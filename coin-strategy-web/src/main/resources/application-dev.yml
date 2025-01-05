@@ -1,0 +1,14 @@
+
+client:
+  okx:
+    url: "https://www.okx.com"
+    apiKey: "API_KEY"
+    passphrase: "PASSPHRASE"
+    secretKey: "SECRET_KEY"
+  binance:
+    url: "https://www.okx.com"
+    apiKey: "API_KEY"
+    passphrase: "PASSPHRASE"
+    secretKey: "SECRET_KEY"
+    
+
