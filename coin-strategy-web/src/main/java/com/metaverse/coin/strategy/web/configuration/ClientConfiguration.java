@@ -26,6 +26,9 @@ public class ClientConfiguration {
     @Value("${client.okx.apiKey}")
     private String okxApiKey;
 
+    @Value("${client.okx.simulated}")
+    private boolean okxSimulated;
+
     @Value("${client.okx.passphrase}")
     private String okxPassphrase;
 
@@ -39,13 +42,13 @@ public class ClientConfiguration {
     @Bean
     public OkxApiService getOkxService(){
         Duration defaultTimeout = Duration.ofSeconds(30);
-        boolean simulated = true;
-        Proxy proxy = new Proxy(Proxy.Type.SOCKS, new InetSocketAddress("127.0.0.1", 7890));
-        OkHttpClient client = defaultClient(okxApiKey, okxSecretKey, okxPassphrase, simulated, defaultTimeout)
+//        Proxy proxy = new Proxy(Proxy.Type.SOCKS, new InetSocketAddress("tw02.ctg.wtf", 4649));
+        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress("proxy.huobidev", 3129));
+        OkHttpClient client = defaultClient(okxApiKey, okxSecretKey, okxPassphrase, okxSimulated, defaultTimeout)
                 .newBuilder()
                 .proxy(proxy)
                 .build();
-        return new OkxApiService(buildApi(okxApiKey, okxSecretKey, okxPassphrase, okxUrl, simulated, defaultTimeout), client, simulated);
+        return new OkxApiService(buildApi(okxApiKey, okxSecretKey, okxPassphrase, okxUrl, okxSimulated, defaultTimeout), client, okxSimulated);
     }
 
     private static OkxApi buildApi(String apiKey, String secretKey, String passphrase, String url, boolean simulated, Duration timeout) {

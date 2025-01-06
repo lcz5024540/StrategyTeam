@@ -8,7 +8,9 @@ public class CoinStrategyWebApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(CoinStrategyWebApplication.class, args);
+        System.out.println("=========================================");
         System.out.println("CoinStrategyWebApplication start success!");
+        System.out.println("=========================================");
     }
 
 }

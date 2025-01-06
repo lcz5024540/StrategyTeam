@@ -1,11 +1,13 @@
 
 client:
   okx:
+    simulated: false
     url: "https://www.okx.com"
     apiKey: "API_KEY"
     passphrase: "PASSPHRASE"
     secretKey: "SECRET_KEY"
   binance:
+    simulated: false
     url: "https://www.okx.com"
     apiKey: "API_KEY"
     passphrase: "PASSPHRASE"
