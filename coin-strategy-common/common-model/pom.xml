@@ -6,8 +6,12 @@
     <parent>
         <groupId>com.metaverse</groupId>
         <artifactId>coin-strategy-common</artifactId>
-        <version>${revision}</version>
+        <version>0.0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>common-model</artifactId>
+
+    <properties>
+        <revision>0.0.1-SNAPSHOT</revision>
+    </properties>
 </project>

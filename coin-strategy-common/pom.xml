@@ -4,7 +4,7 @@
     <parent>
         <groupId>com.metaverse</groupId>
         <artifactId>coinstrategy</artifactId>
-        <version>${revision}</version>
+        <version>0.0.1-SNAPSHOT</version>
     </parent>
     <artifactId>coin-strategy-common</artifactId>
     <packaging>pom</packaging>
@@ -16,5 +16,10 @@
         <module>common-dao</module>
         <module>common-model</module>
         <module>common-service</module>
+        <module>common-chain</module>
     </modules>
+
+    <properties>
+        <revision>0.0.1-SNAPSHOT</revision>
+    </properties>
 </project>
