@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.metaverse</groupId>
         <artifactId>coin-strategy-common</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>common-chain</artifactId>
@@ -19,7 +19,7 @@
         <dependency>
             <groupId>com.metaverse</groupId>
             <artifactId>common-base</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${revision}</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
@@ -72,14 +72,14 @@
         <dependency>
             <groupId>com.metaverse</groupId>
             <artifactId>common-dao</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${revision}</version>
             <scope>compile</scope>
         </dependency>
 
         <dependency>
             <groupId>com.metaverse</groupId>
             <artifactId>common-model</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <version>${revision}</version>
             <scope>compile</scope>
         </dependency>
 
@@ -88,13 +88,6 @@
             <artifactId>fastjson2</artifactId>
             <version>${fastjson2.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.metaverse</groupId>
-            <artifactId>common-base</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
-            <scope>compile</scope>
-        </dependency>
-
     </dependencies>
 
     <build>

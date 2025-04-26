@@ -5,19 +5,25 @@
     <parent>
         <groupId>com.metaverse</groupId>
         <artifactId>coin-strategy-common</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>common-client</artifactId>
+
+    <properties>
+        <org.ta4j.version>0.15</org.ta4j.version>
+    </properties>
 
     <dependencies>
         <dependency>
             <groupId>com.metaverse</groupId>
             <artifactId>common-model</artifactId>
+            <version>${revision}</version>
         </dependency>
         <dependency>
             <groupId>com.metaverse</groupId>
             <artifactId>common-base</artifactId>
+            <version>${revision}</version>
         </dependency>
 
         <dependency>
@@ -61,15 +67,27 @@
         </dependency>
         <dependency>
             <groupId>com.metaverse</groupId>
-            <artifactId>common-model</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
+            <artifactId>common-base</artifactId>
+            <version>${revision}</version>
             <scope>compile</scope>
         </dependency>
+
         <dependency>
-            <groupId>com.metaverse</groupId>
-            <artifactId>common-base</artifactId>
-            <version>0.0.1-SNAPSHOT</version>
-            <scope>compile</scope>
+            <groupId>io.github.binance</groupId>
+            <artifactId>binance-connector-java</artifactId>
+            <version>3.4.1</version>
+        </dependency>
+
+        <dependency>
+            <!-- Allows jackson to handle OffsetDateTime serde -->
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.ta4j</groupId>
+            <artifactId>ta4j-core</artifactId>
+            <version>${org.ta4j.version}</version>
         </dependency>
     </dependencies>
 

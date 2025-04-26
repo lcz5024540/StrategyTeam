@@ -3,16 +3,9 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.5.3</version>
-        <relativePath/> <!-- lookup parent from repository -->
-    </parent>
-
     <groupId>com.metaverse</groupId>
     <artifactId>coinstrategy</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
 
     <name>coinstrategy</name>
@@ -24,29 +17,24 @@
     <modules>
         <module>coin-strategy-common</module>
         <module>coin-strategy-job</module>
-        <module>coin-strategy-solana</module>
-        <module>coin-strategy-evm</module>
+<!--        <module>coin-strategy-evm</module>-->
         <module>coin-strategy-web</module>
     </modules>
 
     <properties>
         <java.version>17</java.version>
         <revision>0.0.1-SNAPSHOT</revision>
-
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <maven.compiler.release>17</maven.compiler.release>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
-        <spring.boot>2.5.3</spring.boot>
 
         <jackson.version>2.16.1</jackson.version>
         <fastjson2.version>2.0.47</fastjson2.version>
         <lombok.version>1.18.30</lombok.version>
-        <slf4j.version>1.7.30</slf4j.version>
+        <slf4j.version>2.0.12</slf4j.version>
         <ch.qos.logback.version>1.2.4</ch.qos.logback.version>
         <junit.jupiter.version>5.10.2</junit.jupiter.version>
-        <mybatis-plus.version>3.4.3.4</mybatis-plus.version>
 
         <retrofit2.version>2.11.0</retrofit2.version>
         <okhttp3.version>4.12.0</okhttp3.version>
@@ -127,18 +115,6 @@
                 <artifactId>okhttp-sse</artifactId>
                 <version>${okhttp3.version}</version>
             </dependency>
-
-            <dependency>
-                <groupId>com.baomidou</groupId>
-                <artifactId>mybatis-plus-boot-starter</artifactId>
-                <version>${mybatis-plus.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.baomidou</groupId>
-                <artifactId>mybatis-plus-extension</artifactId>
-                <version>${mybatis-plus.version}</version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -182,16 +158,6 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-boot-starter</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-extension</artifactId>
         </dependency>
     </dependencies>
 
