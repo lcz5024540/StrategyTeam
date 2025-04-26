@@ -43,7 +43,8 @@
         <jackson.version>2.16.1</jackson.version>
         <fastjson2.version>2.0.47</fastjson2.version>
         <lombok.version>1.18.30</lombok.version>
-        <slf4j.version>2.0.12</slf4j.version>
+        <slf4j.version>1.7.30</slf4j.version>
+        <ch.qos.logback.version>1.2.4</ch.qos.logback.version>
         <junit.jupiter.version>5.10.2</junit.jupiter.version>
         <mybatis-plus.version>3.4.3.4</mybatis-plus.version>
 
@@ -95,6 +96,18 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-simple</artifactId>
                 <version>${slf4j.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-core</artifactId>
+                <version>${ch.qos.logback.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${ch.qos.logback.version}</version>
             </dependency>
 
             <dependency>
@@ -159,6 +172,16 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
         </dependency>
 
         <dependency>
