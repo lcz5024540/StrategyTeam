@@ -1,0 +1,15 @@
+server:
+  port: 8081
+
+sunwk:
+  api:
+    base-url: "https://api.sunwk.com"
+    api-key: ""
+    secret-key: "YOUR_SECRET_KEY_HERE"
+
+binance:
+  api:
+    api-key: "KXFMs9WeNZhdSIx2TBIo5waLPPmqoCRjP582e3RxBO6FzWfw7JvrunWDeOu1Ym3P"
+    secret-key: "rKLFKKR2oOyf6cZ04MnVVQ4vhzz4rHrePyN0yo33Hc10b0dSgfOLToenfXtNiQHS"
+    spot-url: "https://api.binance.com"
+    futures-url: "https://fapi.binance.com"

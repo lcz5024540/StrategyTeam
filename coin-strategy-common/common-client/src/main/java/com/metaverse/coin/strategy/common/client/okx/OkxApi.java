@@ -2,383 +2,188 @@ package com.metaverse.coin.strategy.common.client.okx;
 
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.OkxRestResponse;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.Balance;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.RsiBackTesting;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderReq;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderRsp;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderReq;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderRsp;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderReq;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderRsp;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.PlaceOrderReq;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.PlaceOrderRsp;
-import io.reactivex.rxjava3.core.Single;
+import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.GET;
 import retrofit2.http.POST;
 import retrofit2.http.Query;
+import retrofit2.http.QueryMap;
 
-/**
- * Retrofit2 API interface
- */
+import java.util.List;
+import java.util.Map;
+
 public interface OkxApi {
 
-    /**
-     * 查看账户余额
-     * 限速：10次/2s
-     * 限速规则：UserID
-     *
-     * @param ccy 币种，如 BTC
-     *            支持多币种查询（不超过20个），币种之间半角逗号分隔
-     * @return account balance list
-     */
+    // --- Account ---
+
     @GET("/api/v5/account/balance")
-    Single<OkxRestResponse<Balance>> getBalance(@Query("ccy") String ccy);
+    Call<OkxRestResponse<Balance>> getBalance(@Query("ccy") String ccy);
 
-    /**
-     * 下单
-     * 限速：60次/2s
-     * 跟单交易带单产品的限速：4次/2s
-     * 限速规则（期权以外）：UserID + Instrument ID
-     * 限速规则（只限期权）：UserID + Instrument Family
-     *
-     * @param request request
-     * @return trade order response
-     */
+    @GET("/api/v5/account/positions")
+    Call<OkxRestResponse<Map<String, Object>>> getPositions(@Query("instType") String instType, @Query("instId") String instId);
+
+    @POST("/api/v5/account/set-leverage")
+    Call<OkxRestResponse<Object>> setLeverage(@Body Map<String, Object> req);
+
+    @GET("/api/v5/account/config")
+    Call<OkxRestResponse<Map<String, Object>>> getAccountConfig();
+
+    @GET("/api/v5/account/max-size")
+    Call<OkxRestResponse<Map<String, Object>>> getMaxSize(@QueryMap Map<String, Object> queryMap);
+
+    // --- Trade ---
+
     @POST("/api/v5/trade/order")
-    Single<OkxRestResponse<PlaceOrderRsp>> placeOrder(@Body PlaceOrderReq request);
+    Call<OkxRestResponse<PlaceOrderRsp>> placeOrder(@Body PlaceOrderReq req);
 
-    /**
-     * 撤单
-     * 撤销之前下的未完成订单。
-     * <p>
-     * 限速：60次/2s
-     * 限速规则（期权以外）：UserID + Instrument ID
-     * 限速规则（只限期权）：UserID + Instrument Family
-     *
-     * @param request request
-     * @return CancelOrderRsp
-     */
     @POST("/api/v5/trade/cancel-order")
-    Single<OkxRestResponse<CancelOrderRsp>> cancelOrder(@Body CancelOrderReq request);
+    Call<OkxRestResponse<CancelOrderRsp>> cancelOrder(@Body CancelOrderReq req);
 
-    // Grid trading start
+    @POST("/api/v5/trade/close-position")
+    Call<OkxRestResponse<Object>> closePosition(@Body Map<String, Object> req);
 
-    /**
-     * 网格策略委托下单
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：UserID + Instrument ID
-     *
-     * @param request request
-     * @return PlaceGridAlgoOrderRsp
-     */
+    @GET("/api/v5/trade/order")
+    Call<OkxRestResponse<Map<String, Object>>> getOrder(@Query("instId") String instId, @Query("ordId") String ordId, @Query("clOrdId") String clOrdId);
+
+    @GET("/api/v5/trade/orders-history")
+    Call<OkxRestResponse<Map<String, Object>>> getOrdersHistory(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/trade/orders-pending")
+    Call<OkxRestResponse<Map<String, Object>>> getOrdersPending(@QueryMap Map<String, Object> queryMap);
+
+    // --- Algo Trading ---
+
+    @POST("/api/v5/trade/order-algo")
+    Call<OkxRestResponse<Map<String, Object>>> placeAlgoOrder(@Body Map<String, Object> req);
+
+    @POST("/api/v5/trade/cancel-algos")
+    Call<OkxRestResponse<Map<String, Object>>> cancelAlgoOrder(@Body List<Map<String, Object>> req);
+
+    @GET("/api/v5/trade/orders-algo-history")
+    Call<OkxRestResponse<Map<String, Object>>> getAlgoOrdersHistory(@QueryMap Map<String, Object> queryMap);
+
+    // --- Grid Trading ---
+
     @POST("/api/v5/tradingBot/grid/order-algo")
-    Single<OkxRestResponse<PlaceGridAlgoOrderRsp>> placeGridAlgoOrder(@Body PlaceGridAlgoOrderReq request);
+    Call<OkxRestResponse<PlaceGridAlgoOrderRsp>> placeGridAlgoOrder(@Body PlaceGridAlgoOrderReq req);
 
-    /**
-     * 修改网格策略订单
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return AmendGridAlgoOrderRsp
-     */
-    @POST("/api/v5/tradingBot/grid/amend-order-algo")
-    Single<OkxRestResponse<AmendGridAlgoOrderRsp>> amendGridAlgoOrder(@Body AmendGridAlgoOrderReq request);
-
-    /**
-     * 网格策略停止
-     * 每次最多可以撤销10个网格策略。
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return StopGridAlgoOrderRsp
-     */
     @POST("/api/v5/tradingBot/grid/stop-order-algo")
-    Single<OkxRestResponse<StopGridAlgoOrderRsp>> stopGridAlgoOrder(@Body StopGridAlgoOrderReq request);
+    Call<OkxRestResponse<StopGridAlgoOrderRsp>> stopGridAlgoOrder(@Body StopGridAlgoOrderReq req);
 
-    /**
-     * 合约网格平仓
-     * 只有处于已停止未平仓状态合约网格可使用该接口
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return ClosePositionForContractGridRsp
-     */
-    @POST("/api/v5/tradingBot/grid/close-position")
-    Single<OkxRestResponse<ClosePositionForContractGridRsp>> closePositionForContractGrid(@Body ClosePositionForContractGridReq request);
+    @POST("/api/v5/tradingBot/grid/amend-order-algo")
+    Call<OkxRestResponse<Map<String, Object>>> amendGridAlgoOrder(@Body Map<String, Object> req);
 
-    /**
-     * 撤销合约网格平仓单
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return CancelClosePositionOrderForContractGridRsp
-     */
-    @POST("/api/v5/tradingBot/grid/cancel-close-order")
-    Single<OkxRestResponse<CancelClosePositionOrderForContractGridRsp>> cancelClosePositionForContractGrid(@Body CancelClosePositionOrderForContractGridReq request);
+    // --- Market Data ---
 
-    /**
-     * 网格策略立即触发
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：UserID + Instrument ID
-     *
-     * @param request request
-     * @return InstantTriggerGridAlgoOrderRsp
-     */
-    @POST("/api/v5/tradingBot/grid/order-instant-trigger")
-    Single<OkxRestResponse<InstantTriggerGridAlgoOrderRsp>> instantTriggerGridAlgoOrder(@Body InstantTriggerGridAlgoOrderReq request);
+    @GET("/api/v5/market/tickers")
+    Call<OkxRestResponse<Map<String, Object>>> getTickers(@Query("instType") String instType, @Query("uly") String uly);
 
-    /**
-     * 获取未完成网格策略委托单列表
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @param instId      产品ID，如BTC-USDT
-     * @param instType    产品类型
-     *                    SPOT：币币
-     *                    MARGIN：杠杆
-     *                    FUTURES：交割合约
-     *                    SWAP：永续合约
-     * @param after       请求此ID之前（更旧的数据）的分页内容，传的值为对应接口的algoId
-     * @param before      请求此ID之后（更新的数据）的分页内容，传的值为对应接口的algoId
-     * @param limit       返回结果的数量，最大为100，默认100条
-     * @return GridAlgoOrder
-     */
-    @GET("/api/v5/tradingBot/grid/orders-algo-pending")
-    Single<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrderList(
-            @Query("algoOrdType") String algoOrdType,
-            @Query("algoId") String algoId,
-            @Query("instId") String instId,
-            @Query("instType") String instType,
-            @Query("after") String after,
-            @Query("before") String before,
-            @Query("limit") Integer limit
-    );
+    @GET("/api/v5/market/ticker")
+    Call<OkxRestResponse<Map<String, Object>>> getTicker(@Query("instId") String instId);
 
-    /**
-     * 获取历史网格策略委托单列表
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @param instId      产品ID，如BTC-USDT
-     * @param instType    产品类型
-     *                    SPOT：币币
-     *                    MARGIN：杠杆
-     *                    FUTURES：交割合约
-     *                    SWAP：永续合约
-     * @param after       请求此ID之前（更旧的数据）的分页内容，传的值为对应接口的algoId
-     * @param before      请求此ID之后（更新的数据）的分页内容，传的值为对应接口的algoId
-     * @param limit       返回结果的数量，最大为100，默认100条
-     * @return GridAlgoOrder
-     */
-    @GET("/api/v5/tradingBot/grid/orders-algo-history")
-    Single<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrderHistory(
-            @Query("algoOrdType") String algoOrdType,
-            @Query("algoId") String algoId,
-            @Query("instId") String instId,
-            @Query("instType") String instType,
-            @Query("after") String after,
-            @Query("before") String before,
-            @Query("limit") Integer limit);
+    @GET("/api/v5/market/books")
+    Call<OkxRestResponse<Map<String, Object>>> getOrderBook(@Query("instId") String instId, @Query("sz") Integer sz);
 
-    /**
-     * 获取网格策略委托订单详情
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @return GridAlgoOrder
-     */
-    @GET("/api/v5/tradingBot/grid/orders-algo-details")
-    Single<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrderDetails(
-            @Query("algoOrdType") String algoOrdType,
-            @Query("algoId") String algoId);
+    @GET("/api/v5/market/candles")
+    Call<OkxRestResponse<List<String>>> getCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
 
-    /**
-     * 获取网格策略委托子订单信息
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @param type        子订单状态
-     *                    live：未成交
-     *                    filled：已成交
-     * @param groupId     组ID
-     * @param after       请求此ID之前（更旧的数据）的分页内容，传的值为对应接口的ordId
-     * @param before      请求此ID之后（更新的数据）的分页内容，传的值为对应接口的ordId
-     * @param limit       返回结果的数量，最大为100，默认100条
-     * @return GridAlgoSubOrder
-     */
-    @GET("/api/v5/tradingBot/grid/sub-orders")
-    Single<OkxRestResponse<GridAlgoSubOrder>> getGridAlgoSubOrders(
-            @Query("algoOrdType") String algoOrdType,
-            @Query("algoId") String algoId,
-            @Query("type") String type,
-            @Query("groupId") String groupId,
-            @Query("after") String after,
-            @Query("before") String before,
-            @Query("limit") Integer limit);
+    @GET("/api/v5/market/history-candles")
+    Call<OkxRestResponse<List<String>>> getHistoryCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
 
-    /**
-     * 获取网格策略委托持仓
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param algoOrdType 订单类型
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @return GridAlgoOrderPosition
-     */
-    @GET("/api/v5/tradingBot/grid/positions")
-    Single<OkxRestResponse<GridAlgoOrderPosition>> getGridAlgoOrderPositions(
-            @Query("algoOrdType") String algoOrdType,
-            @Query("algoId") String algoId);
+    // --- Public Data ---
 
-    /**
-     * 现货网格提取利润
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return SpotGridWithdrawIncomeRsp
-     */
-    @POST("/api/v5/tradingBot/grid/withdraw-income")
-    Single<OkxRestResponse<SpotGridWithdrawIncomeRsp>> spotGridWithdrawIncome(@Body SpotGridWithdrawIncomeReq request);
+    @GET("/api/v5/public/instruments")
+    Call<OkxRestResponse<Map<String, Object>>> getInstruments(@Query("instType") String instType, @Query("uly") String uly, @Query("instId") String instId);
 
-    /**
-     * 调整保证金计算
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return ComputeGridMarginBalanceRsp
-     */
-    @POST("/api/v5/tradingBot/grid/compute-margin-balance")
-    Single<OkxRestResponse<ComputeGridMarginBalanceRsp>> computeGridMarginBalance(@Body ComputeGridMarginBalanceReq request);
+    @GET("/api/v5/public/delivery-exercise-history")
+    Call<OkxRestResponse<Map<String, Object>>> getDeliveryExerciseHistory(@Query("instType") String instType, @Query("uly") String uly, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
 
-    /**
-     * 调整保证金
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return AdjustGridMarginBalanceRsp
-     */
-    @POST("/api/v5/tradingBot/grid/margin-balance")
-    Single<OkxRestResponse<AdjustGridMarginBalanceRsp>> adjustGridMarginBalance(@Body AdjustGridMarginBalanceReq request);
+    @GET("/api/v5/public/open-interest")
+    Call<OkxRestResponse<Map<String, Object>>> getOpenInterest(@Query("instType") String instType, @Query("uly") String uly, @Query("instId") String instId);
 
-    /**
-     * 加仓
-     * 该接口用于加仓，仅适用于合约网格。
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：UserID
-     *
-     * @param request request
-     * @return AddGridInvestmentRsp
-     */
-    @POST("/api/v5/tradingBot/grid/adjust-investment")
-    Single<OkxRestResponse<AddGridInvestmentRsp>> addGridInvestment(@Body AddGridInvestmentReq request);
+    @GET("/api/v5/public/funding-rate")
+    Call<OkxRestResponse<Map<String, Object>>> getFundingRate(@Query("instId") String instId);
 
-    /**
-     * 网格策略智能回测（公共）
-     * 公共接口无须鉴权
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：IP
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param instId      产品ID，如BTC-USDT
-     * @param direction   合约网格类型
-     *                    long：做多，short：做空，neutral：中性
-     *                    合约网格必填
-     * @param duration    回测周期
-     *                    7D：7天，30D：30天，180D：180天
-     *                    默认现货网格为7D
-     *                    合约网格只支持7D
-     * @return GridApiParam
-     */
-    @GET("/api/v5/tradingBot/grid/ai-param")
-    Single<OkxRestResponse<GridApiParam>> getGridAiParameterPublic(
-            @Query("algoOrdType") String algoOrdType,
-            @Query("instId") String instId,
-            @Query("direction") String direction,
-            @Query("duration") String duration);
+    @GET("/api/v5/public/funding-rate-history")
+    Call<OkxRestResponse<Map<String, Object>>> getFundingRateHistory(@Query("instId") String instId, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
 
-    /**
-     * 计算最小投资数量（公共）
-     * 公共接口无须鉴权
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：IP
-     *
-     * @param request request
-     * @return ComputeGridMinInvestmentRsp
-     */
-    @POST("/api/v5/tradingBot/grid/min-investment")
-    Single<OkxRestResponse<ComputeGridMinInvestmentRsp>> computeGridMinInvestmentPublic(@Body ComputeGridMinInvestmentReq request);
+    @GET("/api/v5/public/price-limit")
+    Call<OkxRestResponse<Map<String, Object>>> getPriceLimit(@Query("instId") String instId);
 
-    /**
-     * RSI回测（公共）
-     * 公共接口无须鉴权
-     * <p>
-     * 限速：20次/2s
-     * 限速规则：IP
-     *
-     * @param instId      产品ID，如BTC-USDT
-     *                    适用于币币
-     * @param timeframe   K线种类
-     *                    3m, 5m, 15m, 30m (m代表分钟)
-     *                    1H, 4H (H代表小时)
-     *                    1D (D代表天)
-     * @param thold       阈值
-     *                    取值[1,100]的整数
-     * @param timePeriod  周期
-     *                    14
-     * @param triggerCond 触发条件
-     *                    cross_up：上穿
-     *                    cross_down：下穿
-     *                    above：上方
-     *                    below：下方
-     *                    cross：交叉
-     *                    默认是cross_down
-     * @param duration    回测周期
-     *                    1M：1个月
-     *                    默认1M
-     * @return RsiBackTesting
-     */
-    @GET("/api/v5/tradingBot/public/rsi-back-testing")
-    Single<OkxRestResponse<RsiBackTesting>> getRsiBackTestingPublic(
-            @Query("instId") String instId,
-            @Query("timeframe") String timeframe,
-            @Query("thold") Integer thold,
-            @Query("timePeriod") Integer timePeriod,
-            @Query("triggerCond") String triggerCond,
-            @Query("duration") String duration);
+    @GET("/api/v5/public/opt-summary")
+    Call<OkxRestResponse<Map<String, Object>>> getOptSummary(@Query("uly") String uly, @Query("expTime") String expTime);
 
+    @GET("/api/v5/public/estimated-price")
+    Call<OkxRestResponse<Map<String, Object>>> getEstimatedPrice(@Query("instId") String instId);
 
-    // Grid trading end
+    @GET("/api/v5/public/discount-rate-interest-free-quota")
+    Call<OkxRestResponse<Map<String, Object>>> getDiscountRateInterestFreeQuota(@Query("ccy") String ccy);
+
+    @GET("/api/v5/public/time")
+    Call<OkxRestResponse<Map<String, Object>>> getSystemTime();
+
+    @GET("/api/v5/public/liquidation-orders")
+    Call<OkxRestResponse<Map<String, Object>>> getLiquidationOrders(@Query("instType") String instType, @Query("mgnMode") String mgnMode, @Query("instId") String instId, @Query("ccy") String ccy, @Query("uly") String uly, @Query("alias") String alias, @Query("state") String state, @Query("before") String before, @Query("after") String after, @Query("limit") Integer limit);
+
+    @GET("/api/v5/public/mark-price")
+    Call<OkxRestResponse<Map<String, Object>>> getMarkPrice(@Query("instType") String instType, @Query("uly") String uly, @Query("instId") String instId);
+
+    @GET("/api/v5/public/position-tiers")
+    Call<OkxRestResponse<Map<String, Object>>> getPositionTiers(@Query("instType") String instType, @Query("uly") String uly, @Query("instId") String instId, @Query("tdMode") String tdMode, @Query("tier") String tier);
+
+    @GET("/api/v5/public/interest-rate-loan-quota")
+    Call<OkxRestResponse<Map<String, Object>>> getInterestRateLoanQuota();
+
+    @GET("/api/v5/public/underlying")
+    Call<OkxRestResponse<Map<String, Object>>> getUnderlying(@Query("instType") String instType);
+
+    @GET("/api/v5/public/insurance-fund")
+    Call<OkxRestResponse<Map<String, Object>>> getInsuranceFund(@Query("instType") String instType, @Query("type") String type, @Query("uly") String uly, @Query("ccy") String ccy, @Query("before") String before, @Query("after") String after, @Query("limit") Integer limit);
+
+    @GET("/api/v5/public/convert-contract-coin")
+    Call<OkxRestResponse<Map<String, Object>>> convertContractCoin(@Query("type") String type, @Query("instId") String instId, @Query("sz") String sz, @Query("px") String px, @Query("unit") String unit);
+
+    // --- Funding Account ---
+
+    @GET("/api/v5/asset/currencies")
+    Call<OkxRestResponse<Map<String, Object>>> getCurrencies(@Query("ccy") String ccy);
+
+    @GET("/api/v5/asset/balances")
+    Call<OkxRestResponse<Map<String, Object>>> getAssetBalances(@Query("ccy") String ccy);
+
+    @POST("/api/v5/asset/transfer")
+    Call<OkxRestResponse<Map<String, Object>>> assetTransfer(@Body Map<String, Object> req);
+
+    @GET("/api/v5/asset/bills")
+    Call<OkxRestResponse<Map<String, Object>>> getAssetBills(@Query("ccy") String ccy, @Query("type") String type, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+
+    @GET("/api/v5/asset/deposit-lightning")
+    Call<OkxRestResponse<Map<String, Object>>> getDepositLightning(@Query("ccy") String ccy, @Query("amt") String amt, @Query("to") String to);
+
+    @GET("/api/v5/asset/deposit-address")
+    Call<OkxRestResponse<Map<String, Object>>> getDepositAddress(@Query("ccy") String ccy);
+
+    @GET("/api/v5/asset/deposit-history")
+    Call<OkxRestResponse<Map<String, Object>>> getDepositHistory(@Query("ccy") String ccy, @Query("depId") String depId, @Query("txId") String txId, @Query("type") String type, @Query("state") String state, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+
+    @POST("/api/v5/asset/withdrawal")
+    Call<OkxRestResponse<Map<String, Object>>> withdrawal(@Body Map<String, Object> req);
+
+    @GET("/api/v5/asset/withdrawal-history")
+    Call<OkxRestResponse<Map<String, Object>>> getWithdrawalHistory(@Query("ccy") String ccy, @Query("wdId") String wdId, @Query("clientId") String clientId, @Query("txId") String txId, @Query("type") String type, @Query("state") String state, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+
+    @POST("/api/v5/asset/cancel-withdrawal")
+    Call<OkxRestResponse<Map<String, Object>>> cancelWithdrawal(@Body Map<String, Object> req);
+
+    @POST("/api/v5/asset/convert-dust-assets")
+    Call<OkxRestResponse<Map<String, Object>>> convertDustAssets(@Body Map<String, Object> req);
 
 }

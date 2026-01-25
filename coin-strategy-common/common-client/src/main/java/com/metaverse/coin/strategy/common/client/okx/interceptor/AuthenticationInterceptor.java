@@ -1,24 +1,15 @@
 package com.metaverse.coin.strategy.common.client.okx.interceptor;
 
-import com.metaverse.coin.strategy.common.base.utils.DateUtils;
 import com.metaverse.coin.strategy.common.base.utils.SignUtils;
-import lombok.extern.slf4j.Slf4j;
 import okhttp3.Interceptor;
 import okhttp3.Request;
-import okhttp3.RequestBody;
 import okhttp3.Response;
 import okio.Buffer;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.util.Date;
+import java.time.Instant;
 
-import static com.metaverse.coin.strategy.common.base.constants.OkxConstants.*;
-
-/**
- * OkHttp Interceptor that adds an authorization header
- */
-@Slf4j
 public class AuthenticationInterceptor implements Interceptor {
 
     private final String apiKey;
@@ -36,43 +27,34 @@ public class AuthenticationInterceptor implements Interceptor {
     @NotNull
     @Override
     public Response intercept(@NotNull Chain chain) throws IOException {
-        String timestamp = DateUtils.format(DateUtils.FORMAT_UTC_ISO8601, new Date(), 0);
-        String method = chain.request().method();
-        String body = EMPTY;
-        if (method.equalsIgnoreCase("POST")) {
-            body = bodyToString(chain.request().body());
+        Request original = chain.request();
+        Request.Builder builder = original.newBuilder();
+
+        String timestamp = Instant.now().toString();
+        String method = original.method();
+        String path = original.url().encodedPath();
+        String query = original.url().encodedQuery();
+        if (query != null && !query.isEmpty()) {
+            path += "?" + query;
         }
-        String sign = SignUtils.signRest(secretKey,
-                timestamp,
-                method,
-                chain.request().url().encodedPath()
-                        + (chain.request().url().encodedQuery() != null ? ("?" + chain.request().url().encodedQuery()) : EMPTY),
-                body);
-        Request.Builder requestBuilder = chain.request()
-                .newBuilder()
-                .header(HEADER_OK_ACCESS_KEY, apiKey)
-                .header(HEADER_OK_ACCESS_SIGN, sign)
-                .header(HEADER_OK_ACCESS_TIMESTAMP, timestamp)
-                .header(HEADER_OK_ACCESS_PASSPHRASE, passphrase);
+
+        String body = "";
+        if (original.body() != null) {
+            Buffer buffer = new Buffer();
+            original.body().writeTo(buffer);
+            body = buffer.readUtf8();
+        }
+
+        String sign = SignUtils.signRest(secretKey, timestamp, method, path, body);
+
+        builder.addHeader("OK-ACCESS-KEY", apiKey);
+        builder.addHeader("OK-ACCESS-SIGN", sign);
+        builder.addHeader("OK-ACCESS-TIMESTAMP", timestamp);
+        builder.addHeader("OK-ACCESS-PASSPHRASE", passphrase);
         if (simulated) {
-            requestBuilder.header(HEADER_X_SIMULATED_TRADING, "1");
+            builder.addHeader("x-simulated-trading", "1");
         }
-        return chain.proceed(requestBuilder.build());
-    }
 
-    private static String bodyToString(final RequestBody request) {
-        try {
-            final Buffer buffer = new Buffer();
-            if (request != null) {
-                request.writeTo(buffer);
-            } else {
-                return EMPTY;
-            }
-            return buffer.readUtf8();
-        } catch (final IOException e) {
-            log.error("Failed to serialize request body", e);
-            return EMPTY;
-        }
+        return chain.proceed(builder.build());
     }
-
 }

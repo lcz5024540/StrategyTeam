@@ -1,393 +1,273 @@
 package com.metaverse.coin.strategy.common.client.okx;
 
-import com.metaverse.coin.strategy.common.client.ApiService;
+import com.metaverse.coin.strategy.common.client.okx.service.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.OkxRestResponse;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.Balance;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.RsiBackTesting;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderReq;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderRsp;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderReq;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderRsp;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderReq;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.PlaceOrderReq;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.PlaceOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.enums.AlgoOrderType;
-import com.metaverse.coin.strategy.common.model.okx.enums.ContractDirection;
-import com.metaverse.coin.strategy.common.model.okx.enums.InstrumentType;
-import com.metaverse.coin.strategy.common.model.okx.enums.TriggerCondition;
-import lombok.extern.slf4j.Slf4j;
+import com.metaverse.coin.strategy.common.model.okx.enums.ws.TdMode;
 import okhttp3.OkHttpClient;
 
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 
-@Slf4j
-public class OkxApiService extends ApiService {
+public class OkxApiService {
 
-//    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
-
-    private final boolean simulated;
-    private final OkxApi api;
+    private final OkxApi okxApi;
     private final OkHttpClient client;
+    private final boolean simulated;
 
-//    public OkxApiService(String apiKey, String secretKey, String passphrase) {
-//        this(apiKey, secretKey, passphrase, false);
-//    }
-//
-//    public OkxApiService(String apiKey, String secretKey, String passphrase, boolean simulated) {
-//        this(buildApi(apiKey, secretKey, passphrase, simulated, DEFAULT_TIMEOUT),
-//                defaultClient(apiKey, secretKey, passphrase, simulated, DEFAULT_TIMEOUT),
-//                simulated);
-//    }
+    public final OkxAccountService account;
+    public final OkxTradeService trade;
+    public final OkxAlgoTradingService algoTrading;
+    public final OkxGridTradingService gridTrading;
+    public final OkxMarketDataService marketData;
+    public final OkxPublicDataService publicData;
+    public final OkxFundingService funding;
 
-    public OkxApiService(final OkxApi api, final OkHttpClient client, boolean simulated) {
-        this.api = api;
+    public OkxApiService(OkxApi okxApi, OkHttpClient client, boolean simulated) {
+        this.okxApi = okxApi;
         this.client = client;
         this.simulated = simulated;
+
+        this.account = new OkxAccountService(okxApi);
+        this.trade = new OkxTradeService(okxApi);
+        this.algoTrading = new OkxAlgoTradingService(okxApi);
+        this.gridTrading = new OkxGridTradingService(okxApi);
+        this.marketData = new OkxMarketDataService(okxApi);
+        this.publicData = new OkxPublicDataService(okxApi);
+        this.funding = new OkxFundingService(okxApi);
     }
 
-//    public static OkxApi buildApi(String apiKey, String secretKey, String passphrase, boolean simulated, Duration timeout) {
-//        ObjectMapper mapper = defaultObjectMapper();
-//        OkHttpClient client = defaultClient(apiKey, secretKey, passphrase, simulated, timeout);
-//        Retrofit retrofit = defaultRetrofit(client, mapper, simulated);
-//        return retrofit.create(OkxApi.class);
-//    }
+    // --- Account ---
 
-
-
-    // 开始接口
-
-    /**
-     * 查看账户余额
-     *
-     * @param ccy 支持多币种查询（不超过20个），币种之间半角逗号分隔
-     * @return AccountBalance list
-     */
     public OkxRestResponse<Balance> getBalance(String ccy) {
-        return execute(api.getBalance(ccy));
+        return account.getBalance(ccy);
     }
 
-    /**
-     * 下单
-     *
-     * @param request request
-     * @return OkxRestResponse<TradeOrderRsp>
-     */
-    public OkxRestResponse<PlaceOrderRsp> placeOrder(PlaceOrderReq request) {
-        return execute(api.placeOrder(request));
+    public OkxRestResponse<Object> setLeverage(String instId, String mgnMode, String lever) {
+        return account.setLeverage(instId, mgnMode, lever);
     }
 
-    /**
-     * 撤单
-     *
-     * @param request request
-     * @return OkxRestResponse<CancelOrderRsp>
-     */
-    public OkxRestResponse<CancelOrderRsp> cancelOrder(CancelOrderReq request) {
-        return execute(api.cancelOrder(request));
+    public OkxRestResponse<Map<String, Object>> getPositions(String instType, String instId) {
+        return account.getPositions(instType, instId);
     }
 
-
-    // Grid trading start
-
-    /**
-     * 网格策略委托下单
-     *
-     * @param request request
-     * @return PlaceGridAlgoOrderRsp
-     */
-    public OkxRestResponse<PlaceGridAlgoOrderRsp> placeGridAlgoOrder(PlaceGridAlgoOrderReq request) {
-        return execute(api.placeGridAlgoOrder(request));
+    public OkxRestResponse<Map<String, Object>> getAccountConfig() {
+        return account.getAccountConfig();
     }
 
-    /**
-     * 修改网格策略订单
-     *
-     * @param request request
-     * @return AmendGridAlgoOrderRsp
-     */
-    public OkxRestResponse<AmendGridAlgoOrderRsp> amendGridAlgoOrder(AmendGridAlgoOrderReq request) {
-        return execute(api.amendGridAlgoOrder(request));
+    public OkxRestResponse<Map<String, Object>> getMaxSize(Map<String, Object> queryMap) {
+        return account.getMaxSize(queryMap);
     }
 
-    /**
-     * 网格策略停止
-     * 每次最多可以撤销10个网格策略。
-     *
-     * @param request request
-     * @return StopGridAlgoOrderRsp
-     */
-    public OkxRestResponse<StopGridAlgoOrderRsp> stopGridAlgoOrder(StopGridAlgoOrderReq request) {
-        return execute(api.stopGridAlgoOrder(request));
+    // --- Trade ---
+
+    public OkxRestResponse<PlaceOrderRsp> openLong(String instId, TdMode tdMode, BigDecimal size, BigDecimal price) {
+        return trade.openLong(instId, tdMode, size, price);
     }
 
-    /**
-     * 合约网格平仓
-     * 只有处于已停止未平仓状态合约网格可使用该接口
-     *
-     * @param request request
-     * @return ClosePositionForContractGridRsp
-     */
-    public OkxRestResponse<ClosePositionForContractGridRsp> closePositionForContractGrid(ClosePositionForContractGridReq request) {
-        return execute(api.closePositionForContractGrid(request));
+    public OkxRestResponse<PlaceOrderRsp> openShort(String instId, TdMode tdMode, BigDecimal size, BigDecimal price) {
+        return trade.openShort(instId, tdMode, size, price);
     }
 
-    /**
-     * 撤销合约网格平仓单
-     *
-     * @param request request
-     * @return CancelClosePositionOrderForContractGridRsp
-     */
-    public OkxRestResponse<CancelClosePositionOrderForContractGridRsp> cancelClosePositionForContractGrid(CancelClosePositionOrderForContractGridReq request) {
-        return execute(api.cancelClosePositionForContractGrid(request));
+    public OkxRestResponse<PlaceOrderRsp> closeLong(String instId, TdMode tdMode, BigDecimal size, BigDecimal price) {
+        return trade.closeLong(instId, tdMode, size, price);
     }
 
-    /**
-     * 网格策略立即触发
-     *
-     * @param request request
-     * @return InstantTriggerGridAlgoOrderRsp
-     */
-    public OkxRestResponse<InstantTriggerGridAlgoOrderRsp> instantTriggerGridAlgoOrder(InstantTriggerGridAlgoOrderReq request) {
-        return execute(api.instantTriggerGridAlgoOrder(request));
+    public OkxRestResponse<PlaceOrderRsp> closeShort(String instId, TdMode tdMode, BigDecimal size, BigDecimal price) {
+        return trade.closeShort(instId, tdMode, size, price);
     }
 
-    /**
-     * 获取未完成网格策略委托单列表
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @param instId      产品ID，如BTC-USDT
-     * @param instType    产品类型
-     *                    SPOT：币币
-     *                    MARGIN：杠杆
-     *                    FUTURES：交割合约
-     *                    SWAP：永续合约
-     * @param after       请求此ID之前（更旧的数据）的分页内容，传的值为对应接口的algoId
-     * @param before      请求此ID之后（更新的数据）的分页内容，传的值为对应接口的algoId
-     * @param limit       返回结果的数量，最大为100，默认100条
-     * @return GridAlgoOrder
-     */
-    public OkxRestResponse<GridAlgoOrder> getGridAlgoOrderList(
-            AlgoOrderType algoOrdType,
-            String algoId,
-            String instId,
-            InstrumentType instType,
-            String after,
-            String before,
-            Integer limit) {
-        return execute(api.getGridAlgoOrderList(algoOrdType.getValue(),
-                algoId,
-                instId,
-                instType != null ? instType.getValue() : null,
-                after,
-                before,
-                limit));
+    public OkxRestResponse<Object> closePosition(String instId, String mgnMode, String posSide) {
+        return trade.closePosition(instId, mgnMode, posSide);
     }
 
-    /**
-     * 获取历史网格策略委托单列表
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @param instId      产品ID，如BTC-USDT
-     * @param instType    产品类型
-     *                    SPOT：币币
-     *                    MARGIN：杠杆
-     *                    FUTURES：交割合约
-     *                    SWAP：永续合约
-     * @param after       请求此ID之前（更旧的数据）的分页内容，传的值为对应接口的algoId
-     * @param before      请求此ID之后（更新的数据）的分页内容，传的值为对应接口的algoId
-     * @param limit       返回结果的数量，最大为100，默认100条
-     * @return GridAlgoOrder
-     */
-    public OkxRestResponse<GridAlgoOrder> getGridAlgoOrderHistory(
-            AlgoOrderType algoOrdType,
-            String algoId,
-            String instId,
-            InstrumentType instType,
-            String after,
-            String before,
-            Integer limit) {
-        return execute(api.getGridAlgoOrderHistory(algoOrdType.getValue(),
-                algoId,
-                instId,
-                instType != null ? instType.getValue() : null,
-                after,
-                before,
-                limit));
+    public OkxRestResponse<CancelOrderRsp> cancelOrder(CancelOrderReq req) {
+        return trade.cancelOrder(req);
     }
 
-    /**
-     * 获取网格策略委托订单详情
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @return GridAlgoOrder
-     */
-    public OkxRestResponse<GridAlgoOrder> getGridAlgoOrderDetails(AlgoOrderType algoOrdType, String algoId) {
-        return execute(api.getGridAlgoOrderDetails(algoOrdType.getValue(), algoId));
+    public OkxRestResponse<Map<String, Object>> getOrder(String instId, String ordId, String clOrdId) {
+        return trade.getOrder(instId, ordId, clOrdId);
     }
 
-    /**
-     * 获取网格策略委托子订单信息
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @param type        子订单状态
-     *                    live：未成交
-     *                    filled：已成交
-     * @param groupId     组ID
-     * @param after       请求此ID之前（更旧的数据）的分页内容，传的值为对应接口的ordId
-     * @param before      请求此ID之后（更新的数据）的分页内容，传的值为对应接口的ordId
-     * @param limit       返回结果的数量，最大为100，默认100条
-     * @return GridAlgoSubOrder
-     */
-    public OkxRestResponse<GridAlgoSubOrder> getGridAlgoSubOrders(
-            AlgoOrderType algoOrdType,
-            String algoId,
-            String type,
-            String groupId,
-            String after,
-            String before,
-            Integer limit) {
-        return execute(api.getGridAlgoSubOrders(algoOrdType.getValue(), algoId, type, groupId, after, before, limit));
+    public OkxRestResponse<Map<String, Object>> getOrdersHistory(Map<String, Object> queryMap) {
+        return trade.getOrdersHistory(queryMap);
     }
 
-    /**
-     * 获取网格策略委托持仓
-     *
-     * @param algoOrdType 订单类型
-     *                    contract_grid：合约网格委托
-     * @param algoId      策略订单ID
-     * @return GridAlgoOrderPosition
-     */
-    public OkxRestResponse<GridAlgoOrderPosition> getGridAlgoOrderPositions(AlgoOrderType algoOrdType, String algoId) {
-        return execute(api.getGridAlgoOrderPositions(algoOrdType.getValue(), algoId));
+    public OkxRestResponse<Map<String, Object>> getOrdersPending(Map<String, Object> queryMap) {
+        return trade.getOrdersPending(queryMap);
     }
 
-    /**
-     * 现货网格提取利润
-     *
-     * @param request request
-     * @return SpotGridWithdrawIncomeRsp
-     */
-    public OkxRestResponse<SpotGridWithdrawIncomeRsp> spotGridWithdrawIncome(SpotGridWithdrawIncomeReq request) {
-        return execute(api.spotGridWithdrawIncome(request));
+    // --- Algo Trading ---
+
+    public OkxRestResponse<Map<String, Object>> placeAlgoOrder(Map<String, Object> req) {
+        return algoTrading.placeAlgoOrder(req);
     }
 
-    /**
-     * 调整保证金计算
-     *
-     * @param request request
-     * @return ComputeGridMarginBalanceRsp
-     */
-    public OkxRestResponse<ComputeGridMarginBalanceRsp> computeGridMarginBalance(ComputeGridMarginBalanceReq request) {
-        return execute(api.computeGridMarginBalance(request));
+    public OkxRestResponse<Map<String, Object>> cancelAlgoOrder(List<Map<String, Object>> req) {
+        return algoTrading.cancelAlgoOrder(req);
     }
 
-    /**
-     * 调整保证金
-     *
-     * @param request request
-     * @return AdjustGridMarginBalanceRsp
-     */
-    public OkxRestResponse<AdjustGridMarginBalanceRsp> adjustGridMarginBalance(AdjustGridMarginBalanceReq request) {
-        return execute(api.adjustGridMarginBalance(request));
+    public OkxRestResponse<Map<String, Object>> getAlgoOrdersHistory(Map<String, Object> queryMap) {
+        return algoTrading.getAlgoOrdersHistory(queryMap);
     }
 
-    /**
-     * 加仓
-     * 该接口用于加仓，仅适用于合约网格。
-     *
-     * @param request request
-     * @return AddGridInvestmentRsp
-     */
-    public OkxRestResponse<AddGridInvestmentRsp> addGridInvestment(AddGridInvestmentReq request) {
-        return execute(api.addGridInvestment(request));
+    // --- Grid Trading ---
+
+    public OkxRestResponse<PlaceGridAlgoOrderRsp> placeGridAlgoOrder(PlaceGridAlgoOrderReq req) {
+        return gridTrading.placeGridAlgoOrder(req);
     }
 
-    /**
-     * 网格策略智能回测（公共）
-     * 公共接口无须鉴权
-     *
-     * @param algoOrdType 策略订单类型
-     *                    grid：现货网格委托
-     *                    contract_grid：合约网格委托
-     * @param instId      产品ID，如BTC-USDT
-     * @param direction   合约网格类型
-     *                    long：做多，short：做空，neutral：中性
-     *                    合约网格必填
-     * @param duration    回测周期
-     *                    7D：7天，30D：30天，180D：180天
-     *                    默认现货网格为7D
-     *                    合约网格只支持7D
-     * @return GridApiParam
-     */
-    public OkxRestResponse<GridApiParam> getGridAiParameterPublic(
-            AlgoOrderType algoOrdType,
-            String instId,
-            ContractDirection direction,
-            String duration) {
-        return execute(api.getGridAiParameterPublic(algoOrdType.getValue(),
-                instId,
-                direction != null ? direction.getValue() : null,
-                duration));
+    public OkxRestResponse<StopGridAlgoOrderRsp> stopGridAlgoOrder(StopGridAlgoOrderReq req) {
+        return gridTrading.stopGridAlgoOrder(req);
     }
 
-    /**
-     * 计算最小投资数量（公共）
-     * 公共接口无须鉴权
-     *
-     * @param request request
-     * @return ComputeGridMinInvestmentRsp
-     */
-    public OkxRestResponse<ComputeGridMinInvestmentRsp> computeGridMinInvestmentPublic(ComputeGridMinInvestmentReq request) {
-        return execute(api.computeGridMinInvestmentPublic(request));
+    public OkxRestResponse<Map<String, Object>> amendGridAlgoOrder(Map<String, Object> req) {
+        return gridTrading.amendGridAlgoOrder(req);
     }
 
-    /**
-     * RSI回测（公共）
-     * 公共接口无须鉴权
-     *
-     * @param instId      产品ID，如BTC-USDT
-     *                    适用于币币
-     * @param timeframe   K线种类
-     *                    3m, 5m, 15m, 30m (m代表分钟)
-     *                    1H, 4H (H代表小时)
-     *                    1D (D代表天)
-     * @param thold       阈值
-     *                    取值[1,100]的整数
-     * @param timePeriod  周期
-     *                    14
-     * @param triggerCond 触发条件
-     *                    cross_up：上穿
-     *                    cross_down：下穿
-     *                    above：上方
-     *                    below：下方
-     *                    cross：交叉
-     *                    默认是cross_down
-     * @param duration    回测周期
-     *                    1M：1个月
-     *                    默认1M
-     * @return RsiBackTesting
-     */
-    public OkxRestResponse<RsiBackTesting> getRsiBackTestingPublic(
-            String instId,
-            String timeframe,
-            Integer thold,
-            Integer timePeriod,
-            TriggerCondition triggerCond,
-            String duration) {
-        return execute(api.getRsiBackTestingPublic(instId,
-                timeframe,
-                thold,
-                timePeriod,
-                triggerCond != null ? triggerCond.getValue() : null,
-                duration));
+    // --- Market Data ---
+
+    public OkxRestResponse<Map<String, Object>> getTickers(String instType, String uly) {
+        return marketData.getTickers(instType, uly);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getTicker(String instId) {
+        return marketData.getTicker(instId);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getOrderBook(String instId, Integer sz) {
+        return marketData.getOrderBook(instId, sz);
+    }
+
+    public OkxRestResponse<List<String>> getCandles(String instId, String bar, String after, String before, Integer limit) {
+        return marketData.getCandles(instId, bar, after, before, limit);
+    }
+
+    public OkxRestResponse<List<String>> getHistoryCandles(String instId, String bar, String after, String before, Integer limit) {
+        return marketData.getHistoryCandles(instId, bar, after, before, limit);
+    }
+
+    // --- Public Data ---
+
+    public OkxRestResponse<Map<String, Object>> getInstruments(String instType, String uly, String instId) {
+        return publicData.getInstruments(instType, uly, instId);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getDeliveryExerciseHistory(String instType, String uly, String after, String before, Integer limit) {
+        return publicData.getDeliveryExerciseHistory(instType, uly, after, before, limit);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getOpenInterest(String instType, String uly, String instId) {
+        return publicData.getOpenInterest(instType, uly, instId);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getFundingRate(String instId) {
+        return publicData.getFundingRate(instId);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getFundingRateHistory(String instId, String after, String before, Integer limit) {
+        return publicData.getFundingRateHistory(instId, after, before, limit);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getPriceLimit(String instId) {
+        return publicData.getPriceLimit(instId);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getOptSummary(String uly, String expTime) {
+        return publicData.getOptSummary(uly, expTime);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getEstimatedPrice(String instId) {
+        return publicData.getEstimatedPrice(instId);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getDiscountRateInterestFreeQuota(String ccy) {
+        return publicData.getDiscountRateInterestFreeQuota(ccy);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getSystemTime() {
+        return publicData.getSystemTime();
+    }
+
+    public OkxRestResponse<Map<String, Object>> getLiquidationOrders(String instType, String mgnMode, String instId, String ccy, String uly, String alias, String state, String before, String after, Integer limit) {
+        return publicData.getLiquidationOrders(instType, mgnMode, instId, ccy, uly, alias, state, before, after, limit);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getMarkPrice(String instType, String uly, String instId) {
+        return publicData.getMarkPrice(instType, uly, instId);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getPositionTiers(String instType, String uly, String instId, String tdMode, String tier) {
+        return publicData.getPositionTiers(instType, uly, instId, tdMode, tier);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getInterestRateLoanQuota() {
+        return publicData.getInterestRateLoanQuota();
+    }
+
+    public OkxRestResponse<Map<String, Object>> getUnderlying(String instType) {
+        return publicData.getUnderlying(instType);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getInsuranceFund(String instType, String type, String uly, String ccy, String before, String after, Integer limit) {
+        return publicData.getInsuranceFund(instType, type, uly, ccy, before, after, limit);
+    }
+
+    public OkxRestResponse<Map<String, Object>> convertContractCoin(String type, String instId, String sz, String px, String unit) {
+        return publicData.convertContractCoin(type, instId, sz, px, unit);
+    }
+
+    // --- Funding Account ---
+
+    public OkxRestResponse<Map<String, Object>> getCurrencies(String ccy) {
+        return funding.getCurrencies(ccy);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getAssetBalances(String ccy) {
+        return funding.getAssetBalances(ccy);
+    }
+
+    public OkxRestResponse<Map<String, Object>> assetTransfer(Map<String, Object> req) {
+        return funding.assetTransfer(req);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getAssetBills(String ccy, String type, String after, String before, Integer limit) {
+        return funding.getAssetBills(ccy, type, after, before, limit);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getDepositLightning(String ccy, String amt, String to) {
+        return funding.getDepositLightning(ccy, amt, to);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getDepositAddress(String ccy) {
+        return funding.getDepositAddress(ccy);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getDepositHistory(String ccy, String depId, String txId, String type, String state, String after, String before, Integer limit) {
+        return funding.getDepositHistory(ccy, depId, txId, type, state, after, before, limit);
+    }
+
+    public OkxRestResponse<Map<String, Object>> withdrawal(Map<String, Object> req) {
+        return funding.withdrawal(req);
+    }
+
+    public OkxRestResponse<Map<String, Object>> getWithdrawalHistory(String ccy, String wdId, String clientId, String txId, String type, String state, String after, String before, Integer limit) {
+        return funding.getWithdrawalHistory(ccy, wdId, clientId, txId, type, state, after, before, limit);
+    }
+
+    public OkxRestResponse<Map<String, Object>> cancelWithdrawal(Map<String, Object> req) {
+        return funding.cancelWithdrawal(req);
+    }
+
+    public OkxRestResponse<Map<String, Object>> convertDustAssets(Map<String, Object> req) {
+        return funding.convertDustAssets(req);
     }
 }

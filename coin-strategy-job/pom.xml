@@ -13,6 +13,20 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-dao</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <version>3.5.5</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
             <version>3.1.7</version>

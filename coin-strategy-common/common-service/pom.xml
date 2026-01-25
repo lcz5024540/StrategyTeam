@@ -4,8 +4,9 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.metaverse</groupId>
-        <artifactId>coin-strategy-common</artifactId>
+        <artifactId>coinstrategy</artifactId>
         <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>common-service</artifactId>

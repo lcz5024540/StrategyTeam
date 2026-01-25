@@ -5,8 +5,9 @@
 
     <parent>
         <groupId>com.metaverse</groupId>
-        <artifactId>coin-strategy-common</artifactId>
+        <artifactId>coinstrategy</artifactId>
         <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>common-base</artifactId>
@@ -15,12 +16,12 @@
         <guava.version>30.1.1-jre</guava.version>
         <knife4j.version>3.0.2</knife4j.version>
     </properties>
-
     <dependencies>
         <dependency>
             <groupId>com.metaverse</groupId>
             <artifactId>common-model</artifactId>
-            <version>${revision}</version>
+            <version>0.0.1-SNAPSHOT</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>

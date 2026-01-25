@@ -50,7 +50,7 @@ public class WsResponse<T> implements IWsResponse {
 
     public static <T> WsResponse<T> tryParse(Class<T> tClass, String message) {
         try {
-            WsResponse<JSONObject> response = JSONObject.parseObject(message, new TypeReference<>() {
+            WsResponse<JSONObject> response = JSONObject.parseObject(message, new TypeReference<WsResponse<JSONObject>>() {
             });
             if (response != null
                     && response.getEvent() != null

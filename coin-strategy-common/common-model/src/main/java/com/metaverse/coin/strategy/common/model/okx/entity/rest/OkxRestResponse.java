@@ -9,7 +9,7 @@ import java.util.List;
 
 @Data
 @ToString
-public class OkxRestResponse<T extends IOkxRestRsp> implements IOkxRestObject {
+public class OkxRestResponse<T> implements IOkxRestObject {
 
     /**
      * 结果代码，0表示成功

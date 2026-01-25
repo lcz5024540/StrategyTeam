@@ -1,21 +1,71 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
+    <groupId>com.metaverse</groupId>
+    <version>${revision}</version>
+    <artifactId>coin-strategy-common</artifactId>
+    <packaging>pom</packaging>
+    <description>Aggregator and Dependency Bundle for Common Modules</description>
+
     <parent>
         <groupId>com.metaverse</groupId>
         <artifactId>coinstrategy</artifactId>
         <version>${revision}</version>
     </parent>
-    <artifactId>coin-strategy-common</artifactId>
-    <packaging>pom</packaging>
 
     <modules>
         <module>common-base</module>
         <module>common-cache</module>
         <module>common-client</module>
         <module>common-dao</module>
+        <module>common-api</module>
         <module>common-model</module>
         <module>common-service</module>
     </modules>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-base</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-dao</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-service</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <source>1.8</source>
+                    <target>1.8</target>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

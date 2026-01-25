@@ -5,34 +5,33 @@
 
     <parent>
         <groupId>com.metaverse</groupId>
-        <artifactId>coin-strategy-common</artifactId>
+        <artifactId>coinstrategy</artifactId>
         <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>common-dao</artifactId>
-    <version>${revision}</version>
 
     <dependencies>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-model</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <version>3.5.5</version>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>8.3.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <mainClass>none</mainClass>     <!-- 取消查找本项目下的Main方法：为了解决Unable to find main class的问题 -->
-                    <classifier>execute</classifier>    <!-- 为了解决依赖模块找不到此模块中的类或属性 -->
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>repackage</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
 
 </project>

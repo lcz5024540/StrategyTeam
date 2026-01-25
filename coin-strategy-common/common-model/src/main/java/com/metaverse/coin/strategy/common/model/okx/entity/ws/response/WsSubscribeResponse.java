@@ -14,6 +14,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @ToString
@@ -33,7 +34,7 @@ public class WsSubscribeResponse<T, D> implements IWsResponse {
 
     public static <T, D> WsSubscribeResponse<T, D> tryParse(Class<T> tClass, Class<D> dClass, String message) {
         try {
-            WsSubscribeResponse<JSONObject, ?> response = JSONObject.parseObject(message, new TypeReference<>() {
+            WsSubscribeResponse<JSONObject, Object> response = JSONObject.parseObject(message, new TypeReference<WsSubscribeResponse<JSONObject, Object>>() {
             });
             if (response != null && response.getData() != null && response.getArg() != null) {
                 WsSubscribeResponse<T, D> result = new WsSubscribeResponse<>();
@@ -68,7 +69,7 @@ public class WsSubscribeResponse<T, D> implements IWsResponse {
                             log.error("new instance error", e);
                         }
                         return instance;
-                    }).filter(Objects::nonNull).toList());
+                    }).filter(Objects::nonNull).collect(Collectors.toList()));
                 } else {
                     result.setData(JSONArray.parseArray(response.getData().toString(), dClass));
                 }

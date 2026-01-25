@@ -1,7 +1,7 @@
 package com.metaverse.coin.strategy.web.configuration;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.metaverse.coin.strategy.common.client.ApiService;
 import com.metaverse.coin.strategy.common.client.okx.OkxApi;
 import com.metaverse.coin.strategy.common.client.okx.OkxApiService;
 import com.metaverse.coin.strategy.common.client.okx.interceptor.AuthenticationInterceptor;
@@ -52,7 +52,8 @@ public class ClientConfiguration {
     }
 
     private static OkxApi buildApi(String apiKey, String secretKey, String passphrase, String url, boolean simulated, Duration timeout) {
-        ObjectMapper mapper = ApiService.errorMapper;
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         OkHttpClient client = defaultClient(apiKey, secretKey, passphrase, simulated, timeout);
         Retrofit retrofit = defaultRetrofit(client, mapper, url);
         return retrofit.create(OkxApi.class);

@@ -51,4 +51,9 @@ public class SignUtils {
         return hmacSha256.doFinal(content);
     }
 
+    public static byte[] hmacSHA512(byte[] key, byte[] content) throws Exception {
+        Mac hmacSha512 = Mac.getInstance("HmacSHA512");
+        hmacSha512.init(new SecretKeySpec(key, 0, key.length, "HmacSHA512"));
+        return hmacSha512.doFinal(content);
+    }
 }

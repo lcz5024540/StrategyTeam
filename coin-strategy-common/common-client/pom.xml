@@ -4,8 +4,9 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.metaverse</groupId>
-        <artifactId>coin-strategy-common</artifactId>
+        <artifactId>coinstrategy</artifactId>
         <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>common-client</artifactId>
@@ -65,17 +66,17 @@
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp-sse</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.metaverse</groupId>
-            <artifactId>common-base</artifactId>
-            <version>${revision}</version>
-            <scope>compile</scope>
-        </dependency>
-
+        
         <dependency>
             <groupId>io.github.binance</groupId>
             <artifactId>binance-connector-java</artifactId>
             <version>3.4.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.github.binance</groupId>
+            <artifactId>binance-futures-connector-java</artifactId>
+            <version>3.0.3</version>
         </dependency>
 
         <dependency>
@@ -88,6 +89,12 @@
             <groupId>org.ta4j</groupId>
             <artifactId>ta4j-core</artifactId>
             <version>${org.ta4j.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
