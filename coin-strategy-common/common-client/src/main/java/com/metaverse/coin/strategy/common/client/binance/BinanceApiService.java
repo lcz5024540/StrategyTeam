@@ -39,6 +39,7 @@ public class BinanceApiService {
     private final BinanceAlgoService algoService;
     private final BinanceCopyTradingService copyTradingService;
     private final BinanceMiningService miningService;
+    private final BinanceSimpleEarnService simpleEarnService;
 
     public BinanceApiService(String apiKey, String secretKey) {
         this(apiKey, secretKey, null, null);
@@ -56,6 +57,7 @@ public class BinanceApiService {
         this.algoService = new BinanceAlgoService(spotClient);
         this.copyTradingService = new BinanceCopyTradingService(spotClient);
         this.miningService = new BinanceMiningService(spotBaseUrl, apiKey, secretKey);
+        this.simpleEarnService = new BinanceSimpleEarnService(spotClient, spotBaseUrl, apiKey, secretKey);
     }
 
     // ================= DELEGATED METHODS (For backward compatibility) =================
