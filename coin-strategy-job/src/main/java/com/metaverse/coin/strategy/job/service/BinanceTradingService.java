@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +23,7 @@ public class BinanceTradingService {
         // Type defaults to LIMIT if price is provided, else MARKET?
         // Usually safe to assume LIMIT for trading strategies, or MARKET if price is null.
         String type = (price == null) ? "MARKET" : "LIMIT";
-        return binanceApiService.spotBuy(symbol, type, quantity, price);
+        return JSON.toJSONString(binanceApiService.spotBuy(symbol, type, quantity, price));
     }
 
     /**
@@ -31,7 +32,7 @@ public class BinanceTradingService {
     public String spotSell(String symbol, String quantity, String price) {
         log.info("Spot Sell: symbol={}, quantity={}, price={}", symbol, quantity, price);
         String type = (price == null) ? "MARKET" : "LIMIT";
-        return binanceApiService.spotSell(symbol, type, quantity, price);
+        return JSON.toJSONString(binanceApiService.spotSell(symbol, type, quantity, price));
     }
 
     // ================= FUTURES TRADING =================

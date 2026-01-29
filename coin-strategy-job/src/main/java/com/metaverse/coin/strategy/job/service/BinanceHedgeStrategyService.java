@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
+import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -187,6 +188,17 @@ public class BinanceHedgeStrategyService {
         }
     }
 
+    private BigDecimal getBalance(BinanceAccountInfo accountInfo, String assetName) {
+        if (accountInfo != null && accountInfo.getBalances() != null) {
+            for (BinanceAccountInfo.BinanceBalance balance : accountInfo.getBalances()) {
+                if (assetName.equals(balance.getAsset())) {
+                    return balance.getFree();
+                }
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
     private BigDecimal getBalance(String jsonResponse, String assetName) {
         try {
             JSONObject json = JSON.parseObject(jsonResponse);
@@ -253,7 +265,7 @@ public class BinanceHedgeStrategyService {
         // Spot Buy
         CompletableFuture<String> spotBuyFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.spotBuy(symbol, "MARKET", qtyStr, null);
+                return JSON.toJSONString(binanceApiService.spotBuy(symbol, "MARKET", qtyStr, null));
             } catch (Exception e) {
                 return "Spot Buy Error: " + e.getMessage();
             }
@@ -305,7 +317,7 @@ public class BinanceHedgeStrategyService {
         // Spot Sell
         CompletableFuture<String> spotSellFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.spotSell(symbol, "MARKET", qtyStr, null);
+                return JSON.toJSONString(binanceApiService.spotSell(symbol, "MARKET", qtyStr, null));
             } catch (Exception e) {
                 return "Spot Sell Error: " + e.getMessage();
             }

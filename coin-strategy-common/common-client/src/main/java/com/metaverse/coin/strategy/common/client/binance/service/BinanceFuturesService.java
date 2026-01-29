@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 
 public class BinanceFuturesService {
     private final UMFuturesClientImpl futuresClient;
+    private static final long DEFAULT_RECV_WINDOW = 60000L;
 
     public BinanceFuturesService(UMFuturesClientImpl futuresClient) {
         this.futuresClient = futuresClient;
@@ -23,6 +24,7 @@ public class BinanceFuturesService {
      */
     public String account() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
         return futuresClient.account().accountInformation(parameters);
     }
 
@@ -36,6 +38,7 @@ public class BinanceFuturesService {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("symbol", symbol);
         parameters.put("leverage", leverage);
+        parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
         return futuresClient.account().changeInitialLeverage(parameters);
     }
 
@@ -49,6 +52,7 @@ public class BinanceFuturesService {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("symbol", symbol);
         parameters.put("marginType", marginType);
+        parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
         return futuresClient.account().changeMarginType(parameters);
     }
 
@@ -66,6 +70,7 @@ public class BinanceFuturesService {
         if (quantity != null) parameters.put("quantity", quantity);
         if (price != null) parameters.put("price", price);
         if (reduceOnly != null) parameters.put("reduceOnly", reduceOnly);
+        parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
         
         return futuresClient.account().newOrder(parameters);
     }

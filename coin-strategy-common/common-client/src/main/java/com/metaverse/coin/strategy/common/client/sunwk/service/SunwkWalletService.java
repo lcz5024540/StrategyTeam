@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.common.client.sunwk.service;
 
 import com.metaverse.coin.strategy.common.client.sunwk.SunwkApi;
+import com.metaverse.coin.strategy.common.model.sunwk.entity.SunwkDepositAddress;
 
 public class SunwkWalletService extends SunwkService {
 
@@ -8,7 +9,7 @@ public class SunwkWalletService extends SunwkService {
         super(sunwkApi);
     }
 
-    public String getDepositAddress(String currency) {
-        return execute(sunwkApi.getDepositAddress(currency), "Failed to get deposit address");
+    public SunwkDepositAddress getDepositAddress(String currency) {
+        return executeData(sunwkApi.getDepositAddress(currency), "Failed to get deposit address");
     }
 }

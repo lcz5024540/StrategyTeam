@@ -1,11 +1,21 @@
 package com.metaverse.coin.strategy.common.client.binance;
 
+import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceExchangeInfo;
+import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceKline;
+import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTicker;
+import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTrade;
+import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
+import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder;
+import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Slf4j
 public class BinanceApiServiceTest {
@@ -17,7 +27,8 @@ public class BinanceApiServiceTest {
 
     // Testnet URLs
     //private static final String SPOT_BASE_URL = "https://testnet.binance.vision";
-    private static final String SPOT_BASE_URL = "https://api.binance.com";
+    //private static final String SPOT_BASE_URL = "https://api.binance.com";
+    private static final String SPOT_BASE_URL = "https://api1.binance.com";
     private static final String FUTURES_BASE_URL = "https://testnet.binancefuture.com";
 
     private BinanceApiService binanceApiService;
@@ -38,18 +49,58 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    public void testPing() {
+        String ping = binanceApiService.ping();
+        log.info("Spot Ping: {}", ping);
+    }
+
+    @Test
+    public void testExchangeInfo() {
+        BinanceExchangeInfo exchangeInfo = binanceApiService.exchangeInfo();
+        // log.info("Exchange Info: {}", exchangeInfo); // Too large to log
+        assertNotNull(exchangeInfo);
+        
+        // Test with specific symbol
+        BinanceExchangeInfo symbolInfo = binanceApiService.exchangeInfo("BTCUSDT", null);
+        log.info("Symbol Info (BTCUSDT): {}", symbolInfo);
+        assertNotNull(symbolInfo);
+    }
+    
+    @Test
+    public void testMarketDataEndpoints() {
+        // Trades
+        List<BinanceTrade> trades = binanceApiService.getTrades("BTCUSDT", 5);
+        log.info("Trades: {}", trades);
+        assertNotNull(trades);
+
+        // Ticker
+        BinanceTicker ticker = binanceApiService.getTicker("BTCUSDT", "1h");
+        log.info("Ticker (1h): {}", ticker);
+        assertNotNull(ticker);
+    }
+
+    @Test
     public void testAccount() {
-        String accountInfo = binanceApiService.account();
+        BinanceAccountInfo accountInfo = binanceApiService.account();
         log.info("Spot Account Info: {}", accountInfo);
         assertNotNull(accountInfo);
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("Requires valid API keys and network access")
+    public void testApiKeyPermission() {
+        BinanceApiKeyPermission permission = binanceApiService.getApiKeyPermission();
+        log.info("API Key Permission: {}", permission);
+        assertNotNull(permission);
+    }
+
+    @Test
     public void testKlines() {
         // Symbol: BTCUSDT, Interval: 1h, Limit: 10
-        String klines = binanceApiService.klines("BTCUSDT", "1h", 10);
+        List<BinanceKline> klines = binanceApiService.klines("BTCUSDT", "1h", 10);
         log.info("Spot Klines: {}", klines);
         assertNotNull(klines);
+        // assertTrue(!klines.isEmpty()); // May be empty if testnet has no data or other issues, but typically shouldn't be
     }
 
     @Test
@@ -60,39 +111,41 @@ public class BinanceApiServiceTest {
         String side = "BUY";
         String type = "LIMIT";
         String timeInForce = "GTC";
-        String quantity = "0.01";
-        String price = "40000"; // Ensure this price is away from market to not fill immediately if you want to cancel
+        String quantity = "0.0001";
+        String price = "85000"; // Ensure this price is away from market to not fill immediately if you want to cancel
 
         log.info("Placing Spot Order...");
-        String orderResponse = binanceApiService.newOrder(symbol, side, type, timeInForce, quantity, price);
+        BinanceOrder orderResponse = binanceApiService.newOrder(symbol, side, type, timeInForce, quantity, price);
         log.info("Place Order Response: {}", orderResponse);
         assertNotNull(orderResponse);
 
-        // Extract Order ID (Parsing JSON manually or using a library would be better, but for this test we just log)
-        // For real automated testing, you'd parse the JSON.
-        // Here we assume the user checks logs or we proceed to cancel if we could parse it.
+        // Extract Order ID
+        Long orderId = orderResponse.getOrderId();
+        log.info("Order ID: {}", orderId);
         
-        // 2. Query the Order (Assuming we had the ID, but here we can query Open Orders or just skip specific ID query if we don't parse)
-        // Let's try to query without ID if possible? No, getOrder usually needs ID or origClientOrderId.
-        // Since we are returning String (JSON), we can't easily extract ID without JSON library.
-        // But for the purpose of "adding test cases", this shows how to call it.
+        // 2. Query the Order
+        if (orderId != null) {
+            // ... implementation to query or cancel using ID
+        }
         
         // To make this test runnable and cancel the order, we would need to parse the response.
         // For now, we will demonstrate the cancel call with a dummy ID or comment it out.
         
-        // log.info("Canceling Spot Order...");
-        // String cancelResponse = binanceApiService.cancelOrder(symbol, 12345L, null);
-        // log.info("Cancel Order Response: {}", cancelResponse);
+        log.info("Canceling Spot Order...");
+        if (orderId != null) {
+            BinanceOrder cancelResponse = binanceApiService.cancelOrder(symbol, orderId, null);
+            log.info("Cancel Order Response: {}", cancelResponse);
+        }
     }
     
     @Test
     public void testCancelSpotOrder() {
         // Example of cancelling an order
         // You need to provide a valid orderId
-        Long orderId = 12345678L; 
+        Long orderId = 55930035987L; 
         String symbol = "BTCUSDT";
         try {
-            String response = binanceApiService.cancelOrder(symbol, orderId, null);
+            BinanceOrder response = binanceApiService.cancelOrder(symbol, orderId, null);
             log.info("Cancel Order Response: {}", response);
         } catch (Exception e) {
             log.error("Cancel Order Failed (Expected if order doesn't exist): {}", e.getMessage());
@@ -102,10 +155,10 @@ public class BinanceApiServiceTest {
     @Test
     public void testGetSpotOrder() {
         // Example of getting an order
-        Long orderId = 12345678L;
+        Long orderId = 55930035987L;
         String symbol = "BTCUSDT";
         try {
-            String response = binanceApiService.getOrder(symbol, orderId, null);
+            BinanceOrder response = binanceApiService.getOrder(symbol, orderId, null);
             log.info("Get Order Response: {}", response);
         } catch (Exception e) {
             log.error("Get Order Failed (Expected if order doesn't exist): {}", e.getMessage());

@@ -2,11 +2,14 @@ package com.metaverse.coin.strategy.job.sunwk;
 
 import com.metaverse.coin.strategy.common.client.sunwk.SunwkApiClientFactory;
 import com.metaverse.coin.strategy.common.client.sunwk.SunwkApiService;
+import com.metaverse.coin.strategy.common.model.sunwk.entity.SunwkAsset;
+import com.metaverse.coin.strategy.common.model.sunwk.entity.SunwkOrder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -75,7 +78,7 @@ public class SunwkHedgeStrategy {
         // 3. 并发执行下单
         CompletableFuture<Void> longFuture = CompletableFuture.runAsync(() -> {
             try {
-                String result = sunwkApiService.getOrderService().placeOrder(openLongParams);
+                SunwkOrder result = sunwkApiService.getOrderService().placeOrder(openLongParams);
                 log.info("开多单结果: {}", result);
             } catch (Exception e) {
                 log.error("开多单失败", e);
@@ -84,7 +87,7 @@ public class SunwkHedgeStrategy {
 
         CompletableFuture<Void> shortFuture = CompletableFuture.runAsync(() -> {
             try {
-                String result = sunwkApiService.getOrderService().placeOrder(openShortParams);
+                SunwkOrder result = sunwkApiService.getOrderService().placeOrder(openShortParams);
                 log.info("开空单结果: {}", result);
             } catch (Exception e) {
                 log.error("开空单失败", e);
@@ -122,7 +125,7 @@ public class SunwkHedgeStrategy {
         // 3. 并发执行
         CompletableFuture<Void> closeLongFuture = CompletableFuture.runAsync(() -> {
             try {
-                String result = sunwkApiService.getOrderService().placeOrder(closeLongParams);
+                SunwkOrder result = sunwkApiService.getOrderService().placeOrder(closeLongParams);
                 log.info("平多单结果: {}", result);
             } catch (Exception e) {
                 log.error("平多单失败", e);
@@ -131,7 +134,7 @@ public class SunwkHedgeStrategy {
 
         CompletableFuture<Void> closeShortFuture = CompletableFuture.runAsync(() -> {
             try {
-                String result = sunwkApiService.getOrderService().placeOrder(closeShortParams);
+                SunwkOrder result = sunwkApiService.getOrderService().placeOrder(closeShortParams);
                 log.info("平空单结果: {}", result);
             } catch (Exception e) {
                 log.error("平空单失败", e);
@@ -145,7 +148,7 @@ public class SunwkHedgeStrategy {
     private boolean checkPreConditions(String contractCode) {
         try {
             // 简单检查：能否获取到资产信息
-            String assets = sunwkApiService.getAccountService().getAssets();
+            List<SunwkAsset> assets = sunwkApiService.getAccountService().getAssets();
             log.info("当前资产信息: {}", assets);
             // TODO: 解析 JSON 判断余额是否充足
             // if (balance < required) return false;
