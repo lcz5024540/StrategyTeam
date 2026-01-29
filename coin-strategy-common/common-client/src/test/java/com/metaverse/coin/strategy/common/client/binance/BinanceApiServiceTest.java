@@ -42,6 +42,7 @@ public class BinanceApiServiceTest {
     // ================= SPOT API TESTS =================
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testCheckServerTime() {
         String serverTime = binanceApiService.checkServerTime();
         log.info("Spot Server Time: {}", serverTime);
@@ -49,12 +50,14 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testPing() {
         String ping = binanceApiService.ping();
         log.info("Spot Ping: {}", ping);
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testExchangeInfo() {
         BinanceExchangeInfo exchangeInfo = binanceApiService.exchangeInfo();
         // log.info("Exchange Info: {}", exchangeInfo); // Too large to log
@@ -67,6 +70,7 @@ public class BinanceApiServiceTest {
     }
     
     @Test
+    @Disabled("Integration test - requires network")
     public void testMarketDataEndpoints() {
         // Trades
         List<BinanceTrade> trades = binanceApiService.getTrades("BTCUSDT", 5);
@@ -80,6 +84,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testAccount() {
         BinanceAccountInfo accountInfo = binanceApiService.account();
         log.info("Spot Account Info: {}", accountInfo);
@@ -95,6 +100,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testKlines() {
         // Symbol: BTCUSDT, Interval: 1h, Limit: 10
         List<BinanceKline> klines = binanceApiService.klines("BTCUSDT", "1h", 10);
@@ -104,6 +110,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testSpotOrderLifecycle() {
         // 1. Place a Limit Order
         // Note: Prices and Quantities must be valid for the symbol on Testnet
@@ -139,6 +146,7 @@ public class BinanceApiServiceTest {
     }
     
     @Test
+    @Disabled("Integration test - requires network")
     public void testCancelSpotOrder() {
         // Example of cancelling an order
         // You need to provide a valid orderId
@@ -153,6 +161,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testGetSpotOrder() {
         // Example of getting an order
         Long orderId = 55930035987L;
@@ -169,6 +178,7 @@ public class BinanceApiServiceTest {
     // ================= FUTURES API TESTS =================
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testCheckFuturesServerTime() {
         String serverTime = binanceApiService.checkFuturesServerTime();
         log.info("Futures Server Time: {}", serverTime);
@@ -176,6 +186,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testGetFuturesAccount() {
         String accountInfo = binanceApiService.getFuturesAccount();
         log.info("Futures Account Info: {}", accountInfo);
@@ -183,6 +194,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testChangeInitialLeverage() {
         String symbol = "BTCUSDT";
         Integer leverage = 10;
@@ -192,6 +204,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testFuturesOrderLifecycle() {
         String symbol = "BTCUSDT";
         String quantity = "0.01";
@@ -223,6 +236,7 @@ public class BinanceApiServiceTest {
     }
     
     @Test
+    @Disabled("Integration test - requires network")
     public void testPlaceFuturesOrder_Limit() {
         String symbol = "BTCUSDT";
         String side = "BUY";
@@ -239,6 +253,7 @@ public class BinanceApiServiceTest {
     }
 
     @Test
+    @Disabled("Integration test - requires network")
     public void testCancelFuturesOrder() {
         // Example cancel
         String symbol = "BTCUSDT";

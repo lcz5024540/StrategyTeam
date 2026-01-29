@@ -1,8 +1,8 @@
 # Coin Strategy Common Client
 
-此模块封装了 Binance API 的调用，提供了现货 (Spot)、合约 (Futures) 和杠杆 (Margin) 的统一访问接口。
+此模块封装了 Binance API 的调用，提供了现货 (Spot)、合约 (Futures)、杠杆 (Margin)、矿池 (Mining)、赚币 (Simple Earn) 和策略交易 (Alpha/Algo) 的统一访问接口。
 
-基于 `binance-connector-java` 进行扩展，对 Margin 接口进行了全面的增强和重构，支持所有官方文档中列出的 Margin Market Data 和 Trade 接口。
+基于 `binance-connector-java` 进行扩展，对所有接口进行了强类型封装，使用更安全、更易用。
 
 ## 快速开始
 
@@ -19,6 +19,139 @@ String secretKey = "YOUR_SECRET_KEY";
 // 初始化服务
 BinanceApiService apiService = new BinanceApiService(apiKey, secretKey);
 ```
+
+---
+
+## 现货交易 (Spot API)
+
+通过 `BinanceSpotService` 和 `BinanceMarketDataService` 提供核心功能。
+
+### 1. 账户信息
+```java
+// 获取账户信息（余额、权限等）
+BinanceAccountInfo account = apiService.account();
+System.out.println("BTC 余额: " + account.getAssetBalance("BTC").getFree());
+```
+
+### 2. 交易 (Trade)
+```java
+// 下限价单 (买入 0.01 BTC @ 50000 USDT)
+BinanceOrder order = apiService.placeSpotOrder(
+    "BTCUSDT", "BUY", "LIMIT", "GTC", "0.01", "50000"
+);
+System.out.println("订单ID: " + order.getOrderId());
+
+// 撤单
+apiService.cancelSpotOrder("BTCUSDT", order.getOrderId(), null);
+
+// 查询所有挂单
+List<BinanceOrder> openOrders = apiService.getSpotOpenOrders("BTCUSDT");
+
+// 查询历史成交
+List<BinanceTradeHistory> trades = apiService.getSpotMyTrades("BTCUSDT", null, 10, null, null, null);
+```
+
+### 3. 市场行情 (Market Data)
+```java
+// 获取最新成交
+List<BinanceTrade> trades = apiService.getTrades("BTCUSDT", 20);
+
+// 获取交易对信息
+BinanceExchangeInfo info = apiService.exchangeInfo("BTCUSDT", null);
+```
+
+---
+
+## 钱包服务 (Wallet API)
+
+通过 `BinanceWalletService` 提供充提和资产管理功能。
+
+```java
+BinanceWalletService walletService = apiService.getWalletService();
+
+// 系统状态
+BinanceSystemStatus status = walletService.systemStatus();
+
+// 获取所有币种信息 (充提状态、网络等)
+List<BinanceCoinInfo> coins = walletService.getAllCoins();
+
+// 查询充值历史
+List<BinanceDepositHistory> deposits = walletService.depositHistory("USDT", 1, null, null, 0, 10);
+
+// 查询提现历史
+List<BinanceWithdrawHistory> withdraws = walletService.withdrawHistory("USDT", null, null, null, 0, 10);
+
+// 获取充值地址
+BinanceDepositAddress address = walletService.getDepositAddress("USDT", "TRX");
+System.out.println("USDT-TRC20 地址: " + address.getAddress());
+```
+
+---
+
+## 矿池服务 (Mining API)
+
+通过 `BinanceMiningService` 提供矿池相关功能。
+
+```java
+BinanceMiningService miningService = apiService.getMiningService();
+
+// 获取算法列表
+List<BinanceMiningAlgo> algos = miningService.getAlgoList();
+
+// 获取矿工列表
+List<BinanceMiningWorker> workers = miningService.getWorkerList("sha256", "myUserName", 1, 0, 1, 1);
+
+// 获取收益列表
+List<BinanceMiningPayment> payments = miningService.getPaymentList("sha256", "myUserName", null, null, null, 1, 20);
+```
+
+---
+
+## 赚币服务 (Simple Earn API)
+
+通过 `BinanceSimpleEarnService` 提供理财产品管理。
+
+```java
+BinanceSimpleEarnService earnService = apiService.getSimpleEarnService();
+
+// 获取活期产品列表
+BinanceSimpleEarnListResponse<BinanceSimpleEarnFlexibleProduct> products = 
+    earnService.getFlexibleProductList("USDT", 1L, 20);
+
+// 申购活期产品
+earnService.subscribeFlexibleProduct("PRODUCT_ID", new BigDecimal("100"), true, "SPOT");
+
+// 获取活期持仓
+BinanceSimpleEarnListResponse<BinanceSimpleEarnFlexiblePosition> positions = 
+    earnService.getFlexibleProductPosition("USDT", null, 1L, 20);
+```
+
+---
+
+## 策略交易 (Alpha/Algo API)
+
+通过 `BinanceAlphaService` 提供算法订单（如 TWAP, VP）。
+
+```java
+BinanceAlphaService alphaService = apiService.getAlphaService();
+
+// 下 TWAP 策略单
+Map<String, Object> params = new HashMap<>();
+params.put("limitPrice", "50000"); // 选填
+params.put("duration", 300);       // 持续 300秒
+
+BinanceAlphaOrder algoOrder = alphaService.newOrder(
+    "BTCUSDT", "BUY", "1.0", "TWAP", params
+);
+
+// 查询进行中的策略单
+List<BinanceAlphaOrder> openAlgos = alphaService.getOpenOrders();
+
+// 停止策略单
+alphaService.cancelOrder(algoOrder.getAlgoId());
+```
+
+---
 
 ## 杠杆交易 (Margin API)
 
@@ -149,13 +282,37 @@ apiService.keepAliveMarginUserDataStream(listenKey);
 apiService.closeMarginUserDataStream(listenKey);
 ```
 
+---
+
 ## 注意事项
 
-1. **参数类型**: 大部分金额和价格参数使用 `String` 类型以避免精度丢失。
+1. **参数类型**: 大部分金额和价格参数使用 `String` 或 `BigDecimal` 类型以避免精度丢失。
 2. **异常处理**: 接口调用失败会抛出 `RuntimeException`，建议在业务层捕获并处理。
 3. **网络**: 底层使用 `OkHttp`，默认连接超时和读取超时已配置。
+4. **测试网**: 在 `BinanceApiService` 构造函数中可以传入 Testnet URL 进行测试。
 
 ## 参考文档
 
+- [Binance Spot API Documentation](https://developers.binance.com/docs/binance-spot-api-docs)
 - [Binance Margin API Documentation](https://developers.binance.com/docs/margin_trading/market-data)
-- [Binance Connector Java Example](https://github.com/binance/binance-connector-java/blob/master/clients/margin-trading/example_rest.md)
+
+---
+
+## 测试 (Testing)
+
+本项目包含单元测试和集成测试。
+
+### 运行测试
+
+使用 Maven 运行所有测试：
+
+```bash
+mvn test -pl coin-strategy-common/common-client
+```
+
+### 单元测试 vs 集成测试
+
+- **单元测试**: 使用 `MockWebServer` 模拟 Binance API 响应，无需真实网络连接和 API Key。覆盖了 Spot, Margin, Wallet, Market Data, Mining, Simple Earn, Alpha 等模块的主要功能。
+- **集成测试**: `BinanceApiServiceTest` 包含连接真实 API (Testnet) 的测试用例。
+  - 默认情况下，需要真实网络连接的测试已被禁用 (`@Disabled`)，以确保构建可以通过。
+  - 如需运行集成测试，请在 `BinanceApiServiceTest.java` 中移除 `@Disabled` 注解，并配置有效的 Testnet API Key 和 Secret Key。
