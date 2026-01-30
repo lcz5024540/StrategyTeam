@@ -1,75 +1,117 @@
 package com.metaverse.coin.strategy.common.client.okx;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.metaverse.coin.strategy.common.client.okx.interceptor.AuthenticationInterceptor;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.OkxRestResponse;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.Balance;
-import com.metaverse.coin.strategy.common.model.okx.enums.ws.TdMode;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.*;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import retrofit2.Retrofit;
-import retrofit2.converter.jackson.JacksonConverterFactory;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import retrofit2.Call;
+import retrofit2.Response;
 
-import java.math.BigDecimal;
-import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 
-@Disabled("Integration test - requires API keys")
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.Mockito.*;
+
 public class OkxApiServiceTest {
 
+    @Mock
+    private OkxApi okxApi;
+
+    @Mock
+    private OkHttpClient okHttpClient;
+
+    @Mock
+    private Call<OkxRestResponse<OkxAccountConfig>> callAccountConfig;
+    @Mock
+    private Call<OkxRestResponse<OkxMaxSize>> callMaxSize;
+    @Mock
+    private Call<OkxRestResponse<OkxPositionRisk>> callPositionRisk;
+    @Mock
+    private Call<OkxRestResponse<OkxBill>> callBills;
+    @Mock
+    private Call<OkxRestResponse<OkxMaxAvailSize>> callMaxAvailSize;
+    @Mock
+    private Call<OkxRestResponse<OkxTradeFee>> callTradeFee;
+    @Mock
+    private Call<OkxRestResponse<OkxLeverageInfo>> callLeverageInfo;
+
     private OkxApiService okxApiService;
-    // TODO: Replace with your actual keys
-    private static final String API_KEY = "YOUR_API_KEY";
-    private static final String SECRET_KEY = "YOUR_SECRET_KEY";
-    private static final String PASSPHRASE = "YOUR_PASSPHRASE";
-    private static final boolean SIMULATED = true;
-    private static final String URL = "https://www.okx.com";
 
     @BeforeEach
     public void setUp() {
-        OkHttpClient client = new OkHttpClient.Builder()
-                .addInterceptor(new AuthenticationInterceptor(API_KEY, SECRET_KEY, PASSPHRASE, SIMULATED))
-                .readTimeout(Duration.ofSeconds(30))
-                .build();
-
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(URL)
-                .client(client)
-                .addConverterFactory(JacksonConverterFactory.create(new ObjectMapper()))
-                .build();
-
-        OkxApi okxApi = retrofit.create(OkxApi.class);
-        okxApiService = new OkxApiService(okxApi, client, SIMULATED);
+        MockitoAnnotations.openMocks(this);
+        okxApiService = new OkxApiService(okxApi, okHttpClient, true);
     }
 
     @Test
-    public void testGetBalance() {
-        OkxRestResponse<Balance> response = okxApiService.getBalance("USDT");
-        System.out.println(response);
+    public void testGetAccountConfig() throws Exception {
+        when(okxApi.getAccountConfig()).thenReturn(callAccountConfig);
+        when(callAccountConfig.execute()).thenReturn(Response.success(new OkxRestResponse<>()));
+
+        okxApiService.getAccountConfig();
+        verify(okxApi).getAccountConfig();
     }
 
     @Test
-    public void testOpenLong() {
-        // Example: Open Long on BTC-USDT-SWAP
-        // TdMode: CROSS (margin mode)
-        okxApiService.openLong("BTC-USDT-SWAP", TdMode.CROSS, new BigDecimal("1"), null);
-    }
-    
-    @Test
-    public void testSetLeverage() {
-        okxApiService.setLeverage("BTC-USDT-SWAP", "cross", "10");
+    public void testGetMaxSize() throws Exception {
+        when(okxApi.getMaxSize(anyMap())).thenReturn(callMaxSize);
+        when(callMaxSize.execute()).thenReturn(Response.success(new OkxRestResponse<>()));
+
+        Map<String, Object> map = new HashMap<>();
+        okxApiService.getMaxSize(map);
+        verify(okxApi).getMaxSize(map);
     }
 
     @Test
-    public void testGetPositions() {
-        OkxRestResponse<Map<String, Object>> response = okxApiService.getPositions("SWAP", "BTC-USDT-SWAP");
-        System.out.println(response);
+    public void testGetPositionRisk() throws Exception {
+        when(okxApi.getPositionRisk(anyMap())).thenReturn(callPositionRisk);
+        when(callPositionRisk.execute()).thenReturn(Response.success(new OkxRestResponse<>()));
+
+        Map<String, Object> map = new HashMap<>();
+        okxApiService.getPositionRisk(map);
+        verify(okxApi).getPositionRisk(map);
     }
 
     @Test
-    public void testClosePosition() {
-        okxApiService.closePosition("BTC-USDT-SWAP", "cross", "long");
+    public void testGetBills() throws Exception {
+        when(okxApi.getBills(anyMap())).thenReturn(callBills);
+        when(callBills.execute()).thenReturn(Response.success(new OkxRestResponse<>()));
+
+        Map<String, Object> map = new HashMap<>();
+        okxApiService.getBills(map);
+        verify(okxApi).getBills(map);
+    }
+
+    @Test
+    public void testGetMaxAvailSize() throws Exception {
+        when(okxApi.getMaxAvailSize(anyMap())).thenReturn(callMaxAvailSize);
+        when(callMaxAvailSize.execute()).thenReturn(Response.success(new OkxRestResponse<>()));
+
+        Map<String, Object> map = new HashMap<>();
+        okxApiService.getMaxAvailSize(map);
+        verify(okxApi).getMaxAvailSize(map);
+    }
+
+    @Test
+    public void testGetTradeFee() throws Exception {
+        when(okxApi.getTradeFee(anyMap())).thenReturn(callTradeFee);
+        when(callTradeFee.execute()).thenReturn(Response.success(new OkxRestResponse<>()));
+
+        okxApiService.getTradeFee("SPOT", "BTC-USDT", null, null);
+        verify(okxApi).getTradeFee(anyMap());
+    }
+
+    @Test
+    public void testGetLeverageInfo() throws Exception {
+        when(okxApi.getLeverageInfo(anyMap())).thenReturn(callLeverageInfo);
+        when(callLeverageInfo.execute()).thenReturn(Response.success(new OkxRestResponse<>()));
+
+        okxApiService.getLeverageInfo("BTC-USDT", "cross");
+        verify(okxApi).getLeverageInfo(anyMap());
     }
 }

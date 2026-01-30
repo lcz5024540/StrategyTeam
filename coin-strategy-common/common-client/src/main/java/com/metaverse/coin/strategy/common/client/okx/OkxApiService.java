@@ -2,14 +2,13 @@ package com.metaverse.coin.strategy.common.client.okx;
 
 import com.metaverse.coin.strategy.common.client.okx.service.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.OkxRestResponse;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.Balance;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderReq;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderReq;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderReq;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.PlaceOrderRsp;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.algo.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.signal.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.recurring.*;
 import com.metaverse.coin.strategy.common.model.okx.enums.ws.TdMode;
 import okhttp3.OkHttpClient;
 
@@ -27,6 +26,8 @@ public class OkxApiService {
     public final OkxTradeService trade;
     public final OkxAlgoTradingService algoTrading;
     public final OkxGridTradingService gridTrading;
+    public final OkxSignalBotService signalBot;
+    public final OkxRecurringBuyService recurringBuy;
     public final OkxMarketDataService marketData;
     public final OkxPublicDataService publicData;
     public final OkxFundingService funding;
@@ -40,6 +41,8 @@ public class OkxApiService {
         this.trade = new OkxTradeService(okxApi);
         this.algoTrading = new OkxAlgoTradingService(okxApi);
         this.gridTrading = new OkxGridTradingService(okxApi);
+        this.signalBot = new OkxSignalBotService(okxApi);
+        this.recurringBuy = new OkxRecurringBuyService(okxApi);
         this.marketData = new OkxMarketDataService(okxApi);
         this.publicData = new OkxPublicDataService(okxApi);
         this.funding = new OkxFundingService(okxApi);
@@ -59,12 +62,52 @@ public class OkxApiService {
         return account.getPositions(instType, instId);
     }
 
-    public OkxRestResponse<Map<String, Object>> getAccountConfig() {
+    public OkxRestResponse<OkxAccountConfig> getAccountConfig() {
         return account.getAccountConfig();
     }
 
-    public OkxRestResponse<Map<String, Object>> getMaxSize(Map<String, Object> queryMap) {
+    public OkxRestResponse<OkxMaxSize> getMaxSize(Map<String, Object> queryMap) {
         return account.getMaxSize(queryMap);
+    }
+
+    public OkxRestResponse<OkxPositionRisk> getPositionRisk(Map<String, Object> queryMap) {
+        return account.getPositionRisk(queryMap);
+    }
+
+    public OkxRestResponse<OkxBill> getBills(Map<String, Object> queryMap) {
+        return account.getBills(queryMap);
+    }
+
+    public OkxRestResponse<OkxBill> getBillsArchive(Map<String, Object> queryMap) {
+        return account.getBillsArchive(queryMap);
+    }
+
+    public OkxRestResponse<OkxMaxAvailSize> getMaxAvailSize(Map<String, Object> queryMap) {
+        return account.getMaxAvailSize(queryMap);
+    }
+
+    public OkxRestResponse<OkxTradeFee> getTradeFee(String instType, String instId, String uly, String category) {
+        return account.getTradeFee(instType, instId, uly, category);
+    }
+
+    public OkxRestResponse<OkxInterestAccrued> getInterestAccrued(Map<String, Object> queryMap) {
+        return account.getInterestAccrued(queryMap);
+    }
+
+    public OkxRestResponse<OkxInterestRate> getInterestRate(Map<String, Object> queryMap) {
+        return account.getInterestRate(queryMap);
+    }
+
+    public OkxRestResponse<OkxMaxLoan> getMaxLoan(Map<String, Object> queryMap) {
+        return account.getMaxLoan(queryMap);
+    }
+
+    public OkxRestResponse<OkxPositionMode> setPositionMode(String posMode) {
+        return account.setPositionMode(posMode);
+    }
+
+    public OkxRestResponse<OkxLeverageInfo> getLeverageInfo(String instId, String mgnMode) {
+        return account.getLeverageInfo(instId, mgnMode);
     }
 
     // --- Trade ---
@@ -85,7 +128,7 @@ public class OkxApiService {
         return trade.closeShort(instId, tdMode, size, price);
     }
 
-    public OkxRestResponse<Object> closePosition(String instId, String mgnMode, String posSide) {
+    public OkxRestResponse<OkxClosePositionRsp> closePosition(String instId, String mgnMode, String posSide) {
         return trade.closePosition(instId, mgnMode, posSide);
     }
 
@@ -93,29 +136,29 @@ public class OkxApiService {
         return trade.cancelOrder(req);
     }
 
-    public OkxRestResponse<Map<String, Object>> getOrder(String instId, String ordId, String clOrdId) {
+    public OkxRestResponse<OkxOrder> getOrder(String instId, String ordId, String clOrdId) {
         return trade.getOrder(instId, ordId, clOrdId);
     }
 
-    public OkxRestResponse<Map<String, Object>> getOrdersHistory(Map<String, Object> queryMap) {
+    public OkxRestResponse<OkxOrder> getOrdersHistory(Map<String, Object> queryMap) {
         return trade.getOrdersHistory(queryMap);
     }
 
-    public OkxRestResponse<Map<String, Object>> getOrdersPending(Map<String, Object> queryMap) {
+    public OkxRestResponse<OkxOrder> getOrdersPending(Map<String, Object> queryMap) {
         return trade.getOrdersPending(queryMap);
     }
 
     // --- Algo Trading ---
 
-    public OkxRestResponse<Map<String, Object>> placeAlgoOrder(Map<String, Object> req) {
+    public OkxRestResponse<PlaceAlgoOrderRsp> placeAlgoOrder(Map<String, Object> req) {
         return algoTrading.placeAlgoOrder(req);
     }
 
-    public OkxRestResponse<Map<String, Object>> cancelAlgoOrder(List<Map<String, Object>> req) {
+    public OkxRestResponse<CancelAlgoOrderRsp> cancelAlgoOrder(List<Map<String, Object>> req) {
         return algoTrading.cancelAlgoOrder(req);
     }
 
-    public OkxRestResponse<Map<String, Object>> getAlgoOrdersHistory(Map<String, Object> queryMap) {
+    public OkxRestResponse<OkxAlgoOrder> getAlgoOrdersHistory(Map<String, Object> queryMap) {
         return algoTrading.getAlgoOrdersHistory(queryMap);
     }
 
@@ -125,12 +168,136 @@ public class OkxApiService {
         return gridTrading.placeGridAlgoOrder(req);
     }
 
+    public OkxRestResponse<AmendGridAlgoOrderRsp> amendGridAlgoOrder(AmendGridAlgoOrderReq req) {
+        return gridTrading.amendGridAlgoOrder(req);
+    }
+
+    public OkxRestResponse<AddGridInvestmentRsp> addGridInvestment(AddGridInvestmentReq req) {
+        return gridTrading.addGridInvestment(req);
+    }
+
     public OkxRestResponse<StopGridAlgoOrderRsp> stopGridAlgoOrder(StopGridAlgoOrderReq req) {
         return gridTrading.stopGridAlgoOrder(req);
     }
 
-    public OkxRestResponse<Map<String, Object>> amendGridAlgoOrder(Map<String, Object> req) {
-        return gridTrading.amendGridAlgoOrder(req);
+    public OkxRestResponse<ClosePositionForContractGridRsp> closePositionForContractGrid(ClosePositionForContractGridReq req) {
+        return gridTrading.closePositionForContractGrid(req);
+    }
+
+    public OkxRestResponse<CancelClosePositionOrderForContractGridRsp> cancelClosePositionOrderForContractGrid(CancelClosePositionOrderForContractGridReq req) {
+        return gridTrading.cancelClosePositionOrderForContractGrid(req);
+    }
+
+    public OkxRestResponse<InstantTriggerGridAlgoOrderRsp> instantTriggerGridAlgoOrder(InstantTriggerGridAlgoOrderReq req) {
+        return gridTrading.instantTriggerGridAlgoOrder(req);
+    }
+
+    public OkxRestResponse<GridAlgoOrder> getGridAlgoOrdersHistory(Map<String, Object> queryMap) {
+        return gridTrading.getGridAlgoOrdersHistory(queryMap);
+    }
+
+    public OkxRestResponse<GridAlgoOrder> getGridAlgoOrderDetails(String algoOrdId, String algoClOrdId) {
+        return gridTrading.getGridAlgoOrderDetails(algoOrdId, algoClOrdId);
+    }
+
+    public OkxRestResponse<GridAlgoSubOrder> getGridAlgoSubOrders(Map<String, Object> queryMap) {
+        return gridTrading.getGridAlgoSubOrders(queryMap);
+    }
+
+    public OkxRestResponse<GridAlgoOrderPosition> getGridAlgoPositions(Map<String, Object> queryMap) {
+        return gridTrading.getGridAlgoPositions(queryMap);
+    }
+
+    public OkxRestResponse<SpotGridWithdrawIncomeRsp> spotGridWithdrawIncome(SpotGridWithdrawIncomeReq req) {
+        return gridTrading.spotGridWithdrawIncome(req);
+    }
+
+    public OkxRestResponse<ComputeGridMinInvestmentRsp> computeGridMinInvestment(Map<String, Object> queryMap) {
+        return gridTrading.computeGridMinInvestment(queryMap);
+    }
+
+    public OkxRestResponse<ComputeGridMarginBalanceRsp> computeGridMarginBalance(Map<String, Object> queryMap) {
+        return gridTrading.computeGridMarginBalance(queryMap);
+    }
+
+    public OkxRestResponse<AdjustGridMarginBalanceRsp> adjustGridMarginBalance(AdjustGridMarginBalanceReq req) {
+        return gridTrading.adjustGridMarginBalance(req);
+    }
+
+    public OkxRestResponse<GridApiParam> getGridAiParam(Map<String, Object> queryMap) {
+        return gridTrading.getGridAiParam(queryMap);
+    }
+
+    // --- Signal Bot ---
+
+    public OkxRestResponse<PlaceSignalAlgoOrderRsp> placeSignalAlgoOrder(PlaceSignalAlgoOrderReq req) {
+        return signalBot.placeSignalAlgoOrder(req);
+    }
+
+    public OkxRestResponse<PlaceSignalAlgoSubOrderRsp> placeSignalAlgoSubOrder(PlaceSignalAlgoSubOrderReq req) {
+        return signalBot.placeSignalAlgoSubOrder(req);
+    }
+
+    public OkxRestResponse<CancelSignalAlgoOrderRsp> cancelSignalAlgoOrder(CancelSignalAlgoOrderReq req) {
+        return signalBot.cancelSignalAlgoOrder(req);
+    }
+
+    public OkxRestResponse<SignalAlgoOrder> getSignalAlgoOrdersPending(Map<String, Object> queryMap) {
+        return signalBot.getSignalAlgoOrdersPending(queryMap);
+    }
+
+    public OkxRestResponse<SignalAlgoOrder> getSignalAlgoOrdersHistory(Map<String, Object> queryMap) {
+        return signalBot.getSignalAlgoOrdersHistory(queryMap);
+    }
+
+    public OkxRestResponse<SignalAlgoOrder> getSignalAlgoOrderDetails(Map<String, Object> queryMap) {
+        return signalBot.getSignalAlgoOrderDetails(queryMap);
+    }
+
+    public OkxRestResponse<SignalAlgoSubOrder> getSignalAlgoSubOrders(Map<String, Object> queryMap) {
+        return signalBot.getSignalAlgoSubOrders(queryMap);
+    }
+
+    public OkxRestResponse<SignalAlgoPosition> getSignalAlgoPositions(Map<String, Object> queryMap) {
+        return signalBot.getSignalAlgoPositions(queryMap);
+    }
+
+    public OkxRestResponse<CloseSignalPositionRsp> closeSignalPosition(CloseSignalPositionReq req) {
+        return signalBot.closeSignalPosition(req);
+    }
+
+    public OkxRestResponse<ChangeSignalMarginBalanceRsp> changeSignalMarginBalance(ChangeSignalMarginBalanceReq req) {
+        return signalBot.changeSignalMarginBalance(req);
+    }
+
+    // --- Recurring Buy ---
+
+    public OkxRestResponse<PlaceRecurringBuyAlgoOrderRsp> placeRecurringBuyAlgoOrder(PlaceRecurringBuyAlgoOrderReq req) {
+        return recurringBuy.placeRecurringBuyAlgoOrder(req);
+    }
+
+    public OkxRestResponse<CancelRecurringBuyAlgoOrderRsp> cancelRecurringBuyAlgoOrder(CancelRecurringBuyAlgoOrderReq req) {
+        return recurringBuy.cancelRecurringBuyAlgoOrder(req);
+    }
+
+    public OkxRestResponse<AmendRecurringBuyAlgoOrderRsp> amendRecurringBuyAlgoOrder(AmendRecurringBuyAlgoOrderReq req) {
+        return recurringBuy.amendRecurringBuyAlgoOrder(req);
+    }
+
+    public OkxRestResponse<RecurringAlgoOrder> getRecurringBuyAlgoOrdersPending(Map<String, Object> queryMap) {
+        return recurringBuy.getRecurringBuyAlgoOrdersPending(queryMap);
+    }
+
+    public OkxRestResponse<RecurringAlgoOrder> getRecurringBuyAlgoOrdersHistory(Map<String, Object> queryMap) {
+        return recurringBuy.getRecurringBuyAlgoOrdersHistory(queryMap);
+    }
+
+    public OkxRestResponse<RecurringAlgoOrder> getRecurringBuyAlgoOrderDetails(Map<String, Object> queryMap) {
+        return recurringBuy.getRecurringBuyAlgoOrderDetails(queryMap);
+    }
+
+    public OkxRestResponse<RecurringAlgoSubOrder> getRecurringBuyAlgoSubOrders(Map<String, Object> queryMap) {
+        return recurringBuy.getRecurringBuyAlgoSubOrders(queryMap);
     }
 
     // --- Market Data ---

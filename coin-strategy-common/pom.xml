@@ -10,7 +10,7 @@
     <parent>
         <groupId>com.metaverse</groupId>
         <artifactId>coinstrategy</artifactId>
-        <version>${revision}</version>
+        <version>0.0.1-SNAPSHOT</version>
     </parent>
 
     <modules>

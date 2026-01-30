@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.metaverse</groupId>
         <artifactId>coinstrategy</artifactId>
-        <version>${revision}</version>
+        <version>0.0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>coin-strategy-job</artifactId>
@@ -22,7 +22,7 @@
             <version>${revision}</version>
         </dependency>
         <dependency>
-            <groupId>com.baomidou</groupId>
+             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-boot-starter</artifactId>
             <version>3.5.5</version>
         </dependency>

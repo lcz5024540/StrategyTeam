@@ -1,15 +1,13 @@
 package com.metaverse.coin.strategy.common.client.okx;
 
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.OkxRestResponse;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.Balance;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderReq;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.PlaceGridAlgoOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderReq;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.StopGridAlgoOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderReq;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.CancelOrderRsp;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.PlaceOrderReq;
-import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.PlaceOrderRsp;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.account.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.algo.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.grid.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.signal.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.recurring.*;
 import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.GET;
@@ -34,52 +32,215 @@ public interface OkxApi {
     Call<OkxRestResponse<Object>> setLeverage(@Body Map<String, Object> req);
 
     @GET("/api/v5/account/config")
-    Call<OkxRestResponse<Map<String, Object>>> getAccountConfig();
+    Call<OkxRestResponse<OkxAccountConfig>> getAccountConfig();
 
     @GET("/api/v5/account/max-size")
-    Call<OkxRestResponse<Map<String, Object>>> getMaxSize(@QueryMap Map<String, Object> queryMap);
+    Call<OkxRestResponse<OkxMaxSize>> getMaxSize(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/position-risk")
+    Call<OkxRestResponse<OkxPositionRisk>> getPositionRisk(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/bills")
+    Call<OkxRestResponse<OkxBill>> getBills(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/bills-archive")
+    Call<OkxRestResponse<OkxBill>> getBillsArchive(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/max-avail-size")
+    Call<OkxRestResponse<OkxMaxAvailSize>> getMaxAvailSize(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/trade-fee")
+    Call<OkxRestResponse<OkxTradeFee>> getTradeFee(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/interest-accrued")
+    Call<OkxRestResponse<OkxInterestAccrued>> getInterestAccrued(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/interest-rate")
+    Call<OkxRestResponse<OkxInterestRate>> getInterestRate(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/account/max-loan")
+    Call<OkxRestResponse<OkxMaxLoan>> getMaxLoan(@QueryMap Map<String, Object> queryMap);
+
+    @POST("/api/v5/account/set-position-mode")
+    Call<OkxRestResponse<OkxPositionMode>> setPositionMode(@Body Map<String, Object> req);
+
+    @GET("/api/v5/account/leverage-info")
+    Call<OkxRestResponse<OkxLeverageInfo>> getLeverageInfo(@QueryMap Map<String, Object> queryMap);
 
     // --- Trade ---
 
     @POST("/api/v5/trade/order")
     Call<OkxRestResponse<PlaceOrderRsp>> placeOrder(@Body PlaceOrderReq req);
 
+    @POST("/api/v5/trade/batch-orders")
+    Call<OkxRestResponse<PlaceOrderRsp>> batchOrders(@Body List<PlaceOrderReq> req);
+
     @POST("/api/v5/trade/cancel-order")
     Call<OkxRestResponse<CancelOrderRsp>> cancelOrder(@Body CancelOrderReq req);
 
+    @POST("/api/v5/trade/cancel-batch-orders")
+    Call<OkxRestResponse<CancelOrderRsp>> cancelBatchOrders(@Body List<CancelOrderReq> req);
+
+    @POST("/api/v5/trade/amend-order")
+    Call<OkxRestResponse<AmendOrderRsp>> amendOrder(@Body AmendOrderReq req);
+
+    @POST("/api/v5/trade/amend-batch-orders")
+    Call<OkxRestResponse<AmendOrderRsp>> amendBatchOrders(@Body List<AmendOrderReq> req);
+
+    @POST("/api/v5/trade/mass-cancel")
+    Call<OkxRestResponse<Object>> massCancel(@Body MassCancelOrderReq req);
+
+    @POST("/api/v5/trade/cancel-all-after")
+    Call<OkxRestResponse<CancelAllAfterRsp>> cancelAllAfter(@Body CancelAllAfterReq req);
+
     @POST("/api/v5/trade/close-position")
-    Call<OkxRestResponse<Object>> closePosition(@Body Map<String, Object> req);
+    Call<OkxRestResponse<OkxClosePositionRsp>> closePosition(@Body Map<String, Object> req);
 
     @GET("/api/v5/trade/order")
-    Call<OkxRestResponse<Map<String, Object>>> getOrder(@Query("instId") String instId, @Query("ordId") String ordId, @Query("clOrdId") String clOrdId);
+    Call<OkxRestResponse<OkxOrder>> getOrder(@Query("instId") String instId, @Query("ordId") String ordId, @Query("clOrdId") String clOrdId);
 
     @GET("/api/v5/trade/orders-history")
-    Call<OkxRestResponse<Map<String, Object>>> getOrdersHistory(@QueryMap Map<String, Object> queryMap);
+    Call<OkxRestResponse<OkxOrder>> getOrdersHistory(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/trade/orders-history-archive")
+    Call<OkxRestResponse<OkxOrder>> getOrdersHistoryArchive(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/trade/fills")
+    Call<OkxRestResponse<OkxTransaction>> getFills(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/trade/fills-history")
+    Call<OkxRestResponse<OkxTransaction>> getFillsHistory(@QueryMap Map<String, Object> queryMap);
 
     @GET("/api/v5/trade/orders-pending")
-    Call<OkxRestResponse<Map<String, Object>>> getOrdersPending(@QueryMap Map<String, Object> queryMap);
+    Call<OkxRestResponse<OkxOrder>> getOrdersPending(@QueryMap Map<String, Object> queryMap);
 
     // --- Algo Trading ---
 
     @POST("/api/v5/trade/order-algo")
-    Call<OkxRestResponse<Map<String, Object>>> placeAlgoOrder(@Body Map<String, Object> req);
+    Call<OkxRestResponse<PlaceAlgoOrderRsp>> placeAlgoOrder(@Body Map<String, Object> req);
 
     @POST("/api/v5/trade/cancel-algos")
-    Call<OkxRestResponse<Map<String, Object>>> cancelAlgoOrder(@Body List<Map<String, Object>> req);
+    Call<OkxRestResponse<CancelAlgoOrderRsp>> cancelAlgoOrder(@Body List<Map<String, Object>> req);
+
+    @POST("/api/v5/trade/amend-algos")
+    Call<OkxRestResponse<AmendAlgoOrderRsp>> amendAlgoOrder(@Body List<AmendAlgoOrderReq> req);
+
+    @GET("/api/v5/trade/order-algo")
+    Call<OkxRestResponse<OkxAlgoOrder>> getAlgoOrder(@Query("algoId") String algoId, @Query("algoClOrdId") String algoClOrdId);
+
+    @GET("/api/v5/trade/orders-algo-pending")
+    Call<OkxRestResponse<OkxAlgoOrder>> getAlgoOrdersPending(@QueryMap Map<String, Object> queryMap);
 
     @GET("/api/v5/trade/orders-algo-history")
-    Call<OkxRestResponse<Map<String, Object>>> getAlgoOrdersHistory(@QueryMap Map<String, Object> queryMap);
+    Call<OkxRestResponse<OkxAlgoOrder>> getAlgoOrdersHistory(@QueryMap Map<String, Object> queryMap);
 
     // --- Grid Trading ---
 
     @POST("/api/v5/tradingBot/grid/order-algo")
     Call<OkxRestResponse<PlaceGridAlgoOrderRsp>> placeGridAlgoOrder(@Body PlaceGridAlgoOrderReq req);
 
+    @POST("/api/v5/tradingBot/grid/amend-order-algo")
+    Call<OkxRestResponse<AmendGridAlgoOrderRsp>> amendGridAlgoOrder(@Body AmendGridAlgoOrderReq req);
+
+    @POST("/api/v5/tradingBot/grid/adjust-investment")
+    Call<OkxRestResponse<AddGridInvestmentRsp>> addGridInvestment(@Body AddGridInvestmentReq req);
+
     @POST("/api/v5/tradingBot/grid/stop-order-algo")
     Call<OkxRestResponse<StopGridAlgoOrderRsp>> stopGridAlgoOrder(@Body StopGridAlgoOrderReq req);
 
-    @POST("/api/v5/tradingBot/grid/amend-order-algo")
-    Call<OkxRestResponse<Map<String, Object>>> amendGridAlgoOrder(@Body Map<String, Object> req);
+    @POST("/api/v5/tradingBot/grid/close-position")
+    Call<OkxRestResponse<ClosePositionForContractGridRsp>> closePositionForContractGrid(@Body ClosePositionForContractGridReq req);
+
+    @POST("/api/v5/tradingBot/grid/cancel-close-order")
+    Call<OkxRestResponse<CancelClosePositionOrderForContractGridRsp>> cancelClosePositionOrderForContractGrid(@Body CancelClosePositionOrderForContractGridReq req);
+
+    @POST("/api/v5/tradingBot/grid/instant-trigger")
+    Call<OkxRestResponse<InstantTriggerGridAlgoOrderRsp>> instantTriggerGridAlgoOrder(@Body InstantTriggerGridAlgoOrderReq req);
+
+    @GET("/api/v5/tradingBot/grid/orders-algo-history")
+    Call<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrdersHistory(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/grid/orders-algo-details")
+    Call<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrderDetails(@Query("algoOrdId") String algoOrdId, @Query("algoClOrdId") String algoClOrdId);
+
+    @GET("/api/v5/tradingBot/grid/sub-orders")
+    Call<OkxRestResponse<GridAlgoSubOrder>> getGridAlgoSubOrders(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/grid/positions")
+    Call<OkxRestResponse<GridAlgoOrderPosition>> getGridAlgoPositions(@QueryMap Map<String, Object> queryMap);
+
+    @POST("/api/v5/tradingBot/grid/withdraw-income")
+    Call<OkxRestResponse<SpotGridWithdrawIncomeRsp>> spotGridWithdrawIncome(@Body SpotGridWithdrawIncomeReq req);
+
+    @GET("/api/v5/tradingBot/grid/min-investment")
+    Call<OkxRestResponse<ComputeGridMinInvestmentRsp>> computeGridMinInvestment(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/grid/margin-balance")
+    Call<OkxRestResponse<ComputeGridMarginBalanceRsp>> computeGridMarginBalance(@QueryMap Map<String, Object> queryMap);
+
+    @POST("/api/v5/tradingBot/grid/adjust-margin-balance")
+    Call<OkxRestResponse<AdjustGridMarginBalanceRsp>> adjustGridMarginBalance(@Body AdjustGridMarginBalanceReq req);
+
+    @GET("/api/v5/tradingBot/grid/ai-param")
+    Call<OkxRestResponse<GridApiParam>> getGridAiParam(@QueryMap Map<String, Object> queryMap);
+
+    // --- Signal Bot ---
+
+    @POST("/api/v5/tradingBot/signal/order-algo")
+    Call<OkxRestResponse<PlaceSignalAlgoOrderRsp>> placeSignalAlgoOrder(@Body PlaceSignalAlgoOrderReq req);
+
+    @POST("/api/v5/tradingBot/signal/sub-order")
+    Call<OkxRestResponse<PlaceSignalAlgoSubOrderRsp>> placeSignalAlgoSubOrder(@Body PlaceSignalAlgoSubOrderReq req);
+
+    @POST("/api/v5/tradingBot/signal/cancel-order-algo")
+    Call<OkxRestResponse<CancelSignalAlgoOrderRsp>> cancelSignalAlgoOrder(@Body CancelSignalAlgoOrderReq req);
+
+    @POST("/api/v5/tradingBot/signal/amend-order-algo")
+    Call<OkxRestResponse<AmendSignalAlgoOrderRsp>> amendSignalAlgoOrder(@Body AmendSignalAlgoOrderReq req);
+
+    @GET("/api/v5/tradingBot/signal/orders-algo-details")
+    Call<OkxRestResponse<SignalAlgoOrder>> getSignalAlgoOrderDetails(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/signal/orders-algo-history")
+    Call<OkxRestResponse<SignalAlgoOrder>> getSignalAlgoOrdersHistory(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/signal/orders-algo-pending")
+    Call<OkxRestResponse<SignalAlgoOrder>> getSignalAlgoOrdersPending(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/signal/sub-orders")
+    Call<OkxRestResponse<SignalAlgoSubOrder>> getSignalAlgoSubOrders(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/signal/positions")
+    Call<OkxRestResponse<SignalAlgoPosition>> getSignalAlgoPositions(@QueryMap Map<String, Object> queryMap);
+
+    @POST("/api/v5/tradingBot/signal/close-position")
+    Call<OkxRestResponse<CloseSignalPositionRsp>> closeSignalPosition(@Body CloseSignalPositionReq req);
+
+    @POST("/api/v5/tradingBot/signal/margin-balance")
+    Call<OkxRestResponse<ChangeSignalMarginBalanceRsp>> changeSignalMarginBalance(@Body ChangeSignalMarginBalanceReq req);
+
+    // --- Recurring Buy ---
+
+    @POST("/api/v5/tradingBot/recurring/order-algo")
+    Call<OkxRestResponse<PlaceRecurringBuyAlgoOrderRsp>> placeRecurringBuyAlgoOrder(@Body PlaceRecurringBuyAlgoOrderReq req);
+
+    @POST("/api/v5/tradingBot/recurring/cancel-order-algo")
+    Call<OkxRestResponse<CancelRecurringBuyAlgoOrderRsp>> cancelRecurringBuyAlgoOrder(@Body CancelRecurringBuyAlgoOrderReq req);
+
+    @POST("/api/v5/tradingBot/recurring/amend-order-algo")
+    Call<OkxRestResponse<AmendRecurringBuyAlgoOrderRsp>> amendRecurringBuyAlgoOrder(@Body AmendRecurringBuyAlgoOrderReq req);
+
+    @GET("/api/v5/tradingBot/recurring/orders-algo-pending")
+    Call<OkxRestResponse<RecurringAlgoOrder>> getRecurringBuyAlgoOrdersPending(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/recurring/orders-algo-history")
+    Call<OkxRestResponse<RecurringAlgoOrder>> getRecurringBuyAlgoOrdersHistory(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/recurring/orders-algo-details")
+    Call<OkxRestResponse<RecurringAlgoOrder>> getRecurringBuyAlgoOrderDetails(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/recurring/sub-orders")
+    Call<OkxRestResponse<RecurringAlgoSubOrder>> getRecurringBuyAlgoSubOrders(@QueryMap Map<String, Object> queryMap);
 
     // --- Market Data ---
 

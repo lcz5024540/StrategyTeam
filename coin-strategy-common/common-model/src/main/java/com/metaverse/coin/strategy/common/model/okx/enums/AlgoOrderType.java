@@ -13,7 +13,31 @@ public enum AlgoOrderType {
     /**
      * Contract grid
      */
-    CONTRACT_GRID("contract_grid");
+    CONTRACT_GRID("contract_grid"),
+    /**
+     * Conditional (Stop Order)
+     */
+    CONDITIONAL("conditional"),
+    /**
+     * OCO (One-cancels-the-other)
+     */
+    OCO("oco"),
+    /**
+     * Trigger Order
+     */
+    TRIGGER("trigger"),
+    /**
+     * Trailing Stop
+     */
+    MOVE_ORDER_STOP("move_order_stop"),
+    /**
+     * Iceberg
+     */
+    ICEBERG("iceberg"),
+    /**
+     * TWAP
+     */
+    TWAP("twap");
 
     private final String value;
 
