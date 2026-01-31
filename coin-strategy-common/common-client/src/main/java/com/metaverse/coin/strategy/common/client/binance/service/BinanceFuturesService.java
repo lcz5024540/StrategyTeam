@@ -172,9 +172,9 @@ public class BinanceFuturesService {
     /**
      * Place Multiple Orders (Batch)
      */
-//    public String batchOrders(String batchOrders) {
-//        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
-//        parameters.put("batchOrders", batchOrders);
-//        return futuresClient.account().batchOrders(parameters);
-//    }
+    public String batchOrders(String batchOrders) {
+        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("batchOrders", batchOrders);
+        return futuresClient.account().placeMultipleOrders(parameters);
+    }
 }

@@ -10,7 +10,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Calendar;
 import java.util.LinkedHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,6 +31,78 @@ public class BinanceSpotServiceTest {
     @BeforeEach
     public void setUp() {
         spotService = new BinanceSpotService(spotClient);
+    }
+
+    @Test
+    public void testCommissionRate() {
+        // Arrange
+        String symbol = "BTCUSDT";
+        String jsonResponse = "{\"symbol\":\"BTCUSDT\",\"standardCommission\":{\"maker\":\"0.00100000\",\"taker\":\"0.00100000\"}}";
+        when(spotClient.createTrade()).thenReturn(trade);
+        when(trade.commission(any(LinkedHashMap.class))).thenReturn(jsonResponse);
+
+        // Act
+        String result = spotService.commissionRate(symbol);
+
+        // Assert
+        assertEquals(jsonResponse, result);
+    }
+
+    @Test
+    public void testOrderCountUsage() {
+        // Arrange
+        String jsonResponse = "[{\"rateLimitType\":\"ORDERS\",\"interval\":\"SECOND\",\"intervalNum\":10,\"limit\":50,\"count\":0}]";
+        when(spotClient.createTrade()).thenReturn(trade);
+        when(trade.rateLimitOrder(any(LinkedHashMap.class))).thenReturn(jsonResponse);
+
+        // Act
+        String result = spotService.orderCountUsage();
+
+        // Assert
+        assertEquals(jsonResponse, result);
+    }
+
+    @Test
+    public void testAllocations() {
+        // Arrange
+        String symbol = "BTCUSDT";
+        String jsonResponse = "[{\"symbol\":\"BTCUSDT\",\"allocationId\":1}]";
+        when(spotClient.createTrade()).thenReturn(trade);
+        when(trade.sorAllocations(any(LinkedHashMap.class))).thenReturn(jsonResponse);
+
+        // Act
+        String result = spotService.allocations(symbol, null, null, null, null);
+
+        // Assert
+        assertEquals(jsonResponse, result);
+    }
+
+    @Test
+    public void testGetAllOCO() {
+        // Arrange
+        String jsonResponse = "[{\"orderListId\": 1}]";
+        when(spotClient.createTrade()).thenReturn(trade);
+        when(trade.getOCOOrders(any(LinkedHashMap.class))).thenReturn(jsonResponse);
+
+        // Act
+        String result = spotService.getAllOCO(null, null, null, null);
+
+        // Assert
+        assertEquals(jsonResponse, result);
+    }
+
+    @Test
+    public void testOrderList() {
+        // Arrange
+        String jsonResponse = "{\"orderListId\": 1}";
+        when(spotClient.createTrade()).thenReturn(trade);
+        when(trade.getOCOOrder(any(LinkedHashMap.class))).thenReturn(jsonResponse);
+
+        // Act
+        String result = spotService.orderList(1L, null);
+
+        // Assert
+        assertEquals(jsonResponse, result);
     }
 
     @Test

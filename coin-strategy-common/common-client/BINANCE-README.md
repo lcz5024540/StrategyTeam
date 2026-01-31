@@ -1,5 +1,176 @@
 # Binance API 使用说明
 
+## 现货账户与交易 (Spot Account & Trade)
+
+通过 `BinanceSpotService` 提供账户信息查询与订单管理功能。
+
+### 1. 账户信息 (Account Information)
+
+获取当前账户的资产余额、权限等信息。
+
+**用法示例:**
+
+```java
+// 初始化 BinanceApiService
+BinanceApiService apiService = new BinanceApiService(apiKey, secretKey);
+BinanceSpotService spotService = apiService.getSpotService();
+
+// 获取账户信息
+BinanceAccountInfo accountInfo = spotService.account();
+System.out.println("Can Trade: " + accountInfo.getCanTrade());
+for (BinanceBalance balance : accountInfo.getBalances()) {
+    if (new BigDecimal(balance.getFree()).compareTo(BigDecimal.ZERO) > 0) {
+        System.out.println("Asset: " + balance.getAsset() + ", Free: " + balance.getFree());
+    }
+}
+```
+
+### 2. 下单 (New Order)
+
+支持限价单、市价单等多种订单类型。
+
+**用法示例:**
+
+```java
+// 限价买入 BTCUSDT
+String symbol = "BTCUSDT";
+String side = "BUY";
+String type = "LIMIT";
+String timeInForce = "GTC";
+String quantity = "0.001";
+String price = "50000";
+
+// 返回原始 JSON
+String response = spotService.newOrder(symbol, side, type, timeInForce, quantity, price);
+System.out.println(response);
+
+// 或者使用强类型返回值
+BinanceOrder order = spotService.placeOrder(symbol, side, type, timeInForce, quantity, price);
+System.out.println("Order ID: " + order.getOrderId());
+```
+
+### 3. 测试下单 (Test New Order)
+
+测试新订单创建和签名，不会发送到撮合引擎。
+
+**用法示例:**
+
+```java
+// 测试限价买入
+String testResponse = spotService.testNewOrder(symbol, side, type, timeInForce, quantity, price);
+System.out.println("Test Order Response: " + testResponse);
+```
+
+### 4. 查询订单 (Query Order)
+
+查询特定订单的状态。
+
+**用法示例:**
+
+```java
+Long orderId = 12345678L;
+BinanceOrder order = spotService.getOrderObject("BTCUSDT", orderId, null);
+System.out.println("Order Status: " + order.getStatus());
+```
+
+### 5. 撤销订单 (Cancel Order)
+
+撤销未成交的订单。
+
+**用法示例:**
+
+```java
+// 撤销指定订单
+BinanceOrder canceledOrder = spotService.cancelOrderObject("BTCUSDT", 12345678L, null);
+System.out.println("Canceled Order ID: " + canceledOrder.getOrderId());
+
+// 撤销某交易对下所有挂单
+List<BinanceOrder> canceledOrders = spotService.cancelAllOpenOrders("BTCUSDT");
+System.out.println("Canceled " + canceledOrders.size() + " orders.");
+```
+
+### 6. 当前挂单 (Open Orders)
+
+查询当前未成交的订单。
+
+**用法示例:**
+
+```java
+List<BinanceOrder> openOrders = spotService.getOpenOrders("BTCUSDT");
+for (BinanceOrder o : openOrders) {
+    System.out.println("Open Order: " + o.getOrderId() + " Price: " + o.getPrice());
+}
+```
+
+### 7. 所有订单 (All Orders)
+
+查询所有订单（包括已成交、已撤销）。
+
+**用法示例:**
+
+```java
+List<BinanceOrder> allOrders = spotService.getAllOrders("BTCUSDT", null, 10, null, null);
+for (BinanceOrder o : allOrders) {
+    System.out.println("Order: " + o.getOrderId() + " Status: " + o.getStatus());
+}
+```
+
+### 8. 历史成交 (My Trades)
+
+查询账户的历史成交记录。
+
+**用法示例:**
+
+```java
+List<BinanceTradeHistory> trades = spotService.getMyTrades("BTCUSDT", null, 10, null, null, null);
+for (BinanceTradeHistory trade : trades) {
+    System.out.println("Trade ID: " + trade.getId() + ", Price: " + trade.getPrice() + ", Qty: " + trade.getQty());
+}
+```
+
+### 9. OCO 订单 (OCO Orders)
+
+OCO (One Cancels the Other) 订单管理，包括查询和撤销。
+
+**用法示例:**
+
+```java
+// 查询所有 Open OCO
+String openOcos = spotService.getOpenOCO();
+System.out.println(openOcos);
+
+// 查询特定 OCO
+// String ocoDetails = spotService.getOCO(12345L, null);
+
+// 撤销 OCO
+// 需要 orderListId
+// spotService.cancelOCO("BTCUSDT", 12345L, null, null);
+```
+
+### 10. 佣金费率 (Commission Rate)
+
+查询当前账户的佣金费率。
+
+**用法示例:**
+
+```java
+String commission = spotService.commissionRate("BTCUSDT");
+System.out.println("Commission Rate: " + commission);
+```
+
+### 11. 阻止的撮合 (Prevented Matches)
+
+查询由于自我交易预防 (STP) 而过期的订单被阻止的撮合。
+
+**用法示例:**
+
+```java
+List<BinancePreventedMatch> preventedMatches = spotService.getPreventedMatches("BTCUSDT", null, null, 10);
+for (BinancePreventedMatch match : preventedMatches) {
+    System.out.println("Prevented Match ID: " + match.getPreventedMatchId());
+}
+```
+
 ## 钱包服务 (Wallet Services)
 
 ### 提现 (Travel Rule)
