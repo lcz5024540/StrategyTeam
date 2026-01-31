@@ -42,6 +42,17 @@ public class BinanceAlphaService {
 
     /**
      * Place a new Algo Order (VP/TWAP)
+     * <br>
+     * 下单 (VP/TWAP 策略)
+     * <br>
+     * POST /sapi/v1/algo/spot/newOrder
+     * <br>
+     * @param symbol Trading symbol, e.g. BNBUSDT
+     * @param side BUY or SELL
+     * @param quantity Quantity of base asset
+     * @param algoType Algo type: VP or TWAP
+     * @param additionalParams Additional parameters (limitPrice, urgency, etc.)
+     * @return BinanceAlphaOrder
      */
     public BinanceAlphaOrder newOrder(String symbol, String side, String quantity, String algoType, Map<String, Object> additionalParams) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -58,6 +69,13 @@ public class BinanceAlphaService {
 
     /**
      * Cancel an Algo Order
+     * <br>
+     * 取消策略订单
+     * <br>
+     * DELETE /sapi/v1/algo/spot/order
+     * <br>
+     * @param algoId Algo Order ID
+     * @return BinanceAlphaOrder
      */
     public BinanceAlphaOrder cancelOrder(Long algoId) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -68,6 +86,12 @@ public class BinanceAlphaService {
 
     /**
      * Get Open Algo Orders
+     * <br>
+     * 查询进行中的策略订单
+     * <br>
+     * GET /sapi/v1/algo/spot/openOrders
+     * <br>
+     * @return List of BinanceAlphaOrder
      */
     public List<BinanceAlphaOrder> getOpenOrders() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -77,6 +101,18 @@ public class BinanceAlphaService {
 
     /**
      * Get Historical Algo Orders
+     * <br>
+     * 查询历史策略订单
+     * <br>
+     * GET /sapi/v1/algo/spot/historicalOrders
+     * <br>
+     * @param symbol Trading symbol (optional)
+     * @param side BUY or SELL (optional)
+     * @param startTime Start time in ms (optional)
+     * @param endTime End time in ms (optional)
+     * @param page Page number (optional)
+     * @param pageSize Page size (optional)
+     * @return List of BinanceAlphaOrder
      */
     public List<BinanceAlphaOrder> getHistoricalOrders(String symbol, String side, Long startTime, Long endTime, Integer page, Integer pageSize) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();

@@ -11,6 +11,8 @@ import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.signal.*
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.recurring.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.market.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.rubik.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.finance.staking.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.affiliate.*;
 import com.metaverse.coin.strategy.common.model.okx.enums.ws.TdMode;
 import okhttp3.OkHttpClient;
 
@@ -34,6 +36,9 @@ public class OkxApiService {
     public final OkxPublicDataService publicData;
     public final OkxFundingService funding;
     public final OkxRubikService rubik;
+    public final OkxEarnService earn;
+    public final OkxSavingsService savings;
+    public final OkxAffiliateService affiliate;
 
     public OkxApiService(OkxApi okxApi, OkHttpClient client, boolean simulated) {
         this.okxApi = okxApi;
@@ -50,6 +55,9 @@ public class OkxApiService {
         this.publicData = new OkxPublicDataService(okxApi);
         this.funding = new OkxFundingService(okxApi);
         this.rubik = new OkxRubikService(okxApi);
+        this.earn = new OkxEarnService(okxApi);
+        this.savings = new OkxSavingsService(okxApi);
+        this.affiliate = new OkxAffiliateService(okxApi);
     }
 
     // --- Account ---
@@ -574,5 +582,33 @@ public class OkxApiService {
 
     public OkxRestResponse<OkxTakerFlow> getTakerFlow(String ccy, String period) {
         return rubik.getTakerFlow(ccy, period);
+    }
+
+    // --- Finance (On-chain Earn / Staking DeFi) ---
+
+    public OkxRestResponse<OkxStakingOffer> getStakingOffers(Map<String, Object> queryMap) {
+        return earn.getStakingOffers(queryMap);
+    }
+
+    public OkxRestResponse<OkxStakingPurchaseRsp> purchaseStaking(OkxStakingPurchaseReq req) {
+        return earn.purchaseStaking(req);
+    }
+
+    public OkxRestResponse<OkxStakingRedeemRsp> redeemStaking(OkxStakingRedeemReq req) {
+        return earn.redeemStaking(req);
+    }
+
+    public OkxRestResponse<OkxStakingOrder> getActiveStakingOrders(Map<String, Object> queryMap) {
+        return earn.getActiveStakingOrders(queryMap);
+    }
+
+    public OkxRestResponse<OkxStakingOrder> getStakingOrdersHistory(Map<String, Object> queryMap) {
+        return earn.getStakingOrdersHistory(queryMap);
+    }
+
+    // --- Affiliate ---
+
+    public OkxRestResponse<OkxAffiliateInviteeDetail> getAffiliateInviteeDetail(Map<String, Object> queryMap) {
+        return affiliate.getAffiliateInviteeDetail(queryMap);
     }
 }

@@ -81,6 +81,16 @@ public class OkxTradeService extends OkxService {
         return execute(okxApi.placeOrder(req), "Place order failed");
     }
 
+    /**
+     * 市价全平 (Close Position)
+     * <br>
+     * 市价全平某个仓位。
+     *
+     * @param instId  产品ID
+     * @param mgnMode 保证金模式: cross(全仓), isolated(逐仓)
+     * @param posSide 持仓方向: long, short, net (可选)
+     * @return 响应结果
+     */
     public OkxRestResponse<OkxClosePositionRsp> closePosition(String instId, String mgnMode, String posSide) {
         Map<String, Object> req = new HashMap<>();
         req.put("instId", instId);
@@ -91,10 +101,24 @@ public class OkxTradeService extends OkxService {
         return execute(okxApi.closePosition(req), "Close position failed");
     }
 
+    /**
+     * 撤单 (Cancel Order)
+     *
+     * @param req 撤单请求参数，需包含 instId 和 (ordId 或 clOrdId)
+     * @return 撤单响应
+     */
     public OkxRestResponse<CancelOrderRsp> cancelOrder(CancelOrderReq req) {
         return execute(okxApi.cancelOrder(req), "Cancel order failed");
     }
 
+    /**
+     * 获取订单详情 (Get Order Details)
+     *
+     * @param instId  产品ID
+     * @param ordId   订单ID (可选)
+     * @param clOrdId 客户自定义订单ID (可选)
+     * @return 订单详情
+     */
     public OkxRestResponse<OkxOrder> getOrder(String instId, String ordId, String clOrdId) {
         return execute(okxApi.getOrder(instId, ordId, clOrdId), "Get order failed");
     }

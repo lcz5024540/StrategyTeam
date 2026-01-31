@@ -284,6 +284,12 @@ apiService.closeMarginUserDataStream(listenKey);
 
 ---
 
+## OKX 交易 (OKX Trading)
+
+OKX 相关的 API 接口文档请参考 [OKX-README.md](OKX-README.md)。
+
+---
+
 ## 注意事项
 
 1. **参数类型**: 大部分金额和价格参数使用 `String` 或 `BigDecimal` 类型以避免精度丢失。
@@ -295,6 +301,7 @@ apiService.closeMarginUserDataStream(listenKey);
 
 - [Binance Spot API Documentation](https://developers.binance.com/docs/binance-spot-api-docs)
 - [Binance Margin API Documentation](https://developers.binance.com/docs/margin_trading/market-data)
+- [OKX V5 API Documentation](https://www.okx.com/docs-v5/zh/)
 
 ---
 

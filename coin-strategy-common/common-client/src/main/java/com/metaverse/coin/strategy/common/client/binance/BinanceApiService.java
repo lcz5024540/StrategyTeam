@@ -36,7 +36,6 @@ public class BinanceApiService {
     private final BinanceWalletService walletService;
     private final BinanceMarginService marginService;
     private final BinanceMarketDataService marketDataService;
-    private final BinanceAlgoService algoService;
     private final BinanceCopyTradingService copyTradingService;
     private final BinanceMiningService miningService;
     private final BinanceSimpleEarnService simpleEarnService;
@@ -55,7 +54,6 @@ public class BinanceApiService {
         this.walletService = new BinanceWalletService(spotClient, apiKey, secretKey, spotBaseUrl);
         this.marginService = new BinanceMarginService(spotClient, spotBaseUrl, apiKey, secretKey);
         this.marketDataService = new BinanceMarketDataService(spotClient);
-        this.algoService = new BinanceAlgoService(spotClient);
         this.copyTradingService = new BinanceCopyTradingService(spotClient);
         this.miningService = new BinanceMiningService(spotBaseUrl, apiKey, secretKey);
         this.simpleEarnService = new BinanceSimpleEarnService(spotClient, spotBaseUrl, apiKey, secretKey);

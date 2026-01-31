@@ -49,7 +49,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * System Status
+     * 系统状态 (System Status)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/system-status">System Status</a>
      */
     public BinanceSystemStatus systemStatus() {
         String json = spotClient.createWallet().systemStatus();
@@ -62,7 +64,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * All Coins' Information
+     * 所有币种信息 (All Coins' Information)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/coin-info">All Coins' Information</a>
      */
     public List<BinanceCoinInfo> getAllCoins() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -76,7 +80,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * Deposit History
+     * 充值历史 (Deposit History)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/deposit-history">Deposit History</a>
      */
     public List<BinanceDepositHistory> depositHistory(String coin, Integer status, Long startTime, Long endTime, Integer offset, Integer limit) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -96,7 +102,34 @@ public class BinanceWalletService {
     }
 
     /**
-     * Withdraw History
+     * 提现 (Withdraw)
+     * <br>
+     * 提交提现请求。
+     *
+     * @param coin 币种
+     * @param address 提现地址
+     * @param amount 提现数量
+     * @param network (可选) 网络
+     * @param name (可选) 地址名称
+     * @param walletType (可选) 0:现货钱包, 1:资金钱包
+     * @return 提现 ID (JSON 字符串)
+     * @see <a href="https://developers.binance.com/docs/wallet/travel-rule/withdraw">Withdraw (Travel Rule)</a>
+     */
+    public String withdraw(String coin, String address, String amount, String network, String name, Integer walletType) {
+        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("coin", coin);
+        parameters.put("address", address);
+        parameters.put("amount", amount);
+        if (network != null) parameters.put("network", network);
+        if (name != null) parameters.put("name", name);
+        if (walletType != null) parameters.put("walletType", walletType);
+        return spotClient.createWallet().withdraw(parameters);
+    }
+
+    /**
+     * 提现历史 (Withdraw History)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/travel-rule/withdraw-history">Withdraw History</a>
      */
     public List<BinanceWithdrawHistory> withdrawHistory(String coin, Integer status, Long startTime, Long endTime, Integer offset, Integer limit) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -116,7 +149,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * Asset Detail
+     * 资产详情 (Asset Detail)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/asset-detail">Asset Detail</a>
      */
     public Map<String, BinanceAssetDetail> assetDetail(String asset) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -131,7 +166,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * Trade Fee
+     * 交易手续费 (Trade Fee)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/trade-fee">Trade Fee</a>
      */
     public List<BinanceTradeFee> tradeFee(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -146,7 +183,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * Account Status
+     * 账户状态 (Account Status)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/account-status">Account Status</a>
      */
     public BinanceAccountStatus accountStatus() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -160,7 +199,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * API Trading Status
+     * API 交易状态 (API Trading Status)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/api-trading-status">API Trading Status</a>
      */
     public BinanceApiTradingStatus apiTradingStatus() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -174,7 +215,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * Deposit Address
+     * 充值地址 (Deposit Address)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/deposit-address">Deposit Address</a>
      */
     public BinanceDepositAddress depositAddress(String coin, String network) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -190,7 +233,9 @@ public class BinanceWalletService {
     }
 
     /**
-     * Get API Key Permission
+     * 获取 API Key 权限 (Get API Key Permission)
+     *
+     * @see <a href="https://developers.binance.com/docs/wallet/capital/api-key-permission">Get API Key Permission</a>
      */
     public BinanceApiKeyPermission getApiKeyPermission() {
         if (apiKey == null || secretKey == null) {

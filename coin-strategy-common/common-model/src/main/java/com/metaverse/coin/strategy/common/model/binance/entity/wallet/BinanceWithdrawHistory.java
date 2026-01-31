@@ -17,4 +17,8 @@ public class BinanceWithdrawHistory {
     private Integer confirmNo;
     private String info;
     private String txId;
+    private Integer walletType;
+    private String txKey;
+    private String questionnaire;
+    private String completeTime;
 }
