@@ -426,11 +426,23 @@ public interface OkxApi {
     @GET("/api/v5/rubik/stat/margin/loan-ratio")
     Call<OkxRestResponse<OkxMarginLendingRatio>> getMarginLendingRatio(@Query("ccy") String ccy, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
 
-    @GET("/api/v5/rubik/stat/contracts/long-short-account-ratio")
-    Call<OkxRestResponse<OkxLongShortRatio>> getLongShortAccountRatio(@Query("ccy") String ccy, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
+    @GET("/api/v5/rubik/stat/contracts/long-short-account-ratio-contract-top-trader")
+    Call<OkxRestResponse<OkxLongShortRatio>> getLongShortAccountRatio(@Query("instId") String instId, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
 
     @GET("/api/v5/rubik/stat/contracts/open-interest-volume")
     Call<OkxRestResponse<OkxOpenInterestVolume>> getOpenInterestVolume(@Query("ccy") String ccy, @Query("instType") String instType, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/contracts/open-interest-history")
+    Call<OkxRestResponse<OkxOpenInterestHistory>> getOpenInterestHistory(@Query("instId") String instId, @Query("period") String period, @Query("begin") String begin, @Query("end") String end, @Query("limit") String limit);
+
+    @GET("/api/v5/rubik/stat/taker-volume-contract")
+    Call<OkxRestResponse<OkxTakerVolume>> getTakerVolumeContract(@Query("instId") String instId, @Query("period") String period, @Query("begin") String begin, @Query("end") String end, @Query("limit") String limit);
+
+    @GET("/api/v5/rubik/stat/contracts/long-short-position-ratio-contract-top-trader")
+    Call<OkxRestResponse<OkxLongShortRatio>> getLongShortPositionRatioContractTopTrader(@Query("instId") String instId, @Query("period") String period, @Query("begin") String begin, @Query("end") String end, @Query("limit") String limit);
+
+    @GET("/api/v5/rubik/stat/contracts/long-short-account-ratio-contract")
+    Call<OkxRestResponse<OkxLongShortRatio>> getLongShortAccountRatioContract(@Query("instId") String instId, @Query("period") String period, @Query("begin") String begin, @Query("end") String end, @Query("limit") String limit);
 
     @GET("/api/v5/rubik/stat/option/open-interest-volume")
     Call<OkxRestResponse<OkxOpenInterestVolume>> getOptionOpenInterestVolume(@Query("ccy") String ccy, @Query("period") String period);
@@ -443,6 +455,9 @@ public interface OkxApi {
 
     @GET("/api/v5/rubik/stat/option/open-interest-volume-strike")
     Call<OkxRestResponse<OkxOpenInterestVolumeStrike>> getOptionOpenInterestVolumeStrike(@Query("ccy") String ccy, @Query("expTime") String expTime, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/option/taker-block-volume")
+    Call<OkxRestResponse<OkxTakerVolume>> getOptionTakerBlockVolume(@Query("ccy") String ccy, @Query("period") String period, @Query("begin") String begin, @Query("end") String end);
 
     @GET("/api/v5/rubik/stat/taker-flow")
     Call<OkxRestResponse<OkxTakerFlow>> getTakerFlow(@Query("ccy") String ccy, @Query("period") String period);

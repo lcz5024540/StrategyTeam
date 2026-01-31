@@ -41,6 +41,8 @@ public class OkxRubikServiceTest {
     private Call<OkxRestResponse<OkxOpenInterestVolumeStrike>> callOpenInterestVolumeStrike;
     @Mock
     private Call<OkxRestResponse<OkxTakerFlow>> callTakerFlow;
+    @Mock
+    private Call<OkxRestResponse<OkxOpenInterestHistory>> callOpenInterestHistory;
 
     @BeforeEach
     public void setUp() {
@@ -77,7 +79,7 @@ public class OkxRubikServiceTest {
     public void testGetLongShortAccountRatio() throws IOException {
         mockCall(callLongShortRatio);
         when(okxApi.getLongShortAccountRatio(any(), any(), any(), any())).thenReturn(callLongShortRatio);
-        assertNotNull(okxRubikService.getLongShortAccountRatio("BTC", "123", "456", "5m"));
+        assertNotNull(okxRubikService.getLongShortAccountRatio("BTC-USDT", "123", "456", "5m"));
     }
 
     @Test

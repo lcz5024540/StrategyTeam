@@ -528,8 +528,8 @@ public class OkxApiService {
         return rubik.getMarginLendingRatio(ccy, begin, end, period);
     }
 
-    public OkxRestResponse<OkxLongShortRatio> getLongShortAccountRatio(String ccy, String begin, String end, String period) {
-        return rubik.getLongShortAccountRatio(ccy, begin, end, period);
+    public OkxRestResponse<OkxLongShortRatio> getLongShortAccountRatio(String instId, String begin, String end, String period) {
+        return rubik.getLongShortAccountRatio(instId, begin, end, period);
     }
 
     public OkxRestResponse<OkxOpenInterestVolume> getOpenInterestVolume(String ccy, String instType, String begin, String end, String period) {
@@ -550,6 +550,26 @@ public class OkxApiService {
 
     public OkxRestResponse<OkxOpenInterestVolumeStrike> getOptionOpenInterestVolumeStrike(String ccy, String expTime, String period) {
         return rubik.getOptionOpenInterestVolumeStrike(ccy, expTime, period);
+    }
+
+    public OkxRestResponse<OkxOpenInterestHistory> getOpenInterestHistory(String instId, String period, String begin, String end, String limit) {
+        return rubik.getOpenInterestHistory(instId, period, begin, end, limit);
+    }
+
+    public OkxRestResponse<OkxTakerVolume> getTakerVolumeContract(String instId, String period, String begin, String end, String limit) {
+        return rubik.getTakerVolumeContract(instId, period, begin, end, limit);
+    }
+
+    public OkxRestResponse<OkxLongShortRatio> getLongShortPositionRatioContractTopTrader(String instId, String period, String begin, String end, String limit) {
+        return rubik.getLongShortPositionRatioContractTopTrader(instId, period, begin, end, limit);
+    }
+
+    public OkxRestResponse<OkxLongShortRatio> getLongShortAccountRatioContract(String instId, String period, String begin, String end, String limit) {
+        return rubik.getLongShortAccountRatioContract(instId, period, begin, end, limit);
+    }
+
+    public OkxRestResponse<OkxTakerVolume> getOptionTakerBlockVolume(String ccy, String period, String begin, String end) {
+        return rubik.getOptionTakerBlockVolume(ccy, period, begin, end);
     }
 
     public OkxRestResponse<OkxTakerFlow> getTakerFlow(String ccy, String period) {
