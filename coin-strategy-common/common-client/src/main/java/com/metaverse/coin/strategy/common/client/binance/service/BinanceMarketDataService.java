@@ -41,6 +41,10 @@ public class BinanceMarketDataService {
 
     /**
      * Test Connectivity
+     * <br>
+     * GET /api/v3/ping
+     * <br>
+     * 测试服务器连通性
      */
     public String ping() {
         return spotClient.createMarket().ping();
@@ -48,6 +52,10 @@ public class BinanceMarketDataService {
 
     /**
      * Check Server Time
+     * <br>
+     * GET /api/v3/time
+     * <br>
+     * 获取服务器时间
      */
     public String time() {
         return spotClient.createMarket().time();
@@ -55,6 +63,10 @@ public class BinanceMarketDataService {
 
     /**
      * Exchange Information (Raw JSON)
+     * <br>
+     * GET /api/v3/exchangeInfo
+     * <br>
+     * 获取交易规则和交易对信息
      */
     public String exchangeInfo(String symbol, List<String> symbols) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -68,6 +80,10 @@ public class BinanceMarketDataService {
 
     /**
      * Exchange Information (Parsed Object)
+     * <br>
+     * GET /api/v3/exchangeInfo
+     * <br>
+     * 获取交易规则和交易对信息
      */
     public BinanceExchangeInfo getExchangeInfo(String symbol, List<String> symbols) {
         String json = exchangeInfo(symbol, symbols);
@@ -81,6 +97,10 @@ public class BinanceMarketDataService {
 
     /**
      * Recent Trades List
+     * <br>
+     * GET /api/v3/trades
+     * <br>
+     * 获取近期成交
      */
     public String trades(String symbol, Integer limit) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -91,6 +111,10 @@ public class BinanceMarketDataService {
 
     /**
      * Recent Trades List (Parsed Object)
+     * <br>
+     * GET /api/v3/trades
+     * <br>
+     * 获取近期成交
      */
     public List<BinanceTrade> getTrades(String symbol, Integer limit) {
         String json = trades(symbol, limit);
@@ -104,6 +128,10 @@ public class BinanceMarketDataService {
 
     /**
      * Historical Trades List
+     * <br>
+     * GET /api/v3/historicalTrades
+     * <br>
+     * 查询历史成交
      */
     public String historicalTrades(String symbol, Integer limit, Long fromId) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -115,6 +143,10 @@ public class BinanceMarketDataService {
 
     /**
      * Historical Trades List (Parsed Object)
+     * <br>
+     * GET /api/v3/historicalTrades
+     * <br>
+     * 查询历史成交
      */
     public List<BinanceTrade> getHistoricalTrades(String symbol, Integer limit, Long fromId) {
         String json = historicalTrades(symbol, limit, fromId);
@@ -128,6 +160,10 @@ public class BinanceMarketDataService {
 
     /**
      * Compressed/Aggregate Trades List
+     * <br>
+     * GET /api/v3/aggTrades
+     * <br>
+     * 获取归集交易
      */
     public String aggTrades(String symbol, String fromId, Long startTime, Long endTime, Integer limit) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -141,6 +177,10 @@ public class BinanceMarketDataService {
 
     /**
      * Compressed/Aggregate Trades List (Parsed Object)
+     * <br>
+     * GET /api/v3/aggTrades
+     * <br>
+     * 获取归集交易
      */
     public List<BinanceAggTrade> getAggTrades(String symbol, String fromId, Long startTime, Long endTime, Integer limit) {
         String json = aggTrades(symbol, fromId, startTime, endTime, limit);
@@ -154,6 +194,10 @@ public class BinanceMarketDataService {
 
     /**
      * Rolling window price change statistics
+     * <br>
+     * GET /api/v3/ticker
+     * <br>
+     * 滚动窗口价格变动统计
      */
     public String ticker(String symbol, String windowSize) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -164,6 +208,10 @@ public class BinanceMarketDataService {
 
     /**
      * Rolling window price change statistics (Parsed Object)
+     * <br>
+     * GET /api/v3/ticker
+     * <br>
+     * 滚动窗口价格变动统计
      */
     public BinanceTicker getTicker(String symbol, String windowSize) {
         String json = ticker(symbol, windowSize);
@@ -177,6 +225,10 @@ public class BinanceMarketDataService {
 
     /**
      * Kline/Candlestick Data (Raw JSON)
+     * <br>
+     * GET /api/v3/klines
+     * <br>
+     * K线数据
      */
     public String klines(String symbol, String interval, Integer limit, Long startTime, Long endTime) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -190,6 +242,10 @@ public class BinanceMarketDataService {
 
     /**
      * Kline/Candlestick Data (Parsed Object)
+     * <br>
+     * GET /api/v3/klines
+     * <br>
+     * K线数据
      */
     public List<BinanceKline> getKlines(String symbol, String interval, Integer limit, Long startTime, Long endTime) {
         String json = klines(symbol, interval, limit, startTime, endTime);
@@ -203,6 +259,10 @@ public class BinanceMarketDataService {
     
     /**
      * Current Average Price
+     * <br>
+     * GET /api/v3/avgPrice
+     * <br>
+     * 当前平均价格
      */
     public String averagePrice(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -212,6 +272,10 @@ public class BinanceMarketDataService {
     
     /**
      * 24hr Ticker Price Change Statistics
+     * <br>
+     * GET /api/v3/ticker/24hr
+     * <br>
+     * 24hr 价格变动情况
      */
     public String ticker24H(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -221,6 +285,10 @@ public class BinanceMarketDataService {
     
     /**
      * Symbol Price Ticker
+     * <br>
+     * GET /api/v3/ticker/price
+     * <br>
+     * 最新价格
      */
     public String tickerPrice(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -230,6 +298,10 @@ public class BinanceMarketDataService {
     
     /**
      * Symbol Order Book Ticker
+     * <br>
+     * GET /api/v3/ticker/bookTicker
+     * <br>
+     * 当前最优挂单
      */
     public String tickerBook(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -239,6 +311,10 @@ public class BinanceMarketDataService {
     
     /**
      * Order Book
+     * <br>
+     * GET /api/v3/depth
+     * <br>
+     * 深度信息
      */
     public String depth(String symbol, Integer limit) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -249,6 +325,10 @@ public class BinanceMarketDataService {
 
     /**
      * Trading Day Ticker
+     * <br>
+     * GET /api/v3/ticker/tradingDay
+     * <br>
+     * 交易日行情
      */
     public String tradingDayTicker(String symbol, List<String> symbols, String timeZone) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -260,6 +340,10 @@ public class BinanceMarketDataService {
 
     /**
      * Trading Day Ticker (Parsed Object - Single)
+     * <br>
+     * GET /api/v3/ticker/tradingDay
+     * <br>
+     * 交易日行情
      */
     public BinanceTicker getTradingDayTicker(String symbol, String timeZone) {
         if (symbol == null) throw new IllegalArgumentException("Symbol must be provided");
@@ -274,6 +358,10 @@ public class BinanceMarketDataService {
 
     /**
      * Trading Day Ticker (Parsed Object - List)
+     * <br>
+     * GET /api/v3/ticker/tradingDay
+     * <br>
+     * 交易日行情
      */
     public List<BinanceTicker> getTradingDayTickers(List<String> symbols, String timeZone) {
         String json = tradingDayTicker(null, symbols, timeZone);
@@ -287,6 +375,10 @@ public class BinanceMarketDataService {
 
     /**
      * UI Klines
+     * <br>
+     * GET /api/v3/uiKlines
+     * <br>
+     * UI K线数据 (优化版K线)
      */
     public String uiKlines(String symbol, String interval, Integer limit, Long startTime, Long endTime) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -402,6 +494,19 @@ public class BinanceMarketDataService {
         } catch (JsonProcessingException e) {
             log.error("Failed to parse Binance all ticker book", e);
             throw new RuntimeException("Failed to parse Binance all ticker book", e);
+        }
+    }
+
+    /**
+     * Get Order Book (Depth)
+     */
+    public BinanceOrderBook getOrderBook(String symbol, Integer limit) {
+        String json = depth(symbol, limit);
+        try {
+            return objectMapper.readValue(json, BinanceOrderBook.class);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse Binance order book", e);
+            throw new RuntimeException("Failed to parse Binance order book", e);
         }
     }
 

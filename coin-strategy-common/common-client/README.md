@@ -1,6 +1,16 @@
 # Coin Strategy Common Client
 
-此模块封装了 Binance API 的调用，提供了现货 (Spot)、合约 (Futures)、杠杆 (Margin)、矿池 (Mining)、赚币 (Simple Earn) 和策略交易 (Alpha/Algo) 的统一访问接口。
+此模块封装了主流交易所 API 的调用，提供了统一且强类型的访问接口。
+
+- [Binance 文档 (当前页面)](#快速开始)
+- [OKX 文档 (OKX-README.md)](OKX-README.md)
+- [Gate.io 文档 (GATE-README.md)](GATE-README.md)
+
+---
+
+## Binance API
+
+封装了 Binance API 的调用，提供了现货 (Spot)、合约 (Futures)、杠杆 (Margin)、矿池 (Mining)、赚币 (Simple Earn) 和策略交易 (Alpha/Algo) 的统一访问接口。
 
 基于 `binance-connector-java` 进行扩展，对所有接口进行了强类型封装，使用更安全、更易用。
 

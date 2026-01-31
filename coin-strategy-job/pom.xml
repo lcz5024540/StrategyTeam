@@ -14,7 +14,13 @@
     <dependencies>
         <dependency>
             <groupId>com.metaverse</groupId>
+            <artifactId>coin-strategy-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
             <artifactId>common-client</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.metaverse</groupId>

@@ -294,3 +294,59 @@ Long algoId = 123456L;
 BinanceAlphaOrder result = alphaService.cancelOrder(algoId);
 System.out.println("Cancelled Algo Order: " + result.getAlgoId());
 ```
+
+## 杠杆交易市场数据 (Margin Market Data)
+
+通过 `BinanceMarginService` 获取杠杆交易相关的市场数据。
+
+**用法示例:**
+
+```java
+// 初始化服务
+BinanceApiService apiService = new BinanceApiService(apiKey, secretKey);
+BinanceMarginService marginService = apiService.getMarginService();
+
+// 1. 获取所有全仓杠杆资产
+List<BinanceMarginAsset> marginAssets = marginService.getMarginAssets();
+for (BinanceMarginAsset asset : marginAssets) {
+    System.out.println("Asset: " + asset.getAssetName());
+}
+
+// 2. 获取所有全仓杠杆交易对
+List<BinanceMarginPair> marginPairs = marginService.getMarginPairs();
+for (BinanceMarginPair pair : marginPairs) {
+    System.out.println("Pair: " + pair.getSymbol());
+}
+
+// 3. 查询杠杆价格指数
+BinanceMarginPriceIndex priceIndex = marginService.getMarginPriceIndex("BTCUSDT");
+System.out.println("Price Index: " + priceIndex.getPrice() + ", Calculate Time: " + priceIndex.getCalcTime());
+
+// 4. 获取所有逐仓杠杆交易对
+List<BinanceIsolatedMarginSymbol> isolatedSymbols = marginService.getIsolatedMarginSymbols("BTCUSDT");
+for (BinanceIsolatedMarginSymbol symbol : isolatedSymbols) {
+    System.out.println("Isolated Symbol: " + symbol.getSymbol());
+}
+
+// 5. 查询逐仓杠杆交易对
+BinanceIsolatedMarginSymbol isolatedSymbol = marginService.getIsolatedMarginSymbol("BTCUSDT");
+System.out.println("Isolated Symbol Base: " + isolatedSymbol.getBase());
+
+// 6. 获取全仓杠杆抵押率
+List<BinanceCrossMarginCollateralRatio> collateralRatios = marginService.getCrossMarginCollateralRatio();
+for (BinanceCrossMarginCollateralRatio ratio : collateralRatios) {
+    System.out.println("Collaterals: " + ratio.getCollaterals());
+}
+
+// 7. 获取杠杆下架计划
+List<BinanceMarginDelistSchedule> delistSchedule = marginService.getDelistSchedule();
+for (BinanceMarginDelistSchedule schedule : delistSchedule) {
+    System.out.println("Delist Time: " + schedule.getDelistTime());
+}
+
+// 8. 获取未来每小时利率
+List<BinanceMarginNextHourlyInterestRate> interestRates = marginService.getFutureHourlyInterestRate("BTC,ETH", false);
+for (BinanceMarginNextHourlyInterestRate rate : interestRates) {
+    System.out.println("Asset: " + rate.getAsset() + ", Hourly Rate: " + rate.getNextHourlyInterestRate());
+}
+```

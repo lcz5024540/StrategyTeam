@@ -194,6 +194,13 @@ public class BinanceMarginService {
         return parseList(json, new TypeReference<List<BinanceMarginInterestRateHistory>>() {});
     }
 
+    /**
+     * Get Future Hourly Interest Rate (MARKET_DATA)
+     * <br>
+     * GET /sapi/v1/margin/next-hourly-interest-rate
+     * <br>
+     * 获取未来每小时利率
+     */
     public List<BinanceMarginNextHourlyInterestRate> getFutureHourlyInterestRate(String assets, Boolean isIsolated) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         if (assets != null) parameters.put("assets", assets);
@@ -240,18 +247,46 @@ public class BinanceMarginService {
 
     // =========================== Market Data ===========================
 
+    /**
+     * Get All Margin Assets (MARKET_DATA)
+     * <br>
+     * GET /sapi/v1/margin/allAssets
+     * <br>
+     * 获取所有全仓杠杆资产
+     *
+     * @return List of BinanceMarginAsset
+     */
     public List<BinanceMarginAsset> getMarginAssets() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         String json = executeRequest("/sapi/v1/margin/allAssets", parameters, "GET", false); // Usually public
         return parseList(json, new TypeReference<List<BinanceMarginAsset>>() {});
     }
 
+    /**
+     * Get All Cross Margin Pairs (MARKET_DATA)
+     * <br>
+     * GET /sapi/v1/margin/allPairs
+     * <br>
+     * 获取所有全仓杠杆交易对
+     *
+     * @return List of BinanceMarginPair
+     */
     public List<BinanceMarginPair> getMarginPairs() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         String json = executeRequest("/sapi/v1/margin/allPairs", parameters, "GET", false); // Usually public
         return parseList(json, new TypeReference<List<BinanceMarginPair>>() {});
     }
 
+    /**
+     * Query Margin PriceIndex (MARKET_DATA)
+     * <br>
+     * GET /sapi/v1/margin/priceIndex
+     * <br>
+     * 查询杠杆价格指数
+     *
+     * @param symbol Symbol, e.g. BTCUSDT
+     * @return BinanceMarginPriceIndex
+     */
     public BinanceMarginPriceIndex getMarginPriceIndex(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("symbol", symbol);
@@ -259,26 +294,64 @@ public class BinanceMarginService {
         return parse(json, BinanceMarginPriceIndex.class);
     }
 
+    /**
+     * Get All Isolated Margin Symbol (USER_DATA)
+     * <br>
+     * GET /sapi/v1/margin/isolated/allPairs
+     * <br>
+     * 获取所有逐仓杠杆交易对
+     *
+     * @param symbol Symbol (Optional)
+     * @return List of BinanceIsolatedMarginSymbol
+     */
     public List<BinanceIsolatedMarginSymbol> getIsolatedMarginSymbols(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         if (symbol != null) parameters.put("symbol", symbol);
         String json = executeRequest("/sapi/v1/margin/isolated/allPairs", parameters, "GET", true); // Requires API Key usually
         return parseList(json, new TypeReference<List<BinanceIsolatedMarginSymbol>>() {});
     }
-    
+
+    /**
+     * Get Isolated Margin Symbol (USER_DATA)
+     * <br>
+     * GET /sapi/v1/margin/isolated/pair
+     * <br>
+     * 查询逐仓杠杆交易对
+     *
+     * @param symbol Symbol
+     * @return BinanceIsolatedMarginSymbol
+     */
     public BinanceIsolatedMarginSymbol getIsolatedMarginSymbol(String symbol) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("symbol", symbol);
         String json = executeRequest("/sapi/v1/margin/isolated/pair", parameters, "GET", true);
         return parse(json, BinanceIsolatedMarginSymbol.class);
     }
-    
+
+    /**
+     * Get Cross Margin Collateral Ratio (MARKET_DATA)
+     * <br>
+     * GET /sapi/v1/margin/crossMarginCollateralRatio
+     * <br>
+     * 获取全仓杠杆抵押率
+     *
+     * @return List of BinanceCrossMarginCollateralRatio
+     */
     public List<BinanceCrossMarginCollateralRatio> getCrossMarginCollateralRatio() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         String json = executeRequest("/sapi/v1/margin/crossMarginCollateralRatio", parameters, "GET", false); // Public? API Key? Assume safe to use API Key if needed
         return parseList(json, new TypeReference<List<BinanceCrossMarginCollateralRatio>>() {});
     }
     
+    /**
+     * Get Margin Delist Schedule (MARKET_DATA)
+     * <br>
+     * GET /sapi/v1/margin/delist-schedule
+     * <br>
+     * 获取杠杆下架计划
+     *
+     * @return List of BinanceMarginDelistSchedule
+     */
     public List<BinanceMarginDelistSchedule> getDelistSchedule() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         String json = executeRequest("/sapi/v1/margin/delist-schedule", parameters, "GET", false); // Public?

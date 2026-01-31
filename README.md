@@ -24,3 +24,61 @@
 #### 三、链上撸羊毛
   1. 项目方空投。主要是链上交易
   2. 记录交易损耗、记录交易的项目
+
+## 系统架构设计 (System Architecture)
+
+基于目前的 `common-client` 对接情况，为了支持后续多种策略研发，采用以下分层架构：
+
+### 架构图
+
+```mermaid
+graph TD
+    S[策略层 Strategy] --> |调用| API[通用接口层 common-api]
+    API --> |实现| Adapter[适配层 Adapter]
+    Adapter --> |调用| SDK[现有 common-client (Binance/Okx/Gate)]
+    SDK --> |请求| Exchange[交易所 API]
+```
+
+### 架构说明
+
+1.  **策略层 (Strategy)**: 专注于交易逻辑（如网格、对冲、指标分析），不感知具体交易所。只操作通用模型。
+2.  **通用接口层 (common-api)**: 定义标准化的数据模型（Order, Ticker, Balance）和接口（ITradeService, IMarketDataService）。
+3.  **适配层 (Adapter)**: 实现通用接口，将通用请求转换为具体交易所 SDK 的调用，并将结果转换为通用模型。
+4.  **SDK 层 (common-client)**: 现有的 Binance, OKX, Gate 对接代码，负责底层的 HTTP 通信和签名。
+
+### 模块职责与依赖 (Module Responsibilities & Dependencies)
+
+#### 模块职责定位
+
+*   **coin-strategy-core**: **(新增)** 策略的核心实现层。
+    *   依赖 `common-api` (获取标准接口和模型)。
+    *   编写具体的策略逻辑类（如 `GridStrategy`, `ArbitrageStrategy`）。
+    *   **不直接依赖** `common-client`（通过 `common-api` 接口与适配层交互，解耦底层 SDK）。
+*   **coin-strategy-job**: **(现有)** 策略的**运行容器**。
+    *   负责定时调度、启动/停止策略。
+    *   依赖 `coin-strategy-core`（获取策略逻辑）。
+    *   依赖 `common-client`（注入具体的适配器实现）。
+*   **coin-strategy-web**: **(现有)** 策略的**管理后台**。
+    *   负责策略参数配置、收益展示、启停控制。
+    *   依赖 `coin-strategy-core`（获取策略元数据）。
+*   **common-api**: **(新增)** 通用接口层。
+    *   定义标准化的数据模型（Order, Ticker, Balance）。
+    *   定义标准服务接口（ITradeService, IMarketDataService）。
+
+#### 模块依赖关系图
+
+```mermaid
+graph TD
+    Job[coin-strategy-job <br> 运行容器] --> Core[coin-strategy-core <br> 策略实现]
+    Web[coin-strategy-web <br> 管理后台] --> Core
+    Core --> API[common-api <br> 通用接口]
+    API --> Model[common-model <br> 数据模型]
+    Job --> Client[common-client <br> SDK适配器实现]
+```
+
+## 策略文档索引 (Strategy Documentation)
+
+*   [资金费率套利策略 (Funding Rate Arbitrage)](FUNDING_RATE_ARBITRAGE.md)
+*   [TOP50 趋势与波动率策略 (Top 50 Trend & Volatility)](TOP50_STRATEGY.md)
+*   [常规技术分析策略 (Conventional Technical Analysis)](CONVENTIONAL_TECHNICAL_STRATEGY.md)
+*   [链上借贷+LP稳定币策略 (On-chain Lending & LP)](CEX_LOAN_ONCHAIN_STABLE_LP_STRATEGY.md)

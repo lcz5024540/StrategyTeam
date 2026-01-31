@@ -43,9 +43,9 @@ public class BinanceAlphaService {
     /**
      * Place a new Algo Order (VP/TWAP)
      * <br>
-     * 下单 (VP/TWAP 策略)
-     * <br>
      * POST /sapi/v1/algo/spot/newOrder
+     * <br>
+     * 下单 (VP/TWAP 策略)
      * <br>
      * @param symbol Trading symbol, e.g. BNBUSDT
      * @param side BUY or SELL
@@ -70,9 +70,9 @@ public class BinanceAlphaService {
     /**
      * Cancel an Algo Order
      * <br>
-     * 取消策略订单
-     * <br>
      * DELETE /sapi/v1/algo/spot/order
+     * <br>
+     * 取消策略订单
      * <br>
      * @param algoId Algo Order ID
      * @return BinanceAlphaOrder
@@ -87,9 +87,9 @@ public class BinanceAlphaService {
     /**
      * Get Open Algo Orders
      * <br>
-     * 查询进行中的策略订单
-     * <br>
      * GET /sapi/v1/algo/spot/openOrders
+     * <br>
+     * 查询进行中的策略订单
      * <br>
      * @return List of BinanceAlphaOrder
      */
@@ -102,9 +102,9 @@ public class BinanceAlphaService {
     /**
      * Get Historical Algo Orders
      * <br>
-     * 查询历史策略订单
-     * <br>
      * GET /sapi/v1/algo/spot/historicalOrders
+     * <br>
+     * 查询历史策略订单
      * <br>
      * @param symbol Trading symbol (optional)
      * @param side BUY or SELL (optional)
@@ -125,6 +125,27 @@ public class BinanceAlphaService {
         
         String json = executeRequest("/sapi/v1/algo/spot/historicalOrders", parameters, "GET", true);
         return parseList(json, new TypeReference<List<BinanceAlphaOrder>>() {});
+    }
+
+    /**
+     * Query Sub Orders
+     * <br>
+     * GET /sapi/v1/algo/spot/subOrders
+     * <br>
+     * 查询子订单
+     * <br>
+     * @param algoId Algo Order ID
+     * @param page Page number (optional)
+     * @param pageSize Page size (optional)
+     * @return JSON String of sub orders
+     */
+    public String getSubOrders(Long algoId, Integer page, Integer pageSize) {
+        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
+        if (algoId != null) parameters.put("algoId", algoId);
+        if (page != null) parameters.put("page", page);
+        if (pageSize != null) parameters.put("pageSize", pageSize);
+
+        return executeRequest("/sapi/v1/algo/spot/subOrders", parameters, "GET", true);
     }
 
     // =========================== Helper Methods ===========================

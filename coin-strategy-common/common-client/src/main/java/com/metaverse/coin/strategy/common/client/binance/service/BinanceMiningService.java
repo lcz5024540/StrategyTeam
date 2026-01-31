@@ -32,7 +32,10 @@ public class BinanceMiningService {
 
     /**
      * Acquiring Algorithm (MARKET_DATA)
+     * <br>
      * GET /sapi/v1/mining/pub/algoList
+     * <br>
+     * 获取算法 (市场数据)
      */
     public List<BinanceMiningAlgo> getAlgoList() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -42,7 +45,10 @@ public class BinanceMiningService {
 
     /**
      * Acquiring CoinName (MARKET_DATA)
+     * <br>
      * GET /sapi/v1/mining/pub/coinList
+     * <br>
+     * 获取币种 (市场数据)
      */
     public List<BinanceMiningCoin> getCoinList() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -52,7 +58,10 @@ public class BinanceMiningService {
 
     /**
      * Request for Detail Miner List (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/worker/detail
+     * <br>
+     * 请求矿工详细列表 (用户数据)
      */
     public List<BinanceMiningWorker> getWorkerDetail(String algo, String userName, String workerName) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -65,7 +74,10 @@ public class BinanceMiningService {
 
     /**
      * Request for Miner List (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/worker/list
+     * <br>
+     * 请求矿工列表 (用户数据)
      */
     public List<BinanceMiningWorker> getWorkerList(String algo, String userName, Integer pageIndex, Integer sort, Integer sortColumn, Integer workerStatus) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -88,7 +100,10 @@ public class BinanceMiningService {
 
     /**
      * Earnings List (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/payment/list
+     * <br>
+     * 收益列表 (用户数据)
      */
     public List<BinanceMiningPayment> getPaymentList(String algo, String userName, String coin, Long startDate, Long endDate, Integer pageIndex, Integer pageSize) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -106,7 +121,10 @@ public class BinanceMiningService {
 
     /**
      * Extra Bonus List (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/payment/other
+     * <br>
+     * 额外奖励列表 (用户数据)
      */
     public List<BinanceMiningPayment> getOtherPaymentList(String algo, String userName, String coin, Long startDate, Long endDate, Integer pageIndex, Integer pageSize) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -124,7 +142,10 @@ public class BinanceMiningService {
 
     /**
      * Hashrate Resale List (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/hash-transfer/config/details
+     * <br>
+     * 算力转售列表 (用户数据)
      */
     public List<BinanceHashrateResaleConfig> getHashrateResaleList(Integer pageIndex, Integer pageSize) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -137,7 +158,10 @@ public class BinanceMiningService {
 
     /**
      * Hashrate Resale Detail (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/hash-transfer/profit/details
+     * <br>
+     * 算力转售详情 (用户数据)
      */
     public List<BinanceHashrateResaleDetail> getHashrateResaleDetail(Integer configId, String userName, Integer pageIndex, Integer pageSize) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -197,7 +221,10 @@ public class BinanceMiningService {
 
     /**
      * Statistic List (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/statistics/user/status
+     * <br>
+     * 统计列表 (用户数据)
      */
     public BinanceMiningStat getStatistic(String algo, String userName) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -210,7 +237,10 @@ public class BinanceMiningService {
 
     /**
      * Account List (USER_DATA)
+     * <br>
      * GET /sapi/v1/mining/statistics/user/list
+     * <br>
+     * 账户列表 (用户数据)
      */
     public List<BinanceMiningAccount> getAccountList(String algo, String userName) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();

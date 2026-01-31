@@ -7,9 +7,11 @@ class GateApiServiceTest {
 
     @Test
     void testInstantiation() {
-        GateApiService service = GateApiService.create("key", "secret");
+        GateApiService service = new GateApiService("key", "secret");
         assertNotNull(service);
-        assertNotNull(service.getGateApi());
+        assertNotNull(service.getApiClient());
+        assertNotNull(service.getSpotApi());
+        assertNotNull(service.getFuturesApi());
         assertNotNull(service.getAccountService());
         assertNotNull(service.getTradeService());
         assertNotNull(service.getMarketDataService());

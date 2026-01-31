@@ -42,7 +42,11 @@ public class BinanceSimpleEarnService {
     // =========================== Flexible Product ===========================
 
     /**
-     * Get Simple Earn Flexible Product List (USER_DATA)
+     * Get Simple Earn Flexible Product List (Simple Earn)
+     * <br>
+     * GET /sapi/v1/simple-earn/flexible/list
+     * <br>
+     * 获取活期产品列表
      */
     public BinanceSimpleEarnListResponse<BinanceSimpleEarnFlexibleProduct> getFlexibleProductList(String asset, Long current, Integer size) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -55,7 +59,11 @@ public class BinanceSimpleEarnService {
     }
 
     /**
-     * Subscribe Flexible Product (TRADE)
+     * Subscribe Flexible Product (Simple Earn)
+     * <br>
+     * POST /sapi/v1/simple-earn/flexible/subscribe
+     * <br>
+     * 申购活期产品
      */
     public String subscribeFlexibleProduct(String productId, BigDecimal amount, Boolean autoSubscribe, String sourceAccount) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -68,7 +76,11 @@ public class BinanceSimpleEarnService {
     }
 
     /**
-     * Redeem Flexible Product (TRADE)
+     * Redeem Flexible Product (Simple Earn)
+     * <br>
+     * POST /sapi/v1/simple-earn/flexible/redeem
+     * <br>
+     * 赎回活期产品
      */
     public String redeemFlexibleProduct(String productId, BigDecimal amount, String type, Boolean redeemAll, String destAccount) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -82,7 +94,11 @@ public class BinanceSimpleEarnService {
     }
 
     /**
-     * Get Flexible Product Position (USER_DATA)
+     * Get Flexible Product Position (Simple Earn)
+     * <br>
+     * GET /sapi/v1/simple-earn/flexible/position
+     * <br>
+     * 获取活期持仓
      */
     public BinanceSimpleEarnListResponse<BinanceSimpleEarnFlexiblePosition> getFlexibleProductPosition(String asset, String productId, Long current, Integer size) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -98,7 +114,11 @@ public class BinanceSimpleEarnService {
     // =========================== Locked Product ===========================
 
     /**
-     * Get Simple Earn Locked Product List (USER_DATA)
+     * Get Simple Earn Locked Product List (Simple Earn)
+     * <br>
+     * GET /sapi/v1/simple-earn/locked/list
+     * <br>
+     * 获取定期产品列表
      */
     public BinanceSimpleEarnListResponse<BinanceSimpleEarnLockedProduct> getLockedProductList(String asset, Long current, Integer size) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -111,7 +131,11 @@ public class BinanceSimpleEarnService {
     }
 
     /**
-     * Subscribe Locked Product (TRADE)
+     * Subscribe Locked Product (Simple Earn)
+     * <br>
+     * POST /sapi/v1/simple-earn/locked/subscribe
+     * <br>
+     * 申购定期产品
      */
     public String subscribeLockedProduct(String projectId, BigDecimal amount, Boolean autoSubscribe, String sourceAccount, String redeemTo) {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
@@ -153,7 +177,11 @@ public class BinanceSimpleEarnService {
     // =========================== Account ===========================
 
     /**
-     * Get Simple Earn Account (USER_DATA)
+     * Get Simple Earn Account (Simple Earn)
+     * <br>
+     * GET /sapi/v1/simple-earn/account
+     * <br>
+     * 获取理财账户信息
      */
     public BinanceSimpleEarnAccount getAccount() {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();

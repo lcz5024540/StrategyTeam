@@ -256,11 +256,11 @@ public class BinanceApiService {
     }
 
     public String getFuturesOpenOrders(String symbol) {
-        return futuresService.currentAllOpenOrders(symbol);
+        return futuresService.getOpenOrders(symbol);
     }
 
     public String getFuturesTickerPrice(String symbol) {
-        return futuresService.tickerPrice(symbol);
+        return futuresService.getTickerPrice(symbol);
     }
 
     public String getFuturesFundingRate(String symbol) {
