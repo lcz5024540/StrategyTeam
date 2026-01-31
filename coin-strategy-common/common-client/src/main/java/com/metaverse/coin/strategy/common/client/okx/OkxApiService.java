@@ -9,6 +9,8 @@ import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.signal.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.recurring.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.market.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.rubik.*;
 import com.metaverse.coin.strategy.common.model.okx.enums.ws.TdMode;
 import okhttp3.OkHttpClient;
 
@@ -31,6 +33,7 @@ public class OkxApiService {
     public final OkxMarketDataService marketData;
     public final OkxPublicDataService publicData;
     public final OkxFundingService funding;
+    public final OkxRubikService rubik;
 
     public OkxApiService(OkxApi okxApi, OkHttpClient client, boolean simulated) {
         this.okxApi = okxApi;
@@ -46,6 +49,7 @@ public class OkxApiService {
         this.marketData = new OkxMarketDataService(okxApi);
         this.publicData = new OkxPublicDataService(okxApi);
         this.funding = new OkxFundingService(okxApi);
+        this.rubik = new OkxRubikService(okxApi);
     }
 
     // --- Account ---
@@ -196,6 +200,10 @@ public class OkxApiService {
         return gridTrading.getGridAlgoOrdersHistory(queryMap);
     }
 
+    public OkxRestResponse<GridAlgoOrder> getGridAlgoOrdersPending(Map<String, Object> queryMap) {
+        return gridTrading.getGridAlgoOrdersPending(queryMap);
+    }
+
     public OkxRestResponse<GridAlgoOrder> getGridAlgoOrderDetails(String algoOrdId, String algoClOrdId) {
         return gridTrading.getGridAlgoOrderDetails(algoOrdId, algoClOrdId);
     }
@@ -226,6 +234,26 @@ public class OkxApiService {
 
     public OkxRestResponse<GridApiParam> getGridAiParam(Map<String, Object> queryMap) {
         return gridTrading.getGridAiParam(queryMap);
+    }
+
+    public OkxRestResponse<ComputeGridMarginBalanceRsp> computeGridMarginBalancePost(ComputeGridMarginBalanceReq req) {
+        return gridTrading.computeGridMarginBalancePost(req);
+    }
+
+    public OkxRestResponse<AmendGridAlgoBasicParamRsp> amendGridAlgoBasicParam(AmendGridAlgoBasicParamReq req) {
+        return gridTrading.amendGridAlgoBasicParam(req);
+    }
+
+    public OkxRestResponse<ComputeGridMinInvestmentRsp> computeGridMinInvestmentPost(ComputeGridMinInvestmentReq req) {
+        return gridTrading.computeGridMinInvestmentPost(req);
+    }
+
+    public OkxRestResponse<RsiBackTestingRsp> rsiBackTesting(Map<String, Object> queryMap) {
+        return gridTrading.rsiBackTesting(queryMap);
+    }
+
+    public OkxRestResponse<GridQuantityRsp> getGridQuantity(Map<String, Object> queryMap) {
+        return gridTrading.getGridQuantity(queryMap);
     }
 
     // --- Signal Bot ---
@@ -276,8 +304,8 @@ public class OkxApiService {
         return recurringBuy.placeRecurringBuyAlgoOrder(req);
     }
 
-    public OkxRestResponse<CancelRecurringBuyAlgoOrderRsp> cancelRecurringBuyAlgoOrder(CancelRecurringBuyAlgoOrderReq req) {
-        return recurringBuy.cancelRecurringBuyAlgoOrder(req);
+    public OkxRestResponse<CancelRecurringBuyAlgoOrderRsp> stopRecurringBuyAlgoOrder(CancelRecurringBuyAlgoOrderReq req) {
+        return recurringBuy.stopRecurringBuyAlgoOrder(req);
     }
 
     public OkxRestResponse<AmendRecurringBuyAlgoOrderRsp> amendRecurringBuyAlgoOrder(AmendRecurringBuyAlgoOrderReq req) {
@@ -302,24 +330,72 @@ public class OkxApiService {
 
     // --- Market Data ---
 
-    public OkxRestResponse<Map<String, Object>> getTickers(String instType, String uly) {
+    public OkxRestResponse<OkxTicker> getTickers(String instType, String uly) {
         return marketData.getTickers(instType, uly);
     }
 
-    public OkxRestResponse<Map<String, Object>> getTicker(String instId) {
+    public OkxRestResponse<OkxTicker> getTicker(String instId) {
         return marketData.getTicker(instId);
     }
 
-    public OkxRestResponse<Map<String, Object>> getOrderBook(String instId, Integer sz) {
+    public OkxRestResponse<OkxIndexTicker> getIndexTickers(String quoteCcy, String instId) {
+        return marketData.getIndexTickers(quoteCcy, instId);
+    }
+
+    public OkxRestResponse<OkxOrderBook> getOrderBook(String instId, Integer sz) {
         return marketData.getOrderBook(instId, sz);
     }
 
-    public OkxRestResponse<List<String>> getCandles(String instId, String bar, String after, String before, Integer limit) {
+    public OkxRestResponse<OkxCandle> getCandles(String instId, String bar, String after, String before, Integer limit) {
         return marketData.getCandles(instId, bar, after, before, limit);
     }
 
-    public OkxRestResponse<List<String>> getHistoryCandles(String instId, String bar, String after, String before, Integer limit) {
+    public OkxRestResponse<OkxCandle> getHistoryCandles(String instId, String bar, String after, String before, Integer limit) {
         return marketData.getHistoryCandles(instId, bar, after, before, limit);
+    }
+
+    public OkxRestResponse<OkxCandle> getIndexCandles(String instId, String bar, String after, String before, Integer limit) {
+        return marketData.getIndexCandles(instId, bar, after, before, limit);
+    }
+
+    public OkxRestResponse<OkxCandle> getMarkPriceCandles(String instId, String bar, String after, String before, Integer limit) {
+        return marketData.getMarkPriceCandles(instId, bar, after, before, limit);
+    }
+
+    public OkxRestResponse<OkxTrade> getTrades(String instId, Integer limit) {
+        return marketData.getTrades(instId, limit);
+    }
+
+    public OkxRestResponse<OkxTrade> getHistoryTrades(String instId, String type, String after, String before, Integer limit) {
+        return marketData.getHistoryTrades(instId, type, after, before, limit);
+    }
+
+    public OkxRestResponse<OkxPlatformVolume> getPlatform24Volume() {
+        return marketData.getPlatform24Volume();
+    }
+
+    public OkxRestResponse<OkxOracle> getOracle() {
+        return marketData.getOracle();
+    }
+
+    public OkxRestResponse<OkxExchangeRate> getExchangeRate() {
+        return marketData.getExchangeRate();
+    }
+
+    public OkxRestResponse<OkxIndexComponent> getIndexComponents(String index) {
+        return marketData.getIndexComponents(index);
+    }
+
+    public OkxRestResponse<OkxTicker> getBlockTickers(String instType, String uly) {
+        return marketData.getBlockTickers(instType, uly);
+    }
+
+    public OkxRestResponse<OkxTicker> getBlockTicker(String instId) {
+        return marketData.getBlockTicker(instId);
+    }
+
+    public OkxRestResponse<OkxTrade> getBlockTrades(String instId) {
+        return marketData.getBlockTrades(instId);
     }
 
     // --- Public Data ---
@@ -436,5 +512,47 @@ public class OkxApiService {
 
     public OkxRestResponse<Map<String, Object>> convertDustAssets(Map<String, Object> req) {
         return funding.convertDustAssets(req);
+    }
+
+    // --- Rubik (Trading Statistics) ---
+
+    public OkxRestResponse<String> getSupportCoin() {
+        return rubik.getSupportCoin();
+    }
+
+    public OkxRestResponse<OkxTakerVolume> getTakerVolume(String ccy, String instType, String begin, String end, String period) {
+        return rubik.getTakerVolume(ccy, instType, begin, end, period);
+    }
+
+    public OkxRestResponse<OkxMarginLendingRatio> getMarginLendingRatio(String ccy, String begin, String end, String period) {
+        return rubik.getMarginLendingRatio(ccy, begin, end, period);
+    }
+
+    public OkxRestResponse<OkxLongShortRatio> getLongShortAccountRatio(String ccy, String begin, String end, String period) {
+        return rubik.getLongShortAccountRatio(ccy, begin, end, period);
+    }
+
+    public OkxRestResponse<OkxOpenInterestVolume> getOpenInterestVolume(String ccy, String instType, String begin, String end, String period) {
+        return rubik.getOpenInterestVolume(ccy, instType, begin, end, period);
+    }
+
+    public OkxRestResponse<OkxOpenInterestVolume> getOptionOpenInterestVolume(String ccy, String period) {
+        return rubik.getOptionOpenInterestVolume(ccy, period);
+    }
+
+    public OkxRestResponse<OkxPutCallRatio> getOptionOpenInterestVolumeRatio(String ccy, String period) {
+        return rubik.getOptionOpenInterestVolumeRatio(ccy, period);
+    }
+
+    public OkxRestResponse<OkxOpenInterestVolumeExpiry> getOptionOpenInterestVolumeExpiry(String ccy, String period) {
+        return rubik.getOptionOpenInterestVolumeExpiry(ccy, period);
+    }
+
+    public OkxRestResponse<OkxOpenInterestVolumeStrike> getOptionOpenInterestVolumeStrike(String ccy, String expTime, String period) {
+        return rubik.getOptionOpenInterestVolumeStrike(ccy, expTime, period);
+    }
+
+    public OkxRestResponse<OkxTakerFlow> getTakerFlow(String ccy, String period) {
+        return rubik.getTakerFlow(ccy, period);
     }
 }

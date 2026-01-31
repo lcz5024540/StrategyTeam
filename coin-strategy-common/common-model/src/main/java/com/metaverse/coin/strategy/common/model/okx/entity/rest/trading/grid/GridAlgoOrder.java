@@ -344,14 +344,14 @@ public class GridAlgoOrder implements IRestEntity, IOkxRestRsp {
      */
     @JSONField(name = "fee")
     @JsonProperty("fee")
-    private BigDecimal fee;
+    private String fee;
 
     /**
      * 累计资金费用，仅适用于合约网格，其他网格策略为""
      */
     @JSONField(name = "fundingFee")
     @JsonProperty("fundingFee")
-    private BigDecimal fundingFee;
+    private String fundingFee;
 
     @Data
     @AllArgsConstructor

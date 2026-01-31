@@ -20,4 +20,21 @@ public class InstantTriggerGridAlgoOrderReq implements IOkxRestReq {
     @JsonProperty("algoId")
     private String algoId;
 
+    /**
+     * 产品ID，如 BTC-USDT
+     */
+    @JSONField(name = "instId")
+    @JsonProperty("instId")
+    private String instId;
+
+    /**
+     * 策略订单类型
+     * grid：现货网格
+     * contract_grid：合约网格
+     * moon_grid：天地网格
+     */
+    @JSONField(name = "algoOrdType")
+    @JsonProperty("algoOrdType")
+    private String algoOrdType;
+
 }

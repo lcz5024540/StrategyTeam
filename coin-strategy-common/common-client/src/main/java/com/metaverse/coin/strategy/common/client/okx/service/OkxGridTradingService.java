@@ -45,6 +45,10 @@ public class OkxGridTradingService extends OkxService {
         return execute(okxApi.getGridAlgoOrdersHistory(queryMap), "Get grid algo orders history failed");
     }
 
+    public OkxRestResponse<GridAlgoOrder> getGridAlgoOrdersPending(Map<String, Object> queryMap) {
+        return execute(okxApi.getGridAlgoOrdersPending(queryMap), "Get grid algo orders pending failed");
+    }
+
     public OkxRestResponse<GridAlgoOrder> getGridAlgoOrderDetails(String algoOrdId, String algoClOrdId) {
         return execute(okxApi.getGridAlgoOrderDetails(algoOrdId, algoClOrdId), "Get grid algo order details failed");
     }
@@ -75,5 +79,25 @@ public class OkxGridTradingService extends OkxService {
 
     public OkxRestResponse<GridApiParam> getGridAiParam(Map<String, Object> queryMap) {
         return execute(okxApi.getGridAiParam(queryMap), "Get grid AI param failed");
+    }
+
+    public OkxRestResponse<ComputeGridMarginBalanceRsp> computeGridMarginBalancePost(ComputeGridMarginBalanceReq req) {
+        return execute(okxApi.computeGridMarginBalancePost(req), "Compute grid margin balance (POST) failed");
+    }
+
+    public OkxRestResponse<AmendGridAlgoBasicParamRsp> amendGridAlgoBasicParam(AmendGridAlgoBasicParamReq req) {
+        return execute(okxApi.amendGridAlgoBasicParam(req), "Amend grid algo basic param failed");
+    }
+
+    public OkxRestResponse<ComputeGridMinInvestmentRsp> computeGridMinInvestmentPost(ComputeGridMinInvestmentReq req) {
+        return execute(okxApi.computeGridMinInvestmentPost(req), "Compute grid min investment (POST) failed");
+    }
+
+    public OkxRestResponse<RsiBackTestingRsp> rsiBackTesting(Map<String, Object> queryMap) {
+        return execute(okxApi.rsiBackTesting(queryMap), "RSI back testing failed");
+    }
+
+    public OkxRestResponse<GridQuantityRsp> getGridQuantity(Map<String, Object> queryMap) {
+        return execute(okxApi.getGridQuantity(queryMap), "Get grid quantity failed");
     }
 }

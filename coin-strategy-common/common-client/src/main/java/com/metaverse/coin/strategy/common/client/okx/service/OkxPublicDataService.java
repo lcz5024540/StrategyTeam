@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.common.client.okx.service;
 
 import com.metaverse.coin.strategy.common.client.okx.OkxApi;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.OkxRestResponse;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.market.OkxTrade;
 
 import java.util.Map;
 
@@ -13,6 +14,10 @@ public class OkxPublicDataService extends OkxService {
 
     public OkxRestResponse<Map<String, Object>> getInstruments(String instType, String uly, String instId) {
         return execute(okxApi.getInstruments(instType, uly, instId), "Get instruments failed");
+    }
+
+    public OkxRestResponse<OkxTrade> getPublicOptionTrades(String instId, Integer limit) {
+        return execute(okxApi.getPublicOptionTrades(instId, limit), "Get public option trades failed");
     }
 
     public OkxRestResponse<Map<String, Object>> getDeliveryExerciseHistory(String instType, String uly, String after, String before, Integer limit) {

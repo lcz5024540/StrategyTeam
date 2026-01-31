@@ -8,6 +8,8 @@ import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.order.booking.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.signal.*;
 import com.metaverse.coin.strategy.common.model.okx.entity.rest.trading.recurring.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.market.*;
+import com.metaverse.coin.strategy.common.model.okx.entity.rest.rubik.*;
 import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.GET;
@@ -154,11 +156,14 @@ public interface OkxApi {
     @POST("/api/v5/tradingBot/grid/cancel-close-order")
     Call<OkxRestResponse<CancelClosePositionOrderForContractGridRsp>> cancelClosePositionOrderForContractGrid(@Body CancelClosePositionOrderForContractGridReq req);
 
-    @POST("/api/v5/tradingBot/grid/instant-trigger")
+    @POST("/api/v5/tradingBot/grid/order-instant-trigger")
     Call<OkxRestResponse<InstantTriggerGridAlgoOrderRsp>> instantTriggerGridAlgoOrder(@Body InstantTriggerGridAlgoOrderReq req);
 
     @GET("/api/v5/tradingBot/grid/orders-algo-history")
     Call<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrdersHistory(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/grid/orders-algo-pending")
+    Call<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrdersPending(@QueryMap Map<String, Object> queryMap);
 
     @GET("/api/v5/tradingBot/grid/orders-algo-details")
     Call<OkxRestResponse<GridAlgoOrder>> getGridAlgoOrderDetails(@Query("algoOrdId") String algoOrdId, @Query("algoClOrdId") String algoClOrdId);
@@ -183,6 +188,21 @@ public interface OkxApi {
 
     @GET("/api/v5/tradingBot/grid/ai-param")
     Call<OkxRestResponse<GridApiParam>> getGridAiParam(@QueryMap Map<String, Object> queryMap);
+
+    @POST("/api/v5/tradingBot/grid/compute-margin-balance")
+    Call<OkxRestResponse<ComputeGridMarginBalanceRsp>> computeGridMarginBalancePost(@Body ComputeGridMarginBalanceReq req);
+
+    @POST("/api/v5/tradingBot/grid/amend-algo-basic-param")
+    Call<OkxRestResponse<AmendGridAlgoBasicParamRsp>> amendGridAlgoBasicParam(@Body AmendGridAlgoBasicParamReq req);
+
+    @POST("/api/v5/tradingBot/grid/min-investment")
+    Call<OkxRestResponse<ComputeGridMinInvestmentRsp>> computeGridMinInvestmentPost(@Body ComputeGridMinInvestmentReq req);
+
+    @GET("/api/v5/tradingBot/public/rsi-back-testing")
+    Call<OkxRestResponse<RsiBackTestingRsp>> rsiBackTesting(@QueryMap Map<String, Object> queryMap);
+
+    @GET("/api/v5/tradingBot/grid/grid-quantity")
+    Call<OkxRestResponse<GridQuantityRsp>> getGridQuantity(@QueryMap Map<String, Object> queryMap);
 
     // --- Signal Bot ---
 
@@ -224,8 +244,8 @@ public interface OkxApi {
     @POST("/api/v5/tradingBot/recurring/order-algo")
     Call<OkxRestResponse<PlaceRecurringBuyAlgoOrderRsp>> placeRecurringBuyAlgoOrder(@Body PlaceRecurringBuyAlgoOrderReq req);
 
-    @POST("/api/v5/tradingBot/recurring/cancel-order-algo")
-    Call<OkxRestResponse<CancelRecurringBuyAlgoOrderRsp>> cancelRecurringBuyAlgoOrder(@Body CancelRecurringBuyAlgoOrderReq req);
+    @POST("/api/v5/tradingBot/recurring/stop-order-algo")
+    Call<OkxRestResponse<CancelRecurringBuyAlgoOrderRsp>> stopRecurringBuyAlgoOrder(@Body CancelRecurringBuyAlgoOrderReq req);
 
     @POST("/api/v5/tradingBot/recurring/amend-order-algo")
     Call<OkxRestResponse<AmendRecurringBuyAlgoOrderRsp>> amendRecurringBuyAlgoOrder(@Body AmendRecurringBuyAlgoOrderReq req);
@@ -245,24 +265,72 @@ public interface OkxApi {
     // --- Market Data ---
 
     @GET("/api/v5/market/tickers")
-    Call<OkxRestResponse<Map<String, Object>>> getTickers(@Query("instType") String instType, @Query("uly") String uly);
+    Call<OkxRestResponse<OkxTicker>> getTickers(@Query("instType") String instType, @Query("uly") String uly);
 
     @GET("/api/v5/market/ticker")
-    Call<OkxRestResponse<Map<String, Object>>> getTicker(@Query("instId") String instId);
+    Call<OkxRestResponse<OkxTicker>> getTicker(@Query("instId") String instId);
+
+    @GET("/api/v5/market/index-tickers")
+    Call<OkxRestResponse<OkxIndexTicker>> getIndexTickers(@Query("quoteCcy") String quoteCcy, @Query("instId") String instId);
 
     @GET("/api/v5/market/books")
-    Call<OkxRestResponse<Map<String, Object>>> getOrderBook(@Query("instId") String instId, @Query("sz") Integer sz);
+    Call<OkxRestResponse<OkxOrderBook>> getOrderBook(@Query("instId") String instId, @Query("sz") Integer sz);
+
+    @GET("/api/v5/market/books-full")
+    Call<OkxRestResponse<OkxOrderBook>> getOrderBookFull(@Query("instId") String instId, @Query("sz") Integer sz);
 
     @GET("/api/v5/market/candles")
-    Call<OkxRestResponse<List<String>>> getCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+    Call<OkxRestResponse<OkxCandle>> getCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
 
     @GET("/api/v5/market/history-candles")
-    Call<OkxRestResponse<List<String>>> getHistoryCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+    Call<OkxRestResponse<OkxCandle>> getHistoryCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+
+    @GET("/api/v5/market/index-candles")
+    Call<OkxRestResponse<OkxCandle>> getIndexCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+
+    @GET("/api/v5/market/mark-price-candles")
+    Call<OkxRestResponse<OkxCandle>> getMarkPriceCandles(@Query("instId") String instId, @Query("bar") String bar, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+
+    @GET("/api/v5/market/trades")
+    Call<OkxRestResponse<OkxTrade>> getTrades(@Query("instId") String instId, @Query("limit") Integer limit);
+
+    @GET("/api/v5/market/option/instrument-family-trades")
+    Call<OkxRestResponse<OkxTrade>> getOptionInstrumentFamilyTrades(@Query("instFamily") String instFamily);
+
+    @GET("/api/v5/market/history-trades")
+    Call<OkxRestResponse<OkxTrade>> getHistoryTrades(@Query("instId") String instId, @Query("type") String type, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
+
+    @GET("/api/v5/market/platform-24-volume")
+    Call<OkxRestResponse<OkxPlatformVolume>> getPlatform24Volume();
+
+    @GET("/api/v5/market/call-auction-details")
+    Call<OkxRestResponse<Map<String, Object>>> getCallAuctionDetails(@Query("instId") String instId);
+
+    @GET("/api/v5/market/oracle")
+    Call<OkxRestResponse<OkxOracle>> getOracle();
+
+    @GET("/api/v5/market/exchange-rate")
+    Call<OkxRestResponse<OkxExchangeRate>> getExchangeRate();
+
+    @GET("/api/v5/market/index-components")
+    Call<OkxRestResponse<OkxIndexComponent>> getIndexComponents(@Query("index") String index);
+
+    @GET("/api/v5/market/block-tickers")
+    Call<OkxRestResponse<OkxTicker>> getBlockTickers(@Query("instType") String instType, @Query("uly") String uly);
+
+    @GET("/api/v5/market/block-ticker")
+    Call<OkxRestResponse<OkxTicker>> getBlockTicker(@Query("instId") String instId);
+
+    @GET("/api/v5/market/block-trades")
+    Call<OkxRestResponse<OkxTrade>> getBlockTrades(@Query("instId") String instId);
 
     // --- Public Data ---
 
     @GET("/api/v5/public/instruments")
     Call<OkxRestResponse<Map<String, Object>>> getInstruments(@Query("instType") String instType, @Query("uly") String uly, @Query("instId") String instId);
+
+    @GET("/api/v5/public/option-trades")
+    Call<OkxRestResponse<OkxTrade>> getPublicOptionTrades(@Query("instId") String instId, @Query("limit") Integer limit);
 
     @GET("/api/v5/public/delivery-exercise-history")
     Call<OkxRestResponse<Map<String, Object>>> getDeliveryExerciseHistory(@Query("instType") String instType, @Query("uly") String uly, @Query("after") String after, @Query("before") String before, @Query("limit") Integer limit);
@@ -346,5 +414,37 @@ public interface OkxApi {
 
     @POST("/api/v5/asset/convert-dust-assets")
     Call<OkxRestResponse<Map<String, Object>>> convertDustAssets(@Body Map<String, Object> req);
+
+    // --- Rubik (Trading Statistics) ---
+
+    @GET("/api/v5/rubik/stat/trading-data/support-coin")
+    Call<OkxRestResponse<String>> getSupportCoin();
+
+    @GET("/api/v5/rubik/stat/taker-volume")
+    Call<OkxRestResponse<OkxTakerVolume>> getTakerVolume(@Query("ccy") String ccy, @Query("instType") String instType, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/margin/loan-ratio")
+    Call<OkxRestResponse<OkxMarginLendingRatio>> getMarginLendingRatio(@Query("ccy") String ccy, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/contracts/long-short-account-ratio")
+    Call<OkxRestResponse<OkxLongShortRatio>> getLongShortAccountRatio(@Query("ccy") String ccy, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/contracts/open-interest-volume")
+    Call<OkxRestResponse<OkxOpenInterestVolume>> getOpenInterestVolume(@Query("ccy") String ccy, @Query("instType") String instType, @Query("begin") String begin, @Query("end") String end, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/option/open-interest-volume")
+    Call<OkxRestResponse<OkxOpenInterestVolume>> getOptionOpenInterestVolume(@Query("ccy") String ccy, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/option/open-interest-volume-ratio")
+    Call<OkxRestResponse<OkxPutCallRatio>> getOptionOpenInterestVolumeRatio(@Query("ccy") String ccy, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/option/open-interest-volume-expiry")
+    Call<OkxRestResponse<OkxOpenInterestVolumeExpiry>> getOptionOpenInterestVolumeExpiry(@Query("ccy") String ccy, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/option/open-interest-volume-strike")
+    Call<OkxRestResponse<OkxOpenInterestVolumeStrike>> getOptionOpenInterestVolumeStrike(@Query("ccy") String ccy, @Query("expTime") String expTime, @Query("period") String period);
+
+    @GET("/api/v5/rubik/stat/taker-flow")
+    Call<OkxRestResponse<OkxTakerFlow>> getTakerFlow(@Query("ccy") String ccy, @Query("period") String period);
 
 }
