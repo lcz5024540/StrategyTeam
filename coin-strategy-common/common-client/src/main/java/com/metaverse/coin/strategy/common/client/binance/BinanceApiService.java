@@ -4,6 +4,10 @@ import com.binance.connector.client.SpotClient;
 import com.binance.connector.client.impl.SpotClientImpl;
 import com.binance.connector.futures.client.impl.UMFuturesClientImpl;
 import com.metaverse.coin.strategy.common.client.binance.service.*;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPositionRisk;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceAggTrade;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceAveragePrice;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceBookTicker;
@@ -61,10 +65,6 @@ public class BinanceApiService {
     }
 
     // ================= DELEGATED METHODS (For backward compatibility) =================
-
-    // ... (Optional: You can keep old methods calling the new services, or remove them. 
-    // For now, I'll keep the key ones to avoid breaking existing tests immediately, 
-    // or I can update the tests to use the services. Updating tests is better.)
 
     // ================= SPOT API =================
 
@@ -214,15 +214,15 @@ public class BinanceApiService {
 
     // ================= FUTURES API (USDS-M) =================
 
-    public String checkFuturesServerTime() {
+    public Long checkFuturesServerTime() {
         return futuresService.checkServerTime();
     }
 
-    public String getFuturesAccount() {
+    public BinanceFuturesAccount getFuturesAccount() {
         return futuresService.account();
     }
 
-    public String changeInitialLeverage(String symbol, Integer leverage) {
+    public BinanceFuturesPositionRisk changeInitialLeverage(String symbol, Integer leverage) {
         return futuresService.changeInitialLeverage(symbol, leverage);
     }
 
@@ -230,40 +230,40 @@ public class BinanceApiService {
         return futuresService.changeMarginType(symbol, marginType);
     }
 
-    public String placeFuturesOrder(String symbol, String side, String positionSide, String type, 
+    public BinanceFuturesOrder placeFuturesOrder(String symbol, String side, String positionSide, String type, 
                                     String timeInForce, String quantity, String price, Boolean reduceOnly) {
         return futuresService.placeOrder(symbol, side, positionSide, type, timeInForce, quantity, price, reduceOnly);
     }
 
-    public String openLong(String symbol, String type, String quantity, String price, String timeInForce) {
+    public BinanceFuturesOrder openLong(String symbol, String type, String quantity, String price, String timeInForce) {
         return futuresService.openLong(symbol, type, quantity, price, timeInForce);
     }
 
-    public String closeLong(String symbol, String type, String quantity, String price) {
+    public BinanceFuturesOrder closeLong(String symbol, String type, String quantity, String price) {
         return futuresService.closeLong(symbol, type, quantity, price);
     }
 
-    public String openShort(String symbol, String type, String quantity, String price, String timeInForce) {
+    public BinanceFuturesOrder openShort(String symbol, String type, String quantity, String price, String timeInForce) {
         return futuresService.openShort(symbol, type, quantity, price, timeInForce);
     }
 
-    public String closeShort(String symbol, String type, String quantity, String price) {
+    public BinanceFuturesOrder closeShort(String symbol, String type, String quantity, String price) {
         return futuresService.closeShort(symbol, type, quantity, price);
     }
 
-    public String cancelFuturesOrder(String symbol, Long orderId, String origClientOrderId) {
+    public BinanceFuturesOrder cancelFuturesOrder(String symbol, Long orderId, String origClientOrderId) {
         return futuresService.cancelOrder(symbol, orderId, origClientOrderId);
     }
 
-    public String getFuturesOpenOrders(String symbol) {
+    public List<BinanceFuturesOrder> getFuturesOpenOrders(String symbol) {
         return futuresService.getOpenOrders(symbol);
     }
 
-    public String getFuturesTickerPrice(String symbol) {
+    public BinancePriceTicker getFuturesTickerPrice(String symbol) {
         return futuresService.getTickerPrice(symbol);
     }
 
-    public String getFuturesFundingRate(String symbol) {
+    public BinanceFuturesPremiumIndex getFuturesFundingRate(String symbol) {
         // Using Premium Index to get the current/last funding rate
         return futuresService.getPremiumIndex(symbol);
     }

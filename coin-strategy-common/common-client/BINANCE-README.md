@@ -1,5 +1,34 @@
 # Binance API 使用说明
 
+## 集成测试配置 (Integration Test Configuration)
+
+为了安全地进行真实接口调试，我们建议使用配置文件或环境变量来管理 API Key，避免将敏感信息提交到代码仓库。
+
+### 方法一：使用配置文件 (推荐)
+
+1.  在 `common-client` 模块下找到 `src/test/resources/binance-test.properties.template` 文件。
+2.  将其复制为同目录下的 `binance-test.properties`。
+3.  在 `binance-test.properties` 中填入你的 API Key：
+    ```properties
+    binance.api.key=your_actual_api_key
+    binance.secret.key=your_actual_secret_key
+    ```
+    > **注意**: `binance-test.properties` 已被添加到 `.gitignore` 中，请确保不要强制提交该文件。
+
+### 方法二：使用环境变量
+
+你也可以在运行测试前设置以下环境变量：
+
+*   `BINANCE_API_KEY`
+*   `BINANCE_SECRET_KEY`
+
+或者在 IDE 的 Run Configuration 中设置 JVM 参数：
+```
+-Dbinance.api.key=your_key -Dbinance.secret.key=your_secret
+```
+
+---
+
 ## 现货账户与交易 (Spot Account & Trade)
 
 通过 `BinanceSpotService` 提供账户信息查询与订单管理功能。
@@ -349,4 +378,140 @@ List<BinanceMarginNextHourlyInterestRate> interestRates = marginService.getFutur
 for (BinanceMarginNextHourlyInterestRate rate : interestRates) {
     System.out.println("Asset: " + rate.getAsset() + ", Hourly Rate: " + rate.getNextHourlyInterestRate());
 }
+```
+
+## 合约账户与交易 (Futures Account & Trade)
+
+通过 `BinanceFuturesService` 提供 U 本位合约的账户信息查询与订单管理功能。
+
+### 1. 账户信息与余额
+
+获取账户信息、余额及持仓风险。
+
+**用法示例:**
+
+```java
+// 初始化
+BinanceFuturesService futuresService = apiService.getFuturesService();
+
+// 获取账户信息 (V2)
+BinanceFuturesAccount account = futuresService.account();
+System.out.println("Total Wallet Balance: " + account.getTotalWalletBalance());
+
+// 获取账户余额 (V2)
+List<BinanceFuturesAccountBalance> balances = futuresService.getFutureAccountBalance();
+for (BinanceFuturesAccountBalance b : balances) {
+    System.out.println("Asset: " + b.getAsset() + ", Balance: " + b.getBalance());
+}
+
+// 获取持仓风险 (V2)
+List<BinanceFuturesPositionRisk> positions = futuresService.getPositionRisk("BTCUSDT");
+for (BinanceFuturesPositionRisk p : positions) {
+    System.out.println("Symbol: " + p.getSymbol() + ", Entry Price: " + p.getEntryPrice());
+}
+```
+
+### 2. 下单 (New Order)
+
+支持限价单、市价单、止损单等多种订单类型。
+
+**用法示例:**
+
+```java
+// 开多 (Open Long)
+BinanceFuturesOrder order = futuresService.newOrder(
+    "BTCUSDT", "BUY", "LONG", "LIMIT", "GTC", "0.001", "50000", false
+);
+System.out.println("Order ID: " + order.getOrderId());
+
+// 快捷方法 (Hedge Mode)
+futuresService.openLong("BTCUSDT", "LIMIT", "0.001", "50000", "GTC");
+```
+
+### 3. 批量下单与修改 (Batch Orders)
+
+支持批量下单和批量修改订单。
+
+**用法示例:**
+
+```java
+// 批量下单
+String batchOrdersJson = "[{\"symbol\":\"BTCUSDT\",\"side\":\"BUY\",\"type\":\"LIMIT\",\"quantity\":\"0.001\",\"price\":\"50000\",\"timeInForce\":\"GTC\"}]";
+List<BinanceFuturesOrder> orders = futuresService.batchOrders(batchOrdersJson);
+
+// 批量修改
+// 构造 Object List 或 JSON 字符串
+// List<BinanceFuturesOrder> modifiedOrders = futuresService.modifyBatchOrders(batchOrdersList);
+```
+
+### 4. 撤单 (Cancel Order)
+
+撤销订单、撤销所有挂单、倒计时自动撤单。
+
+**用法示例:**
+
+```java
+// 撤销单个订单
+futuresService.cancelOrder("BTCUSDT", 123456L, null);
+
+// 撤销某交易对所有挂单
+futuresService.cancelAllOpenOrders("BTCUSDT");
+
+// 倒计时撤销所有订单 (例如 10000 毫秒后)
+futuresService.autoCancelAllOpenOrders("BTCUSDT", 10000L);
+```
+
+### 5. 订单查询 (Query Order)
+
+查询订单状态、当前挂单、历史订单。
+
+**用法示例:**
+
+```java
+// 查询单个订单
+BinanceFuturesOrder order = futuresService.getOrder("BTCUSDT", 123456L, null);
+
+// 查询当前挂单
+List<BinanceFuturesOrder> openOrders = futuresService.getOpenOrders("BTCUSDT");
+
+// 查询历史订单
+List<BinanceFuturesOrder> allOrders = futuresService.getAllOrders("BTCUSDT", null, null, null, 10);
+```
+
+### 6. 调整模式 (Position & Margin Mode)
+
+调整持仓模式（单向/双向）和保证金模式（逐仓/全仓）。
+
+**用法示例:**
+
+```java
+// 更改持仓模式 (true: 双向持仓 Mode)
+futuresService.changePositionMode("true");
+BinanceFuturesPositionMode mode = futuresService.getPositionMode();
+System.out.println("Dual Side Position: " + mode.getDualSidePosition());
+
+// 更改全仓/逐仓模式 (ISOLATED, CROSSED)
+futuresService.changeMarginType("BTCUSDT", "ISOLATED");
+
+// 调整逐仓保证金
+futuresService.modifyIsolatedPositionMargin("BTCUSDT", new BigDecimal("10"), 1, "LONG");
+```
+
+### 7. 历史与流水 (History & Income)
+
+查询成交历史、资金流水、下载交易记录。
+
+**用法示例:**
+
+```java
+// 账户成交历史
+List<BinanceFuturesAccountTrade> trades = futuresService.getAccountTradeList("BTCUSDT", null, null, null, 10);
+
+// 收益流水 (如资金费、手续费)
+List<BinanceFuturesIncome> income = futuresService.getIncomeHistory("BTCUSDT", "FUNDING_FEE", null, null, 10);
+
+// 获取交易历史下载链接
+BinanceFuturesDownloadId downloadId = futuresService.getDownloadIdForTradeHistory(startTime, endTime);
+BinanceFuturesDownloadStatus status = futuresService.getDownloadIdStatus(downloadId.getDownloadId());
+System.out.println("Download URL: " + status.getUrl());
 ```

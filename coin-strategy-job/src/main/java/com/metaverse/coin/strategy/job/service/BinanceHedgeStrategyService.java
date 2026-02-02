@@ -4,6 +4,9 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
+import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -106,7 +110,7 @@ public class BinanceHedgeStrategyService {
     private void checkPreConditions(String symbol, BigDecimal requiredAmount, StringBuilder logBuffer, boolean useSpotFutures) {
         // 1.1 Check API Connectivity
         try {
-            String serverTime = binanceApiService.checkFuturesServerTime();
+            Long serverTime = binanceApiService.checkFuturesServerTime();
             logAndAppend(logBuffer, "Futures API Check: OK (Server Time: " + serverTime + ")");
             if (useSpotFutures) {
                 String spotTime = binanceApiService.checkServerTime();
@@ -124,7 +128,7 @@ public class BinanceHedgeStrategyService {
 
             if (useSpotFutures) {
                 // Spot Balance
-                BigDecimal spotBalance = getBalance(binanceApiService.account(), "USDT"); // Assuming account() returns similar JSON structure or adapted
+                BigDecimal spotBalance = getBalance(binanceApiService.account(), "USDT");
                 logAndAppend(logBuffer, "Spot Wallet Balance (USDT): " + spotBalance);
                 
                 if (spotBalance.compareTo(requiredAmount) < 0) {
@@ -153,13 +157,11 @@ public class BinanceHedgeStrategyService {
     private void checkExistingPositions(String symbol, StringBuilder logBuffer) {
         try {
             // 1. Check Open Positions
-            String accountInfo = binanceApiService.getFuturesAccount();
-            JSONObject json = JSON.parseObject(accountInfo);
-            if (json.containsKey("positions")) {
-                for (Object item : json.getJSONArray("positions")) {
-                    JSONObject position = (JSONObject) item;
-                    if (symbol.equals(position.getString("symbol"))) {
-                        BigDecimal amt = position.getBigDecimal("positionAmt");
+            BinanceFuturesAccount accountInfo = binanceApiService.getFuturesAccount();
+            if (accountInfo.getPositions() != null) {
+                for (BinanceFuturesAccount.BinanceFuturesAccountPosition position : accountInfo.getPositions()) {
+                    if (symbol.equals(position.getSymbol())) {
+                        BigDecimal amt = position.getPositionAmt();
                         // Check if absolute value is greater than 0
                         if (amt.abs().compareTo(BigDecimal.ZERO) > 0) {
                             String msg = "Existing Futures Position detected for " + symbol + ": " + amt + ". Strategy aborted to prevent unintended exposure.";
@@ -172,8 +174,7 @@ public class BinanceHedgeStrategyService {
             logAndAppend(logBuffer, "Position Check: No existing positions for " + symbol + ".");
 
             // 2. Check Pending Open Orders
-            String openOrdersInfo = binanceApiService.getFuturesOpenOrders(symbol);
-            JSONArray openOrders = JSON.parseArray(openOrdersInfo);
+            List<BinanceFuturesOrder> openOrders = binanceApiService.getFuturesOpenOrders(symbol);
             if (openOrders != null && !openOrders.isEmpty()) {
                 String msg = "Existing Pending Open Orders detected for " + symbol + ". Strategy aborted.";
                 logAndAppend(logBuffer, "!!! " + msg);
@@ -199,39 +200,21 @@ public class BinanceHedgeStrategyService {
         return BigDecimal.ZERO;
     }
 
-    private BigDecimal getBalance(String jsonResponse, String assetName) {
-        try {
-            JSONObject json = JSON.parseObject(jsonResponse);
-            // Spot account: { "balances": [ {"asset": "BTC", "free": "0.0", "locked": "0.0"} ] }
-            // Futures account: { "assets": [ {"asset": "USDT", "availableBalance": "..."} ] }
-            
-            if (json.containsKey("balances")) { // Spot
-                for (Object item : json.getJSONArray("balances")) {
-                    JSONObject asset = (JSONObject) item;
-                    if (assetName.equals(asset.getString("asset"))) {
-                        return asset.getBigDecimal("free");
-                    }
-                }
-            } else if (json.containsKey("assets")) { // Futures
-                for (Object item : json.getJSONArray("assets")) {
-                    JSONObject asset = (JSONObject) item;
-                    if (assetName.equals(asset.getString("asset"))) {
-                        return asset.getBigDecimal("availableBalance");
-                    }
+    private BigDecimal getBalance(BinanceFuturesAccount accountInfo, String assetName) {
+        if (accountInfo != null && accountInfo.getAssets() != null) {
+            for (BinanceFuturesAccount.BinanceFuturesAsset asset : accountInfo.getAssets()) {
+                if (assetName.equals(asset.getAsset())) {
+                    return asset.getAvailableBalance();
                 }
             }
-        } catch (Exception e) {
-            log.warn("Failed to parse balance: " + e.getMessage());
         }
         return BigDecimal.ZERO;
     }
 
     private BigDecimal getCurrentPrice(String symbol) {
         // Use Futures Ticker instead of Spot Ticker
-        String tickerStr = binanceApiService.getFuturesTickerPrice(symbol);
-        // Response: {"symbol":"BTCUSDT","price":"60000.00","time":...}
-        JSONObject json = JSON.parseObject(tickerStr);
-        return json.getBigDecimal("price");
+        BinancePriceTicker ticker = binanceApiService.getFuturesTickerPrice(symbol);
+        return ticker.getPrice();
     }
 
     private void openFuturesPositions(String symbol, BigDecimal quantity, StringBuilder logBuffer) throws ExecutionException, InterruptedException {
@@ -239,7 +222,7 @@ public class BinanceHedgeStrategyService {
         
         CompletableFuture<String> longFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.openLong(symbol, "MARKET", qtyStr, null, null);
+                return JSON.toJSONString(binanceApiService.openLong(symbol, "MARKET", qtyStr, null, null));
             } catch (Exception e) {
                 return "Error: " + e.getMessage();
             }
@@ -247,7 +230,7 @@ public class BinanceHedgeStrategyService {
 
         CompletableFuture<String> shortFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.openShort(symbol, "MARKET", qtyStr, null, null);
+                return JSON.toJSONString(binanceApiService.openShort(symbol, "MARKET", qtyStr, null, null));
             } catch (Exception e) {
                 return "Error: " + e.getMessage();
             }
@@ -274,7 +257,7 @@ public class BinanceHedgeStrategyService {
         // Futures Short
         CompletableFuture<String> futuresShortFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.openShort(symbol, "MARKET", qtyStr, null, null);
+                return JSON.toJSONString(binanceApiService.openShort(symbol, "MARKET", qtyStr, null, null));
             } catch (Exception e) {
                 return "Futures Short Error: " + e.getMessage();
             }
@@ -291,7 +274,7 @@ public class BinanceHedgeStrategyService {
 
         CompletableFuture<String> closeLongFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.closeLong(symbol, "MARKET", qtyStr, null);
+                return JSON.toJSONString(binanceApiService.closeLong(symbol, "MARKET", qtyStr, null));
             } catch (Exception e) {
                 return "Error: " + e.getMessage();
             }
@@ -299,7 +282,7 @@ public class BinanceHedgeStrategyService {
 
         CompletableFuture<String> closeShortFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.closeShort(symbol, "MARKET", qtyStr, null);
+                return JSON.toJSONString(binanceApiService.closeShort(symbol, "MARKET", qtyStr, null));
             } catch (Exception e) {
                 return "Error: " + e.getMessage();
             }
@@ -326,7 +309,7 @@ public class BinanceHedgeStrategyService {
         // Futures Close Short
         CompletableFuture<String> futuresCloseShortFuture = CompletableFuture.supplyAsync(() -> {
             try {
-                return binanceApiService.closeShort(symbol, "MARKET", qtyStr, null);
+                return JSON.toJSONString(binanceApiService.closeShort(symbol, "MARKET", qtyStr, null));
             } catch (Exception e) {
                 return "Futures Close Short Error: " + e.getMessage();
             }

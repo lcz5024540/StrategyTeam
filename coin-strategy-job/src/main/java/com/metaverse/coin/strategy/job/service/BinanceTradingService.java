@@ -43,7 +43,7 @@ public class BinanceTradingService {
     public String openLong(String symbol, String quantity, String price) {
         log.info("Futures Open Long: symbol={}, quantity={}, price={}", symbol, quantity, price);
         String type = (price == null) ? "MARKET" : "LIMIT";
-        return binanceApiService.openLong(symbol, type, quantity, price, "GTC");
+        return JSON.toJSONString(binanceApiService.openLong(symbol, type, quantity, price, "GTC"));
     }
 
     /**
@@ -52,7 +52,7 @@ public class BinanceTradingService {
     public String closeLong(String symbol, String quantity, String price) {
         log.info("Futures Close Long: symbol={}, quantity={}, price={}", symbol, quantity, price);
         String type = (price == null) ? "MARKET" : "LIMIT";
-        return binanceApiService.closeLong(symbol, type, quantity, price);
+        return JSON.toJSONString(binanceApiService.closeLong(symbol, type, quantity, price));
     }
 
     /**
@@ -61,7 +61,7 @@ public class BinanceTradingService {
     public String openShort(String symbol, String quantity, String price) {
         log.info("Futures Open Short: symbol={}, quantity={}, price={}", symbol, quantity, price);
         String type = (price == null) ? "MARKET" : "LIMIT";
-        return binanceApiService.openShort(symbol, type, quantity, price, "GTC");
+        return JSON.toJSONString(binanceApiService.openShort(symbol, type, quantity, price, "GTC"));
     }
 
     /**
@@ -70,7 +70,7 @@ public class BinanceTradingService {
     public String closeShort(String symbol, String quantity, String price) {
         log.info("Futures Close Short: symbol={}, quantity={}, price={}", symbol, quantity, price);
         String type = (price == null) ? "MARKET" : "LIMIT";
-        return binanceApiService.closeShort(symbol, type, quantity, price);
+        return JSON.toJSONString(binanceApiService.closeShort(symbol, type, quantity, price));
     }
 
     /**
@@ -78,7 +78,7 @@ public class BinanceTradingService {
      */
     public String setLeverage(String symbol, Integer leverage) {
         log.info("Setting Leverage: symbol={}, leverage={}", symbol, leverage);
-        return binanceApiService.changeInitialLeverage(symbol, leverage);
+        return JSON.toJSONString(binanceApiService.changeInitialLeverage(symbol, leverage));
     }
 
     /**

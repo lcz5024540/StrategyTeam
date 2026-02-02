@@ -1,0 +1,6 @@
+# Binance API Credentials for Integration Tests
+# Copy this file to 'binance-test.properties' and fill in your keys.
+# DO NOT commit 'binance-test.properties' to version control!
+
+binance.api.key=YOUR_API_KEY_HERE
+binance.secret.key=YOUR_SECRET_KEY_HERE

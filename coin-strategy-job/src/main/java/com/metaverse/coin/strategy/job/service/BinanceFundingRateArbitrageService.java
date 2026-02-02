@@ -3,6 +3,9 @@ package com.metaverse.coin.strategy.job.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
+import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,10 +81,9 @@ public class BinanceFundingRateArbitrageService {
     }
 
     private BigDecimal getFundingRate(String symbol) {
-        String response = binanceApiService.getFuturesFundingRate(symbol);
+        BinanceFuturesPremiumIndex premiumIndex = binanceApiService.getFuturesFundingRate(symbol);
         // Response: {"symbol":"BTCUSDT","markPrice":"...","lastFundingRate":"0.0001",...}
-        JSONObject json = JSON.parseObject(response);
-        return json.getBigDecimal("lastFundingRate");
+        return premiumIndex.getLastFundingRate();
     }
 
     private void checkBalances(BigDecimal requiredAmount, StringBuilder logBuffer) {
@@ -106,6 +108,17 @@ public class BinanceFundingRateArbitrageService {
             for (BinanceAccountInfo.BinanceBalance balance : accountInfo.getBalances()) {
                 if (assetName.equals(balance.getAsset())) {
                     return balance.getFree();
+                }
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal getBalance(BinanceFuturesAccount accountInfo, String assetName) {
+        if (accountInfo != null && accountInfo.getAssets() != null) {
+            for (BinanceFuturesAccount.BinanceFuturesAsset asset : accountInfo.getAssets()) {
+                if (assetName.equals(asset.getAsset())) {
+                    return asset.getAvailableBalance();
                 }
             }
         }
@@ -137,9 +150,8 @@ public class BinanceFundingRateArbitrageService {
     }
 
     private BigDecimal getCurrentPrice(String symbol) {
-        String tickerStr = binanceApiService.getFuturesTickerPrice(symbol);
-        JSONObject json = JSON.parseObject(tickerStr);
-        return json.getBigDecimal("price");
+        BinancePriceTicker ticker = binanceApiService.getFuturesTickerPrice(symbol);
+        return ticker.getPrice();
     }
 
     private void openPositions(String symbol, BigDecimal quantity, StringBuilder logBuffer) {
@@ -159,7 +171,7 @@ public class BinanceFundingRateArbitrageService {
                 // binanceApiService.changeInitialLeverage(symbol, 1); // Ideally 1x for pure arbitrage to avoid liquidation risk, but user might want leverage.
                 // For now, we assume user sets leverage or we use existing. 
                 // Ideally, funding rate arbitrage uses 1x leverage on Futures to match Spot perfectly without liquidation risk (except extreme spread).
-                return binanceApiService.openShort(symbol, "MARKET", qtyStr, null, null);
+                return JSON.toJSONString(binanceApiService.openShort(symbol, "MARKET", qtyStr, null, null));
             } catch (Exception e) {
                 return "Futures Short Error: " + e.getMessage();
             }

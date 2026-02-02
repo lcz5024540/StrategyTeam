@@ -1,4 +1,4 @@
-package com.metaverse.coin.strategy.common.client.binance;
+package com.metaverse.coin.strategy.common.client.binance.mock;
 
 import com.binance.connector.client.SpotClient;
 import com.metaverse.coin.strategy.common.client.binance.service.BinanceSimpleEarnService;

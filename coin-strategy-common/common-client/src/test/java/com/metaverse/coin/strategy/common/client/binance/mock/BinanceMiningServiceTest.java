@@ -1,4 +1,4 @@
-package com.metaverse.coin.strategy.common.client.binance;
+package com.metaverse.coin.strategy.common.client.binance.mock;
 
 import com.metaverse.coin.strategy.common.client.binance.service.BinanceMiningService;
 import com.metaverse.coin.strategy.common.model.binance.entity.mining.BinanceMiningAlgo;

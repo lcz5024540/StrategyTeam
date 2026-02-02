@@ -1,12 +1,17 @@
-package com.metaverse.coin.strategy.common.client.binance;
+package com.metaverse.coin.strategy.common.client.binance.debug;
 
+import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceExchangeInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceKline;
+import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTrade;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
+import com.metaverse.coin.strategy.common.model.binance.entity.alpha.BinanceAlphaOrder;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.*;
+import com.metaverse.coin.strategy.common.model.binance.entity.simpleearn.*;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -22,14 +27,15 @@ public class BinanceApiServiceTest {
 
     // TODO: Please replace with your actual API Key and Secret Key
     // You can use Binance Testnet keys for safety: https://testnet.binance.vision/
-    private static final String API_KEY = "KXFMs9WeNZhdSIx2TBIo5waLPPmqoCRjP582e3RxBO6FzWfw7JvrunWDeOu1Ym3P";
-    private static final String SECRET_KEY = "rKLFKKR2oOyf6cZ04MnVVQ4vhzz4rHrePyN0yo33Hc10b0dSgfOLToenfXtNiQHS";
+    private static final String API_KEY = "";
+    private static final String SECRET_KEY = "";
 
     // Testnet URLs
     //private static final String SPOT_BASE_URL = "https://testnet.binance.vision";
     //private static final String SPOT_BASE_URL = "https://api.binance.com";
     private static final String SPOT_BASE_URL = "https://api1.binance.com";
-    private static final String FUTURES_BASE_URL = "https://testnet.binancefuture.com";
+    private static final String FUTURES_BASE_URL = "https://fapi.binance.com";
+    //private static final String FUTURES_BASE_URL = "https://testnet.binancefuture.com";
 
     private BinanceApiService binanceApiService;
 
@@ -180,7 +186,7 @@ public class BinanceApiServiceTest {
     @Test
     @Disabled("Integration test - requires network")
     public void testCheckFuturesServerTime() {
-        String serverTime = binanceApiService.checkFuturesServerTime();
+        Long serverTime = binanceApiService.checkFuturesServerTime();
         log.info("Futures Server Time: {}", serverTime);
         assertNotNull(serverTime);
     }
@@ -188,7 +194,7 @@ public class BinanceApiServiceTest {
     @Test
     @Disabled("Integration test - requires network")
     public void testGetFuturesAccount() {
-        String accountInfo = binanceApiService.getFuturesAccount();
+        BinanceFuturesAccount accountInfo = binanceApiService.getFuturesAccount();
         log.info("Futures Account Info: {}", accountInfo);
         assertNotNull(accountInfo);
     }
@@ -196,9 +202,9 @@ public class BinanceApiServiceTest {
     @Test
     @Disabled("Integration test - requires network")
     public void testChangeInitialLeverage() {
-        String symbol = "BTCUSDT";
+        String symbol = "ETHUSDT";
         Integer leverage = 10;
-        String response = binanceApiService.changeInitialLeverage(symbol, leverage);
+        BinanceFuturesPositionRisk response = binanceApiService.changeInitialLeverage(symbol, leverage);
         log.info("Change Leverage Response: {}", response);
         assertNotNull(response);
     }
@@ -212,25 +218,25 @@ public class BinanceApiServiceTest {
         // 1. Open Long
         log.info("Opening Long...");
         // Market Order
-        String openLongResponse = binanceApiService.openLong(symbol, "MARKET", quantity, null, null);
+        BinanceFuturesOrder openLongResponse = binanceApiService.openLong(symbol, "MARKET", quantity, null, null);
         log.info("Open Long Response: {}", openLongResponse);
         assertNotNull(openLongResponse);
 
         // 2. Close Long
         log.info("Closing Long...");
-        String closeLongResponse = binanceApiService.closeLong(symbol, "MARKET", quantity, null);
+        BinanceFuturesOrder closeLongResponse = binanceApiService.closeLong(symbol, "MARKET", quantity, null);
         log.info("Close Long Response: {}", closeLongResponse);
         assertNotNull(closeLongResponse);
         
         // 3. Open Short
         log.info("Opening Short...");
-        String openShortResponse = binanceApiService.openShort(symbol, "MARKET", quantity, null, null);
+        com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder openShortResponse = binanceApiService.openShort(symbol, "MARKET", quantity, null, null);
         log.info("Open Short Response: {}", openShortResponse);
         assertNotNull(openShortResponse);
 
         // 4. Close Short
         log.info("Closing Short...");
-        String closeShortResponse = binanceApiService.closeShort(symbol, "MARKET", quantity, null);
+        BinanceFuturesOrder closeShortResponse = binanceApiService.closeShort(symbol, "MARKET", quantity, null);
         log.info("Close Short Response: {}", closeShortResponse);
         assertNotNull(closeShortResponse);
     }
@@ -247,7 +253,7 @@ public class BinanceApiServiceTest {
         String price = "40000";
         
         log.info("Placing Limit Order (Futures)...");
-        String response = binanceApiService.placeFuturesOrder(symbol, side, positionSide, type, timeInForce, quantity, price, false);
+        BinanceFuturesOrder response = binanceApiService.placeFuturesOrder(symbol, side, positionSide, type, timeInForce, quantity, price, false);
         log.info("Place Limit Order Response: {}", response);
         assertNotNull(response);
     }
@@ -259,10 +265,111 @@ public class BinanceApiServiceTest {
         String symbol = "BTCUSDT";
         Long orderId = 12345678L;
         try {
-            String response = binanceApiService.cancelFuturesOrder(symbol, orderId, null);
+            BinanceFuturesOrder response = binanceApiService.cancelFuturesOrder(symbol, orderId, null);
             log.info("Cancel Futures Order Response: {}", response);
         } catch (Exception e) {
             log.error("Cancel Futures Order Failed: {}", e.getMessage());
+        }
+    }
+
+    @Test
+    @Disabled("Integration test - requires network")
+    public void testFuturesMarketData() {
+        String symbol = "BTCUSDT";
+        
+        // Ticker Price
+        BinancePriceTicker tickerPrice = binanceApiService.getFuturesTickerPrice(symbol);
+        log.info("Futures Ticker Price: {}", tickerPrice);
+        assertNotNull(tickerPrice);
+        
+        // Funding Rate (Premium Index)
+        BinanceFuturesPremiumIndex fundingRate = binanceApiService.getFuturesFundingRate(symbol);
+        log.info("Futures Funding Rate: {}", fundingRate);
+        assertNotNull(fundingRate);
+    }
+    
+    @Test
+    @Disabled("Integration test - requires network")
+    public void testFuturesOrderOperations() {
+        String symbol = "BTCUSDT";
+        
+        // Get Open Orders
+        List<BinanceFuturesOrder> openOrders = binanceApiService.getFuturesOpenOrders(symbol);
+        log.info("Futures Open Orders: {}", openOrders);
+        assertNotNull(openOrders);
+        
+        // Cancel All Open Orders (Be careful!)
+        // String cancelAllResponse = binanceApiService.getFuturesService().cancelAllOpenOrders(symbol);
+        // log.info("Cancel All Futures Orders Response: {}", cancelAllResponse);
+    }
+
+    // ================= ALPHA API TESTS =================
+
+    @Test
+    @Disabled("Integration test - requires network")
+    public void testAlphaOrderOperations() {
+        // Get Open Orders
+        List<BinanceAlphaOrder> openOrders = binanceApiService.getAlphaService().getOpenOrders();
+        log.info("Alpha Open Orders: {}", openOrders);
+        assertNotNull(openOrders);
+        
+        // Get Historical Orders
+        try {
+            List<BinanceAlphaOrder> history = binanceApiService.getAlphaService().getHistoricalOrders("BTCUSDT", null, null, null, 1, 10);
+            log.info("Alpha Historical Orders: {}", history);
+            assertNotNull(history);
+        } catch (Exception e) {
+            log.error("Failed to get Alpha history (might be empty or not supported on testnet): {}", e.getMessage());
+        }
+    }
+
+    // ================= EARN API TESTS =================
+
+    @Test
+    @Disabled("Integration test - requires network")
+    public void testSimpleEarnFlexible() {
+        // List Flexible Products
+        try {
+            BinanceSimpleEarnListResponse<BinanceSimpleEarnFlexibleProduct> products = binanceApiService.getSimpleEarnService().getFlexibleProductList("USDT", 1L, 10);
+            log.info("Flexible Products: {}", products);
+            assertNotNull(products);
+            
+            // Get Position
+            BinanceSimpleEarnListResponse<BinanceSimpleEarnFlexiblePosition> positions = binanceApiService.getSimpleEarnService().getFlexibleProductPosition("USDT", null, 1L, 10);
+            log.info("Flexible Positions: {}", positions);
+            assertNotNull(positions);
+        } catch (Exception e) {
+            log.error("Simple Earn Flexible Test Failed: {}", e.getMessage());
+        }
+    }
+    
+    @Test
+    @Disabled("Integration test - requires network")
+    public void testSimpleEarnLocked() {
+        // List Locked Products
+        try {
+            BinanceSimpleEarnListResponse<BinanceSimpleEarnLockedProduct> products = binanceApiService.getSimpleEarnService().getLockedProductList("USDT", 1L, 10);
+            log.info("Locked Products: {}", products);
+            assertNotNull(products);
+            
+            // Get Position
+            BinanceSimpleEarnListResponse<BinanceSimpleEarnLockedPosition> positions = binanceApiService.getSimpleEarnService().getLockedProductPosition("USDT", null, null, 1L, 10);
+            log.info("Locked Positions: {}", positions);
+            assertNotNull(positions);
+        } catch (Exception e) {
+            log.error("Simple Earn Locked Test Failed: {}", e.getMessage());
+        }
+    }
+    
+    @Test
+    @Disabled("Integration test - requires network")
+    public void testSimpleEarnAccount() {
+        try {
+            BinanceSimpleEarnAccount account = binanceApiService.getSimpleEarnService().getAccount();
+            log.info("Simple Earn Account: {}", account);
+            assertNotNull(account);
+        } catch (Exception e) {
+            log.error("Simple Earn Account Test Failed: {}", e.getMessage());
         }
     }
 }
