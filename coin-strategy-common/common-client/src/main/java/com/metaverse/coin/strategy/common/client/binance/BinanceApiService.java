@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.common.client.binance;
 import com.binance.connector.client.SpotClient;
 import com.binance.connector.client.impl.SpotClientImpl;
 import com.binance.connector.futures.client.impl.UMFuturesClientImpl;
+import com.binance.connector.futures.client.impl.CMFuturesClientImpl;
 import com.metaverse.coin.strategy.common.client.binance.service.*;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
@@ -34,9 +35,11 @@ public class BinanceApiService {
 
     private final SpotClient spotClient;
     private final UMFuturesClientImpl futuresClient;
+    private final CMFuturesClientImpl coinFuturesClient;
 
     private final BinanceSpotService spotService;
     private final BinanceFuturesService futuresService;
+    private final BinanceCoinFuturesService coinFuturesService;
     private final BinanceWalletService walletService;
     private final BinanceMarginService marginService;
     private final BinanceMarketDataService marketDataService;
@@ -52,9 +55,11 @@ public class BinanceApiService {
     public BinanceApiService(String apiKey, String secretKey, String spotBaseUrl, String futuresBaseUrl) {
         this.spotClient = new SpotClientImpl(apiKey, secretKey, spotBaseUrl);
         this.futuresClient = new UMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl);
+        this.coinFuturesClient = new CMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com");
 
         this.spotService = new BinanceSpotService(spotClient);
         this.futuresService = new BinanceFuturesService(futuresClient);
+        this.coinFuturesService = new BinanceCoinFuturesService(coinFuturesClient, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com", apiKey, secretKey);
         this.walletService = new BinanceWalletService(spotClient, apiKey, secretKey, spotBaseUrl);
         this.marginService = new BinanceMarginService(spotClient, spotBaseUrl, apiKey, secretKey);
         this.marketDataService = new BinanceMarketDataService(spotClient);
