@@ -273,6 +273,10 @@ public class BinanceApiService {
         return futuresService.getPremiumIndex(symbol);
     }
 
+    public List<BinanceFuturesPremiumIndex> getFuturesFundingRates() {
+        return futuresService.getPremiumIndices();
+    }
+
     // ================= MARGIN API =================
 
     public BinanceCrossMarginAccount getCrossMarginAccountDetails() {

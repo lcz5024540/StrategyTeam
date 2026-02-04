@@ -7,6 +7,18 @@
 *   **收益**：赚取合约的资金费率 (通常为正，即多头付给空头)。
 *   **成本**：仅需支付交易手续费，现货无资金费。
 *   **优点**：无爆仓风险 (只要保持 1:1 对冲)，无跨所转账风险。
+*   **详细执行逻辑**：
+    1.  **标的筛选**：选择高市值的代币 (BTC, ETH, SOL 等) 以保证流动性。
+    2.  **交易对映射**：Spot (e.g., `BTCUSDT`) vs Futures (e.g., `BTCUSDT` U-based Perpetual).
+    3.  **开仓条件**：
+        *   当前资金费率 (Current Funding Rate) > `OPEN_THRESHOLD` (e.g., 0.01%).
+        *   预测下期费率 (Next Funding Rate) > 0 (避免即将反转).
+        *   价差 (Spread) = Futures Price - Spot Price >= 0 (确保开仓时不亏损基差，最好能吃到溢价).
+    4.  **平仓条件**：
+        *   资金费率 < `CLOSE_THRESHOLD` (e.g., 0.002%).
+        *   资金费率转负 (立即平仓).
+        *   急需释放资金.
+    5.  **对冲比例**：始终保持 `Spot Value == Futures Value` (Delta Neutral).
 
 ### 1.2 多交易所套利 (跨期/跨所套利)
 *   **操作**：
@@ -95,3 +107,22 @@ public class FundingRateArbitrageStrategy implements Strategy {
     *   仅监控不交易，记录“理论开仓点”和“理论收益”。
 3.  **实盘测试**：
     *   小资金 (如 100 USDT) 跑通全流程。
+
+## 5. 当前实现 (Current Implementation)
+
+已基于上述架构实现了单交易所期现套利策略 (Spot-Futures Arbitrage)。
+
+### 5.1 核心组件
+*   **Strategy**: `com.metaverse.coin.strategy.core.arbitrage.decision.SpotFuturesArbitrageStrategy`
+    *   实现了 `Strategy` 接口，使用 `ScheduledExecutorService` 每分钟轮询一次。
+    *   包含开仓逻辑 (Rate > 0.05%) 和风控检查。
+*   **Monitor**: `com.metaverse.coin.strategy.core.arbitrage.monitor.FundingRateMonitor`
+    *   调用 `BinanceApiService.getFuturesFundingRates()` 获取实时费率。
+*   **Execution**: `com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor`
+    *   使用 `CompletableFuture` 并行执行现货和合约订单，降低 Legging Risk。
+*   **Risk**: `com.metaverse.coin.strategy.core.arbitrage.risk.RiskController`
+    *   提供 `checkTradeRisk` 方法，在下单前检查账户状态。
+
+### 5.2 依赖更新
+*   更新了 `common-client` 以支持 `getFuturesFundingRates`。
+*   引入了 `JUnit 5` 和 `Mockito 4` 进行单元测试。
