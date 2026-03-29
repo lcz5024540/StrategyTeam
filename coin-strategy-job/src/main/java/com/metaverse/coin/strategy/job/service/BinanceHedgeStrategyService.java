@@ -1,19 +1,17 @@
 package com.metaverse.coin.strategy.job.service;
 
 import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONArray;
-import com.alibaba.fastjson2.JSONObject;
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
+import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -25,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 public class BinanceHedgeStrategyService {
 
     private final BinanceApiService binanceApiService;
+    private final OrderExecutor orderExecutor;
 
     /**
      * Execute Hedge Strategy
@@ -55,16 +54,13 @@ public class BinanceHedgeStrategyService {
         try {
             // 1. Preparation & Checks
             checkPreConditions(symbol, usdtAmount, resultLog, useSpotFutures);
+            checkExistingPositions(symbol, resultLog);
 
-            // 2. Calculate Quantity based on current price
-            // Note: For Spot-Futures, ideally check spread. Here we use Futures price for simplicity 
-            // or Spot price depending on main driver. 
-            // Safe to use Futures price as base for calculation if we want consistent notional value on futures side.
-            BigDecimal currentPrice = getCurrentPrice(symbol);
-            logAndAppend(resultLog, "Reference Price: " + currentPrice);
-
-            int precision = getPrecision(symbol);
-            BigDecimal quantity = usdtAmount.divide(currentPrice, precision, RoundingMode.DOWN);
+            // 2. Build a trade plan from exchange metadata so quantity works across symbols.
+            SpotFuturesOrderPlan plan = orderExecutor.createSpotFuturesPlan(symbol, usdtAmount, 3);
+            BigDecimal quantity = plan.getQuantity();
+            logAndAppend(resultLog, "Reference Price: " + plan.getReferencePrice());
+            logAndAppend(resultLog, "Spot Price: " + plan.getSpotPrice() + ", Futures Price: " + plan.getFuturesPrice());
             
             if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new RuntimeException("Calculated quantity is too small: " + quantity);
@@ -211,12 +207,6 @@ public class BinanceHedgeStrategyService {
         return BigDecimal.ZERO;
     }
 
-    private BigDecimal getCurrentPrice(String symbol) {
-        // Use Futures Ticker instead of Spot Ticker
-        BinancePriceTicker ticker = binanceApiService.getFuturesTickerPrice(symbol);
-        return ticker.getPrice();
-    }
-
     private void openFuturesPositions(String symbol, BigDecimal quantity, StringBuilder logBuffer) throws ExecutionException, InterruptedException {
         String qtyStr = quantity.toPlainString();
         
@@ -324,14 +314,5 @@ public class BinanceHedgeStrategyService {
     private void logAndAppend(StringBuilder buffer, String msg) {
         log.info(msg);
         buffer.append(msg).append("\n");
-    }
-
-    private int getPrecision(String symbol) {
-        // Simple heuristic for common coins
-        if (symbol.startsWith("BTC")) return 3;
-        if (symbol.startsWith("ETH")) return 3;
-        if (symbol.startsWith("SOL")) return 2;
-        if (symbol.startsWith("XRP")) return 1;
-        return 2; // Default
     }
 }

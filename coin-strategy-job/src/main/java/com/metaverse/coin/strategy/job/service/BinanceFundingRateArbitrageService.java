@@ -1,26 +1,27 @@
 package com.metaverse.coin.strategy.job.service;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
-import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
-import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
+import com.metaverse.coin.strategy.core.arbitrage.execution.ArbitrageExecutionResult;
+import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.risk.RiskController;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.concurrent.CompletableFuture;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * Binance Funding Rate Arbitrage Strategy
- * Strategy:
- * 1. Monitor Funding Rate.
- * 2. If Funding Rate > Threshold (positive), Open Long Spot + Short Futures.
- * 3. Capture Funding Fees (paid by Longs to Shorts).
+ * Binance funding-rate hedge executor.
+ * Opens delta-neutral positions: Long Spot + Short Futures.
  */
 @Service
 @Slf4j
@@ -28,176 +29,128 @@ import java.util.concurrent.CompletableFuture;
 public class BinanceFundingRateArbitrageService {
 
     private final BinanceApiService binanceApiService;
+    private final OrderExecutor orderExecutor;
+    private final RiskController riskController;
 
-    /**
-     * Execute Arbitrage Entry
-     * @param symbol Symbol (e.g., BTCUSDT)
-     * @param usdtAmount Total USDT Amount to deploy (split 50/50 ideally, or per side)
-     *                   Here we interpret it as Amount PER SIDE to ensure delta neutral.
-     * @param minFundingRate Minimum Funding Rate to trigger (e.g., 0.0001 for 0.01%)
-     * @return Execution Log
-     */
     public String executeArbitrage(String symbol, BigDecimal usdtAmount, BigDecimal minFundingRate) {
+        return executeArbitrage(parseSymbols(symbol), usdtAmount, minFundingRate, 3);
+    }
+
+    public String executeArbitrage(String symbols, BigDecimal usdtAmount, BigDecimal minFundingRate, Integer leverage) {
+        return executeArbitrage(parseSymbols(symbols), usdtAmount, minFundingRate, leverage);
+    }
+
+    public String executeArbitrage(List<String> symbols, BigDecimal usdtAmount, BigDecimal minFundingRate, Integer leverage) {
         StringBuilder resultLog = new StringBuilder();
-        logAndAppend(resultLog, "=== Starting Funding Rate Arbitrage for " + symbol + " ===");
-        logAndAppend(resultLog, "Amount Per Side: " + usdtAmount + " USDT");
-        logAndAppend(resultLog, "Min Funding Rate: " + minFundingRate);
+        List<String> normalizedSymbols = normalizeSymbols(symbols);
+        int normalizedLeverage = leverage == null || leverage <= 0 ? 3 : leverage;
 
-        try {
-            // 1. Check Funding Rate
-            BigDecimal currentRate = getFundingRate(symbol);
-            logAndAppend(resultLog, "Current Funding Rate: " + currentRate);
-
-            if (currentRate.compareTo(minFundingRate) < 0) {
-                logAndAppend(resultLog, "Funding Rate too low. Strategy Aborted.");
-                return resultLog.toString();
-            }
-
-            // 2. Check Balances
-            checkBalances(usdtAmount, resultLog);
-
-            // 3. Calculate Quantity
-            BigDecimal price = getCurrentPrice(symbol);
-            int precision = getPrecision(symbol);
-            BigDecimal quantity = usdtAmount.divide(price, precision, RoundingMode.DOWN);
-            
-            if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
-                throw new RuntimeException("Calculated quantity is too small: " + quantity);
-            }
-            logAndAppend(resultLog, "Reference Price: " + price + ", Quantity: " + quantity);
-
-            // 4. Execute Orders (Parallel)
-            logAndAppend(resultLog, ">> Opening Positions (Long Spot + Short Futures)...");
-            openPositions(symbol, quantity, resultLog);
-
-            logAndAppend(resultLog, "=== Arbitrage Positions Opened Successfully ===");
-
-        } catch (Exception e) {
-            log.error("Arbitrage Strategy Failed", e);
-            logAndAppend(resultLog, "!!! Arbitrage Strategy Failed: " + e.getMessage());
+        if (normalizedSymbols.isEmpty()) {
+            return "No symbols provided.";
         }
 
+        logAndAppend(resultLog, "=== Starting Funding Rate Arbitrage ===");
+        logAndAppend(resultLog, "Symbols: " + String.join(", ", normalizedSymbols));
+        logAndAppend(resultLog, "Amount Per Symbol: " + usdtAmount + " USDT");
+        logAndAppend(resultLog, "Min Funding Rate: " + minFundingRate);
+        logAndAppend(resultLog, "Leverage: " + normalizedLeverage + "x");
+
+        Map<String, String> executionSummary = new LinkedHashMap<>();
+        for (String symbol : normalizedSymbols) {
+            try {
+                logAndAppend(resultLog, "");
+                logAndAppend(resultLog, ">> Evaluating " + symbol);
+
+                BinanceFuturesPremiumIndex premiumIndex = getFundingRate(symbol);
+                if (premiumIndex == null || premiumIndex.getLastFundingRate() == null) {
+                    executionSummary.put(symbol, "Skipped: funding rate unavailable");
+                    logAndAppend(resultLog, "Skipped: funding rate unavailable");
+                    continue;
+                }
+
+                BigDecimal fundingRate = premiumIndex.getLastFundingRate();
+                logAndAppend(resultLog, "Funding Rate: " + fundingRate);
+
+                if (fundingRate.compareTo(minFundingRate) < 0) {
+                    executionSummary.put(symbol, "Skipped: funding rate below threshold");
+                    logAndAppend(resultLog, "Skipped: funding rate below threshold");
+                    continue;
+                }
+
+                SpotFuturesOrderPlan plan = orderExecutor.createSpotFuturesPlan(symbol, usdtAmount, normalizedLeverage);
+                plan.setFundingRate(fundingRate);
+                logAndAppend(resultLog, "Calculated Quantity: " + plan.getQuantity());
+                logAndAppend(resultLog, "Spot Price: " + plan.getSpotPrice() + ", Futures Price: " + plan.getFuturesPrice());
+
+                if (plan.getFuturesPrice().subtract(plan.getSpotPrice()).compareTo(BigDecimal.ZERO) < 0) {
+                    executionSummary.put(symbol, "Skipped: futures basis is negative");
+                    logAndAppend(resultLog, "Skipped: futures basis is negative");
+                    continue;
+                }
+
+                if (!riskController.checkTradeRisk(plan)) {
+                    executionSummary.put(symbol, "Rejected: risk check failed");
+                    logAndAppend(resultLog, "Rejected: risk check failed");
+                    continue;
+                }
+
+                prepareFuturesSettings(symbol, normalizedLeverage, resultLog);
+                ArbitrageExecutionResult executionResult = orderExecutor.openArbitragePosition(plan);
+                executionSummary.put(symbol, executionResult.isSuccess() ? "Opened" : "Failed");
+                logAndAppend(resultLog, "Execution Result: " + executionResult.getMessage());
+                if (executionResult.isSuccess()) {
+                    logAndAppend(resultLog, "Spot Order ID: " + executionResult.getSpotOrderId());
+                    logAndAppend(resultLog, "Futures Order ID: " + executionResult.getFuturesOrderId());
+                }
+            } catch (Exception e) {
+                log.error("Failed to execute funding-rate arbitrage for {}", symbol, e);
+                executionSummary.put(symbol, "Failed: " + e.getMessage());
+                logAndAppend(resultLog, "Failed: " + e.getMessage());
+            }
+        }
+
+        logAndAppend(resultLog, "");
+        logAndAppend(resultLog, "=== Summary ===");
+        executionSummary.forEach((symbol, status) -> logAndAppend(resultLog, symbol + " -> " + status));
         return resultLog.toString();
     }
 
-    private BigDecimal getFundingRate(String symbol) {
-        BinanceFuturesPremiumIndex premiumIndex = binanceApiService.getFuturesFundingRate(symbol);
-        // Response: {"symbol":"BTCUSDT","markPrice":"...","lastFundingRate":"0.0001",...}
-        return premiumIndex.getLastFundingRate();
-    }
-
-    private void checkBalances(BigDecimal requiredAmount, StringBuilder logBuffer) {
-        // Futures Balance
-        BigDecimal futuresBalance = getBalance(binanceApiService.getFuturesAccount(), "USDT");
-        // Spot Balance
-        BigDecimal spotBalance = getBalance(binanceApiService.account(), "USDT");
-
-        logAndAppend(logBuffer, "Futures Balance: " + futuresBalance + " USDT");
-        logAndAppend(logBuffer, "Spot Balance: " + spotBalance + " USDT");
-
-        if (futuresBalance.compareTo(requiredAmount) < 0) {
-            logAndAppend(logBuffer, "WARNING: Futures Balance might be insufficient.");
-        }
-        if (spotBalance.compareTo(requiredAmount) < 0) {
-            logAndAppend(logBuffer, "WARNING: Spot Balance might be insufficient.");
-        }
-    }
-
-    private BigDecimal getBalance(BinanceAccountInfo accountInfo, String assetName) {
-        if (accountInfo != null && accountInfo.getBalances() != null) {
-            for (BinanceAccountInfo.BinanceBalance balance : accountInfo.getBalances()) {
-                if (assetName.equals(balance.getAsset())) {
-                    return balance.getFree();
-                }
-            }
-        }
-        return BigDecimal.ZERO;
-    }
-
-    private BigDecimal getBalance(BinanceFuturesAccount accountInfo, String assetName) {
-        if (accountInfo != null && accountInfo.getAssets() != null) {
-            for (BinanceFuturesAccount.BinanceFuturesAsset asset : accountInfo.getAssets()) {
-                if (assetName.equals(asset.getAsset())) {
-                    return asset.getAvailableBalance();
-                }
-            }
-        }
-        return BigDecimal.ZERO;
-    }
-
-    private BigDecimal getBalance(String jsonResponse, String assetName) {
+    private void prepareFuturesSettings(String symbol, Integer leverage, StringBuilder logBuffer) {
         try {
-            JSONObject json = JSON.parseObject(jsonResponse);
-            if (json.containsKey("balances")) { // Spot
-                for (Object item : json.getJSONArray("balances")) {
-                    JSONObject asset = (JSONObject) item;
-                    if (assetName.equals(asset.getString("asset"))) {
-                        return asset.getBigDecimal("free");
-                    }
-                }
-            } else if (json.containsKey("assets")) { // Futures
-                for (Object item : json.getJSONArray("assets")) {
-                    JSONObject asset = (JSONObject) item;
-                    if (assetName.equals(asset.getString("asset"))) {
-                        return asset.getBigDecimal("availableBalance");
-                    }
-                }
-            }
+            binanceApiService.changeInitialLeverage(symbol, leverage);
+            logAndAppend(logBuffer, "Futures leverage set to " + leverage + "x");
         } catch (Exception e) {
-            log.warn("Failed to parse balance: " + e.getMessage());
+            logAndAppend(logBuffer, "Leverage setup warning: " + e.getMessage());
         }
-        return BigDecimal.ZERO;
     }
 
-    private BigDecimal getCurrentPrice(String symbol) {
-        BinancePriceTicker ticker = binanceApiService.getFuturesTickerPrice(symbol);
-        return ticker.getPrice();
+    private BinanceFuturesPremiumIndex getFundingRate(String symbol) {
+        return binanceApiService.getFuturesFundingRate(symbol);
     }
 
-    private void openPositions(String symbol, BigDecimal quantity, StringBuilder logBuffer) {
-        String qtyStr = quantity.toPlainString();
-
-        CompletableFuture<String> spotBuyFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return JSON.toJSONString(binanceApiService.spotBuy(symbol, "MARKET", qtyStr, null));
-            } catch (Exception e) {
-                return "Spot Buy Error: " + e.getMessage();
-            }
-        });
-
-        CompletableFuture<String> futuresShortFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                // Ensure leverage is appropriate? 
-                // binanceApiService.changeInitialLeverage(symbol, 1); // Ideally 1x for pure arbitrage to avoid liquidation risk, but user might want leverage.
-                // For now, we assume user sets leverage or we use existing. 
-                // Ideally, funding rate arbitrage uses 1x leverage on Futures to match Spot perfectly without liquidation risk (except extreme spread).
-                return JSON.toJSONString(binanceApiService.openShort(symbol, "MARKET", qtyStr, null, null));
-            } catch (Exception e) {
-                return "Futures Short Error: " + e.getMessage();
-            }
-        });
-
-        CompletableFuture.allOf(spotBuyFuture, futuresShortFuture).join();
-
-        try {
-            logAndAppend(logBuffer, "Spot Buy Result: " + spotBuyFuture.get());
-            logAndAppend(logBuffer, "Futures Short Result: " + futuresShortFuture.get());
-        } catch (Exception e) {
-            logAndAppend(logBuffer, "Error getting results: " + e.getMessage());
+    private List<String> parseSymbols(String symbols) {
+        if (symbols == null || symbols.trim().isEmpty()) {
+            return new ArrayList<>();
         }
+        return Arrays.stream(symbols.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isEmpty())
+                .collect(Collectors.toList());
+    }
+
+    private List<String> normalizeSymbols(List<String> symbols) {
+        if (symbols == null) {
+            return new ArrayList<>();
+        }
+        return symbols.stream()
+                .filter(item -> item != null && !item.trim().isEmpty())
+                .map(item -> item.trim().toUpperCase(Locale.ROOT))
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     private void logAndAppend(StringBuilder buffer, String msg) {
         log.info(msg);
         buffer.append(msg).append("\n");
-    }
-
-    private int getPrecision(String symbol) {
-        // TODO: Retrieve from Exchange Info
-        if (symbol.startsWith("BTC")) return 3;
-        if (symbol.startsWith("ETH")) return 3;
-        if (symbol.startsWith("SOL")) return 2;
-        if (symbol.startsWith("XRP")) return 1;
-        return 2;
     }
 }

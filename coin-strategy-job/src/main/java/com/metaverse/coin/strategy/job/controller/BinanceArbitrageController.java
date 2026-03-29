@@ -19,14 +19,21 @@ public class BinanceArbitrageController {
     /**
      * Trigger Funding Rate Arbitrage (Open Long Spot + Short Futures if rate > threshold)
      * @param symbol Symbol (e.g., BTCUSDT)
+     * @param symbols Comma-separated symbols (e.g., BTCUSDT,ETHUSDT)
      * @param amount USDT Amount per side
      * @param minRate Minimum Funding Rate to trigger (e.g., 0.0001)
      * @return Execution Log
      */
     @PostMapping("/execute")
-    public String executeArbitrage(@RequestParam String symbol, 
-                                   @RequestParam BigDecimal amount, 
-                                   @RequestParam(defaultValue = "0.0001") BigDecimal minRate) {
-        return arbitrageService.executeArbitrage(symbol, amount, minRate);
+    public String executeArbitrage(@RequestParam(required = false) String symbol,
+                                   @RequestParam(required = false) String symbols,
+                                   @RequestParam BigDecimal amount,
+                                   @RequestParam(defaultValue = "0.0001") BigDecimal minRate,
+                                   @RequestParam(defaultValue = "3") Integer leverage) {
+        String targetSymbols = symbols;
+        if ((targetSymbols == null || targetSymbols.trim().isEmpty()) && symbol != null && !symbol.trim().isEmpty()) {
+            targetSymbols = symbol;
+        }
+        return arbitrageService.executeArbitrage(targetSymbols, amount, minRate, leverage);
     }
 }

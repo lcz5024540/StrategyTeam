@@ -4,6 +4,7 @@ import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo.BinanceBalance;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,8 +31,30 @@ public class RiskController {
      * Check if a new trade is allowed.
      */
     public boolean checkTradeRisk(String symbol, BigDecimal quantity, BigDecimal price) {
+        SpotFuturesOrderPlan plan = SpotFuturesOrderPlan.builder()
+                .symbol(symbol)
+                .spotSymbol(symbol)
+                .futuresSymbol(symbol)
+                .quantity(quantity)
+                .spotPrice(price)
+                .futuresPrice(price)
+                .spotNotional(quantity.multiply(price))
+                .futuresNotional(quantity.multiply(price))
+                .leverage(1)
+                .build();
+        return checkTradeRisk(plan);
+    }
+
+    public boolean checkTradeRisk(SpotFuturesOrderPlan plan) {
+        if (plan == null || plan.getQuantity() == null || plan.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Risk Alert: invalid trade plan");
+            return false;
+        }
+
         // 1. Check Notional Value
-        BigDecimal tradeValue = quantity.multiply(price);
+        BigDecimal tradeValue = plan.getSpotNotional() != null
+                ? plan.getSpotNotional()
+                : plan.getQuantity().multiply(plan.getSpotPrice());
         
         if (tradeValue.compareTo(MAX_POSITION_VALUE_USDT) > 0) {
             log.warn("Risk Alert: Trade value {} exceeds max allowed {}", tradeValue, MAX_POSITION_VALUE_USDT);
@@ -60,7 +83,26 @@ public class RiskController {
             return false; // Fail safe
         }
 
-        // 3. Check Futures Margin Health
+        // 3. Check Futures Balance against expected initial margin.
+        try {
+            BinanceFuturesAccount futuresAccount = binanceApiService.getFuturesAccount();
+            BigDecimal availableBalance = futuresAccount.getAssets().stream()
+                    .filter(asset -> "USDT".equals(asset.getAsset()))
+                    .findFirst()
+                    .map(BinanceFuturesAccount.BinanceFuturesAsset::getAvailableBalance)
+                    .orElse(BigDecimal.ZERO);
+            BigDecimal requiredMargin = plan.getRequiredFuturesMargin();
+
+            if (availableBalance.compareTo(requiredMargin) < 0) {
+                log.warn("Risk Alert: Insufficient Futures Balance. Required margin: {}, Available: {}", requiredMargin, availableBalance);
+                return false;
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch Futures account info during risk check", e);
+            return false;
+        }
+
+        // 4. Check Futures Margin Health
         if (!checkAccountHealth()) {
             log.warn("Risk Alert: Futures Account Health is poor");
             return false;
