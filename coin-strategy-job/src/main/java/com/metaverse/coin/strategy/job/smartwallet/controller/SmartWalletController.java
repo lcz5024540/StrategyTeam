@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.controller;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
+import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
@@ -134,5 +135,10 @@ public class SmartWalletController {
                                               @RequestParam(defaultValue = "1000") BigDecimal bankrollUsdc,
                                               @RequestParam(defaultValue = "PAPER") ExecutionMode mode) {
         return followService.executeSignal(signalId, bankrollUsdc, mode);
+    }
+
+    @GetMapping("/execution-wallet/status")
+    public ExecutionWalletStatus executionWalletStatus() {
+        return followService.executionWalletStatus();
     }
 }

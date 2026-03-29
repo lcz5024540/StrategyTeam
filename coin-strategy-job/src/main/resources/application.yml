@@ -51,6 +51,21 @@ smart-wallet:
     recent-trade-limit: 30
     discovery-fixed-delay-ms: 3600000
     event-sync-fixed-delay-ms: 15000
+  execution-wallet:
+    enabled: false
+    chain: "polygon"
+    address: "${POLYMARKET_EXECUTION_WALLET_ADDRESS:}"
+    private-key: "${POLYMARKET_EXECUTION_PRIVATE_KEY:}"
+    funder-address: "${POLYMARKET_EXECUTION_FUNDER_ADDRESS:}"
+    max-order-usdc: 150
+    min-order-usdc: 1
+    price-slippage-rate: 0.02
+    allow-yes: true
+    allow-no: true
+    api-base-url: "https://clob.polymarket.com"
+    api-key: "${POLYMARKET_CLOB_API_KEY:}"
+    api-secret: "${POLYMARKET_CLOB_API_SECRET:}"
+    api-passphrase: "${POLYMARKET_CLOB_API_PASSPHRASE:}"
   wallets:
     - address: "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
       chain: "polygon"

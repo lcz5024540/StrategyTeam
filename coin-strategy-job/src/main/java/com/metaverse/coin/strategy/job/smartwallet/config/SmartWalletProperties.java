@@ -26,6 +26,7 @@ public class SmartWalletProperties {
     private Integer followDelaySeconds = 3;
     private Long pollFixedDelayMs = 5000L;
     private PolymarketMonitor polymarket = new PolymarketMonitor();
+    private ExecutionWallet executionWallet = new ExecutionWallet();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
 
@@ -45,6 +46,24 @@ public class SmartWalletProperties {
         private Integer recentTradeLimit = 30;
         private Long discoveryFixedDelayMs = 3600000L;
         private Long eventSyncFixedDelayMs = 15000L;
+    }
+
+    @Data
+    public static class ExecutionWallet {
+        private boolean enabled = false;
+        private String chain = "polygon";
+        private String address;
+        private String privateKey;
+        private String funderAddress;
+        private BigDecimal maxOrderUsdc = new BigDecimal("150");
+        private BigDecimal minOrderUsdc = new BigDecimal("1");
+        private BigDecimal priceSlippageRate = new BigDecimal("0.02");
+        private Boolean allowYes = Boolean.TRUE;
+        private Boolean allowNo = Boolean.TRUE;
+        private String apiBaseUrl = "https://clob.polymarket.com";
+        private String apiKey;
+        private String apiSecret;
+        private String apiPassphrase;
     }
 
     @Data

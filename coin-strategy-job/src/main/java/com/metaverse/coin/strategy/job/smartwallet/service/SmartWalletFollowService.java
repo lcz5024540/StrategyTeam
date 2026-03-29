@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
+import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
@@ -27,17 +28,20 @@ public class SmartWalletFollowService {
     private final PredictionMarketOpportunityService opportunityService;
     private final SmartWalletScoringService scoringService;
     private final PolymarketExecutionGateway executionGateway;
+    private final ExecutionWalletContextLoader executionWalletContextLoader;
 
     public SmartWalletFollowService(SmartWalletProperties properties,
                                     SmartWalletRegistryService walletRegistryService,
                                     PredictionMarketOpportunityService opportunityService,
                                     SmartWalletScoringService scoringService,
-                                    PolymarketExecutionGateway executionGateway) {
+                                    PolymarketExecutionGateway executionGateway,
+                                    ExecutionWalletContextLoader executionWalletContextLoader) {
         this.properties = properties;
         this.walletRegistryService = walletRegistryService;
         this.opportunityService = opportunityService;
         this.scoringService = scoringService;
         this.executionGateway = executionGateway;
+        this.executionWalletContextLoader = executionWalletContextLoader;
     }
 
     public SmartWalletScanResponse scan(BigDecimal bankrollUsdc) {
@@ -83,10 +87,14 @@ public class SmartWalletFollowService {
                     .signalId(signalId)
                     .mode(normalizedMode)
                     .success(false)
-                    .message("LIVE mode is disabled. Set smart-wallet.auto-execution-enabled=true after wiring a real Polymarket adapter.")
+                    .message("LIVE mode is disabled. Set smart-wallet.auto-execution-enabled=true after checking /smart-wallet/execution-wallet/status.")
                     .build();
         }
         return executionGateway.execute(signal, normalizedMode);
+    }
+
+    public ExecutionWalletStatus executionWalletStatus() {
+        return executionWalletContextLoader.getStatus();
     }
 
     private SmartWalletSignal buildSignal(SmartWalletProfile wallet,
@@ -192,7 +200,7 @@ public class SmartWalletFollowService {
     private List<String> buildNotes() {
         List<String> notes = new ArrayList<>();
         notes.add("This service ranks wallets and markets; it cannot guarantee win rate.");
-        notes.add("LIVE execution is intentionally gated behind configuration and a real execution adapter.");
+        notes.add("LIVE execution requires execution-wallet config plus Polymarket API credentials.");
         notes.add("Recommended stake is capped by bankroll utilization and max-stake-usdc.");
         return notes;
     }

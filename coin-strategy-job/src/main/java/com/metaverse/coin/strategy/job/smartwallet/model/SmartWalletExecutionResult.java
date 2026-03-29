@@ -11,4 +11,5 @@ public class SmartWalletExecutionResult {
     private boolean success;
     private String message;
     private String externalOrderId;
+    private String executionAddress;
 }

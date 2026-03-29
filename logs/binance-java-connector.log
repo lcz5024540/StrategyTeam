@@ -323,3 +323,23 @@ Caused by: java.net.SocketException: Operation not permitted
 2026-03-29 22:17:49.545[1774793869545] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
 2026-03-29 22:17:49.546[1774793869546] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
 2026-03-29 22:17:49.546[1774793869546] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 0 ms
+2026-03-29 22:55:17.594[1774796117594] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-03-29 22:55:17.596[1774796117596] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-03-29 22:55:17.598[1774796117598] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-03-29 22:55:17.601[1774796117601] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-03-29 22:55:32.980[1774796132980] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 25137 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-03-29 22:55:32.981[1774796132981] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-03-29 22:55:33.481[1774796133481] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-03-29 22:55:33.489[1774796133489] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-03-29 22:55:33.490[1774796133490] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 474 ms
+2026-03-29 22:55:33.907[1774796133907] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-03-29 22:55:33.910[1774796133910] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-03-29 22:55:33.913[1774796133913] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-03-29 22:55:33.936[1774796133936] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-03-29 22:55:33.957[1774796133957] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-03-29 22:55:33.962[1774796133962] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.159 seconds (JVM running for 6.355)
+2026-03-29 22:55:33.993[1774796133993] | INFO  | scheduling-1 | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-03-29 22:55:34.094[1774796134094] | INFO  | scheduling-1 | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-03-29 22:55:57.203[1774796157203] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-03-29 22:55:57.203[1774796157203] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-03-29 22:55:57.203[1774796157203] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 0 ms
