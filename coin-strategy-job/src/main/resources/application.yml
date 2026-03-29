@@ -1,15 +1,91 @@
 server:
   port: 8081
 
+spring:
+  datasource:
+    url: "jdbc:mysql://127.0.0.1:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "root"
+    password: "Lroot1234"
+    driver-class-name: "com.mysql.cj.jdbc.Driver"
+
 sunwk:
   api:
     base-url: "https://api.sunwk.com"
-    api-key: ""
-    secret-key: "YOUR_SECRET_KEY_HERE"
+    api-key: "${SUNWK_API_KEY:}"
+    secret-key: "${SUNWK_SECRET_KEY:}"
 
 binance:
   api:
-    api-key: "KXFMs9WeNZhdSIx2TBIo5waLPPmqoCRjP582e3RxBO6FzWfw7JvrunWDeOu1Ym3P"
-    secret-key: "rKLFKKR2oOyf6cZ04MnVVQ4vhzz4rHrePyN0yo33Hc10b0dSgfOLToenfXtNiQHS"
+    api-key: "${BINANCE_API_KEY:}"
+    secret-key: "${BINANCE_SECRET_KEY:}"
     spot-url: "https://api.binance.com"
     futures-url: "https://fapi.binance.com"
+
+smart-wallet:
+  enabled: true
+  auto-execution-enabled: false
+  scan-enabled: true
+  require-tag-match: true
+  min-win-rate: 0.62
+  min-wallet-score: 0.70
+  min-total-trades: 25
+  min-realized-pnl-usdc: 1000
+  max-drawdown-rate: 0.25
+  min-market-liquidity: 25000
+  max-stake-usdc: 150
+  bankroll-utilization-rate: 0.03
+  follow-delay-seconds: 3
+  poll-fixed-delay-ms: 5000
+  polymarket:
+    enabled: true
+    auto-discover-enabled: false
+    auto-sync-events-enabled: true
+    data-api-base-url: "https://data-api.polymarket.com"
+    gamma-api-base-url: "https://gamma-api.polymarket.com"
+    leaderboard-category: "OVERALL"
+    leaderboard-time-period: "ALL"
+    leaderboard-order-by: "PNL"
+    leaderboard-limit: 50
+    analyze-top-n: 30
+    closed-position-limit: 50
+    recent-trade-limit: 30
+    discovery-fixed-delay-ms: 3600000
+    event-sync-fixed-delay-ms: 15000
+  wallets:
+    - address: "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
+      chain: "polygon"
+      alias: "ElectionWhale"
+      win-rate: 0.74
+      realized-pnl-usdc: 18420
+      total-trades: 118
+      average-size-usdc: 340
+      max-drawdown-rate: 0.12
+      preferred-outcome: "YES"
+      tags: [ "politics", "macro", "elections" ]
+    - address: "0x1111111111111111111111111111111111111111"
+      chain: "polygon"
+      alias: "MacroSharp"
+      win-rate: 0.68
+      realized-pnl-usdc: 9630
+      total-trades: 76
+      average-size-usdc: 210
+      max-drawdown-rate: 0.18
+      preferred-outcome: "NO"
+      tags: [ "rates", "macro", "fed" ]
+  markets:
+    - market-id: "pm-fed-cut-june"
+      question: "Will the Fed cut rates before July?"
+      outcome: "YES"
+      price: 0.41
+      conviction: 0.73
+      liquidity-usdc: 89000
+      category: "macro"
+      tags: [ "macro", "rates", "fed" ]
+    - market-id: "pm-election-swing-state"
+      question: "Will Candidate A win the swing state?"
+      outcome: "YES"
+      price: 0.57
+      conviction: 0.79
+      liquidity-usdc: 112000
+      category: "politics"
+      tags: [ "politics", "elections" ]

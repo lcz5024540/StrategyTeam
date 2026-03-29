@@ -1,0 +1,5 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sun Mar 29 20:18:02 CST 2026
+@default-huaweicloud-https\://repo.huaweicloud.com/repository/maven/.lastUpdated=1774786094580
+https\://repo.huaweicloud.com/repository/maven/.error=Could not transfer artifact org.apache.maven.plugins\:maven-clean-plugin\:pom\:3.2.0 from/to huaweicloud (https\://repo.huaweicloud.com/repository/maven/)\: repo.huaweicloud.com\: nodename nor servname provided, or not known
+https\://repo.maven.apache.org/maven2/.lastUpdated=1774786682082

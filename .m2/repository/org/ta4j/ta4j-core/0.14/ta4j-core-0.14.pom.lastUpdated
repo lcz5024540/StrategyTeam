@@ -1,0 +1,4 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sun Mar 29 21:02:42 CST 2026
+@default-central-direct-https\://repo.maven.apache.org/maven2/.lastUpdated=1774789362261
+https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact org.ta4j\:ta4j-core\:pom\:0.14 from/to central-direct (https\://repo.maven.apache.org/maven2)\: Remote host terminated the handshake

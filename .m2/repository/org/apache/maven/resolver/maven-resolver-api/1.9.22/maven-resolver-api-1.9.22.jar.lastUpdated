@@ -1,0 +1,4 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Sun Mar 29 21:20:39 CST 2026
+@default-central-direct-https\://repo.maven.apache.org/maven2/.lastUpdated=1774790439657
+https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact org.apache.maven.resolver\:maven-resolver-api\:jar\:1.9.22 from/to central-direct (https\://repo.maven.apache.org/maven2)\: Remote host terminated the handshake

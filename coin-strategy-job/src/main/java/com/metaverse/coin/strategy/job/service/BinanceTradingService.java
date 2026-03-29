@@ -4,11 +4,13 @@ import com.alibaba.fastjson2.JSON;
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class BinanceTradingService {
 
     private final BinanceApiService binanceApiService;

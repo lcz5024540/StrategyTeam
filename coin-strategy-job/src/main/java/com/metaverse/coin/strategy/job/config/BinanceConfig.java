@@ -2,10 +2,12 @@ package com.metaverse.coin.strategy.job.config;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class BinanceConfig {
 
     @Value("${binance.api.api-key}")

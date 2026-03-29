@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 @Service
 @Slf4j
 @RequiredArgsConstructor
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class BinanceHedgeStrategyService {
 
     private final BinanceApiService binanceApiService;

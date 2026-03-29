@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.common.model.sunwk.entity.SunwkAsset;
 import com.metaverse.coin.strategy.common.model.sunwk.entity.SunwkOrder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -20,6 +21,7 @@ import java.util.concurrent.Executors;
  */
 @Slf4j
 @Component
+@ConditionalOnExpression("'${sunwk.api.api-key:}' != '' && '${sunwk.api.secret-key:}' != ''")
 public class SunwkHedgeStrategy {
 
     private final SunwkApiService sunwkApiService;

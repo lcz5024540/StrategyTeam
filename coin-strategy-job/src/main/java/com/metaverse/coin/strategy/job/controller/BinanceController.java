@@ -2,11 +2,13 @@ package com.metaverse.coin.strategy.job.controller;
 
 import com.metaverse.coin.strategy.job.service.BinanceTradingService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/binance")
 @RequiredArgsConstructor
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class BinanceController {
 
     private final BinanceTradingService binanceTradingService;

@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.job.controller;
 
 import com.metaverse.coin.strategy.job.service.BinanceFundingRateArbitrageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
 @RestController
 @RequestMapping("/binance/strategy/arbitrage")
 @RequiredArgsConstructor
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class BinanceArbitrageController {
 
     private final BinanceFundingRateArbitrageService arbitrageService;

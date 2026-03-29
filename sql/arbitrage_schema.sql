@@ -58,3 +58,73 @@ CREATE TABLE IF NOT EXISTS `strategy_execution_log` (
     `message` TEXT COMMENT '详细日志信息',
     INDEX `idx_symbol_time` (`symbol`, `check_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='策略运行日志';
+
+-- 4. Polymarket 聪明钱包画像表
+CREATE TABLE IF NOT EXISTS `smart_wallet_profile` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '钱包地址',
+    `chain` VARCHAR(32) NOT NULL DEFAULT 'polygon' COMMENT '链',
+    `alias` VARCHAR(128) DEFAULT NULL COMMENT '别名',
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+    `win_rate` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '正确率 0-1',
+    `realized_pnl_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '累计已实现收益',
+    `total_trades` INT NOT NULL DEFAULT 0 COMMENT '交易次数',
+    `average_size_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '平均仓位',
+    `average_roi_rate` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '平均收益率 0-1',
+    `max_drawdown_rate` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '最大回撤 0-1',
+    `wallet_score` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '综合评分 0-1',
+    `qualified` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否满足 smart wallet 条件',
+    `watch_enabled` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否开启实时跟单监控',
+    `last_trade_at` TIMESTAMP NULL COMMENT '最后一笔交易时间',
+    `last_evaluated_at` TIMESTAMP NULL COMMENT '最后评估时间',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_wallet_chain_source` (`wallet_address`, `chain`, `source`),
+    INDEX `idx_profile_qualified` (`qualified`, `watch_enabled`, `wallet_score`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket聪明钱包画像表';
+
+-- 5. Polymarket 钱包开单事件表
+CREATE TABLE IF NOT EXISTS `smart_wallet_trade_event` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '钱包地址',
+    `chain` VARCHAR(32) NOT NULL DEFAULT 'polygon' COMMENT '链',
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+    `external_trade_id` VARCHAR(128) NOT NULL COMMENT '外部交易ID',
+    `market_id` VARCHAR(128) NOT NULL COMMENT '市场ID',
+    `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
+    `outcome` VARCHAR(16) NOT NULL COMMENT 'YES/NO',
+    `side` VARCHAR(16) NOT NULL COMMENT 'BUY/SELL',
+    `price` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '价格',
+    `size_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '名义金额',
+    `opened_at` TIMESTAMP NOT NULL COMMENT '开单时间',
+    `processed` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否已生成跟单任务',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_trade_source_id` (`source`, `external_trade_id`),
+    INDEX `idx_trade_wallet_time` (`wallet_address`, `opened_at`),
+    INDEX `idx_trade_processed` (`processed`, `opened_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket钱包开单事件表';
+
+-- 6. Polymarket 跟单任务表
+CREATE TABLE IF NOT EXISTS `smart_wallet_follow_task` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '触发钱包地址',
+    `source_event_id` BIGINT UNSIGNED NOT NULL COMMENT '来源交易事件ID',
+    `market_id` VARCHAR(128) NOT NULL COMMENT '市场ID',
+    `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
+    `outcome` VARCHAR(16) NOT NULL COMMENT 'YES/NO',
+    `side` VARCHAR(16) NOT NULL COMMENT 'BUY/SELL',
+    `trigger_price` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '触发价格',
+    `trigger_size_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '触发钱包仓位',
+    `recommended_stake_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '建议跟单金额',
+    `status` VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/FOLLOWED/SKIPPED/FAILED',
+    `execution_mode` VARCHAR(16) NOT NULL DEFAULT 'PAPER' COMMENT 'PAPER/LIVE',
+    `external_order_id` VARCHAR(128) DEFAULT NULL COMMENT '跟单订单ID',
+    `error_message` VARCHAR(512) DEFAULT NULL COMMENT '错误信息',
+    `scheduled_at` TIMESTAMP NOT NULL COMMENT '计划执行时间',
+    `executed_at` TIMESTAMP NULL COMMENT '实际执行时间',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_follow_source_event` (`source_event_id`),
+    INDEX `idx_follow_status_time` (`status`, `scheduled_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket跟单任务表';
