@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -131,17 +132,34 @@ public class PolymarketApiClient {
                 .header("Accept", "application/json")
                 .GET()
                 .build();
+        IllegalStateException lastFailure = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw new IllegalStateException("Polymarket API request failed: " + uri + ", status=" + response.statusCode());
+                }
+                return objectMapper.readTree(response.body());
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                lastFailure = new IllegalStateException("Failed to request Polymarket API: " + uri, e);
+                if (attempt >= 3 || e instanceof InterruptedException) {
+                    break;
+                }
+                log.warn("Polymarket API request attempt {} failed for {}", attempt, uri);
+                sleepQuietly(attempt * 300L);
+            }
+        }
+        throw lastFailure == null ? new IllegalStateException("Failed to request Polymarket API: " + uri) : lastFailure;
+    }
+
+    private void sleepQuietly(long millis) {
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("Polymarket API request failed: " + uri + ", status=" + response.statusCode());
-            }
-            return objectMapper.readTree(response.body());
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new IllegalStateException("Failed to request Polymarket API: " + uri, e);
+            TimeUnit.MILLISECONDS.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

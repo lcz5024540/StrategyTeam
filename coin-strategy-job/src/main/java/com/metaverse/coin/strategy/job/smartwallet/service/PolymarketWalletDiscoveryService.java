@@ -32,7 +32,23 @@ public class PolymarketWalletDiscoveryService {
     private final SmartWalletProfileStoreService profileStoreService;
 
     public PolymarketDiscoverySummary analyzeTopWallets() {
-        List<PolymarketApiClient.LeaderboardEntry> candidates = polymarketApiClient.fetchLeaderboard();
+        List<String> notes = new ArrayList<>();
+        List<PolymarketApiClient.LeaderboardEntry> candidates;
+        try {
+            candidates = polymarketApiClient.fetchLeaderboard();
+        } catch (Exception e) {
+            log.warn("Failed to fetch Polymarket leaderboard", e);
+            notes.add("Leaderboard fetch failed: " + rootMessage(e));
+            return PolymarketDiscoverySummary.builder()
+                    .candidateWallets(0)
+                    .analyzedWallets(0)
+                    .importedProfiles(0)
+                    .importedTradeEvents(0)
+                    .qualifiedCount(profileStoreService.listWatchEnabled().size())
+                    .watchlistCount(profileStoreService.listWatchEnabled().size())
+                    .notes(notes)
+                    .build();
+        }
         Map<String, PolymarketApiClient.LeaderboardEntry> deduped = new LinkedHashMap<>();
         for (PolymarketApiClient.LeaderboardEntry candidate : candidates) {
             if (candidate == null || !StringUtils.hasText(candidate.getWalletAddress())) {
@@ -44,7 +60,6 @@ public class PolymarketWalletDiscoveryService {
         int importedProfiles = 0;
         int analyzedWallets = 0;
         int importedTradeEvents = 0;
-        List<String> notes = new ArrayList<>();
 
         int limit = Math.min(deduped.size(), monitorService.getAnalyzeTopN());
         for (PolymarketApiClient.LeaderboardEntry candidate : deduped.values().stream().limit(limit).toList()) {
@@ -57,8 +72,8 @@ public class PolymarketWalletDiscoveryService {
                 importedProfiles++;
                 analyzedWallets++;
             } catch (Exception e) {
-                log.warn("Failed to analyze Polymarket wallet {}", candidate.getWalletAddress(), e);
-                notes.add("Analyze failed for " + candidate.getWalletAddress() + ": " + e.getMessage());
+                log.warn("Failed to analyze Polymarket wallet {}", candidate.getWalletAddress());
+                notes.add("Analyze failed for " + candidate.getWalletAddress() + ": " + rootMessage(e));
             }
         }
 
@@ -66,8 +81,8 @@ public class PolymarketWalletDiscoveryService {
         try {
             importedTradeEvents = syncWatchlistTrades();
         } catch (Exception e) {
-            log.warn("Failed to sync watchlist trades after discovery", e);
-            notes.add("Trade sync failed after discovery: " + e.getMessage());
+            log.warn("Failed to sync watchlist trades after discovery");
+            notes.add("Trade sync failed after discovery: " + rootMessage(e));
         }
 
         notes.add("Candidates come from Polymarket official leaderboard and are re-ranked by local wallet score.");
@@ -86,13 +101,25 @@ public class PolymarketWalletDiscoveryService {
     public int syncWatchlistTrades() {
         int importedTradeEvents = 0;
         for (SmartWalletProfileEntity wallet : profileStoreService.listWatchEnabled()) {
-            List<PolymarketApiClient.UserTrade> trades = polymarketApiClient.fetchUserTrades(wallet.getWalletAddress());
+            List<PolymarketApiClient.UserTrade> trades;
+            try {
+                trades = polymarketApiClient.fetchUserTrades(wallet.getWalletAddress());
+            } catch (Exception e) {
+                log.warn("Skip syncing wallet {} because Polymarket trades request failed: {}",
+                        wallet.getWalletAddress(), rootMessage(e));
+                continue;
+            }
             for (PolymarketApiClient.UserTrade trade : trades) {
                 if (trade == null || !StringUtils.hasText(trade.getTradeId())) {
                     continue;
                 }
-                monitorService.ingestTradeEvent(toTradeEventRequest(trade, wallet));
-                importedTradeEvents++;
+                try {
+                    monitorService.ingestTradeEvent(toTradeEventRequest(trade, wallet));
+                    importedTradeEvents++;
+                } catch (Exception e) {
+                    log.warn("Skip trade {} for wallet {}: {}",
+                            trade.getTradeId(), wallet.getWalletAddress(), rootMessage(e));
+                }
             }
         }
         return importedTradeEvents;
@@ -103,7 +130,11 @@ public class PolymarketWalletDiscoveryService {
         if (!monitorService.isDiscoveryEnabled()) {
             return;
         }
-        analyzeTopWallets();
+        try {
+            analyzeTopWallets();
+        } catch (Exception e) {
+            log.warn("Scheduled Polymarket discovery failed: {}", rootMessage(e));
+        }
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.event-sync-fixed-delay-ms:15000}")
@@ -111,7 +142,11 @@ public class PolymarketWalletDiscoveryService {
         if (!monitorService.isEventSyncEnabled()) {
             return;
         }
-        syncWatchlistTrades();
+        try {
+            syncWatchlistTrades();
+        } catch (Exception e) {
+            log.warn("Scheduled Polymarket trade sync failed: {}", rootMessage(e));
+        }
     }
 
     private PolymarketWalletMetricsRequest buildMetrics(PolymarketApiClient.LeaderboardEntry candidate) {
@@ -214,5 +249,13 @@ public class PolymarketWalletDiscoveryService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null ? throwable.getMessage() : current.getMessage();
     }
 }
