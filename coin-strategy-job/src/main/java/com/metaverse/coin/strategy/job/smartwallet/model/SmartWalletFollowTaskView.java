@@ -22,6 +22,8 @@ public class SmartWalletFollowTaskView {
     private String executionMode;
     private String externalOrderId;
     private String errorMessage;
+    private Integer consensusWallets;
+    private BigDecimal consensusScore;
     private Date scheduledAt;
     private Date executedAt;
 }

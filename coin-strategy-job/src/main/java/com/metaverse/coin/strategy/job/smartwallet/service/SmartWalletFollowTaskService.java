@@ -8,8 +8,11 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProf
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
+import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
+import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,8 @@ public class SmartWalletFollowTaskService {
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final SmartWalletProfileStoreService profileStoreService;
     private final PolymarketExecutionGateway executionGateway;
+    private final SmartWalletSignalRiskService signalRiskService;
+    private final PolymarketConsensusSignalService consensusSignalService;
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
         SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
@@ -105,11 +110,10 @@ public class SmartWalletFollowTaskService {
             return;
         }
 
-        BigDecimal recommendedStake = event.getSizeUsdc()
-                .multiply(profile.getWalletScore() == null ? BigDecimal.ZERO : profile.getWalletScore())
-                .multiply(properties.getBankrollUtilizationRate())
-                .min(properties.getMaxStakeUsdc())
-                .setScale(2, RoundingMode.HALF_UP);
+        SignalRiskDecision decision = signalRiskService.evaluate(profile, event);
+        BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
+                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
 
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
@@ -121,8 +125,9 @@ public class SmartWalletFollowTaskService {
                 .setTriggerPrice(event.getPrice())
                 .setTriggerSizeUsdc(event.getSizeUsdc())
                 .setRecommendedStakeUsdc(recommendedStake)
-                .setStatus("PENDING")
+                .setStatus(decision.isAccepted() ? "PENDING" : "SKIPPED")
                 .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
+                .setErrorMessage(String.join(" | ", decision.getReasons()))
                 .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
@@ -137,6 +142,12 @@ public class SmartWalletFollowTaskService {
         try {
             SmartWalletSignal signal = SmartWalletSignal.builder()
                     .signalId(String.valueOf(task.getId()))
+                    .market(PredictionMarketOpportunity.builder()
+                            .marketId(task.getMarketId())
+                            .question(task.getQuestion())
+                            .outcome(task.getOutcome())
+                            .price(task.getTriggerPrice())
+                            .build())
                     .followOutcome(task.getOutcome())
                     .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
                     .build();
@@ -159,6 +170,12 @@ public class SmartWalletFollowTaskService {
     }
 
     private SmartWalletFollowTaskView toView(SmartWalletFollowTaskEntity task) {
+        ConsensusSignalView consensus = consensusSignalService.listRecentConsensusSignals().stream()
+                .filter(item -> item.getMarketId() != null && item.getMarketId().equalsIgnoreCase(task.getMarketId()))
+                .filter(item -> item.getOutcome() != null && item.getOutcome().equalsIgnoreCase(task.getOutcome()))
+                .filter(item -> item.getSide() != null && item.getSide().equalsIgnoreCase(task.getSide()))
+                .findFirst()
+                .orElse(null);
         return SmartWalletFollowTaskView.builder()
                 .id(task.getId())
                 .walletAddress(task.getWalletAddress())
@@ -173,6 +190,8 @@ public class SmartWalletFollowTaskService {
                 .executionMode(task.getExecutionMode())
                 .externalOrderId(task.getExternalOrderId())
                 .errorMessage(task.getErrorMessage())
+                .consensusWallets(consensus == null ? null : consensus.getDistinctWallets())
+                .consensusScore(consensus == null ? null : consensus.getConsensusScore())
                 .scheduledAt(task.getScheduledAt())
                 .executedAt(task.getExecutedAt())
                 .build();

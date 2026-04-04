@@ -27,6 +27,7 @@ public class SmartWalletProperties {
     private Long pollFixedDelayMs = 5000L;
     private PolymarketMonitor polymarket = new PolymarketMonitor();
     private ExecutionWallet executionWallet = new ExecutionWallet();
+    private SignalRisk signalRisk = new SignalRisk();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
 
@@ -52,6 +53,7 @@ public class SmartWalletProperties {
     public static class ExecutionWallet {
         private boolean enabled = false;
         private String chain = "polygon";
+        private Integer chainId = 137;
         private String address;
         private String privateKey;
         private String funderAddress;
@@ -64,6 +66,25 @@ public class SmartWalletProperties {
         private String apiKey;
         private String apiSecret;
         private String apiPassphrase;
+        private boolean deriveApiCredsIfMissing = true;
+        private String sdkMode = "PYTHON";
+        private String pythonExecutable = "python3";
+        private String helperScriptPath = "scripts/polymarket_clob_client.py";
+        private Integer signatureType = 0;
+        private String orderType = "GTC";
+    }
+
+    @Data
+    public static class SignalRisk {
+        private boolean allowSellSignal = false;
+        private Integer maxSignalAgeSeconds = 300;
+        private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
+        private BigDecimal minFollowPrice = new BigDecimal("0.05");
+        private BigDecimal maxFollowPrice = new BigDecimal("0.95");
+        private boolean enableConsensusGate = true;
+        private Integer consensusWindowSeconds = 180;
+        private Integer minDistinctWallets = 2;
+        private BigDecimal minConsensusScore = new BigDecimal("0.72");
     }
 
     @Data

@@ -7,6 +7,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -14,12 +17,9 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,8 +32,11 @@ public class PolymarketApiClient {
 
     private final SmartWalletProperties properties;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
+    private final OkHttpClient httpClient = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build();
 
     public List<LeaderboardEntry> fetchLeaderboard() {
@@ -126,26 +129,59 @@ public class PolymarketApiClient {
         return result;
     }
 
+    public MarketMetadata fetchMarketMetadata(String conditionId) {
+        if (!StringUtils.hasText(conditionId)) {
+            throw new IllegalArgumentException("conditionId is required");
+        }
+        JsonNode body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(),
+                "/markets", Map.of("condition_ids", conditionId)));
+        JsonNode market = extractArray(body).isEmpty() ? null : extractArray(body).get(0);
+        if (market == null || market.isNull()) {
+            throw new IllegalStateException("Polymarket market metadata not found for conditionId=" + conditionId);
+        }
+
+        List<String> outcomes = parseStringList(market.get("outcomes"));
+        List<String> clobTokenIds = parseStringList(firstNonNull(market.get("clobTokenIds"), market.get("clobToken_ids")));
+        Map<String, String> outcomeTokenMap = new LinkedHashMap<>();
+        for (int i = 0; i < Math.min(outcomes.size(), clobTokenIds.size()); i++) {
+            String outcome = normalizeOutcomeLabel(outcomes.get(i));
+            String tokenId = clobTokenIds.get(i);
+            if (StringUtils.hasText(outcome) && StringUtils.hasText(tokenId)) {
+                outcomeTokenMap.put(outcome, tokenId.trim());
+            }
+        }
+
+        return MarketMetadata.builder()
+                .conditionId(text(market, "conditionId", "condition_id"))
+                .marketId(text(market, "id", "marketId", "market_id"))
+                .question(text(market, "question", "title"))
+                .category(text(market, "category", "groupItemTitle"))
+                .minimumTickSize(num(market, "minimum_tick_size", "orderPriceMinTickSize", "tick_size"))
+                .negRisk(bool(market, "negRisk", "neg_risk"))
+                .outcomeTokenIds(outcomeTokenMap)
+                .build();
+    }
+
     private JsonNode getJson(URI uri) {
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(20))
+        Request request = new Request.Builder()
+                .url(uri.toString())
                 .header("Accept", "application/json")
-                .GET()
+                .header("User-Agent", "CoinStrategy/1.0")
+                .get()
                 .build();
         IllegalStateException lastFailure = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            try {
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    throw new IllegalStateException("Polymarket API request failed: " + uri + ", status=" + response.statusCode());
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    throw new IllegalStateException("Polymarket API request failed: " + uri + ", status=" + response.code());
                 }
-                return objectMapper.readTree(response.body());
-            } catch (IOException | InterruptedException e) {
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
+                if (response.body() == null) {
+                    throw new IllegalStateException("Polymarket API response body is empty: " + uri);
                 }
+                return objectMapper.readTree(response.body().string());
+            } catch (IOException e) {
                 lastFailure = new IllegalStateException("Failed to request Polymarket API: " + uri, e);
-                if (attempt >= 3 || e instanceof InterruptedException) {
+                if (attempt >= 3) {
                     break;
                 }
                 log.warn("Polymarket API request attempt {} failed for {}", attempt, uri);
@@ -224,6 +260,51 @@ public class PolymarketApiClient {
         return null;
     }
 
+    private JsonNode firstNonNull(JsonNode... candidates) {
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && !candidate.isNull()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private List<String> parseStringList(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return Collections.emptyList();
+        }
+        try {
+            if (node.isArray()) {
+                List<String> values = new ArrayList<>();
+                for (JsonNode element : node) {
+                    if (element != null && !element.isNull()) {
+                        values.add(element.asText());
+                    }
+                }
+                return values;
+            }
+            if (node.isTextual()) {
+                String raw = node.asText();
+                if (!StringUtils.hasText(raw)) {
+                    return Collections.emptyList();
+                }
+                JsonNode parsed = objectMapper.readTree(raw);
+                if (parsed.isArray()) {
+                    List<String> values = new ArrayList<>();
+                    for (JsonNode element : parsed) {
+                        if (element != null && !element.isNull()) {
+                            values.add(element.asText());
+                        }
+                    }
+                    return values;
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Failed to parse Polymarket list field {}", node, e);
+        }
+        return Collections.emptyList();
+    }
+
     private BigDecimal num(JsonNode node, String... fields) {
         String text = text(node, fields);
         if (!StringUtils.hasText(text)) {
@@ -254,6 +335,14 @@ public class PolymarketApiClient {
         }
     }
 
+    private boolean bool(JsonNode node, String... fields) {
+        String text = text(node, fields);
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        return "true".equalsIgnoreCase(text) || "1".equals(text);
+    }
+
     private String normalizeOutcome(String value) {
         if (!StringUtils.hasText(value)) {
             return "YES";
@@ -263,6 +352,20 @@ public class PolymarketApiClient {
             return "NO";
         }
         return "YES";
+    }
+
+    private String normalizeOutcomeLabel(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String normalized = value.trim().toUpperCase();
+        if (normalized.contains("NO")) {
+            return "NO";
+        }
+        if (normalized.contains("YES")) {
+            return "YES";
+        }
+        return normalized;
     }
 
     private String normalizeSide(String value) {
@@ -314,5 +417,18 @@ public class PolymarketApiClient {
         private BigDecimal price;
         private BigDecimal size;
         private Long tradedAt;
+    }
+
+    @Data
+    @Builder
+    public static class MarketMetadata {
+        private String conditionId;
+        private String marketId;
+        private String question;
+        private String category;
+        private BigDecimal minimumTickSize;
+        private boolean negRisk;
+        @Builder.Default
+        private Map<String, String> outcomeTokenIds = new LinkedHashMap<>();
     }
 }

@@ -4,9 +4,14 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProf
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
+import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketProductOverview;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioAttributionItem;
+import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioPositionView;
+import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
@@ -16,6 +21,10 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSum
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketPortfolioAnalyticsService;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOpportunityService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService;
@@ -44,6 +53,10 @@ public class SmartWalletController {
     private final PredictionMarketOpportunityService opportunityService;
     private final SmartWalletFollowService followService;
     private final PolymarketSmartWalletMonitorService polymarketMonitorService;
+    private final PolymarketConsensusSignalService consensusSignalService;
+    private final PolymarketClobExecutionService clobExecutionService;
+    private final PolymarketPortfolioAnalyticsService portfolioAnalyticsService;
+    private final PolymarketProductOverviewService productOverviewService;
     private final PolymarketWalletDiscoveryService polymarketWalletDiscoveryService;
     private final SmartWalletSelectionService selectionService;
     private final SmartWalletFollowTaskService followTaskService;
@@ -60,6 +73,38 @@ public class SmartWalletController {
         );
     }
 
+    @GetMapping("/overview")
+    public PolymarketProductOverview overview() {
+        return productOverviewService.overview();
+    }
+
+    @GetMapping("/portfolio/summary")
+    public PortfolioSummaryView portfolioSummary(@RequestParam(required = false) Integer windowSeconds,
+                                                 @RequestParam(defaultValue = "5000") Integer limit) {
+        return portfolioAnalyticsService.summary(windowSeconds, limit);
+    }
+
+    @GetMapping("/portfolio/positions")
+    public List<PortfolioPositionView> portfolioPositions(@RequestParam(required = false) Integer windowSeconds,
+                                                          @RequestParam(defaultValue = "2000") Integer limit,
+                                                          @RequestParam(defaultValue = "0") Integer offset) {
+        return portfolioAnalyticsService.listPositions(windowSeconds, limit, offset);
+    }
+
+    @GetMapping("/portfolio/attribution/wallets")
+    public List<PortfolioAttributionItem> portfolioWalletAttribution(@RequestParam(required = false) Integer windowSeconds,
+                                                                     @RequestParam(defaultValue = "5000") Integer taskLimit,
+                                                                     @RequestParam(defaultValue = "20") Integer limit) {
+        return portfolioAnalyticsService.walletAttribution(windowSeconds, taskLimit, limit);
+    }
+
+    @GetMapping("/portfolio/attribution/markets")
+    public List<PortfolioAttributionItem> portfolioMarketAttribution(@RequestParam(required = false) Integer windowSeconds,
+                                                                     @RequestParam(defaultValue = "5000") Integer taskLimit,
+                                                                     @RequestParam(defaultValue = "20") Integer limit) {
+        return portfolioAnalyticsService.marketAttribution(windowSeconds, taskLimit, limit);
+    }
+
     @GetMapping("/profiles")
     public List<SmartWalletProfileEntity> profiles() {
         return polymarketMonitorService.listProfiles();
@@ -68,6 +113,15 @@ public class SmartWalletController {
     @GetMapping("/watchlist")
     public List<SmartWalletProfileEntity> watchlist() {
         return polymarketMonitorService.listWatchlist();
+    }
+
+    @GetMapping("/consensus-signals")
+    public List<ConsensusSignalView> consensusSignals(@RequestParam(required = false) Integer windowSeconds,
+                                                      @RequestParam(required = false) String marketId,
+                                                      @RequestParam(required = false) String outcome,
+                                                      @RequestParam(required = false) String side,
+                                                      @RequestParam(required = false) Integer limit) {
+        return consensusSignalService.listConsensusSignals(windowSeconds, marketId, outcome, side, limit);
     }
 
     @PostMapping("/polymarket/metrics")
@@ -140,5 +194,25 @@ public class SmartWalletController {
     @GetMapping("/execution-wallet/status")
     public ExecutionWalletStatus executionWalletStatus() {
         return followService.executionWalletStatus();
+    }
+
+    @PostMapping("/execution-wallet/derive-api-creds")
+    public Map<String, Object> deriveExecutionWalletApiCreds() {
+        return clobExecutionService.deriveApiCreds();
+    }
+
+    @GetMapping("/clob/markets/{conditionId}")
+    public Object clobMarketMetadata(@PathVariable String conditionId) {
+        return clobExecutionService.marketMetadata(conditionId);
+    }
+
+    @GetMapping("/clob/orders/{orderId}")
+    public Map<String, Object> clobOrder(@PathVariable String orderId) {
+        return clobExecutionService.getOrder(orderId);
+    }
+
+    @PostMapping("/clob/orders/{orderId}/cancel")
+    public Map<String, Object> cancelClobOrder(@PathVariable String orderId) {
+        return clobExecutionService.cancelOrder(orderId);
     }
 }

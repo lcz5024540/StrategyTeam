@@ -54,6 +54,7 @@ smart-wallet:
   execution-wallet:
     enabled: false
     chain: "polygon"
+    chain-id: 137
     address: "${POLYMARKET_EXECUTION_WALLET_ADDRESS:}"
     private-key: "${POLYMARKET_EXECUTION_PRIVATE_KEY:}"
     funder-address: "${POLYMARKET_EXECUTION_FUNDER_ADDRESS:}"
@@ -66,6 +67,22 @@ smart-wallet:
     api-key: "${POLYMARKET_CLOB_API_KEY:}"
     api-secret: "${POLYMARKET_CLOB_API_SECRET:}"
     api-passphrase: "${POLYMARKET_CLOB_API_PASSPHRASE:}"
+    derive-api-creds-if-missing: true
+    sdk-mode: "PYTHON"
+    python-executable: "${POLYMARKET_PYTHON_EXECUTABLE:python3}"
+    helper-script-path: "scripts/polymarket_clob_client.py"
+    signature-type: 0
+    order-type: "GTC"
+  signal-risk:
+    allow-sell-signal: false
+    max-signal-age-seconds: 300
+    min-trigger-size-usdc: 5
+    min-follow-price: 0.05
+    max-follow-price: 0.95
+    enable-consensus-gate: true
+    consensus-window-seconds: 180
+    min-distinct-wallets: 2
+    min-consensus-score: 0.72
   wallets:
     - address: "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
       chain: "polygon"

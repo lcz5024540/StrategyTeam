@@ -200,7 +200,7 @@ public class SmartWalletFollowService {
     private List<String> buildNotes() {
         List<String> notes = new ArrayList<>();
         notes.add("This service ranks wallets and markets; it cannot guarantee win rate.");
-        notes.add("LIVE execution requires execution-wallet config plus Polymarket API credentials.");
+        notes.add("LIVE execution requires execution-wallet config and the official Polymarket Python SDK bridge.");
         notes.add("Recommended stake is capped by bankroll utilization and max-stake-usdc.");
         return notes;
     }
