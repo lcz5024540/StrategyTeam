@@ -28,6 +28,7 @@ public class SmartWalletProperties {
     private PolymarketMonitor polymarket = new PolymarketMonitor();
     private ExecutionWallet executionWallet = new ExecutionWallet();
     private SignalRisk signalRisk = new SignalRisk();
+    private SettlementSync settlementSync = new SettlementSync();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
 
@@ -85,6 +86,19 @@ public class SmartWalletProperties {
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 2;
         private BigDecimal minConsensusScore = new BigDecimal("0.72");
+    }
+
+    @Data
+    public static class SettlementSync {
+        private boolean enabled = true;
+        private Long fixedDelayMs = 300000L;
+        private Integer positionLimit = 50;
+        private Integer marketLimit = 20;
+        private boolean refreshCacheOnEachRun = false;
+        private Integer refreshCacheEveryRuns = 12;
+        private Integer retryBatchLimit = 20;
+        private Integer retryBackoffMinutes = 15;
+        private Integer maxRetryFailures = 8;
     }
 
     @Data

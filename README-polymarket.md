@@ -111,6 +111,12 @@ The product goal is not just "place orders on Polymarket", but:
 - `GET /smart-wallet/clob/markets/{conditionId}`
 - `GET /smart-wallet/clob/orders/{orderId}`
 - `POST /smart-wallet/clob/orders/{orderId}/cancel`
+- `POST /smart-wallet/settlement/sync`
+- `GET /smart-wallet/settlement/status`
+- `GET /smart-wallet/settlement/runs`
+- `GET /smart-wallet/settlement/retries`
+- `GET /smart-wallet/settlement/retries/report`
+- `POST /smart-wallet/settlement/retries/process`
 
 ## Risk Rules
 
@@ -138,6 +144,34 @@ Important sections:
 - `smart-wallet.signal-risk`
 - `smart-wallet.execution-wallet`
 
+## Environment Variables
+
+The execution wallet now reads secrets only from environment variables.
+
+Template file:
+
+- `scripts/polymarket-env.example.sh`
+
+Recommended local workflow:
+
+1. copy `scripts/polymarket-env.example.sh` to `scripts/polymarket-env.sh`
+2. fill in your own wallet and CLOB values
+3. start the service with `scripts/run-smart-wallet.sh`
+
+Variables used by the service:
+
+```bash
+export POLYMARKET_EXECUTION_WALLET_ADDRESS=""
+export POLYMARKET_EXECUTION_PRIVATE_KEY=""
+export POLYMARKET_EXECUTION_FUNDER_ADDRESS=""
+
+export POLYMARKET_CLOB_API_KEY=""
+export POLYMARKET_CLOB_API_SECRET=""
+export POLYMARKET_CLOB_API_PASSPHRASE=""
+
+export POLYMARKET_PYTHON_EXECUTABLE="/opt/homebrew/bin/python3.11"
+```
+
 ## Official API Binding
 
 This service is aligned with the official Polymarket API domains from the public docs:
@@ -154,6 +188,9 @@ For that reason, the Java integration in this repo uses direct HTTP bindings ins
 - base URLs remain configurable from `application.yml`
 - discovery and analytics currently rely on Gamma/Data APIs
 - live CLOB execution is bridged through the official Python SDK helper in `scripts/polymarket_clob_client.py`
+- settlement sync supports scheduled batch processing with market de-duplication and cached metadata refresh control
+- settlement sync persists run history and failed-market retry queue
+- settlement retry tables are auto-created on service startup if missing
 
 ## Delivery Status
 
@@ -178,6 +215,8 @@ For that reason, the Java integration in this repo uses direct HTTP bindings ins
 - portfolio summary endpoint
 - portfolio position and attribution endpoints
 - resilience for intermittent Polymarket TLS failures
+- settlement sync run history
+- failed-market retry queue with backoff
 
 ### Partially Implemented
 
@@ -195,7 +234,8 @@ For that reason, the Java integration in this repo uses direct HTTP bindings ins
 - analytics
   - task, profile, portfolio, and attribution visibility exist
   - consensus signal visibility exists
-  - strategy attribution and portfolio PnL are not yet complete
+- strategy attribution and portfolio PnL are not yet complete
+- retry queue currently focuses on metadata fetch failures rather than all unresolved markets
 
 ### Not Yet Implemented
 

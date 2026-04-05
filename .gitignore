@@ -35,3 +35,5 @@ build/
 ### Test Credentials ###
 binance-test.properties
 
+### Local Secrets ###
+scripts/polymarket-env.sh

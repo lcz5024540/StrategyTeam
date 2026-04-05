@@ -241,3 +241,45 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_daily_report` (
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY `uk_daily_report_date_execution` (`report_date`, `execution_address`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket每日报表表';
+
+-- 12. Polymarket 结算同步运行历史表
+CREATE TABLE IF NOT EXISTS `smart_wallet_settlement_run` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `trigger_type` VARCHAR(16) NOT NULL COMMENT 'SCHEDULED/MANUAL',
+    `position_limit` INT NOT NULL DEFAULT 0 COMMENT '本轮仓位扫描上限',
+    `market_limit` INT NOT NULL DEFAULT 0 COMMENT '本轮市场扫描上限',
+    `refresh_cache` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否刷新缓存',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'RUNNING' COMMENT 'RUNNING/SUCCESS/FAILED',
+    `scanned_positions` INT NOT NULL DEFAULT 0 COMMENT '扫描仓位数',
+    `distinct_markets` INT NOT NULL DEFAULT 0 COMMENT '去重市场数',
+    `fetched_markets` INT NOT NULL DEFAULT 0 COMMENT '实际拉取市场数',
+    `resolved_positions` INT NOT NULL DEFAULT 0 COMMENT '已结算仓位数',
+    `unresolved_markets` INT NOT NULL DEFAULT 0 COMMENT '未结算市场数',
+    `skipped_future_markets` INT NOT NULL DEFAULT 0 COMMENT '跳过的未来市场数',
+    `failed_markets` INT NOT NULL DEFAULT 0 COMMENT '失败市场数',
+    `notes` TEXT DEFAULT NULL COMMENT '运行备注',
+    `error_message` VARCHAR(512) DEFAULT NULL COMMENT '整体错误',
+    `started_at` TIMESTAMP NOT NULL COMMENT '开始时间',
+    `finished_at` TIMESTAMP NULL COMMENT '结束时间',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX `idx_settlement_run_started` (`started_at`),
+    INDEX `idx_settlement_run_status` (`status`, `started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket结算同步运行历史表';
+
+-- 13. Polymarket 结算失败重试队列表
+CREATE TABLE IF NOT EXISTS `smart_wallet_settlement_retry` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `market_id` VARCHAR(128) NOT NULL COMMENT '市场ID',
+    `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
+    `latest_run_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '最近一次运行ID',
+    `failure_count` INT NOT NULL DEFAULT 1 COMMENT '累计失败次数',
+    `last_error_message` VARCHAR(512) DEFAULT NULL COMMENT '最近错误',
+    `last_failed_at` TIMESTAMP NOT NULL COMMENT '最近失败时间',
+    `next_retry_at` TIMESTAMP NOT NULL COMMENT '下一次重试时间',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/RETRYING/RESOLVED/ABANDONED',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_settlement_retry_market` (`market_id`),
+    INDEX `idx_settlement_retry_status` (`status`, `next_retry_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket结算失败重试队列表';

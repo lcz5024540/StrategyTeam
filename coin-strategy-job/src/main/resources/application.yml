@@ -52,13 +52,13 @@ smart-wallet:
     discovery-fixed-delay-ms: 3600000
     event-sync-fixed-delay-ms: 15000
   execution-wallet:
-    enabled: false
+    enabled: true
     chain: "polygon"
     chain-id: 137
-    address: "${POLYMARKET_EXECUTION_WALLET_ADDRESS:0x645e08d13aa56af683c345f5301bcb5b8c2fc6b7}"
+    address: "${POLYMARKET_EXECUTION_WALLET_ADDRESS:}"
     private-key: "${POLYMARKET_EXECUTION_PRIVATE_KEY:}"
     funder-address: "${POLYMARKET_EXECUTION_FUNDER_ADDRESS:}"
-    max-order-usdc: 150
+    max-order-usdc: 30
     min-order-usdc: 1
     price-slippage-rate: 0.02
     allow-yes: true
@@ -69,7 +69,7 @@ smart-wallet:
     api-passphrase: "${POLYMARKET_CLOB_API_PASSPHRASE:}"
     derive-api-creds-if-missing: true
     sdk-mode: "PYTHON"
-    python-executable: "${POLYMARKET_PYTHON_EXECUTABLE:python3}"
+    python-executable: "${POLYMARKET_PYTHON_EXECUTABLE:/opt/homebrew/bin/python3.11}"
     helper-script-path: "scripts/polymarket_clob_client.py"
     signature-type: 0
     order-type: "GTC"
@@ -83,6 +83,16 @@ smart-wallet:
     consensus-window-seconds: 180
     min-distinct-wallets: 2
     min-consensus-score: 0.72
+  settlement-sync:
+    enabled: true
+    fixed-delay-ms: 300000
+    position-limit: 50
+    market-limit: 20
+    refresh-cache-on-each-run: false
+    refresh-cache-every-runs: 12
+    retry-batch-limit: 20
+    retry-backoff-minutes: 15
+    max-retry-failures: 8
   wallets:
     - address: "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
       chain: "polygon"

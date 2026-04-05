@@ -25,6 +25,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceV
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlTimelinePoint;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReportAttributionItem;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncFailure;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -415,6 +416,29 @@ public class SmartWalletAccountingService {
                 .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
                 .orderByAsc(SmartWalletPositionEntity::getLastFilledAt)
                 .last("limit " + Math.max(positionLimit, 1)));
+        return syncSettlementsForPositions(positions, marketLimit, refreshCache);
+    }
+
+    public SettlementSyncSummary syncSettlementsForMarkets(List<String> marketIds, boolean refreshCache) {
+        if (marketIds == null || marketIds.isEmpty()) {
+            return SettlementSyncSummary.builder()
+                    .scannedPositions(0)
+                    .distinctMarkets(0)
+                    .fetchedMarkets(0)
+                    .resolvedPositions(0)
+                    .unresolvedMarkets(0)
+                    .skippedFutureMarkets(0)
+                    .failedMarkets(0)
+                    .build();
+        }
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
+                .in(SmartWalletPositionEntity::getMarketId, marketIds)
+                .orderByAsc(SmartWalletPositionEntity::getLastFilledAt));
+        return syncSettlementsForPositions(positions, marketIds.size(), refreshCache);
+    }
+
+    private SettlementSyncSummary syncSettlementsForPositions(List<SmartWalletPositionEntity> positions, int marketLimit, boolean refreshCache) {
         Set<String> markets = new LinkedHashSet<>();
         for (SmartWalletPositionEntity position : positions) {
             if (StringUtils.hasText(position.getMarketId()) && markets.size() < Math.max(marketLimit, 1)) {
@@ -427,6 +451,7 @@ public class SmartWalletAccountingService {
         int skippedFuture = 0;
         int failed = 0;
         List<String> notes = new ArrayList<>();
+        List<SettlementSyncFailure> failures = new ArrayList<>();
         Map<String, PolymarketApiClient.MarketMetadata> metadataByMarket = new LinkedHashMap<>();
         for (String marketId : markets) {
             try {
@@ -435,8 +460,20 @@ public class SmartWalletAccountingService {
                 fetched++;
             } catch (Exception e) {
                 failed++;
-                notes.add("Metadata fetch failed for " + marketId + ": " + e.getMessage());
-                log.warn("Failed to sync settlement for market {}: {}", marketId, e.getMessage());
+                String question = positions.stream()
+                        .filter(position -> marketId.equalsIgnoreCase(position.getMarketId()))
+                        .map(SmartWalletPositionEntity::getQuestion)
+                        .filter(StringUtils::hasText)
+                        .findFirst()
+                        .orElse(null);
+                String message = e.getMessage();
+                notes.add("Metadata fetch failed for " + marketId + ": " + message);
+                failures.add(SettlementSyncFailure.builder()
+                        .marketId(marketId)
+                        .question(question)
+                        .errorMessage(message)
+                        .build());
+                log.warn("Failed to sync settlement for market {}: {}", marketId, message);
             }
         }
         for (SmartWalletPositionEntity position : positions) {
@@ -467,6 +504,8 @@ public class SmartWalletAccountingService {
                 .skippedFutureMarkets(skippedFuture)
                 .failedMarkets(failed)
                 .notes(notes)
+                .failures(failures)
+                .processedMarketIds(new ArrayList<>(markets))
                 .build();
     }
 

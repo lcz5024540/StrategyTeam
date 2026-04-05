@@ -18,4 +18,8 @@ public class SettlementSyncSummary {
     private Integer failedMarkets;
     @Builder.Default
     private List<String> notes = new ArrayList<>();
+    @Builder.Default
+    private List<SettlementSyncFailure> failures = new ArrayList<>();
+    @Builder.Default
+    private List<String> processedMarketIds = new ArrayList<>();
 }

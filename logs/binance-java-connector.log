@@ -29,3 +29,300 @@
 2026-04-05 09:15:00.372[1775351700372] | WARN  | XNIO-1 task-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
 2026-04-05 09:15:05.678[1775351705678] | WARN  | XNIO-1 task-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
 2026-04-05 09:15:11.290[1775351711290] | WARN  | XNIO-1 task-1 | c.m.c.s.j.s.s.SmartWalletAccountingService - Failed to sync settlement for market 0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866: Failed to request Polymarket API: https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 09:36:42.436[1775353002436] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 09:36:42.440[1775353002440] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 09:36:42.443[1775353002443] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 09:36:42.448[1775353002448] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 09:37:01.686[1775353021686] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 97222 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 09:37:01.688[1775353021688] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 09:37:02.247[1775353022247] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 09:37:02.257[1775353022257] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 09:37:02.257[1775353022257] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 529 ms
+2026-04-05 09:37:02.769[1775353022769] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 09:37:02.772[1775353022772] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 09:37:02.776[1775353022776] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 09:37:02.807[1775353022807] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 09:37:02.829[1775353022829] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 09:37:02.835[1775353022835] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.345 seconds (JVM running for 6.601)
+2026-04-05 09:37:02.867[1775353022867] | INFO  | scheduling-1 | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 09:37:02.981[1775353022981] | INFO  | scheduling-1 | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 09:37:08.026[1775353028026] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 09:37:13.334[1775353033334] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 09:37:18.940[1775353038940] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xdb27bf2ac5d428a9c63dbc914611036855a6c56e because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 09:37:23.947[1775353043947] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x2005d16a84ceefa912d4e380cd32e7ff827875ea&limit=30&offset=0&takerOnly=true
+2026-04-05 09:37:35.507[1775353055507] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=8, markets=8, resolved=1, failed=0
+2026-04-05 09:37:36.606[1775353056606] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 09:37:36.606[1775353056606] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 09:37:36.607[1775353056607] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 09:42:35.514[1775353355514] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=7, markets=7, resolved=0, failed=0
+2026-04-05 09:47:35.518[1775353655518] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=7, markets=7, resolved=0, failed=0
+2026-04-05 09:52:35.524[1775353955524] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=7, markets=7, resolved=0, failed=0
+2026-04-05 09:52:37.980[1775353957980] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 09:52:37.983[1775353957983] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 09:52:37.985[1775353957985] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 09:52:37.991[1775353957991] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 09:52:52.744[1775353972744] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 98973 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 09:52:52.751[1775353972751] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 09:52:53.586[1775353973586] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 09:52:53.594[1775353973594] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 09:52:53.594[1775353973594] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 764 ms
+2026-04-05 09:52:54.117[1775353974117] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 09:52:54.122[1775353974122] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 09:52:54.125[1775353974125] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 09:52:54.154[1775353974154] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 09:52:54.175[1775353974175] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 09:52:54.179[1775353974179] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.686 seconds (JVM running for 6.945)
+2026-04-05 09:52:54.279[1775353974279] | INFO  | scheduling-1 | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 09:52:54.410[1775353974410] | INFO  | scheduling-1 | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 09:52:59.468[1775353979468] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 09:53:04.774[1775353984774] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 09:53:10.381[1775353990381] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xdb27bf2ac5d428a9c63dbc914611036855a6c56e because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 09:53:13.877[1775353993877] | ERROR | scheduling-1 | o.s.s.s.TaskUtils$LoggingErrorHandler - Unexpected error occurred in scheduled task
+org.springframework.jdbc.BadSqlGrammarException: 
+### Error updating database.  Cause: java.sql.SQLSyntaxErrorException: Table 'coin_strategy.smart_wallet_settlement_run' doesn't exist
+### The error may exist in com/metaverse/coin/strategy/common/dao/mapper/SmartWalletSettlementRunMapper.java (best guess)
+### The error may involve com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRunMapper.insert-Inline
+### The error occurred while setting parameters
+### SQL: INSERT INTO smart_wallet_settlement_run  ( trigger_type, position_limit, market_limit, refresh_cache, status,          started_at,  created_at, updated_at )  VALUES (  ?, ?, ?, ?, ?,          ?,  ?, ?  )
+### Cause: java.sql.SQLSyntaxErrorException: Table 'coin_strategy.smart_wallet_settlement_run' doesn't exist
+; bad SQL grammar []; nested exception is java.sql.SQLSyntaxErrorException: Table 'coin_strategy.smart_wallet_settlement_run' doesn't exist
+	at org.springframework.jdbc.support.SQLErrorCodeSQLExceptionTranslator.doTranslate(SQLErrorCodeSQLExceptionTranslator.java:239)
+	at org.springframework.jdbc.support.AbstractFallbackSQLExceptionTranslator.translate(AbstractFallbackSQLExceptionTranslator.java:70)
+	at org.mybatis.spring.MyBatisExceptionTranslator.translateExceptionIfPossible(MyBatisExceptionTranslator.java:92)
+	at org.mybatis.spring.SqlSessionTemplate$SqlSessionInterceptor.invoke(SqlSessionTemplate.java:439)
+	at jdk.proxy2/jdk.proxy2.$Proxy64.insert(Unknown Source)
+	at org.mybatis.spring.SqlSessionTemplate.insert(SqlSessionTemplate.java:272)
+	at com.baomidou.mybatisplus.core.override.MybatisMapperMethod.execute(MybatisMapperMethod.java:59)
+	at com.baomidou.mybatisplus.core.override.MybatisMapperProxy$PlainMethodInvoker.invoke(MybatisMapperProxy.java:152)
+	at com.baomidou.mybatisplus.core.override.MybatisMapperProxy.invoke(MybatisMapperProxy.java:89)
+	at jdk.proxy2/jdk.proxy2.$Proxy76.insert(Unknown Source)
+	at com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService.createRun(SmartWalletSettlementSyncService.java:210)
+	at com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService.runLocked(SmartWalletSettlementSyncService.java:168)
+	at com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService.scheduledSyncSettlements(SmartWalletSettlementSyncService.java:55)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.scheduling.support.ScheduledMethodRunnable.run(ScheduledMethodRunnable.java:84)
+	at org.springframework.scheduling.support.DelegatingErrorHandlingRunnable.run(DelegatingErrorHandlingRunnable.java:54)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.runAndReset(FutureTask.java:305)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:305)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+Caused by: java.sql.SQLSyntaxErrorException: Table 'coin_strategy.smart_wallet_settlement_run' doesn't exist
+	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:121)
+	at com.mysql.cj.jdbc.exceptions.SQLExceptionsMapping.translateException(SQLExceptionsMapping.java:122)
+	at com.mysql.cj.jdbc.ClientPreparedStatement.executeInternal(ClientPreparedStatement.java:912)
+	at com.mysql.cj.jdbc.ClientPreparedStatement.execute(ClientPreparedStatement.java:354)
+	at com.zaxxer.hikari.pool.ProxyPreparedStatement.execute(ProxyPreparedStatement.java:44)
+	at com.zaxxer.hikari.pool.HikariProxyPreparedStatement.execute(HikariProxyPreparedStatement.java)
+	at org.apache.ibatis.executor.statement.PreparedStatementHandler.update(PreparedStatementHandler.java:48)
+	at org.apache.ibatis.executor.statement.RoutingStatementHandler.update(RoutingStatementHandler.java:75)
+	at org.apache.ibatis.executor.SimpleExecutor.doUpdate(SimpleExecutor.java:50)
+	at org.apache.ibatis.executor.BaseExecutor.update(BaseExecutor.java:117)
+	at org.apache.ibatis.executor.CachingExecutor.update(CachingExecutor.java:76)
+	at org.apache.ibatis.session.defaults.DefaultSqlSession.update(DefaultSqlSession.java:197)
+	at org.apache.ibatis.session.defaults.DefaultSqlSession.insert(DefaultSqlSession.java:184)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.mybatis.spring.SqlSessionTemplate$SqlSessionInterceptor.invoke(SqlSessionTemplate.java:425)
+	... 21 common frames omitted
+2026-04-05 09:53:35.108[1775354015108] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 09:53:35.108[1775354015108] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 09:53:35.110[1775354015110] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 2 ms
+2026-04-05 09:54:36.488[1775354076488] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 09:54:36.491[1775354076491] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 09:54:36.493[1775354076493] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 09:54:36.498[1775354076498] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 09:55:18.486[1775354118486] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 99478 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 09:55:18.489[1775354118489] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 09:55:19.161[1775354119161] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 09:55:19.179[1775354119179] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 09:55:19.179[1775354119179] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 647 ms
+2026-04-05 09:55:19.636[1775354119636] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 09:55:19.772[1775354119772] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 09:55:19.976[1775354119976] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 09:55:19.980[1775354119980] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 09:55:19.986[1775354119986] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 09:55:20.028[1775354120028] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 09:55:20.045[1775354120045] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 09:55:20.052[1775354120052] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.781 seconds (JVM running for 7.189)
+2026-04-05 09:55:28.772[1775354128772] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 09:55:31.536[1775354131536] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=7, markets=7, resolved=0, failed=0
+2026-04-05 09:55:53.644[1775354153644] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 09:55:53.645[1775354153645] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 09:55:53.649[1775354153649] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 4 ms
+2026-04-05 10:00:31.550[1775354431550] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=7, markets=7, resolved=0, failed=0
+2026-04-05 10:05:36.563[1775354736563] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc
+2026-04-05 10:05:41.868[1775354741868] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc
+2026-04-05 10:05:47.479[1775354747479] | WARN  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletAccountingService - Failed to sync settlement for market 0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc: Failed to request Polymarket API: https://gamma-api.polymarket.com/markets?condition_ids=0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc
+2026-04-05 10:05:47.492[1775354747492] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=8, markets=8, resolved=0, failed=1
+2026-04-05 10:10:52.508[1775355052508] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc
+2026-04-05 10:10:57.813[1775355057813] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc
+2026-04-05 10:10:59.145[1775355059145] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=8, markets=8, resolved=0, failed=0
+2026-04-05 10:15:59.167[1775355359167] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=8, markets=8, resolved=0, failed=0
+2026-04-05 10:20:59.192[1775355659192] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=8, markets=8, resolved=0, failed=0
+2026-04-05 10:26:04.259[1775355964259] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=8, markets=8, resolved=0, failed=0
+2026-04-05 10:26:26.225[1775355986225] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 10:26:26.231[1775355986231] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 10:26:26.234[1775355986234] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 10:26:26.243[1775355986243] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 10:26:31.904[1775355991904] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 1594 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 10:26:31.906[1775355991906] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 10:26:32.509[1775355992509] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 10:26:32.520[1775355992520] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 10:26:32.520[1775355992520] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 577 ms
+2026-04-05 10:26:32.889[1775355992889] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 10:26:33.003[1775355993003] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 10:26:33.188[1775355993188] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 10:26:33.197[1775355993197] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 10:26:33.200[1775355993200] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 10:26:33.230[1775355993230] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 10:26:33.248[1775355993248] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 10:26:33.252[1775355993252] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.55 seconds (JVM running for 6.871)
+2026-04-05 10:26:38.322[1775355998322] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 10:26:43.630[1775356003630] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 10:26:46.855[1775356006855] | INFO  | XNIO-1 task-2 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 10:26:46.856[1775356006856] | INFO  | XNIO-1 task-2 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 10:26:46.857[1775356006857] | INFO  | XNIO-1 task-2 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 10:26:53.193[1775356013193] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 10:26:58.500[1775356018500] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 10:27:11.965[1775356031965] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=8, markets=8, resolved=2, failed=0
+2026-04-05 10:31:05.682[1775356265682] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 10:31:05.686[1775356265686] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 10:31:05.689[1775356265689] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 10:31:05.695[1775356265695] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 10:31:11.232[1775356271232] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 2058 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 10:31:11.234[1775356271234] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 10:31:11.874[1775356271874] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 10:31:11.886[1775356271886] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 10:31:11.886[1775356271886] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 621 ms
+2026-04-05 10:31:12.276[1775356272276] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 10:31:12.397[1775356272397] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 10:31:12.566[1775356272566] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 10:31:12.569[1775356272569] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 10:31:12.574[1775356272574] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 10:31:12.604[1775356272604] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 10:31:12.619[1775356272619] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 10:31:12.626[1775356272626] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.582 seconds (JVM running for 6.824)
+2026-04-05 10:31:21.219[1775356281219] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 10:31:53.189[1775356313189] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 10:31:57.288[1775356317288] | WARN  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletAccountingService - Failed to sync settlement for market 0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866: Failed to request Polymarket API: https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 10:32:11.084[1775356331084] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=1
+2026-04-05 10:32:11.715[1775356331715] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 10:32:11.716[1775356331716] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 10:32:11.718[1775356331718] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 2 ms
+2026-04-05 10:37:11.703[1775356631703] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 10:42:13.945[1775356933945] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 10:47:13.970[1775357233970] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 10:52:13.989[1775357533989] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 10:57:09.557[1775357829557] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 10:57:09.568[1775357829568] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 10:57:09.571[1775357829571] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 10:57:09.580[1775357829580] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 10:57:15.159[1775357835159] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 5079 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 10:57:15.161[1775357835161] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 10:57:15.788[1775357835788] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 10:57:15.796[1775357835796] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 10:57:15.796[1775357835796] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 591 ms
+2026-04-05 10:57:16.177[1775357836177] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 10:57:16.294[1775357836294] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 10:57:16.468[1775357836468] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 10:57:16.473[1775357836473] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 10:57:16.476[1775357836476] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 10:57:16.512[1775357836512] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 10:57:16.530[1775357836530] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 10:57:16.537[1775357836537] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.574 seconds (JVM running for 6.849)
+2026-04-05 10:57:25.345[1775357845345] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 10:57:27.689[1775357847689] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 10:57:51.359[1775357871359] | INFO  | XNIO-1 task-2 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 10:57:51.359[1775357871359] | INFO  | XNIO-1 task-2 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 10:57:51.360[1775357871360] | INFO  | XNIO-1 task-2 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 11:02:27.660[1775358147660] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:07:27.674[1775358447674] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:12:27.688[1775358747688] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:17:28.769[1775359048769] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:22:28.791[1775359348791] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:27:28.907[1775359648907] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:32:28.916[1775359948916] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:37:33.104[1775360253104] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:39:58.727[1775360398727] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x2005d16a84ceefa912d4e380cd32e7ff827875ea&limit=30&offset=0&takerOnly=true
+2026-04-05 11:40:22.778[1775360422778] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x2005d16a84ceefa912d4e380cd32e7ff827875ea&limit=30&offset=0&takerOnly=true
+2026-04-05 11:40:28.393[1775360428393] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x2005d16a84ceefa912d4e380cd32e7ff827875ea because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 11:40:33.396[1775360433396] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 11:42:33.118[1775360553118] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:47:33.134[1775360853134] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:48:30.955[1775360910955] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x17db3fcd93ba12d38382a0cade24b200185c5f6d&limit=30&offset=0&takerOnly=true
+2026-04-05 11:50:22.523[1775361022523] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 11:50:42.831[1775361042831] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 11:52:35.233[1775361155233] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:57:35.248[1775361455248] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:58:01.144[1775361481144] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 11:58:01.149[1775361481149] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 11:58:01.151[1775361481151] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.152[1775361481152] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 11:58:01.152[1775361481152] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.153[1775361481153] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x204f72f35326db932158cba6adff0b9a1da95e14 because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.153[1775361481153] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xbddf61af533ff524d27154e589d2d7a81510c684&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.153[1775361481153] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xbddf61af533ff524d27154e589d2d7a81510c684&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.153[1775361481153] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xbddf61af533ff524d27154e589d2d7a81510c684 because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.153[1775361481153] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.153[1775361481153] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.153[1775361481153] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x16b29c50f2439faf627209b2ac0c7bbddaa8a881 because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x006cc834cc092684f1b56626e23bedb3835c16ea&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x006cc834cc092684f1b56626e23bedb3835c16ea&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x006cc834cc092684f1b56626e23bedb3835c16ea because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdc876e6873772d38716fda7f2452a78d426d7ab6&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xdc876e6873772d38716fda7f2452a78d426d7ab6&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xdc876e6873772d38716fda7f2452a78d426d7ab6 because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.154[1775361481154] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x507e52ef684ca2dd91f90a9d26d149dd3288beae&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x507e52ef684ca2dd91f90a9d26d149dd3288beae&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x507e52ef684ca2dd91f90a9d26d149dd3288beae because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xe90bec87d9ef430f27f9dcfe72c34b76967d5da2&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xe90bec87d9ef430f27f9dcfe72c34b76967d5da2&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xe90bec87d9ef430f27f9dcfe72c34b76967d5da2 because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xc2e7800b5af46e6093872b177b7a5e7f0563be51&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xc2e7800b5af46e6093872b177b7a5e7f0563be51&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xc2e7800b5af46e6093872b177b7a5e7f0563be51 because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x14964aefa2cd7caff7878b3820a690a03c5aa429 because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.155[1775361481155] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.156[1775361481156] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xee613b3fc183ee44f9da9c05f53e2da107e3debf because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.156[1775361481156] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x17db3fcd93ba12d38382a0cade24b200185c5f6d&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.156[1775361481156] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x17db3fcd93ba12d38382a0cade24b200185c5f6d&limit=30&offset=0&takerOnly=true
+2026-04-05 11:58:01.156[1775361481156] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x17db3fcd93ba12d38382a0cade24b200185c5f6d because Polymarket trades request failed: interrupted
+2026-04-05 11:58:01.161[1775361481161] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 11:58:06.714[1775361486714] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 7850 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 11:58:06.716[1775361486716] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 11:58:07.314[1775361487314] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 11:58:07.324[1775361487324] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 11:58:07.324[1775361487324] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 572 ms
+2026-04-05 11:58:07.707[1775361487707] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 11:58:07.830[1775361487830] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 11:58:07.999[1775361487999] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 11:58:08.002[1775361488002] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 11:58:08.005[1775361488005] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 11:58:08.036[1775361488036] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 11:58:08.053[1775361488053] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 11:58:08.059[1775361488059] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.543 seconds (JVM running for 6.782)
+2026-04-05 11:58:15.056[1775361495056] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 11:58:23.713[1775361503713] | INFO  | XNIO-1 task-2 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 11:58:23.714[1775361503714] | INFO  | XNIO-1 task-2 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 11:58:23.715[1775361503715] | INFO  | XNIO-1 task-2 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 12:01:12.381[1775361672381] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x507e52ef684ca2dd91f90a9d26d149dd3288beae&limit=30&offset=0&takerOnly=true
+2026-04-05 12:01:17.691[1775361677691] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x507e52ef684ca2dd91f90a9d26d149dd3288beae&limit=30&offset=0&takerOnly=true
+2026-04-05 12:01:23.299[1775361683299] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x507e52ef684ca2dd91f90a9d26d149dd3288beae because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 12:03:15.877[1775361795877] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:08:15.897[1775362095897] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:10:37.876[1775362237876] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 12:10:50.433[1775362250433] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 12:13:15.906[1775362395906] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0

@@ -40,7 +40,16 @@ public class ExecutionWalletContextLoader {
                 && StringUtils.hasText(config.getApiKey())
                 && StringUtils.hasText(config.getApiSecret())
                 && StringUtils.hasText(config.getApiPassphrase());
-        boolean liveReady = configured && (hasApiCredentials || config.isDeriveApiCredsIfMissing());
+        boolean bridgeReady = !"PYTHON".equalsIgnoreCase(config.getSdkMode())
+                || pythonSdkBridge.isAvailable(ExecutionWalletContext.builder()
+                .sdkMode(trim(config.getSdkMode()))
+                .pythonExecutable(trim(config.getPythonExecutable()))
+                .helperScriptPath(trim(config.getHelperScriptPath()))
+                .build());
+        boolean liveReady = config.isEnabled()
+                && configured
+                && bridgeReady
+                && (hasApiCredentials || config.isDeriveApiCredsIfMissing());
         return ExecutionWalletContext.builder()
                 .enabled(config.isEnabled())
                 .configured(configured)

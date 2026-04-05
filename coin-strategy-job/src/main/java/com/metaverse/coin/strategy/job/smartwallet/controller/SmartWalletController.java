@@ -24,6 +24,10 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlTimelineP
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReportAttributionItem;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncStatusView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRunView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
@@ -42,6 +46,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowServ
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -72,6 +77,7 @@ public class SmartWalletController {
     private final PolymarketWalletDiscoveryService polymarketWalletDiscoveryService;
     private final SmartWalletSelectionService selectionService;
     private final SmartWalletFollowTaskService followTaskService;
+    private final SmartWalletSettlementSyncService settlementSyncService;
 
     @GetMapping("/health")
     public Map<String, Object> health() {
@@ -267,7 +273,34 @@ public class SmartWalletController {
     public SettlementSyncSummary syncSettlements(@RequestParam(defaultValue = "500") Integer positionLimit,
                                                  @RequestParam(defaultValue = "100") Integer marketLimit,
                                                  @RequestParam(defaultValue = "false") boolean refreshCache) {
-        return accountingService.syncSettlements(positionLimit, marketLimit, refreshCache);
+        return settlementSyncService.runNow(positionLimit, marketLimit, refreshCache);
+    }
+
+    @GetMapping("/settlement/status")
+    public SettlementSyncStatusView settlementStatus() {
+        return settlementSyncService.status();
+    }
+
+    @GetMapping("/settlement/runs")
+    public List<SettlementRunView> settlementRuns(@RequestParam(defaultValue = "20") Integer limit) {
+        return settlementSyncService.listRuns(limit);
+    }
+
+    @GetMapping("/settlement/retries")
+    public List<SettlementRetryView> settlementRetries(@RequestParam(required = false) String status,
+                                                       @RequestParam(defaultValue = "20") Integer limit) {
+        return settlementSyncService.listRetries(status, limit);
+    }
+
+    @GetMapping("/settlement/retries/report")
+    public SettlementRetryReportView settlementRetryReport() {
+        return settlementSyncService.retryReport();
+    }
+
+    @PostMapping("/settlement/retries/process")
+    public SettlementSyncSummary processSettlementRetries(@RequestParam(required = false) Integer limit,
+                                                          @RequestParam(defaultValue = "false") boolean refreshCache) {
+        return settlementSyncService.processRetriesNow(limit, refreshCache);
     }
 
     @GetMapping("/reports/wallets")
