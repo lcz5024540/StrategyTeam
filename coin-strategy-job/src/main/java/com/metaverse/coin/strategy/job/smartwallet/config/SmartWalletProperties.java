@@ -31,6 +31,7 @@ public class SmartWalletProperties {
     private ExecutionWallet executionWallet = new ExecutionWallet();
     private SignalRisk signalRisk = new SignalRisk();
     private Map<String, SignalRisk> signalRiskPresets = new LinkedHashMap<>();
+    private LiveValidation liveValidation = new LiveValidation();
     private SettlementSync settlementSync = new SettlementSync();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
@@ -108,6 +109,19 @@ public class SmartWalletProperties {
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;
+    }
+
+    @Data
+    public static class LiveValidation {
+        private boolean enabled = false;
+        private String preset = "followable";
+        private Long fixedDelayMs = 45000L;
+        private Integer candidateScanLimit = 40;
+        private Integer maxExecutionsPerRun = 1;
+        private boolean skipIfPaperPendingExists = true;
+        private Integer networkErrorThreshold = 2;
+        private Integer networkCooldownMinutes = 15;
+        private Integer geoblockCooldownMinutes = 720;
     }
 
     @Data

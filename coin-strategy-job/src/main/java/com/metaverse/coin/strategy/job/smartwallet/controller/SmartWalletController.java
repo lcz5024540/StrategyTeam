@@ -5,6 +5,8 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTrad
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
+import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationRunSummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRequest;
@@ -50,6 +52,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOppor
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletAccountingService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
@@ -85,6 +88,7 @@ public class SmartWalletController {
     private final PolymarketWalletDiscoveryService polymarketWalletDiscoveryService;
     private final SmartWalletSelectionService selectionService;
     private final SmartWalletFollowTaskService followTaskService;
+    private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
 
     @GetMapping("/health")
@@ -238,6 +242,16 @@ public class SmartWalletController {
     @PostMapping("/follow-tasks/process")
     public Map<String, Object> processFollowTasks() {
         return Map.of("processed", followTaskService.processPendingTasksNow());
+    }
+
+    @GetMapping("/live-validation/status")
+    public LiveValidationStatusView liveValidationStatus() {
+        return liveValidationService.status();
+    }
+
+    @PostMapping("/live-validation/process")
+    public LiveValidationRunSummary processLiveValidation() {
+        return liveValidationService.processNow();
     }
 
     @GetMapping("/wallets")

@@ -226,6 +226,13 @@ public class SmartWalletFollowTaskService {
         return signalRiskService.evaluate(profile, event, overrideRisk);
     }
 
+    public SmartWalletProperties.SignalRisk resolveSignalRiskPreset(String preset) {
+        if (preset == null || preset.isBlank()) {
+            return properties.getSignalRisk();
+        }
+        return properties.getSignalRiskPresets().getOrDefault(preset, properties.getSignalRisk());
+    }
+
     public SmartWalletRiskSimulationResult simulateRisk(SmartWalletRiskSimulationRequest request) {
         SmartWalletRiskSimulationRequest applied = request == null ? new SmartWalletRiskSimulationRequest() : request;
         SmartWalletProperties.SignalRisk overrideRisk = buildSimulationRisk(applied);

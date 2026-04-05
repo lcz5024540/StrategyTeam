@@ -204,6 +204,35 @@ To inspect all configured presets and the current default risk profile:
 curl -s 'http://127.0.0.1:8081/smart-wallet/config/signal-risk-presets'
 ```
 
+## Dual-Flow Automation
+
+The service can now run two lanes automatically after startup:
+
+- `PAPER` main flow
+  - driven by the existing follow-task scheduler
+  - processes normal `PENDING` tasks
+- `LIVE` validation lane
+  - driven by `smart-wallet.live-validation`
+  - only scans single-wallet override candidates from a named preset
+  - intended for tiny real-money validation, not broad production trading
+
+Status and manual trigger APIs:
+
+```bash
+curl -s 'http://127.0.0.1:8081/smart-wallet/live-validation/status'
+curl -s -X POST 'http://127.0.0.1:8081/smart-wallet/live-validation/process'
+```
+
+Recommended startup mode:
+
+- keep `smart-wallet.auto-execution-enabled=true` only when you want the normal main lane to auto-place `PAPER`/`LIVE` according to task mode
+- keep `smart-wallet.live-validation.enabled=true` only after wallet funding and risk review
+- keep `smart-wallet.live-validation.max-executions-per-run=1` for early testing
+- keep the built-in circuit breaker enabled through:
+  - `smart-wallet.live-validation.network-error-threshold`
+  - `smart-wallet.live-validation.network-cooldown-minutes`
+  - `smart-wallet.live-validation.geoblock-cooldown-minutes`
+
 Current `followable` preset is now configured in:
 
 - `smart-wallet.signal-risk-presets.followable`

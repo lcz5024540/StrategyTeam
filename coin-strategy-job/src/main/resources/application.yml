@@ -156,6 +156,25 @@ smart-wallet:
       single-wallet-override-min-trades: 50
       single-wallet-override-min-trigger-size-usdc: 100
       single-wallet-override-min-recommended-stake-usdc: 5
+  live-validation:
+    # [TUNE] Auxiliary LIVE lane. Keep disabled until you are ready to test with real funds.
+    enabled: false
+    # [TUNE] Preset name used by the LIVE validation lane.
+    preset: "followable"
+    # [FIXED-ONCE] Background cadence for small LIVE validation attempts.
+    fixed-delay-ms: 45000
+    # [TUNE] How many override candidates to scan per cycle.
+    candidate-scan-limit: 40
+    # [TUNE] Hard cap on how many LIVE validation orders can be sent in one cycle.
+    max-executions-per-run: 1
+    # [TUNE] When true, skip a LIVE validation candidate if the same follow task already has any PAPER/LIVE order record.
+    skip-if-paper-pending-exists: true
+    # [TUNE] Consecutive TLS/network failures before automatic suspension.
+    network-error-threshold: 2
+    # [TUNE] Suspension window after repeated TLS/network failures.
+    network-cooldown-minutes: 15
+    # [TUNE] Suspension window after Polymarket geoblock / regional restriction is detected.
+    geoblock-cooldown-minutes: 720
   settlement-sync:
     # [FIXED-ONCE] Settlement/accounting automation switch.
     enabled: true
