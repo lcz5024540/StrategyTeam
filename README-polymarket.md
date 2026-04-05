@@ -172,6 +172,58 @@ export POLYMARKET_CLOB_API_PASSPHRASE=""
 export POLYMARKET_PYTHON_EXECUTABLE="/opt/homebrew/bin/python3.11"
 ```
 
+Classification:
+
+- `[SCRIPT][FIXED-ONCE]`
+  - fill once in `scripts/polymarket-env.sh`
+  - includes wallet address, private key, funder address, derived CLOB creds, Python path
+- `[TUNE]`
+  - strategy and risk parameters that you should revisit as live data comes in
+  - includes freshness window, consensus gate, wallet thresholds, order sizing caps
+- `[FIXED-ONCE]`
+  - environment or integration constants usually set once per deployment
+  - includes API base URLs, chain id, polling intervals, DB connection, helper script path
+
+## Single-Wallet Override Preset
+
+The single-wallet override board now supports a short preset so you do not need to pass a long list of tuning params every time.
+
+Recommended preset:
+
+- `preset=followable`
+
+Example:
+
+```bash
+curl -s 'http://127.0.0.1:8081/smart-wallet/follow-tasks/single-wallet-override?limit=5&preset=followable'
+```
+
+To inspect all configured presets and the current default risk profile:
+
+```bash
+curl -s 'http://127.0.0.1:8081/smart-wallet/config/signal-risk-presets'
+```
+
+Current `followable` preset is now configured in:
+
+- `smart-wallet.signal-risk-presets.followable`
+
+and expands to this strategy shape:
+
+- `taskLimit=120`
+- `maxSignalAgeSeconds=3600`
+- `minDistinctWallets=1`
+- `minConsensusScore=0`
+- `singleWalletOverrideMinWalletScore=0.79`
+- `singleWalletOverrideMinWinRate=0.65`
+- `singleWalletOverrideMinTrades=50`
+- `singleWalletOverrideMinTriggerSizeUsdc=100`
+- `singleWalletOverrideMinRecommendedStakeUsdc=5`
+
+Use this board to inspect candidates before deciding whether any of those values should become the default live policy.
+
+To add more presets later, extend `smart-wallet.signal-risk-presets` in `application.yml`, for example `strict`, `followable`, `aggressive`.
+
 ## Official API Binding
 
 This service is aligned with the official Polymarket API domains from the public docs:

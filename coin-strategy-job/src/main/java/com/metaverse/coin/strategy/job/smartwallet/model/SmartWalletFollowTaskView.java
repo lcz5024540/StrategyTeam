@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
 @Data
 @Builder
@@ -24,6 +25,11 @@ public class SmartWalletFollowTaskView {
     private String errorMessage;
     private Integer consensusWallets;
     private BigDecimal consensusScore;
+    private Boolean taskExecutable;
+    private Boolean overrideApplied;
+    private String appliedPreset;
+    private Integer blockerCount;
+    private List<String> riskReasons;
     private Date scheduledAt;
     private Date executedAt;
 }

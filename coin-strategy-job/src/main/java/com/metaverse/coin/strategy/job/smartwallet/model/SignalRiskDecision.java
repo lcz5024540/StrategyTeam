@@ -11,6 +11,7 @@ import java.util.List;
 @Builder
 public class SignalRiskDecision {
     private boolean accepted;
+    private boolean overrideApplied;
     private BigDecimal recommendedStakeUsdc;
     private Integer consensusWallets;
     private BigDecimal consensusScore;

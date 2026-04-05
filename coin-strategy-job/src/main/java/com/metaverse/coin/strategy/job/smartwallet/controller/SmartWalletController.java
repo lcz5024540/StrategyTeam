@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.controller;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
@@ -14,6 +15,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioAttributionIte
 import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
+import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
@@ -31,6 +34,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
@@ -58,6 +63,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -66,6 +72,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SmartWalletController {
 
+    private final SmartWalletProperties properties;
     private final SmartWalletRegistryService walletRegistryService;
     private final PredictionMarketOpportunityService opportunityService;
     private final SmartWalletFollowService followService;
@@ -169,8 +176,63 @@ public class SmartWalletController {
     }
 
     @GetMapping("/follow-tasks")
-    public List<SmartWalletFollowTaskView> followTasks() {
-        return followTaskService.listFollowTasks();
+    public List<SmartWalletFollowTaskView> followTasks(@RequestParam(defaultValue = "100") Integer limit,
+                                                       @RequestParam(defaultValue = "false") boolean includeRiskEvaluation) {
+        return followTaskService.listFollowTasks(limit, includeRiskEvaluation);
+    }
+
+    @GetMapping("/follow-tasks/executable")
+    public List<SmartWalletFollowTaskView> executableFollowTasks(@RequestParam(defaultValue = "50") Integer limit) {
+        return followTaskService.listExecutableTasks(limit);
+    }
+
+    @GetMapping("/follow-tasks/single-wallet-override")
+    public List<SmartWalletFollowTaskView> singleWalletOverrideFollowTasks(@RequestParam(defaultValue = "20") Integer limit,
+                                                                           @RequestParam(required = false) String preset,
+                                                                           @RequestParam(required = false) Integer taskLimit,
+                                                                           @RequestParam(required = false) Integer maxSignalAgeSeconds,
+                                                                           @RequestParam(required = false) Integer minDistinctWallets,
+                                                                           @RequestParam(required = false) BigDecimal minConsensusScore,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinWalletScore,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinWinRate,
+                                                                           @RequestParam(required = false) Integer singleWalletOverrideMinTrades,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinTriggerSizeUsdc,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinRecommendedStakeUsdc) {
+        SmartWalletRiskSimulationRequest request = new SmartWalletRiskSimulationRequest();
+        request.setTaskLimit(taskLimit);
+        request.setMaxSignalAgeSeconds(maxSignalAgeSeconds);
+        request.setMinDistinctWallets(minDistinctWallets);
+        request.setMinConsensusScore(minConsensusScore);
+        request.setSingleWalletOverrideMinWalletScore(singleWalletOverrideMinWalletScore);
+        request.setSingleWalletOverrideMinWinRate(singleWalletOverrideMinWinRate);
+        request.setSingleWalletOverrideMinTrades(singleWalletOverrideMinTrades);
+        request.setSingleWalletOverrideMinTriggerSizeUsdc(singleWalletOverrideMinTriggerSizeUsdc);
+        request.setSingleWalletOverrideMinRecommendedStakeUsdc(singleWalletOverrideMinRecommendedStakeUsdc);
+        applySingleWalletOverridePreset(request, preset);
+        return followTaskService.listSingleWalletOverrideTasks(limit, followTaskService.buildSimulationRisk(request), taskLimit, preset);
+    }
+
+    @GetMapping("/follow-tasks/opportunities")
+    public List<SmartWalletFollowTaskView> opportunityFollowTasks(@RequestParam(defaultValue = "20") Integer limit,
+                                                                  @RequestParam(defaultValue = "3") Integer maxBlockers,
+                                                                  @RequestParam(defaultValue = "false") boolean includeExecutable) {
+        return followTaskService.listOpportunityTasks(limit, maxBlockers, includeExecutable);
+    }
+
+    @GetMapping("/config/signal-risk-presets")
+    public SignalRiskPresetCatalogView signalRiskPresets() {
+        List<SignalRiskPresetView> presets = new ArrayList<>();
+        properties.getSignalRiskPresets().forEach((name, risk) ->
+                presets.add(toSignalRiskPresetView(name, risk, false)));
+        return SignalRiskPresetCatalogView.builder()
+                .activeDefault(toSignalRiskPresetView("default", properties.getSignalRisk(), true))
+                .presets(presets)
+                .build();
+    }
+
+    @PostMapping("/follow-tasks/simulate-risk")
+    public SmartWalletRiskSimulationResult simulateRisk(@RequestBody(required = false) SmartWalletRiskSimulationRequest request) {
+        return followTaskService.simulateRisk(request);
     }
 
     @PostMapping("/follow-tasks/process")
@@ -324,6 +386,16 @@ public class SmartWalletController {
         return clobExecutionService.dryRunOrder(request);
     }
 
+    @PostMapping("/follow-tasks/{followTaskId}/dry-run")
+    public Map<String, Object> followTaskDryRun(@PathVariable Long followTaskId) {
+        return clobExecutionService.dryRunFollowTask(followTaskId);
+    }
+
+    @PostMapping("/follow-tasks/{followTaskId}/execute-live")
+    public SmartWalletExecutionResult executeFollowTaskLive(@PathVariable Long followTaskId) {
+        return clobExecutionService.executeFollowTask(followTaskId);
+    }
+
     @GetMapping("/clob/markets/{conditionId}")
     public Object clobMarketMetadata(@PathVariable String conditionId) {
         return clobExecutionService.marketMetadata(conditionId);
@@ -337,5 +409,61 @@ public class SmartWalletController {
     @PostMapping("/clob/orders/{orderId}/cancel")
     public Map<String, Object> cancelClobOrder(@PathVariable String orderId) {
         return clobExecutionService.cancelOrder(orderId);
+    }
+
+    private void applySingleWalletOverridePreset(SmartWalletRiskSimulationRequest request, String preset) {
+        if (preset == null || preset.isBlank()) {
+            return;
+        }
+        SmartWalletProperties.SignalRisk presetRisk = properties.getSignalRiskPresets().get(preset);
+        if (presetRisk == null) {
+            return;
+        }
+        if (request.getMaxSignalAgeSeconds() == null) {
+            request.setMaxSignalAgeSeconds(presetRisk.getMaxSignalAgeSeconds());
+        }
+        if (request.getMinDistinctWallets() == null) {
+            request.setMinDistinctWallets(presetRisk.getMinDistinctWallets());
+        }
+        if (request.getMinConsensusScore() == null) {
+            request.setMinConsensusScore(presetRisk.getMinConsensusScore());
+        }
+        if (request.getSingleWalletOverrideMinWalletScore() == null) {
+            request.setSingleWalletOverrideMinWalletScore(presetRisk.getSingleWalletOverrideMinWalletScore());
+        }
+        if (request.getSingleWalletOverrideMinWinRate() == null) {
+            request.setSingleWalletOverrideMinWinRate(presetRisk.getSingleWalletOverrideMinWinRate());
+        }
+        if (request.getSingleWalletOverrideMinTrades() == null) {
+            request.setSingleWalletOverrideMinTrades(presetRisk.getSingleWalletOverrideMinTrades());
+        }
+        if (request.getSingleWalletOverrideMinTriggerSizeUsdc() == null) {
+            request.setSingleWalletOverrideMinTriggerSizeUsdc(presetRisk.getSingleWalletOverrideMinTriggerSizeUsdc());
+        }
+        if (request.getSingleWalletOverrideMinRecommendedStakeUsdc() == null) {
+            request.setSingleWalletOverrideMinRecommendedStakeUsdc(presetRisk.getSingleWalletOverrideMinRecommendedStakeUsdc());
+        }
+        if (request.getTaskLimit() == null) {
+            request.setTaskLimit(120);
+        }
+    }
+
+    private SignalRiskPresetView toSignalRiskPresetView(String name,
+                                                        SmartWalletProperties.SignalRisk risk,
+                                                        boolean activeDefault) {
+        return SignalRiskPresetView.builder()
+                .name(name)
+                .activeDefault(activeDefault)
+                .maxSignalAgeSeconds(risk.getMaxSignalAgeSeconds())
+                .minDistinctWallets(risk.getMinDistinctWallets())
+                .minConsensusScore(risk.getMinConsensusScore())
+                .enableConsensusGate(risk.isEnableConsensusGate())
+                .enableSingleWalletOverride(risk.isEnableSingleWalletOverride())
+                .singleWalletOverrideMinWalletScore(risk.getSingleWalletOverrideMinWalletScore())
+                .singleWalletOverrideMinWinRate(risk.getSingleWalletOverrideMinWinRate())
+                .singleWalletOverrideMinTrades(risk.getSingleWalletOverrideMinTrades())
+                .singleWalletOverrideMinTriggerSizeUsdc(risk.getSingleWalletOverrideMinTriggerSizeUsdc())
+                .singleWalletOverrideMinRecommendedStakeUsdc(risk.getSingleWalletOverrideMinRecommendedStakeUsdc())
+                .build();
     }
 }

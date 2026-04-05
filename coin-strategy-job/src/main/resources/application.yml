@@ -1,10 +1,14 @@
 server:
+  # [FIXED-ONCE] Local service port. Usually set once per machine.
   port: 8081
 
 spring:
   datasource:
+    # [FIXED-ONCE] Local MySQL connection. Usually fixed per environment.
     url: "jdbc:mysql://127.0.0.1:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    # [FIXED-ONCE] DB username for the local environment.
     username: "root"
+    # [FIXED-ONCE] DB password for the local environment.
     password: "Lroot1234"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
 
@@ -22,78 +26,152 @@ binance:
     futures-url: "https://fapi.binance.com"
 
 smart-wallet:
+  # [FIXED-ONCE] Master switch for this module.
   enabled: true
+  # [TUNE] Enable only after paper flow and accounting are verified.
   auto-execution-enabled: false
+  # [FIXED-ONCE] Toggle periodic scan/processing jobs.
   scan-enabled: true
+  # [TUNE] Keep true if category/tag matching should remain part of qualification.
   require-tag-match: true
+  # [TUNE] Wallet admission threshold for watchlist qualification.
   min-win-rate: 0.62
+  # [TUNE] Wallet scoring threshold for watchlist qualification.
   min-wallet-score: 0.70
+  # [TUNE] Minimum sample size required before trusting a wallet.
   min-total-trades: 25
+  # [TUNE] Minimum realized PnL used to filter weak wallets.
   min-realized-pnl-usdc: 1000
+  # [TUNE] Maximum tolerated drawdown for watchlist qualification.
   max-drawdown-rate: 0.25
+  # [TUNE] Ignore very illiquid markets.
   min-market-liquidity: 25000
+  # [TUNE] Global cap for a single recommended stake.
   max-stake-usdc: 150
+  # [TUNE] Fraction of bankroll allowed per trade before caps.
   bankroll-utilization-rate: 0.03
+  # [TUNE] Delay between observed smart-wallet event and follow attempt.
   follow-delay-seconds: 3
+  # [FIXED-ONCE] Background polling cadence for follow-task processing.
   poll-fixed-delay-ms: 5000
   polymarket:
+    # [FIXED-ONCE] Enable Polymarket integration.
     enabled: true
+    # [FIXED-ONCE] Auto-discovery can stay off if discovery is triggered manually.
     auto-discover-enabled: false
+    # [FIXED-ONCE] Periodically sync fresh trades for watchlist wallets.
     auto-sync-events-enabled: true
+    # [FIXED-ONCE] Official Polymarket Data API base URL.
     data-api-base-url: "https://data-api.polymarket.com"
+    # [FIXED-ONCE] Official Polymarket Gamma API base URL.
     gamma-api-base-url: "https://gamma-api.polymarket.com"
+    # [TUNE] Leaderboard source filters for wallet discovery.
     leaderboard-category: "OVERALL"
     leaderboard-time-period: "ALL"
     leaderboard-order-by: "PNL"
+    # [TUNE] Candidate pool size before deeper analysis.
     leaderboard-limit: 50
+    # [TUNE] Number of top wallets to score each cycle.
     analyze-top-n: 30
+    # [TUNE] Historical closed positions fetched per wallet.
     closed-position-limit: 50
+    # [TUNE] Recent trades fetched per watchlist wallet.
     recent-trade-limit: 30
+    # [FIXED-ONCE] Discovery job interval.
     discovery-fixed-delay-ms: 3600000
+    # [FIXED-ONCE] Watchlist trade sync interval.
     event-sync-fixed-delay-ms: 15000
   execution-wallet:
+    # [SCRIPT][FIXED-ONCE] Live routing master switch. Requires env secrets to be present.
     enabled: true
+    # [FIXED-ONCE] Polymarket execution network.
     chain: "polygon"
     chain-id: 137
+    # [SCRIPT][FIXED-ONCE] Wallet address injected from local env script.
     address: "${POLYMARKET_EXECUTION_WALLET_ADDRESS:}"
+    # [SCRIPT][FIXED-ONCE] Private key injected from local env script.
     private-key: "${POLYMARKET_EXECUTION_PRIVATE_KEY:}"
+    # [SCRIPT][FIXED-ONCE] Funder address injected from local env script.
     funder-address: "${POLYMARKET_EXECUTION_FUNDER_ADDRESS:}"
+    # [TUNE] Hard ceiling for one live order.
     max-order-usdc: 30
+    # [TUNE] Reject tiny orders below this size.
     min-order-usdc: 1
+    # [TUNE] Price buffer used when preparing orders.
     price-slippage-rate: 0.02
+    # [TUNE] Side-level execution filters.
     allow-yes: true
     allow-no: true
+    # [FIXED-ONCE] Official CLOB API base URL.
     api-base-url: "https://clob.polymarket.com"
+    # [SCRIPT][FIXED-ONCE] Derived CLOB API credentials injected from local env script.
     api-key: "${POLYMARKET_CLOB_API_KEY:}"
     api-secret: "${POLYMARKET_CLOB_API_SECRET:}"
     api-passphrase: "${POLYMARKET_CLOB_API_PASSPHRASE:}"
+    # [FIXED-ONCE] Allow wallet-based derivation if API creds are not yet stored.
     derive-api-creds-if-missing: true
+    # [FIXED-ONCE] Current bridge uses the official Python SDK.
     sdk-mode: "PYTHON"
+    # [SCRIPT][FIXED-ONCE] Python interpreter used by the CLOB bridge.
     python-executable: "${POLYMARKET_PYTHON_EXECUTABLE:/opt/homebrew/bin/python3.11}"
+    # [FIXED-ONCE] Local helper script path.
     helper-script-path: "scripts/polymarket_clob_client.py"
+    # [FIXED-ONCE] Polymarket signature mode and default order type.
     signature-type: 0
     order-type: "GTC"
   signal-risk:
+    # [TUNE] Keep SELL disabled unless you explicitly want reverse / exit following.
     allow-sell-signal: false
+    # [TUNE] Main freshness gate. Most sensitive live-strategy parameter.
     max-signal-age-seconds: 300
+    # [TUNE] Ignore tiny smart-wallet prints.
     min-trigger-size-usdc: 5
+    # [TUNE] Follow only inside this market price band.
     min-follow-price: 0.05
     max-follow-price: 0.95
+    # [TUNE] Multi-wallet consensus gate for stricter entry.
     enable-consensus-gate: true
+    # [TUNE] Consensus computation window.
     consensus-window-seconds: 180
+    # [TUNE] Minimum distinct wallets before consensus is trusted.
     min-distinct-wallets: 2
+    # [TUNE] Minimum weighted consensus score.
     min-consensus-score: 0.72
+    # [TUNE] Special strategy lane for one exceptional wallet.
+    enable-single-wallet-override: true
+    # [TUNE] Single-wallet override thresholds.
+    single-wallet-override-min-wallet-score: 0.79
+    single-wallet-override-min-win-rate: 0.65
+    single-wallet-override-min-trades: 50
+    single-wallet-override-min-trigger-size-usdc: 100
+    single-wallet-override-min-recommended-stake-usdc: 5
+  signal-risk-presets:
+    # [TUNE] Named presets for manual analysis boards. Add more presets here instead of changing code.
+    followable:
+      max-signal-age-seconds: 3600
+      min-distinct-wallets: 1
+      min-consensus-score: 0
+      single-wallet-override-min-wallet-score: 0.79
+      single-wallet-override-min-win-rate: 0.65
+      single-wallet-override-min-trades: 50
+      single-wallet-override-min-trigger-size-usdc: 100
+      single-wallet-override-min-recommended-stake-usdc: 5
   settlement-sync:
+    # [FIXED-ONCE] Settlement/accounting automation switch.
     enabled: true
+    # [FIXED-ONCE] Batch cadence and workload caps for settlement sync.
     fixed-delay-ms: 300000
     position-limit: 50
     market-limit: 20
+    # [TUNE] Metadata refresh policy. Usually fixed unless API behavior changes.
     refresh-cache-on-each-run: false
     refresh-cache-every-runs: 12
+    # [TUNE] Retry pacing for failed settlement metadata fetches.
     retry-batch-limit: 20
     retry-backoff-minutes: 15
     max-retry-failures: 8
   wallets:
+    # [FIXED-ONCE] Example seed wallets for local bootstrap/demo only.
     - address: "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
       chain: "polygon"
       alias: "ElectionWhale"
@@ -115,6 +193,7 @@ smart-wallet:
       preferred-outcome: "NO"
       tags: [ "rates", "macro", "fed" ]
   markets:
+    # [FIXED-ONCE] Example seed markets for local bootstrap/demo only.
     - market-id: "pm-fed-cut-june"
       question: "Will the Fed cut rates before July?"
       outcome: "YES"

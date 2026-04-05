@@ -23,15 +23,22 @@ public class SmartWalletSignalRiskService {
     private final PolymarketConsensusSignalService consensusSignalService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
+        return evaluate(profile, event, null);
+    }
+
+    public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
+                                       SmartWalletTradeEventEntity event,
+                                       SmartWalletProperties.SignalRisk overrideRisk) {
         List<String> reasons = new ArrayList<>();
         boolean accepted = true;
+        boolean overrideApplied = false;
 
         if (profile == null || !Boolean.TRUE.equals(profile.getQualified()) || !Boolean.TRUE.equals(profile.getWatchEnabled())) {
             accepted = false;
             reasons.add("Wallet is not qualified in watchlist.");
         }
 
-        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
         if (!risk.isAllowSellSignal() && "SELL".equalsIgnoreCase(event.getSide())) {
             accepted = false;
             reasons.add("SELL signals are disabled by risk policy.");
@@ -58,14 +65,14 @@ public class SmartWalletSignalRiskService {
         }
 
         ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event);
+        boolean consensusWalletCountFailed = false;
+        boolean consensusScoreFailed = false;
         if (risk.isEnableConsensusGate()) {
             if (consensus.getDistinctWallets() < risk.getMinDistinctWallets()) {
-                accepted = false;
-                reasons.add("Consensus wallet count is below threshold.");
+                consensusWalletCountFailed = true;
             }
             if (safe(consensus.getConsensusScore()).compareTo(safe(risk.getMinConsensusScore())) < 0) {
-                accepted = false;
-                reasons.add("Consensus score is below threshold.");
+                consensusScoreFailed = true;
             }
         }
 
@@ -82,12 +89,29 @@ public class SmartWalletSignalRiskService {
             reasons.add("Recommended stake is below execution wallet minimum order.");
         }
 
+        boolean singleWalletOverride = qualifiesSingleWalletOverride(profile, risk, triggerSize, recommendedStake);
+        if (singleWalletOverride && consensusWalletCountFailed) {
+            overrideApplied = true;
+            consensusWalletCountFailed = false;
+            reasons.add("Single-wallet override bypassed consensus wallet-count gate.");
+        }
+
+        if (consensusWalletCountFailed) {
+            accepted = false;
+            reasons.add("Consensus wallet count is below threshold.");
+        }
+        if (consensusScoreFailed) {
+            accepted = false;
+            reasons.add("Consensus score is below threshold.");
+        }
+
         if (accepted) {
             reasons.add("Signal passed watchlist, freshness, size and price checks.");
         }
 
         return SignalRiskDecision.builder()
                 .accepted(accepted)
+                .overrideApplied(overrideApplied)
                 .recommendedStakeUsdc(recommendedStake)
                 .consensusWallets(consensus.getDistinctWallets())
                 .consensusScore(consensus.getConsensusScore())
@@ -97,5 +121,19 @@ public class SmartWalletSignalRiskService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private boolean qualifiesSingleWalletOverride(SmartWalletProfileEntity profile,
+                                                  SmartWalletProperties.SignalRisk risk,
+                                                  BigDecimal triggerSize,
+                                                  BigDecimal recommendedStake) {
+        if (!risk.isEnableSingleWalletOverride() || profile == null) {
+            return false;
+        }
+        return safe(profile.getWalletScore()).compareTo(safe(risk.getSingleWalletOverrideMinWalletScore())) >= 0
+                && safe(profile.getWinRate()).compareTo(safe(risk.getSingleWalletOverrideMinWinRate())) >= 0
+                && (profile.getTotalTrades() == null ? 0 : profile.getTotalTrades()) >= (risk.getSingleWalletOverrideMinTrades() == null ? 0 : risk.getSingleWalletOverrideMinTrades())
+                && triggerSize.compareTo(safe(risk.getSingleWalletOverrideMinTriggerSizeUsdc())) >= 0
+                && recommendedStake.compareTo(safe(risk.getSingleWalletOverrideMinRecommendedStakeUsdc())) >= 0;
     }
 }

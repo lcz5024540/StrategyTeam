@@ -5,7 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @ConfigurationProperties(prefix = "smart-wallet")
@@ -28,6 +30,7 @@ public class SmartWalletProperties {
     private PolymarketMonitor polymarket = new PolymarketMonitor();
     private ExecutionWallet executionWallet = new ExecutionWallet();
     private SignalRisk signalRisk = new SignalRisk();
+    private Map<String, SignalRisk> signalRiskPresets = new LinkedHashMap<>();
     private SettlementSync settlementSync = new SettlementSync();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
@@ -86,6 +89,12 @@ public class SmartWalletProperties {
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 2;
         private BigDecimal minConsensusScore = new BigDecimal("0.72");
+        private boolean enableSingleWalletOverride = true;
+        private BigDecimal singleWalletOverrideMinWalletScore = new BigDecimal("0.88");
+        private BigDecimal singleWalletOverrideMinWinRate = new BigDecimal("0.68");
+        private Integer singleWalletOverrideMinTrades = 60;
+        private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
+        private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("5");
     }
 
     @Data

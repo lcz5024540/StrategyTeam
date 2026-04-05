@@ -8,12 +8,14 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -33,6 +35,7 @@ public class PolymarketApiClient {
     private final SmartWalletProperties properties;
     private final ObjectMapper objectMapper;
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
+            .protocols(List.of(Protocol.HTTP_1_1))
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
@@ -213,7 +216,47 @@ public class PolymarketApiClient {
                 sleepQuietly(attempt * 300L);
             }
         }
+        JsonNode curlFallback = getJsonViaCurl(uri);
+        if (curlFallback != null) {
+            log.info("Polymarket API curl fallback succeeded for {}", uri);
+            return curlFallback;
+        }
         throw lastFailure == null ? new IllegalStateException("Failed to request Polymarket API: " + uri) : lastFailure;
+    }
+
+    private JsonNode getJsonViaCurl(URI uri) {
+        try {
+            Process process = new ProcessBuilder(
+                    "curl",
+                    "-s",
+                    "--http1.1",
+                    "-H",
+                    "Accept: application/json",
+                    "-H",
+                    "User-Agent: CoinStrategy/1.0",
+                    uri.toString()
+            ).start();
+            byte[] stdout = readAll(process.getInputStream());
+            byte[] stderr = readAll(process.getErrorStream());
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                log.warn("Polymarket API curl fallback failed for {} with exitCode={} stderr={}",
+                        uri, exitCode, new String(stderr, StandardCharsets.UTF_8));
+                return null;
+            }
+            String body = new String(stdout, StandardCharsets.UTF_8);
+            if (!StringUtils.hasText(body)) {
+                return null;
+            }
+            return objectMapper.readTree(body);
+        } catch (Exception e) {
+            log.warn("Polymarket API curl fallback errored for {}", uri, e);
+            return null;
+        }
+    }
+
+    private byte[] readAll(InputStream inputStream) throws IOException {
+        return inputStream == null ? new byte[0] : inputStream.readAllBytes();
     }
 
     private void sleepQuietly(long millis) {
