@@ -326,3 +326,559 @@ Caused by: java.sql.SQLSyntaxErrorException: Table 'coin_strategy.smart_wallet_s
 2026-04-05 12:10:37.876[1775362237876] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
 2026-04-05 12:10:50.433[1775362250433] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
 2026-04-05 12:13:15.906[1775362395906] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:14:01.226[1775362441226] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdc876e6873772d38716fda7f2452a78d426d7ab6&limit=30&offset=0&takerOnly=true
+2026-04-05 12:14:04.571[1775362444571] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xdc876e6873772d38716fda7f2452a78d426d7ab6&limit=30&offset=0&takerOnly=true
+2026-04-05 12:18:16.019[1775362696019] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:19:39.824[1775362779824] | ERROR | XNIO-1 task-1 | io.undertow.request                  - UT005023: Exception handling request to /smart-wallet/execution-wallet/derive-api-creds
+org.springframework.web.util.NestedServletException: Request processing failed; nested exception is java.lang.IllegalStateException: Execution wallet is missing address or private key.
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1014)
+	at org.springframework.web.servlet.FrameworkServlet.doPost(FrameworkServlet.java:909)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:517)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:883)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:584)
+	at io.undertow.servlet.handlers.ServletHandler.handleRequest(ServletHandler.java:74)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:129)
+	at org.springframework.web.filter.RequestContextFilter.doFilterInternal(RequestContextFilter.java:100)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at org.springframework.web.filter.FormContentFilter.doFilterInternal(FormContentFilter.java:93)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at org.springframework.web.filter.CharacterEncodingFilter.doFilterInternal(CharacterEncodingFilter.java:201)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at io.undertow.servlet.handlers.FilterHandler.handleRequest(FilterHandler.java:84)
+	at io.undertow.servlet.handlers.security.ServletSecurityRoleHandler.handleRequest(ServletSecurityRoleHandler.java:62)
+	at io.undertow.servlet.handlers.ServletChain$1.handleRequest(ServletChain.java:68)
+	at io.undertow.servlet.handlers.ServletDispatchingHandler.handleRequest(ServletDispatchingHandler.java:36)
+	at io.undertow.servlet.handlers.RedirectDirHandler.handleRequest(RedirectDirHandler.java:68)
+	at io.undertow.servlet.handlers.security.SSLInformationAssociationHandler.handleRequest(SSLInformationAssociationHandler.java:117)
+	at io.undertow.servlet.handlers.security.ServletAuthenticationCallHandler.handleRequest(ServletAuthenticationCallHandler.java:57)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.security.handlers.AbstractConfidentialityHandler.handleRequest(AbstractConfidentialityHandler.java:46)
+	at io.undertow.servlet.handlers.security.ServletConfidentialityConstraintHandler.handleRequest(ServletConfidentialityConstraintHandler.java:64)
+	at io.undertow.security.handlers.AuthenticationMechanismsHandler.handleRequest(AuthenticationMechanismsHandler.java:60)
+	at io.undertow.servlet.handlers.security.CachedAuthenticatedSessionHandler.handleRequest(CachedAuthenticatedSessionHandler.java:77)
+	at io.undertow.security.handlers.AbstractSecurityContextAssociationHandler.handleRequest(AbstractSecurityContextAssociationHandler.java:43)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.servlet.handlers.SendErrorPageHandler.handleRequest(SendErrorPageHandler.java:52)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.servlet.handlers.ServletInitialHandler.handleFirstRequest(ServletInitialHandler.java:275)
+	at io.undertow.servlet.handlers.ServletInitialHandler.access$100(ServletInitialHandler.java:79)
+	at io.undertow.servlet.handlers.ServletInitialHandler$2.call(ServletInitialHandler.java:134)
+	at io.undertow.servlet.handlers.ServletInitialHandler$2.call(ServletInitialHandler.java:131)
+	at io.undertow.servlet.core.ServletRequestContextThreadSetupAction$1.call(ServletRequestContextThreadSetupAction.java:48)
+	at io.undertow.servlet.core.ContextClassLoaderSetupAction$1.call(ContextClassLoaderSetupAction.java:43)
+	at io.undertow.servlet.handlers.ServletInitialHandler.dispatchRequest(ServletInitialHandler.java:255)
+	at io.undertow.servlet.handlers.ServletInitialHandler.access$000(ServletInitialHandler.java:79)
+	at io.undertow.servlet.handlers.ServletInitialHandler$1.handleRequest(ServletInitialHandler.java:100)
+	at io.undertow.server.Connectors.executeRootHandler(Connectors.java:393)
+	at io.undertow.server.HttpServerExchange$1.run(HttpServerExchange.java:852)
+	at org.jboss.threads.ContextClassLoaderSavingRunnable.run(ContextClassLoaderSavingRunnable.java:35)
+	at org.jboss.threads.EnhancedQueueExecutor.safeRun(EnhancedQueueExecutor.java:2019)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.doRunTask(EnhancedQueueExecutor.java:1558)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1449)
+	at org.xnio.XnioWorker$WorkerThreadFactory$1$1.run(XnioWorker.java:1282)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+Caused by: java.lang.IllegalStateException: Execution wallet is missing address or private key.
+	at com.metaverse.coin.strategy.job.smartwallet.service.ExecutionWalletContextLoader.requireLiveContext(ExecutionWalletContextLoader.java:28)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService.deriveApiCreds(PolymarketClobExecutionService.java:17)
+	at com.metaverse.coin.strategy.job.smartwallet.controller.SmartWalletController.deriveExecutionWalletApiCreds(SmartWalletController.java:318)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+	at org.springframework.web.method.support.InvocableHandlerMethod.invokeForRequest(InvocableHandlerMethod.java:150)
+	at org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod.invokeAndHandle(ServletInvocableHandlerMethod.java:117)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.invokeHandlerMethod(RequestMappingHandlerAdapter.java:895)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.handleInternal(RequestMappingHandlerAdapter.java:808)
+	at org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter.handle(AbstractHandlerMethodAdapter.java:87)
+	at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1072)
+	at org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:965)
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1006)
+	... 51 common frames omitted
+2026-04-05 12:20:56.492[1775362856492] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 12:20:56.495[1775362856495] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 12:20:56.497[1775362856497] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 12:20:56.501[1775362856501] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 12:22:04.904[1775362924904] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 9995 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 12:22:04.906[1775362924906] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 12:22:05.392[1775362925392] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 12:22:05.399[1775362925399] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 12:22:05.399[1775362925399] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 468 ms
+2026-04-05 12:22:05.739[1775362925739] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 12:22:06.792[1775362926792] | ERROR | main       | com.zaxxer.hikari.pool.HikariPool    - HikariPool-1 - Exception during pool initialization.
+com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at com.mysql.cj.jdbc.exceptions.SQLError.createCommunicationsException(SQLError.java:174)
+	at com.mysql.cj.jdbc.exceptions.SQLExceptionsMapping.translateException(SQLExceptionsMapping.java:64)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:815)
+	at com.mysql.cj.jdbc.ConnectionImpl.<init>(ConnectionImpl.java:438)
+	at com.mysql.cj.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:241)
+	at com.mysql.cj.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:189)
+	at com.zaxxer.hikari.util.DriverDataSource.getConnection(DriverDataSource.java:138)
+	at com.zaxxer.hikari.pool.PoolBase.newConnection(PoolBase.java:364)
+	at com.zaxxer.hikari.pool.PoolBase.newPoolEntry(PoolBase.java:206)
+	at com.zaxxer.hikari.pool.HikariPool.createPoolEntry(HikariPool.java:476)
+	at com.zaxxer.hikari.pool.HikariPool.checkFailFast(HikariPool.java:561)
+	at com.zaxxer.hikari.pool.HikariPool.<init>(HikariPool.java:115)
+	at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:112)
+	at org.springframework.jdbc.datasource.DataSourceUtils.fetchConnection(DataSourceUtils.java:160)
+	at org.springframework.jdbc.datasource.DataSourceUtils.doGetConnection(DataSourceUtils.java:118)
+	at org.springframework.jdbc.datasource.DataSourceUtils.getConnection(DataSourceUtils.java:81)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:378)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:436)
+	at com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService.ensureSettlementTables(SmartWalletSettlementSyncService.java:57)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleElement.invoke(InitDestroyAnnotationBeanPostProcessor.java:389)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleMetadata.invokeInitMethods(InitDestroyAnnotationBeanPostProcessor.java:333)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor.postProcessBeforeInitialization(InitDestroyAnnotationBeanPostProcessor.java:157)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.applyBeanPostProcessorsBeforeInitialization(AbstractAutowireCapableBeanFactory.java:440)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(AbstractAutowireCapableBeanFactory.java:1796)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:620)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.config.DependencyDescriptor.resolveCandidate(DependencyDescriptor.java:276)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.doResolveDependency(DefaultListableBeanFactory.java:1391)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.resolveDependency(DefaultListableBeanFactory.java:1311)
+	at org.springframework.beans.factory.support.ConstructorResolver.resolveAutowiredArgument(ConstructorResolver.java:887)
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:791)
+	at org.springframework.beans.factory.support.ConstructorResolver.autowireConstructor(ConstructorResolver.java:229)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.autowireConstructor(AbstractAutowireCapableBeanFactory.java:1372)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1222)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:582)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:955)
+	at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:921)
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:583)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:147)
+	at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:731)
+	at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:408)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:307)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1303)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1292)
+	at com.metaverse.coin.strategy.job.CoinStrategyJobApplication.main(CoinStrategyJobApplication.java:17)
+Caused by: com.mysql.cj.exceptions.CJCommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)
+	at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:499)
+	at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:480)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:61)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:104)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:149)
+	at com.mysql.cj.exceptions.ExceptionFactory.createCommunicationsException(ExceptionFactory.java:165)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:88)
+	at com.mysql.cj.NativeSession.connect(NativeSession.java:120)
+	at com.mysql.cj.jdbc.ConnectionImpl.connectOneTryOnly(ConnectionImpl.java:935)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:805)
+	... 55 common frames omitted
+Caused by: java.net.SocketException: Operation not permitted
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:591)
+	at java.base/sun.nio.ch.Net.connect(Net.java:580)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:593)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:633)
+	at com.mysql.cj.protocol.StandardSocketFactory.connect(StandardSocketFactory.java:153)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:62)
+	... 58 common frames omitted
+2026-04-05 12:22:06.795[1775362926795] | WARN  | main       | o.s.b.w.s.c.AnnotationConfigServletWebServerApplicationContext - Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'smartWalletController' defined in file [/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes/com/metaverse/coin/strategy/job/smartwallet/controller/SmartWalletController.class]: Unsatisfied dependency expressed through constructor parameter 12; nested exception is org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletSettlementSyncService': Invocation of init method failed; nested exception is org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+2026-04-05 12:22:06.807[1775362926807] | INFO  | main       | o.s.b.a.l.ConditionEvaluationReportLoggingListener - 
+
+Error starting ApplicationContext. To display the conditions report re-run your application with 'debug' enabled.
+2026-04-05 12:22:06.823[1775362926823] | ERROR | main       | o.s.boot.SpringApplication           - Application run failed
+org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'smartWalletController' defined in file [/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes/com/metaverse/coin/strategy/job/smartwallet/controller/SmartWalletController.class]: Unsatisfied dependency expressed through constructor parameter 12; nested exception is org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletSettlementSyncService': Invocation of init method failed; nested exception is org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:800)
+	at org.springframework.beans.factory.support.ConstructorResolver.autowireConstructor(ConstructorResolver.java:229)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.autowireConstructor(AbstractAutowireCapableBeanFactory.java:1372)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1222)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:582)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:955)
+	at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:921)
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:583)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:147)
+	at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:731)
+	at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:408)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:307)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1303)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1292)
+	at com.metaverse.coin.strategy.job.CoinStrategyJobApplication.main(CoinStrategyJobApplication.java:17)
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletSettlementSyncService': Invocation of init method failed; nested exception is org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor.postProcessBeforeInitialization(InitDestroyAnnotationBeanPostProcessor.java:160)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.applyBeanPostProcessorsBeforeInitialization(AbstractAutowireCapableBeanFactory.java:440)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(AbstractAutowireCapableBeanFactory.java:1796)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:620)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.config.DependencyDescriptor.resolveCandidate(DependencyDescriptor.java:276)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.doResolveDependency(DefaultListableBeanFactory.java:1391)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.resolveDependency(DefaultListableBeanFactory.java:1311)
+	at org.springframework.beans.factory.support.ConstructorResolver.resolveAutowiredArgument(ConstructorResolver.java:887)
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:791)
+	... 19 common frames omitted
+Caused by: org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at org.springframework.jdbc.datasource.DataSourceUtils.getConnection(DataSourceUtils.java:84)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:378)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:436)
+	at com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService.ensureSettlementTables(SmartWalletSettlementSyncService.java:57)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleElement.invoke(InitDestroyAnnotationBeanPostProcessor.java:389)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleMetadata.invokeInitMethods(InitDestroyAnnotationBeanPostProcessor.java:333)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor.postProcessBeforeInitialization(InitDestroyAnnotationBeanPostProcessor.java:157)
+	... 32 common frames omitted
+Caused by: com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at com.mysql.cj.jdbc.exceptions.SQLError.createCommunicationsException(SQLError.java:174)
+	at com.mysql.cj.jdbc.exceptions.SQLExceptionsMapping.translateException(SQLExceptionsMapping.java:64)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:815)
+	at com.mysql.cj.jdbc.ConnectionImpl.<init>(ConnectionImpl.java:438)
+	at com.mysql.cj.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:241)
+	at com.mysql.cj.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:189)
+	at com.zaxxer.hikari.util.DriverDataSource.getConnection(DriverDataSource.java:138)
+	at com.zaxxer.hikari.pool.PoolBase.newConnection(PoolBase.java:364)
+	at com.zaxxer.hikari.pool.PoolBase.newPoolEntry(PoolBase.java:206)
+	at com.zaxxer.hikari.pool.HikariPool.createPoolEntry(HikariPool.java:476)
+	at com.zaxxer.hikari.pool.HikariPool.checkFailFast(HikariPool.java:561)
+	at com.zaxxer.hikari.pool.HikariPool.<init>(HikariPool.java:115)
+	at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:112)
+	at org.springframework.jdbc.datasource.DataSourceUtils.fetchConnection(DataSourceUtils.java:160)
+	at org.springframework.jdbc.datasource.DataSourceUtils.doGetConnection(DataSourceUtils.java:118)
+	at org.springframework.jdbc.datasource.DataSourceUtils.getConnection(DataSourceUtils.java:81)
+	... 42 common frames omitted
+Caused by: com.mysql.cj.exceptions.CJCommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)
+	at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:499)
+	at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:480)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:61)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:104)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:149)
+	at com.mysql.cj.exceptions.ExceptionFactory.createCommunicationsException(ExceptionFactory.java:165)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:88)
+	at com.mysql.cj.NativeSession.connect(NativeSession.java:120)
+	at com.mysql.cj.jdbc.ConnectionImpl.connectOneTryOnly(ConnectionImpl.java:935)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:805)
+	... 55 common frames omitted
+Caused by: java.net.SocketException: Operation not permitted
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:591)
+	at java.base/sun.nio.ch.Net.connect(Net.java:580)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:593)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:633)
+	at com.mysql.cj.protocol.StandardSocketFactory.connect(StandardSocketFactory.java:153)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:62)
+	... 58 common frames omitted
+2026-04-05 12:22:50.646[1775362970646] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 10073 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 12:22:50.647[1775362970647] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 12:22:51.170[1775362971170] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 12:22:51.178[1775362971178] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 12:22:51.178[1775362971178] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 500 ms
+2026-04-05 12:22:51.512[1775362971512] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 12:22:51.612[1775362971612] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 12:22:51.763[1775362971763] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 12:22:51.767[1775362971767] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 12:22:51.771[1775362971771] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 12:22:51.797[1775362971797] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 12:22:51.812[1775362971812] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 12:22:51.817[1775362971817] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.355 seconds (JVM running for 6.633)
+2026-04-05 12:22:56.891[1775362976891] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 12:23:05.027[1775362985027] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:23:14.553[1775362994553] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 12:23:14.554[1775362994554] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 12:23:14.555[1775362994555] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 12:24:29.152[1775363069152] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 12:24:35.859[1775363075859] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 12:28:05.051[1775363285051] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:33:05.073[1775363585073] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:38:07.896[1775363887896] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:39:03.930[1775363943930] | ERROR | XNIO-1 task-1 | io.undertow.request                  - UT005023: Exception handling request to /smart-wallet/execution-wallet/derive-api-creds
+org.springframework.web.util.NestedServletException: Request processing failed; nested exception is java.lang.IllegalStateException: Polymarket Python SDK bridge failed: {"success": false, "message": "Polymarket helper failed unexpectedly.", "details": {"error": "PolyApiException[status_code=None, error_message=Request exception!]", "traceback": "Traceback (most recent call last):\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 101, in map_httpcore_exceptions\n    yield\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 250, in handle_request\n    resp = self._pool.handle_request(req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/connection_pool.py\", line 256, in handle_request\n    raise exc from None\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/connection_pool.py\", line 236, in handle_request\n    response = connection.handle_request(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/http_proxy.py\", line 316, in handle_request\n    stream = stream.start_tls(**kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/http11.py\", line 376, in start_tls\n    return self._stream.start_tls(ssl_context, server_hostname, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_backends/sync.py\", line 154, in start_tls\n    with map_exceptions(exc_map):\n  File \"/opt/homebrew/Cellar/python@3.11/3.11.12_1/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py\", line 158, in __exit__\n    self.gen.throw(typ, value, traceback)\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_exceptions.py\", line 14, in map_exceptions\n    raise to_exc(exc) from exc\nhttpcore.ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/http_helpers/helpers.py\", line 49, in request\n    resp = _http_client.request(\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 825, in request\n    return self.send(request, auth=auth, follow_redirects=follow_redirects)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 914, in send\n    response = self._send_handling_auth(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 942, in _send_handling_auth\n    response = self._send_handling_redirects(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 979, in _send_handling_redirects\n    response = self._send_single_request(request)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 1014, in _send_single_request\n    response = transport.handle_request(request)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 249, in handle_request\n    with map_httpcore_exceptions():\n  File \"/opt/homebrew/Cellar/python@3.11/3.11.12_1/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py\", line 158, in __exit__\n    self.gen.throw(typ, value, traceback)\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 118, in map_httpcore_exceptions\n    raise mapped_exc(message) from exc\nhttpx.ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 212, in <module>\n    main()\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 200, in main\n    handle_derive_api_creds()\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 107, in handle_derive_api_creds\n    _, creds, derived = build_client()\n                        ^^^^^^^^^^^^^^\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 75, in build_client\n    creds = client.create_or_derive_api_creds()\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/client.py\", line 260, in create_or_derive_api_creds\n    return self.derive_api_key(nonce)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/client.py\", line 241, in derive_api_key\n    creds_raw = get(endpoint, headers=headers)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/http_helpers/helpers.py\", line 73, in get\n    return request(endpoint, GET, headers, data)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/http_helpers/helpers.py\", line 65, in request\n    raise PolyApiException(error_msg=\"Request exception!\")\npy_clob_client.exceptions.PolyApiException: PolyApiException[status_code=None, error_message=Request exception!]\n"}}
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1014)
+	at org.springframework.web.servlet.FrameworkServlet.doPost(FrameworkServlet.java:909)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:517)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:883)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:584)
+	at io.undertow.servlet.handlers.ServletHandler.handleRequest(ServletHandler.java:74)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:129)
+	at org.springframework.web.filter.RequestContextFilter.doFilterInternal(RequestContextFilter.java:100)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at org.springframework.web.filter.FormContentFilter.doFilterInternal(FormContentFilter.java:93)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at org.springframework.web.filter.CharacterEncodingFilter.doFilterInternal(CharacterEncodingFilter.java:201)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at io.undertow.servlet.handlers.FilterHandler.handleRequest(FilterHandler.java:84)
+	at io.undertow.servlet.handlers.security.ServletSecurityRoleHandler.handleRequest(ServletSecurityRoleHandler.java:62)
+	at io.undertow.servlet.handlers.ServletChain$1.handleRequest(ServletChain.java:68)
+	at io.undertow.servlet.handlers.ServletDispatchingHandler.handleRequest(ServletDispatchingHandler.java:36)
+	at io.undertow.servlet.handlers.RedirectDirHandler.handleRequest(RedirectDirHandler.java:68)
+	at io.undertow.servlet.handlers.security.SSLInformationAssociationHandler.handleRequest(SSLInformationAssociationHandler.java:117)
+	at io.undertow.servlet.handlers.security.ServletAuthenticationCallHandler.handleRequest(ServletAuthenticationCallHandler.java:57)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.security.handlers.AbstractConfidentialityHandler.handleRequest(AbstractConfidentialityHandler.java:46)
+	at io.undertow.servlet.handlers.security.ServletConfidentialityConstraintHandler.handleRequest(ServletConfidentialityConstraintHandler.java:64)
+	at io.undertow.security.handlers.AuthenticationMechanismsHandler.handleRequest(AuthenticationMechanismsHandler.java:60)
+	at io.undertow.servlet.handlers.security.CachedAuthenticatedSessionHandler.handleRequest(CachedAuthenticatedSessionHandler.java:77)
+	at io.undertow.security.handlers.AbstractSecurityContextAssociationHandler.handleRequest(AbstractSecurityContextAssociationHandler.java:43)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.servlet.handlers.SendErrorPageHandler.handleRequest(SendErrorPageHandler.java:52)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.servlet.handlers.ServletInitialHandler.handleFirstRequest(ServletInitialHandler.java:275)
+	at io.undertow.servlet.handlers.ServletInitialHandler.access$100(ServletInitialHandler.java:79)
+	at io.undertow.servlet.handlers.ServletInitialHandler$2.call(ServletInitialHandler.java:134)
+	at io.undertow.servlet.handlers.ServletInitialHandler$2.call(ServletInitialHandler.java:131)
+	at io.undertow.servlet.core.ServletRequestContextThreadSetupAction$1.call(ServletRequestContextThreadSetupAction.java:48)
+	at io.undertow.servlet.core.ContextClassLoaderSetupAction$1.call(ContextClassLoaderSetupAction.java:43)
+	at io.undertow.servlet.handlers.ServletInitialHandler.dispatchRequest(ServletInitialHandler.java:255)
+	at io.undertow.servlet.handlers.ServletInitialHandler.access$000(ServletInitialHandler.java:79)
+	at io.undertow.servlet.handlers.ServletInitialHandler$1.handleRequest(ServletInitialHandler.java:100)
+	at io.undertow.server.Connectors.executeRootHandler(Connectors.java:393)
+	at io.undertow.server.HttpServerExchange$1.run(HttpServerExchange.java:852)
+	at org.jboss.threads.ContextClassLoaderSavingRunnable.run(ContextClassLoaderSavingRunnable.java:35)
+	at org.jboss.threads.EnhancedQueueExecutor.safeRun(EnhancedQueueExecutor.java:2019)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.doRunTask(EnhancedQueueExecutor.java:1558)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1449)
+	at org.xnio.XnioWorker$WorkerThreadFactory$1$1.run(XnioWorker.java:1282)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+Caused by: java.lang.IllegalStateException: Polymarket Python SDK bridge failed: {"success": false, "message": "Polymarket helper failed unexpectedly.", "details": {"error": "PolyApiException[status_code=None, error_message=Request exception!]", "traceback": "Traceback (most recent call last):\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 101, in map_httpcore_exceptions\n    yield\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 250, in handle_request\n    resp = self._pool.handle_request(req)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/connection_pool.py\", line 256, in handle_request\n    raise exc from None\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/connection_pool.py\", line 236, in handle_request\n    response = connection.handle_request(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/http_proxy.py\", line 316, in handle_request\n    stream = stream.start_tls(**kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_sync/http11.py\", line 376, in start_tls\n    return self._stream.start_tls(ssl_context, server_hostname, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_backends/sync.py\", line 154, in start_tls\n    with map_exceptions(exc_map):\n  File \"/opt/homebrew/Cellar/python@3.11/3.11.12_1/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py\", line 158, in __exit__\n    self.gen.throw(typ, value, traceback)\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpcore/_exceptions.py\", line 14, in map_exceptions\n    raise to_exc(exc) from exc\nhttpcore.ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/http_helpers/helpers.py\", line 49, in request\n    resp = _http_client.request(\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 825, in request\n    return self.send(request, auth=auth, follow_redirects=follow_redirects)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 914, in send\n    response = self._send_handling_auth(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 942, in _send_handling_auth\n    response = self._send_handling_redirects(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 979, in _send_handling_redirects\n    response = self._send_single_request(request)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_client.py\", line 1014, in _send_single_request\n    response = transport.handle_request(request)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 249, in handle_request\n    with map_httpcore_exceptions():\n  File \"/opt/homebrew/Cellar/python@3.11/3.11.12_1/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py\", line 158, in __exit__\n    self.gen.throw(typ, value, traceback)\n  File \"/opt/homebrew/lib/python3.11/site-packages/httpx/_transports/default.py\", line 118, in map_httpcore_exceptions\n    raise mapped_exc(message) from exc\nhttpx.ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 212, in <module>\n    main()\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 200, in main\n    handle_derive_api_creds()\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 107, in handle_derive_api_creds\n    _, creds, derived = build_client()\n                        ^^^^^^^^^^^^^^\n  File \"/Users/jenniferni/jenifer/ray/CoinStrategy/scripts/polymarket_clob_client.py\", line 75, in build_client\n    creds = client.create_or_derive_api_creds()\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/client.py\", line 260, in create_or_derive_api_creds\n    return self.derive_api_key(nonce)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/client.py\", line 241, in derive_api_key\n    creds_raw = get(endpoint, headers=headers)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/http_helpers/helpers.py\", line 73, in get\n    return request(endpoint, GET, headers, data)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/lib/python3.11/site-packages/py_clob_client/http_helpers/helpers.py\", line 65, in request\n    raise PolyApiException(error_msg=\"Request exception!\")\npy_clob_client.exceptions.PolyApiException: PolyApiException[status_code=None, error_message=Request exception!]\n"}}
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketPythonSdkBridge.invoke(PolymarketPythonSdkBridge.java:113)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketPythonSdkBridge.deriveApiCreds(PolymarketPythonSdkBridge.java:48)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService.deriveApiCreds(PolymarketClobExecutionService.java:17)
+	at com.metaverse.coin.strategy.job.smartwallet.controller.SmartWalletController.deriveExecutionWalletApiCreds(SmartWalletController.java:318)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+	at org.springframework.web.method.support.InvocableHandlerMethod.invokeForRequest(InvocableHandlerMethod.java:150)
+	at org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod.invokeAndHandle(ServletInvocableHandlerMethod.java:117)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.invokeHandlerMethod(RequestMappingHandlerAdapter.java:895)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.handleInternal(RequestMappingHandlerAdapter.java:808)
+	at org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter.handle(AbstractHandlerMethodAdapter.java:87)
+	at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1072)
+	at org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:965)
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1006)
+	... 51 common frames omitted
+2026-04-05 12:43:07.915[1775364187915] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:48:07.934[1775364487934] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:53:07.951[1775364787951] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:58:10.666[1775365090666] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 12:59:51.667[1775365191667] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 12:59:58.105[1775365198105] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 13:00:01.759[1775365201759] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x14964aefa2cd7caff7878b3820a690a03c5aa429 because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 13:00:04.804[1775365204804] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 13:00:29.978[1775365229978] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 13:00:40.170[1775365240170] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xee613b3fc183ee44f9da9c05f53e2da107e3debf because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 13:00:45.173[1775365245173] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x17db3fcd93ba12d38382a0cade24b200185c5f6d&limit=30&offset=0&takerOnly=true
+2026-04-05 13:00:50.483[1775365250483] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x17db3fcd93ba12d38382a0cade24b200185c5f6d&limit=30&offset=0&takerOnly=true
+2026-04-05 13:03:10.683[1775365390683] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:04:06.037[1775365446037] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 13:04:06.041[1775365446041] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 13:04:06.043[1775365446043] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 13:04:06.045[1775365446045] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 13:04:15.801[1775365455801] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 12116 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 13:04:15.802[1775365455802] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 13:04:16.281[1775365456281] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 13:04:16.288[1775365456288] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 13:04:16.288[1775365456288] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 458 ms
+2026-04-05 13:04:16.649[1775365456649] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 13:04:16.751[1775365456751] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 13:04:16.889[1775365456889] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 13:04:16.897[1775365456897] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 13:04:16.900[1775365456900] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 13:04:16.925[1775365456925] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 13:04:16.940[1775365456940] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 13:04:16.945[1775365456945] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.317 seconds (JVM running for 6.534)
+2026-04-05 13:04:22.013[1775365462013] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 13:04:32.736[1775365472736] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 13:04:34.681[1775365474681] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 13:04:34.681[1775365474681] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 13:04:34.682[1775365474682] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 13:04:35.166[1775365475166] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:07:22.214[1775365642214] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xbddf61af533ff524d27154e589d2d7a81510c684&limit=30&offset=0&takerOnly=true
+2026-04-05 13:09:24.594[1775365764594] | INFO  | SpringApplicationShutdownHook | io.undertow                          - stopping server: Undertow - 2.2.28.Final
+2026-04-05 13:09:24.596[1775365764596] | INFO  | SpringApplicationShutdownHook | io.undertow.servlet                  - Destroying Spring FrameworkServlet 'dispatcherServlet'
+2026-04-05 13:09:24.598[1775365764598] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-05 13:09:24.601[1775365764601] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-05 13:09:31.506[1775365771506] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 12735 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-05 13:09:31.507[1775365771507] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-05 13:09:32.024[1775365772024] | WARN  | main       | io.undertow.websockets.jsr           - UT026010: Buffer pool was not set on WebSocketDeploymentInfo, the default pool will be used
+2026-04-05 13:09:32.035[1775365772035] | INFO  | main       | io.undertow.servlet                  - Initializing Spring embedded WebApplicationContext
+2026-04-05 13:09:32.036[1775365772036] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 490 ms
+2026-04-05 13:09:32.472[1775365772472] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-05 13:09:32.588[1775365772588] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-05 13:09:32.767[1775365772767] | INFO  | main       | io.undertow                          - starting server: Undertow - 2.2.28.Final
+2026-04-05 13:09:32.771[1775365772771] | INFO  | main       | org.xnio                             - XNIO version 3.8.7.Final
+2026-04-05 13:09:32.774[1775365772774] | INFO  | main       | org.xnio.nio                         - XNIO NIO Implementation Version 3.8.7.Final
+2026-04-05 13:09:32.807[1775365772807] | INFO  | main       | org.jboss.threads                    - JBoss Threads version 3.1.0.Final
+2026-04-05 13:09:32.825[1775365772825] | INFO  | main       | o.s.b.w.e.undertow.UndertowWebServer - Undertow started on port(s) 8081 (http)
+2026-04-05 13:09:32.834[1775365772834] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.509 seconds (JVM running for 6.717)
+2026-04-05 13:09:43.569[1775365783569] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 13:09:48.878[1775365788878] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 13:09:54.490[1775365794490] | WARN  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletAccountingService - Failed to sync settlement for market 0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866: Failed to request Polymarket API: https://gamma-api.polymarket.com/markets?condition_ids=0xc58cfb7397c4f3f803f5c20135cafa7f6d2c87cf3bb1e6138042b95d828e1866
+2026-04-05 13:09:56.602[1775365796602] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=1
+2026-04-05 13:11:16.934[1775365876934] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 13:11:30.343[1775365890343] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 13:11:35.952[1775365895952] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x204f72f35326db932158cba6adff0b9a1da95e14 because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 13:13:48.430[1775366028430] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-05 13:13:48.430[1775366028430] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-05 13:13:48.431[1775366028431] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 13:13:48.510[1775366028510] | ERROR | XNIO-1 task-1 | io.undertow.request                  - UT005023: Exception handling request to /smart-wallet/clob/dry-run
+org.springframework.web.util.NestedServletException: Request processing failed; nested exception is java.lang.IllegalStateException: Polymarket token id not found for outcome YES on market 0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc.
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1014)
+	at org.springframework.web.servlet.FrameworkServlet.doPost(FrameworkServlet.java:909)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:517)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:883)
+	at javax.servlet.http.HttpServlet.service(HttpServlet.java:584)
+	at io.undertow.servlet.handlers.ServletHandler.handleRequest(ServletHandler.java:74)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:129)
+	at org.springframework.web.filter.RequestContextFilter.doFilterInternal(RequestContextFilter.java:100)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at org.springframework.web.filter.FormContentFilter.doFilterInternal(FormContentFilter.java:93)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at org.springframework.web.filter.CharacterEncodingFilter.doFilterInternal(CharacterEncodingFilter.java:201)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:117)
+	at io.undertow.servlet.core.ManagedFilter.doFilter(ManagedFilter.java:67)
+	at io.undertow.servlet.handlers.FilterHandler$FilterChainImpl.doFilter(FilterHandler.java:131)
+	at io.undertow.servlet.handlers.FilterHandler.handleRequest(FilterHandler.java:84)
+	at io.undertow.servlet.handlers.security.ServletSecurityRoleHandler.handleRequest(ServletSecurityRoleHandler.java:62)
+	at io.undertow.servlet.handlers.ServletChain$1.handleRequest(ServletChain.java:68)
+	at io.undertow.servlet.handlers.ServletDispatchingHandler.handleRequest(ServletDispatchingHandler.java:36)
+	at io.undertow.servlet.handlers.RedirectDirHandler.handleRequest(RedirectDirHandler.java:68)
+	at io.undertow.servlet.handlers.security.SSLInformationAssociationHandler.handleRequest(SSLInformationAssociationHandler.java:117)
+	at io.undertow.servlet.handlers.security.ServletAuthenticationCallHandler.handleRequest(ServletAuthenticationCallHandler.java:57)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.security.handlers.AbstractConfidentialityHandler.handleRequest(AbstractConfidentialityHandler.java:46)
+	at io.undertow.servlet.handlers.security.ServletConfidentialityConstraintHandler.handleRequest(ServletConfidentialityConstraintHandler.java:64)
+	at io.undertow.security.handlers.AuthenticationMechanismsHandler.handleRequest(AuthenticationMechanismsHandler.java:60)
+	at io.undertow.servlet.handlers.security.CachedAuthenticatedSessionHandler.handleRequest(CachedAuthenticatedSessionHandler.java:77)
+	at io.undertow.security.handlers.AbstractSecurityContextAssociationHandler.handleRequest(AbstractSecurityContextAssociationHandler.java:43)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.servlet.handlers.SendErrorPageHandler.handleRequest(SendErrorPageHandler.java:52)
+	at io.undertow.server.handlers.PredicateHandler.handleRequest(PredicateHandler.java:43)
+	at io.undertow.servlet.handlers.ServletInitialHandler.handleFirstRequest(ServletInitialHandler.java:275)
+	at io.undertow.servlet.handlers.ServletInitialHandler.access$100(ServletInitialHandler.java:79)
+	at io.undertow.servlet.handlers.ServletInitialHandler$2.call(ServletInitialHandler.java:134)
+	at io.undertow.servlet.handlers.ServletInitialHandler$2.call(ServletInitialHandler.java:131)
+	at io.undertow.servlet.core.ServletRequestContextThreadSetupAction$1.call(ServletRequestContextThreadSetupAction.java:48)
+	at io.undertow.servlet.core.ContextClassLoaderSetupAction$1.call(ContextClassLoaderSetupAction.java:43)
+	at io.undertow.servlet.handlers.ServletInitialHandler.dispatchRequest(ServletInitialHandler.java:255)
+	at io.undertow.servlet.handlers.ServletInitialHandler.access$000(ServletInitialHandler.java:79)
+	at io.undertow.servlet.handlers.ServletInitialHandler$1.handleRequest(ServletInitialHandler.java:100)
+	at io.undertow.server.Connectors.executeRootHandler(Connectors.java:393)
+	at io.undertow.server.HttpServerExchange$1.run(HttpServerExchange.java:852)
+	at org.jboss.threads.ContextClassLoaderSavingRunnable.run(ContextClassLoaderSavingRunnable.java:35)
+	at org.jboss.threads.EnhancedQueueExecutor.safeRun(EnhancedQueueExecutor.java:2019)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.doRunTask(EnhancedQueueExecutor.java:1558)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1423)
+	at org.xnio.XnioWorker$WorkerThreadFactory$1$1.run(XnioWorker.java:1282)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+Caused by: java.lang.IllegalStateException: Polymarket token id not found for outcome YES on market 0x50294abc2a69dd1e2de319110785bb0cd696df8297a34ddb02a8208739f4bbbc.
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketOrderRequestFactory.resolveTokenId(PolymarketOrderRequestFactory.java:74)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketOrderRequestFactory.prepare(PolymarketOrderRequestFactory.java:42)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService.dryRunOrder(PolymarketClobExecutionService.java:59)
+	at com.metaverse.coin.strategy.job.smartwallet.controller.SmartWalletController.clobDryRun(SmartWalletController.java:324)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+	at org.springframework.web.method.support.InvocableHandlerMethod.invokeForRequest(InvocableHandlerMethod.java:150)
+	at org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod.invokeAndHandle(ServletInvocableHandlerMethod.java:117)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.invokeHandlerMethod(RequestMappingHandlerAdapter.java:895)
+	at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.handleInternal(RequestMappingHandlerAdapter.java:808)
+	at org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter.handle(AbstractHandlerMethodAdapter.java:87)
+	at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1072)
+	at org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:965)
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1006)
+	... 51 common frames omitted
+2026-04-05 13:14:38.901[1775366078901] | WARN  | XNIO-1 task-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x711157abc86db11223006e99d6f0f64054460b76eb93687d3198ce4f747392d0
+2026-04-05 13:14:44.204[1775366084204] | WARN  | XNIO-1 task-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x711157abc86db11223006e99d6f0f64054460b76eb93687d3198ce4f747392d0
+2026-04-05 13:14:56.811[1775366096811] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:15:51.455[1775366151455] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 13:16:04.828[1775366164828] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true
+2026-04-05 13:16:10.436[1775366170436] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x14964aefa2cd7caff7878b3820a690a03c5aa429 because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 13:16:15.438[1775366175438] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 13:16:20.748[1775366180748] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 13:19:56.836[1775366396836] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:20:47.534[1775366447534] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881&limit=30&offset=0&takerOnly=true
+2026-04-05 13:21:07.845[1775366467845] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881&limit=30&offset=0&takerOnly=true
+2026-04-05 13:21:13.453[1775366473453] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x16b29c50f2439faf627209b2ac0c7bbddaa8a881 because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 13:21:18.457[1775366478457] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x006cc834cc092684f1b56626e23bedb3835c16ea&limit=30&offset=0&takerOnly=true
+2026-04-05 13:21:23.770[1775366483770] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x006cc834cc092684f1b56626e23bedb3835c16ea&limit=30&offset=0&takerOnly=true
+2026-04-05 13:21:29.376[1775366489376] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x006cc834cc092684f1b56626e23bedb3835c16ea because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 13:25:00.047[1775366700047] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:30:00.065[1775367000065] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:35:00.089[1775367300089] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:39:39.218[1775367579218] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdc876e6873772d38716fda7f2452a78d426d7ab6&limit=30&offset=0&takerOnly=true
+2026-04-05 13:39:59.997[1775367599997] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:45:00.008[1775367900008] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:50:00.023[1775368200023] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:51:41.495[1775368301495] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 13:51:46.807[1775368306807] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 13:51:52.420[1775368312420] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0xee613b3fc183ee44f9da9c05f53e2da107e3debf because Polymarket trades request failed: SSL peer shut down incorrectly
+2026-04-05 13:51:57.423[1775368317423] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x17db3fcd93ba12d38382a0cade24b200185c5f6d&limit=30&offset=0&takerOnly=true
+2026-04-05 13:54:43.772[1775368483772] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 13:55:06.599[1775368506599] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 2 failed for https://data-api.polymarket.com/trades?user=0x204f72f35326db932158cba6adff0b9a1da95e14&limit=30&offset=0&takerOnly=true
+2026-04-05 13:55:12.076[1775368512076] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 13:56:29.034[1775368589034] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xbddf61af533ff524d27154e589d2d7a81510c684&limit=30&offset=0&takerOnly=true
+2026-04-05 13:59:57.159[1775368797159] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true
+2026-04-05 14:00:12.087[1775368812087] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 14:05:15.885[1775369115885] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 14:06:44.849[1775369204849] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e&limit=30&offset=0&takerOnly=true
+2026-04-05 14:07:17.493[1775369237493] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xbddf61af533ff524d27154e589d2d7a81510c684&limit=30&offset=0&takerOnly=true
+2026-04-05 14:10:15.898[1775369415898] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 14:15:15.916[1775369715916] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 14:20:36.419[1775370036419] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0
+2026-04-05 14:25:36.436[1775370336436] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=6, markets=6, resolved=0, failed=0

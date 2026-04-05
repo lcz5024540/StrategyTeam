@@ -1,12 +1,10 @@
-#!/usr/bin/env bash
+#!/bin/zsh
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/scripts/polymarket-env.sh"
 
 if [ -f "$ENV_FILE" ]; then
-  # Load execution wallet and CLOB variables from a local, untracked file.
-  # shellcheck disable=SC1090
   source "$ENV_FILE"
 fi
 

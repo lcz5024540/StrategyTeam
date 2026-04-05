@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketProductOverview;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
@@ -316,6 +317,11 @@ public class SmartWalletController {
     @PostMapping("/execution-wallet/derive-api-creds")
     public Map<String, Object> deriveExecutionWalletApiCreds() {
         return clobExecutionService.deriveApiCreds();
+    }
+
+    @PostMapping("/clob/dry-run")
+    public Map<String, Object> clobDryRun(@RequestBody PolymarketOrderDryRunRequest request) {
+        return clobExecutionService.dryRunOrder(request);
     }
 
     @GetMapping("/clob/markets/{conditionId}")

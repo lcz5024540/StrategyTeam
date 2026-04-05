@@ -19,14 +19,18 @@ def fail(message, extra=None, code=1):
 
 
 try:
+    import httpx
     from py_clob_client.client import ClobClient
     from py_clob_client.clob_types import ApiCreds, MarketOrderArgs, OpenOrderParams, OrderArgs, OrderType
+    import py_clob_client.http_helpers.helpers as clob_helpers
     from py_clob_client.order_builder.constants import BUY, SELL
 except Exception as exc:
     fail(
         "py-clob-client is not installed. Run `pip install py-clob-client` before enabling LIVE Polymarket execution.",
         str(exc),
     )
+
+clob_helpers._http_client = httpx.Client(http2=False, timeout=30.0)
 
 
 def read_payload():
