@@ -233,6 +233,114 @@ Recommended startup mode:
   - `smart-wallet.live-validation.network-cooldown-minutes`
   - `smart-wallet.live-validation.geoblock-cooldown-minutes`
 
+## Startup Steps
+
+The repository is now configured so that a single service startup will run both lanes automatically:
+
+- `PAPER` main flow
+  - wallet discovery
+  - watchlist trade sync
+  - follow-task creation
+  - scheduled `PAPER` processing
+- `LIVE` validation lane
+  - scans `single-wallet-override` candidates from the configured preset
+  - submits at most the configured number of tiny validation orders per cycle
+  - pauses itself automatically on geoblock or repeated TLS/network failures
+
+Current default startup config in `application.yml`:
+
+- `smart-wallet.polymarket.auto-discover-enabled=true`
+- `smart-wallet.polymarket.auto-sync-events-enabled=true`
+- `smart-wallet.auto-execution-enabled=false`
+- `smart-wallet.live-validation.enabled=true`
+- `smart-wallet.live-validation.preset=followable`
+- `smart-wallet.live-validation.max-executions-per-run=1`
+
+### 1. Prepare env file
+
+Create your local env file from the example and fill in your real values:
+
+```bash
+cp scripts/polymarket-env.example.sh scripts/polymarket-env.sh
+```
+
+Required local secrets live in `scripts/polymarket-env.sh`:
+
+- `POLYMARKET_EXECUTION_WALLET_ADDRESS`
+- `POLYMARKET_EXECUTION_PRIVATE_KEY`
+- `POLYMARKET_EXECUTION_FUNDER_ADDRESS`
+- `POLYMARKET_CLOB_API_KEY`
+- `POLYMARKET_CLOB_API_SECRET`
+- `POLYMARKET_CLOB_API_PASSPHRASE`
+- `POLYMARKET_PYTHON_EXECUTABLE`
+
+### 2. Start the service
+
+```bash
+cd /Users/jenniferni/jenifer/ray/CoinStrategy
+scripts/run-smart-wallet.sh
+```
+
+### 3. Verify the service is up
+
+```bash
+curl -s 'http://127.0.0.1:8081/smart-wallet/health'
+curl -s 'http://127.0.0.1:8081/smart-wallet/execution-wallet/status'
+curl -s 'http://127.0.0.1:8081/smart-wallet/live-validation/status'
+```
+
+Expected checks:
+
+- `health.status = UP`
+- `execution-wallet-status.liveReady = true`
+- `live-validation.status.enabled = true`
+
+### 4. Verify the PAPER main flow
+
+```bash
+curl -s 'http://127.0.0.1:8081/smart-wallet/follow-tasks?limit=20&includeRiskEvaluation=true'
+curl -s 'http://127.0.0.1:8081/smart-wallet/pnl/summary'
+curl -s 'http://127.0.0.1:8081/smart-wallet/reports/performance'
+```
+
+Use these to confirm that watchlist events are flowing into tasks and that paper accounting is updating.
+
+### 5. Verify the LIVE validation lane
+
+```bash
+curl -s 'http://127.0.0.1:8081/smart-wallet/config/signal-risk-presets'
+curl -s 'http://127.0.0.1:8081/smart-wallet/follow-tasks/single-wallet-override?limit=5&preset=followable'
+curl -s 'http://127.0.0.1:8081/smart-wallet/live-validation/status'
+```
+
+The `live-validation/status` response is the main checkpoint:
+
+- `running`
+- `lastRunAt`
+- `lastRunSummary`
+- `suspended`
+- `suspendedUntil`
+- `suspensionReason`
+
+If `suspended=true`, the LIVE lane hit a protective circuit breaker. In this environment, the most common reasons are:
+
+- Polymarket geoblock / regional restriction
+- repeated TLS/network failures from the Python SDK bridge
+
+### 6. Manual fallback checks
+
+If you want to force a one-off validation cycle:
+
+```bash
+curl -s -X POST 'http://127.0.0.1:8081/smart-wallet/live-validation/process'
+```
+
+If you want to inspect the exact candidate before a LIVE validation order:
+
+```bash
+curl -s -X POST 'http://127.0.0.1:8081/smart-wallet/follow-tasks/{id}/dry-run'
+```
+
 Current `followable` preset is now configured in:
 
 - `smart-wallet.signal-risk-presets.followable`

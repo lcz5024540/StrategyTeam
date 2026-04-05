@@ -839,3 +839,7 @@ java.lang.IllegalStateException: Polymarket Python SDK bridge failed: {"success"
 2026-04-05 17:18:19.967[1775380699967] | INFO  | XNIO-1 task-1 | io.undertow.servlet                  - Initializing Spring DispatcherServlet 'dispatcherServlet'
 2026-04-05 17:18:19.967[1775380699967] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
 2026-04-05 17:18:19.968[1775380699968] | INFO  | XNIO-1 task-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-05 17:23:12.317[1775380992317] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=11, markets=11, resolved=0, failed=0
+2026-04-05 17:28:12.883[1775381292883] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=12, markets=12, resolved=0, failed=0
+2026-04-05 17:33:19.077[1775381599077] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x5f5c8d8fa28d77b5552562f32393ac199fb6b92ed1c1e2239e29c09f7e4eb3f5
+2026-04-05 17:33:20.988[1775381600988] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=13, markets=13, resolved=0, failed=0

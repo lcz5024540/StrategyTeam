@@ -58,7 +58,7 @@ smart-wallet:
     # [FIXED-ONCE] Enable Polymarket integration.
     enabled: true
     # [FIXED-ONCE] Auto-discovery can stay off if discovery is triggered manually.
-    auto-discover-enabled: false
+    auto-discover-enabled: true
     # [FIXED-ONCE] Periodically sync fresh trades for watchlist wallets.
     auto-sync-events-enabled: true
     # [FIXED-ONCE] Official Polymarket Data API base URL.
@@ -158,7 +158,7 @@ smart-wallet:
       single-wallet-override-min-recommended-stake-usdc: 5
   live-validation:
     # [TUNE] Auxiliary LIVE lane. Keep disabled until you are ready to test with real funds.
-    enabled: false
+    enabled: true
     # [TUNE] Preset name used by the LIVE validation lane.
     preset: "followable"
     # [FIXED-ONCE] Background cadence for small LIVE validation attempts.
