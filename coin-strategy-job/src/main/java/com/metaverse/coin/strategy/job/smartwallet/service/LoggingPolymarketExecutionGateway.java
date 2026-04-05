@@ -31,6 +31,16 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     .message(stringify(firstNonNull(response.get("message"), response.get("status"), "LIVE order submitted through official Python SDK bridge.")))
                     .externalOrderId(orderId)
                     .executionAddress(wallet.getAddress())
+                    .marketId(order.getMarketId())
+                    .tokenId(order.getTokenId())
+                    .outcome(order.getOutcome())
+                    .side(order.getSide())
+                    .orderType(wallet.getOrderType())
+                    .status(success || orderId != null ? "FILLED" : "FAILED")
+                    .price(order.getLimitPrice())
+                    .size(order.getSize())
+                    .notionalUsdc(order.getStakeUsdc())
+                    .feeUsdc(java.math.BigDecimal.ZERO)
                     .build();
         }
         return SmartWalletExecutionResult.builder()
@@ -39,6 +49,14 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                 .success(true)
                 .message("Paper order created from smart-wallet signal.")
                 .externalOrderId("paper-" + signal.getSignalId())
+                .marketId(signal.getMarket() == null ? null : signal.getMarket().getMarketId())
+                .outcome(signal.getFollowOutcome())
+                .side("BUY")
+                .orderType("GTC")
+                .status("FILLED")
+                .price(signal.getMarket() == null ? null : signal.getMarket().getPrice())
+                .notionalUsdc(signal.getRecommendedStakeUsdc())
+                .feeUsdc(java.math.BigDecimal.ZERO)
                 .build();
     }
 

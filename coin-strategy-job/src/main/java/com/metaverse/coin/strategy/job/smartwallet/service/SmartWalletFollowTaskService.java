@@ -37,6 +37,7 @@ public class SmartWalletFollowTaskService {
     private final PolymarketExecutionGateway executionGateway;
     private final SmartWalletSignalRiskService signalRiskService;
     private final PolymarketConsensusSignalService consensusSignalService;
+    private final SmartWalletAccountingService accountingService;
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
         SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
@@ -159,6 +160,7 @@ public class SmartWalletFollowTaskService {
             task.setExecutedAt(new Date());
             task.setUpdatedAt(new Date());
             followTaskMapper.updateById(task);
+            accountingService.recordExecution(task, result);
         } catch (Exception e) {
             log.error("Failed to execute smart wallet follow task {}", task.getId(), e);
             task.setStatus("FAILED");
@@ -166,6 +168,19 @@ public class SmartWalletFollowTaskService {
             task.setExecutedAt(new Date());
             task.setUpdatedAt(new Date());
             followTaskMapper.updateById(task);
+            accountingService.recordExecution(task, SmartWalletExecutionResult.builder()
+                    .signalId(String.valueOf(task.getId()))
+                    .mode("LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER)
+                    .success(false)
+                    .message(e.getMessage())
+                    .marketId(task.getMarketId())
+                    .outcome(task.getOutcome())
+                    .side(task.getSide())
+                    .status("FAILED")
+                    .price(task.getTriggerPrice())
+                    .notionalUsdc(task.getRecommendedStakeUsdc())
+                    .feeUsdc(BigDecimal.ZERO)
+                    .build());
         }
     }
 

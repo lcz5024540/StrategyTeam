@@ -55,7 +55,7 @@ smart-wallet:
     enabled: false
     chain: "polygon"
     chain-id: 137
-    address: "${POLYMARKET_EXECUTION_WALLET_ADDRESS:0xdff6c24e172c94b3c6100c46c995351e9783d337}"
+    address: "${POLYMARKET_EXECUTION_WALLET_ADDRESS:0x645e08d13aa56af683c345f5301bcb5b8c2fc6b7}"
     private-key: "${POLYMARKET_EXECUTION_PRIVATE_KEY:}"
     funder-address: "${POLYMARKET_EXECUTION_FUNDER_ADDRESS:}"
     max-order-usdc: 150

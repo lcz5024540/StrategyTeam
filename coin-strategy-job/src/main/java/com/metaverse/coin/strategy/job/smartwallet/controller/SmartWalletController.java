@@ -14,6 +14,16 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlTimelinePoint;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReportAttributionItem;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
@@ -27,6 +37,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketPortfolioAn
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOpportunityService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletAccountingService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
@@ -52,6 +63,7 @@ public class SmartWalletController {
     private final SmartWalletRegistryService walletRegistryService;
     private final PredictionMarketOpportunityService opportunityService;
     private final SmartWalletFollowService followService;
+    private final SmartWalletAccountingService accountingService;
     private final PolymarketSmartWalletMonitorService polymarketMonitorService;
     private final PolymarketConsensusSignalService consensusSignalService;
     private final PolymarketClobExecutionService clobExecutionService;
@@ -194,6 +206,78 @@ public class SmartWalletController {
     @GetMapping("/execution-wallet/status")
     public ExecutionWalletStatus executionWalletStatus() {
         return followService.executionWalletStatus();
+    }
+
+    @GetMapping("/orders")
+    public List<SmartWalletOrderView> orders(@RequestParam(defaultValue = "100") Integer limit) {
+        return accountingService.listOrders(limit);
+    }
+
+    @GetMapping("/fills")
+    public List<SmartWalletFillView> fills(@RequestParam(defaultValue = "100") Integer limit) {
+        return accountingService.listFills(limit);
+    }
+
+    @GetMapping("/positions/live")
+    public List<SmartWalletPositionView> livePositions() {
+        return accountingService.listPositions();
+    }
+
+    @GetMapping("/positions/history")
+    public List<SmartWalletPositionView> positionHistory(@RequestParam(defaultValue = "false") boolean closedOnly) {
+        return accountingService.listPositions(closedOnly);
+    }
+
+    @GetMapping("/cash-ledger")
+    public List<SmartWalletCashLedgerView> cashLedger(@RequestParam(defaultValue = "100") Integer limit) {
+        return accountingService.listLedger(limit);
+    }
+
+    @GetMapping("/pnl/summary")
+    public SmartWalletPnlSummaryView pnlSummary() {
+        return accountingService.summary();
+    }
+
+    @GetMapping("/reports/performance")
+    public SmartWalletPerformanceView performanceReport() {
+        return accountingService.performance();
+    }
+
+    @GetMapping("/pnl/timeline")
+    public List<SmartWalletPnlTimelinePoint> pnlTimeline(@RequestParam(defaultValue = "30") Integer days) {
+        return accountingService.pnlTimeline(days);
+    }
+
+    @GetMapping("/reports/daily")
+    public List<SmartWalletDailyReportView> dailyReports(@RequestParam(defaultValue = "30") Integer limit) {
+        return accountingService.listDailyReports(limit);
+    }
+
+    @PostMapping("/reports/daily/rebuild")
+    public Map<String, Object> rebuildDailyReports(@RequestParam(defaultValue = "7") Integer days) {
+        return Map.of("rebuilt", accountingService.rebuildRecentReports(days));
+    }
+
+    @PostMapping("/accounting/backfill")
+    public Map<String, Object> backfillAccounting(@RequestParam(defaultValue = "2000") Integer limit) {
+        return Map.of("imported", accountingService.backfillFromFollowTasks(limit));
+    }
+
+    @PostMapping("/settlement/sync")
+    public SettlementSyncSummary syncSettlements(@RequestParam(defaultValue = "500") Integer positionLimit,
+                                                 @RequestParam(defaultValue = "100") Integer marketLimit,
+                                                 @RequestParam(defaultValue = "false") boolean refreshCache) {
+        return accountingService.syncSettlements(positionLimit, marketLimit, refreshCache);
+    }
+
+    @GetMapping("/reports/wallets")
+    public List<SmartWalletReportAttributionItem> walletReports(@RequestParam(defaultValue = "20") Integer limit) {
+        return accountingService.walletAttribution(limit);
+    }
+
+    @GetMapping("/reports/markets")
+    public List<SmartWalletReportAttributionItem> marketReports(@RequestParam(defaultValue = "20") Integer limit) {
+        return accountingService.marketAttribution(limit);
     }
 
     @PostMapping("/execution-wallet/derive-api-creds")

@@ -15,10 +15,17 @@ public class PolymarketMarketMetadataService {
     private final Map<String, PolymarketApiClient.MarketMetadata> cache = new ConcurrentHashMap<>();
 
     public PolymarketApiClient.MarketMetadata getByConditionId(String conditionId) {
+        return getByConditionId(conditionId, false);
+    }
+
+    public PolymarketApiClient.MarketMetadata getByConditionId(String conditionId, boolean refresh) {
         if (!StringUtils.hasText(conditionId)) {
             throw new IllegalArgumentException("conditionId is required");
         }
         String normalized = conditionId.trim();
+        if (refresh) {
+            cache.remove(normalized);
+        }
         return cache.computeIfAbsent(normalized, polymarketApiClient::fetchMarketMetadata);
     }
 

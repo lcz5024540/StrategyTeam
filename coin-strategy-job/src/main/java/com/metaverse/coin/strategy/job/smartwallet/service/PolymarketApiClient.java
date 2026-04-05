@@ -150,6 +150,26 @@ public class PolymarketApiClient {
                 outcomeTokenMap.put(outcome, tokenId.trim());
             }
         }
+        String resolvedOutcome = null;
+        JsonNode tokensNode = market.get("tokens");
+        if (tokensNode != null && tokensNode.isArray()) {
+            for (JsonNode token : tokensNode) {
+                String outcome = normalizeOutcomeLabel(text(token, "outcome"));
+                String tokenId = text(token, "token_id", "tokenId", "clobTokenId");
+                if (StringUtils.hasText(outcome) && StringUtils.hasText(tokenId) && !outcomeTokenMap.containsKey(outcome)) {
+                    outcomeTokenMap.put(outcome, tokenId.trim());
+                }
+                if (resolvedOutcome == null && bool(token, "winner", "winning")) {
+                    resolvedOutcome = outcome;
+                }
+            }
+        }
+        if (resolvedOutcome == null) {
+            String explicitWinner = normalizeOutcomeLabel(text(market, "winner", "winningOutcome", "resolutionOutcome"));
+            if (StringUtils.hasText(explicitWinner)) {
+                resolvedOutcome = explicitWinner;
+            }
+        }
 
         return MarketMetadata.builder()
                 .conditionId(text(market, "conditionId", "condition_id"))
@@ -158,6 +178,11 @@ public class PolymarketApiClient {
                 .category(text(market, "category", "groupItemTitle"))
                 .minimumTickSize(num(market, "minimum_tick_size", "orderPriceMinTickSize", "tick_size"))
                 .negRisk(bool(market, "negRisk", "neg_risk"))
+                .active(bool(market, "active"))
+                .closed(bool(market, "closed", "isClosed"))
+                .acceptingOrders(bool(market, "acceptingOrders", "accepting_orders"))
+                .resolvedOutcome(resolvedOutcome)
+                .endAt(epochMillis(market, "endDateISO", "endDate", "gameStartTime", "eventStartDate"))
                 .outcomeTokenIds(outcomeTokenMap)
                 .build();
     }
@@ -428,7 +453,16 @@ public class PolymarketApiClient {
         private String category;
         private BigDecimal minimumTickSize;
         private boolean negRisk;
+        private boolean active;
+        private boolean closed;
+        private boolean acceptingOrders;
+        private String resolvedOutcome;
+        private Long endAt;
         @Builder.Default
         private Map<String, String> outcomeTokenIds = new LinkedHashMap<>();
+
+        public boolean isResolved() {
+            return StringUtils.hasText(resolvedOutcome) || (closed && !acceptingOrders);
+        }
     }
 }
