@@ -17,6 +17,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPosi
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletConflictMarketView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
@@ -170,6 +171,35 @@ public class SmartWalletAccountingService {
         return result;
     }
 
+    public List<SmartWalletPositionView> listNextSettlements(int limit) {
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
+                .orderByDesc(SmartWalletPositionEntity::getLastFilledAt));
+        for (SmartWalletPositionEntity position : positions) {
+            markToMarket(position);
+        }
+        List<SmartWalletPositionView> result = new ArrayList<>();
+        for (SmartWalletPositionEntity position : positions) {
+            result.add(toPositionView(position));
+        }
+        result.sort((left, right) -> {
+            Long leftEnd = left.getMarketEndAt();
+            Long rightEnd = right.getMarketEndAt();
+            if (leftEnd == null && rightEnd == null) {
+                return 0;
+            }
+            if (leftEnd == null) {
+                return 1;
+            }
+            if (rightEnd == null) {
+                return -1;
+            }
+            return Long.compare(leftEnd, rightEnd);
+        });
+        int safeLimit = Math.max(limit, 1);
+        return result.size() <= safeLimit ? result : new ArrayList<>(result.subList(0, safeLimit));
+    }
+
     public List<SmartWalletCashLedgerView> listLedger(int limit) {
         List<SmartWalletCashLedgerEntity> items = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
                 .orderByDesc(SmartWalletCashLedgerEntity::getOccurredAt)
@@ -251,9 +281,40 @@ public class SmartWalletAccountingService {
                 .build();
     }
 
+    public List<SmartWalletConflictMarketView> conflictingMarkets(int limit, boolean openOnly) {
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .orderByDesc(SmartWalletPositionEntity::getLastFilledAt));
+        Map<String, SmartWalletConflictMarketAccumulator> grouped = new LinkedHashMap<>();
+        for (SmartWalletPositionEntity position : positions) {
+            if (openOnly && !"OPEN".equalsIgnoreCase(position.getStatus()) && !"PARTIALLY_CLOSED".equalsIgnoreCase(position.getStatus())) {
+                continue;
+            }
+            if (!StringUtils.hasText(position.getMarketId())) {
+                continue;
+            }
+            grouped.computeIfAbsent(position.getMarketId(),
+                            key -> new SmartWalletConflictMarketAccumulator(position.getMarketId(), position.getQuestion()))
+                    .add(position);
+        }
+        List<SmartWalletConflictMarketView> result = new ArrayList<>();
+        for (SmartWalletConflictMarketAccumulator item : grouped.values()) {
+            if (item.getOutcomes().size() < 2) {
+                continue;
+            }
+            Long marketEndAt = resolveMarketEndAt(item.getMarketId());
+            result.add(item.toView(marketEndAt, timeFormatter.formatEpochMillisToBjt(marketEndAt)));
+        }
+        result.sort((left, right) -> right.getNetPnlUsdc().compareTo(left.getNetPnlUsdc()));
+        if (result.size() > Math.max(limit, 1)) {
+            return new ArrayList<>(result.subList(0, Math.max(limit, 1)));
+        }
+        return result;
+    }
+
     public SmartWalletPerformanceView performance() {
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<>());
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
+        ConflictSummary conflictSummary = summarizeConflicts(positions, null);
         BigDecimal volume = BigDecimal.ZERO;
         BigDecimal fee = BigDecimal.ZERO;
         int filledOrders = 0;
@@ -320,6 +381,11 @@ public class SmartWalletAccountingService {
                 .averageLossUsdc(averageLoss)
                 .profitFactor(profitFactor)
                 .maxDrawdownUsdc(maxDrawdown)
+                .conflictingMarkets(conflictSummary.conflictingMarkets())
+                .conflictingPositions(conflictSummary.conflictingPositions())
+                .openConflictingMarkets(conflictSummary.openConflictingMarkets())
+                .openConflictingPositions(conflictSummary.openConflictingPositions())
+                .conflictNetPnlUsdc(conflictSummary.conflictNetPnlUsdc())
                 .build();
     }
 
@@ -812,6 +878,7 @@ public class SmartWalletAccountingService {
         }
         BigDecimal winRate = positions.isEmpty() ? BigDecimal.ZERO
                 : BigDecimal.valueOf(wins).divide(BigDecimal.valueOf(positions.size()), 4, RoundingMode.HALF_UP);
+        ConflictSummary conflictSummary = summarizeConflicts(positions, reportDate);
 
         SmartWalletDailyReportEntity entity = dailyReportMapper.selectOne(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
                 .eq(SmartWalletDailyReportEntity::getReportDate, java.sql.Date.valueOf(reportDate))
@@ -1220,10 +1287,78 @@ public class SmartWalletAccountingService {
                 .unrealizedPnlUsdc(report.getUnrealizedPnlUsdc())
                 .netPnlUsdc(report.getNetPnlUsdc())
                 .winRate(report.getWinRate())
+                .conflictingMarkets(calculateDailyConflictSummary(report).conflictingMarkets())
+                .conflictingPositions(calculateDailyConflictSummary(report).conflictingPositions())
+                .conflictNetPnlUsdc(calculateDailyConflictSummary(report).conflictNetPnlUsdc())
                 .build();
     }
 
+    private ConflictSummary calculateDailyConflictSummary(SmartWalletDailyReportEntity report) {
+        if (report == null || report.getReportDate() == null) {
+            return ConflictSummary.empty();
+        }
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(StringUtils.hasText(report.getExecutionAddress()), SmartWalletPositionEntity::getExecutionAddress, report.getExecutionAddress()));
+        return summarizeConflicts(positions, toLocalDate(report.getReportDate()));
+    }
+
+    private ConflictSummary summarizeConflicts(List<SmartWalletPositionEntity> positions, LocalDate closedOnDate) {
+        if (positions == null || positions.isEmpty()) {
+            return ConflictSummary.empty();
+        }
+        Map<String, SmartWalletConflictMarketAccumulator> grouped = new LinkedHashMap<>();
+        for (SmartWalletPositionEntity position : positions) {
+            if (!StringUtils.hasText(position.getMarketId())) {
+                continue;
+            }
+            if (closedOnDate != null) {
+                if (position.getClosedAt() == null || !closedOnDate.equals(toLocalDate(position.getClosedAt()))) {
+                    continue;
+                }
+            }
+            grouped.computeIfAbsent(position.getMarketId(),
+                            key -> new SmartWalletConflictMarketAccumulator(position.getMarketId(), position.getQuestion()))
+                    .add(position);
+        }
+        int conflictingMarkets = 0;
+        int conflictingPositions = 0;
+        int openConflictingMarkets = 0;
+        int openConflictingPositions = 0;
+        BigDecimal conflictNetPnlUsdc = BigDecimal.ZERO;
+        for (SmartWalletConflictMarketAccumulator item : grouped.values()) {
+            if (item.getOutcomes().size() < 2) {
+                continue;
+            }
+            conflictingMarkets++;
+            conflictingPositions += item.getPositionCount();
+            conflictNetPnlUsdc = conflictNetPnlUsdc
+                    .add(item.getRealizedPnlUsdc())
+                    .add(item.getUnrealizedPnlUsdc());
+            if (item.getOpenPositionCount() > 0) {
+                openConflictingMarkets++;
+                openConflictingPositions += item.getOpenPositionCount();
+            }
+        }
+        return new ConflictSummary(
+                conflictingMarkets,
+                conflictingPositions,
+                openConflictingMarkets,
+                openConflictingPositions,
+                conflictNetPnlUsdc
+        );
+    }
+
     private record PositionUpdateResult(SmartWalletPositionEntity position, BigDecimal realizedDelta) {
+    }
+
+    private record ConflictSummary(int conflictingMarkets,
+                                   int conflictingPositions,
+                                   int openConflictingMarkets,
+                                   int openConflictingPositions,
+                                   BigDecimal conflictNetPnlUsdc) {
+        private static ConflictSummary empty() {
+            return new ConflictSummary(0, 0, 0, 0, BigDecimal.ZERO);
+        }
     }
 
     private record PositionSnapshot(BigDecimal quantity,

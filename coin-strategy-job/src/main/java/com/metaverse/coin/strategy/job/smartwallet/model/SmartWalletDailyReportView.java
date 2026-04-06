@@ -20,4 +20,7 @@ public class SmartWalletDailyReportView {
     private BigDecimal unrealizedPnlUsdc;
     private BigDecimal netPnlUsdc;
     private BigDecimal winRate;
+    private Integer conflictingMarkets;
+    private Integer conflictingPositions;
+    private BigDecimal conflictNetPnlUsdc;
 }

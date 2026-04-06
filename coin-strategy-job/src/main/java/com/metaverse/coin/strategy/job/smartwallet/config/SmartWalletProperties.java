@@ -92,6 +92,8 @@ public class SmartWalletProperties {
         private Integer maxHoursToMarketEnd = 72;
         private boolean blockDuplicateOpenPosition = true;
         private boolean blockDuplicatePendingTask = true;
+        private boolean blockOppositeOpenPositionSameMarket = true;
+        private boolean blockOppositePendingTaskSameMarket = true;
         private boolean enableConsensusGate = true;
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 2;

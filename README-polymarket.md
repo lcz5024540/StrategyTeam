@@ -129,8 +129,259 @@ The current implementation enforces these pre-task checks:
 - prices outside configured follow range are rejected
 - recommended stake must be above execution-wallet minimum order
 - optional multi-wallet consensus gate is enforced before a signal becomes pending
+- single-wallet override can allow strong wallets through a stricter side lane
+- portfolio-level position count limit is enforced
+- portfolio-level total open cost budget is enforced
+- long-duration markets can be rejected by market-end timing policy
+- duplicate same-market same-outcome open positions are blocked
+- duplicate same-market same-outcome pending tasks are blocked
+- opposite-outcome positions on the same market are blocked
+- opposite-outcome pending tasks on the same market are blocked
 
 Rejected items are persisted as `SKIPPED` follow tasks so they remain auditable.
+
+## Why Risk Downgrading Matters
+
+This project is not only a signal follower. It is a portfolio system.
+
+Without additional risk downgrading and blocking rules, a smart-wallet strategy can still fail for operational reasons:
+
+- too many markets open at the same time and capital gets locked for too long
+- the same market gets followed repeatedly, creating duplicated exposure
+- both sides of the same market get opened by different source signals
+- long-settlement markets consume budget and slow turnover
+- stale signals are executed after the original edge is gone
+
+In real runs, the most dangerous pattern is not always "low-quality wallets". It is often "good wallets but bad portfolio construction".
+
+That is why risk handling in this project is split into two layers:
+
+- signal quality control
+  - freshness, size, consensus, wallet override, price range
+- portfolio exposure control
+  - max open positions, max open cost, market timing, duplicate blocking, opposite-market blocking
+
+The new opposite-market controls are especially important because historical analysis showed that opening both outcomes on the same `marketId` created avoidable losses and distorted win-rate evaluation.
+
+## Current Risk Controls
+
+### Signal-Level Controls
+
+- watchlist qualification check
+- signal freshness window
+- minimum trigger size
+- follow price range check
+- execution-wallet minimum order check
+- consensus wallet count threshold
+- consensus score threshold
+- optional single-wallet override for strong wallets
+
+### Portfolio-Level Controls
+
+- `max-open-positions`
+- `max-total-open-cost-usdc`
+- `max-hours-to-market-end`
+- `block-duplicate-open-position`
+- `block-duplicate-pending-task`
+- `block-opposite-open-position-same-market`
+- `block-opposite-pending-task-same-market`
+
+### Execution Safety Controls
+
+- `PAPER` is the default validation path
+- `LIVE` validation is a separate lane
+- geoblock / TLS / network failures trigger circuit-breaker suspension
+- live execution remains disabled by default in restricted environments
+
+### Risk Observability
+
+You can inspect risk decisions and bottlenecks through:
+
+- `GET /smart-wallet/follow-tasks?includeRiskEvaluation=true`
+- `GET /smart-wallet/follow-tasks/blocker-stats?taskLimit=200`
+- `GET /smart-wallet/capacity/summary`
+- `GET /smart-wallet/reports/performance`
+- `GET /smart-wallet/reports/conflicting-markets?limit=20&openOnly=false`
+
+The most useful interpretation is:
+
+- `blocker-stats`
+  - tells you which rule blocks the largest share of new tasks
+- `capacity/summary`
+  - tells you whether the portfolio is already full
+- `performance`
+  - now includes conflict metrics, so you can see whether same-market multi-outcome exposure is harming results
+- `conflicting-markets`
+  - lists the specific markets where multiple outcomes were held
+
+## How To Tune Risk Parameters
+
+Use the risk reports as a decision guide instead of adjusting parameters blindly.
+
+### If `POSITION_LIMIT` Is Dominant
+
+Meaning:
+
+- too many open positions are already consuming portfolio slots
+
+Check:
+
+- `GET /smart-wallet/capacity/summary`
+- `GET /smart-wallet/positions/live`
+
+Tune:
+
+- raise `smart-wallet.signal-risk.max-open-positions` carefully
+- or reduce how many new markets the strategy is allowed to open
+
+Recommended approach:
+
+- first inspect whether many old positions should naturally settle soon
+- only then increase the slot limit in small steps
+
+### If `CAPITAL_LIMIT` Is Dominant
+
+Meaning:
+
+- open cost basis has already consumed the configured budget
+
+Check:
+
+- `GET /smart-wallet/capacity/summary`
+- `GET /smart-wallet/pnl/summary`
+
+Tune:
+
+- raise `smart-wallet.signal-risk.max-total-open-cost-usdc`
+- lower stake sizing if you want broader diversification without increasing total budget
+
+Recommended approach:
+
+- increase budget before increasing position count only if turnover is already healthy
+
+### If `MARKET_TIMING` Is Dominant
+
+Meaning:
+
+- too many candidate markets settle too far in the future
+
+Check:
+
+- `GET /smart-wallet/follow-tasks?includeRiskEvaluation=true`
+- `GET /smart-wallet/reports/conflicting-markets?limit=20&openOnly=false`
+
+Tune:
+
+- raise `smart-wallet.signal-risk.max-hours-to-market-end` if you want to allow longer-duration markets
+- keep it tight if capital turnover is more important than signal coverage
+
+Recommended approach:
+
+- do not widen this first if capital is already constrained
+
+### If `SIGNAL_FRESHNESS` Is Dominant
+
+Meaning:
+
+- signals are being evaluated after their useful window
+
+Tune:
+
+- raise `smart-wallet.signal-risk.max-signal-age-seconds`
+- or reduce polling / scheduling delay
+
+Recommended approach:
+
+- widen freshness gradually
+- confirm that widening it improves realized performance rather than just increasing fill count
+
+### If `CONSENSUS_WALLETS` Or `CONSENSUS_SCORE` Is Dominant
+
+Meaning:
+
+- the default multi-wallet confirmation is too strict for current market conditions
+
+Tune:
+
+- `smart-wallet.signal-risk.min-distinct-wallets`
+- `smart-wallet.signal-risk.min-consensus-score`
+- or use a preset with `single-wallet override`
+
+Recommended approach:
+
+- prefer `single-wallet override` before fully weakening consensus rules
+
+### If `MIN_ORDER` Is Dominant
+
+Meaning:
+
+- recommended stake is below your execution wallet minimum order threshold
+
+Tune:
+
+- lower `smart-wallet.execution-wallet.min-order-usdc`
+- or raise strategy stake sizing constraints
+
+Recommended approach:
+
+- keep the minimum realistic for execution costs
+- avoid lowering it so far that the strategy opens many low-signal micro positions
+
+### If `DUPLICATE_POSITION` Or `DUPLICATE_TASK` Is Dominant
+
+Meaning:
+
+- the strategy is repeatedly trying to enter the same market and outcome
+
+Tune:
+
+- normally do not disable these protections
+
+Recommended approach:
+
+- treat this as healthy blocking, not as a parameter problem
+
+### If `OPPOSITE_MARKET_POSITION` Or `OPPOSITE_MARKET_TASK` Is Dominant
+
+Meaning:
+
+- the system is trying to open both sides of the same market through different source signals
+
+Check:
+
+- `GET /smart-wallet/reports/conflicting-markets?limit=20&openOnly=false`
+- `GET /smart-wallet/reports/performance`
+
+Tune:
+
+- normally do not disable these protections
+- instead tighten strategy qualification or single-wallet override rules
+
+Recommended approach:
+
+- this is one of the highest-priority safety protections
+- historical analysis showed that same-market opposite-outcome exposure caused avoidable losses
+
+### If Conflict Metrics Are High In `performance`
+
+Fields:
+
+- `conflictingMarkets`
+- `conflictingPositions`
+- `openConflictingMarkets`
+- `openConflictingPositions`
+- `conflictNetPnlUsdc`
+
+Interpretation:
+
+- high counts mean the strategy has repeatedly held multiple outcomes on the same market
+- a strongly negative `conflictNetPnlUsdc` means this behavior is materially damaging returns
+
+Action:
+
+- keep opposite-market blocking enabled
+- review single-wallet override thresholds
+- review source signal selection for sports and binary yes/no markets first
 
 ## Config Surface
 
@@ -281,6 +532,17 @@ Required local secrets live in `scripts/polymarket-env.sh`:
 cd /Users/jenniferni/jenifer/ray/CoinStrategy
 scripts/run-smart-wallet.sh
 ```
+
+The service now uses the default Spring Boot embedded `Tomcat` container again.
+
+### 2.1 Open Swagger UI
+
+After the service starts, open:
+
+- `http://127.0.0.1:8081/swagger-ui.html`
+- OpenAPI JSON: `http://127.0.0.1:8081/v3/api-docs`
+
+Use this page to inspect request/response models before building your own reporting UI.
 
 ### 3. Verify the service is up
 

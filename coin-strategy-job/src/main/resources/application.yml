@@ -2,6 +2,15 @@ server:
   # [FIXED-ONCE] Local service port. Usually set once per machine.
   port: 8081
 
+springdoc:
+  # [FIXED-ONCE] Swagger UI entry path for local API inspection.
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
 spring:
   datasource:
     # [FIXED-ONCE] Local MySQL connection. Usually fixed per environment.
@@ -141,6 +150,10 @@ smart-wallet:
     block-duplicate-open-position: true
     # [TUNE] Do not queue another pending task if the same market+outcome is already pending.
     block-duplicate-pending-task: true
+    # [TUNE] Strong safety rail: block opening the opposite side on the same market.
+    block-opposite-open-position-same-market: true
+    # [TUNE] Strong safety rail: block pending tasks that would open the opposite side on the same market.
+    block-opposite-pending-task-same-market: true
     # [TUNE] Multi-wallet consensus gate for stricter entry.
     enable-consensus-gate: true
     # [TUNE] Consensus computation window.

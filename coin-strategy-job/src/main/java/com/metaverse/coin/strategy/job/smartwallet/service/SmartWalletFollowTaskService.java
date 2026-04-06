@@ -541,9 +541,15 @@ public class SmartWalletFollowTaskService {
             return "MARKET_TIMING";
         }
         if (text.contains("open position already exists")) {
+            if (text.contains("different outcome")) {
+                return "OPPOSITE_MARKET_POSITION";
+            }
             return "DUPLICATE_POSITION";
         }
         if (text.contains("pending follow task already exists")) {
+            if (text.contains("different outcome")) {
+                return "OPPOSITE_MARKET_TASK";
+            }
             return "DUPLICATE_TASK";
         }
         if (text.contains("signal is stale")) {

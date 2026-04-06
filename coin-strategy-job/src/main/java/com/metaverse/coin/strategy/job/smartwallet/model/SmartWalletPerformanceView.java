@@ -24,4 +24,9 @@ public class SmartWalletPerformanceView {
     private BigDecimal averageLossUsdc;
     private BigDecimal profitFactor;
     private BigDecimal maxDrawdownUsdc;
+    private Integer conflictingMarkets;
+    private Integer conflictingPositions;
+    private Integer openConflictingMarkets;
+    private Integer openConflictingPositions;
+    private BigDecimal conflictNetPnlUsdc;
 }

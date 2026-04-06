@@ -118,10 +118,22 @@ public class SmartWalletSignalRiskService {
             reasons.add("An open position already exists for the same market and outcome.");
         }
 
+        if (risk.isBlockOppositeOpenPositionSameMarket()
+                && hasOpenPositionOnSameMarketDifferentOutcome(event.getMarketId(), event.getOutcome())) {
+            accepted = false;
+            reasons.add("An open position already exists for the same market with a different outcome.");
+        }
+
         if (risk.isBlockDuplicatePendingTask()
                 && hasPendingFollowTask(event.getMarketId(), event.getOutcome(), currentFollowTaskId)) {
             accepted = false;
             reasons.add("A pending follow task already exists for the same market and outcome.");
+        }
+
+        if (risk.isBlockOppositePendingTaskSameMarket()
+                && hasPendingFollowTaskOnSameMarketDifferentOutcome(event.getMarketId(), event.getOutcome(), currentFollowTaskId)) {
+            accepted = false;
+            reasons.add("A pending follow task already exists for the same market with a different outcome.");
         }
 
         ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event);
@@ -231,6 +243,32 @@ public class SmartWalletSignalRiskService {
         LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                 .eq(SmartWalletFollowTaskEntity::getMarketId, marketId)
                 .eq(SmartWalletFollowTaskEntity::getOutcome, outcome)
+                .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
+        if (currentFollowTaskId != null) {
+            query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
+        }
+        Long count = followTaskMapper.selectCount(query);
+        return count != null && count > 0;
+    }
+
+    private boolean hasOpenPositionOnSameMarketDifferentOutcome(String marketId, String outcome) {
+        if (marketId == null || outcome == null) {
+            return false;
+        }
+        Long count = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getMarketId, marketId)
+                .ne(SmartWalletPositionEntity::getOutcome, outcome)
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        return count != null && count > 0;
+    }
+
+    private boolean hasPendingFollowTaskOnSameMarketDifferentOutcome(String marketId, String outcome, Long currentFollowTaskId) {
+        if (marketId == null || outcome == null) {
+            return false;
+        }
+        LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .eq(SmartWalletFollowTaskEntity::getMarketId, marketId)
+                .ne(SmartWalletFollowTaskEntity::getOutcome, outcome)
                 .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
         if (currentFollowTaskId != null) {
             query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
