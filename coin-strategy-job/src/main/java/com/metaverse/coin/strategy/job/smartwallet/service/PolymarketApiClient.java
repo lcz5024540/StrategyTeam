@@ -19,6 +19,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,6 +41,11 @@ public class PolymarketApiClient {
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
+            .build();
+    private final OkHttpClient fastFallbackClient = httpClient.newBuilder()
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .writeTimeout(8, TimeUnit.SECONDS)
             .build();
 
     public List<LeaderboardEntry> fetchLeaderboard() {
@@ -122,7 +128,7 @@ public class PolymarketApiClient {
                     .walletAddress(walletAddress)
                     .marketId(text(node, "conditionId", "market", "marketId"))
                     .question(text(node, "question", "title"))
-                    .outcome(normalizeOutcome(text(node, "outcome", "outcomeName", "side")))
+                    .outcome(normalizeOutcome(text(node, "outcome", "outcomeName")))
                     .side(normalizeSide(text(node, "side", "type")))
                     .price(num(node, "price"))
                     .size(num(node, "size", "sizeUsd", "amount"))
@@ -191,15 +197,13 @@ public class PolymarketApiClient {
     }
 
     private JsonNode getJson(URI uri) {
-        Request request = new Request.Builder()
-                .url(uri.toString())
-                .header("Accept", "application/json")
-                .header("User-Agent", "CoinStrategy/1.0")
-                .get()
-                .build();
+        Request request = buildRequest(uri);
         IllegalStateException lastFailure = null;
+        boolean fastFallbackRecommended = false;
         for (int attempt = 1; attempt <= 3; attempt++) {
-            try (Response response = httpClient.newCall(request).execute()) {
+            long startedAt = System.currentTimeMillis();
+            OkHttpClient client = selectClient(uri, attempt, fastFallbackRecommended);
+            try (Response response = client.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
                     throw new IllegalStateException("Polymarket API request failed: " + uri + ", status=" + response.code());
                 }
@@ -209,10 +213,15 @@ public class PolymarketApiClient {
                 return objectMapper.readTree(response.body().string());
             } catch (IOException e) {
                 lastFailure = new IllegalStateException("Failed to request Polymarket API: " + uri, e);
+                fastFallbackRecommended = fastFallbackRecommended || isImmediateFallbackCandidate(e, uri);
                 if (attempt >= 3) {
                     break;
                 }
-                log.warn("Polymarket API request attempt {} failed for {}", attempt, uri);
+                log.warn("Polymarket API request attempt {} failed for {} after {} ms: {}",
+                        attempt, uri, System.currentTimeMillis() - startedAt, rootMessage(e));
+                if (fastFallbackRecommended && attempt >= 2) {
+                    break;
+                }
                 sleepQuietly(attempt * 300L);
             }
         }
@@ -230,6 +239,10 @@ public class PolymarketApiClient {
                     "curl",
                     "-s",
                     "--http1.1",
+                    "--connect-timeout",
+                    "4",
+                    "--max-time",
+                    "12",
                     "-H",
                     "Accept: application/json",
                     "-H",
@@ -265,6 +278,49 @@ public class PolymarketApiClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private Request buildRequest(URI uri) {
+        return new Request.Builder()
+                .url(uri.toString())
+                .header("Accept", "application/json")
+                .header("User-Agent", "CoinStrategy/1.0")
+                .get()
+                .build();
+    }
+
+    private OkHttpClient selectClient(URI uri, int attempt, boolean fastFallbackRecommended) {
+        if (fastFallbackRecommended || isSlowDataEndpoint(uri)) {
+            return attempt == 1 ? fastFallbackClient : httpClient;
+        }
+        return httpClient;
+    }
+
+    private boolean isSlowDataEndpoint(URI uri) {
+        String value = uri == null ? "" : uri.toString();
+        return value.contains("/v1/leaderboard")
+                || value.contains("/closed-positions")
+                || value.contains("/public-profile");
+    }
+
+    private boolean isImmediateFallbackCandidate(IOException e, URI uri) {
+        String message = rootMessage(e).toLowerCase();
+        return message.contains("ssl peer shut down incorrectly")
+                || message.contains("remote host terminated the handshake")
+                || message.contains("sslhandshakeexception")
+                || message.contains("read timed out")
+                || e instanceof SocketTimeoutException
+                || isSlowDataEndpoint(uri);
+    }
+
+    private String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        Throwable last = throwable;
+        while (current != null) {
+            last = current;
+            current = current.getCause();
+        }
+        return last == null || last.getMessage() == null ? "unknown error" : last.getMessage();
     }
 
     private URI buildUri(String baseUrl, String path, Map<String, String> params) {
@@ -415,11 +471,7 @@ public class PolymarketApiClient {
         if (!StringUtils.hasText(value)) {
             return "YES";
         }
-        String normalized = value.trim().toUpperCase();
-        if (normalized.contains("NO")) {
-            return "NO";
-        }
-        return "YES";
+        return normalizeOutcomeLabel(value);
     }
 
     private String normalizeOutcomeLabel(String value) {
@@ -427,10 +479,10 @@ public class PolymarketApiClient {
             return null;
         }
         String normalized = value.trim().toUpperCase();
-        if (normalized.contains("NO")) {
+        if ("NO".equals(normalized) || normalized.startsWith("NO ")) {
             return "NO";
         }
-        if (normalized.contains("YES")) {
+        if ("YES".equals(normalized) || normalized.startsWith("YES ")) {
             return "YES";
         }
         return normalized;
@@ -505,7 +557,7 @@ public class PolymarketApiClient {
         private Map<String, String> outcomeTokenIds = new LinkedHashMap<>();
 
         public boolean isResolved() {
-            return StringUtils.hasText(resolvedOutcome) || (closed && !acceptingOrders);
+            return StringUtils.hasText(resolvedOutcome);
         }
     }
 }

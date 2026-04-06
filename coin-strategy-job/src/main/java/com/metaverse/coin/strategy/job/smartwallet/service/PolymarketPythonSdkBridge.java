@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -17,10 +18,17 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
-public class PolymarketPythonSdkBridge {
+@Slf4j
+public class PolymarketPythonSdkBridge implements PolymarketClobClient {
 
     private final ObjectMapper objectMapper;
 
+    @Override
+    public boolean supports(ExecutionWalletContextLoader.ExecutionWalletContext context) {
+        return context != null && "PYTHON".equalsIgnoreCase(context.getSdkMode());
+    }
+
+    @Override
     public boolean isAvailable(ExecutionWalletContextLoader.ExecutionWalletContext context) {
         String python = StringUtils.hasText(context.getPythonExecutable()) ? context.getPythonExecutable() : "python3";
         ProcessBuilder builder = new ProcessBuilder(
@@ -44,10 +52,12 @@ public class PolymarketPythonSdkBridge {
         }
     }
 
+    @Override
     public Map<String, Object> deriveApiCreds(ExecutionWalletContextLoader.ExecutionWalletContext context) {
         return invoke("derive-api-creds", Map.of(), context);
     }
 
+    @Override
     public Map<String, Object> placeOrder(ExecutionWalletContextLoader.ExecutionWalletContext context,
                                           PolymarketOrderRequestFactory.PreparedPolymarketOrder order) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -67,10 +77,12 @@ public class PolymarketPythonSdkBridge {
         return invoke("place-order", payload, context);
     }
 
+    @Override
     public Map<String, Object> getOrder(ExecutionWalletContextLoader.ExecutionWalletContext context, String orderId) {
         return invoke("get-order", Map.of("orderId", orderId), context);
     }
 
+    @Override
     public Map<String, Object> cancelOrder(ExecutionWalletContextLoader.ExecutionWalletContext context, String orderId) {
         return invoke("cancel-order", Map.of("orderId", orderId), context);
     }
@@ -81,6 +93,11 @@ public class PolymarketPythonSdkBridge {
         if (!"PYTHON".equalsIgnoreCase(context.getSdkMode())) {
             throw new IllegalStateException("Unsupported Polymarket CLOB sdk-mode: " + context.getSdkMode());
         }
+        log.info("Polymarket Python SDK invoke command={} helperScript={} python={} payloadKeys={}",
+                command,
+                context.getHelperScriptPath(),
+                context.getPythonExecutable(),
+                payload == null ? java.util.List.of() : payload.keySet());
         String python = StringUtils.hasText(context.getPythonExecutable()) ? context.getPythonExecutable() : "python3";
         String scriptPath = resolveScriptPath(context.getHelperScriptPath()).toString();
         ProcessBuilder builder = new ProcessBuilder(python, scriptPath, command);
@@ -96,19 +113,22 @@ public class PolymarketPythonSdkBridge {
         env.put("POLY_DERIVE_API_CREDS_IF_MISSING", Boolean.toString(context.isDeriveApiCredsIfMissing()));
         env.put("POLY_SIGNATURE_TYPE", String.valueOf(context.getSignatureType() == null ? 0 : context.getSignatureType()));
         env.put("POLY_ORDER_TYPE", defaultString(context.getOrderType(), "GTC"));
+        env.put("POLYMARKET_PYTHON_TIMEOUT_SECONDS", String.valueOf(resolveTimeoutSeconds(context)));
         try {
             Process process = builder.start();
             try (OutputStream stdin = process.getOutputStream()) {
                 stdin.write(objectMapper.writeValueAsBytes(payload));
                 stdin.flush();
             }
-            boolean finished = process.waitFor(90, TimeUnit.SECONDS);
+            int timeoutSeconds = resolveTimeoutSeconds(context);
+            boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                throw new IllegalStateException("Polymarket Python SDK bridge timed out.");
+                throw new IllegalStateException("Polymarket Python SDK bridge timed out after " + timeoutSeconds + " seconds.");
             }
             String stdout = readFully(process.getInputStream());
             String stderr = readFully(process.getErrorStream());
+            logPythonStderr(command, stderr, process.exitValue() == 0);
             if (process.exitValue() != 0) {
                 throw new IllegalStateException("Polymarket Python SDK bridge failed: " + firstNonBlank(stderr, stdout));
             }
@@ -140,7 +160,46 @@ public class PolymarketPythonSdkBridge {
         return StringUtils.hasText(value) ? value.trim() : fallback;
     }
 
+    private int resolveTimeoutSeconds(ExecutionWalletContextLoader.ExecutionWalletContext context) {
+        Integer configured = context.getPythonTimeoutSeconds();
+        return configured == null || configured <= 0 ? 45 : configured;
+    }
+
     private String firstNonBlank(String preferred, String fallback) {
         return StringUtils.hasText(preferred) ? preferred.trim() : defaultString(fallback, "unknown error");
+    }
+
+    private void logPythonStderr(String command, String stderr, boolean success) {
+        if (!StringUtils.hasText(stderr)) {
+            return;
+        }
+        for (String line : stderr.split("\\R")) {
+            if (!StringUtils.hasText(line)) {
+                continue;
+            }
+            String trimmed = line.trim();
+            if (success) {
+                log.info("[python-bridge:{}] {}", command, trimmed);
+                continue;
+            }
+            if (isOperationalPythonLine(trimmed)) {
+                log.warn("[python-bridge:{}] {}", command, trimmed);
+            } else {
+                log.error("[python-bridge:{}] {}", command, trimmed);
+            }
+        }
+    }
+
+    private boolean isOperationalPythonLine(String line) {
+        String normalized = line.toLowerCase();
+        return normalized.contains("[polymarket_http]")
+                || normalized.contains("connecterror")
+                || normalized.contains("connection refused")
+                || normalized.contains("request exception")
+                || normalized.contains("timeout")
+                || normalized.contains("timed out")
+                || normalized.contains("ssl")
+                || normalized.contains("geoblock")
+                || normalized.contains("restricted in your region");
     }
 }

@@ -75,6 +75,7 @@ public class SmartWalletProperties {
         private String sdkMode = "PYTHON";
         private String pythonExecutable = "python3";
         private String helperScriptPath = "scripts/polymarket_clob_client.py";
+        private Integer pythonTimeoutSeconds = 45;
         private Integer signatureType = 0;
         private String orderType = "GTC";
     }
@@ -86,6 +87,11 @@ public class SmartWalletProperties {
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         private BigDecimal minFollowPrice = new BigDecimal("0.05");
         private BigDecimal maxFollowPrice = new BigDecimal("0.95");
+        private Integer maxOpenPositions = 10;
+        private BigDecimal maxTotalOpenCostUsdc = new BigDecimal("500");
+        private Integer maxHoursToMarketEnd = 72;
+        private boolean blockDuplicateOpenPosition = true;
+        private boolean blockDuplicatePendingTask = true;
         private boolean enableConsensusGate = true;
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 2;
@@ -119,6 +125,7 @@ public class SmartWalletProperties {
         private Integer candidateScanLimit = 40;
         private Integer maxExecutionsPerRun = 1;
         private boolean skipIfPaperPendingExists = true;
+        private Integer unsupportedMarketCooldownMinutes = 360;
         private Integer networkErrorThreshold = 2;
         private Integer networkCooldownMinutes = 15;
         private Integer geoblockCooldownMinutes = 720;

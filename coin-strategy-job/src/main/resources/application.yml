@@ -111,11 +111,13 @@ smart-wallet:
     # [FIXED-ONCE] Allow wallet-based derivation if API creds are not yet stored.
     derive-api-creds-if-missing: true
     # [FIXED-ONCE] Current bridge uses the official Python SDK.
-    sdk-mode: "PYTHON"
+    sdk-mode: "JAVA"
     # [SCRIPT][FIXED-ONCE] Python interpreter used by the CLOB bridge.
     python-executable: "${POLYMARKET_PYTHON_EXECUTABLE:/opt/homebrew/bin/python3.11}"
     # [FIXED-ONCE] Local helper script path.
     helper-script-path: "scripts/polymarket_clob_client.py"
+    # [TUNE] Maximum wait for one Python SDK bridge call before treating it as an external execution failure.
+    python-timeout-seconds: 45
     # [FIXED-ONCE] Polymarket signature mode and default order type.
     signature-type: 0
     order-type: "GTC"
@@ -129,6 +131,16 @@ smart-wallet:
     # [TUNE] Follow only inside this market price band.
     min-follow-price: 0.05
     max-follow-price: 0.95
+    # [TUNE] Maximum number of simultaneously open positions across the portfolio.
+    max-open-positions: 10
+    # [TUNE] Portfolio-wide capital budget for still-open positions.
+    max-total-open-cost-usdc: 500
+    # [TUNE] Ignore long-dated markets so capital can recycle faster.
+    max-hours-to-market-end: 72
+    # [TUNE] Do not open another position if the same market+outcome is already open.
+    block-duplicate-open-position: true
+    # [TUNE] Do not queue another pending task if the same market+outcome is already pending.
+    block-duplicate-pending-task: true
     # [TUNE] Multi-wallet consensus gate for stricter entry.
     enable-consensus-gate: true
     # [TUNE] Consensus computation window.
@@ -157,8 +169,8 @@ smart-wallet:
       single-wallet-override-min-trigger-size-usdc: 100
       single-wallet-override-min-recommended-stake-usdc: 5
   live-validation:
-    # [TUNE] Auxiliary LIVE lane. Keep disabled until you are ready to test with real funds.
-    enabled: true
+    # [TUNE] Auxiliary LIVE lane. Keep disabled by default; enable only in a geoblock-safe environment when you want tiny real-fund validation.
+    enabled: false
     # [TUNE] Preset name used by the LIVE validation lane.
     preset: "followable"
     # [FIXED-ONCE] Background cadence for small LIVE validation attempts.
@@ -169,8 +181,10 @@ smart-wallet:
     max-executions-per-run: 1
     # [TUNE] When true, skip a LIVE validation candidate if the same follow task already has any PAPER/LIVE order record.
     skip-if-paper-pending-exists: true
+    # [TUNE] Cooldown for markets whose outcome labels cannot be mapped to token ids yet.
+    unsupported-market-cooldown-minutes: 360
     # [TUNE] Consecutive TLS/network failures before automatic suspension.
-    network-error-threshold: 2
+    network-error-threshold: 1
     # [TUNE] Suspension window after repeated TLS/network failures.
     network-cooldown-minutes: 15
     # [TUNE] Suspension window after Polymarket geoblock / regional restriction is detected.

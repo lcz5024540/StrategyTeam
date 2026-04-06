@@ -1,5 +1,10 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -21,14 +26,24 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletProperties properties;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
     private final PolymarketConsensusSignalService consensusSignalService;
+    private final SmartWalletPositionMapper positionMapper;
+    private final SmartWalletFollowTaskMapper followTaskMapper;
+    private final PolymarketMarketMetadataService marketMetadataService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
-        return evaluate(profile, event, null);
+        return evaluate(profile, event, null, null);
     }
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
                                        SmartWalletTradeEventEntity event,
                                        SmartWalletProperties.SignalRisk overrideRisk) {
+        return evaluate(profile, event, overrideRisk, null);
+    }
+
+    public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
+                                       SmartWalletTradeEventEntity event,
+                                       SmartWalletProperties.SignalRisk overrideRisk,
+                                       Long currentFollowTaskId) {
         List<String> reasons = new ArrayList<>();
         boolean accepted = true;
         boolean overrideApplied = false;
@@ -56,12 +71,57 @@ public class SmartWalletSignalRiskService {
             reasons.add("Trigger price is outside follow range.");
         }
 
+        Integer openPositions = countOpenPositions();
+        if (openPositions >= defaultInt(risk.getMaxOpenPositions(), Integer.MAX_VALUE)) {
+            accepted = false;
+            reasons.add("Open position count has reached the portfolio limit.");
+        }
+
+        BigDecimal totalOpenCost = totalOpenCostUsdc();
+        if (totalOpenCost.compareTo(safe(risk.getMaxTotalOpenCostUsdc())) >= 0) {
+            accepted = false;
+            reasons.add("Total open position cost has reached the portfolio budget limit.");
+        }
+
         if (event.getOpenedAt() != null) {
             long ageMs = Math.max(0L, System.currentTimeMillis() - event.getOpenedAt().getTime());
             if (ageMs > risk.getMaxSignalAgeSeconds() * 1000L) {
                 accepted = false;
                 reasons.add("Signal is stale.");
             }
+        }
+
+        PolymarketApiClient.MarketMetadata metadata = null;
+        try {
+            metadata = marketMetadataService.getByConditionId(event.getMarketId());
+        } catch (Exception ignored) {
+            // Keep risk evaluation resilient when metadata endpoint is temporarily flaky.
+        }
+        Long endAt = metadata == null ? null : metadata.getEndAt();
+        if (endAt != null && endAt > 0) {
+            long remainingMs = endAt - System.currentTimeMillis();
+            if (remainingMs <= 0) {
+                accepted = false;
+                reasons.add("Market is already at or past expected end time.");
+            } else {
+                long maxHours = defaultInt(risk.getMaxHoursToMarketEnd(), Integer.MAX_VALUE);
+                if (remainingMs > maxHours * 3600_000L) {
+                    accepted = false;
+                    reasons.add("Market end time is too far away for the current capital-turnover policy.");
+                }
+            }
+        }
+
+        if (risk.isBlockDuplicateOpenPosition()
+                && hasOpenPosition(event.getMarketId(), event.getOutcome())) {
+            accepted = false;
+            reasons.add("An open position already exists for the same market and outcome.");
+        }
+
+        if (risk.isBlockDuplicatePendingTask()
+                && hasPendingFollowTask(event.getMarketId(), event.getOutcome(), currentFollowTaskId)) {
+            accepted = false;
+            reasons.add("A pending follow task already exists for the same market and outcome.");
         }
 
         ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event);
@@ -135,5 +195,51 @@ public class SmartWalletSignalRiskService {
                 && (profile.getTotalTrades() == null ? 0 : profile.getTotalTrades()) >= (risk.getSingleWalletOverrideMinTrades() == null ? 0 : risk.getSingleWalletOverrideMinTrades())
                 && triggerSize.compareTo(safe(risk.getSingleWalletOverrideMinTriggerSizeUsdc())) >= 0
                 && recommendedStake.compareTo(safe(risk.getSingleWalletOverrideMinRecommendedStakeUsdc())) >= 0;
+    }
+
+    private Integer countOpenPositions() {
+        Long count = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        return count == null ? 0 : count.intValue();
+    }
+
+    private BigDecimal totalOpenCostUsdc() {
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        BigDecimal total = BigDecimal.ZERO;
+        for (SmartWalletPositionEntity position : positions) {
+            total = total.add(safe(position.getCostBasisUsdc()));
+        }
+        return total;
+    }
+
+    private boolean hasOpenPosition(String marketId, String outcome) {
+        if (marketId == null || outcome == null) {
+            return false;
+        }
+        Long count = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getMarketId, marketId)
+                .eq(SmartWalletPositionEntity::getOutcome, outcome)
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        return count != null && count > 0;
+    }
+
+    private boolean hasPendingFollowTask(String marketId, String outcome, Long currentFollowTaskId) {
+        if (marketId == null || outcome == null) {
+            return false;
+        }
+        LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .eq(SmartWalletFollowTaskEntity::getMarketId, marketId)
+                .eq(SmartWalletFollowTaskEntity::getOutcome, outcome)
+                .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
+        if (currentFollowTaskId != null) {
+            query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
+        }
+        Long count = followTaskMapper.selectCount(query);
+        return count != null && count > 0;
+    }
+
+    private int defaultInt(Integer value, int fallback) {
+        return value == null || value <= 0 ? fallback : value;
     }
 }

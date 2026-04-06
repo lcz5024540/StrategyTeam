@@ -16,6 +16,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetrics
 import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioAttributionItem;
 import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetView;
@@ -24,6 +26,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletBlockerStatView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlTimelinePoint;
@@ -64,6 +68,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.core.env.Environment;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -90,6 +95,7 @@ public class SmartWalletController {
     private final SmartWalletFollowTaskService followTaskService;
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
+    private final Environment environment;
 
     @GetMapping("/health")
     public Map<String, Object> health() {
@@ -223,6 +229,11 @@ public class SmartWalletController {
         return followTaskService.listOpportunityTasks(limit, maxBlockers, includeExecutable);
     }
 
+    @GetMapping("/follow-tasks/blocker-stats")
+    public List<SmartWalletBlockerStatView> followTaskBlockerStats(@RequestParam(defaultValue = "200") Integer taskLimit) {
+        return followTaskService.blockerStats(taskLimit);
+    }
+
     @GetMapping("/config/signal-risk-presets")
     public SignalRiskPresetCatalogView signalRiskPresets() {
         List<SignalRiskPresetView> presets = new ArrayList<>();
@@ -232,6 +243,19 @@ public class SmartWalletController {
                 .activeDefault(toSignalRiskPresetView("default", properties.getSignalRisk(), true))
                 .presets(presets)
                 .build();
+    }
+
+    @GetMapping("/config/live-validation-debug")
+    public Map<String, Object> liveValidationDebug() {
+        SmartWalletProperties.LiveValidation config = properties.getLiveValidation();
+        return Map.of(
+                "environmentEnabledRaw", environment.getProperty("smart-wallet.live-validation.enabled"),
+                "environmentPresetRaw", environment.getProperty("smart-wallet.live-validation.preset"),
+                "boundEnabled", config.isEnabled(),
+                "boundPreset", config.getPreset(),
+                "boundCandidateScanLimit", config.getCandidateScanLimit(),
+                "boundMaxExecutionsPerRun", config.getMaxExecutionsPerRun()
+        );
     }
 
     @PostMapping("/follow-tasks/simulate-risk")
@@ -301,6 +325,11 @@ public class SmartWalletController {
         return accountingService.listFills(limit);
     }
 
+    @GetMapping("/capacity/summary")
+    public SmartWalletCapacitySummaryView capacitySummary() {
+        return accountingService.capacitySummary();
+    }
+
     @GetMapping("/positions/live")
     public List<SmartWalletPositionView> livePositions() {
         return accountingService.listPositions();
@@ -344,6 +373,23 @@ public class SmartWalletController {
     @PostMapping("/accounting/backfill")
     public Map<String, Object> backfillAccounting(@RequestParam(defaultValue = "2000") Integer limit) {
         return Map.of("imported", accountingService.backfillFromFollowTasks(limit));
+    }
+
+    @PostMapping("/accounting/repair-premature-settlements")
+    public PrematureSettlementRepairSummary repairPrematureSettlements(@RequestParam(defaultValue = "500") Integer limit,
+                                                                       @RequestParam(defaultValue = "true") boolean refreshCache) {
+        return accountingService.repairPrematureResolvedPaperPositions(limit, refreshCache);
+    }
+
+    @PostMapping("/accounting/repair-premature-settlements/by-ids")
+    public PrematureSettlementRepairSummary repairPrematureSettlementsByIds(@RequestBody PrematureSettlementRepairRequest request) {
+        if (request == null) {
+            return accountingService.repairPrematureResolvedPaperPositionsByIds(List.of());
+        }
+        if (request.getPositionIds() != null && !request.getPositionIds().isEmpty()) {
+            return accountingService.repairPrematureResolvedPaperPositionsByIds(request.getPositionIds());
+        }
+        return accountingService.repairPrematureResolvedPaperPositionsByItems(request.getItems());
     }
 
     @PostMapping("/settlement/sync")

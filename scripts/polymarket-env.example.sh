@@ -16,3 +16,15 @@ export POLYMARKET_CLOB_API_PASSPHRASE=""
 
 # [SCRIPT][FIXED-ONCE] Python executable used by the official py-clob-client bridge.
 export POLYMARKET_PYTHON_EXECUTABLE="/opt/homebrew/bin/python3.11"
+
+# [TUNE] Python HTTP client stability knobs for Polymarket SDK bridge.
+export POLY_HTTP_CONNECT_RETRIES="2"
+export POLY_HTTP_REQUEST_ATTEMPTS="3"
+export POLY_HTTP_CONNECT_TIMEOUT_SECONDS="10"
+export POLY_HTTP_READ_TIMEOUT_SECONDS="30"
+export POLY_HTTP_WRITE_TIMEOUT_SECONDS="30"
+export POLY_HTTP_POOL_TIMEOUT_SECONDS="10"
+export POLY_HTTP_RETRY_BASE_SLEEP_SECONDS="0.4"
+
+# [TUNE] Optional Python bridge execution timeout override when a single call hangs too long.
+export POLYMARKET_PYTHON_TIMEOUT_SECONDS="45"

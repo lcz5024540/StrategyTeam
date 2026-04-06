@@ -17,7 +17,7 @@ import java.util.List;
 public class ExecutionWalletContextLoader {
 
     private final SmartWalletProperties properties;
-    private final PolymarketPythonSdkBridge pythonSdkBridge;
+    private final PolymarketClobClientRouter clobClientRouter;
 
     public ExecutionWalletContext requireLiveContext() {
         ExecutionWalletContext context = load();
@@ -40,11 +40,11 @@ public class ExecutionWalletContextLoader {
                 && StringUtils.hasText(config.getApiKey())
                 && StringUtils.hasText(config.getApiSecret())
                 && StringUtils.hasText(config.getApiPassphrase());
-        boolean bridgeReady = !"PYTHON".equalsIgnoreCase(config.getSdkMode())
-                || pythonSdkBridge.isAvailable(ExecutionWalletContext.builder()
+        boolean bridgeReady = clobClientRouter.isAvailable(ExecutionWalletContext.builder()
                 .sdkMode(trim(config.getSdkMode()))
                 .pythonExecutable(trim(config.getPythonExecutable()))
                 .helperScriptPath(trim(config.getHelperScriptPath()))
+                .apiBaseUrl(trim(config.getApiBaseUrl()))
                 .build());
         boolean liveReady = config.isEnabled()
                 && configured
@@ -68,6 +68,7 @@ public class ExecutionWalletContextLoader {
                 .sdkMode(trim(config.getSdkMode()))
                 .pythonExecutable(trim(config.getPythonExecutable()))
                 .helperScriptPath(trim(config.getHelperScriptPath()))
+                .pythonTimeoutSeconds(config.getPythonTimeoutSeconds())
                 .signatureType(config.getSignatureType())
                 .orderType(trim(config.getOrderType()))
                 .minOrderUsdc(safe(config.getMinOrderUsdc(), BigDecimal.ONE))
@@ -96,8 +97,8 @@ public class ExecutionWalletContextLoader {
         if (context.isLiveReady()) {
             notes.add("Wallet is ready for LIVE order routing.");
         }
-        notes.add("Current CLOB bridge mode: " + (context.getSdkMode() == null ? "PYTHON" : context.getSdkMode()) + ".");
-        if ("PYTHON".equalsIgnoreCase(context.getSdkMode()) && !pythonSdkBridge.isAvailable(context)) {
+        notes.add("Current CLOB bridge mode: " + (context.getSdkMode() == null ? "JAVA" : context.getSdkMode()) + ".");
+        if (!clobClientRouter.isAvailable(context)) {
             notes.add("Python bridge is configured, but `py-clob-client` is not installed in the selected Python environment.");
         }
         notes.add("Private key is read from configuration but never exposed by the status endpoint.");
@@ -150,6 +151,7 @@ public class ExecutionWalletContextLoader {
         private String sdkMode;
         private String pythonExecutable;
         private String helperScriptPath;
+        private Integer pythonTimeoutSeconds;
         private Integer signatureType;
         private String orderType;
         private BigDecimal minOrderUsdc;

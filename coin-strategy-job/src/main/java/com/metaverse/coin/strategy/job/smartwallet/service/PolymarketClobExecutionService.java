@@ -21,22 +21,22 @@ import java.util.Map;
 public class PolymarketClobExecutionService {
 
     private final ExecutionWalletContextLoader walletContextLoader;
-    private final PolymarketPythonSdkBridge pythonSdkBridge;
+    private final PolymarketClobClientRouter clobClientRouter;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final PolymarketOrderRequestFactory orderRequestFactory;
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final SmartWalletFollowTaskService followTaskService;
 
     public Map<String, Object> deriveApiCreds() {
-        return pythonSdkBridge.deriveApiCreds(walletContextLoader.requireLiveContext());
+        return clobClientRouter.deriveApiCreds(walletContextLoader.requireLiveContext());
     }
 
     public Map<String, Object> getOrder(String orderId) {
-        return pythonSdkBridge.getOrder(walletContextLoader.requireLiveContext(), orderId);
+        return clobClientRouter.getOrder(walletContextLoader.requireLiveContext(), orderId);
     }
 
     public Map<String, Object> cancelOrder(String orderId) {
-        return pythonSdkBridge.cancelOrder(walletContextLoader.requireLiveContext(), orderId);
+        return clobClientRouter.cancelOrder(walletContextLoader.requireLiveContext(), orderId);
     }
 
     public PolymarketApiClient.MarketMetadata marketMetadata(String conditionId) {

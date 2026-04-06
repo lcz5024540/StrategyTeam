@@ -4,6 +4,10 @@ import os
 import sys
 import traceback
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 
 def write_json(payload, code=0):
     sys.stdout.write(json.dumps(payload, ensure_ascii=True))
@@ -22,15 +26,15 @@ try:
     import httpx
     from py_clob_client.client import ClobClient
     from py_clob_client.clob_types import ApiCreds, MarketOrderArgs, OpenOrderParams, OrderArgs, OrderType
-    import py_clob_client.http_helpers.helpers as clob_helpers
     from py_clob_client.order_builder.constants import BUY, SELL
+    from polymarket_http import install_py_clob_http_overrides
 except Exception as exc:
     fail(
         "py-clob-client is not installed. Run `pip install py-clob-client` before enabling LIVE Polymarket execution.",
         str(exc),
     )
 
-clob_helpers._http_client = httpx.Client(http2=False, timeout=30.0)
+install_py_clob_http_overrides()
 
 
 def read_payload():

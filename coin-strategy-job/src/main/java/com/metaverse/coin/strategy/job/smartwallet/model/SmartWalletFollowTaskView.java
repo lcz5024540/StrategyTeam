@@ -15,6 +15,8 @@ public class SmartWalletFollowTaskView {
     private String marketId;
     private String question;
     private String outcome;
+    private Long marketEndAt;
+    private String marketEndAtBjt;
     private String side;
     private BigDecimal triggerPrice;
     private BigDecimal triggerSizeUsdc;
@@ -29,6 +31,8 @@ public class SmartWalletFollowTaskView {
     private Boolean overrideApplied;
     private String appliedPreset;
     private Integer blockerCount;
+    private String primaryBlockerCategory;
+    private List<String> blockerCategories;
     private List<String> riskReasons;
     private Date scheduledAt;
     private Date executedAt;

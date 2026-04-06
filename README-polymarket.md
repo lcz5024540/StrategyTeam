@@ -215,6 +215,7 @@ The service can now run two lanes automatically after startup:
   - driven by `smart-wallet.live-validation`
   - only scans single-wallet override candidates from a named preset
   - intended for tiny real-money validation, not broad production trading
+  - disabled by default because Polymarket may reject trading by region (`geoblock`)
 
 Status and manual trigger APIs:
 
@@ -226,7 +227,7 @@ curl -s -X POST 'http://127.0.0.1:8081/smart-wallet/live-validation/process'
 Recommended startup mode:
 
 - keep `smart-wallet.auto-execution-enabled=true` only when you want the normal main lane to auto-place `PAPER`/`LIVE` according to task mode
-- keep `smart-wallet.live-validation.enabled=true` only after wallet funding and risk review
+- keep `smart-wallet.live-validation.enabled=true` only after wallet funding, risk review, and confirming your runtime environment is not geoblocked
 - keep `smart-wallet.live-validation.max-executions-per-run=1` for early testing
 - keep the built-in circuit breaker enabled through:
   - `smart-wallet.live-validation.network-error-threshold`
@@ -235,7 +236,7 @@ Recommended startup mode:
 
 ## Startup Steps
 
-The repository is now configured so that a single service startup will run both lanes automatically:
+The repository is now configured so that a single service startup will always run the `PAPER` lane automatically, while the `LIVE` validation lane is disabled by default and should be enabled only when your environment is allowed to trade:
 
 - `PAPER` main flow
   - wallet discovery
@@ -252,7 +253,7 @@ Current default startup config in `application.yml`:
 - `smart-wallet.polymarket.auto-discover-enabled=true`
 - `smart-wallet.polymarket.auto-sync-events-enabled=true`
 - `smart-wallet.auto-execution-enabled=false`
-- `smart-wallet.live-validation.enabled=true`
+- `smart-wallet.live-validation.enabled=false`
 - `smart-wallet.live-validation.preset=followable`
 - `smart-wallet.live-validation.max-executions-per-run=1`
 

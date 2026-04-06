@@ -12,6 +12,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletBlockerStatView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
@@ -26,7 +27,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -42,6 +48,8 @@ public class SmartWalletFollowTaskService {
     private final SmartWalletSignalRiskService signalRiskService;
     private final PolymarketConsensusSignalService consensusSignalService;
     private final SmartWalletAccountingService accountingService;
+    private final PolymarketMarketMetadataService marketMetadataService;
+    private final SmartWalletTimeFormatter timeFormatter;
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
         SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
@@ -160,6 +168,42 @@ public class SmartWalletFollowTaskService {
                 : new ArrayList<>(candidates.subList(0, normalizeLimit(limit, 20)));
     }
 
+    public List<SmartWalletBlockerStatView> blockerStats(Integer taskLimit) {
+        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
+                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
+                .last("limit " + normalizeLimit(taskLimit, 200)));
+        Map<String, MutableBlockerStat> grouped = new LinkedHashMap<>();
+        for (SmartWalletFollowTaskEntity task : tasks) {
+            SignalRiskDecision decision = evaluateTask(task.getId());
+            List<String> categories = classifyBlockerCategories(decision);
+            if (categories.isEmpty()) {
+                categories = List.of(decision != null && decision.isAccepted() ? "EXECUTABLE" : "OTHER");
+            }
+            for (String category : categories) {
+                MutableBlockerStat stat = grouped.computeIfAbsent(category, key -> new MutableBlockerStat());
+                stat.taskCount += 1;
+                if (decision != null && decision.isAccepted()) {
+                    stat.executableCount += 1;
+                } else {
+                    stat.blockedCount += 1;
+                }
+            }
+        }
+        List<SmartWalletBlockerStatView> result = new ArrayList<>();
+        grouped.forEach((category, stat) -> result.add(SmartWalletBlockerStatView.builder()
+                .blockerCategory(category)
+                .taskCount(stat.taskCount)
+                .executableCount(stat.executableCount)
+                .blockedCount(stat.blockedCount)
+                .build()));
+        result.sort((left, right) -> Integer.compare(
+                right.getTaskCount() == null ? 0 : right.getTaskCount(),
+                left.getTaskCount() == null ? 0 : left.getTaskCount()
+        ));
+        return result;
+    }
+
     @Scheduled(fixedDelayString = "${smart-wallet.poll-fixed-delay-ms:5000}")
     public void processPendingTasks() {
         if (!properties.isEnabled() || !properties.isScanEnabled()) {
@@ -223,7 +267,7 @@ public class SmartWalletFollowTaskService {
                     .reasons(List.of("Source trade event is missing for this follow task."))
                     .build();
         }
-        return signalRiskService.evaluate(profile, event, overrideRisk);
+        return signalRiskService.evaluate(profile, event, overrideRisk, task.getId());
     }
 
     public SmartWalletProperties.SignalRisk resolveSignalRiskPreset(String preset) {
@@ -373,6 +417,15 @@ public class SmartWalletFollowTaskService {
             task.setUpdatedAt(new Date());
             followTaskMapper.updateById(task);
             accountingService.recordExecution(task, result);
+            if (result.isSuccess() && mode == ExecutionMode.PAPER) {
+                log.info(
+                        "PAPER execution success followTaskId={} marketId={} outcome={} stakeUsdc={} executionMode=PAPER",
+                        task.getId(),
+                        task.getMarketId(),
+                        task.getOutcome(),
+                        task.getRecommendedStakeUsdc()
+                );
+            }
             return result;
         } catch (Exception e) {
             log.error("Failed to execute smart wallet follow task {}", task.getId(), e);
@@ -413,12 +466,16 @@ public class SmartWalletFollowTaskService {
 
     private SmartWalletFollowTaskView toView(SmartWalletFollowTaskEntity task, SignalRiskDecision decision, String appliedPreset) {
         ConsensusSignalView consensus = findConsensus(task);
+        Long marketEndAt = resolveMarketEndAt(task.getMarketId());
+        List<String> blockerCategories = classifyBlockerCategories(decision);
         return SmartWalletFollowTaskView.builder()
                 .id(task.getId())
                 .walletAddress(task.getWalletAddress())
                 .marketId(task.getMarketId())
                 .question(task.getQuestion())
                 .outcome(task.getOutcome())
+                .marketEndAt(marketEndAt)
+                .marketEndAtBjt(timeFormatter.formatEpochMillisToBjt(marketEndAt))
                 .side(task.getSide())
                 .triggerPrice(task.getTriggerPrice())
                 .triggerSizeUsdc(task.getTriggerSizeUsdc())
@@ -437,10 +494,92 @@ public class SmartWalletFollowTaskService {
                 .overrideApplied(decision == null ? null : decision.isOverrideApplied())
                 .appliedPreset(appliedPreset)
                 .blockerCount(decision == null || decision.getReasons() == null ? null : decision.getReasons().size())
+                .primaryBlockerCategory(blockerCategories.isEmpty() ? null : blockerCategories.get(0))
+                .blockerCategories(blockerCategories.isEmpty() ? null : blockerCategories)
                 .riskReasons(decision == null ? null : decision.getReasons())
                 .scheduledAt(task.getScheduledAt())
                 .executedAt(task.getExecutedAt())
                 .build();
+    }
+
+    private Long resolveMarketEndAt(String marketId) {
+        try {
+            PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(marketId);
+            return metadata == null ? null : metadata.getEndAt();
+        } catch (Exception e) {
+            log.debug("Failed to resolve market end time for follow task marketId={}: {}", marketId, e.getMessage());
+            return null;
+        }
+    }
+
+    private List<String> classifyBlockerCategories(SignalRiskDecision decision) {
+        if (decision == null || decision.getReasons() == null || decision.getReasons().isEmpty()) {
+            return List.of();
+        }
+        Set<String> categories = new LinkedHashSet<>();
+        for (String reason : decision.getReasons()) {
+            String category = classifyReason(reason);
+            if (category != null) {
+                categories.add(category);
+            }
+        }
+        return new ArrayList<>(categories);
+    }
+
+    private String classifyReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        String text = reason.toLowerCase(Locale.ROOT);
+        if (text.contains("open position count") || text.contains("portfolio limit")) {
+            return "POSITION_LIMIT";
+        }
+        if (text.contains("total open position cost") || text.contains("portfolio budget")) {
+            return "CAPITAL_LIMIT";
+        }
+        if (text.contains("market end time is too far away") || text.contains("past expected end time")) {
+            return "MARKET_TIMING";
+        }
+        if (text.contains("open position already exists")) {
+            return "DUPLICATE_POSITION";
+        }
+        if (text.contains("pending follow task already exists")) {
+            return "DUPLICATE_TASK";
+        }
+        if (text.contains("signal is stale")) {
+            return "SIGNAL_FRESHNESS";
+        }
+        if (text.contains("consensus wallet count")) {
+            return "CONSENSUS_WALLETS";
+        }
+        if (text.contains("consensus score")) {
+            return "CONSENSUS_SCORE";
+        }
+        if (text.contains("trigger size")) {
+            return "TRIGGER_SIZE";
+        }
+        if (text.contains("trigger price")) {
+            return "PRICE_RANGE";
+        }
+        if (text.contains("minimum order")) {
+            return "MIN_ORDER";
+        }
+        if (text.contains("wallet is not qualified")) {
+            return "WATCHLIST";
+        }
+        if (text.contains("sell signals are disabled")) {
+            return "SELL_DISABLED";
+        }
+        if (text.contains("source trade event is missing")) {
+            return "SOURCE_EVENT";
+        }
+        return "OTHER";
+    }
+
+    private static class MutableBlockerStat {
+        private int taskCount;
+        private int executableCount;
+        private int blockedCount;
     }
 
     private ConsensusSignalView findConsensus(SmartWalletFollowTaskEntity task) {

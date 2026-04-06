@@ -15,6 +15,8 @@ public class SmartWalletPositionView {
     private String tokenId;
     private String question;
     private String outcome;
+    private Long marketEndAt;
+    private String marketEndAtBjt;
     private String netSide;
     private BigDecimal quantity;
     private BigDecimal averageEntryPrice;

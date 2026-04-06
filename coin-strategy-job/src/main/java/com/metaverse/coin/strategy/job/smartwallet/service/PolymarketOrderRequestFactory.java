@@ -9,6 +9,9 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -69,11 +72,33 @@ public class PolymarketOrderRequestFactory {
         if (metadata == null || metadata.getOutcomeTokenIds() == null || metadata.getOutcomeTokenIds().isEmpty()) {
             throw new IllegalStateException("Polymarket market metadata is missing outcome token ids.");
         }
-        String tokenId = metadata.getOutcomeTokenIds().get(outcome);
+        String tokenId = findTokenId(metadata.getOutcomeTokenIds(), outcome);
         if (!StringUtils.hasText(tokenId)) {
-            throw new IllegalStateException("Polymarket token id not found for outcome " + outcome + " on market " + metadata.getConditionId() + ".");
+            String supportedOutcomes = metadata.getOutcomeTokenIds().keySet().stream()
+                    .filter(StringUtils::hasText)
+                    .collect(Collectors.joining(", "));
+            throw new IllegalStateException("Polymarket token id not found for outcome " + outcome
+                    + " on market " + metadata.getConditionId()
+                    + ". Supported outcomes: [" + supportedOutcomes + "].");
         }
         return tokenId.trim();
+    }
+
+    private String findTokenId(Map<String, String> outcomeTokenIds, String outcome) {
+        if (!StringUtils.hasText(outcome) || outcomeTokenIds == null || outcomeTokenIds.isEmpty()) {
+            return null;
+        }
+        String exact = outcomeTokenIds.get(outcome);
+        if (StringUtils.hasText(exact)) {
+            return exact;
+        }
+        String normalized = outcome.trim().toUpperCase(Locale.ROOT);
+        for (Map.Entry<String, String> entry : outcomeTokenIds.entrySet()) {
+            if (entry.getKey() != null && normalized.equals(entry.getKey().trim().toUpperCase(Locale.ROOT))) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     private BigDecimal snapToTick(BigDecimal price, BigDecimal tickSize) {

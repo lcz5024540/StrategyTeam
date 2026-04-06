@@ -22,7 +22,9 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
@@ -41,6 +43,7 @@ public class SmartWalletLiveValidationService {
     private volatile Date suspendedUntil;
     private volatile String suspensionReason;
     private volatile int consecutiveNetworkErrors;
+    private final Map<String, Date> unsupportedMarkets = new ConcurrentHashMap<>();
 
     @Scheduled(fixedDelayString = "${smart-wallet.live-validation.fixed-delay-ms:45000}")
     public void scheduledProcess() {
@@ -107,6 +110,11 @@ public class SmartWalletLiveValidationService {
                     skipped++;
                     continue;
                 }
+                if (isUnsupportedMarketCoolingDown(task.getMarketId())) {
+                    skipped++;
+                    notes.add("Skipped followTaskId=" + task.getId() + " because market " + task.getMarketId() + " is cooling down after an unsupported outcome/token mapping issue.");
+                    continue;
+                }
                 if (Boolean.TRUE.equals(config.isSkipIfPaperPendingExists()) && hasPaperOrLiveOrder(task.getId())) {
                     skipped++;
                     continue;
@@ -121,6 +129,15 @@ public class SmartWalletLiveValidationService {
                     notes.add("Executed LIVE validation for followTaskId=" + task.getId() + " status=" + result.getStatus());
                 } catch (Exception ex) {
                     skipped++;
+                    if (handleUnsupportedTokenMapping(config, task, ex, notes)) {
+                        continue;
+                    }
+                    if (handleOperationalValidationFailure(config, task, ex, notes)) {
+                        if (isSuspended()) {
+                            break;
+                        }
+                        continue;
+                    }
                     applyCircuitBreakerIfNeeded(config, ex, notes);
                     notes.add("LIVE validation failed for followTaskId=" + task.getId() + ": " + ex.getMessage());
                     log.error("Failed LIVE validation for follow task {}", task.getId(), ex);
@@ -226,11 +243,74 @@ public class SmartWalletLiveValidationService {
         return suspendedUntil != null && suspendedUntil.after(new Date());
     }
 
+    private boolean isUnsupportedMarketCoolingDown(String marketId) {
+        if (marketId == null) {
+            return false;
+        }
+        Date until = unsupportedMarkets.get(marketId);
+        if (until == null) {
+            return false;
+        }
+        if (until.after(new Date())) {
+            return true;
+        }
+        unsupportedMarkets.remove(marketId);
+        return false;
+    }
+
+    private boolean handleUnsupportedTokenMapping(SmartWalletProperties.LiveValidation config,
+                                                  SmartWalletFollowTaskEntity task,
+                                                  Exception ex,
+                                                  List<String> notes) {
+        String normalized = collectExceptionText(ex);
+        if (!(ex instanceof IllegalStateException) || normalized.isBlank()) {
+            return false;
+        }
+        if (!normalized.contains("token id not found")) {
+            return false;
+        }
+        int cooldownMinutes = config.getUnsupportedMarketCooldownMinutes() == null
+                || config.getUnsupportedMarketCooldownMinutes() <= 0
+                ? 360
+                : config.getUnsupportedMarketCooldownMinutes();
+        unsupportedMarkets.put(task.getMarketId(), new Date(System.currentTimeMillis() + cooldownMinutes * 60_000L));
+        notes.add("Skipped followTaskId=" + task.getId() + " because market outcome labels are not executable yet. Market cooldown applied for " + cooldownMinutes + " minutes.");
+        log.warn("Skip LIVE validation for follow task {} because token mapping is unsupported for market {}: {}",
+                task.getId(), task.getMarketId(), ex.getMessage());
+        return true;
+    }
+
+    private boolean handleOperationalValidationFailure(SmartWalletProperties.LiveValidation config,
+                                                       SmartWalletFollowTaskEntity task,
+                                                       Exception ex,
+                                                       List<String> notes) {
+        String normalized = collectExceptionText(ex);
+        if (!normalized.contains("request exception")
+                && !normalized.contains("unexpected_eof_while_reading")
+                && !normalized.contains("ssl")
+                && !normalized.contains("sslhandshakeexception")
+                && !normalized.contains("ssl peer shut down incorrectly")
+                && !normalized.contains("remote host terminated the handshake")
+                && !normalized.contains("connecterror")
+                && !normalized.contains("failed to request polymarket api")
+                && !normalized.contains("timed out")
+                && !normalized.contains("timeout")
+                && !normalized.contains("interrupted while waiting")
+                && !normalized.contains("trading restricted in your region")
+                && !normalized.contains("geoblock")) {
+            return false;
+        }
+        applyCircuitBreakerIfNeeded(config, ex, notes);
+        notes.add("Skipped followTaskId=" + task.getId() + " because LIVE validation hit an external Polymarket network or regional restriction.");
+        log.warn("Skip LIVE validation for follow task {} due to external Polymarket connectivity/restriction issue: {}",
+                task.getId(), ex.getMessage());
+        return true;
+    }
+
     private void applyCircuitBreakerIfNeeded(SmartWalletProperties.LiveValidation config,
                                              Exception ex,
                                              List<String> notes) {
-        String message = ex.getMessage() == null ? "" : ex.getMessage();
-        String normalized = message.toLowerCase();
+        String normalized = collectExceptionText(ex);
         if (normalized.contains("trading restricted in your region") || normalized.contains("geoblock")) {
             suspendForMinutes(config.getGeoblockCooldownMinutes(), "Polymarket geoblock / regional restriction detected.");
             notes.add("Live validation suspended because Polymarket returned a geoblock response.");
@@ -239,6 +319,9 @@ public class SmartWalletLiveValidationService {
         if (normalized.contains("unexpected_eof_while_reading")
                 || normalized.contains("request exception")
                 || normalized.contains("ssl")
+                || normalized.contains("sslhandshakeexception")
+                || normalized.contains("ssl peer shut down incorrectly")
+                || normalized.contains("remote host terminated the handshake")
                 || normalized.contains("connecterror")) {
             consecutiveNetworkErrors++;
             if (consecutiveNetworkErrors >= safeThreshold(config.getNetworkErrorThreshold())) {
@@ -260,5 +343,20 @@ public class SmartWalletLiveValidationService {
             return 2;
         }
         return Math.min(threshold, 10);
+    }
+
+    private String collectExceptionText(Throwable throwable) {
+        StringBuilder builder = new StringBuilder();
+        Throwable current = throwable;
+        while (current != null) {
+            if (current.getMessage() != null && !current.getMessage().isBlank()) {
+                if (builder.length() > 0) {
+                    builder.append(" | ");
+                }
+                builder.append(current.getClass().getSimpleName()).append(": ").append(current.getMessage());
+            }
+            current = current.getCause();
+        }
+        return builder.toString().toLowerCase();
     }
 }

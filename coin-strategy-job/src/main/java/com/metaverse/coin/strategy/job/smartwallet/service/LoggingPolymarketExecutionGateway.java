@@ -14,14 +14,14 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
 
     private final ExecutionWalletContextLoader walletContextLoader;
     private final PolymarketOrderRequestFactory orderRequestFactory;
-    private final PolymarketPythonSdkBridge pythonSdkBridge;
+    private final PolymarketClobClientRouter clobClientRouter;
 
     @Override
     public SmartWalletExecutionResult execute(SmartWalletSignal signal, ExecutionMode mode) {
         if (mode == ExecutionMode.LIVE) {
             ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
             PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepare(signal, wallet);
-            Map<String, Object> response = pythonSdkBridge.placeOrder(wallet, order);
+            Map<String, Object> response = clobClientRouter.placeOrder(wallet, order);
             String orderId = stringify(firstNonNull(response.get("orderID"), response.get("orderId"), response.get("id")));
             boolean success = truthy(firstNonNull(response.get("success"), response.get("ok")));
             return SmartWalletExecutionResult.builder()
