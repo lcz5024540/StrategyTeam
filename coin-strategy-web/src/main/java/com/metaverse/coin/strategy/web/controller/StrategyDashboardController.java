@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.web.controller;
 
 import com.metaverse.coin.strategy.web.model.StrategyDashboardOverviewView;
 import com.metaverse.coin.strategy.web.model.StrategyDetailView;
-import com.metaverse.coin.strategy.web.service.StrategyDashboardService;
+import com.metaverse.coin.strategy.web.service.facade.StrategyReadFacade;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/dashboard/api")
 public class StrategyDashboardController {
 
-    private final StrategyDashboardService strategyDashboardService;
+    private final StrategyReadFacade strategyDashboardService;
 
-    public StrategyDashboardController(StrategyDashboardService strategyDashboardService) {
+    public StrategyDashboardController(StrategyReadFacade strategyDashboardService) {
         this.strategyDashboardService = strategyDashboardService;
     }
 

@@ -2,6 +2,12 @@ package com.metaverse.coin.strategy.job.smartwallet.controller;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
+import com.metaverse.coin.strategy.job.analytics.application.StrategyAnalyticsApplicationService;
+import com.metaverse.coin.strategy.job.execution.application.ExecutionApplicationService;
+import com.metaverse.coin.strategy.job.follow.application.FollowTaskApplicationService;
+import com.metaverse.coin.strategy.job.marketdata.application.PredictionMarketDataApplicationService;
+import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
+import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
@@ -20,7 +26,6 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepa
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
@@ -74,7 +79,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.core.env.Environment;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -100,6 +104,12 @@ public class SmartWalletController {
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
     private final Environment environment;
+    private final PredictionMarketDataApplicationService predictionMarketDataApplicationService;
+    private final FollowTaskApplicationService followTaskApplicationService;
+    private final ExecutionApplicationService executionApplicationService;
+    private final SettlementApplicationService settlementApplicationService;
+    private final RiskPolicyApplicationService riskPolicyApplicationService;
+    private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -194,26 +204,26 @@ public class SmartWalletController {
     @Operation(summary = "分析聪明钱包", description = "从 Polymarket 拉取排行榜、画像与交易记录，分析并入库 smart wallet。")
     @PostMapping("/polymarket/analyze")
     public PolymarketDiscoverySummary analyzeTopWallets() {
-        return polymarketWalletDiscoveryService.analyzeTopWallets();
+        return predictionMarketDataApplicationService.analyzeSourceWallets();
     }
 
     @Operation(summary = "同步观察名单事件", description = "同步 watchlist 钱包的最新 Polymarket 开单事件。")
     @PostMapping("/polymarket/sync-events")
     public Map<String, Object> syncWatchlistEvents() {
-        return Map.of("imported", polymarketWalletDiscoveryService.syncWatchlistTrades());
+        return Map.of("imported", predictionMarketDataApplicationService.syncWatchlistEvents());
     }
 
     @Operation(summary = "跟单任务列表", description = "查看生成的跟单任务，可选带实时风控评估结果。")
     @GetMapping("/follow-tasks")
     public List<SmartWalletFollowTaskView> followTasks(@RequestParam(defaultValue = "100") Integer limit,
                                                        @RequestParam(defaultValue = "false") boolean includeRiskEvaluation) {
-        return followTaskService.listFollowTasks(limit, includeRiskEvaluation);
+        return followTaskApplicationService.listTasks(limit, includeRiskEvaluation);
     }
 
     @Operation(summary = "可执行任务列表", description = "查看当前通过风控、可直接执行的跟单任务。")
     @GetMapping("/follow-tasks/executable")
     public List<SmartWalletFollowTaskView> executableFollowTasks(@RequestParam(defaultValue = "50") Integer limit) {
-        return followTaskService.listExecutableTasks(limit);
+        return followTaskApplicationService.listExecutableTasks(limit);
     }
 
     @Operation(summary = "单强钱包候选", description = "基于单钱包 override 策略查看候选任务，适合 followable 预设。")
@@ -254,7 +264,7 @@ public class SmartWalletController {
     @Operation(summary = "阻塞项统计", description = "按 blockerCategory 聚合最近任务，观察当前主要风控瓶颈。")
     @GetMapping("/follow-tasks/blocker-stats")
     public List<SmartWalletBlockerStatView> followTaskBlockerStats(@RequestParam(defaultValue = "200") Integer taskLimit) {
-        return followTaskService.blockerStats(taskLimit);
+        return followTaskApplicationService.blockerStats(taskLimit);
     }
 
     @Operation(summary = "冲突市场报表", description = "查看同一市场持有多个 outcome 的冲突持仓与对应收益情况。")
@@ -267,13 +277,7 @@ public class SmartWalletController {
     @Operation(summary = "风控预设配置", description = "查看默认风控参数和所有 signal-risk preset。")
     @GetMapping("/config/signal-risk-presets")
     public SignalRiskPresetCatalogView signalRiskPresets() {
-        List<SignalRiskPresetView> presets = new ArrayList<>();
-        properties.getSignalRiskPresets().forEach((name, risk) ->
-                presets.add(toSignalRiskPresetView(name, risk, false)));
-        return SignalRiskPresetCatalogView.builder()
-                .activeDefault(toSignalRiskPresetView("default", properties.getSignalRisk(), true))
-                .presets(presets)
-                .build();
+        return riskPolicyApplicationService.presets();
     }
 
     @Operation(summary = "Live 调试配置", description = "查看 live-validation 绑定到 Spring 配置后的实际值，便于排查配置覆盖。")
@@ -293,13 +297,13 @@ public class SmartWalletController {
     @Operation(summary = "风控模拟", description = "使用临时参数模拟风控筛选结果，不修改线上配置。")
     @PostMapping("/follow-tasks/simulate-risk")
     public SmartWalletRiskSimulationResult simulateRisk(@RequestBody(required = false) SmartWalletRiskSimulationRequest request) {
-        return followTaskService.simulateRisk(request);
+        return followTaskApplicationService.simulateRisk(request);
     }
 
     @Operation(summary = "处理跟单任务", description = "手动触发一轮待执行 follow task 处理。")
     @PostMapping("/follow-tasks/process")
     public Map<String, Object> processFollowTasks() {
-        return Map.of("processed", followTaskService.processPendingTasksNow());
+        return Map.of("processed", followTaskApplicationService.processPendingTasksNow());
     }
 
     @Operation(summary = "Live 验证状态", description = "查看 LIVE 小额验证辅助流程的启停、熔断与最近一轮执行情况。")
@@ -349,7 +353,7 @@ public class SmartWalletController {
     @Operation(summary = "执行钱包状态", description = "查看 execution wallet 是否已配置完成以及是否可进行真实下单。")
     @GetMapping("/execution-wallet/status")
     public ExecutionWalletStatus executionWalletStatus() {
-        return followService.executionWalletStatus();
+        return executionApplicationService.executionWalletStatus();
     }
 
     @Operation(summary = "订单列表", description = "查看 PAPER 或 LIVE 的订单记录。")
@@ -367,7 +371,7 @@ public class SmartWalletController {
     @Operation(summary = "容量摘要", description = "查看当前组合剩余仓位槽位、资金预算和基础风控限制。")
     @GetMapping("/capacity/summary")
     public SmartWalletCapacitySummaryView capacitySummary() {
-        return accountingService.capacitySummary();
+        return strategyAnalyticsApplicationService.capacitySummary();
     }
 
     @Operation(summary = "当前持仓", description = "查看当前未平仓或未结算的持仓记录。")
@@ -397,19 +401,19 @@ public class SmartWalletController {
     @Operation(summary = "盈亏汇总", description = "查看总订单、胜率、已实现与未实现盈亏等总览。")
     @GetMapping("/pnl/summary")
     public SmartWalletPnlSummaryView pnlSummary() {
-        return accountingService.summary();
+        return strategyAnalyticsApplicationService.pnlSummary();
     }
 
     @Operation(summary = "绩效报表", description = "查看胜率、盈亏比、回撤、冲突市场等综合绩效指标。")
     @GetMapping("/reports/performance")
     public SmartWalletPerformanceView performanceReport() {
-        return accountingService.performance();
+        return strategyAnalyticsApplicationService.performance();
     }
 
     @Operation(summary = "盈亏时间线", description = "按天查看收益变化曲线。")
     @GetMapping("/pnl/timeline")
     public List<SmartWalletPnlTimelinePoint> pnlTimeline(@RequestParam(defaultValue = "30") Integer days) {
-        return accountingService.pnlTimeline(days);
+        return strategyAnalyticsApplicationService.pnlTimeline(days);
     }
 
     @Operation(summary = "日报列表", description = "查看按日汇总的收益、胜率与绩效数据。")
@@ -454,32 +458,32 @@ public class SmartWalletController {
     public SettlementSyncSummary syncSettlements(@RequestParam(defaultValue = "500") Integer positionLimit,
                                                  @RequestParam(defaultValue = "100") Integer marketLimit,
                                                  @RequestParam(defaultValue = "false") boolean refreshCache) {
-        return settlementSyncService.runNow(positionLimit, marketLimit, refreshCache);
+        return settlementApplicationService.runNow(positionLimit, marketLimit, refreshCache);
     }
 
     @Operation(summary = "结算状态", description = "查看 settlement sync 的最近状态和运行情况。")
     @GetMapping("/settlement/status")
     public SettlementSyncStatusView settlementStatus() {
-        return settlementSyncService.status();
+        return settlementApplicationService.status();
     }
 
     @Operation(summary = "结算运行历史", description = "查看 settlement sync 的历史运行记录。")
     @GetMapping("/settlement/runs")
     public List<SettlementRunView> settlementRuns(@RequestParam(defaultValue = "20") Integer limit) {
-        return settlementSyncService.listRuns(limit);
+        return settlementApplicationService.listRuns(limit);
     }
 
     @Operation(summary = "结算重试队列", description = "查看结算失败市场的重试队列。")
     @GetMapping("/settlement/retries")
     public List<SettlementRetryView> settlementRetries(@RequestParam(required = false) String status,
                                                        @RequestParam(defaultValue = "20") Integer limit) {
-        return settlementSyncService.listRetries(status, limit);
+        return settlementApplicationService.listRetries(status, limit);
     }
 
     @Operation(summary = "结算重试报表", description = "查看结算重试成功、失败、待重试的统计结果。")
     @GetMapping("/settlement/retries/report")
     public SettlementRetryReportView settlementRetryReport() {
-        return settlementSyncService.retryReport();
+        return settlementApplicationService.retryReport();
     }
 
     @Operation(summary = "处理结算重试", description = "手动处理一轮结算失败市场的重试任务。")
@@ -504,7 +508,7 @@ public class SmartWalletController {
     @Operation(summary = "派生 CLOB API 凭证", description = "基于执行钱包派生 Polymarket CLOB API key、secret 与 passphrase。")
     @PostMapping("/execution-wallet/derive-api-creds")
     public Map<String, Object> deriveExecutionWalletApiCreds() {
-        return clobExecutionService.deriveApiCreds();
+        return executionApplicationService.deriveApiCreds();
     }
 
     @Operation(summary = "CLOB 通用预演", description = "按 market/outcome/stake 预演订单参数，不会真实下单。")
@@ -522,7 +526,7 @@ public class SmartWalletController {
     @Operation(summary = "按任务真实下单", description = "按 followTaskId 触发真实 LIVE 下单，仅在运行环境允许交易时使用。")
     @PostMapping("/follow-tasks/{followTaskId}/execute-live")
     public SmartWalletExecutionResult executeFollowTaskLive(@PathVariable Long followTaskId) {
-        return clobExecutionService.executeFollowTask(followTaskId);
+        return executionApplicationService.executeFollowTask(followTaskId);
     }
 
     @Operation(summary = "查看市场元数据", description = "按 conditionId 查看 Polymarket 市场元数据、tokenId 与价格相关信息。")
@@ -580,22 +584,4 @@ public class SmartWalletController {
         }
     }
 
-    private SignalRiskPresetView toSignalRiskPresetView(String name,
-                                                        SmartWalletProperties.SignalRisk risk,
-                                                        boolean activeDefault) {
-        return SignalRiskPresetView.builder()
-                .name(name)
-                .activeDefault(activeDefault)
-                .maxSignalAgeSeconds(risk.getMaxSignalAgeSeconds())
-                .minDistinctWallets(risk.getMinDistinctWallets())
-                .minConsensusScore(risk.getMinConsensusScore())
-                .enableConsensusGate(risk.isEnableConsensusGate())
-                .enableSingleWalletOverride(risk.isEnableSingleWalletOverride())
-                .singleWalletOverrideMinWalletScore(risk.getSingleWalletOverrideMinWalletScore())
-                .singleWalletOverrideMinWinRate(risk.getSingleWalletOverrideMinWinRate())
-                .singleWalletOverrideMinTrades(risk.getSingleWalletOverrideMinTrades())
-                .singleWalletOverrideMinTriggerSizeUsdc(risk.getSingleWalletOverrideMinTriggerSizeUsdc())
-                .singleWalletOverrideMinRecommendedStakeUsdc(risk.getSingleWalletOverrideMinRecommendedStakeUsdc())
-                .build();
-    }
 }

@@ -1,0 +1,26 @@
+package com.metaverse.coin.strategy.job.strategy.model;
+
+import java.math.BigDecimal;
+
+public record StrategyMetricsView(
+        Integer totalOrders,
+        Integer filledOrders,
+        Integer openPositions,
+        Integer closedPositions,
+        Integer winningPositions,
+        Integer losingPositions,
+        BigDecimal winRate,
+        BigDecimal tradedVolumeUsdc,
+        BigDecimal feeUsdc,
+        BigDecimal realizedPnlUsdc,
+        BigDecimal unrealizedPnlUsdc,
+        BigDecimal netPnlUsdc,
+        BigDecimal profitFactor,
+        BigDecimal maxDrawdownUsdc,
+        Integer conflictingMarkets,
+        Integer openConflictingMarkets,
+        BigDecimal conflictNetPnlUsdc,
+        Integer remainingPositionSlots,
+        BigDecimal remainingCapitalBudgetUsdc
+) {
+}
