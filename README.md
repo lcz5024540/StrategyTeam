@@ -76,6 +76,10 @@ graph TD
     Job --> Client[common-client <br> SDK适配器实现]
 ```
 
+## 平台架构文档
+
+*   [量化策略平台 MVP Java 架构设计文档](MVP_ARCHITECTURE.md)
+
 ## 策略文档索引 (Strategy Documentation)
 
 *   [资金费率套利策略 (Funding Rate Arbitrage)](FUNDING_RATE_ARBITRAGE.md)

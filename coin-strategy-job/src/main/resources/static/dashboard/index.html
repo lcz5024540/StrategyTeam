@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>策略看板</title>
+    <link rel="stylesheet" href="/dashboard/dashboard.css">
+</head>
+<body>
+<div class="page shell">
+    <div id="sidebarMount"></div>
+    <main class="content">
+    <div id="homeFilters"></div>
+    <header class="hero">
+        <div>
+            <p class="eyebrow">Coin Strategy Dashboard</p>
+            <h1>策略持仓与收益看板</h1>
+            <p class="subtitle">统一查看 Polymarket 跟单策略，以及后续对冲、机器人、智能策略的持仓、收益、风控容量和交易明细。</p>
+        </div>
+        <div class="hero-side" id="homeNav"></div>
+    </header>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>策略概览</h2>
+            <p>点击策略卡片切换数据视图。当前只有 Polymarket 跟单策略接入实时数据，其余策略预留结构等待后续扩展。</p>
+        </div>
+        <div class="strategy-grid" id="strategyCards"></div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <div>
+                <h2 id="strategyTitle">Polymarket 跟单策略</h2>
+                <p id="strategyDesc">-</p>
+            </div>
+            <div id="healthScoreCard"></div>
+        </div>
+        <div id="healthBreakdown"></div>
+        <div class="metric-grid" id="metricCards"></div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>策略洞察</h2>
+            <p>结合当前收益、冲突市场、结算队列和组合容量，快速判断策略是否应继续放量。</p>
+        </div>
+        <div class="insight-grid" id="insights"></div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>风险信号</h2>
+            <p>基于冲突市场、剩余容量和最近 blocker 统计，快速判断当前策略最需要优先处理的问题。</p>
+        </div>
+        <div class="insight-grid" id="riskSignals"></div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>收益时间线</h2>
+            <p>展示最近一段时间的累计净收益变化，用于观察策略拐点、回撤与恢复节奏。</p>
+        </div>
+        <div id="homeWindowSwitcher"></div>
+        <div class="chart-wrap">
+            <svg id="timelineChart" viewBox="0 0 700 260" preserveAspectRatio="none"></svg>
+            <div class="empty-chart" id="chartEmpty">当前暂无足够的收益时间序列数据。</div>
+        </div>
+    </section>
+
+    <div class="split-grid">
+        <section class="panel">
+            <div class="section-head">
+                <h2>钱包归因摘要</h2>
+                <p>快速看出哪些 smart wallet 在当前窗口内贡献了主要收益或亏损。</p>
+            </div>
+            <div class="attribution-summary-grid" id="homeWalletAttribution"></div>
+        </section>
+
+        <section class="panel">
+            <div class="section-head">
+                <h2>市场归因摘要</h2>
+                <p>快速看出当前窗口里哪些市场最赚钱、哪些最拖累收益。</p>
+            </div>
+            <div class="attribution-summary-grid" id="homeMarketAttribution"></div>
+        </section>
+    </div>
+
+    <div class="split-grid">
+        <section class="panel">
+            <div class="section-head">
+                <h2>当前持仓</h2>
+                <p>展示当前 open positions，包括方向、成本和浮盈亏。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>状态</th>
+                        <th>成本</th>
+                        <th>浮盈亏</th>
+                        <th>预计结算</th>
+                    </tr>
+                    </thead>
+                    <tbody id="positionsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-head">
+                <h2>最近待结算</h2>
+                <p>按预计结算时间排序，方便关注最早能释放资金的仓位。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>成本</th>
+                        <th>浮盈亏</th>
+                        <th>预计结算</th>
+                    </tr>
+                    </thead>
+                    <tbody id="settlementsBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>交易历史</h2>
+            <p>展示最近订单，后续可以继续扩展成更完整的策略交易流水与图表页。</p>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>订单ID</th>
+                    <th>市场</th>
+                    <th>Outcome</th>
+                    <th>方向</th>
+                    <th>金额</th>
+                    <th>状态</th>
+                    <th>下单时间</th>
+                </tr>
+                </thead>
+                <tbody id="ordersBody"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>冲突市场</h2>
+            <p>用于识别同一市场多 outcome 持仓、对冲误开单、策略冲突等高风险情况。</p>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>市场</th>
+                    <th>冲突 Outcome</th>
+                    <th>Open 数量</th>
+                    <th>净收益</th>
+                    <th>预计结算</th>
+                </tr>
+                </thead>
+                <tbody id="conflictsBody"></tbody>
+            </table>
+        </div>
+    </section>
+    </main>
+</div>
+<script src="/dashboard/dashboard-core.js"></script>
+<script src="/dashboard/dashboard.js"></script>
+</body>
+</html>

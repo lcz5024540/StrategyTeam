@@ -717,3 +717,99 @@ Recommended event flow:
 - `coin-strategy-common/common-model/.../SmartWallet*Entity.java`
 - `coin-strategy-common/common-dao/.../SmartWallet*Mapper.java`
 - `sql/arbitrage_schema.sql`
+
+## Strategy Dashboard
+
+This repo now includes a lightweight dashboard page directly hosted by `coin-strategy-job`. The first connected strategy is `POLYMARKET_COPY`, and the page structure already reserves cards for future strategies such as hedge, robot, and intelligent strategies.
+
+### Dashboard Goals
+
+- show current positions by strategy
+- show strategy-level profitability and capital usage
+- show recent orders and current settlement queue
+- show win-rate / pnl timeline and conflict-market risk
+- provide a front-end aggregation layer based on existing smart-wallet APIs instead of querying MySQL directly
+
+### Dashboard Data Sources
+
+The page is currently front-end aggregated from existing smart-wallet APIs such as:
+
+- `/smart-wallet/reports/performance`
+- `/smart-wallet/pnl/summary`
+- `/smart-wallet/capacity/summary`
+- `/smart-wallet/positions/live`
+- `/smart-wallet/positions/next-settlements`
+- `/smart-wallet/orders`
+- `/smart-wallet/pnl/timeline`
+- `/smart-wallet/reports/conflicting-markets`
+
+### Dashboard Frontend Entry
+
+- overview page: `http://127.0.0.1:8081/dashboard/index.html`
+- strategy detail page: `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY`
+- charts page: `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY`
+- the pages read directly from the existing `/smart-wallet/...` APIs on the same host
+
+### How To Start
+
+1. Start the smart-wallet service:
+   - `scripts/run-smart-wallet.sh`
+2. Open the dashboard page in your browser:
+   - `http://127.0.0.1:8081/dashboard/index.html`
+3. The startup script will also print the ready-to-open URLs after health check succeeds:
+   - `http://127.0.0.1:8081/swagger-ui.html`
+   - `http://127.0.0.1:8081/dashboard/index.html`
+   - `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY&days=30`
+   - `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY&days=30`
+
+### Current Page Sections
+
+- overview page
+  - left sidebar navigation
+  - global strategy / time-window filter bar
+  - strategy cards
+  - strategy core metrics
+  - strategy health score
+  - strategy health score breakdown
+  - strategy insights
+  - time window switcher
+  - risk signal cards
+  - wallet attribution summary cards
+  - market attribution summary cards
+  - current positions summary
+  - next settlements summary
+- strategy detail page
+  - left sidebar navigation
+  - global strategy / time-window filter bar
+  - time window switcher
+  - strategy-level metrics
+  - current positions table
+  - next settlements table
+  - recent orders table
+- charts page
+  - left sidebar navigation
+  - global strategy / time-window filter bar
+  - time window switcher
+  - cumulative pnl timeline chart
+  - daily pnl bar chart
+  - win-rate trend chart
+  - wallet attribution bars
+  - market attribution bars
+  - conflict markets table
+  - strategy analysis summary cards
+  - URL state retention for `strategy` and `days`
+
+### Expansion Guidance
+
+If you add more strategies later, keep the same contract:
+
+- each strategy gets one `strategyCode`
+- the dashboard backend maps that code to one aggregation pipeline
+- page cards stay strategy-agnostic
+- strategy-specific metrics should still be normalized into:
+  - pnl
+  - win rate
+  - drawdown
+  - open positions
+  - capacity
+  - risk insights

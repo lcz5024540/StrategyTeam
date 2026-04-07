@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图表分析</title>
+    <link rel="stylesheet" href="/dashboard/dashboard.css">
+</head>
+<body>
+<div class="page shell">
+    <div id="chartsSidebarMount"></div>
+    <main class="content">
+    <div id="chartsFilters"></div>
+    <header class="hero compact">
+        <div>
+            <p class="eyebrow">Charts & Analytics</p>
+            <h1 id="chartsTitle">策略图表分析</h1>
+            <p class="subtitle">查看收益时间线、冲突市场与策略风险信号，方便后续做更系统的报表页。</p>
+        </div>
+        <div class="hero-side" id="chartsNav"></div>
+    </header>
+
+    <div id="chartsWindowSwitcher"></div>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>累计收益时间线</h2>
+            <p>用于观察策略的收益趋势、回撤阶段和恢复斜率。</p>
+        </div>
+        <div class="chart-wrap large">
+            <svg id="chartsTimeline" viewBox="0 0 900 320" preserveAspectRatio="none"></svg>
+            <div class="empty-chart" id="chartsEmpty">当前暂无足够的收益时间序列数据。</div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>日收益柱状图</h2>
+            <p>展示最近窗口内的单日净收益变化，便于观察收益分布与波动集中时段。</p>
+        </div>
+        <div class="chart-wrap large">
+            <svg id="dailyPnlBars" viewBox="0 0 900 320" preserveAspectRatio="none"></svg>
+            <div class="empty-chart" id="dailyPnlEmpty">当前暂无足够的日报数据。</div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>胜率趋势</h2>
+            <p>基于日报中的胜率字段，观察策略在不同窗口中的胜率变化趋势。</p>
+        </div>
+        <div class="chart-wrap large">
+            <svg id="winRateTrend" viewBox="0 0 900 320" preserveAspectRatio="none"></svg>
+            <div class="empty-chart" id="winRateEmpty">当前暂无足够的胜率数据。</div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>冲突市场</h2>
+            <p>识别同一市场多个 outcome 的持仓冲突，辅助判断策略是否存在重复开单或方向冲突。</p>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>市场</th>
+                    <th>冲突 Outcome</th>
+                    <th>Open 数量</th>
+                    <th>净收益</th>
+                    <th>预计结算</th>
+                </tr>
+                </thead>
+                <tbody id="chartsConflictsBody"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>策略分析摘要</h2>
+            <p>把收益、胜率、冲突市场和资金容量汇总成一组更适合产品化展示的摘要卡片。</p>
+        </div>
+        <div class="metric-grid" id="chartsMetrics"></div>
+    </section>
+
+    <div class="split-grid">
+        <section class="panel">
+            <div class="section-head">
+                <h2>钱包归因</h2>
+                <p>看哪些 smart wallet 为策略贡献了更多收益或亏损。</p>
+            </div>
+            <div class="bars-wrap" id="walletAttributionBars"></div>
+        </section>
+
+        <section class="panel">
+            <div class="section-head">
+                <h2>市场归因</h2>
+                <p>看哪些市场最赚钱、哪些市场最拖累策略表现。</p>
+            </div>
+            <div class="bars-wrap" id="marketAttributionBars"></div>
+        </section>
+    </div>
+    </main>
+</div>
+<script src="/dashboard/dashboard-core.js"></script>
+<script>
+  function renderChartTimeline(points) {
+    const svg = document.getElementById("chartsTimeline");
+    const empty = document.getElementById("chartsEmpty");
+    if (!points || points.length < 2) {
+      svg.innerHTML = "";
+      empty.style.display = "flex";
+      return;
+    }
+    empty.style.display = "none";
+    const width = 900;
+    const height = 320;
+    const padding = 28;
+    const values = points.map(item => Number(item.cumulativeNetPnlUsdc || 0));
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = Math.max(max - min, 1);
+    const coords = points.map((item, index) => {
+      const x = padding + (index * (width - padding * 2)) / (points.length - 1);
+      const y = height - padding - ((Number(item.cumulativeNetPnlUsdc || 0) - min) * (height - padding * 2)) / range;
+      return `${x},${y}`;
+    }).join(" ");
+    const coordsArr = coords.split(" ");
+    svg.innerHTML = `
+      <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="rgba(23,33,23,0.15)" />
+      <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="rgba(23,33,23,0.15)" />
+      <polyline fill="none" stroke="#1f7a4d" stroke-width="3" points="${coords}" />
+      ${points.map((item, index) => {
+        const [x, y] = coordsArr[index].split(",");
+        return `<circle cx="${x}" cy="${y}" r="4" fill="#1f7a4d"><title>${item.bucketAt}: ${item.cumulativeNetPnlUsdc}</title></circle>`;
+      }).join("")}
+    `;
+  }
+
+  function renderConflictRows(rows) {
+    const tbody = document.getElementById("chartsConflictsBody");
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty">当前没有冲突市场。</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${row.question}</td>
+        <td>${(row.outcomes || []).join(" / ")}</td>
+        <td>${row.openPositionCount}</td>
+        <td class="${dashboardAmountClass(row.netPnlUsdc)}">${dashboardFormatMoney(row.netPnlUsdc)}</td>
+        <td>${row.marketEndAtBjt || "-"}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderDailyBars(reports) {
+    const svg = document.getElementById("dailyPnlBars");
+    const empty = document.getElementById("dailyPnlEmpty");
+    if (!reports || reports.length === 0) {
+      svg.innerHTML = "";
+      empty.style.display = "flex";
+      return;
+    }
+    empty.style.display = "none";
+    const width = 900;
+    const height = 320;
+    const padding = 28;
+    const values = reports.map(item => Number(item.netPnlUsdc || 0));
+    const maxAbs = Math.max(...values.map(v => Math.abs(v)), 1);
+    const zeroY = height / 2;
+    const barWidth = Math.max((width - padding * 2) / reports.length - 8, 8);
+    svg.innerHTML = `
+      <line x1="${padding}" y1="${zeroY}" x2="${width - padding}" y2="${zeroY}" stroke="rgba(23,33,23,0.15)" />
+      ${reports.map((item, index) => {
+        const value = Number(item.netPnlUsdc || 0);
+        const x = padding + index * ((width - padding * 2) / reports.length) + 4;
+        const barHeight = Math.max((Math.abs(value) / maxAbs) * (height / 2 - padding), 2);
+        const y = value >= 0 ? zeroY - barHeight : zeroY;
+        const color = value >= 0 ? "#1f7a4d" : "#9f2d2d";
+        return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="${color}"><title>${item.reportDate}: ${item.netPnlUsdc}</title></rect>`;
+      }).join("")}
+    `;
+  }
+
+  function renderWinRateTrend(reports) {
+    const svg = document.getElementById("winRateTrend");
+    const empty = document.getElementById("winRateEmpty");
+    const points = (reports || []).filter(item => item.winRate !== null && item.winRate !== undefined);
+    if (points.length < 2) {
+      svg.innerHTML = "";
+      empty.style.display = "flex";
+      return;
+    }
+    empty.style.display = "none";
+    const width = 900;
+    const height = 320;
+    const padding = 28;
+    const coords = points.map((item, index) => {
+      const x = padding + (index * (width - padding * 2)) / (points.length - 1);
+      const y = height - padding - (Number(item.winRate || 0) * (height - padding * 2));
+      return `${x},${y}`;
+    }).join(" ");
+    const coordsArr = coords.split(" ");
+    svg.innerHTML = `
+      <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="rgba(23,33,23,0.15)" />
+      <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="rgba(23,33,23,0.15)" />
+      <polyline fill="none" stroke="#ab5b13" stroke-width="3" points="${coords}" />
+      ${points.map((item, index) => {
+        const [x, y] = coordsArr[index].split(",");
+        return `<circle cx="${x}" cy="${y}" r="4" fill="#ab5b13"><title>${item.reportDate}: ${(Number(item.winRate || 0) * 100).toFixed(2)}%</title></circle>`;
+      }).join("")}
+    `;
+  }
+
+  async function initChartsPage() {
+    try {
+      const code = parseStrategyCode();
+      const days = dashboardSelectedDays();
+      const detail = await loadStrategyDashboardDetail(code, { days });
+      document.getElementById("chartsSidebarMount").innerHTML = renderStrategySidebar("CHARTS", code);
+      document.getElementById("chartsFilters").innerHTML = renderGlobalFilterBar(code);
+      attachGlobalFilters("chartsFilters", "charts.html");
+      document.getElementById("chartsTitle").textContent = `${detail.name} 图表分析`;
+      document.getElementById("chartsNav").innerHTML = renderDashboardNav("CHARTS") + `<div class="pill">${dashboardGeneratedAtText()}</div>`;
+      document.getElementById("chartsWindowSwitcher").innerHTML = buildWindowSwitcher(detail.selectedDays || days, code);
+
+      renderChartTimeline(detail.timeline || []);
+      renderDailyBars(detail.dailyReports || []);
+      renderWinRateTrend(detail.dailyReports || []);
+      renderConflictRows(detail.conflicts || []);
+      renderAttributionBars("walletAttributionBars", detail.walletAttribution || [], "当前没有钱包归因数据。");
+      renderAttributionBars("marketAttributionBars", detail.marketAttribution || [], "当前没有市场归因数据。");
+
+      const metrics = [
+        ["净收益", dashboardFormatMoney(detail.netPnlUsdc), "综合收益"],
+        ["胜率", dashboardFormatPercent(detail.winRate), "基于已关闭仓位"],
+        ["冲突市场", String(detail.openConflictingMarkets || 0), "当前冲突市场数量"],
+        ["剩余仓位槽位", String(detail.remainingPositionSlots || 0), "当前还可开仓位数量"],
+        ["剩余资金预算", dashboardFormatMoney(detail.remainingCapitalBudgetUsdc), "剩余预算"],
+        ["订单总数", String(detail.totalOrders || 0), "已记录订单数"]
+      ];
+
+      document.getElementById("chartsMetrics").innerHTML = metrics.map(([label, value, hint]) => `
+        <article class="metric-card">
+          <div class="label">${label}</div>
+          <div class="value ${label.includes("收益") ? dashboardAmountClass(String(value).replace(/[+$,]/g, "")) : ""}">${value}</div>
+          <div class="hint">${hint}</div>
+        </article>
+      `).join("");
+    } catch (error) {
+      document.body.innerHTML = `<div class="page"><section class="panel"><h1>页面加载失败</h1><p>${error.message}</p></section></div>`;
+    }
+  }
+
+  initChartsPage();
+</script>
+</body>
+</html>

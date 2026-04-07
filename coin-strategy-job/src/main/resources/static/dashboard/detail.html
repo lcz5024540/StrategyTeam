@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>策略详情</title>
+    <link rel="stylesheet" href="/dashboard/dashboard.css">
+</head>
+<body>
+<div class="page shell">
+    <div id="detailSidebarMount"></div>
+    <main class="content">
+    <div id="detailFilters"></div>
+    <header class="hero compact">
+        <div>
+            <p class="eyebrow">Strategy Detail</p>
+            <h1 id="detailTitle">策略详情</h1>
+            <p class="subtitle" id="detailDesc">-</p>
+        </div>
+        <div class="hero-side" id="detailNav"></div>
+    </header>
+
+    <div id="detailWindowSwitcher"></div>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>核心指标</h2>
+            <p>聚焦单个策略的收益、胜率、回撤与资金容量。</p>
+        </div>
+        <div class="metric-grid" id="detailMetrics"></div>
+    </section>
+
+    <div class="split-grid">
+        <section class="panel">
+            <div class="section-head">
+                <h2>当前持仓</h2>
+                <p>策略当前正在持有的仓位。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>状态</th>
+                        <th>成本</th>
+                        <th>浮盈亏</th>
+                        <th>预计结算</th>
+                    </tr>
+                    </thead>
+                    <tbody id="detailPositionsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-head">
+                <h2>最近待结算</h2>
+                <p>最早结算的仓位优先展示。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>成本</th>
+                        <th>浮盈亏</th>
+                        <th>预计结算</th>
+                    </tr>
+                    </thead>
+                    <tbody id="detailSettlementsBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <section class="panel">
+        <div class="section-head">
+            <h2>最近订单</h2>
+            <p>用来观察策略最近一段时间的开单节奏、方向和订单状态。</p>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr>
+                    <th>订单ID</th>
+                    <th>市场</th>
+                    <th>Outcome</th>
+                    <th>方向</th>
+                    <th>金额</th>
+                    <th>状态</th>
+                    <th>下单时间</th>
+                </tr>
+                </thead>
+                <tbody id="detailOrdersBody"></tbody>
+            </table>
+        </div>
+    </section>
+    </main>
+</div>
+<script src="/dashboard/dashboard-core.js"></script>
+<script>
+  function renderRows(targetId, rows, mapper, emptyText, colspan) {
+    const tbody = document.getElementById(targetId);
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${colspan}" class="empty">${emptyText}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map(mapper).join("");
+  }
+
+  async function initDetailPage() {
+    try {
+      const code = parseStrategyCode();
+      const days = dashboardSelectedDays();
+      const detail = await loadStrategyDashboardDetail(code, { days });
+      document.getElementById("detailSidebarMount").innerHTML = renderStrategySidebar("DETAIL", code);
+      document.getElementById("detailFilters").innerHTML = renderGlobalFilterBar(code);
+      attachGlobalFilters("detailFilters", "detail.html");
+      document.getElementById("detailTitle").textContent = detail.name;
+      document.getElementById("detailDesc").textContent = detail.description;
+      document.getElementById("detailNav").innerHTML = renderDashboardNav("DETAIL") + `<div class="pill">${dashboardGeneratedAtText()}</div>`;
+      document.getElementById("detailWindowSwitcher").innerHTML = buildWindowSwitcher(detail.selectedDays || days, code);
+
+      const metrics = [
+        ["净收益", dashboardFormatMoney(detail.netPnlUsdc), "综合已实现与未实现盈亏"],
+        ["已实现收益", dashboardFormatMoney(detail.realizedPnlUsdc), "已结算收益"],
+        ["未实现收益", dashboardFormatMoney(detail.unrealizedPnlUsdc), "当前浮盈亏"],
+        ["胜率", dashboardFormatPercent(detail.winRate), "基于已关闭仓位"],
+        ["Open 仓位", String(detail.openPositions || 0), "当前未结算仓位"],
+        ["Closed 仓位", String(detail.closedPositions || 0), "已关闭/已结算仓位"],
+        ["回撤", dashboardFormatMoney(detail.maxDrawdownUsdc), "最大回撤"],
+        ["剩余资金预算", dashboardFormatMoney(detail.remainingCapitalBudgetUsdc), "剩余可用策略预算"]
+      ];
+
+      document.getElementById("detailMetrics").innerHTML = metrics.map(([label, value, hint]) => `
+        <article class="metric-card">
+          <div class="label">${label}</div>
+          <div class="value ${label.includes("收益") || label.includes("回撤") ? dashboardAmountClass(String(value).replace(/[+$,]/g, "")) : ""}">${value}</div>
+          <div class="hint">${hint}</div>
+        </article>
+      `).join("");
+
+      renderRows("detailPositionsBody", detail.positions, (row) => `
+        <tr>
+          <td>${row.question}</td>
+          <td><span class="badge">${row.outcome}</span></td>
+          <td>${row.status}</td>
+          <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
+          <td class="${dashboardAmountClass(row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.unrealizedPnlUsdc)}</td>
+          <td>${row.marketEndAtBjt || "-"}</td>
+        </tr>
+      `, "当前没有 open positions。", 6);
+
+      renderRows("detailSettlementsBody", detail.nextSettlements, (row) => `
+        <tr>
+          <td>${row.question}</td>
+          <td><span class="badge">${row.outcome}</span></td>
+          <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
+          <td class="${dashboardAmountClass(row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.unrealizedPnlUsdc)}</td>
+          <td>${row.marketEndAtBjt || "-"}</td>
+        </tr>
+      `, "当前没有待结算仓位。", 5);
+
+      renderRows("detailOrdersBody", detail.recentOrders, (row) => `
+        <tr>
+          <td>${row.id}</td>
+          <td>${row.question}</td>
+          <td><span class="badge">${row.outcome}</span></td>
+          <td>${row.side}</td>
+          <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
+          <td>${row.status}</td>
+          <td>${row.placedAt || "-"}</td>
+        </tr>
+      `, "当前没有订单记录。", 7);
+    } catch (error) {
+      document.body.innerHTML = `<div class="page"><section class="panel"><h1>页面加载失败</h1><p>${error.message}</p></section></div>`;
+    }
+  }
+
+  initDetailPage();
+</script>
+</body>
+</html>
