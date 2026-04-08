@@ -107,6 +107,13 @@ function renderInsights(detail) {
   if (detail.maxDrawdownUsdc > 300) {
     insights.push({ level: "warn", title: "回撤偏高", message: "当前回撤较大，建议收紧信号阈值或减少最大开仓数。" });
   }
+  if ((detail.stalePaperSettlementReview?.staleCount || 0) > 0) {
+    insights.push({
+      level: "warn",
+      title: "历史模拟仓位待复核",
+      message: `检测到 ${detail.stalePaperSettlementReview.staleCount} 笔 paper-book 仓位已过结算时间但状态未更新，建议执行 /smart-wallet/settlement/review-paper-history。`
+    });
+  }
   if ((detail.nextSettlements || []).length > 0) {
     insights.push({ level: "info", title: "最近待结算市场", message: `${detail.nextSettlements[0].question}，预计北京时间 ${detail.nextSettlements[0].marketEndAtBjt}。` });
   } else {

@@ -45,6 +45,26 @@ async function loadStrategyDashboardOverview() {
   return dashboardGetJson("/strategy-platform/strategy/overview");
 }
 
+async function loadPaperSettlementReviewSummary(limit = 200) {
+  const history = await dashboardGetJson(`/smart-wallet/positions/history?closedOnly=false`);
+  const now = Date.now();
+  const stalePaperPositions = (history || []).filter((row) => {
+    if (!row || row.executionAddress !== "paper-book") {
+      return false;
+    }
+    const status = String(row.status || "").toUpperCase();
+    if (status !== "OPEN" && status !== "PARTIALLY_CLOSED") {
+      return false;
+    }
+    const marketEndAt = Number(row.marketEndAt || 0);
+    return Number.isFinite(marketEndAt) && marketEndAt > 0 && marketEndAt <= now;
+  });
+  return {
+    staleCount: stalePaperPositions.length,
+    sample: stalePaperPositions.slice(0, Math.max(limit, 1))
+  };
+}
+
 function dashboardFormatMoney(value) {
   const num = Number(value || 0);
   return `${num >= 0 ? "+" : "-"}$${Math.abs(num).toFixed(2)}`;
@@ -158,11 +178,12 @@ async function loadPolymarketDashboardDetail(options = {}) {
   const attributionLimit = options.attributionLimit || 10;
   const baseDetail = await dashboardGetJson("/strategy-platform/strategy/POLYMARKET_COPY");
 
-  const [walletAttribution, marketAttribution, dailyReports, blockerStats] = await Promise.all([
+  const [walletAttribution, marketAttribution, dailyReports, blockerStats, stalePaperSettlementReview] = await Promise.all([
     dashboardGetJson(`/smart-wallet/reports/wallets?limit=${attributionLimit}`),
     dashboardGetJson(`/smart-wallet/reports/markets?limit=${attributionLimit}`),
     dashboardGetJson(`/smart-wallet/reports/daily?limit=${Math.max(days, 7)}`),
-    dashboardGetJson("/smart-wallet/follow-tasks/blocker-stats?taskLimit=200")
+    dashboardGetJson("/smart-wallet/follow-tasks/blocker-stats?taskLimit=200"),
+    loadPaperSettlementReviewSummary()
   ]);
 
   return {
@@ -195,6 +216,7 @@ async function loadPolymarketDashboardDetail(options = {}) {
     marketAttribution,
     dailyReports,
     blockerStats,
+    stalePaperSettlementReview,
     selectedDays: days
   };
 }

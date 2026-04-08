@@ -30,6 +30,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReportAttributionItem;
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairItem;
+import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettlementReviewView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncFailure;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import lombok.RequiredArgsConstructor;
@@ -710,6 +711,45 @@ public class SmartWalletAccountingService {
                 .repairedPositions(repairedIds.size())
                 .repairedPositionIds(repairedIds)
                 .notes(notes.size() <= 20 ? notes : new ArrayList<>(notes.subList(0, 20)))
+                .build();
+    }
+
+    public HistoricalPaperSettlementReviewView reviewHistoricalPaperSettlements(int limit, boolean refreshCache) {
+        List<SmartWalletPositionEntity> openPaperPositions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
+                .orderByAsc(SmartWalletPositionEntity::getLastFilledAt)
+                .last("limit " + Math.max(limit, 1)));
+        SettlementSyncSummary syncSummary = syncSettlementsForPositions(openPaperPositions, Math.max(limit, 1), refreshCache);
+
+        List<SmartWalletPositionEntity> unclaimedPaperPositions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
+                .eq(SmartWalletPositionEntity::getStatus, "RESOLVED_UNCLAIMED")
+                .orderByAsc(SmartWalletPositionEntity::getClosedAt)
+                .last("limit " + Math.max(limit, 1)));
+        List<Long> autoClaimedIds = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+        for (SmartWalletPositionEntity position : unclaimedPaperPositions) {
+            try {
+                SmartWalletClaimResultView result = claimResolvedPosition(position.getId(), false);
+                autoClaimedIds.add(position.getId());
+                notes.add("Auto-claimed paper position " + position.getId() + " => " + result.getCurrentStatus());
+            } catch (Exception e) {
+                notes.add("Failed to auto-claim paper position " + position.getId() + ": " + e.getMessage());
+            }
+        }
+        if (syncSummary != null && syncSummary.getNotes() != null) {
+            notes.addAll(syncSummary.getNotes());
+        }
+        if (notes.size() > 20) {
+            notes = new ArrayList<>(notes.subList(0, 20));
+        }
+        return HistoricalPaperSettlementReviewView.builder()
+                .scannedPositions(openPaperPositions.size())
+                .autoClaimedPositions(autoClaimedIds.size())
+                .settlementSync(syncSummary)
+                .autoClaimedPositionIds(autoClaimedIds)
+                .notes(notes)
                 .build();
     }
 

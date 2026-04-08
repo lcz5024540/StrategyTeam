@@ -11,6 +11,7 @@ import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicat
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
+import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettlementReviewView;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationRunSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
@@ -460,6 +461,13 @@ public class SmartWalletController {
                                                  @RequestParam(defaultValue = "100") Integer marketLimit,
                                                  @RequestParam(defaultValue = "false") boolean refreshCache) {
         return settlementApplicationService.runNow(positionLimit, marketLimit, refreshCache);
+    }
+
+    @Operation(summary = "复核历史模拟结算", description = "重扫 paper-book 历史未结算仓位，并自动收口旧的未领取模拟仓位。")
+    @PostMapping("/settlement/review-paper-history")
+    public HistoricalPaperSettlementReviewView reviewHistoricalPaperSettlements(@RequestParam(defaultValue = "1000") Integer limit,
+                                                                                @RequestParam(defaultValue = "true") boolean refreshCache) {
+        return accountingService.reviewHistoricalPaperSettlements(limit, refreshCache);
     }
 
     @Operation(summary = "结算状态", description = "查看 settlement sync 的最近状态和运行情况。")

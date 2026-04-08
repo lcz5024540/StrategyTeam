@@ -489,3 +489,27 @@ Identify and stop the process that's listening on port 8081 or configure this ap
 2026-04-08 09:38:57.132[1775612337132] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://gamma-api.polymarket.com/markets?condition_ids=0x775c37eb491ce7ed4447c973239cca67ff4302986f78205c1e67bde4849e664b after 20192 ms: Read timed out
 2026-04-08 09:39:02.765[1775612342765] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=11, markets=11, resolved=0, failed=0
 2026-04-08 09:42:10.000[1775612530000] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xbddf61af533ff524d27154e589d2d7a81510c684&limit=30&offset=0&takerOnly=true after 20002 ms: Read timed out
+2026-04-08 09:42:17.719[1775612537719] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-08 09:42:17.723[1775612537723] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-08 09:42:30.405[1775612550405] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 8769 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/classes started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-08 09:42:30.406[1775612550406] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-08 09:42:30.893[1775612550893] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat initialized with port(s): 8081 (http)
+2026-04-08 09:42:30.896[1775612550896] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Initializing ProtocolHandler ["http-nio-8081"]
+2026-04-08 09:42:30.897[1775612550897] | INFO  | main       | o.a.catalina.core.StandardService    - Starting service [Tomcat]
+2026-04-08 09:42:30.897[1775612550897] | INFO  | main       | o.a.catalina.core.StandardEngine     - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-04-08 09:42:30.962[1775612550962] | INFO  | main       | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring embedded WebApplicationContext
+2026-04-08 09:42:30.962[1775612550962] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 532 ms
+2026-04-08 09:42:31.334[1775612551334] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-08 09:42:31.427[1775612551427] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-08 09:42:31.683[1775612551683] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Starting ProtocolHandler ["http-nio-8081"]
+2026-04-08 09:42:31.690[1775612551690] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat started on port(s): 8081 (http) with context path ''
+2026-04-08 09:42:31.695[1775612551695] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.448 seconds (JVM running for 6.655)
+2026-04-08 09:42:32.221[1775612552221] | INFO  | http-nio-8081-exec-1 | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-08 09:42:32.221[1775612552221] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-08 09:42:32.221[1775612552221] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 0 ms
+2026-04-08 09:42:57.151[1775612577151] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=11, markets=11, resolved=0, failed=0
+2026-04-08 09:45:38.997[1775612738997] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0xee613b3fc183ee44f9da9c05f53e2da107e3debf&limit=30&offset=0&takerOnly=true after 20007 ms: Read timed out
+2026-04-08 09:47:57.165[1775612877165] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=11, markets=11, resolved=0, failed=0
+2026-04-08 09:50:01.564[1775613001564] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x507e52ef684ca2dd91f90a9d26d149dd3288beae&limit=30&offset=0&takerOnly=true after 20007 ms: Socket closed
+2026-04-08 09:52:57.180[1775613177180] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=11, markets=11, resolved=0, failed=0
+2026-04-08 09:54:16.555[1775613256555] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x507e52ef684ca2dd91f90a9d26d149dd3288beae&limit=30&offset=0&takerOnly=true after 20002 ms: Read timed out
