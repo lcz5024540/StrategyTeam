@@ -57,7 +57,8 @@ public class StrategyProductQueryService {
             return new StrategyDetailView(summary,
                     new StrategyMetricsView(0, 0, 0, 0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                             BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                            0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO),
+                            BigDecimal.ZERO, BigDecimal.ZERO,
+                            0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
                     List.of(new StrategyInsightView("INFO", "策略待接入", "当前页面结构已预留，后续可继续接入真实策略数据。")),
                     List.of(), List.of(), List.of(), List.of(), List.of());
         }
@@ -74,18 +75,23 @@ public class StrategyProductQueryService {
         StrategySummaryView summary = new StrategySummaryView(
                 POLYMARKET_CODE, "Polymarket 跟单策略", "Polymarket", "ACTIVE",
                 "基于 smart wallet 的 Polymarket 模拟跟单与风控策略。",
-                performance.getOpenPositions(), safe(performance.getNetPnlUsdc()), safe(performance.getRealizedPnlUsdc()),
-                safe(performance.getUnrealizedPnlUsdc()), safe(performance.getWinRate()), performance.getTotalOrders()
+                performance.getOpenPositions(), safe(performance.getCompositePnlUsdc()), safe(performance.getNetPnlUsdc()),
+                safe(performance.getRealizedPnlUsdc()),
+                safe(performance.getUnrealizedPnlUsdc()), safe(performance.getPendingSettlementPnlUsdc()),
+                safe(performance.getWinRate()), performance.getTotalOrders()
         );
 
         StrategyMetricsView metrics = new StrategyMetricsView(
                 performance.getTotalOrders(), performance.getFilledOrders(), performance.getOpenPositions(),
                 performance.getClosedPositions(), performance.getWinningPositions(), performance.getLosingPositions(),
                 safe(performance.getWinRate()), safe(pnlSummary.getTradedVolumeUsdc()), safe(pnlSummary.getFeeUsdc()),
-                safe(performance.getRealizedPnlUsdc()), safe(performance.getUnrealizedPnlUsdc()), safe(performance.getNetPnlUsdc()),
+                safe(performance.getRealizedPnlUsdc()), safe(performance.getUnrealizedPnlUsdc()),
+                safe(performance.getPendingSettlementPnlUsdc()), safe(performance.getCompositePnlUsdc()),
+                safe(performance.getNetPnlUsdc()),
                 safe(performance.getProfitFactor()), safe(performance.getMaxDrawdownUsdc()), performance.getConflictingMarkets(),
                 performance.getOpenConflictingMarkets(), safe(performance.getConflictNetPnlUsdc()),
-                capacity.getRemainingPositionSlots(), safe(capacity.getRemainingCapitalBudgetUsdc())
+                capacity.getRemainingPositionSlots(), safe(capacity.getRemainingCapitalBudgetUsdc()),
+                safe(capacity.getAvailableCapitalUsdc()), safe(capacity.getLockedClaimProceedsUsdc())
         );
 
         return new StrategyDetailView(
@@ -128,7 +134,7 @@ public class StrategyProductQueryService {
     private StrategyPositionRowView toPosition(SmartWalletPositionView row) {
         return new StrategyPositionRowView(row.getId(), row.getMarketId(), row.getQuestion(), row.getOutcome(), row.getStatus(),
                 row.getQuantity(), row.getAverageEntryPrice(), row.getCostBasisUsdc(), row.getRealizedPnlUsdc(),
-                row.getUnrealizedPnlUsdc(), row.getMarketEndAtBjt());
+                row.getUnrealizedPnlUsdc(), row.getUnrealizedPnlUsdc(), row.getMarketEndAtBjt());
     }
 
     private StrategyOrderRowView toOrder(SmartWalletOrderView row) {
@@ -149,7 +155,7 @@ public class StrategyProductQueryService {
 
     private StrategySummaryView placeholder(String code, String name, String category, String status, String description) {
         return new StrategySummaryView(code, name, category, status, description, 0,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0);
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0);
     }
 
     private BigDecimal safe(BigDecimal value) {

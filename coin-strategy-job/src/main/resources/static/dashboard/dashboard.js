@@ -24,26 +24,36 @@ function renderOverview(summary) {
   document.getElementById("homeWindowSwitcher").innerHTML = buildWindowSwitcher(summary.selectedDays || 30, state.selected);
   const cards = document.getElementById("strategyCards");
   cards.innerHTML = "";
-  strategyCatalog.forEach((strategy) => {
-    const strategySummary = strategy.code === "POLYMARKET_COPY" ? summary : null;
+  const overviewStrategies = summary.strategyList || strategyCatalog.map((strategy) => ({
+    code: strategy.code,
+    name: strategy.name,
+    category: strategy.category,
+    status: strategy.status,
+    description: strategy.description,
+    openPositions: strategy.code === "POLYMARKET_COPY" ? summary.openPositions : 0,
+    netPnlUsdc: strategy.code === "POLYMARKET_COPY" ? summary.netPnlUsdc : 0,
+    compositePnlUsdc: strategy.code === "POLYMARKET_COPY" ? summary.compositePnlUsdc : 0,
+    realizedPnlUsdc: strategy.code === "POLYMARKET_COPY" ? summary.realizedPnlUsdc : 0
+  }));
+  overviewStrategies.forEach((strategySummary) => {
     const card = document.createElement("article");
-    card.className = `strategy-card ${strategy.code === state.selected ? "active" : ""}`;
+    card.className = `strategy-card ${strategySummary.code === state.selected ? "active" : ""}`;
     card.innerHTML = `
       <div class="strategy-meta">
-        <span>${strategy.category}</span>
-        <span class="strategy-status">${strategy.status}</span>
+        <span>${strategySummary.category}</span>
+        <span class="strategy-status">${strategySummary.status}</span>
       </div>
-      <h3>${strategy.name}</h3>
-      <p>${strategy.description}</p>
+      <h3>${strategySummary.name}</h3>
+      <p>${strategySummary.description}</p>
       <div class="strategy-meta">
         <span>持仓 ${strategySummary?.openPositions ?? 0}</span>
-        <span class="${dashboardAmountClass(strategySummary?.netPnlUsdc)}">${dashboardFormatMoney(strategySummary?.netPnlUsdc)}</span>
+        <span class="${dashboardAmountClass(strategySummary?.realizedPnlUsdc)}">${dashboardFormatMoney(strategySummary?.realizedPnlUsdc)}</span>
       </div>
     `;
     card.addEventListener("click", async () => {
-      state.selected = strategy.code;
+      state.selected = strategySummary.code;
       const params = new URLSearchParams(window.location.search);
-      params.set("strategy", strategy.code);
+      params.set("strategy", strategySummary.code);
       params.set("days", String(dashboardSelectedDays()));
       window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
       renderOverview(summary);
@@ -63,15 +73,18 @@ function renderMetrics(detail) {
 
   const cards = document.getElementById("metricCards");
   const metrics = [
-    ["净收益", dashboardFormatMoney(detail.netPnlUsdc), "综合已实现与未实现盈亏"],
+    ["综合收益", dashboardFormatMoney(detail.compositePnlUsdc), "已实现净收益 + 待结算收益"],
+    ["已结算净收益", dashboardFormatMoney(detail.netPnlUsdc), "已实现收益 - 手续费，不含待结算部分"],
     ["已实现收益", dashboardFormatMoney(detail.realizedPnlUsdc), "真正结算落袋的收益"],
-    ["未实现收益", dashboardFormatMoney(detail.unrealizedPnlUsdc), "当前 open positions 的浮盈亏"],
+    ["待结算收益", dashboardFormatMoney(detail.pendingSettlementPnlUsdc), "市场已持仓但尚未个人结算的中间态收益"],
     ["胜率", dashboardFormatPercent(detail.winRate), "基于已关闭仓位统计"],
     ["订单数", String(detail.totalOrders || 0), "累计订单总数"],
     ["Open 仓位", String(detail.openPositions || 0), "当前仍在持有的仓位数"],
     ["回撤", dashboardFormatMoney(detail.maxDrawdownUsdc), "策略历史最大回撤"],
     ["冲突市场", String(detail.openConflictingMarkets || 0), "同市场多 outcome 持仓"],
     ["剩余仓位槽位", String(detail.remainingPositionSlots || 0), "组合还能容纳的新仓位数量"],
+    ["可用资金", dashboardFormatMoney(detail.availableCapitalUsdc), "当前还能继续投入的新资金"],
+    ["待领取锁定", dashboardFormatMoney(detail.lockedClaimProceedsUsdc), "真实单已结算但未 claim 的锁定金额"],
     ["剩余资金预算", dashboardFormatMoney(detail.remainingCapitalBudgetUsdc), "还能继续投入的策略预算"]
   ];
   cards.innerHTML = metrics.map(([label, value, hint]) => `
@@ -166,9 +179,9 @@ function renderDetail(detail) {
     <tr>
       <td>${row.question}</td>
       <td><span class="badge">${row.outcome}</span></td>
-      <td>${row.status}</td>
+      <td>${dashboardPositionStatusText(row.status)}</td>
       <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
-      <td class="${dashboardAmountClass(row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.unrealizedPnlUsdc)}</td>
+      <td class="${dashboardAmountClass(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
       <td>${row.marketEndAtBjt || "-"}</td>
     </tr>
   `, "当前没有 open positions。", 6);
@@ -178,7 +191,7 @@ function renderDetail(detail) {
       <td>${row.question}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
-      <td class="${dashboardAmountClass(row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.unrealizedPnlUsdc)}</td>
+      <td class="${dashboardAmountClass(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
       <td>${row.marketEndAtBjt || "-"}</td>
     </tr>
   `, "当前没有待结算仓位。", 5);
@@ -191,9 +204,10 @@ function renderDetail(detail) {
       <td>${row.side}</td>
       <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
       <td>${row.status}</td>
+      <td>${dashboardOrderSettlementText(row)}</td>
       <td>${row.placedAt || "-"}</td>
     </tr>
-  `, "当前没有订单记录。", 7);
+  `, "当前没有订单记录。", 8);
 
   renderTableRows("conflictsBody", detail.conflicts, (row) => `
     <tr>
@@ -216,7 +230,11 @@ async function init() {
   try {
     state.selected = parseStrategyCode();
     const days = dashboardSelectedDays();
-    const summary = await loadStrategyDashboardDetail(state.selected, { days });
+    const [overview, summary] = await Promise.all([
+      loadStrategyDashboardOverview(),
+      loadStrategyDashboardDetail(state.selected, { days })
+    ]);
+    summary.strategyList = overview?.strategies || [];
     renderOverview(summary);
     renderDetail(summary);
   } catch (error) {

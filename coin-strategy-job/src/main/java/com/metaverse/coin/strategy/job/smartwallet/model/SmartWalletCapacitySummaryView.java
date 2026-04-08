@@ -14,6 +14,8 @@ public class SmartWalletCapacitySummaryView {
     private BigDecimal totalOpenCostUsdc;
     private BigDecimal openCostLimitUsdc;
     private BigDecimal remainingCapitalBudgetUsdc;
+    private BigDecimal availableCapitalUsdc;
+    private BigDecimal lockedClaimProceedsUsdc;
     private Integer maxHoursToMarketEnd;
     private Boolean duplicateOpenPositionBlocked;
     private Boolean duplicatePendingTaskBlocked;

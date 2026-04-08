@@ -722,6 +722,20 @@ Recommended event flow:
 
 This repo now includes a lightweight dashboard page directly hosted by `coin-strategy-job`. The first connected strategy is `POLYMARKET_COPY`, and the page structure already reserves cards for future strategies such as hedge, robot, and intelligent strategies.
 
+### Current Recommended Run Mode
+
+For the current MVP, you do **not** need to start a separate front-end service to see the dashboard pages.
+
+The recommended mode is:
+
+- start `coin-strategy-job`
+- let it expose both:
+  - smart-wallet backend APIs
+  - dashboard static pages
+  - Swagger API docs
+
+That means a single command is enough for the current product demo path.
+
 ### Dashboard Goals
 
 - show current positions by strategy
@@ -752,15 +766,58 @@ The page is currently front-end aggregated from existing smart-wallet APIs such 
 
 ### How To Start
 
-1. Start the smart-wallet service:
+1. Prepare local execution env if needed:
+   - make sure `scripts/polymarket-env.sh` exists
+   - fill your own wallet / CLOB values only if you need execution features
+2. Start the integrated backend + dashboard service:
    - `scripts/run-smart-wallet.sh`
-2. Open the dashboard page in your browser:
-   - `http://127.0.0.1:8081/dashboard/index.html`
-3. The startup script will also print the ready-to-open URLs after health check succeeds:
-   - `http://127.0.0.1:8081/swagger-ui.html`
-   - `http://127.0.0.1:8081/dashboard/index.html`
-   - `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY&days=30`
-   - `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY&days=30`
+3. Wait until the script prints:
+   - `[run-smart-wallet] service is ready.`
+4. Open any of these URLs in your browser:
+   - Swagger: `http://127.0.0.1:8081/swagger-ui.html`
+   - Dashboard overview: `http://127.0.0.1:8081/dashboard/index.html`
+   - Dashboard detail: `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY&days=30`
+   - Dashboard charts: `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY&days=30`
+
+### What `run-smart-wallet.sh` Does
+
+The script already combines startup concerns for the current MVP:
+
+- loads local env from `scripts/polymarket-env.sh` if present
+- builds `coin-strategy-job`
+- starts the Spring Boot application
+- waits for `/smart-wallet/health` to become available
+- prints the ready-to-open backend and page URLs
+
+So for the current repository state, this is the main command you should remember:
+
+```bash
+scripts/run-smart-wallet.sh
+```
+
+### Quick Access After Startup
+
+Backend / docs:
+
+- health: `http://127.0.0.1:8081/smart-wallet/health`
+- swagger: `http://127.0.0.1:8081/swagger-ui.html`
+
+Frontend pages:
+
+- overview: `http://127.0.0.1:8081/dashboard/index.html`
+- detail: `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY&days=30`
+- charts: `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY&days=30`
+
+### Optional Separate Web App
+
+The repo still contains `coin-strategy-web`, but for the current MVP validation path it is **not** required to see the dashboard pages.
+
+- `coin-strategy-job`
+  - recommended for current use
+  - exposes APIs + dashboard pages together
+- `coin-strategy-web`
+  - reserved for the future BFF / product-side evolution
+  - not required for the current dashboard browsing flow
 
 ### Current Page Sections
 

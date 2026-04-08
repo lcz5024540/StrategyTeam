@@ -14,6 +14,8 @@ public record StrategyMetricsView(
         BigDecimal feeUsdc,
         BigDecimal realizedPnlUsdc,
         BigDecimal unrealizedPnlUsdc,
+        BigDecimal pendingSettlementPnlUsdc,
+        BigDecimal compositePnlUsdc,
         BigDecimal netPnlUsdc,
         BigDecimal profitFactor,
         BigDecimal maxDrawdownUsdc,
@@ -21,6 +23,8 @@ public record StrategyMetricsView(
         Integer openConflictingMarkets,
         BigDecimal conflictNetPnlUsdc,
         Integer remainingPositionSlots,
-        BigDecimal remainingCapitalBudgetUsdc
+        BigDecimal remainingCapitalBudgetUsdc,
+        BigDecimal availableCapitalUsdc,
+        BigDecimal lockedClaimProceedsUsdc
 ) {
 }

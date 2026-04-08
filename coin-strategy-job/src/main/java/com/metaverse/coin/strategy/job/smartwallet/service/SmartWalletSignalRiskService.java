@@ -29,6 +29,7 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletPositionMapper positionMapper;
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final PolymarketMarketMetadataService marketMetadataService;
+    private final SmartWalletAccountingService accountingService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -81,6 +82,12 @@ public class SmartWalletSignalRiskService {
         if (totalOpenCost.compareTo(safe(risk.getMaxTotalOpenCostUsdc())) >= 0) {
             accepted = false;
             reasons.add("Total open position cost has reached the portfolio budget limit.");
+        }
+
+        BigDecimal availableCapital = accountingService.availableCapitalUsdc();
+        if (availableCapital.compareTo(BigDecimal.ZERO) <= 0) {
+            accepted = false;
+            reasons.add("Available capital is depleted. Strategy is paused to avoid bankroll penetration.");
         }
 
         if (event.getOpenedAt() != null) {
@@ -154,6 +161,7 @@ public class SmartWalletSignalRiskService {
                 .multiply(properties.getBankrollUtilizationRate())
                 .min(properties.getMaxStakeUsdc())
                 .setScale(2, RoundingMode.HALF_UP);
+        recommendedStake = recommendedStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal minOrderUsdc = executionWalletContextLoader.load().getMinOrderUsdc();
         if (recommendedStake.compareTo(minOrderUsdc) < 0) {

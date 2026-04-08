@@ -41,6 +41,10 @@ async function dashboardGetJson(url) {
   return response.json();
 }
 
+async function loadStrategyDashboardOverview() {
+  return dashboardGetJson("/strategy-platform/strategy/overview");
+}
+
 function dashboardFormatMoney(value) {
   const num = Number(value || 0);
   return `${num >= 0 ? "+" : "-"}$${Math.abs(num).toFixed(2)}`;
@@ -63,14 +67,47 @@ function dashboardGeneratedAtText() {
   return `数据生成时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`;
 }
 
+function dashboardOrderSettlementText(row) {
+  if (!row) {
+    return "-";
+  }
+  const status = String(row.status || "").toUpperCase();
+  if (["CANCELLED", "REJECTED", "FAILED", "EXPIRED"].includes(status)) {
+    return "-";
+  }
+  return row.marketEndAtBjt || "-";
+}
+
+function dashboardPositionStatusText(status) {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "OPEN") {
+    return "持有中";
+  }
+  if (normalized === "PARTIALLY_CLOSED") {
+    return "部分止盈";
+  }
+  if (normalized === "CLOSED") {
+    return "已平仓";
+  }
+  if (normalized === "RESOLVED_UNCLAIMED") {
+    return "已可领取未领取";
+  }
+  if (normalized === "CLAIMED") {
+    return "已领取";
+  }
+  return status || "-";
+}
+
 function dashboardPlaceholderDetail(strategy) {
   return {
     code: strategy.code,
     name: strategy.name,
     description: strategy.description,
     netPnlUsdc: 0,
+    compositePnlUsdc: 0,
     realizedPnlUsdc: 0,
     unrealizedPnlUsdc: 0,
+    pendingSettlementPnlUsdc: 0,
     winRate: 0,
     totalOrders: 0,
     openPositions: 0,
@@ -79,6 +116,8 @@ function dashboardPlaceholderDetail(strategy) {
     openConflictingMarkets: 0,
     remainingPositionSlots: 0,
     remainingCapitalBudgetUsdc: 0,
+    availableCapitalUsdc: 0,
+    lockedClaimProceedsUsdc: 0,
     positions: [],
     nextSettlements: [],
     recentOrders: [],
@@ -117,18 +156,9 @@ function buildWindowSwitcher(activeDays, strategyCode) {
 async function loadPolymarketDashboardDetail(options = {}) {
   const days = options.days || 30;
   const attributionLimit = options.attributionLimit || 10;
-  const settlementLimit = options.settlementLimit || 8;
-  const orderLimit = options.orderLimit || 30;
+  const baseDetail = await dashboardGetJson("/strategy-platform/strategy/POLYMARKET_COPY");
 
-  const [performance, pnlSummary, capacity, positions, nextSettlements, orders, timeline, conflicts, walletAttribution, marketAttribution, dailyReports, blockerStats] = await Promise.all([
-    dashboardGetJson("/smart-wallet/reports/performance"),
-    dashboardGetJson("/smart-wallet/pnl/summary"),
-    dashboardGetJson("/smart-wallet/capacity/summary"),
-    dashboardGetJson("/smart-wallet/positions/live"),
-    dashboardGetJson(`/smart-wallet/positions/next-settlements?limit=${settlementLimit}`),
-    dashboardGetJson(`/smart-wallet/orders?limit=${orderLimit}`),
-    dashboardGetJson(`/smart-wallet/pnl/timeline?days=${days}`),
-    dashboardGetJson("/smart-wallet/reports/conflicting-markets?limit=10&openOnly=false"),
+  const [walletAttribution, marketAttribution, dailyReports, blockerStats] = await Promise.all([
     dashboardGetJson(`/smart-wallet/reports/wallets?limit=${attributionLimit}`),
     dashboardGetJson(`/smart-wallet/reports/markets?limit=${attributionLimit}`),
     dashboardGetJson(`/smart-wallet/reports/daily?limit=${Math.max(days, 7)}`),
@@ -136,26 +166,31 @@ async function loadPolymarketDashboardDetail(options = {}) {
   ]);
 
   return {
-    code: "POLYMARKET_COPY",
-    name: "Polymarket 跟单策略",
-    description: "基于 smart wallet 的 Polymarket 模拟跟单与风控策略。",
-    totalOrders: Number(performance.totalOrders || 0),
-    openPositions: Number(performance.openPositions || 0),
-    closedPositions: Number(performance.closedPositions || 0),
-    netPnlUsdc: Number(performance.netPnlUsdc || 0),
-    realizedPnlUsdc: Number(performance.realizedPnlUsdc || 0),
-    unrealizedPnlUsdc: Number(performance.unrealizedPnlUsdc || 0),
-    winRate: Number(performance.winRate || 0),
-    maxDrawdownUsdc: Number(performance.maxDrawdownUsdc || 0),
-    openConflictingMarkets: Number(performance.openConflictingMarkets || 0),
-    remainingPositionSlots: Number(capacity.remainingPositionSlots || 0),
-    remainingCapitalBudgetUsdc: Number(capacity.remainingCapitalBudgetUsdc || 0),
-    tradedVolumeUsdc: Number(pnlSummary.tradedVolumeUsdc || 0),
-    positions,
-    nextSettlements,
-    recentOrders: orders,
-    conflicts,
-    timeline,
+    code: baseDetail?.summary?.code || "POLYMARKET_COPY",
+    name: baseDetail?.summary?.name || "Polymarket 跟单策略",
+    description: baseDetail?.summary?.description || "基于 smart wallet 的 Polymarket 模拟跟单与风控策略。",
+    totalOrders: Number(baseDetail?.metrics?.totalOrders || 0),
+    openPositions: Number(baseDetail?.metrics?.openPositions || 0),
+    closedPositions: Number(baseDetail?.metrics?.closedPositions || 0),
+    netPnlUsdc: Number(baseDetail?.metrics?.netPnlUsdc || 0),
+    compositePnlUsdc: Number((baseDetail?.metrics?.compositePnlUsdc ?? baseDetail?.metrics?.netPnlUsdc) || 0),
+    realizedPnlUsdc: Number(baseDetail?.metrics?.realizedPnlUsdc || 0),
+    unrealizedPnlUsdc: Number(baseDetail?.metrics?.unrealizedPnlUsdc || 0),
+    pendingSettlementPnlUsdc: Number((baseDetail?.metrics?.pendingSettlementPnlUsdc ?? baseDetail?.metrics?.unrealizedPnlUsdc) || 0),
+    winRate: Number(baseDetail?.metrics?.winRate || 0),
+    maxDrawdownUsdc: Number(baseDetail?.metrics?.maxDrawdownUsdc || 0),
+    openConflictingMarkets: Number(baseDetail?.metrics?.openConflictingMarkets || 0),
+    remainingPositionSlots: Number(baseDetail?.metrics?.remainingPositionSlots || 0),
+    remainingCapitalBudgetUsdc: Number(baseDetail?.metrics?.remainingCapitalBudgetUsdc || 0),
+    availableCapitalUsdc: Number(baseDetail?.metrics?.availableCapitalUsdc || 0),
+    lockedClaimProceedsUsdc: Number(baseDetail?.metrics?.lockedClaimProceedsUsdc || 0),
+    tradedVolumeUsdc: Number(baseDetail?.metrics?.tradedVolumeUsdc || 0),
+    positions: baseDetail?.positions || [],
+    nextSettlements: baseDetail?.nextSettlements || [],
+    recentOrders: baseDetail?.recentOrders || [],
+    conflicts: baseDetail?.conflicts || [],
+    timeline: baseDetail?.timeline || [],
+    insights: baseDetail?.insights || [],
     walletAttribution,
     marketAttribution,
     dailyReports,
@@ -165,11 +200,41 @@ async function loadPolymarketDashboardDetail(options = {}) {
 }
 
 async function loadStrategyDashboardDetail(code, options = {}) {
-  const strategy = strategyCatalog.find(item => item.code === code) || strategyCatalog[0];
-  if (strategy.placeholder) {
-    return dashboardPlaceholderDetail(strategy);
+  if (code === "POLYMARKET_COPY") {
+    return loadPolymarketDashboardDetail(options);
   }
-  return loadPolymarketDashboardDetail(options);
+  const detail = await dashboardGetJson(`/strategy-platform/strategy/${code}`);
+  return {
+    code: detail?.summary?.code || code,
+    name: detail?.summary?.name || code,
+    description: detail?.summary?.description || "",
+    totalOrders: Number(detail?.metrics?.totalOrders || 0),
+    openPositions: Number(detail?.metrics?.openPositions || 0),
+    closedPositions: Number(detail?.metrics?.closedPositions || 0),
+    netPnlUsdc: Number(detail?.metrics?.netPnlUsdc || 0),
+    compositePnlUsdc: Number((detail?.metrics?.compositePnlUsdc ?? detail?.metrics?.netPnlUsdc) || 0),
+    realizedPnlUsdc: Number(detail?.metrics?.realizedPnlUsdc || 0),
+    unrealizedPnlUsdc: Number(detail?.metrics?.unrealizedPnlUsdc || 0),
+    pendingSettlementPnlUsdc: Number((detail?.metrics?.pendingSettlementPnlUsdc ?? detail?.metrics?.unrealizedPnlUsdc) || 0),
+    winRate: Number(detail?.metrics?.winRate || 0),
+    maxDrawdownUsdc: Number(detail?.metrics?.maxDrawdownUsdc || 0),
+    openConflictingMarkets: Number(detail?.metrics?.openConflictingMarkets || 0),
+    remainingPositionSlots: Number(detail?.metrics?.remainingPositionSlots || 0),
+    remainingCapitalBudgetUsdc: Number(detail?.metrics?.remainingCapitalBudgetUsdc || 0),
+    availableCapitalUsdc: Number(detail?.metrics?.availableCapitalUsdc || 0),
+    lockedClaimProceedsUsdc: Number(detail?.metrics?.lockedClaimProceedsUsdc || 0),
+    positions: detail?.positions || [],
+    nextSettlements: detail?.nextSettlements || [],
+    recentOrders: detail?.recentOrders || [],
+    conflicts: detail?.conflicts || [],
+    timeline: detail?.timeline || [],
+    insights: detail?.insights || [],
+    walletAttribution: [],
+    marketAttribution: [],
+    dailyReports: [],
+    blockerStats: [],
+    selectedDays: options.days || 30
+  };
 }
 
 function renderDashboardNav(selectedCode) {
@@ -328,7 +393,7 @@ function attachGlobalFilters(containerId, currentPage) {
 
 function calculateHealthScore(detail) {
   const winRateScore = dashboardClamp(Number(detail.winRate || 0) * 100, 0, 100);
-  const pnlScore = detail.netPnlUsdc > 0 ? 20 : detail.netPnlUsdc < 0 ? -20 : 0;
+  const pnlScore = detail.realizedPnlUsdc > 0 ? 20 : detail.realizedPnlUsdc < 0 ? -20 : 0;
   const drawdownPenalty = dashboardClamp(Number(detail.maxDrawdownUsdc || 0) / 10, 0, 35);
   const conflictPenalty = Math.min(Number(detail.openConflictingMarkets || 0) * 6, 25);
   const capacityPenalty = Number(detail.remainingCapitalBudgetUsdc || 0) < 100 ? 10 : 0;
@@ -345,10 +410,10 @@ function calculateHealthScore(detail) {
         detail: `按已结算仓位胜率折算，当前为 ${dashboardFormatPercent(detail.winRate || 0)}。`
       },
       {
-        label: "净收益贡献",
+        label: "已结算收益贡献",
         value: pnlScore,
         kind: pnlScore >= 0 ? "positive" : "negative",
-        detail: `当前净收益为 ${dashboardFormatMoney(detail.netPnlUsdc || 0)}。`
+        detail: `当前已实现收益为 ${dashboardFormatMoney(detail.realizedPnlUsdc || 0)}，待结算收益为 ${dashboardFormatMoney(detail.pendingSettlementPnlUsdc || 0)}。`
       },
       {
         label: "回撤扣分",

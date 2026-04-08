@@ -19,6 +19,8 @@ public class SmartWalletPerformanceView {
     private BigDecimal feeUsdc;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
+    private BigDecimal pendingSettlementPnlUsdc;
+    private BigDecimal compositePnlUsdc;
     private BigDecimal netPnlUsdc;
     private BigDecimal averageWinUsdc;
     private BigDecimal averageLossUsdc;

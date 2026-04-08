@@ -90,6 +90,7 @@
                     <th>方向</th>
                     <th>金额</th>
                     <th>状态</th>
+                    <th>预计结算</th>
                     <th>下单时间</th>
                 </tr>
                 </thead>
@@ -124,13 +125,16 @@
       document.getElementById("detailWindowSwitcher").innerHTML = buildWindowSwitcher(detail.selectedDays || days, code);
 
       const metrics = [
-        ["净收益", dashboardFormatMoney(detail.netPnlUsdc), "综合已实现与未实现盈亏"],
+        ["综合收益", dashboardFormatMoney(detail.compositePnlUsdc ?? detail.netPnlUsdc), "已结算净收益 + 待结算收益"],
+        ["已结算净收益", dashboardFormatMoney(detail.netPnlUsdc), "已实现收益 - 手续费，不含待结算部分"],
         ["已实现收益", dashboardFormatMoney(detail.realizedPnlUsdc), "已结算收益"],
-        ["未实现收益", dashboardFormatMoney(detail.unrealizedPnlUsdc), "当前浮盈亏"],
+        ["待结算收益", dashboardFormatMoney(detail.pendingSettlementPnlUsdc ?? detail.unrealizedPnlUsdc), "尚未完成个人结算的中间态收益"],
         ["胜率", dashboardFormatPercent(detail.winRate), "基于已关闭仓位"],
         ["Open 仓位", String(detail.openPositions || 0), "当前未结算仓位"],
         ["Closed 仓位", String(detail.closedPositions || 0), "已关闭/已结算仓位"],
         ["回撤", dashboardFormatMoney(detail.maxDrawdownUsdc), "最大回撤"],
+        ["可用资金", dashboardFormatMoney(detail.availableCapitalUsdc || 0), "当前还可继续投入的资金"],
+        ["待领取锁定", dashboardFormatMoney(detail.lockedClaimProceedsUsdc || 0), "真实单已结算但尚未 claim 的锁定金额"],
         ["剩余资金预算", dashboardFormatMoney(detail.remainingCapitalBudgetUsdc), "剩余可用策略预算"]
       ];
 
@@ -146,9 +150,9 @@
         <tr>
           <td>${row.question}</td>
           <td><span class="badge">${row.outcome}</span></td>
-          <td>${row.status}</td>
+          <td>${dashboardPositionStatusText(row.status)}</td>
           <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
-          <td class="${dashboardAmountClass(row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.unrealizedPnlUsdc)}</td>
+          <td class="${dashboardAmountClass(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
           <td>${row.marketEndAtBjt || "-"}</td>
         </tr>
       `, "当前没有 open positions。", 6);
@@ -158,7 +162,7 @@
           <td>${row.question}</td>
           <td><span class="badge">${row.outcome}</span></td>
           <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
-          <td class="${dashboardAmountClass(row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.unrealizedPnlUsdc)}</td>
+          <td class="${dashboardAmountClass(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
           <td>${row.marketEndAtBjt || "-"}</td>
         </tr>
       `, "当前没有待结算仓位。", 5);
@@ -171,9 +175,10 @@
           <td>${row.side}</td>
           <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
           <td>${row.status}</td>
+          <td>${dashboardOrderSettlementText(row)}</td>
           <td>${row.placedAt || "-"}</td>
         </tr>
-      `, "当前没有订单记录。", 7);
+      `, "当前没有订单记录。", 8);
     } catch (error) {
       document.body.innerHTML = `<div class="page"><section class="panel"><h1>页面加载失败</h1><p>${error.message}</p></section></div>`;
     }

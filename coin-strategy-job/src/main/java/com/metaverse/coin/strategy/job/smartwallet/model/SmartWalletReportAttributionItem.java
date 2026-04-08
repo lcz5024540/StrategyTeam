@@ -13,6 +13,7 @@ public class SmartWalletReportAttributionItem {
     private Integer orderCount;
     private BigDecimal tradedVolumeUsdc;
     private BigDecimal realizedPnlUsdc;
+    private BigDecimal pendingSettlementPnlUsdc;
     private BigDecimal feeUsdc;
     private BigDecimal netPnlUsdc;
 }

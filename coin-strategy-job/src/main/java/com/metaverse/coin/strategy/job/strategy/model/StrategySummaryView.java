@@ -9,9 +9,11 @@ public record StrategySummaryView(
         String status,
         String description,
         Integer openPositions,
+        BigDecimal compositePnlUsdc,
         BigDecimal netPnlUsdc,
         BigDecimal realizedPnlUsdc,
         BigDecimal unrealizedPnlUsdc,
+        BigDecimal pendingSettlementPnlUsdc,
         BigDecimal winRate,
         Integer totalOrders
 ) {

@@ -13,6 +13,7 @@ public record StrategyPositionRowView(
         BigDecimal costBasisUsdc,
         BigDecimal realizedPnlUsdc,
         BigDecimal unrealizedPnlUsdc,
+        BigDecimal pendingSettlementPnlUsdc,
         String marketEndAtBjt
 ) {
 }

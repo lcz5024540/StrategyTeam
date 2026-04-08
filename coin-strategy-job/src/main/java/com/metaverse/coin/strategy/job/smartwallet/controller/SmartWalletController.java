@@ -33,6 +33,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletBlockerStatView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletConflictMarketView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
@@ -491,6 +492,13 @@ public class SmartWalletController {
     public SettlementSyncSummary processSettlementRetries(@RequestParam(required = false) Integer limit,
                                                           @RequestParam(defaultValue = "false") boolean refreshCache) {
         return settlementSyncService.processRetriesNow(limit, refreshCache);
+    }
+
+    @Operation(summary = "确认领取结算收益", description = "将 RESOLVED_UNCLAIMED 仓位推进到 CLAIMED。LIVE 仓位需要先完成链上领取，再传 confirmExternalClaim=true。")
+    @PostMapping("/positions/{positionId}/claim")
+    public SmartWalletClaimResultView claimPosition(@PathVariable Long positionId,
+                                                    @RequestParam(defaultValue = "false") boolean confirmExternalClaim) {
+        return accountingService.claimResolvedPosition(positionId, confirmExternalClaim);
     }
 
     @Operation(summary = "钱包归因报表", description = "按 smart wallet 来源查看收益归因报表。")

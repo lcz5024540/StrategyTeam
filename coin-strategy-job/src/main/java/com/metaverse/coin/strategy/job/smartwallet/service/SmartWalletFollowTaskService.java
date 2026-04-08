@@ -397,6 +397,29 @@ public class SmartWalletFollowTaskService {
 
     private SmartWalletExecutionResult executeTask(SmartWalletFollowTaskEntity task) {
         try {
+            SignalRiskDecision decision = evaluateTask(task.getId());
+            if (!decision.isAccepted()) {
+                task.setStatus("SKIPPED");
+                task.setErrorMessage(String.join(" | ", decision.getReasons()));
+                task.setUpdatedAt(new Date());
+                followTaskMapper.updateById(task);
+                return SmartWalletExecutionResult.builder()
+                        .signalId(String.valueOf(task.getId()))
+                        .mode("LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER)
+                        .success(false)
+                        .message(task.getErrorMessage())
+                        .marketId(task.getMarketId())
+                        .outcome(task.getOutcome())
+                        .side(task.getSide())
+                        .status("SKIPPED")
+                        .price(task.getTriggerPrice())
+                        .notionalUsdc(task.getRecommendedStakeUsdc())
+                        .feeUsdc(BigDecimal.ZERO)
+                        .build();
+            }
+            if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
+                task.setRecommendedStakeUsdc(decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP));
+            }
             SmartWalletSignal signal = SmartWalletSignal.builder()
                     .signalId(String.valueOf(task.getId()))
                     .market(PredictionMarketOpportunity.builder()
