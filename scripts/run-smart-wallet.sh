@@ -15,16 +15,15 @@ source ~/.zshrc
 echo "[run-smart-wallet] building coin-strategy-job..."
 mvn -pl coin-strategy-job -am package -DskipTests
 
-CP="coin-strategy-job/target/classes:coin-strategy-core/target/classes:coin-strategy-common/common-api/target/classes:coin-strategy-common/common-dao/target/classes:coin-strategy-common/common-client/target/classes:coin-strategy-common/common-base/target/classes:coin-strategy-common/common-model/target/classes:$(find "$ROOT_DIR/.m2/repository" -name '*.jar' \
-  ! -path '*/org/springframework/boot/*/3.*/*.jar' \
-  ! -path '*/org/apache/tomcat/embed/*/10.*/*.jar' \
-  ! -path '*/org/springframework/spring-*/6.*/*.jar' \
-  ! -path '*/jakarta/servlet/*/*.jar' \
-  ! -name '*undertow*' \
-  ! -name 'spring-boot-starter-undertow-*.jar' | paste -sd ':' -)"
+APP_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+
+if [ -z "$APP_JAR" ]; then
+  echo "[run-smart-wallet] packaged application jar was not produced." >&2
+  exit 1
+fi
 
 echo "[run-smart-wallet] starting application..."
-java -cp "$CP" com.metaverse.coin.strategy.job.CoinStrategyJobApplication &
+java -jar "$APP_JAR" &
 APP_PID=$!
 
 cleanup() {

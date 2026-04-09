@@ -37,3 +37,6 @@ binance-test.properties
 
 ### Local Secrets ###
 scripts/polymarket-env.sh
+
+### Local Maven Cache ###
+.m2/
