@@ -23,7 +23,7 @@ public class PolymarketProductOverviewService {
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
-    private final PolymarketPortfolioAnalyticsService portfolioAnalyticsService;
+    private final SmartWalletAccountingService accountingService;
 
     public PolymarketProductOverview overview() {
         Map<String, Long> taskStatusCounts = new LinkedHashMap<>();
@@ -34,7 +34,7 @@ public class PolymarketProductOverviewService {
         }
 
         long tradeEvents = tradeEventMapper.selectCount(new LambdaQueryWrapper<SmartWalletTradeEventEntity>());
-        var portfolio = portfolioAnalyticsService.summary();
+        var capacity = accountingService.capacitySummary();
         return PolymarketProductOverview.builder()
                 .mode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
                 .discoveryEnabled(monitorService.isDiscoveryEnabled())
@@ -43,8 +43,8 @@ public class PolymarketProductOverviewService {
                 .profiles(monitorService.listProfiles().size())
                 .watchlist(monitorService.listWatchlist().size())
                 .tradeEvents(tradeEvents)
-                .totalDeployedUsdc(portfolio.getTotalDeployedUsdc())
-                .activePositions(portfolio.getActivePositions())
+                .totalDeployedUsdc(capacity.getTotalOpenCostUsdc())
+                .activePositions(capacity.getOpenPositionCount())
                 .taskStatusCounts(taskStatusCounts)
                 .executionWallet(executionWalletContextLoader.getStatus())
                 .notes(List.of(

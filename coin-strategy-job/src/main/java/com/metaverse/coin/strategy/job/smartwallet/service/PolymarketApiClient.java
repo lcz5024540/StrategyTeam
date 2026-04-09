@@ -114,6 +114,42 @@ public class PolymarketApiClient {
         return result;
     }
 
+    public BigDecimal fetchBalance(String walletAddress) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return BigDecimal.ZERO;
+        }
+        JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
+                "/balance", Map.of("user", walletAddress)));
+        if (body != null && body.has("balance")) {
+            try {
+                return new BigDecimal(body.get("balance").asText());
+            } catch (NumberFormatException e) {
+                return BigDecimal.ZERO;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    public List<JsonNode> fetchPositions(String walletAddress, String conditionId) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return List.of();
+        }
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("user", walletAddress);
+        if (StringUtils.hasText(conditionId)) {
+            params.put("market", conditionId);
+        }
+        params.put("sizeThreshold", "0.01");
+
+        JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
+                "/positions", params));
+        List<JsonNode> result = new ArrayList<>();
+        for (JsonNode node : iterableArray(extractArray(body))) {
+            result.add(node);
+        }
+        return result;
+    }
+
     public List<UserTrade> fetchUserTrades(String walletAddress) {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("user", walletAddress);

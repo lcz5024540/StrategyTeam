@@ -20,9 +20,6 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRe
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketProductOverview;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioAttributionItem;
-import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioPositionView;
-import com.metaverse.coin.strategy.job.smartwallet.model.PortfolioSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
@@ -62,7 +59,6 @@ import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
-import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketPortfolioAnalyticsService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOpportunityService;
@@ -104,7 +100,6 @@ public class SmartWalletController {
     private final PolymarketSmartWalletMonitorService polymarketMonitorService;
     private final PolymarketConsensusSignalService consensusSignalService;
     private final PolymarketClobExecutionService clobExecutionService;
-    private final PolymarketPortfolioAnalyticsService portfolioAnalyticsService;
     private final PolymarketProductOverviewService productOverviewService;
     private final PolymarketWalletDiscoveryService polymarketWalletDiscoveryService;
     private final SmartWalletSelectionService selectionService;
@@ -137,37 +132,6 @@ public class SmartWalletController {
     @GetMapping("/overview")
     public PolymarketProductOverview overview() {
         return productOverviewService.overview();
-    }
-
-    @Operation(summary = "组合摘要", description = "按时间窗口汇总当前组合暴露、任务数量与资金使用情况。")
-    @GetMapping("/portfolio/summary")
-    public PortfolioSummaryView portfolioSummary(@RequestParam(required = false) Integer windowSeconds,
-                                                 @RequestParam(defaultValue = "5000") Integer limit) {
-        return portfolioAnalyticsService.summary(windowSeconds, limit);
-    }
-
-    @Operation(summary = "组合持仓视图", description = "按 marketId、outcome、side 聚合组合持仓，适合看当前暴露。")
-    @GetMapping("/portfolio/positions")
-    public List<PortfolioPositionView> portfolioPositions(@RequestParam(required = false) Integer windowSeconds,
-                                                          @RequestParam(defaultValue = "2000") Integer limit,
-                                                          @RequestParam(defaultValue = "0") Integer offset) {
-        return portfolioAnalyticsService.listPositions(windowSeconds, limit, offset);
-    }
-
-    @Operation(summary = "钱包归因分析", description = "按 smart wallet 来源聚合任务与收益，查看跟哪个钱包最赚钱或最亏。")
-    @GetMapping("/portfolio/attribution/wallets")
-    public List<PortfolioAttributionItem> portfolioWalletAttribution(@RequestParam(required = false) Integer windowSeconds,
-                                                                     @RequestParam(defaultValue = "5000") Integer taskLimit,
-                                                                     @RequestParam(defaultValue = "20") Integer limit) {
-        return portfolioAnalyticsService.walletAttribution(windowSeconds, taskLimit, limit);
-    }
-
-    @Operation(summary = "市场归因分析", description = "按市场维度聚合任务与收益，查看哪些市场类型表现最好或最差。")
-    @GetMapping("/portfolio/attribution/markets")
-    public List<PortfolioAttributionItem> portfolioMarketAttribution(@RequestParam(required = false) Integer windowSeconds,
-                                                                     @RequestParam(defaultValue = "5000") Integer taskLimit,
-                                                                     @RequestParam(defaultValue = "20") Integer limit) {
-        return portfolioAnalyticsService.marketAttribution(windowSeconds, taskLimit, limit);
     }
 
     @Operation(summary = "钱包画像列表", description = "查看已入库的 smart wallet Polymarket 画像信息。")
@@ -560,13 +524,13 @@ public class SmartWalletController {
         return claimService.claimPosition(positionId, confirmExternalClaim);
     }
 
-    @Operation(summary = "钱包归因报表", description = "按 smart wallet 来源查看收益归因报表。")
+    @Operation(summary = "钱包归因报表", description = "按执行钱包 executionAddress 查看收益归因报表。")
     @GetMapping("/reports/wallets")
     public List<SmartWalletReportAttributionItem> walletReports(@RequestParam(defaultValue = "20") Integer limit) {
         return accountingService.walletAttribution(limit);
     }
 
-    @Operation(summary = "市场归因报表", description = "按市场维度查看收益归因报表。")
+    @Operation(summary = "市场归因报表", description = "按市场维度汇总成交量、账本收益与当前未落袋暴露。")
     @GetMapping("/reports/markets")
     public List<SmartWalletReportAttributionItem> marketReports(@RequestParam(defaultValue = "20") Integer limit) {
         return accountingService.marketAttribution(limit);

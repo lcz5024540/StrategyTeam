@@ -37,6 +37,8 @@ public class SmartWalletOrderEntity {
     private String errorMessage;
     private Date placedAt;
     private Date filledAt;
+    private Date nextPollAt;
+    private Integer pollAttempts;
     private Date createdAt;
     private Date updatedAt;
 }

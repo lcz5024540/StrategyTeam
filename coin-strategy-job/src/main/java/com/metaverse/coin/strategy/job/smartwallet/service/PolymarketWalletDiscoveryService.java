@@ -168,7 +168,7 @@ public class PolymarketWalletDiscoveryService {
         }
     }
 
-    @Scheduled(fixedDelayString = "${smart-wallet.polymarket.event-sync-fixed-delay-ms:15000}")
+    @Scheduled(fixedDelayString = "${smart-wallet.polymarket.event-sync-fixed-delay-ms:30000}")
     public void scheduledSyncWatchlistTrades() {
         if (!monitorService.isEventSyncEnabled()) {
             return;

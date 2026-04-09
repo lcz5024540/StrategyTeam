@@ -153,11 +153,14 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_order` (
     `error_message` VARCHAR(512) DEFAULT NULL COMMENT '错误信息',
     `placed_at` TIMESTAMP NOT NULL COMMENT '下单时间',
     `filled_at` TIMESTAMP NULL COMMENT '成交时间',
+    `next_poll_at` TIMESTAMP NULL COMMENT '下一次轮询时间',
+    `poll_attempts` INT NOT NULL DEFAULT 0 COMMENT '轮询次数',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY `uk_order_external` (`external_order_id`),
     INDEX `idx_order_follow_task` (`follow_task_id`),
-    INDEX `idx_order_market_status` (`market_id`, `status`)
+    INDEX `idx_order_market_status` (`market_id`, `status`),
+    INDEX `idx_order_poll` (`status`, `next_poll_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket跟单订单表';
 
 -- 8. Polymarket 成交明细表

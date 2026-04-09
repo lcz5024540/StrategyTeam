@@ -29,7 +29,7 @@ class SmartWalletConflictMarketAccumulator {
         this.question = question;
     }
 
-    void add(SmartWalletPositionEntity position) {
+    void add(SmartWalletPositionEntity position, BigDecimal realizedPnl) {
         positionCount++;
         if (position.getOutcome() != null && !position.getOutcome().isBlank()) {
             outcomes.add(position.getOutcome());
@@ -37,7 +37,7 @@ class SmartWalletConflictMarketAccumulator {
         if ("OPEN".equalsIgnoreCase(position.getStatus()) || "PARTIALLY_CLOSED".equalsIgnoreCase(position.getStatus())) {
             openPositionCount++;
         }
-        realizedPnlUsdc = realizedPnlUsdc.add(safe(position.getRealizedPnlUsdc()));
+        realizedPnlUsdc = realizedPnlUsdc.add(safe(realizedPnl));
         unrealizedPnlUsdc = unrealizedPnlUsdc.add(safe(position.getUnrealizedPnlUsdc()));
         if (position.getClosedAt() != null && (latestClosedAt == null || position.getClosedAt().after(latestClosedAt))) {
             latestClosedAt = position.getClosedAt();

@@ -140,9 +140,8 @@ def handle_place_order(payload):
             token_id=token_id,
             amount=amount,
             side=side,
-            order_type=order_type,
         )
-        signed = client.create_market_order(args)
+        response = client.create_and_post_market_order(args)
     else:
         price = float(payload.get("price") or 0)
         size = float(payload.get("size") or 0)
@@ -153,10 +152,9 @@ def handle_place_order(payload):
             price=price,
             size=size,
             side=side,
+            order_type=order_type,
         )
-        signed = client.create_order(args)
-
-    response = client.post_order(signed, order_type)
+        response = client.create_and_post_order(args)
     order_id = None
     if isinstance(response, dict):
         order_id = response.get("orderID") or response.get("orderId") or response.get("id")

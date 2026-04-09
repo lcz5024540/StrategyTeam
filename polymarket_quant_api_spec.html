@@ -1,0 +1,159 @@
+<div style="padding:1rem 0">
+
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+  <button onclick="showAll()" style="font-size:12px;padding:4px 12px" id="btn-all">全部</button>
+  <button onclick="filter('data')" style="font-size:12px;padding:4px 12px" id="btn-data">数据层</button>
+  <button onclick="filter('strategy')" style="font-size:12px;padding:4px 12px" id="btn-strategy">策略层</button>
+  <button onclick="filter('exec')" style="font-size:12px;padding:4px 12px" id="btn-exec">执行层</button>
+  <button onclick="filter('monitor')" style="font-size:12px;padding:4px 12px" id="btn-monitor">监控层</button>
+</div>
+
+<div id="api-list"></div>
+
+<script>
+var specs = [
+  {
+    layer: "data", layerLabel: "数据层", step: "步骤 1 — 市场扫描",
+    method: "GET", path: "/markets",
+    host: "gamma-api.polymarket.com",
+    params: "active=true&limit=100&order=volume24hr:desc",
+    keyFields: ["conditionId","question","outcomePrices","volume24hr","liquidity","endDate","resolved"],
+    usage: "每轮循环开始时拉取。过滤 resolved=false 且 endDate > now，按流动性排序，筛选值得交易的市场。"
+  },
+  {
+    layer: "data", layerLabel: "数据层", step: "步骤 2 — 订单簿快照",
+    method: "GET", path: "/book",
+    host: "clob.polymarket.com",
+    params: "tokenID={yes_token_id}",
+    keyFields: ["bids[]{price,size}","asks[]{price,size}","spread","midpoint"],
+    usage: "对目标市场拉取订单簿。计算 spread、mid price，评估流动性深度，作为定价模型输入。"
+  },
+  {
+    layer: "data", layerLabel: "数据层", step: "步骤 2b — 实时价格 (WebSocket)",
+    method: "WS", path: "ws.polymarket.com",
+    host: "Subscribe: {type:'market', assets_ids:[tokenID]}",
+    params: "",
+    keyFields: ["price","side","size","timestamp","type:price_change|book"],
+    usage: "长连接订阅，price_change 事件触发策略重算；book 事件更新本地订单簿缓存。优先用WS，REST作降级。"
+  },
+  {
+    layer: "data", layerLabel: "数据层", step: "步骤 3 — 持仓同步",
+    method: "GET", path: "/positions",
+    host: "data-api.polymarket.com",
+    params: "user={walletAddress}&market={conditionId}",
+    keyFields: ["asset","size","avgPrice","currentValue","unrealizedPnl","tokenId"],
+    usage: "每轮同步，更新本地仓位状态。用于风控判断当前敞口，也用于计算持仓成本基准。"
+  },
+  {
+    layer: "strategy", layerLabel: "策略层", step: "步骤 4a — 获取历史价格",
+    method: "GET", path: "/prices-history",
+    host: "clob.polymarket.com",
+    params: "tokenID={id}&interval=1h&fidelity=60",
+    keyFields: ["t (timestamp)","p (price)"],
+    usage: "拉取历史 OHLC 用于均值回归/趋势策略。interval 可选 1m/5m/1h/1d。启动时一次性拉取，运行中增量更新。"
+  },
+  {
+    layer: "strategy", layerLabel: "策略层", step: "步骤 4b — 全局价格快照",
+    method: "GET", path: "/prices",
+    host: "clob.polymarket.com",
+    params: "tokenIds={id1},{id2},...  (批量，逗号分隔)",
+    keyFields: ["tokenId","price"],
+    usage: "批量拉取多个 token 最新成交价，用于快速计算相关市场的价差套利信号。"
+  },
+  {
+    layer: "exec", layerLabel: "执行层", step: "步骤 6a — 单笔下单",
+    method: "POST", path: "/order",
+    host: "clob.polymarket.com",
+    params: "{tokenID, price, size, side:'BUY'|'SELL', type:'GTC'|'GTD'|'FOK'|'FAK', expiration?}",
+    keyFields: ["orderID","status","price","size","side","createdAt"],
+    usage: "需 EIP-712 签名。用 SDK createAndPostOrder()。FOK 适合对价吃单，GTC 挂单做 maker 享手续费返佣。"
+  },
+  {
+    layer: "exec", layerLabel: "执行层", step: "步骤 6b — 批量下单",
+    method: "POST", path: "/orders",
+    host: "clob.polymarket.com",
+    params: "[{order1}, {order2}, ...] 最多15笔",
+    keyFields: ["results[]{orderID,status,error}"],
+    usage: "做市商更新多档报价时使用。一次提交最多15笔，减少请求数量。结合 cancel_all 先撤再挂。"
+  },
+  {
+    layer: "exec", layerLabel: "执行层", step: "步骤 6c — 撤单",
+    method: "DELETE", path: "/order/{orderID}",
+    host: "clob.polymarket.com",
+    params: "orderID (路径参数)",
+    keyFields: ["status:'canceled'","canceledAt"],
+    usage: "价格偏离时撤单。也可 DELETE /orders 批量撤，或 DELETE /orders?market=conditionId 撤某市场全部订单。"
+  },
+  {
+    layer: "monitor", layerLabel: "监控层", step: "步骤 7a — 订单状态轮询",
+    method: "GET", path: "/order/{orderID}",
+    host: "clob.polymarket.com",
+    params: "orderID (路径参数)",
+    keyFields: ["status:'live'|'matched'|'partially_filled'|'canceled'|'expired'","sizeMatched","sizeFilled"],
+    usage: "下单后轮询直到 matched 或 canceled。建议指数退避，首次1s，后续2/4/8s。matched 后更新本地持仓。"
+  },
+  {
+    layer: "monitor", layerLabel: "监控层", step: "步骤 7b — 市场结算检测",
+    method: "GET", path: "/markets/{conditionId}",
+    host: "gamma-api.polymarket.com",
+    params: "conditionId (路径参数)",
+    keyFields: ["resolved (bool)","resolutionOutcome:'Yes'|'No'","resolutionTime"],
+    usage: "轮询持仓市场。resolved=true 且 resolutionOutcome 与持仓方向一致时触发 redeem 流程。"
+  },
+  {
+    layer: "monitor", layerLabel: "监控层", step: "步骤 7c — 兑换收益",
+    method: "POST", path: "/redeem (Relayer)",
+    host: "relayer.polymarket.com",
+    params: "{conditionId, amounts:[n]} 或直接调 CTF.redeemPositions()",
+    keyFields: ["txHash","status","amountRedeemed"],
+    usage: "市场结算后调用。走 Relayer 无需 POL gas。大批量时直接调 Polygon 链上 CTF 合约 redeemPositions()。"
+  },
+  {
+    layer: "monitor", layerLabel: "监控层", step: "步骤 7d — P&L 查询",
+    method: "GET", path: "/pnl",
+    host: "data-api.polymarket.com",
+    params: "user={walletAddress}&window=1d|7d|30d|all",
+    keyFields: ["realizedPnl","unrealizedPnl","totalVolume","winRate","roi"],
+    usage: "定期记录 P&L 快照用于策略评估。unrealizedPnl 需结合实时价格自行计算：(currentPrice - avgCost) × size。"
+  }
+];
+
+var colorMap = {data:"#534AB7", strategy:"#0F6E56", exec:"#085041", monitor:"#854F0B"};
+var bgMap = {data:"#EEEDFE", strategy:"#E1F5EE", exec:"#E1F5EE", monitor:"#FAEEDA"};
+var methodColor = {GET:"#185FA5", POST:"#3B6D11", DELETE:"#A32D2D", WS:"#854F0B"};
+var methodBg = {GET:"#E6F1FB", POST:"#EAF3DE", DELETE:"#FCEBEB", WS:"#FAEEDA"};
+
+function render(list) {
+  var html = list.map(function(s) {
+    var mc = methodColor[s.method]||"#444";
+    var mb = methodBg[s.method]||"#f0f0f0";
+    var lc = colorMap[s.layer]||"#444";
+    var lb = bgMap[s.layer]||"#f9f9f9";
+    return '<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);margin-bottom:12px;overflow:hidden">' +
+      '<div style="padding:10px 14px;background:'+lb+';display:flex;align-items:center;gap:10px;border-bottom:0.5px solid var(--color-border-tertiary)">' +
+        '<span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px;background:'+lb+';color:'+lc+';border:0.5px solid '+lc+'">' + s.layerLabel + '</span>' +
+        '<span style="font-size:13px;font-weight:500;color:'+lc+'">' + s.step + '</span>' +
+      '</div>' +
+      '<div style="padding:12px 14px">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">' +
+          '<span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px;background:'+mb+';color:'+mc+'">' + s.method + '</span>' +
+          '<code style="font-size:12px;color:var(--color-text-primary)">' + s.path + '</code>' +
+          '<span style="font-size:11px;color:var(--color-text-tertiary)">' + s.host + '</span>' +
+        '</div>' +
+        (s.params ? '<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--color-text-secondary)">参数：</span><code style="font-size:11px;color:var(--color-text-secondary)">' + s.params + '</code></div>' : '') +
+        '<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--color-text-secondary)">关键字段：</span>' +
+          s.keyFields.map(function(f){ return '<code style="font-size:11px;background:var(--color-background-secondary);padding:1px 5px;border-radius:3px;margin:2px;display:inline-block">' + f + '</code>'; }).join('') +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--color-text-secondary);line-height:1.6">' + s.usage + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  document.getElementById('api-list').innerHTML = html;
+}
+
+function showAll() { render(specs); }
+function filter(layer) { render(specs.filter(function(s){ return s.layer===layer; })); }
+
+render(specs);
+</script>
+</div>

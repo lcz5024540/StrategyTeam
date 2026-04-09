@@ -7215,3 +7215,146 @@ java.lang.IllegalStateException: Settlement sync is already running.
 2026-04-09 09:16:09.428[1775697369428] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=9, claimed=9, waitingConfirmation=0, failed=0
 2026-04-09 09:17:09.442[1775697429442] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=0, claimed=0, waitingConfirmation=0, failed=0
 2026-04-09 09:18:09.446[1775697489446] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=0, claimed=0, waitingConfirmation=0, failed=0
+2026-04-09 11:19:29.487[1775704769487] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.16 on ZBMac-HYHHD407Y7 with PID 37015 (/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/target/classes started by lichangzheng.ray in /Users/lichangzheng.ray/Ray/CoinStrategy)
+2026-04-09 11:19:29.488[1775704769488] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-09 11:19:30.050[1775704770050] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat initialized with port(s): 8081 (http)
+2026-04-09 11:19:30.054[1775704770054] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Initializing ProtocolHandler ["http-nio-8081"]
+2026-04-09 11:19:30.055[1775704770055] | INFO  | main       | o.a.catalina.core.StandardService    - Starting service [Tomcat]
+2026-04-09 11:19:30.055[1775704770055] | INFO  | main       | o.a.catalina.core.StandardEngine     - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-04-09 11:19:30.167[1775704770167] | INFO  | main       | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring embedded WebApplicationContext
+2026-04-09 11:19:30.167[1775704770167] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 656 ms
+2026-04-09 11:19:30.673[1775704770673] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-09 11:19:30.796[1775704770796] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-09 11:19:31.356[1775704771356] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Starting ProtocolHandler ["http-nio-8081"]
+2026-04-09 11:19:31.366[1775704771366] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat started on port(s): 8081 (http) with context path ''
+2026-04-09 11:19:31.373[1775704771373] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 2.193 seconds (JVM running for 2.464)
+2026-04-09 11:19:32.004[1775704772004] | INFO  | http-nio-8081-exec-1 | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-09 11:19:32.004[1775704772004] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-09 11:19:32.005[1775704772005] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-09 11:19:35.521[1775704775521] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/v1/leaderboard?category=OVERALL&timePeriod=ALL&sortBy=PNL&limit=50&offset=0 after 4104 ms: No route to host
+2026-04-09 11:19:39.553[1775704779553] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API curl fallback failed for https://data-api.polymarket.com/v1/leaderboard?category=OVERALL&timePeriod=ALL&sortBy=PNL&limit=50&offset=0 with exitCode=28 stderr=
+2026-04-09 11:19:39.556[1775704779556] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Failed to fetch Polymarket leaderboard
+java.lang.IllegalStateException: Failed to request Polymarket API: https://data-api.polymarket.com/v1/leaderboard?category=OVERALL&timePeriod=ALL&sortBy=PNL&limit=50&offset=0
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketApiClient.getJson(PolymarketApiClient.java:294)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketApiClient.fetchLeaderboard(PolymarketApiClient.java:66)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService.analyzeTopWallets(PolymarketWalletDiscoveryService.java:43)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService.scheduledDiscoverWallets(PolymarketWalletDiscoveryService.java:165)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.scheduling.support.ScheduledMethodRunnable.run(ScheduledMethodRunnable.java:84)
+	at org.springframework.scheduling.support.DelegatingErrorHandlingRunnable.run(DelegatingErrorHandlingRunnable.java:54)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.runAndReset(FutureTask.java:305)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:305)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+Caused by: java.net.NoRouteToHostException: No route to host
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:579)
+	at java.base/sun.nio.ch.Net.connect(Net.java:568)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:593)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:633)
+	at okhttp3.internal.platform.Platform.connectSocket(Platform.kt:128)
+	at okhttp3.internal.connection.RealConnection.connectSocket(RealConnection.kt:295)
+	at okhttp3.internal.connection.RealConnection.connect(RealConnection.kt:207)
+	at okhttp3.internal.connection.ExchangeFinder.findConnection(ExchangeFinder.kt:226)
+	at okhttp3.internal.connection.ExchangeFinder.findHealthyConnection(ExchangeFinder.kt:106)
+	at okhttp3.internal.connection.ExchangeFinder.find(ExchangeFinder.kt:74)
+	at okhttp3.internal.connection.RealCall.initExchange$okhttp(RealCall.kt:255)
+	at okhttp3.internal.connection.ConnectInterceptor.intercept(ConnectInterceptor.kt:32)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.cache.CacheInterceptor.intercept(CacheInterceptor.kt:95)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.http.BridgeInterceptor.intercept(BridgeInterceptor.kt:83)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.http.RetryAndFollowUpInterceptor.intercept(RetryAndFollowUpInterceptor.kt:76)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.connection.RealCall.getResponseWithInterceptorChain$okhttp(RealCall.kt:201)
+	at okhttp3.internal.connection.RealCall.execute(RealCall.kt:154)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketApiClient.getJson(PolymarketApiClient.java:282)
+	... 15 common frames omitted
+	Suppressed: java.net.SocketTimeoutException: Connect timed out
+		at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:551)
+		at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:602)
+		... 35 common frames omitted
+2026-04-09 11:19:39.586[1775704779586] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=0, markets=0, resolved=0, failed=0
+2026-04-09 11:19:39.594[1775704779594] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=0, claimed=0, waitingConfirmation=0, failed=0
+2026-04-09 11:20:39.613[1775704839613] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=0, claimed=0, waitingConfirmation=0, failed=0
+2026-04-09 11:21:39.628[1775704899628] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=0, claimed=0, waitingConfirmation=0, failed=0
+2026-04-09 11:22:39.647[1775704959647] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=0, claimed=0, waitingConfirmation=0, failed=0
+2026-04-09 11:23:15.903[1775704995903] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-09 11:23:15.909[1775704995909] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-09 11:26:34.336[1775705194336] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.16 on ZBMac-HYHHD407Y7 with PID 40385 (/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/target/classes started by lichangzheng.ray in /Users/lichangzheng.ray/Ray/CoinStrategy)
+2026-04-09 11:26:34.337[1775705194337] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-09 11:26:34.900[1775705194900] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat initialized with port(s): 8081 (http)
+2026-04-09 11:26:34.904[1775705194904] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Initializing ProtocolHandler ["http-nio-8081"]
+2026-04-09 11:26:34.905[1775705194905] | INFO  | main       | o.a.catalina.core.StandardService    - Starting service [Tomcat]
+2026-04-09 11:26:34.905[1775705194905] | INFO  | main       | o.a.catalina.core.StandardEngine     - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-04-09 11:26:34.991[1775705194991] | INFO  | main       | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring embedded WebApplicationContext
+2026-04-09 11:26:34.991[1775705194991] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 630 ms
+2026-04-09 11:26:35.401[1775705195401] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-09 11:26:35.509[1775705195509] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-09 11:26:35.813[1775705195813] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Starting ProtocolHandler ["http-nio-8081"]
+2026-04-09 11:26:35.823[1775705195823] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat started on port(s): 8081 (http) with context path ''
+2026-04-09 11:26:35.828[1775705195828] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 1.799 seconds (JVM running for 2.09)
+2026-04-09 11:26:36.801[1775705196801] | INFO  | http-nio-8081-exec-1 | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-09 11:26:36.801[1775705196801] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-09 11:26:36.801[1775705196801] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 0 ms
+2026-04-09 11:26:40.001[1775705200001] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/v1/leaderboard?category=OVERALL&timePeriod=ALL&sortBy=PNL&limit=50&offset=0 after 4138 ms: No route to host
+2026-04-09 11:26:44.029[1775705204029] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API curl fallback failed for https://data-api.polymarket.com/v1/leaderboard?category=OVERALL&timePeriod=ALL&sortBy=PNL&limit=50&offset=0 with exitCode=28 stderr=
+2026-04-09 11:26:44.033[1775705204033] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Failed to fetch Polymarket leaderboard
+java.lang.IllegalStateException: Failed to request Polymarket API: https://data-api.polymarket.com/v1/leaderboard?category=OVERALL&timePeriod=ALL&sortBy=PNL&limit=50&offset=0
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketApiClient.getJson(PolymarketApiClient.java:294)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketApiClient.fetchLeaderboard(PolymarketApiClient.java:66)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService.analyzeTopWallets(PolymarketWalletDiscoveryService.java:43)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService.scheduledDiscoverWallets(PolymarketWalletDiscoveryService.java:165)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.scheduling.support.ScheduledMethodRunnable.run(ScheduledMethodRunnable.java:84)
+	at org.springframework.scheduling.support.DelegatingErrorHandlingRunnable.run(DelegatingErrorHandlingRunnable.java:54)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.runAndReset(FutureTask.java:305)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:305)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+Caused by: java.net.NoRouteToHostException: No route to host
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:579)
+	at java.base/sun.nio.ch.Net.connect(Net.java:568)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:593)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:633)
+	at okhttp3.internal.platform.Platform.connectSocket(Platform.kt:128)
+	at okhttp3.internal.connection.RealConnection.connectSocket(RealConnection.kt:295)
+	at okhttp3.internal.connection.RealConnection.connect(RealConnection.kt:207)
+	at okhttp3.internal.connection.ExchangeFinder.findConnection(ExchangeFinder.kt:226)
+	at okhttp3.internal.connection.ExchangeFinder.findHealthyConnection(ExchangeFinder.kt:106)
+	at okhttp3.internal.connection.ExchangeFinder.find(ExchangeFinder.kt:74)
+	at okhttp3.internal.connection.RealCall.initExchange$okhttp(RealCall.kt:255)
+	at okhttp3.internal.connection.ConnectInterceptor.intercept(ConnectInterceptor.kt:32)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.cache.CacheInterceptor.intercept(CacheInterceptor.kt:95)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.http.BridgeInterceptor.intercept(BridgeInterceptor.kt:83)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.http.RetryAndFollowUpInterceptor.intercept(RetryAndFollowUpInterceptor.kt:76)
+	at okhttp3.internal.http.RealInterceptorChain.proceed(RealInterceptorChain.kt:109)
+	at okhttp3.internal.connection.RealCall.getResponseWithInterceptorChain$okhttp(RealCall.kt:201)
+	at okhttp3.internal.connection.RealCall.execute(RealCall.kt:154)
+	at com.metaverse.coin.strategy.job.smartwallet.service.PolymarketApiClient.getJson(PolymarketApiClient.java:282)
+	... 15 common frames omitted
+	Suppressed: java.net.SocketTimeoutException: Connect timed out
+		at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:551)
+		at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:602)
+		... 35 common frames omitted
+2026-04-09 11:26:44.061[1775705204061] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=0, markets=0, resolved=0, failed=0
+2026-04-09 11:26:44.070[1775705204070] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletClaimService - Scheduled claim processing finished: scanned=0, claimed=0, waitingConfirmation=0, failed=0
+2026-04-09 11:27:25.096[1775705245096] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-09 11:27:25.099[1775705245099] | INFO  | SpringApplicationShutdownHook | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
