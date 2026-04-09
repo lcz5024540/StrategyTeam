@@ -146,7 +146,7 @@
     }
     tbody.innerHTML = rows.map((row) => `
       <tr>
-        <td>${row.question}</td>
+        <td>${dashboardTitleCell(row.question, 40)}</td>
         <td>${(row.outcomes || []).join(" / ")}</td>
         <td>${row.openPositionCount}</td>
         <td class="${dashboardAmountClass(row.netPnlUsdc)}">${dashboardFormatMoney(row.netPnlUsdc)}</td>

@@ -22,6 +22,7 @@ public class SmartWalletFollowTaskEntity {
     private String marketId;
     private String question;
     private String outcome;
+    private Long marketEndAt;
     private String side;
     private BigDecimal triggerPrice;
     private BigDecimal triggerSizeUsdc;

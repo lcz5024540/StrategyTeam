@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_follow_task` (
     `market_id` VARCHAR(128) NOT NULL COMMENT '市场ID',
     `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
     `outcome` VARCHAR(128) NOT NULL COMMENT 'Polymarket outcome label',
+    `market_end_at` BIGINT DEFAULT NULL COMMENT '市场预计结算时间戳(毫秒)',
     `side` VARCHAR(16) NOT NULL COMMENT 'BUY/SELL',
     `trigger_price` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '触发价格',
     `trigger_size_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '触发钱包仓位',
@@ -141,6 +142,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_order` (
     `token_id` VARCHAR(128) DEFAULT NULL COMMENT 'CLOB outcome token id',
     `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
     `outcome` VARCHAR(128) NOT NULL COMMENT 'Polymarket outcome label',
+    `market_end_at` BIGINT DEFAULT NULL COMMENT '市场预计结算时间戳(毫秒)',
     `side` VARCHAR(16) NOT NULL COMMENT 'BUY/SELL',
     `order_type` VARCHAR(16) NOT NULL DEFAULT 'GTC' COMMENT '订单类型',
     `status` VARCHAR(32) NOT NULL DEFAULT 'SUBMITTED' COMMENT 'SUBMITTED/FILLED/CANCELED/FAILED',
@@ -188,6 +190,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_position` (
     `token_id` VARCHAR(128) DEFAULT NULL COMMENT 'CLOB outcome token id',
     `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
     `outcome` VARCHAR(128) NOT NULL COMMENT 'Polymarket outcome label',
+    `market_end_at` BIGINT DEFAULT NULL COMMENT '市场预计结算时间戳(毫秒)',
     `net_side` VARCHAR(16) NOT NULL DEFAULT 'BUY' COMMENT '净方向',
     `quantity` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '净份额数量',
     `average_entry_price` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '平均开仓成本',
@@ -198,7 +201,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_position` (
     `opened_at` TIMESTAMP NULL COMMENT '首次开仓时间',
     `last_filled_at` TIMESTAMP NULL COMMENT '最近成交时间',
     `closed_at` TIMESTAMP NULL COMMENT '平仓时间',
-    `status` VARCHAR(16) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/CLOSED',
+    `status` VARCHAR(32) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/PARTIALLY_CLOSED/CLOSED/RESOLVED_UNCLAIMED/CLAIMED',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY `uk_position_execution_market_outcome` (`execution_address`, `market_id`, `outcome`),
@@ -258,7 +261,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_settlement_run` (
     `skipped_future_markets` INT NOT NULL DEFAULT 0 COMMENT '跳过的未来市场数',
     `failed_markets` INT NOT NULL DEFAULT 0 COMMENT '失败市场数',
     `notes` TEXT DEFAULT NULL COMMENT '运行备注',
-    `error_message` VARCHAR(512) DEFAULT NULL COMMENT '整体错误',
+    `error_message` VARCHAR(2048) DEFAULT NULL COMMENT '整体错误',
     `started_at` TIMESTAMP NOT NULL COMMENT '开始时间',
     `finished_at` TIMESTAMP NULL COMMENT '结束时间',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -274,7 +277,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_settlement_retry` (
     `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
     `latest_run_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '最近一次运行ID',
     `failure_count` INT NOT NULL DEFAULT 1 COMMENT '累计失败次数',
-    `last_error_message` VARCHAR(512) DEFAULT NULL COMMENT '最近错误',
+    `last_error_message` VARCHAR(2048) DEFAULT NULL COMMENT '最近错误',
     `last_failed_at` TIMESTAMP NOT NULL COMMENT '最近失败时间',
     `next_retry_at` TIMESTAMP NOT NULL COMMENT '下一次重试时间',
     `status` VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/RETRYING/RESOLVED/ABANDONED',
@@ -283,3 +286,45 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_settlement_retry` (
     UNIQUE KEY `uk_settlement_retry_market` (`market_id`),
     INDEX `idx_settlement_retry_status` (`status`, `next_retry_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket结算失败重试队列表';
+
+-- 14. Polymarket claim 运行历史表
+CREATE TABLE IF NOT EXISTS `smart_wallet_claim_run` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `trigger_type` VARCHAR(16) NOT NULL COMMENT 'SCHEDULED/MANUAL/RETRY',
+    `position_limit` INT NOT NULL DEFAULT 0 COMMENT '本轮扫描仓位上限',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'RUNNING' COMMENT 'RUNNING/SUCCESS/FAILED',
+    `scanned_positions` INT NOT NULL DEFAULT 0 COMMENT '扫描仓位数',
+    `attempted_claims` INT NOT NULL DEFAULT 0 COMMENT '实际尝试领取数',
+    `claimed_positions` INT NOT NULL DEFAULT 0 COMMENT '已完成领取数',
+    `waiting_confirmation_positions` INT NOT NULL DEFAULT 0 COMMENT '等待人工确认数',
+    `failed_positions` INT NOT NULL DEFAULT 0 COMMENT '失败仓位数',
+    `skipped_positions` INT NOT NULL DEFAULT 0 COMMENT '跳过仓位数',
+    `notes` TEXT DEFAULT NULL COMMENT '运行备注',
+    `error_message` VARCHAR(2048) DEFAULT NULL COMMENT '整体错误',
+    `started_at` TIMESTAMP NOT NULL COMMENT '开始时间',
+    `finished_at` TIMESTAMP NULL COMMENT '结束时间',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX `idx_claim_run_started` (`started_at`),
+    INDEX `idx_claim_run_status` (`status`, `started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket claim运行历史表';
+
+-- 15. Polymarket claim 重试队列表
+CREATE TABLE IF NOT EXISTS `smart_wallet_claim_retry` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `position_id` BIGINT UNSIGNED NOT NULL COMMENT '仓位ID',
+    `execution_address` VARCHAR(128) DEFAULT NULL COMMENT '执行地址',
+    `market_id` VARCHAR(128) DEFAULT NULL COMMENT '市场ID',
+    `question` VARCHAR(512) DEFAULT NULL COMMENT '问题描述',
+    `latest_run_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '最近一次运行ID',
+    `failure_count` INT NOT NULL DEFAULT 1 COMMENT '累计失败次数',
+    `last_error_message` VARCHAR(2048) DEFAULT NULL COMMENT '最近错误',
+    `last_failed_at` TIMESTAMP NOT NULL COMMENT '最近失败时间',
+    `next_retry_at` TIMESTAMP NOT NULL COMMENT '下一次重试时间',
+    `status` VARCHAR(24) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/RETRYING/WAITING_CONFIRMATION/RESOLVED/ABANDONED',
+    `tx_hash` VARCHAR(128) DEFAULT NULL COMMENT '链上交易哈希',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_claim_retry_position` (`position_id`),
+    INDEX `idx_claim_retry_status` (`status`, `next_retry_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket claim重试队列表';

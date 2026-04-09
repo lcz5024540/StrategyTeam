@@ -33,6 +33,7 @@ public class SmartWalletProperties {
     private Map<String, SignalRisk> signalRiskPresets = new LinkedHashMap<>();
     private LiveValidation liveValidation = new LiveValidation();
     private SettlementSync settlementSync = new SettlementSync();
+    private Claim claim = new Claim();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
 
@@ -52,6 +53,9 @@ public class SmartWalletProperties {
         private Integer recentTradeLimit = 30;
         private Long discoveryFixedDelayMs = 3600000L;
         private Long eventSyncFixedDelayMs = 15000L;
+        private Integer watchlistTradeSyncBatchSize = 3;
+        private Long walletTradeSyncMinIntervalMs = 120000L;
+        private Long walletTradeErrorCooldownMs = 300000L;
     }
 
     @Data
@@ -114,6 +118,19 @@ public class SmartWalletProperties {
         private Integer marketLimit = 20;
         private boolean refreshCacheOnEachRun = false;
         private Integer refreshCacheEveryRuns = 12;
+        private Integer retryBatchLimit = 20;
+        private Integer retryBackoffMinutes = 15;
+        private Integer maxRetryFailures = 8;
+    }
+
+    @Data
+    public static class Claim {
+        private boolean enabled = true;
+        private Long fixedDelayMs = 60000L;
+        private Integer positionLimit = 50;
+        private boolean paperAutoClaimEnabled = true;
+        private boolean liveAutoClaimEnabled = true;
+        private String liveGatewayMode = "MANUAL_CONFIRM";
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;

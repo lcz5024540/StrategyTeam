@@ -66,7 +66,7 @@ public class StrategyProductQueryService {
         SmartWalletPerformanceView performance = accountingService.performance();
         SmartWalletPnlSummaryView pnlSummary = accountingService.summary();
         SmartWalletCapacitySummaryView capacity = accountingService.capacitySummary();
-        List<SmartWalletPositionView> positions = accountingService.listPositions();
+        List<SmartWalletPositionView> positions = accountingService.listActivePositions();
         List<SmartWalletPositionView> nextSettlements = accountingService.listNextSettlements(8);
         List<SmartWalletOrderView> orders = accountingService.listOrders(30);
         List<SmartWalletPnlTimelinePoint> timeline = accountingService.pnlTimeline(30);
@@ -118,11 +118,14 @@ public class StrategyProductQueryService {
         if (metrics.maxDrawdownUsdc() != null && metrics.maxDrawdownUsdc().compareTo(BigDecimal.valueOf(300)) > 0) {
             insights.add(new StrategyInsightView("WARN", "回撤偏高", "当前策略回撤较高，建议收紧信号阈值或减少同时持仓数。"));
         }
+        if (metrics.pendingSettlementPnlUsdc() != null && metrics.pendingSettlementPnlUsdc().compareTo(BigDecimal.ZERO) > 0) {
+            insights.add(new StrategyInsightView("WARN", "待结算估值未确认", "部分仓位已过预计结算时间，但 winner 尚未确认；这部分金额当前只是估值，不应视为真实落袋收益。"));
+        }
         if (!nextSettlements.isEmpty()) {
             SmartWalletPositionView next = nextSettlements.get(0);
-            insights.add(new StrategyInsightView("INFO", "最近待结算市场", next.getQuestion() + "，预计北京时间 " + next.getMarketEndAtBjt() + "。"));
+            insights.add(new StrategyInsightView("INFO", "待结算处理", next.getQuestion() + "，预计北京时间 " + next.getMarketEndAtBjt() + "。"));
         } else {
-            insights.add(new StrategyInsightView("INFO", "暂无待结算持仓", "当前没有未结算仓位，适合重新观察新策略机会。"));
+            insights.add(new StrategyInsightView("INFO", "暂无待结算处理项", "当前没有已到结算窗口但仍需处理的仓位。"));
         }
         if (metrics.winRate() != null && metrics.winRate().compareTo(BigDecimal.ZERO) == 0
                 && metrics.closedPositions() != null && metrics.closedPositions() == 0) {
@@ -132,9 +135,12 @@ public class StrategyProductQueryService {
     }
 
     private StrategyPositionRowView toPosition(SmartWalletPositionView row) {
+        BigDecimal pendingSettlementAmount = "RESOLVED_UNCLAIMED".equalsIgnoreCase(row.getStatus())
+                ? safe(row.getClaimableProceedsUsdc())
+                : safe(row.getUnrealizedPnlUsdc());
         return new StrategyPositionRowView(row.getId(), row.getMarketId(), row.getQuestion(), row.getOutcome(), row.getStatus(),
                 row.getQuantity(), row.getAverageEntryPrice(), row.getCostBasisUsdc(), row.getRealizedPnlUsdc(),
-                row.getUnrealizedPnlUsdc(), row.getUnrealizedPnlUsdc(), row.getMarketEndAtBjt());
+                row.getUnrealizedPnlUsdc(), pendingSettlementAmount, row.getMarketEndAtBjt());
     }
 
     private StrategyOrderRowView toOrder(SmartWalletOrderView row) {

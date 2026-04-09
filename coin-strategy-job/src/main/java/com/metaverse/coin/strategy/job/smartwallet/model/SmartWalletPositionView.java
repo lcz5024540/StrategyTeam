@@ -23,6 +23,7 @@ public class SmartWalletPositionView {
     private BigDecimal costBasisUsdc;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
+    private BigDecimal claimableProceedsUsdc;
     private BigDecimal lastMarkPrice;
     private String status;
     private Date openedAt;

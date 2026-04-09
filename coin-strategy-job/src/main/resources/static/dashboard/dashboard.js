@@ -115,9 +115,9 @@ function renderInsights(detail) {
     });
   }
   if ((detail.nextSettlements || []).length > 0) {
-    insights.push({ level: "info", title: "最近待结算市场", message: `${detail.nextSettlements[0].question}，预计北京时间 ${detail.nextSettlements[0].marketEndAtBjt}。` });
+    insights.push({ level: "info", title: "待结算处理", message: `${detail.nextSettlements[0].question}，预计北京时间 ${detail.nextSettlements[0].marketEndAtBjt}。` });
   } else {
-    insights.push({ level: "info", title: "暂无待结算仓位", message: "当前没有未结算仓位，适合重新观察新策略机会。" });
+    insights.push({ level: "info", title: "暂无待结算处理项", message: "当前没有已到结算窗口但仍需处理的仓位。" });
   }
   if (detail.closedPositions === 0) {
     insights.push({ level: "info", title: "当前胜率尚未成型", message: "暂时没有已结算仓位，胜率需要等待真实结算后再判断。" });
@@ -184,7 +184,7 @@ function renderDetail(detail) {
 
   renderTableRows("positionsBody", detail.positions, (row) => `
     <tr>
-      <td>${row.question}</td>
+      <td>${dashboardTitleCell(row.question, 40)}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${dashboardPositionStatusText(row.status)}</td>
       <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
@@ -195,7 +195,7 @@ function renderDetail(detail) {
 
   renderTableRows("settlementsBody", detail.nextSettlements, (row) => `
     <tr>
-      <td>${row.question}</td>
+      <td>${dashboardTitleCell(row.question, 40)}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
       <td class="${dashboardAmountClass(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
@@ -205,8 +205,8 @@ function renderDetail(detail) {
 
   renderTableRows("ordersBody", detail.recentOrders, (row) => `
     <tr>
-      <td>${row.id}</td>
-      <td>${row.question}</td>
+      <td>${dashboardAddressCell(row.id, 6, 4)}</td>
+      <td>${dashboardTitleCell(row.question, 40)}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${row.side}</td>
       <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
@@ -218,7 +218,7 @@ function renderDetail(detail) {
 
   renderTableRows("conflictsBody", detail.conflicts, (row) => `
     <tr>
-      <td>${row.question}</td>
+      <td>${dashboardTitleCell(row.question, 40)}</td>
       <td>${(row.outcomes || []).join(" / ")}</td>
       <td>${row.openPositionCount}</td>
       <td class="${dashboardAmountClass(row.netPnlUsdc)}">${dashboardFormatMoney(row.netPnlUsdc)}</td>

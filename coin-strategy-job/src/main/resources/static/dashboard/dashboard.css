@@ -549,6 +549,9 @@ body {
 .attribution-card h3 {
   margin: 10px 0 8px;
   font-size: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attribution-value {
@@ -581,6 +584,9 @@ body {
 
 .bar-label {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bar-track {
@@ -617,6 +623,7 @@ body {
 table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 thead th {
@@ -630,6 +637,23 @@ tbody td {
   border-top: 1px solid var(--line);
   padding: 14px 0;
   vertical-align: top;
+  overflow: hidden;
+}
+
+.cell-truncate {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-question {
+  line-height: 1.5;
+}
+
+.cell-mono {
+  font-family: ui-monospace, "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 .badge {

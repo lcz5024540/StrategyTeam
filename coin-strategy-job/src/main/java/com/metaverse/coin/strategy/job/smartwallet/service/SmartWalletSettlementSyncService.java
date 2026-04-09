@@ -333,7 +333,7 @@ public class SmartWalletSettlementSyncService {
     private void failRun(SmartWalletSettlementRunEntity run, RuntimeException e) {
         Date now = new Date();
         run.setStatus("FAILED")
-                .setErrorMessage(e.getMessage())
+                .setErrorMessage(abbreviate(e.getMessage(), 500))
                 .setFinishedAt(now)
                 .setUpdatedAt(now);
         settlementRunMapper.updateById(run);
@@ -422,7 +422,7 @@ public class SmartWalletSettlementSyncService {
         retry.setQuestion(failure.getQuestion())
                 .setLatestRunId(runId)
                 .setFailureCount(failureCount)
-                .setLastErrorMessage(failure.getErrorMessage())
+                .setLastErrorMessage(abbreviate(failure.getErrorMessage(), 500))
                 .setLastFailedAt(now)
                 .setNextRetryAt(nextRetryAt)
                 .setStatus(nextStatus)
@@ -438,6 +438,13 @@ public class SmartWalletSettlementSyncService {
         int base = Math.max(properties.getSettlementSync().getRetryBackoffMinutes(), 1);
         long factor = 1L << Math.min(Math.max(failureCount - 1, 0), 4);
         return base * factor;
+    }
+
+    private String abbreviate(String value, int maxLength) {
+        if (!StringUtils.hasText(value) || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, Math.max(maxLength - 3, 0)) + "...";
     }
 
     private SettlementRunView toRunView(SmartWalletSettlementRunEntity run) {

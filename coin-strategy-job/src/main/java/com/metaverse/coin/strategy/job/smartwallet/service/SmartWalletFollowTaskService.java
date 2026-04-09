@@ -371,6 +371,7 @@ public class SmartWalletFollowTaskService {
         BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
+        Long marketEndAt = resolveMarketEndAt(event.getMarketId(), event.getQuestion());
 
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
@@ -378,6 +379,7 @@ public class SmartWalletFollowTaskService {
                 .setMarketId(event.getMarketId())
                 .setQuestion(event.getQuestion())
                 .setOutcome(event.getOutcome())
+                .setMarketEndAt(marketEndAt)
                 .setSide(event.getSide())
                 .setTriggerPrice(event.getPrice())
                 .setTriggerSizeUsdc(event.getSizeUsdc())
@@ -489,7 +491,7 @@ public class SmartWalletFollowTaskService {
 
     private SmartWalletFollowTaskView toView(SmartWalletFollowTaskEntity task, SignalRiskDecision decision, String appliedPreset) {
         ConsensusSignalView consensus = findConsensus(task);
-        Long marketEndAt = resolveMarketEndAt(task.getMarketId());
+        Long marketEndAt = resolveDisplayMarketEndAt(task);
         List<String> blockerCategories = classifyBlockerCategories(decision);
         return SmartWalletFollowTaskView.builder()
                 .id(task.getId())
@@ -525,9 +527,25 @@ public class SmartWalletFollowTaskService {
                 .build();
     }
 
-    private Long resolveMarketEndAt(String marketId) {
+    private Long resolveDisplayMarketEndAt(SmartWalletFollowTaskEntity task) {
+        if (task == null) {
+            return null;
+        }
+        if (task.getMarketEndAt() != null && task.getMarketEndAt() > 0) {
+            return task.getMarketEndAt();
+        }
+        Long marketEndAt = resolveMarketEndAt(task.getMarketId(), task.getQuestion());
+        if (marketEndAt != null && marketEndAt > 0 && task.getId() != null) {
+            task.setMarketEndAt(marketEndAt);
+            task.setUpdatedAt(new Date());
+            followTaskMapper.updateById(task);
+        }
+        return marketEndAt;
+    }
+
+    private Long resolveMarketEndAt(String marketId, String questionHint) {
         try {
-            PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(marketId);
+            PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(marketId, false, questionHint);
             return metadata == null ? null : metadata.getEndAt();
         } catch (Exception e) {
             log.debug("Failed to resolve market end time for follow task marketId={}: {}", marketId, e.getMessage());

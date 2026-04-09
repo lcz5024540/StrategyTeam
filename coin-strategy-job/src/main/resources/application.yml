@@ -89,7 +89,13 @@ smart-wallet:
     # [FIXED-ONCE] Discovery job interval.
     discovery-fixed-delay-ms: 3600000
     # [FIXED-ONCE] Watchlist trade sync interval.
-    event-sync-fixed-delay-ms: 15000
+    event-sync-fixed-delay-ms: 60000
+    # [TUNE] Sync only a small batch of watchlist wallets each round to avoid bursty API traffic.
+    watchlist-trade-sync-batch-size: 3
+    # [TUNE] Minimum spacing between two trade-sync requests for the same wallet.
+    wallet-trade-sync-min-interval-ms: 120000
+    # [TUNE] Back off longer after one wallet hits a network/TLS failure.
+    wallet-trade-error-cooldown-ms: 300000
   execution-wallet:
     # [SCRIPT][FIXED-ONCE] Live routing master switch. Requires env secrets to be present.
     enabled: true
@@ -213,6 +219,23 @@ smart-wallet:
     refresh-cache-on-each-run: false
     refresh-cache-every-runs: 12
     # [TUNE] Retry pacing for failed settlement metadata fetches.
+    retry-batch-limit: 20
+    retry-backoff-minutes: 15
+    max-retry-failures: 8
+  claim:
+    # [FIXED-ONCE] Claim automation switch. Paper claims can stay on; live claims honor gateway mode below.
+    enabled: true
+    # [FIXED-ONCE] Background cadence for claim processing.
+    fixed-delay-ms: 60000
+    # [TUNE] Max RESOLVED_UNCLAIMED positions scanned per round.
+    position-limit: 50
+    # [TUNE] Simulated paper claims should usually stay enabled once settlement accounting is trusted.
+    paper-auto-claim-enabled: true
+    # [TUNE] Enable live claim workflow orchestration; actual on-chain broadcasting still depends on gateway mode.
+    live-auto-claim-enabled: true
+    # [FIXED-ONCE] MANUAL_CONFIRM keeps live claims in WAITING_CONFIRMATION until you confirm externally.
+    live-gateway-mode: "MANUAL_CONFIRM"
+    # [TUNE] Retry pacing for live claim submission failures.
     retry-batch-limit: 20
     retry-backoff-minutes: 15
     max-retry-failures: 8

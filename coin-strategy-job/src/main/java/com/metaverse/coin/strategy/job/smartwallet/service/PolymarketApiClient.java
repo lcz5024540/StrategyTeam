@@ -6,6 +6,8 @@ import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import okhttp3.ConnectionPool;
+import okhttp3.Dispatcher;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
@@ -35,8 +37,12 @@ public class PolymarketApiClient {
 
     private final SmartWalletProperties properties;
     private final ObjectMapper objectMapper;
+    private final ConnectionPool connectionPool = new ConnectionPool(6, 5, TimeUnit.MINUTES);
+    private final Dispatcher dispatcher = createDispatcher();
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .protocols(List.of(Protocol.HTTP_1_1))
+            .connectionPool(connectionPool)
+            .dispatcher(dispatcher)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
@@ -148,10 +154,48 @@ public class PolymarketApiClient {
         if (market == null || market.isNull()) {
             throw new IllegalStateException("Polymarket market metadata not found for conditionId=" + conditionId);
         }
+        return parseMarketMetadata(market);
+    }
 
+    public List<MarketMetadata> searchMarkets(String query, int limitPerType, boolean keepClosedMarkets) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("q", query.trim());
+        params.put("limit_per_type", String.valueOf(Math.max(limitPerType, 1)));
+        params.put("keep_closed_markets", keepClosedMarkets ? "1" : "0");
+        JsonNode body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(), "/public-search", params));
+        List<MarketMetadata> results = new ArrayList<>();
+        collectSearchMarkets(body.get("markets"), results);
+        JsonNode events = body.get("events");
+        if (events != null && events.isArray()) {
+            for (JsonNode event : events) {
+                collectSearchMarkets(event == null ? null : event.get("markets"), results);
+            }
+        }
+        return results;
+    }
+
+    private void collectSearchMarkets(JsonNode marketsNode, List<MarketMetadata> results) {
+        if (marketsNode == null || !marketsNode.isArray()) {
+            return;
+        }
+        for (JsonNode market : marketsNode) {
+            if (market == null || market.isNull()) {
+                continue;
+            }
+            results.add(parseMarketMetadata(market));
+        }
+    }
+
+    private MarketMetadata parseMarketMetadata(JsonNode market) {
         List<String> outcomes = parseStringList(market.get("outcomes"));
+        List<String> outcomePrices = parseStringList(market.get("outcomePrices"));
         List<String> clobTokenIds = parseStringList(firstNonNull(market.get("clobTokenIds"), market.get("clobToken_ids")));
         Map<String, String> outcomeTokenMap = new LinkedHashMap<>();
+        boolean closed = bool(market, "closed", "isClosed");
+        boolean acceptingOrders = bool(market, "acceptingOrders", "accepting_orders");
         for (int i = 0; i < Math.min(outcomes.size(), clobTokenIds.size()); i++) {
             String outcome = normalizeOutcomeLabel(outcomes.get(i));
             String tokenId = clobTokenIds.get(i);
@@ -179,7 +223,9 @@ public class PolymarketApiClient {
                 resolvedOutcome = explicitWinner;
             }
         }
-
+        if (resolvedOutcome == null && closed) {
+            resolvedOutcome = inferResolvedOutcomeFromPrices(outcomes, outcomePrices);
+        }
         return MarketMetadata.builder()
                 .conditionId(text(market, "conditionId", "condition_id"))
                 .marketId(text(market, "id", "marketId", "market_id"))
@@ -188,23 +234,56 @@ public class PolymarketApiClient {
                 .minimumTickSize(num(market, "minimum_tick_size", "orderPriceMinTickSize", "tick_size"))
                 .negRisk(bool(market, "negRisk", "neg_risk"))
                 .active(bool(market, "active"))
-                .closed(bool(market, "closed", "isClosed"))
-                .acceptingOrders(bool(market, "acceptingOrders", "accepting_orders"))
+                .closed(closed)
+                .acceptingOrders(acceptingOrders)
                 .resolvedOutcome(resolvedOutcome)
                 .endAt(epochMillis(market, "endDateISO", "endDate", "gameStartTime", "eventStartDate"))
+                .outcomes(new ArrayList<>(outcomes))
+                .outcomePrices(new ArrayList<>(outcomePrices))
                 .outcomeTokenIds(outcomeTokenMap)
                 .build();
+    }
+
+    private String inferResolvedOutcomeFromPrices(List<String> outcomes, List<String> outcomePrices) {
+        if (outcomes.isEmpty() || outcomePrices.isEmpty() || outcomes.size() != outcomePrices.size()) {
+            return null;
+        }
+        String winner = null;
+        for (int i = 0; i < outcomes.size(); i++) {
+            String outcome = normalizeOutcomeLabel(outcomes.get(i));
+            BigDecimal price;
+            try {
+                price = new BigDecimal(outcomePrices.get(i));
+            } catch (NumberFormatException e) {
+                return null;
+            }
+            if (price.compareTo(new BigDecimal("0.999")) >= 0) {
+                if (winner != null) {
+                    return null;
+                }
+                winner = outcome;
+                continue;
+            }
+            if (price.compareTo(new BigDecimal("0.001")) > 0) {
+                return null;
+            }
+        }
+        return winner;
     }
 
     private JsonNode getJson(URI uri) {
         Request request = buildRequest(uri);
         IllegalStateException lastFailure = null;
         boolean fastFallbackRecommended = false;
+        boolean curlFallbackAttempted = false;
         for (int attempt = 1; attempt <= 3; attempt++) {
             long startedAt = System.currentTimeMillis();
             OkHttpClient client = selectClient(uri, attempt, fastFallbackRecommended);
             try (Response response = client.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
+                    if (response.code() == 429 || response.code() >= 500) {
+                        throw new IOException("Polymarket API temporary failure status=" + response.code());
+                    }
                     throw new IllegalStateException("Polymarket API request failed: " + uri + ", status=" + response.code());
                 }
                 if (response.body() == null) {
@@ -213,22 +292,36 @@ public class PolymarketApiClient {
                 return objectMapper.readTree(response.body().string());
             } catch (IOException e) {
                 lastFailure = new IllegalStateException("Failed to request Polymarket API: " + uri, e);
-                fastFallbackRecommended = fastFallbackRecommended || isImmediateFallbackCandidate(e, uri);
+                boolean immediateFallback = isImmediateFallbackCandidate(e, uri);
+                fastFallbackRecommended = fastFallbackRecommended || immediateFallback;
                 if (attempt >= 3) {
                     break;
                 }
                 log.warn("Polymarket API request attempt {} failed for {} after {} ms: {}",
                         attempt, uri, System.currentTimeMillis() - startedAt, rootMessage(e));
+                if (immediateFallback) {
+                    if (!curlFallbackAttempted) {
+                        curlFallbackAttempted = true;
+                        JsonNode curlFallback = getJsonViaCurl(uri);
+                        if (curlFallback != null) {
+                            log.info("Polymarket API curl fallback succeeded for {}", uri);
+                            return curlFallback;
+                        }
+                    }
+                    break;
+                }
                 if (fastFallbackRecommended && attempt >= 2) {
                     break;
                 }
                 sleepQuietly(attempt * 300L);
             }
         }
-        JsonNode curlFallback = getJsonViaCurl(uri);
-        if (curlFallback != null) {
-            log.info("Polymarket API curl fallback succeeded for {}", uri);
-            return curlFallback;
+        if (!curlFallbackAttempted) {
+            JsonNode curlFallback = getJsonViaCurl(uri);
+            if (curlFallback != null) {
+                log.info("Polymarket API curl fallback succeeded for {}", uri);
+                return curlFallback;
+            }
         }
         throw lastFailure == null ? new IllegalStateException("Failed to request Polymarket API: " + uri) : lastFailure;
     }
@@ -284,9 +377,18 @@ public class PolymarketApiClient {
         return new Request.Builder()
                 .url(uri.toString())
                 .header("Accept", "application/json")
+                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                .header("Connection", "keep-alive")
                 .header("User-Agent", "CoinStrategy/1.0")
                 .get()
                 .build();
+    }
+
+    private static Dispatcher createDispatcher() {
+        Dispatcher dispatcher = new Dispatcher();
+        dispatcher.setMaxRequests(8);
+        dispatcher.setMaxRequestsPerHost(4);
+        return dispatcher;
     }
 
     private OkHttpClient selectClient(URI uri, int attempt, boolean fastFallbackRecommended) {
@@ -553,6 +655,10 @@ public class PolymarketApiClient {
         private boolean acceptingOrders;
         private String resolvedOutcome;
         private Long endAt;
+        @Builder.Default
+        private List<String> outcomes = new ArrayList<>();
+        @Builder.Default
+        private List<String> outcomePrices = new ArrayList<>();
         @Builder.Default
         private Map<String, String> outcomeTokenIds = new LinkedHashMap<>();
 

@@ -87,6 +87,75 @@ function dashboardGeneratedAtText() {
   return `数据生成时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`;
 }
 
+function dashboardParseTime(value) {
+  if (!value) {
+    return 0;
+  }
+  const ts = Date.parse(value);
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function dashboardSortOrders(rows) {
+  return [...(rows || [])].sort((left, right) => {
+    const rightTs = Math.max(dashboardParseTime(right?.placedAt), dashboardParseTime(right?.filledAt));
+    const leftTs = Math.max(dashboardParseTime(left?.placedAt), dashboardParseTime(left?.filledAt));
+    if (rightTs !== leftTs) {
+      return rightTs - leftTs;
+    }
+    return Number(right?.id || 0) - Number(left?.id || 0);
+  });
+}
+
+function dashboardIsAddressLike(value) {
+  return /^0x[a-fA-F0-9]{10,}$/.test(String(value || "").trim());
+}
+
+function dashboardCompactMiddle(value, head = 6, tail = 4) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "-";
+  }
+  if (text.length <= head + tail + 3) {
+    return text;
+  }
+  return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function dashboardCompactText(value, maxLength = 36) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "-";
+  }
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(maxLength - 3, 1))}...`;
+}
+
+function dashboardCompactLabel(value, maxLength = 36) {
+  return dashboardIsAddressLike(value)
+    ? dashboardCompactMiddle(value, 8, 6)
+    : dashboardCompactText(value, maxLength);
+}
+
+function dashboardEscapeHtmlAttr(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function dashboardTitleCell(value, maxLength = 44) {
+  const full = String(value || "").trim();
+  return `<span class="cell-truncate cell-question" title="${dashboardEscapeHtmlAttr(full || "-")}">${dashboardCompactText(full, maxLength)}</span>`;
+}
+
+function dashboardAddressCell(value, head = 8, tail = 6) {
+  const full = String(value || "").trim();
+  return `<span class="cell-truncate cell-mono" title="${dashboardEscapeHtmlAttr(full || "-")}">${dashboardCompactMiddle(full, head, tail)}</span>`;
+}
+
 function dashboardOrderSettlementText(row) {
   if (!row) {
     return "-";
@@ -208,7 +277,7 @@ async function loadPolymarketDashboardDetail(options = {}) {
     tradedVolumeUsdc: Number(baseDetail?.metrics?.tradedVolumeUsdc || 0),
     positions: baseDetail?.positions || [],
     nextSettlements: baseDetail?.nextSettlements || [],
-    recentOrders: baseDetail?.recentOrders || [],
+    recentOrders: dashboardSortOrders(baseDetail?.recentOrders || []),
     conflicts: baseDetail?.conflicts || [],
     timeline: baseDetail?.timeline || [],
     insights: baseDetail?.insights || [],
@@ -247,7 +316,7 @@ async function loadStrategyDashboardDetail(code, options = {}) {
     lockedClaimProceedsUsdc: Number(detail?.metrics?.lockedClaimProceedsUsdc || 0),
     positions: detail?.positions || [],
     nextSettlements: detail?.nextSettlements || [],
-    recentOrders: detail?.recentOrders || [],
+    recentOrders: dashboardSortOrders(detail?.recentOrders || []),
     conflicts: detail?.conflicts || [],
     timeline: detail?.timeline || [],
     insights: detail?.insights || [],
@@ -359,7 +428,7 @@ function renderAttributionBars(targetId, rows, emptyText) {
     return `
       <div class="bar-row">
         <div class="bar-header">
-          <span class="bar-label">${item.label || item.key || "-"}</span>
+          <span class="bar-label" title="${dashboardEscapeHtmlAttr(item.label || item.key || "-")}">${dashboardCompactLabel(item.label || item.key || "-", 28)}</span>
           <span class="${dashboardAmountClass(net)}">${dashboardFormatMoney(net)}</span>
         </div>
         <div class="bar-track">
@@ -497,7 +566,7 @@ function renderAttributionSummaryCards(targetId, titlePrefix, rows, emptyText) {
   target.innerHTML = rows.slice(0, 3).map((item, index) => `
     <article class="attribution-card">
       <div class="attribution-rank">TOP ${index + 1}</div>
-      <h3>${item.label || item.key || "-"}</h3>
+      <h3 title="${dashboardEscapeHtmlAttr(item.label || item.key || "-")}">${dashboardCompactLabel(item.label || item.key || "-", 30)}</h3>
       <div class="attribution-value ${dashboardAmountClass(item.netPnlUsdc)}">${dashboardFormatMoney(item.netPnlUsdc)}</div>
       <div class="attribution-meta">
         <span>${titlePrefix}订单 ${item.orderCount ?? 0}</span>

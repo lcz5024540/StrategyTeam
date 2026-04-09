@@ -48,6 +48,11 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryReportView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRunView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimStatusView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
@@ -64,6 +69,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOppor
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletAccountingService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
@@ -103,6 +109,7 @@ public class SmartWalletController {
     private final PolymarketWalletDiscoveryService polymarketWalletDiscoveryService;
     private final SmartWalletSelectionService selectionService;
     private final SmartWalletFollowTaskService followTaskService;
+    private final SmartWalletClaimService claimService;
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
     private final Environment environment;
@@ -376,13 +383,13 @@ public class SmartWalletController {
         return strategyAnalyticsApplicationService.capacitySummary();
     }
 
-    @Operation(summary = "当前持仓", description = "查看当前未平仓或未结算的持仓记录。")
+    @Operation(summary = "当前持仓", description = "查看当前仍活跃的持仓记录，不包含 CLOSED 或 CLAIMED 仓位。")
     @GetMapping("/positions/live")
     public List<SmartWalletPositionView> livePositions() {
         return accountingService.listPositions();
     }
 
-    @Operation(summary = "最近结算持仓", description = "查看预计最先结算的一批持仓，时间已带北京时间字段。")
+    @Operation(summary = "待结算处理持仓", description = "查看已到结算窗口或待领取的仓位，时间已带北京时间字段。")
     @GetMapping("/positions/next-settlements")
     public List<SmartWalletPositionView> nextSettlements(@RequestParam(defaultValue = "10") Integer limit) {
         return accountingService.listNextSettlements(limit);
@@ -434,6 +441,13 @@ public class SmartWalletController {
     @PostMapping("/accounting/backfill")
     public Map<String, Object> backfillAccounting(@RequestParam(defaultValue = "2000") Integer limit) {
         return Map.of("imported", accountingService.backfillFromFollowTasks(limit));
+    }
+
+    @Operation(summary = "回填结算时间", description = "批量回填缺失的 marketEndAt，覆盖 position、order 与 followTask。")
+    @PostMapping("/accounting/backfill-market-end-at")
+    public Map<String, Object> backfillMarketEndAt(@RequestParam(defaultValue = "500") Integer limit,
+                                                   @RequestParam(defaultValue = "false") boolean refreshCache) {
+        return accountingService.backfillMissingMarketEndAt(limit, refreshCache);
     }
 
     @Operation(summary = "修复提前结算", description = "扫描并修复被错误提前推进为 RESOLVED 的 PAPER 持仓。")
@@ -502,11 +516,48 @@ public class SmartWalletController {
         return settlementSyncService.processRetriesNow(limit, refreshCache);
     }
 
+    @Operation(summary = "Claim 状态", description = "查看 claim 自动处理的启停、最近一轮执行与运行状态。")
+    @GetMapping("/claim/status")
+    public SmartWalletClaimStatusView claimStatus() {
+        return claimService.status();
+    }
+
+    @Operation(summary = "Claim 运行历史", description = "查看 claim 自动处理的历史运行记录。")
+    @GetMapping("/claim/runs")
+    public List<SmartWalletClaimRunView> claimRuns(@RequestParam(defaultValue = "20") Integer limit) {
+        return claimService.listRuns(limit);
+    }
+
+    @Operation(summary = "Claim 重试队列", description = "查看 live claim 失败、待确认或待重试的队列。")
+    @GetMapping("/claim/retries")
+    public List<SmartWalletClaimRetryView> claimRetries(@RequestParam(required = false) String status,
+                                                        @RequestParam(defaultValue = "20") Integer limit) {
+        return claimService.listRetries(status, limit);
+    }
+
+    @Operation(summary = "Claim 重试报表", description = "查看 claim retry 的待处理、待确认、已解决与放弃统计。")
+    @GetMapping("/claim/retries/report")
+    public SmartWalletClaimRetryReportView claimRetryReport() {
+        return claimService.retryReport();
+    }
+
+    @Operation(summary = "处理 Claim", description = "扫描并处理一批 RESOLVED_UNCLAIMED 仓位。paper 会自动模拟领取；live 按 claim gateway 模式推进。")
+    @PostMapping("/claim/process")
+    public SmartWalletClaimSummary processClaims(@RequestParam(required = false) Integer limit) {
+        return claimService.processNow(limit);
+    }
+
+    @Operation(summary = "处理 Claim 重试", description = "处理一轮到期的 live claim retry。")
+    @PostMapping("/claim/retries/process")
+    public SmartWalletClaimSummary processClaimRetries(@RequestParam(required = false) Integer limit) {
+        return claimService.processRetriesNow(limit);
+    }
+
     @Operation(summary = "确认领取结算收益", description = "将 RESOLVED_UNCLAIMED 仓位推进到 CLAIMED。LIVE 仓位需要先完成链上领取，再传 confirmExternalClaim=true。")
     @PostMapping("/positions/{positionId}/claim")
     public SmartWalletClaimResultView claimPosition(@PathVariable Long positionId,
                                                     @RequestParam(defaultValue = "false") boolean confirmExternalClaim) {
-        return accountingService.claimResolvedPosition(positionId, confirmExternalClaim);
+        return claimService.claimPosition(positionId, confirmExternalClaim);
     }
 
     @Operation(summary = "钱包归因报表", description = "按 smart wallet 来源查看收益归因报表。")

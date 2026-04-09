@@ -22,6 +22,7 @@ public class SmartWalletPositionEntity {
     private String tokenId;
     private String question;
     private String outcome;
+    private Long marketEndAt;
     private String netSide;
     private BigDecimal quantity;
     private BigDecimal averageEntryPrice;

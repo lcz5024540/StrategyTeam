@@ -67,6 +67,19 @@ public class PolymarketSmartWalletMonitorService {
                 && properties.getPolymarket().isAutoSyncEventsEnabled();
     }
 
+    public int getWatchlistTradeSyncBatchSize() {
+        Integer value = properties.getPolymarket().getWatchlistTradeSyncBatchSize();
+        return value == null ? 3 : Math.max(value, 1);
+    }
+
+    public Long getWalletTradeSyncMinIntervalMs() {
+        return properties.getPolymarket().getWalletTradeSyncMinIntervalMs();
+    }
+
+    public Long getWalletTradeErrorCooldownMs() {
+        return properties.getPolymarket().getWalletTradeErrorCooldownMs();
+    }
+
     private void normalizeMetricsRequest(PolymarketWalletMetricsRequest request) {
         if (request.getChain() == null || request.getChain().trim().isEmpty()) {
             request.setChain("polygon");
