@@ -1,18 +1,21 @@
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-  <mirrors>
-    <mirror>
-      <id>central-direct</id>
-      <name>Maven Central Direct</name>
-      <url>https://repo.maven.apache.org/maven2</url>
-      <mirrorOf>*</mirrorOf>
-    </mirror>
-  </mirrors>
   <profiles>
     <profile>
-      <id>official-central</id>
+      <id>aliyun-central</id>
       <repositories>
+        <repository>
+          <id>aliyun</id>
+          <name>Aliyun Maven</name>
+          <url>https://maven.aliyun.com/repository/public</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </repository>
         <repository>
           <id>central</id>
           <name>Maven Central</name>
@@ -26,6 +29,68 @@
         </repository>
       </repositories>
       <pluginRepositories>
+        <pluginRepository>
+          <id>aliyun</id>
+          <name>Aliyun Maven</name>
+          <url>https://maven.aliyun.com/repository/public</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+          <id>central</id>
+          <name>Maven Central</name>
+          <url>https://repo.maven.apache.org/maven2</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+    <profile>
+      <id>huaweicloud-central</id>
+      <repositories>
+        <repository>
+          <id>huaweicloud</id>
+          <name>Huawei Cloud Maven</name>
+          <url>https://repo.huaweicloud.com/repository/maven/</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </repository>
+        <repository>
+          <id>central</id>
+          <name>Maven Central</name>
+          <url>https://repo.maven.apache.org/maven2</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>huaweicloud</id>
+          <name>Huawei Cloud Maven</name>
+          <url>https://repo.huaweicloud.com/repository/maven/</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </pluginRepository>
         <pluginRepository>
           <id>central</id>
           <name>Maven Central</name>
@@ -41,6 +106,6 @@
     </profile>
   </profiles>
   <activeProfiles>
-    <activeProfile>official-central</activeProfile>
+    <activeProfile>aliyun-central</activeProfile>
   </activeProfiles>
 </settings>
