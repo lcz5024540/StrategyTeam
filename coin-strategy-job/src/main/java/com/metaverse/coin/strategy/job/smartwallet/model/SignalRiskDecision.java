@@ -13,6 +13,10 @@ public class SignalRiskDecision {
     private boolean accepted;
     private boolean overrideApplied;
     private BigDecimal recommendedStakeUsdc;
+    private BigDecimal expectedNetEvUsdc;
+    private BigDecimal estimatedFeeUsdc;
+    private BigDecimal estimatedSlippageUsdc;
+    private Integer evSampleSize;
     private Integer consensusWallets;
     private BigDecimal consensusScore;
     @Builder.Default

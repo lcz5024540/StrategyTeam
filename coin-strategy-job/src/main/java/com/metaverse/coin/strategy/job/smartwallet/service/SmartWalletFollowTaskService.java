@@ -97,6 +97,7 @@ public class SmartWalletFollowTaskService {
             }
             result.add(toView(task, decision));
         }
+        result.sort(this::compareTaskPriorityByEv);
         return result;
     }
 
@@ -119,11 +120,9 @@ public class SmartWalletFollowTaskService {
                 continue;
             }
             result.add(toView(task, decision, appliedPreset));
-            if (result.size() >= normalizeLimit(limit, 20)) {
-                break;
-            }
         }
-        return result;
+        result.sort(this::compareTaskPriorityByEv);
+        return truncate(result, normalizeLimit(limit, 20));
     }
 
     public List<SmartWalletFollowTaskView> listOpportunityTasks(Integer limit, Integer maxBlockers, boolean includeExecutable) {
@@ -152,17 +151,7 @@ public class SmartWalletFollowTaskService {
             }
             candidates.add(toView(task, decision));
         }
-        candidates.sort((left, right) -> {
-            int leftBlockers = left.getBlockerCount() == null ? Integer.MAX_VALUE : left.getBlockerCount();
-            int rightBlockers = right.getBlockerCount() == null ? Integer.MAX_VALUE : right.getBlockerCount();
-            int blockerCompare = Integer.compare(leftBlockers, rightBlockers);
-            if (blockerCompare != 0) {
-                return blockerCompare;
-            }
-            BigDecimal leftStake = left.getRecommendedStakeUsdc() == null ? BigDecimal.ZERO : left.getRecommendedStakeUsdc();
-            BigDecimal rightStake = right.getRecommendedStakeUsdc() == null ? BigDecimal.ZERO : right.getRecommendedStakeUsdc();
-            return rightStake.compareTo(leftStake);
-        });
+        candidates.sort(this::compareTaskPriorityByEv);
         return candidates.size() <= normalizeLimit(limit, 20)
                 ? candidates
                 : new ArrayList<>(candidates.subList(0, normalizeLimit(limit, 20)));
@@ -307,17 +296,8 @@ public class SmartWalletFollowTaskService {
                 opportunities.add(view);
             }
         }
-        opportunities.sort((left, right) -> {
-            int leftBlockers = left.getBlockerCount() == null ? Integer.MAX_VALUE : left.getBlockerCount();
-            int rightBlockers = right.getBlockerCount() == null ? Integer.MAX_VALUE : right.getBlockerCount();
-            int blockerCompare = Integer.compare(leftBlockers, rightBlockers);
-            if (blockerCompare != 0) {
-                return blockerCompare;
-            }
-            BigDecimal leftStake = left.getRecommendedStakeUsdc() == null ? BigDecimal.ZERO : left.getRecommendedStakeUsdc();
-            BigDecimal rightStake = right.getRecommendedStakeUsdc() == null ? BigDecimal.ZERO : right.getRecommendedStakeUsdc();
-            return rightStake.compareTo(leftStake);
-        });
+        executable.sort(this::compareTaskPriorityByEv);
+        opportunities.sort(this::compareTaskPriorityByEv);
 
         return SmartWalletRiskSimulationResult.builder()
                 .applied(applied)
@@ -515,6 +495,10 @@ public class SmartWalletFollowTaskService {
                 .consensusScore(decision == null
                         ? (consensus == null ? null : consensus.getConsensusScore())
                         : decision.getConsensusScore())
+                .expectedNetEvUsdc(decision == null ? null : decision.getExpectedNetEvUsdc())
+                .estimatedFeeUsdc(decision == null ? null : decision.getEstimatedFeeUsdc())
+                .estimatedSlippageUsdc(decision == null ? null : decision.getEstimatedSlippageUsdc())
+                .evSampleSize(decision == null ? null : decision.getEvSampleSize())
                 .taskExecutable(decision == null ? null : decision.isAccepted())
                 .overrideApplied(decision == null ? null : decision.isOverrideApplied())
                 .appliedPreset(appliedPreset)
@@ -565,6 +549,26 @@ public class SmartWalletFollowTaskService {
             }
         }
         return new ArrayList<>(categories);
+    }
+
+    private int compareTaskPriorityByEv(SmartWalletFollowTaskView left, SmartWalletFollowTaskView right) {
+        int blockerCompare = Integer.compare(
+                left == null || left.getBlockerCount() == null ? Integer.MAX_VALUE : left.getBlockerCount(),
+                right == null || right.getBlockerCount() == null ? Integer.MAX_VALUE : right.getBlockerCount());
+        if (blockerCompare != 0) {
+            return blockerCompare;
+        }
+
+        BigDecimal leftEv = left == null || left.getExpectedNetEvUsdc() == null ? BigDecimal.valueOf(-999999) : left.getExpectedNetEvUsdc();
+        BigDecimal rightEv = right == null || right.getExpectedNetEvUsdc() == null ? BigDecimal.valueOf(-999999) : right.getExpectedNetEvUsdc();
+        int evCompare = rightEv.compareTo(leftEv);
+        if (evCompare != 0) {
+            return evCompare;
+        }
+
+        BigDecimal leftStake = left == null || left.getRecommendedStakeUsdc() == null ? BigDecimal.ZERO : left.getRecommendedStakeUsdc();
+        BigDecimal rightStake = right == null || right.getRecommendedStakeUsdc() == null ? BigDecimal.ZERO : right.getRecommendedStakeUsdc();
+        return rightStake.compareTo(leftStake);
     }
 
     private String classifyReason(String reason) {

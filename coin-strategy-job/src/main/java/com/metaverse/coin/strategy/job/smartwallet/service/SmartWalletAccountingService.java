@@ -66,6 +66,7 @@ public class SmartWalletAccountingService {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletTimeFormatter timeFormatter;
     private final com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties properties;
+    private final SmartWalletFollowTaskService followTaskService;
 
     public void recordExecution(SmartWalletFollowTaskEntity task, SmartWalletExecutionResult result) {
         Date now = task.getExecutedAt() == null ? new Date() : task.getExecutedAt();
@@ -1524,6 +1525,7 @@ public class SmartWalletAccountingService {
 
     private SmartWalletOrderView toOrderView(SmartWalletOrderEntity order) {
         Long marketEndAt = resolveStoredOrderMarketEndAt(order);
+        SignalRiskDecision decision = resolveOrderRiskDecision(order);
         return SmartWalletOrderView.builder()
                 .id(order.getId())
                 .followTaskId(order.getFollowTaskId())
@@ -1544,10 +1546,27 @@ public class SmartWalletAccountingService {
                 .size(order.getSize())
                 .notionalUsdc(order.getNotionalUsdc())
                 .feeUsdc(order.getFeeUsdc())
+                .expectedNetEvUsdc(decision == null ? null : decision.getExpectedNetEvUsdc())
+                .estimatedFeeUsdc(decision == null ? null : decision.getEstimatedFeeUsdc())
+                .estimatedSlippageUsdc(decision == null ? null : decision.getEstimatedSlippageUsdc())
+                .evSampleSize(decision == null ? null : decision.getEvSampleSize())
                 .errorMessage(order.getErrorMessage())
                 .placedAt(order.getPlacedAt())
                 .filledAt(order.getFilledAt())
                 .build();
+    }
+
+    private SignalRiskDecision resolveOrderRiskDecision(SmartWalletOrderEntity order) {
+        if (order == null || order.getFollowTaskId() == null) {
+            return null;
+        }
+        try {
+            return followTaskService.evaluateTask(order.getFollowTaskId());
+        } catch (Exception ex) {
+            log.debug("Failed to resolve order EV for orderId={} followTaskId={}: {}",
+                    order.getId(), order.getFollowTaskId(), ex.getMessage());
+            return null;
+        }
     }
 
     private SmartWalletFillView toFillView(SmartWalletFillEntity fill) {

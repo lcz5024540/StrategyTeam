@@ -56,6 +56,56 @@
         <div class="insight-grid" id="riskSignals"></div>
     </section>
 
+    <section class="panel filter-panel">
+        <div id="homeTaskFilters"></div>
+    </section>
+
+    <div class="split-grid">
+        <section class="panel">
+            <div class="section-head">
+                <h2>可执行任务</h2>
+                <p>已经通过风控的 follow task，按 blocker、EV、stake 优先级排序。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>Stake</th>
+                        <th>EV</th>
+                        <th>样本</th>
+                        <th>状态</th>
+                    </tr>
+                    </thead>
+                    <tbody id="executableTasksBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-head">
+                <h2>机会看板</h2>
+                <p>展示最接近可执行的任务，直接看 blocker 与 EV 是否值得放行。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>Stake</th>
+                        <th>EV</th>
+                        <th>阻塞</th>
+                        <th>主阻塞</th>
+                    </tr>
+                    </thead>
+                    <tbody id="opportunityTasksBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
     <section class="panel">
         <div class="section-head">
             <h2>收益时间线</h2>
@@ -145,6 +195,7 @@
                     <th>Outcome</th>
                     <th>方向</th>
                     <th>金额</th>
+                    <th>EV</th>
                     <th>状态</th>
                     <th>预计结算</th>
                     <th>下单时间</th>

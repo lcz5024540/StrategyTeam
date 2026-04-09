@@ -146,7 +146,8 @@ public class StrategyProductQueryService {
     private StrategyOrderRowView toOrder(SmartWalletOrderView row) {
         return new StrategyOrderRowView(row.getId(), row.getFollowTaskId(), row.getExecutionMode(), row.getQuestion(),
                 row.getOutcome(), row.getSide(), row.getStatus(), row.getPrice(), row.getSize(),
-                row.getNotionalUsdc(), row.getMarketEndAtBjt(), row.getPlacedAt() == null ? null : row.getPlacedAt().toString());
+                row.getNotionalUsdc(), row.getExpectedNetEvUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(), row.getEvSampleSize(),
+                row.getMarketEndAtBjt(), row.getPlacedAt() == null ? null : row.getPlacedAt().toString());
     }
 
     private StrategyTimelinePointView toTimeline(SmartWalletPnlTimelinePoint row) {

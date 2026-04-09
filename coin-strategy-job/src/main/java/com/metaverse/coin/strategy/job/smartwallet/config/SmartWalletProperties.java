@@ -69,6 +69,7 @@ public class SmartWalletProperties {
         private BigDecimal maxOrderUsdc = new BigDecimal("150");
         private BigDecimal minOrderUsdc = new BigDecimal("1");
         private BigDecimal priceSlippageRate = new BigDecimal("0.02");
+        private BigDecimal estimatedFeeRate = new BigDecimal("0.0015");
         private Boolean allowYes = Boolean.TRUE;
         private Boolean allowNo = Boolean.TRUE;
         private String apiBaseUrl = "https://clob.polymarket.com";
@@ -91,6 +92,9 @@ public class SmartWalletProperties {
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         private BigDecimal minFollowPrice = new BigDecimal("0.05");
         private BigDecimal maxFollowPrice = new BigDecimal("0.95");
+        private boolean enableEvGate = false;
+        private Integer evMinSampleSize = 3;
+        private BigDecimal minExpectedNetEvUsdc = BigDecimal.ZERO;
         private Integer maxOpenPositions = 10;
         private BigDecimal maxTotalOpenCostUsdc = new BigDecimal("500");
         private Integer maxHoursToMarketEnd = 72;

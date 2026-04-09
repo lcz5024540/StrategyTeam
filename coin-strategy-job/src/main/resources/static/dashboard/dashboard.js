@@ -1,6 +1,11 @@
 const state = {
   selected: "POLYMARKET_COPY",
   detail: null,
+  taskFilters: {
+    positiveEvOnly: false,
+    maxBlocker: null,
+    minSampleSize: 0
+  }
 };
 
 function renderOverview(summary) {
@@ -65,6 +70,11 @@ function renderOverview(summary) {
   renderAttributionSummaryCards("homeWalletAttribution", "钱包", summary.walletAttribution || [], "当前窗口没有钱包归因数据。");
   renderAttributionSummaryCards("homeMarketAttribution", "市场", summary.marketAttribution || [], "当前窗口没有市场归因数据。");
   renderRiskSignalCards("riskSignals", summary);
+  document.getElementById("homeTaskFilters").innerHTML = dashboardBuildTaskFilterBar("homeTask", state.taskFilters);
+  dashboardAttachTaskFilters("homeTask", () => {
+    state.taskFilters = dashboardReadTaskFilters("homeTask");
+    renderDetail(state.detail);
+  });
 }
 
 function renderMetrics(detail) {
@@ -210,11 +220,12 @@ function renderDetail(detail) {
       <td><span class="badge">${row.outcome}</span></td>
       <td>${row.side}</td>
       <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
+      <td class="${dashboardAmountClass(row.expectedNetEvUsdc)}">${row.expectedNetEvUsdc == null ? "-" : dashboardFormatMoney(row.expectedNetEvUsdc)}</td>
       <td>${row.status}</td>
       <td>${dashboardOrderSettlementText(row)}</td>
       <td>${row.placedAt || "-"}</td>
     </tr>
-  `, "当前没有订单记录。", 8);
+  `, "当前没有订单记录。", 9);
 
   renderTableRows("conflictsBody", detail.conflicts, (row) => `
     <tr>
@@ -225,6 +236,31 @@ function renderDetail(detail) {
       <td>${row.marketEndAtBjt || "-"}</td>
     </tr>
   `, "当前没有冲突市场。", 5);
+
+  const executableTasks = dashboardFilterTasks(detail.executableTasks, state.taskFilters);
+  const opportunityTasks = dashboardFilterTasks(detail.opportunityTasks, state.taskFilters);
+
+  renderTableRows("executableTasksBody", executableTasks, (row) => `
+    <tr>
+      <td>${dashboardTitleCell(row.question, 40)}</td>
+      <td><span class="badge">${row.outcome}</span></td>
+      <td>${dashboardFormatMoney(row.recommendedStakeUsdc)}</td>
+      <td>${dashboardTaskEvCell(row)}</td>
+      <td>${dashboardTaskSampleCell(row)}</td>
+      <td>${dashboardTaskStatusBadge(row)}</td>
+    </tr>
+  `, "当前没有通过风控的可执行任务。", 6);
+
+  renderTableRows("opportunityTasksBody", opportunityTasks, (row) => `
+    <tr>
+      <td>${dashboardTitleCell(row.question, 40)}</td>
+      <td><span class="badge">${row.outcome}</span></td>
+      <td>${dashboardFormatMoney(row.recommendedStakeUsdc)}</td>
+      <td>${dashboardTaskEvCell(row)}</td>
+      <td>${row.blockerCount ?? 0}</td>
+      <td><span class="cell-truncate" title="${dashboardEscapeHtmlAttr((row.riskReasons || []).join(" | "))}">${dashboardTaskBlockerText(row)}</span></td>
+    </tr>
+  `, "当前没有接近可执行的机会任务。", 6);
 }
 
 async function loadSelected() {
@@ -242,6 +278,7 @@ async function init() {
       loadStrategyDashboardDetail(state.selected, { days })
     ]);
     summary.strategyList = overview?.strategies || [];
+    state.detail = summary;
     renderOverview(summary);
     renderDetail(summary);
   } catch (error) {

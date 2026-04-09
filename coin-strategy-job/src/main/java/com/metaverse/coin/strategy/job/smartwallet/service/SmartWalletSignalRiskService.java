@@ -30,6 +30,7 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletAccountingService accountingService;
+    private final TradeEvScoringService tradeEvScoringService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -169,6 +170,18 @@ public class SmartWalletSignalRiskService {
             reasons.add("Recommended stake is below execution wallet minimum order.");
         }
 
+        TradeEvScoringService.TradeEvEstimate evEstimate = tradeEvScoringService.estimate(event, recommendedStake);
+        if (evEstimate.getSampleSize() != null && evEstimate.getSampleSize() > 0) {
+            reasons.add("Local EV estimate sample size=" + evEstimate.getSampleSize() + ".");
+        }
+        if (risk.isEnableEvGate()
+                && defaultInt(risk.getEvMinSampleSize(), 0) > 0
+                && defaultInt(evEstimate.getSampleSize(), 0) >= defaultInt(risk.getEvMinSampleSize(), 0)
+                && safe(evEstimate.getExpectedNetEvUsdc()).compareTo(safe(risk.getMinExpectedNetEvUsdc())) < 0) {
+            accepted = false;
+            reasons.add("Local historical net EV estimate is below threshold.");
+        }
+
         boolean singleWalletOverride = qualifiesSingleWalletOverride(profile, risk, triggerSize, recommendedStake);
         if (singleWalletOverride && consensusWalletCountFailed) {
             overrideApplied = true;
@@ -193,6 +206,10 @@ public class SmartWalletSignalRiskService {
                 .accepted(accepted)
                 .overrideApplied(overrideApplied)
                 .recommendedStakeUsdc(recommendedStake)
+                .expectedNetEvUsdc(evEstimate.getExpectedNetEvUsdc())
+                .estimatedFeeUsdc(evEstimate.getEstimatedFeeUsdc())
+                .estimatedSlippageUsdc(evEstimate.getEstimatedSlippageUsdc())
+                .evSampleSize(evEstimate.getSampleSize())
                 .consensusWallets(consensus.getDistinctWallets())
                 .consensusScore(consensus.getConsensusScore())
                 .reasons(reasons)

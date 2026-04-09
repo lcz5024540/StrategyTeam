@@ -13,6 +13,10 @@ public record StrategyOrderRowView(
         BigDecimal price,
         BigDecimal size,
         BigDecimal notionalUsdc,
+        BigDecimal expectedNetEvUsdc,
+        BigDecimal estimatedFeeUsdc,
+        BigDecimal estimatedSlippageUsdc,
+        Integer evSampleSize,
         String marketEndAtBjt,
         String placedAt
 ) {

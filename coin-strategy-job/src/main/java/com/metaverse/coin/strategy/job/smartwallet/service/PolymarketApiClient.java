@@ -25,6 +25,7 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -177,6 +178,63 @@ public class PolymarketApiClient {
                     .tradedAt(epochMillis(node, "timestamp", "createdAt", "time"))
                     .build());
         }
+        return result;
+    }
+
+    public OrderBook fetchOrderBook(String tokenId) {
+        if (!StringUtils.hasText(tokenId)) {
+            throw new IllegalArgumentException("tokenId is required");
+        }
+        JsonNode body = getJson(buildUri(properties.getExecutionWallet().getApiBaseUrl(),
+                "/book", Map.of("tokenID", tokenId.trim())));
+        List<OrderBookLevel> bids = parseOrderBookLevels(body.get("bids"));
+        List<OrderBookLevel> asks = parseOrderBookLevels(body.get("asks"));
+        bids.sort(Comparator.comparing(OrderBookLevel::getPrice).reversed());
+        asks.sort(Comparator.comparing(OrderBookLevel::getPrice));
+        BigDecimal midpoint = firstNonZero(
+                num(body, "midpoint", "mid", "mid_price"),
+                midpointFromBook(bids, asks)
+        );
+        BigDecimal spread = firstNonZero(
+                num(body, "spread", "spreadBps", "spread_bps"),
+                spreadFromBook(bids, asks)
+        );
+        return OrderBook.builder()
+                .tokenId(tokenId.trim())
+                .midpoint(midpoint)
+                .spread(spread)
+                .bids(bids)
+                .asks(asks)
+                .build();
+    }
+
+    public List<MarketTrade> fetchMarketTrades(String conditionId, Integer limit, Long afterEpochSeconds) {
+        if (!StringUtils.hasText(conditionId)) {
+            return List.of();
+        }
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("market", conditionId.trim());
+        params.put("limit", String.valueOf(limit == null ? 50 : Math.max(1, Math.min(limit, 500))));
+        if (afterEpochSeconds != null && afterEpochSeconds > 0) {
+            params.put("after", String.valueOf(afterEpochSeconds));
+        }
+
+        JsonNode body = getJson(buildUri(properties.getExecutionWallet().getApiBaseUrl(), "/trades", params));
+        List<MarketTrade> result = new ArrayList<>();
+        for (JsonNode node : iterableArray(extractArray(body))) {
+            result.add(MarketTrade.builder()
+                    .tradeId(text(node, "tradeID", "id"))
+                    .marketId(text(node, "market", "conditionId", "marketId"))
+                    .price(num(node, "price"))
+                    .size(firstNonZero(num(node, "size"), num(node, "amount")))
+                    .side(normalizeSide(text(node, "side")))
+                    .fee(num(node, "fee"))
+                    .makerAddress(text(node, "maker_address", "makerAddress"))
+                    .takerAddress(text(node, "taker_address", "takerAddress"))
+                    .timestamp(epochMillis(node, "timestamp", "createdAt", "time"))
+                    .build());
+        }
+        result.sort(Comparator.comparing(MarketTrade::getTimestamp, Comparator.nullsLast(Comparator.reverseOrder())));
         return result;
     }
 
@@ -567,6 +625,55 @@ public class PolymarketApiClient {
         return Collections.emptyList();
     }
 
+    private List<OrderBookLevel> parseOrderBookLevels(JsonNode node) {
+        if (node == null || node.isNull() || !node.isArray()) {
+            return Collections.emptyList();
+        }
+        List<OrderBookLevel> levels = new ArrayList<>();
+        for (JsonNode level : node) {
+            if (level == null || level.isNull()) {
+                continue;
+            }
+            BigDecimal price = num(level, "price");
+            BigDecimal size = firstNonZero(num(level, "size"), num(level, "amount"));
+            levels.add(OrderBookLevel.builder()
+                    .price(price)
+                    .size(size)
+                    .build());
+        }
+        return levels;
+    }
+
+    private BigDecimal midpointFromBook(List<OrderBookLevel> bids, List<OrderBookLevel> asks) {
+        if (bids.isEmpty() || asks.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return bids.get(0).getPrice().add(asks.get(0).getPrice()).divide(new BigDecimal("2"), 8, java.math.RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal spreadFromBook(List<OrderBookLevel> bids, List<OrderBookLevel> asks) {
+        if (bids.isEmpty() || asks.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal mid = midpointFromBook(bids, asks);
+        if (mid.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return asks.get(0).getPrice()
+                .subtract(bids.get(0).getPrice())
+                .divide(mid, 8, java.math.RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("10000"));
+    }
+
+    private BigDecimal firstNonZero(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null && value.compareTo(BigDecimal.ZERO) != 0) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
     private BigDecimal num(JsonNode node, String... fields) {
         String text = text(node, fields);
         if (!StringUtils.hasText(text)) {
@@ -701,5 +808,38 @@ public class PolymarketApiClient {
         public boolean isResolved() {
             return StringUtils.hasText(resolvedOutcome);
         }
+    }
+
+    @Data
+    @Builder
+    public static class OrderBookLevel {
+        private BigDecimal price;
+        private BigDecimal size;
+    }
+
+    @Data
+    @Builder
+    public static class OrderBook {
+        private String tokenId;
+        private BigDecimal midpoint;
+        private BigDecimal spread;
+        @Builder.Default
+        private List<OrderBookLevel> bids = new ArrayList<>();
+        @Builder.Default
+        private List<OrderBookLevel> asks = new ArrayList<>();
+    }
+
+    @Data
+    @Builder
+    public static class MarketTrade {
+        private String tradeId;
+        private String marketId;
+        private BigDecimal price;
+        private BigDecimal size;
+        private String side;
+        private BigDecimal fee;
+        private String makerAddress;
+        private String takerAddress;
+        private Long timestamp;
     }
 }

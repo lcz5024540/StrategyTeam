@@ -33,6 +33,8 @@ const strategyCatalog = [
   }
 ];
 
+const dashboardTaskLowSampleThreshold = 20;
+
 async function dashboardGetJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -187,6 +189,128 @@ function dashboardPositionStatusText(status) {
   return status || "-";
 }
 
+function dashboardTaskStatusBadge(task) {
+  if (!task) {
+    return `<span class="badge neutral">-</span>`;
+  }
+  if (task.taskExecutable === true) {
+    return `<span class="badge positive-fill">可执行</span>`;
+  }
+  if ((task.blockerCount || 0) > 0) {
+    return `<span class="badge warn-fill">阻塞 ${task.blockerCount}</span>`;
+  }
+  return `<span class="badge neutral">${task.status || "-"}</span>`;
+}
+
+function dashboardTaskBlockerText(task) {
+  if (!task) {
+    return "-";
+  }
+  if (task.taskExecutable === true) {
+    return "已通过风控";
+  }
+  if (task.primaryBlockerCategory) {
+    return task.primaryBlockerCategory;
+  }
+  if (task.riskReasons && task.riskReasons.length > 0) {
+    return dashboardCompactText(task.riskReasons[0], 40);
+  }
+  return "-";
+}
+
+function dashboardTaskHasLowSample(task) {
+  return Number(task?.evSampleSize || 0) > 0 && Number(task?.evSampleSize || 0) < dashboardTaskLowSampleThreshold;
+}
+
+function dashboardTaskSampleCell(task) {
+  const sampleSize = task?.evSampleSize;
+  if (sampleSize === null || sampleSize === undefined) {
+    return "-";
+  }
+  return `${sampleSize}${dashboardTaskHasLowSample(task) ? ' <span class="sample-flag">低样本</span>' : ""}`;
+}
+
+function dashboardTaskEvCell(task) {
+  const ev = task?.expectedNetEvUsdc;
+  const evText = ev == null ? "-" : dashboardFormatMoney(ev);
+  const lowSampleHint = dashboardTaskHasLowSample(task)
+    ? `<div class="cell-subhint">样本少于 ${dashboardTaskLowSampleThreshold}</div>`
+    : "";
+  return `<div class="${dashboardAmountClass(ev)}">${evText}</div>${lowSampleHint}`;
+}
+
+function dashboardBuildTaskFilterBar(prefix, filters) {
+  return `
+    <div class="task-filter-bar">
+      <div class="filter-item">
+        <label for="${prefix}PositiveEvOnly">EV 过滤</label>
+        <select id="${prefix}PositiveEvOnly">
+          <option value="ALL" ${filters.positiveEvOnly ? "" : "selected"}>全部任务</option>
+          <option value="POSITIVE" ${filters.positiveEvOnly ? "selected" : ""}>只看正 EV</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label for="${prefix}MaxBlocker">阻塞数</label>
+        <select id="${prefix}MaxBlocker">
+          <option value="ALL" ${filters.maxBlocker === null ? "selected" : ""}>不限</option>
+          <option value="0" ${filters.maxBlocker === 0 ? "selected" : ""}>仅 blocker=0</option>
+          <option value="1" ${filters.maxBlocker === 1 ? "selected" : ""}>blocker≤1</option>
+          <option value="3" ${filters.maxBlocker === 3 ? "selected" : ""}>blocker≤3</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label for="${prefix}MinSample">最小样本</label>
+        <select id="${prefix}MinSample">
+          <option value="0" ${filters.minSampleSize === 0 ? "selected" : ""}>不限</option>
+          <option value="3" ${filters.minSampleSize === 3 ? "selected" : ""}>至少 3</option>
+          <option value="10" ${filters.minSampleSize === 10 ? "selected" : ""}>至少 10</option>
+          <option value="20" ${filters.minSampleSize === 20 ? "selected" : ""}>至少 20</option>
+        </select>
+      </div>
+      <div class="filter-item filter-action">
+        <span>排序规则</span>
+        <strong>blocker 更少 -> EV 更高 -> stake 更大</strong>
+      </div>
+    </div>
+  `;
+}
+
+function dashboardReadTaskFilters(prefix) {
+  const positiveEvOnly = document.getElementById(`${prefix}PositiveEvOnly`)?.value === "POSITIVE";
+  const maxBlockerRaw = document.getElementById(`${prefix}MaxBlocker`)?.value || "ALL";
+  const minSampleSize = Number(document.getElementById(`${prefix}MinSample`)?.value || 0);
+  return {
+    positiveEvOnly,
+    maxBlocker: maxBlockerRaw === "ALL" ? null : Number(maxBlockerRaw),
+    minSampleSize: Number.isFinite(minSampleSize) ? minSampleSize : 0
+  };
+}
+
+function dashboardAttachTaskFilters(prefix, onChange) {
+  ["PositiveEvOnly", "MaxBlocker", "MinSample"].forEach((suffix) => {
+    const el = document.getElementById(`${prefix}${suffix}`);
+    if (!el) {
+      return;
+    }
+    el.addEventListener("change", onChange);
+  });
+}
+
+function dashboardFilterTasks(rows, filters) {
+  return (rows || []).filter((row) => {
+    if (filters?.positiveEvOnly && Number(row?.expectedNetEvUsdc || 0) <= 0) {
+      return false;
+    }
+    if (filters?.maxBlocker !== null && filters?.maxBlocker !== undefined && Number(row?.blockerCount || 0) > filters.maxBlocker) {
+      return false;
+    }
+    if (Number(filters?.minSampleSize || 0) > 0 && Number(row?.evSampleSize || 0) < Number(filters.minSampleSize || 0)) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function dashboardPlaceholderDetail(strategy) {
   return {
     code: strategy.code,
@@ -247,11 +371,13 @@ async function loadPolymarketDashboardDetail(options = {}) {
   const attributionLimit = options.attributionLimit || 10;
   const baseDetail = await dashboardGetJson("/strategy-platform/strategy/POLYMARKET_COPY");
 
-  const [walletAttribution, marketAttribution, dailyReports, blockerStats, stalePaperSettlementReview] = await Promise.all([
+  const [walletAttribution, marketAttribution, dailyReports, blockerStats, executableTasks, opportunityTasks, stalePaperSettlementReview] = await Promise.all([
     dashboardGetJson(`/smart-wallet/reports/wallets?limit=${attributionLimit}`),
     dashboardGetJson(`/smart-wallet/reports/markets?limit=${attributionLimit}`),
     dashboardGetJson(`/smart-wallet/reports/daily?limit=${Math.max(days, 7)}`),
     dashboardGetJson("/smart-wallet/follow-tasks/blocker-stats?taskLimit=200"),
+    dashboardGetJson("/smart-wallet/follow-tasks/executable?limit=8"),
+    dashboardGetJson("/smart-wallet/follow-tasks/opportunities?limit=8&maxBlockers=3"),
     loadPaperSettlementReviewSummary()
   ]);
 
@@ -285,6 +411,8 @@ async function loadPolymarketDashboardDetail(options = {}) {
     marketAttribution,
     dailyReports,
     blockerStats,
+    executableTasks: executableTasks || [],
+    opportunityTasks: opportunityTasks || [],
     stalePaperSettlementReview,
     selectedDays: days
   };
@@ -324,6 +452,8 @@ async function loadStrategyDashboardDetail(code, options = {}) {
     marketAttribution: [],
     dailyReports: [],
     blockerStats: [],
+    executableTasks: [],
+    opportunityTasks: [],
     selectedDays: options.days || 30
   };
 }

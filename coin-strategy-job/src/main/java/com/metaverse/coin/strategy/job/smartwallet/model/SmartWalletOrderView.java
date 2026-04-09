@@ -28,6 +28,10 @@ public class SmartWalletOrderView {
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal expectedNetEvUsdc;
+    private BigDecimal estimatedFeeUsdc;
+    private BigDecimal estimatedSlippageUsdc;
+    private Integer evSampleSize;
     private String errorMessage;
     private Date placedAt;
     private Date filledAt;

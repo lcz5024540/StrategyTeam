@@ -90,6 +90,10 @@ smart-wallet:
     discovery-fixed-delay-ms: 3600000
     # [FIXED-ONCE] Watchlist trade sync interval.
     event-sync-fixed-delay-ms: 60000
+    # [TUNE] Background cadence for collecting recent active market snapshots.
+    market-snapshot-fixed-delay-ms: 45000
+    # [TUNE] Background cadence for backfilling recent trade effect labels.
+    trade-effect-label-fixed-delay-ms: 60000
     # [TUNE] Sync only a small batch of watchlist wallets each round to avoid bursty API traffic.
     watchlist-trade-sync-batch-size: 3
     # [TUNE] Minimum spacing between two trade-sync requests for the same wallet.
@@ -114,6 +118,8 @@ smart-wallet:
     min-order-usdc: 1
     # [TUNE] Price buffer used when preparing orders.
     price-slippage-rate: 0.02
+    # [TUNE] Default single-side fee-rate assumption used by offline paper EV labels.
+    estimated-fee-rate: 0.0015
     # [TUNE] Side-level execution filters.
     allow-yes: true
     allow-no: true
@@ -146,6 +152,12 @@ smart-wallet:
     # [TUNE] Follow only inside this market price band.
     min-follow-price: 0.05
     max-follow-price: 0.95
+    # [TUNE] When enabled, reject signals whose local historical net EV estimate is below threshold.
+    enable-ev-gate: false
+    # [TUNE] Minimum local label sample size before EV gate is trusted.
+    ev-min-sample-size: 3
+    # [TUNE] Minimum expected net EV required when EV gate is enabled.
+    min-expected-net-ev-usdc: 0
     # [TUNE] Maximum number of simultaneously open positions across the portfolio.
     max-open-positions: 10
     # [TUNE] Portfolio-wide capital budget for still-open positions.

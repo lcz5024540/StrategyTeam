@@ -30,6 +30,10 @@
         <div class="metric-grid" id="detailMetrics"></div>
     </section>
 
+    <section class="panel filter-panel">
+        <div id="detailTaskFilters"></div>
+    </section>
+
     <div class="split-grid">
         <section class="panel">
             <div class="section-head">
@@ -89,6 +93,7 @@
                     <th>Outcome</th>
                     <th>方向</th>
                     <th>金额</th>
+                    <th>EV</th>
                     <th>状态</th>
                     <th>预计结算</th>
                     <th>下单时间</th>
@@ -98,10 +103,65 @@
             </table>
         </div>
     </section>
+
+    <div class="split-grid">
+        <section class="panel">
+            <div class="section-head">
+                <h2>可执行任务</h2>
+                <p>已通过风控，可直接进入任务层决策的候选。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>Stake</th>
+                        <th>EV</th>
+                        <th>样本</th>
+                        <th>状态</th>
+                    </tr>
+                    </thead>
+                    <tbody id="detailExecutableTasksBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="section-head">
+                <h2>机会看板</h2>
+                <p>拦截项不多但还未放行的任务，便于判断是否值得放宽规则。</p>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>市场</th>
+                        <th>Outcome</th>
+                        <th>Stake</th>
+                        <th>EV</th>
+                        <th>阻塞</th>
+                        <th>主阻塞</th>
+                    </tr>
+                    </thead>
+                    <tbody id="detailOpportunityTasksBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
     </main>
 </div>
 <script src="/dashboard/dashboard-core.js"></script>
 <script>
+  const detailTaskState = {
+    filters: {
+      positiveEvOnly: false,
+      maxBlocker: null,
+      minSampleSize: 0
+    },
+    detail: null
+  };
+
   function renderRows(targetId, rows, mapper, emptyText, colspan) {
     const tbody = document.getElementById(targetId);
     if (!rows || rows.length === 0) {
@@ -109,6 +169,33 @@
       return;
     }
     tbody.innerHTML = rows.map(mapper).join("");
+  }
+
+  function renderDetailTaskTables(detail) {
+    const executableTasks = dashboardFilterTasks(detail.executableTasks, detailTaskState.filters);
+    const opportunityTasks = dashboardFilterTasks(detail.opportunityTasks, detailTaskState.filters);
+
+    renderRows("detailExecutableTasksBody", executableTasks, (row) => `
+      <tr>
+        <td>${dashboardTitleCell(row.question, 40)}</td>
+        <td><span class="badge">${row.outcome}</span></td>
+        <td>${dashboardFormatMoney(row.recommendedStakeUsdc)}</td>
+        <td>${dashboardTaskEvCell(row)}</td>
+        <td>${dashboardTaskSampleCell(row)}</td>
+        <td>${dashboardTaskStatusBadge(row)}</td>
+      </tr>
+    `, "当前没有通过风控的可执行任务。", 6);
+
+    renderRows("detailOpportunityTasksBody", opportunityTasks, (row) => `
+      <tr>
+        <td>${dashboardTitleCell(row.question, 40)}</td>
+        <td><span class="badge">${row.outcome}</span></td>
+        <td>${dashboardFormatMoney(row.recommendedStakeUsdc)}</td>
+        <td>${dashboardTaskEvCell(row)}</td>
+        <td>${row.blockerCount ?? 0}</td>
+        <td><span class="cell-truncate" title="${dashboardEscapeHtmlAttr((row.riskReasons || []).join(" | "))}">${dashboardTaskBlockerText(row)}</span></td>
+      </tr>
+    `, "当前没有接近可执行的机会任务。", 6);
   }
 
   async function initDetailPage() {
@@ -123,6 +210,7 @@
       document.getElementById("detailDesc").textContent = detail.description;
       document.getElementById("detailNav").innerHTML = renderDashboardNav("DETAIL") + `<div class="pill">${dashboardGeneratedAtText()}</div>`;
       document.getElementById("detailWindowSwitcher").innerHTML = buildWindowSwitcher(detail.selectedDays || days, code);
+      document.getElementById("detailTaskFilters").innerHTML = dashboardBuildTaskFilterBar("detailTask", detailTaskState.filters);
 
       const metrics = [
         ["综合收益", dashboardFormatMoney(detail.compositePnlUsdc ?? detail.netPnlUsdc), "已结算净收益 + 待结算收益"],
@@ -174,11 +262,19 @@
           <td><span class="badge">${row.outcome}</span></td>
           <td>${row.side}</td>
           <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
+          <td class="${dashboardAmountClass(row.expectedNetEvUsdc)}">${row.expectedNetEvUsdc == null ? "-" : dashboardFormatMoney(row.expectedNetEvUsdc)}</td>
           <td>${row.status}</td>
           <td>${dashboardOrderSettlementText(row)}</td>
           <td>${row.placedAt || "-"}</td>
         </tr>
-      `, "当前没有订单记录。", 8);
+      `, "当前没有订单记录。", 9);
+
+      detailTaskState.detail = detail;
+      renderDetailTaskTables(detail);
+      dashboardAttachTaskFilters("detailTask", () => {
+        detailTaskState.filters = dashboardReadTaskFilters("detailTask");
+        renderDetailTaskTables(detailTaskState.detail);
+      });
     } catch (error) {
       document.body.innerHTML = `<div class="page"><section class="panel"><h1>页面加载失败</h1><p>${error.message}</p></section></div>`;
     }

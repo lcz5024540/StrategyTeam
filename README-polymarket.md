@@ -198,6 +198,7 @@ The new opposite-market controls are especially important because historical ana
 You can inspect risk decisions and bottlenecks through:
 
 - `GET /smart-wallet/follow-tasks?includeRiskEvaluation=true`
+- `GET /smart-wallet/follow-tasks/opportunities?limit=20&maxBlockers=3`
 - `GET /smart-wallet/follow-tasks/blocker-stats?taskLimit=200`
 - `GET /smart-wallet/capacity/summary`
 - `GET /smart-wallet/reports/performance`
@@ -207,6 +208,9 @@ The most useful interpretation is:
 
 - `blocker-stats`
   - tells you which rule blocks the largest share of new tasks
+- `follow-tasks` / `opportunities`
+  - now expose EV fields such as `expectedNetEvUsdc`, so you can rank executable or near-executable tasks directly
+  - dashboard also supports `positive EV` / `max blocker` / `min sample` filtering, and marks low-sample EV as a warning instead of a hard reject
 - `capacity/summary`
   - tells you whether the portfolio is already full
 - `performance`

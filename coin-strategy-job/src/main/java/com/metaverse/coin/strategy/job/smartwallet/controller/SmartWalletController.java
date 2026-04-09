@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.controller;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.analytics.application.StrategyAnalyticsApplicationService;
 import com.metaverse.coin.strategy.job.execution.application.ExecutionApplicationService;
@@ -189,7 +191,7 @@ public class SmartWalletController {
     @Operation(summary = "跟单任务列表", description = "查看生成的跟单任务，可选带实时风控评估结果。")
     @GetMapping("/follow-tasks")
     public List<SmartWalletFollowTaskView> followTasks(@RequestParam(defaultValue = "100") Integer limit,
-                                                       @RequestParam(defaultValue = "false") boolean includeRiskEvaluation) {
+                                                       @RequestParam(defaultValue = "true") boolean includeRiskEvaluation) {
         return followTaskApplicationService.listTasks(limit, includeRiskEvaluation);
     }
 
@@ -564,6 +566,32 @@ public class SmartWalletController {
     @GetMapping("/clob/markets/{conditionId}")
     public Object clobMarketMetadata(@PathVariable String conditionId) {
         return clobExecutionService.marketMetadata(conditionId);
+    }
+
+    @Operation(summary = "采集市场快照", description = "按 conditionId/outcome 主动抓取一次订单簿与最近成交，生成市场微观结构快照。")
+    @PostMapping("/clob/markets/{conditionId}/snapshot")
+    public SmartWalletMarketSnapshotEntity collectMarketSnapshot(@PathVariable String conditionId,
+                                                                 @RequestParam(defaultValue = "YES") String outcome) {
+        return predictionMarketDataApplicationService.collectMarketSnapshot(conditionId, outcome);
+    }
+
+    @Operation(summary = "批量采集市场快照", description = "按最近活跃 trade event 批量抓取市场快照，用于后续 effect label 回填。")
+    @PostMapping("/clob/markets/snapshots/backfill")
+    public List<SmartWalletMarketSnapshotEntity> collectRecentMarketSnapshots(@RequestParam(defaultValue = "20") Integer limit) {
+        return predictionMarketDataApplicationService.collectRecentMarketSnapshots(limit);
+    }
+
+    @Operation(summary = "回填交易效果标签", description = "按 sourceEventId 从事件前后快照回填交易效果标签，生成 future mid 和基础纸面PnL。")
+    @PostMapping("/trade-events/{sourceEventId}/effect-label")
+    public SmartWalletTradeEffectLabelEntity buildTradeEffectLabel(@PathVariable Long sourceEventId) {
+        return predictionMarketDataApplicationService.buildTradeEffectLabel(sourceEventId);
+    }
+
+    @Operation(summary = "批量回填交易效果标签", description = "按最近 trade event 批量回填 effect label，可选择只处理缺失标签的事件。")
+    @PostMapping("/trade-events/effect-labels/backfill")
+    public List<SmartWalletTradeEffectLabelEntity> buildRecentTradeEffectLabels(@RequestParam(defaultValue = "50") Integer limit,
+                                                                                @RequestParam(defaultValue = "true") boolean missingOnly) {
+        return predictionMarketDataApplicationService.buildRecentTradeEffectLabels(limit, missingOnly);
     }
 
     @Operation(summary = "查询订单", description = "按 orderId 查询 CLOB 订单详情。")
