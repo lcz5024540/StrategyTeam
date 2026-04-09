@@ -1,4 +1,0 @@
-#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
-#Mon Apr 06 18:25:45 CST 2026
-@default-central-direct-https\://repo.maven.apache.org/maven2/.lastUpdated=1775471145600
-https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact org.apache.maven.doxia\:doxia-decoration-model\:jar\:1.11.1 from/to central-direct (https\://repo.maven.apache.org/maven2)\: Remote host terminated the handshake

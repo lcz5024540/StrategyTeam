@@ -1,4 +1,0 @@
-#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
-#Sun Mar 29 20:45:18 CST 2026
-@default-central-direct-https\://repo.maven.apache.org/maven2/.lastUpdated=1774788318695
-https\://repo.maven.apache.org/maven2/.error=Could not transfer artifact org.mockito\:mockito-core\:jar\:4.11.0 from/to central-direct (https\://repo.maven.apache.org/maven2)\: Remote host terminated the handshake

@@ -31,10 +31,12 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReportAttrib
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairItem;
 import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettlementReviewView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncFailure;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -66,7 +68,7 @@ public class SmartWalletAccountingService {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletTimeFormatter timeFormatter;
     private final com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties properties;
-    private final SmartWalletFollowTaskService followTaskService;
+    private final ObjectProvider<SmartWalletFollowTaskService> followTaskServiceProvider;
 
     public void recordExecution(SmartWalletFollowTaskEntity task, SmartWalletExecutionResult result) {
         Date now = task.getExecutedAt() == null ? new Date() : task.getExecutedAt();
@@ -119,12 +121,12 @@ public class SmartWalletAccountingService {
     }
 
     public void processOrderFill(SmartWalletOrderEntity order, BigDecimal filledSize, BigDecimal avgPrice, BigDecimal fee) {
-        if (filledSize == null || filledSize.compareTo(BigDecimal.ZERO) &lt;= 0) {
+        if (filledSize == null || filledSize.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
-        
-        Long fillCount = fillMapper.selectCount(new LambdaQueryWrapper&lt;SmartWalletFillEntity&gt;().eq(SmartWalletFillEntity::getOrderId, order.getId()));
-        if (fillCount != null && fillCount &gt; 0) {
+
+        Long fillCount = fillMapper.selectCount(new LambdaQueryWrapper<SmartWalletFillEntity>().eq(SmartWalletFillEntity::getOrderId, order.getId()));
+        if (fillCount != null && fillCount > 0) {
             return; // 已经处理过成交，防重
         }
         
@@ -603,7 +605,7 @@ public class SmartWalletAccountingService {
         for (SmartWalletOrderEntity order : orders) {
             String key = order.getExecutionAddress();
             AttributionAccumulator acc = grouped.computeIfAbsent(key,
-                    key -> new AttributionAccumulator(key, key));
+                    ignored -> new AttributionAccumulator(key, key));
             acc.addOrder(safe(order.getNotionalUsdc()));
         }
         for (SmartWalletCashLedgerEntity entry : ledgerEntries) {
@@ -1561,6 +1563,10 @@ public class SmartWalletAccountingService {
             return null;
         }
         try {
+            SmartWalletFollowTaskService followTaskService = followTaskServiceProvider.getIfAvailable();
+            if (followTaskService == null) {
+                return null;
+            }
             return followTaskService.evaluateTask(order.getFollowTaskId());
         } catch (Exception ex) {
             log.debug("Failed to resolve order EV for orderId={} followTaskId={}: {}",

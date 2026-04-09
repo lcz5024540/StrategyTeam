@@ -71,7 +71,7 @@ public class SmartWalletOrderPollingService {
                                 avgPrice = new java.math.BigDecimal(String.valueOf(orderData.get("price")));
                             }
                             
-                            if (filledSize.compareTo(java.math.BigDecimal.ZERO) &gt; 0) {
+                            if (filledSize.compareTo(java.math.BigDecimal.ZERO) > 0) {
                                 accountingService.processOrderFill(order, filledSize, avgPrice, java.math.BigDecimal.ZERO);
                             }
                         }
