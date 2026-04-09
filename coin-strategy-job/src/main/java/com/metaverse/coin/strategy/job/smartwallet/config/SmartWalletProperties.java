@@ -53,6 +53,9 @@ public class SmartWalletProperties {
         private Integer recentTradeLimit = 30;
         private Long discoveryFixedDelayMs = 3600000L;
         private Long eventSyncFixedDelayMs = 15000L;
+        private Long positionSyncFixedDelayMs = 15000L;
+        private Long positionSyncErrorCooldownMs = 300000L;
+        private Long positionSyncNotFoundCooldownMs = 1800000L;
         private Integer watchlistTradeSyncBatchSize = 3;
         private Long walletTradeSyncMinIntervalMs = 30000L;
         private Long walletTradeErrorCooldownMs = 300000L;

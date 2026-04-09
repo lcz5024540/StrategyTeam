@@ -106,6 +106,6 @@
     </profile>
   </profiles>
   <activeProfiles>
-    <activeProfile>aliyun-central</activeProfile>
+    <activeProfile>huaweicloud-central</activeProfile>
   </activeProfiles>
 </settings>

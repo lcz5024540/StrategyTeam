@@ -90,6 +90,12 @@ smart-wallet:
     discovery-fixed-delay-ms: 3600000
     # [FIXED-ONCE] Watchlist trade sync interval.
     event-sync-fixed-delay-ms: 60000
+    # [TUNE] Balance/positions sync cadence for the configured live execution wallet.
+    position-sync-fixed-delay-ms: 15000
+    # [TUNE] Cooldown after transient live wallet sync failures.
+    position-sync-error-cooldown-ms: 300000
+    # [TUNE] Longer cooldown after Polymarket returns 404 for the configured live wallet address.
+    position-sync-not-found-cooldown-ms: 1800000
     # [TUNE] Background cadence for collecting recent active market snapshots.
     market-snapshot-fixed-delay-ms: 45000
     # [TUNE] Background cadence for backfilling recent trade effect labels.
