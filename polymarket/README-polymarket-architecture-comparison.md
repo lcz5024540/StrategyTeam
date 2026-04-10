@@ -1,6 +1,6 @@
 # Polymarket 量化系统架构与当前实现对比
 
-本文档旨在对比 [polymarket_quant_system.md](./polymarket_quant_system.md) 中规划的标准量化交易架构与当前代码库的实际落地情况，评估主循环流程的合理性，并记录已修复的问题。
+本文档旨在对比 [polymarket_quant_system.md](polymarket/polymarket_quant_system.mdsystem.md) 中规划的标准量化交易架构与当前代码库的实际落地情况，评估主循环流程的合理性，并记录已修复的问题。
 
 ---
 

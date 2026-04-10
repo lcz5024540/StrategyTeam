@@ -54,10 +54,11 @@ public class TradeEvScoringService {
                     ? targetStake.divide(labelStake, 8, RoundingMode.HALF_UP)
                     : BigDecimal.ONE;
             BigDecimal recencyWeight = recencyWeight(now, label.getEventAt(), i);
+            BigDecimal slippageUsdc = firstNonNull(label.getRealizedSlippageUsdc(), label.getEstimatedSlippageUsdc());
             totalWeight = totalWeight.add(recencyWeight);
             weightedNetPnl = weightedNetPnl.add(safe(label.getNetPnlRule()).multiply(scale).multiply(recencyWeight));
             weightedFee = weightedFee.add(safe(label.getEstimatedFeeUsdc()).multiply(scale).multiply(recencyWeight));
-            weightedSlippage = weightedSlippage.add(safe(label.getEstimatedSlippageUsdc()).multiply(scale).multiply(recencyWeight));
+            weightedSlippage = weightedSlippage.add(safe(slippageUsdc).multiply(scale).multiply(recencyWeight));
         }
         if (totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
             return emptyEstimate();
@@ -86,6 +87,15 @@ public class TradeEvScoringService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private BigDecimal firstNonNull(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private TradeEvEstimate emptyEstimate() {

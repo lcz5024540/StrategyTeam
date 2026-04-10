@@ -46,6 +46,8 @@ public class SmartWalletTradeEffectLabelEntity {
     private BigDecimal estimatedSlippageRate;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
+    private BigDecimal realizedSlippageBps;
+    private BigDecimal realizedSlippageUsdc;
     private BigDecimal paperEntryPrice;
     @TableField("paper_exit_price_30s")
     private BigDecimal paperExitPrice30s;

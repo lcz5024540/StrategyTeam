@@ -9,10 +9,12 @@ import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicat
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketMarketDataStreamService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOpportunityService;
+import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletAccountingService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService;
@@ -57,6 +59,10 @@ class SmartWalletControllerTest {
     private PolymarketConsensusSignalService consensusSignalService;
     @Mock
     private PolymarketClobExecutionService clobExecutionService;
+    @Mock
+    private PolymarketMarketDataStreamService marketDataStreamService;
+    @Mock
+    private MarketSnapshotCollectorService marketSnapshotCollectorService;
     @Mock
     private PolymarketProductOverviewService productOverviewService;
     @Mock

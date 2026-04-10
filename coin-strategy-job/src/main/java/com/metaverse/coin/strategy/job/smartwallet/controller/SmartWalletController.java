@@ -17,6 +17,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettleme
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationRunSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
+import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
+import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMockWsEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketProductOverview;
@@ -62,6 +64,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWallet
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketMarketDataStreamService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOpportunityService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletAccountingService;
@@ -69,6 +72,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowServ
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
+import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
@@ -102,6 +106,8 @@ public class SmartWalletController {
     private final PolymarketSmartWalletMonitorService polymarketMonitorService;
     private final PolymarketConsensusSignalService consensusSignalService;
     private final PolymarketClobExecutionService clobExecutionService;
+    private final PolymarketMarketDataStreamService marketDataStreamService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
     private final PolymarketProductOverviewService productOverviewService;
     private final PolymarketWalletDiscoveryService polymarketWalletDiscoveryService;
     private final SmartWalletSelectionService selectionService;
@@ -156,6 +162,39 @@ public class SmartWalletController {
                                                       @RequestParam(required = false) String side,
                                                       @RequestParam(required = false) Integer limit) {
         return consensusSignalService.listConsensusSignals(windowSeconds, marketId, outcome, side, limit);
+    }
+
+    @Operation(summary = "市场数据诊断", description = "查看 Polymarket WS 本地缓存和 snapshot 采集命中/降级统计，便于离线联调。")
+    @GetMapping("/polymarket/market-data/diagnostics")
+    public PolymarketMarketDataDiagnosticsView marketDataDiagnostics() {
+        PolymarketMarketDataStreamService.MarketDataStreamStats wsStats = marketDataStreamService.getStats();
+        MarketSnapshotCollectorService.SnapshotCollectionStats snapshotStats = marketSnapshotCollectorService.snapshotStats();
+        return PolymarketMarketDataDiagnosticsView.builder()
+                .wsEnabled(wsStats.isEnabled())
+                .wsConnected(wsStats.isConnected())
+                .subscribedTokenCount(wsStats.getSubscribedTokenCount())
+                .cachedTokenCount(wsStats.getCachedTokenCount())
+                .messagesReceived(wsStats.getMessagesReceived())
+                .bookEventsReceived(wsStats.getBookEventsReceived())
+                .priceEventsReceived(wsStats.getPriceEventsReceived())
+                .lastEventAt(wsStats.getLastEventAt())
+                .wsSnapshotHits(snapshotStats.getWsHits())
+                .restFallbacks(snapshotStats.getRestFallbacks())
+                .build();
+    }
+
+    @Operation(summary = "注入 Mock WS 事件", description = "向本地 market-data 缓存注入一条模拟 websocket 消息，不访问外网。")
+    @PostMapping("/polymarket/market-data/mock-event")
+    public Map<String, Object> injectMockMarketDataEvent(@RequestBody PolymarketMockWsEventRequest request) {
+        marketDataStreamService.ingestMockEvent(request == null ? null : request.getPayload());
+        return Map.of("accepted", true);
+    }
+
+    @Operation(summary = "手动采集市场快照", description = "基于当前缓存或 REST 降级，对指定市场/outcome 执行一次 snapshot 采集。")
+    @PostMapping("/polymarket/market-data/collect-snapshot")
+    public SmartWalletMarketSnapshotEntity collectDiagnosticMarketSnapshot(@RequestParam String marketId,
+                                                                           @RequestParam(defaultValue = "YES") String outcome) {
+        return marketSnapshotCollectorService.collectSnapshot(marketId, outcome);
     }
 
     @Operation(summary = "导入钱包指标", description = "手动写入某个 Polymarket 钱包的胜率、PnL、样本数等指标。")

@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_trade_effect_label` (
     `estimated_slippage_rate` DECIMAL(10, 8) DEFAULT NULL COMMENT '预估单边滑点率',
     `estimated_fee_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT '双边预估手续费',
     `estimated_slippage_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT '双边预估滑点成本',
+    `realized_slippage_bps` DECIMAL(20, 8) DEFAULT NULL COMMENT '事件价相对t0 mid的真实单边滑点(bps)',
+    `realized_slippage_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT '事件价相对t0 mid的真实单边滑点成本',
     `paper_entry_price` DECIMAL(20, 8) DEFAULT NULL COMMENT '纸面跟单入场价',
     `paper_exit_price_30s` DECIMAL(20, 8) DEFAULT NULL COMMENT '30秒退出价',
     `paper_exit_price_5m` DECIMAL(20, 8) DEFAULT NULL COMMENT '5分钟退出价',

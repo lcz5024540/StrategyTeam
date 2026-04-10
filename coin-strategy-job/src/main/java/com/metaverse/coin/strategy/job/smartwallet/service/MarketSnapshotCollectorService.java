@@ -18,6 +18,7 @@ import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.LongAdder;
 
 @Service
 @Slf4j
@@ -27,7 +28,10 @@ public class MarketSnapshotCollectorService {
     private final SmartWalletMarketSnapshotMapper marketSnapshotMapper;
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final PolymarketApiClient polymarketApiClient;
+    private final PolymarketMarketDataStreamService marketDataStreamService;
     private final PolymarketMarketMetadataService marketMetadataService;
+    private final LongAdder wsSnapshotHits = new LongAdder();
+    private final LongAdder restSnapshotFallbacks = new LongAdder();
 
     public SmartWalletMarketSnapshotEntity saveSnapshot(SmartWalletMarketSnapshotEntity snapshot) {
         if (snapshot == null || !StringUtils.hasText(snapshot.getMarketId()) || snapshot.getSnapshotAt() == null) {
@@ -54,7 +58,18 @@ public class MarketSnapshotCollectorService {
             throw new IllegalStateException("Polymarket token id not found for outcome=" + normalizedOutcome
                     + " conditionId=" + conditionId);
         }
-        PolymarketApiClient.OrderBook orderBook = polymarketApiClient.fetchOrderBook(tokenId);
+        PolymarketMarketDataStreamService.MarketDataSnapshot marketDataSnapshot = marketDataStreamService.getSnapshot(tokenId);
+        boolean usedWs = marketDataSnapshot != null && marketDataSnapshot.getOrderBook() != null;
+        if (usedWs) {
+            wsSnapshotHits.increment();
+        } else {
+            restSnapshotFallbacks.increment();
+            log.debug("Polymarket market snapshot fallback to REST marketId={} outcome={} tokenId={}",
+                    conditionId, normalizedOutcome, tokenId);
+        }
+        PolymarketApiClient.OrderBook orderBook = usedWs
+                ? marketDataSnapshot.getOrderBook()
+                : polymarketApiClient.fetchOrderBook(tokenId);
         List<PolymarketApiClient.MarketTrade> trades = polymarketApiClient.fetchMarketTrades(conditionId, 50, recentEpochSeconds(120));
         BigDecimal mid = safe(orderBook.getMidpoint());
         if (mid.compareTo(BigDecimal.ZERO) <= 0) {
@@ -76,7 +91,7 @@ public class MarketSnapshotCollectorService {
                 .setBidDepth5c(depthWithin(orderBook.getBids(), mid, new BigDecimal("0.05")))
                 .setAskDepth5c(depthWithin(orderBook.getAsks(), mid, new BigDecimal("0.05")))
                 .setOrderImbalance(orderImbalance(orderBook, mid))
-                .setLastTradePrice(latestTradePrice(trades))
+                .setLastTradePrice(resolveLastTradePrice(marketDataSnapshot, trades))
                 .setLastTradeSize(latestTradeSize(trades))
                 .setTradeCount30s(countTradesWithin(trades, 30))
                 .setBuyVolume30s(volumeWithin(trades, "BUY", 30))
@@ -117,7 +132,9 @@ public class MarketSnapshotCollectorService {
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.market-snapshot-fixed-delay-ms:45000}")
     public void scheduledCollectRecentMarketSnapshots() {
         try {
-            collectRecentActiveMarketSnapshots(20);
+            List<SmartWalletMarketSnapshotEntity> snapshots = collectRecentActiveMarketSnapshots(20);
+            log.info("Scheduled market snapshot collection finished: snapshots={} wsHits={} restFallbacks={}",
+                    snapshots.size(), wsSnapshotHits.sum(), restSnapshotFallbacks.sum());
         } catch (Exception ex) {
             log.warn("Scheduled market snapshot collection failed: {}", ex.getMessage());
         }
@@ -134,6 +151,13 @@ public class MarketSnapshotCollectorService {
             query.eq(SmartWalletMarketSnapshotEntity::getOutcome, outcome.trim().toUpperCase());
         }
         return marketSnapshotMapper.selectList(query);
+    }
+
+    public SnapshotCollectionStats snapshotStats() {
+        return SnapshotCollectionStats.builder()
+                .wsHits(wsSnapshotHits.sum())
+                .restFallbacks(restSnapshotFallbacks.sum())
+                .build();
     }
 
     public SmartWalletMarketSnapshotEntity findNearestSnapshotAtOrAfter(String marketId, String outcome, Date targetTime) {
@@ -239,6 +263,12 @@ public class MarketSnapshotCollectorService {
         return trades == null || trades.isEmpty() ? BigDecimal.ZERO : safe(trades.get(0).getPrice());
     }
 
+    private BigDecimal resolveLastTradePrice(PolymarketMarketDataStreamService.MarketDataSnapshot marketDataSnapshot,
+                                             List<PolymarketApiClient.MarketTrade> trades) {
+        BigDecimal wsPrice = marketDataSnapshot == null ? BigDecimal.ZERO : safe(marketDataSnapshot.getLastTradePrice());
+        return wsPrice.compareTo(BigDecimal.ZERO) > 0 ? wsPrice : latestTradePrice(trades);
+    }
+
     private BigDecimal latestTradeSize(List<PolymarketApiClient.MarketTrade> trades) {
         return trades == null || trades.isEmpty() ? BigDecimal.ZERO : safe(trades.get(0).getSize());
     }
@@ -306,5 +336,12 @@ public class MarketSnapshotCollectorService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    @lombok.Data
+    @lombok.Builder
+    public static class SnapshotCollectionStats {
+        private long wsHits;
+        private long restFallbacks;
     }
 }

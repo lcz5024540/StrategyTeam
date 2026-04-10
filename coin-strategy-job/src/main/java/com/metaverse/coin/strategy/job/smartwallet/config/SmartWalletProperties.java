@@ -79,6 +79,10 @@ public class SmartWalletProperties {
         private String apiKey;
         private String apiSecret;
         private String apiPassphrase;
+        private boolean wsEnabled = true;
+        private String wsUrl = "wss://ws.polymarket.com";
+        private Long wsCacheTtlMs = 30000L;
+        private Long wsWarmupWaitMs = 1200L;
         private boolean deriveApiCredsIfMissing = true;
         private String sdkMode = "PYTHON";
         private String pythonExecutable = "python3";

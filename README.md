@@ -82,7 +82,7 @@ graph TD
 
 ## 策略文档索引 (Strategy Documentation)
 
-*   [资金费率套利策略 (Funding Rate Arbitrage)](FUNDING_RATE_ARBITRAGE.md)
+*   [资金费率套利策略 (Funding Rate Arbitrage)](funding-rate/FUNDING_RATE_ARBITRAGE.md_ARBITRAGE.md)
 *   [TOP50 趋势与波动率策略 (Top 50 Trend & Volatility)](TOP50_STRATEGY.md)
 *   [常规技术分析策略 (Conventional Technical Analysis)](CONVENTIONAL_TECHNICAL_STRATEGY.md)
-*   [链上借贷+LP稳定币策略 (On-chain Lending & LP)](CEX_LOAN_ONCHAIN_STABLE_LP_STRATEGY.md)
+*   [链上借贷+LP稳定币策略 (On-chain Lending & LP)](funding-rate/CEX_LOAN_ONCHAIN_STABLE_LP_STRATEGY.mdP_STRATEGY.md)

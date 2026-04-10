@@ -99,6 +99,9 @@ public class TradeEffectLabelService {
         BigDecimal estimatedSlippageRate = safe(properties.getExecutionWallet().getPriceSlippageRate());
         BigDecimal estimatedFeeUsdc = roundCost(stakeUsdc.multiply(estimatedFeeRate).multiply(new BigDecimal("2")));
         BigDecimal estimatedSlippageUsdc = roundCost(stakeUsdc.multiply(estimatedSlippageRate).multiply(new BigDecimal("2")));
+        BigDecimal realizedSlippageUsdc = realizedSlippageUsdc(normalizeSide(event.getSide()), stakeUsdc, entryPrice, snapshotMid(snapshotT0));
+        BigDecimal realizedSlippageBps = realizedSlippageBps(normalizeSide(event.getSide()), entryPrice, snapshotMid(snapshotT0));
+        BigDecimal slippageCostForNetPnl = firstNonNull(realizedSlippageUsdc, estimatedSlippageUsdc);
 
         SmartWalletTradeEffectLabelEntity label = new SmartWalletTradeEffectLabelEntity()
                 .setSourceEventId(event.getId())
@@ -121,6 +124,8 @@ public class TradeEffectLabelService {
                 .setEstimatedSlippageRate(estimatedSlippageRate)
                 .setEstimatedFeeUsdc(estimatedFeeUsdc)
                 .setEstimatedSlippageUsdc(estimatedSlippageUsdc)
+                .setRealizedSlippageBps(realizedSlippageBps)
+                .setRealizedSlippageUsdc(realizedSlippageUsdc)
                 .setPaperEntryPrice(entryPrice)
                 .setPaperExitPrice30s(firstPositive(snapshotMid(snapshot30s), snapshotLastTrade(snapshot30s)))
                 .setPaperExitPrice5m(firstPositive(snapshotMid(snapshot5m), snapshotLastTrade(snapshot5m)))
@@ -129,9 +134,9 @@ public class TradeEffectLabelService {
         label.setPaperPnl30s(grossPnl(label.getSide(), label.getPaperStakeUsdc(), label.getPaperEntryPrice(), label.getPaperExitPrice30s()));
         label.setPaperPnl5m(grossPnl(label.getSide(), label.getPaperStakeUsdc(), label.getPaperEntryPrice(), label.getPaperExitPrice5m()));
         label.setPaperPnlRule(grossPnl(label.getSide(), label.getPaperStakeUsdc(), label.getPaperEntryPrice(), label.getPaperExitPriceRule()));
-        label.setNetPnl30s(netPnl(label.getPaperPnl30s(), estimatedFeeUsdc, estimatedSlippageUsdc));
-        label.setNetPnl5m(netPnl(label.getPaperPnl5m(), estimatedFeeUsdc, estimatedSlippageUsdc));
-        label.setNetPnlRule(netPnl(label.getPaperPnlRule(), estimatedFeeUsdc, estimatedSlippageUsdc));
+        label.setNetPnl30s(netPnl(label.getPaperPnl30s(), estimatedFeeUsdc, slippageCostForNetPnl));
+        label.setNetPnl5m(netPnl(label.getPaperPnl5m(), estimatedFeeUsdc, slippageCostForNetPnl));
+        label.setNetPnlRule(netPnl(label.getPaperPnlRule(), estimatedFeeUsdc, slippageCostForNetPnl));
         label.setIsPositiveEv30s(isPositive(label.getNetPnl30s()));
         label.setIsPositiveEv5m(isPositive(label.getNetPnl5m()));
         label.setIsPositiveEvRule(isPositive(label.getNetPnlRule()));
@@ -201,6 +206,46 @@ public class TradeEffectLabelService {
                 .setScale(8, RoundingMode.HALF_UP);
     }
 
+    private BigDecimal realizedSlippageBps(String side, BigDecimal entryPrice, BigDecimal benchmarkMidPrice) {
+        BigDecimal adverseMove = adversePriceMove(side, entryPrice, benchmarkMidPrice);
+        if (adverseMove == null || benchmarkMidPrice == null || benchmarkMidPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        return adverseMove
+                .divide(benchmarkMidPrice, 8, RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("10000"))
+                .setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal realizedSlippageUsdc(String side,
+                                            BigDecimal stakeUsdc,
+                                            BigDecimal entryPrice,
+                                            BigDecimal benchmarkMidPrice) {
+        BigDecimal adverseMove = adversePriceMove(side, entryPrice, benchmarkMidPrice);
+        if (adverseMove == null
+                || stakeUsdc == null || stakeUsdc.compareTo(BigDecimal.ZERO) <= 0
+                || entryPrice == null || entryPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        BigDecimal quantity = stakeUsdc.divide(entryPrice, 8, RoundingMode.HALF_UP);
+        return adverseMove.multiply(quantity).setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal adversePriceMove(String side, BigDecimal entryPrice, BigDecimal benchmarkMidPrice) {
+        if (entryPrice == null || benchmarkMidPrice == null
+                || entryPrice.compareTo(BigDecimal.ZERO) <= 0
+                || benchmarkMidPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        BigDecimal rawMove = "SELL".equalsIgnoreCase(side)
+                ? benchmarkMidPrice.subtract(entryPrice)
+                : entryPrice.subtract(benchmarkMidPrice);
+        BigDecimal adverseMove = rawMove.max(BigDecimal.ZERO);
+        return adverseMove.compareTo(BigDecimal.ZERO) > 0
+                ? adverseMove.setScale(8, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+    }
+
     private Boolean isPositive(BigDecimal value) {
         return value == null ? null : value.compareTo(BigDecimal.ZERO) > 0;
     }
@@ -234,6 +279,15 @@ public class TradeEffectLabelService {
     private BigDecimal firstPositive(BigDecimal... values) {
         for (BigDecimal value : values) {
             if (value != null && value.compareTo(BigDecimal.ZERO) > 0) {
+                return value.setScale(8, RoundingMode.HALF_UP);
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal firstNonNull(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null) {
                 return value.setScale(8, RoundingMode.HALF_UP);
             }
         }

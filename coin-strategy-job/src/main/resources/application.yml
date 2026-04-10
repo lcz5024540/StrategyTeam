@@ -135,6 +135,15 @@ smart-wallet:
     api-key: "${POLYMARKET_CLOB_API_KEY:}"
     api-secret: "${POLYMARKET_CLOB_API_SECRET:}"
     api-passphrase: "${POLYMARKET_CLOB_API_PASSPHRASE:}"
+    # [FIXED-ONCE] Market data prefers websocket to avoid REST rate pressure.
+    ws-enabled: true
+    ws-url: "wss://ws.polymarket.com"
+    # [TUNE] Treat WS orderbook/price cache as stale after this long.
+    ws-cache-ttl-ms: 30000
+    # [TUNE] Initial wait window for the first WS snapshot before REST fallback.
+    ws-warmup-wait-ms: 1200
+    # [TUNE] Periodic websocket diagnostics log cadence.
+    ws-diagnostics-fixed-delay-ms: 120000
     # [FIXED-ONCE] Allow wallet-based derivation if API creds are not yet stored.
     derive-api-creds-if-missing: true
     # [FIXED-ONCE] Current bridge uses the official Python SDK.
