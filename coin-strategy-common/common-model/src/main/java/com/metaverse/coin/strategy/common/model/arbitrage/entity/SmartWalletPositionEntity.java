@@ -27,6 +27,7 @@ public class SmartWalletPositionEntity {
     private BigDecimal quantity;
     private BigDecimal averageEntryPrice;
     private BigDecimal costBasisUsdc;
+    private BigDecimal originalCostBasisUsdc;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
     private BigDecimal lastMarkPrice;

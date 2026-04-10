@@ -97,7 +97,7 @@ function renderMetrics(detail) {
     ["净收益", formatMoney(detail.metrics.netPnlUsdc), "仅统计已实现收益扣除费用后的净值"],
     ["已实现收益", formatMoney(detail.metrics.realizedPnlUsdc), "真正结算落袋的收益"],
     ["未实现收益", formatMoney(detail.metrics.unrealizedPnlUsdc), "尚未到结算时间的持仓浮盈亏"],
-    ["待结算估值", formatMoney(detail.metrics.pendingSettlementPnlUsdc), "已过结算时间但 winner 未确认的估值，不等于已兑现收益"],
+    ["净待结算收益", formatMoney(detail.metrics.pendingSettlementPnlUsdc), "待结算仓位按净收益口径展示，不再把回款总额当收益"],
     ["胜率", formatPercent(detail.metrics.winRate), "基于已关闭仓位统计"],
     ["订单数", String(detail.metrics.totalOrders || 0), "累计订单总数"],
     ["Open 仓位", String(detail.metrics.openPositions || 0), "当前仍在持有的仓位数"],
@@ -189,8 +189,9 @@ function renderDetail(detail) {
     <tr>
       <td>${row.question}</td>
       <td><span class="badge">${row.outcome}</span></td>
-      <td>${formatMoney(row.costBasisUsdc)}</td>
-      <td class="${amountClass(row.unrealizedPnlUsdc)}">${formatMoney(row.unrealizedPnlUsdc)}</td>
+      <td>${formatMoney(row.originalCostBasisUsdc ?? row.costBasisUsdc)}</td>
+      <td class="${amountClass(row.pendingSettlementNetPnlUsdc ?? row.unrealizedPnlUsdc)}">${formatMoney(row.pendingSettlementNetPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
+      <td>${formatMoney(row.claimableProceedsUsdc || 0)}</td>
       <td>${row.marketEndAtBjt || "-"}</td>
     </tr>
   `, "当前没有待结算仓位。");

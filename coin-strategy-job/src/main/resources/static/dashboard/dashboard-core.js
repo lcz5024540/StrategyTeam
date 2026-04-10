@@ -713,7 +713,7 @@ function calculateHealthScore(detail) {
         label: "已结算收益贡献",
         value: pnlScore,
         kind: pnlScore >= 0 ? "positive" : "negative",
-        detail: `当前已实现收益为 ${dashboardFormatMoney(detail.realizedPnlUsdc || 0)}，待结算收益为 ${dashboardFormatMoney(detail.pendingSettlementPnlUsdc || 0)}。`
+        detail: `当前已实现收益为 ${dashboardFormatMoney(detail.realizedPnlUsdc || 0)}，净待结算收益为 ${dashboardFormatMoney(detail.pendingSettlementPnlUsdc || 0)}。`
       },
       {
         label: "回撤扣分",

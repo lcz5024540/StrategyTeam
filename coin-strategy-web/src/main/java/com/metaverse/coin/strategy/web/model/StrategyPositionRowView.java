@@ -11,8 +11,11 @@ public record StrategyPositionRowView(
         BigDecimal quantity,
         BigDecimal averageEntryPrice,
         BigDecimal costBasisUsdc,
+        BigDecimal originalCostBasisUsdc,
         BigDecimal realizedPnlUsdc,
         BigDecimal unrealizedPnlUsdc,
+        BigDecimal pendingSettlementNetPnlUsdc,
+        BigDecimal claimableProceedsUsdc,
         String marketEndAtBjt
 ) {
 }

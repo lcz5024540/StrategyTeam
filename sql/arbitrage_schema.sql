@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_position` (
     `quantity` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '净份额数量',
     `average_entry_price` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '平均开仓成本',
     `cost_basis_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '持仓成本',
+    `original_cost_basis_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '原始持仓成本(用于结算后展示)',
     `realized_pnl_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '已实现收益',
     `unrealized_pnl_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '未实现收益',
     `last_mark_price` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '最新估值价格',

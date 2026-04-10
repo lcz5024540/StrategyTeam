@@ -37,6 +37,8 @@ public class SmartWalletSchemaMaintenanceService {
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`");
         ensureColumnExists("smart_wallet_position", "market_end_at",
                 "ALTER TABLE `smart_wallet_position` ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`");
+        ensureColumnExists("smart_wallet_position", "original_cost_basis_usdc",
+                "ALTER TABLE `smart_wallet_position` ADD COLUMN `original_cost_basis_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '原始持仓成本(用于结算后展示)' AFTER `cost_basis_usdc`");
     }
 
     private void widenOutcomeColumn(String tableName) {

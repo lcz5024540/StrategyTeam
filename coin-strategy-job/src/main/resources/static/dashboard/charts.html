@@ -234,15 +234,15 @@
       renderAttributionBars("marketAttributionBars", detail.marketAttribution || [], "当前没有市场归因数据。");
 
       const metrics = [
-        ["综合收益", dashboardFormatMoney(detail.compositePnlUsdc ?? detail.netPnlUsdc), "已结算净收益 + 待结算收益"],
+        ["综合收益", dashboardFormatMoney(detail.compositePnlUsdc ?? detail.netPnlUsdc), "已结算净收益 + 净待结算收益"],
         ["已结算净收益", dashboardFormatMoney(detail.netPnlUsdc), "已实现收益 - 手续费，不含待结算部分"],
         ["已实现收益", dashboardFormatMoney(detail.realizedPnlUsdc), "真正已结算落袋的收益"],
-        ["待结算收益", dashboardFormatMoney(detail.pendingSettlementPnlUsdc ?? detail.unrealizedPnlUsdc), "尚未个人结算的中间态收益"],
+        ["净待结算收益", dashboardFormatMoney(detail.pendingSettlementPnlUsdc ?? detail.unrealizedPnlUsdc), "待结算仓位按净收益口径展示，不再把回款总额当收益"],
         ["胜率", dashboardFormatPercent(detail.winRate), "基于已关闭仓位"],
         ["冲突市场", String(detail.openConflictingMarkets || 0), "当前冲突市场数量"],
         ["剩余仓位槽位", String(detail.remainingPositionSlots || 0), "当前还可开仓位数量"],
         ["可用资金", dashboardFormatMoney(detail.availableCapitalUsdc || 0), "当前还可继续投入的资金"],
-        ["待领取锁定", dashboardFormatMoney(detail.lockedClaimProceedsUsdc || 0), "真实单已结算但尚未 claim 的锁定金额"],
+        ["可回款资金", dashboardFormatMoney(detail.lockedClaimProceedsUsdc || 0), "已结算但尚未 claim 的回款总额"],
         ["剩余资金预算", dashboardFormatMoney(detail.remainingCapitalBudgetUsdc), "剩余预算"],
         ["订单总数", String(detail.totalOrders || 0), "已记录订单数"]
       ];

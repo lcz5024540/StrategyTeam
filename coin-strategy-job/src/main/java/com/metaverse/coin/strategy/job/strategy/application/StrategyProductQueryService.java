@@ -158,12 +158,10 @@ public class StrategyProductQueryService {
     }
 
     private StrategyPositionRowView toPosition(SmartWalletPositionView row) {
-        BigDecimal pendingSettlementAmount = "RESOLVED_UNCLAIMED".equalsIgnoreCase(row.getStatus())
-                ? safe(row.getClaimableProceedsUsdc())
-                : safe(row.getUnrealizedPnlUsdc());
         return new StrategyPositionRowView(row.getId(), row.getMarketId(), row.getQuestion(), row.getOutcome(), row.getStatus(),
-                row.getQuantity(), row.getAverageEntryPrice(), row.getCostBasisUsdc(), row.getRealizedPnlUsdc(),
-                row.getUnrealizedPnlUsdc(), pendingSettlementAmount, row.getMarketEndAtBjt());
+                row.getQuantity(), row.getAverageEntryPrice(), row.getCostBasisUsdc(), row.getOriginalCostBasisUsdc(),
+                row.getRealizedPnlUsdc(), row.getUnrealizedPnlUsdc(), row.getPendingSettlementNetPnlUsdc(),
+                row.getClaimableProceedsUsdc(), row.getMarketEndAtBjt());
     }
 
     private StrategyOrderRowView toOrder(SmartWalletOrderView row) {

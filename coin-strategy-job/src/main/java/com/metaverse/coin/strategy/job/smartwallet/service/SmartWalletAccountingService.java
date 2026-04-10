@@ -396,7 +396,7 @@ public class SmartWalletAccountingService {
             markToMarket(position);
             if (isActivePositionStatus(position.getStatus())) {
                 if (isPendingSettlementWindow(position)) {
-                    pendingSettlement = pendingSettlement.add(safe(position.getUnrealizedPnlUsdc()));
+                    pendingSettlement = pendingSettlement.add(pendingSettlementNetPnlForPosition(position));
                 } else {
                     unrealized = unrealized.add(safe(position.getUnrealizedPnlUsdc()));
                 }
@@ -576,7 +576,7 @@ public class SmartWalletAccountingService {
                     : BigDecimal.ZERO;
             unrealized = unrealized.add(positionUnrealized);
             if (isPendingSettlementWindow(position)) {
-                pendingSettlement = pendingSettlement.add(safe(position.getUnrealizedPnlUsdc()));
+                pendingSettlement = pendingSettlement.add(pendingSettlementNetPnlForPosition(position));
             }
             if (isClosedOrSettledStatus(position.getStatus())) {
                 closedPositions++;
@@ -1087,6 +1087,7 @@ public class SmartWalletAccountingService {
                     .setQuantity(BigDecimal.ZERO)
                     .setAverageEntryPrice(BigDecimal.ZERO)
                     .setCostBasisUsdc(BigDecimal.ZERO)
+                    .setOriginalCostBasisUsdc(BigDecimal.ZERO)
                     .setRealizedPnlUsdc(BigDecimal.ZERO)
                     .setUnrealizedPnlUsdc(BigDecimal.ZERO)
                     .setLastMarkPrice(fill.getPrice())
@@ -1139,6 +1140,7 @@ public class SmartWalletAccountingService {
                 .setQuantity(quantity)
                 .setAverageEntryPrice(averageEntry)
                 .setCostBasisUsdc(costBasis)
+                .setOriginalCostBasisUsdc(costBasis)
                 .setRealizedPnlUsdc(realized)
                 .setLastMarkPrice(fill.getPrice())
                 .setLastFilledAt(fill.getFilledAt())
@@ -1311,6 +1313,7 @@ public class SmartWalletAccountingService {
                 .setUnrealizedPnlUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
                 .setLastMarkPrice(resolutionPrice)
                 .setQuantity(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
+                .setOriginalCostBasisUsdc(safe(position.getCostBasisUsdc()).setScale(8, RoundingMode.HALF_UP))
                 .setCostBasisUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
                 .setAverageEntryPrice(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
                 .setNetSide("FLAT")
@@ -1401,6 +1404,7 @@ public class SmartWalletAccountingService {
                 .setQuantity(snapshot.quantity())
                 .setAverageEntryPrice(snapshot.averageEntryPrice())
                 .setCostBasisUsdc(snapshot.costBasisUsdc())
+                .setOriginalCostBasisUsdc(snapshot.costBasisUsdc())
                 .setRealizedPnlUsdc(snapshot.realizedPnlUsdc())
                 .setUnrealizedPnlUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
                 .setLastMarkPrice(snapshot.lastPrice())
@@ -1583,11 +1587,7 @@ public class SmartWalletAccountingService {
     }
 
     private BigDecimal recomputeSettlementProceeds(SmartWalletPositionEntity position) {
-        List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
-                .eq(SmartWalletFillEntity::getExecutionAddress, position.getExecutionAddress())
-                .eq(SmartWalletFillEntity::getMarketId, position.getMarketId())
-                .eq(SmartWalletFillEntity::getOutcome, position.getOutcome())
-                .orderByAsc(SmartWalletFillEntity::getFilledAt));
+        List<SmartWalletFillEntity> fills = loadPositionFills(position);
         if (fills.isEmpty()) {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
@@ -1595,6 +1595,50 @@ public class SmartWalletAccountingService {
         PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(position.getMarketId(), false, position.getQuestion());
         BigDecimal price = settlementPrice(position, metadata);
         return safe(snapshot.quantity()).multiply(price).setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal originalCostBasisForPosition(SmartWalletPositionEntity position) {
+        if (position == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+        if (!isSettledStatus(position.getStatus())) {
+            return safe(position.getCostBasisUsdc()).setScale(8, RoundingMode.HALF_UP);
+        }
+        BigDecimal stored = position.getOriginalCostBasisUsdc();
+        if (stored != null && stored.compareTo(BigDecimal.ZERO) > 0) {
+            return stored.setScale(8, RoundingMode.HALF_UP);
+        }
+        List<SmartWalletFillEntity> fills = loadPositionFills(position);
+        if (fills.isEmpty()) {
+            return safe(position.getCostBasisUsdc()).setScale(8, RoundingMode.HALF_UP);
+        }
+        return replayPositionFromFills(fills).costBasisUsdc();
+    }
+
+    private BigDecimal pendingSettlementNetPnlForPosition(SmartWalletPositionEntity position) {
+        if (position == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+        if (isActivePositionStatus(position.getStatus())) {
+            return safe(position.getUnrealizedPnlUsdc()).setScale(8, RoundingMode.HALF_UP);
+        }
+        if ("RESOLVED_UNCLAIMED".equalsIgnoreCase(position.getStatus())) {
+            return lockedClaimProceedsForPosition(position)
+                    .subtract(originalCostBasisForPosition(position))
+                    .setScale(8, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private List<SmartWalletFillEntity> loadPositionFills(SmartWalletPositionEntity position) {
+        if (position == null) {
+            return List.of();
+        }
+        return fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                .eq(SmartWalletFillEntity::getExecutionAddress, position.getExecutionAddress())
+                .eq(SmartWalletFillEntity::getMarketId, position.getMarketId())
+                .eq(SmartWalletFillEntity::getOutcome, position.getOutcome())
+                .orderByAsc(SmartWalletFillEntity::getFilledAt));
     }
 
     private BigDecimal realizedPnlForPosition(SmartWalletPositionEntity position) {
@@ -1819,9 +1863,13 @@ public class SmartWalletAccountingService {
 
     private SmartWalletPositionView toPositionView(SmartWalletPositionEntity position) {
         Long marketEndAt = resolveStoredPositionMarketEndAt(position);
+        BigDecimal originalCostBasis = originalCostBasisForPosition(position);
         BigDecimal claimableProceeds = "RESOLVED_UNCLAIMED".equalsIgnoreCase(position.getStatus())
                 ? lockedClaimProceedsForPosition(position)
                 : BigDecimal.ZERO;
+        BigDecimal pendingSettlementNetPnl = "RESOLVED_UNCLAIMED".equalsIgnoreCase(position.getStatus())
+                ? claimableProceeds.subtract(originalCostBasis).setScale(8, RoundingMode.HALF_UP)
+                : safe(position.getUnrealizedPnlUsdc()).setScale(8, RoundingMode.HALF_UP);
         return SmartWalletPositionView.builder()
                 .id(position.getId())
                 .executionAddress(position.getExecutionAddress())
@@ -1835,8 +1883,10 @@ public class SmartWalletAccountingService {
                 .quantity(position.getQuantity())
                 .averageEntryPrice(position.getAverageEntryPrice())
                 .costBasisUsdc(position.getCostBasisUsdc())
+                .originalCostBasisUsdc(originalCostBasis)
                 .realizedPnlUsdc(position.getRealizedPnlUsdc())
                 .unrealizedPnlUsdc(position.getUnrealizedPnlUsdc())
+                .pendingSettlementNetPnlUsdc(pendingSettlementNetPnl)
                 .claimableProceedsUsdc(claimableProceeds)
                 .lastMarkPrice(position.getLastMarkPrice())
                 .status(position.getStatus())
@@ -2148,7 +2198,8 @@ public class SmartWalletAccountingService {
             if (isActivePositionStatus(position.getStatus())) {
                 this.pendingSettlementPnlUsdc = this.pendingSettlementPnlUsdc.add(safe(position.getUnrealizedPnlUsdc()));
             } else if ("RESOLVED_UNCLAIMED".equalsIgnoreCase(position.getStatus())) {
-                this.pendingSettlementPnlUsdc = this.pendingSettlementPnlUsdc.add(safe(claimableProceeds));
+                BigDecimal netPendingSettlement = safe(claimableProceeds).subtract(originalCostBasisForPosition(position));
+                this.pendingSettlementPnlUsdc = this.pendingSettlementPnlUsdc.add(netPendingSettlement);
             }
         }
 

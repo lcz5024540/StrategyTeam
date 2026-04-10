@@ -90,10 +90,10 @@ function renderMetrics(detail) {
 
   const cards = document.getElementById("metricCards");
   const metrics = [
-    ["综合收益", dashboardFormatMoney(detail.compositePnlUsdc), "已实现净收益 + 待结算收益"],
+    ["综合收益", dashboardFormatMoney(detail.compositePnlUsdc), "已实现净收益 + 净待结算收益"],
     ["已结算净收益", dashboardFormatMoney(detail.netPnlUsdc), "已实现收益 - 手续费，不含待结算部分"],
     ["已实现收益", dashboardFormatMoney(detail.realizedPnlUsdc), "真正结算落袋的收益"],
-    ["待结算收益", dashboardFormatMoney(detail.pendingSettlementPnlUsdc), "市场已持仓但尚未个人结算的中间态收益"],
+    ["净待结算收益", dashboardFormatMoney(detail.pendingSettlementPnlUsdc), "待结算仓位按净收益口径展示，不再把回款总额当收益"],
     ["胜率", dashboardFormatPercent(detail.winRate), "基于已关闭仓位统计"],
     ["订单数", String(detail.totalOrders || 0), "累计订单总数"],
     ["Open 仓位", String(detail.openPositions || 0), "当前仍在持有的仓位数"],
@@ -101,7 +101,7 @@ function renderMetrics(detail) {
     ["冲突市场", String(detail.openConflictingMarkets || 0), "同市场多 outcome 持仓"],
     ["剩余仓位槽位", String(detail.remainingPositionSlots || 0), "组合还能容纳的新仓位数量"],
     ["可用资金", dashboardFormatMoney(detail.availableCapitalUsdc), "当前还能继续投入的新资金"],
-    ["待领取锁定", dashboardFormatMoney(detail.lockedClaimProceedsUsdc), "真实单已结算但未 claim 的锁定金额"],
+    ["可回款资金", dashboardFormatMoney(detail.lockedClaimProceedsUsdc), "已结算但尚未 claim 的回款总额"],
     ["剩余资金预算", dashboardFormatMoney(detail.remainingCapitalBudgetUsdc), "还能继续投入的策略预算"]
   ];
   cards.innerHTML = metrics.map(([label, value, hint]) => `
@@ -214,11 +214,12 @@ function renderDetail(detail) {
     <tr>
       <td>${dashboardTitleCell(row.question, 40)}</td>
       <td><span class="badge">${row.outcome}</span></td>
-      <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
-      <td class="${dashboardAmountClass(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
+      <td>${dashboardFormatMoney(row.originalCostBasisUsdc ?? row.costBasisUsdc)}</td>
+      <td class="${dashboardAmountClass(row.pendingSettlementNetPnlUsdc ?? row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementNetPnlUsdc ?? row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
+      <td>${dashboardFormatMoney(row.claimableProceedsUsdc || 0)}</td>
       <td>${row.marketEndAtBjt || "-"}</td>
     </tr>
-  `, "当前没有待结算仓位。", 5);
+  `, "当前没有待结算仓位。", 6);
 
   renderTableRows("ordersBody", detail.recentOrders, (row) => `
     <tr>
