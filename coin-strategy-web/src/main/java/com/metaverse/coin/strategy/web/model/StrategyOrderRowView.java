@@ -16,6 +16,9 @@ public record StrategyOrderRowView(
         BigDecimal expectedNetEvUsdc,
         BigDecimal estimatedFeeUsdc,
         BigDecimal estimatedSlippageUsdc,
+        BigDecimal followProbability,
+        BigDecimal calibratedFollowProbability,
+        BigDecimal slippageSpikeProbability,
         Integer evSampleSize,
         String marketEndAtBjt,
         String placedAt

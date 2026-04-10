@@ -16,6 +16,9 @@ public class SignalRiskDecision {
     private BigDecimal expectedNetEvUsdc;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
+    private BigDecimal followProbability;
+    private BigDecimal calibratedFollowProbability;
+    private BigDecimal slippageSpikeProbability;
     private Integer evSampleSize;
     private Integer consensusWallets;
     private BigDecimal consensusScore;

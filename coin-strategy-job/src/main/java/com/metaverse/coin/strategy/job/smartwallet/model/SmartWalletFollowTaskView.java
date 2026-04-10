@@ -30,6 +30,9 @@ public class SmartWalletFollowTaskView {
     private BigDecimal expectedNetEvUsdc;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
+    private BigDecimal followProbability;
+    private BigDecimal calibratedFollowProbability;
+    private BigDecimal slippageSpikeProbability;
     private Integer evSampleSize;
     private Boolean taskExecutable;
     private Boolean overrideApplied;

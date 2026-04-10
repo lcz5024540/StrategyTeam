@@ -4,10 +4,12 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMark
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
 import com.metaverse.coin.strategy.job.analytics.application.StrategyAnalyticsApplicationService;
 import com.metaverse.coin.strategy.job.execution.application.ExecutionApplicationService;
 import com.metaverse.coin.strategy.job.follow.application.FollowTaskApplicationService;
 import com.metaverse.coin.strategy.job.marketdata.application.PredictionMarketDataApplicationService;
+import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -17,6 +19,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettleme
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationRunSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
+import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMockWsEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
@@ -59,6 +62,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulati
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
@@ -89,6 +93,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.core.env.Environment;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -121,6 +126,7 @@ public class SmartWalletController {
     private final ExecutionApplicationService executionApplicationService;
     private final SettlementApplicationService settlementApplicationService;
     private final RiskPolicyApplicationService riskPolicyApplicationService;
+    private final BaselineModelConfigApplicationService baselineModelConfigApplicationService;
     private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
@@ -306,6 +312,18 @@ public class SmartWalletController {
                 "boundCandidateScanLimit", config.getCandidateScanLimit(),
                 "boundMaxExecutionsPerRun", config.getMaxExecutionsPerRun()
         );
+    }
+
+    @Operation(summary = "Baseline 模型配置", description = "查看当前 P1 baseline EV/滑点模型和校准参数的运行时配置。")
+    @GetMapping("/config/baseline-model")
+    public BaselineModelConfigView baselineModelConfig() {
+        return baselineModelConfigApplicationService.current();
+    }
+
+    @Operation(summary = "更新 Baseline 模型配置", description = "热更新当前进程中的 baseline 模型和校准参数，不修改 application.yml。")
+    @PostMapping("/config/baseline-model")
+    public BaselineModelConfigView updateBaselineModelConfig(@RequestBody(required = false) UpdateBaselineModelConfigRequest request) {
+        return baselineModelConfigApplicationService.update(request);
     }
 
     @Operation(summary = "风控模拟", description = "使用临时参数模拟风控筛选结果，不修改线上配置。")
@@ -634,6 +652,30 @@ public class SmartWalletController {
     public List<SmartWalletTradeEffectLabelEntity> buildRecentTradeEffectLabels(@RequestParam(defaultValue = "50") Integer limit,
                                                                                 @RequestParam(defaultValue = "true") boolean missingOnly) {
         return predictionMarketDataApplicationService.buildRecentTradeEffectLabels(limit, missingOnly);
+    }
+
+    @Operation(summary = "钱包日特征列表", description = "查看最近生成的 wallet_feature_daily 结果，用于 leader admission 和因果分析前置特征。")
+    @GetMapping("/wallet-features/daily")
+    public List<SmartWalletWalletFeatureDailyEntity> walletFeatureDaily(@RequestParam(defaultValue = "100") Integer limit) {
+        return predictionMarketDataApplicationService.listWalletFeatureDaily(limit);
+    }
+
+    @Operation(summary = "回填单个钱包日特征", description = "按钱包地址和日期重建单个 wallet_feature_daily 特征快照。")
+    @PostMapping("/wallet-features/daily")
+    public SmartWalletWalletFeatureDailyEntity buildWalletFeatureDaily(@RequestParam String walletAddress,
+                                                                       @RequestParam(required = false) String featureDate) {
+        return predictionMarketDataApplicationService.buildWalletFeatureDaily(
+                walletAddress,
+                featureDate == null || featureDate.isBlank() ? null : LocalDate.parse(featureDate)
+        );
+    }
+
+    @Operation(summary = "批量回填钱包日特征", description = "按最近高分钱包批量重建 wallet_feature_daily，可只补缺失数据。")
+    @PostMapping("/wallet-features/daily/backfill")
+    public List<SmartWalletWalletFeatureDailyEntity> buildRecentWalletFeatureDaily(@RequestParam(defaultValue = "30") Integer walletLimit,
+                                                                                   @RequestParam(defaultValue = "1") Integer days,
+                                                                                   @RequestParam(defaultValue = "true") boolean missingOnly) {
+        return predictionMarketDataApplicationService.buildRecentWalletFeatureDaily(walletLimit, days, missingOnly);
     }
 
     @Operation(summary = "查询订单", description = "按 orderId 查询 CLOB 订单详情。")

@@ -1,9 +1,11 @@
 package com.metaverse.coin.strategy.job.smartwallet.controller;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
 import com.metaverse.coin.strategy.job.analytics.application.StrategyAnalyticsApplicationService;
 import com.metaverse.coin.strategy.job.execution.application.ExecutionApplicationService;
 import com.metaverse.coin.strategy.job.follow.application.FollowTaskApplicationService;
 import com.metaverse.coin.strategy.job.marketdata.application.PredictionMarketDataApplicationService;
+import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -33,11 +35,13 @@ import org.springframework.core.env.Environment;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -90,6 +94,8 @@ class SmartWalletControllerTest {
     @Mock
     private RiskPolicyApplicationService riskPolicyApplicationService;
     @Mock
+    private BaselineModelConfigApplicationService baselineModelConfigApplicationService;
+    @Mock
     private StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
 
     @InjectMocks
@@ -110,5 +116,37 @@ class SmartWalletControllerTest {
                 .andExpect(status().isOk());
 
         verify(followTaskApplicationService).listTasks(5, true);
+    }
+
+    @Test
+    void shouldExposeBaselineModelConfigEndpoint() throws Exception {
+        mockMvc.perform(get("/smart-wallet/config/baseline-model"))
+                .andExpect(status().isOk());
+
+        verify(baselineModelConfigApplicationService).current();
+    }
+
+    @Test
+    void shouldExposeWalletFeatureDailyListEndpoint() throws Exception {
+        when(predictionMarketDataApplicationService.listWalletFeatureDaily(20))
+                .thenReturn(List.of(new SmartWalletWalletFeatureDailyEntity()));
+
+        mockMvc.perform(get("/smart-wallet/wallet-features/daily").param("limit", "20"))
+                .andExpect(status().isOk());
+
+        verify(predictionMarketDataApplicationService).listWalletFeatureDaily(20);
+    }
+
+    @Test
+    void shouldBuildWalletFeatureDailyForSpecifiedDate() throws Exception {
+        when(predictionMarketDataApplicationService.buildWalletFeatureDaily("wallet-1", LocalDate.of(2026, 4, 10)))
+                .thenReturn(new SmartWalletWalletFeatureDailyEntity());
+
+        mockMvc.perform(post("/smart-wallet/wallet-features/daily")
+                        .param("walletAddress", "wallet-1")
+                        .param("featureDate", "2026-04-10"))
+                .andExpect(status().isOk());
+
+        verify(predictionMarketDataApplicationService).buildWalletFeatureDaily("wallet-1", LocalDate.of(2026, 4, 10));
     }
 }

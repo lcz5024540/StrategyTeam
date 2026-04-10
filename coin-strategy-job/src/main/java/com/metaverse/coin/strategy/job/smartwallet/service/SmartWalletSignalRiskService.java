@@ -170,16 +170,33 @@ public class SmartWalletSignalRiskService {
             reasons.add("Recommended stake is below execution wallet minimum order.");
         }
 
-        TradeEvScoringService.TradeEvEstimate evEstimate = tradeEvScoringService.estimate(event, recommendedStake);
+        TradeEvScoringService.TradeEvEstimate evEstimate = tradeEvScoringService.estimate(profile, event, consensus, recommendedStake);
         if (evEstimate.getSampleSize() != null && evEstimate.getSampleSize() > 0) {
             reasons.add("Local EV estimate sample size=" + evEstimate.getSampleSize() + ".");
         }
+        reasons.add("Model follow probability=" + safe(evEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) + ".");
+        reasons.add("Model slippage spike probability=" + safe(evEstimate.getSlippageSpikeProbability()).setScale(4, RoundingMode.HALF_UP) + ".");
         if (risk.isEnableEvGate()
                 && defaultInt(risk.getEvMinSampleSize(), 0) > 0
                 && defaultInt(evEstimate.getSampleSize(), 0) >= defaultInt(risk.getEvMinSampleSize(), 0)
                 && safe(evEstimate.getExpectedNetEvUsdc()).compareTo(safe(risk.getMinExpectedNetEvUsdc())) < 0) {
             accepted = false;
             reasons.add("Local historical net EV estimate is below threshold.");
+        }
+        if (risk.isEnableProbabilityGate()
+                && safe(evEstimate.getCalibratedFollowProbability()).compareTo(safe(risk.getMinCalibratedFollowProbability())) < 0) {
+            accepted = false;
+            reasons.add("Calibrated follow probability is below threshold.");
+        }
+        if (risk.isEnableSlippageGate()
+                && safe(evEstimate.getEstimatedSlippageUsdc()).compareTo(safe(risk.getMaxExpectedSlippageUsdc())) > 0) {
+            accepted = false;
+            reasons.add("Predicted slippage cost is above threshold.");
+        }
+        if (risk.isEnableSlippageGate()
+                && safe(evEstimate.getSlippageSpikeProbability()).compareTo(safe(risk.getMaxSlippageSpikeProbability())) > 0) {
+            accepted = false;
+            reasons.add("Slippage spike probability is above threshold.");
         }
 
         boolean singleWalletOverride = qualifiesSingleWalletOverride(profile, risk, triggerSize, recommendedStake);
@@ -209,6 +226,9 @@ public class SmartWalletSignalRiskService {
                 .expectedNetEvUsdc(evEstimate.getExpectedNetEvUsdc())
                 .estimatedFeeUsdc(evEstimate.getEstimatedFeeUsdc())
                 .estimatedSlippageUsdc(evEstimate.getEstimatedSlippageUsdc())
+                .followProbability(evEstimate.getFollowProbability())
+                .calibratedFollowProbability(evEstimate.getCalibratedFollowProbability())
+                .slippageSpikeProbability(evEstimate.getSlippageSpikeProbability())
                 .evSampleSize(evEstimate.getSampleSize())
                 .consensusWallets(consensus.getDistinctWallets())
                 .consensusScore(consensus.getConsensusScore())

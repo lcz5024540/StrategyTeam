@@ -1,6 +1,9 @@
 const state = {
   selected: "POLYMARKET_COPY",
   detail: null,
+  baselineModelConfig: null,
+  baselineModelStatus: "",
+  baselineModelStatusLevel: "neutral",
   positionMode: "PAPER",
   taskFilters: {
     positiveEvOnly: false,
@@ -78,6 +81,7 @@ function renderOverview(summary) {
     state.taskFilters = dashboardReadTaskFilters("homeTask");
     renderDetail(state.detail);
   });
+  renderBaselineModelPanel();
 }
 
 function renderMetrics(detail) {
@@ -224,11 +228,12 @@ function renderDetail(detail) {
       <td>${row.side}</td>
       <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
       <td class="${dashboardAmountClass(row.expectedNetEvUsdc)}">${row.expectedNetEvUsdc == null ? "-" : dashboardFormatMoney(row.expectedNetEvUsdc)}</td>
+      <td>${dashboardOrderModelCell(row)}</td>
       <td>${row.status}</td>
       <td>${dashboardOrderSettlementText(row)}</td>
       <td>${row.placedAt || "-"}</td>
     </tr>
-  `, "当前没有订单记录。", 9);
+  `, "当前没有订单记录。", 10);
 
   renderTableRows("conflictsBody", detail.conflicts, (row) => `
     <tr>
@@ -249,10 +254,11 @@ function renderDetail(detail) {
       <td><span class="badge">${row.outcome}</span></td>
       <td>${dashboardFormatMoney(row.recommendedStakeUsdc)}</td>
       <td>${dashboardTaskEvCell(row)}</td>
+      <td>${dashboardTaskModelCell(row)}</td>
       <td>${dashboardTaskSampleCell(row)}</td>
       <td>${dashboardTaskStatusBadge(row)}</td>
     </tr>
-  `, "当前没有通过风控的可执行任务。", 6);
+  `, "当前没有通过风控的可执行任务。", 7);
 
   renderTableRows("opportunityTasksBody", opportunityTasks, (row) => `
     <tr>
@@ -260,16 +266,186 @@ function renderDetail(detail) {
       <td><span class="badge">${row.outcome}</span></td>
       <td>${dashboardFormatMoney(row.recommendedStakeUsdc)}</td>
       <td>${dashboardTaskEvCell(row)}</td>
+      <td>${dashboardTaskModelCell(row)}</td>
       <td>${row.blockerCount ?? 0}</td>
       <td><span class="cell-truncate" title="${dashboardEscapeHtmlAttr((row.riskReasons || []).join(" | "))}">${dashboardTaskBlockerText(row)}</span></td>
     </tr>
-  `, "当前没有接近可执行的机会任务。", 6);
+  `, "当前没有接近可执行的机会任务。", 7);
+}
+
+function baselineField(label, id, value) {
+  return `
+    <div class="model-config-field">
+      <label for="${id}">${label}</label>
+      <input id="${id}" type="number" step="0.0001" value="${value ?? ""}">
+    </div>
+  `;
+}
+
+function renderBaselineModelPanel() {
+  const mount = document.getElementById("baselineModelPanel");
+  if (!mount) {
+    return;
+  }
+  const config = state.baselineModelConfig;
+  if (!config) {
+    mount.innerHTML = `<div class="empty-state">当前没有可用的 baseline 模型配置。</div>`;
+    return;
+  }
+  const statusClass = state.baselineModelStatusLevel === "error"
+    ? "model-config-status error"
+    : state.baselineModelStatusLevel === "success"
+      ? "model-config-status success"
+      : "model-config-status";
+  mount.innerHTML = `
+    <div class="model-config-grid">
+      <article class="model-config-card">
+        <h3>Follow Probability</h3>
+        <p>调节跟单概率基线和主要正负因子权重。</p>
+        <div class="model-config-fields">
+          ${baselineField("Intercept", "baselineFollowIntercept", config.followProbability?.intercept)}
+          ${baselineField("Wallet Score", "baselineFollowWalletScoreWeight", config.followProbability?.walletScoreWeight)}
+          ${baselineField("Consensus Score", "baselineFollowConsensusScoreWeight", config.followProbability?.consensusScoreWeight)}
+          ${baselineField("Positive Rate", "baselineFollowPositiveRateWeight", config.followProbability?.positiveRateWeight)}
+          ${baselineField("Trigger Size", "baselineFollowTriggerSizeWeight", config.followProbability?.triggerSizeWeight)}
+          ${baselineField("Distinct Wallet", "baselineFollowDistinctWalletWeight", config.followProbability?.distinctWalletWeight)}
+          ${baselineField("Imbalance", "baselineFollowImbalanceWeight", config.followProbability?.imbalanceWeight)}
+          ${baselineField("Spread Penalty", "baselineFollowSpreadPenaltyWeight", config.followProbability?.spreadPenaltyWeight)}
+          ${baselineField("Vol Penalty", "baselineFollowVolatilityPenaltyWeight", config.followProbability?.volatilityPenaltyWeight)}
+          ${baselineField("Trigger Size Cap", "baselineFollowTriggerSizeCapUsdc", config.followProbability?.triggerSizeCapUsdc)}
+          ${baselineField("Distinct Wallet Cap", "baselineFollowDistinctWalletCap", config.followProbability?.distinctWalletCap)}
+          ${baselineField("Spread Scale (bps)", "baselineFollowSpreadPenaltyScaleBps", config.followProbability?.spreadPenaltyScaleBps)}
+          ${baselineField("Vol Scale", "baselineFollowVolatilityPenaltyScale", config.followProbability?.volatilityPenaltyScale)}
+        </div>
+      </article>
+      <article class="model-config-card">
+        <h3>Slippage</h3>
+        <p>控制价差、冲击和波动对滑点成本的贡献。</p>
+        <div class="model-config-fields">
+          ${baselineField("Gross Edge Prior", "baselineGrossEdgePriorWeight", config.grossEdgePriorWeight)}
+          ${baselineField("Spread Cost", "baselineSlippageSpreadCostWeight", config.slippage?.spreadCostWeight)}
+          ${baselineField("Impact Cost", "baselineSlippageImpactCostWeight", config.slippage?.impactCostWeight)}
+          ${baselineField("Vol Cost", "baselineSlippageVolatilityCostWeight", config.slippage?.volatilityCostWeight)}
+        </div>
+      </article>
+      <article class="model-config-card">
+        <h3>Slippage Spike</h3>
+        <p>控制滑点尖峰风险的触发阈值和特征权重。</p>
+        <div class="model-config-fields">
+          ${baselineField("Intercept", "baselineSpikeIntercept", config.slippageSpike?.intercept)}
+          ${baselineField("Spread Risk", "baselineSpikeSpreadRiskWeight", config.slippageSpike?.spreadRiskWeight)}
+          ${baselineField("Vol Risk", "baselineSpikeVolatilityRiskWeight", config.slippageSpike?.volatilityRiskWeight)}
+          ${baselineField("Size/Depth Risk", "baselineSpikeSizeDepthRiskWeight", config.slippageSpike?.sizeDepthRiskWeight)}
+          ${baselineField("Hist Spike", "baselineSpikeHistoricalSpikeWeight", config.slippageSpike?.historicalSpikeWeight)}
+          ${baselineField("Spread Scale (bps)", "baselineSpikeSpreadRiskScaleBps", config.slippageSpike?.spreadRiskScaleBps)}
+          ${baselineField("Vol Scale", "baselineSpikeVolatilityRiskScale", config.slippageSpike?.volatilityRiskScale)}
+          ${baselineField("Spike Threshold (bps)", "baselineSpikeThresholdBps", config.slippageSpike?.spikeThresholdBps)}
+        </div>
+      </article>
+      <article class="model-config-card">
+        <h3>Calibration</h3>
+        <p>对 baseline 输出做 Platt 风格校准。</p>
+        <div class="model-config-fields">
+          ${baselineField("Follow Scale", "baselineCalibrationFollowScale", config.calibration?.followProbabilityScale)}
+          ${baselineField("Follow Bias", "baselineCalibrationFollowBias", config.calibration?.followProbabilityBias)}
+          ${baselineField("Spike Scale", "baselineCalibrationSpikeScale", config.calibration?.slippageSpikeScale)}
+          ${baselineField("Spike Bias", "baselineCalibrationSpikeBias", config.calibration?.slippageSpikeBias)}
+        </div>
+      </article>
+    </div>
+    <div class="model-config-actions">
+      <button class="action-button primary" id="baselineModelSaveButton">保存运行时配置</button>
+      <button class="action-button secondary" id="baselineModelResetButton">重载当前配置</button>
+      <span class="${statusClass}" id="baselineModelStatus">${state.baselineModelStatus || "修改后仅影响当前进程，刷新数据即可观察结果变化。"}</span>
+    </div>
+  `;
+  document.getElementById("baselineModelSaveButton")?.addEventListener("click", saveBaselineModelConfig);
+  document.getElementById("baselineModelResetButton")?.addEventListener("click", reloadBaselineModelConfig);
+}
+
+function baselineNumber(id) {
+  const raw = document.getElementById(id)?.value;
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return null;
+  }
+  return Number(raw);
+}
+
+function collectBaselineModelRequest() {
+  return {
+    grossEdgePriorWeight: baselineNumber("baselineGrossEdgePriorWeight"),
+    followProbability: {
+      intercept: baselineNumber("baselineFollowIntercept"),
+      walletScoreWeight: baselineNumber("baselineFollowWalletScoreWeight"),
+      consensusScoreWeight: baselineNumber("baselineFollowConsensusScoreWeight"),
+      positiveRateWeight: baselineNumber("baselineFollowPositiveRateWeight"),
+      triggerSizeWeight: baselineNumber("baselineFollowTriggerSizeWeight"),
+      distinctWalletWeight: baselineNumber("baselineFollowDistinctWalletWeight"),
+      imbalanceWeight: baselineNumber("baselineFollowImbalanceWeight"),
+      spreadPenaltyWeight: baselineNumber("baselineFollowSpreadPenaltyWeight"),
+      volatilityPenaltyWeight: baselineNumber("baselineFollowVolatilityPenaltyWeight"),
+      triggerSizeCapUsdc: baselineNumber("baselineFollowTriggerSizeCapUsdc"),
+      distinctWalletCap: baselineNumber("baselineFollowDistinctWalletCap"),
+      spreadPenaltyScaleBps: baselineNumber("baselineFollowSpreadPenaltyScaleBps"),
+      volatilityPenaltyScale: baselineNumber("baselineFollowVolatilityPenaltyScale")
+    },
+    slippage: {
+      spreadCostWeight: baselineNumber("baselineSlippageSpreadCostWeight"),
+      impactCostWeight: baselineNumber("baselineSlippageImpactCostWeight"),
+      volatilityCostWeight: baselineNumber("baselineSlippageVolatilityCostWeight")
+    },
+    slippageSpike: {
+      intercept: baselineNumber("baselineSpikeIntercept"),
+      spreadRiskWeight: baselineNumber("baselineSpikeSpreadRiskWeight"),
+      volatilityRiskWeight: baselineNumber("baselineSpikeVolatilityRiskWeight"),
+      sizeDepthRiskWeight: baselineNumber("baselineSpikeSizeDepthRiskWeight"),
+      historicalSpikeWeight: baselineNumber("baselineSpikeHistoricalSpikeWeight"),
+      spreadRiskScaleBps: baselineNumber("baselineSpikeSpreadRiskScaleBps"),
+      volatilityRiskScale: baselineNumber("baselineSpikeVolatilityRiskScale"),
+      spikeThresholdBps: baselineNumber("baselineSpikeThresholdBps")
+    },
+    calibration: {
+      followProbabilityScale: baselineNumber("baselineCalibrationFollowScale"),
+      followProbabilityBias: baselineNumber("baselineCalibrationFollowBias"),
+      slippageSpikeScale: baselineNumber("baselineCalibrationSpikeScale"),
+      slippageSpikeBias: baselineNumber("baselineCalibrationSpikeBias")
+    }
+  };
+}
+
+async function reloadBaselineModelConfig() {
+  try {
+    state.baselineModelConfig = await dashboardGetJson("/smart-wallet/config/baseline-model");
+    state.baselineModelStatus = "已重载当前运行时配置。";
+    state.baselineModelStatusLevel = "success";
+    renderBaselineModelPanel();
+  } catch (error) {
+    state.baselineModelStatus = `重载失败：${error.message}`;
+    state.baselineModelStatusLevel = "error";
+    renderBaselineModelPanel();
+  }
+}
+
+async function saveBaselineModelConfig() {
+  try {
+    const request = collectBaselineModelRequest();
+    state.baselineModelConfig = await dashboardPostJson("/smart-wallet/config/baseline-model", request);
+    state.baselineModelStatus = "运行时配置已更新，正在刷新策略数据。";
+    state.baselineModelStatusLevel = "success";
+    renderBaselineModelPanel();
+    await loadSelected();
+  } catch (error) {
+    state.baselineModelStatus = `保存失败：${error.message}`;
+    state.baselineModelStatusLevel = "error";
+    renderBaselineModelPanel();
+  }
 }
 
 async function loadSelected() {
   const days = dashboardSelectedDays();
   state.positionMode = dashboardSelectedMode();
   state.detail = await loadStrategyDashboardDetail(state.selected, { days, mode: state.positionMode });
+  renderOverview(state.detail);
   renderDetail(state.detail);
 }
 
@@ -278,11 +454,13 @@ async function init() {
     state.selected = parseStrategyCode();
     state.positionMode = dashboardSelectedMode();
     const days = dashboardSelectedDays();
-    const [overview, summary] = await Promise.all([
+    const [overview, summary, baselineConfig] = await Promise.all([
       loadStrategyDashboardOverviewWithMode(state.positionMode),
-      loadStrategyDashboardDetail(state.selected, { days, mode: state.positionMode })
+      loadStrategyDashboardDetail(state.selected, { days, mode: state.positionMode }),
+      dashboardGetJson("/smart-wallet/config/baseline-model")
     ]);
     summary.strategyList = overview?.strategies || [];
+    state.baselineModelConfig = baselineConfig;
     state.detail = summary;
     renderOverview(summary);
     renderDetail(summary);

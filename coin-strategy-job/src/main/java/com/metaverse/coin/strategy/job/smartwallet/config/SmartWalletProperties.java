@@ -30,6 +30,8 @@ public class SmartWalletProperties {
     private PolymarketMonitor polymarket = new PolymarketMonitor();
     private ExecutionWallet executionWallet = new ExecutionWallet();
     private SignalRisk signalRisk = new SignalRisk();
+    private ModelCalibration modelCalibration = new ModelCalibration();
+    private BaselineModel baselineModel = new BaselineModel();
     private Map<String, SignalRisk> signalRiskPresets = new LinkedHashMap<>();
     private LiveValidation liveValidation = new LiveValidation();
     private SettlementSync settlementSync = new SettlementSync();
@@ -102,6 +104,11 @@ public class SmartWalletProperties {
         private boolean enableEvGate = false;
         private Integer evMinSampleSize = 3;
         private BigDecimal minExpectedNetEvUsdc = BigDecimal.ZERO;
+        private boolean enableProbabilityGate = false;
+        private BigDecimal minCalibratedFollowProbability = new BigDecimal("0.52");
+        private boolean enableSlippageGate = false;
+        private BigDecimal maxExpectedSlippageUsdc = new BigDecimal("1.50");
+        private BigDecimal maxSlippageSpikeProbability = new BigDecimal("0.65");
         private Integer maxOpenPositions = 10;
         private BigDecimal maxTotalOpenCostUsdc = new BigDecimal("500");
         private Integer maxHoursToMarketEnd = 72;
@@ -119,6 +126,58 @@ public class SmartWalletProperties {
         private Integer singleWalletOverrideMinTrades = 60;
         private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
         private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("5");
+    }
+
+    @Data
+    public static class ModelCalibration {
+        private BigDecimal followProbabilityScale = new BigDecimal("1.15");
+        private BigDecimal followProbabilityBias = new BigDecimal("-0.10");
+        private BigDecimal slippageSpikeScale = new BigDecimal("1.10");
+        private BigDecimal slippageSpikeBias = new BigDecimal("-0.05");
+    }
+
+    @Data
+    public static class BaselineModel {
+        private BigDecimal grossEdgePriorWeight = new BigDecimal("1.00");
+        private FollowProbability followProbability = new FollowProbability();
+        private Slippage slippage = new Slippage();
+        private SlippageSpike slippageSpike = new SlippageSpike();
+
+        @Data
+        public static class FollowProbability {
+            private BigDecimal intercept = new BigDecimal("-0.35");
+            private BigDecimal walletScoreWeight = new BigDecimal("1.40");
+            private BigDecimal consensusScoreWeight = new BigDecimal("1.10");
+            private BigDecimal positiveRateWeight = new BigDecimal("1.25");
+            private BigDecimal triggerSizeWeight = new BigDecimal("0.45");
+            private BigDecimal distinctWalletWeight = new BigDecimal("0.35");
+            private BigDecimal imbalanceWeight = new BigDecimal("0.20");
+            private BigDecimal spreadPenaltyWeight = new BigDecimal("0.90");
+            private BigDecimal volatilityPenaltyWeight = new BigDecimal("0.65");
+            private BigDecimal triggerSizeCapUsdc = new BigDecimal("500");
+            private BigDecimal distinctWalletCap = new BigDecimal("5");
+            private BigDecimal spreadPenaltyScaleBps = new BigDecimal("250");
+            private BigDecimal volatilityPenaltyScale = new BigDecimal("0.20");
+        }
+
+        @Data
+        public static class Slippage {
+            private BigDecimal spreadCostWeight = new BigDecimal("0.50");
+            private BigDecimal impactCostWeight = new BigDecimal("0.015");
+            private BigDecimal volatilityCostWeight = new BigDecimal("0.20");
+        }
+
+        @Data
+        public static class SlippageSpike {
+            private BigDecimal intercept = new BigDecimal("-1.10");
+            private BigDecimal spreadRiskWeight = new BigDecimal("1.20");
+            private BigDecimal volatilityRiskWeight = new BigDecimal("0.90");
+            private BigDecimal sizeDepthRiskWeight = new BigDecimal("1.05");
+            private BigDecimal historicalSpikeWeight = new BigDecimal("1.10");
+            private BigDecimal spreadRiskScaleBps = new BigDecimal("120");
+            private BigDecimal volatilityRiskScale = new BigDecimal("0.12");
+            private BigDecimal spikeThresholdBps = new BigDecimal("80");
+        }
     }
 
     @Data

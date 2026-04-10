@@ -100,6 +100,8 @@ smart-wallet:
     market-snapshot-fixed-delay-ms: 45000
     # [TUNE] Background cadence for backfilling recent trade effect labels.
     trade-effect-label-fixed-delay-ms: 60000
+    # [TUNE] Background cadence for building wallet_feature_daily snapshots.
+    wallet-feature-daily-fixed-delay-ms: 300000
     # [TUNE] Sync only a small batch of watchlist wallets each round to avoid bursty API traffic.
     watchlist-trade-sync-batch-size: 3
     # [TUNE] Minimum spacing between two trade-sync requests for the same wallet.
@@ -173,6 +175,13 @@ smart-wallet:
     ev-min-sample-size: 3
     # [TUNE] Minimum expected net EV required when EV gate is enabled.
     min-expected-net-ev-usdc: 0
+    # [TUNE] Optional probability gate driven by calibrated baseline model output.
+    enable-probability-gate: false
+    min-calibrated-follow-probability: 0.52
+    # [TUNE] Optional slippage gate driven by predicted execution risk.
+    enable-slippage-gate: false
+    max-expected-slippage-usdc: 1.50
+    max-slippage-spike-probability: 0.65
     # [TUNE] Maximum number of simultaneously open positions across the portfolio.
     max-open-positions: 10
     # [TUNE] Portfolio-wide capital budget for still-open positions.
@@ -203,6 +212,42 @@ smart-wallet:
     single-wallet-override-min-trades: 50
     single-wallet-override-min-trigger-size-usdc: 100
     single-wallet-override-min-recommended-stake-usdc: 5
+  model-calibration:
+    # [TUNE] Platt-style calibration params for baseline follow-probability output.
+    follow-probability-scale: 1.15
+    follow-probability-bias: -0.10
+    # [TUNE] Platt-style calibration params for slippage-spike probability output.
+    slippage-spike-scale: 1.10
+    slippage-spike-bias: -0.05
+  baseline-model:
+    gross-edge-prior-weight: 1.00
+    follow-probability:
+      intercept: -0.35
+      wallet-score-weight: 1.40
+      consensus-score-weight: 1.10
+      positive-rate-weight: 1.25
+      trigger-size-weight: 0.45
+      distinct-wallet-weight: 0.35
+      imbalance-weight: 0.20
+      spread-penalty-weight: 0.90
+      volatility-penalty-weight: 0.65
+      trigger-size-cap-usdc: 500
+      distinct-wallet-cap: 5
+      spread-penalty-scale-bps: 250
+      volatility-penalty-scale: 0.20
+    slippage:
+      spread-cost-weight: 0.50
+      impact-cost-weight: 0.015
+      volatility-cost-weight: 0.20
+    slippage-spike:
+      intercept: -1.10
+      spread-risk-weight: 1.20
+      volatility-risk-weight: 0.90
+      size-depth-risk-weight: 1.05
+      historical-spike-weight: 1.10
+      spread-risk-scale-bps: 120
+      volatility-risk-scale: 0.12
+      spike-threshold-bps: 80
   signal-risk-presets:
     # [TUNE] Named presets for manual analysis boards. Add more presets here instead of changing code.
     followable:

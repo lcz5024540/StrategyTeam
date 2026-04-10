@@ -43,6 +43,20 @@ async function dashboardGetJson(url) {
   return response.json();
 }
 
+async function dashboardPostJson(url, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body || {})
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed: ${url} status=${response.status}`);
+  }
+  return response.json();
+}
+
 async function loadStrategyDashboardOverview() {
   return loadStrategyDashboardOverviewWithMode(dashboardSelectedMode());
 }
@@ -242,6 +256,28 @@ function dashboardTaskEvCell(task) {
     ? `<div class="cell-subhint">样本少于 ${dashboardTaskLowSampleThreshold}</div>`
     : "";
   return `<div class="${dashboardAmountClass(ev)}">${evText}</div>${lowSampleHint}`;
+}
+
+function dashboardTaskModelCell(task) {
+  const calibrated = task?.calibratedFollowProbability;
+  const spike = task?.slippageSpikeProbability;
+  const calibratedText = calibrated == null ? "-" : dashboardFormatPercent(calibrated);
+  const spikeText = spike == null ? "-" : dashboardFormatPercent(spike);
+  return `
+    <div>${calibratedText}</div>
+    <div class="cell-subhint">滑点尖峰 ${spikeText}</div>
+  `;
+}
+
+function dashboardOrderModelCell(order) {
+  const calibrated = order?.calibratedFollowProbability;
+  const spike = order?.slippageSpikeProbability;
+  const calibratedText = calibrated == null ? "-" : dashboardFormatPercent(calibrated);
+  const spikeText = spike == null ? "-" : dashboardFormatPercent(spike);
+  return `
+    <div>${calibratedText}</div>
+    <div class="cell-subhint">滑点尖峰 ${spikeText}</div>
+  `;
 }
 
 function dashboardBuildTaskFilterBar(prefix, filters) {
