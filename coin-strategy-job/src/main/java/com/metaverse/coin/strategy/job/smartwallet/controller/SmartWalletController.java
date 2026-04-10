@@ -81,6 +81,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistrySe
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -100,6 +101,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/smart-wallet")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Smart Wallet", description = "Polymarket 聪明钱包跟踪、模拟跟单、风控分析、结算与报表接口")
 public class SmartWalletController {
 
@@ -243,7 +245,12 @@ public class SmartWalletController {
     @Operation(summary = "可执行任务列表", description = "查看当前通过风控、可直接执行的跟单任务。")
     @GetMapping("/follow-tasks/executable")
     public List<SmartWalletFollowTaskView> executableFollowTasks(@RequestParam(defaultValue = "50") Integer limit) {
-        return followTaskApplicationService.listExecutableTasks(limit);
+        try {
+            return followTaskApplicationService.listExecutableTasks(limit);
+        } catch (Exception e) {
+            log.error("Failed to load executable follow tasks limit={}", limit, e);
+            throw e;
+        }
     }
 
     @Operation(summary = "单强钱包候选", description = "基于单钱包 override 策略查看候选任务，适合 followable 预设。")
@@ -278,13 +285,24 @@ public class SmartWalletController {
     public List<SmartWalletFollowTaskView> opportunityFollowTasks(@RequestParam(defaultValue = "20") Integer limit,
                                                                   @RequestParam(defaultValue = "3") Integer maxBlockers,
                                                                   @RequestParam(defaultValue = "false") boolean includeExecutable) {
-        return followTaskService.listOpportunityTasks(limit, maxBlockers, includeExecutable);
+        try {
+            return followTaskService.listOpportunityTasks(limit, maxBlockers, includeExecutable);
+        } catch (Exception e) {
+            log.error("Failed to load opportunity follow tasks limit={} maxBlockers={} includeExecutable={}",
+                    limit, maxBlockers, includeExecutable, e);
+            throw e;
+        }
     }
 
     @Operation(summary = "阻塞项统计", description = "按 blockerCategory 聚合最近任务，观察当前主要风控瓶颈。")
     @GetMapping("/follow-tasks/blocker-stats")
     public List<SmartWalletBlockerStatView> followTaskBlockerStats(@RequestParam(defaultValue = "200") Integer taskLimit) {
-        return followTaskApplicationService.blockerStats(taskLimit);
+        try {
+            return followTaskApplicationService.blockerStats(taskLimit);
+        } catch (Exception e) {
+            log.error("Failed to load follow-task blocker stats taskLimit={}", taskLimit, e);
+            throw e;
+        }
     }
 
     @Operation(summary = "冲突市场报表", description = "查看同一市场持有多个 outcome 的冲突持仓与对应收益情况。")
