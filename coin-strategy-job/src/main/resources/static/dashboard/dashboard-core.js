@@ -44,7 +44,12 @@ async function dashboardGetJson(url) {
 }
 
 async function loadStrategyDashboardOverview() {
-  return dashboardGetJson("/strategy-platform/strategy/overview");
+  return loadStrategyDashboardOverviewWithMode(dashboardSelectedMode());
+}
+
+async function loadStrategyDashboardOverviewWithMode(mode) {
+  const selectedMode = dashboardNormalizeMode(mode);
+  return dashboardGetJson(`/strategy-platform/strategy/overview?mode=${selectedMode}`);
 }
 
 async function loadPaperSettlementReviewSummary(limit = 200) {
@@ -339,8 +344,26 @@ function dashboardPlaceholderDetail(strategy) {
     walletAttribution: [],
     marketAttribution: [],
     dailyReports: [],
-    blockerStats: []
+    blockerStats: [],
+    positionMode: "PAPER"
   };
+}
+
+function dashboardNormalizeMode(mode) {
+  const normalized = String(mode || "").trim().toUpperCase();
+  if (normalized === "LIVE") {
+    return "LIVE";
+  }
+  return "PAPER";
+}
+
+function dashboardSelectedMode() {
+  const params = new URLSearchParams(window.location.search);
+  return dashboardNormalizeMode(params.get("mode"));
+}
+
+function dashboardModeLabel(mode) {
+  return dashboardNormalizeMode(mode) === "LIVE" ? "真实持仓" : "模拟持仓";
 }
 
 function parsePositiveIntParam(name, fallbackValue) {
@@ -354,10 +377,11 @@ function parsePositiveIntParam(name, fallbackValue) {
 
 function buildWindowSwitcher(activeDays, strategyCode) {
   const options = [7, 14, 30, 60];
+  const mode = dashboardSelectedMode();
   return `
     <div class="window-switcher">
       ${options.map((days) => `
-        <a href="${window.location.pathname}?strategy=${strategyCode || "POLYMARKET_COPY"}&days=${days}"
+        <a href="${window.location.pathname}?strategy=${strategyCode || "POLYMARKET_COPY"}&days=${days}&mode=${mode}"
            class="${days === activeDays ? "active" : ""}">
           ${days}天
         </a>
@@ -369,16 +393,17 @@ function buildWindowSwitcher(activeDays, strategyCode) {
 async function loadPolymarketDashboardDetail(options = {}) {
   const days = options.days || 30;
   const attributionLimit = options.attributionLimit || 10;
-  const baseDetail = await dashboardGetJson("/strategy-platform/strategy/POLYMARKET_COPY");
+  const mode = dashboardNormalizeMode(options.mode || dashboardSelectedMode());
+  const baseDetail = await dashboardGetJson(`/strategy-platform/strategy/POLYMARKET_COPY?mode=${mode}`);
 
   const [walletAttribution, marketAttribution, dailyReports, blockerStats, executableTasks, opportunityTasks, stalePaperSettlementReview] = await Promise.all([
-    dashboardGetJson(`/smart-wallet/reports/wallets?limit=${attributionLimit}`),
-    dashboardGetJson(`/smart-wallet/reports/markets?limit=${attributionLimit}`),
-    dashboardGetJson(`/smart-wallet/reports/daily?limit=${Math.max(days, 7)}`),
+    dashboardGetJson(`/smart-wallet/reports/wallets?limit=${attributionLimit}&mode=${mode}`),
+    dashboardGetJson(`/smart-wallet/reports/markets?limit=${attributionLimit}&mode=${mode}`),
+    dashboardGetJson(`/smart-wallet/reports/daily?limit=${Math.max(days, 7)}&mode=${mode}`),
     dashboardGetJson("/smart-wallet/follow-tasks/blocker-stats?taskLimit=200"),
     dashboardGetJson("/smart-wallet/follow-tasks/executable?limit=8"),
     dashboardGetJson("/smart-wallet/follow-tasks/opportunities?limit=8&maxBlockers=3"),
-    loadPaperSettlementReviewSummary()
+    mode === "PAPER" ? loadPaperSettlementReviewSummary() : Promise.resolve(null)
   ]);
 
   return {
@@ -414,7 +439,8 @@ async function loadPolymarketDashboardDetail(options = {}) {
     executableTasks: executableTasks || [],
     opportunityTasks: opportunityTasks || [],
     stalePaperSettlementReview,
-    selectedDays: days
+    selectedDays: days,
+    positionMode: mode
   };
 }
 
@@ -422,7 +448,8 @@ async function loadStrategyDashboardDetail(code, options = {}) {
   if (code === "POLYMARKET_COPY") {
     return loadPolymarketDashboardDetail(options);
   }
-  const detail = await dashboardGetJson(`/strategy-platform/strategy/${code}`);
+  const mode = dashboardNormalizeMode(options.mode || dashboardSelectedMode());
+  const detail = await dashboardGetJson(`/strategy-platform/strategy/${code}?mode=${mode}`);
   return {
     code: detail?.summary?.code || code,
     name: detail?.summary?.name || code,
@@ -454,7 +481,8 @@ async function loadStrategyDashboardDetail(code, options = {}) {
     blockerStats: [],
     executableTasks: [],
     opportunityTasks: [],
-    selectedDays: options.days || 30
+    selectedDays: options.days || 30,
+    positionMode: mode
   };
 }
 
@@ -471,6 +499,7 @@ function renderDashboardNav(selectedCode) {
 
 function renderGlobalFilterBar(activeStrategyCode) {
   const selectedDays = dashboardSelectedDays();
+  const selectedMode = dashboardSelectedMode();
   return `
     <section class="panel filter-panel">
       <div class="filter-grid">
@@ -492,9 +521,20 @@ function renderGlobalFilterBar(activeStrategyCode) {
             `).join("")}
           </select>
         </div>
+        <div class="filter-item">
+          <label>持仓模式</label>
+          <div class="segmented-toggle">
+            ${["PAPER", "LIVE"].map((mode) => `
+              <a href="${window.location.pathname}?strategy=${activeStrategyCode || parseStrategyCode()}&days=${selectedDays}&mode=${mode}"
+                 class="${selectedMode === mode ? "active" : ""}">
+                ${dashboardModeLabel(mode)}
+              </a>
+            `).join("")}
+          </div>
+        </div>
         <div class="filter-item filter-action">
           <span>当前说明</span>
-          <strong>页面切换会保留策略与时间窗口参数</strong>
+          <strong>页面切换会保留策略、时间窗口和持仓模式参数</strong>
         </div>
       </div>
     </section>
@@ -586,6 +626,7 @@ function dashboardPageHref(page, strategyCode) {
   const params = new URLSearchParams();
   params.set("strategy", strategyCode || parseStrategyCode());
   params.set("days", String(dashboardSelectedDays()));
+  params.set("mode", dashboardSelectedMode());
   return `/dashboard/${page}?${params.toString()}`;
 }
 
@@ -600,14 +641,16 @@ function attachGlobalFilters(containerId, currentPage) {
     strategySelect.addEventListener("change", () => {
       const strategy = strategySelect.value || parseStrategyCode();
       const days = daysSelect ? daysSelect.value : dashboardSelectedDays();
-      window.location.href = `/dashboard/${currentPage}?strategy=${strategy}&days=${days}`;
+      const mode = dashboardSelectedMode();
+      window.location.href = `/dashboard/${currentPage}?strategy=${strategy}&days=${days}&mode=${mode}`;
     });
   }
   if (daysSelect) {
     daysSelect.addEventListener("change", () => {
       const strategy = strategySelect ? strategySelect.value : parseStrategyCode();
       const days = daysSelect.value || dashboardSelectedDays();
-      window.location.href = `/dashboard/${currentPage}?strategy=${strategy}&days=${days}`;
+      const mode = dashboardSelectedMode();
+      window.location.href = `/dashboard/${currentPage}?strategy=${strategy}&days=${days}&mode=${mode}`;
     });
   }
 }

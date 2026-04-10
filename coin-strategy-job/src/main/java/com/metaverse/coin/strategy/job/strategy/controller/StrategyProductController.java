@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,13 +24,14 @@ public class StrategyProductController {
 
     @Operation(summary = "策略总览")
     @GetMapping("/overview")
-    public StrategyDashboardOverviewView overview() {
-        return strategyProductQueryService.overview();
+    public StrategyDashboardOverviewView overview(@RequestParam(required = false) String mode) {
+        return strategyProductQueryService.overview(mode);
     }
 
     @Operation(summary = "策略详情")
     @GetMapping("/{strategyCode}")
-    public StrategyDetailView detail(@PathVariable String strategyCode) {
-        return strategyProductQueryService.detail(strategyCode);
+    public StrategyDetailView detail(@PathVariable String strategyCode,
+                                     @RequestParam(required = false) String mode) {
+        return strategyProductQueryService.detail(strategyCode, mode);
     }
 }

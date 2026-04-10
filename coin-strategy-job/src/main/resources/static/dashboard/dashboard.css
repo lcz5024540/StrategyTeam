@@ -229,7 +229,7 @@ body {
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 16px;
   align-items: end;
 }
@@ -260,6 +260,29 @@ body {
   padding: 12px 14px;
   color: var(--text);
   font: inherit;
+}
+
+.segmented-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmented-toggle a {
+  text-decoration: none;
+  color: var(--muted);
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(22, 33, 20, 0.06);
+  border: 1px solid transparent;
+  transition: background .18s ease, color .18s ease, border-color .18s ease;
+}
+
+.segmented-toggle a.active,
+.segmented-toggle a:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: rgba(31, 122, 77, 0.2);
 }
 
 .filter-action strong {

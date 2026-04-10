@@ -1,6 +1,7 @@
 const state = {
   selected: "POLYMARKET_COPY",
   detail: null,
+  positionMode: "PAPER",
   taskFilters: {
     positiveEvOnly: false,
     maxBlocker: null,
@@ -16,6 +17,7 @@ function renderOverview(summary) {
     ${renderDashboardNav("HOME")}
     <div class="pill">Tomcat + Swagger</div>
     <div class="pill">Smart Wallet APIs</div>
+    <div class="pill">${dashboardModeLabel(state.positionMode)}视图</div>
     <div class="pill">${dashboardGeneratedAtText()}</div>
   `;
   const health = calculateHealthScore(summary);
@@ -60,6 +62,7 @@ function renderOverview(summary) {
       const params = new URLSearchParams(window.location.search);
       params.set("strategy", strategySummary.code);
       params.set("days", String(dashboardSelectedDays()));
+      params.set("mode", state.positionMode);
       window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
       renderOverview(summary);
       await loadSelected();
@@ -265,17 +268,19 @@ function renderDetail(detail) {
 
 async function loadSelected() {
   const days = dashboardSelectedDays();
-  state.detail = await loadStrategyDashboardDetail(state.selected, { days });
+  state.positionMode = dashboardSelectedMode();
+  state.detail = await loadStrategyDashboardDetail(state.selected, { days, mode: state.positionMode });
   renderDetail(state.detail);
 }
 
 async function init() {
   try {
     state.selected = parseStrategyCode();
+    state.positionMode = dashboardSelectedMode();
     const days = dashboardSelectedDays();
     const [overview, summary] = await Promise.all([
-      loadStrategyDashboardOverview(),
-      loadStrategyDashboardDetail(state.selected, { days })
+      loadStrategyDashboardOverviewWithMode(state.positionMode),
+      loadStrategyDashboardDetail(state.selected, { days, mode: state.positionMode })
     ]);
     summary.strategyList = overview?.strategies || [];
     state.detail = summary;

@@ -16,12 +16,12 @@ public class StrategyDashboardService implements StrategyReadFacade {
     }
 
     @Override
-    public StrategyDashboardOverviewView overview() {
-        return strategyPlatformQueryClient.getOverview();
+    public StrategyDashboardOverviewView overview(String mode) {
+        return strategyPlatformQueryClient.getOverview(mode);
     }
 
     @Override
-    public StrategyDetailView detail(String strategyCode) {
-        return strategyPlatformQueryClient.getStrategyDetail(strategyCode);
+    public StrategyDetailView detail(String strategyCode, String mode) {
+        return strategyPlatformQueryClient.getStrategyDetail(strategyCode, mode);
     }
 }

@@ -393,8 +393,9 @@ public class SmartWalletController {
 
     @Operation(summary = "日报列表", description = "查看按日汇总的收益、胜率与绩效数据。")
     @GetMapping("/reports/daily")
-    public List<SmartWalletDailyReportView> dailyReports(@RequestParam(defaultValue = "30") Integer limit) {
-        return accountingService.listDailyReports(limit);
+    public List<SmartWalletDailyReportView> dailyReports(@RequestParam(defaultValue = "30") Integer limit,
+                                                         @RequestParam(required = false) String mode) {
+        return accountingService.listDailyReports(limit, mode);
     }
 
     @Operation(summary = "重建日报", description = "按最近天数重建 daily report 聚合数据。")
@@ -528,14 +529,16 @@ public class SmartWalletController {
 
     @Operation(summary = "钱包归因报表", description = "按执行钱包 executionAddress 查看收益归因报表。")
     @GetMapping("/reports/wallets")
-    public List<SmartWalletReportAttributionItem> walletReports(@RequestParam(defaultValue = "20") Integer limit) {
-        return accountingService.walletAttribution(limit);
+    public List<SmartWalletReportAttributionItem> walletReports(@RequestParam(defaultValue = "20") Integer limit,
+                                                                @RequestParam(required = false) String mode) {
+        return accountingService.walletAttribution(limit, mode);
     }
 
     @Operation(summary = "市场归因报表", description = "按市场维度汇总成交量、账本收益与当前未落袋暴露。")
     @GetMapping("/reports/markets")
-    public List<SmartWalletReportAttributionItem> marketReports(@RequestParam(defaultValue = "20") Integer limit) {
-        return accountingService.marketAttribution(limit);
+    public List<SmartWalletReportAttributionItem> marketReports(@RequestParam(defaultValue = "20") Integer limit,
+                                                                @RequestParam(required = false) String mode) {
+        return accountingService.marketAttribution(limit, mode);
     }
 
     @Operation(summary = "派生 CLOB API 凭证", description = "基于执行钱包派生 Polymarket CLOB API key、secret 与 passphrase。")

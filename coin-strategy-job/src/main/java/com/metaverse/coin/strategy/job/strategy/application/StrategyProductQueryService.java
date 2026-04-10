@@ -42,7 +42,11 @@ public class StrategyProductQueryService {
     }
 
     public StrategyDashboardOverviewView overview() {
-        StrategyDetailView polymarket = detail(POLYMARKET_CODE);
+        return overview(null);
+    }
+
+    public StrategyDashboardOverviewView overview(String mode) {
+        StrategyDetailView polymarket = detail(POLYMARKET_CODE, mode);
         List<StrategySummaryView> strategies = new ArrayList<>();
         strategies.add(polymarket.summary());
         strategies.add(placeholder("HEDGE", "对冲策略", "对冲", "PLANNED", "后续用于市场中性、风险对冲和跨市场保护仓位。"));
@@ -52,6 +56,10 @@ public class StrategyProductQueryService {
     }
 
     public StrategyDetailView detail(String strategyCode) {
+        return detail(strategyCode, null);
+    }
+
+    public StrategyDetailView detail(String strategyCode, String mode) {
         if (!POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             StrategySummaryView summary = placeholder(strategyCode, strategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
             return new StrategyDetailView(summary,
@@ -63,18 +71,18 @@ public class StrategyProductQueryService {
                     List.of(), List.of(), List.of(), List.of(), List.of());
         }
 
-        SmartWalletPerformanceView performance = accountingService.performance();
-        SmartWalletPnlSummaryView pnlSummary = accountingService.summary();
-        SmartWalletCapacitySummaryView capacity = accountingService.capacitySummary();
-        List<SmartWalletPositionView> positions = accountingService.listActivePositions();
-        List<SmartWalletPositionView> nextSettlements = accountingService.listNextSettlements(8);
-        List<SmartWalletOrderView> orders = accountingService.listOrders(30);
-        List<SmartWalletPnlTimelinePoint> timeline = accountingService.pnlTimeline(30);
-        List<SmartWalletConflictMarketView> conflicts = accountingService.conflictingMarkets(10, false);
+        SmartWalletPerformanceView performance = accountingService.performance(mode);
+        SmartWalletPnlSummaryView pnlSummary = accountingService.summary(mode);
+        SmartWalletCapacitySummaryView capacity = accountingService.capacitySummary(mode);
+        List<SmartWalletPositionView> positions = accountingService.listActivePositions(mode);
+        List<SmartWalletPositionView> nextSettlements = accountingService.listNextSettlements(8, mode);
+        List<SmartWalletOrderView> orders = accountingService.listOrders(30, mode);
+        List<SmartWalletPnlTimelinePoint> timeline = accountingService.pnlTimeline(30, mode);
+        List<SmartWalletConflictMarketView> conflicts = accountingService.conflictingMarkets(10, false, mode);
 
         StrategySummaryView summary = new StrategySummaryView(
                 POLYMARKET_CODE, "Polymarket 跟单策略", "Polymarket", "ACTIVE",
-                "基于 smart wallet 的 Polymarket 模拟跟单与风控策略。",
+                buildDescription(mode),
                 performance.getOpenPositions(), safe(performance.getCompositePnlUsdc()), safe(performance.getNetPnlUsdc()),
                 safe(performance.getRealizedPnlUsdc()),
                 safe(performance.getUnrealizedPnlUsdc()), safe(performance.getPendingSettlementPnlUsdc()),
@@ -97,7 +105,7 @@ public class StrategyProductQueryService {
         return new StrategyDetailView(
                 summary,
                 metrics,
-                buildInsights(metrics, nextSettlements),
+                buildInsights(metrics, nextSettlements, mode),
                 positions.stream().map(this::toPosition).toList(),
                 nextSettlements.stream().map(this::toPosition).toList(),
                 orders.stream().map(this::toOrder).toList(),
@@ -106,7 +114,7 @@ public class StrategyProductQueryService {
         );
     }
 
-    private List<StrategyInsightView> buildInsights(StrategyMetricsView metrics, List<SmartWalletPositionView> nextSettlements) {
+    private List<StrategyInsightView> buildInsights(StrategyMetricsView metrics, List<SmartWalletPositionView> nextSettlements, String mode) {
         List<StrategyInsightView> insights = new ArrayList<>();
         BigDecimal remainingCapital = metrics.remainingCapitalBudgetUsdc() == null ? BigDecimal.ZERO : metrics.remainingCapitalBudgetUsdc();
         if (remainingCapital.compareTo(BigDecimal.valueOf(100)) < 0) {
@@ -131,7 +139,22 @@ public class StrategyProductQueryService {
                 && metrics.closedPositions() != null && metrics.closedPositions() == 0) {
             insights.add(new StrategyInsightView("INFO", "当前胜率尚未成型", "暂时没有已结算仓位，胜率需要等待真实结算后再判断。"));
         }
+        if ("LIVE".equalsIgnoreCase(mode)) {
+            insights.add(new StrategyInsightView("INFO", "当前查看真实仓", "页面已切到 LIVE 口径，指标、持仓、订单和时间线都只统计真实执行钱包。"));
+        } else if ("PAPER".equalsIgnoreCase(mode)) {
+            insights.add(new StrategyInsightView("INFO", "当前查看模拟仓", "页面已切到 PAPER 口径，指标、持仓、订单和时间线都只统计 paper-book 仓位。"));
+        }
         return insights;
+    }
+
+    private String buildDescription(String mode) {
+        if ("LIVE".equalsIgnoreCase(mode)) {
+            return "基于 smart wallet 的 Polymarket 真实持仓与风控策略视图。";
+        }
+        if ("PAPER".equalsIgnoreCase(mode)) {
+            return "基于 smart wallet 的 Polymarket 模拟持仓与风控策略视图。";
+        }
+        return "基于 smart wallet 的 Polymarket 跟单与风控策略。";
     }
 
     private StrategyPositionRowView toPosition(SmartWalletPositionView row) {

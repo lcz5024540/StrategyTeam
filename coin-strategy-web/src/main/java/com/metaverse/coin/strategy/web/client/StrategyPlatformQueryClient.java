@@ -5,7 +5,15 @@ import com.metaverse.coin.strategy.web.model.StrategyDetailView;
 
 public interface StrategyPlatformQueryClient {
 
-    StrategyDashboardOverviewView getOverview();
+    default StrategyDashboardOverviewView getOverview() {
+        return getOverview(null);
+    }
 
-    StrategyDetailView getStrategyDetail(String strategyCode);
+    StrategyDashboardOverviewView getOverview(String mode);
+
+    default StrategyDetailView getStrategyDetail(String strategyCode) {
+        return getStrategyDetail(strategyCode, null);
+    }
+
+    StrategyDetailView getStrategyDetail(String strategyCode, String mode);
 }

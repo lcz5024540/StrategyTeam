@@ -74,6 +74,31 @@ h1 {
   background: var(--panel);
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-toggle a {
+  text-decoration: none;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(23, 33, 23, 0.06);
+  border: 1px solid transparent;
+}
+
+.mode-toggle a.active,
+.mode-toggle a:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: rgba(31, 122, 77, 0.24);
 }
 
 .panel {

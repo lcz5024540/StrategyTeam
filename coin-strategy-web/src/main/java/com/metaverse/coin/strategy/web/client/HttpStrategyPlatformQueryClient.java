@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Locale;
 
 @Component
 public class HttpStrategyPlatformQueryClient implements StrategyPlatformQueryClient {
@@ -27,13 +28,24 @@ public class HttpStrategyPlatformQueryClient implements StrategyPlatformQueryCli
     }
 
     @Override
-    public StrategyDashboardOverviewView getOverview() {
-        return getJson("/strategy-platform/strategy/overview", StrategyDashboardOverviewView.class);
+    public StrategyDashboardOverviewView getOverview(String mode) {
+        return getJson("/strategy-platform/strategy/overview" + modeQuery(mode), StrategyDashboardOverviewView.class);
     }
 
     @Override
-    public StrategyDetailView getStrategyDetail(String strategyCode) {
-        return getJson("/strategy-platform/strategy/" + strategyCode, StrategyDetailView.class);
+    public StrategyDetailView getStrategyDetail(String strategyCode, String mode) {
+        return getJson("/strategy-platform/strategy/" + strategyCode + modeQuery(mode), StrategyDetailView.class);
+    }
+
+    private String modeQuery(String mode) {
+        if (mode == null || mode.isBlank()) {
+            return "";
+        }
+        String normalized = mode.trim().toUpperCase(Locale.ROOT);
+        if (!"PAPER".equals(normalized) && !"LIVE".equals(normalized)) {
+            return "";
+        }
+        return "?mode=" + normalized;
     }
 
     private <T> T getJson(String path, Class<T> type) {

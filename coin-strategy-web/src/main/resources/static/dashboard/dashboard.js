@@ -2,6 +2,7 @@ const state = {
   selected: "POLYMARKET_COPY",
   overview: null,
   detail: null,
+  positionMode: "PAPER",
 };
 
 async function getJson(url) {
@@ -26,9 +27,39 @@ function amountClass(value) {
   return Number(value || 0) >= 0 ? "positive" : "negative";
 }
 
+function normalizeMode(mode) {
+  return String(mode || "").trim().toUpperCase() === "LIVE" ? "LIVE" : "PAPER";
+}
+
+function selectedMode() {
+  const params = new URLSearchParams(window.location.search);
+  return normalizeMode(params.get("mode"));
+}
+
+function modeLabel(mode) {
+  return normalizeMode(mode) === "LIVE" ? "真实持仓" : "模拟持仓";
+}
+
+function updateUrl() {
+  const params = new URLSearchParams(window.location.search);
+  params.set("strategy", state.selected);
+  params.set("mode", state.positionMode);
+  window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+}
+
+function renderModeToggle() {
+  const mount = document.getElementById("modeToggle");
+  mount.innerHTML = ["PAPER", "LIVE"].map((mode) => `
+    <a href="?strategy=${state.selected}&mode=${mode}" class="${state.positionMode === mode ? "active" : ""}">
+      ${modeLabel(mode)}
+    </a>
+  `).join("");
+}
+
 function renderOverview() {
   const generatedAt = document.getElementById("generatedAt");
   generatedAt.textContent = `数据生成时间：${state.overview.generatedAtBjt}`;
+  renderModeToggle();
 
   const cards = document.getElementById("strategyCards");
   cards.innerHTML = "";
@@ -49,6 +80,7 @@ function renderOverview() {
     `;
     card.addEventListener("click", async () => {
       state.selected = strategy.code;
+      updateUrl();
       renderOverview();
       await loadDetail(strategy.code);
     });
@@ -187,17 +219,20 @@ function renderDetail(detail) {
 }
 
 async function loadOverview() {
-  state.overview = await getJson("/dashboard/api/overview");
+  state.overview = await getJson(`/dashboard/api/overview?mode=${state.positionMode}`);
   renderOverview();
 }
 
 async function loadDetail(code) {
-  state.detail = await getJson(`/dashboard/api/strategies/${code}`);
+  state.detail = await getJson(`/dashboard/api/strategies/${code}?mode=${state.positionMode}`);
   renderDetail(state.detail);
 }
 
 async function init() {
   try {
+    const params = new URLSearchParams(window.location.search);
+    state.selected = params.get("strategy") || state.selected;
+    state.positionMode = selectedMode();
     await loadOverview();
     await loadDetail(state.selected);
   } catch (error) {
