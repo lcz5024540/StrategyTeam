@@ -26,12 +26,28 @@ export function getAmountClass(value: number | null | undefined): 'positive' | '
   return 'neutral'
 }
 
-export function compactAddress(address: string, prefixLen = 6, suffixLen = 4): string {
-  if (!address || address.length <= prefixLen + suffixLen) return address
-  return `${address.slice(0, prefixLen)}...${address.slice(-suffixLen)}`
+function toDisplayText(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'bigint' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value)
+  }
 }
 
-export function truncateText(text: string, maxLen: number): string {
-  if (!text || text.length <= maxLen) return text
-  return `${text.slice(0, maxLen)}...`
+export function compactAddress(address: unknown, prefixLen = 6, suffixLen = 4): string {
+  const text = toDisplayText(address)
+  if (!text || text.length <= prefixLen + suffixLen) return text
+  return `${text.slice(0, prefixLen)}...${text.slice(-suffixLen)}`
+}
+
+export function truncateText(text: unknown, maxLen: number): string {
+  const normalizedText = toDisplayText(text)
+  if (!normalizedText || normalizedText.length <= maxLen) return normalizedText
+  return `${normalizedText.slice(0, maxLen)}...`
 }
