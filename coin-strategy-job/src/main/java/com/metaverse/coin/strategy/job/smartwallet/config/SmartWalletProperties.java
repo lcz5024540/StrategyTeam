@@ -121,6 +121,11 @@ public class SmartWalletProperties {
         private Integer minDistinctWallets = 2;
         private BigDecimal minConsensusScore = new BigDecimal("0.72");
         private boolean enableSingleWalletOverride = true;
+        // Leaderboard survivorship-bias guard: when a wallet shows winRate >= threshold with only a small sample,
+        // the number is almost certainly inflated (only top-N positions visible). Block single-wallet override for them.
+        private boolean blockUnreliableLeaderboardWinRate = true;
+        private BigDecimal unreliableWinRateThreshold = new BigDecimal("1.0");
+        private Integer unreliableMaxSampleSize = 50;
         private BigDecimal singleWalletOverrideMinWalletScore = new BigDecimal("0.88");
         private BigDecimal singleWalletOverrideMinWinRate = new BigDecimal("0.68");
         private Integer singleWalletOverrideMinTrades = 60;

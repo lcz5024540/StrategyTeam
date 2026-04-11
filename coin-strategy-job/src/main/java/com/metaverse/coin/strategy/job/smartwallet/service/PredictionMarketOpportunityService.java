@@ -74,4 +74,10 @@ public class PredictionMarketOpportunityService {
                 market.getCategory(),
                 market.getOutcome() == null ? List.of() : List.of(market.getOutcome()));
     }
+
+    public int clearAll() {
+        int size = markets.size();
+        markets.clear();
+        return size;
+    }
 }

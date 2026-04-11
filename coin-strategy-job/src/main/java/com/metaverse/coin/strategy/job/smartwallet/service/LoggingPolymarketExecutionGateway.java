@@ -1,11 +1,13 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.Map;
 
 @Component
@@ -15,6 +17,7 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
     private final ExecutionWalletContextLoader walletContextLoader;
     private final PolymarketOrderRequestFactory orderRequestFactory;
     private final PolymarketClobClientRouter clobClientRouter;
+    private final SmartWalletProperties properties;
 
     @Override
     public SmartWalletExecutionResult execute(SmartWalletSignal signal, ExecutionMode mode) {
@@ -35,6 +38,8 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     orderResponse.get("state")
             ));
             String normalizedStatus = normalizeLiveStatus(rawStatus, orderId, success);
+            java.math.BigDecimal liveNotional = order.getStakeUsdc();
+            java.math.BigDecimal liveFee = estimateFee(liveNotional, properties.getExecutionWallet().getEstimatedFeeRate());
             return SmartWalletExecutionResult.builder()
                     .signalId(signal.getSignalId())
                     .mode(mode)
@@ -50,10 +55,13 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     .status(normalizedStatus)
                     .price(order.getLimitPrice())
                     .size(order.getSize())
-                    .notionalUsdc(order.getStakeUsdc())
-                    .feeUsdc(java.math.BigDecimal.ZERO)
+                    .notionalUsdc(liveNotional)
+                    .feeUsdc(liveFee)
                     .build();
         }
+        java.math.BigDecimal paperNotional = signal.getRecommendedStakeUsdc();
+        java.math.BigDecimal paperPrice    = signal.getMarket() == null ? null : signal.getMarket().getPrice();
+        java.math.BigDecimal paperFee = estimateFee(paperNotional, properties.getExecutionWallet().getEstimatedFeeRate());
         return SmartWalletExecutionResult.builder()
                 .signalId(signal.getSignalId())
                 .mode(ExecutionMode.PAPER)
@@ -65,9 +73,9 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                 .side("BUY")
                 .orderType("GTC")
                 .status("FILLED")
-                .price(signal.getMarket() == null ? null : signal.getMarket().getPrice())
-                .notionalUsdc(signal.getRecommendedStakeUsdc())
-                .feeUsdc(java.math.BigDecimal.ZERO)
+                .price(paperPrice)
+                .notionalUsdc(paperNotional)
+                .feeUsdc(paperFee)
                 .build();
     }
 
@@ -90,6 +98,14 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
         }
         String text = String.valueOf(value);
         return "true".equalsIgnoreCase(text) || "1".equals(text);
+    }
+
+    /** Taker fee = notional * feeRate (single-leg, entry only). Returns ZERO when inputs are null. */
+    private java.math.BigDecimal estimateFee(java.math.BigDecimal notional, java.math.BigDecimal feeRate) {
+        if (notional == null || feeRate == null) {
+            return java.math.BigDecimal.ZERO;
+        }
+        return notional.multiply(feeRate).setScale(8, java.math.RoundingMode.HALF_UP);
     }
 
     private String normalizeLiveStatus(String rawStatus, String orderId, boolean success) {

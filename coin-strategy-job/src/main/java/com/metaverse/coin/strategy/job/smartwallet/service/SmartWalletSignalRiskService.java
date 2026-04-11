@@ -56,6 +56,18 @@ public class SmartWalletSignalRiskService {
         }
 
         SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
+
+        // Warn early when this wallet has a suspiciously perfect win rate (leaderboard survivorship bias).
+        // Single-wallet override will be blocked for these wallets; consensus path still allowed but flagged.
+        if (risk.isBlockUnreliableLeaderboardWinRate() && profile != null) {
+            BigDecimal winRate = safe(profile.getWinRate());
+            int totalTrades = profile.getTotalTrades() == null ? 0 : profile.getTotalTrades();
+            if (winRate.compareTo(safe(risk.getUnreliableWinRateThreshold())) >= 0
+                    && totalTrades <= (risk.getUnreliableMaxSampleSize() == null ? 50 : risk.getUnreliableMaxSampleSize())) {
+                reasons.add("[UNRELIABLE_WIN_RATE] Wallet winRate=" + winRate + " with only " + totalTrades
+                        + " trades — likely leaderboard survivorship bias. Single-wallet override blocked.");
+            }
+        }
         if (!risk.isAllowSellSignal() && "SELL".equalsIgnoreCase(event.getSide())) {
             accepted = false;
             reasons.add("SELL signals are disabled by risk policy.");
@@ -246,6 +258,18 @@ public class SmartWalletSignalRiskService {
                                                   BigDecimal recommendedStake) {
         if (!risk.isEnableSingleWalletOverride() || profile == null) {
             return false;
+        }
+        // Block single-wallet override for wallets with suspiciously perfect win rates:
+        // winRate >= unreliableWinRateThreshold (default 1.0) AND totalTrades <= unreliableMaxSampleSize (default 50)
+        // This catches leaderboard survivorship bias where only top-50 positions are shown, inflating win rate to 1.0.
+        if (risk.isBlockUnreliableLeaderboardWinRate()) {
+            BigDecimal winRate = safe(profile.getWinRate());
+            int totalTrades = profile.getTotalTrades() == null ? 0 : profile.getTotalTrades();
+            boolean suspiciouslyPerfect = winRate.compareTo(safe(risk.getUnreliableWinRateThreshold())) >= 0
+                    && totalTrades <= (risk.getUnreliableMaxSampleSize() == null ? 50 : risk.getUnreliableMaxSampleSize());
+            if (suspiciouslyPerfect) {
+                return false;
+            }
         }
         return safe(profile.getWalletScore()).compareTo(safe(risk.getSingleWalletOverrideMinWalletScore())) >= 0
                 && safe(profile.getWinRate()).compareTo(safe(risk.getSingleWalletOverrideMinWinRate())) >= 0

@@ -206,6 +206,11 @@ smart-wallet:
     min-consensus-score: 0.72
     # [TUNE] Special strategy lane for one exceptional wallet.
     enable-single-wallet-override: true
+    # [FIX-BUG2] Block single-wallet override for wallets whose win rate is suspiciously perfect
+    # due to leaderboard survivorship bias (only top-N positions shown, making winRate appear = 1.0).
+    block-unreliable-leaderboard-win-rate: true
+    unreliable-win-rate-threshold: 1.0
+    unreliable-max-sample-size: 50
     # [TUNE] Single-wallet override thresholds.
     single-wallet-override-min-wallet-score: 0.79
     single-wallet-override-min-win-rate: 0.65

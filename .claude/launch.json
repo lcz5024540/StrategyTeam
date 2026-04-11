@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "smart-wallet",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["scripts/run-smart-wallet.sh"],
+      "port": 8081
+    }
+  ]
+}

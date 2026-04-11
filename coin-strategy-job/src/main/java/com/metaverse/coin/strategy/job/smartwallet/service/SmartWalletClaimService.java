@@ -260,6 +260,10 @@ public class SmartWalletClaimService {
     }
 
     private SmartWalletClaimSummary runLocked(List<SmartWalletPositionEntity> positions, String triggerType) {
+        if (shouldSkipScheduledEmptyRun(positions, triggerType)) {
+            log.debug("Skip scheduled claim processing because no RESOLVED_UNCLAIMED positions were found.");
+            return null;
+        }
         if (!running.compareAndSet(false, true)) {
             if ("SCHEDULED".equalsIgnoreCase(triggerType)) {
                 log.info("Skip scheduled claim processing because a previous run is still in progress.");
@@ -547,6 +551,10 @@ public class SmartWalletClaimService {
         int base = Math.max(properties.getClaim().getRetryBackoffMinutes(), 1);
         long factor = 1L << Math.min(Math.max(failureCount - 1, 0), 4);
         return base * factor;
+    }
+
+    private boolean shouldSkipScheduledEmptyRun(List<SmartWalletPositionEntity> positions, String triggerType) {
+        return "SCHEDULED".equalsIgnoreCase(triggerType) && (positions == null || positions.isEmpty());
     }
 
     private boolean isPaperExecutionAddress(String executionAddress) {

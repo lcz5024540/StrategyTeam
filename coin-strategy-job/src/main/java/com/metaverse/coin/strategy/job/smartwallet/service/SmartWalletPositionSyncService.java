@@ -1,7 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletCashLedgerMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletCashLedgerEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Date;
 import java.util.List;
 
@@ -24,6 +27,7 @@ public class SmartWalletPositionSyncService {
     private final PolymarketApiClient polymarketApiClient;
     private final ExecutionWalletContextLoader walletContextLoader;
     private final SmartWalletPositionMapper positionMapper;
+    private final SmartWalletCashLedgerMapper cashLedgerMapper;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
 
@@ -126,6 +130,86 @@ public class SmartWalletPositionSyncService {
         }
         Long cooldownMs = monitor.getPositionSyncErrorCooldownMs();
         return cooldownMs == null || cooldownMs <= 0 ? 300_000L : cooldownMs;
+    }
+
+    // -------------------------------------------------------------------------
+    // P2 Stop-loss: runs every 5 minutes, closes paper positions whose mark
+    // price has fallen >= stopLossThresholdRate below average entry price.
+    // -------------------------------------------------------------------------
+    @Scheduled(fixedDelay = 300_000)
+    public void checkStopLoss() {
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        if (!properties.isEnabled() || risk == null || !risk.isEnableStopLoss()) {
+            return;
+        }
+        BigDecimal threshold = risk.getStopLossThresholdRate() == null
+                ? new BigDecimal("0.50") : risk.getStopLossThresholdRate();
+
+        List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+
+        for (SmartWalletPositionEntity pos : openPositions) {
+            BigDecimal entry = pos.getAverageEntryPrice();
+            BigDecimal mark  = pos.getLastMarkPrice();
+            if (entry == null || entry.compareTo(BigDecimal.ZERO) <= 0 || mark == null) {
+                continue;
+            }
+            // loss rate = (entry - mark) / entry
+            BigDecimal lossRate = entry.subtract(mark).divide(entry, 8, RoundingMode.HALF_UP);
+            if (lossRate.compareTo(threshold) < 0) {
+                continue;
+            }
+            // Calculate stop-loss PnL: qty * (mark - entry)
+            BigDecimal qty  = pos.getQuantity() == null ? BigDecimal.ZERO : pos.getQuantity();
+            BigDecimal realizedPnl = qty.multiply(mark.subtract(entry)).setScale(8, RoundingMode.HALF_UP);
+            BigDecimal proceeds     = qty.multiply(mark).max(BigDecimal.ZERO).setScale(8, RoundingMode.HALF_UP);
+
+            pos.setStatus("CLAIMED");
+            pos.setRealizedPnlUsdc(realizedPnl);
+            pos.setCostBasisUsdc(BigDecimal.ZERO);
+            pos.setAverageEntryPrice(BigDecimal.ZERO);
+            pos.setClosedAt(new Date());
+            pos.setUpdatedAt(new Date());
+            positionMapper.updateById(pos);
+
+            // Record cash-ledger entries for the stop-loss close
+            Date now = new Date();
+            if (realizedPnl.compareTo(BigDecimal.ZERO) < 0) {
+                SmartWalletCashLedgerEntity lossEntry = new SmartWalletCashLedgerEntity()
+                        .setExecutionAddress(pos.getExecutionAddress())
+                        .setAsset("USDC")
+                        .setEntryType("REALIZED_PNL")
+                        .setDirection("OUT")
+                        .setAmount(realizedPnl.abs())
+                        .setReferenceType("POSITION")
+                        .setReferenceId(pos.getId())
+                        .setMarketId(pos.getMarketId())
+                        .setQuestion(pos.getQuestion())
+                        .setOccurredAt(now)
+                        .setCreatedAt(now);
+                cashLedgerMapper.insert(lossEntry);
+            }
+            SmartWalletCashLedgerEntity proceedsEntry = new SmartWalletCashLedgerEntity()
+                    .setExecutionAddress(pos.getExecutionAddress())
+                    .setAsset("USDC")
+                    .setEntryType("SETTLEMENT_PROCEEDS")
+                    .setDirection("IN")
+                    .setAmount(proceeds)
+                    .setReferenceType("POSITION")
+                    .setReferenceId(pos.getId())
+                    .setMarketId(pos.getMarketId())
+                    .setQuestion(pos.getQuestion())
+                    .setOccurredAt(now)
+                    .setCreatedAt(now);
+            cashLedgerMapper.insert(proceedsEntry);
+
+            log.info("STOP-LOSS triggered positionId={} marketId={} outcome={} entry={} mark={} lossRate={}% pnl={}",
+                    pos.getId(), pos.getMarketId(), pos.getOutcome(),
+                    entry, mark,
+                    lossRate.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                    realizedPnl.setScale(2, RoundingMode.HALF_UP));
+        }
     }
 
     private boolean isNotFoundError(Exception e) {

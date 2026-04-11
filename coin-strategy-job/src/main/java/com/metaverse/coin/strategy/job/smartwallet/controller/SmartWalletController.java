@@ -77,6 +77,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTask
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
@@ -122,6 +123,7 @@ public class SmartWalletController {
     private final SmartWalletClaimService claimService;
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
+    private final SmartWalletDataResetService dataResetService;
     private final Environment environment;
     private final PredictionMarketDataApplicationService predictionMarketDataApplicationService;
     private final FollowTaskApplicationService followTaskApplicationService;
@@ -148,6 +150,35 @@ public class SmartWalletController {
     @GetMapping("/overview")
     public PolymarketProductOverview overview() {
         return productOverviewService.overview();
+    }
+
+    @Operation(summary = "重置 smart-wallet 数据", description = "清空 smart-wallet 运行数据与可选风险特征数据，用于从头重新计算。需要 confirm=true 才会执行。")
+    @PostMapping("/admin/reset-data")
+    public Map<String, Object> resetData(@RequestParam(defaultValue = "false") boolean confirm,
+                                         @RequestParam(defaultValue = "true") boolean includeProfiles,
+                                         @RequestParam(defaultValue = "true") boolean includeRiskArtifacts,
+                                         @RequestParam(defaultValue = "true") boolean includeRuntimeSeeds,
+                                         @RequestParam(defaultValue = "true") boolean includeMetadataCache) {
+        if (!confirm) {
+            return Map.of(
+                    "executed", false,
+                    "message", "Pass confirm=true to execute the smart-wallet data reset.",
+                    "includeProfiles", includeProfiles,
+                    "includeRiskArtifacts", includeRiskArtifacts,
+                    "includeRuntimeSeeds", includeRuntimeSeeds,
+                    "includeMetadataCache", includeMetadataCache
+            );
+        }
+        Map<String, Object> result = dataResetService.reset(
+                includeProfiles,
+                includeRiskArtifacts,
+                includeRuntimeSeeds,
+                includeMetadataCache
+        );
+        return Map.of(
+                "executed", true,
+                "result", result
+        );
     }
 
     @Operation(summary = "钱包画像列表", description = "查看已入库的 smart wallet Polymarket 画像信息。")

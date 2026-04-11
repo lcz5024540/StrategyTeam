@@ -122,6 +122,17 @@ public class PolymarketMarketMetadataService {
         }
     }
 
+    public Map<String, Integer> clearAllCaches() {
+        int cached = cache.size();
+        int local = localMetadata.size();
+        cache.clear();
+        localMetadata.clear();
+        return Map.of(
+                "cache", cached,
+                "localMetadata", local
+        );
+    }
+
     private PolymarketApiClient.MarketMetadata findByQuestionHint(String conditionId, String questionHint) {
         if (!StringUtils.hasText(questionHint)) {
             return null;
