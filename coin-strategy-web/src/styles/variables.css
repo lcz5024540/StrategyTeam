@@ -1,0 +1,32 @@
+:root {
+  /* 颜色系统 */
+  --bg: #f4efe3;
+  --panel: rgba(255, 251, 242, 0.92);
+  --line: rgba(27, 38, 28, 0.12);
+  --text: #162114;
+  --muted: #667160;
+  --accent: #1f7a4d;
+  --accent-soft: rgba(31, 122, 77, 0.12);
+  --warn: #ab5b13;
+  --warn-soft: rgba(171, 91, 19, 0.12);
+  --danger: #9f2d2d;
+  --danger-soft: rgba(159, 45, 45, 0.12);
+  --shadow: 0 24px 60px rgba(31, 26, 16, 0.08);
+
+  /* 间距系统 */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* 圆角 */
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-full: 999px;
+
+  /* 字体 */
+  --font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Consolas, monospace;
+}

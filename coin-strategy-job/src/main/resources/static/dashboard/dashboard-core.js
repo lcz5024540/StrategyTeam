@@ -91,6 +91,12 @@ function dashboardFormatMoney(value) {
   return `${num >= 0 ? "+" : "-"}$${Math.abs(num).toFixed(2)}`;
 }
 
+// 格式化纯金额（不带正负号前缀，用于成本、市值等）
+function dashboardFormatAmount(value) {
+  const num = Number(value || 0);
+  return `$${num.toFixed(2)}`;
+}
+
 function dashboardFormatPercent(value) {
   const num = Number(value || 0) * 100;
   return `${num.toFixed(2)}%`;
