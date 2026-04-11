@@ -149,4 +149,16 @@ class SmartWalletControllerTest {
 
         verify(predictionMarketDataApplicationService).buildWalletFeatureDaily("wallet-1", LocalDate.of(2026, 4, 10));
     }
+
+    @Test
+    void shouldAdmitWalletToWatchlistWhenQualified() throws Exception {
+        when(polymarketWalletDiscoveryService.analyzeWalletAndAdmitWatchlist("0xabc"))
+                .thenReturn(true);
+
+        mockMvc.perform(post("/smart-wallet/polymarket/watchlist/admit")
+                        .param("walletAddress", "0xabc"))
+                .andExpect(status().isOk());
+
+        verify(polymarketWalletDiscoveryService).analyzeWalletAndAdmitWatchlist("0xabc");
+    }
 }

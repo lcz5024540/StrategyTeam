@@ -1,32 +1,46 @@
 :root {
-  /* 颜色系统 */
-  --bg: #f4efe3;
-  --panel: rgba(255, 251, 242, 0.92);
-  --line: rgba(27, 38, 28, 0.12);
-  --text: #162114;
-  --muted: #667160;
-  --accent: #1f7a4d;
-  --accent-soft: rgba(31, 122, 77, 0.12);
-  --warn: #ab5b13;
-  --warn-soft: rgba(171, 91, 19, 0.12);
-  --danger: #9f2d2d;
-  --danger-soft: rgba(159, 45, 45, 0.12);
-  --shadow: 0 24px 60px rgba(31, 26, 16, 0.08);
+  /* ── Cyberpunk 颜色系统 ─────────────────────────────── */
+  --bg:           #020904;
+  --panel:        rgba(3, 12, 5, 0.97);
+  --panel-solid:  #040f06;
+  --line:         rgba(0, 255, 65, 0.16);
+  --line-bright:  rgba(0, 255, 65, 0.35);
 
-  /* 间距系统 */
+  --text:         #c0f0c0;
+  --text-bright:  #e8ffe8;
+  --muted:        #3a6642;
+
+  --accent:       #00ff41;
+  --accent-dim:   #00cc33;
+  --accent-soft:  rgba(0, 255, 65, 0.10);
+  --accent-glow:  0 0 8px rgba(0, 255, 65, 0.70), 0 0 24px rgba(0, 255, 65, 0.25);
+  --accent-glow-sm: 0 0 4px rgba(0, 255, 65, 0.60);
+
+  --warn:         #ffaa00;
+  --warn-soft:    rgba(255, 170, 0, 0.12);
+  --warn-glow:    0 0 6px rgba(255, 170, 0, 0.60);
+
+  --danger:       #ff2244;
+  --danger-soft:  rgba(255, 34, 68, 0.12);
+  --danger-glow:  0 0 6px rgba(255, 34, 68, 0.60);
+
+  --shadow:       0 0 0 1px rgba(0, 255, 65, 0.14), 0 8px 40px rgba(0, 0, 0, 0.90);
+  --panel-glow:   0 0 0 1px rgba(0, 255, 65, 0.20), 0 0 30px rgba(0, 255, 65, 0.04), 0 12px 48px rgba(0, 0, 0, 0.95);
+
+  /* ── 间距 ──────────────────────────────────────────── */
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 32px;
 
-  /* 圆角 */
-  --radius-sm: 12px;
-  --radius-md: 18px;
-  --radius-lg: 24px;
+  /* ── 圆角 ──────────────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
   --radius-full: 999px;
 
-  /* 字体 */
+  /* ── 字体 ──────────────────────────────────────────── */
   --font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Consolas, monospace;
+  --font-mono:   ui-monospace, "SFMono-Regular", "SF Mono", Consolas, "Courier New", monospace;
 }
