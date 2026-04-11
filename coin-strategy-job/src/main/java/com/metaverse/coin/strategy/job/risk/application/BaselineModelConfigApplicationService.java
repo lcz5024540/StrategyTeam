@@ -69,7 +69,7 @@ public class BaselineModelConfigApplicationService {
         baseline.setGrossEdgePriorWeight(coalesce(request.getGrossEdgePriorWeight(), baseline.getGrossEdgePriorWeight()));
         if (request.getFollowProbability() != null) {
             SmartWalletProperties.BaselineModel.FollowProbability current = baseline.getFollowProbability();
-            UpdateBaselineModelConfigRequest.FollowProbabilityRequest update = request.getFollowProbability();
+            UpdateBaselineModelConfigRequest.FollowProbability update = request.getFollowProbability();
             current.setIntercept(coalesce(update.getIntercept(), current.getIntercept()));
             current.setWalletScoreWeight(coalesce(update.getWalletScoreWeight(), current.getWalletScoreWeight()));
             current.setConsensusScoreWeight(coalesce(update.getConsensusScoreWeight(), current.getConsensusScoreWeight()));
@@ -86,14 +86,14 @@ public class BaselineModelConfigApplicationService {
         }
         if (request.getSlippage() != null) {
             SmartWalletProperties.BaselineModel.Slippage current = baseline.getSlippage();
-            UpdateBaselineModelConfigRequest.SlippageRequest update = request.getSlippage();
+            UpdateBaselineModelConfigRequest.Slippage update = request.getSlippage();
             current.setSpreadCostWeight(coalesce(update.getSpreadCostWeight(), current.getSpreadCostWeight()));
             current.setImpactCostWeight(coalesce(update.getImpactCostWeight(), current.getImpactCostWeight()));
             current.setVolatilityCostWeight(coalesce(update.getVolatilityCostWeight(), current.getVolatilityCostWeight()));
         }
         if (request.getSlippageSpike() != null) {
             SmartWalletProperties.BaselineModel.SlippageSpike current = baseline.getSlippageSpike();
-            UpdateBaselineModelConfigRequest.SlippageSpikeRequest update = request.getSlippageSpike();
+            UpdateBaselineModelConfigRequest.SlippageSpike update = request.getSlippageSpike();
             current.setIntercept(coalesce(update.getIntercept(), current.getIntercept()));
             current.setSpreadRiskWeight(coalesce(update.getSpreadRiskWeight(), current.getSpreadRiskWeight()));
             current.setVolatilityRiskWeight(coalesce(update.getVolatilityRiskWeight(), current.getVolatilityRiskWeight()));
@@ -104,7 +104,7 @@ public class BaselineModelConfigApplicationService {
             current.setSpikeThresholdBps(coalesce(update.getSpikeThresholdBps(), current.getSpikeThresholdBps()));
         }
         if (request.getCalibration() != null) {
-            UpdateBaselineModelConfigRequest.CalibrationRequest update = request.getCalibration();
+            UpdateBaselineModelConfigRequest.Calibration update = request.getCalibration();
             calibration.setFollowProbabilityScale(coalesce(update.getFollowProbabilityScale(), calibration.getFollowProbabilityScale()));
             calibration.setFollowProbabilityBias(coalesce(update.getFollowProbabilityBias(), calibration.getFollowProbabilityBias()));
             calibration.setSlippageSpikeScale(coalesce(update.getSlippageSpikeScale(), calibration.getSlippageSpikeScale()));
