@@ -22,13 +22,24 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
             ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
             PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepare(signal, wallet);
             Map<String, Object> response = clobClientRouter.placeOrder(wallet, order);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> orderResponse = response.get("response") instanceof Map<?, ?>
+                    ? (Map<String, Object>) response.get("response")
+                    : Map.of();
             String orderId = stringify(firstNonNull(response.get("orderID"), response.get("orderId"), response.get("id")));
-            boolean success = truthy(firstNonNull(response.get("success"), response.get("ok")));
+            boolean success = truthy(firstNonNull(response.get("success"), response.get("ok"))) || orderId != null;
+            String rawStatus = stringify(firstNonNull(
+                    response.get("status"),
+                    orderResponse.get("status"),
+                    orderResponse.get("orderStatus"),
+                    orderResponse.get("state")
+            ));
+            String normalizedStatus = normalizeLiveStatus(rawStatus, orderId, success);
             return SmartWalletExecutionResult.builder()
                     .signalId(signal.getSignalId())
                     .mode(mode)
-                    .success(success || orderId != null)
-                    .message(stringify(firstNonNull(response.get("message"), response.get("status"), "LIVE order submitted through official Python SDK bridge.")))
+                    .success(success)
+                    .message(stringify(firstNonNull(response.get("message"), rawStatus, "LIVE order submitted to Polymarket CLOB.")))
                     .externalOrderId(orderId)
                     .executionAddress(wallet.getAddress())
                     .marketId(order.getMarketId())
@@ -36,7 +47,7 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     .outcome(order.getOutcome())
                     .side(order.getSide())
                     .orderType(wallet.getOrderType())
-                    .status(success || orderId != null ? "FILLED" : "FAILED")
+                    .status(normalizedStatus)
                     .price(order.getLimitPrice())
                     .size(order.getSize())
                     .notionalUsdc(order.getStakeUsdc())
@@ -79,5 +90,25 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
         }
         String text = String.valueOf(value);
         return "true".equalsIgnoreCase(text) || "1".equals(text);
+    }
+
+    private String normalizeLiveStatus(String rawStatus, String orderId, boolean success) {
+        if (rawStatus != null) {
+            String normalized = rawStatus.trim().toUpperCase();
+            if ("OPEN".equals(normalized)
+                    || "PLACED".equals(normalized)
+                    || "PENDING".equals(normalized)
+                    || "UNMATCHED".equals(normalized)) {
+                return "LIVE";
+            }
+            if ("PARTIAL".equals(normalized)) {
+                return "PARTIALLY_FILLED";
+            }
+            return normalized;
+        }
+        if (success && orderId != null) {
+            return "LIVE";
+        }
+        return "FAILED";
     }
 }

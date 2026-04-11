@@ -201,6 +201,9 @@ public class SmartWalletProperties {
         private boolean paperAutoClaimEnabled = true;
         private boolean liveAutoClaimEnabled = true;
         private String liveGatewayMode = "MANUAL_CONFIRM";
+        private String relayerBaseUrl = "https://relayer.polymarket.com";
+        private String builderApiKey;
+        private Integer requestTimeoutSeconds = 20;
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;

@@ -21,17 +21,6 @@ public class PolymarketOrderRequestFactory {
 
     public PreparedPolymarketOrder prepare(SmartWalletSignal signal,
                                            ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
-        BigDecimal cappedStake = signal.getRecommendedStakeUsdc()
-                .max(wallet.getMinOrderUsdc())
-                .min(wallet.getMaxOrderUsdc())
-                .setScale(2, RoundingMode.HALF_UP);
-
-        BigDecimal rawPrice = signal.getMarket() == null || signal.getMarket().getPrice() == null
-                ? BigDecimal.ZERO
-                : signal.getMarket().getPrice();
-        BigDecimal slippage = rawPrice.multiply(wallet.getPriceSlippageRate());
-        BigDecimal limitPrice = rawPrice.add(slippage).min(BigDecimal.ONE).setScale(4, RoundingMode.HALF_UP);
-
         String outcome = signal.getFollowOutcome() == null ? "YES" : signal.getFollowOutcome().trim().toUpperCase();
         if ("YES".equals(outcome) && !wallet.isAllowYes()) {
             throw new IllegalStateException("Execution wallet is configured to block YES orders.");
@@ -46,23 +35,65 @@ public class PolymarketOrderRequestFactory {
         BigDecimal minimumTickSize = metadata.getMinimumTickSize() == null || metadata.getMinimumTickSize().compareTo(BigDecimal.ZERO) <= 0
                 ? new BigDecimal("0.01")
                 : metadata.getMinimumTickSize();
+        return prepareLocalDraft(
+                signal.getSignalId(),
+                conditionId,
+                metadata.getQuestion() == null && signal.getMarket() != null ? signal.getMarket().getQuestion() : metadata.getQuestion(),
+                outcome,
+                signal.getRecommendedStakeUsdc(),
+                signal.getMarket() == null ? null : signal.getMarket().getPrice(),
+                tokenId,
+                minimumTickSize,
+                metadata.isNegRisk(),
+                wallet
+        );
+    }
+
+    public PreparedPolymarketOrder prepareLocalDraft(String signalId,
+                                                     String conditionId,
+                                                     String question,
+                                                     String outcome,
+                                                     BigDecimal requestedStakeUsdc,
+                                                     BigDecimal requestedPrice,
+                                                     String tokenId,
+                                                     BigDecimal tickSize,
+                                                     boolean negRisk,
+                                                     ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
+        if ("YES".equalsIgnoreCase(outcome) && !wallet.isAllowYes()) {
+            throw new IllegalStateException("Execution wallet is configured to block YES orders.");
+        }
+        if ("NO".equalsIgnoreCase(outcome) && !wallet.isAllowNo()) {
+            throw new IllegalStateException("Execution wallet is configured to block NO orders.");
+        }
+        BigDecimal recommendedStake = requestedStakeUsdc == null ? wallet.getMinOrderUsdc() : requestedStakeUsdc;
+        BigDecimal cappedStake = recommendedStake
+                .max(wallet.getMinOrderUsdc())
+                .min(wallet.getMaxOrderUsdc())
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal rawPrice = requestedPrice == null ? BigDecimal.ZERO : requestedPrice;
+        BigDecimal slippage = rawPrice.multiply(wallet.getPriceSlippageRate());
+        BigDecimal limitPrice = rawPrice.add(slippage).min(BigDecimal.ONE).setScale(4, RoundingMode.HALF_UP);
+        BigDecimal minimumTickSize = tickSize == null || tickSize.compareTo(BigDecimal.ZERO) <= 0
+                ? new BigDecimal("0.01")
+                : tickSize;
         BigDecimal normalizedLimitPrice = snapToTick(limitPrice, minimumTickSize);
         BigDecimal size = normalizedLimitPrice.compareTo(BigDecimal.ZERO) <= 0
                 ? BigDecimal.ZERO
                 : cappedStake.divide(normalizedLimitPrice, 6, RoundingMode.DOWN);
 
         return PreparedPolymarketOrder.builder()
-                .signalId(signal.getSignalId())
+                .signalId(signalId)
                 .marketId(conditionId)
-                .question(metadata.getQuestion() == null && signal.getMarket() != null ? signal.getMarket().getQuestion() : metadata.getQuestion())
+                .question(question)
                 .outcome(outcome)
                 .side("BUY")
                 .stakeUsdc(cappedStake)
                 .limitPrice(normalizedLimitPrice)
                 .size(size)
-                .tokenId(tokenId)
+                .tokenId(StringUtils.hasText(tokenId) ? tokenId.trim() : null)
                 .tickSize(minimumTickSize)
-                .negRisk(metadata.isNegRisk())
+                .negRisk(negRisk)
                 .executionAddress(wallet.getAddress())
                 .funderAddress(wallet.getFunderAddress())
                 .build();

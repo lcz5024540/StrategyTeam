@@ -139,7 +139,10 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
         ApiCreds creds = ensureApiCreds(context);
         String path = "/data/order/" + orderId;
         Map<String, String> headers = createLevel2Headers(context, creds, "GET", path, null);
-        return executeJson("GET", context, path, headers, null);
+        return Map.of(
+                "success", true,
+                "response", executeJson("GET", context, path, headers, null)
+        );
     }
 
     @Override
@@ -150,7 +153,10 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
         body.put("orderID", orderId);
         String serializedBody = serialize(body);
         Map<String, String> headers = createLevel2Headers(context, creds, "DELETE", "/order", serializedBody);
-        return executeJson("DELETE", context, "/order", headers, serializedBody);
+        return Map.of(
+                "success", true,
+                "response", executeJson("DELETE", context, "/order", headers, serializedBody)
+        );
     }
 
     private ApiCreds ensureApiCreds(ExecutionWalletContextLoader.ExecutionWalletContext context) {

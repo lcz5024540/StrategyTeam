@@ -622,6 +622,12 @@ public class SmartWalletController {
         return executionApplicationService.deriveApiCreds();
     }
 
+    @Operation(summary = "查看实时执行钱包状态", description = "直接从 Polymarket 查询执行钱包余额与远端持仓，便于核对真实 LIVE 账户状态。")
+    @GetMapping("/execution-wallet/live-state")
+    public Map<String, Object> executionWalletLiveState(@RequestParam(required = false) String conditionId) {
+        return clobExecutionService.liveWalletState(conditionId);
+    }
+
     @Operation(summary = "CLOB 通用预演", description = "按 market/outcome/stake 预演订单参数，不会真实下单。")
     @PostMapping("/clob/dry-run")
     public Map<String, Object> clobDryRun(@RequestBody PolymarketOrderDryRunRequest request) {
@@ -644,6 +650,16 @@ public class SmartWalletController {
     @GetMapping("/clob/markets/{conditionId}")
     public Object clobMarketMetadata(@PathVariable String conditionId) {
         return clobExecutionService.marketMetadata(conditionId);
+    }
+
+    @Operation(summary = "查看实时价格参考", description = "按 conditionId/outcome 查看当前 token 的 best bid/ask、midpoint 与回退价格参考。")
+    @GetMapping("/clob/markets/{conditionId}/price-reference")
+    public Map<String, Object> clobMarketPriceReference(@PathVariable String conditionId,
+                                                        @RequestParam(defaultValue = "YES") String outcome,
+                                                        @RequestParam(required = false) String tokenId,
+                                                        @RequestParam(required = false) BigDecimal fallbackPrice,
+                                                        @RequestParam(required = false) String question) {
+        return clobExecutionService.marketPriceReference(conditionId, outcome, tokenId, fallbackPrice, question);
     }
 
     @Operation(summary = "采集市场快照", description = "按 conditionId/outcome 主动抓取一次订单簿与最近成交，生成市场微观结构快照。")

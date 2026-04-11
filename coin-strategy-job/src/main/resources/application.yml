@@ -306,7 +306,14 @@ smart-wallet:
     # [TUNE] Enable live claim workflow orchestration; actual on-chain broadcasting still depends on gateway mode.
     live-auto-claim-enabled: true
     # [FIXED-ONCE] MANUAL_CONFIRM keeps live claims in WAITING_CONFIRMATION until you confirm externally.
+    # [TUNE] RELAYER submits redeem requests to Polymarket relayer when builder-api-key is configured.
     live-gateway-mode: "MANUAL_CONFIRM"
+    # [FIXED-ONCE] Official relayer base URL for redeem submission.
+    relayer-base-url: "https://relayer.polymarket.com"
+    # [SCRIPT][FIXED-ONCE] Optional relayer builder API key used only when live-gateway-mode=RELAYER.
+    builder-api-key: "${POLYMARKET_RELAYER_BUILDER_API_KEY:}"
+    # [TUNE] Timeout for redeem submission HTTP calls.
+    request-timeout-seconds: 20
     # [TUNE] Retry pacing for live claim submission failures.
     retry-batch-limit: 20
     retry-backoff-minutes: 15

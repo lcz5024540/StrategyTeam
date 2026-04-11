@@ -7,12 +7,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -22,6 +22,8 @@ public class PolymarketClobExecutionService {
 
     private final ExecutionWalletContextLoader walletContextLoader;
     private final PolymarketClobClientRouter clobClientRouter;
+    private final PolymarketApiClient polymarketApiClient;
+    private final PolymarketMarketDataStreamService marketDataStreamService;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final PolymarketOrderRequestFactory orderRequestFactory;
     private final SmartWalletFollowTaskMapper followTaskMapper;
@@ -43,35 +45,76 @@ public class PolymarketClobExecutionService {
         return marketMetadataService.getByConditionId(conditionId);
     }
 
-    public Map<String, Object> dryRunOrder(PolymarketOrderDryRunRequest request) {
-        ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
-        if (request == null || request.getPrice() == null || request.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("price must be provided and positive for dry-run.");
-        }
-        String outcome = request.getOutcome() == null ? "YES" : request.getOutcome().trim().toUpperCase();
-        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(request.getConditionId());
-        SmartWalletSignal signal = SmartWalletSignal.builder()
-                .signalId("dry-run-" + request.getConditionId() + "-" + outcome)
-                .followOutcome(outcome)
-                .recommendedStakeUsdc(request.getStakeUsdc() == null ? wallet.getMinOrderUsdc() : request.getStakeUsdc())
-                .market(PredictionMarketOpportunity.builder()
-                        .marketId(request.getConditionId())
-                        .question(request.getQuestion() != null ? request.getQuestion() : metadata.getQuestion())
-                        .outcome(outcome)
-                        .price(request.getPrice())
-                        .conviction(BigDecimal.ONE)
-                        .liquidityUsdc(BigDecimal.ZERO)
-                        .category(metadata.getCategory())
-                        .build())
-                .build();
-        PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared = orderRequestFactory.prepare(signal, wallet);
-        return Map.of(
-                "success", true,
-                "dryRun", true,
-                "walletReady", wallet.isLiveReady(),
-                "preparedOrder", prepared,
-                "marketMetadata", metadata
+    public Map<String, Object> marketPriceReference(String conditionId,
+                                                    String outcome,
+                                                    String tokenId,
+                                                    BigDecimal fallbackPrice,
+                                                    String questionHint) {
+        String normalizedOutcome = normalizeOutcome(outcome);
+        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                conditionId,
+                false,
+                questionHint,
+                List.of(normalizedOutcome)
         );
+        String resolvedTokenId = firstNonBlank(tokenId, resolveTokenId(metadata, normalizedOutcome));
+        return buildPriceReference(conditionId, normalizedOutcome, resolvedTokenId, fallbackPrice);
+    }
+
+    public Map<String, Object> liveWalletState(String conditionId) {
+        ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.load();
+        if (!StringUtils.hasText(wallet.getAddress())) {
+            throw new IllegalStateException("Execution wallet address is missing.");
+        }
+        return Map.of(
+                "walletAddress", wallet.getAddress(),
+                "balanceUsdc", polymarketApiClient.fetchBalance(wallet.getAddress()),
+                "positions", polymarketApiClient.fetchPositions(wallet.getAddress(), conditionId)
+        );
+    }
+
+    public Map<String, Object> dryRunOrder(PolymarketOrderDryRunRequest request) {
+        if (request == null || !StringUtils.hasText(request.getConditionId())) {
+            throw new IllegalArgumentException("conditionId must be provided for dry-run.");
+        }
+        ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.load();
+        String outcome = normalizeOutcome(request.getOutcome());
+        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                request.getConditionId(),
+                false,
+                request.getQuestion(),
+                List.of(outcome)
+        );
+        String resolvedTokenId = firstNonBlank(request.getTokenId(), resolveTokenId(metadata, outcome));
+        Map<String, Object> priceReference = buildPriceReference(
+                request.getConditionId(),
+                outcome,
+                resolvedTokenId,
+                request.getPrice()
+        );
+        BigDecimal entryPrice = resolveEntryPrice(request.getPrice(), priceReference);
+        if (entryPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("price must be provided, or a usable real-time price reference must be available.");
+        }
+        String question = firstNonBlank(request.getQuestion(), metadata == null ? null : metadata.getQuestion(), request.getConditionId());
+        BigDecimal tickSize = metadata == null ? null : metadata.getMinimumTickSize();
+        PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared = orderRequestFactory.prepareLocalDraft(
+                "dry-run-" + request.getConditionId() + "-" + outcome,
+                request.getConditionId(),
+                question,
+                outcome,
+                request.getStakeUsdc(),
+                entryPrice,
+                resolvedTokenId,
+                tickSize,
+                metadata != null && metadata.isNegRisk(),
+                wallet
+        );
+        LinkedHashMap<String, Object> response = baseDryRunResponse(wallet, prepared, metadata, priceReference);
+        response.put("marketSelection", buildMarketSelection(request.getConditionId(), question, outcome, metadata, resolvedTokenId));
+        response.put("localPositionDraft", buildLocalPositionDraft(prepared, entryPrice));
+        response.put("settlementSimulation", buildSettlementSimulation(prepared));
+        return response;
     }
 
     public Map<String, Object> dryRunFollowTask(Long followTaskId) {
@@ -92,25 +135,29 @@ public class PolymarketClobExecutionService {
             throw new IllegalStateException("Follow task is missing outcome.");
         }
 
-        ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
+        ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.load();
         SignalRiskDecision decision = followTaskService.evaluateTask(followTaskId);
-        String outcome = task.getOutcome().trim().toUpperCase();
-        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(task.getMarketId());
-        SmartWalletSignal signal = SmartWalletSignal.builder()
-                .signalId("follow-task-" + task.getId())
-                .followOutcome(outcome)
-                .recommendedStakeUsdc(resolveStake(task, wallet))
-                .market(PredictionMarketOpportunity.builder()
-                        .marketId(task.getMarketId())
-                        .question(StringUtils.hasText(task.getQuestion()) ? task.getQuestion() : metadata.getQuestion())
-                        .outcome(outcome)
-                        .price(task.getTriggerPrice())
-                        .conviction(BigDecimal.ONE)
-                        .liquidityUsdc(BigDecimal.ZERO)
-                        .category(metadata.getCategory())
-                        .build())
-                .build();
-        PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared = orderRequestFactory.prepare(signal, wallet);
+        String outcome = normalizeOutcome(task.getOutcome());
+        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                task.getMarketId(),
+                false,
+                task.getQuestion(),
+                List.of(outcome)
+        );
+        String resolvedTokenId = resolveTokenId(metadata, outcome);
+        Map<String, Object> priceReference = buildPriceReference(task.getMarketId(), outcome, resolvedTokenId, task.getTriggerPrice());
+        PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared = orderRequestFactory.prepareLocalDraft(
+                "follow-task-" + task.getId(),
+                task.getMarketId(),
+                firstNonBlank(task.getQuestion(), metadata == null ? null : metadata.getQuestion(), task.getMarketId()),
+                outcome,
+                resolveStake(task, wallet),
+                resolveEntryPrice(task.getTriggerPrice(), priceReference),
+                resolvedTokenId,
+                metadata == null ? null : metadata.getMinimumTickSize(),
+                metadata != null && metadata.isNegRisk(),
+                wallet
+        );
         Map<String, Object> followTask = new LinkedHashMap<>();
         followTask.put("id", task.getId());
         followTask.put("status", task.getStatus());
@@ -124,16 +171,14 @@ public class PolymarketClobExecutionService {
         followTask.put("recommendedStakeUsdc", task.getRecommendedStakeUsdc());
         followTask.put("externalOrderId", task.getExternalOrderId());
         followTask.put("errorMessage", task.getErrorMessage());
-        return Map.of(
-                "success", true,
-                "dryRun", true,
-                "walletReady", wallet.isLiveReady(),
-                "taskExecutable", decision.isAccepted(),
-                "riskDecision", decision,
-                "followTask", followTask,
-                "preparedOrder", prepared,
-                "marketMetadata", metadata
-        );
+        LinkedHashMap<String, Object> response = baseDryRunResponse(wallet, prepared, metadata, priceReference);
+        response.put("taskExecutable", decision.isAccepted());
+        response.put("riskDecision", decision);
+        response.put("followTask", followTask);
+        response.put("marketSelection", buildMarketSelection(task.getMarketId(), firstNonBlank(task.getQuestion(), metadata == null ? null : metadata.getQuestion(), task.getMarketId()), outcome, metadata, resolvedTokenId));
+        response.put("localPositionDraft", buildLocalPositionDraft(prepared, prepared.getLimitPrice()));
+        response.put("settlementSimulation", buildSettlementSimulation(prepared));
+        return response;
     }
 
     public SmartWalletExecutionResult executeFollowTask(Long followTaskId) {
@@ -149,5 +194,210 @@ public class PolymarketClobExecutionService {
             return task.getTriggerSizeUsdc();
         }
         return wallet.getMinOrderUsdc();
+    }
+
+    private LinkedHashMap<String, Object> baseDryRunResponse(ExecutionWalletContextLoader.ExecutionWalletContext wallet,
+                                                             PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared,
+                                                             PolymarketApiClient.MarketMetadata metadata,
+                                                             Map<String, Object> priceReference) {
+        LinkedHashMap<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("dryRun", true);
+        response.put("walletReady", wallet.isLiveReady());
+        response.put("simulationOnly", !StringUtils.hasText(prepared.getTokenId()));
+        response.put("metadataNotFoundIsNormalInSimulation", !StringUtils.hasText(prepared.getTokenId()));
+        response.put("preparedOrder", prepared);
+        response.put("marketMetadata", metadata);
+        response.put("priceReference", priceReference);
+        response.put("note", StringUtils.hasText(prepared.getTokenId())
+                ? "metadata and tokenId are resolved, so this dry-run can be promoted to a live order path."
+                : "metadata not found or tokenId missing is normal in simulation; maintain the local market mapping until you need live execution.");
+        return response;
+    }
+
+    private Map<String, Object> buildMarketSelection(String conditionId,
+                                                     String question,
+                                                     String outcome,
+                                                     PolymarketApiClient.MarketMetadata metadata,
+                                                     String tokenId) {
+        LinkedHashMap<String, Object> marketSelection = new LinkedHashMap<>();
+        marketSelection.put("conditionId", conditionId);
+        marketSelection.put("question", question);
+        marketSelection.put("outcome", outcome);
+        marketSelection.put("category", metadata == null ? null : metadata.getCategory());
+        marketSelection.put("tokenId", tokenId);
+        marketSelection.put("tokenIdResolved", StringUtils.hasText(tokenId));
+        marketSelection.put("metadataSource", StringUtils.hasText(tokenId) ? "REMOTE_OR_CACHED" : "LOCAL_OR_SYNTHETIC");
+        marketSelection.put("outcomes", metadata == null ? List.of(outcome) : metadata.getOutcomes());
+        return marketSelection;
+    }
+
+    private Map<String, Object> buildLocalPositionDraft(PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared,
+                                                        BigDecimal entryPrice) {
+        LinkedHashMap<String, Object> draft = new LinkedHashMap<>();
+        draft.put("marketId", prepared.getMarketId());
+        draft.put("question", prepared.getQuestion());
+        draft.put("outcome", prepared.getOutcome());
+        draft.put("side", prepared.getSide());
+        draft.put("entryPrice", scale(entryPrice, 4));
+        draft.put("limitPrice", scale(prepared.getLimitPrice(), 4));
+        draft.put("stakeUsdc", scale(prepared.getStakeUsdc(), 2));
+        draft.put("size", scale(prepared.getSize(), 6));
+        draft.put("tickSize", scale(prepared.getTickSize(), 4));
+        draft.put("tokenId", prepared.getTokenId());
+        return draft;
+    }
+
+    private Map<String, Object> buildSettlementSimulation(PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared) {
+        BigDecimal payoutIfWin = scale(prepared.getSize(), 8);
+        BigDecimal payoutIfLose = BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        BigDecimal stake = scale(prepared.getStakeUsdc(), 8);
+        BigDecimal pnlIfWin = payoutIfWin.subtract(stake).setScale(8, RoundingMode.HALF_UP);
+        BigDecimal pnlIfLose = payoutIfLose.subtract(stake).setScale(8, RoundingMode.HALF_UP);
+        LinkedHashMap<String, Object> simulation = new LinkedHashMap<>();
+        simulation.put("payoutIfWinUsdc", payoutIfWin);
+        simulation.put("payoutIfLoseUsdc", payoutIfLose);
+        simulation.put("pnlIfWinUsdc", pnlIfWin);
+        simulation.put("pnlIfLoseUsdc", pnlIfLose);
+        simulation.put("maxProfitUsdc", pnlIfWin.max(BigDecimal.ZERO));
+        simulation.put("maxLossUsdc", pnlIfLose.abs());
+        simulation.put("breakEvenWinProbability", scale(prepared.getLimitPrice(), 6));
+        return simulation;
+    }
+
+    private Map<String, Object> buildPriceReference(String conditionId,
+                                                    String outcome,
+                                                    String tokenId,
+                                                    BigDecimal fallbackPrice) {
+        LinkedHashMap<String, Object> reference = new LinkedHashMap<>();
+        reference.put("conditionId", conditionId);
+        reference.put("outcome", outcome);
+        reference.put("tokenId", tokenId);
+        reference.put("requestedPrice", fallbackPrice);
+        if (!StringUtils.hasText(tokenId)) {
+            reference.put("referenceSource", fallbackPrice != null ? "REQUEST_PRICE" : "UNAVAILABLE");
+            reference.put("referencePrice", fallbackPrice);
+            reference.put("note", "No tokenId was available, so the simulation uses only the locally provided price.");
+            return reference;
+        }
+
+        try {
+            PolymarketMarketDataStreamService.MarketDataSnapshot wsSnapshot = marketDataStreamService.getSnapshot(tokenId);
+            PolymarketApiClient.OrderBook orderBook;
+            String source;
+            if (wsSnapshot != null && wsSnapshot.getOrderBook() != null) {
+                orderBook = wsSnapshot.getOrderBook();
+                source = "WS_CACHE";
+                reference.put("lastTradePrice", scale(wsSnapshot.getLastTradePrice(), 8));
+            } else {
+                orderBook = polymarketApiClient.fetchOrderBook(tokenId);
+                source = "REST_BOOK";
+                List<PolymarketApiClient.MarketTrade> trades = polymarketApiClient.fetchMarketTrades(conditionId, 20, null);
+                if (!trades.isEmpty()) {
+                    reference.put("lastTradePrice", scale(trades.get(0).getPrice(), 8));
+                }
+            }
+            BigDecimal bestBid = topPrice(orderBook == null ? null : orderBook.getBids());
+            BigDecimal bestAsk = topPrice(orderBook == null ? null : orderBook.getAsks());
+            BigDecimal midpoint = safe(orderBook == null ? null : orderBook.getMidpoint());
+            BigDecimal referencePrice = midpoint.compareTo(BigDecimal.ZERO) > 0
+                    ? midpoint
+                    : firstPositive(bestAsk, bestBid, fallbackPrice);
+            reference.put("referenceSource", source);
+            reference.put("bestBid", scale(bestBid, 8));
+            reference.put("bestAsk", scale(bestAsk, 8));
+            reference.put("midpoint", scale(midpoint, 8));
+            reference.put("referencePrice", scale(referencePrice, 8));
+            return reference;
+        } catch (Exception e) {
+            reference.put("referenceSource", fallbackPrice != null ? "REQUEST_PRICE_FALLBACK" : "ERROR");
+            reference.put("referencePrice", fallbackPrice);
+            reference.put("lookupError", e.getMessage());
+            return reference;
+        }
+    }
+
+    private BigDecimal resolveEntryPrice(BigDecimal requestedPrice, Map<String, Object> priceReference) {
+        BigDecimal requested = safe(requestedPrice);
+        if (requested.compareTo(BigDecimal.ZERO) > 0) {
+            return requested;
+        }
+        Object referenced = priceReference == null ? null : priceReference.get("referencePrice");
+        return referenced instanceof BigDecimal ? (BigDecimal) referenced : safe(referenced);
+    }
+
+    private String resolveTokenId(PolymarketApiClient.MarketMetadata metadata, String outcome) {
+        if (metadata == null || metadata.getOutcomeTokenIds() == null || metadata.getOutcomeTokenIds().isEmpty()) {
+            return null;
+        }
+        return metadata.getOutcomeTokenIds().entrySet().stream()
+                .filter(entry -> StringUtils.hasText(entry.getKey()) && StringUtils.hasText(entry.getValue()))
+                .filter(entry -> outcome.equalsIgnoreCase(entry.getKey().trim()))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String normalizeOutcome(String outcome) {
+        if (!StringUtils.hasText(outcome)) {
+            return "YES";
+        }
+        String normalized = outcome.trim().toUpperCase();
+        if (normalized.startsWith("NO")) {
+            return "NO";
+        }
+        if (normalized.startsWith("YES")) {
+            return "YES";
+        }
+        return normalized;
+    }
+
+    private BigDecimal topPrice(List<PolymarketApiClient.OrderBookLevel> levels) {
+        if (levels == null || levels.isEmpty() || levels.get(0) == null) {
+            return BigDecimal.ZERO;
+        }
+        return safe(levels.get(0).getPrice());
+    }
+
+    private BigDecimal firstPositive(BigDecimal... values) {
+        if (values == null) {
+            return BigDecimal.ZERO;
+        }
+        for (BigDecimal value : values) {
+            if (value != null && value.compareTo(BigDecimal.ZERO) > 0) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal scale(BigDecimal value, int scale) {
+        return safe(value).setScale(scale, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal safe(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
     }
 }

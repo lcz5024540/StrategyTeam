@@ -16,10 +16,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PredictionMarketOpportunityService {
 
     private final SmartWalletProperties properties;
+    private final PolymarketMarketMetadataService marketMetadataService;
     private final Map<String, PredictionMarketOpportunity> markets = new ConcurrentHashMap<>();
 
-    public PredictionMarketOpportunityService(SmartWalletProperties properties) {
+    public PredictionMarketOpportunityService(SmartWalletProperties properties,
+                                              PolymarketMarketMetadataService marketMetadataService) {
         this.properties = properties;
+        this.marketMetadataService = marketMetadataService;
     }
 
     @PostConstruct
@@ -35,7 +38,7 @@ public class PredictionMarketOpportunityService {
                     .category(seed.getCategory())
                     .tags(seed.getTags())
                     .build();
-            markets.put(market.getMarketId(), market);
+            storeMarket(market);
         }
     }
 
@@ -56,7 +59,19 @@ public class PredictionMarketOpportunityService {
                 .category(request.getCategory())
                 .tags(request.getTags())
                 .build();
-        markets.put(market.getMarketId(), market);
+        storeMarket(market);
         return market;
+    }
+
+    private void storeMarket(PredictionMarketOpportunity market) {
+        if (market == null || market.getMarketId() == null) {
+            return;
+        }
+        markets.put(market.getMarketId(), market);
+        marketMetadataService.registerLocalMetadata(
+                market.getMarketId(),
+                market.getQuestion(),
+                market.getCategory(),
+                market.getOutcome() == null ? List.of() : List.of(market.getOutcome()));
     }
 }

@@ -990,6 +990,7 @@ public class SmartWalletAccountingService {
     }
 
     private SettlementSyncSummary syncSettlementsForPositions(List<SmartWalletPositionEntity> positions, int marketLimit, boolean refreshCache) {
+        Set<String> localPaperMarkets = registerPaperMarketMetadataHints(positions);
         Set<String> markets = new LinkedHashSet<>();
         for (SmartWalletPositionEntity position : positions) {
             if (StringUtils.hasText(position.getMarketId()) && markets.size() < Math.max(marketLimit, 1)) {
@@ -1011,8 +1012,16 @@ public class SmartWalletAccountingService {
                     .filter(StringUtils::hasText)
                     .findFirst()
                     .orElse(null);
+            List<String> outcomeHints = positions.stream()
+                    .filter(position -> marketId.equalsIgnoreCase(position.getMarketId()))
+                    .map(SmartWalletPositionEntity::getOutcome)
+                    .filter(StringUtils::hasText)
+                    .distinct()
+                    .toList();
             try {
-                PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(marketId, refreshCache, question);
+                PolymarketApiClient.MarketMetadata metadata = localPaperMarkets.contains(marketId)
+                        ? marketMetadataService.getBestEffortByConditionId(marketId, refreshCache, question, outcomeHints)
+                        : marketMetadataService.getByConditionId(marketId, refreshCache, question);
                 metadataByMarket.put(marketId, metadata);
                 fetched++;
             } catch (Exception e) {
@@ -1067,6 +1076,43 @@ public class SmartWalletAccountingService {
                 .failures(failures)
                 .processedMarketIds(new ArrayList<>(markets))
                 .build();
+    }
+
+    private Set<String> registerPaperMarketMetadataHints(List<SmartWalletPositionEntity> positions) {
+        if (positions == null || positions.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> liveMarkets = positions.stream()
+                .filter(position -> position != null && isLiveExecutionAddress(position.getExecutionAddress()))
+                .map(SmartWalletPositionEntity::getMarketId)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        Map<String, List<SmartWalletPositionEntity>> grouped = new LinkedHashMap<>();
+        for (SmartWalletPositionEntity position : positions) {
+            if (position == null
+                    || !isPaperExecutionAddress(position.getExecutionAddress())
+                    || !StringUtils.hasText(position.getMarketId())
+                    || liveMarkets.contains(position.getMarketId())) {
+                continue;
+            }
+            grouped.computeIfAbsent(position.getMarketId(), ignored -> new ArrayList<>()).add(position);
+        }
+        Set<String> registered = new LinkedHashSet<>();
+        grouped.forEach((marketId, marketPositions) -> {
+            String question = marketPositions.stream()
+                    .map(SmartWalletPositionEntity::getQuestion)
+                    .filter(StringUtils::hasText)
+                    .findFirst()
+                    .orElse(null);
+            List<String> outcomes = marketPositions.stream()
+                    .map(SmartWalletPositionEntity::getOutcome)
+                    .filter(StringUtils::hasText)
+                    .distinct()
+                    .toList();
+            marketMetadataService.registerLocalMetadata(marketId, question, null, outcomes);
+            registered.add(marketId);
+        });
+        return registered;
     }
 
     private PositionUpdateResult applyFillToPosition(SmartWalletFillEntity fill, Long marketEndAt) {
