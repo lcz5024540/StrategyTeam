@@ -66,50 +66,49 @@ public class BaselineModelConfigApplicationService {
         }
         SmartWalletProperties.BaselineModel baseline = properties.getBaselineModel();
         SmartWalletProperties.ModelCalibration calibration = properties.getModelCalibration();
-
         baseline.setGrossEdgePriorWeight(coalesce(request.getGrossEdgePriorWeight(), baseline.getGrossEdgePriorWeight()));
         if (request.getFollowProbability() != null) {
-            SmartWalletProperties.BaselineModel.FollowProbability fp = baseline.getFollowProbability();
-            UpdateBaselineModelConfigRequest.FollowProbability incoming = request.getFollowProbability();
-            fp.setIntercept(coalesce(incoming.getIntercept(), fp.getIntercept()));
-            fp.setWalletScoreWeight(coalesce(incoming.getWalletScoreWeight(), fp.getWalletScoreWeight()));
-            fp.setConsensusScoreWeight(coalesce(incoming.getConsensusScoreWeight(), fp.getConsensusScoreWeight()));
-            fp.setPositiveRateWeight(coalesce(incoming.getPositiveRateWeight(), fp.getPositiveRateWeight()));
-            fp.setTriggerSizeWeight(coalesce(incoming.getTriggerSizeWeight(), fp.getTriggerSizeWeight()));
-            fp.setDistinctWalletWeight(coalesce(incoming.getDistinctWalletWeight(), fp.getDistinctWalletWeight()));
-            fp.setImbalanceWeight(coalesce(incoming.getImbalanceWeight(), fp.getImbalanceWeight()));
-            fp.setSpreadPenaltyWeight(coalesce(incoming.getSpreadPenaltyWeight(), fp.getSpreadPenaltyWeight()));
-            fp.setVolatilityPenaltyWeight(coalesce(incoming.getVolatilityPenaltyWeight(), fp.getVolatilityPenaltyWeight()));
-            fp.setTriggerSizeCapUsdc(coalesce(incoming.getTriggerSizeCapUsdc(), fp.getTriggerSizeCapUsdc()));
-            fp.setDistinctWalletCap(coalesce(incoming.getDistinctWalletCap(), fp.getDistinctWalletCap()));
-            fp.setSpreadPenaltyScaleBps(coalesce(incoming.getSpreadPenaltyScaleBps(), fp.getSpreadPenaltyScaleBps()));
-            fp.setVolatilityPenaltyScale(coalesce(incoming.getVolatilityPenaltyScale(), fp.getVolatilityPenaltyScale()));
+            SmartWalletProperties.BaselineModel.FollowProbability current = baseline.getFollowProbability();
+            UpdateBaselineModelConfigRequest.FollowProbabilityRequest update = request.getFollowProbability();
+            current.setIntercept(coalesce(update.getIntercept(), current.getIntercept()));
+            current.setWalletScoreWeight(coalesce(update.getWalletScoreWeight(), current.getWalletScoreWeight()));
+            current.setConsensusScoreWeight(coalesce(update.getConsensusScoreWeight(), current.getConsensusScoreWeight()));
+            current.setPositiveRateWeight(coalesce(update.getPositiveRateWeight(), current.getPositiveRateWeight()));
+            current.setTriggerSizeWeight(coalesce(update.getTriggerSizeWeight(), current.getTriggerSizeWeight()));
+            current.setDistinctWalletWeight(coalesce(update.getDistinctWalletWeight(), current.getDistinctWalletWeight()));
+            current.setImbalanceWeight(coalesce(update.getImbalanceWeight(), current.getImbalanceWeight()));
+            current.setSpreadPenaltyWeight(coalesce(update.getSpreadPenaltyWeight(), current.getSpreadPenaltyWeight()));
+            current.setVolatilityPenaltyWeight(coalesce(update.getVolatilityPenaltyWeight(), current.getVolatilityPenaltyWeight()));
+            current.setTriggerSizeCapUsdc(coalesce(update.getTriggerSizeCapUsdc(), current.getTriggerSizeCapUsdc()));
+            current.setDistinctWalletCap(coalesce(update.getDistinctWalletCap(), current.getDistinctWalletCap()));
+            current.setSpreadPenaltyScaleBps(coalesce(update.getSpreadPenaltyScaleBps(), current.getSpreadPenaltyScaleBps()));
+            current.setVolatilityPenaltyScale(coalesce(update.getVolatilityPenaltyScale(), current.getVolatilityPenaltyScale()));
         }
         if (request.getSlippage() != null) {
-            SmartWalletProperties.BaselineModel.Slippage slippage = baseline.getSlippage();
-            UpdateBaselineModelConfigRequest.Slippage incoming = request.getSlippage();
-            slippage.setSpreadCostWeight(coalesce(incoming.getSpreadCostWeight(), slippage.getSpreadCostWeight()));
-            slippage.setImpactCostWeight(coalesce(incoming.getImpactCostWeight(), slippage.getImpactCostWeight()));
-            slippage.setVolatilityCostWeight(coalesce(incoming.getVolatilityCostWeight(), slippage.getVolatilityCostWeight()));
+            SmartWalletProperties.BaselineModel.Slippage current = baseline.getSlippage();
+            UpdateBaselineModelConfigRequest.SlippageRequest update = request.getSlippage();
+            current.setSpreadCostWeight(coalesce(update.getSpreadCostWeight(), current.getSpreadCostWeight()));
+            current.setImpactCostWeight(coalesce(update.getImpactCostWeight(), current.getImpactCostWeight()));
+            current.setVolatilityCostWeight(coalesce(update.getVolatilityCostWeight(), current.getVolatilityCostWeight()));
         }
         if (request.getSlippageSpike() != null) {
-            SmartWalletProperties.BaselineModel.SlippageSpike spike = baseline.getSlippageSpike();
-            UpdateBaselineModelConfigRequest.SlippageSpike incoming = request.getSlippageSpike();
-            spike.setIntercept(coalesce(incoming.getIntercept(), spike.getIntercept()));
-            spike.setSpreadRiskWeight(coalesce(incoming.getSpreadRiskWeight(), spike.getSpreadRiskWeight()));
-            spike.setVolatilityRiskWeight(coalesce(incoming.getVolatilityRiskWeight(), spike.getVolatilityRiskWeight()));
-            spike.setSizeDepthRiskWeight(coalesce(incoming.getSizeDepthRiskWeight(), spike.getSizeDepthRiskWeight()));
-            spike.setHistoricalSpikeWeight(coalesce(incoming.getHistoricalSpikeWeight(), spike.getHistoricalSpikeWeight()));
-            spike.setSpreadRiskScaleBps(coalesce(incoming.getSpreadRiskScaleBps(), spike.getSpreadRiskScaleBps()));
-            spike.setVolatilityRiskScale(coalesce(incoming.getVolatilityRiskScale(), spike.getVolatilityRiskScale()));
-            spike.setSpikeThresholdBps(coalesce(incoming.getSpikeThresholdBps(), spike.getSpikeThresholdBps()));
+            SmartWalletProperties.BaselineModel.SlippageSpike current = baseline.getSlippageSpike();
+            UpdateBaselineModelConfigRequest.SlippageSpikeRequest update = request.getSlippageSpike();
+            current.setIntercept(coalesce(update.getIntercept(), current.getIntercept()));
+            current.setSpreadRiskWeight(coalesce(update.getSpreadRiskWeight(), current.getSpreadRiskWeight()));
+            current.setVolatilityRiskWeight(coalesce(update.getVolatilityRiskWeight(), current.getVolatilityRiskWeight()));
+            current.setSizeDepthRiskWeight(coalesce(update.getSizeDepthRiskWeight(), current.getSizeDepthRiskWeight()));
+            current.setHistoricalSpikeWeight(coalesce(update.getHistoricalSpikeWeight(), current.getHistoricalSpikeWeight()));
+            current.setSpreadRiskScaleBps(coalesce(update.getSpreadRiskScaleBps(), current.getSpreadRiskScaleBps()));
+            current.setVolatilityRiskScale(coalesce(update.getVolatilityRiskScale(), current.getVolatilityRiskScale()));
+            current.setSpikeThresholdBps(coalesce(update.getSpikeThresholdBps(), current.getSpikeThresholdBps()));
         }
         if (request.getCalibration() != null) {
-            UpdateBaselineModelConfigRequest.Calibration incoming = request.getCalibration();
-            calibration.setFollowProbabilityScale(coalesce(incoming.getFollowProbabilityScale(), calibration.getFollowProbabilityScale()));
-            calibration.setFollowProbabilityBias(coalesce(incoming.getFollowProbabilityBias(), calibration.getFollowProbabilityBias()));
-            calibration.setSlippageSpikeScale(coalesce(incoming.getSlippageSpikeScale(), calibration.getSlippageSpikeScale()));
-            calibration.setSlippageSpikeBias(coalesce(incoming.getSlippageSpikeBias(), calibration.getSlippageSpikeBias()));
+            UpdateBaselineModelConfigRequest.CalibrationRequest update = request.getCalibration();
+            calibration.setFollowProbabilityScale(coalesce(update.getFollowProbabilityScale(), calibration.getFollowProbabilityScale()));
+            calibration.setFollowProbabilityBias(coalesce(update.getFollowProbabilityBias(), calibration.getFollowProbabilityBias()));
+            calibration.setSlippageSpikeScale(coalesce(update.getSlippageSpikeScale(), calibration.getSlippageSpikeScale()));
+            calibration.setSlippageSpikeBias(coalesce(update.getSlippageSpikeBias(), calibration.getSlippageSpikeBias()));
         }
         return current();
     }
