@@ -77,6 +77,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTask
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
@@ -122,6 +123,7 @@ public class SmartWalletController {
     private final SmartWalletClaimService claimService;
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
+    private final SmartWalletDataResetService dataResetService;
     private final Environment environment;
     private final PredictionMarketDataApplicationService predictionMarketDataApplicationService;
     private final FollowTaskApplicationService followTaskApplicationService;
@@ -148,6 +150,35 @@ public class SmartWalletController {
     @GetMapping("/overview")
     public PolymarketProductOverview overview() {
         return productOverviewService.overview();
+    }
+
+    @Operation(summary = "重置 smart-wallet 数据", description = "清空 smart-wallet 运行数据与可选风险特征数据，用于从头重新计算。需要 confirm=true 才会执行。")
+    @PostMapping("/admin/reset-data")
+    public Map<String, Object> resetData(@RequestParam(defaultValue = "false") boolean confirm,
+                                         @RequestParam(defaultValue = "true") boolean includeProfiles,
+                                         @RequestParam(defaultValue = "true") boolean includeRiskArtifacts,
+                                         @RequestParam(defaultValue = "true") boolean includeRuntimeSeeds,
+                                         @RequestParam(defaultValue = "true") boolean includeMetadataCache) {
+        if (!confirm) {
+            return Map.of(
+                    "executed", false,
+                    "message", "Pass confirm=true to execute the smart-wallet data reset.",
+                    "includeProfiles", includeProfiles,
+                    "includeRiskArtifacts", includeRiskArtifacts,
+                    "includeRuntimeSeeds", includeRuntimeSeeds,
+                    "includeMetadataCache", includeMetadataCache
+            );
+        }
+        Map<String, Object> result = dataResetService.reset(
+                includeProfiles,
+                includeRiskArtifacts,
+                includeRuntimeSeeds,
+                includeMetadataCache
+        );
+        return Map.of(
+                "executed", true,
+                "result", result
+        );
     }
 
     @Operation(summary = "钱包画像列表", description = "查看已入库的 smart wallet Polymarket 画像信息。")
@@ -229,6 +260,19 @@ public class SmartWalletController {
         return predictionMarketDataApplicationService.analyzeSourceWallets();
     }
 
+    @Operation(summary = "准入单个钱包到观察名单", description = "传入单个钱包地址，按钱包画像风控逻辑进行分析；满足条件则落库并加入 watchlist，否则跳过落库并返回失败。")
+    @PostMapping("/polymarket/watchlist/admit")
+    public Map<String, Object> admitWalletToWatchlist(@RequestParam String walletAddress) {
+        boolean admitted = polymarketWalletDiscoveryService.analyzeWalletAndAdmitWatchlist(walletAddress);
+        return Map.of(
+                "walletAddress", walletAddress,
+                "admitted", admitted,
+                "message", admitted
+                        ? "Wallet admitted to watchlist and persisted successfully."
+                        : "Wallet did not pass admission checks, skipped persistence."
+        );
+    }
+
     @Operation(summary = "同步观察名单事件", description = "同步 watchlist 钱包的最新 Polymarket 开单事件。")
     @PostMapping("/polymarket/sync-events")
     public Map<String, Object> syncWatchlistEvents() {
@@ -251,6 +295,30 @@ public class SmartWalletController {
             log.error("Failed to load executable follow tasks limit={}", limit, e);
             throw e;
         }
+    }
+
+    @Operation(summary = "重评延迟候选", description = "手动重评 enrichment_status=PENDING/LOW_CONFIDENCE_LINK 的候选，并尝试恢复此前被 intelligence 暂时拦截的跟单任务。")
+    @PostMapping("/follow-tasks/intelligence/reevaluate-deferred")
+    public Map<String, Object> reevaluateDeferredCandidates(@RequestParam(defaultValue = "50") Integer limit) {
+        return Map.of(
+                "limit", limit,
+                "updated", followTaskService.reevaluateDeferredCandidates(limit)
+        );
+    }
+
+    @Operation(summary = "回放最近智能候选", description = "回放最近的 trade event，对历史上漏掉 candidate/task 的事件补建 intelligence 记录和跟单任务。")
+    @PostMapping("/follow-tasks/intelligence/replay-recent")
+    public Map<String, Object> replayRecentIntelligenceCandidates(@RequestParam(defaultValue = "100") Integer limit,
+                                                                  @RequestParam(defaultValue = "false") boolean includeProcessed) {
+        SmartWalletFollowTaskService.IntelligenceReplaySummary summary =
+                followTaskService.replayRecentIntelligenceCandidates(limit, includeProcessed);
+        return Map.of(
+                "limit", limit,
+                "includeProcessed", includeProcessed,
+                "scanned", summary.getScanned(),
+                "changed", summary.getChanged(),
+                "skipped", summary.getSkipped()
+        );
     }
 
     @Operation(summary = "单强钱包候选", description = "基于单钱包 override 策略查看候选任务，适合 followable 预设。")

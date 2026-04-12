@@ -19,6 +19,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOppor
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletAccountingService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
@@ -40,6 +41,7 @@ import java.util.List;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -81,6 +83,8 @@ class SmartWalletControllerTest {
     private SmartWalletLiveValidationService liveValidationService;
     @Mock
     private SmartWalletSettlementSyncService settlementSyncService;
+    @Mock
+    private SmartWalletDataResetService dataResetService;
     @Mock
     private Environment environment;
     @Mock
@@ -148,5 +152,52 @@ class SmartWalletControllerTest {
                 .andExpect(status().isOk());
 
         verify(predictionMarketDataApplicationService).buildWalletFeatureDaily("wallet-1", LocalDate.of(2026, 4, 10));
+    }
+
+    @Test
+    void shouldAdmitWalletToWatchlistWhenQualified() throws Exception {
+        when(polymarketWalletDiscoveryService.analyzeWalletAndAdmitWatchlist("0xabc"))
+                .thenReturn(true);
+
+        mockMvc.perform(post("/smart-wallet/polymarket/watchlist/admit")
+                        .param("walletAddress", "0xabc"))
+                .andExpect(status().isOk());
+
+        verify(polymarketWalletDiscoveryService).analyzeWalletAndAdmitWatchlist("0xabc");
+    }
+
+    @Test
+    void shouldReevaluateDeferredIntelligenceCandidates() throws Exception {
+        when(followTaskService.reevaluateDeferredCandidates(12)).thenReturn(7);
+
+        mockMvc.perform(post("/smart-wallet/follow-tasks/intelligence/reevaluate-deferred")
+                        .param("limit", "12"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.limit").value(12))
+                .andExpect(jsonPath("$.updated").value(7));
+
+        verify(followTaskService).reevaluateDeferredCandidates(12);
+    }
+
+    @Test
+    void shouldReplayRecentIntelligenceCandidates() throws Exception {
+        when(followTaskService.replayRecentIntelligenceCandidates(25, true))
+                .thenReturn(SmartWalletFollowTaskService.IntelligenceReplaySummary.builder()
+                        .scanned(25)
+                        .changed(6)
+                        .skipped(19)
+                        .build());
+
+        mockMvc.perform(post("/smart-wallet/follow-tasks/intelligence/replay-recent")
+                        .param("limit", "25")
+                        .param("includeProcessed", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.limit").value(25))
+                .andExpect(jsonPath("$.includeProcessed").value(true))
+                .andExpect(jsonPath("$.scanned").value(25))
+                .andExpect(jsonPath("$.changed").value(6))
+                .andExpect(jsonPath("$.skipped").value(19));
+
+        verify(followTaskService).replayRecentIntelligenceCandidates(25, true);
     }
 }

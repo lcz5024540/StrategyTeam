@@ -199,24 +199,29 @@ function renderDetail(detail) {
   renderInsights(detail);
   renderTimeline(detail);
 
-  renderTableRows("positionsBody", detail.positions, (row) => `
+  renderTableRows("positionsBody", detail.positions, (row) => {
+    const cost = Number(row.costBasisUsdc || 0);
+    const pnl = Number(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc ?? 0);
+    const marketValue = cost + pnl;
+    return `
     <tr>
       <td>${dashboardTitleCell(row.question, 40)}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${dashboardPositionStatusText(row.status)}</td>
-      <td>${dashboardFormatMoney(row.costBasisUsdc)}</td>
-      <td class="${dashboardAmountClass(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
+      <td>${dashboardFormatAmount(row.costBasisUsdc)}</td>
+      <td>${dashboardFormatAmount(marketValue)}</td>
+      <td class="${dashboardAmountClass(pnl)}">${dashboardFormatMoney(pnl)}</td>
       <td>${row.marketEndAtBjt || "-"}</td>
     </tr>
-  `, "当前没有 open positions。", 6);
+  `;}, "当前没有 open positions。", 7);
 
   renderTableRows("settlementsBody", detail.nextSettlements, (row) => `
     <tr>
       <td>${dashboardTitleCell(row.question, 40)}</td>
       <td><span class="badge">${row.outcome}</span></td>
-      <td>${dashboardFormatMoney(row.originalCostBasisUsdc ?? row.costBasisUsdc)}</td>
+      <td>${dashboardFormatAmount(row.originalCostBasisUsdc ?? row.costBasisUsdc)}</td>
       <td class="${dashboardAmountClass(row.pendingSettlementNetPnlUsdc ?? row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}">${dashboardFormatMoney(row.pendingSettlementNetPnlUsdc ?? row.pendingSettlementPnlUsdc ?? row.unrealizedPnlUsdc)}</td>
-      <td>${dashboardFormatMoney(row.claimableProceedsUsdc || 0)}</td>
+      <td>${dashboardFormatAmount(row.claimableProceedsUsdc || 0)}</td>
       <td>${row.marketEndAtBjt || "-"}</td>
     </tr>
   `, "当前没有待结算仓位。", 6);
@@ -227,7 +232,7 @@ function renderDetail(detail) {
       <td>${dashboardTitleCell(row.question, 40)}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${row.side}</td>
-      <td>${dashboardFormatMoney(row.notionalUsdc)}</td>
+      <td>${dashboardFormatAmount(row.notionalUsdc)}</td>
       <td class="${dashboardAmountClass(row.expectedNetEvUsdc)}">${row.expectedNetEvUsdc == null ? "-" : dashboardFormatMoney(row.expectedNetEvUsdc)}</td>
       <td>${dashboardOrderModelCell(row)}</td>
       <td>${row.status}</td>

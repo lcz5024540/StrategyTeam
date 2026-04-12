@@ -1,11 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
-import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEffectLabelMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletWalletFeatureDailyMapper;
-import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
@@ -41,8 +39,6 @@ class WalletFeatureDailyServiceTest {
     private SmartWalletTradeEventMapper tradeEventMapper;
     @Mock
     private SmartWalletTradeEffectLabelMapper tradeEffectLabelMapper;
-    @Mock
-    private SmartWalletFollowTaskMapper followTaskMapper;
 
     private WalletFeatureDailyService service;
 
@@ -50,16 +46,15 @@ class WalletFeatureDailyServiceTest {
     void setUp() {
         service = new WalletFeatureDailyService(
                 walletFeatureDailyMapper,
-                profileMapper,
                 tradeEventMapper,
                 tradeEffectLabelMapper,
-                followTaskMapper
+                profileMapper
         );
         when(walletFeatureDailyMapper.selectOne(any())).thenReturn(null);
     }
 
     @Test
-    void shouldBuildWalletFeatureDailyFromEventsLabelsAndTasks() {
+    void shouldBuildWalletFeatureDailyFromEventsAndLabels() {
         LocalDate featureDate = LocalDate.of(2026, 4, 10);
         Date eventDate1 = asDate(LocalDate.of(2026, 4, 9));
         Date eventDate2 = asDate(LocalDate.of(2026, 4, 5));
@@ -74,25 +69,21 @@ class WalletFeatureDailyServiceTest {
                 label("12.50", true, "40", "10"),
                 label("-2.50", false, "120", "20")
         ));
-        when(followTaskMapper.selectList(any())).thenReturn(List.of(
-                task("PENDING", eventDate1, eventDate1.getTime() + 3_600_000L),
-                task("BLOCKED", eventDate2, eventDate2.getTime() + 3 * 24 * 3_600_000L)
-        ));
         when(profileMapper.selectOne(any())).thenReturn(new SmartWalletProfileEntity()
                 .setMaxDrawdownRate(new BigDecimal("0.15")));
 
         SmartWalletWalletFeatureDailyEntity feature = service.buildFeature("wallet-1", featureDate);
 
-        assertEquals(1, feature.getTrades7d());
+        assertEquals(2, feature.getTrades7d());
         assertEquals(2, feature.getTrades30d());
         assertEquals(2, feature.getMarkets30d());
         assertEquals(new BigDecimal("10.00000000"), feature.getPnl30d());
         assertEquals(new BigDecimal("0.5000"), feature.getWinRate30d());
         assertEquals(new BigDecimal("15.00000000"), feature.getAvgSize30d());
         assertEquals(new BigDecimal("0.1500"), feature.getDrawdown30d());
-        assertEquals(new BigDecimal("0.0000"), feature.getConcentrationMarket30d());
-        assertEquals(new BigDecimal("0.5000"), feature.getLowLiquidityRatio30d());
-        assertEquals(new BigDecimal("0.5000"), feature.getLateMarketRatio30d());
+        assertEquals(new BigDecimal("0.5000"), feature.getConcentrationMarket30d());
+        assertEquals(new BigDecimal("0.0000"), feature.getLowLiquidityRatio30d());
+        assertEquals(new BigDecimal("0.0000"), feature.getLateMarketRatio30d());
         assertEquals(new BigDecimal("0.5000"), feature.getFollowableRate30d());
 
         ArgumentCaptor<SmartWalletWalletFeatureDailyEntity> captor = ArgumentCaptor.forClass(SmartWalletWalletFeatureDailyEntity.class);
@@ -117,13 +108,6 @@ class WalletFeatureDailyServiceTest {
                 .setIsPositiveEvRule(positive)
                 .setRealizedSlippageBps(new BigDecimal(realizedSlippageBps))
                 .setPaperStakeUsdc(new BigDecimal(stakeUsdc));
-    }
-
-    private SmartWalletFollowTaskEntity task(String status, Date createdAt, long marketEndAt) {
-        return new SmartWalletFollowTaskEntity()
-                .setStatus(status)
-                .setCreatedAt(createdAt)
-                .setMarketEndAt(marketEndAt);
     }
 
     private Date asDate(LocalDate date) {

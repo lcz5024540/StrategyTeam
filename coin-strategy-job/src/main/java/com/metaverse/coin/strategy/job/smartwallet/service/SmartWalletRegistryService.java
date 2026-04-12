@@ -63,4 +63,10 @@ public class SmartWalletRegistryService {
         wallets.put(profile.getAddress(), profile);
         return profile;
     }
+
+    public int clearAll() {
+        int size = wallets.size();
+        wallets.clear();
+        return size;
+    }
 }

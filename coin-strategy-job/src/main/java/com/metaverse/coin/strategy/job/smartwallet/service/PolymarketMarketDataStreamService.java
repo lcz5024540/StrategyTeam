@@ -35,7 +35,22 @@ public class PolymarketMarketDataStreamService {
         if (!StringUtils.hasText(tokenId)) {
             return null;
         }
-        return snapshotCache.get(tokenId.trim());
+        String normalizedTokenId = tokenId.trim();
+        MarketDataSnapshot snapshot = snapshotCache.get(normalizedTokenId);
+        if (snapshot == null) {
+            return null;
+        }
+        Long ttlMs = properties.getExecutionWallet() == null ? null : properties.getExecutionWallet().getWsCacheTtlMs();
+        if (ttlMs != null && ttlMs > 0 && snapshot.getUpdatedAt() != null
+                && System.currentTimeMillis() - snapshot.getUpdatedAt().getTime() > ttlMs) {
+            snapshotCache.remove(normalizedTokenId, snapshot);
+            return null;
+        }
+        return snapshot;
+    }
+
+    public MarketDataSnapshot getCachedSnapshot(String tokenId) {
+        return getSnapshot(tokenId);
     }
 
     public MarketDataStreamStats getStats() {
@@ -65,10 +80,11 @@ public class PolymarketMarketDataStreamService {
             }
             PolymarketApiClient.OrderBook orderBook = parseOrderBook(event, tokenId);
             BigDecimal lastTradePrice = number(event, "lastTradePrice", "last_trade_price", "price");
+            MarketDataSnapshot previous = snapshotCache.get(tokenId.trim());
             MarketDataSnapshot snapshot = MarketDataSnapshot.builder()
                     .tokenId(tokenId.trim())
-                    .orderBook(orderBook)
-                    .lastTradePrice(lastTradePrice)
+                    .orderBook(orderBook != null ? orderBook : previous == null ? null : previous.getOrderBook())
+                    .lastTradePrice(lastTradePrice != null ? lastTradePrice : previous == null ? null : previous.getLastTradePrice())
                     .updatedAt(new Date())
                     .build();
             snapshotCache.put(tokenId.trim(), snapshot);
@@ -85,6 +101,10 @@ public class PolymarketMarketDataStreamService {
         }
     }
 
+    public void handleMessage(String payload) {
+        ingestMockEvent(payload);
+    }
+
     private PolymarketApiClient.OrderBook parseOrderBook(JsonNode node, String tokenId) {
         JsonNode bidsNode = firstPresent(node, "bids", "buy");
         JsonNode asksNode = firstPresent(node, "asks", "sell");
@@ -98,6 +118,16 @@ public class PolymarketMarketDataStreamService {
             midpoint = midpointFromBook(bids, asks);
         }
         BigDecimal spread = number(node, "spread", "spread_bps", "spreadBps");
+        if ((spread == null || spread.compareTo(BigDecimal.ZERO) <= 0)
+                && midpoint != null
+                && midpoint.compareTo(BigDecimal.ZERO) > 0
+                && !bids.isEmpty()
+                && !asks.isEmpty()) {
+            spread = asks.get(0).getPrice()
+                    .subtract(bids.get(0).getPrice())
+                    .divide(midpoint, 8, BigDecimal.ROUND_HALF_UP)
+                    .multiply(new BigDecimal("10000"));
+        }
         return PolymarketApiClient.OrderBook.builder()
                 .tokenId(tokenId)
                 .midpoint(midpoint == null ? BigDecimal.ZERO : midpoint)

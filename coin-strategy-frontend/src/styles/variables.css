@@ -1,0 +1,46 @@
+:root {
+  /* ── Cyberpunk 颜色系统 ─────────────────────────────── */
+  --bg:           #020904;
+  --panel:        rgba(3, 12, 5, 0.97);
+  --panel-solid:  #040f06;
+  --line:         rgba(0, 255, 65, 0.16);
+  --line-bright:  rgba(0, 255, 65, 0.35);
+
+  --text:         #c0f0c0;
+  --text-bright:  #e8ffe8;
+  --muted:        #3a6642;
+
+  --accent:       #00ff41;
+  --accent-dim:   #00cc33;
+  --accent-soft:  rgba(0, 255, 65, 0.10);
+  --accent-glow:  0 0 8px rgba(0, 255, 65, 0.70), 0 0 24px rgba(0, 255, 65, 0.25);
+  --accent-glow-sm: 0 0 4px rgba(0, 255, 65, 0.60);
+
+  --warn:         #ffaa00;
+  --warn-soft:    rgba(255, 170, 0, 0.12);
+  --warn-glow:    0 0 6px rgba(255, 170, 0, 0.60);
+
+  --danger:       #ff2244;
+  --danger-soft:  rgba(255, 34, 68, 0.12);
+  --danger-glow:  0 0 6px rgba(255, 34, 68, 0.60);
+
+  --shadow:       0 0 0 1px rgba(0, 255, 65, 0.14), 0 8px 40px rgba(0, 0, 0, 0.90);
+  --panel-glow:   0 0 0 1px rgba(0, 255, 65, 0.20), 0 0 30px rgba(0, 255, 65, 0.04), 0 12px 48px rgba(0, 0, 0, 0.95);
+
+  /* ── 间距 ──────────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* ── 圆角 ──────────────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-full: 999px;
+
+  /* ── 字体 ──────────────────────────────────────────── */
+  --font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono:   ui-monospace, "SFMono-Regular", "SF Mono", Consolas, "Courier New", monospace;
+}

@@ -96,7 +96,7 @@ class MarketSnapshotCollectorServiceTest {
                 .tokenId(orderBook.getTokenId())
                 .orderBook(orderBook)
                 .lastTradePrice(new BigDecimal(lastTradePrice))
-                .lastUpdatedAt(System.currentTimeMillis())
+                .updatedAt(new java.util.Date())
                 .build();
     }
 

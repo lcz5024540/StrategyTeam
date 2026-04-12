@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
@@ -33,6 +34,8 @@ public class PolymarketWalletDiscoveryService {
     private final PolymarketSmartWalletMonitorService monitorService;
     private final SmartWalletSelectionService selectionService;
     private final SmartWalletProfileStoreService profileStoreService;
+    private final SmartWalletProperties properties;
+    private final SmartWalletScoringService scoringService;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
@@ -101,6 +104,38 @@ public class PolymarketWalletDiscoveryService {
                 .watchlistCount(profileStoreService.listWatchEnabled().size())
                 .notes(notes)
                 .build();
+    }
+
+    public boolean analyzeWalletAndAdmitWatchlist(String walletAddress) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return false;
+        }
+        String normalizedWalletAddress = walletAddress.trim();
+        PolymarketApiClient.LeaderboardEntry candidate = PolymarketApiClient.LeaderboardEntry.builder()
+                .walletAddress(normalizedWalletAddress)
+                .build();
+
+        PolymarketWalletMetricsRequest metrics;
+        try {
+            metrics = buildMetrics(candidate);
+        } catch (Exception e) {
+            log.warn("Failed to analyze Polymarket wallet {}: {}", normalizedWalletAddress, rootMessage(e));
+            return false;
+        }
+        if (metrics == null || metrics.getTotalTrades() == null || metrics.getTotalTrades() <= 0) {
+            return false;
+        }
+
+        if (!isQualified(metrics)) {
+            return false;
+        }
+
+        SmartWalletProfileEntity entity = monitorService.ingestWalletMetrics(metrics);
+        entity.setQualified(Boolean.TRUE);
+        entity.setWatchEnabled(Boolean.TRUE);
+        entity.setLastEvaluatedAt(new Date());
+        profileStoreService.update(entity);
+        return true;
     }
 
     public int syncWatchlistTrades() {
@@ -318,6 +353,21 @@ public class PolymarketWalletDiscoveryService {
         request.setSizeUsdc(safe(trade.getSize()));
         request.setOpenedAt(trade.getTradedAt() == null ? new Date() : new Date(trade.getTradedAt()));
         return request;
+    }
+
+    private boolean isQualified(PolymarketWalletMetricsRequest metrics) {
+        BigDecimal winRate = safe(metrics.getWinRate());
+        BigDecimal realizedPnlUsdc = safe(metrics.getRealizedPnlUsdc());
+        int totalTrades = metrics.getTotalTrades() == null ? 0 : metrics.getTotalTrades();
+        BigDecimal averageRoiRate = safe(metrics.getAverageRoiRate());
+        BigDecimal maxDrawdownRate = safe(metrics.getMaxDrawdownRate());
+        BigDecimal walletScore = scoringService.score(winRate, realizedPnlUsdc, totalTrades, averageRoiRate, maxDrawdownRate);
+
+        return winRate.compareTo(properties.getMinWinRate()) >= 0
+                && walletScore.compareTo(properties.getMinWalletScore()) >= 0
+                && totalTrades >= properties.getMinTotalTrades()
+                && realizedPnlUsdc.compareTo(properties.getMinRealizedPnlUsdc()) >= 0
+                && maxDrawdownRate.compareTo(properties.getMaxDrawdownRate()) <= 0;
     }
 
     private BigDecimal safe(BigDecimal value) {

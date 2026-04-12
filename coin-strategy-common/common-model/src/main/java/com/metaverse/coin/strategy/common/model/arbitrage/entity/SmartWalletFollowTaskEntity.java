@@ -18,6 +18,13 @@ public class SmartWalletFollowTaskEntity {
     private Long id;
 
     private String walletAddress;
+
+    /** 触发钱包对应的实体ID */
+    private String entityId;
+
+    /** 关联的候选跟单信号ID */
+    private Long followCandidateId;
+
     private Long sourceEventId;
     private String marketId;
     private String question;

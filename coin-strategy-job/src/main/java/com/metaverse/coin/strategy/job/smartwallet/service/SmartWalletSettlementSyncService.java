@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSett
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSettlementRunEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryCandidate;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRunView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncFailure;
@@ -111,10 +112,11 @@ public class SmartWalletSettlementSyncService {
                 "SCHEDULED"
         );
         if (summary != null) {
-            log.info("Scheduled settlement sync finished: scanned={}, markets={}, resolved={}, failed={}",
+            log.info("Scheduled settlement sync finished: scanned={}, markets={}, resolved={}, oraclePending={}, failed={}",
                     summary.getScannedPositions(),
                     summary.getDistinctMarkets(),
                     summary.getResolvedPositions(),
+                    summary.getOraclePendingMarkets(),
                     summary.getFailedMarkets());
         }
     }
@@ -143,6 +145,7 @@ public class SmartWalletSettlementSyncService {
                     .fetchedMarkets(0)
                     .resolvedPositions(0)
                     .unresolvedMarkets(0)
+                    .oraclePendingMarkets(0)
                     .skippedFutureMarkets(0)
                     .failedMarkets(0)
                     .notes(List.of("No due settlement retries."))
@@ -345,6 +348,12 @@ public class SmartWalletSettlementSyncService {
         for (SettlementSyncFailure failure : failures) {
             upsertRetry(runId, failure);
         }
+        List<SettlementRetryCandidate> retryCandidates = summary.getRetryCandidates() == null
+                ? Collections.emptyList()
+                : summary.getRetryCandidates();
+        for (SettlementRetryCandidate retryCandidate : retryCandidates) {
+            upsertRetry(runId, retryCandidate);
+        }
     }
 
     private void reconcileProcessedRetryQueue(Long runId, List<String> marketIds, SettlementSyncSummary summary) {
@@ -352,6 +361,12 @@ public class SmartWalletSettlementSyncService {
                 ? Collections.emptyList()
                 : summary.getFailures().stream()
                 .map(SettlementSyncFailure::getMarketId)
+                .filter(StringUtils::hasText)
+                .toList();
+        List<String> pendingMarketIds = summary.getRetryCandidates() == null
+                ? Collections.emptyList()
+                : summary.getRetryCandidates().stream()
+                .map(SettlementRetryCandidate::getMarketId)
                 .filter(StringUtils::hasText)
                 .toList();
         Date now = new Date();
@@ -363,6 +378,9 @@ public class SmartWalletSettlementSyncService {
                 continue;
             }
             if (failedMarketIds.contains(marketId)) {
+                continue;
+            }
+            if (pendingMarketIds.contains(marketId)) {
                 continue;
             }
             retry.setLatestRunId(runId)
@@ -386,12 +404,21 @@ public class SmartWalletSettlementSyncService {
                 .map(SettlementSyncFailure::getMarketId)
                 .filter(StringUtils::hasText)
                 .toList();
+        List<String> pendingMarketIds = summary.getRetryCandidates() == null
+                ? Collections.emptyList()
+                : summary.getRetryCandidates().stream()
+                .map(SettlementRetryCandidate::getMarketId)
+                .filter(StringUtils::hasText)
+                .toList();
         Date now = new Date();
         List<SmartWalletSettlementRetryEntity> retries = settlementRetryMapper.selectList(new LambdaQueryWrapper<SmartWalletSettlementRetryEntity>()
                 .in(SmartWalletSettlementRetryEntity::getMarketId, processedMarkets)
                 .in(SmartWalletSettlementRetryEntity::getStatus, List.of("PENDING", "RETRYING")));
         for (SmartWalletSettlementRetryEntity retry : retries) {
             if (failedMarketIds.contains(retry.getMarketId())) {
+                continue;
+            }
+            if (pendingMarketIds.contains(retry.getMarketId())) {
                 continue;
             }
             retry.setLatestRunId(runId)
@@ -426,6 +453,37 @@ public class SmartWalletSettlementSyncService {
                 .setLastFailedAt(now)
                 .setNextRetryAt(nextRetryAt)
                 .setStatus(nextStatus)
+                .setUpdatedAt(now);
+        if (retry.getId() == null) {
+            settlementRetryMapper.insert(retry);
+        } else {
+            settlementRetryMapper.updateById(retry);
+        }
+    }
+
+    private void upsertRetry(Long runId, SettlementRetryCandidate retryCandidate) {
+        if (retryCandidate == null || !StringUtils.hasText(retryCandidate.getMarketId())) {
+            return;
+        }
+        Date now = new Date();
+        SmartWalletProperties.SettlementSync config = properties.getSettlementSync();
+        SmartWalletSettlementRetryEntity retry = settlementRetryMapper.selectOne(new LambdaQueryWrapper<SmartWalletSettlementRetryEntity>()
+                .eq(SmartWalletSettlementRetryEntity::getMarketId, retryCandidate.getMarketId())
+                .last("limit 1"));
+        int failureCount = retry == null || retry.getFailureCount() == null ? 0 : retry.getFailureCount();
+        Date nextRetryAt = Date.from(Instant.now().plus(Math.max(config.getRetryBackoffMinutes(), 1), ChronoUnit.MINUTES));
+        if (retry == null) {
+            retry = new SmartWalletSettlementRetryEntity()
+                    .setMarketId(retryCandidate.getMarketId())
+                    .setCreatedAt(now);
+        }
+        retry.setQuestion(retryCandidate.getQuestion())
+                .setLatestRunId(runId)
+                .setFailureCount(failureCount)
+                .setLastErrorMessage(abbreviate(retryCandidate.getRetryMessage(), 500))
+                .setLastFailedAt(now)
+                .setNextRetryAt(nextRetryAt)
+                .setStatus("PENDING")
                 .setUpdatedAt(now);
         if (retry.getId() == null) {
             settlementRetryMapper.insert(retry);

@@ -56,6 +56,18 @@ public class SmartWalletSignalRiskService {
         }
 
         SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
+
+        // Warn early when this wallet has a suspiciously perfect win rate (leaderboard survivorship bias).
+        // Single-wallet override will be blocked for these wallets; consensus path still allowed but flagged.
+        if (risk.isBlockUnreliableLeaderboardWinRate() && profile != null) {
+            BigDecimal winRate = safe(profile.getWinRate());
+            int totalTrades = profile.getTotalTrades() == null ? 0 : profile.getTotalTrades();
+            if (winRate.compareTo(safe(risk.getUnreliableWinRateThreshold())) >= 0
+                    && totalTrades <= (risk.getUnreliableMaxSampleSize() == null ? 50 : risk.getUnreliableMaxSampleSize())) {
+                reasons.add("[UNRELIABLE_WIN_RATE] Wallet winRate=" + winRate + " with only " + totalTrades
+                        + " trades — likely leaderboard survivorship bias. Single-wallet override blocked.");
+            }
+        }
         if (!risk.isAllowSellSignal() && "SELL".equalsIgnoreCase(event.getSide())) {
             accepted = false;
             reasons.add("SELL signals are disabled by risk policy.");
@@ -145,11 +157,26 @@ public class SmartWalletSignalRiskService {
         }
 
         ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event);
-        boolean consensusWalletCountFailed = false;
+
+        // 告警：检测到同一实体多钱包同时触发（记录但不拒绝）
+        if (consensus.isHasSuspiciousMultiWallet()) {
+            reasons.add("[MULTI_WALLET_INFLATION] Suspicious multi-wallet entity detected in consensus signal. "
+                    + "Raw wallets=" + consensus.getDistinctWallets()
+                    + ", Deduped entities=" + consensus.getDedupedEntityCount()
+                    + ". Using entity count for gate evaluation.");
+        }
+
+        boolean consensusEntityCountFailed = false;
         boolean consensusScoreFailed = false;
         if (risk.isEnableConsensusGate()) {
-            if (consensus.getDistinctWallets() < risk.getMinDistinctWallets()) {
-                consensusWalletCountFailed = true;
+            // 核心修复：使用实体去重后的 dedupedEntityCount，而非原始地址数 distinctWallets
+            // 防止一个实体用多钱包伪造共识强度
+            int effectiveEntityCount = consensus.getDedupedEntityCount();
+            int minEntities = risk.getMinDistinctEntities() != null
+                    ? risk.getMinDistinctEntities()
+                    : risk.getMinDistinctWallets(); // fallback 兼容旧配置
+            if (effectiveEntityCount < minEntities) {
+                consensusEntityCountFailed = true;
             }
             if (safe(consensus.getConsensusScore()).compareTo(safe(risk.getMinConsensusScore())) < 0) {
                 consensusScoreFailed = true;
@@ -200,15 +227,18 @@ public class SmartWalletSignalRiskService {
         }
 
         boolean singleWalletOverride = qualifiesSingleWalletOverride(profile, risk, triggerSize, recommendedStake);
-        if (singleWalletOverride && consensusWalletCountFailed) {
+        if (singleWalletOverride && consensusEntityCountFailed) {
             overrideApplied = true;
-            consensusWalletCountFailed = false;
-            reasons.add("Single-wallet override bypassed consensus wallet-count gate.");
+            consensusEntityCountFailed = false;
+            reasons.add("Single-wallet override bypassed consensus entity-count gate (deduped entities="
+                    + consensus.getDedupedEntityCount() + ").");
         }
 
-        if (consensusWalletCountFailed) {
+        if (consensusEntityCountFailed) {
             accepted = false;
-            reasons.add("Consensus wallet count is below threshold.");
+            reasons.add("Consensus entity count (deduped=" + consensus.getDedupedEntityCount()
+                    + ", raw wallets=" + consensus.getDistinctWallets()
+                    + ") is below threshold.");
         }
         if (consensusScoreFailed) {
             accepted = false;
@@ -230,8 +260,10 @@ public class SmartWalletSignalRiskService {
                 .calibratedFollowProbability(evEstimate.getCalibratedFollowProbability())
                 .slippageSpikeProbability(evEstimate.getSlippageSpikeProbability())
                 .evSampleSize(evEstimate.getSampleSize())
-                .consensusWallets(consensus.getDistinctWallets())
+                .consensusWallets(consensus.getDistinctWallets())        // 原始钱包数（历史兼容）
+                .consensusEntities(consensus.getDedupedEntityCount())    // 实体去重后数量（真实强度）
                 .consensusScore(consensus.getConsensusScore())
+                .hasSuspiciousMultiWallet(consensus.isHasSuspiciousMultiWallet())
                 .reasons(reasons)
                 .build();
     }
@@ -246,6 +278,18 @@ public class SmartWalletSignalRiskService {
                                                   BigDecimal recommendedStake) {
         if (!risk.isEnableSingleWalletOverride() || profile == null) {
             return false;
+        }
+        // Block single-wallet override for wallets with suspiciously perfect win rates:
+        // winRate >= unreliableWinRateThreshold (default 1.0) AND totalTrades <= unreliableMaxSampleSize (default 50)
+        // This catches leaderboard survivorship bias where only top-50 positions are shown, inflating win rate to 1.0.
+        if (risk.isBlockUnreliableLeaderboardWinRate()) {
+            BigDecimal winRate = safe(profile.getWinRate());
+            int totalTrades = profile.getTotalTrades() == null ? 0 : profile.getTotalTrades();
+            boolean suspiciouslyPerfect = winRate.compareTo(safe(risk.getUnreliableWinRateThreshold())) >= 0
+                    && totalTrades <= (risk.getUnreliableMaxSampleSize() == null ? 50 : risk.getUnreliableMaxSampleSize());
+            if (suspiciouslyPerfect) {
+                return false;
+            }
         }
         return safe(profile.getWalletScore()).compareTo(safe(risk.getSingleWalletOverrideMinWalletScore())) >= 0
                 && safe(profile.getWinRate()).compareTo(safe(risk.getSingleWalletOverrideMinWinRate())) >= 0

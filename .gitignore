@@ -40,3 +40,8 @@ scripts/polymarket-env.sh
 
 ### Local Maven Cache ###
 .m2/
+
+coin-strategy-frontend/node_modules/
+coin-strategy-frontend/dist/
+logs/
+.gitignore

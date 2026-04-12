@@ -1,24 +1,40 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class SmartWalletProfileStoreService {
 
     private static final String SOURCE = "POLYMARKET";
+    // Days thresholds for activity decay (P2)
+    private static final long DECAY_START_DAYS   = 30L;
+    private static final long OFFLINE_DAYS        = 90L;
+    // Score penalty per week of inactivity after DECAY_START_DAYS
+    private static final BigDecimal DECAY_PER_WEEK = new BigDecimal("0.05");
 
     private final SmartWalletProfileMapper profileMapper;
     private final SmartWalletScoringService scoringService;
+    private final SmartWalletFollowTaskMapper followTaskMapper;
+    private final SmartWalletPositionMapper positionMapper;
 
     public SmartWalletProfileEntity upsertMetrics(PolymarketWalletMetricsRequest request) {
         SmartWalletProfileEntity entity = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
@@ -80,6 +96,144 @@ public class SmartWalletProfileStoreService {
     public void update(SmartWalletProfileEntity entity) {
         entity.setUpdatedAt(new Date());
         profileMapper.updateById(entity);
+    }
+
+    // -------------------------------------------------------------------------
+    // P2: Activity-decay job — runs every 6 hours.
+    // Wallets inactive >30 days lose walletScore by DECAY_PER_WEEK per week.
+    // Wallets inactive >90 days are disabled (watchEnabled=false).
+    // -------------------------------------------------------------------------
+    @Scheduled(fixedDelay = 6 * 3600_000L)
+    public void applyActivityDecay() {
+        List<SmartWalletProfileEntity> wallets = profileMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                        .eq(SmartWalletProfileEntity::getSource, SOURCE));
+        Date now = new Date();
+        for (SmartWalletProfileEntity wallet : wallets) {
+            Date lastTrade = wallet.getLastTradeAt();
+            if (lastTrade == null) {
+                continue;
+            }
+            long daysSince = TimeUnit.MILLISECONDS.toDays(now.getTime() - lastTrade.getTime());
+            if (daysSince <= DECAY_START_DAYS) {
+                continue;
+            }
+            if (daysSince >= OFFLINE_DAYS && Boolean.TRUE.equals(wallet.getWatchEnabled())) {
+                wallet.setWatchEnabled(Boolean.FALSE);
+                wallet.setUpdatedAt(now);
+                profileMapper.updateById(wallet);
+                log.info("WALLET_DECAY offline walletAddress={} daysSinceLastTrade={}", wallet.getWalletAddress(), daysSince);
+                continue;
+            }
+            // Decay: 5% per week beyond the 30-day grace period
+            long weeksOverThreshold = (daysSince - DECAY_START_DAYS) / 7 + 1;
+            BigDecimal penalty = DECAY_PER_WEEK.multiply(BigDecimal.valueOf(weeksOverThreshold));
+            BigDecimal decayedScore = safe(wallet.getWalletScore()).subtract(penalty).max(BigDecimal.ZERO)
+                    .setScale(4, RoundingMode.HALF_UP);
+            if (decayedScore.compareTo(safe(wallet.getWalletScore())) < 0) {
+                wallet.setWalletScore(decayedScore);
+                wallet.setUpdatedAt(now);
+                profileMapper.updateById(wallet);
+                log.debug("WALLET_DECAY score walletAddress={} daysSince={} newScore={}", wallet.getWalletAddress(), daysSince, decayedScore);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // P2: Internal win-rate refresh — runs every 6 hours.
+    // Computes real win rate from our own closed positions for each wallet and
+    // blends it with the external leaderboard win rate (weight 0.4 internal / 0.6 external)
+    // to correct for survivorship bias in the official leaderboard data.
+    //
+    // Survivorship-bias fallback: when a wallet has winRate=1.0 with a small sample
+    // (totalTrades <= LEADERBOARD_POSITION_CAP) and we have no internal closed positions yet,
+    // cap the win rate to LEADERBOARD_BIAS_FALLBACK_WIN_RATE immediately rather than waiting
+    // for internal data to accumulate. This prevents wallets with inflated leaderboard metrics
+    // from qualifying for single-wallet override from the very first signal.
+    // -------------------------------------------------------------------------
+    private static final int    LEADERBOARD_POSITION_CAP          = 50;
+    private static final BigDecimal LEADERBOARD_BIAS_WIN_RATE_TRIGGER = new BigDecimal("1.0");
+    private static final BigDecimal LEADERBOARD_BIAS_FALLBACK_WIN_RATE = new BigDecimal("0.65");
+
+    @Scheduled(fixedDelay = 6 * 3600_000L + 60_000L) // offset by 1 min so both jobs don't run simultaneously
+    public void refreshInternalWinRate() {
+        List<SmartWalletProfileEntity> wallets = profileMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                        .eq(SmartWalletProfileEntity::getSource, SOURCE));
+
+        for (SmartWalletProfileEntity wallet : wallets) {
+            // Count our own followed tasks that resulted in closed positions for this wallet
+            List<SmartWalletFollowTaskEntity> followedTasks = followTaskMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                            .eq(SmartWalletFollowTaskEntity::getWalletAddress, wallet.getWalletAddress())
+                            .eq(SmartWalletFollowTaskEntity::getStatus, "FOLLOWED"));
+
+            int total = 0, wins = 0;
+            for (SmartWalletFollowTaskEntity task : followedTasks) {
+                // Find the closed position for this task via market+outcome
+                List<SmartWalletPositionEntity> closed = positionMapper.selectList(
+                        new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                                .eq(SmartWalletPositionEntity::getMarketId, task.getMarketId())
+                                .eq(SmartWalletPositionEntity::getOutcome, task.getOutcome())
+                                .in(SmartWalletPositionEntity::getStatus, List.of("CLAIMED", "RESOLVED_UNCLAIMED")));
+                for (SmartWalletPositionEntity pos : closed) {
+                    total++;
+                    if (pos.getRealizedPnlUsdc() != null && pos.getRealizedPnlUsdc().compareTo(BigDecimal.ZERO) > 0) {
+                        wins++;
+                    }
+                }
+            }
+
+            BigDecimal currentWinRate = safe(wallet.getWinRate());
+            int leaderboardTrades = wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades();
+
+            if (total < 3) {
+                // Not enough internal data for blending yet.
+                // Survivorship-bias fallback: wallets with winRate=1.0 and small leaderboard samples
+                // almost certainly have inflated metrics — cap them to a conservative default immediately.
+                boolean suspiciouslyPerfect = currentWinRate.compareTo(LEADERBOARD_BIAS_WIN_RATE_TRIGGER) >= 0
+                        && leaderboardTrades <= LEADERBOARD_POSITION_CAP;
+                if (suspiciouslyPerfect && currentWinRate.compareTo(LEADERBOARD_BIAS_FALLBACK_WIN_RATE) > 0) {
+                    BigDecimal fallbackScore = scoringService.score(
+                            LEADERBOARD_BIAS_FALLBACK_WIN_RATE,
+                            safe(wallet.getRealizedPnlUsdc()),
+                            leaderboardTrades,
+                            safe(wallet.getAverageRoiRate()),
+                            safe(wallet.getMaxDrawdownRate())
+                    );
+                    wallet.setWinRate(LEADERBOARD_BIAS_FALLBACK_WIN_RATE);
+                    wallet.setWalletScore(fallbackScore);
+                    wallet.setUpdatedAt(new Date());
+                    profileMapper.updateById(wallet);
+                    log.info("WIN_RATE_BIAS_FALLBACK walletAddress={} leaderboardTrades={} winRate reset {} -> {} newScore={}",
+                            wallet.getWalletAddress(), leaderboardTrades, currentWinRate,
+                            LEADERBOARD_BIAS_FALLBACK_WIN_RATE, fallbackScore);
+                }
+                continue;
+            }
+
+            BigDecimal internalWinRate = BigDecimal.valueOf(wins)
+                    .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
+            // Blend: 40% internal (truth) + 60% external (leaderboard) to smooth noise
+            BigDecimal blendedWinRate = internalWinRate.multiply(new BigDecimal("0.40"))
+                    .add(currentWinRate.multiply(new BigDecimal("0.60")))
+                    .setScale(4, RoundingMode.HALF_UP);
+
+            // Re-score wallet with blended win rate
+            BigDecimal newScore = scoringService.score(
+                    blendedWinRate,
+                    safe(wallet.getRealizedPnlUsdc()),
+                    leaderboardTrades,
+                    safe(wallet.getAverageRoiRate()),
+                    safe(wallet.getMaxDrawdownRate())
+            );
+            wallet.setWinRate(blendedWinRate);
+            wallet.setWalletScore(newScore);
+            wallet.setUpdatedAt(new Date());
+            profileMapper.updateById(wallet);
+            log.info("WIN_RATE_REFRESH walletAddress={} internalWinRate={} blended={} newScore={} sampleSize={}",
+                    wallet.getWalletAddress(), internalWinRate, blendedWinRate, newScore, total);
+        }
     }
 
     private BigDecimal safe(BigDecimal value) {
