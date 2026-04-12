@@ -5,6 +5,8 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityDedupedConsensus;
+import com.metaverse.coin.strategy.job.smartwallet.intelligence.service.EntityAwareConsensusService;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import lombok.Builder;
 import lombok.Data;
@@ -30,6 +32,7 @@ public class PolymarketConsensusSignalService {
     private final SmartWalletProperties properties;
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final SmartWalletProfileStoreService profileStoreService;
+    private final EntityAwareConsensusService entityAwareConsensusService;
 
     public List<ConsensusSignalView> listRecentConsensusSignals() {
         SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
@@ -64,9 +67,9 @@ public class PolymarketConsensusSignalService {
         }
 
         return grouped.values().stream()
-                .map(ConsensusAccumulator::toView)
+                .map(acc -> acc.toView(entityAwareConsensusService))
                 .sorted(Comparator.comparing(ConsensusSignalView::getConsensusScore).reversed()
-                        .thenComparing(ConsensusSignalView::getDistinctWallets, Comparator.reverseOrder()))
+                        .thenComparing(ConsensusSignalView::getDedupedEntityCount, Comparator.reverseOrder()))
                 .limit(normalizeLimit(limit))
                 .toList();
     }
@@ -88,6 +91,8 @@ public class PolymarketConsensusSignalService {
                         .outcome(currentEvent.getOutcome())
                         .side(currentEvent.getSide())
                         .distinctWallets(0)
+                        .dedupedEntityCount(0)
+                        .hasSuspiciousMultiWallet(false)
                         .totalTriggerSizeUsdc(BigDecimal.ZERO)
                         .averageTriggerPrice(BigDecimal.ZERO)
                         .consensusScore(BigDecimal.ZERO)
@@ -169,20 +174,26 @@ public class PolymarketConsensusSignalService {
             }
         }
 
-        private ConsensusSignalView toView() {
-            BigDecimal consensusScore = walletScores.isEmpty()
-                    ? BigDecimal.ZERO
-                    : walletScores.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add)
-                    .divide(BigDecimal.valueOf(walletScores.size()), 4, RoundingMode.HALF_UP);
+        private ConsensusSignalView toView(EntityAwareConsensusService entityAwareConsensusService) {
             BigDecimal averagePrice = priceCount == 0
                     ? BigDecimal.ZERO
                     : totalTriggerPrice.divide(BigDecimal.valueOf(priceCount), 4, RoundingMode.HALF_UP);
+
+            // 实体去重：解决「地址膨胀」bug —— 一个实体的多钱包只计 1 票
+            EntityDedupedConsensus deduped = entityAwareConsensusService.deduplicateByEntity(
+                    walletAddresses, walletScores);
+
+            // consensusScore 改为使用实体维度的平均评分（去重后）
+            BigDecimal consensusScore = deduped.getEntityAvgScore();
+
             return ConsensusSignalView.builder()
                     .marketId(marketId)
                     .question(question)
                     .outcome(outcome)
                     .side(side)
-                    .distinctWallets(walletScores.size())
+                    .distinctWallets(walletScores.size())              // 原始地址数（历史兼容）
+                    .dedupedEntityCount(deduped.getDedupedEntityCount()) // 实体去重后数量（风控使用）
+                    .hasSuspiciousMultiWallet(deduped.isHasSuspiciousMultiWallet())
                     .totalTriggerSizeUsdc(totalTriggerSizeUsdc.setScale(4, RoundingMode.HALF_UP))
                     .averageTriggerPrice(averagePrice)
                     .consensusScore(consensusScore)

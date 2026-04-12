@@ -21,6 +21,8 @@ public class SmartWalletSchemaMaintenanceService {
         widenOutcomeColumn("smart_wallet_order");
         widenOutcomeColumn("smart_wallet_fill");
         widenOutcomeColumn("smart_wallet_position");
+        ensureMinimumVarcharLength("smart_wallet_order", "status", 32,
+                "ALTER TABLE `smart_wallet_order` MODIFY COLUMN `status` VARCHAR(32) NOT NULL DEFAULT 'FILLED' COMMENT 'LIVE/PARTIALLY_FILLED/FILLED/FAILED/SETTLEMENT_PENDING_ORACLE/SETTLED_WIN/SETTLED_LOSS'");
         ensureMinimumVarcharLength("smart_wallet_position", "status", 32,
                 "ALTER TABLE `smart_wallet_position` MODIFY COLUMN `status` VARCHAR(32) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/PARTIALLY_CLOSED/CLOSED/RESOLVED_UNCLAIMED/CLAIMED'");
         ensureMinimumVarcharLength("smart_wallet_settlement_run", "error_message", 2048,

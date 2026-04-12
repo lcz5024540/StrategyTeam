@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletCashLedgerMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -28,6 +29,8 @@ class SmartWalletPositionSyncServiceTest {
     private ExecutionWalletContextLoader walletContextLoader;
     @Mock
     private SmartWalletPositionMapper positionMapper;
+    @Mock
+    private SmartWalletCashLedgerMapper cashLedgerMapper;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -37,7 +40,13 @@ class SmartWalletPositionSyncServiceTest {
         properties = new SmartWalletProperties();
         properties.setEnabled(true);
         properties.getPolymarket().setEnabled(true);
-        service = new SmartWalletPositionSyncService(properties, polymarketApiClient, walletContextLoader, positionMapper);
+        service = new SmartWalletPositionSyncService(
+                properties,
+                polymarketApiClient,
+                walletContextLoader,
+                positionMapper,
+                cashLedgerMapper
+        );
     }
 
     @Test

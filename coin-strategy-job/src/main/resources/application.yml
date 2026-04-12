@@ -187,7 +187,7 @@ smart-wallet:
     max-expected-slippage-usdc: 1.50
     max-slippage-spike-probability: 0.65
     # [TUNE] Maximum number of simultaneously open positions across the portfolio.
-    max-open-positions: 10
+    max-open-positions: 20
     # [TUNE] Portfolio-wide capital budget for still-open positions.
     max-total-open-cost-usdc: 500
     # [TUNE] Ignore long-dated markets so capital can recycle faster.

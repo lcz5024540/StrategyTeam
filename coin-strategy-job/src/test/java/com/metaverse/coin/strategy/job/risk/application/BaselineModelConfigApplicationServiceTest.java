@@ -30,11 +30,11 @@ class BaselineModelConfigApplicationServiceTest {
         UpdateBaselineModelConfigRequest request = new UpdateBaselineModelConfigRequest();
         request.setGrossEdgePriorWeight(new BigDecimal("1.30"));
 
-        UpdateBaselineModelConfigRequest.FollowProbabilityRequest followProbability = new UpdateBaselineModelConfigRequest.FollowProbabilityRequest();
+        UpdateBaselineModelConfigRequest.FollowProbability followProbability = new UpdateBaselineModelConfigRequest.FollowProbability();
         followProbability.setWalletScoreWeight(new BigDecimal("2.20"));
         request.setFollowProbability(followProbability);
 
-        UpdateBaselineModelConfigRequest.CalibrationRequest calibration = new UpdateBaselineModelConfigRequest.CalibrationRequest();
+        UpdateBaselineModelConfigRequest.Calibration calibration = new UpdateBaselineModelConfigRequest.Calibration();
         calibration.setFollowProbabilityBias(new BigDecimal("-0.20"));
         request.setCalibration(calibration);
 

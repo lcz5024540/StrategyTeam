@@ -32,6 +32,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepa
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairItem;
 import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettlementReviewView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
+import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryCandidate;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncFailure;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +61,16 @@ import java.util.Set;
 public class SmartWalletAccountingService {
 
     private static final String PAPER_BOOK_EXECUTION_ADDRESS = "paper-book";
+    private static final String ORDER_STATUS_SETTLEMENT_PENDING_ORACLE = "SETTLEMENT_PENDING_ORACLE";
+    private static final String ORDER_STATUS_SETTLED_WIN = "SETTLED_WIN";
+    private static final String ORDER_STATUS_SETTLED_LOSS = "SETTLED_LOSS";
+    private static final List<String> EXECUTED_ORDER_STATUSES = List.of(
+            "FILLED",
+            "MATCHED",
+            ORDER_STATUS_SETTLEMENT_PENDING_ORACLE,
+            ORDER_STATUS_SETTLED_WIN,
+            ORDER_STATUS_SETTLED_LOSS
+    );
 
     private final SmartWalletOrderMapper orderMapper;
     private final SmartWalletFillMapper fillMapper;
@@ -689,7 +700,7 @@ public class SmartWalletAccountingService {
 
     public List<SmartWalletReportAttributionItem> walletAttribution(int limit, String mode) {
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
-                .eq(SmartWalletOrderEntity::getStatus, "FILLED"));
+                .in(SmartWalletOrderEntity::getStatus, EXECUTED_ORDER_STATUSES));
         List<SmartWalletCashLedgerEntity> ledgerEntries = cashLedgerMapper.selectList(new LambdaQueryWrapper<>());
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
         Map<String, AttributionAccumulator> grouped = new LinkedHashMap<>();
@@ -731,7 +742,7 @@ public class SmartWalletAccountingService {
 
     public List<SmartWalletReportAttributionItem> marketAttribution(int limit, String mode) {
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
-                .eq(SmartWalletOrderEntity::getStatus, "FILLED"));
+                .in(SmartWalletOrderEntity::getStatus, EXECUTED_ORDER_STATUSES));
         List<SmartWalletCashLedgerEntity> ledgerEntries = cashLedgerMapper.selectList(new LambdaQueryWrapper<>());
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
         Map<String, AttributionAccumulator> grouped = new LinkedHashMap<>();
@@ -978,6 +989,7 @@ public class SmartWalletAccountingService {
                     .fetchedMarkets(0)
                     .resolvedPositions(0)
                     .unresolvedMarkets(0)
+                    .oraclePendingMarkets(0)
                     .skippedFutureMarkets(0)
                     .failedMarkets(0)
                     .build();
@@ -1000,11 +1012,16 @@ public class SmartWalletAccountingService {
         int resolved = 0;
         int fetched = 0;
         int unresolved = 0;
+        int oraclePending = 0;
         int skippedFuture = 0;
         int failed = 0;
         List<String> notes = new ArrayList<>();
         List<SettlementSyncFailure> failures = new ArrayList<>();
+        List<SettlementRetryCandidate> retryCandidates = new ArrayList<>();
         Map<String, PolymarketApiClient.MarketMetadata> metadataByMarket = new LinkedHashMap<>();
+        Set<String> unresolvedNotedMarkets = new LinkedHashSet<>();
+        Set<String> oraclePendingMarkets = new LinkedHashSet<>();
+        Set<String> resolvedOrderStatusSyncedMarkets = new LinkedHashSet<>();
         for (String marketId : markets) {
             String question = positions.stream()
                     .filter(position -> marketId.equalsIgnoreCase(position.getMarketId()))
@@ -1046,39 +1063,9 @@ public class SmartWalletAccountingService {
                 continue;
             }
             if (!metadata.isResolved()) {
-                // For paper-book positions with expired markets, try to infer the outcome from prices
-                boolean isPaper = isPaperExecutionAddress(position.getExecutionAddress());
                 boolean marketExpired = (metadata.getEndAt() != null && metadata.getEndAt() <= System.currentTimeMillis())
                         || (position.getMarketEndAt() != null && position.getMarketEndAt() <= System.currentTimeMillis());
-                if (isPaper && marketExpired) {
-                    String inferredOutcome = inferResolvedOutcomeFromPrices(metadata.getOutcomes(), metadata.getOutcomePrices());
-                    if (StringUtils.hasText(inferredOutcome)) {
-                        PolymarketApiClient.MarketMetadata resolvedMetadata = PolymarketApiClient.MarketMetadata.builder()
-                                .conditionId(metadata.getConditionId())
-                                .marketId(metadata.getMarketId())
-                                .question(metadata.getQuestion())
-                                .category(metadata.getCategory())
-                                .minimumTickSize(metadata.getMinimumTickSize())
-                                .negRisk(metadata.isNegRisk())
-                                .active(metadata.isActive())
-                                .closed(true)
-                                .acceptingOrders(false)
-                                .resolvedOutcome(inferredOutcome)
-                                .endAt(metadata.getEndAt())
-                                .outcomes(metadata.getOutcomes())
-                                .outcomePrices(metadata.getOutcomePrices())
-                                .outcomeTokenIds(metadata.getOutcomeTokenIds())
-                                .build();
-                        notes.add("Paper position " + position.getId() + " auto-resolved with inferred outcome: " + inferredOutcome);
-                        log.info("Auto-resolving expired paper position: positionId={}, marketId={}, inferredOutcome={}",
-                                position.getId(), position.getMarketId(), inferredOutcome);
-                        resolvePosition(position, resolvedMetadata);
-                        resolved++;
-                        continue;
-                    }
-                }
                 if (metadata.isClosed()) {
-                    notes.add("Market closed without explicit resolved outcome yet, skipping settlement for " + position.getMarketId());
                     log.warn("Settlement unresolved after market close: marketId={}, question={}, outcomes={}, outcomePrices={}, acceptingOrders={}",
                             position.getMarketId(),
                             position.getQuestion(),
@@ -1086,8 +1073,29 @@ public class SmartWalletAccountingService {
                             metadata.getOutcomePrices(),
                             metadata.isAcceptingOrders());
                 }
+                if (marketExpired
+                        && StringUtils.hasText(position.getMarketId())
+                        && oraclePendingMarkets.add(position.getMarketId())) {
+                    oraclePending++;
+                    retryCandidates.add(SettlementRetryCandidate.builder()
+                            .marketId(position.getMarketId())
+                            .question(questionOrPosition(position, metadata))
+                            .retryType("ORACLE_PENDING")
+                            .retryMessage(buildOraclePendingRetryMessage(position, metadata))
+                            .build());
+                    markPaperOrdersAwaitingOracle(position.getMarketId());
+                }
+                if (StringUtils.hasText(position.getMarketId())
+                        && unresolvedNotedMarkets.add(position.getMarketId())) {
+                    notes.add(marketExpired
+                            ? buildOraclePendingSettlementNote(position, metadata)
+                            : buildUnresolvedSettlementNote(position, metadata));
+                }
                 unresolved++;
                 continue;
+            }
+            if (resolvedOrderStatusSyncedMarkets.add(position.getMarketId())) {
+                syncResolvedPaperOrderStatuses(position.getMarketId(), metadata.getResolvedOutcome());
             }
             resolvePosition(position, metadata);
             resolved++;
@@ -1101,12 +1109,137 @@ public class SmartWalletAccountingService {
                 .fetchedMarkets(fetched)
                 .resolvedPositions(resolved)
                 .unresolvedMarkets(unresolved)
+                .oraclePendingMarkets(oraclePending)
                 .skippedFutureMarkets(skippedFuture)
                 .failedMarkets(failed)
                 .notes(notes)
                 .failures(failures)
+                .retryCandidates(retryCandidates)
                 .processedMarketIds(new ArrayList<>(markets))
                 .build();
+    }
+
+    private String buildUnresolvedSettlementNote(SmartWalletPositionEntity position,
+                                                 PolymarketApiClient.MarketMetadata metadata) {
+        String marketId = position == null ? null : position.getMarketId();
+        String question = questionOrPosition(position, metadata);
+        Long effectiveEndAt = metadata != null && metadata.getEndAt() != null
+                ? metadata.getEndAt()
+                : (position == null ? null : position.getMarketEndAt());
+        String endAtBjt = effectiveEndAt == null ? "unknown" : timeFormatter.formatEpochMillisToBjt(effectiveEndAt);
+        boolean closed = metadata != null && metadata.isClosed();
+        boolean acceptingOrders = metadata != null && metadata.isAcceptingOrders();
+        boolean expired = effectiveEndAt != null && effectiveEndAt <= System.currentTimeMillis();
+
+        if (expired) {
+            return "Unresolved expired market " + marketId
+                    + " [" + abbreviateQuestion(question) + "]"
+                    + ", closed=" + closed
+                    + ", acceptingOrders=" + acceptingOrders
+                    + ", endAtBjt=" + endAtBjt + ".";
+        }
+        return "Settlement pending for market " + marketId
+                + " [" + abbreviateQuestion(question) + "]"
+                + ", closed=" + closed
+                + ", acceptingOrders=" + acceptingOrders
+                + ", endAtBjt=" + endAtBjt + ".";
+    }
+
+    private String buildOraclePendingSettlementNote(SmartWalletPositionEntity position,
+                                                    PolymarketApiClient.MarketMetadata metadata) {
+        String marketId = position == null ? null : position.getMarketId();
+        String question = questionOrPosition(position, metadata);
+        Long effectiveEndAt = metadata != null && metadata.getEndAt() != null
+                ? metadata.getEndAt()
+                : (position == null ? null : position.getMarketEndAt());
+        String endAtBjt = effectiveEndAt == null ? "unknown" : timeFormatter.formatEpochMillisToBjt(effectiveEndAt);
+        boolean closed = metadata != null && metadata.isClosed();
+        boolean acceptingOrders = metadata != null && metadata.isAcceptingOrders();
+        return "Expired market " + marketId
+                + " [" + abbreviateQuestion(question) + "]"
+                + " is waiting for Polymarket/UMA oracle resolution"
+                + ", closed=" + closed
+                + ", acceptingOrders=" + acceptingOrders
+                + ", endAtBjt=" + endAtBjt + ".";
+    }
+
+    private String buildOraclePendingRetryMessage(SmartWalletPositionEntity position,
+                                                  PolymarketApiClient.MarketMetadata metadata) {
+        String marketId = position == null ? null : position.getMarketId();
+        String question = questionOrPosition(position, metadata);
+        return "Market " + marketId
+                + " [" + abbreviateQuestion(question) + "]"
+                + " expired and is still waiting for oracle resolution; retry settlement after UMA result is finalized.";
+    }
+
+    private void markPaperOrdersAwaitingOracle(String marketId) {
+        if (!StringUtils.hasText(marketId)) {
+            return;
+        }
+        List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                .eq(SmartWalletOrderEntity::getExecutionAddress, PAPER_BOOK_EXECUTION_ADDRESS)
+                .eq(SmartWalletOrderEntity::getMarketId, marketId)
+                .in(SmartWalletOrderEntity::getStatus, List.of("FILLED", "MATCHED", ORDER_STATUS_SETTLEMENT_PENDING_ORACLE)));
+        Date now = new Date();
+        for (SmartWalletOrderEntity order : orders) {
+            if (ORDER_STATUS_SETTLEMENT_PENDING_ORACLE.equalsIgnoreCase(order.getStatus())) {
+                continue;
+            }
+            order.setStatus(ORDER_STATUS_SETTLEMENT_PENDING_ORACLE)
+                    .setUpdatedAt(now);
+            orderMapper.updateById(order);
+        }
+    }
+
+    private void syncResolvedPaperOrderStatuses(String marketId, String resolvedOutcome) {
+        if (!StringUtils.hasText(marketId) || !StringUtils.hasText(resolvedOutcome)) {
+            return;
+        }
+        List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                .eq(SmartWalletOrderEntity::getExecutionAddress, PAPER_BOOK_EXECUTION_ADDRESS)
+                .eq(SmartWalletOrderEntity::getMarketId, marketId)
+                .in(SmartWalletOrderEntity::getStatus, EXECUTED_ORDER_STATUSES));
+        Date now = new Date();
+        for (SmartWalletOrderEntity order : orders) {
+            String nextStatus = resolvedOutcome.equalsIgnoreCase(order.getOutcome())
+                    ? ORDER_STATUS_SETTLED_WIN
+                    : ORDER_STATUS_SETTLED_LOSS;
+            if (nextStatus.equalsIgnoreCase(order.getStatus())) {
+                continue;
+            }
+            order.setStatus(nextStatus)
+                    .setUpdatedAt(now);
+            orderMapper.updateById(order);
+        }
+    }
+
+    private String questionOrPosition(SmartWalletPositionEntity position,
+                                      PolymarketApiClient.MarketMetadata metadata) {
+        return firstNonBlank(
+                position == null ? null : position.getQuestion(),
+                metadata == null ? null : metadata.getQuestion(),
+                position == null ? null : position.getMarketId()
+        );
+    }
+
+    private String abbreviateQuestion(String question) {
+        if (!StringUtils.hasText(question)) {
+            return "n/a";
+        }
+        String trimmed = question.trim();
+        return trimmed.length() <= 80 ? trimmed : trimmed.substring(0, 77) + "...";
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private Set<String> registerPaperMarketMetadataHints(List<SmartWalletPositionEntity> positions) {
@@ -1412,67 +1545,6 @@ public class SmartWalletAccountingService {
         return metadata.getResolvedOutcome().equalsIgnoreCase(position.getOutcome())
                 ? BigDecimal.ONE.setScale(8, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
-    }
-
-    /**
-     * Infer the resolved outcome from outcome prices for paper-book positions.
-     * Uses a relaxed threshold (>= 0.95) to detect a clear winner when the market has expired.
-     * Returns null if no clear winner can be determined.
-     */
-    private String inferResolvedOutcomeFromPrices(List<String> outcomes, List<String> outcomePrices) {
-        if (outcomes == null || outcomePrices == null || outcomes.isEmpty() || outcomePrices.isEmpty()) {
-            return null;
-        }
-        if (outcomes.size() != outcomePrices.size()) {
-            return null;
-        }
-        String winner = null;
-        BigDecimal highestPrice = BigDecimal.ZERO;
-        for (int i = 0; i < outcomes.size(); i++) {
-            String outcome = outcomes.get(i);
-            BigDecimal price;
-            try {
-                price = new BigDecimal(outcomePrices.get(i));
-            } catch (NumberFormatException e) {
-                continue;
-            }
-            // Use relaxed threshold (>= 0.95) for paper-book expired markets
-            if (price.compareTo(new BigDecimal("0.95")) >= 0) {
-                if (winner != null) {
-                    // Multiple winners, cannot determine
-                    return null;
-                }
-                winner = outcome;
-                highestPrice = price;
-            } else if (price.compareTo(new BigDecimal("0.05")) > 0 && winner == null) {
-                // If no clear winner yet, track the highest price as potential winner
-                if (price.compareTo(highestPrice) > 0) {
-                    highestPrice = price;
-                    winner = outcome;
-                }
-            }
-        }
-        // Only return winner if it has a dominant price (>= 0.95)
-        // or if there's a single outcome with price > 0.80 and all others are < 0.20
-        if (winner != null && highestPrice.compareTo(new BigDecimal("0.95")) >= 0) {
-            return winner;
-        }
-        // Fallback: check if one outcome clearly dominates (> 0.80 and others < 0.20)
-        if (outcomes.size() == 2) {
-            try {
-                BigDecimal price0 = new BigDecimal(outcomePrices.get(0));
-                BigDecimal price1 = new BigDecimal(outcomePrices.get(1));
-                if (price0.compareTo(new BigDecimal("0.80")) > 0 && price1.compareTo(new BigDecimal("0.20")) < 0) {
-                    return outcomes.get(0);
-                }
-                if (price1.compareTo(new BigDecimal("0.80")) > 0 && price0.compareTo(new BigDecimal("0.20")) < 0) {
-                    return outcomes.get(1);
-                }
-            } catch (NumberFormatException e) {
-                // ignore
-            }
-        }
-        return null;
     }
 
     private void markToMarket(SmartWalletPositionEntity position) {

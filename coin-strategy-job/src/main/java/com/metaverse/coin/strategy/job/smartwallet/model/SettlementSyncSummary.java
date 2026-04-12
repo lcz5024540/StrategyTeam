@@ -14,12 +14,15 @@ public class SettlementSyncSummary {
     private Integer fetchedMarkets;
     private Integer resolvedPositions;
     private Integer unresolvedMarkets;
+    private Integer oraclePendingMarkets;
     private Integer skippedFutureMarkets;
     private Integer failedMarkets;
     @Builder.Default
     private List<String> notes = new ArrayList<>();
     @Builder.Default
     private List<SettlementSyncFailure> failures = new ArrayList<>();
+    @Builder.Default
+    private List<SettlementRetryCandidate> retryCandidates = new ArrayList<>();
     @Builder.Default
     private List<String> processedMarketIds = new ArrayList<>();
 }

@@ -297,6 +297,30 @@ public class SmartWalletController {
         }
     }
 
+    @Operation(summary = "重评延迟候选", description = "手动重评 enrichment_status=PENDING/LOW_CONFIDENCE_LINK 的候选，并尝试恢复此前被 intelligence 暂时拦截的跟单任务。")
+    @PostMapping("/follow-tasks/intelligence/reevaluate-deferred")
+    public Map<String, Object> reevaluateDeferredCandidates(@RequestParam(defaultValue = "50") Integer limit) {
+        return Map.of(
+                "limit", limit,
+                "updated", followTaskService.reevaluateDeferredCandidates(limit)
+        );
+    }
+
+    @Operation(summary = "回放最近智能候选", description = "回放最近的 trade event，对历史上漏掉 candidate/task 的事件补建 intelligence 记录和跟单任务。")
+    @PostMapping("/follow-tasks/intelligence/replay-recent")
+    public Map<String, Object> replayRecentIntelligenceCandidates(@RequestParam(defaultValue = "100") Integer limit,
+                                                                  @RequestParam(defaultValue = "false") boolean includeProcessed) {
+        SmartWalletFollowTaskService.IntelligenceReplaySummary summary =
+                followTaskService.replayRecentIntelligenceCandidates(limit, includeProcessed);
+        return Map.of(
+                "limit", limit,
+                "includeProcessed", includeProcessed,
+                "scanned", summary.getScanned(),
+                "changed", summary.getChanged(),
+                "skipped", summary.getSkipped()
+        );
+    }
+
     @Operation(summary = "单强钱包候选", description = "基于单钱包 override 策略查看候选任务，适合 followable 预设。")
     @GetMapping("/follow-tasks/single-wallet-override")
     public List<SmartWalletFollowTaskView> singleWalletOverrideFollowTasks(@RequestParam(defaultValue = "20") Integer limit,

@@ -38,6 +38,7 @@ public class SmartWalletProperties {
     private Claim claim = new Claim();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
+    private Intelligence intelligence = new Intelligence();
 
     @Data
     public static class PolymarketMonitor {
@@ -121,6 +122,8 @@ public class SmartWalletProperties {
         private boolean enableConsensusGate = true;
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 2;
+        /** 实体去重后的最小实体数门控（替代 minDistinctWallets）。默认与 minDistinctWallets 保持一致 */
+        private Integer minDistinctEntities = 2;
         private BigDecimal minConsensusScore = new BigDecimal("0.72");
         private boolean enableSingleWalletOverride = true;
         // Leaderboard survivorship-bias guard: when a wallet shows winRate >= threshold with only a small sample,
@@ -214,6 +217,26 @@ public class SmartWalletProperties {
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;
+    }
+
+    @Data
+    public static class Intelligence {
+        /** Polygonscan API Key for funding source analysis (Polygon chain) */
+        private String polygonscanApiKey = "";
+        /** Polygonscan API base URL */
+        private String polygonscanApiBaseUrl = "https://api.polygonscan.com/api";
+        /** Clustering job fixed delay in ms */
+        private Long clusterFixedDelayMs = 3600000L;
+        /** Minimum cluster confidence to treat as same entity for consensus dedup (0-1) */
+        private BigDecimal minClusterConfidenceForDedup = new BigDecimal("0.40");
+        /** BehaviorSimilarityClusterer similarity threshold (wallets above this are considered same entity) */
+        private Double behaviorSimilarityThreshold = 0.75;
+        /** Entity feature snapshot refresh interval in ms (default 6 hours) */
+        private Long entitySnapshotFixedDelayMs = 21600000L;
+        /** Deferred candidate reevaluation interval in ms */
+        private Long candidateReevaluationFixedDelayMs = 120000L;
+        /** Deferred candidate reevaluation batch size */
+        private Integer candidateReevaluationBatchSize = 50;
     }
 
     @Data

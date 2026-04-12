@@ -1,7 +1,45 @@
 # Polymarket 量化系统 — 规约编程计划文档
 
-> 版本：v1.0 | 日期：2026-04-12
-> 基于：`polymarket内幕分析.md` × 现有代码 Gap 分析
+> 版本：v1.1 | 日期：2026-04-12
+> 基于：`polymarket内幕分析.md` × 现有代码 Gap 分析 × 架构审查建议
+
+---
+
+## 进展入口
+
+- 本轮实体识别、候选重评、历史回放、测试修复的落地总结：
+  [POLYMARKET_INTELLIGENCE_PROGRESS_SUMMARY.md](/Users/jenniferni/jenifer/ray/CoinStrategy/polymarket/POLYMARKET_INTELLIGENCE_PROGRESS_SUMMARY.md)
+
+---
+
+## ⚠️ 架构级问题：共识信号的「地址膨胀」Bug
+
+> 此问题由架构审查发现，**已确认存在于现有代码中**，影响所有依赖共识信号的决策逻辑，必须在 Phase 1 中优先修复。
+
+### 问题根因
+
+`PolymarketConsensusSignalService.buildConsensusForEvent()` 中，共识的核心指标 `distinctWallets` 计算逻辑为：
+
+```java
+// 当前代码：按钱包地址去重，本质是地址计数
+distinctWallets = count of unique wallet addresses on watchlist
+consensusScore  = sum(wallet_scores) / count(wallets)
+```
+
+**真实问题场景**：一个 Insider 实体将资金拆分到 3 个钱包（均在 watchlist），在同一市场同向下单：
+- 当前系统识别为：`distinctWallets = 3`，触发强共识 ✅
+- 真实情况应为：`distinctEntities = 1`，不满足共识门槛 ❌
+- 后果：系统在**单一实体伪装的共识信号**上下单，风险被严重低估
+
+### 影响范围
+
+| 位置 | 受影响逻辑 |
+|------|-----------|
+| `SmartWalletSignalRiskService.evaluate()` | `minDistinctWallets` 门控基于地址数，而非实体数 |
+| `SmartWalletSignalRiskService` single-wallet override | 无法判断"单地址"是否真的是独立实体 |
+| `SmartWalletScoringService` | 多钱包同实体的历史战绩重复计入 |
+| `HHI`（持仓集中度特征）| 基于地址计算的 HHI 严重失真 |
+| 后续链上巨鲸接入 | Polymarket 账户和链上地址无法打通 |
 
 ---
 
@@ -12,6 +50,7 @@
 | 文档提出 | 实现状态 | 备注 |
 |---------|---------|------|
 | 数据采集层（Gamma/CLOB/Data API/链上） | ✅ 已实现 | PolymarketApiClient + JavaClobClient |
+| **Wallet/Entity Intelligence 层** | ❌ **缺失（P0）** | **共识按地址计数，实体膨胀 bug 存在** |
 | 特征工程层（AVR/Jump/HHI/Fresh Wallet） | ❌ 缺失 | 无独立特征计算模块 |
 | Alpha 模型层（规则/LR/XGBoost） | ❌ 缺失 | 无信号评分体系 |
 | 策略执行层（下单/仓位/风控） | ✅ 基础已有 | 执行框架已有，风控门控存在 |
@@ -25,7 +64,7 @@
 | 策略二：价格未收敛套利 | ❌ 缺失 | 无实际价格对比模型 |
 | 策略三：信息扩散延迟（Twitter/NLP） | ❌ 缺失 | 无社交数据接入 |
 | 策略四：流动性套利（做市/扫单） | ❌ 缺失 | 无做市模块 |
-| Smart Wallet 跟单 | ✅ 已实现 | 系统主策略 |
+| Smart Wallet 跟单 | ✅ 已实现 | 系统主策略，但受实体膨胀 bug 影响 |
 
 ### 1.3 风险控制对照
 
@@ -34,13 +73,197 @@
 | 洗盘识别（自成交过滤） | ❌ 缺失 | 无有效成交量过滤 |
 | 流动性阈值过滤 | ❌ 缺失 | 无深度/Volume 最小阈值 |
 | 事件时间校准 | ❌ 缺失 | 无 resolution source 对齐 |
-| 钱包聚类（多账户识别） | ⚠️ 基础 | 有 Clustering 概念但无实现 |
+| **实体级钱包聚类** | ❌ **缺失（P0）** | **共识信号可被多钱包伪放大** |
 | 结算规则解析 | ⚠️ 部分 | 有 settlement sync，无规则争议标记 |
 | 混淆因素控制（做市商/激励刷量） | ❌ 缺失 | 无对照组控制 |
 
 ---
 
 ## 二、模块改进规划
+
+### 🔴 模块 0（前置必做）：Wallet/Entity Intelligence 层
+
+> **这是所有模块的基础设施，必须在 Phase 1 中优先实现，不可跳过**
+> 
+> 不独立进程，在 `coin-strategy-job` 内新建包 `smartwallet/intelligence`
+
+#### 核心思想
+
+将当前的二元结构（钱包地址 → 跟单任务）升级为三层结构：
+
+```
+当前：TradeEvent ──────────────────────────────────→ FollowTask
+升级：TradeEvent → [Intelligence Enrich] → SignalCandidate → [Approved] → FollowTask
+                           ↑
+                    entity_id + cluster_confidence
+```
+
+#### 包结构规约
+
+```
+coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/
+└── smartwallet/
+    └── intelligence/                          ← 新建领域包
+        ├── entity/                            ← 实体模型
+        │   ├── WalletEntityMap.java           ← 地址 → 实体映射
+        │   ├── WalletEntityFeatureSnapshot.java ← 实体级特征快照
+        │   └── WalletFollowCandidate.java     ← 候选跟单信号（含实体维度）
+        ├── service/
+        │   ├── WalletEntityResolutionService.java  ← 核心：地址 → 实体解析
+        │   ├── WalletClusteringService.java         ← 聚类算法
+        │   ├── EntityFeatureSnapshotService.java    ← 实体特征计算
+        │   └── FollowCandidateEvaluationService.java ← 候选信号评估
+        └── model/
+            ├── EntityResolutionResult.java
+            └── ClusterConfidence.java
+```
+
+#### 三张核心表规约
+
+```sql
+-- 表1：钱包 → 实体映射（核心索引）
+CREATE TABLE wallet_entity_map (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    wallet_address  VARCHAR(100) NOT NULL,
+    entity_id       VARCHAR(64)  NOT NULL,  -- UUID，同一实体共享
+    cluster_method  VARCHAR(30)  NOT NULL,  -- FUNDING_SOURCE / BEHAVIOR_SIM / MANUAL
+    cluster_confidence DECIMAL(5,4) NOT NULL DEFAULT 0.0, -- 0-1，置信度
+    funding_source_address VARCHAR(100),    -- 共同入金地址（如有）
+    behavior_sim_score DECIMAL(5,4),        -- 行为相似度得分
+    is_primary_wallet  TINYINT DEFAULT 0,   -- 该实体的主钱包标记
+    verified        TINYINT DEFAULT 0,      -- 人工确认
+    created_at      DATETIME NOT NULL,
+    updated_at      DATETIME NOT NULL,
+    UNIQUE KEY uk_wallet (wallet_address),
+    INDEX idx_entity (entity_id),
+    INDEX idx_funding_source (funding_source_address)
+);
+
+-- 表2：实体级特征快照（合并同实体所有钱包数据后的指标）
+CREATE TABLE wallet_entity_feature_snapshot (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    entity_id       VARCHAR(64) NOT NULL,
+    snapshot_time   DATETIME NOT NULL,
+    wallet_count    INT NOT NULL,           -- 该实体下的钱包数
+    aggregated_win_rate DECIMAL(5,4),       -- 合并后胜率
+    aggregated_roi      DECIMAL(10,4),      -- 合并后 ROI
+    aggregated_pnl_usdc DECIMAL(18,2),      -- 合并后 PnL
+    aggregated_total_trades INT,            -- 合并后交易次数
+    entity_score    DECIMAL(5,4),           -- 实体维度综合得分
+    is_multi_wallet TINYINT DEFAULT 0,      -- 是否存在多钱包
+    created_at      DATETIME NOT NULL,
+    INDEX idx_entity_time (entity_id, snapshot_time)
+);
+
+-- 表3：候选跟单信号（intelligence enrich 的输出，follow task 的前置）
+CREATE TABLE wallet_follow_candidate (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    source_event_id BIGINT NOT NULL,        -- 关联 trade event
+    wallet_address  VARCHAR(100) NOT NULL,
+    entity_id       VARCHAR(64)  NOT NULL,
+    cluster_confidence DECIMAL(5,4) NOT NULL,
+    entity_wallet_count INT NOT NULL,       -- 该实体总钱包数
+    is_entity_first_signal TINYINT DEFAULT 0, -- 该实体在本市场是否首次触发
+    entity_consensus_dedup_count INT,       -- 去重后的实体共识数
+    enrichment_status VARCHAR(20) NOT NULL, -- ENRICHED / SKIPPED_NO_ENTITY / PENDING
+    rejection_reason  VARCHAR(200),
+    follow_task_id   BIGINT,                -- 最终生成的 follow task（如有）
+    created_at      DATETIME NOT NULL,
+    INDEX idx_event (source_event_id),
+    INDEX idx_entity (entity_id),
+    INDEX idx_wallet (wallet_address)
+);
+```
+
+#### 关键接口规约
+
+```java
+// ---- WalletEntityResolutionService ----
+public interface WalletEntityResolutionService {
+    /**
+     * 解析钱包地址对应的实体
+     * 优先查 wallet_entity_map，未命中则触发聚类检测
+     */
+    EntityResolutionResult resolveEntity(String walletAddress);
+
+    /**
+     * 批量解析，用于共识信号实体去重
+     */
+    Map<String, EntityResolutionResult> resolveEntities(List<String> walletAddresses);
+
+    /**
+     * 强制重新聚类（用于后台任务）
+     */
+    void reCluster(String walletAddress);
+}
+
+public record EntityResolutionResult(
+    String walletAddress,
+    String entityId,               // null 表示未找到关联实体，默认 = walletAddress 自身
+    ClusterConfidence confidence,  // HIGH / MEDIUM / LOW / UNRESOLVED
+    int entityWalletCount,         // 该实体下的钱包总数
+    boolean isMultiWallet,         // 是否存在其他关联钱包
+    String primaryWalletAddress    // 实体主钱包
+) {}
+
+public enum ClusterConfidence {
+    HIGH,       // 共同入金地址 + 行为高度一致，confidence >= 0.85
+    MEDIUM,     // 行为相似但入金来源不明，0.60 <= confidence < 0.85
+    LOW,        // 仅行为弱相关，0.40 <= confidence < 0.60
+    UNRESOLVED  // 无聚类信息，视为独立实体
+}
+
+// ---- 共识信号实体去重 ----
+public interface EntityAwareConsensusService {
+    /**
+     * 在构建共识信号时，将地址列表折叠为实体列表
+     * 一个实体贡献的多个钱包只计 1 票
+     */
+    EntityDedupedConsensus deduplicateByEntity(List<String> walletAddresses,
+                                               Map<String, BigDecimal> walletScoreMap);
+}
+
+public record EntityDedupedConsensus(
+    int rawWalletCount,            // 原始地址数（当前系统的值）
+    int dedupedEntityCount,        // 去重后实体数（真实共识强度）
+    List<String> entityIds,        // 参与实体列表
+    BigDecimal entityAvgScore,     // 按实体平均的综合得分
+    boolean hasSuspiciousMultiWallet // 是否存在同实体 >1 钱包触发（告警）
+) {}
+```
+
+#### 跟单链路改造规约
+
+**原链路（需修改）**：
+```
+SmartWalletFollowTaskService.recordTradeEvent(event)
+  → createFollowTaskIfQualified(event)   // 直接评估 → 直接建 task
+```
+
+**新链路（按规约实现）**：
+```
+SmartWalletFollowTaskService.recordTradeEvent(event)
+  → intelligenceEnrichService.enrich(event)      // Step 1: 实体解析 + 聚类置信度
+      → WalletEntityResolutionService.resolveEntity(walletAddress)
+      → 写入 wallet_follow_candidate（enrichment_status = ENRICHED）
+  → followCandidateEvaluationService.evaluate(candidate)  // Step 2: 候选信号评估
+      → 实体级重复检测（同实体已有 pending task → SKIP）
+      → 更新 PolymarketConsensusSignal 时用 dedupedEntityCount 代替 distinctWallets
+  → createFollowTaskIfQualified(candidate)        // Step 3: 原有逻辑（需传入 entityId）
+      → SignalRiskDecision 的 distinctWallets 字段替换为 dedupedEntityCount
+```
+
+#### 对现有代码的修改点
+
+| 文件 | 修改内容 |
+|------|---------|
+| `PolymarketConsensusSignalService.java` | `distinctWallets` 替换为 `dedupedEntityCount`，`consensusScore` 基于实体平均 |
+| `SmartWalletSignalRiskService.java` | `minDistinctWallets` 门控改为 `minDistinctEntities`；single-wallet override 增加 `clusterConfidence` 检测 |
+| `SmartWalletFollowTaskService.java` | 插入 intelligence enrich 中间步骤，`createFollowTaskIfQualified` 改为接收 `WalletFollowCandidate` |
+| `SmartWalletScoringService.java` | 新增 `scoreEntity(entityId)` 方法，合并同实体多钱包历史后重新计算胜率/ROI |
+| `SmartWalletProperties.java` | `minDistinctWallets` → `minDistinctEntities`；新增 `clusterConfidenceThreshold` |
+
+---
 
 ### 模块 A：特征工程层（Feature Engineering）
 
@@ -239,31 +462,38 @@ LiquidityGate
 
 ---
 
-### 模块 F：钱包聚类系统（Wallet Clustering）
+### 模块 F：钱包聚类算法（Wallet Clustering Algorithms）
 
-**目标**：识别同一实体的多钱包行为，避免误判为多个独立 Insider
+> **注意**：模块 F 是模块 0（Entity Intelligence 层）的内部实现细节，为其提供聚类能力。
+> 模块 0 对外暴露统一接口，模块 F 是内部算法实现，不单独对外暴露服务。
 
-**缺失内容**：
-- 资金来源分析（入金地址聚类）
-- 行为相似度分析（交易时间、市场选择）
-- 聚类图谱可视化
+**目标**：实现多种聚类算法，支撑 `WalletEntityResolutionService` 的实体识别
 
-**设计规约**：
+**算法规约**：
 
 ```
-WalletCluster
-├── FundingSourceAnalyzer
-│   └── groupByDepositAddress()   // 链上追踪入金地址
-├── BehaviorSimilarityAnalyzer
-│   ├── tradeTimeCorrelation()    // 交易时间同步性
-│   └── marketOverlapRatio()      // 市场选择重合度
-├── ClusterGraphBuilder
-│   └── UnionFind / Graph 算法构建聚类图
-└── ClusterEntity                 // 聚类实体（代表一个真实交易者）
-    ├── clusterId
-    ├── walletAddresses []
-    └── aggregatedMetrics         // 合并计算胜率/ROI
+WalletClusteringService（位于 smartwallet/intelligence/service/）
+├── FundingSourceClusterer
+│   ├── 数据源：Polygon 链上入金记录（via Polygonscan API 或 Alchemy）
+│   ├── 算法：同一入金地址 → 同一实体（高置信）
+│   └── groupByDepositAddress(List<String> wallets) → Map<String,String> wallet→entityId
+├── BehaviorSimilarityClusterer
+│   ├── 数据源：smart_wallet_trade_event 历史记录
+│   ├── 特征向量：[交易时间分布, 市场选择重合度, 仓位大小相关性]
+│   ├── 算法：余弦相似度 + 阈值（similarity > 0.80 → 同实体，MEDIUM 置信）
+│   └── computeSimilarity(walletA, walletB) → BigDecimal
+├── UnionFindEntityBuilder
+│   ├── 输入：来自各 Clusterer 的 (walletA, walletB, confidence) 边集
+│   ├── 算法：带权 Union-Find，合并置信度加权
+│   └── build(edges) → Map<String, String> wallet→entityId
+└── ClusterResultValidator
+    └── 人工复核接口：POST /intelligence/entity/merge / /intelligence/entity/split
 ```
+
+**Phase 1 简化策略**：
+- 第一步仅实现 `FundingSourceClusterer`（最高置信，实现最简单）
+- `BehaviorSimilarityClusterer` 在 Phase 2 实现
+- 未聚类的钱包 `entity_id = wallet_address`（自身即实体，`cluster_confidence = 0`）
 
 ---
 
@@ -379,79 +609,140 @@ AlertingSystem
 
 ## 三、实施优先级与阶段规划
 
-### Phase 1（核心基础，4周）
-
-> 目标：构建特征计算 + 信号评分的基础闭环
-
-| 任务 | 模块 | 优先级 | 预计工作量 |
-|------|------|--------|-----------|
-| AVR / PriceJump 计算器 | 模块A | P0 | 3天 |
-| HHI / FreshWallet 计算器 | 模块A | P0 | 3天 |
-| 规则引擎 + 信号评分 | 模块B | P0 | 4天 |
-| 流动性过滤器 | 模块E | P0 | 2天 |
-| market_feature_snapshot 表 | 模块A | P0 | 1天 |
-| market_signal_record 表 | 模块B | P0 | 1天 |
-| 市场全量扫描定时任务 | 模块C | P1 | 3天 |
-| 市场扫描器 API 端点 | 模块C | P1 | 2天 |
-
-**验收标准**：
-- [ ] 能对任意 Polymarket 市场计算 AVR/HHI/Fresh 特征
-- [ ] 规则引擎能输出 0-10 信号评分并写入数据库
-- [ ] 低流动性市场能被自动过滤（Volume/Depth 阈值）
-- [ ] 定时任务每 15 分钟扫描全市场并更新信号记录
+> **核心原则**：Entity Intelligence 是基础设施，必须先于特征工程和信号评分实现。
+> 错误的实体识别会污染所有下游计算，上层建得越多，修正代价越高。
 
 ---
 
-### Phase 2（信号质量提升，3周）
+### Phase 1：Entity Intelligence 基础设施（3周）
 
-> 目标：提升信号可靠性，减少假信号
+> **目标：修复实体膨胀 bug，建立实体维度的基础能力，不独立进程，内嵌 coin-strategy-job**
 
-| 任务 | 模块 | 优先级 | 预计工作量 |
-|------|------|--------|-----------|
-| 洗盘自成交检测 | 模块D | P0 | 4天 |
-| 高频对倒行为检测 | 模块D | P0 | 3天 |
-| 有效成交量替换原始成交量 | 模块D | P0 | 2天 |
-| 钱包聚类基础实现（入金地址） | 模块F | P1 | 5天 |
-| 结算规则争议标记 | 模块G | P1 | 3天 |
-| 告警系统（Telegram/Discord） | 模块I | P1 | 3天 |
+#### 第 1 周：数据库 + 包骨架
 
-**验收标准**：
-- [ ] 能识别 >= 80% 的自成交行为
-- [ ] 同一实体多钱包能被聚类为一个 ClusterEntity
-- [ ] 高争议市场自动标记 RISKY 并拒绝进入
-- [ ] 高分信号触发时能在 1 分钟内发送 Telegram 通知
+| 任务 | 文件/位置 | 工作量 |
+|------|----------|--------|
+| 创建 `wallet_entity_map` 表 | `sql/polymarket_entity_intelligence.sql` | 0.5天 |
+| 创建 `wallet_entity_feature_snapshot` 表 | 同上 | 0.5天 |
+| 创建 `wallet_follow_candidate` 表 | 同上 | 0.5天 |
+| 建立 `smartwallet/intelligence` 包骨架 | `coin-strategy-job` | 0.5天 |
+| 实现 `WalletEntityMap` / `WalletFollowCandidate` Entity + Mapper | common-model | 1天 |
+
+#### 第 2 周：聚类服务 + 实体解析
+
+| 任务 | 文件/位置 | 工作量 |
+|------|----------|--------|
+| `FundingSourceClusterer`（Polygonscan API 入金地址） | intelligence/service | 2天 |
+| `WalletEntityResolutionService`（查表 + fallback to self） | intelligence/service | 1天 |
+| `WalletClusteringService`（聚类调度 + UnionFind） | intelligence/service | 1天 |
+| 后台定时任务：每小时重跑未解析钱包的聚类 | Job | 1天 |
+
+#### 第 3 周：链路改造 + 共识修复
+
+| 任务 | 文件/位置 | 工作量 |
+|------|----------|--------|
+| `FollowCandidateEvaluationService`（实体级重复检测） | intelligence/service | 1天 |
+| 改造 `SmartWalletFollowTaskService`：插入 enrich 中间步骤 | 现有文件 | 2天 |
+| 改造 `PolymarketConsensusSignalService`：`distinctWallets` → `dedupedEntityCount` | 现有文件 | 1天 |
+| 改造 `SmartWalletSignalRiskService`：`minDistinctWallets` → `minDistinctEntities` | 现有文件 | 1天 |
+| 新增 `EntityAwareConsensusService.deduplicateByEntity()` | intelligence/service | 0.5天 |
+| 流水线冒烟测试（模拟同实体 3 钱包触发场景） | test | 0.5天 |
+
+**Phase 1 验收标准**：
+- [ ] `wallet_entity_map` 表存在，且 `FundingSourceClusterer` 能自动写入共同入金地址的钱包对
+- [ ] `SmartWalletFollowTaskService.recordTradeEvent` 流程中有 `wallet_follow_candidate` 写入
+- [ ] `PolymarketConsensusSignalService` 的 `distinctWallets` 字段已替换为 `dedupedEntityCount`
+- [ ] **关键验证**：构造测试场景（1个实体 3个钱包同时买入），确认 `dedupedEntityCount = 1` 而非 `3`
+- [ ] `SmartWalletSignalRiskService` 的共识门控使用实体数，配置项名称为 `minDistinctEntities`
 
 ---
 
-### Phase 3（策略扩展，4周）
+### Phase 2：实体特征增强 + 市场特征基础（4周）
 
-> 目标：在 Smart Wallet 跟单基础上新增独立策略
+> **目标：提升实体评分质量 + 建立市场维度的特征基础**
 
-| 任务 | 模块 | 优先级 | 预计工作量 |
-|------|------|--------|-----------|
-| 策略一：事件前异常交易完整实现 | 策略层 | P0 | 5天 |
-| 策略二：价格收敛套利（体育/天气） | 策略层 | P1 | 5天 |
-| 回测框架基础版 | 模块H | P1 | 7天 |
-| 前端市场扫描器页面 | 模块J | P1 | 5天 |
+#### 实体侧（2周）
 
-**验收标准**：
-- [ ] 策略一能独立产生信号并触发下单（paper模式）
-- [ ] 回测框架能跑通 30 天历史数据
-- [ ] 前端市场扫描器页面正常展示异常市场列表
-
----
-
-### Phase 4（ML 模型化，持续）
-
-> 目标：引入机器学习模型提升预测精度
-
-| 任务 | 模块 | 优先级 |
+| 任务 | 模块 | 工作量 |
 |------|------|--------|
-| 特征数据集标注（历史信号 + 结果） | 模块B | P1 |
-| Logistic Regression 基线模型 | 模块B | P1 |
-| XGBoost / LightGBM 模型 | 模块B | P2 |
-| 模型在线推理服务接口 | 模块B | P2 |
-| 策略三：社交媒体 NLP（Twitter/Discord） | 策略层 | P2 |
+| `BehaviorSimilarityClusterer`（交易行为相似度聚类） | 模块F | 3天 |
+| `EntityFeatureSnapshotService`（合并同实体多钱包后重算指标） | 模块0 | 2天 |
+| `SmartWalletScoringService.scoreEntity(entityId)` 方法 | 现有服务 | 1天 |
+| 实体维度的 single-wallet override 增加 `clusterConfidence` 校验 | 模块0 | 1天 |
+| API：`GET /intelligence/entity/{entityId}` 实体详情页 | Web | 0.5天 |
+| API：`POST /intelligence/entity/merge` / `/split` 人工复核接口 | Web | 0.5天 |
+
+#### 市场侧（2周）
+
+| 任务 | 模块 | 工作量 |
+|------|------|--------|
+| `AVRCalculator` + `PriceJumpDetector` | 模块A | 3天 |
+| `FreshWalletDetector`（基于实体首次交易时间，非地址） | 模块A | 1天 |
+| `LiquidityGate`（Volume/Depth 最小阈值） | 模块E | 2天 |
+| `market_feature_snapshot` 表 | 模块A | 0.5天 |
+| 市场全量扫描定时任务（每15分钟） | 模块C | 1天 |
+
+**Phase 2 验收标准**：
+- [ ] 同实体多钱包的合并胜率/ROI 与单独计算结果有可对比的对比报告
+- [ ] `FreshWalletDetector` 使用 `entity_id` 的首次交易时间（而非 wallet 地址）
+- [ ] 低流动性市场被 `LiquidityGate.REJECT` 并在 `wallet_follow_candidate.rejection_reason` 中记录
+- [ ] 市场扫描任务每 15 分钟写入 `market_feature_snapshot`
+
+---
+
+### Phase 3：信号评分 + 反洗盘 + 告警（3周）
+
+> **目标：Alpha 信号闭环 + 信号质量提升 + 生产级监控**
+
+| 任务 | 模块 | 工作量 |
+|------|------|--------|
+| 规则引擎 + 信号综合评分（基于实体级 HHI/FreshRatio） | 模块B | 4天 |
+| `market_signal_record` 表 + 写入逻辑 | 模块B | 1天 |
+| 洗盘自成交检测（SelfTradeDetector） | 模块D | 3天 |
+| 高频对倒行为检测 | 模块D | 2天 |
+| 有效成交量替换原始 AVR 计算 | 模块D | 1天 |
+| 结算规则争议标记（RISKY 市场拒绝） | 模块G | 2天 |
+| Telegram/Discord 告警（信号 + 仓位 + 系统健康） | 模块I | 2天 |
+
+**Phase 3 验收标准**：
+- [ ] 规则引擎对高 AVR + 高实体集中度（HHI）市场输出 HIGH/CRITICAL 信号
+- [ ] 洗盘过滤后的有效成交量比原始成交量低（在已知洗盘案例上验证）
+- [ ] 高分信号触发后 1 分钟内收到 Telegram 通知
+- [ ] RISKY 市场（UMA dispute 历史）自动出现在 `wallet_follow_candidate.rejection_reason`
+
+---
+
+### Phase 4：策略扩展 + 回测 + 前端（4周）
+
+> **目标：扩展独立策略，补全回测能力和运营工具**
+
+| 任务 | 模块 | 工作量 |
+|------|------|--------|
+| 策略一：事件前异常交易（AVR信号独立触发） | 策略层 | 5天 |
+| 策略二：价格收敛套利（体育/天气市场） | 策略层 | 5天 |
+| 回测框架基础版（历史数据回放 + 指标计算） | 模块H | 7天 |
+| 前端：实体图谱页面（实体 → 钱包列表 + 聚类置信） | 模块J | 3天 |
+| 前端：市场扫描器页面（AVR/HHI 时序 + 信号历史） | 模块J | 3天 |
+
+**Phase 4 验收标准**：
+- [ ] 策略一可在 paper 模式下独立产生信号并创建 follow task
+- [ ] 回测框架可跑通 30 天历史数据并输出胜率/Sharpe/最大回撤
+- [ ] 前端实体图谱页可看到钱包 → 实体归属 + 聚类置信度
+
+---
+
+### Phase 5：链上接入 + 服务拆分（时机驱动，不定期）
+
+> **仅当链上巨鲸监控真正接入时才执行此阶段**
+> 此时 Entity Intelligence 已天然成为多策略复用的基础设施，可以独立成进程
+
+| 任务 | 说明 |
+|------|------|
+| 链上地址桥接（入金来源追踪 Polygon/ETH） | 从链上交易记录补充 `FundingSourceClusterer` 数据 |
+| Polymarket 账户 ↔ 链上地址打通 | 建立跨平台的 entity_id 统一视图 |
+| `smartwallet/intelligence` 独立为微服务 | 作为独立的 Entity Intelligence Service 供多策略调用 |
+| ML 模型化：Logistic Regression → XGBoost | 基于已积累的实体级标注数据训练 |
+| 策略三：社交情绪 NLP | Twitter/Discord 情绪 × 实体交易行为联动 |
 
 ---
 
@@ -550,19 +841,38 @@ public interface WashTradeFilter {
 ## 五、数据模型汇总（新增表）
 
 ```sql
--- Phase 1 新增
-CREATE TABLE market_feature_snapshot (...);  -- 市场特征快照
-CREATE TABLE market_signal_record (...);     -- 信号记录
+-- Phase 1 新增（Entity Intelligence 基础）
+CREATE TABLE wallet_entity_map (...);              -- 地址 → 实体映射（含聚类置信度）
+CREATE TABLE wallet_entity_feature_snapshot (...); -- 实体级合并特征快照
+CREATE TABLE wallet_follow_candidate (...);        -- 候选跟单信号（enrich 结果）
 
--- Phase 2 新增  
-CREATE TABLE wash_trade_flag (...);          -- 洗盘标记
-CREATE TABLE wallet_cluster (...);           -- 钱包聚类
-CREATE TABLE resolution_risk (...);          -- 结算风险评级
+-- Phase 2 新增
+CREATE TABLE market_feature_snapshot (...);        -- 市场特征快照（AVR/Jump/Depth）
 
 -- Phase 3 新增
-CREATE TABLE backtest_run (...);             -- 回测任务
-CREATE TABLE backtest_trade (...);           -- 回测成交记录
-CREATE TABLE backtest_metrics (...);         -- 回测指标结果
+CREATE TABLE market_signal_record (...);           -- 信号评分记录
+CREATE TABLE wash_trade_flag (...);                -- 洗盘标记
+CREATE TABLE resolution_risk (...);                -- 结算争议风险评级
+
+-- Phase 4 新增
+CREATE TABLE backtest_run (...);                   -- 回测任务
+CREATE TABLE backtest_trade (...);                 -- 回测成交记录
+CREATE TABLE backtest_metrics (...);               -- 回测指标结果
+
+-- 现有表需新增字段
+ALTER TABLE smart_wallet_profile
+    ADD COLUMN entity_id VARCHAR(64),              -- 关联实体ID
+    ADD COLUMN cluster_confidence DECIMAL(5,4),    -- 聚类置信度
+    ADD INDEX idx_entity_id (entity_id);
+
+ALTER TABLE smart_wallet_follow_task
+    ADD COLUMN entity_id VARCHAR(64),              -- 触发实体ID
+    ADD COLUMN follow_candidate_id BIGINT;         -- 关联候选信号ID
+
+-- ConsensusSignal 视图或表需新增
+-- distinctWallets → 保留（历史兼容）
+-- dedupedEntityCount → 新增（真实共识强度）
+-- hasSuspiciousMultiWallet → 新增（告警标志）
 ```
 
 ---
@@ -593,12 +903,24 @@ CREATE TABLE backtest_metrics (...);         -- 回测指标结果
 
 ## 七、注意事项与风险
 
-1. **Polymarket API 限流**：特征计算需批量拉取数据，需实现请求队列 + 限流控制，避免封 IP
-2. **链上数据延迟**：Polygon RPC 有延迟，特征计算时间戳对齐需特别处理
-3. **历史数据获取**：部分特征需要 30 天历史成交量均值，需预填充历史数据
-4. **特征泄露风险**：回测时需严格避免使用未来数据（look-ahead bias）
-5. **评分权重调优**：初期规则权重需通过历史验证迭代，不可固定不变
-6. **洗盘误杀**：过激的洗盘过滤可能误杀真实信号，初期设置较低置信度阈值
+### 实体层相关（P0 风险）
+
+1. **聚类冷启动问题**：初始 `wallet_entity_map` 为空，所有钱包默认 `entity_id = wallet_address`。需在上线前对 watchlist 存量钱包做一次全量聚类预填充，否则 Phase 1 验收无效
+2. **链上数据获取限制**：Polygonscan API 有免费配额限制，`FundingSourceClusterer` 需要实现请求限流 + 本地缓存，避免 API 超限
+3. **聚类误判的影响**：错误地将两个独立 Insider 聚类为同一实体，会导致共识信号漏报。初期建议 `clusterConfidenceThreshold = 0.80`（仅高置信聚类生效），低置信映射仍视为独立实体
+4. **现有共识门控的平滑升级**：`minDistinctWallets` 改为 `minDistinctEntities` 后，由于实体数 ≤ 地址数，部分原先能触发的信号会因门控变严而不触发。上线初期建议同步降低 `minDistinctEntities` 阈值（如从 3 降为 2），观察信号量变化后再调整
+
+### 市场特征相关
+
+5. **Polymarket API 限流**：全市场扫描需批量拉取数据，需实现请求队列 + 限流控制，避免封 IP
+6. **链上数据延迟**：Polygon RPC 有延迟，特征计算时间戳对齐需特别处理
+7. **历史数据获取**：AVR 需要 30 天历史成交量均值，需在服务启动时预填充历史数据
+
+### 信号质量相关
+
+8. **特征泄露风险**：回测时需严格避免使用未来数据（look-ahead bias）
+9. **评分权重调优**：初期规则权重需通过历史验证迭代，不可固定不变
+10. **洗盘误杀**：过激的洗盘过滤可能误杀真实信号，初期设置较低置信度阈值（`washConfidence < 0.70` 不过滤）
 
 ---
 
@@ -611,4 +933,34 @@ CREATE TABLE backtest_metrics (...);         -- 回测指标结果
 
 ---
 
-*文档结束 — 下一步：按 Phase 1 任务清单逐项实现，完成后更新本文档的实现状态*
+## 九、决策记录（ADR）
+
+### ADR-001：Entity Intelligence 优先于特征工程
+
+**决策**：将 Wallet/Entity Intelligence 层定为 Phase 1 核心任务，特征工程后移到 Phase 2。
+
+**背景**：架构审查发现共识信号的「地址膨胀」bug（一个实体 N 个钱包会被计算为 N 票共识），已在代码 `PolymarketConsensusSignalService` 中确认。
+
+**理由**：
+- 该 bug 会导致系统在假共识信号上下单，风险被严重低估
+- HHI、FreshWalletRatio 等市场特征也依赖实体维度才有意义，先建实体层可以确保上层特征不失真
+- 链上巨鲸接入后该层会自然演化为跨策略基础设施，早建成本低
+
+**代价**：市场扫描器和信号评分延后约 3 周，接受。
+
+---
+
+### ADR-002：Entity Intelligence 不单独拆进程（Phase 1-4）
+
+**决策**：在 `coin-strategy-job` 内新建 `smartwallet/intelligence` 包，不拆独立服务。
+
+**理由**：
+- 当前只有 Polymarket 跟单一个消费方，拆进程带来的网络开销和运维复杂度不值得
+- 等链上巨鲸监控接入时（Phase 5），届时有多个消费方，拆服务的收益才能覆盖成本
+- 包内接口已按 Service 边界设计，未来拆服务只需包装 RPC，无需重写逻辑
+
+**代价**：内嵌在 job 模块中，部署耦合度较高，接受。
+
+---
+
+*文档版本 v1.1 — 下一步：按 Phase 1 任务清单逐项实现。每个阶段完成后更新各 Task 的状态标记。*

@@ -4,10 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.WalletFollowCandidateMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletFollowCandidateEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityResolutionResult;
+import com.metaverse.coin.strategy.job.smartwallet.intelligence.service.WalletEntityResolutionService;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
@@ -22,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -50,6 +55,9 @@ public class SmartWalletFollowTaskService {
     private final SmartWalletAccountingService accountingService;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletTimeFormatter timeFormatter;
+    // ---- Entity Intelligence 层（Phase 1 新增）----
+    private final WalletEntityResolutionService entityResolutionService;
+    private final WalletFollowCandidateMapper followCandidateMapper;
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
         SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
@@ -220,6 +228,80 @@ public class SmartWalletFollowTaskService {
         return pending.size();
     }
 
+    @Scheduled(fixedDelayString = "${smart-wallet.intelligence.candidate-reevaluation-fixed-delay-ms:120000}")
+    public void scheduledReevaluateDeferredCandidates() {
+        try {
+            reevaluateDeferredCandidates(properties.getIntelligence().getCandidateReevaluationBatchSize());
+        } catch (Exception ex) {
+            log.warn("Scheduled deferred-candidate reevaluation failed: {}", ex.getMessage());
+        }
+    }
+
+    public int reevaluateDeferredCandidates(Integer limit) {
+        int batchSize = limit == null ? 50 : Math.max(1, Math.min(limit, 200));
+        List<WalletFollowCandidateEntity> candidates = followCandidateMapper.selectList(
+                new LambdaQueryWrapper<WalletFollowCandidateEntity>()
+                        .in(WalletFollowCandidateEntity::getEnrichmentStatus, List.of("PENDING", "LOW_CONFIDENCE_LINK"))
+                        .orderByAsc(WalletFollowCandidateEntity::getUpdatedAt)
+                        .last("limit " + batchSize));
+        int updated = 0;
+        for (WalletFollowCandidateEntity candidate : candidates) {
+            if (candidate == null || candidate.getSourceEventId() == null) {
+                continue;
+            }
+            SmartWalletTradeEventEntity event = tradeEventMapper.selectById(candidate.getSourceEventId());
+            if (event == null) {
+                continue;
+            }
+            if (refreshCandidateAndMaybeTask(candidate, event)) {
+                updated++;
+            }
+        }
+        return updated;
+    }
+
+    public IntelligenceReplaySummary replayRecentIntelligenceCandidates(Integer limit, boolean includeProcessed) {
+        int batchSize = limit == null ? 100 : Math.max(1, Math.min(limit, 500));
+        List<SmartWalletTradeEventEntity> events = tradeEventMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                        .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
+                        .orderByDesc(SmartWalletTradeEventEntity::getId)
+                        .last("limit " + batchSize));
+        int scanned = 0;
+        int changed = 0;
+        int skipped = 0;
+        for (SmartWalletTradeEventEntity event : events) {
+            if (event == null || event.getId() == null) {
+                continue;
+            }
+            scanned++;
+            WalletFollowCandidateEntity beforeCandidate = findCandidateBySourceEventId(event.getId());
+            SmartWalletFollowTaskEntity beforeTask = findTaskBySourceEventId(event.getId());
+            boolean hadCandidate = beforeCandidate != null;
+            boolean hadTask = beforeTask != null;
+            boolean processed = Boolean.TRUE.equals(event.getProcessed());
+            if (!includeProcessed && processed && hadCandidate && hadTask) {
+                skipped++;
+                continue;
+            }
+            createFollowTaskIfQualified(event);
+            WalletFollowCandidateEntity afterCandidate = findCandidateBySourceEventId(event.getId());
+            SmartWalletFollowTaskEntity afterTask = findTaskBySourceEventId(event.getId());
+            SmartWalletTradeEventEntity refreshedEvent = tradeEventMapper.selectById(event.getId());
+            boolean eventProcessed = refreshedEvent != null && Boolean.TRUE.equals(refreshedEvent.getProcessed());
+            if ((!hadCandidate && afterCandidate != null) || (!hadTask && afterTask != null) || (!processed && eventProcessed)) {
+                changed++;
+            } else {
+                skipped++;
+            }
+        }
+        return IntelligenceReplaySummary.builder()
+                .scanned(scanned)
+                .changed(changed)
+                .skipped(skipped)
+                .build();
+    }
+
     public SmartWalletFollowTaskEntity getTask(Long taskId) {
         return taskId == null ? null : followTaskMapper.selectById(taskId);
     }
@@ -347,14 +429,30 @@ public class SmartWalletFollowTaskService {
             return;
         }
 
+        // ---- Step 1: Intelligence Enrich ----
+        // 将钱包地址解析为实体 ID + 聚类置信度，写入 wallet_follow_candidate 作为中间记录
+        WalletFollowCandidateEntity candidate = enrichAndSaveCandidate(event);
+
+        if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
+            createSkippedTaskForPendingCandidate(event, candidate);
+            event.setProcessed(Boolean.TRUE);
+            event.setUpdatedAt(new Date());
+            tradeEventMapper.updateById(event);
+            return;
+        }
+
+        // ---- Step 2: Risk Evaluation（沿用原有逻辑，现在共识内部已用实体去重）----
         SignalRiskDecision decision = signalRiskService.evaluate(profile, event);
         BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
         Long marketEndAt = resolveMarketEndAt(event.getMarketId(), event.getQuestion());
 
+        // ---- Step 3: Create Follow Task（附带实体维度字段）----
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
+                .setEntityId(candidate.getEntityId())
+                .setFollowCandidateId(candidate.getId())
                 .setSourceEventId(event.getId())
                 .setMarketId(event.getMarketId())
                 .setQuestion(event.getQuestion())
@@ -372,9 +470,268 @@ public class SmartWalletFollowTaskService {
                 .setUpdatedAt(new Date());
         followTaskMapper.insert(task);
 
+        // 回填 candidate 的 follow_task_id
+        candidate.setFollowTaskId(task.getId())
+                .setUpdatedAt(new Date());
+        followCandidateMapper.updateById(candidate);
+
         event.setProcessed(Boolean.TRUE);
         event.setUpdatedAt(new Date());
         tradeEventMapper.updateById(event);
+    }
+
+    /**
+     * Intelligence Enrich：解析钱包地址对应的实体，生成并持久化 WalletFollowCandidate
+     */
+    private WalletFollowCandidateEntity enrichAndSaveCandidate(SmartWalletTradeEventEntity event) {
+        // 防重：同一 event 已有 candidate 则直接返回
+        WalletFollowCandidateEntity existing = followCandidateMapper.selectOne(
+                new LambdaQueryWrapper<WalletFollowCandidateEntity>()
+                        .eq(WalletFollowCandidateEntity::getSourceEventId, event.getId())
+                        .last("limit 1"));
+        if (existing != null) {
+            return existing;
+        }
+
+        EntityResolutionResult resolution = entityResolutionService.resolveEntity(event.getWalletAddress());
+        String effectiveEntityId = resolveEffectiveEntityId(event, resolution);
+        ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event);
+        boolean isEntityFirstSignal = isEntityFirstSignal(event, effectiveEntityId);
+        String enrichmentStatus = determineEnrichmentStatus(resolution, effectiveEntityId);
+        String rejectionReason = determineCandidateReason(resolution, effectiveEntityId);
+
+        Date now = new Date();
+        WalletFollowCandidateEntity candidate = new WalletFollowCandidateEntity()
+                .setSourceEventId(event.getId())
+                .setWalletAddress(event.getWalletAddress())
+                .setEntityId(effectiveEntityId)
+                .setClusterConfidence(resolution.getConfidenceScore())
+                .setClusterMethod(resolution.getClusterMethod())
+                .setEntityWalletCount(resolution.getEntityWalletCount())
+                .setIsEntityFirstSignal(isEntityFirstSignal)
+                .setEntityConsensusDedupCount(consensus.getDedupedEntityCount())
+                .setEnrichmentStatus(enrichmentStatus)
+                .setRejectionReason(rejectionReason)
+                .setCreatedAt(now)
+                .setUpdatedAt(now);
+        followCandidateMapper.insert(candidate);
+        return candidate;
+    }
+
+    private boolean refreshCandidateAndMaybeTask(WalletFollowCandidateEntity candidate, SmartWalletTradeEventEntity event) {
+        String previousStatus = candidate.getEnrichmentStatus();
+        String previousReason = candidate.getRejectionReason();
+        populateCandidateFields(candidate, event);
+        candidate.setUpdatedAt(new Date());
+        followCandidateMapper.updateById(candidate);
+
+        SmartWalletFollowTaskEntity task = resolveLinkedFollowTask(candidate, event);
+        if (!wasBlockedByIntelligence(task, previousReason)) {
+            return true;
+        }
+
+        if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
+            if (task != null) {
+                task.setErrorMessage(candidate.getRejectionReason());
+                task.setUpdatedAt(new Date());
+                followTaskMapper.updateById(task);
+            }
+            return true;
+        }
+
+        SmartWalletProfileEntity profile = profileStoreService.listWatchEnabled().stream()
+                .filter(item -> item.getWalletAddress().equalsIgnoreCase(event.getWalletAddress()))
+                .findFirst()
+                .orElse(null);
+        if (profile == null || task == null) {
+            return true;
+        }
+
+        SignalRiskDecision decision = signalRiskService.evaluate(profile, event);
+        BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
+                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
+        task.setEntityId(candidate.getEntityId())
+                .setFollowCandidateId(candidate.getId())
+                .setRecommendedStakeUsdc(recommendedStake)
+                .setStatus(decision.isAccepted() ? "PENDING" : "SKIPPED")
+                .setErrorMessage(String.join(" | ", decision.getReasons()))
+                .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
+                .setUpdatedAt(new Date());
+        followTaskMapper.updateById(task);
+        log.info("Reevaluated deferred intelligence candidate sourceEventId={} oldStatus={} newStatus={} followTaskId={} taskStatus={}",
+                candidate.getSourceEventId(), previousStatus, candidate.getEnrichmentStatus(), task.getId(), task.getStatus());
+        return true;
+    }
+
+    private void populateCandidateFields(WalletFollowCandidateEntity candidate, SmartWalletTradeEventEntity event) {
+        EntityResolutionResult resolution = entityResolutionService.resolveEntity(event.getWalletAddress());
+        String effectiveEntityId = resolveEffectiveEntityId(event, resolution);
+        ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event);
+        candidate.setWalletAddress(event.getWalletAddress())
+                .setEntityId(effectiveEntityId)
+                .setClusterConfidence(resolution.getConfidenceScore())
+                .setClusterMethod(resolution.getClusterMethod())
+                .setEntityWalletCount(resolution.getEntityWalletCount())
+                .setIsEntityFirstSignal(isEntityFirstSignal(event, effectiveEntityId))
+                .setEntityConsensusDedupCount(consensus.getDedupedEntityCount())
+                .setEnrichmentStatus(determineEnrichmentStatus(resolution, effectiveEntityId))
+                .setRejectionReason(determineCandidateReason(resolution, effectiveEntityId));
+    }
+
+    private String resolveEffectiveEntityId(SmartWalletTradeEventEntity event, EntityResolutionResult resolution) {
+        if (resolution == null) {
+            return normalizeWalletEntityId(event == null ? null : event.getWalletAddress());
+        }
+        if (resolution.isPendingClustering()) {
+            return normalizeWalletEntityId(event == null ? null : event.getWalletAddress());
+        }
+        if (!shouldTrustResolvedEntity(resolution)) {
+            return normalizeWalletEntityId(event == null ? null : event.getWalletAddress());
+        }
+        return normalizeWalletEntityId(resolution.getEntityId());
+    }
+
+    private boolean shouldTrustResolvedEntity(EntityResolutionResult resolution) {
+        if (resolution == null || !resolution.isResolvedFromMap()) {
+            return false;
+        }
+        if (!StringUtils.hasText(resolution.getEntityId())
+                || !StringUtils.hasText(resolution.getClusterMethod())
+                || "SELF".equalsIgnoreCase(resolution.getClusterMethod())) {
+            return false;
+        }
+        BigDecimal threshold = properties.getIntelligence().getMinClusterConfidenceForDedup();
+        BigDecimal confidence = resolution.getConfidenceScore() == null ? BigDecimal.ZERO : resolution.getConfidenceScore();
+        return confidence.compareTo(threshold == null ? BigDecimal.ZERO : threshold) >= 0;
+    }
+
+    private String determineEnrichmentStatus(EntityResolutionResult resolution, String effectiveEntityId) {
+        if (resolution == null || resolution.isPendingClustering()) {
+            return "PENDING";
+        }
+        if (!normalizeWalletEntityId(resolution.getEntityId()).equalsIgnoreCase(normalizeWalletEntityId(effectiveEntityId))) {
+            return "LOW_CONFIDENCE_LINK";
+        }
+        return "ENRICHED";
+    }
+
+    private String determineCandidateReason(EntityResolutionResult resolution, String effectiveEntityId) {
+        if (resolution == null) {
+            return "Entity resolution returned null. Fallback to wallet-level identity.";
+        }
+        if (resolution.isPendingClustering()) {
+            return "Entity resolution is pending. Follow task generation is deferred for this signal.";
+        }
+        if (!normalizeWalletEntityId(resolution.getEntityId()).equalsIgnoreCase(normalizeWalletEntityId(effectiveEntityId))) {
+            return "Resolved entity link is below trust threshold. Fallback to wallet-level identity for this signal.";
+        }
+        return null;
+    }
+
+    private boolean isEntityFirstSignal(SmartWalletTradeEventEntity event, String effectiveEntityId) {
+        if (event == null || !StringUtils.hasText(effectiveEntityId)) {
+            return true;
+        }
+        List<String> walletAddresses = resolveWalletAddressesForEntity(effectiveEntityId);
+        if (walletAddresses.isEmpty()) {
+            walletAddresses = List.of(normalizeWalletEntityId(event.getWalletAddress()));
+        }
+        LambdaQueryWrapper<SmartWalletTradeEventEntity> query = new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                .in(SmartWalletTradeEventEntity::getWalletAddress, walletAddresses)
+                .eq(SmartWalletTradeEventEntity::getMarketId, event.getMarketId())
+                .eq(SmartWalletTradeEventEntity::getOutcome, event.getOutcome())
+                .eq(SmartWalletTradeEventEntity::getSide, event.getSide())
+                .ne(event.getId() != null, SmartWalletTradeEventEntity::getId, event.getId())
+                .lt(event.getOpenedAt() != null, SmartWalletTradeEventEntity::getOpenedAt, event.getOpenedAt())
+                .last("limit 1");
+        return tradeEventMapper.selectOne(query) == null;
+    }
+
+    private List<String> resolveWalletAddressesForEntity(String effectiveEntityId) {
+        if (!StringUtils.hasText(effectiveEntityId)) {
+            return List.of();
+        }
+        List<String> entityWallets = entityResolutionService.getWalletsByEntityId(effectiveEntityId);
+        if (entityWallets == null || entityWallets.isEmpty()) {
+            return List.of();
+        }
+        return entityWallets.stream()
+                .filter(StringUtils::hasText)
+                .map(this::normalizeWalletEntityId)
+                .toList();
+    }
+
+    private void createSkippedTaskForPendingCandidate(SmartWalletTradeEventEntity event, WalletFollowCandidateEntity candidate) {
+        Long marketEndAt = resolveMarketEndAt(event.getMarketId(), event.getQuestion());
+        SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
+                .setWalletAddress(event.getWalletAddress())
+                .setEntityId(candidate.getEntityId())
+                .setFollowCandidateId(candidate.getId())
+                .setSourceEventId(event.getId())
+                .setMarketId(event.getMarketId())
+                .setQuestion(event.getQuestion())
+                .setOutcome(event.getOutcome())
+                .setMarketEndAt(marketEndAt)
+                .setSide(event.getSide())
+                .setTriggerPrice(event.getPrice())
+                .setTriggerSizeUsdc(event.getSizeUsdc())
+                .setRecommendedStakeUsdc(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .setStatus("SKIPPED")
+                .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
+                .setErrorMessage(candidate.getRejectionReason())
+                .setScheduledAt(new Date())
+                .setCreatedAt(new Date())
+                .setUpdatedAt(new Date());
+        followTaskMapper.insert(task);
+        candidate.setFollowTaskId(task.getId())
+                .setUpdatedAt(new Date());
+        followCandidateMapper.updateById(candidate);
+    }
+
+    private WalletFollowCandidateEntity findCandidateBySourceEventId(Long sourceEventId) {
+        if (sourceEventId == null) {
+            return null;
+        }
+        return followCandidateMapper.selectOne(new LambdaQueryWrapper<WalletFollowCandidateEntity>()
+                .eq(WalletFollowCandidateEntity::getSourceEventId, sourceEventId)
+                .last("limit 1"));
+    }
+
+    private SmartWalletFollowTaskEntity findTaskBySourceEventId(Long sourceEventId) {
+        if (sourceEventId == null) {
+            return null;
+        }
+        return followTaskMapper.selectOne(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .eq(SmartWalletFollowTaskEntity::getSourceEventId, sourceEventId)
+                .last("limit 1"));
+    }
+
+    private SmartWalletFollowTaskEntity resolveLinkedFollowTask(WalletFollowCandidateEntity candidate, SmartWalletTradeEventEntity event) {
+        if (candidate != null && candidate.getFollowTaskId() != null) {
+            SmartWalletFollowTaskEntity linked = followTaskMapper.selectById(candidate.getFollowTaskId());
+            if (linked != null) {
+                return linked;
+            }
+        }
+        return event == null ? null : findTaskBySourceEventId(event.getId());
+    }
+
+    private boolean wasBlockedByIntelligence(SmartWalletFollowTaskEntity task, String previousReason) {
+        if (task == null || !"SKIPPED".equalsIgnoreCase(task.getStatus())) {
+            return false;
+        }
+        String errorMessage = task.getErrorMessage();
+        if (!StringUtils.hasText(errorMessage)) {
+            return false;
+        }
+        return errorMessage.contains("Entity resolution is pending")
+                || errorMessage.contains("below trust threshold")
+                || (StringUtils.hasText(previousReason) && errorMessage.contains(previousReason));
+    }
+
+    private String normalizeWalletEntityId(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private SmartWalletExecutionResult executeTask(SmartWalletFollowTaskEntity task) {
@@ -674,5 +1031,13 @@ public class SmartWalletFollowTaskService {
 
     private List<SmartWalletFollowTaskView> truncate(List<SmartWalletFollowTaskView> items, int limit) {
         return items.size() <= limit ? items : new ArrayList<>(items.subList(0, limit));
+    }
+
+    @lombok.Builder
+    @lombok.Value
+    public static class IntelligenceReplaySummary {
+        int scanned;
+        int changed;
+        int skipped;
     }
 }

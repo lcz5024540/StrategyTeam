@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -26,18 +27,19 @@ class PolymarketMarketDataStreamServiceTest {
 
     @Test
     void shouldBuildCachedSnapshotFromBookAndPriceEvents() {
+        long now = System.currentTimeMillis();
         service.handleMessage("""
-                {"event_type":"book","asset_id":"token-1","bids":[{"price":"0.44","size":"100"}],"asks":[{"price":"0.46","size":"80"}],"timestamp":1710000000000}
-                """);
+                {"event_type":"book","asset_id":"token-1","bids":[{"price":"0.44","size":"100"}],"asks":[{"price":"0.46","size":"80"}],"timestamp":%d}
+                """.formatted(now));
         service.handleMessage("""
-                {"event_type":"price_change","asset_id":"token-1","price":"0.45","timestamp":1710000000500}
-                """);
+                {"event_type":"price_change","asset_id":"token-1","price":"0.45","timestamp":%d}
+                """.formatted(now + 500));
 
         PolymarketMarketDataStreamService.MarketDataSnapshot snapshot = service.getCachedSnapshot("token-1");
 
         assertNotNull(snapshot);
         assertEquals(new BigDecimal("0.45"), snapshot.getLastTradePrice());
-        assertEquals(new BigDecimal("0.45"), snapshot.getOrderBook().getMidpoint());
+        assertEquals(0, new BigDecimal("0.45").compareTo(snapshot.getOrderBook().getMidpoint()));
         assertEquals(new BigDecimal("444.44440000"), snapshot.getOrderBook().getSpread().setScale(8));
         assertEquals(1, snapshot.getOrderBook().getBids().size());
         assertEquals(1, snapshot.getOrderBook().getAsks().size());
@@ -47,20 +49,33 @@ class PolymarketMarketDataStreamServiceTest {
         assertEquals(1L, stats.getBookEventsReceived());
         assertEquals(1L, stats.getPriceEventsReceived());
         assertEquals(1, stats.getCachedTokenCount());
-        assertTrue(stats.getLastEventAt() != null && stats.getLastEventAt() > 0);
+        assertNotNull(stats.getLastEventAt());
+        assertTrue(stats.getLastEventAt().after(new Date(now - 1_000L)));
     }
 
     @Test
-    void shouldIgnoreStaleCacheSnapshots() {
+    void shouldIgnoreStaleCacheSnapshots() throws InterruptedException {
         SmartWalletProperties properties = new SmartWalletProperties();
         properties.getExecutionWallet().setWsEnabled(true);
         properties.getExecutionWallet().setWsCacheTtlMs(1L);
         service = new PolymarketMarketDataStreamService(properties, new ObjectMapper());
 
         service.handleMessage("""
-                {"event_type":"book","asset_id":"token-2","bids":[{"price":"0.40","size":"10"}],"asks":[{"price":"0.60","size":"10"}],"timestamp":1}
-                """);
+                {"event_type":"book","asset_id":"token-2","bids":[{"price":"0.40","size":"10"}],"asks":[{"price":"0.60","size":"10"}],"timestamp":%d}
+                """.formatted(System.currentTimeMillis()));
+
+        Thread.sleep(10L);
 
         assertNull(service.getCachedSnapshot("token-2"));
+    }
+
+    @Test
+    void shouldExposeCompatAliasesForLegacyCallers() {
+        service.ingestMockEvent("""
+                {"event_type":"book","asset_id":"token-3","bids":[{"price":"0.49","size":"10"}],"asks":[{"price":"0.51","size":"10"}],"timestamp":%d}
+                """.formatted(System.currentTimeMillis()));
+
+        assertNotNull(service.getSnapshot("token-3"));
+        assertNotNull(service.getCachedSnapshot("token-3"));
     }
 }
