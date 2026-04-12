@@ -260,6 +260,19 @@ public class SmartWalletController {
         return predictionMarketDataApplicationService.analyzeSourceWallets();
     }
 
+    @Operation(summary = "准入单个钱包到观察名单", description = "传入单个钱包地址，按钱包画像风控逻辑进行分析；满足条件则落库并加入 watchlist，否则跳过落库并返回失败。")
+    @PostMapping("/polymarket/watchlist/admit")
+    public Map<String, Object> admitWalletToWatchlist(@RequestParam String walletAddress) {
+        boolean admitted = polymarketWalletDiscoveryService.analyzeWalletAndAdmitWatchlist(walletAddress);
+        return Map.of(
+                "walletAddress", walletAddress,
+                "admitted", admitted,
+                "message", admitted
+                        ? "Wallet admitted to watchlist and persisted successfully."
+                        : "Wallet did not pass admission checks, skipped persistence."
+        );
+    }
+
     @Operation(summary = "同步观察名单事件", description = "同步 watchlist 钱包的最新 Polymarket 开单事件。")
     @PostMapping("/polymarket/sync-events")
     public Map<String, Object> syncWatchlistEvents() {

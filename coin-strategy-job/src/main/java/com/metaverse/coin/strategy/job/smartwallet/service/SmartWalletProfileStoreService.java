@@ -144,7 +144,17 @@ public class SmartWalletProfileStoreService {
     // Computes real win rate from our own closed positions for each wallet and
     // blends it with the external leaderboard win rate (weight 0.4 internal / 0.6 external)
     // to correct for survivorship bias in the official leaderboard data.
+    //
+    // Survivorship-bias fallback: when a wallet has winRate=1.0 with a small sample
+    // (totalTrades <= LEADERBOARD_POSITION_CAP) and we have no internal closed positions yet,
+    // cap the win rate to LEADERBOARD_BIAS_FALLBACK_WIN_RATE immediately rather than waiting
+    // for internal data to accumulate. This prevents wallets with inflated leaderboard metrics
+    // from qualifying for single-wallet override from the very first signal.
     // -------------------------------------------------------------------------
+    private static final int    LEADERBOARD_POSITION_CAP          = 50;
+    private static final BigDecimal LEADERBOARD_BIAS_WIN_RATE_TRIGGER = new BigDecimal("1.0");
+    private static final BigDecimal LEADERBOARD_BIAS_FALLBACK_WIN_RATE = new BigDecimal("0.65");
+
     @Scheduled(fixedDelay = 6 * 3600_000L + 60_000L) // offset by 1 min so both jobs don't run simultaneously
     public void refreshInternalWinRate() {
         List<SmartWalletProfileEntity> wallets = profileMapper.selectList(
@@ -157,9 +167,6 @@ public class SmartWalletProfileStoreService {
                     new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                             .eq(SmartWalletFollowTaskEntity::getWalletAddress, wallet.getWalletAddress())
                             .eq(SmartWalletFollowTaskEntity::getStatus, "FOLLOWED"));
-            if (followedTasks.isEmpty()) {
-                continue;
-            }
 
             int total = 0, wins = 0;
             for (SmartWalletFollowTaskEntity task : followedTasks) {
@@ -176,23 +183,47 @@ public class SmartWalletProfileStoreService {
                     }
                 }
             }
+
+            BigDecimal currentWinRate = safe(wallet.getWinRate());
+            int leaderboardTrades = wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades();
+
             if (total < 3) {
-                continue; // not enough data to be meaningful
+                // Not enough internal data for blending yet.
+                // Survivorship-bias fallback: wallets with winRate=1.0 and small leaderboard samples
+                // almost certainly have inflated metrics — cap them to a conservative default immediately.
+                boolean suspiciouslyPerfect = currentWinRate.compareTo(LEADERBOARD_BIAS_WIN_RATE_TRIGGER) >= 0
+                        && leaderboardTrades <= LEADERBOARD_POSITION_CAP;
+                if (suspiciouslyPerfect && currentWinRate.compareTo(LEADERBOARD_BIAS_FALLBACK_WIN_RATE) > 0) {
+                    BigDecimal fallbackScore = scoringService.score(
+                            LEADERBOARD_BIAS_FALLBACK_WIN_RATE,
+                            safe(wallet.getRealizedPnlUsdc()),
+                            leaderboardTrades,
+                            safe(wallet.getAverageRoiRate()),
+                            safe(wallet.getMaxDrawdownRate())
+                    );
+                    wallet.setWinRate(LEADERBOARD_BIAS_FALLBACK_WIN_RATE);
+                    wallet.setWalletScore(fallbackScore);
+                    wallet.setUpdatedAt(new Date());
+                    profileMapper.updateById(wallet);
+                    log.info("WIN_RATE_BIAS_FALLBACK walletAddress={} leaderboardTrades={} winRate reset {} -> {} newScore={}",
+                            wallet.getWalletAddress(), leaderboardTrades, currentWinRate,
+                            LEADERBOARD_BIAS_FALLBACK_WIN_RATE, fallbackScore);
+                }
+                continue;
             }
 
             BigDecimal internalWinRate = BigDecimal.valueOf(wins)
                     .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
             // Blend: 40% internal (truth) + 60% external (leaderboard) to smooth noise
-            BigDecimal externalWinRate = safe(wallet.getWinRate());
             BigDecimal blendedWinRate = internalWinRate.multiply(new BigDecimal("0.40"))
-                    .add(externalWinRate.multiply(new BigDecimal("0.60")))
+                    .add(currentWinRate.multiply(new BigDecimal("0.60")))
                     .setScale(4, RoundingMode.HALF_UP);
 
             // Re-score wallet with blended win rate
             BigDecimal newScore = scoringService.score(
                     blendedWinRate,
                     safe(wallet.getRealizedPnlUsdc()),
-                    wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades(),
+                    leaderboardTrades,
                     safe(wallet.getAverageRoiRate()),
                     safe(wallet.getMaxDrawdownRate())
             );
