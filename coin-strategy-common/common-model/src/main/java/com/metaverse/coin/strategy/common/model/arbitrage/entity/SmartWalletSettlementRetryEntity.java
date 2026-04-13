@@ -18,6 +18,7 @@ public class SmartWalletSettlementRetryEntity {
 
     private String marketId;
     private String question;
+    private String retryType;
     private Long latestRunId;
     private Integer failureCount;
     private String lastErrorMessage;

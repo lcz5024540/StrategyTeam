@@ -351,4 +351,48 @@ class SmartWalletAccountingServiceTest {
         assertEquals(0, performance.getOpenPositions());
         assertEquals(new BigDecimal("2.00000000"), performance.getPendingSettlementPnlUsdc());
     }
+
+    @Test
+    void shouldClassifyClosedUnresolvedExpiredMarketAsDataSourceStale() {
+        long past = System.currentTimeMillis() - 60_000L;
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(13L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-stale")
+                .setQuestion("Will stale metadata be classified?")
+                .setOutcome("YES")
+                .setMarketEndAt(past)
+                .setQuantity(new BigDecimal("10"))
+                .setCostBasisUsdc(new BigDecimal("4.50"))
+                .setLastMarkPrice(new BigDecimal("0.45"))
+                .setStatus("OPEN")
+                .setLastFilledAt(new Date(past));
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(103L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-stale")
+                .setOutcome("YES")
+                .setStatus("FILLED");
+        PolymarketApiClient.MarketMetadata metadata = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("market-stale")
+                .marketId("market-stale")
+                .question(position.getQuestion())
+                .endAt(past)
+                .closed(true)
+                .acceptingOrders(false)
+                .resolvedOutcome(null)
+                .umaResolutionStatus("resolved")
+                .outcomes(List.of("YES", "NO"))
+                .outcomePrices(List.of("1.0", "0.0"))
+                .build();
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(position));
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(marketMetadataService.getBestEffortByConditionId(eq("market-stale"), anyBoolean(), eq(position.getQuestion()), anyList()))
+                .thenReturn(metadata);
+
+        SettlementSyncSummary summary = service.syncSettlements(10, 10, false);
+
+        assertEquals("DATA_SOURCE_STALE", summary.getRetryCandidates().get(0).getRetryType());
+    }
 }

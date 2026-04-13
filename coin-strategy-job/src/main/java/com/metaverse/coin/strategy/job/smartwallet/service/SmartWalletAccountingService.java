@@ -1221,8 +1221,10 @@ public class SmartWalletAccountingService {
                     retryCandidates.add(SettlementRetryCandidate.builder()
                             .marketId(position.getMarketId())
                             .question(questionOrPosition(position, metadata))
-                            .retryType("ORACLE_PENDING")
+                            .retryType(classifySettlementRetryType(metadata))
                             .retryMessage(buildOraclePendingRetryMessage(position, metadata))
+                            .resolutionSource(metadata == null ? null : metadata.getResolutionSource())
+                            .resolutionObservedAt(metadata == null ? null : metadata.getResolutionObservedAt())
                             .build());
                     markPaperPositionsAwaitingOracle(position.getMarketId());
                     markPaperOrdersAwaitingOracle(position.getMarketId());
@@ -1319,6 +1321,35 @@ public class SmartWalletAccountingService {
                 + "; retry settlement after UMA result is finalized.";
     }
 
+    private String classifySettlementRetryType(PolymarketApiClient.MarketMetadata metadata) {
+        if (metadata == null) {
+            return "SYNC_FAILURE";
+        }
+        String umaStatus = StringUtils.hasText(metadata.getUmaResolutionStatus())
+                ? metadata.getUmaResolutionStatus().trim().toLowerCase(Locale.ROOT)
+                : "";
+        long now = System.currentTimeMillis();
+        if (metadata.isClosed()) {
+            return "DATA_SOURCE_STALE";
+        }
+        if (StringUtils.hasText(umaStatus)) {
+            if (umaStatus.contains("resolved") || umaStatus.contains("settled") || umaStatus.contains("final")) {
+                return "DATA_SOURCE_STALE";
+            }
+            if (umaStatus.contains("proposed")
+                    || umaStatus.contains("pending")
+                    || umaStatus.contains("dispute")
+                    || umaStatus.contains("challenge")
+                    || umaStatus.contains("request")) {
+                return "ORACLE_PENDING";
+            }
+        }
+        if (metadata.getUmaEndAt() != null && metadata.getUmaEndAt() > 0 && metadata.getUmaEndAt() + 3_600_000L < now) {
+            return "DATA_SOURCE_STALE";
+        }
+        return "ORACLE_PENDING";
+    }
+
     private String oraclePhaseSuffix(PolymarketApiClient.MarketMetadata metadata) {
         if (metadata == null) {
             return "";
@@ -1326,6 +1357,12 @@ public class SmartWalletAccountingService {
         List<String> parts = new ArrayList<>();
         if (StringUtils.hasText(metadata.getUmaResolutionStatus())) {
             parts.add("umaResolutionStatus=" + metadata.getUmaResolutionStatus().trim());
+        }
+        if (StringUtils.hasText(metadata.getResolutionSource())) {
+            parts.add("resolutionSource=" + metadata.getResolutionSource().trim());
+        }
+        if (metadata.getResolutionObservedAt() != null && metadata.getResolutionObservedAt() > 0) {
+            parts.add("resolutionObservedAtBjt=" + timeFormatter.formatEpochMillisToBjt(metadata.getResolutionObservedAt()));
         }
         if (StringUtils.hasText(metadata.getQuestionId())) {
             parts.add("questionId=" + metadata.getQuestionId().trim());

@@ -1109,3 +1109,426 @@
 2026-04-13 08:27:37.274[1776040057274] | INFO  | http-nio-8081-exec-1 | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring DispatcherServlet 'dispatcherServlet'
 2026-04-13 08:27:37.274[1776040057274] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
 2026-04-13 08:27:37.274[1776040057274] | INFO  | http-nio-8081-exec-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 0 ms
+2026-04-13 08:27:59.165[1776040079165] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=33
+2026-04-13 08:28:31.005[1776040111005] | INFO  | scheduling-1 | c.m.c.s.j.s.i.s.EntityFeatureSnapshotService - [EntityFeatureSnapshotService] Refreshing snapshots for 13 entities
+2026-04-13 08:28:31.025[1776040111025] | INFO  | scheduling-1 | c.m.c.s.j.s.i.s.EntityFeatureSnapshotService - [EntityFeatureSnapshotService] Snapshot refresh done. success=13/13
+2026-04-13 08:28:56.883[1776040136883] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=66
+2026-04-13 08:29:25.077[1776040165077] | INFO  | http-nio-8081-exec-2 | o.s.api.AbstractOpenApiResource      - Init duration for springdoc-openapi is: 328 ms
+2026-04-13 08:29:54.220[1776040194220] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=99
+2026-04-13 08:30:51.892[1776040251892] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=132
+2026-04-13 08:31:49.090[1776040309090] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=164
+2026-04-13 08:32:47.647[1776040367647] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=198
+2026-04-13 08:32:47.665[1776040367665] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=1, markets=1, resolved=0, oraclePending=1, failed=0
+2026-04-13 08:33:42.802[1776040422802] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=225
+2026-04-13 08:34:37.540[1776040477540] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=251
+2026-04-13 08:35:32.330[1776040532330] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=277
+2026-04-13 08:36:27.379[1776040587379] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=303
+2026-04-13 08:37:22.134[1776040642134] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=329
+2026-04-13 08:37:47.689[1776040667689] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=1, markets=1, resolved=0, oraclePending=1, failed=0
+2026-04-13 08:38:15.389[1776040695389] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=351
+2026-04-13 08:39:08.431[1776040748431] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=373
+2026-04-13 08:40:01.397[1776040801397] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=395
+2026-04-13 08:40:54.848[1776040854848] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=417
+2026-04-13 08:41:47.493[1776040907493] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=436
+2026-04-13 08:42:39.852[1776040959852] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=455
+2026-04-13 08:42:47.717[1776040967717] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=1, markets=1, resolved=0, oraclePending=1, failed=0
+2026-04-13 08:43:32.143[1776041012143] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=474
+2026-04-13 08:44:29.470[1776041069470] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 59396 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-13 08:44:29.471[1776041069471] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-13 08:44:30.192[1776041070192] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat initialized with port(s): 8081 (http)
+2026-04-13 08:44:30.197[1776041070197] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Initializing ProtocolHandler ["http-nio-8081"]
+2026-04-13 08:44:30.199[1776041070199] | INFO  | main       | o.a.catalina.core.StandardService    - Starting service [Tomcat]
+2026-04-13 08:44:30.199[1776041070199] | INFO  | main       | o.a.catalina.core.StandardEngine     - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-04-13 08:44:30.235[1776041070235] | INFO  | main       | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring embedded WebApplicationContext
+2026-04-13 08:44:30.235[1776041070235] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 739 ms
+2026-04-13 08:44:30.667[1776041070667] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-13 08:44:31.726[1776041071726] | ERROR | main       | com.zaxxer.hikari.pool.HikariPool    - HikariPool-1 - Exception during pool initialization.
+com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at com.mysql.cj.jdbc.exceptions.SQLError.createCommunicationsException(SQLError.java:174)
+	at com.mysql.cj.jdbc.exceptions.SQLExceptionsMapping.translateException(SQLExceptionsMapping.java:64)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:815)
+	at com.mysql.cj.jdbc.ConnectionImpl.<init>(ConnectionImpl.java:438)
+	at com.mysql.cj.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:241)
+	at com.mysql.cj.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:189)
+	at com.zaxxer.hikari.util.DriverDataSource.getConnection(DriverDataSource.java:138)
+	at com.zaxxer.hikari.pool.PoolBase.newConnection(PoolBase.java:364)
+	at com.zaxxer.hikari.pool.PoolBase.newPoolEntry(PoolBase.java:206)
+	at com.zaxxer.hikari.pool.HikariPool.createPoolEntry(HikariPool.java:476)
+	at com.zaxxer.hikari.pool.HikariPool.checkFailFast(HikariPool.java:561)
+	at com.zaxxer.hikari.pool.HikariPool.<init>(HikariPool.java:115)
+	at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:112)
+	at org.springframework.jdbc.datasource.DataSourceUtils.fetchConnection(DataSourceUtils.java:160)
+	at org.springframework.jdbc.datasource.DataSourceUtils.doGetConnection(DataSourceUtils.java:118)
+	at org.springframework.jdbc.datasource.DataSourceUtils.getConnection(DataSourceUtils.java:81)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:378)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:436)
+	at com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService.ensureSettlementTables(SmartWalletSettlementSyncService.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleElement.invoke(InitDestroyAnnotationBeanPostProcessor.java:389)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleMetadata.invokeInitMethods(InitDestroyAnnotationBeanPostProcessor.java:333)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor.postProcessBeforeInitialization(InitDestroyAnnotationBeanPostProcessor.java:157)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.applyBeanPostProcessorsBeforeInitialization(AbstractAutowireCapableBeanFactory.java:440)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(AbstractAutowireCapableBeanFactory.java:1796)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:620)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.config.DependencyDescriptor.resolveCandidate(DependencyDescriptor.java:276)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.doResolveDependency(DefaultListableBeanFactory.java:1391)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.resolveDependency(DefaultListableBeanFactory.java:1311)
+	at org.springframework.beans.factory.support.ConstructorResolver.resolveAutowiredArgument(ConstructorResolver.java:911)
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:788)
+	at org.springframework.beans.factory.support.ConstructorResolver.autowireConstructor(ConstructorResolver.java:224)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.autowireConstructor(AbstractAutowireCapableBeanFactory.java:1372)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1222)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:582)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:955)
+	at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:929)
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:591)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:147)
+	at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:731)
+	at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:408)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:307)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1303)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1292)
+	at com.metaverse.coin.strategy.job.CoinStrategyJobApplication.main(CoinStrategyJobApplication.java:17)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.boot.loader.MainMethodRunner.run(MainMethodRunner.java:49)
+	at org.springframework.boot.loader.Launcher.launch(Launcher.java:108)
+	at org.springframework.boot.loader.Launcher.launch(Launcher.java:58)
+	at org.springframework.boot.loader.JarLauncher.main(JarLauncher.java:65)
+Caused by: com.mysql.cj.exceptions.CJCommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)
+	at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:499)
+	at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:480)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:61)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:104)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:149)
+	at com.mysql.cj.exceptions.ExceptionFactory.createCommunicationsException(ExceptionFactory.java:165)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:88)
+	at com.mysql.cj.NativeSession.connect(NativeSession.java:120)
+	at com.mysql.cj.jdbc.ConnectionImpl.connectOneTryOnly(ConnectionImpl.java:935)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:805)
+	... 63 common frames omitted
+Caused by: java.net.SocketException: Operation not permitted
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:591)
+	at java.base/sun.nio.ch.Net.connect(Net.java:580)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:593)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:633)
+	at com.mysql.cj.protocol.StandardSocketFactory.connect(StandardSocketFactory.java:153)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:62)
+	... 66 common frames omitted
+2026-04-13 08:44:31.729[1776041071729] | WARN  | main       | o.s.b.w.s.c.AnnotationConfigServletWebServerApplicationContext - Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'settlementApplicationService' defined in URL [jar:file:/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar!/BOOT-INF/classes!/com/metaverse/coin/strategy/job/settlement/application/SettlementApplicationService.class]: Unsatisfied dependency expressed through constructor parameter 0; nested exception is org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletSettlementSyncService': Invocation of init method failed; nested exception is org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+2026-04-13 08:44:31.733[1776041071733] | INFO  | main       | o.a.catalina.core.StandardService    - Stopping service [Tomcat]
+2026-04-13 08:44:31.742[1776041071742] | INFO  | main       | o.s.b.a.l.ConditionEvaluationReportLoggingListener - 
+
+Error starting ApplicationContext. To display the conditions report re-run your application with 'debug' enabled.
+2026-04-13 08:44:31.760[1776041071760] | ERROR | main       | o.s.boot.SpringApplication           - Application run failed
+org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'settlementApplicationService' defined in URL [jar:file:/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar!/BOOT-INF/classes!/com/metaverse/coin/strategy/job/settlement/application/SettlementApplicationService.class]: Unsatisfied dependency expressed through constructor parameter 0; nested exception is org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletSettlementSyncService': Invocation of init method failed; nested exception is org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:801)
+	at org.springframework.beans.factory.support.ConstructorResolver.autowireConstructor(ConstructorResolver.java:224)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.autowireConstructor(AbstractAutowireCapableBeanFactory.java:1372)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1222)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:582)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:955)
+	at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:929)
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:591)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:147)
+	at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:731)
+	at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:408)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:307)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1303)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1292)
+	at com.metaverse.coin.strategy.job.CoinStrategyJobApplication.main(CoinStrategyJobApplication.java:17)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.boot.loader.MainMethodRunner.run(MainMethodRunner.java:49)
+	at org.springframework.boot.loader.Launcher.launch(Launcher.java:108)
+	at org.springframework.boot.loader.Launcher.launch(Launcher.java:58)
+	at org.springframework.boot.loader.JarLauncher.main(JarLauncher.java:65)
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletSettlementSyncService': Invocation of init method failed; nested exception is org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor.postProcessBeforeInitialization(InitDestroyAnnotationBeanPostProcessor.java:160)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.applyBeanPostProcessorsBeforeInitialization(AbstractAutowireCapableBeanFactory.java:440)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(AbstractAutowireCapableBeanFactory.java:1796)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:620)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.config.DependencyDescriptor.resolveCandidate(DependencyDescriptor.java:276)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.doResolveDependency(DefaultListableBeanFactory.java:1391)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.resolveDependency(DefaultListableBeanFactory.java:1311)
+	at org.springframework.beans.factory.support.ConstructorResolver.resolveAutowiredArgument(ConstructorResolver.java:911)
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:788)
+	... 27 common frames omitted
+Caused by: org.springframework.jdbc.CannotGetJdbcConnectionException: Failed to obtain JDBC Connection; nested exception is com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at org.springframework.jdbc.datasource.DataSourceUtils.getConnection(DataSourceUtils.java:84)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:378)
+	at org.springframework.jdbc.core.JdbcTemplate.execute(JdbcTemplate.java:436)
+	at com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService.ensureSettlementTables(SmartWalletSettlementSyncService.java:58)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleElement.invoke(InitDestroyAnnotationBeanPostProcessor.java:389)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor$LifecycleMetadata.invokeInitMethods(InitDestroyAnnotationBeanPostProcessor.java:333)
+	at org.springframework.beans.factory.annotation.InitDestroyAnnotationBeanPostProcessor.postProcessBeforeInitialization(InitDestroyAnnotationBeanPostProcessor.java:157)
+	... 40 common frames omitted
+Caused by: com.mysql.cj.jdbc.exceptions.CommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at com.mysql.cj.jdbc.exceptions.SQLError.createCommunicationsException(SQLError.java:174)
+	at com.mysql.cj.jdbc.exceptions.SQLExceptionsMapping.translateException(SQLExceptionsMapping.java:64)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:815)
+	at com.mysql.cj.jdbc.ConnectionImpl.<init>(ConnectionImpl.java:438)
+	at com.mysql.cj.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:241)
+	at com.mysql.cj.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:189)
+	at com.zaxxer.hikari.util.DriverDataSource.getConnection(DriverDataSource.java:138)
+	at com.zaxxer.hikari.pool.PoolBase.newConnection(PoolBase.java:364)
+	at com.zaxxer.hikari.pool.PoolBase.newPoolEntry(PoolBase.java:206)
+	at com.zaxxer.hikari.pool.HikariPool.createPoolEntry(HikariPool.java:476)
+	at com.zaxxer.hikari.pool.HikariPool.checkFailFast(HikariPool.java:561)
+	at com.zaxxer.hikari.pool.HikariPool.<init>(HikariPool.java:115)
+	at com.zaxxer.hikari.HikariDataSource.getConnection(HikariDataSource.java:112)
+	at org.springframework.jdbc.datasource.DataSourceUtils.fetchConnection(DataSourceUtils.java:160)
+	at org.springframework.jdbc.datasource.DataSourceUtils.doGetConnection(DataSourceUtils.java:118)
+	at org.springframework.jdbc.datasource.DataSourceUtils.getConnection(DataSourceUtils.java:81)
+	... 50 common frames omitted
+Caused by: com.mysql.cj.exceptions.CJCommunicationsException: Communications link failure
+
+The last packet sent successfully to the server was 0 milliseconds ago. The driver has not received any packets from the server.
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+	at java.base/jdk.internal.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)
+	at java.base/java.lang.reflect.Constructor.newInstanceWithCaller(Constructor.java:499)
+	at java.base/java.lang.reflect.Constructor.newInstance(Constructor.java:480)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:61)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:104)
+	at com.mysql.cj.exceptions.ExceptionFactory.createException(ExceptionFactory.java:149)
+	at com.mysql.cj.exceptions.ExceptionFactory.createCommunicationsException(ExceptionFactory.java:165)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:88)
+	at com.mysql.cj.NativeSession.connect(NativeSession.java:120)
+	at com.mysql.cj.jdbc.ConnectionImpl.connectOneTryOnly(ConnectionImpl.java:935)
+	at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:805)
+	... 63 common frames omitted
+Caused by: java.net.SocketException: Operation not permitted
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:591)
+	at java.base/sun.nio.ch.Net.connect(Net.java:580)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:593)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:633)
+	at com.mysql.cj.protocol.StandardSocketFactory.connect(StandardSocketFactory.java:153)
+	at com.mysql.cj.protocol.a.NativeSocketConnection.connect(NativeSocketConnection.java:62)
+	... 66 common frames omitted
+2026-04-13 08:46:13.650[1776041173650] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 59581 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-13 08:46:13.651[1776041173651] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-13 08:46:14.381[1776041174381] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat initialized with port(s): 8081 (http)
+2026-04-13 08:46:14.386[1776041174386] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Initializing ProtocolHandler ["http-nio-8081"]
+2026-04-13 08:46:14.387[1776041174387] | INFO  | main       | o.a.catalina.core.StandardService    - Starting service [Tomcat]
+2026-04-13 08:46:14.387[1776041174387] | INFO  | main       | o.a.catalina.core.StandardEngine     - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-04-13 08:46:14.425[1776041174425] | INFO  | main       | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring embedded WebApplicationContext
+2026-04-13 08:46:14.425[1776041174425] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 742 ms
+2026-04-13 08:46:14.797[1776041174797] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-13 08:46:14.913[1776041174913] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-13 08:46:14.937[1776041174937] | WARN  | main       | o.s.b.w.s.c.AnnotationConfigServletWebServerApplicationContext - Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'followTaskApplicationService' defined in URL [jar:file:/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar!/BOOT-INF/classes!/com/metaverse/coin/strategy/job/follow/application/FollowTaskApplicationService.class]: Unsatisfied dependency expressed through constructor parameter 0; nested exception is org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletFollowTaskService': Lookup method resolution failed; nested exception is java.lang.IllegalStateException: Failed to introspect Class [com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService] from ClassLoader [org.springframework.boot.loader.LaunchedURLClassLoader@7e6cbb7a]
+2026-04-13 08:46:14.938[1776041174938] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown initiated...
+2026-04-13 08:46:14.940[1776041174940] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Shutdown completed.
+2026-04-13 08:46:14.941[1776041174941] | INFO  | main       | o.a.catalina.core.StandardService    - Stopping service [Tomcat]
+2026-04-13 08:46:14.947[1776041174947] | INFO  | main       | o.s.b.a.l.ConditionEvaluationReportLoggingListener - 
+
+Error starting ApplicationContext. To display the conditions report re-run your application with 'debug' enabled.
+2026-04-13 08:46:14.959[1776041174959] | ERROR | main       | o.s.boot.SpringApplication           - Application run failed
+org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'followTaskApplicationService' defined in URL [jar:file:/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar!/BOOT-INF/classes!/com/metaverse/coin/strategy/job/follow/application/FollowTaskApplicationService.class]: Unsatisfied dependency expressed through constructor parameter 0; nested exception is org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletFollowTaskService': Lookup method resolution failed; nested exception is java.lang.IllegalStateException: Failed to introspect Class [com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService] from ClassLoader [org.springframework.boot.loader.LaunchedURLClassLoader@7e6cbb7a]
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:801)
+	at org.springframework.beans.factory.support.ConstructorResolver.autowireConstructor(ConstructorResolver.java:224)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.autowireConstructor(AbstractAutowireCapableBeanFactory.java:1372)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1222)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:582)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.preInstantiateSingletons(DefaultListableBeanFactory.java:955)
+	at org.springframework.context.support.AbstractApplicationContext.finishBeanFactoryInitialization(AbstractApplicationContext.java:929)
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:591)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:147)
+	at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:731)
+	at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:408)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:307)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1303)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1292)
+	at com.metaverse.coin.strategy.job.CoinStrategyJobApplication.main(CoinStrategyJobApplication.java:17)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:568)
+	at org.springframework.boot.loader.MainMethodRunner.run(MainMethodRunner.java:49)
+	at org.springframework.boot.loader.Launcher.launch(Launcher.java:108)
+	at org.springframework.boot.loader.Launcher.launch(Launcher.java:58)
+	at org.springframework.boot.loader.JarLauncher.main(JarLauncher.java:65)
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'smartWalletFollowTaskService': Lookup method resolution failed; nested exception is java.lang.IllegalStateException: Failed to introspect Class [com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService] from ClassLoader [org.springframework.boot.loader.LaunchedURLClassLoader@7e6cbb7a]
+	at org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor.determineCandidateConstructors(AutowiredAnnotationBeanPostProcessor.java:298)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.determineConstructorsFromBeanPostProcessors(AbstractAutowireCapableBeanFactory.java:1302)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBeanInstance(AbstractAutowireCapableBeanFactory.java:1219)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:582)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:542)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.lambda$doGetBean$0(AbstractBeanFactory.java:335)
+	at org.springframework.beans.factory.support.DefaultSingletonBeanRegistry.getSingleton(DefaultSingletonBeanRegistry.java:234)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.doGetBean(AbstractBeanFactory.java:333)
+	at org.springframework.beans.factory.support.AbstractBeanFactory.getBean(AbstractBeanFactory.java:208)
+	at org.springframework.beans.factory.config.DependencyDescriptor.resolveCandidate(DependencyDescriptor.java:276)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.doResolveDependency(DefaultListableBeanFactory.java:1391)
+	at org.springframework.beans.factory.support.DefaultListableBeanFactory.resolveDependency(DefaultListableBeanFactory.java:1311)
+	at org.springframework.beans.factory.support.ConstructorResolver.resolveAutowiredArgument(ConstructorResolver.java:911)
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:788)
+	... 27 common frames omitted
+Caused by: java.lang.IllegalStateException: Failed to introspect Class [com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService] from ClassLoader [org.springframework.boot.loader.LaunchedURLClassLoader@7e6cbb7a]
+	at org.springframework.util.ReflectionUtils.getDeclaredMethods(ReflectionUtils.java:485)
+	at org.springframework.util.ReflectionUtils.doWithLocalMethods(ReflectionUtils.java:321)
+	at org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor.determineCandidateConstructors(AutowiredAnnotationBeanPostProcessor.java:276)
+	... 40 common frames omitted
+Caused by: java.lang.NoClassDefFoundError: com/metaverse/coin/strategy/common/model/arbitrage/entity/WalletFollowCandidateEntity
+	at java.base/java.lang.Class.getDeclaredMethods0(Native Method)
+	at java.base/java.lang.Class.privateGetDeclaredMethods(Class.java:3404)
+	at java.base/java.lang.Class.getDeclaredMethods(Class.java:2506)
+	at org.springframework.util.ReflectionUtils.getDeclaredMethods(ReflectionUtils.java:467)
+	... 42 common frames omitted
+Caused by: java.lang.ClassNotFoundException: com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletFollowCandidateEntity
+	at java.base/java.net.URLClassLoader.findClass(URLClassLoader.java:445)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:592)
+	at org.springframework.boot.loader.LaunchedURLClassLoader.loadClass(LaunchedURLClassLoader.java:151)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
+	... 46 common frames omitted
+2026-04-13 08:47:06.843[1776041226843] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 60004 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-13 08:47:06.844[1776041226844] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-13 08:47:07.514[1776041227514] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat initialized with port(s): 8081 (http)
+2026-04-13 08:47:07.518[1776041227518] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Initializing ProtocolHandler ["http-nio-8081"]
+2026-04-13 08:47:07.519[1776041227519] | INFO  | main       | o.a.catalina.core.StandardService    - Starting service [Tomcat]
+2026-04-13 08:47:07.519[1776041227519] | INFO  | main       | o.a.catalina.core.StandardEngine     - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-04-13 08:47:07.557[1776041227557] | INFO  | main       | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring embedded WebApplicationContext
+2026-04-13 08:47:07.557[1776041227557] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 687 ms
+2026-04-13 08:47:07.949[1776041227949] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-13 08:47:08.060[1776041228060] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-13 08:47:08.576[1776041228576] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Starting ProtocolHandler ["http-nio-8081"]
+2026-04-13 08:47:08.585[1776041228585] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat started on port(s): 8081 (http) with context path ''
+2026-04-13 08:47:08.590[1776041228590] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.968 seconds (JVM running for 7.225)
+2026-04-13 08:47:08.663[1776041228663] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=1, markets=1, resolved=0, oraclePending=1, failed=0
+2026-04-13 08:47:08.692[1776041228692] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WALLET_DECAY offline walletAddress=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881 daysSinceLastTrade=99
+2026-04-13 08:47:08.694[1776041228694] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WALLET_DECAY offline walletAddress=0x17db3fcd93ba12d38382a0cade24b200185c5f6d daysSinceLastTrade=93
+2026-04-13 08:47:08.702[1776041228702] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6253
+2026-04-13 08:47:08.704[1776041228704] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xd235973291b2b75ff4070e9c0b01728c520b0f29 leaderboardTrades=7 winRate reset 1.0000 -> 0.65 newScore=0.5259
+2026-04-13 08:47:08.706[1776041228706] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x863134d00841b2e200492805a01e1e2f5defaa53 leaderboardTrades=8 winRate reset 1.0000 -> 0.65 newScore=0.5907
+2026-04-13 08:47:08.707[1776041228707] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x2005d16a84ceefa912d4e380cd32e7ff827875ea leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6338
+2026-04-13 08:47:08.711[1776041228711] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x204f72f35326db932158cba6adff0b9a1da95e14 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6364
+2026-04-13 08:47:08.713[1776041228713] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xe9ad918c7678cd38b12603a762e638a5d1ee7091 leaderboardTrades=1 winRate reset 1.0000 -> 0.65 newScore=0.5669
+2026-04-13 08:47:08.714[1776041228714] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x94f199fb7789f1aef7fff6b758d6b375100f4c7a leaderboardTrades=11 winRate reset 1.0000 -> 0.65 newScore=0.5860
+2026-04-13 08:47:08.715[1776041228715] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x885783760858e1bd5dd09a3c3f916cfa251ac270 leaderboardTrades=7 winRate reset 1.0000 -> 0.65 newScore=0.6038
+2026-04-13 08:47:08.717[1776041228717] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xe90bec87d9ef430f27f9dcfe72c34b76967d5da2 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6178
+2026-04-13 08:47:08.719[1776041228719] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x507e52ef684ca2dd91f90a9d26d149dd3288beae leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6185
+2026-04-13 08:47:08.720[1776041228720] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x006cc834cc092684f1b56626e23bedb3835c16ea leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6280
+2026-04-13 08:47:08.722[1776041228722] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xdc876e6873772d38716fda7f2452a78d426d7ab6 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6268
+2026-04-13 08:47:08.724[1776041228724] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xefbc5fec8d7b0acdc8911bdd9a98d6964308f9a2 leaderboardTrades=4 winRate reset 1.0000 -> 0.65 newScore=0.5923
+2026-04-13 08:47:08.725[1776041228725] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x019782cab5d844f02bafb71f512758be78579f3c leaderboardTrades=3 winRate reset 1.0000 -> 0.65 newScore=0.5722
+2026-04-13 08:47:08.730[1776041228730] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6319
+2026-04-13 08:47:08.732[1776041228732] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xc2e7800b5af46e6093872b177b7a5e7f0563be51 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6177
+2026-04-13 08:47:08.733[1776041228733] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6400
+2026-04-13 08:47:08.735[1776041228735] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xee613b3fc183ee44f9da9c05f53e2da107e3debf leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6089
+2026-04-13 08:47:08.736[1776041228736] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x14964aefa2cd7caff7878b3820a690a03c5aa429 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6106
+2026-04-13 08:47:08.737[1776041228737] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x17db3fcd93ba12d38382a0cade24b200185c5f6d leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.5922
+2026-04-13 08:47:08.738[1776041228738] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x033a07b3de5947eab4306676ad74eb546da30d50 leaderboardTrades=3 winRate reset 1.0000 -> 0.65 newScore=0.5243
+2026-04-13 08:47:19.750[1776041239750] | INFO  | http-nio-8081-exec-2 | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-13 08:47:19.750[1776041239750] | INFO  | http-nio-8081-exec-2 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-13 08:47:19.751[1776041239751] | INFO  | http-nio-8081-exec-2 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-13 08:47:22.320[1776041242320] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=19
+2026-04-13 08:48:12.818[1776041292818] | INFO  | scheduling-1 | c.m.c.s.j.s.i.s.EntityFeatureSnapshotService - [EntityFeatureSnapshotService] Refreshing snapshots for 13 entities
+2026-04-13 08:48:12.828[1776041292828] | INFO  | scheduling-1 | c.m.c.s.j.s.i.s.EntityFeatureSnapshotService - [EntityFeatureSnapshotService] Snapshot refresh done. success=13/13
+2026-04-13 08:48:31.234[1776041311234] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=65
+2026-04-13 08:49:34.775[1776041374775] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=111
+2026-04-13 08:50:37.728[1776041437728] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=157
+2026-04-13 08:50:56.146[1776041456146] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Starting CoinStrategyJobApplication using Java 17.0.18 on Jennifers-MacBook-Air.local with PID 60636 (/Users/jenniferni/jenifer/ray/CoinStrategy/coin-strategy-job/target/coin-strategy-job-0.0.1-SNAPSHOT.jar started by jenniferni in /Users/jenniferni/jenifer/ray/CoinStrategy)
+2026-04-13 08:50:56.148[1776041456148] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - No active profile set, falling back to 1 default profile: "default"
+2026-04-13 08:50:56.765[1776041456765] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat initialized with port(s): 8082 (http)
+2026-04-13 08:50:56.770[1776041456770] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Initializing ProtocolHandler ["http-nio-8082"]
+2026-04-13 08:50:56.771[1776041456771] | INFO  | main       | o.a.catalina.core.StandardService    - Starting service [Tomcat]
+2026-04-13 08:50:56.771[1776041456771] | INFO  | main       | o.a.catalina.core.StandardEngine     - Starting Servlet engine: [Apache Tomcat/9.0.83]
+2026-04-13 08:50:56.810[1776041456810] | INFO  | main       | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring embedded WebApplicationContext
+2026-04-13 08:50:56.811[1776041456811] | INFO  | main       | o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 639 ms
+2026-04-13 08:50:57.168[1776041457168] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Starting...
+2026-04-13 08:50:57.274[1776041457274] | INFO  | main       | com.zaxxer.hikari.HikariDataSource   - HikariPool-1 - Start completed.
+2026-04-13 08:50:57.750[1776041457750] | INFO  | main       | o.a.coyote.http11.Http11NioProtocol  - Starting ProtocolHandler ["http-nio-8082"]
+2026-04-13 08:50:57.757[1776041457757] | INFO  | main       | o.s.b.w.e.tomcat.TomcatWebServer     - Tomcat started on port(s): 8082 (http) with context path ''
+2026-04-13 08:50:57.763[1776041457763] | INFO  | main       | c.m.c.s.j.CoinStrategyJobApplication - Started CoinStrategyJobApplication in 6.86 seconds (JVM running for 7.109)
+2026-04-13 08:50:57.828[1776041457828] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSettlementSyncService - Scheduled settlement sync finished: scanned=1, markets=1, resolved=0, oraclePending=1, failed=0
+2026-04-13 08:50:57.837[1776041457837] | INFO  | http-nio-8082-exec-1 | o.a.c.c.C.[Tomcat].[localhost].[/]   - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-04-13 08:50:57.837[1776041457837] | INFO  | http-nio-8082-exec-1 | o.s.web.servlet.DispatcherServlet    - Initializing Servlet 'dispatcherServlet'
+2026-04-13 08:50:57.838[1776041457838] | INFO  | http-nio-8082-exec-1 | o.s.web.servlet.DispatcherServlet    - Completed initialization in 1 ms
+2026-04-13 08:50:57.856[1776041457856] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WALLET_DECAY offline walletAddress=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881 daysSinceLastTrade=99
+2026-04-13 08:50:57.858[1776041457858] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WALLET_DECAY offline walletAddress=0x17db3fcd93ba12d38382a0cade24b200185c5f6d daysSinceLastTrade=93
+2026-04-13 08:50:57.865[1776041457865] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x6a72f61820b26b1fe4d956e17b6dc2a1ea3033ee leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6253
+2026-04-13 08:50:57.868[1776041457868] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xd235973291b2b75ff4070e9c0b01728c520b0f29 leaderboardTrades=7 winRate reset 1.0000 -> 0.65 newScore=0.5259
+2026-04-13 08:50:57.870[1776041457870] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x863134d00841b2e200492805a01e1e2f5defaa53 leaderboardTrades=8 winRate reset 1.0000 -> 0.65 newScore=0.5907
+2026-04-13 08:50:57.872[1776041457872] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x2005d16a84ceefa912d4e380cd32e7ff827875ea leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6338
+2026-04-13 08:50:57.876[1776041457876] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x204f72f35326db932158cba6adff0b9a1da95e14 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6364
+2026-04-13 08:50:57.877[1776041457877] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xe9ad918c7678cd38b12603a762e638a5d1ee7091 leaderboardTrades=1 winRate reset 1.0000 -> 0.65 newScore=0.5669
+2026-04-13 08:50:57.879[1776041457879] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x94f199fb7789f1aef7fff6b758d6b375100f4c7a leaderboardTrades=11 winRate reset 1.0000 -> 0.65 newScore=0.5860
+2026-04-13 08:50:57.880[1776041457880] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x885783760858e1bd5dd09a3c3f916cfa251ac270 leaderboardTrades=7 winRate reset 1.0000 -> 0.65 newScore=0.6038
+2026-04-13 08:50:57.882[1776041457882] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xe90bec87d9ef430f27f9dcfe72c34b76967d5da2 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6178
+2026-04-13 08:50:57.884[1776041457884] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x507e52ef684ca2dd91f90a9d26d149dd3288beae leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6185
+2026-04-13 08:50:57.886[1776041457886] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x006cc834cc092684f1b56626e23bedb3835c16ea leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6280
+2026-04-13 08:50:57.888[1776041457888] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xdc876e6873772d38716fda7f2452a78d426d7ab6 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6268
+2026-04-13 08:50:57.890[1776041457890] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xefbc5fec8d7b0acdc8911bdd9a98d6964308f9a2 leaderboardTrades=4 winRate reset 1.0000 -> 0.65 newScore=0.5923
+2026-04-13 08:50:57.892[1776041457892] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x019782cab5d844f02bafb71f512758be78579f3c leaderboardTrades=3 winRate reset 1.0000 -> 0.65 newScore=0.5722
+2026-04-13 08:50:57.893[1776041457893] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x16b29c50f2439faf627209b2ac0c7bbddaa8a881 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6319
+2026-04-13 08:50:57.895[1776041457895] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xc2e7800b5af46e6093872b177b7a5e7f0563be51 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6177
+2026-04-13 08:50:57.897[1776041457897] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xdb27bf2ac5d428a9c63dbc914611036855a6c56e leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6400
+2026-04-13 08:50:57.898[1776041457898] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0xee613b3fc183ee44f9da9c05f53e2da107e3debf leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6089
+2026-04-13 08:50:57.899[1776041457899] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x14964aefa2cd7caff7878b3820a690a03c5aa429 leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.6106
+2026-04-13 08:50:57.901[1776041457901] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x17db3fcd93ba12d38382a0cade24b200185c5f6d leaderboardTrades=50 winRate reset 1.0000 -> 0.65 newScore=0.5922
+2026-04-13 08:50:57.902[1776041457902] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletProfileStoreService - WIN_RATE_BIAS_FALLBACK walletAddress=0x033a07b3de5947eab4306676ad74eb546da30d50 leaderboardTrades=3 winRate reset 1.0000 -> 0.65 newScore=0.5243
+2026-04-13 08:51:31.110[1776041491110] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=46
+2026-04-13 08:51:34.403[1776041494403] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true after 20006 ms: Read timed out
+2026-04-13 08:51:38.437[1776041498437] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API curl fallback failed for https://data-api.polymarket.com/trades?user=0x14964aefa2cd7caff7878b3820a690a03c5aa429&limit=30&offset=0&takerOnly=true with exitCode=28 stderr=
+2026-04-13 08:51:38.437[1776041498437] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - Skip syncing wallet 0x14964aefa2cd7caff7878b3820a690a03c5aa429 because Polymarket trades request failed: Read timed out
+2026-04-13 08:51:57.264[1776041517264] | INFO  | scheduling-1 | c.m.c.s.j.s.i.s.EntityFeatureSnapshotService - [EntityFeatureSnapshotService] Refreshing snapshots for 13 entities
+2026-04-13 08:51:57.283[1776041517283] | INFO  | scheduling-1 | c.m.c.s.j.s.i.s.EntityFeatureSnapshotService - [EntityFeatureSnapshotService] Snapshot refresh done. success=13/13
+2026-04-13 08:51:59.396[1776041519396] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API request attempt 1 failed for https://clob.polymarket.com/book?tokenID=41744613862802407522243041166890242229845856664563029958589785369059108810116 after 20003 ms: Read timed out
+2026-04-13 08:52:03.426[1776041523426] | WARN  | scheduling-1 | c.m.c.s.j.s.s.PolymarketApiClient    - Polymarket API curl fallback failed for https://clob.polymarket.com/book?tokenID=41744613862802407522243041166890242229845856664563029958589785369059108810116 with exitCode=28 stderr=

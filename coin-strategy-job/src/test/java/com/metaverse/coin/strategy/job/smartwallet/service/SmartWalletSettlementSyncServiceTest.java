@@ -92,6 +92,7 @@ class SmartWalletSettlementSyncServiceTest {
         verify(settlementRetryMapper).updateById(retryCaptor.capture());
         assertEquals("PENDING", retryCaptor.getValue().getStatus());
         assertEquals(0, retryCaptor.getValue().getFailureCount());
+        assertEquals("ORACLE_PENDING", retryCaptor.getValue().getRetryType());
         verify(settlementRetryMapper, never()).insert(any());
     }
 }

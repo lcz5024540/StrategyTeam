@@ -44,18 +44,22 @@ public class PolymarketMarketMetadataService {
         if (!refresh && cached != null) {
             return cached;
         }
+        PolymarketApiClient.MarketMetadata primary = null;
+        PolymarketApiClient.MarketMetadata exactFallback = null;
         try {
-            PolymarketApiClient.MarketMetadata metadata = polymarketApiClient.fetchMarketMetadata(normalized);
-            cache.put(normalized, metadata);
-            return metadata;
-        } catch (RuntimeException ex) {
-            PolymarketApiClient.MarketMetadata fallback = findByQuestionHint(normalized, questionHint);
-            if (fallback != null) {
-                cache.put(normalized, fallback);
-                return fallback;
+            primary = withSource(polymarketApiClient.fetchMarketMetadata(normalized), "GAMMA_MARKETS");
+            if (shouldProbeExactFallback(primary, questionHint)) {
+                exactFallback = findExactByQuestionHint(normalized, questionHint);
             }
-            if (cached != null) {
-                return cached;
+            PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized, cached, primary, exactFallback);
+            cache.put(normalized, merged);
+            return merged;
+        } catch (RuntimeException ex) {
+            exactFallback = findExactByQuestionHint(normalized, questionHint);
+            if (exactFallback != null || cached != null) {
+                PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized, cached, primary, exactFallback);
+                cache.put(normalized, merged);
+                return merged;
             }
             throw ex;
         }
@@ -109,6 +113,8 @@ public class PolymarketMarketMetadataService {
                 .resolvedOutcome(existing == null ? null : existing.getResolvedOutcome())
                 .endAt(existing == null ? null : existing.getEndAt())
                 .umaEndAt(existing == null ? null : existing.getUmaEndAt())
+                .resolutionSource(existing == null ? "LOCAL" : existing.getResolutionSource())
+                .resolutionObservedAt(existing == null ? System.currentTimeMillis() : existing.getResolutionObservedAt())
                 .outcomes(outcomes)
                 .outcomePrices(outcomePrices)
                 .outcomeTokenIds(existing == null ? Map.of() : existing.getOutcomeTokenIds())
@@ -136,7 +142,7 @@ public class PolymarketMarketMetadataService {
         );
     }
 
-    private PolymarketApiClient.MarketMetadata findByQuestionHint(String conditionId, String questionHint) {
+    private PolymarketApiClient.MarketMetadata findExactByQuestionHint(String conditionId, String questionHint) {
         if (!StringUtils.hasText(questionHint)) {
             return null;
         }
@@ -154,21 +160,179 @@ public class PolymarketMarketMetadataService {
                     .orElse(null);
             if (exactCondition != null) {
                 log.info("Resolved Polymarket metadata for conditionId={} via question search fallback.", normalizedConditionId);
-                return exactCondition;
+                return withSource(exactCondition, "GAMMA_SEARCH_EXACT");
             }
-            return candidates.stream()
+            PolymarketApiClient.MarketMetadata approximate = candidates.stream()
                     .filter(item -> normalizeQuestion(item.getQuestion()).equals(normalizedQuestion))
                     .min(Comparator.comparing(item -> questionDistance(normalizedQuestion, normalizeQuestion(item.getQuestion()))))
-                    .map(item -> {
-                        log.warn("Using question-only metadata fallback for conditionId={} question={}", normalizedConditionId, questionHint);
-                        return item;
-                    })
                     .orElse(null);
+            if (approximate != null) {
+                log.warn("Skip question-only metadata fallback for conditionId={} question={} because conditionId did not match exactly.",
+                        normalizedConditionId, questionHint);
+            }
+            return null;
         } catch (Exception fallbackEx) {
             log.warn("Question-search fallback failed for conditionId={} question={}: {}",
                     conditionId, questionHint, fallbackEx.getMessage());
             return null;
         }
+    }
+
+    private boolean shouldProbeExactFallback(PolymarketApiClient.MarketMetadata primary,
+                                             String questionHint) {
+        if (primary == null || !StringUtils.hasText(questionHint)) {
+            return false;
+        }
+        if (primary.isResolved()) {
+            return false;
+        }
+        if (primary.isClosed()) {
+            return true;
+        }
+        if (!primary.isAcceptingOrders()) {
+            return true;
+        }
+        Long effectiveEndAt = primary.getEndAt();
+        return effectiveEndAt != null && effectiveEndAt > 0 && effectiveEndAt <= System.currentTimeMillis();
+    }
+
+    private PolymarketApiClient.MarketMetadata withSource(PolymarketApiClient.MarketMetadata metadata, String source) {
+        if (metadata == null) {
+            return null;
+        }
+        return metadata.toBuilder()
+                .resolutionSource(StringUtils.hasText(source) ? source.trim() : metadata.getResolutionSource())
+                .resolutionObservedAt(System.currentTimeMillis())
+                .build();
+    }
+
+    private PolymarketApiClient.MarketMetadata mergeMetadata(String conditionId,
+                                                             PolymarketApiClient.MarketMetadata cached,
+                                                             PolymarketApiClient.MarketMetadata primary,
+                                                             PolymarketApiClient.MarketMetadata fallback) {
+        PolymarketApiClient.MarketMetadata base = firstNonNull(primary, fallback, cached);
+        if (base == null) {
+            throw new IllegalStateException("Polymarket market metadata not found for conditionId=" + conditionId);
+        }
+        PolymarketApiClient.MarketMetadata.MarketMetadataBuilder builder = base.toBuilder()
+                .conditionId(firstText(base.getConditionId(), conditionId))
+                .marketId(firstText(base.getMarketId(), fallback == null ? null : fallback.getMarketId(), cached == null ? null : cached.getMarketId()))
+                .questionId(firstText(base.getQuestionId(), fallback == null ? null : fallback.getQuestionId(), cached == null ? null : cached.getQuestionId()))
+                .question(firstText(base.getQuestion(), fallback == null ? null : fallback.getQuestion(), cached == null ? null : cached.getQuestion()))
+                .category(firstText(base.getCategory(), fallback == null ? null : fallback.getCategory(), cached == null ? null : cached.getCategory()))
+                .minimumTickSize(base.getMinimumTickSize() == null
+                        ? firstNonNull(fallback == null ? null : fallback.getMinimumTickSize(), cached == null ? null : cached.getMinimumTickSize())
+                        : base.getMinimumTickSize())
+                .endAt(firstNonNull(base.getEndAt(), fallback == null ? null : fallback.getEndAt(), cached == null ? null : cached.getEndAt()))
+                .umaEndAt(firstNonNull(base.getUmaEndAt(), fallback == null ? null : fallback.getUmaEndAt(), cached == null ? null : cached.getUmaEndAt()))
+                .outcomes(base.getOutcomes() == null || base.getOutcomes().isEmpty()
+                        ? firstNonNullList(fallback == null ? null : fallback.getOutcomes(), cached == null ? null : cached.getOutcomes())
+                        : base.getOutcomes())
+                .outcomePrices(base.getOutcomePrices() == null || base.getOutcomePrices().isEmpty()
+                        ? firstNonNullList(fallback == null ? null : fallback.getOutcomePrices(), cached == null ? null : cached.getOutcomePrices())
+                        : base.getOutcomePrices())
+                .outcomeTokenIds(base.getOutcomeTokenIds() == null || base.getOutcomeTokenIds().isEmpty()
+                        ? firstNonNullMap(fallback == null ? null : fallback.getOutcomeTokenIds(), cached == null ? null : cached.getOutcomeTokenIds())
+                        : base.getOutcomeTokenIds());
+
+        PolymarketApiClient.MarketMetadata trustedResolved = pickTrustedResolved(conditionId, cached, primary, fallback);
+        if (trustedResolved != null) {
+            builder.resolvedOutcome(trustedResolved.getResolvedOutcome())
+                    .resolutionSource(firstText(trustedResolved.getResolutionSource(), base.getResolutionSource()))
+                    .resolutionObservedAt(firstNonNull(trustedResolved.getResolutionObservedAt(), base.getResolutionObservedAt()))
+                    .umaResolutionStatus(firstText(trustedResolved.getUmaResolutionStatus(), base.getUmaResolutionStatus()));
+        } else {
+            builder.resolvedOutcome(null)
+                    .resolutionSource(firstText(base.getResolutionSource(), cached == null ? null : cached.getResolutionSource()))
+                    .resolutionObservedAt(firstNonNull(base.getResolutionObservedAt(), cached == null ? null : cached.getResolutionObservedAt()))
+                    .umaResolutionStatus(firstText(base.getUmaResolutionStatus(), fallback == null ? null : fallback.getUmaResolutionStatus(), cached == null ? null : cached.getUmaResolutionStatus()));
+        }
+        return builder.build();
+    }
+
+    private PolymarketApiClient.MarketMetadata pickTrustedResolved(String conditionId,
+                                                                   PolymarketApiClient.MarketMetadata cached,
+                                                                   PolymarketApiClient.MarketMetadata primary,
+                                                                   PolymarketApiClient.MarketMetadata fallback) {
+        List<PolymarketApiClient.MarketMetadata> candidates = List.of(
+                withNullable(cached),
+                withNullable(primary),
+                withNullable(fallback)
+        ).stream().flatMap(List::stream).toList();
+        PolymarketApiClient.MarketMetadata firstResolved = null;
+        for (PolymarketApiClient.MarketMetadata candidate : candidates) {
+            if (!hasTrustedResolutionSignal(conditionId, candidate)) {
+                continue;
+            }
+            if (firstResolved == null) {
+                firstResolved = candidate;
+                continue;
+            }
+            if (StringUtils.hasText(firstResolved.getResolvedOutcome())
+                    && StringUtils.hasText(candidate.getResolvedOutcome())
+                    && !firstResolved.getResolvedOutcome().equalsIgnoreCase(candidate.getResolvedOutcome())) {
+                log.error("Conflicting resolved outcomes detected for conditionId={}: keep existing={} ignore={} sourceExisting={} sourceIncoming={}",
+                        conditionId,
+                        firstResolved.getResolvedOutcome(),
+                        candidate.getResolvedOutcome(),
+                        firstResolved.getResolutionSource(),
+                        candidate.getResolutionSource());
+                continue;
+            }
+            if (firstResolved.getResolutionObservedAt() == null
+                    || (candidate.getResolutionObservedAt() != null
+                    && candidate.getResolutionObservedAt() > firstResolved.getResolutionObservedAt())) {
+                firstResolved = candidate;
+            }
+        }
+        return firstResolved;
+    }
+
+    private boolean hasTrustedResolutionSignal(String conditionId, PolymarketApiClient.MarketMetadata metadata) {
+        return metadata != null
+                && metadata.isResolved()
+                && StringUtils.hasText(metadata.getConditionId())
+                && metadata.getConditionId().trim().equalsIgnoreCase(conditionId);
+    }
+
+    private List<PolymarketApiClient.MarketMetadata> withNullable(PolymarketApiClient.MarketMetadata metadata) {
+        return metadata == null ? List.of() : List.of(metadata);
+    }
+
+    private <T> T firstNonNull(T... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (T candidate : candidates) {
+            if (candidate != null) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private List<String> firstNonNullList(List<String>... candidates) {
+        if (candidates == null) {
+            return List.of();
+        }
+        for (List<String> candidate : candidates) {
+            if (candidate != null && !candidate.isEmpty()) {
+                return new ArrayList<>(candidate);
+            }
+        }
+        return List.of();
+    }
+
+    private Map<String, String> firstNonNullMap(Map<String, String>... candidates) {
+        if (candidates == null) {
+            return Map.of();
+        }
+        for (Map<String, String> candidate : candidates) {
+            if (candidate != null && !candidate.isEmpty()) {
+                return candidate;
+            }
+        }
+        return Map.of();
     }
 
     private String normalizeQuestion(String value) {
@@ -208,6 +372,8 @@ public class PolymarketMarketMetadataService {
                 .closed(false)
                 .acceptingOrders(false)
                 .umaResolutionStatus(null)
+                .resolutionSource("SYNTHETIC")
+                .resolutionObservedAt(System.currentTimeMillis())
                 .outcomes(outcomes)
                 .outcomePrices(outcomePrices)
                 .outcomeTokenIds(Map.of())

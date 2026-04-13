@@ -10,4 +10,6 @@ public class SettlementRetryCandidate {
     private String question;
     private String retryMessage;
     private String retryType;
+    private String resolutionSource;
+    private Long resolutionObservedAt;
 }

@@ -85,6 +85,7 @@ public class SmartWalletSettlementSyncService {
                     `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                     `market_id` VARCHAR(128) NOT NULL,
                     `question` VARCHAR(512) DEFAULT NULL,
+                    `retry_type` VARCHAR(32) DEFAULT NULL,
                     `latest_run_id` BIGINT UNSIGNED DEFAULT NULL,
                     `failure_count` INT NOT NULL DEFAULT 1,
                     `last_error_message` VARCHAR(512) DEFAULT NULL,
@@ -97,6 +98,11 @@ public class SmartWalletSettlementSyncService {
                     INDEX `idx_settlement_retry_status` (`status`, `next_retry_at`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """);
+        try {
+            jdbcTemplate.execute("ALTER TABLE `smart_wallet_settlement_retry` ADD COLUMN `retry_type` VARCHAR(32) DEFAULT NULL AFTER `question`");
+        } catch (Exception ignored) {
+            // Column already exists on most runs; ignore duplicate-column errors.
+        }
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.settlement-sync.fixed-delay-ms:300000}")
@@ -447,6 +453,7 @@ public class SmartWalletSettlementSyncService {
                     .setCreatedAt(now);
         }
         retry.setQuestion(failure.getQuestion())
+                .setRetryType("SYNC_FAILURE")
                 .setLatestRunId(runId)
                 .setFailureCount(failureCount)
                 .setLastErrorMessage(abbreviate(failure.getErrorMessage(), 500))
@@ -478,6 +485,7 @@ public class SmartWalletSettlementSyncService {
                     .setCreatedAt(now);
         }
         retry.setQuestion(retryCandidate.getQuestion())
+                .setRetryType(retryCandidate.getRetryType())
                 .setLatestRunId(runId)
                 .setFailureCount(failureCount)
                 .setLastErrorMessage(abbreviate(retryCandidate.getRetryMessage(), 500))
@@ -532,6 +540,7 @@ public class SmartWalletSettlementSyncService {
                 .id(retry.getId())
                 .marketId(retry.getMarketId())
                 .question(retry.getQuestion())
+                .retryType(retry.getRetryType())
                 .latestRunId(retry.getLatestRunId())
                 .failureCount(retry.getFailureCount())
                 .lastErrorMessage(retry.getLastErrorMessage())

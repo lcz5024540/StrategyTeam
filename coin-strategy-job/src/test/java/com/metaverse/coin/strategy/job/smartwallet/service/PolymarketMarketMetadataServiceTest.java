@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -56,5 +57,91 @@ class PolymarketMarketMetadataServiceTest {
         assertFalse(metadata.isResolved());
         assertFalse(metadata.isClosed());
         assertTrue(metadata.getOutcomeTokenIds().isEmpty());
+    }
+
+    @Test
+    void shouldUpgradeToResolvedFromExactSearchFallbackWhenPrimaryIsStale() {
+        PolymarketApiClient.MarketMetadata primary = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .question("Will stale winner be repaired?")
+                .closed(false)
+                .acceptingOrders(false)
+                .resolvedOutcome(null)
+                .endAt(System.currentTimeMillis() - 60_000L)
+                .build();
+        PolymarketApiClient.MarketMetadata fallback = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .question("Will stale winner be repaired?")
+                .closed(true)
+                .acceptingOrders(false)
+                .resolvedOutcome("YES")
+                .build();
+        when(polymarketApiClient.fetchMarketMetadata("0xmarket")).thenReturn(primary);
+        when(polymarketApiClient.searchMarkets("Will stale winner be repaired?", 10, true)).thenReturn(List.of(fallback));
+
+        PolymarketApiClient.MarketMetadata metadata = service.getByConditionId("0xmarket", true, "Will stale winner be repaired?");
+
+        assertTrue(metadata.isResolved());
+        assertEquals("YES", metadata.getResolvedOutcome());
+        assertEquals("GAMMA_SEARCH_EXACT", metadata.getResolutionSource());
+        assertNotNull(metadata.getResolutionObservedAt());
+    }
+
+    @Test
+    void shouldIgnoreQuestionOnlyResolvedFallbackWhenConditionIdDiffers() {
+        PolymarketApiClient.MarketMetadata primary = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .question("Will question-only fallback be ignored?")
+                .closed(false)
+                .acceptingOrders(false)
+                .resolvedOutcome(null)
+                .endAt(System.currentTimeMillis() - 60_000L)
+                .build();
+        PolymarketApiClient.MarketMetadata fallback = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xother")
+                .marketId("market-2")
+                .question("Will question-only fallback be ignored?")
+                .closed(true)
+                .acceptingOrders(false)
+                .resolvedOutcome("NO")
+                .build();
+        when(polymarketApiClient.fetchMarketMetadata("0xmarket")).thenReturn(primary);
+        when(polymarketApiClient.searchMarkets("Will question-only fallback be ignored?", 10, true)).thenReturn(List.of(fallback));
+
+        PolymarketApiClient.MarketMetadata metadata = service.getByConditionId("0xmarket", true, "Will question-only fallback be ignored?");
+
+        assertFalse(metadata.isResolved());
+    }
+
+    @Test
+    void shouldKeepCachedResolvedMetadataMonotonicWhenPrimaryRegresses() {
+        PolymarketApiClient.MarketMetadata resolved = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .question("Will resolved metadata stay sticky?")
+                .closed(true)
+                .acceptingOrders(false)
+                .resolvedOutcome("YES")
+                .build();
+        PolymarketApiClient.MarketMetadata regressed = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .question("Will resolved metadata stay sticky?")
+                .closed(false)
+                .acceptingOrders(false)
+                .resolvedOutcome(null)
+                .endAt(System.currentTimeMillis() - 60_000L)
+                .build();
+        when(polymarketApiClient.fetchMarketMetadata("0xmarket")).thenReturn(resolved, regressed);
+
+        PolymarketApiClient.MarketMetadata first = service.getByConditionId("0xmarket", true, "Will resolved metadata stay sticky?");
+        PolymarketApiClient.MarketMetadata second = service.getByConditionId("0xmarket", true, "Will resolved metadata stay sticky?");
+
+        assertTrue(first.isResolved());
+        assertTrue(second.isResolved());
+        assertEquals("YES", second.getResolvedOutcome());
     }
 }

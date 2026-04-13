@@ -758,7 +758,7 @@ public class PolymarketApiClient {
     }
 
     @Data
-    @Builder
+    @Builder(toBuilder = true)
     public static class MarketMetadata {
         private String conditionId;
         private String marketId;
@@ -774,6 +774,8 @@ public class PolymarketApiClient {
         private String resolvedOutcome;
         private Long endAt;
         private Long umaEndAt;
+        private String resolutionSource;
+        private Long resolutionObservedAt;
         @Builder.Default
         private List<String> outcomes = new ArrayList<>();
         @Builder.Default
