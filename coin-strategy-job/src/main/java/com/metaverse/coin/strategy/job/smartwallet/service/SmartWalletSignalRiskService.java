@@ -298,13 +298,16 @@ public class SmartWalletSignalRiskService {
 
         if (consensusEntityCountFailed) {
             accepted = false;
-            reasons.add("Consensus entity count (deduped=" + consensus.getDedupedEntityCount()
+            int effectiveWindow = risk.getConsensusWindowSeconds() == null ? 180 : risk.getConsensusWindowSeconds();
+            reasons.add("Consensus wallet count (deduped=" + consensus.getDedupedEntityCount()
                     + ", raw wallets=" + consensus.getDistinctWallets()
-                    + ") is below threshold.");
+                    + ", window=" + effectiveWindow + "s) is below threshold="
+                    + (risk.getMinDistinctEntities() != null ? risk.getMinDistinctEntities() : risk.getMinDistinctWallets()) + ".");
         }
         if (consensusScoreFailed) {
             accepted = false;
-            reasons.add("Consensus score is below threshold.");
+            reasons.add("Consensus score (" + safe(consensus.getConsensusScore()).setScale(3, RoundingMode.HALF_UP)
+                    + ") is below threshold (" + safe(risk.getMinConsensusScore()).setScale(3, RoundingMode.HALF_UP) + ").");
         }
 
         if (accepted) {

@@ -38,6 +38,10 @@ polymarket:
   smart-wallet:
     # [TUNE] 持仓集中度监控 Job 扫描间隔（ms），默认 5 分钟
     concentration-monitor-delay-ms: 300000
+    # [TUNE] PENDING 任务超时自动过期扫描间隔（ms），默认 5 分钟
+    pending-expire-delay-ms: 300000
+    # [TUNE] 策略健康监控 Job 扫描间隔（ms），默认 1 小时
+    health-monitor-delay-ms: 3600000
 
 smart-wallet:
   # [FIXED-ONCE] Master switch for this module.
@@ -195,8 +199,10 @@ smart-wallet:
     max-open-positions: 20
     # [TUNE] Portfolio-wide capital budget for still-open positions.
     max-total-open-cost-usdc: 500
-    # [TUNE] Ignore long-dated markets so capital can recycle faster.
-    max-hours-to-market-end: 72
+    # [FIX-MARKET-TIMING] Polymarket prediction markets typically run for weeks/months.
+    # 72h was excluding virtually all active markets. 720h (30 days) allows meaningful participation
+    # while still filtering truly long-dated events that would tie up capital.
+    max-hours-to-market-end: 720
     # [TUNE] Do not open another position if the same market+outcome is already open.
     block-duplicate-open-position: true
     # [TUNE] Do not queue another pending task if the same market+outcome is already pending.
@@ -207,24 +213,35 @@ smart-wallet:
     block-opposite-pending-task-same-market: true
     # [TUNE] Multi-wallet consensus gate for stricter entry.
     enable-consensus-gate: true
-    # [TUNE] Consensus computation window.
-    consensus-window-seconds: 180
-    # [TUNE] Minimum distinct wallets before consensus is trusted.
+    # [FIX-CONSENSUS-WINDOW] Root cause of zero-position deadlock.
+    # Smart wallets react to the same market signal over minutes to hours, not within 3 minutes.
+    # With watchlist-trade-sync-batch-size=3 and many wallets, even the sync rotation alone
+    # takes >180s. Increased to 3600s (1h) so multi-wallet consensus is actually detectable.
+    consensus-window-seconds: 3600
+    # [TUNE] Minimum distinct entities (after wallet deduplication) before consensus is trusted.
     min-distinct-wallets: 2
-    # [TUNE] Minimum weighted consensus score.
-    min-consensus-score: 0.72
+    # [FIX-CONSENSUS-SCORE] Lowered from 0.72 → 0.65. The consensus score is the average
+    # wallet score of participating entities. With minWalletScore=0.70, two wallets at the
+    # threshold average to 0.70, which failed the previous 0.72 gate. 0.65 allows consensus
+    # from near-threshold wallets while still requiring meaningful quality.
+    min-consensus-score: 0.65
     # [TUNE] Special strategy lane for one exceptional wallet.
     enable-single-wallet-override: true
-    # [FIX-BUG2] Block single-wallet override for wallets whose win rate is suspiciously perfect
-    # due to leaderboard survivorship bias (only top-N positions shown, making winRate appear = 1.0).
+    # [FIX-BIAS-GUARD] Survivorship bias guard: only flag wallets with winRate=1.0 AND
+    # ≤20 trades as suspicious. Raising the sample-size threshold from 50→20 breaks the
+    # structural deadlock: previously a wallet with ≥50 trades AND winRate=1.0 was blocked
+    # by the guard, while a wallet with <50 trades was blocked by min-trades. Now wallets
+    # with 20-50 trades and a genuine (non-perfect) win rate can qualify for override.
     block-unreliable-leaderboard-win-rate: true
     unreliable-win-rate-threshold: 1.0
-    unreliable-max-sample-size: 50
-    # [TUNE] Single-wallet override thresholds.
+    unreliable-max-sample-size: 20
+    # [FIX-SINGLE-WALLET] Reduced min-trades 50→20 to match realistic Polymarket leaderboard
+    # data (top-50 positions shown; wallets with fewer visible trades are not necessarily bad).
+    # Reduced min-trigger-size 100→30 since many quality signals are <$100.
     single-wallet-override-min-wallet-score: 0.79
     single-wallet-override-min-win-rate: 0.65
-    single-wallet-override-min-trades: 50
-    single-wallet-override-min-trigger-size-usdc: 100
+    single-wallet-override-min-trades: 20
+    single-wallet-override-min-trigger-size-usdc: 30
     single-wallet-override-min-recommended-stake-usdc: 5
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
     # [FEATURE] 集中度门控总开关（默认关闭，先验证 /positions 接口返回格式后再上线）
@@ -291,8 +308,9 @@ smart-wallet:
       min-consensus-score: 0
       single-wallet-override-min-wallet-score: 0.79
       single-wallet-override-min-win-rate: 0.65
-      single-wallet-override-min-trades: 50
-      single-wallet-override-min-trigger-size-usdc: 100
+      # [FIX-PRESET] Synced with main config fix: 50→20 trades, 100→30 trigger
+      single-wallet-override-min-trades: 20
+      single-wallet-override-min-trigger-size-usdc: 30
       single-wallet-override-min-recommended-stake-usdc: 5
   live-validation:
     # [TUNE] Auxiliary LIVE lane. Keep disabled by default; enable only in a geoblock-safe environment when you want tiny real-fund validation.

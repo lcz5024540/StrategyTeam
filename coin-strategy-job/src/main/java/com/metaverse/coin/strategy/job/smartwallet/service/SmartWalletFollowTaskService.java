@@ -28,6 +28,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -38,6 +41,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 @Service
 @Slf4j
@@ -897,6 +901,165 @@ public class SmartWalletFollowTaskService {
         }
     }
 
+    // ── 诊断：信号健康汇总 ────────────────────────────────────────────────────
+
+    /**
+     * 汇总过去 lookbackHours 小时内的信号漏斗状态，用于诊断"为什么策略没有开仓"。
+     * 读取 DB 中已保存的 errorMessage，不重新调用风控引擎（避免高开销）。
+     */
+    public SignalHealthSummaryView getSignalHealthSummary(int lookbackHours) {
+        int hours = Math.min(Math.max(lookbackHours, 1), 72);
+        Date since = new Date(System.currentTimeMillis() - (long) hours * 3600_000L);
+
+        // ── 1. 资金 & 持仓状态（via accountingService）
+        SmartWalletCapacitySummaryView capacity = accountingService.capacitySummary();
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+
+        // ── 2. 有效 watchlist 数量
+        int qualifiedWatchlistCount = profileStoreService.listWatchEnabled().size();
+
+        // ── 3. 信号漏斗：查询时间窗口内的任务（按状态分组）
+        List<SmartWalletFollowTaskEntity> windowTasks = followTaskMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                        .ge(SmartWalletFollowTaskEntity::getCreatedAt, since));
+
+        Map<String, Long> tasksByStatus = new TreeMap<>();
+        long skippedCount = 0;
+        long followedCount = 0;
+        for (SmartWalletFollowTaskEntity task : windowTasks) {
+            String status = task.getStatus() == null ? "UNKNOWN" : task.getStatus().toUpperCase(Locale.ROOT);
+            tasksByStatus.merge(status, 1L, Long::sum);
+            if ("SKIPPED".equals(status)) skippedCount++;
+            if ("FOLLOWED".equals(status)) followedCount++;
+        }
+
+        // ── 4. 拒绝原因分析（仅读 errorMessage，不重新评估）
+        Map<String, Long> rejectionCategories = new TreeMap<>();
+        for (SmartWalletFollowTaskEntity task : windowTasks) {
+            if (!"SKIPPED".equalsIgnoreCase(task.getStatus())) {
+                continue;
+            }
+            String msg = task.getErrorMessage();
+            if (msg == null || msg.isBlank()) {
+                rejectionCategories.merge("OTHER", 1L, Long::sum);
+                continue;
+            }
+            for (String segment : msg.split("\\s*\\|\\s*")) {
+                if (segment.isBlank()) continue;
+                String category = classifyReason(segment.trim());
+                if (category != null) {
+                    rejectionCategories.merge(category, 1L, Long::sum);
+                }
+            }
+        }
+
+        // ── 5. 已实现盈亏（via accounting summary）
+        BigDecimal realizedPnl = null;
+        try {
+            realizedPnl = accountingService.summary().getRealizedPnlUsdc();
+        } catch (Exception ignored) {
+            // summary() 可能依赖复杂聚合，fail-open
+        }
+
+        // ── 6. 近期链上事件数
+        long recentEventCount = tradeEventMapper.selectCount(
+                new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                        .ge(SmartWalletTradeEventEntity::getCreatedAt, since));
+
+        // ── 6. 共识状态
+        List<ConsensusSignalView> consensusSignals = consensusSignalService.listRecentConsensusSignals();
+        int consensusWindowSec = risk.getConsensusWindowSeconds() == null ? 180 : risk.getConsensusWindowSeconds();
+        int minEntities = risk.getMinDistinctWallets() == null ? 2 : risk.getMinDistinctWallets();
+
+        // ── 7. 健康判断
+        BigDecimal available = capacity.getAvailableCapitalUsdc();
+        boolean criticalBlock = false;
+        String primaryBlock = null;
+        if (available != null && available.compareTo(BigDecimal.ZERO) <= 0) {
+            criticalBlock = true;
+            primaryBlock = "availableCapital ≤ 0 (current=" + available.setScale(2, RoundingMode.HALF_UP) + " USDC)";
+        } else if (qualifiedWatchlistCount == 0) {
+            criticalBlock = true;
+            primaryBlock = "qualifiedWatchlistCount = 0: no wallets are watch_enabled + qualified";
+        }
+
+        return SignalHealthSummaryView.builder()
+                .lookbackHours(hours)
+                .capturedAt(new Date())
+                .availableCapitalUsdc(available)
+                .maxTotalOpenCostUsdc(risk.getMaxTotalOpenCostUsdc())
+                .openCostUsdc(capacity.getTotalOpenCostUsdc())
+                .realizedPnlUsdc(realizedPnl)
+                .openPositionCount(capacity.getOpenPositionCount() == null ? 0 : capacity.getOpenPositionCount())
+                .maxOpenPositions(risk.getMaxOpenPositions() == null ? 0 : risk.getMaxOpenPositions())
+                .qualifiedWatchlistCount(qualifiedWatchlistCount)
+                .recentTradeEventCount(recentEventCount)
+                .tasksByStatus(tasksByStatus)
+                .followedTaskCount(followedCount)
+                .skippedTaskCount(skippedCount)
+                .topRejectionCategories(rejectionCategories)
+                .consensusSignalCount(consensusSignals.size())
+                .consensusWindowSeconds(consensusWindowSec)
+                .consensusGateEnabled(risk.isEnableConsensusGate())
+                .minDistinctEntities(minEntities)
+                .criticalBlockDetected(criticalBlock)
+                .primaryBlockReason(primaryBlock)
+                .build();
+    }
+
+    // ── 自动过期：清理长时间滞留的 PENDING 任务 ────────────────────────────
+
+    /**
+     * 每 5 分钟扫描一次，将超过最大信号年龄 5 倍时间仍处于 PENDING 状态的任务标记为 SKIPPED。
+     * 防止僵尸任务永久占用系统资源。
+     */
+    @Scheduled(fixedDelayString = "${polymarket.smart-wallet.pending-expire-delay-ms:300000}")
+    public void expireStalePendingTasks() {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        try {
+            doExpireStalePendingTasks();
+        } catch (Exception e) {
+            log.error("[TaskExpiry] Unexpected error during stale task expiry: {}", e.getMessage(), e);
+        }
+    }
+
+    private void doExpireStalePendingTasks() {
+        int maxSignalAgeSeconds = properties.getSignalRisk().getMaxSignalAgeSeconds() == null
+                ? 300 : properties.getSignalRisk().getMaxSignalAgeSeconds();
+        long expiryMs = (long) maxSignalAgeSeconds * 5 * 1000L;
+        Date expiryThreshold = new Date(System.currentTimeMillis() - expiryMs);
+
+        List<SmartWalletFollowTaskEntity> staleTasks = followTaskMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                        .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING")
+                        .le(SmartWalletFollowTaskEntity::getCreatedAt, expiryThreshold)
+                        .last("limit 100"));
+
+        if (staleTasks.isEmpty()) {
+            return;
+        }
+
+        int expired = 0;
+        for (SmartWalletFollowTaskEntity task : staleTasks) {
+            try {
+                SmartWalletFollowTaskEntity update = new SmartWalletFollowTaskEntity();
+                update.setId(task.getId());
+                update.setStatus("SKIPPED");
+                update.setErrorMessage("[AUTO_EXPIRED] Task exceeded maximum age (" + (expiryMs / 1000) + "s). createdAt=" + task.getCreatedAt());
+                update.setUpdatedAt(new Date());
+                followTaskMapper.updateById(update);
+                expired++;
+            } catch (Exception e) {
+                log.debug("[TaskExpiry] Failed to expire taskId={}: {}", task.getId(), e.getMessage());
+            }
+        }
+        if (expired > 0) {
+            log.info("[TaskExpiry] Auto-expired {} stale PENDING tasks (threshold={}s)", expired, expiryMs / 1000);
+        }
+    }
+
     private List<String> classifyBlockerCategories(SignalRiskDecision decision) {
         if (decision == null || decision.getReasons() == null || decision.getReasons().isEmpty()) {
             return List.of();
@@ -983,6 +1146,15 @@ public class SmartWalletFollowTaskService {
         }
         if (text.contains("source trade event is missing")) {
             return "SOURCE_EVENT";
+        }
+        if (text.contains("capital is depleted") || text.contains("bankroll penetration")) {
+            return "CAPITAL_DEPLETED";
+        }
+        if (text.contains("[concentration]") || text.contains("[concentration_penalty]") || text.contains("[whale_signal]")) {
+            return "CONCENTRATION";
+        }
+        if (text.contains("[auto_expired]")) {
+            return "EXPIRED";
         }
         return "OTHER";
     }

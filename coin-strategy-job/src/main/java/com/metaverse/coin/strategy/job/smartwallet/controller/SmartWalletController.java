@@ -36,6 +36,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletBlockerStatView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimResultView;
@@ -843,6 +844,15 @@ public class SmartWalletController {
     // ──────────────────────────────────────────────────────────────────────────
     // 持仓集中度查询（防控盘分析）
     // ──────────────────────────────────────────────────────────────────────────
+
+    @Operation(
+            summary = "信号健康诊断",
+            description = "汇总过去 N 小时内的信号漏斗、拒绝原因分布、资金状态与共识配置，" +
+                    "用于快速定位策略长时间未开仓的根本原因。lookbackHours 默认 24，最大 72。")
+    @GetMapping("/diagnostics/signal-health")
+    public SignalHealthSummaryView signalHealth(@RequestParam(defaultValue = "24") int lookbackHours) {
+        return followTaskService.getSignalHealthSummary(lookbackHours);
+    }
 
     @Operation(
             summary = "查询市场持仓集中度",
