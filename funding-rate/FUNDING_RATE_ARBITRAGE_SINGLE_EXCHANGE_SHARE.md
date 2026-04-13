@@ -22,6 +22,7 @@
 * **SpotFuturesArbitrageStrategy**
     * 已实现单交易所期现套利主循环。
     * 已从“硬编码数量”升级为“按预算金额和杠杆动态生成下单计划”。
+    * 当前默认合约空单杠杆配置为 `3x`，来源于 `arbitrage.spot-futures.leverage`。
     * 当前开仓过滤包括：
         * 当前资金费率高于开仓阈值。
         * 基差率落在允许区间。
@@ -35,7 +36,7 @@
 
 * **OrderExecutor**
     * 已实现现货买入 + 合约卖出的并发下单。
-    * 已实现单腿失败后的自动回滚。
+    * 已实现单侧失败后的自动回滚。
     * `SpotFuturesOrderPlan` 已增加 `basisSpread` / `basisRate` 字段，用于策略层过滤。
 
 * **RiskController**
