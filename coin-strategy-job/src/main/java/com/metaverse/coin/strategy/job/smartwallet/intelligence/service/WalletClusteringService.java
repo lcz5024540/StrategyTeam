@@ -6,13 +6,17 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletEntityMap
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import javax.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 钱包聚类服务（Phase 1：仅实现入金来源聚类）
@@ -20,6 +24,11 @@ import java.util.Optional;
  * 职责：
  * 1. 对单个钱包尝试进行聚类（查找其入金来源，与已有实体关联）
  * 2. 写入或更新 wallet_entity_map 表
+ *
+ * 并发幂等优化：
+ * - 每个钱包地址独立锁（ConcurrentHashMap 按地址分段），不同地址并发互不阻塞
+ * - DB 层 DuplicateKeyException 兜底，防止极端情况下的重复写入
+ * - clusterBatch 改用有界线程池并行处理，提升批量吞吐
  *
  * Phase 2 将扩展：BehaviorSimilarityClusterer
  */
@@ -37,9 +46,36 @@ public class WalletClusteringService {
     private static final BigDecimal FUNDING_SOURCE_CONFIDENCE = new BigDecimal("0.90");
 
     /**
-     * 对指定钱包执行聚类尝试
-     * - 如果在 wallet_entity_map 中已存在，直接返回（不重复计算）
-     * - 否则尝试入金来源聚类，写入结果
+     * 每个钱包地址独立的 in-process 锁对象。
+     * 相同地址的并发 clusterWallet 调用会串行化；不同地址互不影响。
+     * 内存上限由实际监控钱包数量决定，规模可控。
+     */
+    private final ConcurrentHashMap<String, Object> clusterLocks = new ConcurrentHashMap<>();
+
+    /**
+     * 批量聚类线程池（有界，防止资源耗尽）
+     * 默认 4 线程；外部 API 调用是 IO 密集型，可适当增大
+     */
+    private final ExecutorService clusterExecutor = Executors.newFixedThreadPool(
+            Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors() * 2)));
+
+    @PreDestroy
+    public void shutdown() {
+        clusterExecutor.shutdown();
+        try {
+            if (!clusterExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                clusterExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            clusterExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * 对指定钱包执行聚类尝试（线程安全、幂等）
+     *
+     * 同一地址并发调用时，后者会等待前者完成，若前者已写入则直接跳过。
      *
      * @param walletAddress 钱包地址（大小写不敏感）
      */
@@ -49,7 +85,18 @@ public class WalletClusteringService {
         }
         String normalized = walletAddress.toLowerCase().trim();
 
-        // 已有记录则跳过（避免重复计算）
+        // 获取（或创建）该地址专属锁对象，不同地址使用不同锁，互不阻塞
+        Object lock = clusterLocks.computeIfAbsent(normalized, k -> new Object());
+        synchronized (lock) {
+            doClusterWallet(normalized);
+        }
+    }
+
+    /**
+     * 实际聚类逻辑（调用前已加锁）
+     */
+    private void doClusterWallet(String normalized) {
+        // 已有记录则跳过（双重检查：锁内再查一次，避免并发两次进入的情况）
         Long existing = entityMapMapper.selectCount(new LambdaQueryWrapper<WalletEntityMapEntity>()
                 .eq(WalletEntityMapEntity::getWalletAddress, normalized));
         if (existing != null && existing > 0) {
@@ -110,7 +157,7 @@ public class WalletClusteringService {
                 .setVerified(false)
                 .setCreatedAt(now)
                 .setUpdatedAt(now);
-        entityMapMapper.insert(entity);
+        safeInsert(entity, walletAddress, "FUNDING_SOURCE");
         log.info("[WalletClusteringService] Clustered wallet={} into existing entity={} via funding source={} after behavior confirmation={}.",
                 walletAddress, peer.getEntityId(), fundingSource, similarity);
         return true;
@@ -127,7 +174,7 @@ public class WalletClusteringService {
                 .setVerified(false)
                 .setCreatedAt(now)
                 .setUpdatedAt(now);
-        entityMapMapper.insert(entity);
+        safeInsert(entity, walletAddress, "BEHAVIOR_SIM");
         log.info("[WalletClusteringService] Clustered wallet={} into entity={} via behavior similarity.",
                 walletAddress, targetEntityId);
     }
@@ -147,26 +194,55 @@ public class WalletClusteringService {
                 .setVerified(false)
                 .setCreatedAt(now)
                 .setUpdatedAt(now);
-        entityMapMapper.insert(entity);
+        safeInsert(entity, walletAddress, "SELF");
     }
 
     /**
-     * 批量对 watchlist 中所有未聚类的钱包进行聚类
+     * 安全插入：捕获唯一键冲突（极端并发或外部重复调用的兜底防护）
+     */
+    private void safeInsert(WalletEntityMapEntity entity, String walletAddress, String method) {
+        try {
+            entityMapMapper.insert(entity);
+        } catch (DuplicateKeyException e) {
+            log.debug("[WalletClusteringService] Duplicate key on {} insert for wallet={}, treating as idempotent success.",
+                    method, walletAddress);
+        }
+    }
+
+    /**
+     * 批量对 watchlist 中所有未聚类的钱包进行聚类（并行执行）
      * 供定时任务调用
      *
      * @param walletAddresses 钱包地址列表
      * @return 处理数量
      */
     public int clusterBatch(List<String> walletAddresses) {
-        int count = 0;
-        for (String addr : walletAddresses) {
-            try {
-                clusterWallet(addr);
-                count++;
-            } catch (Exception e) {
-                log.warn("[WalletClusteringService] Batch clustering failed for wallet={}, error={}", addr, e.getMessage());
-            }
+        if (walletAddresses == null || walletAddresses.isEmpty()) {
+            return 0;
         }
-        return count;
+        AtomicInteger count = new AtomicInteger();
+        List<CompletableFuture<Void>> futures = walletAddresses.stream()
+                .map(addr -> CompletableFuture.runAsync(() -> {
+                    try {
+                        clusterWallet(addr);
+                        count.incrementAndGet();
+                    } catch (Exception e) {
+                        log.warn("[WalletClusteringService] Batch clustering failed for wallet={}, error={}", addr, e.getMessage());
+                    }
+                }, clusterExecutor))
+                .toList();
+
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(10, TimeUnit.MINUTES);
+        } catch (TimeoutException e) {
+            log.warn("[WalletClusteringService] Batch clustering timed out after 10 minutes. processed so far={}", count.get());
+            futures.forEach(f -> f.cancel(true));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            log.warn("[WalletClusteringService] Batch clustering encountered unexpected error: {}", e.getMessage());
+        }
+        return count.get();
     }
 }

@@ -20,6 +20,9 @@ import java.util.stream.Collectors;
  *
  * 功能：每小时扫描 watchlist 中未聚类的钱包，触发聚类处理
  * 将来可扩展：实体特征快照更新、多钱包告警报告等
+ *
+ * 性能优化：
+ * - entity_map 查询限定在 watchlist 地址范围内（IN 子句），避免全表扫描
  */
 @Slf4j
 @Service
@@ -50,15 +53,21 @@ public class WalletEntityIntelligenceJob {
             return;
         }
 
-        // 找出已经有 entity_map 记录的钱包
-        List<WalletEntityMapEntity> existingMaps = entityMapMapper.selectList(new LambdaQueryWrapper<>());
-        Set<String> alreadyClustered = existingMaps.stream()
+        List<String> watchlistAddresses = watchlistProfiles.stream()
+                .map(p -> p.getWalletAddress().toLowerCase())
+                .toList();
+
+        // 仅查询 watchlist 范围内的已聚类地址，避免全表扫描
+        Set<String> alreadyClustered = entityMapMapper.selectList(
+                        new LambdaQueryWrapper<WalletEntityMapEntity>()
+                                .in(WalletEntityMapEntity::getWalletAddress, watchlistAddresses)
+                                .select(WalletEntityMapEntity::getWalletAddress))
+                .stream()
                 .map(WalletEntityMapEntity::getWalletAddress)
                 .collect(Collectors.toSet());
 
         // 筛选未聚类的钱包
-        List<String> unclustered = watchlistProfiles.stream()
-                .map(p -> p.getWalletAddress().toLowerCase())
+        List<String> unclustered = watchlistAddresses.stream()
                 .filter(addr -> !alreadyClustered.contains(addr))
                 .toList();
 

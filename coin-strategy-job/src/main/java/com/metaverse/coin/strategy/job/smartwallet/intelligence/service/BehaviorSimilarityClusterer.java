@@ -27,6 +27,11 @@ import java.util.stream.Collectors;
  * 相似度 >= 0.75 → 判定为同一实体（MEDIUM 置信度 0.70）
  *
  * 最小数据要求：每个钱包至少 5 笔历史交易记录
+ *
+ * 性能优化：
+ * - findMostSimilarEntityId 预先提取目标钱包特征，避免在循环内重复加载数据库记录
+ * - buildHourHistogram 使用位运算代替 Calendar/TimeZone 实例创建，减少对象分配
+ * - computeSimilarity(features, trades) 内部路径复用预计算特征
  */
 @Slf4j
 @Service
@@ -63,19 +68,16 @@ public class BehaviorSimilarityClusterer {
             return BigDecimal.ZERO;
         }
 
-        double marketOverlap = computeMarketJaccardSimilarity(tradesA, tradesB);
-        double timeSim = computeTimeDistributionSimilarity(tradesA, tradesB);
-        double sizeSim = computeSizeSimilarity(tradesA, tradesB);
-
-        double combined = WEIGHT_MARKET_OVERLAP * marketOverlap
-                + WEIGHT_TIME_DIST * timeSim
-                + WEIGHT_SIZE_CORR * sizeSim;
-
-        return BigDecimal.valueOf(combined).setScale(4, RoundingMode.HALF_UP);
+        WalletFeatures fa = extractFeatures(tradesA);
+        WalletFeatures fb = extractFeatures(tradesB);
+        return computeSimilarityFromFeatures(fa, fb);
     }
 
     /**
      * 在 wallet_entity_map 中的现有实体里，找到与给定钱包最相似的实体
+     *
+     * 优化：目标钱包特征（市场集合、时间直方图、平均仓位）只提取一次，
+     * 不在每次比较中重复加载数据库并重新计算。
      *
      * @param walletAddress 待聚类的钱包
      * @return 相似实体ID（相似度 >= threshold 时），否则 empty
@@ -91,6 +93,9 @@ public class BehaviorSimilarityClusterer {
             return Optional.empty();
         }
 
+        // 预先提取目标钱包特征（整个 for 循环内复用，不再重复查库）
+        WalletFeatures myFeatures = extractFeatures(myTrades);
+
         // 加载所有已有实体的代表钱包（每个实体取一个主钱包对比即可）
         List<WalletEntityMapEntity> existingPrimaries = entityMapMapper.selectList(
                 new LambdaQueryWrapper<WalletEntityMapEntity>()
@@ -102,7 +107,12 @@ public class BehaviorSimilarityClusterer {
 
         for (WalletEntityMapEntity primary : existingPrimaries) {
             try {
-                BigDecimal sim = computeSimilarity(normalized, primary.getWalletAddress());
+                List<SmartWalletTradeEventEntity> primaryTrades = loadTrades(primary.getWalletAddress());
+                if (primaryTrades.size() < MIN_TRADES_REQUIRED) {
+                    continue;
+                }
+                WalletFeatures primaryFeatures = extractFeatures(primaryTrades);
+                BigDecimal sim = computeSimilarityFromFeatures(myFeatures, primaryFeatures);
                 if (sim.doubleValue() > bestScore) {
                     bestScore = sim.doubleValue();
                     bestEntityId = primary.getEntityId();
@@ -136,6 +146,43 @@ public class BehaviorSimilarityClusterer {
         return Math.max(0D, Math.min(1D, configured));
     }
 
+    // ---- 特征提取 ----
+
+    /**
+     * 预计算钱包特征，供多次比较复用（避免重复遍历交易列表）
+     */
+    private WalletFeatures extractFeatures(List<SmartWalletTradeEventEntity> trades) {
+        Set<String> markets = trades.stream()
+                .map(SmartWalletTradeEventEntity::getMarketId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        double[] hourHistogram = buildHourHistogram(trades);
+
+        Map<String, Double> avgSizeByMarket = trades.stream()
+                .filter(t -> t.getMarketId() != null && t.getSizeUsdc() != null)
+                .collect(Collectors.groupingBy(
+                        SmartWalletTradeEventEntity::getMarketId,
+                        Collectors.averagingDouble(t -> t.getSizeUsdc().doubleValue())));
+
+        return new WalletFeatures(markets, hourHistogram, avgSizeByMarket);
+    }
+
+    /**
+     * 基于预提取特征计算相似度（避免重复读取数据库）
+     */
+    private BigDecimal computeSimilarityFromFeatures(WalletFeatures fa, WalletFeatures fb) {
+        double marketOverlap = jaccardFromSets(fa.markets, fb.markets);
+        double timeSim = cosineSimilarity(fa.hourHistogram, fb.hourHistogram);
+        double sizeSim = sizeSimilarityFromMaps(fa.avgSizeByMarket, fb.avgSizeByMarket);
+
+        double combined = WEIGHT_MARKET_OVERLAP * marketOverlap
+                + WEIGHT_TIME_DIST * timeSim
+                + WEIGHT_SIZE_CORR * sizeSim;
+
+        return BigDecimal.valueOf(combined).setScale(4, RoundingMode.HALF_UP);
+    }
+
     // ---- 私有计算方法 ----
 
     private List<SmartWalletTradeEventEntity> loadTrades(String walletAddress) {
@@ -148,45 +195,25 @@ public class BehaviorSimilarityClusterer {
     /**
      * 市场 Jaccard 相似度：|A∩B| / |A∪B|
      */
-    private double computeMarketJaccardSimilarity(List<SmartWalletTradeEventEntity> tradesA,
-                                                   List<SmartWalletTradeEventEntity> tradesB) {
-        Set<String> marketsA = tradesA.stream()
-                .map(SmartWalletTradeEventEntity::getMarketId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        Set<String> marketsB = tradesB.stream()
-                .map(SmartWalletTradeEventEntity::getMarketId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-
+    private double jaccardFromSets(Set<String> marketsA, Set<String> marketsB) {
         if (marketsA.isEmpty() || marketsB.isEmpty()) {
             return 0.0;
         }
-
         long intersection = marketsA.stream().filter(marketsB::contains).count();
         long union = marketsA.size() + marketsB.size() - intersection;
-
         return union == 0 ? 0.0 : (double) intersection / union;
     }
 
     /**
-     * 24小时交易时间分布的余弦相似度
-     * 将一天分为 24 个时间桶，统计每个时间桶中的交易数量，计算余弦相似度
+     * 24小时交易时间分布直方图
+     * 使用 epoch ms 位运算代替 Calendar/TimeZone 实例，减少对象分配
      */
-    private double computeTimeDistributionSimilarity(List<SmartWalletTradeEventEntity> tradesA,
-                                                      List<SmartWalletTradeEventEntity> tradesB) {
-        double[] histA = buildHourHistogram(tradesA);
-        double[] histB = buildHourHistogram(tradesB);
-        return cosineSimilarity(histA, histB);
-    }
-
     private double[] buildHourHistogram(List<SmartWalletTradeEventEntity> trades) {
         double[] hist = new double[24];
         for (SmartWalletTradeEventEntity trade : trades) {
             if (trade.getOpenedAt() != null) {
-                Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-                cal.setTime(trade.getOpenedAt());
-                int hour = cal.get(Calendar.HOUR_OF_DAY);
+                // UTC hour：epoch ms → 小时数 → 取模 24
+                int hour = (int) ((trade.getOpenedAt().getTime() / 3_600_000L) % 24);
                 hist[hour]++;
             }
         }
@@ -208,22 +235,7 @@ public class BehaviorSimilarityClusterer {
      * 仓位规模相似度：比较共同市场中两个钱包的平均仓位大小
      * 使用 1 - |sizeA - sizeB| / max(sizeA, sizeB) 计算相似度
      */
-    private double computeSizeSimilarity(List<SmartWalletTradeEventEntity> tradesA,
-                                          List<SmartWalletTradeEventEntity> tradesB) {
-        // 按市场分组计算平均仓位
-        Map<String, Double> avgSizeA = tradesA.stream()
-                .filter(t -> t.getMarketId() != null && t.getSizeUsdc() != null)
-                .collect(Collectors.groupingBy(
-                        SmartWalletTradeEventEntity::getMarketId,
-                        Collectors.averagingDouble(t -> t.getSizeUsdc().doubleValue())));
-
-        Map<String, Double> avgSizeB = tradesB.stream()
-                .filter(t -> t.getMarketId() != null && t.getSizeUsdc() != null)
-                .collect(Collectors.groupingBy(
-                        SmartWalletTradeEventEntity::getMarketId,
-                        Collectors.averagingDouble(t -> t.getSizeUsdc().doubleValue())));
-
-        // 仅对共同市场计算
+    private double sizeSimilarityFromMaps(Map<String, Double> avgSizeA, Map<String, Double> avgSizeB) {
         Set<String> commonMarkets = new HashSet<>(avgSizeA.keySet());
         commonMarkets.retainAll(avgSizeB.keySet());
 
@@ -244,5 +256,20 @@ public class BehaviorSimilarityClusterer {
         }
 
         return totalSim / commonMarkets.size();
+    }
+
+    // ---- 内部数据结构 ----
+
+    /** 钱包预计算特征，供多次相似度比较复用 */
+    private static class WalletFeatures {
+        final Set<String> markets;
+        final double[] hourHistogram;
+        final Map<String, Double> avgSizeByMarket;
+
+        WalletFeatures(Set<String> markets, double[] hourHistogram, Map<String, Double> avgSizeByMarket) {
+            this.markets = markets;
+            this.hourHistogram = hourHistogram;
+            this.avgSizeByMarket = avgSizeByMarket;
+        }
     }
 }

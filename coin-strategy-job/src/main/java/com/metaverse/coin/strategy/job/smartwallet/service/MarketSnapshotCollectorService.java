@@ -30,6 +30,7 @@ public class MarketSnapshotCollectorService {
     private final PolymarketApiClient polymarketApiClient;
     private final PolymarketMarketDataStreamService marketDataStreamService;
     private final PolymarketMarketMetadataService marketMetadataService;
+    private final PolymarketMarketDataCacheService marketDataCache;
     private final LongAdder wsSnapshotHits = new LongAdder();
     private final LongAdder restSnapshotFallbacks = new LongAdder();
 
@@ -69,7 +70,7 @@ public class MarketSnapshotCollectorService {
         }
         PolymarketApiClient.OrderBook orderBook = usedWs
                 ? marketDataSnapshot.getOrderBook()
-                : polymarketApiClient.fetchOrderBook(tokenId);
+                : marketDataCache.getOrderBook(tokenId);
         List<PolymarketApiClient.MarketTrade> trades = polymarketApiClient.fetchMarketTrades(conditionId, 50, recentEpochSeconds(120));
         BigDecimal mid = safe(orderBook.getMidpoint());
         if (mid.compareTo(BigDecimal.ZERO) <= 0) {

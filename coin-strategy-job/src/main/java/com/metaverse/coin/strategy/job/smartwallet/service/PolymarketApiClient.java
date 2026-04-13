@@ -251,6 +251,28 @@ public class PolymarketApiClient {
         return parseMarketMetadata(market);
     }
 
+    /**
+     * 批量拉取活跃市场列表（用于套利扫描，不需要搜索词）
+     * 调用 Gamma API /markets?active=true&closed=false，按成交量降序返回
+     */
+    public List<MarketMetadata> fetchActiveMarkets(int limit) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("active", "true");
+        params.put("closed", "false");
+        params.put("order", "volume24hr");
+        params.put("ascending", "false");
+        params.put("limit", String.valueOf(Math.max(1, Math.min(limit, 500))));
+        JsonNode body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(), "/markets", params));
+        List<MarketMetadata> results = new ArrayList<>();
+        JsonNode arr = extractArray(body);
+        for (JsonNode market : iterableArray(arr)) {
+            if (market != null && !market.isNull()) {
+                results.add(parseMarketMetadata(market));
+            }
+        }
+        return results;
+    }
+
     public List<MarketMetadata> searchMarkets(String query, int limitPerType, boolean keepClosedMarkets) {
         if (!StringUtils.hasText(query)) {
             return List.of();

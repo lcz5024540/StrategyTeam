@@ -874,3 +874,52 @@ If you add more strategies later, keep the same contract:
   - open positions
   - capacity
   - risk insights
+
+## 当前 Polymarket 交易链路流程图（代码实现版）
+
+### 主交易链路流程图（端到端）
+
+```mermaid
+graph TB
+    A[定时任务: 钱包发现/交易同步] --> B[抓取watchlist钱包交易]
+    B --> C[ingestTradeEvent 写入 trade_event]
+    C --> D[recordTradeEvent 去重]
+    D --> E[实体解析与候选增强]
+    E --> F{候选是否可用}
+    F -->|PENDING/低置信| G[创建SKIPPED任务并结束]
+    F -->|ENRICHED| H[风险评估 evaluate]
+    H --> I{风险是否通过}
+    I -->|否| J[创建/更新SKIPPED任务]
+    I -->|是| K[创建PENDING任务]
+    K --> L[定时轮询 processPendingTasks]
+    L --> M[executeTask 构造信号]
+    M --> N{执行模式}
+    N -->|PAPER| O[模拟成交成功]
+    N -->|LIVE| P[下发CLOB订单]
+    O --> Q[recordExecution 落订单/持仓/资金账]
+    P --> R[recordExecution 落订单]
+    R --> S{订单是否立即成交}
+    S -->|否 LIVE/PARTIAL| T[进入订单轮询]
+    S -->|是 FILLED/MATCHED| Q
+    T --> U[getOrder 拉取状态]
+    U --> V{有新增成交?}
+    V -->|是| W[processOrderFill 增量入账]
+    V -->|否| X[指数退避后继续轮询]
+    W --> Y[更新持仓/现金账/日报]
+```
+
+### 执行后监控与结算链路图
+
+```mermaid
+graph TB
+    A[订单与成交数据] --> B[Position Sync 同步余额/持仓]
+    B --> C[Settlement Sync 扫描到期市场]
+    C --> D{市场已resolved?}
+    D -->|否| E[保持待结算并重试]
+    D -->|是| F[更新持仓为RESOLVED_UNCLAIMED]
+    F --> G[Claim任务扫描]
+    G --> H{链上claim成功?}
+    H -->|成功| I[状态CLAIMED 释放资金]
+    H -->|失败或待确认| J[写入retry/等待确认]
+    J --> G
+```
