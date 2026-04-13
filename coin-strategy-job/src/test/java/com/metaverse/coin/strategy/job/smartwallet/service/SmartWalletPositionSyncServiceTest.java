@@ -1,9 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
-import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletCashLedgerMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,7 +30,7 @@ class SmartWalletPositionSyncServiceTest {
     @Mock
     private SmartWalletPositionMapper positionMapper;
     @Mock
-    private SmartWalletCashLedgerMapper cashLedgerMapper;
+    private SmartWalletAccountingService accountingService;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -45,7 +45,7 @@ class SmartWalletPositionSyncServiceTest {
                 polymarketApiClient,
                 walletContextLoader,
                 positionMapper,
-                cashLedgerMapper
+                accountingService
         );
     }
 
@@ -109,5 +109,29 @@ class SmartWalletPositionSyncServiceTest {
         verify(walletContextLoader, times(1)).requireLiveContext();
         verify(polymarketApiClient, times(1)).fetchBalance(eq("0x123"));
         verify(polymarketApiClient, never()).fetchPositions(any(), any());
+    }
+
+    @Test
+    void shouldUseUnifiedExitFlowWhenStopLossTriggers() {
+        properties.getSignalRisk().setEnableStopLoss(true);
+        properties.getSignalRisk().setStopLossThresholdRate(new BigDecimal("0.20"));
+        when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
+                .positionId(11L)
+                .currentStatus("CLOSED")
+                .realizedPnlDeltaUsdc(new BigDecimal("-2.00"))
+                .build());
+        when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                .setId(11L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setAverageEntryPrice(new BigDecimal("0.60"))
+                .setLastMarkPrice(new BigDecimal("0.40"))
+                .setQuantity(new BigDecimal("5.00"))
+                .setStatus("OPEN")));
+
+        service.checkStopLoss();
+
+        verify(accountingService).exitPosition(eq(11L), any());
     }
 }

@@ -13,6 +13,10 @@ public class SmartWalletPositionView {
     private String executionAddress;
     private String marketId;
     private String tokenId;
+    private String oracleQuestionId;
+    private String oracleResolutionStatus;
+    private Long oracleEndAt;
+    private String oracleEndAtBjt;
     private String question;
     private String outcome;
     private Long marketEndAt;

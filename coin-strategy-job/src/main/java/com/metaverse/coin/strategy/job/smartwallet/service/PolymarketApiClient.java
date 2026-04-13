@@ -317,12 +317,10 @@ public class PolymarketApiClient {
                 resolvedOutcome = explicitWinner;
             }
         }
-        if (resolvedOutcome == null && closed) {
-            resolvedOutcome = inferResolvedOutcomeFromPrices(outcomes, outcomePrices);
-        }
         return MarketMetadata.builder()
                 .conditionId(text(market, "conditionId", "condition_id"))
                 .marketId(text(market, "id", "marketId", "market_id"))
+                .questionId(text(market, "questionID", "questionId", "question_id"))
                 .question(text(market, "question", "title"))
                 .category(text(market, "category", "groupItemTitle"))
                 .minimumTickSize(num(market, "minimum_tick_size", "orderPriceMinTickSize", "tick_size"))
@@ -330,39 +328,14 @@ public class PolymarketApiClient {
                 .active(bool(market, "active"))
                 .closed(closed)
                 .acceptingOrders(acceptingOrders)
+                .umaResolutionStatus(text(market, "umaResolutionStatus", "uma_resolution_status"))
                 .resolvedOutcome(resolvedOutcome)
                 .endAt(epochMillis(market, "endDateISO", "endDate", "gameStartTime", "eventStartDate"))
+                .umaEndAt(epochMillis(market, "umaEndDate", "umaEndDateISO", "uma_end_date"))
                 .outcomes(new ArrayList<>(outcomes))
                 .outcomePrices(new ArrayList<>(outcomePrices))
                 .outcomeTokenIds(outcomeTokenMap)
                 .build();
-    }
-
-    private String inferResolvedOutcomeFromPrices(List<String> outcomes, List<String> outcomePrices) {
-        if (outcomes.isEmpty() || outcomePrices.isEmpty() || outcomes.size() != outcomePrices.size()) {
-            return null;
-        }
-        String winner = null;
-        for (int i = 0; i < outcomes.size(); i++) {
-            String outcome = normalizeOutcomeLabel(outcomes.get(i));
-            BigDecimal price;
-            try {
-                price = new BigDecimal(outcomePrices.get(i));
-            } catch (NumberFormatException e) {
-                return null;
-            }
-            if (price.compareTo(new BigDecimal("0.999")) >= 0) {
-                if (winner != null) {
-                    return null;
-                }
-                winner = outcome;
-                continue;
-            }
-            if (price.compareTo(new BigDecimal("0.001")) > 0) {
-                return null;
-            }
-        }
-        return winner;
     }
 
     private JsonNode getJson(URI uri) {
@@ -789,6 +762,7 @@ public class PolymarketApiClient {
     public static class MarketMetadata {
         private String conditionId;
         private String marketId;
+        private String questionId;
         private String question;
         private String category;
         private BigDecimal minimumTickSize;
@@ -796,8 +770,10 @@ public class PolymarketApiClient {
         private boolean active;
         private boolean closed;
         private boolean acceptingOrders;
+        private String umaResolutionStatus;
         private String resolvedOutcome;
         private Long endAt;
+        private Long umaEndAt;
         @Builder.Default
         private List<String> outcomes = new ArrayList<>();
         @Builder.Default

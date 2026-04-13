@@ -44,6 +44,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlSummaryVi
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlTimelinePoint;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReportAttributionItem;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncStatusView;
@@ -668,6 +670,13 @@ public class SmartWalletController {
     public SmartWalletClaimResultView claimPosition(@PathVariable Long positionId,
                                                     @RequestParam(defaultValue = "false") boolean confirmExternalClaim) {
         return claimService.claimPosition(positionId, confirmExternalClaim);
+    }
+
+    @Operation(summary = "提前卖出持仓", description = "对 PAPER 持仓生成一笔显式 SELL 平仓成交，按卖出价实现盈亏。若不调用该接口，则持仓继续走 expiry -> oracle -> resolve -> claim 流程。")
+    @PostMapping("/positions/{positionId}/exit")
+    public SmartWalletPositionExitResultView exitPosition(@PathVariable Long positionId,
+                                                          @RequestBody(required = false) SmartWalletPositionExitRequest request) {
+        return accountingService.exitPosition(positionId, request);
     }
 
     @Operation(summary = "钱包归因报表", description = "按执行钱包 executionAddress 查看收益归因报表。")
