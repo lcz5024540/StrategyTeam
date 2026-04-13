@@ -96,7 +96,108 @@ public class HedgePositionTracker {
         return order;
     }
 
-    /** 更新订单状态（成交/失败）*/
+    /**
+     * 订单成功提交到 Polymarket CLOB 后调用：记录 externalOrderId，状态改为 LIVE 等待轮询确认
+     * （GTC 限价单提交成功 ≠ 成交，需轮询才能确认实际成交量）
+     */
+    public void updateOrderSubmitted(Long orderId, String externalOrderId) {
+        Date now = new Date();
+        orderMapper.update(null, new LambdaUpdateWrapper<HedgeOrderEntity>()
+                .eq(HedgeOrderEntity::getId, orderId)
+                .set(HedgeOrderEntity::getExternalOrderId, externalOrderId)
+                .set(HedgeOrderEntity::getStatus, "LIVE")
+                .set(HedgeOrderEntity::getPollAttempts, 0)
+                .set(HedgeOrderEntity::getNextPollAt, new Date(now.getTime() + 5_000L))
+                .set(HedgeOrderEntity::getUpdatedAt, now));
+    }
+
+    /**
+     * 轮询确认订单已成交：记录实际成交数量和成本
+     */
+    public void updateOrderFillConfirmed(Long orderId, BigDecimal filledQty, BigDecimal costUsdc) {
+        orderMapper.update(null, new LambdaUpdateWrapper<HedgeOrderEntity>()
+                .eq(HedgeOrderEntity::getId, orderId)
+                .set(HedgeOrderEntity::getStatus, "FILLED")
+                .set(HedgeOrderEntity::getFilledQuantity, filledQty)
+                .set(HedgeOrderEntity::getCostUsdc, costUsdc)
+                .set(HedgeOrderEntity::getFilledAt, new Date())
+                .set(HedgeOrderEntity::getNextPollAt, null)
+                .set(HedgeOrderEntity::getUpdatedAt, new Date()));
+    }
+
+    /**
+     * 轮询发现订单已被取消或过期
+     */
+    public void updateOrderCancelledByPolling(Long orderId, String reason) {
+        orderMapper.update(null, new LambdaUpdateWrapper<HedgeOrderEntity>()
+                .eq(HedgeOrderEntity::getId, orderId)
+                .set(HedgeOrderEntity::getStatus, "CANCELLED")
+                .set(HedgeOrderEntity::getErrorMessage, reason)
+                .set(HedgeOrderEntity::getNextPollAt, null)
+                .set(HedgeOrderEntity::getUpdatedAt, new Date()));
+    }
+
+    /**
+     * 推进轮询退避（指数退避，最长 60s）
+     */
+    public void advancePollBackoff(Long orderId, int currentAttempts) {
+        long delayMs = Math.min((long) Math.pow(2, Math.min(currentAttempts, 6)) * 1_000L, 60_000L);
+        orderMapper.update(null, new LambdaUpdateWrapper<HedgeOrderEntity>()
+                .eq(HedgeOrderEntity::getId, orderId)
+                .set(HedgeOrderEntity::getPollAttempts, currentAttempts + 1)
+                .set(HedgeOrderEntity::getNextPollAt, new Date(System.currentTimeMillis() + delayMs))
+                .set(HedgeOrderEntity::getUpdatedAt, new Date()));
+    }
+
+    /**
+     * 两边订单均成交后同步持仓实际数量和成本
+     * （取双边成交量最小值以保证 delta 中性）
+     */
+    public void syncActualPositionIfBothFilled(Long positionId) {
+        List<HedgeOrderEntity> orders = getOrdersByPositionId(positionId);
+        if (orders.size() < 2) return;
+        boolean allFilled = orders.stream().allMatch(o -> "FILLED".equals(o.getStatus()));
+        if (!allFilled) return;
+
+        BigDecimal yesQty = orders.stream()
+                .filter(o -> "YES".equals(o.getSide()))
+                .map(o -> o.getFilledQuantity() != null ? o.getFilledQuantity() : BigDecimal.ZERO)
+                .findFirst().orElse(BigDecimal.ZERO);
+        BigDecimal noQty = orders.stream()
+                .filter(o -> "NO".equals(o.getSide()))
+                .map(o -> o.getFilledQuantity() != null ? o.getFilledQuantity() : BigDecimal.ZERO)
+                .findFirst().orElse(BigDecimal.ZERO);
+        BigDecimal actualQty = yesQty.min(noQty);
+
+        BigDecimal yesCost = orders.stream()
+                .filter(o -> "YES".equals(o.getSide()))
+                .map(o -> o.getCostUsdc() != null ? o.getCostUsdc() : BigDecimal.ZERO)
+                .findFirst().orElse(BigDecimal.ZERO);
+        BigDecimal noCost = orders.stream()
+                .filter(o -> "NO".equals(o.getSide()))
+                .map(o -> o.getCostUsdc() != null ? o.getCostUsdc() : BigDecimal.ZERO)
+                .findFirst().orElse(BigDecimal.ZERO);
+        BigDecimal actualTotalCost = yesCost.add(noCost).setScale(4, java.math.RoundingMode.HALF_UP);
+
+        positionMapper.update(null, new LambdaUpdateWrapper<HedgePositionEntity>()
+                .eq(HedgePositionEntity::getId, positionId)
+                .set(HedgePositionEntity::getQuantity, actualQty)
+                .set(HedgePositionEntity::getYesCostUsdc, yesCost)
+                .set(HedgePositionEntity::getNoCostUsdc, noCost)
+                .set(HedgePositionEntity::getTotalCostUsdc, actualTotalCost)
+                .set(HedgePositionEntity::getUpdatedAt, new Date()));
+        log.info("[HedgePositionTracker] Synced actual position id={} actualQty={} actualCost={}",
+                positionId, actualQty, actualTotalCost);
+    }
+
+    /** 查询某持仓的所有订单 */
+    public List<HedgeOrderEntity> getOrdersByPositionId(Long positionId) {
+        return orderMapper.selectList(new LambdaQueryWrapper<HedgeOrderEntity>()
+                .eq(HedgeOrderEntity::getHedgePositionId, positionId)
+                .orderByAsc(HedgeOrderEntity::getId));
+    }
+
+    /** 更新订单状态（成交/失败，兼容旧路径）*/
     public void updateOrderFilled(Long orderId, String externalOrderId,
                                    BigDecimal filledQty, BigDecimal costUsdc) {
         orderMapper.update(null, new LambdaUpdateWrapper<HedgeOrderEntity>()
@@ -106,6 +207,7 @@ public class HedgePositionTracker {
                 .set(HedgeOrderEntity::getFilledQuantity, filledQty)
                 .set(HedgeOrderEntity::getCostUsdc, costUsdc)
                 .set(HedgeOrderEntity::getFilledAt, new Date())
+                .set(HedgeOrderEntity::getNextPollAt, null)
                 .set(HedgeOrderEntity::getUpdatedAt, new Date()));
     }
 
@@ -116,6 +218,12 @@ public class HedgePositionTracker {
                 .set(HedgeOrderEntity::getStatus, "FAILED")
                 .set(HedgeOrderEntity::getErrorMessage, errorMessage)
                 .set(HedgeOrderEntity::getUpdatedAt, new Date()));
+    }
+
+    /** 统计已结算持仓数 */
+    public long countSettled() {
+        return positionMapper.selectCount(new LambdaQueryWrapper<HedgePositionEntity>()
+                .eq(HedgePositionEntity::getStatus, "SETTLED"));
     }
 
     /** 标记持仓进入结算中状态 */

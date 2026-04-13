@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.job.hedge.model.HedgeOpportunity;
 import com.metaverse.coin.strategy.job.hedge.model.HedgeRiskCheckResult;
 import com.metaverse.coin.strategy.job.smartwallet.service.ExecutionWalletContextLoader;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobClientRouter;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketMarketDataCacheService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketOrderRequestFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Date;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -50,6 +52,8 @@ public class HedgeOrderExecutorService {
     private final HedgeArbitrageLogMapper logMapper;
     private final PolymarketClobClientRouter clobClientRouter;
     private final ExecutionWalletContextLoader walletContextLoader;
+    private final ArbitrageDetectorService arbitrageDetector;
+    private final PolymarketMarketDataCacheService marketDataCache;
 
     /** 双边下单并发线程池（YES + NO 同时提交，减少时间窗口） */
     private final ExecutorService orderExecutor = Executors.newFixedThreadPool(2);
@@ -86,6 +90,32 @@ public class HedgeOrderExecutorService {
             saveLog(opportunity, "SKIP_DISABLED", "autoExecution=false（演练模式）", null);
             return false;
         }
+
+        // P2-2：执行前强制刷新订单簿缓存并重新验证机会（防止基于过时价格下单）
+        marketDataCache.invalidateOrderBook(opportunity.getYesTokenId());
+        marketDataCache.invalidateOrderBook(opportunity.getNoTokenId());
+        ArbitrageDetectorService.MarketTokenPair freshPair = new ArbitrageDetectorService.MarketTokenPair(
+                opportunity.getMarketId(), opportunity.getQuestion(),
+                opportunity.getYesTokenId(), opportunity.getNoTokenId(),
+                opportunity.getMarketEndAt());
+        Optional<HedgeOpportunity> freshOpportunity;
+        try {
+            freshOpportunity = arbitrageDetector.detectOpportunity(freshPair);
+        } catch (Exception e) {
+            log.warn("[HedgeExecutor] Pre-execution price refresh failed market={}: {}", opportunity.getMarketId(), e.getMessage());
+            saveLog(opportunity, "SKIP_RISK", "执行前价格刷新失败: " + e.getMessage(), null);
+            return false;
+        }
+        if (freshOpportunity.isEmpty()) {
+            log.info("[HedgeExecutor] Opportunity vanished after price refresh, skipping market={}", opportunity.getMarketId());
+            saveLog(opportunity, "SKIP_STALE", "执行前重新验证：价格已变化，机会消失", null);
+            return false;
+        }
+        // 使用最新价格继续执行
+        opportunity = freshOpportunity.get();
+        totalUsdc = riskResult.getSuggestedSizeUsdc();
+        quantity = sizeCalculator.calculateQuantity(opportunity, totalUsdc);
+        expectedProfit = sizeCalculator.estimateProfitUsdc(opportunity, quantity);
 
         // 加载执行钱包上下文（复用跟单策略的执行钱包，资金逻辑由数据库表隔离）
         ExecutionWalletContextLoader.ExecutionWalletContext context;
@@ -177,14 +207,12 @@ public class HedgeOrderExecutorService {
             return false;
         }
 
-        positionTracker.updateOrderFilled(yesOrderRecord.getId(),
-                yesResult.externalOrderId(), quantity,
-                opp.getYesBestAsk().multiply(quantity).setScale(4, RoundingMode.HALF_UP));
-        positionTracker.updateOrderFilled(noOrderRecord.getId(),
-                noResult.externalOrderId(), quantity,
-                opp.getNoBestAsk().multiply(quantity).setScale(4, RoundingMode.HALF_UP));
+        // 两边订单已成功提交到 Polymarket CLOB，标记为 LIVE 等待轮询确认实际成交量
+        // （GTC 限价单：提交成功 ≠ 立即成交，实际成交由 HedgeOrderPollingJob 异步确认）
+        positionTracker.updateOrderSubmitted(yesOrderRecord.getId(), yesResult.externalOrderId());
+        positionTracker.updateOrderSubmitted(noOrderRecord.getId(), noResult.externalOrderId());
 
-        log.info("[HedgeExecutor] Both sides filled market={} qty={} yesOrderId={} noOrderId={}",
+        log.info("[HedgeExecutor] Both sides submitted (pending fill confirmation): market={} qty={} yesOrderId={} noOrderId={}",
                 opp.getMarketId(), quantity, yesResult.externalOrderId(), noResult.externalOrderId());
         return true;
     }

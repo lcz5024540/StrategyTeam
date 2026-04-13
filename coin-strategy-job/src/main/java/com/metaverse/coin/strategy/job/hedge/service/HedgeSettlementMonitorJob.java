@@ -9,8 +9,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 
 /**
@@ -91,7 +89,7 @@ public class HedgeSettlementMonitorJob {
             return false;
         }
 
-        String resolvedOutcome = meta.getResolvedOutcome(); // "Yes" or "No"
+        String resolvedOutcome = meta.getResolvedOutcome(); // "Yes" or "No"（已由 PolymarketApiClient 标准化为大写）
         if (!StringUtils.hasText(resolvedOutcome)) {
             return false;
         }
@@ -99,25 +97,11 @@ public class HedgeSettlementMonitorJob {
         log.info("[HedgeSettlement] Market resolved: positionId={} market={} outcome={}",
                 position.getId(), position.getMarketId(), resolvedOutcome);
 
-        // 标记进入结算中（如果还是 OPEN 状态）
+        // 仅将持仓推进到 SETTLING 状态，记录结果方向
+        // 实际链上 Claim（redeemPositions）和最终 SETTLED 标记由 HedgeClaimService 负责
         if ("OPEN".equals(position.getStatus())) {
             positionTracker.markSettling(position.getId(), resolvedOutcome);
         }
-
-        // 对冲策略的收益计算：
-        //   - 买入 Q 股 YES（at ask_yes）+ Q 股 NO（at ask_no）
-        //   - 无论哪边赢，赢方 token 结算为 $1 / 股
-        //   - claimed = Q × $1
-        //   - realizedPnl = claimed - totalCost - fee ≈ Q × netEdgeRate
-        BigDecimal quantity = position.getQuantity();
-        BigDecimal claimed = quantity != null ? quantity : BigDecimal.ZERO; // 1 USDC per winning token
-        BigDecimal estimatedFee = claimed.multiply(properties.getEstimatedFeeRate())
-                .setScale(4, RoundingMode.HALF_UP);
-
-        positionTracker.markSettled(position.getId(), claimed, estimatedFee);
-
-        log.info("[HedgeSettlement] Position settled: id={} claimed={} USDC outcome={}",
-                position.getId(), claimed, resolvedOutcome);
         return true;
     }
 }

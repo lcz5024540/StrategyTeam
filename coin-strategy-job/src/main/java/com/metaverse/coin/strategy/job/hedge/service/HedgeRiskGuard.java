@@ -106,11 +106,13 @@ public class HedgeRiskGuard {
             return HedgeRiskCheckResult.fail(violations);
         }
 
-        // 8. 对冲总敞口
-        BigDecimal currentHedgeExposure = globalRiskGuard.currentHedgeExposureUsdc();
+        // 8 + 9. 一次性获取全局敞口快照（避免 currentHedgeExposureUsdc 被重复查询）
+        GlobalRiskGuard.GlobalExposureSummary exposure = globalRiskGuard.getSummary();
+        BigDecimal currentHedgeExposure = exposure.hedgeExposureUsdc();
+
+        // 8. 对冲策略内部总敞口上限
         BigDecimal newHedgeExposure = currentHedgeExposure.add(suggestedSize);
         if (newHedgeExposure.compareTo(properties.getMaxTotalExposureUsdc()) > 0) {
-            // 尝试缩小仓位到刚好不超出
             BigDecimal allowedSize = properties.getMaxTotalExposureUsdc().subtract(currentHedgeExposure);
             if (allowedSize.compareTo(properties.getMinSinglePositionUsdc()) < 0) {
                 violations.add(String.format("对冲总敞口 %.2f 已达上限 %.2f",
@@ -120,10 +122,26 @@ public class HedgeRiskGuard {
             suggestedSize = allowedSize.setScale(4, RoundingMode.HALF_DOWN);
         }
 
-        // 9. 全局跨策略敞口
-        if (!globalRiskGuard.checkGlobalExposure(suggestedSize)) {
-            violations.add("全局跨策略总敞口超限（跟单 + 对冲）");
-            return HedgeRiskCheckResult.fail(violations);
+        // 9. 全局跨策略敞口（直接用已查询的快照，不再重复查库）
+        BigDecimal globalMax = properties.getGlobalMaxTotalExposureUsdc();
+        if (globalMax != null && globalMax.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal newGlobalTotal = exposure.followExposureUsdc()
+                    .add(currentHedgeExposure).add(suggestedSize);
+            if (newGlobalTotal.compareTo(globalMax) > 0) {
+                violations.add("全局跨策略总敞口超限（跟单 + 对冲）");
+                return HedgeRiskCheckResult.fail(violations);
+            }
+            BigDecimal maxHedgeShare = properties.getMaxHedgeShareOfGlobalExposure();
+            if (maxHedgeShare != null && maxHedgeShare.compareTo(BigDecimal.ZERO) > 0
+                    && newGlobalTotal.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal newHedgeShare = currentHedgeExposure.add(suggestedSize)
+                        .divide(newGlobalTotal, 4, RoundingMode.HALF_UP);
+                if (newHedgeShare.compareTo(maxHedgeShare) > 0) {
+                    violations.add(String.format("对冲占全局敞口比例 %.2f 超出上限 %.2f",
+                            newHedgeShare, maxHedgeShare));
+                    return HedgeRiskCheckResult.fail(violations);
+                }
+            }
         }
 
         return HedgeRiskCheckResult.pass(suggestedSize);

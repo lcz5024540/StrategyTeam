@@ -82,6 +82,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollect
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
+import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -134,6 +135,7 @@ public class SmartWalletController {
     private final RiskPolicyApplicationService riskPolicyApplicationService;
     private final BaselineModelConfigApplicationService baselineModelConfigApplicationService;
     private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
+    private final MarketConcentrationService marketConcentrationService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -836,6 +838,30 @@ public class SmartWalletController {
         if (request.getTaskLimit() == null) {
             request.setTaskLimit(120);
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 持仓集中度查询（防控盘分析）
+    // ──────────────────────────────────────────────────────────────────────────
+
+    @Operation(
+            summary = "查询市场持仓集中度",
+            description = "返回指定市场的 CR_1/CR_3/CR_5 和 HHI 集中度指标，以及前5持仓者地址。" +
+                    "用于判断是否存在控盘风险。结果缓存 60s。outcome 参数可选，不传则分析双向合并数据。")
+    @GetMapping("/concentration/{conditionId}")
+    public MarketConcentrationService.ConcentrationSnapshot marketConcentration(
+            @PathVariable String conditionId,
+            @RequestParam(required = false) String outcome) {
+        return marketConcentrationService.analyze(conditionId, outcome);
+    }
+
+    @Operation(
+            summary = "清除市场集中度缓存",
+            description = "强制淘汰指定市场的集中度缓存，下次查询时重新拉取最新数据。")
+    @PostMapping("/concentration/{conditionId}/invalidate")
+    public String invalidateConcentrationCache(@PathVariable String conditionId) {
+        marketConcentrationService.invalidate(conditionId);
+        return "Concentration cache invalidated for market=" + conditionId;
     }
 
 }

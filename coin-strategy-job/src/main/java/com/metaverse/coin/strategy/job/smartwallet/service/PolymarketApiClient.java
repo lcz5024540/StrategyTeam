@@ -131,6 +131,39 @@ public class PolymarketApiClient {
         return BigDecimal.ZERO;
     }
 
+    /**
+     * 获取某市场全量持仓分布（不传 user），用于集中度分析。
+     * 调用 Data API /positions?market={conditionId}&sizeThreshold=1&limit=N
+     * 返回按 size 降序排列的持仓列表（Polymarket 默认排序）。
+     */
+    public List<MarketPositionEntry> fetchMarketTopPositions(String conditionId, int limit) {
+        if (!StringUtils.hasText(conditionId)) {
+            return List.of();
+        }
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("market", conditionId.trim());
+        params.put("sizeThreshold", "1");
+        params.put("limit", String.valueOf(Math.max(1, Math.min(limit, 100))));
+
+        JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
+                "/positions", params));
+        List<MarketPositionEntry> result = new ArrayList<>();
+        for (JsonNode node : iterableArray(extractArray(body))) {
+            String walletAddress = text(node, "proxyWallet", "user", "walletAddress", "address");
+            if (!StringUtils.hasText(walletAddress)) {
+                continue;
+            }
+            result.add(MarketPositionEntry.builder()
+                    .walletAddress(walletAddress)
+                    .outcome(normalizeOutcome(text(node, "outcome", "outcomeName")))
+                    .size(firstNonZero(num(node, "size"), num(node, "currentTokens")))
+                    .avgPrice(num(node, "avgPrice", "averagePrice"))
+                    .initialValue(num(node, "initialValue", "cashInvested"))
+                    .build());
+        }
+        return result;
+    }
+
     public List<JsonNode> fetchPositions(String walletAddress, String conditionId) {
         if (!StringUtils.hasText(walletAddress)) {
             return List.of();
@@ -841,5 +874,21 @@ public class PolymarketApiClient {
         private String makerAddress;
         private String takerAddress;
         private Long timestamp;
+    }
+
+    /** 市场持仓条目，用于集中度分析（fetchMarketTopPositions 返回） */
+    @Data
+    @Builder
+    public static class MarketPositionEntry {
+        /** 持仓钱包地址 */
+        private String walletAddress;
+        /** 持仓方向：YES / NO */
+        private String outcome;
+        /** 持仓 token 数量 */
+        private BigDecimal size;
+        /** 平均成本价 */
+        private BigDecimal avgPrice;
+        /** 初始 USDC 投入 */
+        private BigDecimal initialValue;
     }
 }

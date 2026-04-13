@@ -104,7 +104,7 @@ public class HedgeScanJob {
 
     /**
      * 将 MarketMetadata 转换为扫描输入对
-     * 只处理有且仅有 YES/NO 两个结果的标准二元市场
+     * 只处理有且仅有 YES/NO 两个结果的标准二元市场，排除 NegRisk 合约
      */
     private List<ArbitrageDetectorService.MarketTokenPair> buildPairs(
             List<PolymarketApiClient.MarketMetadata> markets) {
@@ -112,6 +112,8 @@ public class HedgeScanJob {
         for (PolymarketApiClient.MarketMetadata market : markets) {
             if (market.isResolved() || market.isClosed()) continue;
             if (!market.isActive() || !market.isAcceptingOrders()) continue;
+            // NegRisk 市场结算机制不同（赢方 token 不一定 = $1），暂不支持套利
+            if (market.isNegRisk()) continue;
 
             Map<String, String> tokenIds = market.getOutcomeTokenIds();
             if (tokenIds == null || tokenIds.size() != 2) continue;
@@ -128,6 +130,9 @@ public class HedgeScanJob {
                     yesTokenId,
                     noTokenId,
                     endAt));
+
+            // 按 scanBatchSize 截断（缓存可能返回 500 个市场，但每次只处理配置数量）
+            if (pairs.size() >= properties.getScanBatchSize()) break;
         }
         return pairs;
     }

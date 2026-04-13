@@ -10,6 +10,7 @@ import com.metaverse.coin.strategy.job.hedge.config.HedgeProperties;
 import com.metaverse.coin.strategy.job.hedge.model.HedgeDashboardView;
 import com.metaverse.coin.strategy.job.hedge.model.HedgePositionView;
 import com.metaverse.coin.strategy.job.hedge.service.GlobalRiskGuard;
+import com.metaverse.coin.strategy.job.hedge.service.HedgeClaimService;
 import com.metaverse.coin.strategy.job.hedge.service.HedgePositionTracker;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,6 +35,7 @@ public class HedgeController {
     private final HedgeProperties properties;
     private final HedgePositionTracker positionTracker;
     private final GlobalRiskGuard globalRiskGuard;
+    private final HedgeClaimService hedgeClaimService;
     private final HedgeArbitrageLogMapper logMapper;
     private final HedgeOrderMapper orderMapper;
 
@@ -48,7 +50,7 @@ public class HedgeController {
                 .map(p -> p.getExpectedProfitUsdc() != null ? p.getExpectedProfitUsdc() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        long totalSettled = positionTracker.getSettlementPendingPositions(0).size();  // settled count
+        long totalSettled = positionTracker.countSettled();
         BigDecimal totalPnl = positionTracker.totalRealizedPnlUsdc();
 
         GlobalRiskGuard.GlobalExposureSummary exposure = globalRiskGuard.getSummary();
@@ -111,6 +113,13 @@ public class HedgeController {
     @GetMapping("/risk/global-exposure")
     public GlobalRiskGuard.GlobalExposureSummary globalExposure() {
         return globalRiskGuard.getSummary();
+    }
+
+    @Operation(summary = "手动触发链上 Claim（处理 SETTLING 状态持仓）")
+    @PostMapping("/claim/trigger")
+    public String triggerClaim() {
+        int claimed = hedgeClaimService.triggerClaims();
+        return "Claimed " + claimed + " positions";
     }
 
     @Operation(summary = "当前对冲策略配置（只读）")

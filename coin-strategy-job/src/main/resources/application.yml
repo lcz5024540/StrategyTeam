@@ -34,6 +34,11 @@ binance:
     spot-url: "https://api.binance.com"
     futures-url: "https://fapi.binance.com"
 
+polymarket:
+  smart-wallet:
+    # [TUNE] 持仓集中度监控 Job 扫描间隔（ms），默认 5 分钟
+    concentration-monitor-delay-ms: 300000
+
 smart-wallet:
   # [FIXED-ONCE] Master switch for this module.
   enabled: true
@@ -221,6 +226,27 @@ smart-wallet:
     single-wallet-override-min-trades: 50
     single-wallet-override-min-trigger-size-usdc: 100
     single-wallet-override-min-recommended-stake-usdc: 5
+    # ── 持仓集中度门控（防控盘）────────────────────────────────────────
+    # [FEATURE] 集中度门控总开关（默认关闭，先验证 /positions 接口返回格式后再上线）
+    enable-concentration-gate: false
+    # [TUNE] CR_1 上限：单一持仓者占比超过此值拒绝信号
+    max-top1-concentration-pct: 0.40
+    # [TUNE] CR_3 上限：前三持仓者合计占比超过此值拒绝信号
+    max-top3-concentration-pct: 0.65
+    # [TUNE] HHI 上限（0=禁用）
+    max-hhi: 2500
+    # [TUNE] 鲸鱼信号来源处置模式：BLOCK / DOWNSIZE / WARN_ONLY
+    whale-signal-source-mode: BLOCK
+    # [TUNE] DOWNSIZE 模式下仓位保留比例
+    whale-signal-downsize-rate: 0.20
+    # [TUNE] 集中度缓存有效期（ms）
+    concentration-cache-ttl-ms: 60000
+    # [TUNE] 拉取前 N 名持仓人
+    concentration-top-n: 50
+    # [TUNE] CR_3 低于此值不施加仓位惩罚
+    concentration-stake-safe-top3-pct: 0.40
+    # [TUNE] 集中度惩罚最大削减比例
+    concentration-stake-penalty-max-rate: 0.50
   model-calibration:
     # [TUNE] Platt-style calibration params for baseline follow-probability output.
     follow-probability-scale: 1.15
@@ -423,6 +449,14 @@ polymarket:
 
     # [FIXED-ONCE] 订单类型（GTC = 好至取消）
     order-type: GTC
+
+    # ── 订单成交轮询 ──────────────────────────────────────────
+    # [TUNE] 对冲订单成交状态轮询间隔（ms）
+    order-polling-fixed-delay-ms: 5000
+
+    # ── 链上 Claim ────────────────────────────────────────────
+    # [TUNE] 对冲持仓链上 redeemPositions 触发间隔（ms）
+    claim-fixed-delay-ms: 60000
 
     # ── 结算监控 ──────────────────────────────────────────────
     # [TUNE] 结算轮询间隔（ms）

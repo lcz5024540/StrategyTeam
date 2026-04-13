@@ -136,6 +136,33 @@ public class SmartWalletProperties {
         private Integer singleWalletOverrideMinTrades = 60;
         private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
         private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("5");
+
+        // ── 持仓集中度门控（防控盘） ──────────────────────────────────────────
+        /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */
+        private boolean enableConcentrationGate = false;
+        /** CR_1 上限：单一持仓者占比超过此值则拒绝信号 */
+        private BigDecimal maxTop1ConcentrationPct = new BigDecimal("0.40");
+        /** CR_3 上限：前三持仓者合计占比超过此值则拒绝信号 */
+        private BigDecimal maxTop3ConcentrationPct = new BigDecimal("0.65");
+        /** HHI 上限：超过则判定为高度集中市场（0=不启用 HHI 检查） */
+        private int maxHhi = 2500;
+        /**
+         * 鲸鱼信号来源处置模式：
+         *   BLOCK     - 直接拒绝（默认）
+         *   DOWNSIZE  - 仓位缩至 whaleSignalDownsizeRate
+         *   WARN_ONLY - 仅告警，不影响决策
+         */
+        private String whaleSignalSourceMode = "BLOCK";
+        /** DOWNSIZE 模式下仓位保留比例（默认保留 20%） */
+        private BigDecimal whaleSignalDownsizeRate = new BigDecimal("0.20");
+        /** 集中度数据缓存有效期（ms） */
+        private int concentrationCacheTtlMs = 60000;
+        /** 集中度分析拉取的最大持仓人数（Polymarket limit 上限 100） */
+        private int concentrationTopN = 50;
+        /** CR_3 低于此值时不施加仓位惩罚 */
+        private BigDecimal concentrationStakeSafeTop3Pct = new BigDecimal("0.40");
+        /** 集中度惩罚最大削减比例（0.5 = 最多缩减 50%） */
+        private BigDecimal concentrationStakePenaltyMaxRate = new BigDecimal("0.50");
     }
 
     @Data

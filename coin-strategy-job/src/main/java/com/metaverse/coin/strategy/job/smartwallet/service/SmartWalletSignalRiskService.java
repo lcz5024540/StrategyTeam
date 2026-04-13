@@ -10,6 +10,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTrad
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
+import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService.ConcentrationSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -31,6 +32,7 @@ public class SmartWalletSignalRiskService {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletAccountingService accountingService;
     private final TradeEvScoringService tradeEvScoringService;
+    private final MarketConcentrationService concentrationService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -195,6 +197,66 @@ public class SmartWalletSignalRiskService {
         if (recommendedStake.compareTo(minOrderUsdc) < 0) {
             accepted = false;
             reasons.add("Recommended stake is below execution wallet minimum order.");
+        }
+
+        // ── 集中度门控（防控盘）──────────────────────────────────────────────────
+        // 在共识门控之后、EV估算之前运行，避免对最终被拒绝的信号做不必要的 API 调用
+        if (risk.isEnableConcentrationGate()) {
+            ConcentrationSnapshot snap = concentrationService.analyze(event.getMarketId(), event.getOutcome());
+            if (snap.isDataAvailable()) {
+                // Gate 1：市场集中度过高 → 直接拒绝
+                if (snap.isHighlyConcentrated()) {
+                    accepted = false;
+                    reasons.add("[CONCENTRATION] Market is highly concentrated. " +
+                            "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                            " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                            " HHI=" + snap.hhi() +
+                            " holders=" + snap.observedHolders());
+                } else {
+                    // Gate 2（告警区间）：集中度达到警戒但未触阈值 → 按比例削减 recommendedStake
+                    BigDecimal safeTop3 = safe(risk.getConcentrationStakeSafeTop3Pct());
+                    BigDecimal blockTop3 = safe(risk.getMaxTop3ConcentrationPct());
+                    if (snap.top3Pct().compareTo(safeTop3) > 0
+                            && blockTop3.compareTo(safeTop3) > 0) {
+                        BigDecimal penaltyRate = snap.top3Pct().subtract(safeTop3)
+                                .divide(blockTop3.subtract(safeTop3), 4, RoundingMode.HALF_UP)
+                                .multiply(safe(risk.getConcentrationStakePenaltyMaxRate()))
+                                .min(safe(risk.getConcentrationStakePenaltyMaxRate()));
+                        BigDecimal retainRate = BigDecimal.ONE.subtract(penaltyRate);
+                        recommendedStake = recommendedStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
+                        reasons.add("[CONCENTRATION_PENALTY] CR3=" +
+                                snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                " in caution zone. Stake reduced by " +
+                                penaltyRate.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP) + "%.");
+                    }
+                }
+
+                // Gate 3：信号源钱包本身是鲸鱼
+                String triggerWallet = event.getWalletAddress();
+                if (org.springframework.util.StringUtils.hasText(triggerWallet)
+                        && snap.topHolderAddresses().stream()
+                                .anyMatch(addr -> addr.equalsIgnoreCase(triggerWallet))) {
+                    String mode = risk.getWhaleSignalSourceMode() == null ? "BLOCK" : risk.getWhaleSignalSourceMode().toUpperCase();
+                    switch (mode) {
+                        case "BLOCK" -> {
+                            accepted = false;
+                            reasons.add("[WHALE_SIGNAL] Signal source wallet is a top-5 holder in this market. " +
+                                    "Possible pump-and-dump. Blocked.");
+                        }
+                        case "DOWNSIZE" -> {
+                            BigDecimal downsize = safe(risk.getWhaleSignalDownsizeRate());
+                            recommendedStake = recommendedStake.multiply(downsize).setScale(2, RoundingMode.HALF_UP);
+                            reasons.add("[WHALE_SIGNAL] Signal source is a top-5 holder. " +
+                                    "Stake downsized to " +
+                                    downsize.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
+                        }
+                        default ->  // WARN_ONLY
+                            reasons.add("[WHALE_SIGNAL] Signal source is a top-5 holder. " +
+                                    "WARN_ONLY mode — signal not blocked.");
+                    }
+                }
+            }
+            // API 不可用时 fail-open：跳过集中度检查，不阻断信号
         }
 
         TradeEvScoringService.TradeEvEstimate evEstimate = tradeEvScoringService.estimate(profile, event, consensus, recommendedStake);
