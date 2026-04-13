@@ -43,6 +43,100 @@ polymarket:
     # [TUNE] 策略健康监控 Job 扫描间隔（ms），默认 1 小时
     health-monitor-delay-ms: 3600000
 
+  # ============================================================
+  # Polymarket 对冲套利策略（与跟单策略 smart-wallet 完全隔离）
+  # 配置命名空间: polymarket.hedge.*
+  # 数据隔离: hedge_position / hedge_order / hedge_arbitrage_log 三张独立表
+  # ============================================================
+  hedge:
+    # [FIXED-ONCE] 对冲模块总开关
+    enabled: false
+
+    # [TUNE] 自动下单开关（false = 只扫描/日志，不实际执行）
+    auto-execution-enabled: false
+
+    # ── 套利识别 ──────────────────────────────────────────────
+    # [TUNE] 最小毛利率（扣费前）。低于此值不考虑开仓。
+    # 示例: 0.025 表示 YES ask + NO ask 总和 <= 0.975 才触发
+    min-gross-edge-rate: 0.025
+
+    # [TUNE] 最小净利率（扣除双边手续费后）。
+    min-net-edge-rate: 0.015
+
+    # [TUNE] 单边最小订单簿流动性 USDC（两侧均须满足）
+    min-side-liquidity-usdc: 2000
+
+    # [TUNE] 市场扫描间隔（ms）
+    scan-fixed-delay-ms: 10000
+
+    # [TUNE] 单次扫描最多处理市场数
+    scan-batch-size: 50
+
+    # ── 资金管理 ──────────────────────────────────────────────
+    # [TUNE] 单笔最大投入 USDC（双边合计）
+    max-single-position-usdc: 3000
+
+    # [TUNE] 单笔最小投入 USDC
+    min-single-position-usdc: 50
+
+    # [TUNE] 同时持有的最大对冲仓位数
+    max-open-positions: 20
+
+    # [TUNE] 对冲策略最大总敞口 USDC
+    max-total-exposure-usdc: 30000
+
+    # [TUNE] Kelly 仓位折扣（0.5 = 半 Kelly，更保守）
+    kelly-fraction: 0.5
+
+    # ── 执行参数 ──────────────────────────────────────────────
+    # [FIXED-ONCE] 预估单边手续费率（Polymarket 约 0.15%）
+    estimated-fee-rate: 0.0015
+
+    # [TUNE] 下单价格允许的最大滑点比例（超过则拒绝成交）
+    max-slippage-rate: 0.005
+
+    # [FIXED-ONCE] 订单类型（GTC = 好至取消）
+    order-type: GTC
+
+    # ── 订单成交轮询 ──────────────────────────────────────────
+    # [TUNE] 对冲订单成交状态轮询间隔（ms）
+    order-polling-fixed-delay-ms: 5000
+
+    # ── 链上 Claim ────────────────────────────────────────────
+    # [TUNE] 对冲持仓链上 redeemPositions 触发间隔（ms）
+    claim-fixed-delay-ms: 60000
+
+    # ── 结算监控 ──────────────────────────────────────────────
+    # [TUNE] 结算轮询间隔（ms）
+    settlement-fixed-delay-ms: 30000
+
+    # [TUNE] 单次结算检查最大持仓数
+    settlement-batch-size: 30
+
+    # ── 跨策略全局风控 ─────────────────────────────────────────
+    # [TUNE] 跟单 + 对冲合计最大 USDC 敞口（0 = 不限制）
+    global-max-total-exposure-usdc: 80000
+
+    # [TUNE] 对冲占全局敞口的最大比例（防止挤占跟单资金）
+    max-hedge-share-of-global-exposure: 0.5
+
+  # ============================================================
+  # Polymarket 市场数据集中缓存（由 PolymarketMarketDataCacheService 管理）
+  # 两个策略共用，减少重复 REST 调用，避免触发限频
+  # ============================================================
+  market-data-cache:
+    # [TUNE] 活跃市场列表刷新间隔（ms）。
+    # 原 HedgeScanJob 每 10s 调用一次 searchMarkets，改为 60s 刷一次缓存，请求量降低 6 倍。
+    markets-refresh-ms: 60000
+
+    # [TUNE] 单次拉取活跃市场最大数量（Polymarket 上限 500）
+    markets-batch-size: 500
+
+    # [TUNE] 订单簿缓存有效期（ms）。
+    # 同一 tokenId 在此窗口内最多发起 1 次 /book 请求；
+    # 20s 对套利扫描精度影响极小，但可将 /book 请求量降低约 80%。
+    order-book-ttl-ms: 20000
+
 smart-wallet:
   # [FIXED-ONCE] Master switch for this module.
   enabled: true
@@ -411,98 +505,3 @@ smart-wallet:
       liquidity-usdc: 112000
       category: "politics"
       tags: [ "politics", "elections" ]
-
-# ============================================================
-# Polymarket 对冲套利策略（与跟单策略 smart-wallet 完全隔离）
-# 配置命名空间: polymarket.hedge.*
-# 数据隔离: hedge_position / hedge_order / hedge_arbitrage_log 三张独立表
-# ============================================================
-polymarket:
-  hedge:
-    # [FIXED-ONCE] 对冲模块总开关
-    enabled: false
-
-    # [TUNE] 自动下单开关（false = 只扫描/日志，不实际执行）
-    auto-execution-enabled: false
-
-    # ── 套利识别 ──────────────────────────────────────────────
-    # [TUNE] 最小毛利率（扣费前）。低于此值不考虑开仓。
-    # 示例: 0.025 表示 YES ask + NO ask 总和 <= 0.975 才触发
-    min-gross-edge-rate: 0.025
-
-    # [TUNE] 最小净利率（扣除双边手续费后）。
-    min-net-edge-rate: 0.015
-
-    # [TUNE] 单边最小订单簿流动性 USDC（两侧均须满足）
-    min-side-liquidity-usdc: 2000
-
-    # [TUNE] 市场扫描间隔（ms）
-    scan-fixed-delay-ms: 10000
-
-    # [TUNE] 单次扫描最多处理市场数
-    scan-batch-size: 50
-
-    # ── 资金管理 ──────────────────────────────────────────────
-    # [TUNE] 单笔最大投入 USDC（双边合计）
-    max-single-position-usdc: 3000
-
-    # [TUNE] 单笔最小投入 USDC
-    min-single-position-usdc: 50
-
-    # [TUNE] 同时持有的最大对冲仓位数
-    max-open-positions: 20
-
-    # [TUNE] 对冲策略最大总敞口 USDC
-    max-total-exposure-usdc: 30000
-
-    # [TUNE] Kelly 仓位折扣（0.5 = 半 Kelly，更保守）
-    kelly-fraction: 0.5
-
-    # ── 执行参数 ──────────────────────────────────────────────
-    # [FIXED-ONCE] 预估单边手续费率（Polymarket 约 0.15%）
-    estimated-fee-rate: 0.0015
-
-    # [TUNE] 下单价格允许的最大滑点比例（超过则拒绝成交）
-    max-slippage-rate: 0.005
-
-    # [FIXED-ONCE] 订单类型（GTC = 好至取消）
-    order-type: GTC
-
-    # ── 订单成交轮询 ──────────────────────────────────────────
-    # [TUNE] 对冲订单成交状态轮询间隔（ms）
-    order-polling-fixed-delay-ms: 5000
-
-    # ── 链上 Claim ────────────────────────────────────────────
-    # [TUNE] 对冲持仓链上 redeemPositions 触发间隔（ms）
-    claim-fixed-delay-ms: 60000
-
-    # ── 结算监控 ──────────────────────────────────────────────
-    # [TUNE] 结算轮询间隔（ms）
-    settlement-fixed-delay-ms: 30000
-
-    # [TUNE] 单次结算检查最大持仓数
-    settlement-batch-size: 30
-
-    # ── 跨策略全局风控 ─────────────────────────────────────────
-    # [TUNE] 跟单 + 对冲合计最大 USDC 敞口（0 = 不限制）
-    global-max-total-exposure-usdc: 80000
-
-    # [TUNE] 对冲占全局敞口的最大比例（防止挤占跟单资金）
-    max-hedge-share-of-global-exposure: 0.5
-
-  # ============================================================
-  # Polymarket 市场数据集中缓存（由 PolymarketMarketDataCacheService 管理）
-  # 两个策略共用，减少重复 REST 调用，避免触发限频
-  # ============================================================
-  market-data-cache:
-    # [TUNE] 活跃市场列表刷新间隔（ms）。
-    # 原 HedgeScanJob 每 10s 调用一次 searchMarkets，改为 60s 刷一次缓存，请求量降低 6 倍。
-    markets-refresh-ms: 60000
-
-    # [TUNE] 单次拉取活跃市场最大数量（Polymarket 上限 500）
-    markets-batch-size: 500
-
-    # [TUNE] 订单簿缓存有效期（ms）。
-    # 同一 tokenId 在此窗口内最多发起 1 次 /book 请求；
-    # 20s 对套利扫描精度影响极小，但可将 /book 请求量降低约 80%。
-    order-book-ttl-ms: 20000

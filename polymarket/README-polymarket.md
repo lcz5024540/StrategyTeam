@@ -763,10 +763,10 @@ The page is currently front-end aggregated from existing smart-wallet APIs such 
 
 ### Dashboard Frontend Entry
 
-- overview page: `http://127.0.0.1:8081/dashboard/index.html`
-- strategy detail page: `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY`
-- charts page: `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY`
-- the pages read directly from the existing `/smart-wallet/...` APIs on the same host
+- frontend overview page: `http://127.0.0.1:5173/dashboard`
+- frontend strategy detail page: `http://127.0.0.1:5173/dashboard/detail?strategy=POLYMARKET_COPY`
+- frontend charts page: `http://127.0.0.1:5173/dashboard/charts?strategy=POLYMARKET_COPY`
+- the frontend app reads from the existing `/smart-wallet/...` APIs through the local backend target configured by the dev server
 
 ### How To Start
 
@@ -776,12 +776,12 @@ The page is currently front-end aggregated from existing smart-wallet APIs such 
 2. Start the integrated backend + dashboard service:
    - `scripts/run-smart-wallet.sh`
 3. Wait until the script prints:
-   - `[run-smart-wallet] service is ready.`
+   - `[run-smart-wallet] services are ready.`
 4. Open any of these URLs in your browser:
    - Swagger: `http://127.0.0.1:8081/swagger-ui.html`
-   - Dashboard overview: `http://127.0.0.1:8081/dashboard/index.html`
-   - Dashboard detail: `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY&days=30`
-   - Dashboard charts: `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY&days=30`
+   - Frontend dashboard overview: `http://127.0.0.1:5173/dashboard`
+   - Frontend dashboard detail: `http://127.0.0.1:5173/dashboard/detail?strategy=POLYMARKET_COPY&days=30`
+   - Frontend dashboard charts: `http://127.0.0.1:5173/dashboard/charts?strategy=POLYMARKET_COPY&days=30`
 
 ### What `run-smart-wallet.sh` Does
 
@@ -791,7 +791,8 @@ The script already combines startup concerns for the current MVP:
 - builds `coin-strategy-job`
 - starts the Spring Boot application
 - waits for `/smart-wallet/health` to become available
-- prints the ready-to-open backend and page URLs
+- starts the frontend dev server
+- prints the ready-to-open backend and frontend URLs
 
 So for the current repository state, this is the main command you should remember:
 
@@ -808,20 +809,19 @@ Backend / docs:
 
 Frontend pages:
 
-- overview: `http://127.0.0.1:8081/dashboard/index.html`
-- detail: `http://127.0.0.1:8081/dashboard/detail.html?strategy=POLYMARKET_COPY&days=30`
-- charts: `http://127.0.0.1:8081/dashboard/charts.html?strategy=POLYMARKET_COPY&days=30`
+- overview: `http://127.0.0.1:5173/dashboard`
+- detail: `http://127.0.0.1:5173/dashboard/detail?strategy=POLYMARKET_COPY&days=30`
+- charts: `http://127.0.0.1:5173/dashboard/charts?strategy=POLYMARKET_COPY&days=30`
 
 ### Optional Separate Web App
 
 The repo still contains `coin-strategy-web`, but for the current MVP validation path it is **not** required to see the dashboard pages.
 
 - `coin-strategy-job`
-  - recommended for current use
-  - exposes APIs + dashboard pages together
+  - recommended for current use as the backend API service
 - `coin-strategy-web`
   - reserved for the future BFF / product-side evolution
-  - not required for the current dashboard browsing flow
+  - not required for the current frontend dashboard browsing flow
 
 ### Current Page Sections
 
