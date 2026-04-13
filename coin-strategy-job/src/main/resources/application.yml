@@ -34,6 +34,26 @@ binance:
     spot-url: "https://api.binance.com"
     futures-url: "https://fapi.binance.com"
 
+arbitrage:
+  spot-futures:
+    symbol: "BTCUSDT"
+    trade-usdt-amount: 100
+    leverage: 3
+    open-threshold: 0.0005
+    close-threshold: 0.0001
+    min-basis-rate: 0.0000
+    max-basis-rate: 0.0030
+    max-basis-deterioration-rate: 0.0015
+    estimated-round-trip-fee-rate: 0.0010
+    estimated-slippage-rate: 0.0005
+    min-funding-periods: 4
+    min-net-yield-rate: 0.0002
+    settlement-protection-window-minutes: 5
+    max-position-value-usdt: 1000
+    min-margin-ratio: 2.0
+    required-margin-buffer-rate: 1.10
+    emergency-close-margin-ratio: 1.80
+
 smart-wallet:
   # [FIXED-ONCE] Master switch for this module.
   enabled: true

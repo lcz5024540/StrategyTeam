@@ -71,6 +71,11 @@ public class OrderExecutor {
         BigDecimal spotPrice = getSpotPrice(symbol);
         BigDecimal futuresPrice = getFuturesPrice(symbol);
         BigDecimal referencePrice = spotPrice.max(futuresPrice);
+        BigDecimal basisSpread = futuresPrice.subtract(spotPrice);
+        BigDecimal basisRate = BigDecimal.ZERO;
+        if (spotPrice.compareTo(BigDecimal.ZERO) > 0) {
+            basisRate = basisSpread.divide(spotPrice, INTERNAL_SCALE, RoundingMode.HALF_UP);
+        }
 
         BigDecimal spotStep = getQuantityStep(spotSymbol.getFilters(), spotSymbol.getBaseAssetPrecision());
         BigDecimal futuresStep = getQuantityStep(futuresSymbol.getFilters(), futuresSymbol.getQuantityPrecision());
@@ -104,6 +109,8 @@ public class OrderExecutor {
                 .spotPrice(spotPrice)
                 .futuresPrice(futuresPrice)
                 .referencePrice(referencePrice)
+                .basisSpread(basisSpread)
+                .basisRate(basisRate)
                 .spotNotional(spotNotional)
                 .futuresNotional(futuresNotional)
                 .quantityStep(quantityStep)

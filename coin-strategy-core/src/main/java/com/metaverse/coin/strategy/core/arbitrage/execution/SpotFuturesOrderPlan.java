@@ -20,6 +20,8 @@ public class SpotFuturesOrderPlan {
     private BigDecimal spotPrice;
     private BigDecimal futuresPrice;
     private BigDecimal referencePrice;
+    private BigDecimal basisSpread;
+    private BigDecimal basisRate;
     private BigDecimal spotNotional;
     private BigDecimal futuresNotional;
     private BigDecimal quantityStep;

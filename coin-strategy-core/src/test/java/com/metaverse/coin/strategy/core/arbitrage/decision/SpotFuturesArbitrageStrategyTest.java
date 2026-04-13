@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.core.arbitrage.decision;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.arbitrage.execution.ArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
 import com.metaverse.coin.strategy.core.arbitrage.monitor.FundingRateMonitor;
 import com.metaverse.coin.strategy.core.arbitrage.risk.RiskController;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,9 +13,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.math.BigDecimal;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -38,7 +40,7 @@ public class SpotFuturesArbitrageStrategyTest {
 
     @BeforeEach
     public void setup() {
-        // Reset mocks
+        // Use field defaults on the strategy under test.
     }
 
     private void setStrategyRunning(boolean isRunning) throws Exception {
@@ -48,51 +50,100 @@ public class SpotFuturesArbitrageStrategyTest {
         running.set(isRunning);
     }
 
-    @Test
-    public void testOpenPositionLogic() throws Exception {
-        // Mock Data
-        BinanceFuturesPremiumIndex index = new BinanceFuturesPremiumIndex();
-        index.setSymbol("BTCUSDT");
-        index.setLastFundingRate(new BigDecimal("0.0006")); // > 0.0005 Threshold
-        index.setMarkPrice(new BigDecimal("50000"));
-
-        when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
-        when(riskController.checkTradeRisk(eq("BTCUSDT"), any(), any())).thenReturn(true);
-        when(orderExecutor.openArbitragePosition(eq("BTCUSDT"), eq("BTCUSDT"), any()))
-                .thenReturn(ArbitrageExecutionResult.success("1", "2"));
-
-        // Set running = true without starting scheduler
-        setStrategyRunning(true);
-
-        // Invoke private method via reflection
+    private void executeStrategyLoop() throws Exception {
         Method method = SpotFuturesArbitrageStrategy.class.getDeclaredMethod("executeLogic");
         method.setAccessible(true);
         method.invoke(strategy);
+    }
 
-        // Verify
-        verify(orderExecutor, times(1)).openArbitragePosition(eq("BTCUSDT"), eq("BTCUSDT"), any());
+    private BinanceFuturesPremiumIndex buildFundingIndex(String fundingRate, long nextFundingTime) {
+        BinanceFuturesPremiumIndex index = new BinanceFuturesPremiumIndex();
+        index.setSymbol("BTCUSDT");
+        index.setLastFundingRate(new BigDecimal(fundingRate));
+        index.setMarkPrice(new BigDecimal("50000"));
+        index.setNextFundingTime(nextFundingTime);
+        return index;
+    }
+
+    private SpotFuturesOrderPlan buildPlan(String basisRate) {
+        return SpotFuturesOrderPlan.builder()
+                .symbol("BTCUSDT")
+                .spotSymbol("BTCUSDT")
+                .futuresSymbol("BTCUSDT")
+                .quantity(new BigDecimal("0.001"))
+                .spotPrice(new BigDecimal("50000"))
+                .futuresPrice(new BigDecimal("50020"))
+                .basisSpread(new BigDecimal("20"))
+                .basisRate(new BigDecimal(basisRate))
+                .spotNotional(new BigDecimal("50"))
+                .futuresNotional(new BigDecimal("50.02"))
+                .leverage(3)
+                .build();
     }
 
     @Test
-    public void testRiskRejection() throws Exception {
-        // Mock Data
-        BinanceFuturesPremiumIndex index = new BinanceFuturesPremiumIndex();
-        index.setSymbol("BTCUSDT");
-        index.setLastFundingRate(new BigDecimal("0.0006")); // > 0.0005 Threshold
-        index.setMarkPrice(new BigDecimal("50000"));
+    public void testOpenPositionLogic() throws Exception {
+        BinanceFuturesPremiumIndex index = buildFundingIndex(
+                "0.0006",
+                System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(20)
+        );
+        SpotFuturesOrderPlan plan = buildPlan("0.0004");
 
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
-        when(riskController.checkTradeRisk(eq("BTCUSDT"), any(), any())).thenReturn(false); // Risk Rejected
+        when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
+        when(riskController.checkTradeRisk(any(SpotFuturesOrderPlan.class))).thenReturn(true);
+        when(orderExecutor.openArbitragePosition(any(SpotFuturesOrderPlan.class)))
+                .thenReturn(ArbitrageExecutionResult.success("BTCUSDT", "0.001", "1", "2"));
 
-        // Set running = true without starting scheduler
         setStrategyRunning(true);
+        executeStrategyLoop();
 
-        // Invoke logic
-        Method method = SpotFuturesArbitrageStrategy.class.getDeclaredMethod("executeLogic");
-        method.setAccessible(true);
-        method.invoke(strategy);
+        verify(riskController, times(1)).checkTradeRisk(any(SpotFuturesOrderPlan.class));
+        verify(orderExecutor, times(1)).openArbitragePosition(any(SpotFuturesOrderPlan.class));
+    }
 
-        // Verify NO order executed
-        verify(orderExecutor, never()).openArbitragePosition(any(), any(), any());
+    @Test
+    public void testSkipOpenNearSettlementWindow() throws Exception {
+        BinanceFuturesPremiumIndex index = buildFundingIndex(
+                "0.0008",
+                System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2)
+        );
+        SpotFuturesOrderPlan plan = buildPlan("0.0004");
+
+        when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
+        when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
+
+        setStrategyRunning(true);
+        executeStrategyLoop();
+
+        verify(riskController, never()).checkTradeRisk(any(SpotFuturesOrderPlan.class));
+        verify(orderExecutor, never()).openArbitragePosition(any(SpotFuturesOrderPlan.class));
+    }
+
+    @Test
+    public void testClosePositionWhenFundingTurnsNegative() throws Exception {
+        BinanceFuturesPremiumIndex openIndex = buildFundingIndex(
+                "0.0006",
+                System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(20)
+        );
+        BinanceFuturesPremiumIndex closeIndex = buildFundingIndex(
+                "-0.0001",
+                System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(15)
+        );
+        SpotFuturesOrderPlan plan = buildPlan("0.0004");
+
+        when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, closeIndex);
+        when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
+        when(riskController.checkTradeRisk(any(SpotFuturesOrderPlan.class))).thenReturn(true);
+        when(orderExecutor.openArbitragePosition(any(SpotFuturesOrderPlan.class)))
+                .thenReturn(ArbitrageExecutionResult.success("BTCUSDT", "0.001", "1", "2"));
+        when(orderExecutor.closeArbitragePosition(any(SpotFuturesOrderPlan.class))).thenReturn(true);
+
+        setStrategyRunning(true);
+        executeStrategyLoop();
+        executeStrategyLoop();
+
+        verify(orderExecutor, times(1)).openArbitragePosition(any(SpotFuturesOrderPlan.class));
+        verify(orderExecutor, times(1)).closeArbitragePosition(any(SpotFuturesOrderPlan.class));
     }
 }
