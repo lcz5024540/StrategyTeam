@@ -2,10 +2,10 @@ package com.metaverse.coin.strategy.job.service;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
-import com.metaverse.coin.strategy.core.arbitrage.execution.ArbitrageExecutionResult;
-import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
-import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
-import com.metaverse.coin.strategy.core.arbitrage.risk.RiskController;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -23,19 +23,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class BinanceFundingRateArbitrageServiceTest {
+class BinanceSingleExchangeFundingRateArbitrageServiceTest {
 
     @Mock
     private BinanceApiService binanceApiService;
 
     @Mock
-    private OrderExecutor orderExecutor;
+    private SingleExchangeArbitrageOrderExecutor orderExecutor;
 
     @Mock
-    private RiskController riskController;
+    private SingleExchangeRiskController riskController;
 
     @InjectMocks
-    private BinanceFundingRateArbitrageService arbitrageService;
+    private BinanceSingleExchangeFundingRateArbitrageService arbitrageService;
 
     @Test
     void shouldExecuteMultipleSymbolsWhenFundingRateAndRiskPass() {
@@ -48,7 +48,7 @@ class BinanceFundingRateArbitrageServiceTest {
                 .lastFundingRate(new BigDecimal("0.0012"))
                 .build();
 
-        SpotFuturesOrderPlan btcPlan = SpotFuturesOrderPlan.builder()
+        SingleExchangeSpotFuturesOrderPlan btcPlan = SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol("BTCUSDT")
                 .spotSymbol("BTCUSDT")
                 .futuresSymbol("BTCUSDT")
@@ -59,7 +59,7 @@ class BinanceFundingRateArbitrageServiceTest {
                 .futuresNotional(new BigDecimal("50.01"))
                 .leverage(3)
                 .build();
-        SpotFuturesOrderPlan ethPlan = SpotFuturesOrderPlan.builder()
+        SingleExchangeSpotFuturesOrderPlan ethPlan = SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol("ETHUSDT")
                 .spotSymbol("ETHUSDT")
                 .futuresSymbol("ETHUSDT")
@@ -78,9 +78,9 @@ class BinanceFundingRateArbitrageServiceTest {
         when(riskController.checkTradeRisk(btcPlan)).thenReturn(true);
         when(riskController.checkTradeRisk(ethPlan)).thenReturn(true);
         when(orderExecutor.openArbitragePosition(btcPlan)).thenReturn(
-                ArbitrageExecutionResult.success("BTCUSDT", "0.001", "1", "2"));
+                SingleExchangeArbitrageExecutionResult.success("BTCUSDT", "0.001", "1", "2"));
         when(orderExecutor.openArbitragePosition(ethPlan)).thenReturn(
-                ArbitrageExecutionResult.success("ETHUSDT", "0.02", "3", "4"));
+                SingleExchangeArbitrageExecutionResult.success("ETHUSDT", "0.02", "3", "4"));
 
         String result = arbitrageService.executeArbitrage(List.of("BTCUSDT", "ETHUSDT"), new BigDecimal("50"), new BigDecimal("0.0005"), 3);
 

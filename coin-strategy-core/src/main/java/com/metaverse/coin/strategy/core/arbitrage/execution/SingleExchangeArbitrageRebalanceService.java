@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.core.arbitrage.execution;
 
-import com.metaverse.coin.strategy.core.arbitrage.risk.RiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,9 +15,9 @@ import java.math.BigDecimal;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class RebalanceService {
+public class SingleExchangeArbitrageRebalanceService {
 
-    private final RiskController riskController;
+    private final SingleExchangeRiskController riskController;
     // private final BinanceApiService binanceApiService;
 
     private static final BigDecimal REBALANCE_THRESHOLD = new BigDecimal("1.5"); // 150% Margin Ratio

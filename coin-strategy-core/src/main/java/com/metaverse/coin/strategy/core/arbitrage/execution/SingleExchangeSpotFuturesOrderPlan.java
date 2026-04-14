@@ -12,7 +12,7 @@ import java.math.RoundingMode;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SpotFuturesOrderPlan {
+public class SingleExchangeSpotFuturesOrderPlan {
     private String symbol;
     private String spotSymbol;
     private String futuresSymbol;

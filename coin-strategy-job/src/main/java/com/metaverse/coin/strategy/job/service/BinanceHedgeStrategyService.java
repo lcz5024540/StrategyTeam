@@ -5,8 +5,8 @@ import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
-import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
-import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 public class BinanceHedgeStrategyService {
 
     private final BinanceApiService binanceApiService;
-    private final OrderExecutor orderExecutor;
+    private final SingleExchangeArbitrageOrderExecutor orderExecutor;
 
     /**
      * Execute Hedge Strategy
@@ -59,7 +59,7 @@ public class BinanceHedgeStrategyService {
             checkExistingPositions(symbol, resultLog);
 
             // 2. Build a trade plan from exchange metadata so quantity works across symbols.
-            SpotFuturesOrderPlan plan = orderExecutor.createSpotFuturesPlan(symbol, usdtAmount, 3);
+            SingleExchangeSpotFuturesOrderPlan plan = orderExecutor.createSpotFuturesPlan(symbol, usdtAmount, 3);
             BigDecimal quantity = plan.getQuantity();
             logAndAppend(resultLog, "Reference Price: " + plan.getReferencePrice());
             logAndAppend(resultLog, "Spot Price: " + plan.getSpotPrice() + ", Futures Price: " + plan.getFuturesPrice());

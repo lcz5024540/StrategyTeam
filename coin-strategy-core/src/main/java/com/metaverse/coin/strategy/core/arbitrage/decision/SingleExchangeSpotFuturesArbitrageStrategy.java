@@ -2,11 +2,11 @@ package com.metaverse.coin.strategy.core.arbitrage.decision;
 
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.Strategy;
-import com.metaverse.coin.strategy.core.arbitrage.execution.ArbitrageExecutionResult;
-import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
-import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
-import com.metaverse.coin.strategy.core.arbitrage.monitor.FundingRateMonitor;
-import com.metaverse.coin.strategy.core.arbitrage.risk.RiskController;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeFundingRateMonitor;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,11 +31,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Component
 @Slf4j
 @RequiredArgsConstructor
-public class SpotFuturesArbitrageStrategy implements Strategy {
+public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
 
-    private final FundingRateMonitor fundingRateMonitor;
-    private final OrderExecutor orderExecutor;
-    private final RiskController riskController;
+    private final SingleExchangeFundingRateMonitor fundingRateMonitor;
+    private final SingleExchangeArbitrageOrderExecutor orderExecutor;
+    private final SingleExchangeRiskController riskController;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -86,7 +86,7 @@ public class SpotFuturesArbitrageStrategy implements Strategy {
 
     @Override
     public String getStrategyId() {
-        return "SPOT_FUTURES_ARBITRAGE_V1";
+        return "SINGLE_EXCHANGE_SPOT_FUTURES_ARBITRAGE_V1";
     }
 
     @Override
@@ -124,7 +124,7 @@ public class SpotFuturesArbitrageStrategy implements Strategy {
             }
 
             BigDecimal currentRate = premiumIndex.getLastFundingRate();
-            SpotFuturesOrderPlan marketPlan = orderExecutor.createSpotFuturesPlan(symbol, tradeUsdtAmount, leverage);
+            SingleExchangeSpotFuturesOrderPlan marketPlan = orderExecutor.createSpotFuturesPlan(symbol, tradeUsdtAmount, leverage);
             marketPlan.setFundingRate(currentRate);
             log.info(
                     "Opportunity snapshot for {}: fundingRate={}, basisRate={}, basisSpread={}, quantity={}, nextFundingTime={}",
@@ -157,7 +157,7 @@ public class SpotFuturesArbitrageStrategy implements Strategy {
                         marketPlan.getFuturesNotional(),
                         marketPlan.getLeverage()
                 );
-                ArbitrageExecutionResult result = orderExecutor.openArbitragePosition(marketPlan);
+                SingleExchangeArbitrageExecutionResult result = orderExecutor.openArbitragePosition(marketPlan);
                 if (result.isSuccess()) {
                     activePositions.put(symbol, ActivePosition.fromPlan(marketPlan, premiumIndex.getNextFundingTime()));
                 } else {
@@ -171,7 +171,7 @@ public class SpotFuturesArbitrageStrategy implements Strategy {
                 return;
             }
 
-            SpotFuturesOrderPlan closePlan = SpotFuturesOrderPlan.builder()
+            SingleExchangeSpotFuturesOrderPlan closePlan = SingleExchangeSpotFuturesOrderPlan.builder()
                     .symbol(symbol)
                     .spotSymbol(symbol)
                     .futuresSymbol(symbol)
@@ -198,7 +198,7 @@ public class SpotFuturesArbitrageStrategy implements Strategy {
         }
     }
 
-    private String getOpenBlockReason(BinanceFuturesPremiumIndex premiumIndex, SpotFuturesOrderPlan marketPlan) {
+    private String getOpenBlockReason(BinanceFuturesPremiumIndex premiumIndex, SingleExchangeSpotFuturesOrderPlan marketPlan) {
         BigDecimal currentRate = defaultValue(premiumIndex.getLastFundingRate());
         if (currentRate.compareTo(openThreshold) <= 0) {
             return "funding rate " + currentRate + " is not above open threshold " + openThreshold;
@@ -222,7 +222,7 @@ public class SpotFuturesArbitrageStrategy implements Strategy {
         return null;
     }
 
-    private String getCloseReason(BinanceFuturesPremiumIndex premiumIndex, SpotFuturesOrderPlan marketPlan, ActivePosition activePosition) {
+    private String getCloseReason(BinanceFuturesPremiumIndex premiumIndex, SingleExchangeSpotFuturesOrderPlan marketPlan, ActivePosition activePosition) {
         BigDecimal currentRate = defaultValue(premiumIndex.getLastFundingRate());
         if (currentRate.compareTo(BigDecimal.ZERO) <= 0) {
             return "funding rate turned non-positive";
@@ -272,7 +272,7 @@ public class SpotFuturesArbitrageStrategy implements Strategy {
             Integer leverage,
             Long nextFundingTime
     ) {
-        private static ActivePosition fromPlan(SpotFuturesOrderPlan plan, Long nextFundingTime) {
+        private static ActivePosition fromPlan(SingleExchangeSpotFuturesOrderPlan plan, Long nextFundingTime) {
             return new ActivePosition(
                     plan.getQuantity(),
                     plan.getBasisRate() == null ? BigDecimal.ZERO : plan.getBasisRate(),

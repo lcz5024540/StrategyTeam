@@ -14,8 +14,8 @@ import java.util.Date;
  */
 @Data
 @Accessors(chain = true)
-@TableName("arbitrage_position")
-public class ArbitragePosition {
+@TableName("single_exchange_arbitrage_position")
+public class SingleExchangeArbitragePosition {
 
     @TableId(type = IdType.AUTO)
     private Long id;

@@ -7,19 +7,19 @@
 ### 1.1 架构设计
 
 * 在 `coin-strategy-core` 中建立了单交易所套利的分层结构：
-    * `monitor`：`FundingRateMonitor`
-    * `decision`：`SpotFuturesArbitrageStrategy`
-    * `execution`：`OrderExecutor`
-    * `risk`：`RiskController`
-    * `rebalance`：`RebalanceService`
+    * `monitor`：`SingleExchangeFundingRateMonitor`
+    * `decision`：`SingleExchangeSpotFuturesArbitrageStrategy`
+    * `execution`：`SingleExchangeArbitrageOrderExecutor`
+    * `risk`：`SingleExchangeRiskController`
+    * `rebalance`：`SingleExchangeArbitrageRebalanceService`
 
 ### 1.2 核心能力实现
 
-* **FundingRateMonitor**
+* **SingleExchangeFundingRateMonitor**
     * 已实现 Binance 合约资金费率获取。
     * 已支持读取 `markPrice`、`lastFundingRate`、`nextFundingTime` 等字段。
 
-* **SpotFuturesArbitrageStrategy**
+* **SingleExchangeSpotFuturesArbitrageStrategy**
     * 已实现单交易所期现套利主循环。
     * 已从“硬编码数量”升级为“按预算金额和杠杆动态生成下单计划”。
     * 当前默认合约空单杠杆配置为 `3x`，来源于 `arbitrage.spot-futures.leverage`。
@@ -34,24 +34,29 @@
         * 基差相对开仓基差显著恶化。
         * 保证金率跌破紧急阈值。
 
-* **OrderExecutor**
+* **SingleExchangeArbitrageOrderExecutor**
     * 已实现现货买入 + 合约卖出的并发下单。
     * 已实现单侧失败后的自动回滚。
-    * `SpotFuturesOrderPlan` 已增加 `basisSpread` / `basisRate` 字段，用于策略层过滤。
+* `SingleExchangeSpotFuturesOrderPlan` 已增加 `basisSpread` / `basisRate` 字段，用于策略层过滤。
 
-* **RiskController**
+* **SingleExchangeRiskController**
     * 已实现开仓前的现货余额检查。
     * 已实现期货可用保证金检查。
     * 已引入 `required-margin-buffer-rate` 作为保证金缓冲。
     * 已提供 `getMarginRatio()` 供策略和再平衡服务复用。
 
-* **RebalanceService**
+* **SingleExchangeArbitrageRebalanceService**
     * 已具备定时检查保证金率的骨架。
     * 当前仍为模拟再平衡，尚未真实调用资金划转接口。
 
 ### 1.3 测试与验证
 
-* 已更新 `SpotFuturesArbitrageStrategyTest`。
+* 已更新 `SingleExchangeSpotFuturesArbitrageStrategyTest`。
+* 已完成单交易所统一命名收口：
+    * 服务：`BinanceSingleExchangeFundingRateArbitrageService`
+    * 控制器：`BinanceSingleExchangeArbitrageController`
+    * 实体：`SingleExchangeFundingRateHistory`、`SingleExchangeArbitragePosition`
+    * 表：`single_exchange_funding_rate_history`、`single_exchange_arbitrage_position`
 * 已覆盖的关键场景：
     * 正常开仓。
     * 临近结算窗口禁止开仓。
@@ -59,7 +64,7 @@
 * 已通过命令验证：
 
 ```bash
-mvn -pl coin-strategy-core -DwithTests=true -Dtest=SpotFuturesArbitrageStrategyTest test
+mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbitrageStrategyTest test
 ```
 
 ## 2. 当前不足
@@ -71,7 +76,7 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SpotFuturesArbitrageStrategyT
 
 ### 2.2 再平衡仍为模拟
 
-* `RebalanceService` 目前只记录日志，未真实执行资金划转。
+* `SingleExchangeArbitrageRebalanceService` 目前只记录日志，未真实执行资金划转。
 
 ### 2.3 配置管理仍待统一
 

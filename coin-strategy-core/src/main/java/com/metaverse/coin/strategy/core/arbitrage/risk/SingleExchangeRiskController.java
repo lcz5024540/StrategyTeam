@@ -4,7 +4,7 @@ import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo.BinanceBalance;
-import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +21,7 @@ import java.util.Optional;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class RiskController {
+public class SingleExchangeRiskController {
 
     private final BinanceApiService binanceApiService;
 
@@ -38,7 +38,7 @@ public class RiskController {
      * Check if a new trade is allowed.
      */
     public boolean checkTradeRisk(String symbol, BigDecimal quantity, BigDecimal price) {
-        SpotFuturesOrderPlan plan = SpotFuturesOrderPlan.builder()
+        SingleExchangeSpotFuturesOrderPlan plan = SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol(symbol)
                 .spotSymbol(symbol)
                 .futuresSymbol(symbol)
@@ -52,7 +52,7 @@ public class RiskController {
         return checkTradeRisk(plan);
     }
 
-    public boolean checkTradeRisk(SpotFuturesOrderPlan plan) {
+    public boolean checkTradeRisk(SingleExchangeSpotFuturesOrderPlan plan) {
         if (plan == null || plan.getQuantity() == null || plan.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             log.warn("Risk Alert: invalid trade plan");
             return false;

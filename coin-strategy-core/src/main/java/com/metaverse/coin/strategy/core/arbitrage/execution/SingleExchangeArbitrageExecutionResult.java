@@ -5,7 +5,7 @@ import lombok.Data;
 
 @Data
 @Builder
-public class ArbitrageExecutionResult {
+public class SingleExchangeArbitrageExecutionResult {
     private boolean success;
     private String symbol;
     private String spotOrderId;
@@ -13,8 +13,8 @@ public class ArbitrageExecutionResult {
     private String quantity;
     private String message;
     
-    public static ArbitrageExecutionResult success(String spotOrderId, String futuresOrderId) {
-        return ArbitrageExecutionResult.builder()
+    public static SingleExchangeArbitrageExecutionResult success(String spotOrderId, String futuresOrderId) {
+        return SingleExchangeArbitrageExecutionResult.builder()
                 .success(true)
                 .spotOrderId(spotOrderId)
                 .futuresOrderId(futuresOrderId)
@@ -22,8 +22,8 @@ public class ArbitrageExecutionResult {
                 .build();
     }
 
-    public static ArbitrageExecutionResult success(String symbol, String quantity, String spotOrderId, String futuresOrderId) {
-        return ArbitrageExecutionResult.builder()
+    public static SingleExchangeArbitrageExecutionResult success(String symbol, String quantity, String spotOrderId, String futuresOrderId) {
+        return SingleExchangeArbitrageExecutionResult.builder()
                 .success(true)
                 .symbol(symbol)
                 .quantity(quantity)
@@ -33,8 +33,8 @@ public class ArbitrageExecutionResult {
                 .build();
     }
 
-    public static ArbitrageExecutionResult failure(String message) {
-        return ArbitrageExecutionResult.builder()
+    public static SingleExchangeArbitrageExecutionResult failure(String message) {
+        return SingleExchangeArbitrageExecutionResult.builder()
                 .success(false)
                 .message(message)
                 .build();
