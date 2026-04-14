@@ -128,7 +128,7 @@
 **职责**: 策略逻辑实现与信号生成
 **核心组件**:
 - `FundingRateArbitrageStrategy`: 资金费差套利
-- `SpotFuturesArbitrageStrategy`: 现货期货套利
+- `SingleExchangeSpotFuturesArbitrageStrategy`: 单交易所现货期货套利
 - `BorrowLendArbitrageStrategy`: 借贷利差套利
 - `StrategyOrchestrator`: 策略编排器
 
@@ -815,7 +815,7 @@ public class FeatureEngine {
 public class FundingRateArbitrageStrategy implements Strategy {
     
     private final FeatureEngine featureEngine;
-    private final RiskController riskController;
+    private final SingleExchangeRiskController riskController;
     private final ExecutionEngine executionEngine;
     private final StrategyConfig config;
     

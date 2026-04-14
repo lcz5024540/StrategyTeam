@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class FundingRateMonitor {
+public class SingleExchangeFundingRateMonitor {
 
     private final BinanceApiService binanceApiService;
 

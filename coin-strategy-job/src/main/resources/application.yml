@@ -36,108 +36,43 @@ binance:
     spot-url: "https://api.binance.com"
     futures-url: "https://fapi.binance.com"
 
-polymarket:
-  smart-wallet:
-    # [TUNE] 持仓集中度监控 Job 扫描间隔（ms），默认 5 分钟
-    concentration-monitor-delay-ms: 300000
-    # [TUNE] PENDING 任务超时自动过期扫描间隔（ms），默认 5 分钟
-    pending-expire-delay-ms: 300000
-    # [TUNE] 策略健康监控 Job 扫描间隔（ms），默认 1 小时
-    health-monitor-delay-ms: 3600000
-
-  # ============================================================
-  # Polymarket 对冲套利策略（与跟单策略 smart-wallet 完全隔离）
-  # 配置命名空间: polymarket.hedge.*
-  # 数据隔离: hedge_position / hedge_order / hedge_arbitrage_log 三张独立表
-  # ============================================================
-  hedge:
-    # [FIXED-ONCE] 对冲模块总开关
-    enabled: false
-
-    # [TUNE] 自动下单开关（false = 只扫描/日志，不实际执行）
-    auto-execution-enabled: false
-
-    # ── 套利识别 ──────────────────────────────────────────────
-    # [TUNE] 最小毛利率（扣费前）。低于此值不考虑开仓。
-    # 示例: 0.025 表示 YES ask + NO ask 总和 <= 0.975 才触发
-    min-gross-edge-rate: 0.025
-
-    # [TUNE] 最小净利率（扣除双边手续费后）。
-    min-net-edge-rate: 0.015
-
-    # [TUNE] 单边最小订单簿流动性 USDC（两侧均须满足）
-    min-side-liquidity-usdc: 2000
-
-    # [TUNE] 市场扫描间隔（ms）
-    scan-fixed-delay-ms: 10000
-
-    # [TUNE] 单次扫描最多处理市场数
-    scan-batch-size: 50
-
-    # ── 资金管理 ──────────────────────────────────────────────
-    # [TUNE] 单笔最大投入 USDC（双边合计）
-    max-single-position-usdc: 3000
-
-    # [TUNE] 单笔最小投入 USDC
-    min-single-position-usdc: 50
-
-    # [TUNE] 同时持有的最大对冲仓位数
-    max-open-positions: 20
-
-    # [TUNE] 对冲策略最大总敞口 USDC
-    max-total-exposure-usdc: 30000
-
-    # [TUNE] Kelly 仓位折扣（0.5 = 半 Kelly，更保守）
-    kelly-fraction: 0.5
-
-    # ── 执行参数 ──────────────────────────────────────────────
-    # [FIXED-ONCE] 预估单边手续费率（Polymarket 约 0.15%）
-    estimated-fee-rate: 0.0015
-
-    # [TUNE] 下单价格允许的最大滑点比例（超过则拒绝成交）
-    max-slippage-rate: 0.005
-
-    # [FIXED-ONCE] 订单类型（GTC = 好至取消）
-    order-type: GTC
-
-    # ── 订单成交轮询 ──────────────────────────────────────────
-    # [TUNE] 对冲订单成交状态轮询间隔（ms）
-    order-polling-fixed-delay-ms: 5000
-
-    # ── 链上 Claim ────────────────────────────────────────────
-    # [TUNE] 对冲持仓链上 redeemPositions 触发间隔（ms）
-    claim-fixed-delay-ms: 60000
-
-    # ── 结算监控 ──────────────────────────────────────────────
-    # [TUNE] 结算轮询间隔（ms）
-    settlement-fixed-delay-ms: 30000
-
-    # [TUNE] 单次结算检查最大持仓数
-    settlement-batch-size: 30
-
-    # ── 跨策略全局风控 ─────────────────────────────────────────
-    # [TUNE] 跟单 + 对冲合计最大 USDC 敞口（0 = 不限制）
-    global-max-total-exposure-usdc: 80000
-
-    # [TUNE] 对冲占全局敞口的最大比例（防止挤占跟单资金）
-    max-hedge-share-of-global-exposure: 0.5
-
-  # ============================================================
-  # Polymarket 市场数据集中缓存（由 PolymarketMarketDataCacheService 管理）
-  # 两个策略共用，减少重复 REST 调用，避免触发限频
-  # ============================================================
-  market-data-cache:
-    # [TUNE] 活跃市场列表刷新间隔（ms）。
-    # 原 HedgeScanJob 每 10s 调用一次 searchMarkets，改为 60s 刷一次缓存，请求量降低 6 倍。
-    markets-refresh-ms: 60000
-
-    # [TUNE] 单次拉取活跃市场最大数量（Polymarket 上限 500）
-    markets-batch-size: 500
-
-    # [TUNE] 订单簿缓存有效期（ms）。
-    # 同一 tokenId 在此窗口内最多发起 1 次 /book 请求；
-    # 20s 对套利扫描精度影响极小，但可将 /book 请求量降低约 80%。
-    order-book-ttl-ms: 20000
+arbitrage:
+  spot-futures:
+    # [TUNE] 单交易所期现套利策略的主交易对。
+    symbol: "BTCUSDT"
+    # [TUNE] 单次开仓使用的现货侧预算金额（USDT），杠杆应用前的基准资金。
+    trade-usdt-amount: 100
+    # [TUNE] 对冲用合约空单的杠杆倍数。建议保持在 1x-3x 区间；
+    # 更高杠杆虽然能提高资金利用率，但会明显放大保证金恶化和强平风险。
+    leverage: 3
+    # [TUNE] 允许新开对冲仓位的最低当前资金费率阈值。
+    open-threshold: 0.0005
+    # [TUNE] 当前资金费率低于该值时触发平仓，表示继续持有的收益吸引力不足。
+    close-threshold: 0.0001
+    # [TUNE] 可接受的最小基差率，即 (合约价格 - 现货价格) / 现货价格 的下限。
+    min-basis-rate: 0.0000
+    # [TUNE] 可接受的最大基差率上限，用于避免追逐过高的合约升水。
+    max-basis-rate: 0.0030
+    # [TUNE] 开仓后允许承受的最大不利基差走阔幅度，超过则触发防守性退出。
+    max-basis-deterioration-rate: 0.0015
+    # [TUNE] 预估现货和合约双边开平仓的总手续费率，用于净收益过滤。
+    estimated-round-trip-fee-rate: 0.0010
+    # [TUNE] 预估执行滑点率，与手续费一起用于过滤掉净收益不足的机会。
+    estimated-slippage-rate: 0.0005
+    # [TUNE] 估算预期资金费收益时默认至少持有的资金费结算期数。
+    min-funding-periods: 4
+    # [TUNE] 扣除预估手续费和滑点后的最低预期净收益率，低于该值不允许开仓。
+    min-net-yield-rate: 0.0002
+    # [TUNE] 距离下一次资金费结算不足该分钟数时，不允许新开仓。
+    settlement-protection-window-minutes: 5
+    # [TUNE] 单个策略仓位允许的现货侧最大名义价值上限（USDT）。
+    max-position-value-usdt: 1000
+    # [TUNE] 允许新开仓时，合约账户可接受的最低保证金率。
+    min-margin-ratio: 2.0
+    # [TUNE] 开仓前对合约所需初始保证金施加的安全缓冲倍数。
+    required-margin-buffer-rate: 1.10
+    # [TUNE] 持仓期间合约保证金率的紧急退出阈值，低于该值时应优先平仓。
+    emergency-close-margin-ratio: 1.80
 
 smart-wallet:
   # [FIXED-ONCE] Master switch for this module.

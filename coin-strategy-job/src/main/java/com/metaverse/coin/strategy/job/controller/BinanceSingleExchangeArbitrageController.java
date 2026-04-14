@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.controller;
 
-import com.metaverse.coin.strategy.job.service.BinanceFundingRateArbitrageService;
+import com.metaverse.coin.strategy.job.service.BinanceSingleExchangeFundingRateArbitrageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,9 +14,9 @@ import java.math.BigDecimal;
 @RequestMapping("/binance/strategy/arbitrage")
 @RequiredArgsConstructor
 @ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
-public class BinanceArbitrageController {
+public class BinanceSingleExchangeArbitrageController {
 
-    private final BinanceFundingRateArbitrageService arbitrageService;
+    private final BinanceSingleExchangeFundingRateArbitrageService arbitrageService;
 
     /**
      * Trigger Funding Rate Arbitrage (Open Long Spot + Short Futures if rate > threshold)

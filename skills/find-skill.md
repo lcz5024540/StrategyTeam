@@ -1,13 +1,18 @@
 # skills - find-skill
 ### 一、简介
-find-skill 是Claude Code的一个扩展技能，它充当了Claude Code的"应用商店"或"搜索引擎"，帮助用户发现、搜索并安装社区开发的扩展技能，从而增强 Claude Code 的原生能力。
+find-skills 是一个跨平台、开源的技能发现与管理工具。它的核心使命是打破不同 AI 编程助手（Agent）之间的壁垒，为开发者提供一个统一的入口，用于搜索、安装和管理社区构建的扩展技能。
+简单来说，它就像是 AI 编程领域的 npm 或 App Store，让 Claude Code、Codex、Cursor 等不同工具都能共享同一个繁荣的技能生态。
+find-skills 本质上是一个包管理器（类似于 npm 或 pip）。当你运行安装命令时，它会检测你电脑上安装了哪些 AI 工具，并自动将技能文件部署到对应的配置目录中。
+例如：
+* **对于 Claude Code，它会将技能安装到 ~/.claude/skills/ 或项目下的 .claude/skills/。**
+* **对于 Codex，它会安装到 ~/.codex/skills/**
 
 ### 二、主要功能
 * **技能搜索**：通过关键词搜索全球开发者发布的技能
 * **技能安装**：直接调用安装命令，集成技能到 Claude Code环境
 * **技能管理**：列出当前已安装的技能，方便管理
 
-## 三、安装 find-skill
+## 三、安装 find-skill（以 Claude Code为例）
 #### **方法一：标准安装（推荐）**
 ```bash
 npx skills add https://github.com/vercel-labs/skills --skill find-skills

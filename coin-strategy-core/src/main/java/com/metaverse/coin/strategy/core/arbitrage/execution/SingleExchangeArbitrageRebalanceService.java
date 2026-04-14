@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.core.arbitrage.execution;
 
-import com.metaverse.coin.strategy.core.arbitrage.risk.RiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,9 +15,9 @@ import java.math.BigDecimal;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class RebalanceService {
+public class SingleExchangeArbitrageRebalanceService {
 
-    private final RiskController riskController;
+    private final SingleExchangeRiskController riskController;
     // private final BinanceApiService binanceApiService;
 
     private static final BigDecimal REBALANCE_THRESHOLD = new BigDecimal("1.5"); // 150% Margin Ratio
@@ -29,17 +29,16 @@ public class RebalanceService {
         log.info("Checking for Margin Rebalancing...");
         
         try {
-            // We need a method in RiskController to get actual ratio, or expose the logic here.
-            // For now, let's just use checkAccountHealth() as a boolean proxy, but we really need the value.
-            // TODO: Refactor RiskController to expose getMarginRatio()
-            
-            // Assuming we implement logic here or in RiskController
-            // For now, placeholder logic:
-            
-            boolean healthy = riskController.checkAccountHealth();
-            if (!healthy) {
+            BigDecimal marginRatio = riskController.getMarginRatio();
+            if (marginRatio == null) {
+                log.warn("Skip rebalance because margin ratio is unavailable");
+                return;
+            }
+
+            log.info("Current margin ratio: {}", marginRatio);
+            if (marginRatio.compareTo(REBALANCE_THRESHOLD) < 0) {
                 log.warn("Account health is poor! Triggering Rebalance (Simulation)...");
-                performRebalance();
+                performRebalance(marginRatio);
             }
             
         } catch (Exception e) {
@@ -47,8 +46,8 @@ public class RebalanceService {
         }
     }
 
-    private void performRebalance() {
-        log.info("Simulating Transfer from Spot to Futures to restore Margin Ratio...");
+    private void performRebalance(BigDecimal currentRatio) {
+        log.info("Simulating Transfer from Spot to Futures to restore Margin Ratio from {} to {}", currentRatio, TARGET_RATIO);
         // Logic:
         // 1. Calculate required amount to reach TARGET_RATIO.
         // 2. Check Spot Balance.

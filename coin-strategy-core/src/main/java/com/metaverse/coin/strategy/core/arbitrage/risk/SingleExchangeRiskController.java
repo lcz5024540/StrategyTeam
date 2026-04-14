@@ -4,9 +4,10 @@ import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo.BinanceBalance;
-import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -20,18 +21,24 @@ import java.util.Optional;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class RiskController {
+public class SingleExchangeRiskController {
 
     private final BinanceApiService binanceApiService;
 
-    private static final BigDecimal MAX_POSITION_VALUE_USDT = new BigDecimal("1000"); // Safety cap
-    private static final BigDecimal MIN_MARGIN_RATIO = new BigDecimal("2.0"); // 200% Margin Ratio for Futures
+    @Value("${arbitrage.spot-futures.max-position-value-usdt:1000}")
+    private BigDecimal maxPositionValueUsdt = new BigDecimal("1000");
+
+    @Value("${arbitrage.spot-futures.min-margin-ratio:2.0}")
+    private BigDecimal minMarginRatio = new BigDecimal("2.0");
+
+    @Value("${arbitrage.spot-futures.required-margin-buffer-rate:1.10}")
+    private BigDecimal requiredMarginBufferRate = new BigDecimal("1.10");
 
     /**
      * Check if a new trade is allowed.
      */
     public boolean checkTradeRisk(String symbol, BigDecimal quantity, BigDecimal price) {
-        SpotFuturesOrderPlan plan = SpotFuturesOrderPlan.builder()
+        SingleExchangeSpotFuturesOrderPlan plan = SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol(symbol)
                 .spotSymbol(symbol)
                 .futuresSymbol(symbol)
@@ -45,7 +52,7 @@ public class RiskController {
         return checkTradeRisk(plan);
     }
 
-    public boolean checkTradeRisk(SpotFuturesOrderPlan plan) {
+    public boolean checkTradeRisk(SingleExchangeSpotFuturesOrderPlan plan) {
         if (plan == null || plan.getQuantity() == null || plan.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             log.warn("Risk Alert: invalid trade plan");
             return false;
@@ -56,8 +63,8 @@ public class RiskController {
                 ? plan.getSpotNotional()
                 : plan.getQuantity().multiply(plan.getSpotPrice());
         
-        if (tradeValue.compareTo(MAX_POSITION_VALUE_USDT) > 0) {
-            log.warn("Risk Alert: Trade value {} exceeds max allowed {}", tradeValue, MAX_POSITION_VALUE_USDT);
+        if (tradeValue.compareTo(maxPositionValueUsdt) > 0) {
+            log.warn("Risk Alert: Trade value {} exceeds max allowed {}", tradeValue, maxPositionValueUsdt);
             return false;
         }
 
@@ -92,9 +99,10 @@ public class RiskController {
                     .map(BinanceFuturesAccount.BinanceFuturesAsset::getAvailableBalance)
                     .orElse(BigDecimal.ZERO);
             BigDecimal requiredMargin = plan.getRequiredFuturesMargin();
+            BigDecimal bufferedRequiredMargin = requiredMargin.multiply(requiredMarginBufferRate);
 
-            if (availableBalance.compareTo(requiredMargin) < 0) {
-                log.warn("Risk Alert: Insufficient Futures Balance. Required margin: {}, Available: {}", requiredMargin, availableBalance);
+            if (availableBalance.compareTo(bufferedRequiredMargin) < 0) {
+                log.warn("Risk Alert: Insufficient Futures Balance. Required buffered margin: {}, Available: {}", bufferedRequiredMargin, availableBalance);
                 return false;
             }
         } catch (Exception e) {
@@ -116,6 +124,18 @@ public class RiskController {
      * Margin Ratio = Margin Balance / Maintenance Margin
      */
     public boolean checkAccountHealth() {
+        BigDecimal marginRatio = getMarginRatio();
+        if (marginRatio == null) {
+            return false;
+        }
+        if (marginRatio.compareTo(minMarginRatio) < 0) {
+            log.warn("Risk Alert: Low Margin Ratio: {}", marginRatio);
+            return false;
+        }
+        return true;
+    }
+
+    public BigDecimal getMarginRatio() {
         try {
             BinanceFuturesAccount futuresAccount = binanceApiService.getFuturesService().account();
             BigDecimal marginBalance = futuresAccount.getTotalMarginBalance();
@@ -123,21 +143,15 @@ public class RiskController {
 
             // If no positions (maintMargin is 0), health is perfect
             if (maintMargin.compareTo(BigDecimal.ZERO) == 0) {
-                return true;
+                return new BigDecimal("999");
             }
 
             BigDecimal marginRatio = marginBalance.divide(maintMargin, 2, RoundingMode.HALF_DOWN);
             log.info("Current Futures Margin Ratio: {}", marginRatio);
-
-            if (marginRatio.compareTo(MIN_MARGIN_RATIO) < 0) {
-                log.warn("Risk Alert: Low Margin Ratio: {}", marginRatio);
-                return false;
-            }
-
-            return true;
+            return marginRatio;
         } catch (Exception e) {
             log.error("Failed to check Futures account health", e);
-            return false; // Fail safe
+            return null; // Fail safe
         }
     }
 }

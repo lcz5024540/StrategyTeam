@@ -28,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class OrderExecutor {
+public class SingleExchangeArbitrageOrderExecutor {
 
     private final BinanceApiService binanceApiService;
     private static final int INTERNAL_SCALE = 8;
@@ -44,8 +44,8 @@ public class OrderExecutor {
      * @param quantity Amount to trade (in base asset, e.g., BTC amount)
      * @return Execution Result
      */
-    public ArbitrageExecutionResult openArbitragePosition(String symbol, String futuresSymbol, BigDecimal quantity) {
-        SpotFuturesOrderPlan plan = SpotFuturesOrderPlan.builder()
+    public SingleExchangeArbitrageExecutionResult openArbitragePosition(String symbol, String futuresSymbol, BigDecimal quantity) {
+        SingleExchangeSpotFuturesOrderPlan plan = SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol(symbol)
                 .spotSymbol(symbol)
                 .futuresSymbol(futuresSymbol)
@@ -54,11 +54,11 @@ public class OrderExecutor {
         return openArbitragePosition(plan);
     }
 
-    public SpotFuturesOrderPlan createSpotFuturesPlan(String symbol, BigDecimal usdtAmount) {
+    public SingleExchangeSpotFuturesOrderPlan createSpotFuturesPlan(String symbol, BigDecimal usdtAmount) {
         return createSpotFuturesPlan(symbol, usdtAmount, DEFAULT_LEVERAGE);
     }
 
-    public SpotFuturesOrderPlan createSpotFuturesPlan(String symbol, BigDecimal usdtAmount, Integer leverage) {
+    public SingleExchangeSpotFuturesOrderPlan createSpotFuturesPlan(String symbol, BigDecimal usdtAmount, Integer leverage) {
         if (symbol == null || symbol.trim().isEmpty()) {
             throw new IllegalArgumentException("symbol is required");
         }
@@ -71,6 +71,11 @@ public class OrderExecutor {
         BigDecimal spotPrice = getSpotPrice(symbol);
         BigDecimal futuresPrice = getFuturesPrice(symbol);
         BigDecimal referencePrice = spotPrice.max(futuresPrice);
+        BigDecimal basisSpread = futuresPrice.subtract(spotPrice);
+        BigDecimal basisRate = BigDecimal.ZERO;
+        if (spotPrice.compareTo(BigDecimal.ZERO) > 0) {
+            basisRate = basisSpread.divide(spotPrice, INTERNAL_SCALE, RoundingMode.HALF_UP);
+        }
 
         BigDecimal spotStep = getQuantityStep(spotSymbol.getFilters(), spotSymbol.getBaseAssetPrecision());
         BigDecimal futuresStep = getQuantityStep(futuresSymbol.getFilters(), futuresSymbol.getQuantityPrecision());
@@ -96,7 +101,7 @@ public class OrderExecutor {
             throw new IllegalArgumentException("Calculated notional " + actualMinNotional + " is below minimum required " + minNotional + " for " + symbol);
         }
 
-        return SpotFuturesOrderPlan.builder()
+        return SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol(symbol)
                 .spotSymbol(symbol)
                 .futuresSymbol(symbol)
@@ -104,6 +109,8 @@ public class OrderExecutor {
                 .spotPrice(spotPrice)
                 .futuresPrice(futuresPrice)
                 .referencePrice(referencePrice)
+                .basisSpread(basisSpread)
+                .basisRate(basisRate)
                 .spotNotional(spotNotional)
                 .futuresNotional(futuresNotional)
                 .quantityStep(quantityStep)
@@ -113,7 +120,7 @@ public class OrderExecutor {
                 .build();
     }
 
-    public ArbitrageExecutionResult openArbitragePosition(SpotFuturesOrderPlan plan) {
+    public SingleExchangeArbitrageExecutionResult openArbitragePosition(SingleExchangeSpotFuturesOrderPlan plan) {
         BigDecimal quantity = requireQuantity(plan);
         String symbol = plan.getSpotSymbol();
         String futuresSymbol = plan.getFuturesSymbol();
@@ -147,29 +154,29 @@ public class OrderExecutor {
             // Case 1: Both Success
             if (spotOrder != null && futuresOrder != null) {
                 log.info("Arbitrage Position Opened. Spot Order ID: {}, Futures Order ID: {}", spotOrder.getOrderId(), futuresOrder.getOrderId());
-                return ArbitrageExecutionResult.success(plan.getSymbol(), quantity.toPlainString(), String.valueOf(spotOrder.getOrderId()), String.valueOf(futuresOrder.getOrderId()));
+                return SingleExchangeArbitrageExecutionResult.success(plan.getSymbol(), quantity.toPlainString(), String.valueOf(spotOrder.getOrderId()), String.valueOf(futuresOrder.getOrderId()));
             }
 
             // Case 2: Spot Success, Futures Fail -> Rollback Spot
             if (spotOrder != null && futuresOrder == null) {
                 log.error("Legging Risk: Spot Success, Futures Failed. Rolling back Spot...");
                 rollbackSpot(symbol, "SELL", quantity);
-                return ArbitrageExecutionResult.failure("Legging Risk: Spot Success, Futures Failed. Rolled back Spot.");
+                return SingleExchangeArbitrageExecutionResult.failure("Legging Risk: Spot Success, Futures Failed. Rolled back Spot.");
             }
 
             // Case 3: Spot Fail, Futures Success -> Rollback Futures
             if (spotOrder == null && futuresOrder != null) {
                 log.error("Legging Risk: Spot Failed, Futures Success. Rolling back Futures...");
                 rollbackFutures(futuresSymbol, "BUY", quantity);
-                return ArbitrageExecutionResult.failure("Legging Risk: Spot Failed, Futures Success. Rolled back Futures.");
+                return SingleExchangeArbitrageExecutionResult.failure("Legging Risk: Spot Failed, Futures Success. Rolled back Futures.");
             }
 
             // Case 4: Both Fail
-            return ArbitrageExecutionResult.failure("Both orders failed.");
+            return SingleExchangeArbitrageExecutionResult.failure("Both orders failed.");
 
         } catch (Exception e) {
             log.error("Error executing dual-side order", e);
-            return ArbitrageExecutionResult.failure("Exception during execution: " + e.getMessage());
+            return SingleExchangeArbitrageExecutionResult.failure("Exception during execution: " + e.getMessage());
         }
     }
 
@@ -201,7 +208,7 @@ public class OrderExecutor {
      * Close Arbitrage Position (Sell Spot + Buy Futures)
      */
     public boolean closeArbitragePosition(String symbol, String futuresSymbol, BigDecimal quantity) {
-        SpotFuturesOrderPlan plan = SpotFuturesOrderPlan.builder()
+        SingleExchangeSpotFuturesOrderPlan plan = SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol(symbol)
                 .spotSymbol(symbol)
                 .futuresSymbol(futuresSymbol)
@@ -210,7 +217,7 @@ public class OrderExecutor {
         return closeArbitragePosition(plan);
     }
 
-    public boolean closeArbitragePosition(SpotFuturesOrderPlan plan) {
+    public boolean closeArbitragePosition(SingleExchangeSpotFuturesOrderPlan plan) {
         BigDecimal quantity = requireQuantity(plan);
         String symbol = plan.getSpotSymbol();
         String futuresSymbol = plan.getFuturesSymbol();
@@ -268,7 +275,7 @@ public class OrderExecutor {
         }
     }
 
-    private BigDecimal requireQuantity(SpotFuturesOrderPlan plan) {
+    private BigDecimal requireQuantity(SingleExchangeSpotFuturesOrderPlan plan) {
         if (plan == null || plan.getQuantity() == null || plan.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("plan quantity must be greater than 0");
         }

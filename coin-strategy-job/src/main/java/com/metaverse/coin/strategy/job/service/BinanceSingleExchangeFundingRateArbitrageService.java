@@ -2,10 +2,10 @@ package com.metaverse.coin.strategy.job.service;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
-import com.metaverse.coin.strategy.core.arbitrage.execution.ArbitrageExecutionResult;
-import com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor;
-import com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan;
-import com.metaverse.coin.strategy.core.arbitrage.risk.RiskController;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
+import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -28,11 +28,11 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequiredArgsConstructor
 @ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
-public class BinanceFundingRateArbitrageService {
+public class BinanceSingleExchangeFundingRateArbitrageService {
 
     private final BinanceApiService binanceApiService;
-    private final OrderExecutor orderExecutor;
-    private final RiskController riskController;
+    private final SingleExchangeArbitrageOrderExecutor orderExecutor;
+    private final SingleExchangeRiskController riskController;
 
     public String executeArbitrage(String symbol, BigDecimal usdtAmount, BigDecimal minFundingRate) {
         return executeArbitrage(parseSymbols(symbol), usdtAmount, minFundingRate, 3);
@@ -79,7 +79,7 @@ public class BinanceFundingRateArbitrageService {
                     continue;
                 }
 
-                SpotFuturesOrderPlan plan = orderExecutor.createSpotFuturesPlan(symbol, usdtAmount, normalizedLeverage);
+                SingleExchangeSpotFuturesOrderPlan plan = orderExecutor.createSpotFuturesPlan(symbol, usdtAmount, normalizedLeverage);
                 plan.setFundingRate(fundingRate);
                 logAndAppend(resultLog, "Calculated Quantity: " + plan.getQuantity());
                 logAndAppend(resultLog, "Spot Price: " + plan.getSpotPrice() + ", Futures Price: " + plan.getFuturesPrice());
@@ -97,7 +97,7 @@ public class BinanceFundingRateArbitrageService {
                 }
 
                 prepareFuturesSettings(symbol, normalizedLeverage, resultLog);
-                ArbitrageExecutionResult executionResult = orderExecutor.openArbitragePosition(plan);
+                SingleExchangeArbitrageExecutionResult executionResult = orderExecutor.openArbitragePosition(plan);
                 executionSummary.put(symbol, executionResult.isSuccess() ? "Opened" : "Failed");
                 logAndAppend(resultLog, "Execution Result: " + executionResult.getMessage());
                 if (executionResult.isSuccess()) {

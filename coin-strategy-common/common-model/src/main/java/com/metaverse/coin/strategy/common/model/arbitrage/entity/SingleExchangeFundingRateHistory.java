@@ -14,8 +14,8 @@ import java.util.Date;
  */
 @Data
 @Accessors(chain = true)
-@TableName("funding_rate_history")
-public class FundingRateHistory {
+@TableName("single_exchange_funding_rate_history")
+public class SingleExchangeFundingRateHistory {
 
     @TableId(type = IdType.AUTO)
     private Long id;
