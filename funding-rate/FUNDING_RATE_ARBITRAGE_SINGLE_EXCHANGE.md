@@ -14,8 +14,16 @@
 
 ### 2.2 收益来源
 
-* **资金费收益**：当资金费率为正时，永续空头通常向多头收取资金费。
+* **资金费收益**：当资金费率为正时，永续多头通常需要向空头支付资金费；反之，当资金费为负时，永续空头通常需要向多头支付资金费。
 * **基差收益**：若开仓时合约升水，平仓时基差收敛，可获得额外收益；若基差继续走阔，也可能亏损。
+#### 说明：基差 = 合约价 - 现货价
+* | 步骤 | 现货 | 合约 | 基差变化 |
+  |------|-----------|-------------|----------|
+  | 开仓时 | 花10元买入 | 以10.5元卖出合约 | 基差 = +0.5元（升水） |
+  | 平仓时 | 以10.1元卖出 | 以10.2元买回平仓 | 基差 = +0.1元（收敛了！） |
+  | 盈亏 | +0.1元（10.1-10） | +0.3元（10.5-10.2） | 总赚0.4元 ✅ |
+
+
 
 ### 2.3 主要成本
 
@@ -115,25 +123,28 @@
 
 ### 5.2 当前已实现的核心能力
 
-* 动态按 USDT 预算和杠杆生成 `SpotFuturesOrderPlan`。
+* 动态按 USDT 预算和杠杆生成 `SingleExchangeSpotFuturesOrderPlan`。
 * 引入基差率过滤与临近结算保护。
 * 引入预估净收益过滤，而非只看当前 funding。
-* 持仓后基于 funding 转负、基差恶化和保证金率恶化触发平仓。
+* 持仓后基于资金费率转负、基差恶化和保证金率恶化触发平仓。
 
 ## 6. 当前实现状态
 
 当前仓库中已经实现并持续优化该策略，对应核心类包括：
 
-* `com.metaverse.coin.strategy.core.arbitrage.decision.SpotFuturesArbitrageStrategy`
-* `com.metaverse.coin.strategy.core.arbitrage.execution.OrderExecutor`
-* `com.metaverse.coin.strategy.core.arbitrage.execution.SpotFuturesOrderPlan`
-* `com.metaverse.coin.strategy.core.arbitrage.risk.RiskController`
-* `com.metaverse.coin.strategy.core.arbitrage.execution.RebalanceService`
+* `com.metaverse.coin.strategy.core.arbitrage.decision.SingleExchangeSpotFuturesArbitrageStrategy`
+* `com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor`
+* `com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan`
+* `com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController`
+* `com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageRebalanceService`
+* `com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeFundingRateHistory`
+* `com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition`
 
 当前实现中的默认参数：
 
 * 合约侧默认杠杆：`3x`
 * 配置位置：`coin-strategy-job/src/main/resources/application.yml`
 * 配置键：`arbitrage.spot-futures.leverage`
+* 单交易所持久化表：`single_exchange_funding_rate_history`、`single_exchange_arbitrage_position`
 
 实施进度详见：[单交易所套利实施进度](./FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE_SHARE.md)
