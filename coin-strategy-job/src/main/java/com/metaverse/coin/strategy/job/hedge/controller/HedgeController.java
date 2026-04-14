@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
 /**
  * 对冲策略管理接口
  *
- * 所有端点与跟单策略接口在独立的 /api/hedge/* 路径下，互不干扰。
+ * 所有端点最终挂载在全局前缀 /strategy/api 下，因此完整路径为 /strategy/api/api/hedge/*。
  */
 @Tag(name = "Hedge Strategy", description = "Polymarket 对冲套利策略管理")
 @RestController

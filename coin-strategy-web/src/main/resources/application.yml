@@ -1,11 +1,11 @@
 server:
   port: 8080
+  servlet:
+    context-path: /strategy/api
 
 spring:
   application:
     name: coin-strategy-web
-  profiles:
-    active: dev
 
 dashboard:
   smart-wallet-base-url: http://127.0.0.1:8081

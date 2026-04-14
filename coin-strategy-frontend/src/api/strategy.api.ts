@@ -79,10 +79,10 @@ function normalizeDetail(detail: StrategyDetailApiResponse): StrategyDetail {
 
 export const strategyApi = {
   getOverview: (mode: PositionMode = 'PAPER'): Promise<StrategyOverview> =>
-    apiClient.get('/strategy-platform/strategy/overview', { params: { mode } }),
+    apiClient.get('/strategy/api/strategy-platform/strategy/overview', { params: { mode } }),
 
   getDetail: (code: string, mode: PositionMode = 'PAPER'): Promise<StrategyDetail> =>
     apiClient
-      .get(`/strategy-platform/strategy/${code}`, { params: { mode } })
+      .get(`/strategy/api/strategy-platform/strategy/${code}`, { params: { mode } })
       .then((detail) => normalizeDetail((detail || {}) as StrategyDetailApiResponse)),
 }

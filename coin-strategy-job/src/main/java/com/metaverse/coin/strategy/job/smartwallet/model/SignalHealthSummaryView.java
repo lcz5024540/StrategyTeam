@@ -17,7 +17,7 @@ import java.util.Map;
  *   - 拒绝原因分布（SKIPPED 任务的错误分类汇总）
  *   - 共识状态（当前共识窗口内活跃信号数）
  *
- * 由 GET /smart-wallet/diagnostics/signal-health 端点返回。
+ * 由 GET /strategy/api/smart-wallet/diagnostics/signal-health 端点返回。
  */
 @Data
 @Builder

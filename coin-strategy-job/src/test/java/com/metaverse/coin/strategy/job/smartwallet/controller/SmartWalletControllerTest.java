@@ -116,7 +116,9 @@ class SmartWalletControllerTest {
     void shouldDefaultFollowTasksToIncludeRiskEvaluation() throws Exception {
         when(followTaskApplicationService.listTasks(5, true)).thenReturn(List.of());
 
-        mockMvc.perform(get("/smart-wallet/follow-tasks").param("limit", "5"))
+        mockMvc.perform(get("/strategy/api/smart-wallet/follow-tasks")
+                        .contextPath("/strategy/api")
+                        .param("limit", "5"))
                 .andExpect(status().isOk());
 
         verify(followTaskApplicationService).listTasks(5, true);
@@ -124,7 +126,8 @@ class SmartWalletControllerTest {
 
     @Test
     void shouldExposeBaselineModelConfigEndpoint() throws Exception {
-        mockMvc.perform(get("/smart-wallet/config/baseline-model"))
+        mockMvc.perform(get("/strategy/api/smart-wallet/config/baseline-model")
+                        .contextPath("/strategy/api"))
                 .andExpect(status().isOk());
 
         verify(baselineModelConfigApplicationService).current();
@@ -135,7 +138,9 @@ class SmartWalletControllerTest {
         when(predictionMarketDataApplicationService.listWalletFeatureDaily(20))
                 .thenReturn(List.of(new SmartWalletWalletFeatureDailyEntity()));
 
-        mockMvc.perform(get("/smart-wallet/wallet-features/daily").param("limit", "20"))
+        mockMvc.perform(get("/strategy/api/smart-wallet/wallet-features/daily")
+                        .contextPath("/strategy/api")
+                        .param("limit", "20"))
                 .andExpect(status().isOk());
 
         verify(predictionMarketDataApplicationService).listWalletFeatureDaily(20);
@@ -146,7 +151,8 @@ class SmartWalletControllerTest {
         when(predictionMarketDataApplicationService.buildWalletFeatureDaily("wallet-1", LocalDate.of(2026, 4, 10)))
                 .thenReturn(new SmartWalletWalletFeatureDailyEntity());
 
-        mockMvc.perform(post("/smart-wallet/wallet-features/daily")
+        mockMvc.perform(post("/strategy/api/smart-wallet/wallet-features/daily")
+                        .contextPath("/strategy/api")
                         .param("walletAddress", "wallet-1")
                         .param("featureDate", "2026-04-10"))
                 .andExpect(status().isOk());
@@ -159,7 +165,8 @@ class SmartWalletControllerTest {
         when(polymarketWalletDiscoveryService.analyzeWalletAndAdmitWatchlist("0xabc"))
                 .thenReturn(true);
 
-        mockMvc.perform(post("/smart-wallet/polymarket/watchlist/admit")
+        mockMvc.perform(post("/strategy/api/smart-wallet/polymarket/watchlist/admit")
+                        .contextPath("/strategy/api")
                         .param("walletAddress", "0xabc"))
                 .andExpect(status().isOk());
 
@@ -170,7 +177,8 @@ class SmartWalletControllerTest {
     void shouldReevaluateDeferredIntelligenceCandidates() throws Exception {
         when(followTaskService.reevaluateDeferredCandidates(12)).thenReturn(7);
 
-        mockMvc.perform(post("/smart-wallet/follow-tasks/intelligence/reevaluate-deferred")
+        mockMvc.perform(post("/strategy/api/smart-wallet/follow-tasks/intelligence/reevaluate-deferred")
+                        .contextPath("/strategy/api")
                         .param("limit", "12"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.limit").value(12))
@@ -188,7 +196,8 @@ class SmartWalletControllerTest {
                         .skipped(19)
                         .build());
 
-        mockMvc.perform(post("/smart-wallet/follow-tasks/intelligence/replay-recent")
+        mockMvc.perform(post("/strategy/api/smart-wallet/follow-tasks/intelligence/replay-recent")
+                        .contextPath("/strategy/api")
                         .param("limit", "25")
                         .param("includeProcessed", "true"))
                 .andExpect(status().isOk())

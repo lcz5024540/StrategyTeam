@@ -29,12 +29,12 @@ public class HttpStrategyPlatformQueryClient implements StrategyPlatformQueryCli
 
     @Override
     public StrategyDashboardOverviewView getOverview(String mode) {
-        return getJson("/strategy-platform/strategy/overview" + modeQuery(mode), StrategyDashboardOverviewView.class);
+        return getJson("/strategy/api/strategy-platform/strategy/overview" + modeQuery(mode), StrategyDashboardOverviewView.class);
     }
 
     @Override
     public StrategyDetailView getStrategyDetail(String strategyCode, String mode) {
-        return getJson("/strategy-platform/strategy/" + strategyCode + modeQuery(mode), StrategyDetailView.class);
+        return getJson("/strategy/api/strategy-platform/strategy/" + strategyCode + modeQuery(mode), StrategyDetailView.class);
     }
 
     private String modeQuery(String mode) {

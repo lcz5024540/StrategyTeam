@@ -220,12 +220,12 @@ function renderDetail(detail) {
 }
 
 async function loadOverview() {
-  state.overview = await getJson(`/dashboard/api/overview?mode=${state.positionMode}`);
+  state.overview = await getJson(`/strategy/api/dashboard/api/overview?mode=${state.positionMode}`);
   renderOverview();
 }
 
 async function loadDetail(code) {
-  state.detail = await getJson(`/dashboard/api/strategies/${code}?mode=${state.positionMode}`);
+  state.detail = await getJson(`/strategy/api/dashboard/api/strategies/${code}?mode=${state.positionMode}`);
   renderDetail(state.detail);
 }
 

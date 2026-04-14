@@ -17,7 +17,7 @@ public class SunwkController {
 
     /**
      * 手动触发双向开仓
-     * URL: POST /sunwk/open?contractCode=BTC-USDT&quantity=1
+     * URL: POST /strategy/api/sunwk/open?contractCode=BTC-USDT&quantity=1
      */
     @PostMapping("/open")
     public String openDualPositions(@RequestParam String contractCode, @RequestParam String quantity) {
@@ -27,7 +27,7 @@ public class SunwkController {
 
     /**
      * 手动触发双向平仓
-     * URL: POST /sunwk/close?contractCode=BTC-USDT&quantity=1
+     * URL: POST /strategy/api/sunwk/close?contractCode=BTC-USDT&quantity=1
      */
     @PostMapping("/close")
     public String closeDualPositions(@RequestParam String contractCode, @RequestParam String quantity) {

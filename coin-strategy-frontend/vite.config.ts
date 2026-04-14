@@ -14,11 +14,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/smart-wallet': {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      '/strategy-platform': {
+      '/strategy/api': {
         target: backendTarget,
         changeOrigin: true,
       },

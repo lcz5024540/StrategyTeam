@@ -87,7 +87,7 @@ public class SmartWalletFollowService {
                     .signalId(signalId)
                     .mode(normalizedMode)
                     .success(false)
-                    .message("LIVE mode is disabled. Set smart-wallet.auto-execution-enabled=true after checking /smart-wallet/execution-wallet/status.")
+                    .message("LIVE mode is disabled. Set smart-wallet.auto-execution-enabled=true after checking /strategy/api/smart-wallet/execution-wallet/status.")
                     .build();
         }
         return executionGateway.execute(signal, normalizedMode);
