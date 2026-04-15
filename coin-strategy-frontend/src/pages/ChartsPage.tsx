@@ -6,6 +6,7 @@ import { TimelineChart } from '@/components/charts/TimelineChart'
 import { DailyPnlBars } from '@/components/charts/DailyPnlBars'
 import { WinRateTrend } from '@/components/charts/WinRateTrend'
 import { AttributionBars } from '@/components/charts/AttributionBars'
+import { OrdersTable } from '@/components/tables/OrdersTable'
 
 export function ChartsPage() {
   const [searchParams] = useSearchParams()
@@ -38,8 +39,24 @@ export function ChartsPage() {
     return <div className="loading">加载中...</div>
   }
 
+  const showLiveEmptyHint =
+    mode === 'LIVE' &&
+    dailyReports.length === 0 &&
+    walletAttribution.length === 0 &&
+    marketAttribution.length === 0 &&
+    conflicts.length === 0
+
   return (
     <>
+      {showLiveEmptyHint ? (
+        <section className="panel">
+          <div className="empty-state">
+            当前处于 LIVE 口径，但后端还没有真实收益报表，所以折线图和柱状图会为空。
+            切换右上角的“模拟”可以查看现有 PAPER 数据。
+          </div>
+        </section>
+      ) : null}
+
       {/* 累计收益时间线 */}
       <section className="panel">
         <div className="section-head">
@@ -125,6 +142,14 @@ export function ChartsPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-head">
+          <h2>交易历史</h2>
+          <p>最近的订单记录，便于对照图表回看策略行为</p>
+        </div>
+        <OrdersTable mode={mode} />
       </section>
     </>
   )

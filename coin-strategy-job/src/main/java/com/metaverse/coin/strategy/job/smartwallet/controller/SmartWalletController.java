@@ -481,14 +481,16 @@ public class SmartWalletController {
 
     @Operation(summary = "订单列表", description = "查看 PAPER 或 LIVE 的订单记录。")
     @GetMapping("/orders")
-    public List<SmartWalletOrderView> orders(@RequestParam(defaultValue = "100") Integer limit) {
-        return accountingService.listOrders(limit);
+    public List<SmartWalletOrderView> orders(@RequestParam(defaultValue = "100") Integer limit,
+                                             @RequestParam(required = false) String mode) {
+        return accountingService.listOrders(limit, mode);
     }
 
     @Operation(summary = "成交列表", description = "查看 PAPER 或 LIVE 的成交明细。")
     @GetMapping("/fills")
-    public List<SmartWalletFillView> fills(@RequestParam(defaultValue = "100") Integer limit) {
-        return accountingService.listFills(limit);
+    public List<SmartWalletFillView> fills(@RequestParam(defaultValue = "100") Integer limit,
+                                           @RequestParam(required = false) String mode) {
+        return accountingService.listFills(limit, mode);
     }
 
     @Operation(summary = "容量摘要", description = "查看当前组合剩余仓位槽位、资金预算和基础风控限制。")
@@ -499,20 +501,22 @@ public class SmartWalletController {
 
     @Operation(summary = "当前持仓", description = "查看当前仍活跃的持仓记录，不包含 CLOSED 或 CLAIMED 仓位。")
     @GetMapping("/positions/live")
-    public List<SmartWalletPositionView> livePositions() {
-        return accountingService.listPositions();
+    public List<SmartWalletPositionView> livePositions(@RequestParam(required = false) String mode) {
+        return accountingService.listActivePositions(mode);
     }
 
     @Operation(summary = "待结算处理持仓", description = "查看已到结算窗口或待领取的仓位，时间已带北京时间字段。")
     @GetMapping("/positions/next-settlements")
-    public List<SmartWalletPositionView> nextSettlements(@RequestParam(defaultValue = "10") Integer limit) {
-        return accountingService.listNextSettlements(limit);
+    public List<SmartWalletPositionView> nextSettlements(@RequestParam(defaultValue = "10") Integer limit,
+                                                         @RequestParam(required = false) String mode) {
+        return accountingService.listNextSettlements(limit, mode);
     }
 
     @Operation(summary = "历史持仓", description = "查看历史持仓，可选只返回 closed/resolved 记录。")
     @GetMapping("/positions/history")
-    public List<SmartWalletPositionView> positionHistory(@RequestParam(defaultValue = "false") boolean closedOnly) {
-        return accountingService.listPositions(closedOnly);
+    public List<SmartWalletPositionView> positionHistory(@RequestParam(defaultValue = "false") boolean closedOnly,
+                                                         @RequestParam(required = false) String mode) {
+        return accountingService.listPositions(closedOnly, mode);
     }
 
     @Operation(summary = "资金流水", description = "查看开单、结算、已实现盈亏等资金明细流水。")

@@ -60,6 +60,9 @@ fi
 
 APP_URL="http://127.0.0.1:$BACKEND_PORT"
 FRONTEND_URL="http://127.0.0.1:$FRONTEND_PORT"
+API_CONTEXT_PATH="/strategy/api"
+BACKEND_HEALTH_URL="$APP_URL$API_CONTEXT_PATH/smart-wallet/health"
+BACKEND_SWAGGER_URL="$APP_URL$API_CONTEXT_PATH/swagger-ui.html"
 
 echo "[run-smart-wallet] building coin-strategy-job..."
 mvn -pl coin-strategy-job -am package -DskipTests
@@ -87,7 +90,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 for _ in {1..90}; do
-  if curl -s "$APP_URL/smart-wallet/health" >/dev/null 2>&1; then
+  if curl -s "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
     break
   fi
   if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
@@ -98,8 +101,8 @@ for _ in {1..90}; do
   sleep 1
 done
 
-if ! curl -s "$APP_URL/smart-wallet/health" >/dev/null 2>&1; then
-  echo "[run-smart-wallet] backend health check timeout: $APP_URL/smart-wallet/health" >&2
+if ! curl -s "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
+  echo "[run-smart-wallet] backend health check timeout: $BACKEND_HEALTH_URL" >&2
   exit 1
 fi
 
@@ -139,8 +142,8 @@ fi
 
 echo ""
 echo "[run-smart-wallet] services are ready."
-echo "[run-smart-wallet] backend health:   $APP_URL/smart-wallet/health"
-echo "[run-smart-wallet] backend swagger:  $APP_URL/swagger-ui.html"
+echo "[run-smart-wallet] backend health:   $BACKEND_HEALTH_URL"
+echo "[run-smart-wallet] backend swagger:  $BACKEND_SWAGGER_URL"
 echo "[run-smart-wallet] frontend dashboard: $FRONTEND_URL/dashboard"
 echo "[run-smart-wallet] frontend app:       $FRONTEND_URL"
 echo ""

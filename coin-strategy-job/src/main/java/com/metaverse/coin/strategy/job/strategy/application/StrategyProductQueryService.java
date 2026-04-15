@@ -290,6 +290,11 @@ public class StrategyProductQueryService {
             insights.add(new StrategyInsightView("INFO", "当前胜率尚未成型", "暂时没有已结算仓位，胜率需要等待真实结算后再判断。"));
         }
         if ("LIVE".equalsIgnoreCase(mode)) {
+            if ((metrics.totalOrders() == null || metrics.totalOrders() == 0)
+                    && (metrics.openPositions() == null || metrics.openPositions() == 0)
+                    && (metrics.closedPositions() == null || metrics.closedPositions() == 0)) {
+                insights.add(new StrategyInsightView("INFO", "暂无真实交易数据", "当前 LIVE 口径还没有真实订单、持仓和收益时间线；切回 PAPER 可查看现有模拟数据。"));
+            }
             insights.add(new StrategyInsightView("INFO", "当前查看真实仓", "页面已切到 LIVE 口径，指标、持仓、订单和时间线都只统计真实执行钱包。"));
         } else if ("PAPER".equalsIgnoreCase(mode)) {
             insights.add(new StrategyInsightView("INFO", "当前查看模拟仓", "页面已切到 PAPER 口径，指标、持仓、订单和时间线都只统计 paper-book 仓位。"));

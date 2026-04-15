@@ -334,11 +334,18 @@ public class SmartWalletAccountingService {
     }
 
     public List<SmartWalletFillView> listFills(int limit) {
+        return listFills(limit, null);
+    }
+
+    public List<SmartWalletFillView> listFills(int limit, String mode) {
         List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
                 .orderByDesc(SmartWalletFillEntity::getFilledAt)
                 .last("limit " + Math.max(limit, 1)));
         List<SmartWalletFillView> result = new ArrayList<>();
         for (SmartWalletFillEntity fill : fills) {
+            if (!matchesDashboardMode(fill.getExecutionAddress(), mode)) {
+                continue;
+            }
             result.add(toFillView(fill));
         }
         return result;

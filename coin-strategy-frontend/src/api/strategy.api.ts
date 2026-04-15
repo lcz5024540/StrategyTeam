@@ -3,6 +3,7 @@ import type { PositionMode } from '@/utils/constants'
 import type { StrategyOverview, StrategyDetail } from '@/types/strategy'
 
 type StrategyDetailApiResponse = Partial<StrategyDetail> & {
+  totalOrders?: number
   summary?: {
     code?: string
     name?: string

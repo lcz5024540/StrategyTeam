@@ -5,7 +5,11 @@ import { useStrategyStore } from '@/store/useStrategyStore'
 import { MetricGrid } from '@/components/strategy/MetricGrid'
 import { PositionsTable } from '@/components/tables/PositionsTable'
 import { SettlementsTable } from '@/components/tables/SettlementsTable'
+import { OrdersTable } from '@/components/tables/OrdersTable'
 import { TasksTable } from '@/components/tables/TasksTable'
+import { TimelineChart } from '@/components/charts/TimelineChart'
+import { DailyPnlBars } from '@/components/charts/DailyPnlBars'
+import { reportsApi } from '@/api'
 
 export function DetailPage() {
   const [searchParams] = useSearchParams()
@@ -21,12 +25,12 @@ export function DetailPage() {
 
   const { data: positions = [] } = useQuery({
     queryKey: ['positions', mode],
-    queryFn: () => walletApi.getPositionsLive(),
+    queryFn: () => walletApi.getPositionsLive(mode),
   })
 
   const { data: settlements = [] } = useQuery({
-    queryKey: ['settlements'],
-    queryFn: () => walletApi.getNextSettlements(10),
+    queryKey: ['settlements', mode],
+    queryFn: () => walletApi.getNextSettlements(10, mode),
   })
 
   const { data: executableTasks = [] } = useQuery({
@@ -39,12 +43,33 @@ export function DetailPage() {
     queryFn: () => tasksApi.getOpportunities(20, 3),
   })
 
+  const { data: dailyReports = [] } = useQuery({
+    queryKey: ['dailyReports', 30, mode],
+    queryFn: () => reportsApi.getDailyReports(30, mode),
+  })
+
   if (isLoading) {
     return <div className="loading">加载中...</div>
   }
 
+  const showLiveEmptyHint =
+    mode === 'LIVE' &&
+    detail &&
+    detail.totalTrades === 0 &&
+    positions.length === 0 &&
+    settlements.length === 0
+
   return (
     <>
+      {showLiveEmptyHint ? (
+        <section className="panel">
+          <div className="empty-state">
+            当前处于 LIVE 口径，但还没有真实仓位和订单数据。
+            切回“模拟”可以查看 paper-book 的历史记录和策略明细。
+          </div>
+        </section>
+      ) : null}
+
       <MetricGrid detail={detail} />
 
       <div className="split-grid">
@@ -80,6 +105,31 @@ export function DetailPage() {
           <SettlementsTable positions={settlements} />
         </section>
       </div>
+
+      <div className="split-grid">
+        <section className="panel">
+          <div className="section-head">
+            <h2>收益时间线</h2>
+            <p>按日查看累计收益变化</p>
+          </div>
+          <TimelineChart data={dailyReports} />
+        </section>
+        <section className="panel">
+          <div className="section-head">
+            <h2>订单收益柱状图</h2>
+            <p>按日报查看净收益分布</p>
+          </div>
+          <DailyPnlBars data={dailyReports} />
+        </section>
+      </div>
+
+      <section className="panel">
+        <div className="section-head">
+          <h2>交易历史</h2>
+          <p>最近的订单记录</p>
+        </div>
+        <OrdersTable mode={mode} />
+      </section>
     </>
   )
 }

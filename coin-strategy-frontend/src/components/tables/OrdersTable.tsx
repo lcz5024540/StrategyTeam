@@ -2,10 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { walletApi } from '@/api'
 import { compactAddress, formatAmount, formatMoney, truncateText } from '@/utils/format'
 
-export function OrdersTable() {
+interface OrdersTableProps {
+  mode?: 'PAPER' | 'LIVE'
+}
+
+export function OrdersTable({ mode }: OrdersTableProps) {
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['orders'],
-    queryFn: () => walletApi.getOrders(30),
+    queryKey: ['orders', mode],
+    queryFn: () => walletApi.getOrders(30, mode),
   })
 
   if (isLoading) {
