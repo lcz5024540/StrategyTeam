@@ -18,6 +18,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettlementReviewView;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationRunSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusView;
+import com.metaverse.coin.strategy.job.smartwallet.model.LocalSettlementConfirmRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
@@ -633,6 +634,14 @@ public class SmartWalletController {
     public SettlementSyncSummary processSettlementRetries(@RequestParam(required = false) Integer limit,
                                                           @RequestParam(defaultValue = "false") boolean refreshCache) {
         return settlementSyncService.processRetriesNow(limit, refreshCache);
+    }
+
+    @Operation(summary = "人工确认 LOCAL 结算信号", description = "针对 resolutionSource=LOCAL 的挂起市场，重新到 Polymarket 侧拉取数据；若问题精确匹配且已闭市 outcomePrices 呈现终局 1/0 形态，则按该信号推进结算。marketIds 为空时默认处理当前 LOCAL retry 队列。")
+    @PostMapping("/settlement/manual-confirm-local")
+    public SettlementSyncSummary confirmLocalSettlements(@RequestBody(required = false) LocalSettlementConfirmRequest request,
+                                                         @RequestParam(defaultValue = "true") boolean refreshCache) {
+        List<String> marketIds = request == null ? List.of() : request.getMarketIds();
+        return settlementApplicationService.confirmLocalMarkets(marketIds, refreshCache);
     }
 
     @Operation(summary = "Claim 状态", description = "查看 claim 自动处理的启停、最近一轮执行与运行状态。")

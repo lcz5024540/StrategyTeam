@@ -1140,13 +1140,116 @@ public class SmartWalletAccountingService {
                     .oraclePendingMarkets(0)
                     .skippedFutureMarkets(0)
                     .failedMarkets(0)
-                    .build();
+                .build();
         }
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
                 .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", POSITION_STATUS_SETTLEMENT_PENDING_ORACLE))
                 .in(SmartWalletPositionEntity::getMarketId, marketIds)
                 .orderByAsc(SmartWalletPositionEntity::getLastFilledAt));
         return syncSettlementsForPositions(positions, marketIds.size(), refreshCache);
+    }
+
+    public SettlementSyncSummary confirmLocalMarketsByFinalSignals(List<String> marketIds, boolean refreshCache) {
+        if (marketIds == null || marketIds.isEmpty()) {
+            return SettlementSyncSummary.builder()
+                    .scannedPositions(0)
+                    .distinctMarkets(0)
+                    .fetchedMarkets(0)
+                    .resolvedPositions(0)
+                    .unresolvedMarkets(0)
+                    .oraclePendingMarkets(0)
+                    .skippedFutureMarkets(0)
+                    .failedMarkets(0)
+                    .notes(List.of("No local settlement markets were provided for manual confirmation."))
+                    .build();
+        }
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", POSITION_STATUS_SETTLEMENT_PENDING_ORACLE))
+                .in(SmartWalletPositionEntity::getMarketId, marketIds)
+                .orderByAsc(SmartWalletPositionEntity::getLastFilledAt));
+        Map<String, List<SmartWalletPositionEntity>> positionsByMarket = new LinkedHashMap<>();
+        for (SmartWalletPositionEntity position : positions) {
+            if (position == null || !StringUtils.hasText(position.getMarketId())) {
+                continue;
+            }
+            positionsByMarket.computeIfAbsent(position.getMarketId(), ignored -> new ArrayList<>()).add(position);
+        }
+
+        int fetched = 0;
+        int resolved = 0;
+        int unresolved = 0;
+        int failed = 0;
+        List<String> notes = new ArrayList<>();
+        List<SettlementSyncFailure> failures = new ArrayList<>();
+        List<String> resolvedMarketIds = new ArrayList<>();
+
+        for (String marketId : marketIds.stream().filter(StringUtils::hasText).distinct().toList()) {
+            List<SmartWalletPositionEntity> marketPositions = positionsByMarket.getOrDefault(marketId, List.of());
+            if (marketPositions.isEmpty()) {
+                unresolved++;
+                notes.add("Skip manual confirmation for market " + marketId + " because no active/pending positions were found.");
+                continue;
+            }
+            String question = marketPositions.stream()
+                    .map(SmartWalletPositionEntity::getQuestion)
+                    .filter(StringUtils::hasText)
+                    .findFirst()
+                    .orElse(null);
+            List<String> outcomeHints = marketPositions.stream()
+                    .map(SmartWalletPositionEntity::getOutcome)
+                    .filter(StringUtils::hasText)
+                    .distinct()
+                    .toList();
+            try {
+                PolymarketApiClient.MarketMetadata metadata = marketMetadataService.findManualSettlementSignal(
+                        marketId,
+                        refreshCache,
+                        question,
+                        outcomeHints
+                );
+                if (metadata == null || !metadata.isResolved()) {
+                    unresolved++;
+                    notes.add("Manual confirmation skipped for market " + marketId
+                            + " [" + abbreviateQuestion(question) + "] because Polymarket did not return a unique final-price signal.");
+                    continue;
+                }
+                fetched++;
+                syncResolvedPaperOrderStatuses(marketId, metadata.getResolvedOutcome());
+                for (SmartWalletPositionEntity position : marketPositions) {
+                    resolvePosition(position, metadata);
+                    resolved++;
+                }
+                resolvedMarketIds.add(marketId);
+                notes.add("Manual confirmation resolved market " + marketId
+                        + " [" + abbreviateQuestion(question) + "]"
+                        + " using source=" + metadata.getResolutionSource()
+                        + ", resolvedOutcome=" + metadata.getResolvedOutcome() + ".");
+            } catch (RuntimeException e) {
+                failed++;
+                failures.add(SettlementSyncFailure.builder()
+                        .marketId(marketId)
+                        .question(question)
+                        .errorMessage(e.getMessage())
+                        .build());
+                notes.add("Manual confirmation failed for market " + marketId + ": " + e.getMessage());
+            }
+        }
+        if (notes.size() > 10) {
+            notes = new ArrayList<>(notes.subList(0, 10));
+        }
+        return SettlementSyncSummary.builder()
+                .scannedPositions(positions.size())
+                .distinctMarkets((int) marketIds.stream().filter(StringUtils::hasText).distinct().count())
+                .fetchedMarkets(fetched)
+                .resolvedPositions(resolved)
+                .unresolvedMarkets(unresolved)
+                .oraclePendingMarkets(unresolved)
+                .skippedFutureMarkets(0)
+                .failedMarkets(failed)
+                .notes(notes)
+                .failures(failures)
+                .processedMarketIds(resolvedMarketIds)
+                .build();
     }
 
     private SettlementSyncSummary syncSettlementsForPositions(List<SmartWalletPositionEntity> positions, int marketLimit, boolean refreshCache) {

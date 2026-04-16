@@ -9,6 +9,7 @@ import { OrdersTable } from '@/components/tables/OrdersTable'
 import { TasksTable } from '@/components/tables/TasksTable'
 import { TimelineChart } from '@/components/charts/TimelineChart'
 import { AttributionBars } from '@/components/charts/AttributionBars'
+import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
 export function HomePage() {
   const [searchParams] = useSearchParams()
@@ -33,7 +34,7 @@ export function HomePage() {
   // 获取待结算
   const { data: settlements = [] } = useQuery({
     queryKey: ['settlements', mode],
-    queryFn: () => walletApi.getNextSettlements(10, mode),
+    queryFn: () => walletApi.getNextSettlements(TABLE_FETCH_LIMIT, mode),
   })
 
   // 获取可执行任务

@@ -168,6 +168,36 @@ public class SmartWalletSettlementSyncService {
         return summary;
     }
 
+    public SettlementSyncSummary confirmLocalMarkets(List<String> marketIds, boolean refreshCache) {
+        List<String> targets = normalizeManualConfirmMarketIds(marketIds);
+        if (targets.isEmpty()) {
+            List<SmartWalletSettlementRetryEntity> retries = settlementRetryMapper.selectList(new LambdaQueryWrapper<SmartWalletSettlementRetryEntity>()
+                    .in(SmartWalletSettlementRetryEntity::getStatus, List.of("PENDING", "RETRYING"))
+                    .eq(SmartWalletSettlementRetryEntity::getRetryType, "ORACLE_PENDING")
+                    .like(SmartWalletSettlementRetryEntity::getLastErrorMessage, "resolutionSource=LOCAL")
+                    .orderByAsc(SmartWalletSettlementRetryEntity::getNextRetryAt));
+            targets = retries.stream()
+                    .map(SmartWalletSettlementRetryEntity::getMarketId)
+                    .filter(StringUtils::hasText)
+                    .distinct()
+                    .toList();
+        }
+        if (targets.isEmpty()) {
+            return SettlementSyncSummary.builder()
+                    .scannedPositions(0)
+                    .distinctMarkets(0)
+                    .fetchedMarkets(0)
+                    .resolvedPositions(0)
+                    .unresolvedMarkets(0)
+                    .oraclePendingMarkets(0)
+                    .skippedFutureMarkets(0)
+                    .failedMarkets(0)
+                    .notes(List.of("No LOCAL settlement retry markets were found for manual confirmation."))
+                    .build();
+        }
+        return runManualConfirmLocked(targets, refreshCache);
+    }
+
     public SettlementSyncStatusView status() {
         SmartWalletProperties.SettlementSync config = properties.getSettlementSync();
         int runs = invocationCount.get();
@@ -290,6 +320,23 @@ public class SmartWalletSettlementSyncService {
             SettlementSyncSummary summary = accountingService.syncSettlementsForMarkets(marketIds, refreshCache);
             completeRun(run, summary, "SUCCESS", null);
             reconcileProcessedRetryQueue(run.getId(), marketIds, summary);
+            return summary;
+        } catch (RuntimeException e) {
+            failRun(run, e);
+            throw e;
+        } finally {
+            running.set(false);
+        }
+    }
+
+    private SettlementSyncSummary runManualConfirmLocked(List<String> marketIds, boolean refreshCache) {
+        if (!running.compareAndSet(false, true)) {
+            throw new IllegalStateException("Settlement sync is already running.");
+        }
+        SmartWalletSettlementRunEntity run = createRun("MANUAL_LOCAL", marketIds.size(), marketIds.size(), refreshCache);
+        try {
+            SettlementSyncSummary summary = accountingService.confirmLocalMarketsByFinalSignals(marketIds, refreshCache);
+            completeRun(run, summary, "SUCCESS", null);
             return summary;
         } catch (RuntimeException e) {
             failRun(run, e);
@@ -511,6 +558,17 @@ public class SmartWalletSettlementSyncService {
             return value;
         }
         return value.substring(0, Math.max(maxLength - 3, 0)) + "...";
+    }
+
+    private List<String> normalizeManualConfirmMarketIds(List<String> marketIds) {
+        if (marketIds == null || marketIds.isEmpty()) {
+            return List.of();
+        }
+        return marketIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
     }
 
     private SettlementRunView toRunView(SmartWalletSettlementRunEntity run) {
