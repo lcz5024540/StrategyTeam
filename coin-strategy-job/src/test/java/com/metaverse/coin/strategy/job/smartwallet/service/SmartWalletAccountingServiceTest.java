@@ -7,12 +7,14 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletCashLedgerEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFillEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;
 import org.junit.jupiter.api.BeforeEach;
@@ -350,6 +352,74 @@ class SmartWalletAccountingServiceTest {
 
         assertEquals(0, performance.getOpenPositions());
         assertEquals(new BigDecimal("2.00000000"), performance.getPendingSettlementPnlUsdc());
+        assertEquals(new BigDecimal("2.00000000"), performance.getCompositePnlUsdc());
+    }
+
+    @Test
+    void shouldCountOraclePendingCapitalAsStillLocked() {
+        SmartWalletPositionEntity openPosition = new SmartWalletPositionEntity()
+                .setId(601L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-open")
+                .setQuestion("Should open capital remain locked?")
+                .setOutcome("YES")
+                .setQuantity(new BigDecimal("10.00000000"))
+                .setCostBasisUsdc(new BigDecimal("100.00000000"))
+                .setStatus("OPEN");
+        SmartWalletPositionEntity oraclePending = new SmartWalletPositionEntity()
+                .setId(602L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-pending-capital")
+                .setQuestion("Should oracle pending capital remain locked?")
+                .setOutcome("NO")
+                .setQuantity(new BigDecimal("10.00000000"))
+                .setCostBasisUsdc(new BigDecimal("50.00000000"))
+                .setStatus("SETTLEMENT_PENDING_ORACLE");
+        SmartWalletCashLedgerEntity realized = new SmartWalletCashLedgerEntity()
+                .setExecutionAddress("paper-book")
+                .setEntryType("REALIZED_PNL")
+                .setDirection("IN")
+                .setAmount(new BigDecimal("30.00000000"));
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(openPosition, oraclePending));
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of(realized));
+
+        var capacity = service.capacitySummary();
+
+        assertEquals(1, capacity.getOpenPositionCount());
+        assertEquals(new BigDecimal("150.00000000"), capacity.getTotalOpenCostUsdc());
+        assertEquals(new BigDecimal("380.00000000"), capacity.getAvailableCapitalUsdc());
+    }
+
+    @Test
+    void shouldExposeOraclePendingPnlInSummary() {
+        SmartWalletPositionEntity oraclePending = new SmartWalletPositionEntity()
+                .setId(701L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-summary-pending")
+                .setQuestion("Should summary include oracle pending pnl?")
+                .setOutcome("YES")
+                .setQuantity(new BigDecimal("10.00000000"))
+                .setCostBasisUsdc(new BigDecimal("4.00000000"))
+                .setOriginalCostBasisUsdc(new BigDecimal("4.00000000"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setUnrealizedPnlUsdc(new BigDecimal("2.00000000"))
+                .setLastMarkPrice(new BigDecimal("0.60"))
+                .setMarketEndAt(System.currentTimeMillis() - 60_000L)
+                .setStatus("SETTLEMENT_PENDING_ORACLE")
+                .setOpenedAt(new Date())
+                .setLastFilledAt(new Date());
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(oraclePending));
+        when(fillMapper.selectList(any())).thenReturn(List.of());
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of());
+        when(tradeEventMapper.selectOne(any())).thenReturn(null);
+
+        SmartWalletPnlSummaryView summary = service.summary();
+
+        assertEquals(0, summary.getOpenPositions());
+        assertEquals(new BigDecimal("2.00000000"), summary.getPendingSettlementPnlUsdc());
+        assertEquals(new BigDecimal("2.00000000"), summary.getCompositePnlUsdc());
     }
 
     @Test

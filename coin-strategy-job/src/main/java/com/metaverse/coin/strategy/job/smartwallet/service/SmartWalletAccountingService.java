@@ -553,12 +553,10 @@ public class SmartWalletAccountingService {
                 continue;
             }
             markToMarket(position);
-            if (isActivePositionStatus(position.getStatus())) {
-                if (isPendingSettlementWindow(position)) {
-                    pendingSettlement = pendingSettlement.add(pendingSettlementNetPnlForPosition(position));
-                } else {
-                    unrealized = unrealized.add(safe(position.getUnrealizedPnlUsdc()));
-                }
+            if (isPendingSettlementTracked(position)) {
+                pendingSettlement = pendingSettlement.add(pendingSettlementNetPnlForPosition(position));
+            } else if (isActivePositionStatus(position.getStatus())) {
+                unrealized = unrealized.add(safe(position.getUnrealizedPnlUsdc()));
                 openPositions++;
             }
             if (isClosedOrSettledStatus(position.getStatus())) {
@@ -571,7 +569,7 @@ public class SmartWalletAccountingService {
         BigDecimal winRate = completedPositions == 0 ? BigDecimal.ZERO
                 : BigDecimal.valueOf(wins).divide(BigDecimal.valueOf(completedPositions), 4, RoundingMode.HALF_UP);
         BigDecimal settledNet = realized.subtract(fee);
-        BigDecimal composite = settledNet.add(unrealized);
+        BigDecimal composite = settledNet.add(unrealized).add(pendingSettlement);
         return SmartWalletPnlSummaryView.builder()
                 .totalOrders(countOrdersByMode(mode))
                 .filledOrders(filledOrders)
@@ -593,16 +591,19 @@ public class SmartWalletAccountingService {
 
     public SmartWalletCapacitySummaryView capacitySummary(String mode) {
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
-        int openPositionCount = positions.size();
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", POSITION_STATUS_SETTLEMENT_PENDING_ORACLE)));
         BigDecimal totalOpenCost = BigDecimal.ZERO;
         int filteredOpenPositionCount = 0;
         for (SmartWalletPositionEntity position : positions) {
             if (!matchesDashboardMode(position.getExecutionAddress(), mode)) {
                 continue;
             }
-            filteredOpenPositionCount++;
-            totalOpenCost = totalOpenCost.add(safe(position.getCostBasisUsdc()));
+            if (isActivePositionStatus(position.getStatus())) {
+                filteredOpenPositionCount++;
+            }
+            if (isCapitalLockedPositionStatus(position.getStatus())) {
+                totalOpenCost = totalOpenCost.add(safe(position.getCostBasisUsdc()));
+            }
         }
 
         Integer openPositionLimit = properties.getSignalRisk().getMaxOpenPositions();
@@ -637,7 +638,7 @@ public class SmartWalletAccountingService {
         BigDecimal openCost = BigDecimal.ZERO;
         BigDecimal lockedClaimProceeds = BigDecimal.ZERO;
         for (SmartWalletPositionEntity position : positions) {
-            if ("OPEN".equalsIgnoreCase(position.getStatus()) || "PARTIALLY_CLOSED".equalsIgnoreCase(position.getStatus())) {
+            if (isCapitalLockedPositionStatus(position.getStatus())) {
                 openCost = openCost.add(safe(position.getCostBasisUsdc()));
             }
             lockedClaimProceeds = lockedClaimProceeds.add(lockedClaimProceedsForPosition(position));
@@ -763,7 +764,7 @@ public class SmartWalletAccountingService {
                 : totalWins.divide(totalLosses, 8, RoundingMode.HALF_UP);
         BigDecimal maxDrawdown = calculateMaxDrawdown(mode);
         BigDecimal settledNet = realized.subtract(fee);
-        BigDecimal composite = settledNet.add(unrealized);
+        BigDecimal composite = settledNet.add(unrealized).add(pendingSettlement);
         return SmartWalletPerformanceView.builder()
                 .totalOrders(countOrdersByMode(mode))
                 .filledOrders(filledOrders)
@@ -2100,6 +2101,17 @@ public class SmartWalletAccountingService {
         return POSITION_STATUS_SETTLEMENT_PENDING_ORACLE.equalsIgnoreCase(status);
     }
 
+    private boolean isCapitalLockedPositionStatus(String status) {
+        return isActivePositionStatus(status) || isOraclePendingPositionStatus(status);
+    }
+
+    private boolean isPendingSettlementTracked(SmartWalletPositionEntity position) {
+        if (position == null) {
+            return false;
+        }
+        return isPendingSettlementWindow(position) || "RESOLVED_UNCLAIMED".equalsIgnoreCase(position.getStatus());
+    }
+
     private boolean isPendingSettlementWindow(SmartWalletPositionEntity position) {
         if (position == null) {
             return false;
@@ -2233,7 +2245,7 @@ public class SmartWalletAccountingService {
             if (!matchesDashboardMode(position.getExecutionAddress(), mode)) {
                 continue;
             }
-            if ("OPEN".equalsIgnoreCase(position.getStatus()) || "PARTIALLY_CLOSED".equalsIgnoreCase(position.getStatus())) {
+            if (isCapitalLockedPositionStatus(position.getStatus())) {
                 openCost = openCost.add(safe(position.getCostBasisUsdc()));
             }
             lockedClaimProceeds = lockedClaimProceeds.add(lockedClaimProceedsForPosition(position));
