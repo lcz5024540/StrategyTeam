@@ -221,7 +221,40 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_risk_snapshot` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所资金费率套利风控快照表';
 
 -- ---------------------------------------------------------------------
--- 7. 单交易所策略运行日志表（可选）
+-- 7. 再平衡流水表
+-- 说明：
+-- - 记录每次进入再平衡动作后的最终结果，包括执行成功、条件不满足跳过和异常失败
+-- - 用于审计“为什么触发了划转 / 为什么没有划转 / 实际划转了多少”
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_rebalance_record` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `exchange_name` VARCHAR(32) NOT NULL DEFAULT 'BINANCE' COMMENT '交易所名称',
+    `symbol` VARCHAR(32) DEFAULT NULL COMMENT '关联交易对',
+    `asset` VARCHAR(16) NOT NULL COMMENT '划转资产，如 USDT',
+    `transfer_type` VARCHAR(32) NOT NULL COMMENT '划转类型，如 MAIN_UMFUTURE',
+    `status` VARCHAR(16) NOT NULL COMMENT '结果状态：EXECUTED/SKIPPED/FAILED',
+    `reason_code` VARCHAR(32) NOT NULL COMMENT '结果原因：EXECUTED/PARTIAL_TRANSFER/PERMISSION_MISSING 等',
+    `current_margin_ratio` DECIMAL(20, 8) DEFAULT NULL COMMENT '触发时当前保证金率',
+    `threshold_margin_ratio` DECIMAL(20, 8) DEFAULT NULL COMMENT '触发阈值保证金率',
+    `target_margin_ratio` DECIMAL(20, 8) DEFAULT NULL COMMENT '目标保证金率',
+    `futures_margin_balance` DECIMAL(20, 8) DEFAULT NULL COMMENT '合约账户当前保证金余额',
+    `futures_maint_margin` DECIMAL(20, 8) DEFAULT NULL COMMENT '合约账户维持保证金',
+    `target_margin_balance` DECIMAL(20, 8) DEFAULT NULL COMMENT '按目标保证金率计算出的目标保证金余额',
+    `required_transfer_amount` DECIMAL(20, 8) DEFAULT NULL COMMENT '理论应补充的资金金额',
+    `available_spot_balance` DECIMAL(20, 8) DEFAULT NULL COMMENT '现货账户可用余额',
+    `actual_transfer_amount` DECIMAL(20, 8) DEFAULT NULL COMMENT '实际划转金额',
+    `transfer_id` BIGINT DEFAULT NULL COMMENT '交易所返回的划转流水号',
+    `error_message` VARCHAR(1024) DEFAULT NULL COMMENT '失败原因或异常摘要',
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_rebalance_status_time` (`status`, `created_at`),
+    KEY `idx_rebalance_symbol_time` (`symbol`, `created_at`),
+    KEY `idx_rebalance_transfer_id` (`transfer_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所资金费率套利再平衡流水表';
+
+-- ---------------------------------------------------------------------
+-- 8. 单交易所策略运行日志表（可选）
 -- 说明：
 -- - 保留每次策略轮询或人工触发时的决策结果
 -- - 适合快速排查“为什么开仓 / 为什么不开仓 / 为什么平仓”
@@ -248,6 +281,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_strategy_execution_log` (
 --    single_exchange_arbitrage_signal_snapshot
 --    + single_exchange_arbitrage_funding_settlement
 --    + single_exchange_arbitrage_risk_snapshot
+--    + single_exchange_arbitrage_rebalance_record
 --
 -- 3) 若希望保留简洁的策略轮询日志，可额外启用：
 --    single_exchange_strategy_execution_log

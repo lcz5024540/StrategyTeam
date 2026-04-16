@@ -87,7 +87,10 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
   调用 Binance Universal Transfer 将 `rebalance-asset` 从现货账户划转到 U 本位合约账户。
 * 划转前会检查 API Key 是否具备 `permitsUniversalTransfer` / `enableInternalTransfer` 权限，
   并根据目标保证金率 `rebalance-target-margin-ratio`、当前合约保证金余额、维持保证金和现货可用余额计算实际划转金额。
-* 当前仍未把再平衡动作写入独立流水表，如需完整审计，后续可补充资金划转日志落库。
+* 已新增 `single_exchange_arbitrage_rebalance_record` 运行时流水表写入，
+  会记录再平衡执行成功、条件不满足跳过以及异常失败三类结果。
+* 流水表中已包含当前保证金率、阈值/目标保证金率、理论应划转金额、现货可用余额、实际划转金额以及交易所返回的 `transfer_id`，
+  可直接用于再平衡审计和问题排查。
 
 ### 2.3 配置管理仍待统一
 

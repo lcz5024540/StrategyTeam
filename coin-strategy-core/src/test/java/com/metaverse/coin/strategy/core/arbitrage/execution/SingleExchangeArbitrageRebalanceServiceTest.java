@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.core.arbitrage.execution;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageRebalanceRecordMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageRebalanceRecord;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
@@ -17,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,6 +33,9 @@ class SingleExchangeArbitrageRebalanceServiceTest {
 
     @Mock
     private BinanceApiService binanceApiService;
+
+    @Mock
+    private SingleExchangeArbitrageRebalanceRecordMapper rebalanceRecordMapper;
 
     @Spy
     private SingleExchangeSpotFuturesProperties properties = new SingleExchangeSpotFuturesProperties();
@@ -61,6 +67,11 @@ class SingleExchangeArbitrageRebalanceServiceTest {
         rebalanceService.checkAndRebalance();
 
         verify(binanceApiService).universalTransfer("MAIN_UMFUTURE", "USDT", "180");
+        verify(rebalanceRecordMapper).insert(argThat(record ->
+                "EXECUTED".equals(record.getStatus())
+                        && "EXECUTED".equals(record.getReasonCode())
+                        && new BigDecimal("180").compareTo(record.getActualTransferAmount()) == 0
+                        && Long.valueOf(12345L).equals(record.getTransferId())));
     }
 
     @Test
@@ -75,5 +86,8 @@ class SingleExchangeArbitrageRebalanceServiceTest {
 
         verify(binanceApiService, never()).getFuturesAccount();
         verify(binanceApiService, never()).universalTransfer(anyString(), anyString(), anyString());
+        verify(rebalanceRecordMapper).insert(argThat(record ->
+                "SKIPPED".equals(record.getStatus())
+                        && "PERMISSION_MISSING".equals(record.getReasonCode())));
     }
 }
