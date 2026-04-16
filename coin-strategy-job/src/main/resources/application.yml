@@ -73,6 +73,14 @@ arbitrage:
     required-margin-buffer-rate: 1.10
     # [TUNE] 持仓期间合约保证金率的紧急退出阈值，低于该值时应优先平仓。
     emergency-close-margin-ratio: 1.80
+    # [TUNE] 是否启用“现货账户 -> U 本位合约账户”的自动再平衡划转。
+    rebalance-enabled: true
+    # [TUNE] 当合约保证金率低于该值时，触发自动补充合约保证金。
+    rebalance-threshold-margin-ratio: 1.5
+    # [TUNE] 自动划转后的目标保证金率；系统会按该目标反推所需划转金额。
+    rebalance-target-margin-ratio: 3.0
+    # [TUNE] 自动再平衡默认划转的资产，当前单交易所策略默认使用 USDT。
+    rebalance-asset: "USDT"
 
 smart-wallet:
   # [FIXED-ONCE] Master switch for this module.

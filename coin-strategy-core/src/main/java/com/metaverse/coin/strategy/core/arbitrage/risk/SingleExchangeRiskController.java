@@ -4,10 +4,10 @@ import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo.BinanceBalance;
+import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -24,15 +24,7 @@ import java.util.Optional;
 public class SingleExchangeRiskController {
 
     private final BinanceApiService binanceApiService;
-
-    @Value("${arbitrage.spot-futures.max-position-value-usdt:1000}")
-    private BigDecimal maxPositionValueUsdt = new BigDecimal("1000");
-
-    @Value("${arbitrage.spot-futures.min-margin-ratio:2.0}")
-    private BigDecimal minMarginRatio = new BigDecimal("2.0");
-
-    @Value("${arbitrage.spot-futures.required-margin-buffer-rate:1.10}")
-    private BigDecimal requiredMarginBufferRate = new BigDecimal("1.10");
+    private final SingleExchangeSpotFuturesProperties properties;
 
     /**
      * Check if a new trade is allowed.
@@ -63,8 +55,8 @@ public class SingleExchangeRiskController {
                 ? plan.getSpotNotional()
                 : plan.getQuantity().multiply(plan.getSpotPrice());
         
-        if (tradeValue.compareTo(maxPositionValueUsdt) > 0) {
-            log.warn("Risk Alert: Trade value {} exceeds max allowed {}", tradeValue, maxPositionValueUsdt);
+        if (tradeValue.compareTo(properties.getMaxPositionValueUsdt()) > 0) {
+            log.warn("Risk Alert: Trade value {} exceeds max allowed {}", tradeValue, properties.getMaxPositionValueUsdt());
             return false;
         }
 
@@ -99,7 +91,7 @@ public class SingleExchangeRiskController {
                     .map(BinanceFuturesAccount.BinanceFuturesAsset::getAvailableBalance)
                     .orElse(BigDecimal.ZERO);
             BigDecimal requiredMargin = plan.getRequiredFuturesMargin();
-            BigDecimal bufferedRequiredMargin = requiredMargin.multiply(requiredMarginBufferRate);
+            BigDecimal bufferedRequiredMargin = requiredMargin.multiply(properties.getRequiredMarginBufferRate());
 
             if (availableBalance.compareTo(bufferedRequiredMargin) < 0) {
                 log.warn("Risk Alert: Insufficient Futures Balance. Required buffered margin: {}, Available: {}", bufferedRequiredMargin, availableBalance);
@@ -128,7 +120,7 @@ public class SingleExchangeRiskController {
         if (marginRatio == null) {
             return false;
         }
-        if (marginRatio.compareTo(minMarginRatio) < 0) {
+        if (marginRatio.compareTo(properties.getMinMarginRatio()) < 0) {
             log.warn("Risk Alert: Low Margin Ratio: {}", marginRatio);
             return false;
         }

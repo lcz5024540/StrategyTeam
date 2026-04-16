@@ -22,6 +22,8 @@
 * **SingleExchangeSpotFuturesArbitrageStrategy**
     * 已实现单交易所期现套利主循环。
     * 已从“硬编码数量”升级为“按预算金额和杠杆动态生成下单计划”。
+    * 已接入 `SingleExchangeArbitragePositionMapper`，开仓/平仓状态会写入 `single_exchange_arbitrage_position`。
+    * 策略启动时会自动恢复数据库中未关闭的持仓，避免服务重启后重复开仓。
     * 当前默认合约空单杠杆配置为 `3x`，来源于 `arbitrage.spot-futures.leverage`。
     * 当前开仓过滤包括：
         * 当前资金费率高于开仓阈值。
@@ -47,7 +49,8 @@
 
 * **SingleExchangeArbitrageRebalanceService**
     * 已具备定时检查保证金率的骨架。
-    * 当前仍为模拟再平衡，尚未真实调用资金划转接口。
+    * 已接入 Binance Universal Transfer，可在保证金率过低时执行“现货账户 -> U 本位合约账户”的真实资金划转。
+    * 已增加 API 权限校验、现货可用余额校验以及基于目标保证金率的划转金额计算。
 
 ### 1.3 测试与验证
 
@@ -71,17 +74,26 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 
 ### 2.1 状态持久化缺失
 
-* 当前持仓状态仍保存在内存 `ConcurrentHashMap` 中。
-* 服务重启后会丢失持仓状态，存在重复开仓或漏平仓风险。
+* 已解决。
+* 当前持仓会在开仓前写入 `OPENING`，开仓成功后更新为 `OPENED`，平仓过程更新为 `CLOSING/CLOSED`，失败时更新为 `FAILED`。
+* 服务启动时会从 `single_exchange_arbitrage_position` 恢复 `OPENING/OPENED/CLOSING` 状态的记录，并重建内存持仓视图。
+* 当前仍未记录单交易所订单明细表，因此平仓订单 ID 和更细颗粒度成交恢复仍可继续补强。
 
-### 2.2 再平衡仍为模拟
+### 2.2 再平衡真实划转已补齐
 
-* `SingleExchangeArbitrageRebalanceService` 目前只记录日志，未真实执行资金划转。
+* 已解决。
+* `SingleExchangeArbitrageRebalanceService` 现在会在保证金率低于 `rebalance-threshold-margin-ratio` 时，
+  调用 Binance Universal Transfer 将 `rebalance-asset` 从现货账户划转到 U 本位合约账户。
+* 划转前会检查 API Key 是否具备 `permitsUniversalTransfer` / `enableInternalTransfer` 权限，
+  并根据目标保证金率 `rebalance-target-margin-ratio`、当前合约保证金余额、维持保证金和现货可用余额计算实际划转金额。
+* 当前仍未把再平衡动作写入独立流水表，如需完整审计，后续可补充资金划转日志落库。
 
 ### 2.3 配置管理仍待统一
 
-* 虽然参数已迁移到 `application.yml` 的 `arbitrage.spot-futures` 下，
-* 但仍通过分散的 `@Value` 注入，尚未收敛为统一的 `ConfigurationProperties`。
+* 已解决。
+* 单交易所套利相关参数已统一收敛到 `SingleExchangeSpotFuturesProperties`，由单一配置对象集中读取 `arbitrage.spot-futures` 下的全部参数。
+* `SingleExchangeSpotFuturesArbitrageStrategy`、`SingleExchangeRiskController`、`SingleExchangeArbitrageRebalanceService` 已不再分散使用 `@Value`，避免配置项扩展时出现重复默认值和参数漂移。
+* 当前 `application.yml` 的配置 key 保持不变，因此对现有部署和调参方式无破坏性影响。
 
 ### 2.4 深度与滑点风控缺失
 
@@ -101,15 +113,13 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 
 ### 3.1 近期计划
 
-1. 持仓状态持久化。
-2. 将 `@Value` 参数收敛为 `ConfigurationProperties`。
-3. 实现真实资金划转。
-4. 增加深度检查与滑点保护。
-5. 接入钉钉、Slack 或邮件告警。
+1. 将再平衡动作与风控快照联动落库。
+2. 增加深度检查与滑点保护。
+3. 接入钉钉、Slack 或邮件告警。
 
 ### 3.2 实盘前必做项
 
-1. 增加持仓恢复逻辑。
-2. 增加异常退出和回滚失败告警。
+1. 增加异常退出和回滚失败告警。
+2. 将订单明细和资金费流水与持仓主表联动落库。
 3. 明确单元测试、模拟测试和联网测试的边界。
 4. 使用小资金进行长时间运行验证。

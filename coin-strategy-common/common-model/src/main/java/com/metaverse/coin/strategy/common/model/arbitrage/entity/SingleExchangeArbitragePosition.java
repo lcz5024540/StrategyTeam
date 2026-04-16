@@ -21,9 +21,29 @@ public class SingleExchangeArbitragePosition {
     private Long id;
 
     /**
+     * 业务唯一持仓编号
+     */
+    private String positionCode;
+
+    /**
+     * 交易所名称
+     */
+    private String exchangeName;
+
+    /**
      * 交易对
      */
     private String symbol;
+
+    /**
+     * 现货交易对
+     */
+    private String spotSymbol;
+
+    /**
+     * 合约交易对
+     */
+    private String futuresSymbol;
 
     /**
      * 策略类型
@@ -34,6 +54,26 @@ public class SingleExchangeArbitragePosition {
      * 状态: OPENING, OPENED, CLOSING, CLOSED, FAILED
      */
     private String status;
+
+    /**
+     * 合约杠杆
+     */
+    private Integer leverage;
+
+    /**
+     * 预算金额
+     */
+    private BigDecimal plannedUsdtAmount;
+
+    /**
+     * 现货名义金额
+     */
+    private BigDecimal spotNotional;
+
+    /**
+     * 合约名义金额
+     */
+    private BigDecimal futuresNotional;
 
     // --- 开仓信息 ---
 
@@ -68,6 +108,26 @@ public class SingleExchangeArbitragePosition {
     private BigDecimal quantity;
 
     /**
+     * 开仓时资金费率
+     */
+    private BigDecimal entryFundingRate;
+
+    /**
+     * 开仓时基差
+     */
+    private BigDecimal entryBasisSpread;
+
+    /**
+     * 开仓时基差率
+     */
+    private BigDecimal entryBasisRate;
+
+    /**
+     * 开仓时下一次资金费结算时间
+     */
+    private Long entryNextFundingTime;
+
+    /**
      * 总投入USDT (双边)
      */
     private BigDecimal totalInvestment;
@@ -99,6 +159,21 @@ public class SingleExchangeArbitragePosition {
      */
     private BigDecimal exitFuturesPrice;
 
+    /**
+     * 平仓时资金费率
+     */
+    private BigDecimal exitFundingRate;
+
+    /**
+     * 平仓时基差
+     */
+    private BigDecimal exitBasisSpread;
+
+    /**
+     * 平仓时基差率
+     */
+    private BigDecimal exitBasisRate;
+
     // --- 收益统计 ---
 
     /**
@@ -110,6 +185,11 @@ public class SingleExchangeArbitragePosition {
      * 累计赚取的资金费 (预估)
      */
     private BigDecimal fundingFeesEarned;
+
+    /**
+     * 异常信息
+     */
+    private String errorMessage;
 
     /**
      * 更新时间

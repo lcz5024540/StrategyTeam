@@ -1,7 +1,11 @@
 package com.metaverse.coin.strategy.core.arbitrage.decision;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.Strategy;
+import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
@@ -9,12 +13,15 @@ import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeFundingR
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -36,51 +43,18 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private final SingleExchangeFundingRateMonitor fundingRateMonitor;
     private final SingleExchangeArbitrageOrderExecutor orderExecutor;
     private final SingleExchangeRiskController riskController;
+    private final SingleExchangeArbitragePositionMapper positionMapper;
+    private final SingleExchangeSpotFuturesProperties properties;
+
+    private static final String EXCHANGE_NAME = "BINANCE";
+    private static final String STATUS_OPENING = "OPENING";
+    private static final String STATUS_OPENED = "OPENED";
+    private static final String STATUS_CLOSING = "CLOSING";
+    private static final String STATUS_CLOSED = "CLOSED";
+    private static final String STATUS_FAILED = "FAILED";
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
-
-    @Value("${arbitrage.spot-futures.symbol:BTCUSDT}")
-    private String symbol = "BTCUSDT";
-
-    @Value("${arbitrage.spot-futures.trade-usdt-amount:100}")
-    private BigDecimal tradeUsdtAmount = new BigDecimal("100");
-
-    @Value("${arbitrage.spot-futures.leverage:3}")
-    private Integer leverage = 3;
-
-    @Value("${arbitrage.spot-futures.open-threshold:0.0005}")
-    private BigDecimal openThreshold = new BigDecimal("0.0005");
-
-    @Value("${arbitrage.spot-futures.close-threshold:0.0001}")
-    private BigDecimal closeThreshold = new BigDecimal("0.0001");
-
-    @Value("${arbitrage.spot-futures.min-basis-rate:0.0000}")
-    private BigDecimal minBasisRate = BigDecimal.ZERO;
-
-    @Value("${arbitrage.spot-futures.max-basis-rate:0.0030}")
-    private BigDecimal maxBasisRate = new BigDecimal("0.0030");
-
-    @Value("${arbitrage.spot-futures.max-basis-deterioration-rate:0.0015}")
-    private BigDecimal maxBasisDeteriorationRate = new BigDecimal("0.0015");
-
-    @Value("${arbitrage.spot-futures.estimated-round-trip-fee-rate:0.0010}")
-    private BigDecimal estimatedRoundTripFeeRate = new BigDecimal("0.0010");
-
-    @Value("${arbitrage.spot-futures.estimated-slippage-rate:0.0005}")
-    private BigDecimal estimatedSlippageRate = new BigDecimal("0.0005");
-
-    @Value("${arbitrage.spot-futures.min-funding-periods:4}")
-    private Integer minFundingPeriods = 4;
-
-    @Value("${arbitrage.spot-futures.min-net-yield-rate:0.0002}")
-    private BigDecimal minNetYieldRate = new BigDecimal("0.0002");
-
-    @Value("${arbitrage.spot-futures.settlement-protection-window-minutes:5}")
-    private long settlementProtectionWindowMinutes = 5L;
-
-    @Value("${arbitrage.spot-futures.emergency-close-margin-ratio:1.80}")
-    private BigDecimal emergencyCloseMarginRatio = new BigDecimal("1.80");
 
     private final Map<String, ActivePosition> activePositions = new ConcurrentHashMap<>();
 
@@ -93,6 +67,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     public void start() {
         if (running.compareAndSet(false, true)) {
             log.info("Starting Spot-Futures Arbitrage Strategy...");
+            restorePersistedPositions();
             scheduler.scheduleAtFixedRate(this::executeLogic, 0, 1, TimeUnit.MINUTES);
         }
     }
@@ -115,6 +90,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         }
 
         try {
+            String symbol = properties.getSymbol();
             log.info("Checking arbitrage opportunities for {}", symbol);
 
             BinanceFuturesPremiumIndex premiumIndex = fundingRateMonitor.getBinanceFundingRate(symbol);
@@ -124,7 +100,11 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
             }
 
             BigDecimal currentRate = premiumIndex.getLastFundingRate();
-            SingleExchangeSpotFuturesOrderPlan marketPlan = orderExecutor.createSpotFuturesPlan(symbol, tradeUsdtAmount, leverage);
+            SingleExchangeSpotFuturesOrderPlan marketPlan = orderExecutor.createSpotFuturesPlan(
+                    symbol,
+                    properties.getTradeUsdtAmount(),
+                    properties.getLeverage()
+            );
             marketPlan.setFundingRate(currentRate);
             log.info(
                     "Opportunity snapshot for {}: fundingRate={}, basisRate={}, basisSpread={}, quantity={}, nextFundingTime={}",
@@ -149,6 +129,12 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     return;
                 }
 
+                SingleExchangeArbitragePosition persistedPosition = createOpeningPosition(marketPlan, premiumIndex);
+                if (persistedPosition == null) {
+                    log.warn("Skip open for {} because position state could not be persisted", symbol);
+                    return;
+                }
+
                 log.info(
                         "Opening position for {} with quantity={}, spotNotional={}, futuresNotional={}, leverage={}",
                         symbol,
@@ -159,8 +145,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 );
                 SingleExchangeArbitrageExecutionResult result = orderExecutor.openArbitragePosition(marketPlan);
                 if (result.isSuccess()) {
-                    activePositions.put(symbol, ActivePosition.fromPlan(marketPlan, premiumIndex.getNextFundingTime()));
+                    SingleExchangeArbitragePosition openedPosition = markPositionOpened(persistedPosition, marketPlan, premiumIndex, result);
+                    activePositions.put(symbol, ActivePosition.fromEntity(openedPosition));
                 } else {
+                    markPositionFailed(persistedPosition.getId(), result.getMessage());
                     log.warn("Failed to open arbitrage position for {}: {}", symbol, result.getMessage());
                 }
                 return;
@@ -179,18 +167,22 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     .leverage(activePosition.leverage())
                     .build();
             log.info(
-                    "Closing position for {} because {}. quantity={}, currentFundingRate={}, currentBasisRate={}, entryBasisRate={}",
+                    "Closing position for {} because {}. positionId={}, quantity={}, currentFundingRate={}, currentBasisRate={}, entryBasisRate={}",
                     symbol,
                     closeReason,
+                    activePosition.positionId(),
                     activePosition.quantity(),
                     currentRate,
                     marketPlan.getBasisRate(),
                     activePosition.entryBasisRate()
             );
+            markPositionClosing(activePosition);
             boolean success = orderExecutor.closeArbitragePosition(closePlan);
             if (success) {
+                markPositionClosed(activePosition, marketPlan, currentRate);
                 activePositions.remove(symbol);
             } else {
+                revertPositionToOpened(activePosition);
                 log.warn("Failed to close arbitrage position for {} after trigger: {}", symbol, closeReason);
             }
         } catch (Exception e) {
@@ -198,26 +190,172 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         }
     }
 
+    private void restorePersistedPositions() {
+        try {
+            List<SingleExchangeArbitragePosition> persistedPositions = positionMapper.selectList(
+                    new LambdaQueryWrapper<SingleExchangeArbitragePosition>()
+                            .eq(SingleExchangeArbitragePosition::getStrategyType, getStrategyId())
+                            .eq(SingleExchangeArbitragePosition::getSymbol, properties.getSymbol())
+                            .in(SingleExchangeArbitragePosition::getStatus, STATUS_OPENING, STATUS_OPENED, STATUS_CLOSING)
+                            .orderByDesc(SingleExchangeArbitragePosition::getEntryTime)
+                            .orderByDesc(SingleExchangeArbitragePosition::getId)
+            );
+
+            if (persistedPositions == null || persistedPositions.isEmpty()) {
+                return;
+            }
+
+            SingleExchangeArbitragePosition recovered = persistedPositions.stream()
+                    .filter(position -> position.getQuantity() != null && position.getQuantity().compareTo(BigDecimal.ZERO) > 0)
+                    .max(Comparator.comparing(SingleExchangeArbitragePosition::getId))
+                    .orElse(persistedPositions.get(0));
+
+            if (persistedPositions.size() > 1) {
+                log.warn("Found {} persisted active positions for {}, recovering the latest record id={}",
+                        persistedPositions.size(), properties.getSymbol(), recovered.getId());
+            }
+
+            activePositions.put(properties.getSymbol(), ActivePosition.fromEntity(recovered));
+            log.info("Recovered persisted position for {}: id={}, status={}, quantity={}",
+                    properties.getSymbol(), recovered.getId(), recovered.getStatus(), recovered.getQuantity());
+        } catch (Exception e) {
+            log.error("Failed to restore persisted arbitrage positions for {}", properties.getSymbol(), e);
+        }
+    }
+
+    private SingleExchangeArbitragePosition createOpeningPosition(SingleExchangeSpotFuturesOrderPlan marketPlan,
+                                                                  BinanceFuturesPremiumIndex premiumIndex) {
+        try {
+            SingleExchangeArbitragePosition position = new SingleExchangeArbitragePosition()
+                    .setPositionCode(generatePositionCode(marketPlan.getSymbol()))
+                    .setExchangeName(EXCHANGE_NAME)
+                    .setSymbol(marketPlan.getSymbol())
+                    .setSpotSymbol(marketPlan.getSpotSymbol())
+                    .setFuturesSymbol(marketPlan.getFuturesSymbol())
+                    .setStrategyType(getStrategyId())
+                    .setStatus(STATUS_OPENING)
+                    .setLeverage(marketPlan.getLeverage())
+                    .setPlannedUsdtAmount(properties.getTradeUsdtAmount())
+                    .setQuantity(marketPlan.getQuantity())
+                    .setSpotNotional(marketPlan.getSpotNotional())
+                    .setFuturesNotional(marketPlan.getFuturesNotional())
+                    .setTotalInvestment(estimateTotalInvestment(marketPlan))
+                    .setEntryTime(new Date())
+                    .setEntrySpotPrice(marketPlan.getSpotPrice())
+                    .setEntryFuturesPrice(marketPlan.getFuturesPrice())
+                    .setEntryFundingRate(premiumIndex.getLastFundingRate())
+                    .setEntryBasisSpread(marketPlan.getBasisSpread())
+                    .setEntryBasisRate(marketPlan.getBasisRate())
+                    .setEntryNextFundingTime(premiumIndex.getNextFundingTime())
+                    .setRealizedPnl(BigDecimal.ZERO)
+                    .setFundingFeesEarned(BigDecimal.ZERO)
+                    .setUpdatedAt(new Date());
+            positionMapper.insert(position);
+            return position;
+        } catch (Exception e) {
+            log.error("Failed to persist opening position for {}", marketPlan.getSymbol(), e);
+            return null;
+        }
+    }
+
+    private SingleExchangeArbitragePosition markPositionOpened(SingleExchangeArbitragePosition position,
+                                                               SingleExchangeSpotFuturesOrderPlan marketPlan,
+                                                               BinanceFuturesPremiumIndex premiumIndex,
+                                                               SingleExchangeArbitrageExecutionResult result) {
+        position.setStatus(STATUS_OPENED)
+                .setSpotBuyOrderId(result.getSpotOrderId())
+                .setFuturesSellOrderId(result.getFuturesOrderId())
+                .setEntrySpotPrice(marketPlan.getSpotPrice())
+                .setEntryFuturesPrice(marketPlan.getFuturesPrice())
+                .setEntryFundingRate(premiumIndex.getLastFundingRate())
+                .setEntryBasisSpread(marketPlan.getBasisSpread())
+                .setEntryBasisRate(marketPlan.getBasisRate())
+                .setEntryNextFundingTime(premiumIndex.getNextFundingTime())
+                .setUpdatedAt(new Date())
+                .setErrorMessage(null);
+        try {
+            positionMapper.updateById(position);
+        } catch (Exception e) {
+            log.error("Failed to mark position {} as opened", position.getId(), e);
+        }
+        return position;
+    }
+
+    private void markPositionFailed(Long positionId, String message) {
+        updatePosition(positionId, position -> position.setStatus(STATUS_FAILED)
+                .setErrorMessage(message)
+                .setUpdatedAt(new Date()));
+    }
+
+    private void markPositionClosing(ActivePosition activePosition) {
+        updatePosition(activePosition.positionId(), position -> position.setStatus(STATUS_CLOSING)
+                .setUpdatedAt(new Date()));
+    }
+
+    private void markPositionClosed(ActivePosition activePosition,
+                                    SingleExchangeSpotFuturesOrderPlan marketPlan,
+                                    BigDecimal currentFundingRate) {
+        updatePosition(activePosition.positionId(), position -> position.setStatus(STATUS_CLOSED)
+                .setExitTime(new Date())
+                .setExitSpotPrice(marketPlan.getSpotPrice())
+                .setExitFuturesPrice(marketPlan.getFuturesPrice())
+                .setExitFundingRate(currentFundingRate)
+                .setExitBasisSpread(marketPlan.getBasisSpread())
+                .setExitBasisRate(marketPlan.getBasisRate())
+                .setUpdatedAt(new Date())
+                .setErrorMessage(null));
+    }
+
+    private void revertPositionToOpened(ActivePosition activePosition) {
+        updatePosition(activePosition.positionId(), position -> position.setStatus(STATUS_OPENED)
+                .setUpdatedAt(new Date()));
+    }
+
+    private void updatePosition(Long positionId, java.util.function.Consumer<SingleExchangeArbitragePosition> mutator) {
+        if (positionId == null) {
+            return;
+        }
+        try {
+            SingleExchangeArbitragePosition position = positionMapper.selectById(positionId);
+            if (position == null) {
+                log.warn("Position {} not found during persistence update", positionId);
+                return;
+            }
+            mutator.accept(position);
+            positionMapper.updateById(position);
+        } catch (Exception e) {
+            log.error("Failed to update persisted position {}", positionId, e);
+        }
+    }
+
+    private BigDecimal estimateTotalInvestment(SingleExchangeSpotFuturesOrderPlan marketPlan) {
+        return defaultValue(marketPlan.getSpotNotional()).add(marketPlan.getRequiredFuturesMargin());
+    }
+
+    private String generatePositionCode(String tradeSymbol) {
+        return "SEA-" + tradeSymbol + "-" + UUID.randomUUID().toString().replace("-", "");
+    }
+
     private String getOpenBlockReason(BinanceFuturesPremiumIndex premiumIndex, SingleExchangeSpotFuturesOrderPlan marketPlan) {
         BigDecimal currentRate = defaultValue(premiumIndex.getLastFundingRate());
-        if (currentRate.compareTo(openThreshold) <= 0) {
-            return "funding rate " + currentRate + " is not above open threshold " + openThreshold;
+        if (currentRate.compareTo(properties.getOpenThreshold()) <= 0) {
+            return "funding rate " + currentRate + " is not above open threshold " + properties.getOpenThreshold();
         }
         if (isWithinSettlementProtectionWindow(premiumIndex.getNextFundingTime())) {
             return "next funding settlement is too close";
         }
 
         BigDecimal basisRate = defaultValue(marketPlan.getBasisRate());
-        if (basisRate.compareTo(minBasisRate) < 0) {
-            return "basis rate " + basisRate + " is below minimum " + minBasisRate;
+        if (basisRate.compareTo(properties.getMinBasisRate()) < 0) {
+            return "basis rate " + basisRate + " is below minimum " + properties.getMinBasisRate();
         }
-        if (basisRate.compareTo(maxBasisRate) > 0) {
-            return "basis rate " + basisRate + " is above maximum " + maxBasisRate;
+        if (basisRate.compareTo(properties.getMaxBasisRate()) > 0) {
+            return "basis rate " + basisRate + " is above maximum " + properties.getMaxBasisRate();
         }
 
         BigDecimal expectedNetYield = estimateExpectedNetYield(currentRate);
-        if (expectedNetYield.compareTo(minNetYieldRate) < 0) {
-            return "expected net yield " + expectedNetYield + " is below minimum " + minNetYieldRate;
+        if (expectedNetYield.compareTo(properties.getMinNetYieldRate()) < 0) {
+            return "expected net yield " + expectedNetYield + " is below minimum " + properties.getMinNetYieldRate();
         }
         return null;
     }
@@ -227,33 +365,35 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         if (currentRate.compareTo(BigDecimal.ZERO) <= 0) {
             return "funding rate turned non-positive";
         }
-        if (currentRate.compareTo(closeThreshold) < 0) {
+        if (currentRate.compareTo(properties.getCloseThreshold()) < 0) {
             return "funding rate dropped below close threshold";
         }
 
         BigDecimal currentBasisRate = defaultValue(marketPlan.getBasisRate());
         BigDecimal basisWideningRate = currentBasisRate.subtract(activePosition.entryBasisRate());
-        if (basisWideningRate.compareTo(maxBasisDeteriorationRate) > 0) {
-            return "basis widened by " + basisWideningRate + ", exceeding " + maxBasisDeteriorationRate;
+        if (basisWideningRate.compareTo(properties.getMaxBasisDeteriorationRate()) > 0) {
+            return "basis widened by " + basisWideningRate + ", exceeding " + properties.getMaxBasisDeteriorationRate();
         }
 
         BigDecimal marginRatio = riskController.getMarginRatio();
-        if (marginRatio != null && marginRatio.compareTo(emergencyCloseMarginRatio) < 0) {
-            return "margin ratio " + marginRatio + " is below emergency threshold " + emergencyCloseMarginRatio;
+        if (marginRatio != null && marginRatio.compareTo(properties.getEmergencyCloseMarginRatio()) < 0) {
+            return "margin ratio " + marginRatio + " is below emergency threshold " + properties.getEmergencyCloseMarginRatio();
         }
         return null;
     }
 
     private BigDecimal estimateExpectedNetYield(BigDecimal currentRate) {
+        Integer minFundingPeriods = properties.getMinFundingPeriods();
         int fundingPeriods = minFundingPeriods == null || minFundingPeriods <= 0 ? 1 : minFundingPeriods;
         return currentRate.multiply(BigDecimal.valueOf(fundingPeriods))
-                .subtract(estimatedRoundTripFeeRate)
-                .subtract(estimatedSlippageRate)
+                .subtract(properties.getEstimatedRoundTripFeeRate())
+                .subtract(properties.getEstimatedSlippageRate())
                 .setScale(8, RoundingMode.HALF_UP);
     }
 
     private boolean isWithinSettlementProtectionWindow(Long nextFundingTime) {
-        if (nextFundingTime == null || settlementProtectionWindowMinutes <= 0) {
+        Long settlementProtectionWindowMinutes = properties.getSettlementProtectionWindowMinutes();
+        if (nextFundingTime == null || settlementProtectionWindowMinutes == null || settlementProtectionWindowMinutes <= 0) {
             return false;
         }
         long millisUntilSettlement = nextFundingTime - System.currentTimeMillis();
@@ -266,20 +406,28 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     }
 
     private record ActivePosition(
+            Long positionId,
+            String positionCode,
             BigDecimal quantity,
             BigDecimal entryBasisRate,
             BigDecimal entryFundingRate,
             Integer leverage,
             Long nextFundingTime
     ) {
-        private static ActivePosition fromPlan(SingleExchangeSpotFuturesOrderPlan plan, Long nextFundingTime) {
+        private static ActivePosition fromEntity(SingleExchangeArbitragePosition position) {
             return new ActivePosition(
-                    plan.getQuantity(),
-                    plan.getBasisRate() == null ? BigDecimal.ZERO : plan.getBasisRate(),
-                    plan.getFundingRate() == null ? BigDecimal.ZERO : plan.getFundingRate(),
-                    plan.getLeverage(),
-                    nextFundingTime
+                    position.getId(),
+                    position.getPositionCode(),
+                    position.getQuantity(),
+                    position.getEntryBasisRate() == null ? BigDecimal.ZERO : position.getEntryBasisRate(),
+                    position.getEntryFundingRate() == null ? BigDecimal.ZERO : position.getEntryFundingRate(),
+                    position.getLeverage() == null ? leverageFallback() : position.getLeverage(),
+                    position.getEntryNextFundingTime()
             );
+        }
+
+        private static Integer leverageFallback() {
+            return 1;
         }
     }
 }

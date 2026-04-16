@@ -14,17 +14,20 @@ import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceDep
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceDepositHistory;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceSystemStatus;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceTradeFee;
+import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceUniversalTransferResult;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceWithdrawHistory;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 
 import java.io.IOException;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class BinanceWalletService {
@@ -248,6 +251,32 @@ public class BinanceWalletService {
     }
 
     /**
+     * User Universal Transfer (USER_DATA)
+     * <br>
+     * POST /sapi/v1/asset/transfer
+     */
+    public BinanceUniversalTransferResult universalTransfer(String type, String asset, String amount, String fromSymbol, String toSymbol) {
+        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("type", type);
+        parameters.put("asset", asset);
+        parameters.put("amount", amount);
+        if (fromSymbol != null) {
+            parameters.put("fromSymbol", fromSymbol);
+        }
+        if (toSymbol != null) {
+            parameters.put("toSymbol", toSymbol);
+        }
+
+        String json = executeRequest("/sapi/v1/asset/transfer", parameters, "POST", true);
+        try {
+            return objectMapper.readValue(json, BinanceUniversalTransferResult.class);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse universal transfer result", e);
+            throw new RuntimeException("Failed to parse universal transfer result", e);
+        }
+    }
+
+    /**
      * Get API Key Permission (Wallet)
      * <br>
      * GET /sapi/v1/account/apiRestrictions
@@ -255,38 +284,69 @@ public class BinanceWalletService {
      * 获取 API Key 权限
      */
     public BinanceApiKeyPermission getApiKeyPermission() {
-        if (apiKey == null || secretKey == null) {
-            throw new RuntimeException("API Key and Secret Key are required for this operation");
-        }
-
-        long timestamp = System.currentTimeMillis();
-        String queryString = "timestamp=" + timestamp;
-
-        String signature;
+        String json = executeRequest("/sapi/v1/account/apiRestrictions", new LinkedHashMap<>(), "GET", true);
         try {
-            byte[] hmacBytes = SignUtils.hmacSHA256(secretKey.getBytes(), queryString.getBytes());
-            signature = bytesToHex(hmacBytes);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to sign request", e);
-        }
-
-        String fullUrl = baseUrl + "/sapi/v1/account/apiRestrictions?" + queryString + "&signature=" + signature;
-
-        Request request = new Request.Builder()
-                .url(fullUrl)
-                .addHeader("X-MBX-APIKEY", apiKey)
-                .get()
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String json = response.body().string();
-            if (!response.isSuccessful()) {
-                throw new RuntimeException("Failed to get API Key Permission: " + json);
-            }
             return objectMapper.readValue(json, BinanceApiKeyPermission.class);
         } catch (IOException e) {
             log.error("Failed to get API Key Permission", e);
             throw new RuntimeException("Failed to get API Key Permission", e);
+        }
+    }
+
+    private String executeRequest(String path, Map<String, Object> parameters, String method, boolean signed) {
+        String queryString = parameters.entrySet().stream()
+                .filter(entry -> entry.getValue() != null)
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining("&"));
+
+        if (signed) {
+            if (apiKey == null || secretKey == null) {
+                throw new RuntimeException("API Key and Secret Key are required for this operation");
+            }
+
+            long timestamp = System.currentTimeMillis();
+            if (!queryString.isEmpty()) {
+                queryString += "&";
+            }
+            queryString += "timestamp=" + timestamp;
+
+            try {
+                byte[] hmacBytes = SignUtils.hmacSHA256(secretKey.getBytes(), queryString.getBytes());
+                queryString += "&signature=" + bytesToHex(hmacBytes);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to sign request", e);
+            }
+        }
+
+        String fullUrl = baseUrl + path;
+        Request.Builder requestBuilder = new Request.Builder()
+                .addHeader("X-MBX-APIKEY", apiKey);
+
+        if ("POST".equalsIgnoreCase(method)) {
+            RequestBody body = RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), queryString);
+            requestBuilder.url(fullUrl).post(body);
+        } else if ("PUT".equalsIgnoreCase(method)) {
+            RequestBody body = RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), queryString);
+            requestBuilder.url(fullUrl).put(body);
+        } else if ("DELETE".equalsIgnoreCase(method)) {
+            RequestBody body = RequestBody.create(MediaType.parse("application/x-www-form-urlencoded"), queryString);
+            requestBuilder.url(fullUrl).delete(body);
+        } else {
+            if (!queryString.isEmpty()) {
+                fullUrl += "?" + queryString;
+            }
+            requestBuilder.url(fullUrl).get();
+        }
+
+        try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
+            String json = response.body().string();
+            if (!response.isSuccessful()) {
+                throw new RuntimeException("Failed to execute request: " + json);
+            }
+            return json;
+        } catch (IOException e) {
+            log.error("Failed to execute request", e);
+            throw new RuntimeException("Failed to execute request", e);
         }
     }
 

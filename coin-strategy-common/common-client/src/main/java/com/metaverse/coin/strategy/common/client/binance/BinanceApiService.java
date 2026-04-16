@@ -24,6 +24,7 @@ import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrderList;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceTradeHistory;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
+import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceUniversalTransferResult;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -215,6 +216,14 @@ public class BinanceApiService {
 
     public BinanceApiKeyPermission getApiKeyPermission() {
         return walletService.getApiKeyPermission();
+    }
+
+    public BinanceUniversalTransferResult universalTransfer(String type, String asset, String amount) {
+        return walletService.universalTransfer(type, asset, amount, null, null);
+    }
+
+    public BinanceUniversalTransferResult universalTransfer(String type, String asset, String amount, String fromSymbol, String toSymbol) {
+        return walletService.universalTransfer(type, asset, amount, fromSymbol, toSymbol);
     }
 
     // ================= FUTURES API (USDS-M) =================
