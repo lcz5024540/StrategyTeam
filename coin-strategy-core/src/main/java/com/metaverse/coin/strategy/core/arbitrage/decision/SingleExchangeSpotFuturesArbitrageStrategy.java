@@ -1,7 +1,9 @@
 package com.metaverse.coin.strategy.core.arbitrage.decision;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.Strategy;
@@ -43,6 +45,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private final SingleExchangeFundingRateMonitor fundingRateMonitor;
     private final SingleExchangeArbitrageOrderExecutor orderExecutor;
     private final SingleExchangeRiskController riskController;
+    private final SingleExchangeArbitrageOrderMapper orderMapper;
     private final SingleExchangeArbitragePositionMapper positionMapper;
     private final SingleExchangeSpotFuturesProperties properties;
 
@@ -144,6 +147,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                         marketPlan.getLeverage()
                 );
                 SingleExchangeArbitrageExecutionResult result = orderExecutor.openArbitragePosition(marketPlan);
+                persistOrderRecords(persistedPosition.getId(), persistedPosition.getPositionCode(), result.getOrderRecords());
                 if (result.isSuccess()) {
                     SingleExchangeArbitragePosition openedPosition = markPositionOpened(persistedPosition, marketPlan, premiumIndex, result);
                     activePositions.put(symbol, ActivePosition.fromEntity(openedPosition));
@@ -177,9 +181,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     activePosition.entryBasisRate()
             );
             markPositionClosing(activePosition);
-            boolean success = orderExecutor.closeArbitragePosition(closePlan);
-            if (success) {
-                markPositionClosed(activePosition, marketPlan, currentRate);
+            SingleExchangeArbitrageExecutionResult closeResult = orderExecutor.closeArbitragePosition(closePlan);
+            persistOrderRecords(activePosition.positionId(), activePosition.positionCode(), closeResult.getOrderRecords());
+            if (closeResult.isSuccess()) {
+                markPositionClosed(activePosition, marketPlan, currentRate, closeResult);
                 activePositions.remove(symbol);
             } else {
                 revertPositionToOpened(activePosition);
@@ -294,11 +299,14 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
 
     private void markPositionClosed(ActivePosition activePosition,
                                     SingleExchangeSpotFuturesOrderPlan marketPlan,
-                                    BigDecimal currentFundingRate) {
+                                    BigDecimal currentFundingRate,
+                                    SingleExchangeArbitrageExecutionResult closeResult) {
         updatePosition(activePosition.positionId(), position -> position.setStatus(STATUS_CLOSED)
                 .setExitTime(new Date())
                 .setExitSpotPrice(marketPlan.getSpotPrice())
                 .setExitFuturesPrice(marketPlan.getFuturesPrice())
+                .setSpotSellOrderId(closeResult.getSpotOrderId())
+                .setFuturesBuyOrderId(closeResult.getFuturesOrderId())
                 .setExitFundingRate(currentFundingRate)
                 .setExitBasisSpread(marketPlan.getBasisSpread())
                 .setExitBasisRate(marketPlan.getBasisRate())
@@ -325,6 +333,27 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
             positionMapper.updateById(position);
         } catch (Exception e) {
             log.error("Failed to update persisted position {}", positionId, e);
+        }
+    }
+
+    private void persistOrderRecords(Long positionId, String positionCode, List<SingleExchangeArbitrageOrder> orderRecords) {
+        if (positionId == null || orderRecords == null || orderRecords.isEmpty()) {
+            return;
+        }
+        for (SingleExchangeArbitrageOrder orderRecord : orderRecords) {
+            if (orderRecord == null) {
+                continue;
+            }
+            try {
+                orderRecord.setPositionId(positionId)
+                        .setPositionCode(positionCode)
+                        .setCreatedAt(new Date())
+                        .setUpdatedAt(new Date());
+                orderMapper.insert(orderRecord);
+            } catch (Exception e) {
+                log.error("Failed to persist arbitrage order record for positionId={}, phase={}, hedgeSide={}",
+                        positionId, orderRecord.getTradePhase(), orderRecord.getHedgeSide(), e);
+            }
         }
     }
 

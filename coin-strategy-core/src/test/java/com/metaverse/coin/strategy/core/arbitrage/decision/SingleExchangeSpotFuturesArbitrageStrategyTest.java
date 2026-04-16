@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.core.arbitrage.decision;
 
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
@@ -46,6 +48,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
     @Mock
     private SingleExchangeArbitragePositionMapper positionMapper;
+
+    @Mock
+    private SingleExchangeArbitrageOrderMapper orderMapper;
 
     @Spy
     private SingleExchangeSpotFuturesProperties properties = new SingleExchangeSpotFuturesProperties();
@@ -109,6 +114,24 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
                 .build();
     }
 
+    private SingleExchangeArbitrageExecutionResult buildExecutionResult(String symbol,
+                                                                       String quantity,
+                                                                       String spotOrderId,
+                                                                       String futuresOrderId) {
+        return SingleExchangeArbitrageExecutionResult.builder()
+                .success(true)
+                .symbol(symbol)
+                .quantity(quantity)
+                .spotOrderId(spotOrderId)
+                .futuresOrderId(futuresOrderId)
+                .message("Success")
+                .orderRecords(List.of(
+                        new SingleExchangeArbitrageOrder().setTradePhase("OPEN").setHedgeSide("SPOT"),
+                        new SingleExchangeArbitrageOrder().setTradePhase("OPEN").setHedgeSide("FUTURES")
+                ))
+                .build();
+    }
+
     @Test
     public void testOpenPositionLogic() throws Exception {
         BinanceFuturesPremiumIndex index = buildFundingIndex(
@@ -127,7 +150,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
         when(riskController.checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class))).thenReturn(true);
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
-                .thenReturn(SingleExchangeArbitrageExecutionResult.success("BTCUSDT", "0.001", "1", "2"));
+                .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
@@ -136,6 +159,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         verify(orderExecutor, times(1)).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(positionMapper, times(1)).insert(any(SingleExchangeArbitragePosition.class));
         verify(positionMapper, atLeastOnce()).updateById(any(SingleExchangeArbitragePosition.class));
+        verify(orderMapper, atLeastOnce()).insert(any());
     }
 
     @Test
@@ -179,8 +203,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
         when(riskController.checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class))).thenReturn(true);
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
-                .thenReturn(SingleExchangeArbitrageExecutionResult.success("BTCUSDT", "0.001", "1", "2"));
-        when(orderExecutor.closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class))).thenReturn(true);
+                .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
+        when(orderExecutor.closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "3", "4"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
@@ -190,6 +215,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         verify(orderExecutor, times(1)).closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         ArgumentCaptor<SingleExchangeArbitragePosition> captor = ArgumentCaptor.forClass(SingleExchangeArbitragePosition.class);
         verify(positionMapper, atLeastOnce()).updateById(captor.capture());
+        verify(orderMapper, atLeastOnce()).insert(any());
         assertFalse(captor.getAllValues().isEmpty());
         assertEquals("OPENED", captor.getAllValues().get(0).getStatus());
         assertEquals("CLOSED", captor.getAllValues().get(captor.getAllValues().size() - 1).getStatus());

@@ -1,7 +1,11 @@
 package com.metaverse.coin.strategy.core.arbitrage.execution;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import lombok.Builder;
 import lombok.Data;
+
+import java.util.Collections;
+import java.util.List;
 
 @Data
 @Builder
@@ -12,6 +16,8 @@ public class SingleExchangeArbitrageExecutionResult {
     private String futuresOrderId;
     private String quantity;
     private String message;
+    @Builder.Default
+    private List<SingleExchangeArbitrageOrder> orderRecords = Collections.emptyList();
     
     public static SingleExchangeArbitrageExecutionResult success(String spotOrderId, String futuresOrderId) {
         return SingleExchangeArbitrageExecutionResult.builder()
@@ -19,6 +25,7 @@ public class SingleExchangeArbitrageExecutionResult {
                 .spotOrderId(spotOrderId)
                 .futuresOrderId(futuresOrderId)
                 .message("Success")
+                .orderRecords(Collections.emptyList())
                 .build();
     }
 
@@ -30,6 +37,7 @@ public class SingleExchangeArbitrageExecutionResult {
                 .spotOrderId(spotOrderId)
                 .futuresOrderId(futuresOrderId)
                 .message("Success")
+                .orderRecords(Collections.emptyList())
                 .build();
     }
 
@@ -37,6 +45,7 @@ public class SingleExchangeArbitrageExecutionResult {
         return SingleExchangeArbitrageExecutionResult.builder()
                 .success(false)
                 .message(message)
+                .orderRecords(Collections.emptyList())
                 .build();
     }
 }

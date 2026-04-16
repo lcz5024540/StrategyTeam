@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.core.arbitrage.execution;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesExchangeInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesSymbol;
@@ -14,7 +15,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,9 +33,20 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class SingleExchangeArbitrageOrderExecutor {
 
-    private final BinanceApiService binanceApiService;
+    private static final String EXCHANGE_NAME = "BINANCE";
+    private static final String MARKET_TYPE_SPOT = "SPOT";
+    private static final String MARKET_TYPE_FUTURES = "FUTURES";
+    private static final String TRADE_PHASE_OPEN = "OPEN";
+    private static final String TRADE_PHASE_CLOSE = "CLOSE";
+    private static final String TRADE_PHASE_ROLLBACK = "ROLLBACK";
+    private static final String HEDGE_SIDE_SPOT = "SPOT";
+    private static final String HEDGE_SIDE_FUTURES = "FUTURES";
+    private static final String ORDER_TYPE_MARKET = "MARKET";
+    private static final String POSITION_SIDE_SHORT = "SHORT";
+    private static final String STATUS_FAILED = "FAILED";
     private static final int INTERNAL_SCALE = 8;
     private static final int DEFAULT_LEVERAGE = 3;
+    private final BinanceApiService binanceApiService;
 
     /**
      * Execute Dual-Side Order (Long Spot + Short Futures)
@@ -126,88 +140,102 @@ public class SingleExchangeArbitrageOrderExecutor {
         String futuresSymbol = plan.getFuturesSymbol();
         log.info("Opening Arbitrage Position: Long {} Spot, Short {} Futures, Quantity: {}", symbol, futuresSymbol, quantity);
 
-        // Spot Long
-        CompletableFuture<BinanceOrder> spotFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return binanceApiService.placeSpotOrder(symbol, "BUY", "MARKET", null, quantity.toPlainString(), null);
-            } catch (Exception e) {
-                log.error("Failed to place Spot Long order", e);
-                return null;
-            }
-        });
-
-        // Futures Short
-        CompletableFuture<BinanceFuturesOrder> futuresFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return binanceApiService.openShort(futuresSymbol, "MARKET", quantity.toPlainString(), null, null);
-            } catch (Exception e) {
-                log.error("Failed to place Futures Short order", e);
-                return null;
-            }
-        });
+        CompletableFuture<OrderAttempt<BinanceOrder>> spotFuture = CompletableFuture.supplyAsync(() ->
+                placeSpotOrder(symbol, "BUY", quantity, "Failed to place Spot Long order"));
+        CompletableFuture<OrderAttempt<BinanceFuturesOrder>> futuresFuture = CompletableFuture.supplyAsync(() ->
+                openFuturesShort(futuresSymbol, quantity, "Failed to place Futures Short order"));
 
         try {
             CompletableFuture.allOf(spotFuture, futuresFuture).join();
-            BinanceOrder spotOrder = spotFuture.get();
-            BinanceFuturesOrder futuresOrder = futuresFuture.get();
+            OrderAttempt<BinanceOrder> spotAttempt = spotFuture.get();
+            OrderAttempt<BinanceFuturesOrder> futuresAttempt = futuresFuture.get();
+            List<SingleExchangeArbitrageOrder> orderRecords = new ArrayList<>();
+            orderRecords.add(buildSpotOrderRecord(plan, TRADE_PHASE_OPEN, "BUY", spotAttempt));
+            orderRecords.add(buildFuturesOrderRecord(plan, TRADE_PHASE_OPEN, "SELL", POSITION_SIDE_SHORT, futuresAttempt));
 
-            // Case 1: Both Success
-            if (spotOrder != null && futuresOrder != null) {
-                log.info("Arbitrage Position Opened. Spot Order ID: {}, Futures Order ID: {}", spotOrder.getOrderId(), futuresOrder.getOrderId());
-                return SingleExchangeArbitrageExecutionResult.success(plan.getSymbol(), quantity.toPlainString(), String.valueOf(spotOrder.getOrderId()), String.valueOf(futuresOrder.getOrderId()));
+            if (spotAttempt.isSuccess() && futuresAttempt.isSuccess()) {
+                log.info("Arbitrage Position Opened. Spot Order ID: {}, Futures Order ID: {}",
+                        spotAttempt.getOrder().getOrderId(), futuresAttempt.getOrder().getOrderId());
+                return SingleExchangeArbitrageExecutionResult.builder()
+                        .success(true)
+                        .symbol(plan.getSymbol())
+                        .quantity(quantity.toPlainString())
+                        .spotOrderId(String.valueOf(spotAttempt.getOrder().getOrderId()))
+                        .futuresOrderId(String.valueOf(futuresAttempt.getOrder().getOrderId()))
+                        .message("Success")
+                        .orderRecords(orderRecords)
+                        .build();
             }
 
-            // Case 2: Spot Success, Futures Fail -> Rollback Spot
-            if (spotOrder != null && futuresOrder == null) {
+            if (spotAttempt.isSuccess() && !futuresAttempt.isSuccess()) {
                 log.error("Legging Risk: Spot Success, Futures Failed. Rolling back Spot...");
-                rollbackSpot(symbol, "SELL", quantity);
-                return SingleExchangeArbitrageExecutionResult.failure("Legging Risk: Spot Success, Futures Failed. Rolled back Spot.");
+                OrderAttempt<BinanceOrder> rollbackAttempt = placeSpotOrder(symbol, "SELL", quantity,
+                        "CRITICAL: Failed to rollback Spot SELL order!");
+                orderRecords.add(buildSpotOrderRecord(plan, TRADE_PHASE_ROLLBACK, "SELL", rollbackAttempt));
+                return SingleExchangeArbitrageExecutionResult.builder()
+                        .success(false)
+                        .symbol(plan.getSymbol())
+                        .quantity(quantity.toPlainString())
+                        .message("Legging Risk: Spot Success, Futures Failed. Rolled back Spot.")
+                        .orderRecords(orderRecords)
+                        .build();
             }
 
-            // Case 3: Spot Fail, Futures Success -> Rollback Futures
-            if (spotOrder == null && futuresOrder != null) {
+            if (!spotAttempt.isSuccess() && futuresAttempt.isSuccess()) {
                 log.error("Legging Risk: Spot Failed, Futures Success. Rolling back Futures...");
-                rollbackFutures(futuresSymbol, "BUY", quantity);
-                return SingleExchangeArbitrageExecutionResult.failure("Legging Risk: Spot Failed, Futures Success. Rolled back Futures.");
+                OrderAttempt<BinanceFuturesOrder> rollbackAttempt = closeFuturesShort(futuresSymbol, quantity,
+                        "CRITICAL: Failed to rollback Futures BUY order!");
+                orderRecords.add(buildFuturesOrderRecord(plan, TRADE_PHASE_ROLLBACK, "BUY", POSITION_SIDE_SHORT, rollbackAttempt));
+                return SingleExchangeArbitrageExecutionResult.builder()
+                        .success(false)
+                        .symbol(plan.getSymbol())
+                        .quantity(quantity.toPlainString())
+                        .message("Legging Risk: Spot Failed, Futures Success. Rolled back Futures.")
+                        .orderRecords(orderRecords)
+                        .build();
             }
 
-            // Case 4: Both Fail
-            return SingleExchangeArbitrageExecutionResult.failure("Both orders failed.");
+            return SingleExchangeArbitrageExecutionResult.builder()
+                    .success(false)
+                    .symbol(plan.getSymbol())
+                    .quantity(quantity.toPlainString())
+                    .message("Both orders failed.")
+                    .orderRecords(orderRecords)
+                    .build();
 
         } catch (Exception e) {
             log.error("Error executing dual-side order", e);
-            return SingleExchangeArbitrageExecutionResult.failure("Exception during execution: " + e.getMessage());
+            return SingleExchangeArbitrageExecutionResult.builder()
+                    .success(false)
+                    .symbol(plan.getSymbol())
+                    .quantity(quantity.toPlainString())
+                    .message("Exception during execution: " + e.getMessage())
+                    .build();
         }
     }
 
-    private void rollbackSpot(String symbol, String side, BigDecimal quantity) {
+    private OrderAttempt<BinanceOrder> placeSpotOrder(String symbol, String side, BigDecimal quantity, String errorLogPrefix) {
         try {
-            binanceApiService.placeSpotOrder(symbol, side, "MARKET", null, quantity.toPlainString(), null);
-            log.info("Rollback Spot {} success.", side);
+            return OrderAttempt.success(binanceApiService.placeSpotOrder(symbol, side, ORDER_TYPE_MARKET, null, quantity.toPlainString(), null));
         } catch (Exception e) {
-            log.error("CRITICAL: Failed to rollback Spot {} order!", side, e);
-            // TODO: Alert human operator immediately
+            log.error(errorLogPrefix, e);
+            return OrderAttempt.failure(e.getMessage());
         }
     }
 
-    private void rollbackFutures(String symbol, String side, BigDecimal quantity) {
+    private OrderAttempt<BinanceFuturesOrder> openFuturesShort(String symbol, BigDecimal quantity, String errorLogPrefix) {
         try {
-            if ("BUY".equalsIgnoreCase(side)) {
-                binanceApiService.closeShort(symbol, "MARKET", quantity.toPlainString(), null);
-            } else {
-                binanceApiService.closeLong(symbol, "MARKET", quantity.toPlainString(), null);
-            }
-            log.info("Rollback Futures {} success in hedge mode.", side);
+            return OrderAttempt.success(binanceApiService.openShort(symbol, ORDER_TYPE_MARKET, quantity.toPlainString(), null, null));
         } catch (Exception e) {
-            log.error("CRITICAL: Failed to rollback Futures {} order!", side, e);
-            // TODO: Alert human operator immediately
+            log.error(errorLogPrefix, e);
+            return OrderAttempt.failure(e.getMessage());
         }
     }
 
     /**
      * Close Arbitrage Position (Sell Spot + Buy Futures)
      */
-    public boolean closeArbitragePosition(String symbol, String futuresSymbol, BigDecimal quantity) {
+    public SingleExchangeArbitrageExecutionResult closeArbitragePosition(String symbol, String futuresSymbol, BigDecimal quantity) {
         SingleExchangeSpotFuturesOrderPlan plan = SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol(symbol)
                 .spotSymbol(symbol)
@@ -217,61 +245,72 @@ public class SingleExchangeArbitrageOrderExecutor {
         return closeArbitragePosition(plan);
     }
 
-    public boolean closeArbitragePosition(SingleExchangeSpotFuturesOrderPlan plan) {
+    public SingleExchangeArbitrageExecutionResult closeArbitragePosition(SingleExchangeSpotFuturesOrderPlan plan) {
         BigDecimal quantity = requireQuantity(plan);
         String symbol = plan.getSpotSymbol();
         String futuresSymbol = plan.getFuturesSymbol();
         log.info("Closing Arbitrage Position: Sell {} Spot, Buy {} Futures, Quantity: {}", symbol, futuresSymbol, quantity);
 
-        // Spot Sell
-        CompletableFuture<BinanceOrder> spotFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return binanceApiService.placeSpotOrder(symbol, "SELL", "MARKET", null, quantity.toPlainString(), null);
-            } catch (Exception e) {
-                log.error("Failed to place Spot Sell order", e);
-                return null;
-            }
-        });
-
-        // Futures Buy (Short Close)
-        CompletableFuture<BinanceFuturesOrder> futuresFuture = CompletableFuture.supplyAsync(() -> {
-            try {
-                return binanceApiService.closeShort(futuresSymbol, "MARKET", quantity.toPlainString(), null);
-            } catch (Exception e) {
-                log.error("Failed to place Futures Buy order", e);
-                return null;
-            }
-        });
+        CompletableFuture<OrderAttempt<BinanceOrder>> spotFuture = CompletableFuture.supplyAsync(() ->
+                placeSpotOrder(symbol, "SELL", quantity, "Failed to place Spot Sell order"));
+        CompletableFuture<OrderAttempt<BinanceFuturesOrder>> futuresFuture = CompletableFuture.supplyAsync(() ->
+                closeFuturesShort(futuresSymbol, quantity, "Failed to place Futures Buy order"));
 
         try {
             CompletableFuture.allOf(spotFuture, futuresFuture).join();
-            BinanceOrder spotOrder = spotFuture.get();
-            BinanceFuturesOrder futuresOrder = futuresFuture.get();
+            OrderAttempt<BinanceOrder> spotAttempt = spotFuture.get();
+            OrderAttempt<BinanceFuturesOrder> futuresAttempt = futuresFuture.get();
+            List<SingleExchangeArbitrageOrder> orderRecords = new ArrayList<>();
+            orderRecords.add(buildSpotOrderRecord(plan, TRADE_PHASE_CLOSE, "SELL", spotAttempt));
+            orderRecords.add(buildFuturesOrderRecord(plan, TRADE_PHASE_CLOSE, "BUY", POSITION_SIDE_SHORT, futuresAttempt));
 
-            if (spotOrder != null && futuresOrder != null) {
-                return true;
+            if (spotAttempt.isSuccess() && futuresAttempt.isSuccess()) {
+                return SingleExchangeArbitrageExecutionResult.builder()
+                        .success(true)
+                        .symbol(plan.getSymbol())
+                        .quantity(quantity.toPlainString())
+                        .spotOrderId(String.valueOf(spotAttempt.getOrder().getOrderId()))
+                        .futuresOrderId(String.valueOf(futuresAttempt.getOrder().getOrderId()))
+                        .message("Success")
+                        .orderRecords(orderRecords)
+                        .build();
             }
-            if (spotOrder != null) {
+            if (spotAttempt.isSuccess()) {
                 log.error("Legging Risk on close: Spot close succeeded but Futures close failed. Re-opening Spot.");
-                rollbackSpot(symbol, "BUY", quantity);
+                OrderAttempt<BinanceOrder> rollbackAttempt = placeSpotOrder(symbol, "BUY", quantity,
+                        "CRITICAL: Failed to rollback Spot BUY order!");
+                orderRecords.add(buildSpotOrderRecord(plan, TRADE_PHASE_ROLLBACK, "BUY", rollbackAttempt));
             }
-            if (futuresOrder != null) {
+            if (futuresAttempt.isSuccess()) {
                 log.error("Legging Risk on close: Futures close succeeded but Spot close failed. Re-opening Futures short.");
-                reopenFuturesShort(futuresSymbol, quantity);
+                OrderAttempt<BinanceFuturesOrder> rollbackAttempt = openFuturesShort(futuresSymbol, quantity,
+                        "CRITICAL: Failed to rollback close flow on futures side!");
+                orderRecords.add(buildFuturesOrderRecord(plan, TRADE_PHASE_ROLLBACK, "SELL", POSITION_SIDE_SHORT, rollbackAttempt));
             }
-            return false;
+            return SingleExchangeArbitrageExecutionResult.builder()
+                    .success(false)
+                    .symbol(plan.getSymbol())
+                    .quantity(quantity.toPlainString())
+                    .message("Close arbitrage position failed.")
+                    .orderRecords(orderRecords)
+                    .build();
         } catch (Exception e) {
             log.error("Error closing dual-side order", e);
-            return false;
+            return SingleExchangeArbitrageExecutionResult.builder()
+                    .success(false)
+                    .symbol(plan.getSymbol())
+                    .quantity(quantity.toPlainString())
+                    .message("Exception during close execution: " + e.getMessage())
+                    .build();
         }
     }
 
-    private void reopenFuturesShort(String symbol, BigDecimal quantity) {
+    private OrderAttempt<BinanceFuturesOrder> closeFuturesShort(String symbol, BigDecimal quantity, String errorLogPrefix) {
         try {
-            binanceApiService.openShort(symbol, "MARKET", quantity.toPlainString(), null, null);
-            log.info("Rollback reopen futures short success.");
+            return OrderAttempt.success(binanceApiService.closeShort(symbol, ORDER_TYPE_MARKET, quantity.toPlainString(), null));
         } catch (Exception e) {
-            log.error("CRITICAL: Failed to rollback close flow on futures side!", e);
+            log.error(errorLogPrefix, e);
+            return OrderAttempt.failure(e.getMessage());
         }
     }
 
@@ -280,6 +319,145 @@ public class SingleExchangeArbitrageOrderExecutor {
             throw new IllegalArgumentException("plan quantity must be greater than 0");
         }
         return plan.getQuantity();
+    }
+
+    private SingleExchangeArbitrageOrder buildSpotOrderRecord(SingleExchangeSpotFuturesOrderPlan plan,
+                                                              String tradePhase,
+                                                              String side,
+                                                              OrderAttempt<BinanceOrder> attempt) {
+        BinanceOrder order = attempt.getOrder();
+        return new SingleExchangeArbitrageOrder()
+                .setExchangeName(EXCHANGE_NAME)
+                .setSymbol(plan.getSpotSymbol())
+                .setMarketType(MARKET_TYPE_SPOT)
+                .setTradePhase(tradePhase)
+                .setHedgeSide(HEDGE_SIDE_SPOT)
+                .setSide(side)
+                .setOrderType(ORDER_TYPE_MARKET)
+                .setStatus(order != null && order.getStatus() != null ? order.getStatus() : STATUS_FAILED)
+                .setExchangeOrderId(order != null && order.getOrderId() != null ? String.valueOf(order.getOrderId()) : null)
+                .setClientOrderId(order != null ? order.getClientOrderId() : null)
+                .setRequestedQty(plan.getQuantity())
+                .setExecutedQty(order != null && order.getExecutedQty() != null ? order.getExecutedQty() : BigDecimal.ZERO)
+                .setRequestedPrice(order != null ? order.getPrice() : null)
+                .setAvgPrice(extractSpotAvgPrice(order))
+                .setQuoteQty(order != null ? order.getCummulativeQuoteQty() : BigDecimal.ZERO)
+                .setFeeAmount(extractSpotFeeAmount(order))
+                .setFeeAsset(extractSpotFeeAsset(order))
+                .setPlacedAt(extractSpotPlacedAt(order))
+                .setFilledAt(extractSpotFilledAt(order))
+                .setErrorMessage(attempt.getErrorMessage())
+                .setRawResponse(order != null ? String.valueOf(order) : null);
+    }
+
+    private SingleExchangeArbitrageOrder buildFuturesOrderRecord(SingleExchangeSpotFuturesOrderPlan plan,
+                                                                 String tradePhase,
+                                                                 String side,
+                                                                 String positionSide,
+                                                                 OrderAttempt<BinanceFuturesOrder> attempt) {
+        BinanceFuturesOrder order = attempt.getOrder();
+        return new SingleExchangeArbitrageOrder()
+                .setExchangeName(EXCHANGE_NAME)
+                .setSymbol(plan.getFuturesSymbol())
+                .setMarketType(MARKET_TYPE_FUTURES)
+                .setTradePhase(tradePhase)
+                .setHedgeSide(HEDGE_SIDE_FUTURES)
+                .setSide(side)
+                .setPositionSide(order != null && order.getPositionSide() != null ? order.getPositionSide() : positionSide)
+                .setOrderType(ORDER_TYPE_MARKET)
+                .setStatus(order != null && order.getStatus() != null ? order.getStatus() : STATUS_FAILED)
+                .setExchangeOrderId(order != null && order.getOrderId() != null ? String.valueOf(order.getOrderId()) : null)
+                .setClientOrderId(order != null ? order.getClientOrderId() : null)
+                .setRequestedQty(plan.getQuantity())
+                .setExecutedQty(order != null && order.getExecutedQty() != null ? order.getExecutedQty() : BigDecimal.ZERO)
+                .setRequestedPrice(order != null ? order.getPrice() : null)
+                .setAvgPrice(order != null ? order.getAvgPrice() : null)
+                .setQuoteQty(order != null ? order.getCumQuote() : BigDecimal.ZERO)
+                .setFeeAmount(BigDecimal.ZERO)
+                .setPlacedAt(extractFuturesPlacedAt(order))
+                .setFilledAt(extractFuturesFilledAt(order))
+                .setErrorMessage(attempt.getErrorMessage())
+                .setRawResponse(order != null ? String.valueOf(order) : null);
+    }
+
+    private BigDecimal extractSpotAvgPrice(BinanceOrder order) {
+        if (order == null) {
+            return null;
+        }
+        if (order.getFills() != null && !order.getFills().isEmpty()) {
+            BigDecimal totalQty = BigDecimal.ZERO;
+            BigDecimal totalQuote = BigDecimal.ZERO;
+            for (BinanceOrder.Fill fill : order.getFills()) {
+                BigDecimal fillQty = fill.getQty() == null ? BigDecimal.ZERO : fill.getQty();
+                BigDecimal fillPrice = fill.getPrice() == null ? BigDecimal.ZERO : fill.getPrice();
+                totalQty = totalQty.add(fillQty);
+                totalQuote = totalQuote.add(fillQty.multiply(fillPrice));
+            }
+            if (totalQty.compareTo(BigDecimal.ZERO) > 0) {
+                return totalQuote.divide(totalQty, INTERNAL_SCALE, RoundingMode.HALF_UP);
+            }
+        }
+        if (order.getExecutedQty() != null && order.getExecutedQty().compareTo(BigDecimal.ZERO) > 0
+                && order.getCummulativeQuoteQty() != null) {
+            return order.getCummulativeQuoteQty().divide(order.getExecutedQty(), INTERNAL_SCALE, RoundingMode.HALF_UP);
+        }
+        return order.getPrice();
+    }
+
+    private BigDecimal extractSpotFeeAmount(BinanceOrder order) {
+        if (order == null || order.getFills() == null) {
+            return BigDecimal.ZERO;
+        }
+        return order.getFills().stream()
+                .map(BinanceOrder.Fill::getCommission)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private String extractSpotFeeAsset(BinanceOrder order) {
+        if (order == null || order.getFills() == null || order.getFills().isEmpty()) {
+            return null;
+        }
+        return order.getFills().stream()
+                .map(BinanceOrder.Fill::getCommissionAsset)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Date extractSpotPlacedAt(BinanceOrder order) {
+        if (order == null) {
+            return null;
+        }
+        Long timestamp = order.getTransactTime() != null ? order.getTransactTime()
+                : order.getTime() != null ? order.getTime()
+                : order.getUpdateTime();
+        return timestamp == null ? null : new Date(timestamp);
+    }
+
+    private Date extractSpotFilledAt(BinanceOrder order) {
+        if (order == null || order.getExecutedQty() == null || order.getExecutedQty().compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        Long timestamp = order.getUpdateTime() != null ? order.getUpdateTime()
+                : order.getTransactTime() != null ? order.getTransactTime()
+                : order.getTime();
+        return timestamp == null ? null : new Date(timestamp);
+    }
+
+    private Date extractFuturesPlacedAt(BinanceFuturesOrder order) {
+        if (order == null || order.getUpdateTime() == null) {
+            return null;
+        }
+        return new Date(order.getUpdateTime());
+    }
+
+    private Date extractFuturesFilledAt(BinanceFuturesOrder order) {
+        if (order == null || order.getExecutedQty() == null || order.getExecutedQty().compareTo(BigDecimal.ZERO) <= 0
+                || order.getUpdateTime() == null) {
+            return null;
+        }
+        return new Date(order.getUpdateTime());
     }
 
     private BinanceSymbol getSpotSymbol(String symbol) {
@@ -376,6 +554,36 @@ public class SingleExchangeArbitrageOrderExecutor {
                 return second;
             }
             return fallback == null ? BigDecimal.ZERO : fallback;
+        }
+    }
+
+    private static final class OrderAttempt<T> {
+        private final T order;
+        private final String errorMessage;
+
+        private OrderAttempt(T order, String errorMessage) {
+            this.order = order;
+            this.errorMessage = errorMessage;
+        }
+
+        private static <T> OrderAttempt<T> success(T order) {
+            return new OrderAttempt<>(order, null);
+        }
+
+        private static <T> OrderAttempt<T> failure(String errorMessage) {
+            return new OrderAttempt<>(null, errorMessage);
+        }
+
+        private T getOrder() {
+            return order;
+        }
+
+        private String getErrorMessage() {
+            return errorMessage;
+        }
+
+        private boolean isSuccess() {
+            return order != null;
         }
     }
 }

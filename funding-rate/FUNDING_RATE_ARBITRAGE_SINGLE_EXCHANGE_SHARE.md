@@ -77,7 +77,8 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 * 已解决。
 * 当前持仓会在开仓前写入 `OPENING`，开仓成功后更新为 `OPENED`，平仓过程更新为 `CLOSING/CLOSED`，失败时更新为 `FAILED`。
 * 服务启动时会从 `single_exchange_arbitrage_position` 恢复 `OPENING/OPENED/CLOSING` 状态的记录，并重建内存持仓视图。
-* 当前仍未记录单交易所订单明细表，因此平仓订单 ID 和更细颗粒度成交恢复仍可继续补强。
+* 已接入 `single_exchange_arbitrage_order` 的运行时写入，开仓、平仓以及单侧失败后的回滚订单都会按持仓维度落库。
+* 当前持仓主表也会在平仓成功时同步回填 `spot_sell_order_id` 和 `futures_buy_order_id`。
 
 ### 2.2 再平衡真实划转已补齐
 
