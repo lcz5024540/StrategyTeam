@@ -221,14 +221,37 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_risk_snapshot` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所资金费率套利风控快照表';
 
 -- ---------------------------------------------------------------------
--- 7. 建议说明
+-- 7. 单交易所策略运行日志表（可选）
+-- 说明：
+-- - 保留每次策略轮询或人工触发时的决策结果
+-- - 适合快速排查“为什么开仓 / 为什么不开仓 / 为什么平仓”
+-- - 若已全面接入 single_exchange_arbitrage_signal_snapshot，可将本表视为轻量日志补充
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `single_exchange_strategy_execution_log` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `symbol` VARCHAR(32) NOT NULL COMMENT '交易对，例如 BTCUSDT',
+    `check_time` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '检查时间',
+    `current_funding_rate` DECIMAL(12, 8) DEFAULT NULL COMMENT '检查时资金费率',
+    `action_taken` VARCHAR(50) DEFAULT NULL COMMENT '执行动作：OPEN/CLOSE/SKIP/WAIT/REJECT',
+    `message` TEXT DEFAULT NULL COMMENT '详细决策日志',
+    PRIMARY KEY (`id`),
+    KEY `idx_single_exchange_execution_log_symbol_time` (`symbol`, `check_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所策略运行日志表';
+
+-- ---------------------------------------------------------------------
+-- 8. 建议说明
 -- ---------------------------------------------------------------------
 -- 1) 当前项目若仅希望最小可用落地，可至少先使用：
 --    single_exchange_funding_rate_history + single_exchange_arbitrage_position + single_exchange_arbitrage_order
 --
 -- 2) 若要支持稳定实盘运维，建议同时启用：
---    single_exchange_arbitrage_signal_snapshot + single_exchange_arbitrage_funding_settlement + single_exchange_arbitrage_risk_snapshot
+--    single_exchange_arbitrage_signal_snapshot
+--    + single_exchange_arbitrage_funding_settlement
+--    + single_exchange_arbitrage_risk_snapshot
 --
--- 3) 当前 Java 实体已直接对应：
+-- 3) 若希望保留简洁的策略轮询日志，可额外启用：
+--    single_exchange_strategy_execution_log
+--
+-- 4) 当前 Java 实体已直接对应：
 --    single_exchange_funding_rate_history / single_exchange_arbitrage_position
 --    其余表为单交易所资金费率套利策略的辅助运行表
