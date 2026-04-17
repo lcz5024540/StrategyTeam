@@ -9,6 +9,7 @@ import { OrdersTable } from '@/components/tables/OrdersTable'
 import { TasksTable } from '@/components/tables/TasksTable'
 import { TimelineChart } from '@/components/charts/TimelineChart'
 import { AttributionBars } from '@/components/charts/AttributionBars'
+import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
 export function HomePage() {
@@ -64,6 +65,11 @@ export function HomePage() {
   const { data: marketAttribution = [] } = useQuery({
     queryKey: ['marketAttribution', mode],
     queryFn: () => reportsApi.getMarketAttribution(10, mode),
+  })
+
+  const { data: followAddressDailyReports = [] } = useQuery({
+    queryKey: ['followAddressDailyReports', mode],
+    queryFn: () => reportsApi.getFollowAddressDailyReports(20, mode),
   })
 
   if (detailLoading) {
@@ -136,6 +142,14 @@ export function HomePage() {
           <AttributionBars data={marketAttribution} type="market" />
         </section>
       </div>
+
+      <section className="panel">
+        <div className="section-head">
+          <h2>今日跟单地址分析</h2>
+          <p>按源地址查看胜负笔数、净利润、手续费和在途风险敞口</p>
+        </div>
+        <FollowAddressDailyTable data={followAddressDailyReports} />
+      </section>
 
       {/* 持仓 */}
       <div className="split-grid">

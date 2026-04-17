@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_follow_task` (
 CREATE TABLE IF NOT EXISTS `smart_wallet_order` (
     `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     `follow_task_id` BIGINT UNSIGNED NOT NULL COMMENT '跟单任务ID',
+    `position_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联持仓ID，标识该订单属于哪一轮仓位',
     `wallet_address` VARCHAR(128) NOT NULL COMMENT '触发钱包地址',
     `execution_mode` VARCHAR(16) NOT NULL DEFAULT 'PAPER' COMMENT 'PAPER/LIVE',
     `execution_address` VARCHAR(128) DEFAULT NULL COMMENT '执行钱包地址',
@@ -159,6 +160,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_order` (
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY `uk_order_external` (`external_order_id`),
     INDEX `idx_order_follow_task` (`follow_task_id`),
+    INDEX `idx_order_position` (`position_id`, `placed_at`),
     INDEX `idx_order_market_status` (`market_id`, `status`),
     INDEX `idx_order_poll` (`status`, `next_poll_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket跟单订单表';
@@ -167,6 +169,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_order` (
 CREATE TABLE IF NOT EXISTS `smart_wallet_fill` (
     `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     `order_id` BIGINT UNSIGNED NOT NULL COMMENT '订单ID',
+    `position_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联持仓ID，标识该成交属于哪一轮仓位',
     `follow_task_id` BIGINT UNSIGNED NOT NULL COMMENT '跟单任务ID',
     `wallet_address` VARCHAR(128) NOT NULL COMMENT '触发钱包地址',
     `execution_address` VARCHAR(128) DEFAULT NULL COMMENT '执行钱包地址',
@@ -182,6 +185,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_fill` (
     `filled_at` TIMESTAMP NOT NULL COMMENT '成交时间',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     INDEX `idx_fill_order` (`order_id`),
+    INDEX `idx_fill_position` (`position_id`, `filled_at`),
     INDEX `idx_fill_market_time` (`market_id`, `filled_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket成交明细表';
 
@@ -208,7 +212,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_position` (
     `status` VARCHAR(32) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/PARTIALLY_CLOSED/CLOSED/RESOLVED_UNCLAIMED/CLAIMED',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    UNIQUE KEY `uk_position_execution_market_outcome` (`execution_address`, `market_id`, `outcome`),
+    INDEX `idx_position_execution_market_outcome` (`execution_address`, `market_id`, `outcome`, `status`, `last_filled_at`),
     INDEX `idx_position_status` (`status`, `last_filled_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket持仓表';
 

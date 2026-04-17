@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -185,6 +186,104 @@ public class PolymarketClobExecutionService {
         return followTaskService.executeTaskNow(followTaskId, com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode.LIVE);
     }
 
+    public SmartWalletExecutionResult executeLiveExit(SmartWalletPositionEntity position,
+                                                      BigDecimal requestedPrice,
+                                                      String exitReason) {
+        if (position == null) {
+            throw new IllegalArgumentException("position must be provided for live exit.");
+        }
+        ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
+        ExitPriceReference priceReference = resolveLiveExitPriceReference(position, requestedPrice);
+        PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepareExit(position, priceReference.price(), wallet);
+        Map<String, Object> response = clobClientRouter.placeOrder(wallet, order);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> orderResponse = response.get("response") instanceof Map<?, ?>
+                ? (Map<String, Object>) response.get("response")
+                : Map.of();
+        String orderId = stringify(firstNonNull(response.get("orderID"), response.get("orderId"), response.get("id")));
+        boolean success = truthy(firstNonNull(response.get("success"), response.get("ok"))) || orderId != null;
+        String rawStatus = stringify(firstNonNull(
+                response.get("status"),
+                orderResponse.get("status"),
+                orderResponse.get("orderStatus"),
+                orderResponse.get("state")
+        ));
+        String normalizedStatus = normalizeLiveStatus(rawStatus, orderId, success);
+        BigDecimal liveNotional = order.getStakeUsdc();
+        BigDecimal liveFee = estimateFee(liveNotional, wallet.getEstimatedFeeRate());
+        return SmartWalletExecutionResult.builder()
+                .signalId(order.getSignalId())
+                .mode(com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode.LIVE)
+                .success(success)
+                .message(stringify(firstNonNull(
+                        response.get("message"),
+                        rawStatus,
+                        success
+                                ? "LIVE exit order submitted to Polymarket CLOB. reason=" + exitReason + ", pricingSource=" + priceReference.source()
+                                : "LIVE exit order submission failed. reason=" + exitReason + ", pricingSource=" + priceReference.source()
+                )))
+                .externalOrderId(orderId)
+                .executionAddress(wallet.getAddress())
+                .marketId(order.getMarketId())
+                .tokenId(order.getTokenId())
+                .outcome(order.getOutcome())
+                .side(order.getSide())
+                .orderType("EXIT")
+                .status(normalizedStatus)
+                .price(order.getLimitPrice())
+                .size(order.getSize())
+                .notionalUsdc(liveNotional)
+                .feeUsdc(liveFee)
+                .build();
+    }
+
+    private ExitPriceReference resolveLiveExitPriceReference(SmartWalletPositionEntity position,
+                                                             BigDecimal requestedPrice) {
+        BigDecimal fallbackPrice = firstPositive(requestedPrice, safe(position == null ? null : position.getLastMarkPrice()), safe(position == null ? null : position.getAverageEntryPrice()));
+        if (position == null || !StringUtils.hasText(position.getMarketId()) || !StringUtils.hasText(position.getOutcome())) {
+            return new ExitPriceReference(fallbackPrice, "POSITION_FALLBACK");
+        }
+        String outcome = normalizeOutcome(position.getOutcome());
+        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                position.getMarketId(),
+                false,
+                position.getQuestion(),
+                List.of(outcome)
+        );
+        String tokenId = firstNonBlank(position.getTokenId(), resolveTokenId(metadata, outcome));
+        if (!StringUtils.hasText(tokenId)) {
+            return new ExitPriceReference(fallbackPrice, fallbackPrice.compareTo(BigDecimal.ZERO) > 0 ? "POSITION_FALLBACK_TOKEN_MISSING" : "UNAVAILABLE");
+        }
+
+        try {
+            PolymarketMarketDataStreamService.MarketDataSnapshot wsSnapshot = marketDataStreamService.getSnapshot(tokenId);
+            PolymarketApiClient.OrderBook orderBook;
+            BigDecimal lastTradePrice = BigDecimal.ZERO;
+            String source;
+            if (wsSnapshot != null && wsSnapshot.getOrderBook() != null) {
+                orderBook = wsSnapshot.getOrderBook();
+                lastTradePrice = safe(wsSnapshot.getLastTradePrice());
+                source = "WS_BEST_BID";
+            } else {
+                orderBook = polymarketApiClient.fetchOrderBook(tokenId);
+                List<PolymarketApiClient.MarketTrade> trades = polymarketApiClient.fetchMarketTrades(position.getMarketId(), 20, null);
+                if (!trades.isEmpty()) {
+                    lastTradePrice = safe(trades.get(0).getPrice());
+                }
+                source = "REST_BEST_BID";
+            }
+            BigDecimal bestBid = topPrice(orderBook == null ? null : orderBook.getBids());
+            BigDecimal midpoint = safe(orderBook == null ? null : orderBook.getMidpoint());
+            BigDecimal referencePrice = firstPositive(bestBid, midpoint, lastTradePrice, fallbackPrice);
+            if (referencePrice.compareTo(BigDecimal.ZERO) > 0) {
+                return new ExitPriceReference(referencePrice, bestBid.compareTo(BigDecimal.ZERO) > 0 ? source : source + "_FALLBACK");
+            }
+            return new ExitPriceReference(fallbackPrice, fallbackPrice.compareTo(BigDecimal.ZERO) > 0 ? "POSITION_FALLBACK_NO_BOOK" : "UNAVAILABLE");
+        } catch (Exception ex) {
+            return new ExitPriceReference(fallbackPrice, fallbackPrice.compareTo(BigDecimal.ZERO) > 0 ? "POSITION_FALLBACK_BOOK_ERROR" : "BOOK_ERROR");
+        }
+    }
+
     private BigDecimal resolveStake(SmartWalletFollowTaskEntity task,
                                     ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
         if (task.getRecommendedStakeUsdc() != null && task.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
@@ -194,6 +293,54 @@ public class PolymarketClobExecutionService {
             return task.getTriggerSizeUsdc();
         }
         return wallet.getMinOrderUsdc();
+    }
+
+    private Object firstNonNull(Object... candidates) {
+        for (Object candidate : candidates) {
+            if (candidate != null) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private String stringify(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private boolean truthy(Object value) {
+        if (value == null) {
+            return false;
+        }
+        String text = String.valueOf(value);
+        return "true".equalsIgnoreCase(text) || "1".equals(text);
+    }
+
+    private BigDecimal estimateFee(BigDecimal notional, BigDecimal feeRate) {
+        if (notional == null || feeRate == null) {
+            return BigDecimal.ZERO;
+        }
+        return notional.multiply(feeRate).setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private String normalizeLiveStatus(String rawStatus, String orderId, boolean success) {
+        if (rawStatus != null) {
+            String normalized = rawStatus.trim().toUpperCase();
+            if ("OPEN".equals(normalized)
+                    || "PLACED".equals(normalized)
+                    || "PENDING".equals(normalized)
+                    || "UNMATCHED".equals(normalized)) {
+                return "LIVE";
+            }
+            if ("PARTIAL".equals(normalized)) {
+                return "PARTIALLY_FILLED";
+            }
+            return normalized;
+        }
+        if (success && orderId != null) {
+            return "LIVE";
+        }
+        return "FAILED";
     }
 
     private LinkedHashMap<String, Object> baseDryRunResponse(ExecutionWalletContextLoader.ExecutionWalletContext wallet,
@@ -369,6 +516,9 @@ public class PolymarketClobExecutionService {
             }
         }
         return BigDecimal.ZERO;
+    }
+
+    private record ExitPriceReference(BigDecimal price, String source) {
     }
 
     private String firstNonBlank(String... values) {

@@ -74,6 +74,7 @@ public class ExecutionWalletContextLoader {
                 .minOrderUsdc(safe(config.getMinOrderUsdc(), BigDecimal.ONE))
                 .maxOrderUsdc(safe(config.getMaxOrderUsdc(), new BigDecimal("150")))
                 .priceSlippageRate(safe(config.getPriceSlippageRate(), new BigDecimal("0.02")))
+                .estimatedFeeRate(safe(config.getEstimatedFeeRate(), new BigDecimal("0.0015")))
                 .allowYes(Boolean.TRUE.equals(config.getAllowYes()))
                 .allowNo(Boolean.TRUE.equals(config.getAllowNo()))
                 .build();
@@ -157,6 +158,7 @@ public class ExecutionWalletContextLoader {
         private BigDecimal minOrderUsdc;
         private BigDecimal maxOrderUsdc;
         private BigDecimal priceSlippageRate;
+        private BigDecimal estimatedFeeRate;
         private boolean allowYes;
         private boolean allowNo;
     }

@@ -35,6 +35,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalog
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
@@ -99,6 +100,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.core.env.Environment;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -708,6 +710,15 @@ public class SmartWalletController {
     public List<SmartWalletReportAttributionItem> walletReports(@RequestParam(defaultValue = "20") Integer limit,
                                                                 @RequestParam(required = false) String mode) {
         return accountingService.walletAttribution(limit, mode);
+    }
+
+    @Operation(summary = "跟单地址日报", description = "按被跟单的钱包地址输出每日投资分析报表，包含盈利/亏损笔数、胜率、净盈利、手续费、成交额与平均盈亏。")
+    @GetMapping("/reports/follow-addresses/daily")
+    public List<SmartWalletFollowAddressDailyReportView> followAddressDailyReports(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate reportDate,
+            @RequestParam(defaultValue = "20") Integer limit,
+            @RequestParam(required = false) String mode) {
+        return accountingService.followAddressDailyReport(reportDate, limit, mode);
     }
 
     @Operation(summary = "市场归因报表", description = "按市场维度汇总成交量、账本收益与当前未落袋暴露。")

@@ -105,6 +105,8 @@ public class SmartWalletProperties {
         private boolean allowSellSignal = false;
         private boolean enableStopLoss = false;
         private BigDecimal stopLossThresholdRate = new BigDecimal("0.50");
+        private boolean enableTakeProfit = false;
+        private BigDecimal takeProfitThresholdRate = new BigDecimal("0.20");
         private Integer maxSignalAgeSeconds = 300;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         private BigDecimal minFollowPrice = new BigDecimal("0.05");

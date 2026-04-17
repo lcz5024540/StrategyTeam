@@ -1,8 +1,11 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +33,13 @@ class SmartWalletPositionSyncServiceTest {
     @Mock
     private SmartWalletPositionMapper positionMapper;
     @Mock
+    private SmartWalletOrderMapper orderMapper;
+    @Mock
     private SmartWalletAccountingService accountingService;
+    @Mock
+    private PolymarketClobExecutionService clobExecutionService;
+    @Mock
+    private SmartWalletRecoveryService recoveryService;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -45,7 +54,10 @@ class SmartWalletPositionSyncServiceTest {
                 polymarketApiClient,
                 walletContextLoader,
                 positionMapper,
-                accountingService
+                orderMapper,
+                accountingService,
+                clobExecutionService,
+                recoveryService
         );
     }
 
@@ -133,5 +145,90 @@ class SmartWalletPositionSyncServiceTest {
         service.checkStopLoss();
 
         verify(accountingService).exitPosition(eq(11L), any());
+    }
+
+    @Test
+    void shouldUseUnifiedExitFlowWhenTakeProfitTriggers() {
+        properties.getSignalRisk().setEnableTakeProfit(true);
+        properties.getSignalRisk().setTakeProfitThresholdRate(new BigDecimal("0.15"));
+        when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
+                .positionId(21L)
+                .currentStatus("CLOSED")
+                .realizedPnlDeltaUsdc(new BigDecimal("3.00"))
+                .build());
+        when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                .setId(21L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-2")
+                .setOutcome("YES")
+                .setAverageEntryPrice(new BigDecimal("0.50"))
+                .setLastMarkPrice(new BigDecimal("0.62"))
+                .setQuantity(new BigDecimal("10.00"))
+                .setCostBasisUsdc(new BigDecimal("5.00"))
+                .setStatus("OPEN")));
+
+        service.checkTakeProfit();
+
+        verify(accountingService).exitPosition(eq(21L), any());
+    }
+
+    @Test
+    void shouldSubmitLiveExitWhenTakeProfitTriggersOnLivePosition() {
+        properties.getSignalRisk().setEnableTakeProfit(true);
+        properties.getSignalRisk().setTakeProfitThresholdRate(new BigDecimal("0.15"));
+        ExecutionWalletContextLoader.ExecutionWalletContext context = ExecutionWalletContextLoader.ExecutionWalletContext.builder()
+                .address("0xlive")
+                .enabled(true)
+                .configured(true)
+                .liveReady(true)
+                .build();
+        when(walletContextLoader.requireLiveContext()).thenReturn(context);
+        when(orderMapper.selectCount(any())).thenReturn(0L);
+        when(positionMapper.selectList(any()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                        .setId(31L)
+                        .setExecutionAddress("0xlive")
+                        .setMarketId("market-live")
+                        .setOutcome("YES")
+                        .setLastMarkPrice(new BigDecimal("0.62"))
+                        .setQuantity(new BigDecimal("10.00"))
+                        .setCostBasisUsdc(new BigDecimal("5.00"))
+                        .setStatus("OPEN")));
+        when(clobExecutionService.executeLiveExit(any(), any(), any())).thenReturn(SmartWalletExecutionResult.builder()
+                .mode(ExecutionMode.LIVE)
+                .success(true)
+                .externalOrderId("live-order-1")
+                .status("LIVE")
+                .side("SELL")
+                .price(new BigDecimal("0.60"))
+                .size(new BigDecimal("10.00"))
+                .notionalUsdc(new BigDecimal("6.00"))
+                .build());
+
+        service.checkTakeProfit();
+
+        verify(clobExecutionService).executeLiveExit(any(), any(), eq("TAKE_PROFIT_AUTO_EXIT"));
+        verify(accountingService).recordLiveExitExecution(any(), any(), eq("TAKE_PROFIT_AUTO_EXIT"));
+    }
+
+    @Test
+    void shouldNotExitWhenTakeProfitThresholdNotReached() {
+        properties.getSignalRisk().setEnableTakeProfit(true);
+        properties.getSignalRisk().setTakeProfitThresholdRate(new BigDecimal("0.30"));
+        when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                .setId(22L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-3")
+                .setOutcome("NO")
+                .setAverageEntryPrice(new BigDecimal("0.50"))
+                .setLastMarkPrice(new BigDecimal("0.58"))
+                .setQuantity(new BigDecimal("10.00"))
+                .setCostBasisUsdc(new BigDecimal("5.00"))
+                .setStatus("OPEN")));
+
+        service.checkTakeProfit();
+
+        verify(accountingService, never()).exitPosition(eq(22L), any());
     }
 }

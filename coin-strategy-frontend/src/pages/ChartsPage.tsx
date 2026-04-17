@@ -7,6 +7,7 @@ import { DailyPnlBars } from '@/components/charts/DailyPnlBars'
 import { WinRateTrend } from '@/components/charts/WinRateTrend'
 import { AttributionBars } from '@/components/charts/AttributionBars'
 import { OrdersTable } from '@/components/tables/OrdersTable'
+import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
 
 export function ChartsPage() {
   const [searchParams] = useSearchParams()
@@ -28,6 +29,11 @@ export function ChartsPage() {
   const { data: marketAttribution = [] } = useQuery({
     queryKey: ['marketAttribution', mode],
     queryFn: () => reportsApi.getMarketAttribution(10, mode),
+  })
+
+  const { data: followAddressDailyReports = [] } = useQuery({
+    queryKey: ['followAddressDailyReports', mode],
+    queryFn: () => reportsApi.getFollowAddressDailyReports(20, mode),
   })
 
   const { data: conflicts = [] } = useQuery({
@@ -101,6 +107,14 @@ export function ChartsPage() {
           <AttributionBars data={marketAttribution} type="market" />
         </section>
       </div>
+
+      <section className="panel">
+        <div className="section-head">
+          <h2>今日跟单地址分析</h2>
+          <p>按跟单源地址拆解胜率结构、净盈亏与未平仓暴露</p>
+        </div>
+        <FollowAddressDailyTable data={followAddressDailyReports} />
+      </section>
 
       {/* 冲突市场 */}
       <section className="panel">
