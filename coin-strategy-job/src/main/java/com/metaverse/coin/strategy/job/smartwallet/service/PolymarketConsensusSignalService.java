@@ -33,6 +33,7 @@ public class PolymarketConsensusSignalService {
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final SmartWalletProfileStoreService profileStoreService;
     private final EntityAwareConsensusService entityAwareConsensusService;
+    private final SmartWalletLeaderboardStateService leaderboardStateService;
 
     public List<ConsensusSignalView> listRecentConsensusSignals() {
         SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
@@ -146,7 +147,7 @@ public class PolymarketConsensusSignalService {
     }
 
     @Data
-    private static class ConsensusAccumulator {
+    private class ConsensusAccumulator {
         private final String marketId;
         private final String question;
         private final String outcome;
@@ -161,7 +162,7 @@ public class PolymarketConsensusSignalService {
         private void add(SmartWalletTradeEventEntity event, SmartWalletProfileEntity profile) {
             String wallet = profile.getWalletAddress().toLowerCase();
             if (!walletScores.containsKey(wallet)) {
-                walletScores.put(wallet, profile.getWalletScore() == null ? BigDecimal.ZERO : profile.getWalletScore());
+                walletScores.put(wallet, leaderboardStateService.adjustWalletScore(profile, event));
                 walletAddresses.add(profile.getWalletAddress());
             }
             totalTriggerSizeUsdc = totalTriggerSizeUsdc.add(event.getSizeUsdc() == null ? BigDecimal.ZERO : event.getSizeUsdc());

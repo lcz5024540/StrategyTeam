@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @Slf4j
@@ -28,8 +29,10 @@ public class SmartWalletPositionSyncService {
     private final ExecutionWalletContextLoader walletContextLoader;
     private final SmartWalletPositionMapper positionMapper;
     private final SmartWalletAccountingService accountingService;
+    private final SmartWalletRecoveryService recoveryService;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
+    private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
 
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.position-sync-fixed-delay-ms:15000}")
     public void syncPositions() {
@@ -66,10 +69,12 @@ public class SmartWalletPositionSyncService {
             List<JsonNode> positions = polymarketApiClient.fetchPositions(context.getAddress(), null);
             log.debug("Current positions count for {}: {}", context.getAddress(), positions.size());
             clearCooldown();
+            consecutiveRpcFailures.set(0);
 
             // Further process positions if needed...
         } catch (Exception e) {
             applyCooldown(e);
+            maybeRecoverFromRpcFailure(e, context.getAddress());
             log.warn("Failed to sync positions and balance for {}: {}{}",
                     context.getAddress(),
                     e.getMessage(),
@@ -117,6 +122,25 @@ public class SmartWalletPositionSyncService {
         cooldownReason = isNotFoundError(e)
                 ? "Polymarket live wallet balance/positions API returned 404 for the configured address."
                 : "Polymarket live wallet sync request failed.";
+    }
+
+    private void maybeRecoverFromRpcFailure(Exception e, String walletAddress) {
+        SmartWalletProperties.PolymarketMonitor monitor = properties.getPolymarket();
+        if (monitor == null || !monitor.isPositionSyncAutoRecoveryEnabled() || !isRecoverableRpcFailure(e)) {
+            return;
+        }
+        int failures = consecutiveRpcFailures.incrementAndGet();
+        int threshold = monitor.getPositionSyncRecoveryFailureThreshold() == null
+                ? 2
+                : Math.max(1, monitor.getPositionSyncRecoveryFailureThreshold());
+        if (failures < threshold) {
+            return;
+        }
+        consecutiveRpcFailures.set(0);
+        recoveryService.recoverState("position-sync-rpc-error wallet="
+                + (walletAddress == null ? "unknown" : walletAddress)
+                + " message=" + e.getMessage());
+        clearCooldown();
     }
 
     private long resolveCooldownMs(Exception e) {
@@ -187,6 +211,22 @@ public class SmartWalletPositionSyncService {
     private boolean isNotFoundError(Exception e) {
         String message = collectExceptionText(e);
         return message.contains("status=404");
+    }
+
+    private boolean isRecoverableRpcFailure(Exception e) {
+        String message = collectExceptionText(e);
+        return message.contains("timeout")
+                || message.contains("connection refused")
+                || message.contains("connection reset")
+                || message.contains("broken pipe")
+                || message.contains("eof")
+                || message.contains("socket")
+                || message.contains("rpc")
+                || message.contains("502")
+                || message.contains("503")
+                || message.contains("504")
+                || message.contains("tls")
+                || message.contains("ssl");
     }
 
     private String collectExceptionText(Throwable throwable) {

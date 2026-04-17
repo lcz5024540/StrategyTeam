@@ -82,6 +82,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimServi
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
@@ -129,6 +130,7 @@ public class SmartWalletController {
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
     private final SmartWalletDataResetService dataResetService;
+    private final SmartWalletRecoveryService recoveryService;
     private final Environment environment;
     private final PredictionMarketDataApplicationService predictionMarketDataApplicationService;
     private final FollowTaskApplicationService followTaskApplicationService;
@@ -146,7 +148,7 @@ public class SmartWalletController {
                 "service", "smart-wallet",
                 "profiles", polymarketMonitorService.listProfiles().size(),
                 "watchlist", polymarketMonitorService.listWatchlist().size(),
-                "wallets", walletRegistryService.list().size(),
+                "wallets", followService.listWalletsForScan().size(),
                 "markets", opportunityService.list().size(),
                 "status", "UP"
         );
@@ -185,6 +187,12 @@ public class SmartWalletController {
                 "executed", true,
                 "result", result
         );
+    }
+
+    @Operation(summary = "恢复 smart-wallet 状态", description = "在网络/RPC/缓存异常后，触发一次全链路重梳理，尽量避免通过重启服务恢复。")
+    @PostMapping("/admin/recover-state")
+    public Map<String, Object> recoverState(@RequestParam(required = false) String reason) {
+        return recoveryService.recoverState(reason);
     }
 
     @Operation(summary = "钱包画像列表", description = "查看已入库的 smart wallet Polymarket 画像信息。")
@@ -444,7 +452,7 @@ public class SmartWalletController {
 
     @GetMapping("/wallets")
     public List<SmartWalletProfile> wallets() {
-        return walletRegistryService.list();
+        return followService.listWalletsForScan();
     }
 
     @PostMapping("/wallets")

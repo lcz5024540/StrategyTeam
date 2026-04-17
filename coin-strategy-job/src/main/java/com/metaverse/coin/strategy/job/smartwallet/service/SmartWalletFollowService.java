@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
@@ -9,14 +10,17 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -25,21 +29,27 @@ public class SmartWalletFollowService {
 
     private final SmartWalletProperties properties;
     private final SmartWalletRegistryService walletRegistryService;
+    private final SmartWalletProfileStoreService profileStoreService;
     private final PredictionMarketOpportunityService opportunityService;
     private final SmartWalletScoringService scoringService;
+    private final SmartWalletLeaderboardStateService leaderboardStateService;
     private final PolymarketExecutionGateway executionGateway;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
 
     public SmartWalletFollowService(SmartWalletProperties properties,
                                     SmartWalletRegistryService walletRegistryService,
+                                    SmartWalletProfileStoreService profileStoreService,
                                     PredictionMarketOpportunityService opportunityService,
                                     SmartWalletScoringService scoringService,
+                                    SmartWalletLeaderboardStateService leaderboardStateService,
                                     PolymarketExecutionGateway executionGateway,
                                     ExecutionWalletContextLoader executionWalletContextLoader) {
         this.properties = properties;
         this.walletRegistryService = walletRegistryService;
+        this.profileStoreService = profileStoreService;
         this.opportunityService = opportunityService;
         this.scoringService = scoringService;
+        this.leaderboardStateService = leaderboardStateService;
         this.executionGateway = executionGateway;
         this.executionWalletContextLoader = executionWalletContextLoader;
     }
@@ -49,8 +59,8 @@ public class SmartWalletFollowService {
         List<SmartWalletSignal> accepted = new ArrayList<>();
         List<SmartWalletSignal> rejected = new ArrayList<>();
 
-        for (SmartWalletProfile wallet : walletRegistryService.list()) {
-            BigDecimal walletScore = scoringService.score(wallet);
+        for (SmartWalletProfile wallet : listWalletsForScan()) {
+            BigDecimal walletScore = leaderboardStateService.adjustWalletScore(wallet.getAddress(), scoringService.score(wallet));
             for (PredictionMarketOpportunity market : opportunityService.list()) {
                 SmartWalletSignal signal = buildSignal(wallet, market, walletScore, normalizedBankroll);
                 if (signal.isExecutable()) {
@@ -93,6 +103,18 @@ public class SmartWalletFollowService {
         return executionGateway.execute(signal, normalizedMode);
     }
 
+    public List<SmartWalletProfile> listWalletsForScan() {
+        Map<String, SmartWalletProfile> combined = new LinkedHashMap<>();
+        for (SmartWalletProfileEntity entity : profileStoreService.listWatchEnabled()) {
+            SmartWalletProfile runtimeWallet = toRuntimeWallet(entity);
+            combined.put(normalizeAddress(runtimeWallet.getAddress()), runtimeWallet);
+        }
+        for (SmartWalletProfile wallet : walletRegistryService.list()) {
+            combined.putIfAbsent(normalizeAddress(wallet.getAddress()), wallet);
+        }
+        return new ArrayList<>(combined.values());
+    }
+
     public ExecutionWalletStatus executionWalletStatus() {
         return executionWalletContextLoader.getStatus();
     }
@@ -132,11 +154,16 @@ public class SmartWalletFollowService {
         List<String> walletTags = normalize(wallet.getTags());
         List<String> marketTags = normalize(market.getTags());
         boolean tagMatched = walletTags.stream().anyMatch(marketTags::contains);
-        if (properties.isRequireTagMatch() && !tagMatched) {
+        boolean shouldApplyTagGate = properties.isRequireTagMatch()
+                && !walletTags.isEmpty()
+                && !marketTags.isEmpty();
+        if (shouldApplyTagGate && !tagMatched) {
             executable = false;
             reasons.add("Wallet tags do not match market tags");
         } else if (tagMatched) {
             reasons.add("Wallet expertise matches market tags");
+        } else if (properties.isRequireTagMatch() && walletTags.isEmpty()) {
+            reasons.add("Wallet tags are unavailable, so tag matching was skipped");
         }
 
         BigDecimal marketEdge = marketConviction.subtract(marketPrice);
@@ -203,6 +230,28 @@ public class SmartWalletFollowService {
         notes.add("LIVE execution requires execution-wallet config and the official Polymarket Python SDK bridge.");
         notes.add("Recommended stake is capped by bankroll utilization and max-stake-usdc.");
         return notes;
+    }
+
+    private SmartWalletProfile toRuntimeWallet(SmartWalletProfileEntity entity) {
+        return SmartWalletProfile.builder()
+                .address(entity.getWalletAddress())
+                .chain(entity.getChain())
+                .alias(entity.getAlias())
+                .winRate(entity.getWinRate())
+                .realizedPnlUsdc(entity.getRealizedPnlUsdc())
+                .totalTrades(entity.getTotalTrades())
+                .averageSizeUsdc(entity.getAverageSizeUsdc())
+                .maxDrawdownRate(entity.getMaxDrawdownRate())
+                .preferredOutcome("YES")
+                .tags(List.of())
+                .build();
+    }
+
+    private String normalizeAddress(String address) {
+        if (!StringUtils.hasText(address)) {
+            return "";
+        }
+        return address.trim().toLowerCase(Locale.ROOT);
     }
 
     private BigDecimal safe(BigDecimal value) {

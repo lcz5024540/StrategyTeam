@@ -33,6 +33,7 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletAccountingService accountingService;
     private final TradeEvScoringService tradeEvScoringService;
     private final MarketConcentrationService concentrationService;
+    private final SmartWalletLeaderboardStateService leaderboardStateService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -185,7 +186,9 @@ public class SmartWalletSignalRiskService {
             }
         }
 
-        BigDecimal walletScore = profile == null ? BigDecimal.ZERO : safe(profile.getWalletScore());
+        BigDecimal walletScore = profile == null
+                ? BigDecimal.ZERO
+                : leaderboardStateService.adjustWalletScore(profile, event);
         BigDecimal recommendedStake = triggerSize
                 .multiply(walletScore)
                 .multiply(properties.getBankrollUtilizationRate())
