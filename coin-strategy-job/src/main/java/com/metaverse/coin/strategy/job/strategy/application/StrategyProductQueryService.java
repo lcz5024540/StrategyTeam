@@ -399,8 +399,8 @@ public class StrategyProductQueryService {
     private StrategyOrderRowView toOrder(SmartWalletOrderView row) {
         return new StrategyOrderRowView(row.getId(), row.getFollowTaskId(), row.getExecutionMode(), row.getQuestion(),
                 row.getOutcome(), row.getSide(), row.getStatus(), row.getPrice(), row.getSize(),
-                row.getNotionalUsdc(), row.getExpectedNetEvUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(),
-                row.getFollowProbability(), row.getCalibratedFollowProbability(), row.getSlippageSpikeProbability(), row.getEvSampleSize(),
+                row.getNotionalUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(),
+                row.getFollowProbability(), row.getCalibratedFollowProbability(), row.getSlippageSpikeProbability(), row.getEstimateSampleSize(),
                 row.getMarketEndAtBjt(), row.getPlacedAt() == null ? null : row.getPlacedAt().toString());
     }
 
@@ -418,7 +418,6 @@ public class StrategyProductQueryService {
                 safe(position.getYesEntryPrice()).add(safe(position.getNoEntryPrice())),
                 position.getQuantity(),
                 safe(position.getTotalCostUsdc()),
-                safe(position.getExpectedProfitUsdc()),
                 feeUsdc,
                 BigDecimal.ZERO,
                 null,

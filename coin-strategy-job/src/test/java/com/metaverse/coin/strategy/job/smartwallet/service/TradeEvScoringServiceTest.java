@@ -32,19 +32,20 @@ class TradeEvScoringServiceTest {
     @Test
     void shouldPreferRealizedSlippageWhenAvailable() {
         SmartWalletProperties properties = new SmartWalletProperties();
-        TradeEvScoringService service = new TradeEvScoringService(tradeEffectLabelMapper, marketSnapshotCollectorService, properties);
+        TradeProfitabilityScoringService service = new TradeProfitabilityScoringService(tradeEffectLabelMapper, marketSnapshotCollectorService, properties);
         when(tradeEffectLabelMapper.selectList(any())).thenReturn(List.of(
                 label("3.00000000", "0.50000000", "1.25000000", "10")
         ));
         when(marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(any(), any(), any()))
                 .thenReturn(snapshot("35", "50", "120", "0.04", "100"));
 
-        TradeEvScoringService.TradeEvEstimate estimate = service.estimate(profile(), event(), consensus(), new BigDecimal("10"));
+        TradeProfitabilityScoringService.ProfitabilityEstimate estimate =
+                service.estimate(profile(), event(), consensus(), new BigDecimal("10"));
 
-        assertEquals(1, estimate.getSampleSize());
+        assertEquals(1, estimate.getEstimateSampleSize());
         assertEquals(new BigDecimal("0.50000000"), estimate.getEstimatedFeeUsdc());
         assertEquals(new BigDecimal("1.25000000"), estimate.getEstimatedSlippageUsdc());
-        assertTrue(estimate.getExpectedNetEvUsdc().compareTo(BigDecimal.ZERO) > 0);
+        assertTrue(estimate.getEstimatedNetProfitabilityUsdc().compareTo(BigDecimal.ZERO) > 0);
         assertTrue(estimate.getFollowProbability().compareTo(new BigDecimal("0.70")) > 0);
         assertTrue(estimate.getCalibratedFollowProbability().compareTo(estimate.getFollowProbability()) > 0);
         assertTrue(estimate.getSlippageSpikeProbability().compareTo(new BigDecimal("0.50")) > 0);
@@ -55,13 +56,15 @@ class TradeEvScoringServiceTest {
         SmartWalletProperties properties = new SmartWalletProperties();
         properties.getBaselineModel().getFollowProbability().setWalletScoreWeight(new BigDecimal("3.00"));
         properties.getBaselineModel().getFollowProbability().setConsensusScoreWeight(BigDecimal.ZERO);
-        TradeEvScoringService service = new TradeEvScoringService(tradeEffectLabelMapper, marketSnapshotCollectorService, properties);
+        TradeProfitabilityScoringService service =
+                new TradeProfitabilityScoringService(tradeEffectLabelMapper, marketSnapshotCollectorService, properties);
         when(tradeEffectLabelMapper.selectList(any())).thenReturn(List.of());
         when(marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(any(), any(), any()))
                 .thenReturn(snapshot("10", "50", "120", "0.04", "100"));
 
-        TradeEvScoringService.TradeEvEstimate highScore = service.estimate(profile(), event(), consensus(), new BigDecimal("10"));
-        TradeEvScoringService.TradeEvEstimate lowScore = service.estimate(
+        TradeProfitabilityScoringService.ProfitabilityEstimate highScore =
+                service.estimate(profile(), event(), consensus(), new BigDecimal("10"));
+        TradeProfitabilityScoringService.ProfitabilityEstimate lowScore = service.estimate(
                 new SmartWalletProfileEntity().setWalletScore(new BigDecimal("0.20")),
                 event(),
                 consensus(),

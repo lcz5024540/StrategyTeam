@@ -277,8 +277,8 @@ class SmartWalletFollowTaskServiceTest {
         return SignalRiskDecision.builder()
                 .accepted(true)
                 .recommendedStakeUsdc(new BigDecimal(stake))
-                .expectedNetEvUsdc(new BigDecimal(ev))
-                .evSampleSize(sampleSize)
+                .estimatedNetProfitabilityUsdc(new BigDecimal(ev))
+                .estimateSampleSize(sampleSize)
                 .reasons(List.of("Signal passed watchlist, freshness, size and price checks."))
                 .build();
     }
@@ -287,8 +287,8 @@ class SmartWalletFollowTaskServiceTest {
         return SignalRiskDecision.builder()
                 .accepted(false)
                 .recommendedStakeUsdc(new BigDecimal(stake))
-                .expectedNetEvUsdc(new BigDecimal(ev))
-                .evSampleSize(sampleSize)
+                .estimatedNetProfitabilityUsdc(new BigDecimal(ev))
+                .estimateSampleSize(sampleSize)
                 .reasons(reasons)
                 .build();
     }

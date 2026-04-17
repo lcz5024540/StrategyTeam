@@ -414,7 +414,7 @@ public class SmartWalletController {
         );
     }
 
-    @Operation(summary = "Baseline 模型配置", description = "查看当前 P1 baseline EV/滑点模型和校准参数的运行时配置。")
+    @Operation(summary = "Baseline 模型配置", description = "查看当前 P1 baseline 风险/滑点模型和校准参数的运行时配置。")
     @GetMapping("/config/baseline-model")
     public BaselineModelConfigView baselineModelConfig() {
         return baselineModelConfigApplicationService.current();

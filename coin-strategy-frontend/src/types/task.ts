@@ -14,13 +14,12 @@ export interface Task {
   executionMode: string
   consensusWallets: number
   consensusScore: number
-  expectedNetEvUsdc: number
-  estimatedFeeUsdc: number
-  estimatedSlippageUsdc: number
-  followProbability: number
-  calibratedFollowProbability: number
-  slippageSpikeProbability: number
-  evSampleSize: number
+  estimatedFeeUsdc?: number
+  estimatedSlippageUsdc?: number
+  followProbability?: number
+  calibratedFollowProbability?: number
+  slippageSpikeProbability?: number
+  estimateSampleSize?: number
   taskExecutable: boolean
   overrideApplied: boolean
   appliedPreset?: string
@@ -35,6 +34,5 @@ export interface Task {
 export interface BlockerStat {
   blockerCategory: string
   blockedTaskCount: number
-  totalBlockedEvUsdc: number
   sampleTasks: Task[]
 }

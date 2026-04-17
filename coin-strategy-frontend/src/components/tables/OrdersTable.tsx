@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { walletApi } from '@/api'
-import { compactAddress, formatAmount, formatMoney, truncateText } from '@/utils/format'
+import { compactAddress, formatAmount, truncateText } from '@/utils/format'
 import { buildTableOptions, matchesTableKeyword, TABLE_FETCH_LIMIT, TABLE_PAGE_SIZE } from '@/utils/table'
 import { TableToolbar } from './TableToolbar'
 import { TablePagination } from './TablePagination'
@@ -63,7 +63,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
         <table>
           <tbody>
             <tr>
-              <td colSpan={9} className="empty-state">暂无订单记录</td>
+              <td colSpan={8} className="empty-state">暂无订单记录</td>
             </tr>
           </tbody>
         </table>
@@ -111,7 +111,6 @@ export function OrdersTable({ mode }: OrdersTableProps) {
               <th>Outcome</th>
               <th>方向</th>
               <th>名义金额</th>
-              <th>预期EV</th>
               <th>状态</th>
               <th>下单时间</th>
             </tr>
@@ -119,7 +118,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
           <tbody>
             {visibleOrders.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state">当前筛选条件下暂无订单记录</td>
+                <td colSpan={8} className="empty-state">当前筛选条件下暂无订单记录</td>
               </tr>
             ) : (
               visibleOrders.map((order) => (
@@ -132,9 +131,6 @@ export function OrdersTable({ mode }: OrdersTableProps) {
                     <span className={`badge ${order.side === 'BUY' ? 'accent' : 'warn'}`}>{order.side}</span>
                   </td>
                   <td>{formatAmount(order.notionalUsdc)}</td>
-                  <td className={Number(order.expectedNetEvUsdc || 0) >= 0 ? 'positive' : 'negative'}>
-                    {formatMoney(order.expectedNetEvUsdc || 0)}
-                  </td>
                   <td>
                     <span className="badge">{order.status}</span>
                   </td>

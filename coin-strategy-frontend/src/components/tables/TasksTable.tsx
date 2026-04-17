@@ -32,7 +32,6 @@ export function TasksTable({ tasks, type }: TasksTableProps) {
             <th>市场</th>
             <th>Outcome</th>
             <th>推荐仓位</th>
-            <th>预期 EV</th>
             <th>跟投概率</th>
             <th>阻塞</th>
           </tr>
@@ -44,9 +43,6 @@ export function TasksTable({ tasks, type }: TasksTableProps) {
               <td title={task.question}>{truncateText(task.question, 36)}</td>
               <td>{task.outcome}</td>
               <td>{formatMoney(task.recommendedStakeUsdc)}</td>
-              <td className={task.expectedNetEvUsdc >= 0 ? 'positive' : 'negative'}>
-                {formatMoney(task.expectedNetEvUsdc)}
-              </td>
               <td>{formatPercent(task.calibratedFollowProbability || task.followProbability)}</td>
               <td>
                 {task.blockerCount > 0 ? (

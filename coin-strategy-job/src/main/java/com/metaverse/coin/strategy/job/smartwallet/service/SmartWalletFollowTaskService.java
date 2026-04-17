@@ -109,7 +109,7 @@ public class SmartWalletFollowTaskService {
             }
             result.add(toView(task, decision));
         }
-        result.sort(this::compareTaskPriorityByEv);
+        result.sort(this::compareTaskPriority);
         return result;
     }
 
@@ -133,7 +133,7 @@ public class SmartWalletFollowTaskService {
             }
             result.add(toView(task, decision, appliedPreset));
         }
-        result.sort(this::compareTaskPriorityByEv);
+        result.sort(this::compareTaskPriority);
         return truncate(result, normalizeLimit(limit, 20));
     }
 
@@ -163,7 +163,7 @@ public class SmartWalletFollowTaskService {
             }
             candidates.add(toView(task, decision));
         }
-        candidates.sort(this::compareTaskPriorityByEv);
+        candidates.sort(this::compareTaskPriority);
         return candidates.size() <= normalizeLimit(limit, 20)
                 ? candidates
                 : new ArrayList<>(candidates.subList(0, normalizeLimit(limit, 20)));
@@ -382,8 +382,8 @@ public class SmartWalletFollowTaskService {
                 opportunities.add(view);
             }
         }
-        executable.sort(this::compareTaskPriorityByEv);
-        opportunities.sort(this::compareTaskPriorityByEv);
+        executable.sort(this::compareTaskPriority);
+        opportunities.sort(this::compareTaskPriority);
 
         return SmartWalletRiskSimulationResult.builder()
                 .applied(applied)
@@ -856,13 +856,12 @@ public class SmartWalletFollowTaskService {
                 .consensusScore(decision == null
                         ? (consensus == null ? null : consensus.getConsensusScore())
                         : decision.getConsensusScore())
-                .expectedNetEvUsdc(decision == null ? null : decision.getExpectedNetEvUsdc())
                 .estimatedFeeUsdc(decision == null ? null : decision.getEstimatedFeeUsdc())
                 .estimatedSlippageUsdc(decision == null ? null : decision.getEstimatedSlippageUsdc())
                 .followProbability(decision == null ? null : decision.getFollowProbability())
                 .calibratedFollowProbability(decision == null ? null : decision.getCalibratedFollowProbability())
                 .slippageSpikeProbability(decision == null ? null : decision.getSlippageSpikeProbability())
-                .evSampleSize(decision == null ? null : decision.getEvSampleSize())
+                .estimateSampleSize(decision == null ? null : decision.getEstimateSampleSize())
                 .taskExecutable(decision == null ? null : decision.isAccepted())
                 .overrideApplied(decision == null ? null : decision.isOverrideApplied())
                 .appliedPreset(appliedPreset)
@@ -1074,7 +1073,7 @@ public class SmartWalletFollowTaskService {
         return new ArrayList<>(categories);
     }
 
-    private int compareTaskPriorityByEv(SmartWalletFollowTaskView left, SmartWalletFollowTaskView right) {
+    private int compareTaskPriority(SmartWalletFollowTaskView left, SmartWalletFollowTaskView right) {
         int blockerCompare = Integer.compare(
                 left == null || left.getBlockerCount() == null ? Integer.MAX_VALUE : left.getBlockerCount(),
                 right == null || right.getBlockerCount() == null ? Integer.MAX_VALUE : right.getBlockerCount());
@@ -1082,11 +1081,15 @@ public class SmartWalletFollowTaskService {
             return blockerCompare;
         }
 
-        BigDecimal leftEv = left == null || left.getExpectedNetEvUsdc() == null ? BigDecimal.valueOf(-999999) : left.getExpectedNetEvUsdc();
-        BigDecimal rightEv = right == null || right.getExpectedNetEvUsdc() == null ? BigDecimal.valueOf(-999999) : right.getExpectedNetEvUsdc();
-        int evCompare = rightEv.compareTo(leftEv);
-        if (evCompare != 0) {
-            return evCompare;
+        BigDecimal leftProbability = left == null || left.getCalibratedFollowProbability() == null
+                ? BigDecimal.ZERO
+                : left.getCalibratedFollowProbability();
+        BigDecimal rightProbability = right == null || right.getCalibratedFollowProbability() == null
+                ? BigDecimal.ZERO
+                : right.getCalibratedFollowProbability();
+        int probabilityCompare = rightProbability.compareTo(leftProbability);
+        if (probabilityCompare != 0) {
+            return probabilityCompare;
         }
 
         BigDecimal leftStake = left == null || left.getRecommendedStakeUsdc() == null ? BigDecimal.ZERO : left.getRecommendedStakeUsdc();

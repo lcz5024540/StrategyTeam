@@ -2380,13 +2380,12 @@ public class SmartWalletAccountingService {
                 .size(order.getSize())
                 .notionalUsdc(order.getNotionalUsdc())
                 .feeUsdc(order.getFeeUsdc())
-                .expectedNetEvUsdc(decision == null ? null : decision.getExpectedNetEvUsdc())
                 .estimatedFeeUsdc(decision == null ? null : decision.getEstimatedFeeUsdc())
                 .estimatedSlippageUsdc(decision == null ? null : decision.getEstimatedSlippageUsdc())
                 .followProbability(decision == null ? null : decision.getFollowProbability())
                 .calibratedFollowProbability(decision == null ? null : decision.getCalibratedFollowProbability())
                 .slippageSpikeProbability(decision == null ? null : decision.getSlippageSpikeProbability())
-                .evSampleSize(decision == null ? null : decision.getEvSampleSize())
+                .estimateSampleSize(decision == null ? null : decision.getEstimateSampleSize())
                 .errorMessage(order.getErrorMessage())
                 .placedAt(order.getPlacedAt())
                 .filledAt(order.getFilledAt())
@@ -2404,7 +2403,7 @@ public class SmartWalletAccountingService {
             }
             return followTaskService.evaluateTask(order.getFollowTaskId());
         } catch (Exception ex) {
-            log.debug("Failed to resolve order EV for orderId={} followTaskId={}: {}",
+            log.debug("Failed to resolve order risk metrics for orderId={} followTaskId={}: {}",
                     order.getId(), order.getFollowTaskId(), ex.getMessage());
             return null;
         }

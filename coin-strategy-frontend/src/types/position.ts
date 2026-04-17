@@ -31,7 +31,6 @@ export interface Order {
   outcome: string
   side: string
   notionalUsdc: number
-  expectedNetEvUsdc?: number
   status: string
   placedAt: string
   filledAt?: string
