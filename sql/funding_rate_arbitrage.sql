@@ -99,8 +99,8 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_position` (
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_order` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `position_id` BIGINT UNSIGNED NOT NULL COMMENT '关联持仓ID',
-    `position_code` VARCHAR(64) NOT NULL COMMENT '关联持仓编号',
+    `position_id` BIGINT UNSIGNED NOT NULL COMMENT '关联持仓ID，逻辑关联字段',
+    `position_code` VARCHAR(64) NOT NULL COMMENT '关联持仓编号，逻辑关联字段',
     `exchange_name` VARCHAR(32) NOT NULL DEFAULT 'BINANCE' COMMENT '交易所名称',
     `symbol` VARCHAR(32) NOT NULL COMMENT '订单交易对',
     `market_type` VARCHAR(16) NOT NULL COMMENT '市场类型：SPOT/FUTURES',
@@ -128,8 +128,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_order` (
     PRIMARY KEY (`id`),
     KEY `idx_arb_order_position` (`position_id`, `trade_phase`),
     KEY `idx_arb_order_exchange_order` (`exchange_name`, `exchange_order_id`),
-    KEY `idx_arb_order_symbol_time` (`symbol`, `placed_at`),
-    CONSTRAINT `fk_single_exchange_arb_order_position` FOREIGN KEY (`position_id`) REFERENCES `single_exchange_arbitrage_position` (`id`)
+    KEY `idx_arb_order_symbol_time` (`symbol`, `placed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所资金费率套利订单执行表';
 
 -- ---------------------------------------------------------------------
@@ -142,7 +141,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_signal_snapshot` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `exchange_name` VARCHAR(32) NOT NULL DEFAULT 'BINANCE' COMMENT '交易所名称',
     `symbol` VARCHAR(32) NOT NULL COMMENT '交易对',
-    `position_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联持仓ID，可空',
+    `position_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联持仓ID，逻辑关联字段，可空',
     `check_stage` VARCHAR(24) NOT NULL COMMENT '检查阶段：OPEN_CHECK/CLOSE_CHECK/RISK_CHECK/REBALANCE_CHECK',
     `current_funding_rate` DECIMAL(12, 8) DEFAULT NULL COMMENT '当前资金费率',
     `predicted_funding_rate` DECIMAL(12, 8) DEFAULT NULL COMMENT '预测下一期资金费率',
@@ -163,8 +162,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_signal_snapshot` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_signal_snapshot_symbol_stage_time` (`symbol`, `check_stage`, `created_at`),
-    KEY `idx_signal_snapshot_action_time` (`action_taken`, `created_at`),
-    CONSTRAINT `fk_single_exchange_signal_snapshot_position` FOREIGN KEY (`position_id`) REFERENCES `single_exchange_arbitrage_position` (`id`)
+    KEY `idx_signal_snapshot_action_time` (`action_taken`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所资金费率套利决策快照表';
 
 -- ---------------------------------------------------------------------
@@ -175,8 +173,8 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_signal_snapshot` (
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_funding_settlement` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `position_id` BIGINT UNSIGNED NOT NULL COMMENT '关联持仓ID',
-    `position_code` VARCHAR(64) NOT NULL COMMENT '关联持仓编号',
+    `position_id` BIGINT UNSIGNED NOT NULL COMMENT '关联持仓ID，逻辑关联字段',
+    `position_code` VARCHAR(64) NOT NULL COMMENT '关联持仓编号，逻辑关联字段',
     `exchange_name` VARCHAR(32) NOT NULL DEFAULT 'BINANCE' COMMENT '交易所名称',
     `symbol` VARCHAR(32) NOT NULL COMMENT '交易对',
     `funding_time` BIGINT NOT NULL COMMENT '资金费结算时间戳（毫秒）',
@@ -189,8 +187,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_funding_settlement` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_funding_settlement_position_time` (`position_id`, `funding_time`),
-    KEY `idx_funding_settlement_symbol_time` (`symbol`, `funding_time`),
-    CONSTRAINT `fk_single_exchange_funding_settlement_position` FOREIGN KEY (`position_id`) REFERENCES `single_exchange_arbitrage_position` (`id`)
+    KEY `idx_funding_settlement_symbol_time` (`symbol`, `funding_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所资金费率套利资金费结算流水表';
 
 -- ---------------------------------------------------------------------
@@ -201,8 +198,8 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_funding_settlement` (
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_risk_snapshot` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `position_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联持仓ID，可空',
-    `position_code` VARCHAR(64) DEFAULT NULL COMMENT '关联持仓编号，可空',
+    `position_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联持仓ID，逻辑关联字段，可空',
+    `position_code` VARCHAR(64) DEFAULT NULL COMMENT '关联持仓编号，逻辑关联字段，可空',
     `exchange_name` VARCHAR(32) NOT NULL DEFAULT 'BINANCE' COMMENT '交易所名称',
     `symbol` VARCHAR(32) NOT NULL COMMENT '交易对',
     `check_stage` VARCHAR(24) NOT NULL COMMENT '风控阶段：PRE_OPEN/HOLDING/PRE_CLOSE/REBALANCE',
@@ -216,8 +213,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_risk_snapshot` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_risk_snapshot_symbol_stage_time` (`symbol`, `check_stage`, `created_at`),
-    KEY `idx_risk_snapshot_passed_time` (`risk_passed`, `created_at`),
-    CONSTRAINT `fk_single_exchange_risk_snapshot_position` FOREIGN KEY (`position_id`) REFERENCES `single_exchange_arbitrage_position` (`id`)
+    KEY `idx_risk_snapshot_passed_time` (`risk_passed`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单交易所资金费率套利风控快照表';
 
 -- ---------------------------------------------------------------------
@@ -227,7 +223,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_risk_snapshot` (
 -- - 用于审计“为什么触发了划转 / 为什么没有划转 / 实际划转了多少”
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_rebalance_record` (
-    `risk_snapshot_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联的再平衡风控快照ID',
+    `risk_snapshot_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联的再平衡风控快照ID，逻辑关联字段',
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `exchange_name` VARCHAR(32) NOT NULL DEFAULT 'BINANCE' COMMENT '交易所名称',
     `symbol` VARCHAR(32) DEFAULT NULL COMMENT '关联交易对',
