@@ -7,6 +7,10 @@ interface DailyPnlBarsProps {
 }
 
 export function DailyPnlBars({ data }: DailyPnlBarsProps) {
+  if (data.length === 0) {
+    return <div className="empty-state">暂无日收益数据</div>
+  }
+
   const sorted = [...data].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
   const dates = sorted.map((item) => item.reportDate)
   const pnl = sorted.map((item) => Number((item.netPnlUsdc || 0).toFixed(2)))

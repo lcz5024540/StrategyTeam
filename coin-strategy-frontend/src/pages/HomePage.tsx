@@ -9,6 +9,8 @@ import { OrdersTable } from '@/components/tables/OrdersTable'
 import { TasksTable } from '@/components/tables/TasksTable'
 import { TimelineChart } from '@/components/charts/TimelineChart'
 import { AttributionBars } from '@/components/charts/AttributionBars'
+import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
+import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
 export function HomePage() {
   const [searchParams] = useSearchParams()
@@ -27,13 +29,13 @@ export function HomePage() {
   // 获取持仓
   const { data: positions = [], isLoading: positionsLoading } = useQuery({
     queryKey: ['positions', mode],
-    queryFn: () => walletApi.getPositionsLive(),
+    queryFn: () => walletApi.getPositionsLive(mode),
   })
 
   // 获取待结算
   const { data: settlements = [] } = useQuery({
-    queryKey: ['settlements'],
-    queryFn: () => walletApi.getNextSettlements(10),
+    queryKey: ['settlements', mode],
+    queryFn: () => walletApi.getNextSettlements(TABLE_FETCH_LIMIT, mode),
   })
 
   // 获取可执行任务
@@ -65,12 +67,34 @@ export function HomePage() {
     queryFn: () => reportsApi.getMarketAttribution(10, mode),
   })
 
+  const { data: followAddressDailyReports = [] } = useQuery({
+    queryKey: ['followAddressDailyReports', mode],
+    queryFn: () => reportsApi.getFollowAddressDailyReports(20, mode),
+  })
+
   if (detailLoading) {
     return <div className="loading">加载中...</div>
   }
 
+  const showLiveEmptyHint =
+    mode === 'LIVE' &&
+    detail &&
+    detail.totalTrades === 0 &&
+    positions.length === 0 &&
+    settlements.length === 0 &&
+    dailyReports.length === 0
+
   return (
     <>
+      {showLiveEmptyHint ? (
+        <section className="panel">
+          <div className="empty-state">
+            当前处于 LIVE 口径，但后端暂时没有真实订单、持仓和报表数据。
+            切换右上角的“模拟”后，可以查看现有的交易历史、收益折线图和柱状图。
+          </div>
+        </section>
+      ) : null}
+
       {/* 核心指标 */}
       <MetricGrid detail={detail} />
 
@@ -119,6 +143,14 @@ export function HomePage() {
         </section>
       </div>
 
+      <section className="panel">
+        <div className="section-head">
+          <h2>今日跟单地址分析</h2>
+          <p>按源地址查看胜负笔数、净利润、手续费和在途风险敞口</p>
+        </div>
+        <FollowAddressDailyTable data={followAddressDailyReports} />
+      </section>
+
       {/* 持仓 */}
       <div className="split-grid">
         <section className="panel">
@@ -143,7 +175,7 @@ export function HomePage() {
           <h2>交易历史</h2>
           <p>最近的订单记录</p>
         </div>
-        <OrdersTable />
+        <OrdersTable mode={mode} />
       </section>
     </>
   )

@@ -21,6 +21,14 @@ public record StrategyMetricsView(
         Integer openConflictingMarkets,
         BigDecimal conflictNetPnlUsdc,
         Integer remainingPositionSlots,
-        BigDecimal remainingCapitalBudgetUsdc
+        BigDecimal remainingCapitalBudgetUsdc,
+        BigDecimal availableCapitalUsdc,
+        BigDecimal lockedClaimProceedsUsdc,
+        Integer earlyExitOrderCount,
+        BigDecimal earlyExitRealizedPnlUsdc,
+        Integer takeProfitOrderCount,
+        BigDecimal takeProfitRealizedPnlUsdc,
+        Integer stopLossOrderCount,
+        BigDecimal stopLossRealizedPnlUsdc
 ) {
 }

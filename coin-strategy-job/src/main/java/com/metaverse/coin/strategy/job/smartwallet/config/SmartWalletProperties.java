@@ -55,13 +55,18 @@ public class SmartWalletProperties {
         private Integer closedPositionLimit = 50;
         private Integer recentTradeLimit = 30;
         private Long discoveryFixedDelayMs = 3600000L;
+        private Long leaderboardRefreshFixedDelayMs = 300000L;
+        private Integer leaderboardRefreshTopN = 10;
         private Long eventSyncFixedDelayMs = 15000L;
         private Long positionSyncFixedDelayMs = 15000L;
         private Long positionSyncErrorCooldownMs = 300000L;
         private Long positionSyncNotFoundCooldownMs = 1800000L;
+        private boolean positionSyncAutoRecoveryEnabled = true;
+        private Integer positionSyncRecoveryFailureThreshold = 2;
         private Integer watchlistTradeSyncBatchSize = 3;
         private Long walletTradeSyncMinIntervalMs = 30000L;
         private Long walletTradeErrorCooldownMs = 300000L;
+        private BigDecimal staleAddressWeightFactor = new BigDecimal("0.35");
     }
 
     @Data
@@ -98,15 +103,17 @@ public class SmartWalletProperties {
     @Data
     public static class SignalRisk {
         private boolean allowSellSignal = false;
-        private boolean enableStopLoss = false;
-        private BigDecimal stopLossThresholdRate = new BigDecimal("0.50");
+        private boolean enableAutoStopLoss = false;
+        private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
+        private boolean enableAutoTakeProfit = false;
+        private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.20");
         private Integer maxSignalAgeSeconds = 300;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         private BigDecimal minFollowPrice = new BigDecimal("0.05");
         private BigDecimal maxFollowPrice = new BigDecimal("0.95");
-        private boolean enableEvGate = false;
-        private Integer evMinSampleSize = 3;
-        private BigDecimal minExpectedNetEvUsdc = BigDecimal.ZERO;
+        private boolean enableProfitabilityGate = false;
+        private Integer profitabilityMinSampleSize = 3;
+        private BigDecimal minEstimatedNetProfitabilityUsdc = BigDecimal.ZERO;
         private boolean enableProbabilityGate = false;
         private BigDecimal minCalibratedFollowProbability = new BigDecimal("0.52");
         private boolean enableSlippageGate = false;
@@ -120,6 +127,18 @@ public class SmartWalletProperties {
         private boolean blockOppositeOpenPositionSameMarket = true;
         private boolean blockOppositePendingTaskSameMarket = true;
         private boolean enableConsensusGate = true;
+        /**
+         * 开单策略路由模式：
+         * ANY = 命中任一策略即可开单
+         * ALL = 所有启用策略都必须通过
+         */
+        private String entryStrategyRouteMode = "ANY";
+        /**
+         * 启用的开单策略列表。默认保留现有行为：
+         * 1. 共识策略
+         * 2. 单钱包 override 策略
+         */
+        private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "SINGLE_WALLET_OVERRIDE"));
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 2;
         /** 实体去重后的最小实体数门控（替代 minDistinctWallets）。默认与 minDistinctWallets 保持一致 */
@@ -163,6 +182,42 @@ public class SmartWalletProperties {
         private BigDecimal concentrationStakeSafeTop3Pct = new BigDecimal("0.40");
         /** 集中度惩罚最大削减比例（0.5 = 最多缩减 50%） */
         private BigDecimal concentrationStakePenaltyMaxRate = new BigDecimal("0.50");
+
+        /**
+         * Backward-compatible accessors for existing YAML keys:
+         *   smart-wallet.signal-risk.enable-ev-gate
+         *   smart-wallet.signal-risk.ev-min-sample-size
+         *   smart-wallet.signal-risk.min-expected-net-ev-usdc
+         */
+        @Deprecated
+        public boolean isEnableEvGate() {
+            return enableProfitabilityGate;
+        }
+
+        @Deprecated
+        public void setEnableEvGate(boolean enableEvGate) {
+            this.enableProfitabilityGate = enableEvGate;
+        }
+
+        @Deprecated
+        public Integer getEvMinSampleSize() {
+            return profitabilityMinSampleSize;
+        }
+
+        @Deprecated
+        public void setEvMinSampleSize(Integer evMinSampleSize) {
+            this.profitabilityMinSampleSize = evMinSampleSize;
+        }
+
+        @Deprecated
+        public BigDecimal getMinExpectedNetEvUsdc() {
+            return minEstimatedNetProfitabilityUsdc;
+        }
+
+        @Deprecated
+        public void setMinExpectedNetEvUsdc(BigDecimal minExpectedNetEvUsdc) {
+            this.minEstimatedNetProfitabilityUsdc = minExpectedNetEvUsdc;
+        }
     }
 
     @Data

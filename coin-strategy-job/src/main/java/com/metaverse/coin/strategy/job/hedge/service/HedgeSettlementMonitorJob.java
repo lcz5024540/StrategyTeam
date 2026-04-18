@@ -9,6 +9,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 /**
@@ -94,13 +96,25 @@ public class HedgeSettlementMonitorJob {
             return false;
         }
 
-        log.info("[HedgeSettlement] Market resolved: positionId={} market={} outcome={}",
-                position.getId(), position.getMarketId(), resolvedOutcome);
+        log.info("[HedgeSettlement] Market resolved: positionId={} mode={} market={} outcome={}",
+                position.getId(), position.getMode(), position.getMarketId(), resolvedOutcome);
 
-        // 仅将持仓推进到 SETTLING 状态，记录结果方向
-        // 实际链上 Claim（redeemPositions）和最终 SETTLED 标记由 HedgeClaimService 负责
+        // 推进到 SETTLING
         if ("OPEN".equals(position.getStatus())) {
             positionTracker.markSettling(position.getId(), resolvedOutcome);
+        }
+
+        // PAPER 模式：不做链上 claim，直接按理论赢 1.0 USDC/股 结算并写入 PnL
+        // LIVE 模式：交由 HedgeClaimService 处理链上 redeem
+        if ("PAPER".equalsIgnoreCase(position.getMode())) {
+            BigDecimal claimed = position.getQuantity() == null
+                    ? BigDecimal.ZERO
+                    : position.getQuantity().setScale(4, RoundingMode.HALF_UP);
+            BigDecimal totalCost = position.getTotalCostUsdc() == null
+                    ? BigDecimal.ZERO : position.getTotalCostUsdc();
+            BigDecimal fee = totalCost.multiply(properties.getEstimatedFeeRate())
+                    .setScale(4, RoundingMode.HALF_UP);
+            positionTracker.markSettled(position.getId(), claimed, fee);
         }
         return true;
     }

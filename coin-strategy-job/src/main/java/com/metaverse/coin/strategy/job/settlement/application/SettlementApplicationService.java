@@ -38,4 +38,8 @@ public class SettlementApplicationService {
     public SettlementRetryReportView retryReport() {
         return smartWalletSettlementSyncService.retryReport();
     }
+
+    public SettlementSyncSummary confirmLocalMarkets(List<String> marketIds, boolean refreshCache) {
+        return smartWalletSettlementSyncService.confirmLocalMarkets(marketIds, refreshCache);
+    }
 }

@@ -372,6 +372,9 @@ public class PolymarketApiClient {
                 resolvedOutcome = explicitWinner;
             }
         }
+        if (resolvedOutcome == null) {
+            resolvedOutcome = inferResolvedOutcomeFromPrices(outcomes, outcomePrices, closed);
+        }
         return MarketMetadata.builder()
                 .conditionId(text(market, "conditionId", "condition_id"))
                 .marketId(text(market, "id", "marketId", "market_id"))
@@ -391,6 +394,47 @@ public class PolymarketApiClient {
                 .outcomePrices(new ArrayList<>(outcomePrices))
                 .outcomeTokenIds(outcomeTokenMap)
                 .build();
+    }
+
+    private String inferResolvedOutcomeFromPrices(List<String> outcomes,
+                                                  List<String> outcomePrices,
+                                                  boolean closed) {
+        if (!closed || outcomes == null || outcomePrices == null || outcomes.isEmpty() || outcomePrices.isEmpty()) {
+            return null;
+        }
+        int resolvedIndex = -1;
+        for (int i = 0; i < Math.min(outcomes.size(), outcomePrices.size()); i++) {
+            BigDecimal price = parsePrice(outcomePrices.get(i));
+            if (price == null) {
+                return null;
+            }
+            if (price.compareTo(new BigDecimal("0.999")) >= 0) {
+                if (resolvedIndex >= 0) {
+                    return null;
+                }
+                resolvedIndex = i;
+                continue;
+            }
+            if (price.compareTo(new BigDecimal("0.001")) > 0) {
+                return null;
+            }
+        }
+        if (resolvedIndex < 0 || resolvedIndex >= outcomes.size()) {
+            return null;
+        }
+        return normalizeOutcomeLabel(outcomes.get(resolvedIndex));
+    }
+
+    private BigDecimal parsePrice(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (NumberFormatException e) {
+            log.debug("Failed to parse Polymarket price {}", raw, e);
+            return null;
+        }
     }
 
     private JsonNode getJson(URI uri) {

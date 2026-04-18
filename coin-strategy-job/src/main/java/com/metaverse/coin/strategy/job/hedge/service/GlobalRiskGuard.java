@@ -50,12 +50,24 @@ public class GlobalRiskGuard {
 
     /**
      * 计算当前对冲策略的总敞口（OPEN 状态持仓的 total_cost_usdc 之和）
+     *
+     * 默认仅统计 LIVE 仓（PAPER 不消耗真实资金，不应占全局敞口）。
+     * 通过 {@code polymarket.hedge.paper.include-in-global-exposure=true} 可以恢复旧行为。
      */
     public BigDecimal currentHedgeExposureUsdc() {
-        List<HedgePositionEntity> openPositions = hedgePositionMapper.selectList(
-                new LambdaQueryWrapper<HedgePositionEntity>()
-                        .eq(HedgePositionEntity::getStatus, "OPEN")
-                        .select(HedgePositionEntity::getTotalCostUsdc));
+        LambdaQueryWrapper<HedgePositionEntity> wrapper = new LambdaQueryWrapper<HedgePositionEntity>()
+                .eq(HedgePositionEntity::getStatus, "OPEN")
+                .select(HedgePositionEntity::getTotalCostUsdc);
+
+        boolean includePaper = properties.getPaper() != null
+                && properties.getPaper().isIncludeInGlobalExposure();
+        if (!includePaper) {
+            // 兼容历史数据：mode 为空时视为 LIVE
+            wrapper.and(w -> w.eq(HedgePositionEntity::getMode, "LIVE")
+                    .or().isNull(HedgePositionEntity::getMode));
+        }
+
+        List<HedgePositionEntity> openPositions = hedgePositionMapper.selectList(wrapper);
         return openPositions.stream()
                 .map(p -> p.getTotalCostUsdc() != null ? p.getTotalCostUsdc() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)

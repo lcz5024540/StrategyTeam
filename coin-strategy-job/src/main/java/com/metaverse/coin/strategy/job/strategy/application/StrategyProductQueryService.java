@@ -99,7 +99,8 @@ public class StrategyProductQueryService {
                     new StrategyMetricsView(0, 0, 0, 0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                             BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                             BigDecimal.ZERO, BigDecimal.ZERO,
-                            0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
+                            0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                            0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO),
                     List.of(new StrategyInsightView("INFO", "策略待接入", "当前页面结构已预留，后续可继续接入真实策略数据。")),
                     List.of(), List.of(), List.of(), List.of(), List.of());
         }
@@ -135,7 +136,10 @@ public class StrategyProductQueryService {
                 safe(performance.getProfitFactor()), safe(performance.getMaxDrawdownUsdc()), performance.getConflictingMarkets(),
                 performance.getOpenConflictingMarkets(), safe(performance.getConflictNetPnlUsdc()),
                 capacity.getRemainingPositionSlots(), safe(capacity.getRemainingCapitalBudgetUsdc()),
-                safe(capacity.getAvailableCapitalUsdc()), safe(capacity.getLockedClaimProceedsUsdc())
+                safe(capacity.getAvailableCapitalUsdc()), safe(capacity.getLockedClaimProceedsUsdc()),
+                performance.getEarlyExitOrderCount(), safe(performance.getEarlyExitRealizedPnlUsdc()),
+                performance.getTakeProfitOrderCount(), safe(performance.getTakeProfitRealizedPnlUsdc()),
+                performance.getStopLossOrderCount(), safe(performance.getStopLossRealizedPnlUsdc())
         );
 
         return new StrategyDetailView(
@@ -249,7 +253,13 @@ public class StrategyProductQueryService {
                 remainingPositionSlots,
                 availableCapital,
                 availableCapital,
-                lockedClaimProceeds
+                lockedClaimProceeds,
+                0,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO
         );
 
         return new StrategyDetailView(
@@ -290,6 +300,11 @@ public class StrategyProductQueryService {
             insights.add(new StrategyInsightView("INFO", "当前胜率尚未成型", "暂时没有已结算仓位，胜率需要等待真实结算后再判断。"));
         }
         if ("LIVE".equalsIgnoreCase(mode)) {
+            if ((metrics.totalOrders() == null || metrics.totalOrders() == 0)
+                    && (metrics.openPositions() == null || metrics.openPositions() == 0)
+                    && (metrics.closedPositions() == null || metrics.closedPositions() == 0)) {
+                insights.add(new StrategyInsightView("INFO", "暂无真实交易数据", "当前 LIVE 口径还没有真实订单、持仓和收益时间线；切回 PAPER 可查看现有模拟数据。"));
+            }
             insights.add(new StrategyInsightView("INFO", "当前查看真实仓", "页面已切到 LIVE 口径，指标、持仓、订单和时间线都只统计真实执行钱包。"));
         } else if ("PAPER".equalsIgnoreCase(mode)) {
             insights.add(new StrategyInsightView("INFO", "当前查看模拟仓", "页面已切到 PAPER 口径，指标、持仓、订单和时间线都只统计 paper-book 仓位。"));
@@ -393,9 +408,10 @@ public class StrategyProductQueryService {
 
     private StrategyOrderRowView toOrder(SmartWalletOrderView row) {
         return new StrategyOrderRowView(row.getId(), row.getFollowTaskId(), row.getExecutionMode(), row.getQuestion(),
-                row.getOutcome(), row.getSide(), row.getStatus(), row.getPrice(), row.getSize(),
-                row.getNotionalUsdc(), row.getExpectedNetEvUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(),
-                row.getFollowProbability(), row.getCalibratedFollowProbability(), row.getSlippageSpikeProbability(), row.getEvSampleSize(),
+                row.getOutcome(), row.getSide(), row.getOrderType(), row.getEarlyExit(), row.getExitReason(),
+                row.getStatus(), row.getPrice(), row.getSize(),
+                row.getNotionalUsdc(), row.getRealizedPnlUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(),
+                row.getFollowProbability(), row.getCalibratedFollowProbability(), row.getSlippageSpikeProbability(), row.getEstimateSampleSize(),
                 row.getMarketEndAtBjt(), row.getPlacedAt() == null ? null : row.getPlacedAt().toString());
     }
 
@@ -409,11 +425,14 @@ public class StrategyProductQueryService {
                 position.getQuestion(),
                 "YES / NO",
                 "PAIR",
+                "PAIR",
+                false,
+                null,
                 buildHedgePairOrderStatus(position, orders),
                 safe(position.getYesEntryPrice()).add(safe(position.getNoEntryPrice())),
                 position.getQuantity(),
                 safe(position.getTotalCostUsdc()),
-                safe(position.getExpectedProfitUsdc()),
+                safe(position.getRealizedPnlUsdc()),
                 feeUsdc,
                 BigDecimal.ZERO,
                 null,

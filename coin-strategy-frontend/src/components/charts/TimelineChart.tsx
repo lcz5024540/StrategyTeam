@@ -8,6 +8,10 @@ interface TimelineChartProps {
 }
 
 export function TimelineChart({ data }: TimelineChartProps) {
+  if (data.length === 0) {
+    return <div className="empty-state">暂无收益时间线数据</div>
+  }
+
   const sorted = [...data].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
   const dates = sorted.map((item) => item.reportDate)
   const cumulative: number[] = []

@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import lombok.Builder;
 import lombok.Data;
@@ -9,6 +10,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -47,6 +49,63 @@ public class PolymarketOrderRequestFactory {
                 metadata.isNegRisk(),
                 wallet
         );
+    }
+
+    public PreparedPolymarketOrder prepareExit(SmartWalletPositionEntity position,
+                                               BigDecimal requestedPrice,
+                                               ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
+        if (position == null) {
+            throw new IllegalArgumentException("position must be provided for exit order preparation.");
+        }
+        if (!StringUtils.hasText(position.getMarketId())) {
+            throw new IllegalStateException("Position is missing marketId.");
+        }
+        if (!StringUtils.hasText(position.getOutcome())) {
+            throw new IllegalStateException("Position is missing outcome.");
+        }
+        BigDecimal quantity = position.getQuantity();
+        if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("Position has no remaining quantity to exit.");
+        }
+
+        String outcome = position.getOutcome().trim().toUpperCase(Locale.ROOT);
+        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                position.getMarketId(),
+                false,
+                position.getQuestion(),
+                List.of(outcome)
+        );
+        String tokenId = StringUtils.hasText(position.getTokenId())
+                ? position.getTokenId().trim()
+                : resolveTokenId(metadata, outcome);
+        BigDecimal minimumTickSize = metadata.getMinimumTickSize() == null || metadata.getMinimumTickSize().compareTo(BigDecimal.ZERO) <= 0
+                ? new BigDecimal("0.01")
+                : metadata.getMinimumTickSize();
+        BigDecimal referencePrice = requestedPrice == null ? position.getLastMarkPrice() : requestedPrice;
+        if (referencePrice == null || referencePrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("Exit price must be provided, or the position must have a usable lastMarkPrice.");
+        }
+        BigDecimal slippage = referencePrice.multiply(wallet.getPriceSlippageRate());
+        BigDecimal limitPrice = referencePrice.subtract(slippage).max(minimumTickSize).setScale(4, RoundingMode.HALF_UP);
+        BigDecimal normalizedLimitPrice = snapToTick(limitPrice, minimumTickSize);
+        BigDecimal normalizedSize = quantity.setScale(6, RoundingMode.DOWN);
+        BigDecimal exitNotional = normalizedSize.multiply(normalizedLimitPrice).setScale(8, RoundingMode.HALF_UP);
+
+        return PreparedPolymarketOrder.builder()
+                .signalId("position-exit-" + position.getId())
+                .marketId(position.getMarketId())
+                .question(position.getQuestion())
+                .outcome(outcome)
+                .side("SELL")
+                .stakeUsdc(exitNotional)
+                .limitPrice(normalizedLimitPrice)
+                .size(normalizedSize)
+                .tokenId(tokenId)
+                .tickSize(minimumTickSize)
+                .negRisk(metadata != null && metadata.isNegRisk())
+                .executionAddress(wallet.getAddress())
+                .funderAddress(wallet.getFunderAddress())
+                .build();
     }
 
     public PreparedPolymarketOrder prepareLocalDraft(String signalId,

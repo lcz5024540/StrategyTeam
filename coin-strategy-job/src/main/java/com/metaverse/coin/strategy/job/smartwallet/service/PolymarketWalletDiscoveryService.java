@@ -36,14 +36,24 @@ public class PolymarketWalletDiscoveryService {
     private final SmartWalletProfileStoreService profileStoreService;
     private final SmartWalletProperties properties;
     private final SmartWalletScoringService scoringService;
+    private final SmartWalletLeaderboardStateService leaderboardStateService;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
     public PolymarketDiscoverySummary analyzeTopWallets() {
+        return analyzeTopWallets(resolveAnalyzeTopN(), true);
+    }
+
+    public PolymarketDiscoverySummary refreshLeaderboardWatchlist() {
+        return analyzeTopWallets(resolveRefreshTopN(), false);
+    }
+
+    private PolymarketDiscoverySummary analyzeTopWallets(int analyzeLimit, boolean syncTradesAfterRefresh) {
         List<String> notes = new ArrayList<>();
         List<PolymarketApiClient.LeaderboardEntry> candidates;
         try {
             candidates = polymarketApiClient.fetchLeaderboard();
+            leaderboardStateService.refreshSnapshot(candidates);
         } catch (Exception e) {
             log.warn("Failed to fetch Polymarket leaderboard", e);
             notes.add("Leaderboard fetch failed: " + rootMessage(e));
@@ -69,7 +79,7 @@ public class PolymarketWalletDiscoveryService {
         int analyzedWallets = 0;
         int importedTradeEvents = 0;
 
-        int limit = Math.min(deduped.size(), monitorService.getAnalyzeTopN());
+        int limit = Math.min(deduped.size(), Math.max(analyzeLimit, 0));
         for (PolymarketApiClient.LeaderboardEntry candidate : deduped.values().stream().limit(limit).toList()) {
             try {
                 PolymarketWalletMetricsRequest metrics = buildMetrics(candidate);
@@ -86,11 +96,13 @@ public class PolymarketWalletDiscoveryService {
         }
 
         SmartWalletSelectionSummary selection = selectionService.refreshQualifiedWallets();
-        try {
-            importedTradeEvents = syncWatchlistTrades();
-        } catch (Exception e) {
-            log.warn("Failed to sync watchlist trades after discovery");
-            notes.add("Trade sync failed after discovery: " + rootMessage(e));
+        if (syncTradesAfterRefresh) {
+            try {
+                importedTradeEvents = syncWatchlistTrades();
+            } catch (Exception e) {
+                log.warn("Failed to sync watchlist trades after discovery");
+                notes.add("Trade sync failed after discovery: " + rootMessage(e));
+            }
         }
 
         notes.add("Candidates come from Polymarket official leaderboard and are re-ranked by local wallet score.");
@@ -203,6 +215,18 @@ public class PolymarketWalletDiscoveryService {
         }
     }
 
+    @Scheduled(fixedDelayString = "${smart-wallet.polymarket.leaderboard-refresh-fixed-delay-ms:300000}")
+    public void scheduledRefreshLeaderboardWatchlist() {
+        if (!monitorService.isDiscoveryEnabled()) {
+            return;
+        }
+        try {
+            refreshLeaderboardWatchlist();
+        } catch (Exception e) {
+            log.warn("Scheduled Polymarket watchlist refresh failed: {}", rootMessage(e));
+        }
+    }
+
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.event-sync-fixed-delay-ms:30000}")
     public void scheduledSyncWatchlistTrades() {
         if (!monitorService.isEventSyncEnabled()) {
@@ -251,6 +275,19 @@ public class PolymarketWalletDiscoveryService {
     private long tradeErrorCooldownMs() {
         Long value = monitorService.getWalletTradeErrorCooldownMs();
         return value == null ? 300000L : Math.max(value, tradeSyncMinIntervalMs());
+    }
+
+    private int resolveAnalyzeTopN() {
+        return Math.max(0, monitorService.getAnalyzeTopN());
+    }
+
+    private int resolveRefreshTopN() {
+        SmartWalletProperties.PolymarketMonitor monitor = properties.getPolymarket();
+        Integer refreshTopN = monitor == null ? null : monitor.getLeaderboardRefreshTopN();
+        if (refreshTopN == null || refreshTopN <= 0) {
+            return Math.max(1, Math.min(resolveAnalyzeTopN(), 10));
+        }
+        return Math.max(1, refreshTopN);
     }
 
     private String normalizeWalletKey(String walletAddress) {

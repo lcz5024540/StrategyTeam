@@ -21,7 +21,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-public class TradeEvScoringService {
+public class TradeProfitabilityScoringService {
 
     private static final BigDecimal TEN_THOUSAND = new BigDecimal("10000");
 
@@ -29,10 +29,10 @@ public class TradeEvScoringService {
     private final MarketSnapshotCollectorService marketSnapshotCollectorService;
     private final SmartWalletProperties properties;
 
-    public TradeEvEstimate estimate(SmartWalletProfileEntity profile,
-                                    SmartWalletTradeEventEntity event,
-                                    ConsensusSignalView consensus,
-                                    BigDecimal recommendedStakeUsdc) {
+    public ProfitabilityEstimate estimate(SmartWalletProfileEntity profile,
+                                          SmartWalletTradeEventEntity event,
+                                          ConsensusSignalView consensus,
+                                          BigDecimal recommendedStakeUsdc) {
         if (event == null || !StringUtils.hasText(event.getMarketId())) {
             return emptyEstimate();
         }
@@ -62,20 +62,20 @@ public class TradeEvScoringService {
                 .multiply(safe(properties.getBaselineModel().getGrossEdgePriorWeight()))
                 .setScale(8, RoundingMode.HALF_UP);
         BigDecimal expectedGrossEdgeUsdc = blend(grossEdgePrior, currentEdgeUsdc.max(BigDecimal.ZERO), confidence);
-        BigDecimal expectedNetEvUsdc = calibratedFollowProbability.multiply(expectedGrossEdgeUsdc)
+        BigDecimal estimatedNetProfitabilityUsdc = calibratedFollowProbability.multiply(expectedGrossEdgeUsdc)
                 .subtract(estimatedFeeUsdc)
                 .subtract(estimatedSlippageUsdc)
                 .subtract(calibratedSlippageSpikeProbability.multiply(estimatedSlippageUsdc))
                 .setScale(8, RoundingMode.HALF_UP);
 
-        return TradeEvEstimate.builder()
-                .expectedNetEvUsdc(expectedNetEvUsdc)
+        return ProfitabilityEstimate.builder()
+                .estimatedNetProfitabilityUsdc(estimatedNetProfitabilityUsdc)
                 .estimatedFeeUsdc(estimatedFeeUsdc)
                 .estimatedSlippageUsdc(estimatedSlippageUsdc)
                 .followProbability(rawFollowProbability)
                 .calibratedFollowProbability(calibratedFollowProbability)
                 .slippageSpikeProbability(calibratedSlippageSpikeProbability)
-                .sampleSize(historical.sampleSize)
+                .estimateSampleSize(historical.sampleSize)
                 .build();
     }
 
@@ -389,28 +389,28 @@ public class TradeEvScoringService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
-    private TradeEvEstimate emptyEstimate() {
-        return TradeEvEstimate.builder()
-                .expectedNetEvUsdc(BigDecimal.ZERO)
+    private ProfitabilityEstimate emptyEstimate() {
+        return ProfitabilityEstimate.builder()
+                .estimatedNetProfitabilityUsdc(BigDecimal.ZERO)
                 .estimatedFeeUsdc(BigDecimal.ZERO)
                 .estimatedSlippageUsdc(BigDecimal.ZERO)
                 .followProbability(BigDecimal.ZERO)
                 .calibratedFollowProbability(BigDecimal.ZERO)
                 .slippageSpikeProbability(BigDecimal.ZERO)
-                .sampleSize(0)
+                .estimateSampleSize(0)
                 .build();
     }
 
     @Data
     @Builder
-    public static class TradeEvEstimate {
-        private BigDecimal expectedNetEvUsdc;
+    public static class ProfitabilityEstimate {
+        private BigDecimal estimatedNetProfitabilityUsdc;
         private BigDecimal estimatedFeeUsdc;
         private BigDecimal estimatedSlippageUsdc;
         private BigDecimal followProbability;
         private BigDecimal calibratedFollowProbability;
         private BigDecimal slippageSpikeProbability;
-        private Integer sampleSize;
+        private Integer estimateSampleSize;
     }
 
     @Data

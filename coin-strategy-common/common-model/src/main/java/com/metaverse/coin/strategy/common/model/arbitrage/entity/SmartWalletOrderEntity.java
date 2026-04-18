@@ -18,6 +18,7 @@ public class SmartWalletOrderEntity {
     private Long id;
 
     private Long followTaskId;
+    private Long positionId;
     private String walletAddress;
     private String executionMode;
     private String executionAddress;
@@ -34,6 +35,8 @@ public class SmartWalletOrderEntity {
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal realizedPnlUsdc;
+    private String exitReason;
     private String errorMessage;
     private Date placedAt;
     private Date filledAt;

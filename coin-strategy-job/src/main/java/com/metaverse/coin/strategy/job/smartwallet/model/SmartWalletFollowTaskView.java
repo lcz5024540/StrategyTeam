@@ -27,13 +27,12 @@ public class SmartWalletFollowTaskView {
     private String errorMessage;
     private Integer consensusWallets;
     private BigDecimal consensusScore;
-    private BigDecimal expectedNetEvUsdc;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
     private BigDecimal followProbability;
     private BigDecimal calibratedFollowProbability;
     private BigDecimal slippageSpikeProbability;
-    private Integer evSampleSize;
+    private Integer estimateSampleSize;
     private Boolean taskExecutable;
     private Boolean overrideApplied;
     private String appliedPreset;

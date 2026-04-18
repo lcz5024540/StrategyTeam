@@ -34,6 +34,12 @@ export interface StrategyDetail {
   remainingCapitalBudgetUsdc: number
   availableCapitalUsdc: number
   lockedClaimProceedsUsdc: number
+  earlyExitOrderCount: number
+  earlyExitRealizedPnlUsdc: number
+  takeProfitOrderCount: number
+  takeProfitRealizedPnlUsdc: number
+  stopLossOrderCount: number
+  stopLossRealizedPnlUsdc: number
   // 胜率
   winRate: number
   totalTrades: number

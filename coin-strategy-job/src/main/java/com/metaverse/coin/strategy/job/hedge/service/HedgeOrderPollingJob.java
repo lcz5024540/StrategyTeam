@@ -66,6 +66,9 @@ public class HedgeOrderPollingJob {
         List<HedgeOrderEntity> liveOrders = orderMapper.selectList(
                 new LambdaQueryWrapper<HedgeOrderEntity>()
                         .eq(HedgeOrderEntity::getStatus, "LIVE")
+                        // 仅处理实盘订单：PAPER 模式下订单创建时即已写入 FILLED 状态，无需轮询
+                        .and(w -> w.eq(HedgeOrderEntity::getMode, "LIVE")
+                                .or().isNull(HedgeOrderEntity::getMode))
                         .isNotNull(HedgeOrderEntity::getExternalOrderId)
                         .le(HedgeOrderEntity::getNextPollAt, new Date())
                         .orderByAsc(HedgeOrderEntity::getNextPollAt)

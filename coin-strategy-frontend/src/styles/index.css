@@ -507,10 +507,27 @@ tbody tr:hover td {
 .filter-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-sm);
   flex-shrink: 0;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.table-toolbar-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.table-input,
 .filter-bar select {
   padding: 7px 10px;
   border: 1px solid var(--line-bright);
@@ -529,6 +546,18 @@ tbody tr:hover td {
   outline: none;
 }
 
+.table-input {
+  min-width: 220px;
+  background-image: none;
+  padding-right: 10px;
+}
+
+.table-input::placeholder {
+  color: var(--muted);
+}
+
+.table-input:hover,
+.table-input:focus,
 .filter-bar select:hover,
 .filter-bar select:focus {
   border-color: var(--accent);
@@ -538,6 +567,71 @@ tbody tr:hover td {
 .filter-bar select option {
   background: var(--panel-solid);
   color: var(--text);
+}
+
+.table-reset-btn {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.table-pagination-summary {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.table-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.table-pagination .btn {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.table-pagination .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.table-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.table-jump input {
+  width: 72px;
+  padding: 7px 10px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 255, 65, 0.04);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.table-jump input:hover,
+.table-jump input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow-sm);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -650,5 +744,24 @@ tbody tr:hover td {
 
   .hero h1 {
     font-size: 26px;
+  }
+
+  .table-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .table-toolbar-meta {
+    white-space: normal;
+  }
+
+  .table-input {
+    min-width: min(100%, 220px);
+    width: 100%;
+  }
+
+  .table-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

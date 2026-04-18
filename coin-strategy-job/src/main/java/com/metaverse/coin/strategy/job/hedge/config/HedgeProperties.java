@@ -21,6 +21,31 @@ public class HedgeProperties {
     /** 自动下单开关（false = 只扫描/记录，不实际下单）*/
     private boolean autoExecutionEnabled = false;
 
+    /**
+     * 执行模式。PAPER 走模拟仓路径（不调用 CLOB，不占用真实资金，
+     * 订单立即按 bestAsk 视为成交），LIVE 走真实下单。
+     * 默认 LIVE 以保持向后兼容；首次接入建议改为 PAPER。
+     */
+    private HedgeExecutionMode executionMode = HedgeExecutionMode.LIVE;
+
+    /** 模拟仓子配置 */
+    private Paper paper = new Paper();
+
+    @Data
+    public static class Paper {
+        /**
+         * PAPER 仓位是否计入 GlobalRiskGuard.currentHedgeExposureUsdc()。
+         * 默认 false：模拟仓不占用全局敞口，不影响实盘风控判断。
+         */
+        private boolean includeInGlobalExposure = false;
+
+        /**
+         * 模拟成交时叠加的滑点比例（0 = 完全按 bestAsk 成交）。
+         * 例如 0.001 表示模拟成交价 = bestAsk × 1.001，使回测更保守。
+         */
+        private BigDecimal simulateFillSlippageRate = BigDecimal.ZERO;
+    }
+
     // ─────────────────────────────────────────────
     // 套利机会识别
     // ─────────────────────────────────────────────

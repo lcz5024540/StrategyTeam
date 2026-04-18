@@ -4,6 +4,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.HedgeArbitrageLogMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgeArbitrageLogEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgeOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgePositionEntity;
+import com.metaverse.coin.strategy.job.hedge.config.HedgeExecutionMode;
 import com.metaverse.coin.strategy.job.hedge.config.HedgeProperties;
 import com.metaverse.coin.strategy.job.hedge.model.HedgeOpportunity;
 import com.metaverse.coin.strategy.job.hedge.model.HedgeRiskCheckResult;
@@ -54,6 +55,7 @@ public class HedgeOrderExecutorService {
     private final ExecutionWalletContextLoader walletContextLoader;
     private final ArbitrageDetectorService arbitrageDetector;
     private final PolymarketMarketDataCacheService marketDataCache;
+    private final HedgePaperExecutionService paperExecutionService;
 
     /** 双边下单并发线程池（YES + NO 同时提交，减少时间窗口） */
     private final ExecutorService orderExecutor = Executors.newFixedThreadPool(2);
@@ -69,6 +71,11 @@ public class HedgeOrderExecutorService {
         if (!hedgeProperties.isEnabled()) {
             saveLog(opportunity, "SKIP_DISABLED", "对冲策略未启用", null);
             return false;
+        }
+
+        // PAPER 模式分流：不走 CLOB，由 HedgePaperExecutionService 处理
+        if (hedgeProperties.getExecutionMode() == HedgeExecutionMode.PAPER) {
+            return paperExecutionService.execute(opportunity, availableCapital);
         }
 
         // 风控检查
@@ -299,6 +306,7 @@ public class HedgeOrderExecutorService {
                     .setAction(action)
                     .setSkipReason(skipReason)
                     .setHedgePositionId(positionId)
+                    .setMode(hedgeProperties.getExecutionMode() == HedgeExecutionMode.PAPER ? "PAPER" : "LIVE")
                     .setScannedAt(new Date());
             logMapper.insert(entity);
         } catch (Exception e) {

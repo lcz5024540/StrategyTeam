@@ -3,6 +3,7 @@ import type { PositionMode } from '@/utils/constants'
 import type { StrategyOverview, StrategyDetail } from '@/types/strategy'
 
 type StrategyDetailApiResponse = Partial<StrategyDetail> & {
+  totalOrders?: number
   summary?: {
     code?: string
     name?: string
@@ -29,6 +30,12 @@ type StrategyDetailApiResponse = Partial<StrategyDetail> & {
     remainingCapitalBudgetUsdc?: number
     availableCapitalUsdc?: number
     lockedClaimProceedsUsdc?: number
+    earlyExitOrderCount?: number
+    earlyExitRealizedPnlUsdc?: number
+    takeProfitOrderCount?: number
+    takeProfitRealizedPnlUsdc?: number
+    stopLossOrderCount?: number
+    stopLossRealizedPnlUsdc?: number
   }
 }
 
@@ -70,6 +77,14 @@ function normalizeDetail(detail: StrategyDetailApiResponse): StrategyDetail {
         metrics.remainingCapitalBudgetUsdc
     ),
     lockedClaimProceedsUsdc: toNumber(detail?.lockedClaimProceedsUsdc ?? metrics.lockedClaimProceedsUsdc),
+    earlyExitOrderCount: toNumber(detail?.earlyExitOrderCount ?? metrics.earlyExitOrderCount),
+    earlyExitRealizedPnlUsdc: toNumber(detail?.earlyExitRealizedPnlUsdc ?? metrics.earlyExitRealizedPnlUsdc),
+    takeProfitOrderCount: toNumber(detail?.takeProfitOrderCount ?? metrics.takeProfitOrderCount),
+    takeProfitRealizedPnlUsdc: toNumber(
+      detail?.takeProfitRealizedPnlUsdc ?? metrics.takeProfitRealizedPnlUsdc
+    ),
+    stopLossOrderCount: toNumber(detail?.stopLossOrderCount ?? metrics.stopLossOrderCount),
+    stopLossRealizedPnlUsdc: toNumber(detail?.stopLossRealizedPnlUsdc ?? metrics.stopLossRealizedPnlUsdc),
     winRate: toNumber(detail?.winRate ?? metrics.winRate ?? summary.winRate),
     totalTrades: toNumber(detail?.totalTrades ?? detail?.totalOrders ?? metrics.totalOrders ?? summary.totalOrders),
     winTrades: toNumber(detail?.winTrades ?? metrics.winningPositions),

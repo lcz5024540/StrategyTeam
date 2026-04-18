@@ -7,12 +7,15 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletCashLedgerEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFillEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +27,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +40,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -280,6 +286,7 @@ class SmartWalletAccountingServiceTest {
         SmartWalletFillEntity latestFill = new SmartWalletFillEntity()
                 .setId(401L)
                 .setOrderId(201L)
+                .setPositionId(301L)
                 .setFollowTaskId(101L)
                 .setWalletAddress("source-wallet")
                 .setExecutionAddress("paper-book")
@@ -314,12 +321,61 @@ class SmartWalletAccountingServiceTest {
         verify(orderMapper).insert(orderCaptor.capture());
         assertEquals("SELL", orderCaptor.getValue().getSide());
         assertEquals("EXIT", orderCaptor.getValue().getOrderType());
+        assertEquals(301L, orderCaptor.getValue().getPositionId());
 
         ArgumentCaptor<SmartWalletFillEntity> fillCaptor = ArgumentCaptor.forClass(SmartWalletFillEntity.class);
         verify(fillMapper).insert(fillCaptor.capture());
         assertEquals("SELL", fillCaptor.getValue().getSide());
         assertEquals(new BigDecimal("10.00000000"), fillCaptor.getValue().getSize());
         assertEquals(new BigDecimal("7.00000000"), fillCaptor.getValue().getNotionalUsdc());
+        assertEquals(301L, fillCaptor.getValue().getPositionId());
+    }
+
+    @Test
+    void shouldCreateNewPositionRoundWhenPreviousRoundIsAlreadyClosed() {
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(601L)
+                .setFollowTaskId(1601L)
+                .setWalletAddress("wallet-round")
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-round")
+                .setTokenId("token-round")
+                .setQuestion("Will a closed round reopen as a new position?")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.40"))
+                .setMarketEndAt(System.currentTimeMillis() + 3600_000L)
+                .setPlacedAt(new Date());
+
+        when(fillMapper.selectList(any())).thenReturn(List.of(), List.of(), List.of());
+        when(positionMapper.selectList(any())).thenReturn(List.of(), List.of(), List.of());
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of());
+        when(dailyReportMapper.selectOne(any())).thenReturn(null);
+        when(tradeEventMapper.selectOne(any())).thenReturn(null);
+        doAnswer(invocation -> {
+            SmartWalletPositionEntity inserted = invocation.getArgument(0);
+            inserted.setId(901L);
+            return 1;
+        }).when(positionMapper).insert(any(SmartWalletPositionEntity.class));
+
+        service.processOrderFill(order, new BigDecimal("5.00000000"), new BigDecimal("0.40"), BigDecimal.ZERO);
+
+        ArgumentCaptor<SmartWalletPositionEntity> positionCaptor = ArgumentCaptor.forClass(SmartWalletPositionEntity.class);
+        verify(positionMapper).insert(positionCaptor.capture());
+        assertEquals("market-round", positionCaptor.getValue().getMarketId());
+        assertEquals("YES", positionCaptor.getValue().getOutcome());
+        assertEquals("OPEN", positionCaptor.getValue().getStatus());
+
+        ArgumentCaptor<SmartWalletOrderEntity> updatedOrderCaptor = ArgumentCaptor.forClass(SmartWalletOrderEntity.class);
+        verify(orderMapper, atLeastOnce()).updateById(updatedOrderCaptor.capture());
+        assertTrue(updatedOrderCaptor.getAllValues().stream()
+                .anyMatch(updated -> Long.valueOf(901L).equals(updated.getPositionId())));
+
+        ArgumentCaptor<SmartWalletFillEntity> updatedFillCaptor = ArgumentCaptor.forClass(SmartWalletFillEntity.class);
+        verify(fillMapper, atLeastOnce()).updateById(updatedFillCaptor.capture());
+        assertTrue(updatedFillCaptor.getAllValues().stream()
+                .anyMatch(updated -> Long.valueOf(901L).equals(updated.getPositionId())));
     }
 
     @Test
@@ -350,6 +406,74 @@ class SmartWalletAccountingServiceTest {
 
         assertEquals(0, performance.getOpenPositions());
         assertEquals(new BigDecimal("2.00000000"), performance.getPendingSettlementPnlUsdc());
+        assertEquals(new BigDecimal("2.00000000"), performance.getCompositePnlUsdc());
+    }
+
+    @Test
+    void shouldCountOraclePendingCapitalAsStillLocked() {
+        SmartWalletPositionEntity openPosition = new SmartWalletPositionEntity()
+                .setId(601L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-open")
+                .setQuestion("Should open capital remain locked?")
+                .setOutcome("YES")
+                .setQuantity(new BigDecimal("10.00000000"))
+                .setCostBasisUsdc(new BigDecimal("100.00000000"))
+                .setStatus("OPEN");
+        SmartWalletPositionEntity oraclePending = new SmartWalletPositionEntity()
+                .setId(602L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-pending-capital")
+                .setQuestion("Should oracle pending capital remain locked?")
+                .setOutcome("NO")
+                .setQuantity(new BigDecimal("10.00000000"))
+                .setCostBasisUsdc(new BigDecimal("50.00000000"))
+                .setStatus("SETTLEMENT_PENDING_ORACLE");
+        SmartWalletCashLedgerEntity realized = new SmartWalletCashLedgerEntity()
+                .setExecutionAddress("paper-book")
+                .setEntryType("REALIZED_PNL")
+                .setDirection("IN")
+                .setAmount(new BigDecimal("30.00000000"));
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(openPosition, oraclePending));
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of(realized));
+
+        var capacity = service.capacitySummary();
+
+        assertEquals(1, capacity.getOpenPositionCount());
+        assertEquals(new BigDecimal("150.00000000"), capacity.getTotalOpenCostUsdc());
+        assertEquals(new BigDecimal("380.00000000"), capacity.getAvailableCapitalUsdc());
+    }
+
+    @Test
+    void shouldExposeOraclePendingPnlInSummary() {
+        SmartWalletPositionEntity oraclePending = new SmartWalletPositionEntity()
+                .setId(701L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-summary-pending")
+                .setQuestion("Should summary include oracle pending pnl?")
+                .setOutcome("YES")
+                .setQuantity(new BigDecimal("10.00000000"))
+                .setCostBasisUsdc(new BigDecimal("4.00000000"))
+                .setOriginalCostBasisUsdc(new BigDecimal("4.00000000"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setUnrealizedPnlUsdc(new BigDecimal("2.00000000"))
+                .setLastMarkPrice(new BigDecimal("0.60"))
+                .setMarketEndAt(System.currentTimeMillis() - 60_000L)
+                .setStatus("SETTLEMENT_PENDING_ORACLE")
+                .setOpenedAt(new Date())
+                .setLastFilledAt(new Date());
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(oraclePending));
+        when(fillMapper.selectList(any())).thenReturn(List.of());
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of());
+        when(tradeEventMapper.selectOne(any())).thenReturn(null);
+
+        SmartWalletPnlSummaryView summary = service.summary();
+
+        assertEquals(0, summary.getOpenPositions());
+        assertEquals(new BigDecimal("2.00000000"), summary.getPendingSettlementPnlUsdc());
+        assertEquals(new BigDecimal("2.00000000"), summary.getCompositePnlUsdc());
     }
 
     @Test
@@ -394,5 +518,92 @@ class SmartWalletAccountingServiceTest {
         SettlementSyncSummary summary = service.syncSettlements(10, 10, false);
 
         assertEquals("DATA_SOURCE_STALE", summary.getRetryCandidates().get(0).getRetryType());
+    }
+
+    @Test
+    void shouldBuildDailyFollowAddressReportGroupedBySourceWallet() {
+        ZoneId zoneId = ZoneId.systemDefault();
+        LocalDate reportDate = LocalDate.now(zoneId);
+        Date withinDay = Date.from(reportDate.atTime(10, 0).atZone(zoneId).toInstant());
+        Date closeAt = Date.from(reportDate.atTime(18, 0).atZone(zoneId).toInstant());
+
+        SmartWalletOrderEntity orderA = new SmartWalletOrderEntity()
+                .setId(201L)
+                .setWalletAddress("0xAAA")
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-a")
+                .setOutcome("YES")
+                .setPlacedAt(withinDay);
+        SmartWalletOrderEntity orderB = new SmartWalletOrderEntity()
+                .setId(202L)
+                .setWalletAddress("0xBBB")
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-b")
+                .setOutcome("NO")
+                .setPlacedAt(withinDay);
+
+        SmartWalletFillEntity fillA = new SmartWalletFillEntity()
+                .setId(301L)
+                .setOrderId(201L)
+                .setWalletAddress("0xAAA")
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-a")
+                .setOutcome("YES")
+                .setNotionalUsdc(new BigDecimal("40.00"))
+                .setFeeUsdc(new BigDecimal("0.50"))
+                .setFilledAt(withinDay);
+        SmartWalletFillEntity fillB = new SmartWalletFillEntity()
+                .setId(302L)
+                .setOrderId(202L)
+                .setWalletAddress("0xBBB")
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-b")
+                .setOutcome("NO")
+                .setNotionalUsdc(new BigDecimal("25.00"))
+                .setFeeUsdc(new BigDecimal("0.20"))
+                .setFilledAt(withinDay);
+
+        SmartWalletPositionEntity closedWin = new SmartWalletPositionEntity()
+                .setId(401L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-a")
+                .setOutcome("YES")
+                .setRealizedPnlUsdc(new BigDecimal("12.30"))
+                .setClosedAt(closeAt)
+                .setStatus("CLAIMED");
+        SmartWalletPositionEntity openLoss = new SmartWalletPositionEntity()
+                .setId(402L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-b")
+                .setOutcome("NO")
+                .setCostBasisUsdc(new BigDecimal("25.00"))
+                .setUnrealizedPnlUsdc(new BigDecimal("-3.40"))
+                .setLastMarkPrice(new BigDecimal("0.40"))
+                .setStatus("OPEN");
+
+        when(orderMapper.selectList(any())).thenReturn(List.of(orderA, orderB));
+        when(fillMapper.selectList(any())).thenReturn(List.of(fillA, fillB));
+        when(positionMapper.selectList(any())).thenReturn(List.of(closedWin, openLoss));
+
+        List<SmartWalletFollowAddressDailyReportView> reports = service.followAddressDailyReport(reportDate, 10, "PAPER");
+
+        assertEquals(2, reports.size());
+        SmartWalletFollowAddressDailyReportView walletA = reports.stream()
+                .filter(item -> "0xaaa".equals(item.getWalletAddress()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(1, walletA.getWinningPositions());
+        assertEquals(0, walletA.getLosingPositions());
+        assertEquals(new BigDecimal("12.30"), walletA.getRealizedPnlUsdc());
+        assertEquals(new BigDecimal("11.80"), walletA.getNetPnlUsdc());
+
+        SmartWalletFollowAddressDailyReportView walletB = reports.stream()
+                .filter(item -> "0xbbb".equals(item.getWalletAddress()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(1, walletB.getOpenPositions());
+        assertEquals(new BigDecimal("-3.40"), walletB.getUnrealizedPnlUsdc());
+        assertEquals(new BigDecimal("25.00"), walletB.getGrossExposureUsdc());
+        assertEquals(new BigDecimal("-3.60"), walletB.getNetPnlUsdc());
     }
 }

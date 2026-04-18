@@ -7,6 +7,10 @@ interface WinRateTrendProps {
 }
 
 export function WinRateTrend({ data }: WinRateTrendProps) {
+  if (data.length === 0) {
+    return <div className="empty-state">暂无胜率趋势数据</div>
+  }
+
   const sorted = [...data].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
   const dates = sorted.map((item) => item.reportDate)
   const winRates = sorted.map((item) => Number(((item.winRate || 0) * 100).toFixed(2)))

@@ -18,6 +18,7 @@ public class SmartWalletFillEntity {
     private Long id;
 
     private Long orderId;
+    private Long positionId;
     private Long followTaskId;
     private String walletAddress;
     private String executionAddress;

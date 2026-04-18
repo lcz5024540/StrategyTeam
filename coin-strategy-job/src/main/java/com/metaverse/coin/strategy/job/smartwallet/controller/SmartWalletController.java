@@ -18,6 +18,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettlementReviewView;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationRunSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusView;
+import com.metaverse.coin.strategy.job.smartwallet.model.LocalSettlementConfirmRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
@@ -34,6 +35,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalog
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
@@ -81,6 +83,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimServi
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
@@ -97,6 +100,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.core.env.Environment;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -128,6 +132,7 @@ public class SmartWalletController {
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletSettlementSyncService settlementSyncService;
     private final SmartWalletDataResetService dataResetService;
+    private final SmartWalletRecoveryService recoveryService;
     private final Environment environment;
     private final PredictionMarketDataApplicationService predictionMarketDataApplicationService;
     private final FollowTaskApplicationService followTaskApplicationService;
@@ -145,7 +150,7 @@ public class SmartWalletController {
                 "service", "smart-wallet",
                 "profiles", polymarketMonitorService.listProfiles().size(),
                 "watchlist", polymarketMonitorService.listWatchlist().size(),
-                "wallets", walletRegistryService.list().size(),
+                "wallets", followService.listWalletsForScan().size(),
                 "markets", opportunityService.list().size(),
                 "status", "UP"
         );
@@ -184,6 +189,12 @@ public class SmartWalletController {
                 "executed", true,
                 "result", result
         );
+    }
+
+    @Operation(summary = "恢复 smart-wallet 状态", description = "在网络/RPC/缓存异常后，触发一次全链路重梳理，尽量避免通过重启服务恢复。")
+    @PostMapping("/admin/recover-state")
+    public Map<String, Object> recoverState(@RequestParam(required = false) String reason) {
+        return recoveryService.recoverState(reason);
     }
 
     @Operation(summary = "钱包画像列表", description = "查看已入库的 smart wallet Polymarket 画像信息。")
@@ -405,7 +416,7 @@ public class SmartWalletController {
         );
     }
 
-    @Operation(summary = "Baseline 模型配置", description = "查看当前 P1 baseline EV/滑点模型和校准参数的运行时配置。")
+    @Operation(summary = "Baseline 模型配置", description = "查看当前 P1 baseline 风险/滑点模型和校准参数的运行时配置。")
     @GetMapping("/config/baseline-model")
     public BaselineModelConfigView baselineModelConfig() {
         return baselineModelConfigApplicationService.current();
@@ -443,7 +454,7 @@ public class SmartWalletController {
 
     @GetMapping("/wallets")
     public List<SmartWalletProfile> wallets() {
-        return walletRegistryService.list();
+        return followService.listWalletsForScan();
     }
 
     @PostMapping("/wallets")
@@ -481,14 +492,16 @@ public class SmartWalletController {
 
     @Operation(summary = "订单列表", description = "查看 PAPER 或 LIVE 的订单记录。")
     @GetMapping("/orders")
-    public List<SmartWalletOrderView> orders(@RequestParam(defaultValue = "100") Integer limit) {
-        return accountingService.listOrders(limit);
+    public List<SmartWalletOrderView> orders(@RequestParam(defaultValue = "100") Integer limit,
+                                             @RequestParam(required = false) String mode) {
+        return accountingService.listOrders(limit, mode);
     }
 
     @Operation(summary = "成交列表", description = "查看 PAPER 或 LIVE 的成交明细。")
     @GetMapping("/fills")
-    public List<SmartWalletFillView> fills(@RequestParam(defaultValue = "100") Integer limit) {
-        return accountingService.listFills(limit);
+    public List<SmartWalletFillView> fills(@RequestParam(defaultValue = "100") Integer limit,
+                                           @RequestParam(required = false) String mode) {
+        return accountingService.listFills(limit, mode);
     }
 
     @Operation(summary = "容量摘要", description = "查看当前组合剩余仓位槽位、资金预算和基础风控限制。")
@@ -499,20 +512,22 @@ public class SmartWalletController {
 
     @Operation(summary = "当前持仓", description = "查看当前仍活跃的持仓记录，不包含 CLOSED 或 CLAIMED 仓位。")
     @GetMapping("/positions/live")
-    public List<SmartWalletPositionView> livePositions() {
-        return accountingService.listPositions();
+    public List<SmartWalletPositionView> livePositions(@RequestParam(required = false) String mode) {
+        return accountingService.listActivePositions(mode);
     }
 
     @Operation(summary = "待结算处理持仓", description = "查看已到结算窗口或待领取的仓位，时间已带北京时间字段。")
     @GetMapping("/positions/next-settlements")
-    public List<SmartWalletPositionView> nextSettlements(@RequestParam(defaultValue = "10") Integer limit) {
-        return accountingService.listNextSettlements(limit);
+    public List<SmartWalletPositionView> nextSettlements(@RequestParam(defaultValue = "10") Integer limit,
+                                                         @RequestParam(required = false) String mode) {
+        return accountingService.listNextSettlements(limit, mode);
     }
 
     @Operation(summary = "历史持仓", description = "查看历史持仓，可选只返回 closed/resolved 记录。")
     @GetMapping("/positions/history")
-    public List<SmartWalletPositionView> positionHistory(@RequestParam(defaultValue = "false") boolean closedOnly) {
-        return accountingService.listPositions(closedOnly);
+    public List<SmartWalletPositionView> positionHistory(@RequestParam(defaultValue = "false") boolean closedOnly,
+                                                         @RequestParam(required = false) String mode) {
+        return accountingService.listPositions(closedOnly, mode);
     }
 
     @Operation(summary = "资金流水", description = "查看开单、结算、已实现盈亏等资金明细流水。")
@@ -631,6 +646,14 @@ public class SmartWalletController {
         return settlementSyncService.processRetriesNow(limit, refreshCache);
     }
 
+    @Operation(summary = "人工确认 LOCAL 结算信号", description = "针对 resolutionSource=LOCAL 的挂起市场，重新到 Polymarket 侧拉取数据；若问题精确匹配且已闭市 outcomePrices 呈现终局 1/0 形态，则按该信号推进结算。marketIds 为空时默认处理当前 LOCAL retry 队列。")
+    @PostMapping("/settlement/manual-confirm-local")
+    public SettlementSyncSummary confirmLocalSettlements(@RequestBody(required = false) LocalSettlementConfirmRequest request,
+                                                         @RequestParam(defaultValue = "true") boolean refreshCache) {
+        List<String> marketIds = request == null ? List.of() : request.getMarketIds();
+        return settlementApplicationService.confirmLocalMarkets(marketIds, refreshCache);
+    }
+
     @Operation(summary = "Claim 状态", description = "查看 claim 自动处理的启停、最近一轮执行与运行状态。")
     @GetMapping("/claim/status")
     public SmartWalletClaimStatusView claimStatus() {
@@ -687,6 +710,15 @@ public class SmartWalletController {
     public List<SmartWalletReportAttributionItem> walletReports(@RequestParam(defaultValue = "20") Integer limit,
                                                                 @RequestParam(required = false) String mode) {
         return accountingService.walletAttribution(limit, mode);
+    }
+
+    @Operation(summary = "跟单地址日报", description = "按被跟单的钱包地址输出每日投资分析报表，包含盈利/亏损笔数、胜率、净盈利、手续费、成交额与平均盈亏。")
+    @GetMapping("/reports/follow-addresses/daily")
+    public List<SmartWalletFollowAddressDailyReportView> followAddressDailyReports(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate reportDate,
+            @RequestParam(defaultValue = "20") Integer limit,
+            @RequestParam(required = false) String mode) {
+        return accountingService.followAddressDailyReport(reportDate, limit, mode);
     }
 
     @Operation(summary = "市场归因报表", description = "按市场维度汇总成交量、账本收益与当前未落袋暴露。")

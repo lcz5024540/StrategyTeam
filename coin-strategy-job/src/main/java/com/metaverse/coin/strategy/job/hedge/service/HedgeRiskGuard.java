@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.hedge.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.HedgePositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgePositionEntity;
+import com.metaverse.coin.strategy.job.hedge.config.HedgeExecutionMode;
 import com.metaverse.coin.strategy.job.hedge.config.HedgeProperties;
 import com.metaverse.coin.strategy.job.hedge.model.HedgeOpportunity;
 import com.metaverse.coin.strategy.job.hedge.model.HedgeRiskCheckResult;
@@ -76,12 +77,21 @@ public class HedgeRiskGuard {
             }
         }
 
-        // 4. 重复建仓保护
-        Long existingOpen = hedgePositionMapper.selectCount(new LambdaQueryWrapper<HedgePositionEntity>()
+        // 4. 重复建仓保护（按 mode 分隔：PAPER 与 LIVE 可同市场并存，互不阻塞）
+        String currentMode = properties.getExecutionMode() == HedgeExecutionMode.PAPER ? "PAPER" : "LIVE";
+        LambdaQueryWrapper<HedgePositionEntity> dupWrapper = new LambdaQueryWrapper<HedgePositionEntity>()
                 .eq(HedgePositionEntity::getMarketId, opportunity.getMarketId())
-                .in(HedgePositionEntity::getStatus, List.of("OPEN", "SETTLING")));
+                .in(HedgePositionEntity::getStatus, List.of("OPEN", "SETTLING"));
+        if ("LIVE".equals(currentMode)) {
+            // LIVE 模式：把 mode 为 NULL 的历史记录也视作 LIVE 占位
+            dupWrapper.and(w -> w.eq(HedgePositionEntity::getMode, "LIVE")
+                    .or().isNull(HedgePositionEntity::getMode));
+        } else {
+            dupWrapper.eq(HedgePositionEntity::getMode, "PAPER");
+        }
+        Long existingOpen = hedgePositionMapper.selectCount(dupWrapper);
         if (existingOpen > 0) {
-            violations.add("该市场已有 OPEN/SETTLING 状态的对冲持仓");
+            violations.add("该市场已有同模式 (" + currentMode + ") 的 OPEN/SETTLING 持仓");
         }
 
         if (!violations.isEmpty()) {
