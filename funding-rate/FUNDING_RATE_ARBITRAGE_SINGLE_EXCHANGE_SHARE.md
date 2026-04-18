@@ -84,6 +84,7 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 * 当前持仓会在开仓前写入 `OPENING`，开仓成功后更新为 `OPENED`，平仓过程更新为 `CLOSING/CLOSED`，失败时更新为 `FAILED`。
 * 服务启动时会从 `single_exchange_arbitrage_position` 恢复 `OPENING/OPENED/CLOSING` 状态的记录，并重建内存持仓视图。
 * 已接入 `single_exchange_arbitrage_order` 的运行时写入，开仓、平仓以及单侧失败后的回滚订单都会按持仓维度落库。
+* 已接入 `single_exchange_arbitrage_funding_settlement` 的运行时写入：当持仓跨过 `entry_next_funding_time` 且检测到新的 `nextFundingTime` 时，会按持仓维度记录资金费结算流水，并同步推进持仓主表中的 `entry_next_funding_time` 与 `funding_fees_earned`。
 * 当前持仓主表也会在平仓成功时同步回填 `spot_sell_order_id` 和 `futures_buy_order_id`。
 
 ### 2.2 再平衡真实划转已补齐
@@ -133,6 +134,5 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 ### 3.2 实盘前必做项
 
 1. 增加异常退出和回滚失败告警。
-2. 将订单明细和资金费流水与持仓主表联动落库。
-3. 明确单元测试、模拟测试和联网测试的边界。
-4. 使用小资金进行长时间运行验证。
+2. 明确单元测试、模拟测试和联网测试的边界。
+3. 使用小资金进行长时间运行验证。

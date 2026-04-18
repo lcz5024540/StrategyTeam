@@ -3,6 +3,8 @@ package com.metaverse.coin.strategy.core.arbitrage.decision;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageRiskSnapshotMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageFundingSettlement;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageRiskSnapshot;
@@ -56,6 +58,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
     @Mock
     private SingleExchangeArbitrageOrderMapper orderMapper;
+
+    @Mock
+    private SingleExchangeArbitrageFundingSettlementMapper fundingSettlementMapper;
 
     @Mock
     private SingleExchangeArbitrageRiskSnapshotMapper riskSnapshotMapper;
@@ -464,5 +469,90 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         BigDecimal result = (BigDecimal) method.invoke(strategy, new BigDecimal("0.0006"), new BigDecimal("0.0002"));
 
         assertEquals(new BigDecimal("0.00120000"), result);
+    }
+
+    @Test
+    public void testPersistFundingSettlementAndLinkPosition() throws Exception {
+        long lastFundingTime = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1);
+        long nextFundingTime = lastFundingTime + TimeUnit.HOURS.toMillis(8);
+        BinanceFuturesPremiumIndex openIndex = buildFundingIndex("0.0006", lastFundingTime);
+        BinanceFuturesPremiumIndex holdIndex = buildFundingIndex("0.0005", nextFundingTime);
+        SingleExchangeSpotFuturesOrderPlan plan = buildPlan("0.0004");
+        SingleExchangeArbitragePosition persistedPosition = new SingleExchangeArbitragePosition()
+                .setId(6L)
+                .setFundingFeesEarned(BigDecimal.ZERO)
+                .setEntryNextFundingTime(lastFundingTime);
+
+        doAnswer(invocation -> {
+            SingleExchangeArbitragePosition position = invocation.getArgument(0);
+            position.setId(6L);
+            return 1;
+        }).when(positionMapper).insert(any(SingleExchangeArbitragePosition.class));
+        when(positionMapper.selectById(6L)).thenReturn(persistedPosition);
+        when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
+        when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, holdIndex);
+        when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
+        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
+        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildTradeRiskAssessment(true, null));
+        when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
+        when(fundingSettlementMapper.selectCount(any())).thenReturn(0L);
+        when(fundingSettlementMapper.insert(any(SingleExchangeArbitrageFundingSettlement.class))).thenReturn(1);
+
+        setStrategyRunning(true);
+        executeStrategyLoop();
+        executeStrategyLoop();
+
+        verify(fundingSettlementMapper).insert(argThat(settlement ->
+                Long.valueOf(6L).equals(settlement.getPositionId())
+                        && lastFundingTime == settlement.getFundingTime()
+                        && new BigDecimal("0.02500000").compareTo(settlement.getSettlementAmount()) == 0
+                        && "RECEIVED".equals(settlement.getDirection())));
+        verify(positionMapper, atLeastOnce()).updateById(argThat(position ->
+                Long.valueOf(6L).equals(position.getId())
+                        && nextFundingTime == position.getEntryNextFundingTime()
+                        && new BigDecimal("0.02500000").compareTo(position.getFundingFeesEarned()) == 0));
+    }
+
+    @Test
+    public void testSkipDuplicateFundingSettlementInsertButAdvanceFundingWindow() throws Exception {
+        long lastFundingTime = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1);
+        long nextFundingTime = lastFundingTime + TimeUnit.HOURS.toMillis(8);
+        BinanceFuturesPremiumIndex openIndex = buildFundingIndex("0.0006", lastFundingTime);
+        BinanceFuturesPremiumIndex holdIndex = buildFundingIndex("0.0005", nextFundingTime);
+        SingleExchangeSpotFuturesOrderPlan plan = buildPlan("0.0004");
+        SingleExchangeArbitragePosition persistedPosition = new SingleExchangeArbitragePosition()
+                .setId(7L)
+                .setFundingFeesEarned(new BigDecimal("0.01000000"))
+                .setEntryNextFundingTime(lastFundingTime);
+
+        doAnswer(invocation -> {
+            SingleExchangeArbitragePosition position = invocation.getArgument(0);
+            position.setId(7L);
+            return 1;
+        }).when(positionMapper).insert(any(SingleExchangeArbitragePosition.class));
+        when(positionMapper.selectById(7L)).thenReturn(persistedPosition);
+        when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
+        when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, holdIndex);
+        when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
+        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
+        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildTradeRiskAssessment(true, null));
+        when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
+        when(fundingSettlementMapper.selectCount(any())).thenReturn(1L);
+
+        setStrategyRunning(true);
+        executeStrategyLoop();
+        executeStrategyLoop();
+
+        verify(fundingSettlementMapper, never()).insert(any(SingleExchangeArbitrageFundingSettlement.class));
+        verify(positionMapper, atLeastOnce()).updateById(argThat(position ->
+                Long.valueOf(7L).equals(position.getId())
+                        && nextFundingTime == position.getEntryNextFundingTime()
+                        && new BigDecimal("0.01000000").compareTo(position.getFundingFeesEarned()) == 0));
     }
 }

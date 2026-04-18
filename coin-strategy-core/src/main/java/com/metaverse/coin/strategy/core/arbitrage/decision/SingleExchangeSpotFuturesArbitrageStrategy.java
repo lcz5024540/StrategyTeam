@@ -1,9 +1,11 @@
 package com.metaverse.coin.strategy.core.arbitrage.decision;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageRiskSnapshotMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageFundingSettlement;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageRiskSnapshot;
@@ -50,6 +52,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private final SingleExchangeFundingRateMonitor fundingRateMonitor;
     private final SingleExchangeArbitrageOrderExecutor orderExecutor;
     private final SingleExchangeRiskController riskController;
+    private final SingleExchangeArbitrageFundingSettlementMapper fundingSettlementMapper;
     private final SingleExchangeArbitrageOrderMapper orderMapper;
     private final SingleExchangeArbitragePositionMapper positionMapper;
     private final SingleExchangeArbitrageRiskSnapshotMapper riskSnapshotMapper;
@@ -66,6 +69,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private static final String LOG_LIQUIDITY_REJECT_OPEN = "LIQUIDITY_REJECT_OPEN";
     private static final String LOG_LIQUIDITY_WARN_CLOSE = "LIQUIDITY_WARN_CLOSE";
     private static final String LOG_LIQUIDITY_WARN_EMERGENCY_CLOSE = "LIQUIDITY_WARN_EMERGENCY_CLOSE";
+    private static final String FUNDING_DIRECTION_RECEIVED = "RECEIVED";
+    private static final String FUNDING_DIRECTION_PAID = "PAID";
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -207,6 +212,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 return;
             }
 
+            activePosition = reconcileFundingSettlement(activePosition, premiumIndex, marketPlan);
             CloseDecision closeDecision = getCloseDecision(premiumIndex, marketPlan, activePosition);
             if (closeDecision == null) {
                 return;
@@ -430,6 +436,116 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         }
     }
 
+    private ActivePosition reconcileFundingSettlement(ActivePosition activePosition,
+                                                      BinanceFuturesPremiumIndex premiumIndex,
+                                                      SingleExchangeSpotFuturesOrderPlan marketPlan) {
+        if (activePosition == null || activePosition.positionId() == null) {
+            return activePosition;
+        }
+        Long lastRecordedFundingTime = activePosition.nextFundingTime();
+        Long latestNextFundingTime = premiumIndex.getNextFundingTime();
+        if (lastRecordedFundingTime == null
+                || latestNextFundingTime == null
+                || latestNextFundingTime <= lastRecordedFundingTime
+                || System.currentTimeMillis() < lastRecordedFundingTime) {
+            return activePosition;
+        }
+
+        SingleExchangeArbitrageFundingSettlement settlement = buildFundingSettlement(
+                activePosition,
+                premiumIndex,
+                marketPlan,
+                lastRecordedFundingTime
+        );
+        FundingSettlementPersistResult persistResult = persistFundingSettlement(settlement);
+        if (!persistResult.proceed()) {
+            return activePosition;
+        }
+        if (!advancePositionFundingState(
+                activePosition.positionId(),
+                latestNextFundingTime,
+                settlement.getSettlementAmount(),
+                persistResult.inserted())) {
+            return activePosition;
+        }
+
+        ActivePosition updatedPosition = activePosition.withNextFundingTime(latestNextFundingTime);
+        activePositions.put(properties.getSymbol(), updatedPosition);
+        if (persistResult.inserted()) {
+            log.info("Recorded funding settlement for {}: positionId={}, fundingTime={}, amount={}",
+                    properties.getSymbol(), activePosition.positionId(), lastRecordedFundingTime, settlement.getSettlementAmount());
+        }
+        return updatedPosition;
+    }
+
+    private SingleExchangeArbitrageFundingSettlement buildFundingSettlement(ActivePosition activePosition,
+                                                                            BinanceFuturesPremiumIndex premiumIndex,
+                                                                            SingleExchangeSpotFuturesOrderPlan marketPlan,
+                                                                            Long fundingTime) {
+        BigDecimal markPrice = premiumIndex.getMarkPrice() != null ? premiumIndex.getMarkPrice() : defaultValue(marketPlan.getFuturesPrice());
+        BigDecimal fundingRate = defaultValue(premiumIndex.getLastFundingRate());
+        BigDecimal positionQty = defaultValue(activePosition.quantity());
+        BigDecimal notionalValue = positionQty.multiply(defaultValue(markPrice)).setScale(8, RoundingMode.HALF_UP);
+        BigDecimal settlementAmount = notionalValue.multiply(fundingRate).setScale(8, RoundingMode.HALF_UP);
+        return new SingleExchangeArbitrageFundingSettlement()
+                .setPositionId(activePosition.positionId())
+                .setPositionCode(activePosition.positionCode())
+                .setExchangeName(EXCHANGE_NAME)
+                .setSymbol(properties.getSymbol())
+                .setFundingTime(fundingTime)
+                .setFundingRate(fundingRate)
+                .setMarkPrice(markPrice)
+                .setPositionQty(positionQty)
+                .setNotionalValue(notionalValue)
+                .setSettlementAmount(settlementAmount)
+                .setDirection(settlementAmount.signum() >= 0 ? FUNDING_DIRECTION_RECEIVED : FUNDING_DIRECTION_PAID)
+                .setCreatedAt(new Date());
+    }
+
+    private FundingSettlementPersistResult persistFundingSettlement(SingleExchangeArbitrageFundingSettlement settlement) {
+        try {
+            Long existingCount = fundingSettlementMapper.selectCount(
+                    new LambdaQueryWrapper<SingleExchangeArbitrageFundingSettlement>()
+                            .eq(SingleExchangeArbitrageFundingSettlement::getPositionId, settlement.getPositionId())
+                            .eq(SingleExchangeArbitrageFundingSettlement::getFundingTime, settlement.getFundingTime())
+            );
+            if (existingCount != null && existingCount > 0) {
+                log.info("Skip duplicate funding settlement for positionId={}, fundingTime={}",
+                        settlement.getPositionId(), settlement.getFundingTime());
+                return new FundingSettlementPersistResult(true, false);
+            }
+            fundingSettlementMapper.insert(settlement);
+            return new FundingSettlementPersistResult(true, true);
+        } catch (Exception e) {
+            log.error("Failed to persist funding settlement for positionId={}, fundingTime={}",
+                    settlement.getPositionId(), settlement.getFundingTime(), e);
+            return new FundingSettlementPersistResult(false, false);
+        }
+    }
+
+    private boolean advancePositionFundingState(Long positionId,
+                                                Long latestNextFundingTime,
+                                                BigDecimal settlementAmount,
+                                                boolean applySettlementAmount) {
+        try {
+            SingleExchangeArbitragePosition position = positionMapper.selectById(positionId);
+            if (position == null) {
+                log.warn("Position {} not found while advancing funding state", positionId);
+                return false;
+            }
+            position.setEntryNextFundingTime(latestNextFundingTime)
+                    .setUpdatedAt(new Date());
+            if (applySettlementAmount) {
+                position.setFundingFeesEarned(defaultValue(position.getFundingFeesEarned()).add(defaultValue(settlementAmount)));
+            }
+            positionMapper.updateById(position);
+            return true;
+        } catch (Exception e) {
+            log.error("Failed to advance funding state for position {}", positionId, e);
+            return false;
+        }
+    }
+
     private BigDecimal estimateTotalInvestment(SingleExchangeSpotFuturesOrderPlan marketPlan) {
         return defaultValue(marketPlan.getSpotNotional()).add(marketPlan.getRequiredFuturesMargin());
     }
@@ -587,11 +703,26 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
             );
         }
 
+        private ActivePosition withNextFundingTime(Long nextFundingTime) {
+            return new ActivePosition(
+                    positionId,
+                    positionCode,
+                    quantity,
+                    entryBasisRate,
+                    entryFundingRate,
+                    leverage,
+                    nextFundingTime
+            );
+        }
+
         private static Integer leverageFallback() {
             return 1;
         }
     }
 
     private record CloseDecision(String reason, boolean emergency) {
+    }
+
+    private record FundingSettlementPersistResult(boolean proceed, boolean inserted) {
     }
 }
