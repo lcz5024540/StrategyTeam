@@ -2,8 +2,10 @@ package com.metaverse.coin.strategy.core.arbitrage.decision;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageRiskSnapshotMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageRiskSnapshot;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
@@ -12,6 +14,8 @@ import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFu
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeFundingRateMonitor;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeLiquidityAssessment;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskSnapshotData;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeTradeRiskAssessment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,6 +56,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
     @Mock
     private SingleExchangeArbitrageOrderMapper orderMapper;
+
+    @Mock
+    private SingleExchangeArbitrageRiskSnapshotMapper riskSnapshotMapper;
 
     @Spy
     private SingleExchangeSpotFuturesProperties properties = new SingleExchangeSpotFuturesProperties();
@@ -149,6 +156,30 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
                 .build();
     }
 
+    private SingleExchangeTradeRiskAssessment buildTradeRiskAssessment(boolean passed, String rejectionReason) {
+        return SingleExchangeTradeRiskAssessment.builder()
+                .passed(passed)
+                .rejectionReason(rejectionReason)
+                .snapshotData(SingleExchangeRiskSnapshotData.builder()
+                        .spotUsdtBalance(new BigDecimal("500"))
+                        .futuresAvailableBalance(new BigDecimal("80"))
+                        .requiredMargin(new BigDecimal("16.67"))
+                        .bufferedRequiredMargin(new BigDecimal("25.01"))
+                        .marginRatio(new BigDecimal("2.50"))
+                        .build())
+                .build();
+    }
+
+    private SingleExchangeRiskSnapshotData buildRiskSnapshotData(String marginRatio) {
+        return SingleExchangeRiskSnapshotData.builder()
+                .spotUsdtBalance(new BigDecimal("500"))
+                .futuresAvailableBalance(new BigDecimal("80"))
+                .requiredMargin(new BigDecimal("16.67"))
+                .bufferedRequiredMargin(new BigDecimal("25.01"))
+                .marginRatio(new BigDecimal(marginRatio))
+                .build();
+    }
+
     @Test
     public void testOpenPositionLogic() throws Exception {
         BinanceFuturesPremiumIndex index = buildFundingIndex(
@@ -167,18 +198,23 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
         when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
                 .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
-        when(riskController.checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class))).thenReturn(true);
+        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildTradeRiskAssessment(true, null));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, times(1)).checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskController, times(1)).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, times(1)).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(positionMapper, times(1)).insert(any(SingleExchangeArbitragePosition.class));
         verify(positionMapper, atLeastOnce()).updateById(any(SingleExchangeArbitragePosition.class));
         verify(orderMapper, atLeastOnce()).insert(any());
+        verify(riskSnapshotMapper).insert(argThat(snapshot ->
+                "PRE_OPEN".equals(snapshot.getCheckStage())
+                        && Boolean.TRUE.equals(snapshot.getRiskPassed())
+                        && Long.valueOf(1L).equals(snapshot.getPositionId())));
     }
 
     @Test
@@ -197,7 +233,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, never()).checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskController, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, never()).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
     }
 
@@ -226,7 +262,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
                 .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
         when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_CLOSE)))
                 .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_CLOSE, null, "0.0004"));
-        when(riskController.checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class))).thenReturn(true);
+        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildTradeRiskAssessment(true, null));
+        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildRiskSnapshotData("2.50"));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
         when(orderExecutor.closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
@@ -238,9 +277,14 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
         verify(orderExecutor, times(1)).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, times(1)).closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskSnapshotMapper, atLeastOnce()).insert(argThat(snapshot ->
+                "PRE_CLOSE".equals(snapshot.getCheckStage())
+                        && Boolean.TRUE.equals(snapshot.getRiskPassed())
+                        && Long.valueOf(2L).equals(snapshot.getPositionId())));
         ArgumentCaptor<SingleExchangeArbitragePosition> captor = ArgumentCaptor.forClass(SingleExchangeArbitragePosition.class);
         verify(positionMapper, atLeastOnce()).updateById(captor.capture());
         verify(orderMapper, atLeastOnce()).insert(any());
+        verify(riskSnapshotMapper, atLeast(2)).insert(any(SingleExchangeArbitrageRiskSnapshot.class));
         assertFalse(captor.getAllValues().isEmpty());
         assertEquals("OPENED", captor.getAllValues().get(0).getStatus());
         assertEquals("CLOSED", captor.getAllValues().get(captor.getAllValues().size() - 1).getStatus());
@@ -280,12 +324,18 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
         when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
                 .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskController.PHASE_OPEN, "order-book depth is insufficient", "0.0004"));
+        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildRiskSnapshotData("2.50"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, never()).checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskController, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, never()).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskSnapshotMapper).insert(argThat(snapshot ->
+                "PRE_OPEN".equals(snapshot.getCheckStage())
+                        && Boolean.FALSE.equals(snapshot.getRiskPassed())
+                        && snapshot.getRejectionReason().contains("LIQUIDITY_REJECTED")));
     }
 
     @Test
@@ -300,12 +350,18 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
         when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
                 .thenReturn(buildLiquidityAssessment(false, true, SingleExchangeRiskController.PHASE_OPEN, "depth data unavailable after retries", "0.0005"));
+        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildRiskSnapshotData("2.50"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, never()).checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskController, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, never()).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskSnapshotMapper).insert(argThat(snapshot ->
+                "PRE_OPEN".equals(snapshot.getCheckStage())
+                        && Boolean.FALSE.equals(snapshot.getRiskPassed())
+                        && snapshot.getRejectionReason().contains("LIQUIDITY_REJECTED")));
     }
 
     @Test
@@ -333,7 +389,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
                 .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
         when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_CLOSE)))
                 .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskController.PHASE_CLOSE, "slippage too high", "0.0008"));
-        when(riskController.checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class))).thenReturn(true);
+        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildTradeRiskAssessment(true, null));
+        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildRiskSnapshotData("2.50"));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
         when(orderExecutor.closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
@@ -345,6 +404,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
         verify(orderExecutor, times(1)).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, times(1)).closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskSnapshotMapper, atLeastOnce()).insert(argThat(snapshot ->
+                "PRE_CLOSE".equals(snapshot.getCheckStage())
+                        && Boolean.FALSE.equals(snapshot.getRiskPassed())
+                        && Long.valueOf(4L).equals(snapshot.getPositionId())));
     }
 
     @Test
@@ -372,7 +435,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
                 .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
         when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_CLOSE)))
                 .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskController.PHASE_CLOSE, "slippage too high", "0.0008"));
-        when(riskController.checkTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class))).thenReturn(true);
+        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildTradeRiskAssessment(true, null));
+        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildRiskSnapshotData("1.70"));
         when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.70"));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));

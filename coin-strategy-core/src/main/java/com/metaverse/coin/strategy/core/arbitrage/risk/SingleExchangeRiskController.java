@@ -54,70 +54,66 @@ public class SingleExchangeRiskController {
     }
 
     public boolean checkTradeRisk(SingleExchangeSpotFuturesOrderPlan plan) {
+        return evaluateTradeRisk(plan).isPassed();
+    }
+
+    public SingleExchangeTradeRiskAssessment evaluateTradeRisk(SingleExchangeSpotFuturesOrderPlan plan) {
         if (plan == null || plan.getQuantity() == null || plan.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             log.warn("Risk Alert: invalid trade plan");
-            return false;
+            return SingleExchangeTradeRiskAssessment.builder()
+                    .passed(false)
+                    .rejectionReason("invalid trade plan")
+                    .snapshotData(SingleExchangeRiskSnapshotData.builder().build())
+                    .build();
         }
 
-        // 1. Check Notional Value
         BigDecimal tradeValue = plan.getSpotNotional() != null
                 ? plan.getSpotNotional()
                 : plan.getQuantity().multiply(plan.getSpotPrice());
-        
+        RiskMetrics metrics = loadRiskMetrics(plan);
+        SingleExchangeRiskSnapshotData snapshotData = toSnapshotData(metrics);
+
         if (tradeValue.compareTo(properties.getMaxPositionValueUsdt()) > 0) {
             log.warn("Risk Alert: Trade value {} exceeds max allowed {}", tradeValue, properties.getMaxPositionValueUsdt());
-            return false;
+            return buildTradeRiskAssessment(false,
+                    "trade value " + tradeValue + " exceeds max allowed " + properties.getMaxPositionValueUsdt(),
+                    snapshotData);
         }
 
-        // 2. Check Spot Balance (Assuming USDT for buying)
-        try {
-            BinanceAccountInfo spotAccount = binanceApiService.account();
-            Optional<BinanceBalance> usdtBalance = spotAccount.getBalances().stream()
-                    .filter(b -> "USDT".equals(b.getAsset()))
-                    .findFirst();
-
-            if (usdtBalance.isPresent()) {
-                BigDecimal free = usdtBalance.get().getFree();
-                if (free.compareTo(tradeValue) < 0) {
-                    log.warn("Risk Alert: Insufficient Spot USDT Balance. Required: {}, Available: {}", tradeValue, free);
-                    return false;
-                }
-            } else {
-                log.warn("Risk Alert: USDT balance not found in Spot account");
-                return false;
-            }
-        } catch (Exception e) {
-            log.error("Failed to fetch Spot account info during risk check", e);
-            return false; // Fail safe
+        if (!metrics.spotAccountLoaded()) {
+            return buildTradeRiskAssessment(false, "failed to fetch spot account info", snapshotData);
+        }
+        if (metrics.spotUsdtBalance().compareTo(tradeValue) < 0) {
+            log.warn("Risk Alert: Insufficient Spot USDT Balance. Required: {}, Available: {}", tradeValue, metrics.spotUsdtBalance());
+            return buildTradeRiskAssessment(false,
+                    "insufficient spot USDT balance: required=" + tradeValue + ", available=" + metrics.spotUsdtBalance(),
+                    snapshotData);
         }
 
-        // 3. Check Futures Balance against expected initial margin.
-        try {
-            BinanceFuturesAccount futuresAccount = binanceApiService.getFuturesAccount();
-            BigDecimal availableBalance = futuresAccount.getAssets().stream()
-                    .filter(asset -> "USDT".equals(asset.getAsset()))
-                    .findFirst()
-                    .map(BinanceFuturesAccount.BinanceFuturesAsset::getAvailableBalance)
-                    .orElse(BigDecimal.ZERO);
-            BigDecimal requiredMargin = plan.getRequiredFuturesMargin();
-            BigDecimal bufferedRequiredMargin = requiredMargin.multiply(properties.getRequiredMarginBufferRate());
-
-            if (availableBalance.compareTo(bufferedRequiredMargin) < 0) {
-                log.warn("Risk Alert: Insufficient Futures Balance. Required buffered margin: {}, Available: {}", bufferedRequiredMargin, availableBalance);
-                return false;
-            }
-        } catch (Exception e) {
-            log.error("Failed to fetch Futures account info during risk check", e);
-            return false;
+        if (!metrics.futuresAccountLoaded()) {
+            return buildTradeRiskAssessment(false, "failed to fetch futures account info", snapshotData);
+        }
+        if (metrics.futuresAvailableBalance().compareTo(metrics.bufferedRequiredMargin()) < 0) {
+            log.warn("Risk Alert: Insufficient Futures Balance. Required buffered margin: {}, Available: {}",
+                    metrics.bufferedRequiredMargin(), metrics.futuresAvailableBalance());
+            return buildTradeRiskAssessment(false,
+                    "insufficient futures balance: requiredBufferedMargin=" + metrics.bufferedRequiredMargin()
+                            + ", available=" + metrics.futuresAvailableBalance(),
+                    snapshotData);
         }
 
-        // 4. Check Futures Margin Health
-        if (!checkAccountHealth()) {
-            log.warn("Risk Alert: Futures Account Health is poor");
-            return false;
+        if (metrics.marginRatio() == null || metrics.marginRatio().compareTo(properties.getMinMarginRatio()) < 0) {
+            log.warn("Risk Alert: Futures Account Health is poor. marginRatio={}", metrics.marginRatio());
+            return buildTradeRiskAssessment(false,
+                    "margin ratio " + metrics.marginRatio() + " is below minimum " + properties.getMinMarginRatio(),
+                    snapshotData);
         }
-        
-        return true;
+
+        return buildTradeRiskAssessment(true, null, snapshotData);
+    }
+
+    public SingleExchangeRiskSnapshotData captureRiskSnapshotData(SingleExchangeSpotFuturesOrderPlan plan) {
+        return toSnapshotData(loadRiskMetrics(plan));
     }
 
     public SingleExchangeLiquidityAssessment evaluateLiquidityRisk(SingleExchangeSpotFuturesOrderPlan plan, String phase) {
@@ -225,15 +221,7 @@ public class SingleExchangeRiskController {
     public BigDecimal getMarginRatio() {
         try {
             BinanceFuturesAccount futuresAccount = binanceApiService.getFuturesService().account();
-            BigDecimal marginBalance = futuresAccount.getTotalMarginBalance();
-            BigDecimal maintMargin = futuresAccount.getTotalMaintMargin();
-
-            // If no positions (maintMargin is 0), health is perfect
-            if (maintMargin.compareTo(BigDecimal.ZERO) == 0) {
-                return new BigDecimal("999");
-            }
-
-            BigDecimal marginRatio = marginBalance.divide(maintMargin, 2, RoundingMode.HALF_DOWN);
+            BigDecimal marginRatio = calculateMarginRatio(futuresAccount);
             log.info("Current Futures Margin Ratio: {}", marginRatio);
             return marginRatio;
         } catch (Exception e) {
@@ -341,6 +329,95 @@ public class SingleExchangeRiskController {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
 
+    private SingleExchangeTradeRiskAssessment buildTradeRiskAssessment(boolean passed,
+                                                                       String rejectionReason,
+                                                                       SingleExchangeRiskSnapshotData snapshotData) {
+        return SingleExchangeTradeRiskAssessment.builder()
+                .passed(passed)
+                .rejectionReason(rejectionReason)
+                .snapshotData(snapshotData)
+                .build();
+    }
+
+    private SingleExchangeRiskSnapshotData toSnapshotData(RiskMetrics metrics) {
+        return SingleExchangeRiskSnapshotData.builder()
+                .spotUsdtBalance(metrics.spotUsdtBalance())
+                .futuresAvailableBalance(metrics.futuresAvailableBalance())
+                .requiredMargin(metrics.requiredMargin())
+                .bufferedRequiredMargin(metrics.bufferedRequiredMargin())
+                .marginRatio(metrics.marginRatio())
+                .build();
+    }
+
+    private RiskMetrics loadRiskMetrics(SingleExchangeSpotFuturesOrderPlan plan) {
+        BigDecimal requiredMargin = plan == null ? BigDecimal.ZERO : defaultValue(plan.getRequiredFuturesMargin());
+        BigDecimal bufferedRequiredMargin = requiredMargin.multiply(properties.getRequiredMarginBufferRate());
+        BigDecimal spotUsdtBalance = BigDecimal.ZERO;
+        BigDecimal futuresAvailableBalance = BigDecimal.ZERO;
+        BigDecimal marginRatio = null;
+        boolean spotAccountLoaded = false;
+        boolean futuresAccountLoaded = false;
+
+        try {
+            BinanceAccountInfo spotAccount = binanceApiService.account();
+            Optional<BinanceBalance> usdtBalance = Optional.ofNullable(spotAccount.getBalances())
+                    .orElse(List.of())
+                    .stream()
+                    .filter(b -> "USDT".equals(b.getAsset()))
+                    .findFirst();
+            spotUsdtBalance = usdtBalance.map(BinanceBalance::getFree).orElse(BigDecimal.ZERO);
+            spotAccountLoaded = true;
+        } catch (Exception e) {
+            log.error("Failed to fetch Spot account info during risk check", e);
+        }
+
+        try {
+            BinanceFuturesAccount futuresAccount = binanceApiService.getFuturesAccount();
+            futuresAvailableBalance = Optional.ofNullable(futuresAccount.getAssets())
+                    .orElse(List.of())
+                    .stream()
+                    .filter(asset -> "USDT".equals(asset.getAsset()))
+                    .findFirst()
+                    .map(BinanceFuturesAccount.BinanceFuturesAsset::getAvailableBalance)
+                    .orElse(BigDecimal.ZERO);
+            marginRatio = calculateMarginRatio(futuresAccount);
+            futuresAccountLoaded = true;
+        } catch (Exception e) {
+            log.error("Failed to fetch Futures account info during risk check", e);
+        }
+
+        return new RiskMetrics(
+                defaultValue(spotUsdtBalance),
+                defaultValue(futuresAvailableBalance),
+                requiredMargin,
+                bufferedRequiredMargin,
+                marginRatio,
+                spotAccountLoaded,
+                futuresAccountLoaded
+        );
+    }
+
+    private BigDecimal calculateMarginRatio(BinanceFuturesAccount futuresAccount) {
+        if (futuresAccount == null) {
+            return null;
+        }
+        BigDecimal marginBalance = defaultValue(futuresAccount.getTotalMarginBalance());
+        BigDecimal maintMargin = defaultValue(futuresAccount.getTotalMaintMargin());
+        if (maintMargin.compareTo(BigDecimal.ZERO) == 0) {
+            return new BigDecimal("999");
+        }
+        return marginBalance.divide(maintMargin, 2, RoundingMode.HALF_DOWN);
+    }
+
     private record VwapEstimate(BigDecimal vwap, BigDecimal availableQty, boolean sufficient) {
+    }
+
+    private record RiskMetrics(BigDecimal spotUsdtBalance,
+                               BigDecimal futuresAvailableBalance,
+                               BigDecimal requiredMargin,
+                               BigDecimal bufferedRequiredMargin,
+                               BigDecimal marginRatio,
+                               boolean spotAccountLoaded,
+                               boolean futuresAccountLoaded) {
     }
 }

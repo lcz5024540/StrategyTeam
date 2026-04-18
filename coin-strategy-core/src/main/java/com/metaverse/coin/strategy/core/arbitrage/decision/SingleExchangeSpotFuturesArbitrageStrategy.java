@@ -3,8 +3,10 @@ package com.metaverse.coin.strategy.core.arbitrage.decision;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageRiskSnapshotMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageRiskSnapshot;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.Strategy;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
@@ -14,6 +16,8 @@ import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFu
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeFundingRateMonitor;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeLiquidityAssessment;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskSnapshotData;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeTradeRiskAssessment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -48,6 +52,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private final SingleExchangeRiskController riskController;
     private final SingleExchangeArbitrageOrderMapper orderMapper;
     private final SingleExchangeArbitragePositionMapper positionMapper;
+    private final SingleExchangeArbitrageRiskSnapshotMapper riskSnapshotMapper;
     private final SingleExchangeSpotFuturesProperties properties;
 
     private static final String EXCHANGE_NAME = "BINANCE";
@@ -56,6 +61,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private static final String STATUS_CLOSING = "CLOSING";
     private static final String STATUS_CLOSED = "CLOSED";
     private static final String STATUS_FAILED = "FAILED";
+    private static final String CHECK_STAGE_PRE_OPEN = "PRE_OPEN";
+    private static final String CHECK_STAGE_PRE_CLOSE = "PRE_CLOSE";
     private static final String LOG_LIQUIDITY_REJECT_OPEN = "LIQUIDITY_REJECT_OPEN";
     private static final String LOG_LIQUIDITY_WARN_CLOSE = "LIQUIDITY_WARN_CLOSE";
     private static final String LOG_LIQUIDITY_WARN_EMERGENCY_CLOSE = "LIQUIDITY_WARN_EMERGENCY_CLOSE";
@@ -130,6 +137,14 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                         SingleExchangeRiskController.PHASE_OPEN
                 );
                 if (!liquidityAssessment.isPassed()) {
+                    persistRiskSnapshot(
+                            null,
+                            null,
+                            CHECK_STAGE_PRE_OPEN,
+                            false,
+                            buildPreOpenRiskReason("LIQUIDITY_REJECTED", liquidityAssessment.getRejectionReason()),
+                            riskController.captureRiskSnapshotData(marketPlan)
+                    );
                     log.warn("{} for {}: {}", LOG_LIQUIDITY_REJECT_OPEN, symbol, liquidityAssessment.getRejectionReason());
                     return;
                 }
@@ -144,7 +159,16 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     return;
                 }
 
-                if (!riskController.checkTradeRisk(marketPlan)) {
+                SingleExchangeTradeRiskAssessment tradeRiskAssessment = riskController.evaluateTradeRisk(marketPlan);
+                if (!tradeRiskAssessment.isPassed()) {
+                    persistRiskSnapshot(
+                            null,
+                            null,
+                            CHECK_STAGE_PRE_OPEN,
+                            false,
+                            buildPreOpenRiskReason("TRADE_RISK_REJECTED", tradeRiskAssessment.getRejectionReason()),
+                            tradeRiskAssessment.getSnapshotData()
+                    );
                     log.warn("Trade rejected by Risk Controller for {}", symbol);
                     return;
                 }
@@ -154,6 +178,14 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     log.warn("Skip open for {} because position state could not be persisted", symbol);
                     return;
                 }
+                persistRiskSnapshot(
+                        persistedPosition.getId(),
+                        persistedPosition.getPositionCode(),
+                        CHECK_STAGE_PRE_OPEN,
+                        true,
+                        null,
+                        tradeRiskAssessment.getSnapshotData()
+                );
 
                 log.info(
                         "Opening position for {} with quantity={}, spotNotional={}, futuresNotional={}, leverage={}",
@@ -187,11 +219,21 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     .quantity(activePosition.quantity())
                     .spotPrice(marketPlan.getSpotPrice())
                     .futuresPrice(marketPlan.getFuturesPrice())
+                    .spotNotional(activePosition.quantity().multiply(defaultValue(marketPlan.getSpotPrice())))
+                    .futuresNotional(activePosition.quantity().multiply(defaultValue(marketPlan.getFuturesPrice())))
                     .leverage(activePosition.leverage())
                     .build();
             SingleExchangeLiquidityAssessment closeLiquidityAssessment = riskController.evaluateLiquidityRisk(
                     closePlan,
                     SingleExchangeRiskController.PHASE_CLOSE
+            );
+            persistRiskSnapshot(
+                    activePosition.positionId(),
+                    activePosition.positionCode(),
+                    CHECK_STAGE_PRE_CLOSE,
+                    closeLiquidityAssessment.isPassed(),
+                    buildPreCloseRiskReason(closeDecision.reason(), closeLiquidityAssessment),
+                    riskController.captureRiskSnapshotData(closePlan)
             );
             if (!closeLiquidityAssessment.isPassed()) {
                 String logType = closeDecision.emergency() ? LOG_LIQUIDITY_WARN_EMERGENCY_CLOSE : LOG_LIQUIDITY_WARN_CLOSE;
@@ -473,6 +515,55 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
 
     private BigDecimal defaultValue(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private void persistRiskSnapshot(Long positionId,
+                                     String positionCode,
+                                     String checkStage,
+                                     boolean riskPassed,
+                                     String rejectionReason,
+                                     SingleExchangeRiskSnapshotData snapshotData) {
+        try {
+            SingleExchangeArbitrageRiskSnapshot snapshot = new SingleExchangeArbitrageRiskSnapshot()
+                    .setPositionId(positionId)
+                    .setPositionCode(positionCode)
+                    .setExchangeName(EXCHANGE_NAME)
+                    .setSymbol(properties.getSymbol())
+                    .setCheckStage(checkStage)
+                    .setSpotUsdtBalance(snapshotData != null ? snapshotData.getSpotUsdtBalance() : null)
+                    .setFuturesAvailableBalance(snapshotData != null ? snapshotData.getFuturesAvailableBalance() : null)
+                    .setRequiredMargin(snapshotData != null ? snapshotData.getRequiredMargin() : null)
+                    .setBufferedRequiredMargin(snapshotData != null ? snapshotData.getBufferedRequiredMargin() : null)
+                    .setMarginRatio(snapshotData != null ? snapshotData.getMarginRatio() : null)
+                    .setRiskPassed(riskPassed)
+                    .setRejectionReason(trimSnapshotReason(rejectionReason))
+                    .setCreatedAt(new Date());
+            riskSnapshotMapper.insert(snapshot);
+        } catch (Exception e) {
+            log.error("Failed to persist risk snapshot for symbol={}, stage={}", properties.getSymbol(), checkStage, e);
+        }
+    }
+
+    private String buildPreOpenRiskReason(String prefix, String reason) {
+        if (reason == null || reason.isEmpty()) {
+            return prefix;
+        }
+        return prefix + ": " + reason;
+    }
+
+    private String buildPreCloseRiskReason(String closeReason, SingleExchangeLiquidityAssessment assessment) {
+        StringBuilder builder = new StringBuilder("close trigger: ").append(closeReason);
+        if (assessment != null && !assessment.isPassed() && assessment.getRejectionReason() != null) {
+            builder.append("; liquidity warning: ").append(assessment.getRejectionReason());
+        }
+        return builder.toString();
+    }
+
+    private String trimSnapshotReason(String reason) {
+        if (reason == null || reason.length() <= 255) {
+            return reason;
+        }
+        return reason.substring(0, 255);
     }
 
     private record ActivePosition(
