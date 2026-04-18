@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_risk_snapshot` (
 -- - 用于审计“为什么触发了划转 / 为什么没有划转 / 实际划转了多少”
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_rebalance_record` (
+    `risk_snapshot_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联的再平衡风控快照ID',
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `exchange_name` VARCHAR(32) NOT NULL DEFAULT 'BINANCE' COMMENT '交易所名称',
     `symbol` VARCHAR(32) DEFAULT NULL COMMENT '关联交易对',
@@ -248,6 +249,7 @@ CREATE TABLE IF NOT EXISTS `single_exchange_arbitrage_rebalance_record` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
+    KEY `idx_rebalance_risk_snapshot` (`risk_snapshot_id`),
     KEY `idx_rebalance_status_time` (`status`, `created_at`),
     KEY `idx_rebalance_symbol_time` (`symbol`, `created_at`),
     KEY `idx_rebalance_transfer_id` (`transfer_id`)

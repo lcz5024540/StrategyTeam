@@ -17,6 +17,7 @@ public class SingleExchangeArbitrageRebalanceRecord {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    private Long riskSnapshotId;
     private String exchangeName;
     private String symbol;
     private String asset;

@@ -92,6 +92,10 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
   会记录再平衡执行成功、条件不满足跳过以及异常失败三类结果。
 * 流水表中已包含当前保证金率、阈值/目标保证金率、理论应划转金额、现货可用余额、实际划转金额以及交易所返回的 `transfer_id`，
   可直接用于再平衡审计和问题排查。
+* 已新增 `single_exchange_arbitrage_risk_snapshot` 的 `REBALANCE` 阶段运行时写入，仅在保证金率低于 `rebalance-threshold-margin-ratio` 并真正进入再平衡评估时落库。
+* 每次再平衡评估无论结果是 `EXECUTED`、`SKIPPED` 还是 `FAILED`，都会同步写入 1 条风控快照和 1 条再平衡流水。
+* `single_exchange_arbitrage_rebalance_record` 已新增 `risk_snapshot_id`，用于将再平衡流水与对应的风控快照进行单向关联。
+* 当前仅补齐 `REBALANCE` 阶段的运行时风控快照落库，开仓/平仓阶段尚未接入。
 
 ### 2.3 配置管理仍待统一
 
@@ -125,9 +129,9 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 
 ### 3.1 近期计划
 
-1. 将再平衡动作与风控快照联动落库。
-2. 将流动性评估结果接入钉钉、Slack 或邮件告警。
-3. 接入异常回滚和订单执行失败的主动告警。
+1. 将流动性评估结果接入钉钉、Slack 或邮件告警。
+2. 接入异常回滚和订单执行失败的主动告警。
+3. 继续补齐开仓/平仓阶段的风控快照运行时落库。
 
 ### 3.2 实盘前必做项
 
