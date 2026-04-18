@@ -35,6 +35,24 @@ export function MetricGrid({ detail }: MetricGridProps) {
       className: getAmountClass(detail.compositePnlUsdc),
     },
     {
+      label: '全部提前退出收益',
+      value: formatMoney(detail.earlyExitRealizedPnlUsdc),
+      hint: `共 ${formatNumber(detail.earlyExitOrderCount, 0)} 笔，含止盈 / 止损 / 手动`,
+      className: getAmountClass(detail.earlyExitRealizedPnlUsdc),
+    },
+    {
+      label: '自动止盈收益',
+      value: formatMoney(detail.takeProfitRealizedPnlUsdc),
+      hint: `自动止盈 ${formatNumber(detail.takeProfitOrderCount, 0)} 笔`,
+      className: getAmountClass(detail.takeProfitRealizedPnlUsdc),
+    },
+    {
+      label: '自动止损收益',
+      value: formatMoney(detail.stopLossRealizedPnlUsdc),
+      hint: `自动止损 ${formatNumber(detail.stopLossOrderCount, 0)} 笔`,
+      className: getAmountClass(detail.stopLossRealizedPnlUsdc),
+    },
+    {
       label: '最大回撤',
       value: formatMoney(detail.maxDrawdownUsdc),
       hint: '历史最大回撤幅度',
@@ -63,6 +81,12 @@ export function MetricGrid({ detail }: MetricGridProps) {
       value: formatMoney(detail.lockedClaimProceedsUsdc),
       hint: `待结算 ${formatMoney(detail.pendingSettlementPnlUsdc)}`,
       className: getAmountClass(detail.lockedClaimProceedsUsdc),
+    },
+    {
+      label: '提前退出订单',
+      value: formatNumber(detail.earlyExitOrderCount, 0),
+      hint: `止盈 ${formatNumber(detail.takeProfitOrderCount, 0)} / 止损 ${formatNumber(detail.stopLossOrderCount, 0)}`,
+      className: 'neutral',
     },
     {
       label: '胜率',

@@ -25,6 +25,12 @@ public record StrategyMetricsView(
         Integer remainingPositionSlots,
         BigDecimal remainingCapitalBudgetUsdc,
         BigDecimal availableCapitalUsdc,
-        BigDecimal lockedClaimProceedsUsdc
+        BigDecimal lockedClaimProceedsUsdc,
+        Integer earlyExitOrderCount,
+        BigDecimal earlyExitRealizedPnlUsdc,
+        Integer takeProfitOrderCount,
+        BigDecimal takeProfitRealizedPnlUsdc,
+        Integer stopLossOrderCount,
+        BigDecimal stopLossRealizedPnlUsdc
 ) {
 }

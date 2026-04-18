@@ -162,33 +162,33 @@ public class SmartWalletPositionSyncService {
     }
 
     // -------------------------------------------------------------------------
-    // P2 Stop-loss: runs every 5 minutes, closes paper positions whose mark
-    // price has fallen >= stopLossThresholdRate below average entry price.
+    // P2 Auto stop-loss: runs every 5 minutes, closes paper positions whose
+    // unrealized ROI has fallen below the configured loss threshold.
     // -------------------------------------------------------------------------
     @Scheduled(fixedDelay = 300_000)
     public void checkStopLoss() {
         SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
-        if (!properties.isEnabled() || risk == null || !risk.isEnableStopLoss()) {
+        if (!properties.isEnabled() || risk == null || !risk.isEnableAutoStopLoss()) {
             return;
         }
-        BigDecimal threshold = risk.getStopLossThresholdRate() == null
-                ? new BigDecimal("0.50") : risk.getStopLossThresholdRate();
+        BigDecimal threshold = risk.getAutoStopLossThresholdRate() == null
+                ? new BigDecimal("0.50") : risk.getAutoStopLossThresholdRate();
         scanPaperPositionsForExit(threshold, AutoExitMode.STOP_LOSS);
     }
 
     // -------------------------------------------------------------------------
-    // Take-profit: runs every 5 minutes, closes paper positions whose current
-    // unrealized return has reached the configured threshold so capital can be
-    // recycled before oracle settlement.
+    // Auto take-profit: runs every 5 minutes, closes paper/live positions
+    // whose current unrealized return has reached the configured threshold so
+    // capital can be recycled before oracle settlement.
     // -------------------------------------------------------------------------
     @Scheduled(fixedDelay = 300_000)
     public void checkTakeProfit() {
         SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
-        if (!properties.isEnabled() || risk == null || !risk.isEnableTakeProfit()) {
+        if (!properties.isEnabled() || risk == null || !risk.isEnableAutoTakeProfit()) {
             return;
         }
-        BigDecimal threshold = risk.getTakeProfitThresholdRate() == null
-                ? new BigDecimal("0.20") : risk.getTakeProfitThresholdRate();
+        BigDecimal threshold = risk.getAutoTakeProfitThresholdRate() == null
+                ? new BigDecimal("0.20") : risk.getAutoTakeProfitThresholdRate();
         scanPaperPositionsForExit(threshold, AutoExitMode.TAKE_PROFIT);
         scanLivePositionsForTakeProfit(threshold);
     }

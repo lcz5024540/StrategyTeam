@@ -39,5 +39,8 @@ public class HedgeArbitrageLogEntity {
     private String skipReason;
     private Long hedgePositionId;
 
+    /** PAPER | LIVE */
+    private String mode;
+
     private Date scannedAt;
 }

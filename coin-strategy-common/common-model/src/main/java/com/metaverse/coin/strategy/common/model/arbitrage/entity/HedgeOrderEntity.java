@@ -33,6 +33,8 @@ public class HedgeOrderEntity {
 
     /** PENDING | FILLED | PARTIAL | FAILED | CANCELLED */
     private String status;
+    /** PAPER | LIVE */
+    private String mode;
     private String errorMessage;
     private Integer pollAttempts;
     private Date nextPollAt;

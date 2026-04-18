@@ -34,11 +34,20 @@ public class HedgePositionTracker {
     private final HedgeProperties properties;
 
     /**
-     * 创建对冲持仓记录
+     * 创建对冲持仓记录（向后兼容：默认 LIVE 模式）
      */
     public HedgePositionEntity openPosition(HedgeOpportunity opp, BigDecimal quantity,
                                              BigDecimal totalUsdc, BigDecimal expectedProfit,
                                              String executionAddress) {
+        return openPosition(opp, quantity, totalUsdc, expectedProfit, executionAddress, "LIVE");
+    }
+
+    /**
+     * 创建对冲持仓记录。{@code mode} 取值：PAPER 模拟仓 / LIVE 实盘仓。
+     */
+    public HedgePositionEntity openPosition(HedgeOpportunity opp, BigDecimal quantity,
+                                             BigDecimal totalUsdc, BigDecimal expectedProfit,
+                                             String executionAddress, String mode) {
         Date now = new Date();
         BigDecimal yesCost = opp.getYesBestAsk().multiply(quantity).setScale(4, RoundingMode.HALF_UP);
         BigDecimal noCost = opp.getNoBestAsk().multiply(quantity).setScale(4, RoundingMode.HALF_UP);
@@ -61,23 +70,33 @@ public class HedgePositionTracker {
                 .setNoLiquidityUsdc(opp.getNoLiquidityUsdc())
                 .setExecutionAddress(executionAddress)
                 .setStatus("OPEN")
+                .setMode(mode == null ? "LIVE" : mode)
                 .setMarketEndAt(opp.getMarketEndAt())
                 .setOpenedAt(now)
                 .setCreatedAt(now)
                 .setUpdatedAt(now);
 
         positionMapper.insert(position);
-        log.info("[HedgePositionTracker] Opened position id={} market={} qty={} totalCost={} expectedProfit={}",
-                position.getId(), opp.getMarketId(), quantity, totalUsdc, expectedProfit);
+        log.info("[HedgePositionTracker] Opened position id={} mode={} market={} qty={} totalCost={} expectedProfit={}",
+                position.getId(), position.getMode(), opp.getMarketId(), quantity, totalUsdc, expectedProfit);
         return position;
     }
 
     /**
-     * 记录双边订单
+     * 记录双边订单（向后兼容：默认 LIVE 模式）
      */
     public HedgeOrderEntity createOrder(Long hedgePositionId, String marketId,
                                          String tokenId, String side,
                                          BigDecimal price, BigDecimal quantity) {
+        return createOrder(hedgePositionId, marketId, tokenId, side, price, quantity, "LIVE");
+    }
+
+    /**
+     * 记录双边订单。{@code mode} 取值：PAPER / LIVE。
+     */
+    public HedgeOrderEntity createOrder(Long hedgePositionId, String marketId,
+                                         String tokenId, String side,
+                                         BigDecimal price, BigDecimal quantity, String mode) {
         Date now = new Date();
         HedgeOrderEntity order = new HedgeOrderEntity()
                 .setHedgePositionId(hedgePositionId)
@@ -88,6 +107,7 @@ public class HedgePositionTracker {
                 .setPrice(price)
                 .setRequestedQuantity(quantity)
                 .setStatus("PENDING")
+                .setMode(mode == null ? "LIVE" : mode)
                 .setPollAttempts(0)
                 .setSubmittedAt(now)
                 .setCreatedAt(now)

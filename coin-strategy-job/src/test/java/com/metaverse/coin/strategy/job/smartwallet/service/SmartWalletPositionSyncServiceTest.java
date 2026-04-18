@@ -125,8 +125,8 @@ class SmartWalletPositionSyncServiceTest {
 
     @Test
     void shouldUseUnifiedExitFlowWhenStopLossTriggers() {
-        properties.getSignalRisk().setEnableStopLoss(true);
-        properties.getSignalRisk().setStopLossThresholdRate(new BigDecimal("0.20"));
+        properties.getSignalRisk().setEnableAutoStopLoss(true);
+        properties.getSignalRisk().setAutoStopLossThresholdRate(new BigDecimal("0.20"));
         when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
                 .positionId(11L)
                 .currentStatus("CLOSED")
@@ -149,8 +149,8 @@ class SmartWalletPositionSyncServiceTest {
 
     @Test
     void shouldUseUnifiedExitFlowWhenTakeProfitTriggers() {
-        properties.getSignalRisk().setEnableTakeProfit(true);
-        properties.getSignalRisk().setTakeProfitThresholdRate(new BigDecimal("0.15"));
+        properties.getSignalRisk().setEnableAutoTakeProfit(true);
+        properties.getSignalRisk().setAutoTakeProfitThresholdRate(new BigDecimal("0.15"));
         when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
                 .positionId(21L)
                 .currentStatus("CLOSED")
@@ -174,8 +174,8 @@ class SmartWalletPositionSyncServiceTest {
 
     @Test
     void shouldSubmitLiveExitWhenTakeProfitTriggersOnLivePosition() {
-        properties.getSignalRisk().setEnableTakeProfit(true);
-        properties.getSignalRisk().setTakeProfitThresholdRate(new BigDecimal("0.15"));
+        properties.getSignalRisk().setEnableAutoTakeProfit(true);
+        properties.getSignalRisk().setAutoTakeProfitThresholdRate(new BigDecimal("0.15"));
         ExecutionWalletContextLoader.ExecutionWalletContext context = ExecutionWalletContextLoader.ExecutionWalletContext.builder()
                 .address("0xlive")
                 .enabled(true)
@@ -214,8 +214,8 @@ class SmartWalletPositionSyncServiceTest {
 
     @Test
     void shouldNotExitWhenTakeProfitThresholdNotReached() {
-        properties.getSignalRisk().setEnableTakeProfit(true);
-        properties.getSignalRisk().setTakeProfitThresholdRate(new BigDecimal("0.30"));
+        properties.getSignalRisk().setEnableAutoTakeProfit(true);
+        properties.getSignalRisk().setAutoTakeProfitThresholdRate(new BigDecimal("0.30"));
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(22L)
                 .setExecutionAddress("paper-book")

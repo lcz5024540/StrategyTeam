@@ -1,10 +1,29 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { walletApi } from '@/api'
-import { compactAddress, formatAmount, truncateText } from '@/utils/format'
+import { compactAddress, formatAmount, formatMoney, truncateText } from '@/utils/format'
 import { buildTableOptions, matchesTableKeyword, TABLE_FETCH_LIMIT, TABLE_PAGE_SIZE } from '@/utils/table'
 import { TableToolbar } from './TableToolbar'
 import { TablePagination } from './TablePagination'
+
+const EXIT_REASON_LABELS: Record<string, string> = {
+  TAKE_PROFIT_AUTO_EXIT: '自动止盈',
+  STOP_LOSS_AUTO_EXIT: '自动止损',
+}
+
+function getExitReasonLabel(exitReason?: string): string {
+  if (!exitReason) {
+    return '提前卖出'
+  }
+  return EXIT_REASON_LABELS[exitReason] || exitReason
+}
+
+function getPnlBadgeClass(value?: number): string {
+  const pnl = Number(value || 0)
+  if (pnl > 0) return 'badge accent'
+  if (pnl < 0) return 'badge danger'
+  return 'badge'
+}
 
 interface OrdersTableProps {
   mode?: 'PAPER' | 'LIVE'
@@ -63,7 +82,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
         <table>
           <tbody>
             <tr>
-              <td colSpan={8} className="empty-state">暂无订单记录</td>
+              <td colSpan={9} className="empty-state">暂无订单记录</td>
             </tr>
           </tbody>
         </table>
@@ -110,6 +129,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
               <th>市场</th>
               <th>Outcome</th>
               <th>方向</th>
+              <th>标签 / 收益</th>
               <th>名义金额</th>
               <th>状态</th>
               <th>下单时间</th>
@@ -118,7 +138,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
           <tbody>
             {visibleOrders.length === 0 ? (
               <tr>
-                <td colSpan={8} className="empty-state">当前筛选条件下暂无订单记录</td>
+                <td colSpan={9} className="empty-state">当前筛选条件下暂无订单记录</td>
               </tr>
             ) : (
               visibleOrders.map((order) => (
@@ -129,6 +149,26 @@ export function OrdersTable({ mode }: OrdersTableProps) {
                   <td>{order.outcome}</td>
                   <td>
                     <span className={`badge ${order.side === 'BUY' ? 'accent' : 'warn'}`}>{order.side}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'grid', gap: '6px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {order.earlyExit ? <span className="badge accent">提前卖出</span> : null}
+                        {order.exitReason ? (
+                          <span className={`badge ${order.exitReason === 'STOP_LOSS_AUTO_EXIT' ? 'danger' : 'warn'}`}>
+                            {getExitReasonLabel(order.exitReason)}
+                          </span>
+                        ) : null}
+                        {!order.earlyExit && order.orderType ? <span className="badge">{order.orderType}</span> : null}
+                      </div>
+                      {order.earlyExit ? (
+                        <span className={getPnlBadgeClass(order.realizedPnlUsdc)}>
+                          收益 {formatMoney(order.realizedPnlUsdc)}
+                        </span>
+                      ) : (
+                        <span className="badge">-</span>
+                      )}
+                    </div>
                   </td>
                   <td>{formatAmount(order.notionalUsdc)}</td>
                   <td>

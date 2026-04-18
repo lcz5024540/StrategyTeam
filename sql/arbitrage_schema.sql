@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_order` (
     `size` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '份额数量',
     `notional_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '委托名义USDC',
     `fee_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '手续费',
+    `realized_pnl_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '该订单已实现收益',
+    `exit_reason` VARCHAR(64) DEFAULT NULL COMMENT '提前退出原因',
     `error_message` TEXT DEFAULT NULL COMMENT '错误信息',
     `placed_at` TIMESTAMP NOT NULL COMMENT '下单时间',
     `filled_at` TIMESTAMP NULL COMMENT '成交时间',

@@ -31,4 +31,10 @@ public class SmartWalletPerformanceView {
     private Integer openConflictingMarkets;
     private Integer openConflictingPositions;
     private BigDecimal conflictNetPnlUsdc;
+    private Integer earlyExitOrderCount;
+    private BigDecimal earlyExitRealizedPnlUsdc;
+    private Integer takeProfitOrderCount;
+    private BigDecimal takeProfitRealizedPnlUsdc;
+    private Integer stopLossOrderCount;
+    private BigDecimal stopLossRealizedPnlUsdc;
 }

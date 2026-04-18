@@ -40,6 +40,8 @@ public class HedgePositionEntity {
 
     /** OPEN | SETTLING | SETTLED | CANCELLED */
     private String status;
+    /** PAPER | LIVE */
+    private String mode;
     /** YES | NO */
     private String finalOutcome;
     private BigDecimal claimedUsdc;

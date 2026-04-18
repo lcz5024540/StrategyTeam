@@ -23,11 +23,14 @@ public class SmartWalletOrderView {
     private String marketEndAtBjt;
     private String side;
     private String orderType;
+    private Boolean earlyExit;
+    private String exitReason;
     private String status;
     private BigDecimal price;
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal realizedPnlUsdc;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
     private BigDecimal followProbability;

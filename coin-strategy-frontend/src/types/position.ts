@@ -30,7 +30,11 @@ export interface Order {
   question: string
   outcome: string
   side: string
+  orderType?: string
+  earlyExit?: boolean
+  exitReason?: string
   notionalUsdc: number
+  realizedPnlUsdc?: number
   status: string
   placedAt: string
   filledAt?: string
