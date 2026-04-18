@@ -21,6 +21,9 @@ public class SingleExchangeSpotFuturesProperties {
     private BigDecimal maxBasisDeteriorationRate = new BigDecimal("0.0015");
     private BigDecimal estimatedRoundTripFeeRate = new BigDecimal("0.0010");
     private BigDecimal estimatedSlippageRate = new BigDecimal("0.0005");
+    private Boolean liquidityCheckEnabled = true;
+    private Integer liquidityRetryCount = 3;
+    private Long liquidityRetryIntervalMillis = 200L;
     private Integer minFundingPeriods = 4;
     private BigDecimal minNetYieldRate = new BigDecimal("0.0002");
     private Long settlementProtectionWindowMinutes = 5L;
@@ -32,6 +35,7 @@ public class SingleExchangeSpotFuturesProperties {
     private BigDecimal rebalanceThresholdMarginRatio = new BigDecimal("1.5");
     private BigDecimal rebalanceTargetMarginRatio = new BigDecimal("3.0");
     private String rebalanceAsset = "USDT";
+    private Boolean emergencyCloseLiquidityOverrideEnabled = true;
 
     public SingleExchangeSpotFuturesProperties() {
     }
@@ -48,6 +52,9 @@ public class SingleExchangeSpotFuturesProperties {
         maxBasisDeteriorationRate = getBigDecimal(environment, "arbitrage.spot-futures.max-basis-deterioration-rate", maxBasisDeteriorationRate);
         estimatedRoundTripFeeRate = getBigDecimal(environment, "arbitrage.spot-futures.estimated-round-trip-fee-rate", estimatedRoundTripFeeRate);
         estimatedSlippageRate = getBigDecimal(environment, "arbitrage.spot-futures.estimated-slippage-rate", estimatedSlippageRate);
+        liquidityCheckEnabled = getBoolean(environment, "arbitrage.spot-futures.liquidity-check-enabled", liquidityCheckEnabled);
+        liquidityRetryCount = getInteger(environment, "arbitrage.spot-futures.liquidity-retry-count", liquidityRetryCount);
+        liquidityRetryIntervalMillis = getLong(environment, "arbitrage.spot-futures.liquidity-retry-interval-millis", liquidityRetryIntervalMillis);
         minFundingPeriods = getInteger(environment, "arbitrage.spot-futures.min-funding-periods", minFundingPeriods);
         minNetYieldRate = getBigDecimal(environment, "arbitrage.spot-futures.min-net-yield-rate", minNetYieldRate);
         settlementProtectionWindowMinutes = getLong(environment, "arbitrage.spot-futures.settlement-protection-window-minutes", settlementProtectionWindowMinutes);
@@ -59,6 +66,9 @@ public class SingleExchangeSpotFuturesProperties {
         rebalanceThresholdMarginRatio = getBigDecimal(environment, "arbitrage.spot-futures.rebalance-threshold-margin-ratio", rebalanceThresholdMarginRatio);
         rebalanceTargetMarginRatio = getBigDecimal(environment, "arbitrage.spot-futures.rebalance-target-margin-ratio", rebalanceTargetMarginRatio);
         rebalanceAsset = environment.getProperty("arbitrage.spot-futures.rebalance-asset", rebalanceAsset);
+        emergencyCloseLiquidityOverrideEnabled = getBoolean(environment,
+                "arbitrage.spot-futures.emergency-close-liquidity-override-enabled",
+                emergencyCloseLiquidityOverrideEnabled);
     }
 
     private BigDecimal getBigDecimal(Environment environment, String key, BigDecimal defaultValue) {

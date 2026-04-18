@@ -57,8 +57,15 @@ arbitrage:
     max-basis-deterioration-rate: 0.0015
     # [TUNE] 预估现货和合约双边开平仓的总手续费率，用于净收益过滤。
     estimated-round-trip-fee-rate: 0.0010
-    # [TUNE] 预估执行滑点率，与手续费一起用于过滤掉净收益不足的机会。
+    # [TUNE] 组合滑点容忍阈值；开仓时若 depth 盘口可用，系统会按逐档 VWAP 估算现货与合约侧的组合滑点率。
+    # 若深度连续重试失败，开仓会直接拒绝；平仓只记录流动性告警，不阻塞退出。
     estimated-slippage-rate: 0.0005
+    # [TUNE] 是否启用基于现货/合约 depth 盘口的深度与滑点风控。
+    liquidity-check-enabled: true
+    # [TUNE] 获取 depth 盘口失败时的快速重试次数；开仓重试耗尽后直接拒绝，平仓重试耗尽后仅告警放行。
+    liquidity-retry-count: 3
+    # [TUNE] 单次盘口重试之间的等待时间（毫秒）。
+    liquidity-retry-interval-millis: 200
     # [TUNE] 估算预期资金费收益时默认至少持有的资金费结算期数。
     min-funding-periods: 4
     # [TUNE] 扣除预估手续费和滑点后的最低预期净收益率，低于该值不允许开仓。
@@ -73,6 +80,8 @@ arbitrage:
     required-margin-buffer-rate: 1.10
     # [TUNE] 持仓期间合约保证金率的紧急退出阈值，低于该值时应优先平仓。
     emergency-close-margin-ratio: 1.80
+    # [TUNE] 历史兼容配置。当前实现中，平仓阶段的流动性评估只做告警，不再阻塞执行。
+    emergency-close-liquidity-override-enabled: true
     # [TUNE] 是否启用“现货账户 -> U 本位合约账户”的自动再平衡划转。
     rebalance-enabled: true
     # [TUNE] 当合约保证金率低于该值时，触发自动补充合约保证金。

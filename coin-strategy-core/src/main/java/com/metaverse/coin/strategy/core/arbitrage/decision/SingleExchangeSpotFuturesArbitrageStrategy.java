@@ -12,6 +12,7 @@ import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitr
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeFundingRateMonitor;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeLiquidityAssessment;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +56,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private static final String STATUS_CLOSING = "CLOSING";
     private static final String STATUS_CLOSED = "CLOSED";
     private static final String STATUS_FAILED = "FAILED";
+    private static final String LOG_LIQUIDITY_REJECT_OPEN = "LIQUIDITY_REJECT_OPEN";
+    private static final String LOG_LIQUIDITY_WARN_CLOSE = "LIQUIDITY_WARN_CLOSE";
+    private static final String LOG_LIQUIDITY_WARN_EMERGENCY_CLOSE = "LIQUIDITY_WARN_EMERGENCY_CLOSE";
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -121,7 +125,20 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
 
             ActivePosition activePosition = activePositions.get(symbol);
             if (activePosition == null) {
-                String openBlockReason = getOpenBlockReason(premiumIndex, marketPlan);
+                SingleExchangeLiquidityAssessment liquidityAssessment = riskController.evaluateLiquidityRisk(
+                        marketPlan,
+                        SingleExchangeRiskController.PHASE_OPEN
+                );
+                if (!liquidityAssessment.isPassed()) {
+                    log.warn("{} for {}: {}", LOG_LIQUIDITY_REJECT_OPEN, symbol, liquidityAssessment.getRejectionReason());
+                    return;
+                }
+
+                String openBlockReason = getOpenBlockReason(
+                        premiumIndex,
+                        marketPlan,
+                        liquidityAssessment.getEstimatedSlippageRate()
+                );
                 if (openBlockReason != null) {
                     log.info("Skip open for {}: {}", symbol, openBlockReason);
                     return;
@@ -158,8 +175,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 return;
             }
 
-            String closeReason = getCloseReason(premiumIndex, marketPlan, activePosition);
-            if (closeReason == null) {
+            CloseDecision closeDecision = getCloseDecision(premiumIndex, marketPlan, activePosition);
+            if (closeDecision == null) {
                 return;
             }
 
@@ -168,12 +185,26 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     .spotSymbol(symbol)
                     .futuresSymbol(symbol)
                     .quantity(activePosition.quantity())
+                    .spotPrice(marketPlan.getSpotPrice())
+                    .futuresPrice(marketPlan.getFuturesPrice())
                     .leverage(activePosition.leverage())
                     .build();
+            SingleExchangeLiquidityAssessment closeLiquidityAssessment = riskController.evaluateLiquidityRisk(
+                    closePlan,
+                    SingleExchangeRiskController.PHASE_CLOSE
+            );
+            if (!closeLiquidityAssessment.isPassed()) {
+                String logType = closeDecision.emergency() ? LOG_LIQUIDITY_WARN_EMERGENCY_CLOSE : LOG_LIQUIDITY_WARN_CLOSE;
+                log.warn("{} for {}: {}, reason={}",
+                        logType,
+                        symbol,
+                        closeLiquidityAssessment.getRejectionReason(),
+                        closeDecision.reason());
+            }
             log.info(
                     "Closing position for {} because {}. positionId={}, quantity={}, currentFundingRate={}, currentBasisRate={}, entryBasisRate={}",
                     symbol,
-                    closeReason,
+                    closeDecision.reason(),
                     activePosition.positionId(),
                     activePosition.quantity(),
                     currentRate,
@@ -188,7 +219,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 activePositions.remove(symbol);
             } else {
                 revertPositionToOpened(activePosition);
-                log.warn("Failed to close arbitrage position for {} after trigger: {}", symbol, closeReason);
+                log.warn("Failed to close arbitrage position for {} after trigger: {}", symbol, closeDecision.reason());
             }
         } catch (Exception e) {
             log.error("Error in strategy execution loop", e);
@@ -365,7 +396,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         return "SEA-" + tradeSymbol + "-" + UUID.randomUUID().toString().replace("-", "");
     }
 
-    private String getOpenBlockReason(BinanceFuturesPremiumIndex premiumIndex, SingleExchangeSpotFuturesOrderPlan marketPlan) {
+    private String getOpenBlockReason(BinanceFuturesPremiumIndex premiumIndex,
+                                      SingleExchangeSpotFuturesOrderPlan marketPlan,
+                                      BigDecimal estimatedSlippageRate) {
         BigDecimal currentRate = defaultValue(premiumIndex.getLastFundingRate());
         if (currentRate.compareTo(properties.getOpenThreshold()) <= 0) {
             return "funding rate " + currentRate + " is not above open threshold " + properties.getOpenThreshold();
@@ -382,41 +415,49 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
             return "basis rate " + basisRate + " is above maximum " + properties.getMaxBasisRate();
         }
 
-        BigDecimal expectedNetYield = estimateExpectedNetYield(currentRate);
+        BigDecimal expectedNetYield = estimateExpectedNetYield(currentRate, estimatedSlippageRate);
         if (expectedNetYield.compareTo(properties.getMinNetYieldRate()) < 0) {
             return "expected net yield " + expectedNetYield + " is below minimum " + properties.getMinNetYieldRate();
         }
         return null;
     }
 
-    private String getCloseReason(BinanceFuturesPremiumIndex premiumIndex, SingleExchangeSpotFuturesOrderPlan marketPlan, ActivePosition activePosition) {
+    private CloseDecision getCloseDecision(BinanceFuturesPremiumIndex premiumIndex,
+                                           SingleExchangeSpotFuturesOrderPlan marketPlan,
+                                           ActivePosition activePosition) {
         BigDecimal currentRate = defaultValue(premiumIndex.getLastFundingRate());
         if (currentRate.compareTo(BigDecimal.ZERO) <= 0) {
-            return "funding rate turned non-positive";
+            return new CloseDecision("funding rate turned non-positive", false);
         }
         if (currentRate.compareTo(properties.getCloseThreshold()) < 0) {
-            return "funding rate dropped below close threshold";
+            return new CloseDecision("funding rate dropped below close threshold", false);
         }
 
         BigDecimal currentBasisRate = defaultValue(marketPlan.getBasisRate());
         BigDecimal basisWideningRate = currentBasisRate.subtract(activePosition.entryBasisRate());
         if (basisWideningRate.compareTo(properties.getMaxBasisDeteriorationRate()) > 0) {
-            return "basis widened by " + basisWideningRate + ", exceeding " + properties.getMaxBasisDeteriorationRate();
+            return new CloseDecision(
+                    "basis widened by " + basisWideningRate + ", exceeding " + properties.getMaxBasisDeteriorationRate(),
+                    false
+            );
         }
 
         BigDecimal marginRatio = riskController.getMarginRatio();
         if (marginRatio != null && marginRatio.compareTo(properties.getEmergencyCloseMarginRatio()) < 0) {
-            return "margin ratio " + marginRatio + " is below emergency threshold " + properties.getEmergencyCloseMarginRatio();
+            return new CloseDecision(
+                    "margin ratio " + marginRatio + " is below emergency threshold " + properties.getEmergencyCloseMarginRatio(),
+                    true
+            );
         }
         return null;
     }
 
-    private BigDecimal estimateExpectedNetYield(BigDecimal currentRate) {
+    private BigDecimal estimateExpectedNetYield(BigDecimal currentRate, BigDecimal estimatedSlippageRate) {
         Integer minFundingPeriods = properties.getMinFundingPeriods();
         int fundingPeriods = minFundingPeriods == null || minFundingPeriods <= 0 ? 1 : minFundingPeriods;
         return currentRate.multiply(BigDecimal.valueOf(fundingPeriods))
                 .subtract(properties.getEstimatedRoundTripFeeRate())
-                .subtract(properties.getEstimatedSlippageRate())
+                .subtract(defaultValue(estimatedSlippageRate))
                 .setScale(8, RoundingMode.HALF_UP);
     }
 
@@ -458,5 +499,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         private static Integer leverageFallback() {
             return 1;
         }
+    }
+
+    private record CloseDecision(String reason, boolean emergency) {
     }
 }

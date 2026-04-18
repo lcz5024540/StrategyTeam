@@ -46,6 +46,7 @@
     * 已实现期货可用保证金检查。
     * 已引入 `required-margin-buffer-rate` 作为保证金缓冲。
     * 已提供 `getMarginRatio()` 供策略和再平衡服务复用。
+    * 已接入基于 `depth` 的逐档 VWAP 流动性与滑点评估，供开仓和平仓阶段复用。
 
 * **SingleExchangeArbitrageRebalanceService**
     * 已具备定时检查保证金率的骨架。
@@ -101,8 +102,15 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 
 ### 2.4 深度与滑点风控缺失
 
-* 当前尚未实现 `DepthMonitor`。
-* 开仓前还未对盘口深度和预期冲击成本做独立校验。
+* 已解决。
+* 已新增 `SingleExchangeDepthMonitor`，在运行时读取现货与 U 本位合约的 `depth` 盘口，
+  并在行情缺失时按配置进行快速重试。
+* `SingleExchangeRiskController` 已增加基于逐档 VWAP 的深度与滑点风控：
+  开仓会按计划下单量逐档估算现货与合约侧的成交均价，并据此计算组合滑点率。
+* 开仓阶段采用 fail-closed 策略：若深度数据连续重试后仍不可用，或逐档 VWAP 估算出的组合滑点超过阈值，则直接拒绝开仓。
+* 平仓阶段采用分级校验：即使流动性评估失败或行情缺失，也只记录告警和风险日志，不阻塞平仓执行。
+* `SingleExchangeSpotFuturesArbitrageStrategy` 的净收益估算已改为优先使用本次实时逐档 VWAP 滑点估值，
+  不再依赖“行情缺失时回退固定滑点后继续开仓”的旧逻辑。
 
 ### 2.5 告警系统缺失
 
@@ -118,8 +126,8 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 ### 3.1 近期计划
 
 1. 将再平衡动作与风控快照联动落库。
-2. 增加深度检查与滑点保护。
-3. 接入钉钉、Slack 或邮件告警。
+2. 将流动性评估结果接入钉钉、Slack 或邮件告警。
+3. 接入异常回滚和订单执行失败的主动告警。
 
 ### 3.2 实盘前必做项
 
