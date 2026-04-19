@@ -1,0 +1,19 @@
+[Unit]
+Description=CoinStrategy Smart Wallet Backend
+After=network.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_GROUP__
+WorkingDirectory=__APP_HOME__
+Environment=SMART_WALLET_ENV_FILE=__ENV_FILE__
+Environment=SPRING_PROFILES_ACTIVE=prod
+ExecStart=__APP_HOME__/scripts/start-smart-wallet-backend.sh
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

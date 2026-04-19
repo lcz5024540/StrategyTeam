@@ -96,6 +96,12 @@ public class SmartWalletAccountingService {
     private final SmartWalletMarketInfoService marketInfoService;
 
     public void recordExecution(SmartWalletFollowTaskEntity task, SmartWalletExecutionResult result) {
+        marketInfoService.populate(task);
+        if (task == null || !StringUtils.hasText(task.getMarketId()) || !StringUtils.hasText(task.getOutcome())) {
+            throw new IllegalStateException("Follow task market info is missing before execution accounting. taskId="
+                    + (task == null ? null : task.getId())
+                    + ", marketInfoId=" + (task == null ? null : task.getMarketInfoId()));
+        }
         Date now = task.getExecutedAt() == null ? new Date() : task.getExecutedAt();
         BigDecimal price = safe(result.getPrice(), task.getTriggerPrice());
         BigDecimal notional = safe(result.getNotionalUsdc(), task.getRecommendedStakeUsdc());

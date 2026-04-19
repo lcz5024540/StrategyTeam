@@ -180,6 +180,7 @@ public class SmartWalletLiveValidationService {
     }
 
     private SmartWalletExecutionResult executeValidationTask(SmartWalletFollowTaskEntity task, String appliedPreset) {
+        marketInfoService.populate(task);
         SignalRiskDecision decision = followTaskService.evaluateTask(task.getId(), followTaskService.resolveSignalRiskPreset(appliedPreset));
         if (!decision.isAccepted()) {
             throw new IllegalStateException("Task is no longer executable for LIVE validation.");
@@ -196,8 +197,6 @@ public class SmartWalletLiveValidationService {
                 .recommendedStakeUsdc(resolveStake(task, decision))
                 .build();
         SmartWalletExecutionResult result = executionGateway.execute(signal, ExecutionMode.LIVE);
-        // Populate task with marketInfo to enable delegate getters for syntheticTask
-        marketInfoService.populate(task);
         SmartWalletFollowTaskEntity syntheticTask = new SmartWalletFollowTaskEntity()
                 .setId(task.getId())
                 .setWalletAddress(task.getWalletAddress())

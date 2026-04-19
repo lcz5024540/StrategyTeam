@@ -310,7 +310,7 @@ public class SmartWalletFollowTaskService {
     }
 
     public SmartWalletFollowTaskEntity getTask(Long taskId) {
-        return taskId == null ? null : followTaskMapper.selectById(taskId);
+        return taskId == null ? null : marketInfoService.populate(followTaskMapper.selectById(taskId));
     }
 
     public SmartWalletTradeEventEntity getSourceEvent(SmartWalletFollowTaskEntity task) {
@@ -741,6 +741,12 @@ public class SmartWalletFollowTaskService {
 
     private SmartWalletExecutionResult executeTask(SmartWalletFollowTaskEntity task) {
         try {
+            marketInfoService.populate(task);
+            if (task == null || !StringUtils.hasText(task.getMarketId()) || !StringUtils.hasText(task.getOutcome())) {
+                throw new IllegalStateException("Follow task market info is missing before execution. taskId="
+                        + (task == null ? null : task.getId())
+                        + ", marketInfoId=" + (task == null ? null : task.getMarketInfoId()));
+            }
             SignalRiskDecision decision = evaluateTask(task.getId());
             if (!decision.isAccepted()) {
                 task.setStatus("SKIPPED");
@@ -832,6 +838,7 @@ public class SmartWalletFollowTaskService {
     }
 
     private SmartWalletFollowTaskView toView(SmartWalletFollowTaskEntity task, SignalRiskDecision decision, String appliedPreset) {
+        marketInfoService.populate(task);
         ConsensusSignalView consensus = findConsensus(task);
         Long marketEndAt = resolveDisplayMarketEndAt(task);
         List<String> blockerCategories = classifyBlockerCategories(decision);

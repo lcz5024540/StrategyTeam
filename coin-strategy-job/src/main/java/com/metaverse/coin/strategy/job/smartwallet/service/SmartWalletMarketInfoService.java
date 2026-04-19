@@ -62,7 +62,12 @@ public class SmartWalletMarketInfoService {
     public SmartWalletMarketInfoEntity getOrCreate(String marketId, String outcome,
                                                     String question, String tokenId,
                                                     Integer indexSet, Long marketEndAt) {
-        SmartWalletMarketInfoEntity existing = getByMarketIdAndOutcome(marketId, outcome);
+        if (!StringUtils.hasText(marketId) || !StringUtils.hasText(outcome)) {
+            throw new IllegalArgumentException("marketId and outcome are required for smart wallet market info creation.");
+        }
+        String normalizedMarketId = marketId.trim();
+        String normalizedOutcome = outcome.trim();
+        SmartWalletMarketInfoEntity existing = getByMarketIdAndOutcome(normalizedMarketId, normalizedOutcome);
         if (existing != null) {
             // 若有新字段需要补充，顺便更新
             boolean updated = false;
@@ -89,9 +94,9 @@ public class SmartWalletMarketInfoService {
             return existing;
         }
         SmartWalletMarketInfoEntity newInfo = new SmartWalletMarketInfoEntity()
-                .setMarketId(marketId)
+                .setMarketId(normalizedMarketId)
                 .setQuestion(question)
-                .setOutcome(outcome)
+                .setOutcome(normalizedOutcome)
                 .setTokenId(tokenId)
                 .setIndexSet(indexSet)
                 .setMarketEndAt(marketEndAt);
