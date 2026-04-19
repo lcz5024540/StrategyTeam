@@ -6,6 +6,9 @@ server:
 spring:
   application:
     name: coin-strategy-web
+  profiles:
+    # 默认激活 local 环境；部署时通过 --spring.profiles.active=test/prod 覆盖
+    active: ${SPRING_PROFILES_ACTIVE:local}
 
-dashboard:
-  smart-wallet-base-url: http://127.0.0.1:8081
+# dashboard base-url 配置已移至各环境 profile 文件:
+# application-local.yml / application-test.yml / application-prod.yml

@@ -4,6 +4,11 @@ server:
   servlet:
     context-path: /strategy/api
 
+spring:
+  profiles:
+    # 默认激活 local 环境；部署时通过 --spring.profiles.active=test/prod 覆盖
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
 springdoc:
   # [FIXED-ONCE] Swagger UI entry path for local API inspection.
   swagger-ui:
@@ -13,15 +18,8 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 
-spring:
-  datasource:
-    # [FIXED-ONCE] Local MySQL connection. Usually fixed per environment.
-    url: "jdbc:mysql://127.0.0.1:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    # [FIXED-ONCE] DB username for the local environment.
-    username: "root"
-    # [FIXED-ONCE] DB password for the local environment.
-    password: "Lroot1234"
-    driver-class-name: "com.mysql.cj.jdbc.Driver"
+  # datasource 配置已移至各环境 profile 文件:
+  # application-local.yml / application-test.yml / application-prod.yml
 
 sunwk:
   api:

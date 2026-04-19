@@ -1,10 +1,18 @@
+# ============================================================
+# coin-strategy-job — PROD 生产环境
+# 启动方式: --spring.profiles.active=prod
+# 说明: 生产环境前后端部署在不同服务器上
+#       后端监听 0.0.0.0 以接收来自前端服务器 nginx 的反向代理请求
+#       数据库相关敏感信息通过环境变量注入
+# ============================================================
 server:
   port: 8081
-  address: 127.0.0.1
+  address: 0.0.0.0
 
 spring:
   datasource:
-    url: "jdbc:mysql://49.51.250.174:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    username: "root"
-    password: "Lroot1234"
+    # 通过环境变量注入，部署时在 env 文件中设置 DB_HOST / DB_USERNAME / DB_PASSWORD
+    url: "jdbc:mysql://${DB_HOST:127.0.0.1}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "${DB_USERNAME:root}"
+    password: "${DB_PASSWORD:Lroot1234}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
