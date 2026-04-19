@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS `hedge_order` (
 
     -- 状态: PENDING → FILLED | PARTIAL | FAILED | CANCELLED
     `status`                VARCHAR(32)     NOT NULL DEFAULT 'PENDING',
-    `mode`                  VARCHAR(8)      NOT NULL DEFAULT 'LIVE' COMMENT '执行模式: PAPER | LIVE'
+    `mode`                  VARCHAR(8)      NOT NULL DEFAULT 'LIVE' COMMENT '执行模式: PAPER | LIVE',
     `error_message`         TEXT            DEFAULT NULL,
     `poll_attempts`         INT             NOT NULL DEFAULT 0,
     `next_poll_at`          DATETIME        DEFAULT NULL,
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS `hedge_order` (
     `updated_at`            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (`id`),
-    INDEX `idx_mode_status` (`mode`, `status`)
+    INDEX `idx_mode_status` (`mode`, `status`),
     KEY `idx_hedge_position_id` (`hedge_position_id`),
     KEY `idx_external_order_id` (`external_order_id`),
     KEY `idx_status` (`status`)
