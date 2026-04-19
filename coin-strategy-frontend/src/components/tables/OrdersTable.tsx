@@ -1,10 +1,12 @@
 import { useDeferredValue, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery } from '@tanstack/react-query'
 import { walletApi } from '@/api'
 import { compactAddress, formatAmount, formatMoney, truncateText } from '@/utils/format'
-import { buildTableOptions, matchesTableKeyword, TABLE_FETCH_LIMIT, TABLE_PAGE_SIZE } from '@/utils/table'
+import { buildTableOptions, matchesTableKeyword, TABLE_PAGE_SIZE } from '@/utils/table'
 import { TableToolbar } from './TableToolbar'
 import { TablePagination } from './TablePagination'
+
+const ORDER_CURSOR_PAGE_SIZE = 50
 
 const EXIT_REASON_LABELS: Record<string, string> = {
   TAKE_PROFIT_AUTO_EXIT: '自动止盈',
@@ -29,6 +31,11 @@ interface OrdersTableProps {
   mode?: 'PAPER' | 'LIVE'
 }
 
+function parseNextCursor(nextCursor?: string | null): number | undefined {
+  const cursor = Number(nextCursor)
+  return Number.isFinite(cursor) && cursor > 0 ? cursor : undefined
+}
+
 export function OrdersTable({ mode }: OrdersTableProps) {
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
@@ -36,10 +43,20 @@ export function OrdersTable({ mode }: OrdersTableProps) {
   const [statusFilter, setStatusFilter] = useState('')
   const deferredKeyword = useDeferredValue(keyword.trim().toLowerCase())
 
-  const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['orders', mode],
-    queryFn: () => walletApi.getOrders(TABLE_FETCH_LIMIT, mode),
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['ordersPage', mode],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => walletApi.getOrdersPage(ORDER_CURSOR_PAGE_SIZE, pageParam, mode),
+    getNextPageParam: (lastPage) => parseNextCursor(lastPage.nextCursor),
   })
+
+  const orders = data?.pages.flatMap((ordersPage) => ordersPage.items) ?? []
 
   const filteredOrders = orders.filter((order) => {
     if (sideFilter && order.side !== sideFilter) {
@@ -60,17 +77,27 @@ export function OrdersTable({ mode }: OrdersTableProps) {
     )
   })
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / TABLE_PAGE_SIZE))
+  const loadedPages = Math.max(1, Math.ceil(filteredOrders.length / TABLE_PAGE_SIZE))
+  const totalPages = hasNextPage ? Math.max(loadedPages + 1, page) : loadedPages
   const visibleOrders = filteredOrders.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE)
   const hasActiveFilters = Boolean(keyword || sideFilter || statusFilter)
+  const requiredItems = page * TABLE_PAGE_SIZE
+  const isPageLoading = isFetchingNextPage && filteredOrders.length < (page - 1) * TABLE_PAGE_SIZE + 1
 
   useEffect(() => {
     setPage(1)
-  }, [deferredKeyword, sideFilter, statusFilter])
+  }, [deferredKeyword, sideFilter, statusFilter, mode])
 
   useEffect(() => {
     setPage((currentPage) => Math.min(currentPage, totalPages))
   }, [totalPages])
+
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage || filteredOrders.length >= requiredItems) {
+      return
+    }
+    void fetchNextPage()
+  }, [fetchNextPage, filteredOrders.length, hasNextPage, isFetchingNextPage, requiredItems])
 
   if (isLoading) {
     return <div className="loading">订单加载中...</div>
@@ -138,7 +165,9 @@ export function OrdersTable({ mode }: OrdersTableProps) {
           <tbody>
             {visibleOrders.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state">当前筛选条件下暂无订单记录</td>
+                <td colSpan={9} className="empty-state">
+                  {isPageLoading ? '订单加载中...' : '当前筛选条件下暂无订单记录'}
+                </td>
               </tr>
             ) : (
               visibleOrders.map((order) => (
@@ -187,6 +216,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
         pageSize={TABLE_PAGE_SIZE}
         totalItems={filteredOrders.length}
         onPageChange={setPage}
+        hasMore={Boolean(hasNextPage)}
       />
     </>
   )

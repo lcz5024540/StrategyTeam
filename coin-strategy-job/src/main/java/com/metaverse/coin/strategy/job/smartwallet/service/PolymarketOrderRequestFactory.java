@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 public class PolymarketOrderRequestFactory {
 
     private final PolymarketMarketMetadataService marketMetadataService;
+    private final SmartWalletMarketInfoService marketInfoService;
 
     public PreparedPolymarketOrder prepare(SmartWalletSignal signal,
                                            ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
@@ -57,6 +58,8 @@ public class PolymarketOrderRequestFactory {
         if (position == null) {
             throw new IllegalArgumentException("position must be provided for exit order preparation.");
         }
+        // Populate position with market info to enable delegate getters
+        marketInfoService.populate(position);
         if (!StringUtils.hasText(position.getMarketId())) {
             throw new IllegalStateException("Position is missing marketId.");
         }

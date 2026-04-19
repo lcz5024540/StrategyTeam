@@ -35,6 +35,7 @@ public class SmartWalletPositionSyncService {
     private final SmartWalletAccountingService accountingService;
     private final PolymarketClobExecutionService clobExecutionService;
     private final SmartWalletRecoveryService recoveryService;
+    private final SmartWalletMarketInfoService marketInfoService;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
     private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
@@ -218,7 +219,9 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        // Populate positions with market info to enable delegate getters
+        marketInfoService.populatePositions(openPositions);
 
         for (SmartWalletPositionEntity position : openPositions) {
             ExitDecision decision = buildExitDecision(position, threshold, mode);
@@ -268,7 +271,9 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        // Populate positions with market info to enable delegate getters
+        marketInfoService.populatePositions(openPositions);
         for (SmartWalletPositionEntity position : openPositions) {
             if (hasPendingLiveExitOrder(position.getId())) {
                 continue;

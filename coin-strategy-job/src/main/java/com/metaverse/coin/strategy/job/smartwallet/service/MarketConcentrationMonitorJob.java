@@ -39,6 +39,7 @@ public class MarketConcentrationMonitorJob {
     private final SmartWalletProperties properties;
     private final SmartWalletPositionMapper positionMapper;
     private final MarketConcentrationService concentrationService;
+    private final SmartWalletMarketInfoService marketInfoService;
 
     /**
      * 各市场首次观测的 CR_3 基线（key = conditionId:outcome）
@@ -70,6 +71,9 @@ public class MarketConcentrationMonitorJob {
         if (openPositions.isEmpty()) {
             return;
         }
+
+        // Populate all positions with market info to enable delegate getters
+        marketInfoService.populatePositions(openPositions);
 
         int alertCount = 0;
         for (SmartWalletPositionEntity position : openPositions) {

@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.job.hedge.service;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgeOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgePositionEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.job.hedge.config.HedgeProperties;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletOnChainClaimGateway;
@@ -106,8 +107,11 @@ public class HedgeClaimService {
         }
 
         // 构造最小化 SmartWalletPositionEntity 复用链上 Claim 网关（仅使用 marketId 和 quantity）
+        // marketId 现在通过 marketInfo 委托 getter 获取
+        SmartWalletMarketInfoEntity proxyMarketInfo = new SmartWalletMarketInfoEntity()
+                .setMarketId(position.getMarketId());
         SmartWalletPositionEntity proxyPosition = new SmartWalletPositionEntity()
-                .setMarketId(position.getMarketId())   // conditionId for redeemPositions
+                .setMarketInfo(proxyMarketInfo)
                 .setQuantity(claimableQty);
 
         SmartWalletOnChainClaimGateway.ClaimSubmission submission;

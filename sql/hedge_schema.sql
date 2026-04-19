@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS `hedge_position` (
 
     -- 状态流转: OPEN → SETTLING → SETTLED | CANCELLED
     `status`                VARCHAR(32)     NOT NULL DEFAULT 'OPEN',
+    `mode`                  VARCHAR(8)      NOT NULL DEFAULT 'LIVE' COMMENT '执行模式: PAPER 模拟仓 | LIVE 实盘仓',
     `final_outcome`         VARCHAR(8)      DEFAULT NULL COMMENT '结算结果: YES | NO',
+    `winning_side`          VARCHAR(8)      DEFAULT NULL COMMENT 'YES | NO，由 HedgeMarketResolver 在 markSettling 时写入',
+    `winning_token_id`      VARCHAR(80)     DEFAULT NULL COMMENT 'Polymarket 判定为 winner 的 ERC-1155 token id，审计用',
     `claimed_usdc`          DECIMAL(18,4)   DEFAULT NULL COMMENT '实际领取 USDC',
     `fee_usdc`              DECIMAL(18,4)   DEFAULT NULL COMMENT '手续费 USDC',
     `realized_pnl_usdc`     DECIMAL(18,4)   DEFAULT NULL COMMENT '实际 PnL = claimed - total_cost - fee',
@@ -48,7 +51,9 @@ CREATE TABLE IF NOT EXISTS `hedge_position` (
     `updated_at`            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_market_id` (`market_id`),          -- 同一市场只建一个对冲仓位
+    UNIQUE KEY `uk_market_id_mode` (`market_id`, `mode`),
+    INDEX `idx_mode_status` (`mode`, `status`),
+    INDEX `idx_winning_side` (`winning_side`),
     KEY `idx_status` (`status`),
     KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对冲持仓主表';
@@ -74,6 +79,7 @@ CREATE TABLE IF NOT EXISTS `hedge_order` (
 
     -- 状态: PENDING → FILLED | PARTIAL | FAILED | CANCELLED
     `status`                VARCHAR(32)     NOT NULL DEFAULT 'PENDING',
+    `mode`                  VARCHAR(8)      NOT NULL DEFAULT 'LIVE' COMMENT '执行模式: PAPER | LIVE',
     `error_message`         TEXT            DEFAULT NULL,
     `poll_attempts`         INT             NOT NULL DEFAULT 0,
     `next_poll_at`          DATETIME        DEFAULT NULL,
@@ -84,6 +90,7 @@ CREATE TABLE IF NOT EXISTS `hedge_order` (
     `updated_at`            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (`id`),
+    INDEX `idx_mode_status` (`mode`, `status`),
     KEY `idx_hedge_position_id` (`hedge_position_id`),
     KEY `idx_external_order_id` (`external_order_id`),
     KEY `idx_status` (`status`)
@@ -118,8 +125,9 @@ CREATE TABLE IF NOT EXISTS `hedge_arbitrage_log` (
     `hedge_position_id`     BIGINT          DEFAULT NULL COMMENT '执行时关联的持仓 ID',
 
     `scanned_at`            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
+    `mode`                  VARCHAR(8)      NOT NULL DEFAULT 'LIVE'COMMENT '扫描模式: PAPER | LIVE',
     PRIMARY KEY (`id`),
+    INDEX `idx_mode_scanned_at` (`mode`, `scanned_at`),
     KEY `idx_market_id` (`market_id`),
     KEY `idx_action` (`action`),
     KEY `idx_scanned_at` (`scanned_at`)

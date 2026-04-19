@@ -17,6 +17,7 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
     private final ExecutionWalletContextLoader walletContextLoader;
     private final PolymarketOrderRequestFactory orderRequestFactory;
     private final PolymarketClobClientRouter clobClientRouter;
+    private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletProperties properties;
 
     @Override
@@ -40,6 +41,7 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
             String normalizedStatus = normalizeLiveStatus(rawStatus, orderId, success);
             java.math.BigDecimal liveNotional = order.getStakeUsdc();
             java.math.BigDecimal liveFee = estimateFee(liveNotional, properties.getExecutionWallet().getEstimatedFeeRate());
+            Integer liveIndexSet = resolveLiveIndexSet(order.getMarketId(), order.getTokenId(), order.getQuestion(), order.getOutcome());
             return SmartWalletExecutionResult.builder()
                     .signalId(signal.getSignalId())
                     .mode(mode)
@@ -49,6 +51,7 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     .executionAddress(wallet.getAddress())
                     .marketId(order.getMarketId())
                     .tokenId(order.getTokenId())
+                    .indexSet(liveIndexSet)
                     .outcome(order.getOutcome())
                     .side(order.getSide())
                     .orderType(wallet.getOrderType())
@@ -62,14 +65,20 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
         java.math.BigDecimal paperNotional = signal.getRecommendedStakeUsdc();
         java.math.BigDecimal paperPrice    = signal.getMarket() == null ? null : signal.getMarket().getPrice();
         java.math.BigDecimal paperFee = estimateFee(paperNotional, properties.getExecutionWallet().getEstimatedFeeRate());
+        String marketId = signal.getMarket() == null ? null : signal.getMarket().getMarketId();
+        String question = signal.getMarket() == null ? null : signal.getMarket().getQuestion();
+        String outcome = signal.getFollowOutcome();
+        PaperTokenInfo paperTokenInfo = resolvePaperTokenInfo(marketId, question, outcome);
         return SmartWalletExecutionResult.builder()
                 .signalId(signal.getSignalId())
                 .mode(ExecutionMode.PAPER)
                 .success(true)
                 .message("Paper order created from smart-wallet signal.")
                 .externalOrderId("paper-" + signal.getSignalId())
-                .marketId(signal.getMarket() == null ? null : signal.getMarket().getMarketId())
-                .outcome(signal.getFollowOutcome())
+                .marketId(marketId)
+                .tokenId(paperTokenInfo.tokenId())
+                .indexSet(paperTokenInfo.indexSet())
+                .outcome(outcome)
                 .side("BUY")
                 .orderType("GTC")
                 .status("FILLED")
@@ -126,5 +135,55 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
             return "LIVE";
         }
         return "FAILED";
+    }
+
+    /** Best-effort resolve indexSet for a live order from cached/fetched metadata. */
+    private Integer resolveLiveIndexSet(String marketId, String tokenId, String questionHint, String outcome) {
+        if (!org.springframework.util.StringUtils.hasText(marketId)
+                || !org.springframework.util.StringUtils.hasText(tokenId)) {
+            return null;
+        }
+        try {
+            PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                    marketId, false, questionHint,
+                    outcome == null ? java.util.List.of() : java.util.List.of(outcome));
+            return metadata == null ? null : metadata.resolveIndexSet(tokenId);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolved paper token info: tokenId + indexSet.
+     */
+    private record PaperTokenInfo(String tokenId, Integer indexSet) {}
+
+    private PaperTokenInfo resolvePaperTokenInfo(String marketId, String questionHint, String outcome) {
+        if (!org.springframework.util.StringUtils.hasText(marketId)
+                || !org.springframework.util.StringUtils.hasText(outcome)) {
+            return new PaperTokenInfo(null, null);
+        }
+        try {
+            PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                    marketId,
+                    false,
+                    questionHint,
+                    java.util.List.of(outcome)
+            );
+            if (metadata == null || metadata.getOutcomeTokenIds() == null || metadata.getOutcomeTokenIds().isEmpty()) {
+                return new PaperTokenInfo(null, null);
+            }
+            String tokenId = metadata.getOutcomeTokenIds().entrySet().stream()
+                    .filter(entry -> org.springframework.util.StringUtils.hasText(entry.getKey())
+                            && org.springframework.util.StringUtils.hasText(entry.getValue()))
+                    .filter(entry -> outcome.trim().equalsIgnoreCase(entry.getKey().trim()))
+                    .map(java.util.Map.Entry::getValue)
+                    .findFirst()
+                    .orElse(null);
+            Integer indexSet = tokenId != null ? metadata.resolveIndexSet(tokenId) : null;
+            return new PaperTokenInfo(tokenId, indexSet);
+        } catch (RuntimeException ignored) {
+            return new PaperTokenInfo(null, null);
+        }
     }
 }

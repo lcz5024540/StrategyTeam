@@ -36,6 +36,7 @@ public class SmartWalletLiveValidationService {
     private final SmartWalletOrderMapper orderMapper;
     private final SmartWalletAccountingService accountingService;
     private final PolymarketExecutionGateway executionGateway;
+    private final SmartWalletMarketInfoService marketInfoService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Date lastRunAt;
@@ -179,6 +180,7 @@ public class SmartWalletLiveValidationService {
     }
 
     private SmartWalletExecutionResult executeValidationTask(SmartWalletFollowTaskEntity task, String appliedPreset) {
+        marketInfoService.populate(task);
         SignalRiskDecision decision = followTaskService.evaluateTask(task.getId(), followTaskService.resolveSignalRiskPreset(appliedPreset));
         if (!decision.isAccepted()) {
             throw new IllegalStateException("Task is no longer executable for LIVE validation.");
@@ -199,9 +201,8 @@ public class SmartWalletLiveValidationService {
                 .setId(task.getId())
                 .setWalletAddress(task.getWalletAddress())
                 .setSourceEventId(task.getSourceEventId())
-                .setMarketId(task.getMarketId())
-                .setQuestion(task.getQuestion())
-                .setOutcome(task.getOutcome())
+                .setMarketInfoId(task.getMarketInfoId())
+                .setMarketInfo(task.getMarketInfo())
                 .setSide(task.getSide())
                 .setTriggerPrice(task.getTriggerPrice())
                 .setTriggerSizeUsdc(task.getTriggerSizeUsdc())

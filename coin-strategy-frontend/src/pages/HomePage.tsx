@@ -23,7 +23,7 @@ export function HomePage() {
   // 获取策略详情
   const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ['strategyDetail', strategy, mode],
-    queryFn: () => strategyApi.getDetail(strategy, mode),
+    queryFn: () => strategyApi.getSummary(strategy, mode),
   })
 
   // 获取持仓

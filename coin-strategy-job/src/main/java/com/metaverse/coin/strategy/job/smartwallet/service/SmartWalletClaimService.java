@@ -50,6 +50,7 @@ public class SmartWalletClaimService {
     private final SmartWalletClaimRetryMapper claimRetryMapper;
     private final SmartWalletAccountingService accountingService;
     private final SmartWalletOnChainClaimGateway onChainClaimGateway;
+    private final SmartWalletMarketInfoService marketInfoService;
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -301,6 +302,8 @@ public class SmartWalletClaimService {
     private SmartWalletClaimSummary processPositions(Long runId, List<SmartWalletPositionEntity> positions) {
         SmartWalletProperties.Claim config = properties.getClaim();
         Date now = new Date();
+        // Populate all positions with market info to enable delegate getters
+        marketInfoService.populatePositions(positions);
         Map<Long, SmartWalletClaimRetryEntity> retryByPosition = loadRetryMap(positions);
         int attempted = 0;
         int claimed = 0;
@@ -483,6 +486,8 @@ public class SmartWalletClaimService {
                                            String message,
                                            String txHash) {
         Date now = new Date();
+        // Populate position with market info to access delegate getters
+        marketInfoService.populate(position);
         SmartWalletClaimRetryEntity retry = claimRetryMapper.selectOne(new LambdaQueryWrapper<SmartWalletClaimRetryEntity>()
                 .eq(SmartWalletClaimRetryEntity::getPositionId, position.getId())
                 .last("limit 1"));
@@ -515,6 +520,8 @@ public class SmartWalletClaimService {
                                     boolean retryable,
                                     String txHash) {
         Date now = new Date();
+        // Populate position with market info to access delegate getters
+        marketInfoService.populate(position);
         SmartWalletProperties.Claim config = properties.getClaim();
         SmartWalletClaimRetryEntity retry = claimRetryMapper.selectOne(new LambdaQueryWrapper<SmartWalletClaimRetryEntity>()
                 .eq(SmartWalletClaimRetryEntity::getPositionId, position.getId())

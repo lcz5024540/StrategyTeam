@@ -34,6 +34,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportu
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
+import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
@@ -490,11 +491,23 @@ public class SmartWalletController {
         return executionApplicationService.executionWalletStatus();
     }
 
-    @Operation(summary = "订单列表", description = "查看 PAPER 或 LIVE 的订单记录。")
+    /** @deprecated 建议迁移到 /orders/page 游标分页接口 */
+    @Deprecated
+    @Operation(summary = "订单列表（旧）", description = "查看 PAPER 或 LIVE 的订单记录。已改为内部游标分页实现，但返回格式不变，兼容现有前端。")
     @GetMapping("/orders")
     public List<SmartWalletOrderView> orders(@RequestParam(defaultValue = "100") Integer limit,
                                              @RequestParam(required = false) String mode) {
         return accountingService.listOrders(limit, mode);
+    }
+
+    @Operation(summary = "订单列表（游标分页）",
+            description = "基于 lastId 游标分页查询订单，mode 过滤已下推到 SQL 层。首页不传 lastId，后续传上一页返回的 nextCursor。")
+    @GetMapping("/orders/page")
+    public CursorPageView<SmartWalletOrderView> ordersCursor(
+            @RequestParam(defaultValue = "50") Integer limit,
+            @RequestParam(required = false) Long lastId,
+            @RequestParam(required = false) String mode) {
+        return accountingService.listOrdersCursor(limit, lastId, mode);
     }
 
     @Operation(summary = "成交列表", description = "查看 PAPER 或 LIVE 的成交明细。")
@@ -578,6 +591,13 @@ public class SmartWalletController {
     public Map<String, Object> backfillMarketEndAt(@RequestParam(defaultValue = "500") Integer limit,
                                                    @RequestParam(defaultValue = "false") boolean refreshCache) {
         return accountingService.backfillMissingMarketEndAt(limit, refreshCache);
+    }
+
+    @Operation(summary = "回填 token 与仓位关联", description = "批量回填缺失的 tokenId，以及能从现有成交/持仓确定的 order.positionId / fill.positionId。")
+    @PostMapping("/accounting/backfill-token-links")
+    public Map<String, Object> backfillTokenLinks(@RequestParam(defaultValue = "500") Integer limit,
+                                                  @RequestParam(defaultValue = "false") boolean refreshCache) {
+        return accountingService.backfillMissingTokenAndPositionLinks(limit, refreshCache);
     }
 
     @Operation(summary = "修复提前结算", description = "扫描并修复被错误提前推进为 RESOLVED 的 PAPER 持仓。")

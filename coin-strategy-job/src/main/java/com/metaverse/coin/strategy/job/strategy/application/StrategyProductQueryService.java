@@ -19,6 +19,7 @@ import com.metaverse.coin.strategy.job.strategy.model.StrategyConflictRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyDashboardOverviewView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyDetailView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyInsightView;
+import com.metaverse.coin.strategy.job.strategy.model.StrategySummaryDetailView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyMetricsView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyOrderRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyPositionRowView;
@@ -72,8 +73,8 @@ public class StrategyProductQueryService {
     }
 
     public StrategyDashboardOverviewView overview(String mode) {
-        StrategyDetailView polymarket = detail(POLYMARKET_CODE, mode);
-        StrategyDetailView hedge = detail(HEDGE_CODE, mode);
+        StrategySummaryDetailView polymarket = summaryDetail(POLYMARKET_CODE, mode);
+        StrategySummaryDetailView hedge = summaryDetail(HEDGE_CODE, mode);
         List<StrategySummaryView> strategies = new ArrayList<>();
         strategies.add(polymarket.summary());
         strategies.add(hedge.summary());
@@ -82,10 +83,93 @@ public class StrategyProductQueryService {
         return new StrategyDashboardOverviewView(BJT_FORMATTER.format(Instant.now()), POLYMARKET_CODE, strategies);
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 拆分子查询方法 —— 供拆分后的子接口独立调用
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 策略概要（summary + metrics + insights），不含列表数据，首屏快速加载。
+     */
+    public StrategySummaryDetailView summaryDetail(String strategyCode, String mode) {
+        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+            return buildPolymarketSummaryDetail(mode);
+        }
+        if (HEDGE_CODE.equalsIgnoreCase(strategyCode)) {
+            return buildHedgeSummaryDetail(mode);
+        }
+        StrategySummaryView summary = placeholder(strategyCode, strategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
+        return new StrategySummaryDetailView(
+                summary,
+                emptyMetrics(),
+                List.of(new StrategyInsightView("INFO", "策略待接入", "当前页面结构已预留，后续可继续接入真实策略数据。"))
+        );
+    }
+
+    /**
+     * 策略持仓列表（当前活跃持仓）。
+     */
+    public List<StrategyPositionRowView> positions(String strategyCode, String mode) {
+        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+            return accountingService.listActivePositions(mode).stream().map(this::toPosition).toList();
+        }
+        if (HEDGE_CODE.equalsIgnoreCase(strategyCode)) {
+            return hedgePositionMapper.selectList(new LambdaQueryWrapper<HedgePositionEntity>()
+                    .eq(HedgePositionEntity::getStatus, "OPEN")
+                    .orderByDesc(HedgePositionEntity::getOpenedAt)
+                    .orderByDesc(HedgePositionEntity::getId))
+                    .stream().map(this::toHedgePosition).toList();
+        }
+        return List.of();
+    }
+
+    /**
+     * 待结算持仓列表。
+     */
+    public List<StrategyPositionRowView> nextSettlements(String strategyCode, int limit, String mode) {
+        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+            return accountingService.listNextSettlements(limit, mode).stream().map(this::toPosition).toList();
+        }
+        return List.of();
+    }
+
+    /**
+     * 最近订单列表。
+     */
+    public List<StrategyOrderRowView> recentOrders(String strategyCode, int limit, String mode) {
+        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+            return accountingService.listOrders(limit, mode).stream().map(this::toOrder).toList();
+        }
+        return List.of();
+    }
+
+    /**
+     * 收益时间线。
+     */
+    public List<StrategyTimelinePointView> timeline(String strategyCode, int days, String mode) {
+        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+            return accountingService.pnlTimeline(days, mode).stream().map(this::toTimeline).toList();
+        }
+        return List.of();
+    }
+
+    /**
+     * 冲突市场列表。
+     */
+    public List<StrategyConflictRowView> conflicts(String strategyCode, int limit, String mode) {
+        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+            return accountingService.conflictingMarkets(limit, false, mode).stream().map(this::toConflict).toList();
+        }
+        return List.of();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+
     public StrategyDetailView detail(String strategyCode) {
         return detail(strategyCode, null);
     }
 
+    /** @deprecated 使用拆分后的子接口替代全量查询 */
+    @Deprecated
     public StrategyDetailView detail(String strategyCode, String mode) {
         if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             return buildPolymarketDetail(mode);
@@ -116,8 +200,33 @@ public class StrategyProductQueryService {
         List<SmartWalletOrderView> orders = accountingService.listOrders(30, mode);
         List<SmartWalletPnlTimelinePoint> timeline = accountingService.pnlTimeline(30, mode);
         List<SmartWalletConflictMarketView> conflicts = accountingService.conflictingMarkets(10, false, mode);
+        StrategySummaryView summary = buildPolymarketSummary(mode, performance);
+        StrategyMetricsView metrics = buildPolymarketMetrics(performance, pnlSummary, capacity);
 
-        StrategySummaryView summary = new StrategySummaryView(
+        return new StrategyDetailView(
+                summary,
+                metrics,
+                buildInsights(metrics, nextSettlements, mode),
+                positions.stream().map(this::toPosition).toList(),
+                nextSettlements.stream().map(this::toPosition).toList(),
+                orders.stream().map(this::toOrder).toList(),
+                timeline.stream().map(this::toTimeline).toList(),
+                conflicts.stream().map(this::toConflict).toList()
+        );
+    }
+
+    private StrategySummaryDetailView buildPolymarketSummaryDetail(String mode) {
+        SmartWalletPerformanceView performance = accountingService.performance(mode);
+        SmartWalletPnlSummaryView pnlSummary = accountingService.summary(mode);
+        SmartWalletCapacitySummaryView capacity = accountingService.capacitySummary(mode);
+        List<SmartWalletPositionView> nextSettlements = accountingService.listNextSettlements(1, mode);
+        StrategySummaryView summary = buildPolymarketSummary(mode, performance);
+        StrategyMetricsView metrics = buildPolymarketMetrics(performance, pnlSummary, capacity);
+        return new StrategySummaryDetailView(summary, metrics, buildInsights(metrics, nextSettlements, mode));
+    }
+
+    private StrategySummaryView buildPolymarketSummary(String mode, SmartWalletPerformanceView performance) {
+        return new StrategySummaryView(
                 POLYMARKET_CODE, "Polymarket 跟单策略", "Polymarket", "ACTIVE",
                 buildDescription(mode),
                 performance.getOpenPositions(), safe(performance.getCompositePnlUsdc()), safe(performance.getNetPnlUsdc()),
@@ -125,8 +234,12 @@ public class StrategyProductQueryService {
                 safe(performance.getUnrealizedPnlUsdc()), safe(performance.getPendingSettlementPnlUsdc()),
                 safe(performance.getWinRate()), performance.getTotalOrders()
         );
+    }
 
-        StrategyMetricsView metrics = new StrategyMetricsView(
+    private StrategyMetricsView buildPolymarketMetrics(SmartWalletPerformanceView performance,
+                                                       SmartWalletPnlSummaryView pnlSummary,
+                                                       SmartWalletCapacitySummaryView capacity) {
+        return new StrategyMetricsView(
                 performance.getTotalOrders(), performance.getFilledOrders(), performance.getOpenPositions(),
                 performance.getClosedPositions(), performance.getWinningPositions(), performance.getLosingPositions(),
                 safe(performance.getWinRate()), safe(pnlSummary.getTradedVolumeUsdc()), safe(pnlSummary.getFeeUsdc()),
@@ -140,17 +253,6 @@ public class StrategyProductQueryService {
                 performance.getEarlyExitOrderCount(), safe(performance.getEarlyExitRealizedPnlUsdc()),
                 performance.getTakeProfitOrderCount(), safe(performance.getTakeProfitRealizedPnlUsdc()),
                 performance.getStopLossOrderCount(), safe(performance.getStopLossRealizedPnlUsdc())
-        );
-
-        return new StrategyDetailView(
-                summary,
-                metrics,
-                buildInsights(metrics, nextSettlements, mode),
-                positions.stream().map(this::toPosition).toList(),
-                nextSettlements.stream().map(this::toPosition).toList(),
-                orders.stream().map(this::toOrder).toList(),
-                timeline.stream().map(this::toTimeline).toList(),
-                conflicts.stream().map(this::toConflict).toList()
         );
     }
 
@@ -271,6 +373,128 @@ public class StrategyProductQueryService {
                 recentPositions.stream().map(position -> toHedgeOrder(position, orderMap.get(position.getId()))).toList(),
                 List.of(),
                 List.of()
+        );
+    }
+
+    private StrategySummaryDetailView buildHedgeSummaryDetail(String mode) {
+        List<HedgePositionEntity> allPositions = hedgePositionMapper.selectList(new LambdaQueryWrapper<HedgePositionEntity>()
+                .orderByDesc(HedgePositionEntity::getOpenedAt)
+                .orderByDesc(HedgePositionEntity::getId));
+        List<HedgePositionEntity> openPositions = allPositions.stream()
+                .filter(position -> "OPEN".equalsIgnoreCase(position.getStatus()))
+                .toList();
+        List<HedgePositionEntity> unresolvedPositions = allPositions.stream()
+                .filter(this::isHedgeUnresolved)
+                .toList();
+        List<HedgePositionEntity> settledPositions = allPositions.stream()
+                .filter(position -> "SETTLED".equalsIgnoreCase(position.getStatus()))
+                .toList();
+        List<HedgePositionEntity> settlementCandidates = allPositions.stream()
+                .filter(this::isHedgeSettlementCandidate)
+                .sorted(Comparator
+                        .comparing((HedgePositionEntity position) -> position.getMarketEndAt() == null ? Long.MAX_VALUE : position.getMarketEndAt())
+                        .thenComparing(position -> position.getOpenedAt() == null ? Long.MAX_VALUE : position.getOpenedAt().getTime()))
+                .limit(8)
+                .toList();
+
+        BigDecimal realizedPnl = sum(settledPositions, HedgePositionEntity::getRealizedPnlUsdc);
+        BigDecimal pendingSettlementPnl = sum(unresolvedPositions, HedgePositionEntity::getExpectedProfitUsdc);
+        BigDecimal compositePnl = realizedPnl.add(pendingSettlementPnl);
+        BigDecimal tradedVolume = sum(allPositions, HedgePositionEntity::getTotalCostUsdc);
+        BigDecimal feeUsdc = sum(settledPositions, HedgePositionEntity::getFeeUsdc);
+        BigDecimal lockedClaimProceeds = settlementCandidates.stream()
+                .map(this::resolveHedgeClaimableProceeds)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        int closedPositions = settledPositions.size();
+        int winningPositions = (int) settledPositions.stream()
+                .filter(position -> safe(position.getRealizedPnlUsdc()).compareTo(BigDecimal.ZERO) > 0)
+                .count();
+        int losingPositions = (int) settledPositions.stream()
+                .filter(position -> safe(position.getRealizedPnlUsdc()).compareTo(BigDecimal.ZERO) < 0)
+                .count();
+        int cancelledPositions = (int) allPositions.stream()
+                .filter(position -> "CANCELLED".equalsIgnoreCase(position.getStatus()))
+                .count();
+        BigDecimal winRate = closedPositions == 0
+                ? BigDecimal.ZERO
+                : BigDecimal.valueOf(winningPositions)
+                .divide(BigDecimal.valueOf(closedPositions), 4, RoundingMode.HALF_UP);
+
+        GlobalRiskGuard.GlobalExposureSummary exposure = globalRiskGuard.getSummary();
+        BigDecimal hedgeRemainingBudget = positiveOrZero(safe(hedgeProperties.getMaxTotalExposureUsdc()).subtract(safe(exposure.hedgeExposureUsdc())));
+        BigDecimal globalRemainingBudget = safe(hedgeProperties.getGlobalMaxTotalExposureUsdc()).compareTo(BigDecimal.ZERO) > 0
+                ? positiveOrZero(safe(hedgeProperties.getGlobalMaxTotalExposureUsdc()).subtract(safe(exposure.totalExposureUsdc())))
+                : hedgeRemainingBudget;
+        BigDecimal availableCapital = safe(hedgeProperties.getGlobalMaxTotalExposureUsdc()).compareTo(BigDecimal.ZERO) > 0
+                ? hedgeRemainingBudget.min(globalRemainingBudget)
+                : hedgeRemainingBudget;
+        int remainingPositionSlots = Math.max(0, hedgeProperties.getMaxOpenPositions() - openPositions.size());
+        String status = hedgeProperties.isEnabled() ? "ACTIVE" : "PAUSED";
+
+        StrategySummaryView summary = new StrategySummaryView(
+                HEDGE_CODE,
+                "Polymarket 对冲策略",
+                "Polymarket",
+                status,
+                buildHedgeDescription(mode),
+                openPositions.size(),
+                compositePnl,
+                realizedPnl,
+                realizedPnl,
+                pendingSettlementPnl,
+                pendingSettlementPnl,
+                winRate,
+                allPositions.size()
+        );
+
+        StrategyMetricsView metrics = new StrategyMetricsView(
+                allPositions.size(),
+                Math.max(allPositions.size() - cancelledPositions, 0),
+                openPositions.size(),
+                closedPositions,
+                winningPositions,
+                losingPositions,
+                winRate,
+                tradedVolume,
+                feeUsdc,
+                realizedPnl,
+                pendingSettlementPnl,
+                pendingSettlementPnl,
+                compositePnl,
+                realizedPnl,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                0,
+                0,
+                BigDecimal.ZERO,
+                remainingPositionSlots,
+                availableCapital,
+                availableCapital,
+                lockedClaimProceeds,
+                0,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO
+        );
+        return new StrategySummaryDetailView(
+                summary,
+                metrics,
+                buildHedgeInsights(metrics, settlementCandidates, unresolvedPositions, mode)
+        );
+    }
+
+    private StrategyMetricsView emptyMetrics() {
+        return new StrategyMetricsView(
+                0, 0, 0, 0, 0, 0,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO,
+                0, 0, BigDecimal.ZERO,
+                0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO
         );
     }
 

@@ -226,6 +226,7 @@ public class PolymarketClobExecutionService {
                 .executionAddress(wallet.getAddress())
                 .marketId(order.getMarketId())
                 .tokenId(order.getTokenId())
+                .indexSet(position.getIndexSet())
                 .outcome(order.getOutcome())
                 .side(order.getSide())
                 .orderType("EXIT")

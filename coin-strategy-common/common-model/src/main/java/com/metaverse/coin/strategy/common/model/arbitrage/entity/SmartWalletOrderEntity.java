@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.common.model.arbitrage.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -19,15 +20,12 @@ public class SmartWalletOrderEntity {
 
     private Long followTaskId;
     private Long positionId;
+    /** 关联公共市场信息表 smart_wallet_market_info.id */
+    private Long marketInfoId;
     private String walletAddress;
     private String executionMode;
     private String executionAddress;
     private String externalOrderId;
-    private String marketId;
-    private String tokenId;
-    private String question;
-    private String outcome;
-    private Long marketEndAt;
     private String side;
     private String orderType;
     private String status;
@@ -44,4 +42,16 @@ public class SmartWalletOrderEntity {
     private Integer pollAttempts;
     private Date createdAt;
     private Date updatedAt;
+
+    // ── 运行时关联对象，不映射数据库列 ──
+    @TableField(exist = false)
+    private SmartWalletMarketInfoEntity marketInfo;
+
+    // ── 便捷代理方法：业务代码通过这些方法读取市场信息，无需手动 join ──
+    public String getMarketId()    { return marketInfo == null ? null : marketInfo.getMarketId(); }
+    public String getQuestion()    { return marketInfo == null ? null : marketInfo.getQuestion(); }
+    public String getOutcome()     { return marketInfo == null ? null : marketInfo.getOutcome(); }
+    public String getTokenId()     { return marketInfo == null ? null : marketInfo.getTokenId(); }
+    public Integer getIndexSet()   { return marketInfo == null ? null : marketInfo.getIndexSet(); }
+    public Long getMarketEndAt()   { return marketInfo == null ? null : marketInfo.getMarketEndAt(); }
 }

@@ -37,6 +37,7 @@ public class SmartWalletSignalRiskService {
     private final MarketConcentrationService concentrationService;
     private final SmartWalletLeaderboardStateService leaderboardStateService;
     private final SmartWalletEntryStrategyRouter entryStrategyRouter;
+    private final SmartWalletMarketInfoService marketInfoService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -477,20 +478,43 @@ public class SmartWalletSignalRiskService {
         if (marketId == null || outcome == null) {
             return false;
         }
-        Long count = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .eq(SmartWalletPositionEntity::getMarketId, marketId)
-                .eq(SmartWalletPositionEntity::getOutcome, outcome)
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
-        return count != null && count > 0;
+        // After migration, marketId and outcome are in smart_wallet_market_info table
+        // Query via marketInfoId FK instead of direct columns
+        List<Long> marketInfoIds = marketInfoService.findIdsByMarketId(marketId);
+        if (marketInfoIds.isEmpty()) {
+            return false;
+        }
+        for (Long marketInfoId : marketInfoIds) {
+            Long count = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                    .eq(SmartWalletPositionEntity::getMarketInfoId, marketInfoId)
+                    .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+            if (count != null && count > 0) {
+                // Found a matching position; now verify outcome
+                List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .eq(SmartWalletPositionEntity::getMarketInfoId, marketInfoId)
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+                for (SmartWalletPositionEntity pos : positions) {
+                    if (outcome.equalsIgnoreCase(pos.getOutcome())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private boolean hasPendingFollowTask(String marketId, String outcome, Long currentFollowTaskId) {
         if (marketId == null || outcome == null) {
             return false;
         }
+        // After migration, marketId and outcome are in smart_wallet_market_info table
+        // Query via marketInfoId FK instead of direct columns
+        Long marketInfoId = marketInfoService.findIdByMarketIdAndOutcome(marketId, outcome);
+        if (marketInfoId == null) {
+            return false;
+        }
         LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .eq(SmartWalletFollowTaskEntity::getMarketId, marketId)
-                .eq(SmartWalletFollowTaskEntity::getOutcome, outcome)
+                .eq(SmartWalletFollowTaskEntity::getMarketInfoId, marketInfoId)
                 .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
         if (currentFollowTaskId != null) {
             query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
@@ -503,26 +527,50 @@ public class SmartWalletSignalRiskService {
         if (marketId == null || outcome == null) {
             return false;
         }
-        Long count = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .eq(SmartWalletPositionEntity::getMarketId, marketId)
-                .ne(SmartWalletPositionEntity::getOutcome, outcome)
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
-        return count != null && count > 0;
+        // After migration, marketId and outcome are in smart_wallet_market_info table
+        // Query via marketInfoId FK instead of direct columns
+        List<Long> marketInfoIds = marketInfoService.findIdsByMarketId(marketId);
+        if (marketInfoIds.isEmpty()) {
+            return false;
+        }
+        for (Long marketInfoId : marketInfoIds) {
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                    .eq(SmartWalletPositionEntity::getMarketInfoId, marketInfoId)
+                    .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+            for (SmartWalletPositionEntity pos : positions) {
+                if (!outcome.equalsIgnoreCase(pos.getOutcome())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean hasPendingFollowTaskOnSameMarketDifferentOutcome(String marketId, String outcome, Long currentFollowTaskId) {
         if (marketId == null || outcome == null) {
             return false;
         }
-        LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .eq(SmartWalletFollowTaskEntity::getMarketId, marketId)
-                .ne(SmartWalletFollowTaskEntity::getOutcome, outcome)
-                .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
-        if (currentFollowTaskId != null) {
-            query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
+        // After migration, marketId and outcome are in smart_wallet_market_info table
+        // Query via marketInfoId FK instead of direct columns
+        List<Long> marketInfoIds = marketInfoService.findIdsByMarketId(marketId);
+        if (marketInfoIds.isEmpty()) {
+            return false;
         }
-        Long count = followTaskMapper.selectCount(query);
-        return count != null && count > 0;
+        for (Long marketInfoId : marketInfoIds) {
+            LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                    .eq(SmartWalletFollowTaskEntity::getMarketInfoId, marketInfoId)
+                    .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
+            if (currentFollowTaskId != null) {
+                query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
+            }
+            List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(query);
+            for (SmartWalletFollowTaskEntity task : tasks) {
+                if (!outcome.equalsIgnoreCase(task.getOutcome())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private int defaultInt(Integer value, int fallback) {

@@ -6,10 +6,18 @@ interface TablePaginationProps {
   pageSize: number
   totalItems: number
   onPageChange: (page: number) => void
+  hasMore?: boolean
 }
 
-export function TablePagination({ page, pageSize, totalItems, onPageChange }: TablePaginationProps) {
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+export function TablePagination({
+  page,
+  pageSize,
+  totalItems,
+  onPageChange,
+  hasMore = false,
+}: TablePaginationProps) {
+  const loadedPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const totalPages = hasMore ? Math.max(loadedPages + 1, page) : loadedPages
   const [jumpPage, setJumpPage] = useState(String(page))
 
   useEffect(() => {
@@ -28,7 +36,9 @@ export function TablePagination({ page, pageSize, totalItems, onPageChange }: Ta
   return (
     <div className="table-pagination">
       <div className="table-pagination-summary">
-        第 {page} / {totalPages} 页，每页 {pageSize} 条，共 {totalItems} 条
+        {hasMore
+          ? `第 ${page} 页，每页 ${pageSize} 条，已加载 ${totalItems} 条，可继续翻页`
+          : `第 ${page} / ${totalPages} 页，每页 ${pageSize} 条，共 ${totalItems} 条`}
       </div>
       <div className="table-pagination-actions">
         <button
@@ -42,7 +52,7 @@ export function TablePagination({ page, pageSize, totalItems, onPageChange }: Ta
         <button
           type="button"
           className="btn btn-secondary"
-          disabled={page >= totalPages}
+          disabled={!hasMore && page >= totalPages}
           onClick={() => goToPage(page + 1)}
         >
           下一页

@@ -100,6 +100,74 @@ public class PolymarketMarketMetadataService {
         return withSource(candidates.get(0), "MANUAL_SEARCH_FINAL_PRICE");
     }
 
+    public String resolveOutcomeByTokenId(PolymarketApiClient.MarketMetadata metadata,
+                                          String tokenId,
+                                          String fallbackOutcome) {
+        String resolved = findOutcomeByTokenId(metadata, tokenId);
+        if (StringUtils.hasText(resolved)) {
+            return resolved;
+        }
+        return normalizeOutcomeValue(fallbackOutcome);
+    }
+
+    public String resolveWinningTokenId(PolymarketApiClient.MarketMetadata metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        if (StringUtils.hasText(metadata.getWinningTokenId())) {
+            return metadata.getWinningTokenId().trim();
+        }
+        String resolvedOutcome = normalizeOutcomeValue(metadata.getResolvedOutcome());
+        if (!StringUtils.hasText(resolvedOutcome) || metadata.getOutcomeTokenIds() == null) {
+            return null;
+        }
+        return metadata.getOutcomeTokenIds().entrySet().stream()
+                .filter(entry -> resolvedOutcome.equals(normalizeOutcomeValue(entry.getKey())))
+                .map(Map.Entry::getValue)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Resolve the CTF indexSet for a given tokenId using the market metadata.
+     * Returns null if the tokenId cannot be mapped.
+     */
+    public Integer resolveIndexSet(PolymarketApiClient.MarketMetadata metadata, String tokenId) {
+        if (metadata == null || !StringUtils.hasText(tokenId)) {
+            return null;
+        }
+        return metadata.resolveIndexSet(tokenId);
+    }
+
+    /**
+     * Determine if a position's tokenId represents a winning outcome.
+     * Uses direct tokenId comparison with winningTokenId for maximum reliability,
+     * falling back to outcome label comparison.
+     *
+     * @return true if the position won, false if it lost, null if indeterminate
+     */
+    public Boolean isWinningPosition(PolymarketApiClient.MarketMetadata metadata,
+                                     String positionTokenId,
+                                     String positionOutcome) {
+        if (metadata == null || !metadata.isResolved()) {
+            return null;
+        }
+        // Path 1: direct tokenId comparison (most reliable)
+        String winningTokenId = resolveWinningTokenId(metadata);
+        if (StringUtils.hasText(positionTokenId) && StringUtils.hasText(winningTokenId)) {
+            return positionTokenId.trim().equals(winningTokenId.trim());
+        }
+        // Path 2: outcome label comparison (fallback)
+        String effectiveOutcome = resolveOutcomeByTokenId(metadata, positionTokenId, positionOutcome);
+        if (!StringUtils.hasText(effectiveOutcome)) {
+            return null;
+        }
+        return normalizeOutcomeValue(metadata.getResolvedOutcome())
+                .equals(normalizeOutcomeValue(effectiveOutcome));
+    }
+
     public void registerLocalMetadata(String conditionId,
                                       String question,
                                       String category,
@@ -135,6 +203,7 @@ public class PolymarketMarketMetadataService {
                 .acceptingOrders(existing != null && existing.isAcceptingOrders())
                 .umaResolutionStatus(existing == null ? null : existing.getUmaResolutionStatus())
                 .resolvedOutcome(existing == null ? null : existing.getResolvedOutcome())
+                .winningTokenId(existing == null ? null : existing.getWinningTokenId())
                 .endAt(existing == null ? null : existing.getEndAt())
                 .umaEndAt(existing == null ? null : existing.getUmaEndAt())
                 .resolutionSource(existing == null ? "LOCAL" : existing.getResolutionSource())
@@ -142,6 +211,7 @@ public class PolymarketMarketMetadataService {
                 .outcomes(outcomes)
                 .outcomePrices(outcomePrices)
                 .outcomeTokenIds(existing == null ? Map.of() : existing.getOutcomeTokenIds())
+                .tokenIdToIndexSet(existing == null ? Map.of() : existing.getTokenIdToIndexSet())
                 .build();
         localMetadata.put(normalized, metadata);
     }
@@ -261,6 +331,10 @@ public class PolymarketMarketMetadataService {
                         cached == null ? null : cached.getMinimumTickSize(),
                         local == null ? null : local.getMinimumTickSize())
                         : base.getMinimumTickSize())
+                .winningTokenId(firstText(base.getWinningTokenId(),
+                        fallback == null ? null : fallback.getWinningTokenId(),
+                        cached == null ? null : cached.getWinningTokenId(),
+                        local == null ? null : local.getWinningTokenId()))
                 .endAt(firstNonNull(base.getEndAt(),
                         fallback == null ? null : fallback.getEndAt(),
                         cached == null ? null : cached.getEndAt(),
@@ -283,11 +357,21 @@ public class PolymarketMarketMetadataService {
                         ? firstNonNullMap(fallback == null ? null : fallback.getOutcomeTokenIds(),
                         cached == null ? null : cached.getOutcomeTokenIds(),
                         local == null ? null : local.getOutcomeTokenIds())
-                        : base.getOutcomeTokenIds());
+                        : base.getOutcomeTokenIds())
+                .tokenIdToIndexSet(base.getTokenIdToIndexSet() == null || base.getTokenIdToIndexSet().isEmpty()
+                        ? firstNonNullMap(fallback == null ? null : fallback.getTokenIdToIndexSet(),
+                        cached == null ? null : cached.getTokenIdToIndexSet(),
+                        local == null ? null : local.getTokenIdToIndexSet())
+                        : base.getTokenIdToIndexSet());
 
+        String mergedWinningTokenId = firstText(base.getWinningTokenId(),
+                fallback == null ? null : fallback.getWinningTokenId(),
+                cached == null ? null : cached.getWinningTokenId(),
+                local == null ? null : local.getWinningTokenId());
         PolymarketApiClient.MarketMetadata trustedResolved = pickTrustedResolved(conditionId, local, cached, primary, fallback);
         if (trustedResolved != null) {
             builder.resolvedOutcome(trustedResolved.getResolvedOutcome())
+                    .winningTokenId(firstText(resolveWinningTokenId(trustedResolved), mergedWinningTokenId))
                     .resolutionSource(firstText(trustedResolved.getResolutionSource(), base.getResolutionSource()))
                     .resolutionObservedAt(firstNonNull(trustedResolved.getResolutionObservedAt(), base.getResolutionObservedAt()))
                     .umaResolutionStatus(firstText(trustedResolved.getUmaResolutionStatus(), base.getUmaResolutionStatus()));
@@ -395,11 +479,12 @@ public class PolymarketMarketMetadataService {
         return List.of();
     }
 
-    private Map<String, String> firstNonNullMap(Map<String, String>... candidates) {
+    @SafeVarargs
+    private <K, V> Map<K, V> firstNonNullMap(Map<K, V>... candidates) {
         if (candidates == null) {
             return Map.of();
         }
-        for (Map<String, String> candidate : candidates) {
+        for (Map<K, V> candidate : candidates) {
             if (candidate != null && !candidate.isEmpty()) {
                 return candidate;
             }
@@ -478,6 +563,28 @@ public class PolymarketMarketMetadataService {
                 .outcomePrices(outcomePrices)
                 .outcomeTokenIds(Map.of())
                 .build();
+    }
+
+    private String findOutcomeByTokenId(PolymarketApiClient.MarketMetadata metadata, String tokenId) {
+        if (metadata == null || !StringUtils.hasText(tokenId) || metadata.getOutcomeTokenIds() == null) {
+            return null;
+        }
+        String normalizedTokenId = tokenId.trim();
+        return metadata.getOutcomeTokenIds().entrySet().stream()
+                .filter(entry -> StringUtils.hasText(entry.getValue()))
+                .filter(entry -> normalizedTokenId.equals(entry.getValue().trim()))
+                .map(Map.Entry::getKey)
+                .map(this::normalizeOutcomeValue)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private String normalizeOutcomeValue(String outcome) {
+        if (!StringUtils.hasText(outcome)) {
+            return null;
+        }
+        return outcome.trim().toUpperCase(Locale.ROOT);
     }
 
     private List<String> normalizeOutcomes(List<String> outcomeHints) {

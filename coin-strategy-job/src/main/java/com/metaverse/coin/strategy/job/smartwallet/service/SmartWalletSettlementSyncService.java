@@ -524,7 +524,11 @@ public class SmartWalletSettlementSyncService {
         SmartWalletSettlementRetryEntity retry = settlementRetryMapper.selectOne(new LambdaQueryWrapper<SmartWalletSettlementRetryEntity>()
                 .eq(SmartWalletSettlementRetryEntity::getMarketId, retryCandidate.getMarketId())
                 .last("limit 1"));
-        int failureCount = retry == null || retry.getFailureCount() == null ? 0 : retry.getFailureCount();
+        int failureCount = retry == null || retry.getFailureCount() == null ? 1 : retry.getFailureCount() + 1;
+        // ORACLE_PENDING retries never transition to ABANDONED — oracle resolution is a normal
+        // business wait (UMA dispute window may last days). failureCount is incremented for
+        // observability and alerting, but the retry stays PENDING so both the regular settlement
+        // scan and processRetriesNow() continue to pick it up.
         Date nextRetryAt = Date.from(Instant.now().plus(Math.max(config.getRetryBackoffMinutes(), 1), ChronoUnit.MINUTES));
         if (retry == null) {
             retry = new SmartWalletSettlementRetryEntity()
