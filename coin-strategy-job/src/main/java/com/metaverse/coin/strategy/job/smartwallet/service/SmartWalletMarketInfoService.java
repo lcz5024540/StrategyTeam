@@ -1,0 +1,230 @@
+package com.metaverse.coin.strategy.job.smartwallet.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletMarketInfoMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFillEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * 公共市场信息服务 —— 负责 smart_wallet_market_info 表的查询、缓存与实体填充。
+ * <p>
+ * 所有业务 Service 在查出 order/position/fill/follow_task 后，应调用本服务的
+ * {@code populate*} 方法将 marketInfo 关联对象填充到实体上，
+ * 这样后续业务代码调用 {@code entity.getMarketId()} 等便捷方法就能正常工作。
+ */
+@Service
+@Slf4j
+public class SmartWalletMarketInfoService {
+
+    private final SmartWalletMarketInfoMapper marketInfoMapper;
+
+    /** 进程内缓存，按 id 索引 */
+    private final Map<Long, SmartWalletMarketInfoEntity> cacheById = new ConcurrentHashMap<>();
+
+    public SmartWalletMarketInfoService(SmartWalletMarketInfoMapper marketInfoMapper) {
+        this.marketInfoMapper = marketInfoMapper;
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 基础查询
+    // ──────────────────────────────────────────────────────────────────
+
+    public SmartWalletMarketInfoEntity getById(Long id) {
+        if (id == null) return null;
+        return cacheById.computeIfAbsent(id, marketInfoMapper::selectById);
+    }
+
+    public SmartWalletMarketInfoEntity getByMarketIdAndOutcome(String marketId, String outcome) {
+        if (!StringUtils.hasText(marketId) || !StringUtils.hasText(outcome)) return null;
+        return marketInfoMapper.selectOne(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                .eq(SmartWalletMarketInfoEntity::getMarketId, marketId)
+                .eq(SmartWalletMarketInfoEntity::getOutcome, outcome)
+                .last("limit 1"));
+    }
+
+    /**
+     * 按 marketId + outcome 查询，不存在则自动创建一行。
+     * 用于写入场景（创建 order / fill / position / follow_task 时需要关联 market_info_id）。
+     */
+    public SmartWalletMarketInfoEntity getOrCreate(String marketId, String outcome,
+                                                    String question, String tokenId,
+                                                    Integer indexSet, Long marketEndAt) {
+        SmartWalletMarketInfoEntity existing = getByMarketIdAndOutcome(marketId, outcome);
+        if (existing != null) {
+            // 若有新字段需要补充，顺便更新
+            boolean updated = false;
+            if (tokenId != null && existing.getTokenId() == null) {
+                existing.setTokenId(tokenId);
+                updated = true;
+            }
+            if (indexSet != null && existing.getIndexSet() == null) {
+                existing.setIndexSet(indexSet);
+                updated = true;
+            }
+            if (marketEndAt != null && (existing.getMarketEndAt() == null || existing.getMarketEndAt() <= 0)) {
+                existing.setMarketEndAt(marketEndAt);
+                updated = true;
+            }
+            if (question != null && existing.getQuestion() == null) {
+                existing.setQuestion(question);
+                updated = true;
+            }
+            if (updated) {
+                marketInfoMapper.updateById(existing);
+                cacheById.put(existing.getId(), existing);
+            }
+            return existing;
+        }
+        SmartWalletMarketInfoEntity newInfo = new SmartWalletMarketInfoEntity()
+                .setMarketId(marketId)
+                .setQuestion(question)
+                .setOutcome(outcome)
+                .setTokenId(tokenId)
+                .setIndexSet(indexSet)
+                .setMarketEndAt(marketEndAt);
+        marketInfoMapper.insert(newInfo);
+        cacheById.put(newInfo.getId(), newInfo);
+        return newInfo;
+    }
+
+    /**
+     * 批量按 id 加载 market_info，返回 id→entity 的 map。
+     */
+    public Map<Long, SmartWalletMarketInfoEntity> batchGetByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return Map.of();
+        // 从缓存中找
+        Map<Long, SmartWalletMarketInfoEntity> result = new ConcurrentHashMap<>();
+        List<Long> missing = ids.stream().distinct()
+                .filter(id -> {
+                    SmartWalletMarketInfoEntity cached = cacheById.get(id);
+                    if (cached != null) {
+                        result.put(id, cached);
+                        return false;
+                    }
+                    return true;
+                }).toList();
+        if (!missing.isEmpty()) {
+            List<SmartWalletMarketInfoEntity> fetched = marketInfoMapper.selectBatchIds(missing);
+            for (SmartWalletMarketInfoEntity info : fetched) {
+                cacheById.put(info.getId(), info);
+                result.put(info.getId(), info);
+            }
+        }
+        return result;
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 批量填充便捷方法
+    // ──────────────────────────────────────────────────────────────────
+
+    /** 填充单个 Order */
+    public SmartWalletOrderEntity populate(SmartWalletOrderEntity entity) {
+        if (entity != null && entity.getMarketInfoId() != null && entity.getMarketInfo() == null) {
+            entity.setMarketInfo(getById(entity.getMarketInfoId()));
+        }
+        return entity;
+    }
+
+    /** 填充单个 Position */
+    public SmartWalletPositionEntity populate(SmartWalletPositionEntity entity) {
+        if (entity != null && entity.getMarketInfoId() != null && entity.getMarketInfo() == null) {
+            entity.setMarketInfo(getById(entity.getMarketInfoId()));
+        }
+        return entity;
+    }
+
+    /** 填充单个 Fill */
+    public SmartWalletFillEntity populate(SmartWalletFillEntity entity) {
+        if (entity != null && entity.getMarketInfoId() != null && entity.getMarketInfo() == null) {
+            entity.setMarketInfo(getById(entity.getMarketInfoId()));
+        }
+        return entity;
+    }
+
+    /** 填充单个 FollowTask */
+    public SmartWalletFollowTaskEntity populate(SmartWalletFollowTaskEntity entity) {
+        if (entity != null && entity.getMarketInfoId() != null && entity.getMarketInfo() == null) {
+            entity.setMarketInfo(getById(entity.getMarketInfoId()));
+        }
+        return entity;
+    }
+
+    /** 批量填充 Order 列表 */
+    public List<SmartWalletOrderEntity> populateOrders(List<SmartWalletOrderEntity> entities) {
+        if (entities == null || entities.isEmpty()) return entities;
+        Map<Long, SmartWalletMarketInfoEntity> infoMap = batchGetByIds(
+                entities.stream().map(SmartWalletOrderEntity::getMarketInfoId).filter(id -> id != null).toList());
+        entities.forEach(e -> { if (e.getMarketInfoId() != null) e.setMarketInfo(infoMap.get(e.getMarketInfoId())); });
+        return entities;
+    }
+
+    /** 批量填充 Position 列表 */
+    public List<SmartWalletPositionEntity> populatePositions(List<SmartWalletPositionEntity> entities) {
+        if (entities == null || entities.isEmpty()) return entities;
+        Map<Long, SmartWalletMarketInfoEntity> infoMap = batchGetByIds(
+                entities.stream().map(SmartWalletPositionEntity::getMarketInfoId).filter(id -> id != null).toList());
+        entities.forEach(e -> { if (e.getMarketInfoId() != null) e.setMarketInfo(infoMap.get(e.getMarketInfoId())); });
+        return entities;
+    }
+
+    /** 批量填充 Fill 列表 */
+    public List<SmartWalletFillEntity> populateFills(List<SmartWalletFillEntity> entities) {
+        if (entities == null || entities.isEmpty()) return entities;
+        Map<Long, SmartWalletMarketInfoEntity> infoMap = batchGetByIds(
+                entities.stream().map(SmartWalletFillEntity::getMarketInfoId).filter(id -> id != null).toList());
+        entities.forEach(e -> { if (e.getMarketInfoId() != null) e.setMarketInfo(infoMap.get(e.getMarketInfoId())); });
+        return entities;
+    }
+
+    /** 批量填充 FollowTask 列表 */
+    public List<SmartWalletFollowTaskEntity> populateFollowTasks(List<SmartWalletFollowTaskEntity> entities) {
+        if (entities == null || entities.isEmpty()) return entities;
+        Map<Long, SmartWalletMarketInfoEntity> infoMap = batchGetByIds(
+                entities.stream().map(SmartWalletFollowTaskEntity::getMarketInfoId).filter(id -> id != null).toList());
+        entities.forEach(e -> { if (e.getMarketInfoId() != null) e.setMarketInfo(infoMap.get(e.getMarketInfoId())); });
+        return entities;
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // 按 marketId 查询 market_info_id（用于替代旧的 LambdaQueryWrapper 条件）
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * 查找指定 marketId 的所有 market_info_id 列表。
+     * 用于替代旧的 {@code .eq(Entity::getMarketId, marketId)} 查询。
+     */
+    public List<Long> findIdsByMarketId(String marketId) {
+        if (!StringUtils.hasText(marketId)) return List.of();
+        return marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                        .eq(SmartWalletMarketInfoEntity::getMarketId, marketId))
+                .stream().map(SmartWalletMarketInfoEntity::getId).toList();
+    }
+
+    /**
+     * 查找指定 marketId + outcome 的 market_info_id。
+     */
+    public Long findIdByMarketIdAndOutcome(String marketId, String outcome) {
+        SmartWalletMarketInfoEntity info = getByMarketIdAndOutcome(marketId, outcome);
+        return info == null ? null : info.getId();
+    }
+
+    /**
+     * 清除进程内缓存（测试或手动刷新时使用）。
+     */
+    public void clearCache() {
+        cacheById.clear();
+    }
+}

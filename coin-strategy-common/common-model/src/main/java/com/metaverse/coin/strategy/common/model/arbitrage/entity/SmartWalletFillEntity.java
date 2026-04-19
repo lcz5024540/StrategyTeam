@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.common.model.arbitrage.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -20,12 +21,10 @@ public class SmartWalletFillEntity {
     private Long orderId;
     private Long positionId;
     private Long followTaskId;
+    /** 关联公共市场信息表 smart_wallet_market_info.id */
+    private Long marketInfoId;
     private String walletAddress;
     private String executionAddress;
-    private String marketId;
-    private String tokenId;
-    private String question;
-    private String outcome;
     private String side;
     private BigDecimal price;
     private BigDecimal size;
@@ -33,4 +32,13 @@ public class SmartWalletFillEntity {
     private BigDecimal feeUsdc;
     private Date filledAt;
     private Date createdAt;
+
+    @TableField(exist = false)
+    private SmartWalletMarketInfoEntity marketInfo;
+
+    public String getMarketId()    { return marketInfo == null ? null : marketInfo.getMarketId(); }
+    public String getQuestion()    { return marketInfo == null ? null : marketInfo.getQuestion(); }
+    public String getOutcome()     { return marketInfo == null ? null : marketInfo.getOutcome(); }
+    public String getTokenId()     { return marketInfo == null ? null : marketInfo.getTokenId(); }
+    public Integer getIndexSet()   { return marketInfo == null ? null : marketInfo.getIndexSet(); }
 }

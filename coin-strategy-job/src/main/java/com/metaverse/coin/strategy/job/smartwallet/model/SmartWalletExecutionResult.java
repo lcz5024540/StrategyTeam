@@ -16,6 +16,7 @@ public class SmartWalletExecutionResult {
     private String executionAddress;
     private String marketId;
     private String tokenId;
+    private Integer indexSet;
     private String outcome;
     private String side;
     private String orderType;

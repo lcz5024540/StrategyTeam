@@ -21,7 +21,7 @@ export function DetailPage() {
 
   const { data: detail, isLoading } = useQuery({
     queryKey: ['strategyDetail', strategy, mode],
-    queryFn: () => strategyApi.getDetail(strategy, mode),
+    queryFn: () => strategyApi.getSummary(strategy, mode),
   })
 
   const { data: positions = [] } = useQuery({

@@ -211,6 +211,73 @@ class SmartWalletAccountingServiceTest {
     }
 
     @Test
+    void shouldSettleUsingTokenMappingWhenStoredOutcomeDiffers() {
+        long past = System.currentTimeMillis() - 60_000L;
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(14L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-token-map")
+                .setTokenId("token-yes")
+                .setQuestion("Will token mapping repair settlement?")
+                .setOutcome("NO")
+                .setMarketEndAt(past)
+                .setQuantity(new BigDecimal("10"))
+                .setCostBasisUsdc(new BigDecimal("4.00"))
+                .setOriginalCostBasisUsdc(new BigDecimal("4.00"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setUnrealizedPnlUsdc(BigDecimal.ZERO)
+                .setLastMarkPrice(new BigDecimal("0.40"))
+                .setStatus("OPEN")
+                .setOpenedAt(new Date(past))
+                .setLastFilledAt(new Date(past));
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(104L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-token-map")
+                .setTokenId("token-yes")
+                .setOutcome("NO")
+                .setStatus("SETTLEMENT_PENDING_ORACLE")
+                .setPlacedAt(new Date(past))
+                .setNotionalUsdc(new BigDecimal("4.00"));
+        PolymarketApiClient.MarketMetadata metadata = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("market-token-map")
+                .marketId("market-token-map")
+                .question(position.getQuestion())
+                .endAt(past)
+                .closed(true)
+                .acceptingOrders(false)
+                .resolvedOutcome("YES")
+                .winningTokenId("token-yes")
+                .outcomes(List.of("YES", "NO"))
+                .outcomePrices(List.of("1.0", "0.0"))
+                .outcomeTokenIds(Map.of("YES", "token-yes", "NO", "token-no"))
+                .build();
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(position));
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(fillMapper.selectList(any())).thenReturn(List.of());
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of());
+        when(dailyReportMapper.selectOne(any())).thenReturn(null);
+        when(marketMetadataService.getBestEffortByConditionId(eq("market-token-map"), anyBoolean(), eq(position.getQuestion()), anyList()))
+                .thenReturn(metadata);
+        when(marketMetadataService.resolveOutcomeByTokenId(eq(metadata), eq("token-yes"), eq("NO"))).thenReturn("YES");
+
+        SettlementSyncSummary summary = service.syncSettlements(10, 10, false);
+
+        assertEquals(1, summary.getResolvedPositions());
+
+        ArgumentCaptor<SmartWalletOrderEntity> orderCaptor = ArgumentCaptor.forClass(SmartWalletOrderEntity.class);
+        verify(orderMapper, atLeastOnce()).updateById(orderCaptor.capture());
+        assertTrue(orderCaptor.getAllValues().stream()
+                .anyMatch(updated -> "SETTLED_WIN".equals(updated.getStatus()) && "YES".equals(updated.getOutcome())));
+
+        ArgumentCaptor<SmartWalletPositionEntity> positionCaptor = ArgumentCaptor.forClass(SmartWalletPositionEntity.class);
+        verify(positionMapper, atLeastOnce()).updateById(positionCaptor.capture());
+        assertTrue(positionCaptor.getAllValues().stream()
+                .anyMatch(updated -> "RESOLVED_UNCLAIMED".equals(updated.getStatus()) && "YES".equals(updated.getOutcome())));
+    }
+
+    @Test
     void shouldApplyOnlyDeltaWhenOrderReceivesAdditionalPartialFill() {
         SmartWalletOrderEntity order = new SmartWalletOrderEntity()
                 .setId(103L)
@@ -376,6 +443,114 @@ class SmartWalletAccountingServiceTest {
         verify(fillMapper, atLeastOnce()).updateById(updatedFillCaptor.capture());
         assertTrue(updatedFillCaptor.getAllValues().stream()
                 .anyMatch(updated -> Long.valueOf(901L).equals(updated.getPositionId())));
+    }
+
+    @Test
+    void shouldReuseActivePositionByTokenIdBeforeLegacyOutcomeFallback() {
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(701L)
+                .setFollowTaskId(1701L)
+                .setWalletAddress("wallet-token")
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-token")
+                .setTokenId("token-yes")
+                .setQuestion("Will token id drive position reuse?")
+                .setOutcome("NO")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.40"))
+                .setMarketEndAt(System.currentTimeMillis() + 3600_000L)
+                .setPlacedAt(new Date());
+        SmartWalletPositionEntity existingPosition = new SmartWalletPositionEntity()
+                .setId(801L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-token")
+                .setTokenId("token-yes")
+                .setQuestion("Will token id drive position reuse?")
+                .setOutcome("YES")
+                .setQuantity(new BigDecimal("2.00000000"))
+                .setAverageEntryPrice(new BigDecimal("0.40"))
+                .setCostBasisUsdc(new BigDecimal("0.80000000"))
+                .setOriginalCostBasisUsdc(new BigDecimal("0.80000000"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setUnrealizedPnlUsdc(BigDecimal.ZERO)
+                .setLastMarkPrice(new BigDecimal("0.40"))
+                .setStatus("OPEN")
+                .setOpenedAt(new Date())
+                .setLastFilledAt(new Date());
+
+        when(fillMapper.selectList(any())).thenReturn(List.of(), List.of());
+        when(positionMapper.selectList(any())).thenReturn(List.of(existingPosition), List.of(existingPosition));
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of());
+        when(dailyReportMapper.selectOne(any())).thenReturn(null);
+        when(tradeEventMapper.selectOne(any())).thenReturn(null);
+
+        service.processOrderFill(order, new BigDecimal("3.00000000"), new BigDecimal("0.40"), BigDecimal.ZERO);
+
+        verify(positionMapper, never()).insert(any());
+
+        ArgumentCaptor<SmartWalletOrderEntity> updatedOrderCaptor = ArgumentCaptor.forClass(SmartWalletOrderEntity.class);
+        verify(orderMapper, atLeastOnce()).updateById(updatedOrderCaptor.capture());
+        assertTrue(updatedOrderCaptor.getAllValues().stream()
+                .anyMatch(updated -> Long.valueOf(801L).equals(updated.getPositionId())));
+    }
+
+    @Test
+    void shouldBackfillMissingTokenAndPositionLinks() {
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(901L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-backfill")
+                .setQuestion("Will missing token and position links be backfilled?")
+                .setOutcome("YES")
+                .setPlacedAt(new Date());
+        SmartWalletFillEntity fill = new SmartWalletFillEntity()
+                .setId(902L)
+                .setOrderId(901L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-backfill")
+                .setQuestion("Will missing token and position links be backfilled?")
+                .setOutcome("YES")
+                .setFilledAt(new Date());
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(903L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-backfill")
+                .setQuestion("Will missing token and position links be backfilled?")
+                .setOutcome("YES")
+                .setTokenId("token-yes")
+                .setOpenedAt(new Date(System.currentTimeMillis() - 60_000L))
+                .setStatus("OPEN");
+        PolymarketApiClient.MarketMetadata metadata = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("market-backfill")
+                .marketId("market-backfill")
+                .question(position.getQuestion())
+                .outcomeTokenIds(Map.of("YES", "token-yes", "NO", "token-no"))
+                .build();
+        SmartWalletOrderEntity linkedOrder = new SmartWalletOrderEntity()
+                .setId(901L)
+                .setTokenId("token-yes")
+                .setPositionId(903L);
+
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(fillMapper.selectList(any())).thenReturn(List.of(), List.of(fill));
+        when(positionMapper.selectList(any())).thenReturn(List.of(position), List.of(), List.of(position));
+        when(orderMapper.selectById(901L)).thenReturn(linkedOrder);
+        when(marketMetadataService.getBestEffortByConditionId(eq("market-backfill"), anyBoolean(), eq(position.getQuestion()), anyList()))
+                .thenReturn(metadata);
+
+        Map<String, Object> result = service.backfillMissingTokenAndPositionLinks(10, false);
+
+        assertEquals(2, result.get("totalUpdated"));
+
+        ArgumentCaptor<SmartWalletOrderEntity> orderCaptor = ArgumentCaptor.forClass(SmartWalletOrderEntity.class);
+        verify(orderMapper).updateById(orderCaptor.capture());
+        assertEquals("token-yes", orderCaptor.getValue().getTokenId());
+        assertEquals(903L, orderCaptor.getValue().getPositionId());
+
+        ArgumentCaptor<SmartWalletFillEntity> fillCaptor = ArgumentCaptor.forClass(SmartWalletFillEntity.class);
+        verify(fillMapper).updateById(fillCaptor.capture());
+        assertEquals("token-yes", fillCaptor.getValue().getTokenId());
+        assertEquals(903L, fillCaptor.getValue().getPositionId());
     }
 
     @Test

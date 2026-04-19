@@ -145,20 +145,19 @@ HedgeClaimService.triggerClaims()  (手动 REST 触发)
 
 ### 2.3 改造文件清单
 
-| # | 类型 | 路径 | 改动 |
-|---|---|---|---|
-| 1 | 新建 | `coin-strategy-job/.../hedge/config/HedgeExecutionMode.java` | enum {PAPER, LIVE} |
-| 2 | 修改 | `coin-strategy-job/.../hedge/config/HedgeProperties.java` | 新增 `executionMode`, `paper.*` 子配置 |
-| 3 | 新建 | `coin-strategy-job/.../hedge/service/HedgePaperExecutionService.java` | 模拟下单 + 立即 FILLED |
-| 4 | 修改 | `coin-strategy-job/.../hedge/service/HedgeOrderExecutorService.java` | 顶部按 mode 分流；保留 LIVE 既有逻辑 |
-| 5 | 修改 | `coin-strategy-job/.../hedge/service/HedgeOrderPollingJob.java` | `WHERE mode='LIVE'` 过滤 |
-| 6 | 修改 | `coin-strategy-job/.../hedge/service/HedgeSettlementMonitorJob.java` | 模拟仓走"理论结算"路径 |
-| 7 | 修改 | `coin-strategy-job/.../hedge/service/GlobalRiskGuard.java` | `currentHedgeExposureUsdc` 可选过滤 mode |
-| 8 | 修改 | `coin-strategy-common/.../HedgePositionEntity.java` | 新增 `mode` 字段 |
-| 9 | 修改 | `coin-strategy-common/.../HedgeOrderEntity.java` | 新增 `mode` 字段 |
-| 10 | 新建 | `sql/hedge_mode_migration.sql` | `ALTER TABLE` 增加 `mode` 列、索引 |
-| 11 | 修改 | `coin-strategy-job/src/main/resources/application.yml` | 增 `polymarket.hedge` 配置块 |
-| 12 | 修改 | `coin-strategy-job/.../hedge/controller/HedgeController.java` | dashboard 区分 PAPER/LIVE 统计（可选，先报表分组） |
+| #  | 类型 | 路径 | 改动 |
+|----|---|---|---|
+| 1  | 新建 | `coin-strategy-job/.../hedge/config/HedgeExecutionMode.java` | enum {PAPER, LIVE} |
+| 2  | 修改 | `coin-strategy-job/.../hedge/config/HedgeProperties.java` | 新增 `executionMode`, `paper.*` 子配置 |
+| 3  | 新建 | `coin-strategy-job/.../hedge/service/HedgePaperExecutionService.java` | 模拟下单 + 立即 FILLED |
+| 4  | 修改 | `coin-strategy-job/.../hedge/service/HedgeOrderExecutorService.java` | 顶部按 mode 分流；保留 LIVE 既有逻辑 |
+| 5  | 修改 | `coin-strategy-job/.../hedge/service/HedgeOrderPollingJob.java` | `WHERE mode='LIVE'` 过滤 |
+| 6  | 修改 | `coin-strategy-job/.../hedge/service/HedgeSettlementMonitorJob.java` | 模拟仓走"理论结算"路径 |
+| 7  | 修改 | `coin-strategy-job/.../hedge/service/GlobalRiskGuard.java` | `currentHedgeExposureUsdc` 可选过滤 mode |
+| 8  | 修改 | `coin-strategy-common/.../HedgePositionEntity.java` | 新增 `mode` 字段 |
+| 9  | 修改 | `coin-strategy-common/.../HedgeOrderEntity.java` | 新增 `mode` 字段 |
+| 10 | 修改 | `coin-strategy-job/src/main/resources/application.yml` | 增 `polymarket.hedge` 配置块 |
+| 11 | 修改 | `coin-strategy-job/.../hedge/controller/HedgeController.java` | dashboard 区分 PAPER/LIVE 统计（可选，先报表分组） |
 
 ### 2.4 字段扩展规范
 
@@ -213,13 +212,7 @@ if (position.getMode() == PAPER && resolved):
 
 ## 三、模拟仓上线 Run-book（先跑通模拟仓）
 
-### Step 1：执行 SQL 迁移
-
-```bash
-mysql -uroot -p coin_strategy < sql/hedge_mode_migration.sql
-```
-
-### Step 2：在 `application.yml` 末尾添加 `polymarket.hedge` 配置（详见 4.2）
+### Step 1：在 `application.yml` 末尾添加 `polymarket.hedge` 配置（详见 4.2）
 
 最关键的两个值：
 
@@ -231,7 +224,7 @@ polymarket:
     auto-execution-enabled: true   # PAPER 模式下也用此开关控制是否生成模拟订单
 ```
 
-### Step 3：重启 `coin-strategy-job` 应用
+### Step 2：重启 `coin-strategy-job` 应用
 
 ```bash
 mvn -pl coin-strategy-job spring-boot:run
@@ -239,7 +232,7 @@ mvn -pl coin-strategy-job spring-boot:run
 mvn package && java -jar coin-strategy-job/target/coin-strategy-job.jar
 ```
 
-### Step 4：验证
+### Step 3：验证
 
 ```sql
 -- 扫描日志（每 10s 应有新记录）
@@ -269,7 +262,7 @@ curl http://localhost:8081/strategy/api/api/hedge/positions/open
 curl http://localhost:8081/strategy/api/api/hedge/arbitrage-logs?limit=20
 ```
 
-### Step 5：上线 LIVE（仅在模拟仓稳定运行 ≥ 1 周后）
+### Step 4：上线 LIVE（仅在模拟仓稳定运行 ≥ 1 周后）
 
 ```yaml
 polymarket:

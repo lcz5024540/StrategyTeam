@@ -3,6 +3,8 @@ import { App } from '../App'
 import { HomePage } from '../pages/HomePage'
 import { DetailPage } from '../pages/DetailPage'
 import { ChartsPage } from '../pages/ChartsPage'
+import { PolymarketHedgePage } from '../pages/PolymarketHedgePage'
+import { FundingArbPage } from '../pages/FundingArbPage'
 
 export const router = createBrowserRouter([
   {
@@ -24,6 +26,14 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard/charts',
         element: <ChartsPage />,
+      },
+      {
+        path: 'dashboard/polymarket-hedge',
+        element: <PolymarketHedgePage />,
+      },
+      {
+        path: 'dashboard/funding-arb',
+        element: <FundingArbPage />,
       },
     ],
   },

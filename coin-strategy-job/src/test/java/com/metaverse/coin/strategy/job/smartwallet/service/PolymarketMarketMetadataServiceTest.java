@@ -144,4 +144,17 @@ class PolymarketMarketMetadataServiceTest {
         assertTrue(second.isResolved());
         assertEquals("YES", second.getResolvedOutcome());
     }
+
+    @Test
+    void shouldResolveOutcomeAndWinningTokenByTokenId() {
+        PolymarketApiClient.MarketMetadata metadata = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .resolvedOutcome("YES")
+                .outcomeTokenIds(java.util.Map.of("YES", "token-yes", "NO", "token-no"))
+                .build();
+
+        assertEquals("YES", service.resolveOutcomeByTokenId(metadata, "token-yes", "NO"));
+        assertEquals("token-yes", service.resolveWinningTokenId(metadata));
+    }
 }

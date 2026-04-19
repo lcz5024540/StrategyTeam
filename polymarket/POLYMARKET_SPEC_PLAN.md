@@ -622,7 +622,7 @@ AlertingSystem
 
 | 任务 | 文件/位置 | 工作量 |
 |------|----------|--------|
-| 创建 `wallet_entity_map` 表 | `sql/polymarket_entity_intelligence.sql` | 0.5天 |
+| 创建 `wallet_entity_map` 表 | `sql/arbitrage_schema.sql` | 0.5天 |
 | 创建 `wallet_entity_feature_snapshot` 表 | 同上 | 0.5天 |
 | 创建 `wallet_follow_candidate` 表 | 同上 | 0.5天 |
 | 建立 `smartwallet/intelligence` 包骨架 | `coin-strategy-job` | 0.5天 |

@@ -36,6 +36,7 @@ public class SmartWalletLiveValidationService {
     private final SmartWalletOrderMapper orderMapper;
     private final SmartWalletAccountingService accountingService;
     private final PolymarketExecutionGateway executionGateway;
+    private final SmartWalletMarketInfoService marketInfoService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile Date lastRunAt;
@@ -195,13 +196,14 @@ public class SmartWalletLiveValidationService {
                 .recommendedStakeUsdc(resolveStake(task, decision))
                 .build();
         SmartWalletExecutionResult result = executionGateway.execute(signal, ExecutionMode.LIVE);
+        // Populate task with marketInfo to enable delegate getters for syntheticTask
+        marketInfoService.populate(task);
         SmartWalletFollowTaskEntity syntheticTask = new SmartWalletFollowTaskEntity()
                 .setId(task.getId())
                 .setWalletAddress(task.getWalletAddress())
                 .setSourceEventId(task.getSourceEventId())
-                .setMarketId(task.getMarketId())
-                .setQuestion(task.getQuestion())
-                .setOutcome(task.getOutcome())
+                .setMarketInfoId(task.getMarketInfoId())
+                .setMarketInfo(task.getMarketInfo())
                 .setSide(task.getSide())
                 .setTriggerPrice(task.getTriggerPrice())
                 .setTriggerSizeUsdc(task.getTriggerSizeUsdc())

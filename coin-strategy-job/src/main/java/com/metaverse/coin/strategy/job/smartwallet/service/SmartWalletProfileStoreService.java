@@ -170,11 +170,13 @@ public class SmartWalletProfileStoreService {
 
             int total = 0, wins = 0;
             for (SmartWalletFollowTaskEntity task : followedTasks) {
-                // Find the closed position for this task via market+outcome
+                // Find the closed position for this task via marketInfoId FK (after migration)
+                if (task.getMarketInfoId() == null) {
+                    continue; // Skip tasks without market info reference
+                }
                 List<SmartWalletPositionEntity> closed = positionMapper.selectList(
                         new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                                .eq(SmartWalletPositionEntity::getMarketId, task.getMarketId())
-                                .eq(SmartWalletPositionEntity::getOutcome, task.getOutcome())
+                                .eq(SmartWalletPositionEntity::getMarketInfoId, task.getMarketInfoId())
                                 .in(SmartWalletPositionEntity::getStatus, List.of("CLAIMED", "RESOLVED_UNCLAIMED")));
                 for (SmartWalletPositionEntity pos : closed) {
                     total++;

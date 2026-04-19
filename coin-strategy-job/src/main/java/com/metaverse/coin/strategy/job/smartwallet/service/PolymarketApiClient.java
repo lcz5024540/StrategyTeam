@@ -353,6 +353,7 @@ public class PolymarketApiClient {
             }
         }
         String resolvedOutcome = null;
+        String winningTokenId = null;
         JsonNode tokensNode = market.get("tokens");
         if (tokensNode != null && tokensNode.isArray()) {
             for (JsonNode token : tokensNode) {
@@ -363,6 +364,7 @@ public class PolymarketApiClient {
                 }
                 if (resolvedOutcome == null && bool(token, "winner", "winning")) {
                     resolvedOutcome = outcome;
+                    winningTokenId = StringUtils.hasText(tokenId) ? tokenId.trim() : null;
                 }
             }
         }
@@ -374,6 +376,19 @@ public class PolymarketApiClient {
         }
         if (resolvedOutcome == null) {
             resolvedOutcome = inferResolvedOutcomeFromPrices(outcomes, outcomePrices, closed);
+        }
+        if (!StringUtils.hasText(winningTokenId) && StringUtils.hasText(resolvedOutcome)) {
+            winningTokenId = outcomeTokenMap.get(resolvedOutcome);
+        }
+        // Build tokenId → indexSet mapping from the outcomeTokenIds ordering.
+        // CTF convention: indexSet = 1 << outcomeIndex (1 for first outcome, 2 for second, etc.)
+        Map<String, Integer> indexSetMap = new LinkedHashMap<>();
+        int outcomeIdx = 0;
+        for (Map.Entry<String, String> entry : outcomeTokenMap.entrySet()) {
+            if (StringUtils.hasText(entry.getValue())) {
+                indexSetMap.put(entry.getValue().trim(), 1 << outcomeIdx);
+            }
+            outcomeIdx++;
         }
         return MarketMetadata.builder()
                 .conditionId(text(market, "conditionId", "condition_id"))
@@ -388,11 +403,13 @@ public class PolymarketApiClient {
                 .acceptingOrders(acceptingOrders)
                 .umaResolutionStatus(text(market, "umaResolutionStatus", "uma_resolution_status"))
                 .resolvedOutcome(resolvedOutcome)
+                .winningTokenId(winningTokenId)
                 .endAt(epochMillis(market, "endDateISO", "endDate", "gameStartTime", "eventStartDate"))
                 .umaEndAt(epochMillis(market, "umaEndDate", "umaEndDateISO", "uma_end_date"))
                 .outcomes(new ArrayList<>(outcomes))
                 .outcomePrices(new ArrayList<>(outcomePrices))
                 .outcomeTokenIds(outcomeTokenMap)
+                .tokenIdToIndexSet(indexSetMap)
                 .build();
     }
 
@@ -871,6 +888,7 @@ public class PolymarketApiClient {
         private boolean acceptingOrders;
         private String umaResolutionStatus;
         private String resolvedOutcome;
+        private String winningTokenId;
         private Long endAt;
         private Long umaEndAt;
         private String resolutionSource;
@@ -881,9 +899,40 @@ public class PolymarketApiClient {
         private List<String> outcomePrices = new ArrayList<>();
         @Builder.Default
         private Map<String, String> outcomeTokenIds = new LinkedHashMap<>();
+        @Builder.Default
+        private Map<String, Integer> tokenIdToIndexSet = new LinkedHashMap<>();
 
         public boolean isResolved() {
             return StringUtils.hasText(resolvedOutcome);
+        }
+
+        /**
+         * Resolve the CTF indexSet for a given tokenId.
+         * In Polymarket CTF: indexSet = 1 << outcomeIndex (1 for outcome 0 / YES, 2 for outcome 1 / NO).
+         * Returns null if the tokenId is not mapped.
+         */
+        public Integer resolveIndexSet(String tokenId) {
+            if (!StringUtils.hasText(tokenId) || tokenIdToIndexSet == null || tokenIdToIndexSet.isEmpty()) {
+                return deriveIndexSetFromOutcomes(tokenId);
+            }
+            return tokenIdToIndexSet.get(tokenId.trim());
+        }
+
+        /**
+         * Fallback: derive indexSet by matching tokenId against outcomeTokenIds ordering.
+         */
+        private Integer deriveIndexSetFromOutcomes(String tokenId) {
+            if (!StringUtils.hasText(tokenId) || outcomeTokenIds == null || outcomeTokenIds.isEmpty()) {
+                return null;
+            }
+            int index = 0;
+            for (Map.Entry<String, String> entry : outcomeTokenIds.entrySet()) {
+                if (StringUtils.hasText(entry.getValue()) && tokenId.trim().equals(entry.getValue().trim())) {
+                    return 1 << index;
+                }
+                index++;
+            }
+            return null;
         }
     }
 

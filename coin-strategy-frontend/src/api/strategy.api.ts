@@ -96,8 +96,45 @@ export const strategyApi = {
   getOverview: (mode: PositionMode = 'PAPER'): Promise<StrategyOverview> =>
     apiClient.get('/strategy/api/strategy-platform/strategy/overview', { params: { mode } }),
 
+  /** @deprecated 使用下方拆分接口替代 */
   getDetail: (code: string, mode: PositionMode = 'PAPER'): Promise<StrategyDetail> =>
     apiClient
       .get(`/strategy/api/strategy-platform/strategy/${code}`, { params: { mode } })
       .then((detail) => normalizeDetail((detail || {}) as StrategyDetailApiResponse)),
+
+  // ── 拆分子接口 ──
+
+  /** 策略概要（summary + metrics + insights），首屏快速加载 */
+  getSummary: (code: string, mode: PositionMode = 'PAPER'): Promise<StrategyDetail> =>
+    apiClient
+      .get(`/strategy/api/strategy-platform/strategy/${code}/summary`, { params: { mode } })
+      .then((detail) => normalizeDetail((detail || {}) as StrategyDetailApiResponse)),
+
+  /** 当前持仓列表 */
+  getPositions: (code: string, mode: PositionMode = 'PAPER') =>
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/positions`, { params: { mode } }),
+
+  /** 待结算持仓列表 */
+  getNextSettlements: (code: string, limit = 8, mode: PositionMode = 'PAPER') =>
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/next-settlements`, {
+      params: { limit, mode },
+    }),
+
+  /** 最近订单列表 */
+  getOrders: (code: string, limit = 30, mode: PositionMode = 'PAPER') =>
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/orders`, {
+      params: { limit, mode },
+    }),
+
+  /** 收益时间线 */
+  getTimeline: (code: string, days = 30, mode: PositionMode = 'PAPER') =>
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/timeline`, {
+      params: { days, mode },
+    }),
+
+  /** 冲突市场列表 */
+  getConflicts: (code: string, limit = 10, mode: PositionMode = 'PAPER') =>
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/conflicts`, {
+      params: { limit, mode },
+    }),
 }

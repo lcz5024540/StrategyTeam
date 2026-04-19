@@ -4,13 +4,15 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,9 +28,21 @@ class LoggingPolymarketExecutionGatewayTest {
     private PolymarketOrderRequestFactory orderRequestFactory;
     @Mock
     private PolymarketClobClientRouter clobClientRouter;
+    @Mock
+    private PolymarketMarketMetadataService marketMetadataService;
 
-    @InjectMocks
     private LoggingPolymarketExecutionGateway gateway;
+
+    @BeforeEach
+    void setUp() {
+        gateway = new LoggingPolymarketExecutionGateway(
+                walletContextLoader,
+                orderRequestFactory,
+                clobClientRouter,
+                marketMetadataService,
+                new SmartWalletProperties()
+        );
+    }
 
     @Test
     void shouldKeepLiveOrdersOpenUntilPolymarketReportsFill() {
@@ -70,5 +84,34 @@ class LoggingPolymarketExecutionGatewayTest {
         assertTrue(result.isSuccess());
         assertEquals("LIVE", result.getStatus());
         assertEquals("ord-1", result.getExternalOrderId());
+    }
+
+    @Test
+    void shouldAttachTokenIdForPaperOrdersWhenMetadataIsAvailable() {
+        SmartWalletSignal signal = SmartWalletSignal.builder()
+                .signalId("signal-paper")
+                .followOutcome("YES")
+                .recommendedStakeUsdc(new BigDecimal("5.00"))
+                .market(PredictionMarketOpportunity.builder()
+                        .marketId("condition-paper")
+                        .question("Will paper token id be captured?")
+                        .price(new BigDecimal("0.50"))
+                        .build())
+                .build();
+        PolymarketApiClient.MarketMetadata metadata = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("condition-paper")
+                .marketId("condition-paper")
+                .outcomes(List.of("YES", "NO"))
+                .outcomeTokenIds(Map.of("YES", "token-yes", "NO", "token-no"))
+                .build();
+
+        when(marketMetadataService.getBestEffortByConditionId("condition-paper", false,
+                "Will paper token id be captured?", List.of("YES")))
+                .thenReturn(metadata);
+
+        SmartWalletExecutionResult result = gateway.execute(signal, ExecutionMode.PAPER);
+
+        assertTrue(result.isSuccess());
+        assertEquals("token-yes", result.getTokenId());
     }
 }
