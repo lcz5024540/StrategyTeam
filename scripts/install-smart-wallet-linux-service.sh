@@ -2,14 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_HOME="${SMART_WALLET_APP_HOME:-$ROOT_DIR}"
+APP_HOME="${SMART_WALLET_APP_HOME:-/opt/coinstrategy/smart-wallet}"
 APP_USER="${SMART_WALLET_APP_USER:-coinstrategy}"
 APP_GROUP="${SMART_WALLET_APP_GROUP:-$APP_USER}"
 SERVICE_NAME="${SMART_WALLET_SERVICE_NAME:-smart-wallet-backend}"
 BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-8081}"
 SERVER_NAME="${SMART_WALLET_SERVER_NAME:-49.51.250.174}"
 INSTALL_NGINX="${SMART_WALLET_INSTALL_NGINX:-true}"
-FRONTEND_DIST_DIR="${SMART_WALLET_FRONTEND_DIST_DIR:-$APP_HOME/coin-strategy-frontend/dist}"
+FRONTEND_DIST_DIR="${SMART_WALLET_FRONTEND_DIST_DIR:-$APP_HOME/frontend/dist}"
 ENV_DIR="${SMART_WALLET_ENV_DIR:-/etc/coinstrategy}"
 ENV_FILE="${SMART_WALLET_ENV_FILE:-$ENV_DIR/smart-wallet.env}"
 SYSTEMD_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -21,11 +21,6 @@ ENV_TEMPLATE="$ROOT_DIR/deploy/linux/env/smart-wallet.env.example"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "[install-smart-wallet-linux-service] please run as root or with sudo." >&2
-  exit 1
-fi
-
-if [ ! -d "$APP_HOME" ]; then
-  echo "[install-smart-wallet-linux-service] app home does not exist: $APP_HOME" >&2
   exit 1
 fi
 
@@ -47,7 +42,8 @@ if [ "$APP_GROUP" != "$APP_USER" ]; then
 fi
 
 mkdir -p "$ENV_DIR" "$APP_HOME/logs"
-chown -R "$APP_USER:$APP_GROUP" "$APP_HOME/logs"
+mkdir -p "$APP_HOME/bin" "$APP_HOME/backend" "$APP_HOME/frontend" "$APP_HOME/runtime"
+chown -R "$APP_USER:$APP_GROUP" "$APP_HOME"
 
 if [ ! -f "$ENV_FILE" ]; then
   cp "$ENV_TEMPLATE" "$ENV_FILE"
@@ -56,6 +52,18 @@ fi
 
 chown "root:$APP_GROUP" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
+
+START_SCRIPT_SOURCE=""
+if [ -f "$ROOT_DIR/bin/start-smart-wallet-backend.sh" ]; then
+  START_SCRIPT_SOURCE="$ROOT_DIR/bin/start-smart-wallet-backend.sh"
+elif [ -f "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" ]; then
+  START_SCRIPT_SOURCE="$ROOT_DIR/scripts/start-smart-wallet-backend.sh"
+fi
+
+if [ -n "$START_SCRIPT_SOURCE" ]; then
+  install -m 755 "$START_SCRIPT_SOURCE" "$APP_HOME/bin/start-smart-wallet-backend.sh"
+  chown "$APP_USER:$APP_GROUP" "$APP_HOME/bin/start-smart-wallet-backend.sh"
+fi
 
 sed \
   -e "s|__APP_HOME__|$APP_HOME|g" \
@@ -76,7 +84,7 @@ if [ "$INSTALL_NGINX" = "true" ]; then
 
   if [ ! -d "$FRONTEND_DIST_DIR" ]; then
     echo "[install-smart-wallet-linux-service] frontend dist not found: $FRONTEND_DIST_DIR" >&2
-    echo "[install-smart-wallet-linux-service] build frontend first with scripts/build-smart-wallet-release.sh or npm run build." >&2
+    echo "[install-smart-wallet-linux-service] upload frontend dist first, then rerun this script or set SMART_WALLET_INSTALL_NGINX=false." >&2
     exit 1
   fi
 

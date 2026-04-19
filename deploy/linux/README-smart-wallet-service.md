@@ -1,228 +1,242 @@
-# Smart Wallet Linux 服务部署说明
+# Smart Wallet Linux 制品部署说明
 
-这套部署方案是基于当前仓库里的 [`scripts/run-smart-wallet.sh`](../../scripts/run-smart-wallet.sh) 整理出来的 Linux 生产版方案。
+这份方案按你现在的要求重新收口了：
 
-当前按你的服务器实际情况，默认约定如下：
+- 服务器不拉代码
+- 服务器不做 Maven / Node 构建
+- 服务器只接收上传的 `jar` 和前端 `dist`
+- 前端和后端在同一台服务器
+- 后端只监听 `127.0.0.1`
+- 外部流量统一走 `nginx`
 
-- 后端主配置文件：[`coin-strategy-job/src/main/resources/application-prod.yml`](../../coin-strategy-job/src/main/resources/application-prod.yml)
+当前默认机器信息：
+
 - 服务器 IP：`49.51.250.174`
-- 后端服务端口：`8081`
+- 后端 profile：`prod`
+- 后端本地端口：`8081`
 
-核心差异：
+## 1. 部署目录
 
-- 本地脚本：动态找端口、临时前后台一起拉起、前端使用 `vite dev`
-- 服务器方案：后端使用 `systemd` 常驻，前端使用 `vite build` 产物 + `nginx` 托管
-
-## 1. 推荐目录
-
-建议服务器上的项目目录保持为固定路径，例如：
+推荐统一运行目录：
 
 ```bash
-/opt/coinstrategy/CoinStrategy
+/opt/coinstrategy/smart-wallet
 ```
 
-如果你后续想做版本切换，也可以扩展为：
+目录结构建议如下：
 
 ```bash
-/opt/coinstrategy/releases/20260419
-/opt/coinstrategy/current -> /opt/coinstrategy/releases/20260419
+/opt/coinstrategy/smart-wallet/
+├── backend/app.jar
+├── frontend/dist/
+├── bin/
+│   ├── start-smart-wallet-backend.sh
+│   ├── install-smart-wallet-artifacts.sh
+│   └── install-smart-wallet-linux-service.sh
+├── runtime/
+│   ├── polymarket_clob_client.py
+│   └── polymarket_http.py
+└── logs/
 ```
 
-本文档默认 `APP_HOME=/opt/coinstrategy/CoinStrategy`。
+说明：
 
-## 2. 依赖准备
+- `backend/app.jar` 是你本地构建后上传的后端包
+- `frontend/dist/` 是你本地打包后上传的前端静态文件
+- `runtime/` 只在 Polymarket LIVE Python bridge 需要时使用
+- 服务器上不需要 Git 仓库源码
 
-至少准备这些运行环境：
+## 2. 一次性安装内容
+
+服务器只需要预装这些运行时：
 
 - `JDK 17`
-- `Maven 3.9+`
-- `Node.js 18+`
-- `npm`
 - `nginx`
-- `MySQL 8.x`
-- `python3` 和 `pip3`
+- `python3`
+- `pip3`
 
-如果你要启用 Polymarket LIVE 下单，还需要安装 Python SDK：
+如果启用 Polymarket LIVE，还要安装：
 
 ```bash
 pip3 install py-clob-client
 ```
 
-## 3. 配置文件约定
+注意：`Maven`、`Node.js`、`npm` 不再是服务器必须项，它们只需要在你本地或 CI 构建机上存在。
 
-服务器启动时，主配置文件使用：
+## 3. 配置原则
 
-```bash
-coin-strategy-job/src/main/resources/application-prod.yml
-```
+主原则是：
 
-目前仓库里已经对齐为：
+- `application-prod.yml` 放“默认配置”
+- `/etc/coinstrategy/smart-wallet.env` 放“敏感信息和服务器差异化配置”
 
-- `server.port=8081`
-- `server.address=0.0.0.0`
-- MySQL 地址：`49.51.250.174:3306`
+你不应该在服务器上改源码里的 `application-prod.yml`，而是通过环境变量覆盖。
 
-也就是说，后端默认通过 `--spring.profiles.active=prod` 读取这份配置启动。
-
-## 4. 可选环境变量文件
-
-Linux 服务启动不再依赖 `~/.zshrc`，统一改成独立环境文件：
-
-```bash
-/etc/coinstrategy/smart-wallet.env
-```
-
-模板文件在：
+示例环境文件：
 
 - [`deploy/linux/env/smart-wallet.env.example`](./env/smart-wallet.env.example)
 
-这个文件会被 [`scripts/start-smart-wallet-backend.sh`](../../scripts/start-smart-wallet-backend.sh) 直接 `source`，所以请使用 `export KEY=value` 语法。
+建议重点维护这些变量：
 
-这份文件现在更适合放“敏感信息”或“少量覆盖项”，不是主配置入口。
-
-最少建议确认这些配置：
-
-- `SMART_WALLET_BACKEND_PORT`
-- `SPRING_PROFILES_ACTIVE`
+- `SERVER_ADDRESS=127.0.0.1`
+- `SERVER_PORT=8081`
 - `SPRING_DATASOURCE_URL`
 - `SPRING_DATASOURCE_USERNAME`
 - `SPRING_DATASOURCE_PASSWORD`
-- `POLYMARKET_PYTHON_EXECUTABLE`
-- `POLYMARKET_EXECUTION_WALLET_ADDRESS`
-- `POLYMARKET_EXECUTION_PRIVATE_KEY`
-- `POLYMARKET_EXECUTION_FUNDER_ADDRESS`
-- `POLYMARKET_CLOB_API_KEY`
-- `POLYMARKET_CLOB_API_SECRET`
-- `POLYMARKET_CLOB_API_PASSPHRASE`
+- `JAVA_OPTS`
+- `POLYMARKET_*`
+- `SMART_WALLET_EXECUTION_WALLET_HELPER_SCRIPT_PATH`
 
-## 5. 构建发布产物
+## 4. 安全边界
 
-如果你打算直接在服务器构建，可以在项目根目录执行：
+这套方案默认的安全边界是：
+
+1. Spring Boot 后端只监听 `127.0.0.1:8081`
+2. 外网只开放 `80/443`
+3. `nginx` 反代 `/strategy/api/` 到本机 `127.0.0.1:8081`
+4. `systemd` 使用独立低权限用户 `coinstrategy`
+5. 环境变量文件放在 `/etc/coinstrategy/smart-wallet.env`，权限为 `640`
+6. 后端服务加了基础 `systemd` 加固项：`NoNewPrivileges`、`ProtectSystem`、`PrivateTmp`
+
+如果 MySQL 也在这台机器上，建议把数据库地址也改成：
+
+```bash
+SPRING_DATASOURCE_URL=jdbc:mysql://127.0.0.1:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+```
+
+不要继续走公网 IP `49.51.250.174:3306`。
+
+## 5. 本地构建上传包
+
+在本地仓库执行：
 
 ```bash
 bash scripts/build-smart-wallet-release.sh
 ```
 
-这个脚本会做几件事：
+这个脚本只适合本地或 CI，用来生成上传包，不是给服务器构建用的。
 
-1. 执行 `mvn -pl coin-strategy-job -am package -DskipTests`
-2. 执行前端 `npm ci` 和 `npm run build`
-3. 生成发布目录 `dist/smart-wallet-release`
-
-生成后你会拿到：
-
-- `dist/smart-wallet-release/backend/coin-strategy-job.jar`
-- `dist/smart-wallet-release/frontend/dist`
-- `dist/smart-wallet-release/scripts`
-- `dist/smart-wallet-release/deploy/linux`
-
-如果你想让前端使用同域名反代，构建时保持 `VITE_API_BASE_URL` 为空即可；这也是当前脚本默认行为。
-
-## 6. 后端启动方式
-
-Linux 服务启动脚本：
-
-- [`scripts/start-smart-wallet-backend.sh`](../../scripts/start-smart-wallet-backend.sh)
-
-它会做这些事：
-
-1. 优先加载 `/etc/coinstrategy/smart-wallet.env`
-2. 找可运行的 `coin-strategy-job` jar
-3. 以 `spring.profiles.active=prod` 启动，并读取 `application-prod.yml`
-4. 将日志输出到 `journalctl`，同时应用日志继续落到项目目录下 `logs/`
-
-本地手动验证可以这样跑：
+产物会在：
 
 ```bash
-SMART_WALLET_ENV_FILE=/etc/coinstrategy/smart-wallet.env \
-bash scripts/start-smart-wallet-backend.sh
+dist/smart-wallet-release/
 ```
 
-## 7. 安装 systemd 和 nginx
+其中最关键的是：
 
-已经准备好的模板文件：
+- `backend/app.jar`
+- `frontend/dist/`
+- `bin/`
+- `deploy/linux/`
 
-- systemd 模板：[`deploy/linux/systemd/smart-wallet-backend.service.template`](./systemd/smart-wallet-backend.service.template)
-- nginx 模板：[`deploy/linux/nginx/smart-wallet.conf.template`](./nginx/smart-wallet.conf.template)
-
-也提供了一键安装脚本：
-
-- [`scripts/install-smart-wallet-linux-service.sh`](../../scripts/install-smart-wallet-linux-service.sh)
-
-示例：
+也会额外生成一个压缩包：
 
 ```bash
-sudo SMART_WALLET_APP_HOME=/opt/coinstrategy/CoinStrategy \
+dist/smart-wallet-release/smart-wallet-release.tar.gz
+```
+
+## 6. 服务器首次安装
+
+首次安装时，把这些内容上传到服务器任意临时目录，例如：
+
+```bash
+/tmp/smart-wallet-release/
+```
+
+然后执行一次安装脚本：
+
+```bash
+sudo SMART_WALLET_APP_HOME=/opt/coinstrategy/smart-wallet \
 SMART_WALLET_SERVER_NAME=49.51.250.174 \
-bash scripts/install-smart-wallet-linux-service.sh
+bash /tmp/smart-wallet-release/bin/install-smart-wallet-linux-service.sh
 ```
 
-这个安装脚本会：
+这个脚本只做“一次性骨架安装”：
 
-1. 创建 `coinstrategy` 系统用户（如果不存在）
-2. 创建 `/etc/coinstrategy/smart-wallet.env`（如果不存在）
-3. 生成 `/etc/systemd/system/smart-wallet-backend.service`
-4. 生成 `/etc/nginx/conf.d/smart-wallet.conf`
-5. 执行 `systemctl daemon-reload`
-6. 执行 `systemctl enable smart-wallet-backend`
-7. 如果系统已安装 `nginx`，执行 `nginx -t`
+- 创建 `coinstrategy` 用户
+- 创建 `/opt/coinstrategy/smart-wallet` 目录结构
+- 创建 `/etc/coinstrategy/smart-wallet.env`
+- 安装 `systemd`
+- 安装 `nginx` 配置
 
-## 8. 启动与验证
+## 7. 每次发布更新
 
-启动后端：
+之后每次发版，只需要重新上传新版本的：
+
+- `backend/app.jar`
+- `frontend/dist/`
+
+然后执行：
+
+```bash
+sudo SMART_WALLET_APP_HOME=/opt/coinstrategy/smart-wallet \
+bash /tmp/smart-wallet-release/bin/install-smart-wallet-artifacts.sh
+```
+
+这个脚本只会：
+
+- 替换 `backend/app.jar`
+- 替换 `frontend/dist/`
+- 同步 `bin/start-smart-wallet-backend.sh`
+- 如果存在则同步 `runtime/*.py`
+
+然后重启服务：
 
 ```bash
 sudo systemctl restart smart-wallet-backend
-sudo systemctl status smart-wallet-backend
-```
-
-查看日志：
-
-```bash
-journalctl -u smart-wallet-backend -f
-tail -f /opt/coinstrategy/CoinStrategy/logs/coin-strategy-job.log
-```
-
-重载 nginx：
-
-```bash
 sudo systemctl reload nginx
 ```
 
-验证接口：
+## 8. 启动与验证
+
+检查后端：
+
+```bash
+sudo systemctl status smart-wallet-backend
+journalctl -u smart-wallet-backend -f
+```
+
+检查本机接口：
 
 ```bash
 curl http://127.0.0.1:8081/strategy/api/smart-wallet/health
-curl http://127.0.0.1/strategy/api/smart-wallet/health
 ```
 
-Swagger：
+检查外部入口：
 
 ```bash
-http://49.51.250.174/strategy/api/swagger-ui.html
+curl http://49.51.250.174/strategy/api/smart-wallet/health
 ```
 
-前端：
+访问地址：
 
-```bash
-http://49.51.250.174/
-http://49.51.250.174/dashboard
-```
+- Swagger: `http://49.51.250.174/strategy/api/swagger-ui.html`
+- 前端首页: `http://49.51.250.174/`
+- 前端 dashboard: `http://49.51.250.174/dashboard`
 
-## 9. 推荐上线顺序
+## 9. 当前脚本职责
 
-建议按下面顺序配置：
+- [`scripts/build-smart-wallet-release.sh`](../../scripts/build-smart-wallet-release.sh)
+  本地构建上传包
+- [`scripts/install-smart-wallet-artifacts.sh`](../../scripts/install-smart-wallet-artifacts.sh)
+  服务器更新 `jar` 和 `dist`
+- [`scripts/install-smart-wallet-linux-service.sh`](../../scripts/install-smart-wallet-linux-service.sh)
+  服务器首次安装服务骨架
+- [`scripts/start-smart-wallet-backend.sh`](../../scripts/start-smart-wallet-backend.sh)
+  `systemd` 实际调用的后端启动脚本
 
-1. 先确认服务器上的 `application-prod.yml` 配置正确
-2. 手工执行一次 `bash scripts/start-smart-wallet-backend.sh` 验证后端能起来
-3. 执行 `npm run build` 或 `bash scripts/build-smart-wallet-release.sh`
-4. 安装 `systemd` 和 `nginx`
-5. 最后再开启 `auto-execution-enabled` 或 LIVE 模式
+## 10. 精简建议
 
-## 10. 注意事项
+如果你当前阶段只跑后端接口和前端展示，可以继续精简：
 
-- 线上不要继续用 `vite dev`，那是开发态服务
-- 你当前服务器是以 `application-prod.yml` 为主配置启动，所以数据库、端口等核心参数建议优先维护在这份文件里
-- `/etc/coinstrategy/smart-wallet.env` 更适合放私钥、API Key、超时参数这类敏感或易变配置
-- `helper-script-path` 现在是相对路径 `scripts/polymarket_clob_client.py`，所以 `systemd` 的 `WorkingDirectory` 必须指向项目根目录
-- 如果服务器不是 `x86_64` 常规 Linux，请先确认 Java、Node、Python 版本都可用
+- 不启用 Polymarket LIVE，就不用上传 `runtime/*.py`
+- 不改 profile，就不用在 env 里设置 `SPRING_PROFILES_ACTIVE`
+- 不改单机端口，就不用在 env 里设置 `SERVER_PORT`
+
+这样服务器侧真正需要长期维护的，通常只剩：
+
+- 一个 `app.jar`
+- 一个 `dist/`
+- 一个 `/etc/coinstrategy/smart-wallet.env`
+
+这就是比较安全、可控的制品部署方式。

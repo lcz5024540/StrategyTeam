@@ -4,6 +4,7 @@ server {
 
     root __FRONTEND_DIST_DIR__;
     index index.html;
+    server_tokens off;
 
     location /strategy/api/ {
         proxy_pass http://127.0.0.1:__BACKEND_PORT__/strategy/api/;
@@ -14,7 +15,17 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
+
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
 }
