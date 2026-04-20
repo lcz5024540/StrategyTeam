@@ -87,10 +87,7 @@ echo "[OK] 前端 dist -> $RELEASE_DIR/frontend/dist"
 echo ""
 echo "复制部署辅助文件..."
 
-# 启动脚本
-if [ -f "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" ]; then
-  cp "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
-fi
+# 启动脚本 (start-smart-wallet-backend.sh 在步骤 4 中复制)
 if [ -f "$ROOT_DIR/scripts/install-smart-wallet-artifacts.sh" ]; then
   cp "$ROOT_DIR/scripts/install-smart-wallet-artifacts.sh" "$RELEASE_DIR/bin/"
 fi
@@ -111,31 +108,37 @@ if [ -d "$ROOT_DIR/deploy/linux" ]; then
 fi
 
 # ============================================================
-# 4. 生成环境专属启动脚本
+# 4. 生成环境专属快捷脚本 (调用通用管理脚本)
 # ============================================================
-cat > "$RELEASE_DIR/bin/start-backend-${ENV}.sh" << 'SCRIPT_EOF'
+
+# 复制通用管理脚本
+cp "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
+chmod +x "$RELEASE_DIR/bin/start-smart-wallet-backend.sh"
+
+# 生成环境快捷脚本
+cat > "$RELEASE_DIR/bin/start-backend-${ENV}.sh" << SCRIPT_EOF
 #!/usr/bin/env bash
+# ============================================================
+# 快捷脚本 — ${ENV} 环境后端服务管理
+# 用法:
+#   ./start-backend-${ENV}.sh          — 后台启动
+#   ./start-backend-${ENV}.sh stop     — 停止
+#   ./start-backend-${ENV}.sh restart  — 重启
+#   ./start-backend-${ENV}.sh status   — 查看状态
+#   ./start-backend-${ENV}.sh log      — 实时查看日志
+# ============================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="${SMART_WALLET_ENV_FILE:-$APP_HOME/deploy/linux/env/smart-wallet.env}"
+SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+APP_HOME="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 
-if [ -f "$ENV_FILE" ]; then
-  echo "加载环境文件: $ENV_FILE"
-  set -a; source "$ENV_FILE"; set +a
-fi
+# 环境配置
+export SPRING_PROFILES_ACTIVE="${ENV}"
+export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-${ENV}.env}"
+export LOG_DIR="\${LOG_DIR:-/home/ubuntu/logs}"
 
-JAVA_OPTS="${JAVA_OPTS:--Xms512m -Xmx1024m -XX:+UseG1GC}"
-
-exec java $JAVA_OPTS \
-SCRIPT_EOF
-
-# 追加环境特定的 profile 参数
-echo "  -Dspring.profiles.active=$ENV \\" >> "$RELEASE_DIR/bin/start-backend-${ENV}.sh"
-cat >> "$RELEASE_DIR/bin/start-backend-${ENV}.sh" << 'SCRIPT_EOF'
-  -jar "$APP_HOME/backend/app.jar" \
-  --logging.file.path="$APP_HOME/logs"
+# 委托给通用管理脚本
+exec "\$SCRIPT_DIR/start-smart-wallet-backend.sh" "\${1:-start}"
 SCRIPT_EOF
 
 chmod +x "$RELEASE_DIR/bin/start-backend-${ENV}.sh"

@@ -1,5 +1,5 @@
 [Unit]
-Description=CoinStrategy Smart Wallet Backend
+Description=CoinStrategy Smart Wallet Backend (__ENV__)
 After=network.target
 
 [Service]
@@ -7,23 +7,33 @@ Type=simple
 User=__APP_USER__
 Group=__APP_GROUP__
 WorkingDirectory=__APP_HOME__
+
+# 环境变量
 Environment=SMART_WALLET_ENV_FILE=__ENV_FILE__
-Environment=SPRING_PROFILES_ACTIVE=prod
-ExecStart=__APP_HOME__/bin/start-smart-wallet-backend.sh
+Environment=SPRING_PROFILES_ACTIVE=__ENV__
+Environment=LOG_DIR=/home/ubuntu/logs
+Environment=JAVA_OPTS=-Xms512m -Xmx1024m -XX:+UseG1GC
+
+ExecStart=/usr/bin/java $JAVA_OPTS \
+    -Dspring.profiles.active=__ENV__ \
+    -Dlog.dir=/home/ubuntu/logs \
+    -jar __APP_HOME__/backend/app.jar
+
 SuccessExitStatus=143
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
+
+# 安全加固
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ProtectHome=true
 ProtectControlGroups=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=__APP_HOME__/logs __APP_HOME__/runtime
+ReadWritePaths=/home/ubuntu/logs __APP_HOME__/runtime
 
 [Install]
 WantedBy=multi-user.target
