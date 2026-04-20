@@ -12,41 +12,54 @@
 -- - 再在生产库执行
 -- - 执行完成后重启应用，让新逻辑开始给 order / fill 回写 position_id
 
-SET @schema_name = DATABASE();
-
 DROP PROCEDURE IF EXISTS `sp_upgrade_polymarket_smart_wallet_schema`;
 
 DELIMITER $$
 CREATE PROCEDURE `sp_upgrade_polymarket_smart_wallet_schema`()
 BEGIN
     DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_schema_name VARCHAR(128) DEFAULT DATABASE();
 
-    -- 1. smart_wallet_follow_task.market_end_at
+    -- 1. smart_wallet_follow_task.market_end_at（仅旧结构仍保留 outcome 列时补齐）
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_follow_task'
-      AND column_name = 'market_end_at';
-    IF v_exists = 0 THEN
-        ALTER TABLE `smart_wallet_follow_task`
-            ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`;
+      AND column_name = 'outcome';
+    IF v_exists > 0 THEN
+        SELECT COUNT(1) INTO v_exists
+        FROM information_schema.columns
+        WHERE table_schema = v_schema_name
+          AND table_name = 'smart_wallet_follow_task'
+          AND column_name = 'market_end_at';
+        IF v_exists = 0 THEN
+            ALTER TABLE `smart_wallet_follow_task`
+                ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`;
+        END IF;
     END IF;
 
-    -- 2. smart_wallet_order.market_end_at
+    -- 2. smart_wallet_order.market_end_at（仅旧结构仍保留 outcome 列时补齐）
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_order'
-      AND column_name = 'market_end_at';
-    IF v_exists = 0 THEN
-        ALTER TABLE `smart_wallet_order`
-            ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`;
+      AND column_name = 'outcome';
+    IF v_exists > 0 THEN
+        SELECT COUNT(1) INTO v_exists
+        FROM information_schema.columns
+        WHERE table_schema = v_schema_name
+          AND table_name = 'smart_wallet_order'
+          AND column_name = 'market_end_at';
+        IF v_exists = 0 THEN
+            ALTER TABLE `smart_wallet_order`
+                ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`;
+        END IF;
     END IF;
 
     -- 3. smart_wallet_order.position_id
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_order'
       AND column_name = 'position_id';
     IF v_exists = 0 THEN
@@ -57,7 +70,7 @@ BEGIN
     -- 4. smart_wallet_fill.position_id
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_fill'
       AND column_name = 'position_id';
     IF v_exists = 0 THEN
@@ -65,21 +78,28 @@ BEGIN
             ADD COLUMN `position_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联持仓轮次ID' AFTER `order_id`;
     END IF;
 
-    -- 5. smart_wallet_position.market_end_at
+    -- 5. smart_wallet_position.market_end_at（仅旧结构仍保留 outcome 列时补齐）
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_position'
-      AND column_name = 'market_end_at';
-    IF v_exists = 0 THEN
-        ALTER TABLE `smart_wallet_position`
-            ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`;
+      AND column_name = 'outcome';
+    IF v_exists > 0 THEN
+        SELECT COUNT(1) INTO v_exists
+        FROM information_schema.columns
+        WHERE table_schema = v_schema_name
+          AND table_name = 'smart_wallet_position'
+          AND column_name = 'market_end_at';
+        IF v_exists = 0 THEN
+            ALTER TABLE `smart_wallet_position`
+                ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`;
+        END IF;
     END IF;
 
     -- 6. smart_wallet_position.original_cost_basis_usdc
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_position'
       AND column_name = 'original_cost_basis_usdc';
     IF v_exists = 0 THEN
@@ -88,20 +108,35 @@ BEGIN
     END IF;
 
     -- 7. 删除旧唯一索引，允许同 execution_address + market_id + outcome 出现多轮历史仓位
+    --    仅旧结构仍保留 market_id/outcome 列时需要处理
     SELECT COUNT(1) INTO v_exists
-    FROM information_schema.statistics
-    WHERE table_schema = @schema_name
+    FROM information_schema.columns
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_position'
-      AND index_name = 'uk_position_execution_market_outcome';
+      AND column_name = 'market_id';
     IF v_exists > 0 THEN
-        ALTER TABLE `smart_wallet_position`
-            DROP INDEX `uk_position_execution_market_outcome`;
+        SELECT COUNT(1) INTO v_exists
+        FROM information_schema.columns
+        WHERE table_schema = v_schema_name
+          AND table_name = 'smart_wallet_position'
+          AND column_name = 'outcome';
+    END IF;
+    IF v_exists > 0 THEN
+        SELECT COUNT(1) INTO v_exists
+        FROM information_schema.statistics
+        WHERE table_schema = v_schema_name
+          AND table_name = 'smart_wallet_position'
+          AND index_name = 'uk_position_execution_market_outcome';
+        IF v_exists > 0 THEN
+            ALTER TABLE `smart_wallet_position`
+                DROP INDEX `uk_position_execution_market_outcome`;
+        END IF;
     END IF;
 
     -- 8. smart_wallet_order.position_id 索引
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.statistics
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_order'
       AND index_name = 'idx_order_position';
     IF v_exists = 0 THEN
@@ -112,7 +147,7 @@ BEGIN
     -- 9. smart_wallet_fill.position_id 索引
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.statistics
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_fill'
       AND index_name = 'idx_fill_position';
     IF v_exists = 0 THEN
@@ -120,21 +155,35 @@ BEGIN
             ON `smart_wallet_fill` (`position_id`, `filled_at`);
     END IF;
 
-    -- 10. smart_wallet_position 新查询索引
+    -- 10. smart_wallet_position 新查询索引（仅旧结构仍保留 market_id/outcome 列时补齐）
     SELECT COUNT(1) INTO v_exists
-    FROM information_schema.statistics
-    WHERE table_schema = @schema_name
+    FROM information_schema.columns
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_position'
-      AND index_name = 'idx_position_execution_market_outcome';
-    IF v_exists = 0 THEN
-        CREATE INDEX `idx_position_execution_market_outcome`
-            ON `smart_wallet_position` (`execution_address`, `market_id`, `outcome`, `status`, `last_filled_at`);
+      AND column_name = 'market_id';
+    IF v_exists > 0 THEN
+        SELECT COUNT(1) INTO v_exists
+        FROM information_schema.columns
+        WHERE table_schema = v_schema_name
+          AND table_name = 'smart_wallet_position'
+          AND column_name = 'outcome';
+    END IF;
+    IF v_exists > 0 THEN
+        SELECT COUNT(1) INTO v_exists
+        FROM information_schema.statistics
+        WHERE table_schema = v_schema_name
+          AND table_name = 'smart_wallet_position'
+          AND index_name = 'idx_position_execution_market_outcome';
+        IF v_exists = 0 THEN
+            CREATE INDEX `idx_position_execution_market_outcome`
+                ON `smart_wallet_position` (`execution_address`, `market_id`, `outcome`, `status`, `last_filled_at`);
+        END IF;
     END IF;
 
     -- 11. 可选兼容项：扩大 status 列长度，避免后续状态值写入失败
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_order'
       AND column_name = 'status'
       AND IFNULL(character_maximum_length, 0) < 32;
@@ -146,7 +195,7 @@ BEGIN
 
     SELECT COUNT(1) INTO v_exists
     FROM information_schema.columns
-    WHERE table_schema = @schema_name
+    WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_position'
       AND column_name = 'status'
       AND IFNULL(character_maximum_length, 0) < 32;

@@ -33,9 +33,9 @@ public class SmartWalletSchemaMaintenanceService {
                 "ALTER TABLE `smart_wallet_claim_run` MODIFY COLUMN `error_message` VARCHAR(2048) DEFAULT NULL");
         ensureMinimumVarcharLength("smart_wallet_claim_retry", "last_error_message", 2048,
                 "ALTER TABLE `smart_wallet_claim_retry` MODIFY COLUMN `last_error_message` VARCHAR(2048) DEFAULT NULL");
-        ensureColumnExists("smart_wallet_follow_task", "market_end_at",
+        ensureLegacyColumnExists("smart_wallet_follow_task", "market_end_at", "outcome",
                 "ALTER TABLE `smart_wallet_follow_task` ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`");
-        ensureColumnExists("smart_wallet_order", "market_end_at",
+        ensureLegacyColumnExists("smart_wallet_order", "market_end_at", "outcome",
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`");
         ensureColumnExists("smart_wallet_order", "position_id",
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `position_id` BIGINT NULL COMMENT '关联持仓轮次ID' AFTER `follow_task_id`");
@@ -43,23 +43,24 @@ public class SmartWalletSchemaMaintenanceService {
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '该订单已实现收益' AFTER `fee_usdc`");
         ensureColumnExists("smart_wallet_order", "exit_reason",
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `exit_reason` VARCHAR(64) NULL COMMENT '提前退出原因' AFTER `realized_pnl_usdc`");
-        ensureColumnExists("smart_wallet_position", "market_end_at",
+        ensureLegacyColumnExists("smart_wallet_position", "market_end_at", "outcome",
                 "ALTER TABLE `smart_wallet_position` ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`");
         ensureColumnExists("smart_wallet_position", "original_cost_basis_usdc",
                 "ALTER TABLE `smart_wallet_position` ADD COLUMN `original_cost_basis_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '原始持仓成本(用于结算后展示)' AFTER `cost_basis_usdc`");
         ensureColumnExists("smart_wallet_fill", "position_id",
                 "ALTER TABLE `smart_wallet_fill` ADD COLUMN `position_id` BIGINT NULL COMMENT '关联持仓轮次ID' AFTER `order_id`");
-        dropIndexIfExists("smart_wallet_position", "uk_position_execution_market_outcome");
+        dropLegacyIndexIfExists("smart_wallet_position", "uk_position_execution_market_outcome", "market_id", "outcome");
         ensureIndexExists("smart_wallet_order", "idx_order_position",
                 "CREATE INDEX `idx_order_position` ON `smart_wallet_order` (`position_id`, `placed_at`)");
         ensureIndexExists("smart_wallet_fill", "idx_fill_position",
                 "CREATE INDEX `idx_fill_position` ON `smart_wallet_fill` (`position_id`, `filled_at`)");
-        ensureIndexExists("smart_wallet_position", "idx_position_execution_market_outcome",
+        ensureLegacyIndexExists("smart_wallet_position", "idx_position_execution_market_outcome",
+                new String[]{"market_id", "outcome"},
                 "CREATE INDEX `idx_position_execution_market_outcome` ON `smart_wallet_position` (`execution_address`, `market_id`, `outcome`, `status`, `last_filled_at`)");
     }
 
     private void widenOutcomeColumn(String tableName) {
-        if (!tableExists(tableName)) {
+        if (!tableExists(tableName) || !columnExists(tableName, "outcome")) {
             return;
         }
         try {
@@ -77,6 +78,17 @@ public class SmartWalletSchemaMaintenanceService {
             jdbcTemplate.execute(ddl);
         } catch (Exception ex) {
             log.warn("Failed to add column {}.{}: {}", tableName, columnName, ex.getMessage());
+        }
+    }
+
+    private void ensureLegacyColumnExists(String tableName, String columnName, String anchorColumn, String ddl) {
+        if (!tableExists(tableName) || !columnExists(tableName, anchorColumn) || columnExists(tableName, columnName)) {
+            return;
+        }
+        try {
+            jdbcTemplate.execute(ddl);
+        } catch (Exception ex) {
+            log.warn("Failed to add legacy-compatible column {}.{}: {}", tableName, columnName, ex.getMessage());
         }
     }
 
@@ -103,6 +115,22 @@ public class SmartWalletSchemaMaintenanceService {
         }
     }
 
+    private void ensureLegacyIndexExists(String tableName, String indexName, String[] requiredColumns, String ddl) {
+        if (!tableExists(tableName) || indexExists(tableName, indexName)) {
+            return;
+        }
+        for (String requiredColumn : requiredColumns) {
+            if (!columnExists(tableName, requiredColumn)) {
+                return;
+            }
+        }
+        try {
+            jdbcTemplate.execute(ddl);
+        } catch (Exception ex) {
+            log.warn("Failed to create legacy-compatible index {} on {}: {}", indexName, tableName, ex.getMessage());
+        }
+    }
+
     private void dropIndexIfExists(String tableName, String indexName) {
         if (!tableExists(tableName) || !indexExists(tableName, indexName)) {
             return;
@@ -112,6 +140,18 @@ public class SmartWalletSchemaMaintenanceService {
         } catch (Exception ex) {
             log.warn("Failed to drop index {} on {}: {}", indexName, tableName, ex.getMessage());
         }
+    }
+
+    private void dropLegacyIndexIfExists(String tableName, String indexName, String... requiredColumns) {
+        if (!tableExists(tableName) || !indexExists(tableName, indexName)) {
+            return;
+        }
+        for (String requiredColumn : requiredColumns) {
+            if (!columnExists(tableName, requiredColumn)) {
+                return;
+            }
+        }
+        dropIndexIfExists(tableName, indexName);
     }
 
     private boolean tableExists(String tableName) {

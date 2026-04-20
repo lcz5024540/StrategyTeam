@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/scripts/polymarket-env.sh"
 FRONTEND_DIR="$ROOT_DIR/coin-strategy-frontend"
-LOG_DIR="${LOG_DIR:-/home/ubuntu/logs}"
+LOG_DIR="${LOG_DIR:-$ROOT_DIR/logs}"
 
 REQUESTED_BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-8081}"
 REQUESTED_FRONTEND_PORT="${SMART_WALLET_FRONTEND_PORT:-5173}"
