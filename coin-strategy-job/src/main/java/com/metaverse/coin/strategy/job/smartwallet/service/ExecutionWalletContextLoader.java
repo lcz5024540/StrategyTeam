@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.job.config.SecretDecryptor;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import lombok.Builder;
@@ -18,6 +19,7 @@ public class ExecutionWalletContextLoader {
 
     private final SmartWalletProperties properties;
     private final PolymarketClobClientRouter clobClientRouter;
+    private final SecretDecryptor secretDecryptor;
 
     public ExecutionWalletContext requireLiveContext() {
         ExecutionWalletContext context = load();
@@ -58,11 +60,11 @@ public class ExecutionWalletContextLoader {
                 .chain(config.getChain())
                 .chainId(config.getChainId())
                 .address(trim(config.getAddress()))
-                .privateKey(trim(config.getPrivateKey()))
+                .privateKey(decrypt(trim(config.getPrivateKey())))
                 .funderAddress(trim(config.getFunderAddress()))
                 .apiBaseUrl(trim(config.getApiBaseUrl()))
                 .apiKey(trim(config.getApiKey()))
-                .apiSecret(trim(config.getApiSecret()))
+                .apiSecret(decrypt(trim(config.getApiSecret())))
                 .apiPassphrase(trim(config.getApiPassphrase()))
                 .deriveApiCredsIfMissing(config.isDeriveApiCredsIfMissing())
                 .sdkMode(trim(config.getSdkMode()))
@@ -119,6 +121,10 @@ public class ExecutionWalletContextLoader {
 
     private String trim(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String decrypt(String value) {
+        return secretDecryptor.decryptIfEncrypted(value);
     }
 
     private BigDecimal safe(BigDecimal value, BigDecimal defaultValue) {
