@@ -2746,7 +2746,7 @@ public class SmartWalletAccountingService {
             return safe(order.getRealizedPnlUsdc()).setScale(8, RoundingMode.HALF_UP);
         }
         if (!"SELL".equalsIgnoreCase(order.getSide()) || order.getPositionId() == null) {
-            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+            return resolveSettledEntryOrderRealizedPnl(order, fillsByPositionId);
         }
         List<SmartWalletFillEntity> fills = fillsByPositionId == null
                 ? fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
@@ -2781,6 +2781,58 @@ public class SmartWalletAccountingService {
             }
         }
         return realizedForOrder.setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal resolveSettledEntryOrderRealizedPnl(SmartWalletOrderEntity order,
+                                                           Map<Long, List<SmartWalletFillEntity>> fillsByPositionId) {
+        if (order == null || order.getPositionId() == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+        if (!ORDER_STATUS_SETTLED_WIN.equalsIgnoreCase(order.getStatus())
+                && !ORDER_STATUS_SETTLED_LOSS.equalsIgnoreCase(order.getStatus())) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+
+        List<SmartWalletFillEntity> fills = fillsByPositionId == null
+                ? fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                .eq(SmartWalletFillEntity::getPositionId, order.getPositionId())
+                .orderByAsc(SmartWalletFillEntity::getFilledAt)
+                .orderByAsc(SmartWalletFillEntity::getId))
+                : fillsByPositionId.getOrDefault(order.getPositionId(), List.of());
+        if (fills == null || fills.isEmpty()) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+
+        boolean hasSellFill = fills.stream().anyMatch(fill -> "SELL".equalsIgnoreCase(fill.getSide()));
+        if (hasSellFill) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+
+        SmartWalletPositionEntity position = positionMapper.selectById(order.getPositionId());
+        if (position == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+
+        BigDecimal totalEntryCost = BigDecimal.ZERO;
+        BigDecimal orderEntryCost = BigDecimal.ZERO;
+        for (SmartWalletFillEntity fill : fills) {
+            if (!"BUY".equalsIgnoreCase(fill.getSide())) {
+                continue;
+            }
+            BigDecimal entryCost = safe(fill.getNotionalUsdc()).add(safe(fill.getFeeUsdc()));
+            totalEntryCost = totalEntryCost.add(entryCost);
+            if (Objects.equals(fill.getOrderId(), order.getId())) {
+                orderEntryCost = orderEntryCost.add(entryCost);
+            }
+        }
+        if (totalEntryCost.compareTo(BigDecimal.ZERO) <= 0 || orderEntryCost.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+
+        return safe(position.getRealizedPnlUsdc())
+                .multiply(orderEntryCost)
+                .divide(totalEntryCost, 8, RoundingMode.HALF_UP)
+                .setScale(8, RoundingMode.HALF_UP);
     }
 
     private int countOrdersByMode(String mode) {

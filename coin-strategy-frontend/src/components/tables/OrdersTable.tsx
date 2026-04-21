@@ -27,6 +27,18 @@ function getPnlBadgeClass(value?: number): string {
   return 'badge'
 }
 
+function shouldShowRealizedPnl(order: {
+  earlyExit?: boolean
+  realizedPnlUsdc?: number
+  status: string
+}): boolean {
+  const pnl = Number(order.realizedPnlUsdc || 0)
+  if (order.earlyExit) {
+    return true
+  }
+  return pnl !== 0 || order.status === 'SETTLED_WIN' || order.status === 'SETTLED_LOSS'
+}
+
 interface OrdersTableProps {
   mode?: 'PAPER' | 'LIVE'
 }
@@ -190,7 +202,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
                         ) : null}
                         {!order.earlyExit && order.orderType ? <span className="badge">{order.orderType}</span> : null}
                       </div>
-                      {order.earlyExit ? (
+                      {shouldShowRealizedPnl(order) ? (
                         <span className={getPnlBadgeClass(order.realizedPnlUsdc)}>
                           收益 {formatMoney(order.realizedPnlUsdc)}
                         </span>
