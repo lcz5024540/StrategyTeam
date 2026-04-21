@@ -119,7 +119,7 @@
 
 ## 5. 代码架构建议
 
-### 5.1 模块划分
+### 5.1 模块划分（coin-strategy-core/arbitrage）
 
 * **`monitor`**：获取 funding、mark price、spot/futures price、next funding time。
 * **`decision`**：基于 funding、基差、净收益和保证金做开平仓决策。
