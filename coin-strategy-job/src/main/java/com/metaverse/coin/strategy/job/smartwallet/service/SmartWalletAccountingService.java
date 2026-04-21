@@ -1861,6 +1861,15 @@ public class SmartWalletAccountingService {
         marketInfoService.populateOrders(orders);
         Date now = new Date();
         for (SmartWalletOrderEntity order : orders) {
+            if (isEarlyExitOrder(order)) {
+                String earlyExitStatus = resolveEarlyExitOrderStatus(order);
+                if (StringUtils.hasText(earlyExitStatus) && !earlyExitStatus.equalsIgnoreCase(order.getStatus())) {
+                    order.setStatus(earlyExitStatus);
+                    order.setUpdatedAt(now);
+                    orderMapper.updateById(order);
+                }
+                continue;
+            }
             String effectiveOutcome = resolveEffectiveOutcome(order.getTokenId(), order.getOutcome(), metadata);
             String nextStatus = metadata.getResolvedOutcome().equalsIgnoreCase(effectiveOutcome)
                     ? ORDER_STATUS_SETTLED_WIN
@@ -2974,6 +2983,7 @@ public class SmartWalletAccountingService {
         SignalRiskDecision decision = resolveOrderRiskDecision(order);
         String exitReason = resolveOrderExitReason(order);
         BigDecimal realizedPnlUsdc = resolveOrderRealizedPnl(order, null);
+        String displayStatus = resolveDisplayOrderStatus(order);
         return SmartWalletOrderView.builder()
                 .id(order.getId())
                 .followTaskId(order.getFollowTaskId())
@@ -2991,7 +3001,7 @@ public class SmartWalletAccountingService {
                 .orderType(order.getOrderType())
                 .earlyExit(isEarlyExitOrder(order))
                 .exitReason(exitReason)
-                .status(order.getStatus())
+                .status(displayStatus)
                 .price(order.getPrice())
                 .size(order.getSize())
                 .notionalUsdc(order.getNotionalUsdc())
@@ -3007,6 +3017,28 @@ public class SmartWalletAccountingService {
                 .placedAt(order.getPlacedAt())
                 .filledAt(order.getFilledAt())
                 .build();
+    }
+
+    private String resolveDisplayOrderStatus(SmartWalletOrderEntity order) {
+        if (order == null || !isEarlyExitOrder(order)) {
+            return order == null ? null : order.getStatus();
+        }
+        String earlyExitStatus = resolveEarlyExitOrderStatus(order);
+        if (StringUtils.hasText(earlyExitStatus)) {
+            return earlyExitStatus;
+        }
+        return order.getStatus();
+    }
+
+    private String resolveEarlyExitOrderStatus(SmartWalletOrderEntity order) {
+        String exitReason = resolveOrderExitReason(order);
+        if (TAKE_PROFIT_EXIT_REASON.equalsIgnoreCase(exitReason)) {
+            return ORDER_STATUS_SETTLED_WIN;
+        }
+        if (STOP_LOSS_EXIT_REASON.equalsIgnoreCase(exitReason)) {
+            return ORDER_STATUS_SETTLED_LOSS;
+        }
+        return "FILLED";
     }
 
     private SignalRiskDecision resolveOrderRiskDecision(SmartWalletOrderEntity order) {
