@@ -1,4 +1,4 @@
-package com.metaverse.coin.strategy.job.controller;
+package com.metaverse.coin.strategy.job.funding.controller;
 
 import com.metaverse.coin.strategy.job.service.BinanceSingleExchangeFundingRateArbitrageService;
 import lombok.RequiredArgsConstructor;

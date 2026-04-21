@@ -45,3 +45,4 @@ coin-strategy-frontend/node_modules/
 coin-strategy-frontend/dist/
 logs/
 .gitignore
+.log
