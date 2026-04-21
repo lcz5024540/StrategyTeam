@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_fill` (
     `size` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '成交份额',
     `notional_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '成交名义USDC',
     `fee_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '手续费',
+    `realized_pnl_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT 'SELL 成交实现 P&L（USDC）；BUY 成交为 NULL',
     `filled_at` TIMESTAMP NOT NULL COMMENT '成交时间',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     INDEX `idx_fill_order` (`order_id`),

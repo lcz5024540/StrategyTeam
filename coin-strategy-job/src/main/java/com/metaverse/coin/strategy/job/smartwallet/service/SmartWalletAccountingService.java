@@ -371,12 +371,16 @@ public class SmartWalletAccountingService {
                 .setFeeUsdc(fee)
                 .setFilledAt(now)
                 .setCreatedAt(new Date());
+
+        // Compute position update first so realizedPnlUsdc can be stored on the fill row.
+        PositionUpdateResult positionUpdate = applyFillToPosition(order, fill, marketEndAt);
+        BigDecimal realizedDelta = positionUpdate == null ? BigDecimal.ZERO : safe(positionUpdate.realizedDelta());
+        fill.setRealizedPnlUsdc(realizedDelta.setScale(8, RoundingMode.HALF_UP));
         fillMapper.insert(fill);
 
-        PositionUpdateResult positionUpdate = applyFillToPosition(order, fill, marketEndAt);
         syncOrderAndFillPositionLink(order, fill, positionUpdate.position());
         appendCashLedger(order, fill, positionUpdate);
-        updateOrderRealizedPnl(order, positionUpdate == null ? BigDecimal.ZERO : positionUpdate.realizedDelta(), now);
+        updateOrderRealizedPnl(order, realizedDelta, now);
         rebuildDailyReport(order.getExecutionAddress(), toLocalDate(now));
     }
 
@@ -3074,6 +3078,7 @@ public class SmartWalletAccountingService {
                 .size(fill.getSize())
                 .notionalUsdc(fill.getNotionalUsdc())
                 .feeUsdc(fill.getFeeUsdc())
+                .realizedPnlUsdc(fill.getRealizedPnlUsdc())
                 .filledAt(fill.getFilledAt())
                 .build();
     }

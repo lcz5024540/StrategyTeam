@@ -283,8 +283,7 @@ smart-wallet:
     # [TUNE] Keep SELL disabled unless you explicitly want reverse / exit following.
     allow-sell-signal: false
     # [TUNE] Optional automatic stop-loss automation for open positions.
-    # Default off for now to avoid premature defensive exits.
-    enable-auto-stop-loss: false
+    enable-auto-stop-loss: true
     # [TUNE] Trigger automatic stop-loss once unrealized ROI <= -threshold.
     auto-stop-loss-threshold-rate: 0.35
     # [TUNE] Optional automatic take-profit automation for open positions.

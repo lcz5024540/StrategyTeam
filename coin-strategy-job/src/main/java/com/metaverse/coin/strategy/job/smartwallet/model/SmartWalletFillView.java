@@ -23,5 +23,6 @@ public class SmartWalletFillView {
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal realizedPnlUsdc;
     private Date filledAt;
 }
