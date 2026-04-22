@@ -555,3 +555,21 @@ smart-wallet:
       liquidity-usdc: 112000
       category: "politics"
       tags: [ "politics", "elections" ]
+
+weather-arbitrage:
+  enabled: false
+  capital-pool-usdc: 500
+  max-single-stake-usdc: 50
+  max-open-positions: 5
+  entry-edge-threshold: 0.10
+  min-liquidity-usdc: 50
+  min-hours-to-settlement: 12
+  max-hours-to-settlement: 72
+  sigma-f: 3.5
+  cities:
+    - London
+    - New York
+    - Seoul
+  tomorrow-io-api-key: ${TOMORROW_IO_API_KEY:}
+  scan-fixed-delay-ms: 900000
+  sync-fixed-delay-ms: 300000
