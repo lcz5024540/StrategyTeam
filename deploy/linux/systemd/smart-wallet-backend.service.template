@@ -14,10 +14,7 @@ Environment=SPRING_PROFILES_ACTIVE=__ENV__
 Environment=LOG_DIR=/home/ubuntu/logs
 Environment=JAVA_OPTS=-Xms512m -Xmx1024m -XX:+UseG1GC
 
-ExecStart=/usr/bin/java $JAVA_OPTS \
-    -Dspring.profiles.active=__ENV__ \
-    -Dlog.dir=/home/ubuntu/logs \
-    -jar __APP_HOME__/backend/app.jar
+ExecStart=/bin/bash -lc 'set -a; [ -f "$$SMART_WALLET_ENV_FILE" ] && source "$$SMART_WALLET_ENV_FILE"; set +a; exec /usr/bin/java $${JAVA_OPTS:--Xms512m -Xmx1024m -XX:+UseG1GC} -Dspring.profiles.active=$${SPRING_PROFILES_ACTIVE:-__ENV__} -Dlog.dir=$${LOG_DIR:-/home/ubuntu/logs} -jar __APP_HOME__/backend/app.jar'
 
 SuccessExitStatus=143
 Restart=always

@@ -13,5 +13,7 @@ public class SmartWalletPnlTimelinePoint {
     private BigDecimal realizedPnlUsdc;
     private BigDecimal feeUsdc;
     private BigDecimal netPnlUsdc;
+    private BigDecimal cumulativeRealizedPnlUsdc;
+    private BigDecimal cumulativeFeeUsdc;
     private BigDecimal cumulativeNetPnlUsdc;
 }

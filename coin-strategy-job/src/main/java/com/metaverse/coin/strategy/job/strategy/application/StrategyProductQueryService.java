@@ -634,7 +634,7 @@ public class StrategyProductQueryService {
         return new StrategyOrderRowView(row.getId(), row.getFollowTaskId(), row.getExecutionMode(), row.getQuestion(),
                 row.getOutcome(), row.getSide(), row.getOrderType(), row.getEarlyExit(), row.getExitReason(),
                 row.getStatus(), row.getPrice(), row.getSize(),
-                row.getNotionalUsdc(), row.getRealizedPnlUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(),
+                row.getNotionalUsdc(), row.getCostBasisUsdc(), row.getRealizedPnlUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(),
                 row.getFollowProbability(), row.getCalibratedFollowProbability(), row.getSlippageSpikeProbability(), row.getEstimateSampleSize(),
                 row.getMarketEndAtBjt(), row.getPlacedAt() == null ? null : row.getPlacedAt().toString());
     }
@@ -655,6 +655,7 @@ public class StrategyProductQueryService {
                 buildHedgePairOrderStatus(position, orders),
                 safe(position.getYesEntryPrice()).add(safe(position.getNoEntryPrice())),
                 position.getQuantity(),
+                safe(position.getTotalCostUsdc()),
                 safe(position.getTotalCostUsdc()),
                 safe(position.getRealizedPnlUsdc()),
                 feeUsdc,

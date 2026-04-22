@@ -34,6 +34,7 @@ export interface Order {
   earlyExit?: boolean
   exitReason?: string
   notionalUsdc: number
+  costBasisUsdc?: number
   realizedPnlUsdc?: number
   status: string
   placedAt: string

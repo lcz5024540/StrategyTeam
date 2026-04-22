@@ -579,10 +579,12 @@ public class SmartWalletController {
         return strategyAnalyticsApplicationService.performance();
     }
 
-    @Operation(summary = "盈亏时间线", description = "按天查看收益变化曲线。")
+    @Operation(summary = "盈亏时间线", description = "按可选时间桶查看收益变化曲线。")
     @GetMapping("/pnl/timeline")
-    public List<SmartWalletPnlTimelinePoint> pnlTimeline(@RequestParam(defaultValue = "30") Integer days) {
-        return strategyAnalyticsApplicationService.pnlTimeline(days);
+    public List<SmartWalletPnlTimelinePoint> pnlTimeline(@RequestParam(defaultValue = "30") Integer days,
+                                                         @RequestParam(defaultValue = "24") Integer bucketHours,
+                                                         @RequestParam(required = false) String mode) {
+        return strategyAnalyticsApplicationService.pnlTimeline(days, bucketHours, mode);
     }
 
     @Operation(summary = "日报列表", description = "查看按日汇总的收益、胜率与绩效数据。")

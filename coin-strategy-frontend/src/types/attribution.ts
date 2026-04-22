@@ -63,8 +63,11 @@ export interface FollowAddressDailyReport {
 }
 
 export interface TimelinePoint {
-  date: string
-  cumulativePnlUsdc: number
-  dailyPnlUsdc: number
-  winRate: number
+  bucketAt: string
+  realizedPnlUsdc: number
+  feeUsdc: number
+  netPnlUsdc: number
+  cumulativeRealizedPnlUsdc: number
+  cumulativeFeeUsdc: number
+  cumulativeNetPnlUsdc: number
 }

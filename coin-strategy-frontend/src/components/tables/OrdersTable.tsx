@@ -169,7 +169,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
               <th>Outcome</th>
               <th>方向</th>
               <th>标签 / 收益</th>
-              <th>名义金额</th>
+              <th>成本</th>
               <th>状态</th>
               <th>下单时间</th>
             </tr>
@@ -211,7 +211,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
                       )}
                     </div>
                   </td>
-                  <td>{formatAmount(order.notionalUsdc)}</td>
+                  <td>{formatAmount(order.costBasisUsdc ?? order.notionalUsdc)}</td>
                   <td>
                     <span className="badge">{order.status}</span>
                   </td>

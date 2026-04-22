@@ -74,7 +74,7 @@ pip3 install py-clob-client
 
 示例环境文件：
 
-- [`deploy/linux/env/smart-wallet.env.example`](./env/smart-wallet.env.example)
+- [`deploy/linux/env/smart-wallet.env.example`](env/smart-wallet.env)
 
 建议重点维护这些变量：
 
@@ -208,6 +208,21 @@ curl http://127.0.0.1:8081/strategy/api/smart-wallet/health
 curl http://49.51.250.174/strategy/api/smart-wallet/health
 ```
 
+如果启动时报 `Failed to load RSA private key from: /etc/coinstrategy/app-private.pem`，优先检查私钥文件是否存在、格式是否为 PKCS#8 PEM、以及 `coinstrategy` 服务用户是否可读：
+
+```bash
+sudo ls -l /etc/coinstrategy/app-private.pem
+sudo -u coinstrategy test -r /etc/coinstrategy/app-private.pem && echo readable
+sudo head -n 1 /etc/coinstrategy/app-private.pem
+sudo openssl pkey -in /etc/coinstrategy/app-private.pem -noout
+```
+
+私钥推荐用 root 拥有、服务组可读的方式安装：
+
+```bash
+sudo install -o root -g coinstrategy -m 640 /tmp/app-private.pem /etc/coinstrategy/app-private.pem
+```
+
 访问地址：
 
 - Swagger: `http://49.51.250.174/strategy/api/swagger-ui.html`
@@ -223,7 +238,7 @@ curl http://49.51.250.174/strategy/api/smart-wallet/health
 - [`scripts/install-smart-wallet-linux-service.sh`](../../scripts/install-smart-wallet-linux-service.sh)
   服务器首次安装服务骨架
 - [`scripts/start-smart-wallet-backend.sh`](../../scripts/start-smart-wallet-backend.sh)
-  `systemd` 实际调用的后端启动脚本
+  手动管理后端服务时使用的启动脚本
 
 ## 10. 精简建议
 

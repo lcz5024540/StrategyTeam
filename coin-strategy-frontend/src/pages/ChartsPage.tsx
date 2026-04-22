@@ -9,16 +9,51 @@ import { AttributionBars } from '@/components/charts/AttributionBars'
 import { OrdersTable } from '@/components/tables/OrdersTable'
 import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
 
+const BUCKET_OPTIONS = [
+  { hours: 8, label: '8 小时' },
+  { hours: 12, label: '12 小时' },
+  { hours: 24, label: '1 天' },
+  { hours: 72, label: '3 天' },
+]
+
+function normalizeBucketHours(value: number) {
+  return BUCKET_OPTIONS.some((item) => item.hours === value) ? value : 24
+}
+
+function bucketLabel(bucketHours: number) {
+  return BUCKET_OPTIONS.find((item) => item.hours === bucketHours)?.label || '1 天'
+}
+
 export function ChartsPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { positionMode, selectedDays } = useStrategyStore()
 
   const mode = (searchParams.get('mode') || positionMode) as 'PAPER' | 'LIVE'
   const days = Number(searchParams.get('days')) || selectedDays
+  const bucketHours = normalizeBucketHours(Number(searchParams.get('bucketHours')) || 24)
+  const bucketIndex = BUCKET_OPTIONS.findIndex((item) => item.hours === bucketHours)
+
+  const updateBucketHours = (nextBucketHours: number) => {
+    const newParams = new URLSearchParams(searchParams)
+    newParams.set('bucketHours', String(normalizeBucketHours(nextBucketHours)))
+    setSearchParams(newParams)
+  }
+
+  const zoomBucket = (direction: 'in' | 'out') => {
+    const nextIndex = direction === 'in'
+      ? Math.max(0, bucketIndex - 1)
+      : Math.min(BUCKET_OPTIONS.length - 1, bucketIndex + 1)
+    updateBucketHours(BUCKET_OPTIONS[nextIndex].hours)
+  }
 
   const { data: dailyReports = [], isLoading } = useQuery({
     queryKey: ['dailyReports', days, mode],
     queryFn: () => reportsApi.getDailyReports(Math.max(days, 7), mode),
+  })
+
+  const { data: pnlTimeline = [], isLoading: isTimelineLoading } = useQuery({
+    queryKey: ['pnlTimeline', days, bucketHours, mode],
+    queryFn: () => reportsApi.getPnlTimeline(Math.max(days, 1), bucketHours, mode),
   })
 
   const { data: walletAttribution = [] } = useQuery({
@@ -41,12 +76,13 @@ export function ChartsPage() {
     queryFn: () => reportsApi.getConflictingMarkets(20, true),
   })
 
-  if (isLoading) {
+  if (isLoading || isTimelineLoading) {
     return <div className="loading">加载中...</div>
   }
 
   const showLiveEmptyHint =
     mode === 'LIVE' &&
+    pnlTimeline.length === 0 &&
     dailyReports.length === 0 &&
     walletAttribution.length === 0 &&
     marketAttribution.length === 0 &&
@@ -65,21 +101,55 @@ export function ChartsPage() {
 
       {/* 累计收益时间线 */}
       <section className="panel">
-        <div className="section-head">
-          <h2>累计收益时间线</h2>
-          <p>按日查看累计收益变化趋势</p>
+        <div className="section-head section-head-row">
+          <div>
+            <h2>累计收益时间线</h2>
+            <p>{bucketLabel(bucketHours)}一个点，绿色为扣费后净收益，黄色为扣费前收益</p>
+          </div>
+          <div className="chart-controls" aria-label="收益图时间粒度">
+            <button
+              type="button"
+              className="btn btn-secondary chart-zoom-btn"
+              onClick={() => zoomBucket('in')}
+              disabled={bucketIndex === 0}
+              title="缩小时间间隔"
+            >
+              放大
+            </button>
+            <div className="segmented-control">
+              {BUCKET_OPTIONS.map((item) => (
+                <button
+                  key={item.hours}
+                  type="button"
+                  className={item.hours === bucketHours ? 'active' : ''}
+                  onClick={() => updateBucketHours(item.hours)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary chart-zoom-btn"
+              onClick={() => zoomBucket('out')}
+              disabled={bucketIndex === BUCKET_OPTIONS.length - 1}
+              title="放大时间间隔"
+            >
+              缩小
+            </button>
+          </div>
         </div>
-        <TimelineChart data={dailyReports} />
+        <TimelineChart data={pnlTimeline} bucketHours={bucketHours} />
       </section>
 
       {/* 日收益和胜率 */}
       <div className="split-grid">
         <section className="panel">
           <div className="section-head">
-            <h2>日收益</h2>
-            <p>每日收益柱状图</p>
+            <h2>区间收益</h2>
+            <p>{bucketLabel(bucketHours)}收益柱状图</p>
           </div>
-          <DailyPnlBars data={dailyReports} />
+          <DailyPnlBars data={pnlTimeline} bucketHours={bucketHours} />
         </section>
         <section className="panel">
           <div className="section-head">

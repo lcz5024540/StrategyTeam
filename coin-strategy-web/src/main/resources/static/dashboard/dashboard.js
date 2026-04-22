@@ -202,7 +202,7 @@ function renderDetail(detail) {
       <td>${row.question}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${row.side}</td>
-      <td>${formatMoney(row.notionalUsdc)}</td>
+      <td>${formatMoney(row.costBasisUsdc ?? row.notionalUsdc)}</td>
       <td>${row.status}</td>
       <td>${row.placedAt || "-"}</td>
     </tr>

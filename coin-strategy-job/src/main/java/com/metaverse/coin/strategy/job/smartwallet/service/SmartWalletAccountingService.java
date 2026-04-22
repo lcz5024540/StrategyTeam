@@ -49,7 +49,9 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -979,6 +981,77 @@ public class SmartWalletAccountingService {
     }
 
     public List<SmartWalletPnlTimelinePoint> pnlTimeline(int days, String mode) {
+        return pnlTimeline(days, 24, mode);
+    }
+
+    public List<SmartWalletPnlTimelinePoint> pnlTimeline(int days, int bucketHours, String mode) {
+        int safeDays = Math.max(Math.min(days, 180), 1);
+        int safeBucketHours = normalizeTimelineBucketHours(bucketHours);
+        ZoneId zoneId = ZoneId.systemDefault();
+        LocalDateTime now = LocalDateTime.now(zoneId);
+        LocalDateTime startBucket = floorToTimelineBucket(now.minusDays(safeDays), safeBucketHours);
+        Date startDate = Date.from(startBucket.atZone(zoneId).toInstant());
+
+        List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
+                .in(SmartWalletCashLedgerEntity::getEntryType, List.of("REALIZED_PNL", "FEE"))
+                .ge(SmartWalletCashLedgerEntity::getOccurredAt, startDate)
+                .le(SmartWalletCashLedgerEntity::getOccurredAt, Date.from(now.atZone(zoneId).toInstant()))
+                .orderByAsc(SmartWalletCashLedgerEntity::getOccurredAt)
+                .orderByAsc(SmartWalletCashLedgerEntity::getId));
+        if (entries == null || entries.isEmpty()) {
+            return dailyReportTimeline(safeDays, mode);
+        }
+
+        Map<LocalDateTime, TimelineBucketAccumulator> buckets = new LinkedHashMap<>();
+        for (LocalDateTime cursor = startBucket; !cursor.isAfter(now); cursor = cursor.plusHours(safeBucketHours)) {
+            buckets.put(cursor, new TimelineBucketAccumulator());
+        }
+
+        boolean hasEvents = false;
+        for (SmartWalletCashLedgerEntity entry : entries) {
+            if (entry == null || entry.getOccurredAt() == null || !matchesDashboardMode(entry.getExecutionAddress(), mode)) {
+                continue;
+            }
+            LocalDateTime entryTime = LocalDateTime.ofInstant(entry.getOccurredAt().toInstant(), zoneId);
+            LocalDateTime bucketAt = floorToTimelineBucket(entryTime, safeBucketHours);
+            TimelineBucketAccumulator bucket = buckets.get(bucketAt);
+            if (bucket == null) {
+                continue;
+            }
+            BigDecimal delta = ledgerPnlDelta(entry);
+            if (delta.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            hasEvents = true;
+            bucket.add(entry, delta);
+        }
+        if (!hasEvents) {
+            return dailyReportTimeline(safeDays, mode);
+        }
+
+        List<SmartWalletPnlTimelinePoint> points = new ArrayList<>();
+        BigDecimal cumulativeRealized = BigDecimal.ZERO;
+        BigDecimal cumulativeFee = BigDecimal.ZERO;
+        BigDecimal cumulativeNet = BigDecimal.ZERO;
+        for (Map.Entry<LocalDateTime, TimelineBucketAccumulator> entry : buckets.entrySet()) {
+            TimelineBucketAccumulator bucket = entry.getValue();
+            cumulativeRealized = cumulativeRealized.add(bucket.realizedPnl);
+            cumulativeFee = cumulativeFee.add(bucket.fee);
+            cumulativeNet = cumulativeNet.add(bucket.netPnl());
+            points.add(SmartWalletPnlTimelinePoint.builder()
+                    .bucketAt(Date.from(entry.getKey().atZone(zoneId).toInstant()))
+                    .realizedPnlUsdc(bucket.realizedPnl.setScale(8, RoundingMode.HALF_UP))
+                    .feeUsdc(bucket.fee.setScale(8, RoundingMode.HALF_UP))
+                    .netPnlUsdc(bucket.netPnl().setScale(8, RoundingMode.HALF_UP))
+                    .cumulativeRealizedPnlUsdc(cumulativeRealized.setScale(8, RoundingMode.HALF_UP))
+                    .cumulativeFeeUsdc(cumulativeFee.setScale(8, RoundingMode.HALF_UP))
+                    .cumulativeNetPnlUsdc(cumulativeNet.setScale(8, RoundingMode.HALF_UP))
+                    .build());
+        }
+        return points;
+    }
+
+    private List<SmartWalletPnlTimelinePoint> dailyReportTimeline(int days, String mode) {
         int safeDays = Math.max(days, 1);
         List<SmartWalletDailyReportEntity> reports = dailyReportMapper.selectList(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
                 .orderByAsc(SmartWalletDailyReportEntity::getReportDate));
@@ -987,21 +1060,49 @@ public class SmartWalletAccountingService {
                 .toList();
         int fromIndex = Math.max(filteredReports.size() - safeDays, 0);
         List<SmartWalletPnlTimelinePoint> points = new ArrayList<>();
+        BigDecimal cumulativeRealized = BigDecimal.ZERO;
+        BigDecimal cumulativeFee = BigDecimal.ZERO;
         BigDecimal cumulative = BigDecimal.ZERO;
         for (SmartWalletDailyReportEntity report : filteredReports.subList(fromIndex, filteredReports.size())) {
             BigDecimal realized = safe(report.getRealizedPnlUsdc());
             BigDecimal fee = safe(report.getFeeUsdc());
             BigDecimal net = safe(report.getNetPnlUsdc(), realized.subtract(fee));
+            cumulativeRealized = cumulativeRealized.add(realized);
+            cumulativeFee = cumulativeFee.add(fee);
             cumulative = cumulative.add(net);
             points.add(SmartWalletPnlTimelinePoint.builder()
                     .bucketAt(report.getReportDate())
                     .realizedPnlUsdc(realized)
                     .feeUsdc(fee)
                     .netPnlUsdc(net)
+                    .cumulativeRealizedPnlUsdc(cumulativeRealized)
+                    .cumulativeFeeUsdc(cumulativeFee)
                     .cumulativeNetPnlUsdc(cumulative)
                     .build());
         }
         return points;
+    }
+
+    private int normalizeTimelineBucketHours(Integer bucketHours) {
+        if (bucketHours == null) {
+            return 24;
+        }
+        return switch (bucketHours) {
+            case 8, 12, 24, 72 -> bucketHours;
+            default -> 24;
+        };
+    }
+
+    private LocalDateTime floorToTimelineBucket(LocalDateTime value, int bucketHours) {
+        if (bucketHours >= 24) {
+            int bucketDays = Math.max(bucketHours / 24, 1);
+            LocalDate epoch = LocalDate.of(1970, 1, 1);
+            long daysSinceEpoch = ChronoUnit.DAYS.between(epoch, value.toLocalDate());
+            long bucketStartDays = Math.floorDiv(daysSinceEpoch, bucketDays) * (long) bucketDays;
+            return epoch.plusDays(bucketStartDays).atStartOfDay();
+        }
+        int hour = Math.floorDiv(value.getHour(), bucketHours) * bucketHours;
+        return value.withHour(hour).withMinute(0).withSecond(0).withNano(0);
     }
 
     public List<SmartWalletDailyReportView> listDailyReports(int limit) {
@@ -2484,8 +2585,67 @@ public class SmartWalletAccountingService {
     }
 
     private BigDecimal calculateMaxDrawdown(String mode) {
+        DrawdownCalculation ledgerDrawdown = calculateMaxDrawdownFromLedger(mode);
+        if (ledgerDrawdown.hasEvents()) {
+            return ledgerDrawdown.maxDrawdown();
+        }
+        return calculateMaxDrawdownFromDailyReports(mode);
+    }
+
+    private DrawdownCalculation calculateMaxDrawdownFromLedger(String mode) {
+        List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
+                .in(SmartWalletCashLedgerEntity::getEntryType, List.of("REALIZED_PNL", "FEE"))
+                .orderByAsc(SmartWalletCashLedgerEntity::getOccurredAt)
+                .orderByAsc(SmartWalletCashLedgerEntity::getId));
+        if (entries == null) {
+            entries = List.of();
+        }
+        BigDecimal cumulative = BigDecimal.ZERO;
+        BigDecimal peak = BigDecimal.ZERO;
+        BigDecimal maxDrawdown = BigDecimal.ZERO;
+        boolean hasEvents = false;
+        for (SmartWalletCashLedgerEntity entry : entries) {
+            if (!matchesDashboardMode(entry.getExecutionAddress(), mode)) {
+                continue;
+            }
+            BigDecimal pnlDelta = ledgerPnlDelta(entry);
+            if (pnlDelta.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            hasEvents = true;
+            cumulative = cumulative.add(pnlDelta);
+            if (cumulative.compareTo(peak) > 0) {
+                peak = cumulative;
+            }
+            BigDecimal drawdown = peak.subtract(cumulative);
+            if (drawdown.compareTo(maxDrawdown) > 0) {
+                maxDrawdown = drawdown;
+            }
+        }
+        return new DrawdownCalculation(maxDrawdown.setScale(8, RoundingMode.HALF_UP), hasEvents);
+    }
+
+    private BigDecimal ledgerPnlDelta(SmartWalletCashLedgerEntity entry) {
+        if (entry == null || !StringUtils.hasText(entry.getEntryType())) {
+            return BigDecimal.ZERO;
+        }
+        if ("FEE".equalsIgnoreCase(entry.getEntryType())) {
+            return safe(entry.getAmount()).negate();
+        }
+        if ("REALIZED_PNL".equalsIgnoreCase(entry.getEntryType())) {
+            return "OUT".equalsIgnoreCase(entry.getDirection())
+                    ? safe(entry.getAmount()).negate()
+                    : safe(entry.getAmount());
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal calculateMaxDrawdownFromDailyReports(String mode) {
         List<SmartWalletDailyReportEntity> reports = dailyReportMapper.selectList(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
                 .orderByAsc(SmartWalletDailyReportEntity::getReportDate));
+        if (reports == null) {
+            reports = List.of();
+        }
         BigDecimal cumulative = BigDecimal.ZERO;
         BigDecimal peak = BigDecimal.ZERO;
         BigDecimal maxDrawdown = BigDecimal.ZERO;
@@ -2502,7 +2662,7 @@ public class SmartWalletAccountingService {
                 maxDrawdown = drawdown;
             }
         }
-        return maxDrawdown;
+        return maxDrawdown.setScale(8, RoundingMode.HALF_UP);
     }
 
     private BigDecimal deriveSize(BigDecimal notional, BigDecimal price) {
@@ -2604,7 +2764,21 @@ public class SmartWalletAccountingService {
         if (fills.isEmpty()) {
             return safe(position.getCostBasisUsdc()).setScale(8, RoundingMode.HALF_UP);
         }
-        return replayPositionFromFills(fills).costBasisUsdc();
+        return totalBuyCostFromFills(fills);
+    }
+
+    private BigDecimal totalBuyCostFromFills(List<SmartWalletFillEntity> fills) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (fills == null) {
+            return total.setScale(8, RoundingMode.HALF_UP);
+        }
+        for (SmartWalletFillEntity fill : fills) {
+            if (!"BUY".equalsIgnoreCase(fill.getSide())) {
+                continue;
+            }
+            total = total.add(safe(fill.getNotionalUsdc())).add(safe(fill.getFeeUsdc()));
+        }
+        return total.setScale(8, RoundingMode.HALF_UP);
     }
 
     private BigDecimal pendingSettlementNetPnlForPosition(SmartWalletPositionEntity position) {
@@ -2794,6 +2968,19 @@ public class SmartWalletAccountingService {
             }
         }
         return realizedForOrder.setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal resolveOrderCostBasis(SmartWalletOrderEntity order, BigDecimal realizedPnlUsdc) {
+        if (order == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+        BigDecimal notional = safe(order.getNotionalUsdc());
+        BigDecimal fee = safe(order.getFeeUsdc());
+        if ("SELL".equalsIgnoreCase(order.getSide())) {
+            BigDecimal cost = notional.subtract(safe(realizedPnlUsdc)).subtract(fee);
+            return cost.max(BigDecimal.ZERO).setScale(8, RoundingMode.HALF_UP);
+        }
+        return notional.add(fee).setScale(8, RoundingMode.HALF_UP);
     }
 
     private BigDecimal resolveSettledEntryOrderRealizedPnl(SmartWalletOrderEntity order,
@@ -2987,6 +3174,7 @@ public class SmartWalletAccountingService {
         SignalRiskDecision decision = resolveOrderRiskDecision(order);
         String exitReason = resolveOrderExitReason(order);
         BigDecimal realizedPnlUsdc = resolveOrderRealizedPnl(order, null);
+        BigDecimal costBasisUsdc = resolveOrderCostBasis(order, realizedPnlUsdc);
         String displayStatus = resolveDisplayOrderStatus(order);
         return SmartWalletOrderView.builder()
                 .id(order.getId())
@@ -3009,6 +3197,7 @@ public class SmartWalletAccountingService {
                 .price(order.getPrice())
                 .size(order.getSize())
                 .notionalUsdc(order.getNotionalUsdc())
+                .costBasisUsdc(costBasisUsdc)
                 .feeUsdc(order.getFeeUsdc())
                 .realizedPnlUsdc(realizedPnlUsdc)
                 .estimatedFeeUsdc(decision == null ? null : decision.getEstimatedFeeUsdc())
@@ -3614,6 +3803,9 @@ public class SmartWalletAccountingService {
                                     BigDecimal stopLossRealizedPnlUsdc) {
     }
 
+    private record DrawdownCalculation(BigDecimal maxDrawdown, boolean hasEvents) {
+    }
+
     private record ConflictSummary(int conflictingMarkets,
                                    int conflictingPositions,
                                    int openConflictingMarkets,
@@ -3826,6 +4018,23 @@ public class SmartWalletAccountingService {
                     .largestWinUsdc(largestWinUsdc)
                     .largestLossUsdc(largestLossUsdc)
                     .build();
+        }
+    }
+
+    private class TimelineBucketAccumulator {
+        private BigDecimal realizedPnl = BigDecimal.ZERO;
+        private BigDecimal fee = BigDecimal.ZERO;
+
+        private void add(SmartWalletCashLedgerEntity entry, BigDecimal pnlDelta) {
+            if ("FEE".equalsIgnoreCase(entry.getEntryType())) {
+                fee = fee.add(safe(entry.getAmount()));
+            } else if ("REALIZED_PNL".equalsIgnoreCase(entry.getEntryType())) {
+                realizedPnl = realizedPnl.add(pnlDelta);
+            }
+        }
+
+        private BigDecimal netPnl() {
+            return realizedPnl.subtract(fee);
         }
     }
 }

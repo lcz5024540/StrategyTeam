@@ -1,29 +1,60 @@
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
-import type { DailyReport } from '@/types/attribution'
+import type { DailyReport, TimelinePoint } from '@/types/attribution'
 import { formatMoney } from '@/utils/format'
 
 interface TimelineChartProps {
-  data: DailyReport[]
+  data: Array<TimelinePoint | DailyReport>
+  bucketHours?: number
 }
 
-export function TimelineChart({ data }: TimelineChartProps) {
+function formatBucketLabel(value: string, bucketHours: number) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value || '-'
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  return bucketHours >= 24 ? `${month}-${day}` : `${month}-${day} ${hour}:00`
+}
+
+function pointTime(item: TimelinePoint | DailyReport) {
+  return 'bucketAt' in item ? item.bucketAt : item.reportDate
+}
+
+export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
   if (data.length === 0) {
     return <div className="empty-state">暂无收益时间线数据</div>
   }
 
-  const sorted = [...data].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
-  const dates = sorted.map((item) => item.reportDate)
-  const cumulative: number[] = []
-  let running = 0
+  const sorted = [...data].sort((a, b) => new Date(pointTime(a)).getTime() - new Date(pointTime(b)).getTime())
+  const dates = sorted.map((item) => formatBucketLabel(pointTime(item), bucketHours))
+  const cumulativeNet: number[] = []
+  const cumulativeRealized: number[] = []
+  let runningNet = 0
+  let runningRealized = 0
   sorted.forEach((item) => {
-    running += item.netPnlUsdc || 0
-    cumulative.push(Number(running.toFixed(2)))
+    if ('cumulativeNetPnlUsdc' in item) {
+      cumulativeNet.push(Number((item.cumulativeNetPnlUsdc || 0).toFixed(2)))
+      cumulativeRealized.push(Number((item.cumulativeRealizedPnlUsdc || 0).toFixed(2)))
+      return
+    }
+    runningNet += item.netPnlUsdc || 0
+    runningRealized += item.realizedPnlUsdc || 0
+    cumulativeNet.push(Number(runningNet.toFixed(2)))
+    cumulativeRealized.push(Number(runningRealized.toFixed(2)))
   })
+  const sliderStart = sorted.length > 45 ? Math.max(0, 100 - (45 / sorted.length) * 100) : 0
 
   const option: EChartsOption = {
     backgroundColor: 'transparent',
-    grid: { left: 56, right: 20, top: 28, bottom: 38 },
+    grid: { left: 56, right: 24, top: 34, bottom: 72 },
+    legend: {
+      top: 0,
+      right: 0,
+      textStyle: { color: '#6f9f75', fontFamily: 'monospace', fontSize: 11 },
+      itemWidth: 14,
+      itemHeight: 8,
+    },
     tooltip: {
       trigger: 'axis',
       backgroundColor: 'rgba(4, 16, 6, 0.95)',
@@ -31,6 +62,20 @@ export function TimelineChart({ data }: TimelineChartProps) {
       textStyle: { color: '#c0f0c0', fontFamily: 'monospace', fontSize: 12 },
       valueFormatter: (value) => formatMoney(Number(value || 0)),
     },
+    dataZoom: [
+      { type: 'inside', start: sliderStart, end: 100 },
+      {
+        type: 'slider',
+        start: sliderStart,
+        end: 100,
+        height: 18,
+        bottom: 18,
+        borderColor: 'rgba(0, 255, 65, 0.18)',
+        fillerColor: 'rgba(0, 255, 65, 0.10)',
+        handleStyle: { color: '#00ff41', borderColor: '#00ff41' },
+        textStyle: { color: '#3a6642', fontFamily: 'monospace', fontSize: 10 },
+      },
+    ],
     xAxis: {
       type: 'category',
       data: dates,
@@ -52,10 +97,10 @@ export function TimelineChart({ data }: TimelineChartProps) {
     },
     series: [
       {
-        name: '累计收益',
+        name: '累计净收益',
         type: 'line',
         smooth: true,
-        data: cumulative,
+        data: cumulativeNet,
         areaStyle: {
           color: {
             type: 'linear',
@@ -71,8 +116,18 @@ export function TimelineChart({ data }: TimelineChartProps) {
         symbol: 'circle',
         symbolSize: 6,
       },
+      {
+        name: '扣费前累计',
+        type: 'line',
+        smooth: true,
+        data: cumulativeRealized,
+        lineStyle: { width: 2, color: '#ffaa00', type: 'dashed', shadowBlur: 6, shadowColor: 'rgba(255, 170, 0, 0.35)' },
+        itemStyle: { color: '#ffaa00', borderColor: '#020904', borderWidth: 2 },
+        symbol: 'circle',
+        symbolSize: 5,
+      },
     ],
   }
 
-  return <ReactECharts option={option} style={{ height: 320, width: '100%' }} />
+  return <ReactECharts option={option} style={{ height: 360, width: '100%' }} />
 }
