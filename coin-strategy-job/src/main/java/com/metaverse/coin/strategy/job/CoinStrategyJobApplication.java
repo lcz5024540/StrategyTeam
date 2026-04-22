@@ -9,7 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.metaverse.coin.strategy")
 @MapperScan("com.metaverse.coin.strategy.common.dao.mapper")
 @EnableConfigurationProperties({SmartWalletProperties.class, HedgeProperties.class})
 @EnableScheduling

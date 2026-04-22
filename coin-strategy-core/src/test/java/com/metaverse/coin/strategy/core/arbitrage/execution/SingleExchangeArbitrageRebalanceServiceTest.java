@@ -12,7 +12,7 @@ import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccou
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceUniversalTransferResult;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
-import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -40,7 +40,7 @@ import static org.mockito.Mockito.when;
 class SingleExchangeArbitrageRebalanceServiceTest {
 
     @Mock
-    private SingleExchangeRiskController riskController;
+    private SingleExchangeRiskService riskService;
 
     @Mock
     private BinanceApiService binanceApiService;
@@ -65,7 +65,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
 
     @Test
     void testDoNotPersistWhenMarginRatioIsHealthy() {
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("2.50"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("2.50"));
 
         rebalanceService.checkAndRebalance();
 
@@ -79,7 +79,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
     void testExecuteSpotToFuturesTransferWhenMarginRatioIsLow() {
         stubTransactionExecution();
         stubRiskSnapshotId(100L);
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
         when(binanceApiService.getApiKeyPermission()).thenReturn(BinanceApiKeyPermission.builder()
                 .permitsUniversalTransfer(true)
                 .enableInternalTransfer(true)
@@ -131,7 +131,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
     void testSkipTransferWhenApiPermissionIsMissing() {
         stubTransactionExecution();
         stubRiskSnapshotId(200L);
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
         when(binanceApiService.getApiKeyPermission()).thenReturn(BinanceApiKeyPermission.builder()
                 .permitsUniversalTransfer(false)
                 .enableInternalTransfer(false)
@@ -156,7 +156,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
     void testSkipTransferWhenNoMaintenanceMargin() {
         stubTransactionExecution();
         stubRiskSnapshotId(300L);
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
         when(binanceApiService.getApiKeyPermission()).thenReturn(BinanceApiKeyPermission.builder()
                 .permitsUniversalTransfer(true)
                 .enableInternalTransfer(true)
@@ -187,7 +187,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
     void testSkipTransferWhenNoSpotBalance() {
         stubTransactionExecution();
         stubRiskSnapshotId(400L);
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
         when(binanceApiService.getApiKeyPermission()).thenReturn(BinanceApiKeyPermission.builder()
                 .permitsUniversalTransfer(true)
                 .enableInternalTransfer(true)
@@ -218,7 +218,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
     void testSkipTransferWhenTargetAlreadyMet() {
         stubTransactionExecution();
         stubRiskSnapshotId(450L);
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
         when(binanceApiService.getApiKeyPermission()).thenReturn(BinanceApiKeyPermission.builder()
                 .permitsUniversalTransfer(true)
                 .enableInternalTransfer(true)
@@ -250,7 +250,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
     void testPersistFailedOutcomeWhenTransferThrows() {
         stubTransactionExecution();
         stubRiskSnapshotId(500L);
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
         when(binanceApiService.getApiKeyPermission()).thenReturn(BinanceApiKeyPermission.builder()
                 .permitsUniversalTransfer(true)
                 .enableInternalTransfer(true)
@@ -286,7 +286,7 @@ class SingleExchangeArbitrageRebalanceServiceTest {
     void testSkipTransferWhenNormalizedTransferAmountIsNonPositive() {
         stubTransactionExecution();
         stubRiskSnapshotId(600L);
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.20"));
         when(binanceApiService.getApiKeyPermission()).thenReturn(BinanceApiKeyPermission.builder()
                 .permitsUniversalTransfer(true)
                 .enableInternalTransfer(true)

@@ -15,7 +15,7 @@ import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitr
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeFundingRateMonitor;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeLiquidityAssessment;
-import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskSnapshotData;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeTradeRiskAssessment;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,7 +51,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
     private SingleExchangeArbitrageOrderExecutor orderExecutor;
 
     @Mock
-    private SingleExchangeRiskController riskController;
+    private SingleExchangeRiskService riskService;
 
     @Mock
     private SingleExchangeArbitragePositionMapper positionMapper;
@@ -201,9 +201,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
-        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildTradeRiskAssessment(true, null));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
@@ -211,7 +211,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, times(1)).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskService, times(1)).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, times(1)).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(positionMapper, times(1)).insert(any(SingleExchangeArbitragePosition.class));
         verify(positionMapper, atLeastOnce()).updateById(any(SingleExchangeArbitragePosition.class));
@@ -232,13 +232,13 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskService, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, never()).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
     }
 
@@ -263,13 +263,13 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, closeIndex);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_CLOSE)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_CLOSE, null, "0.0004"));
-        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_CLOSE)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_CLOSE, null, "0.0004"));
+        when(riskService.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildTradeRiskAssessment(true, null));
-        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildRiskSnapshotData("2.50"));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
@@ -327,15 +327,15 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskController.PHASE_OPEN, "order-book depth is insufficient", "0.0004"));
-        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskService.PHASE_OPEN, "order-book depth is insufficient", "0.0004"));
+        when(riskService.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildRiskSnapshotData("2.50"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskService, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, never()).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(riskSnapshotMapper).insert(argThat(snapshot ->
                 "PRE_OPEN".equals(snapshot.getCheckStage())
@@ -353,15 +353,15 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
 
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(false, true, SingleExchangeRiskController.PHASE_OPEN, "depth data unavailable after retries", "0.0005"));
-        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(false, true, SingleExchangeRiskService.PHASE_OPEN, "depth data unavailable after retries", "0.0005"));
+        when(riskService.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildRiskSnapshotData("2.50"));
 
         setStrategyRunning(true);
         executeStrategyLoop();
 
-        verify(riskController, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(riskService, never()).evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(orderExecutor, never()).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
         verify(riskSnapshotMapper).insert(argThat(snapshot ->
                 "PRE_OPEN".equals(snapshot.getCheckStage())
@@ -390,13 +390,13 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, closeIndex);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_CLOSE)))
-                .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskController.PHASE_CLOSE, "slippage too high", "0.0008"));
-        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_CLOSE)))
+                .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskService.PHASE_CLOSE, "slippage too high", "0.0008"));
+        when(riskService.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildTradeRiskAssessment(true, null));
-        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildRiskSnapshotData("2.50"));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
@@ -436,15 +436,15 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, closeIndex);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_CLOSE)))
-                .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskController.PHASE_CLOSE, "slippage too high", "0.0008"));
-        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_CLOSE)))
+                .thenReturn(buildLiquidityAssessment(false, false, SingleExchangeRiskService.PHASE_CLOSE, "slippage too high", "0.0008"));
+        when(riskService.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildTradeRiskAssessment(true, null));
-        when(riskController.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.captureRiskSnapshotData(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildRiskSnapshotData("1.70"));
-        when(riskController.getMarginRatio()).thenReturn(new BigDecimal("1.70"));
+        when(riskService.getMarginRatio()).thenReturn(new BigDecimal("1.70"));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
         when(orderExecutor.closeArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
@@ -492,9 +492,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, holdIndex);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
-        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildTradeRiskAssessment(true, null));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
@@ -537,9 +537,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
         when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
         when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(openIndex, holdIndex);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan, plan);
-        when(riskController.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskController.PHASE_OPEN)))
-                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskController.PHASE_OPEN, null, "0.0004"));
-        when(riskController.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildTradeRiskAssessment(true, null));
         when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
                 .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));

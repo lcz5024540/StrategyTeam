@@ -5,7 +5,7 @@ import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFu
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
-import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -32,7 +32,7 @@ class BinanceSingleExchangeFundingRateArbitrageServiceTest {
     private SingleExchangeArbitrageOrderExecutor orderExecutor;
 
     @Mock
-    private SingleExchangeRiskController riskController;
+    private SingleExchangeRiskService riskService;
 
     @InjectMocks
     private BinanceSingleExchangeFundingRateArbitrageService arbitrageService;
@@ -75,8 +75,8 @@ class BinanceSingleExchangeFundingRateArbitrageServiceTest {
         when(binanceApiService.getFuturesFundingRate("ETHUSDT")).thenReturn(ethRate);
         when(orderExecutor.createSpotFuturesPlan("BTCUSDT", new BigDecimal("50"), 3)).thenReturn(btcPlan);
         when(orderExecutor.createSpotFuturesPlan("ETHUSDT", new BigDecimal("50"), 3)).thenReturn(ethPlan);
-        when(riskController.checkTradeRisk(btcPlan)).thenReturn(true);
-        when(riskController.checkTradeRisk(ethPlan)).thenReturn(true);
+        when(riskService.checkTradeRisk(btcPlan)).thenReturn(true);
+        when(riskService.checkTradeRisk(ethPlan)).thenReturn(true);
         when(orderExecutor.openArbitragePosition(btcPlan)).thenReturn(
                 SingleExchangeArbitrageExecutionResult.success("BTCUSDT", "0.001", "1", "2"));
         when(orderExecutor.openArbitragePosition(ethPlan)).thenReturn(
