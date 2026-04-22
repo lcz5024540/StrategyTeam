@@ -46,3 +46,4 @@ coin-strategy-frontend/dist/
 logs/
 .gitignore
 .log
+/logs/
