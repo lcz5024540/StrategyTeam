@@ -87,7 +87,6 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetS
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
-import com.metaverse.coin.strategy.job.config.SecretDecryptor;
 import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
@@ -147,7 +146,6 @@ public class SmartWalletController {
     private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
     private final MarketConcentrationService marketConcentrationService;
     private final FollowTradeAttributionService followTradeAttributionService;
-    private final SecretDecryptor secretDecryptor;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -944,20 +942,6 @@ public class SmartWalletController {
     public String invalidateConcentrationCache(@PathVariable String conditionId) {
         marketConcentrationService.invalidate(conditionId);
         return "Concentration cache invalidated for market=" + conditionId;
-    }
-
-    @Operation(
-            summary = "加密敏感配置值",
-            description = "将明文敏感值（如数据库密码、私钥）加密为 ENC(...) 格式，" +
-                    "用于写入环境变量文件。需要 APP_MASTER_KEY 环境变量已设置。" +
-                    "此接口仅应在本机 127.0.0.1 可访问，请勿暴露到公网。")
-    @PostMapping("/admin/encrypt-secret")
-    public Map<String, String> encryptSecret(@RequestBody Map<String, String> request) {
-        String plaintext = request.get("value");
-        if (plaintext == null || plaintext.isBlank()) {
-            throw new IllegalArgumentException("Request body must contain a non-empty 'value' field.");
-        }
-        return Map.of("encrypted", secretDecryptor.encrypt(plaintext));
     }
 
 }
