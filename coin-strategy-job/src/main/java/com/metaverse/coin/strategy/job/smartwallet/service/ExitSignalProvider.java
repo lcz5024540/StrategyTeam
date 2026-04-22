@@ -38,4 +38,13 @@ public interface ExitSignalProvider {
      * @param averageEntryPrice position's average entry price
      */
     boolean isTrendStopLossTriggered(Long positionId, BigDecimal currentMarkPrice, BigDecimal averageEntryPrice);
+
+    /**
+     * Clear cached price history when a position is closed.
+     * Implementations that maintain in-memory history should override this.
+     * Default: no-op (safe for stateless implementations).
+     */
+    default void clearPositionHistory(Long positionId) {
+        // no-op by default
+    }
 }
