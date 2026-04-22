@@ -36,6 +36,7 @@ public class SmartWalletPositionSyncService {
     private final PolymarketClobExecutionService clobExecutionService;
     private final SmartWalletRecoveryService recoveryService;
     private final SmartWalletMarketInfoService marketInfoService;
+    private final TimeAwareStopLossService timeAwareStopLossService;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
     private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
@@ -172,9 +173,7 @@ public class SmartWalletPositionSyncService {
         if (!properties.isEnabled() || risk == null || !risk.isEnableAutoStopLoss()) {
             return;
         }
-        BigDecimal threshold = risk.getAutoStopLossThresholdRate() == null
-                ? new BigDecimal("0.50") : risk.getAutoStopLossThresholdRate();
-        scanPaperPositionsForExit(threshold, AutoExitMode.STOP_LOSS);
+        scanPaperPositionsForExitWithDynamicThreshold(AutoExitMode.STOP_LOSS);
     }
 
     // -------------------------------------------------------------------------
@@ -245,6 +244,74 @@ public class SmartWalletPositionSyncService {
                         threshold.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
                         decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
                         safe(exitResult.getRealizedPnlDeltaUsdc()).setScale(2, RoundingMode.HALF_UP),
+                        exitResult.getCurrentStatus());
+            } catch (Exception ex) {
+                log.warn("{} exit failed for positionId={} marketId={}: {}",
+                        mode.logLabel(),
+                        position.getId(),
+                        position.getMarketId(),
+                        ex.getMessage(),
+                        ex);
+            }
+        }
+    }
+
+    private void scanPaperPositionsForExitWithDynamicThreshold(AutoExitMode mode) {
+        List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        marketInfoService.populatePositions(openPositions);
+
+        for (SmartWalletPositionEntity position : openPositions) {
+            // Record current mark price for trend analysis
+            timeAwareStopLossService.recordMarkPrice(
+                    position.getId(),
+                    position.getLastMarkPrice(),
+                    position.getAverageEntryPrice()
+            );
+
+            // Resolve dynamic threshold (falls back to fixed threshold when feature is disabled)
+            BigDecimal threshold = timeAwareStopLossService.resolveStopLossThreshold(position);
+
+            // Check threshold-based stop-loss
+            ExitDecision decision = buildExitDecision(position, threshold, mode);
+
+            // Check trend-based stop-loss (additional trigger)
+            boolean trendTriggered = mode == AutoExitMode.STOP_LOSS
+                    && timeAwareStopLossService.isTrendStopLossTriggered(
+                            position.getId(),
+                            position.getLastMarkPrice(),
+                            position.getAverageEntryPrice()
+                    );
+
+            if (!decision.triggered() && !trendTriggered) {
+                continue;
+            }
+
+            String exitReason = trendTriggered && !decision.triggered()
+                    ? "TREND_STOP_LOSS_AUTO_EXIT"
+                    : mode.reason();
+            BigDecimal exitPrice = decision.triggered() ? decision.markPrice() : safe(position.getLastMarkPrice());
+
+            try {
+                SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
+                exitRequest.setPrice(exitPrice);
+                exitRequest.setQuantity(position.getQuantity());
+                exitRequest.setReason(exitReason);
+                SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
+                timeAwareStopLossService.clearPositionHistory(position.getId());
+
+                log.info("{} triggered positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% pnl={} trendTriggered={} currentStatus={}",
+                        mode.logLabel(),
+                        position.getId(),
+                        position.getMarketId(),
+                        position.getOutcome(),
+                        exitPrice,
+                        threshold.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                        decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                        safe(exitResult.getRealizedPnlDeltaUsdc()).setScale(2, RoundingMode.HALF_UP),
+                        trendTriggered,
                         exitResult.getCurrentStatus());
             } catch (Exception ex) {
                 log.warn("{} exit failed for positionId={} marketId={}: {}",
