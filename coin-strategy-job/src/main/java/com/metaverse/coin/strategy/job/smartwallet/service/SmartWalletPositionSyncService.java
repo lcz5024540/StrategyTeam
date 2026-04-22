@@ -36,7 +36,7 @@ public class SmartWalletPositionSyncService {
     private final PolymarketClobExecutionService clobExecutionService;
     private final SmartWalletRecoveryService recoveryService;
     private final SmartWalletMarketInfoService marketInfoService;
-    private final TimeAwareStopLossService timeAwareStopLossService;
+    private final ExitSignalProvider exitSignalProvider;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
     private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
@@ -265,21 +265,21 @@ public class SmartWalletPositionSyncService {
 
         for (SmartWalletPositionEntity position : openPositions) {
             // Record current mark price for trend analysis
-            timeAwareStopLossService.recordMarkPrice(
+            exitSignalProvider.recordMarkPrice(
                     position.getId(),
                     position.getLastMarkPrice(),
                     position.getAverageEntryPrice()
             );
 
             // Resolve dynamic threshold (falls back to fixed threshold when feature is disabled)
-            BigDecimal threshold = timeAwareStopLossService.resolveStopLossThreshold(position);
+            BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
 
             // Check threshold-based stop-loss
             ExitDecision decision = buildExitDecision(position, threshold, mode);
 
             // Check trend-based stop-loss (additional trigger)
             boolean trendTriggered = mode == AutoExitMode.STOP_LOSS
-                    && timeAwareStopLossService.isTrendStopLossTriggered(
+                    && exitSignalProvider.isTrendStopLossTriggered(
                             position.getId(),
                             position.getLastMarkPrice(),
                             position.getAverageEntryPrice()
@@ -300,7 +300,7 @@ public class SmartWalletPositionSyncService {
                 exitRequest.setQuantity(position.getQuantity());
                 exitRequest.setReason(exitReason);
                 SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
-                timeAwareStopLossService.clearPositionHistory(position.getId());
+                exitSignalProvider.clearPositionHistory(position.getId());
 
                 log.info("{} triggered positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% pnl={} trendTriggered={} currentStatus={}",
                         mode.logLabel(),
