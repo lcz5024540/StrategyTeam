@@ -722,6 +722,10 @@ tbody tr:hover td {
   align-items: start;
 }
 
+.funding-arb-monitor-grid {
+  align-items: start;
+}
+
 .funding-arb-form {
   display: flex;
   flex-direction: column;
@@ -851,6 +855,23 @@ tbody tr:hover td {
   font-family: var(--font-mono);
 }
 
+.funding-arb-cell-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.funding-arb-cell-subtitle {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.funding-arb-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════ */
@@ -860,7 +881,8 @@ tbody tr:hover td {
   }
 
   .funding-arb-form-grid,
-  .funding-arb-note-list {
+  .funding-arb-note-list,
+  .funding-arb-summary-grid {
     grid-template-columns: 1fr;
   }
 }

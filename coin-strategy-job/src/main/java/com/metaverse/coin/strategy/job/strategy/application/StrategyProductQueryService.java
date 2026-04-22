@@ -3,8 +3,15 @@ package com.metaverse.coin.strategy.job.strategy.application;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.HedgeOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.HedgePositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgeOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.HedgePositionEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageFundingSettlement;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
+import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.job.hedge.config.HedgeProperties;
 import com.metaverse.coin.strategy.job.hedge.service.GlobalRiskGuard;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
@@ -30,6 +37,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -38,6 +46,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -45,7 +55,10 @@ import java.util.stream.Collectors;
 public class StrategyProductQueryService {
 
     private static final String POLYMARKET_CODE = "POLYMARKET_COPY";
+    private static final String FUNDING_ARB_CODE = "FUNDING_ARB";
     private static final String HEDGE_CODE = "HEDGE";
+    private static final String FUNDING_ARB_STRATEGY_TYPE = "SINGLE_EXCHANGE_SPOT_FUTURES_ARBITRAGE_V1";
+    private static final String FUNDING_ARB_EXCHANGE = "BINANCE";
     private static final DateTimeFormatter BJT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.SIMPLIFIED_CHINESE)
             .withZone(ZoneId.of("Asia/Shanghai"));
@@ -53,17 +66,29 @@ public class StrategyProductQueryService {
     private final SmartWalletAccountingService accountingService;
     private final HedgePositionMapper hedgePositionMapper;
     private final HedgeOrderMapper hedgeOrderMapper;
+    private final SingleExchangeArbitragePositionMapper singleExchangeArbitragePositionMapper;
+    private final SingleExchangeArbitrageOrderMapper singleExchangeArbitrageOrderMapper;
+    private final SingleExchangeArbitrageFundingSettlementMapper singleExchangeArbitrageFundingSettlementMapper;
+    private final SingleExchangeSpotFuturesProperties singleExchangeSpotFuturesProperties;
     private final HedgeProperties hedgeProperties;
     private final GlobalRiskGuard globalRiskGuard;
 
     public StrategyProductQueryService(SmartWalletAccountingService accountingService,
                                        HedgePositionMapper hedgePositionMapper,
                                        HedgeOrderMapper hedgeOrderMapper,
+                                       SingleExchangeArbitragePositionMapper singleExchangeArbitragePositionMapper,
+                                       SingleExchangeArbitrageOrderMapper singleExchangeArbitrageOrderMapper,
+                                       SingleExchangeArbitrageFundingSettlementMapper singleExchangeArbitrageFundingSettlementMapper,
+                                       SingleExchangeSpotFuturesProperties singleExchangeSpotFuturesProperties,
                                        HedgeProperties hedgeProperties,
                                        GlobalRiskGuard globalRiskGuard) {
         this.accountingService = accountingService;
         this.hedgePositionMapper = hedgePositionMapper;
         this.hedgeOrderMapper = hedgeOrderMapper;
+        this.singleExchangeArbitragePositionMapper = singleExchangeArbitragePositionMapper;
+        this.singleExchangeArbitrageOrderMapper = singleExchangeArbitrageOrderMapper;
+        this.singleExchangeArbitrageFundingSettlementMapper = singleExchangeArbitrageFundingSettlementMapper;
+        this.singleExchangeSpotFuturesProperties = singleExchangeSpotFuturesProperties;
         this.hedgeProperties = hedgeProperties;
         this.globalRiskGuard = globalRiskGuard;
     }
@@ -74,9 +99,11 @@ public class StrategyProductQueryService {
 
     public StrategyDashboardOverviewView overview(String mode) {
         StrategySummaryDetailView polymarket = summaryDetail(POLYMARKET_CODE, mode);
+        StrategySummaryDetailView fundingArb = summaryDetail(FUNDING_ARB_CODE, mode);
         StrategySummaryDetailView hedge = summaryDetail(HEDGE_CODE, mode);
         List<StrategySummaryView> strategies = new ArrayList<>();
         strategies.add(polymarket.summary());
+        strategies.add(fundingArb.summary());
         strategies.add(hedge.summary());
         strategies.add(placeholder("ROBOT", "机器人策略", "机器人", "PLANNED", "后续用于事件驱动机器人、盘口套利和自动化规则执行。"));
         strategies.add(placeholder("INTELLIGENT", "智能策略", "智能", "PLANNED", "后续用于模型评分、智能分层择时和多因子调度。"));
@@ -93,6 +120,9 @@ public class StrategyProductQueryService {
     public StrategySummaryDetailView summaryDetail(String strategyCode, String mode) {
         if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             return buildPolymarketSummaryDetail(mode);
+        }
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+            return buildFundingArbSummaryDetail(mode);
         }
         if (HEDGE_CODE.equalsIgnoreCase(strategyCode)) {
             return buildHedgeSummaryDetail(mode);
@@ -112,6 +142,9 @@ public class StrategyProductQueryService {
         if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             return accountingService.listActivePositions(mode).stream().map(this::toPosition).toList();
         }
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+            return loadFundingArbOpenPositions().stream().map(this::toFundingArbPosition).toList();
+        }
         if (HEDGE_CODE.equalsIgnoreCase(strategyCode)) {
             return hedgePositionMapper.selectList(new LambdaQueryWrapper<HedgePositionEntity>()
                     .eq(HedgePositionEntity::getStatus, "OPEN")
@@ -129,6 +162,9 @@ public class StrategyProductQueryService {
         if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             return accountingService.listNextSettlements(limit, mode).stream().map(this::toPosition).toList();
         }
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+            return loadFundingArbNextSettlements(limit).stream().map(this::toFundingArbPosition).toList();
+        }
         return List.of();
     }
 
@@ -139,6 +175,9 @@ public class StrategyProductQueryService {
         if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             return accountingService.listOrders(limit, mode).stream().map(this::toOrder).toList();
         }
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+            return loadFundingArbRecentOrders(limit).stream().map(this::toFundingArbOrder).toList();
+        }
         return List.of();
     }
 
@@ -148,6 +187,9 @@ public class StrategyProductQueryService {
     public List<StrategyTimelinePointView> timeline(String strategyCode, int days, String mode) {
         if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             return accountingService.pnlTimeline(days, mode).stream().map(this::toTimeline).toList();
+        }
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+            return buildFundingArbTimeline(days);
         }
         return List.of();
     }
@@ -173,6 +215,9 @@ public class StrategyProductQueryService {
     public StrategyDetailView detail(String strategyCode, String mode) {
         if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
             return buildPolymarketDetail(mode);
+        }
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+            return buildFundingArbDetail(mode);
         }
         if (HEDGE_CODE.equalsIgnoreCase(strategyCode)) {
             return buildHedgeDetail(mode);
@@ -223,6 +268,100 @@ public class StrategyProductQueryService {
         StrategySummaryView summary = buildPolymarketSummary(mode, performance);
         StrategyMetricsView metrics = buildPolymarketMetrics(performance, pnlSummary, capacity);
         return new StrategySummaryDetailView(summary, metrics, buildInsights(metrics, nextSettlements, mode));
+    }
+
+    private StrategyDetailView buildFundingArbDetail(String mode) {
+        FundingArbSnapshot snapshot = loadFundingArbSnapshot();
+        StrategyMetricsView metrics = buildFundingArbMetrics(snapshot);
+        StrategySummaryView summary = buildFundingArbSummary(metrics, mode);
+        return new StrategyDetailView(
+                summary,
+                metrics,
+                buildFundingArbInsights(snapshot, metrics, mode),
+                snapshot.openPositions().stream().map(this::toFundingArbPosition).toList(),
+                snapshot.nextSettlements().stream().map(this::toFundingArbPosition).toList(),
+                snapshot.orders().stream().limit(30).map(this::toFundingArbOrder).toList(),
+                buildFundingArbTimeline(30),
+                List.of()
+        );
+    }
+
+    private StrategySummaryDetailView buildFundingArbSummaryDetail(String mode) {
+        FundingArbSnapshot snapshot = loadFundingArbSnapshot();
+        StrategyMetricsView metrics = buildFundingArbMetrics(snapshot);
+        StrategySummaryView summary = buildFundingArbSummary(metrics, mode);
+        return new StrategySummaryDetailView(summary, metrics, buildFundingArbInsights(snapshot, metrics, mode));
+    }
+
+    private StrategySummaryView buildFundingArbSummary(StrategyMetricsView metrics, String mode) {
+        return new StrategySummaryView(
+                FUNDING_ARB_CODE,
+                "资金费套利策略",
+                "Funding",
+                "ACTIVE",
+                buildFundingArbDescription(mode),
+                metrics.openPositions(),
+                metrics.compositePnlUsdc(),
+                metrics.netPnlUsdc(),
+                metrics.realizedPnlUsdc(),
+                metrics.unrealizedPnlUsdc(),
+                metrics.pendingSettlementPnlUsdc(),
+                metrics.winRate(),
+                metrics.totalOrders()
+        );
+    }
+
+    private StrategyMetricsView buildFundingArbMetrics(FundingArbSnapshot snapshot) {
+        BigDecimal realizedFundingPnl = sum(snapshot.positions(), SingleExchangeArbitragePosition::getFundingFeesEarned);
+        BigDecimal realizedClosePnl = sum(snapshot.closedPositions(), SingleExchangeArbitragePosition::getRealizedPnl);
+        BigDecimal realizedPnl = realizedFundingPnl.add(realizedClosePnl);
+        BigDecimal tradedVolume = snapshot.orders().stream()
+                .map(this::resolveFundingArbOrderNotional)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal feeUsdc = sum(snapshot.orders(), SingleExchangeArbitrageOrder::getFeeAmount);
+        int winningPositions = (int) snapshot.closedPositions().stream()
+                .filter(position -> resolveFundingArbPositionRealized(position).compareTo(BigDecimal.ZERO) > 0)
+                .count();
+        int losingPositions = (int) snapshot.closedPositions().stream()
+                .filter(position -> resolveFundingArbPositionRealized(position).compareTo(BigDecimal.ZERO) < 0)
+                .count();
+        BigDecimal winRate = snapshot.closedPositions().isEmpty()
+                ? BigDecimal.ZERO
+                : BigDecimal.valueOf(winningPositions)
+                .divide(BigDecimal.valueOf(snapshot.closedPositions().size()), 4, RoundingMode.HALF_UP);
+        BigDecimal maxDrawdown = calculateMaxDrawdown(buildFundingArbTimeline(3650));
+
+        return new StrategyMetricsView(
+                snapshot.orders().size(),
+                (int) snapshot.orders().stream().filter(this::isFundingArbFilledOrder).count(),
+                snapshot.openPositions().size(),
+                snapshot.closedPositions().size(),
+                winningPositions,
+                losingPositions,
+                winRate,
+                tradedVolume,
+                feeUsdc,
+                realizedPnl,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                realizedPnl,
+                realizedPnl,
+                BigDecimal.ZERO,
+                maxDrawdown,
+                0,
+                0,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO
+        );
     }
 
     private StrategySummaryView buildPolymarketSummary(String mode, SmartWalletPerformanceView performance) {
@@ -486,6 +625,151 @@ public class StrategyProductQueryService {
         );
     }
 
+    private FundingArbSnapshot loadFundingArbSnapshot() {
+        List<SingleExchangeArbitragePosition> positions = singleExchangeArbitragePositionMapper.selectList(
+                new LambdaQueryWrapper<SingleExchangeArbitragePosition>()
+                        .eq(SingleExchangeArbitragePosition::getStrategyType, FUNDING_ARB_STRATEGY_TYPE)
+                        .eq(SingleExchangeArbitragePosition::getExchangeName, FUNDING_ARB_EXCHANGE)
+                        .orderByDesc(SingleExchangeArbitragePosition::getEntryTime)
+                        .orderByDesc(SingleExchangeArbitragePosition::getId)
+        );
+        if (positions.isEmpty()) {
+            return new FundingArbSnapshot(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        }
+
+        Set<Long> positionIds = positions.stream()
+                .map(SingleExchangeArbitragePosition::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+
+        List<SingleExchangeArbitrageOrder> orders = positionIds.isEmpty()
+                ? List.of()
+                : singleExchangeArbitrageOrderMapper.selectList(
+                new LambdaQueryWrapper<SingleExchangeArbitrageOrder>()
+                        .in(SingleExchangeArbitrageOrder::getPositionId, positionIds)
+                        .orderByDesc(SingleExchangeArbitrageOrder::getPlacedAt)
+                        .orderByDesc(SingleExchangeArbitrageOrder::getCreatedAt)
+                        .orderByDesc(SingleExchangeArbitrageOrder::getId)
+        );
+
+        List<SingleExchangeArbitrageFundingSettlement> settlements = positionIds.isEmpty()
+                ? List.of()
+                : singleExchangeArbitrageFundingSettlementMapper.selectList(
+                new LambdaQueryWrapper<SingleExchangeArbitrageFundingSettlement>()
+                        .in(SingleExchangeArbitrageFundingSettlement::getPositionId, positionIds)
+                        .orderByDesc(SingleExchangeArbitrageFundingSettlement::getFundingTime)
+                        .orderByDesc(SingleExchangeArbitrageFundingSettlement::getId)
+        );
+
+        List<SingleExchangeArbitragePosition> openPositions = positions.stream()
+                .filter(this::isFundingArbOpenPosition)
+                .toList();
+        List<SingleExchangeArbitragePosition> closedPositions = positions.stream()
+                .filter(position -> "CLOSED".equalsIgnoreCase(position.getStatus()))
+                .toList();
+        List<SingleExchangeArbitragePosition> nextSettlements = openPositions.stream()
+                .sorted(Comparator
+                        .comparing((SingleExchangeArbitragePosition position) -> position.getEntryNextFundingTime() == null ? Long.MAX_VALUE : position.getEntryNextFundingTime())
+                        .thenComparing(position -> position.getEntryTime() == null ? Long.MAX_VALUE : position.getEntryTime().getTime()))
+                .limit(8)
+                .toList();
+        return new FundingArbSnapshot(positions, openPositions, closedPositions, settlements, orders, nextSettlements);
+    }
+
+    private List<SingleExchangeArbitragePosition> loadFundingArbOpenPositions() {
+        return loadFundingArbSnapshot().openPositions();
+    }
+
+    private List<SingleExchangeArbitragePosition> loadFundingArbNextSettlements(int limit) {
+        return loadFundingArbSnapshot().nextSettlements().stream()
+                .limit(Math.max(limit, 0))
+                .toList();
+    }
+
+    private List<SingleExchangeArbitrageOrder> loadFundingArbRecentOrders(int limit) {
+        return loadFundingArbSnapshot().orders().stream()
+                .limit(Math.max(limit, 0))
+                .toList();
+    }
+
+    private List<StrategyTimelinePointView> buildFundingArbTimeline(int days) {
+        FundingArbSnapshot snapshot = loadFundingArbSnapshot();
+        if (snapshot.positions().isEmpty()) {
+            return List.of();
+        }
+        LocalDate cutoffDate = LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(Math.max(days, 1) - 1L);
+        Map<LocalDate, BigDecimal> dailyNetPnl = new TreeMap<>();
+
+        for (SingleExchangeArbitrageFundingSettlement settlement : snapshot.settlements()) {
+            LocalDate date = toFundingArbLocalDate(settlement.getFundingTime(), settlement.getCreatedAt());
+            if (date == null || date.isBefore(cutoffDate)) {
+                continue;
+            }
+            dailyNetPnl.merge(date, safe(settlement.getSettlementAmount()), BigDecimal::add);
+        }
+        for (SingleExchangeArbitragePosition position : snapshot.closedPositions()) {
+            LocalDate date = toFundingArbLocalDate(position.getExitTime());
+            if (date == null || date.isBefore(cutoffDate)) {
+                continue;
+            }
+            dailyNetPnl.merge(date, safe(position.getRealizedPnl()), BigDecimal::add);
+        }
+
+        BigDecimal cumulative = BigDecimal.ZERO;
+        List<StrategyTimelinePointView> timeline = new ArrayList<>();
+        for (Map.Entry<LocalDate, BigDecimal> entry : dailyNetPnl.entrySet()) {
+            cumulative = cumulative.add(safe(entry.getValue()));
+            timeline.add(new StrategyTimelinePointView(entry.getKey().toString(), safe(entry.getValue()), cumulative));
+        }
+        return timeline;
+    }
+
+    private List<StrategyInsightView> buildFundingArbInsights(FundingArbSnapshot snapshot,
+                                                              StrategyMetricsView metrics,
+                                                              String mode) {
+        List<StrategyInsightView> insights = new ArrayList<>();
+        if (snapshot.positions().isEmpty()) {
+            insights.add(new StrategyInsightView("INFO", "暂无套利持仓历史", "当前还没有单交易所资金费套利的持仓、订单与资金费结算记录。"));
+        } else if (metrics.openPositions() != null && metrics.openPositions() > 0) {
+            insights.add(new StrategyInsightView("INFO", "当前存在在途套利仓位", "当前共有 " + metrics.openPositions() + " 组现货多 / 合约空持仓仍在持有中。"));
+        } else {
+            insights.add(new StrategyInsightView("INFO", "当前无在途套利仓位", "当前没有 OPENING、OPENED 或 CLOSING 状态的资金费套利仓位。"));
+        }
+
+        if (!snapshot.nextSettlements().isEmpty()) {
+            SingleExchangeArbitragePosition next = snapshot.nextSettlements().get(0);
+            insights.add(new StrategyInsightView(
+                    "INFO",
+                    "下一次资金费观察窗口",
+                    next.getSymbol() + " 预计北京时间 " + formatEpochMillis(next.getEntryNextFundingTime()) + " 进入下一次资金费结算窗口。"
+            ));
+        }
+
+        if (metrics.realizedPnlUsdc() != null && metrics.realizedPnlUsdc().compareTo(BigDecimal.ZERO) != 0) {
+            insights.add(new StrategyInsightView("INFO", "已实现收益已聚合", "当前已实现 PnL 已合并资金费结算与平仓收益，累计为 " + metrics.realizedPnlUsdc() + " USDT。"));
+        }
+
+        long failedPositions = snapshot.positions().stream()
+                .filter(position -> "FAILED".equalsIgnoreCase(position.getStatus()))
+                .count();
+        if (failedPositions > 0) {
+            insights.add(new StrategyInsightView("WARN", "存在失败持仓记录", "历史上共有 " + failedPositions + " 条套利持仓进入 FAILED 状态，请结合订单明细排查异常原因。"));
+        }
+
+        insights.add(new StrategyInsightView(
+                "INFO",
+                "当前口径说明",
+                "FundingArb 页面当前复用同一套 Binance 单交易所套利库表，PAPER/LIVE 切换不会改变数据范围。"
+        ));
+        insights.add(new StrategyInsightView(
+                "INFO",
+                "执行参数基线",
+                "当前默认开仓阈值 " + safe(singleExchangeSpotFuturesProperties.getOpenThreshold())
+                        + "，默认杠杆 " + singleExchangeSpotFuturesProperties.getLeverage() + "x。"
+        ));
+        return insights;
+    }
+
     private StrategyMetricsView emptyMetrics() {
         return new StrategyMetricsView(
                 0, 0, 0, 0, 0, 0,
@@ -668,6 +952,52 @@ public class StrategyProductQueryService {
         );
     }
 
+    private StrategyPositionRowView toFundingArbPosition(SingleExchangeArbitragePosition row) {
+        return new StrategyPositionRowView(
+                row.getId(),
+                row.getPositionCode(),
+                row.getSymbol() + " @" + (row.getExchangeName() == null ? FUNDING_ARB_EXCHANGE : row.getExchangeName()),
+                "SPOT LONG / FUTURES SHORT",
+                row.getStatus(),
+                row.getQuantity(),
+                safe(row.getEntrySpotPrice()),
+                resolveFundingArbCostBasis(row),
+                resolveFundingArbCostBasis(row),
+                resolveFundingArbPositionRealized(row),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                formatEpochMillis(row.getEntryNextFundingTime())
+        );
+    }
+
+    private StrategyOrderRowView toFundingArbOrder(SingleExchangeArbitrageOrder row) {
+        return new StrategyOrderRowView(
+                row.getId(),
+                row.getPositionId(),
+                buildFundingArbExecutionMode(row),
+                row.getSymbol(),
+                buildFundingArbOrderOutcome(row),
+                row.getSide(),
+                row.getOrderType(),
+                false,
+                row.getErrorMessage(),
+                row.getStatus(),
+                resolveFundingArbOrderPrice(row),
+                resolveFundingArbOrderSize(row),
+                resolveFundingArbOrderNotional(row),
+                BigDecimal.ZERO,
+                safe(row.getFeeAmount()),
+                BigDecimal.ZERO,
+                null,
+                null,
+                null,
+                row.getClientOrderId() == null ? 0 : 1,
+                null,
+                formatDate(row.getPlacedAt() == null ? row.getCreatedAt() : row.getPlacedAt())
+        );
+    }
+
     private StrategyTimelinePointView toTimeline(SmartWalletPnlTimelinePoint row) {
         return new StrategyTimelinePointView(row.getBucketAt() == null ? null : row.getBucketAt().toString(),
                 row.getNetPnlUsdc(), row.getCumulativeNetPnlUsdc());
@@ -678,6 +1008,13 @@ public class StrategyProductQueryService {
                 row.getNetPnlUsdc(), row.getMarketEndAtBjt());
     }
 
+    private String buildFundingArbDescription(String mode) {
+        if ("LIVE".equalsIgnoreCase(mode) || "PAPER".equalsIgnoreCase(mode)) {
+            return "Binance 单交易所现货多 / 合约空资金费套利视图；当前 PAPER/LIVE 共用同一套利数据集。";
+        }
+        return "Binance 单交易所现货多 / 合约空资金费套利视图。";
+    }
+
     private StrategySummaryView placeholder(String code, String name, String category, String status, String description) {
         return new StrategySummaryView(code, name, category, status, description, 0,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0);
@@ -685,6 +1022,90 @@ public class StrategyProductQueryService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private boolean isFundingArbOpenPosition(SingleExchangeArbitragePosition position) {
+        String status = position.getStatus();
+        return "OPENING".equalsIgnoreCase(status)
+                || "OPENED".equalsIgnoreCase(status)
+                || "CLOSING".equalsIgnoreCase(status);
+    }
+
+    private boolean isFundingArbFilledOrder(SingleExchangeArbitrageOrder order) {
+        String status = order.getStatus();
+        return "FILLED".equalsIgnoreCase(status) || "PARTIALLY_FILLED".equalsIgnoreCase(status);
+    }
+
+    private BigDecimal resolveFundingArbPositionRealized(SingleExchangeArbitragePosition position) {
+        return safe(position.getRealizedPnl()).add(safe(position.getFundingFeesEarned()));
+    }
+
+    private BigDecimal resolveFundingArbCostBasis(SingleExchangeArbitragePosition position) {
+        BigDecimal totalInvestment = safe(position.getTotalInvestment());
+        if (totalInvestment.compareTo(BigDecimal.ZERO) > 0) {
+            return totalInvestment;
+        }
+        return safe(position.getSpotNotional()).add(safe(position.getFuturesNotional()));
+    }
+
+    private BigDecimal resolveFundingArbOrderPrice(SingleExchangeArbitrageOrder order) {
+        BigDecimal avgPrice = safe(order.getAvgPrice());
+        return avgPrice.compareTo(BigDecimal.ZERO) > 0 ? avgPrice : safe(order.getRequestedPrice());
+    }
+
+    private BigDecimal resolveFundingArbOrderSize(SingleExchangeArbitrageOrder order) {
+        BigDecimal executedQty = safe(order.getExecutedQty());
+        return executedQty.compareTo(BigDecimal.ZERO) > 0 ? executedQty : safe(order.getRequestedQty());
+    }
+
+    private BigDecimal resolveFundingArbOrderNotional(SingleExchangeArbitrageOrder order) {
+        BigDecimal quoteQty = safe(order.getQuoteQty());
+        if (quoteQty.compareTo(BigDecimal.ZERO) > 0) {
+            return quoteQty;
+        }
+        return resolveFundingArbOrderPrice(order).multiply(resolveFundingArbOrderSize(order));
+    }
+
+    private String buildFundingArbExecutionMode(SingleExchangeArbitrageOrder order) {
+        String marketType = order.getMarketType() == null ? "UNKNOWN" : order.getMarketType();
+        String phase = order.getTradePhase() == null ? "TRADE" : order.getTradePhase();
+        return marketType + "_" + phase;
+    }
+
+    private String buildFundingArbOrderOutcome(SingleExchangeArbitrageOrder order) {
+        String hedgeSide = order.getHedgeSide() == null ? "-" : order.getHedgeSide();
+        String positionSide = order.getPositionSide() == null ? "-" : order.getPositionSide();
+        return hedgeSide + " / " + positionSide;
+    }
+
+    private LocalDate toFundingArbLocalDate(Long epochMillis, Date fallback) {
+        if (epochMillis != null && epochMillis > 0) {
+            return Instant.ofEpochMilli(epochMillis).atZone(ZoneId.of("Asia/Shanghai")).toLocalDate();
+        }
+        return toFundingArbLocalDate(fallback);
+    }
+
+    private LocalDate toFundingArbLocalDate(Date date) {
+        if (date == null) {
+            return null;
+        }
+        return date.toInstant().atZone(ZoneId.of("Asia/Shanghai")).toLocalDate();
+    }
+
+    private BigDecimal calculateMaxDrawdown(List<StrategyTimelinePointView> timeline) {
+        BigDecimal peak = BigDecimal.ZERO;
+        BigDecimal maxDrawdown = BigDecimal.ZERO;
+        for (StrategyTimelinePointView point : timeline) {
+            BigDecimal cumulative = safe(point.cumulativeNetPnlUsdc());
+            if (cumulative.compareTo(peak) > 0) {
+                peak = cumulative;
+            }
+            BigDecimal drawdown = peak.subtract(cumulative);
+            if (drawdown.compareTo(maxDrawdown) > 0) {
+                maxDrawdown = drawdown;
+            }
+        }
+        return maxDrawdown;
     }
 
     private boolean isHedgeUnresolved(HedgePositionEntity position) {
@@ -787,5 +1208,15 @@ public class StrategyProductQueryService {
                 .map(mapper)
                 .map(this::safe)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private record FundingArbSnapshot(
+            List<SingleExchangeArbitragePosition> positions,
+            List<SingleExchangeArbitragePosition> openPositions,
+            List<SingleExchangeArbitragePosition> closedPositions,
+            List<SingleExchangeArbitrageFundingSettlement> settlements,
+            List<SingleExchangeArbitrageOrder> orders,
+            List<SingleExchangeArbitragePosition> nextSettlements
+    ) {
     }
 }
