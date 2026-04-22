@@ -33,6 +33,7 @@ public class SmartWalletPositionEntity {
     private Date lastFilledAt;
     private Date closedAt;
     private String status;
+    private String source;  // FOLLOW_TRADE / WEATHER
     private Date createdAt;
     private Date updatedAt;
 
