@@ -403,6 +403,11 @@ smart-wallet:
     trend-stop-loss-enabled: true
     # [TUNE] 连续多少个扫描周期（约 5 分钟/周期）价格单调下跌且 ROI<0 时触发
     trend-stop-loss-consecutive-periods: 3
+    # [METHOD-C] 退出信号提供者模式: RULES=时间感知止损; SCORING=特征评分退出
+    exit-signal-provider-mode: RULES
+    exit-scoring-roi-momentum-weight: 0.10
+    exit-scoring-min-threshold: 0.03
+    exit-scoring-max-threshold: 0.50
   model-calibration:
     # [TUNE] Platt-style calibration params for baseline follow-probability output.
     follow-probability-scale: 1.15

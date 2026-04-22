@@ -199,6 +199,20 @@ public class SmartWalletProperties {
         /** 趋势加速止损连续下跌周期数（每周期 = 一次 checkStopLoss 扫描，约 5 分钟） */
         private int trendStopLossConsecutivePeriods = 3;
 
+        // ── 方案C：退出信号提供者模式 ────────────────────────────────────
+        /**
+         * 退出信号提供者模式：
+         *   RULES   - 规则退出（时间感知止损 + 趋势止损，即 TimeAwareStopLossService）
+         *   SCORING - 特征评分退出（时间层级基准 + ROI 动量调整，即 ScoredExitSignalProvider）
+         */
+        private String exitSignalProviderMode = "RULES";
+        /** 评分退出：ROI 动量权重（每 1% 亏损对基准阈值的缩减量，默认 0.10 = 每亏 10% 收紧 1%） */
+        private BigDecimal exitScoringRoiMomentumWeight = new BigDecimal("0.10");
+        /** 评分退出：最小止损阈值下限（防止评分后阈值过小导致频繁止损） */
+        private BigDecimal exitScoringMinThreshold = new BigDecimal("0.03");
+        /** 评分退出：最大止损阈值上限（防止评分后阈值过大导致止损失效） */
+        private BigDecimal exitScoringMaxThreshold = new BigDecimal("0.50");
+
         /**
          * Backward-compatible accessors for existing YAML keys:
          *   smart-wallet.signal-risk.enable-ev-gate
