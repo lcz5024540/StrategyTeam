@@ -88,6 +88,8 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoverySe
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.config.SecretDecryptor;
+import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionView;
+import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
 import lombok.RequiredArgsConstructor;
@@ -144,6 +146,7 @@ public class SmartWalletController {
     private final BaselineModelConfigApplicationService baselineModelConfigApplicationService;
     private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
     private final MarketConcentrationService marketConcentrationService;
+    private final FollowTradeAttributionService followTradeAttributionService;
     private final SecretDecryptor secretDecryptor;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
@@ -388,6 +391,21 @@ public class SmartWalletController {
             return followTaskApplicationService.blockerStats(taskLimit);
         } catch (Exception e) {
             log.error("Failed to load follow-task blocker stats taskLimit={}", taskLimit, e);
+            throw e;
+        }
+    }
+
+    @Operation(summary = "跟单 PnL 归因分析",
+               description = "按维度聚合已平仓跟单的盈亏、胜率、持仓时长、退出类型分布。" +
+                       "groupBy: EXIT_REASON（按退出原因）| WALLET_SCORE（按钱包评分段）| MARKET_TIMING（按入场时市场剩余时间）")
+    @GetMapping("/follow-trades/attribution")
+    public List<FollowTradeAttributionView> followTradeAttribution(
+            @RequestParam(defaultValue = "EXIT_REASON") String groupBy,
+            @RequestParam(defaultValue = "500") Integer limit) {
+        try {
+            return followTradeAttributionService.buildAttribution(groupBy, limit);
+        } catch (Exception e) {
+            log.error("Failed to build follow-trade attribution groupBy={} limit={}", groupBy, limit, e);
             throw e;
         }
     }
