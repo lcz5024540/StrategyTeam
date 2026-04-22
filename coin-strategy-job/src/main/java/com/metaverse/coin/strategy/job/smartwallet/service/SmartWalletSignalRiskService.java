@@ -38,6 +38,7 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletLeaderboardStateService leaderboardStateService;
     private final SmartWalletEntryStrategyRouter entryStrategyRouter;
     private final SmartWalletMarketInfoService marketInfoService;
+    private final KellyStakeCalculator kellyStakeCalculator;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -195,15 +196,15 @@ public class SmartWalletSignalRiskService {
         BigDecimal walletScore = profile == null
                 ? BigDecimal.ZERO
                 : leaderboardStateService.adjustWalletScore(profile, event);
-        BigDecimal recommendedStake = triggerSize
+        BigDecimal preliminaryStake = triggerSize
                 .multiply(walletScore)
                 .multiply(properties.getBankrollUtilizationRate())
                 .min(properties.getMaxStakeUsdc())
                 .setScale(2, RoundingMode.HALF_UP);
-        recommendedStake = recommendedStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
+        preliminaryStake = preliminaryStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal minOrderUsdc = executionWalletContextLoader.load().getMinOrderUsdc();
-        if (recommendedStake.compareTo(minOrderUsdc) < 0) {
+        if (preliminaryStake.compareTo(minOrderUsdc) < 0) {
             accepted = false;
             reasons.add("Recommended stake is below execution wallet minimum order.");
         }
@@ -232,7 +233,7 @@ public class SmartWalletSignalRiskService {
                                 .multiply(safe(risk.getConcentrationStakePenaltyMaxRate()))
                                 .min(safe(risk.getConcentrationStakePenaltyMaxRate()));
                         BigDecimal retainRate = BigDecimal.ONE.subtract(penaltyRate);
-                        recommendedStake = recommendedStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
+                        preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
                         reasons.add("[CONCENTRATION_PENALTY] CR3=" +
                                 snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
                                 " in caution zone. Stake reduced by " +
@@ -254,7 +255,7 @@ public class SmartWalletSignalRiskService {
                         }
                         case "DOWNSIZE" -> {
                             BigDecimal downsize = safe(risk.getWhaleSignalDownsizeRate());
-                            recommendedStake = recommendedStake.multiply(downsize).setScale(2, RoundingMode.HALF_UP);
+                            preliminaryStake = preliminaryStake.multiply(downsize).setScale(2, RoundingMode.HALF_UP);
                             reasons.add("[WHALE_SIGNAL] Signal source is a top-5 holder. " +
                                     "Stake downsized to " +
                                     downsize.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
@@ -269,7 +270,38 @@ public class SmartWalletSignalRiskService {
         }
 
         TradeProfitabilityScoringService.ProfitabilityEstimate profitabilityEstimate =
-                tradeProfitabilityScoringService.estimate(profile, event, consensus, recommendedStake);
+                tradeProfitabilityScoringService.estimate(profile, event, consensus, preliminaryStake);
+
+        // ── Kelly 仓位计算 ─────────────────────────────────────────────────────
+        BigDecimal recommendedStake;
+        if (risk.isKellyStakeEnabled()) {
+            BigDecimal kellyStake = kellyStakeCalculator.compute(
+                    profitabilityEstimate.getCalibratedFollowProbability(),
+                    event.getPrice(),
+                    availableCapital,
+                    risk.getKellyFraction(),
+                    minOrderUsdc,
+                    properties.getMaxStakeUsdc()
+            );
+            if (kellyStake == null) {
+                // 概率未知，回退到 preliminaryStake
+                recommendedStake = preliminaryStake;
+                reasons.add("Kelly stake: probability unknown, falling back to legacy formula.");
+            } else if (kellyStake.compareTo(BigDecimal.ZERO) == 0) {
+                // EV 为负，Kelly 建议拒绝
+                accepted = false;
+                recommendedStake = BigDecimal.ZERO;
+                reasons.add("Kelly stake: negative EV, signal rejected.");
+            } else {
+                recommendedStake = kellyStake;
+                reasons.add("Kelly stake=" + kellyStake + " (p=" +
+                        safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) +
+                        " price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ").");
+            }
+        } else {
+            recommendedStake = preliminaryStake;
+        }
+
         if (profitabilityEstimate.getEstimateSampleSize() != null && profitabilityEstimate.getEstimateSampleSize() > 0) {
             reasons.add("Local risk estimate sample size=" + profitabilityEstimate.getEstimateSampleSize() + ".");
         }
