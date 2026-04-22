@@ -381,6 +381,28 @@ smart-wallet:
     concentration-stake-safe-top3-pct: 0.40
     # [TUNE] 集中度惩罚最大削减比例
     concentration-stake-penalty-max-rate: 0.50
+    # ── Kelly 动态仓位 ─────────────────────────────────────────
+    # [TUNE] 启用后使用 calibratedFollowProbability 和入场价格计算 Kelly 仓位
+    kelly-stake-enabled: true
+    # [TUNE] Kelly 折扣因子，0.3 = 保守半 Kelly 以下
+    kelly-fraction: 0.30
+    # ── 时间感知止损 ──────────────────────────────────────────
+    # [TUNE] 启用后按市场剩余时间动态收紧止损线
+    time-aware-stop-loss-enabled: true
+    # [TUNE] 止损分段（remainingHours 降序排列，matches first tier where remaining <= remainingHours）
+    stop-loss-tiers:
+      - remaining-hours: 168
+        threshold-rate: 0.35
+      - remaining-hours: 24
+        threshold-rate: 0.25
+      - remaining-hours: 6
+        threshold-rate: 0.15
+      - remaining-hours: 0
+        threshold-rate: 0.05
+    # [TUNE] 启用趋势加速止损
+    trend-stop-loss-enabled: true
+    # [TUNE] 连续多少个扫描周期（约 5 分钟/周期）价格单调下跌且 ROI<0 时触发
+    trend-stop-loss-consecutive-periods: 3
   model-calibration:
     # [TUNE] Platt-style calibration params for baseline follow-probability output.
     follow-probability-scale: 1.15

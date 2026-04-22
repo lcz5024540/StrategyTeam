@@ -183,6 +183,22 @@ public class SmartWalletProperties {
         /** 集中度惩罚最大削减比例（0.5 = 最多缩减 50%） */
         private BigDecimal concentrationStakePenaltyMaxRate = new BigDecimal("0.50");
 
+        // ── Kelly 动态仓位 ────────────────────────────────────────────
+        /** 是否启用 Kelly 仓位计算（false = 回退到原有 triggerSize * walletScore 公式） */
+        private boolean kellyStakeEnabled = false;
+        /** Kelly 折扣因子（0.3 = 30% Kelly，保守值） */
+        private BigDecimal kellyFraction = new BigDecimal("0.30");
+
+        // ── 时间感知止损 ──────────────────────────────────────────────
+        /** 是否启用时间感知动态止损阈值（false = 使用 autoStopLossThresholdRate 固定值） */
+        private boolean timeAwareStopLossEnabled = false;
+        /** 止损阈值分段列表，按 remainingHours 降序排列，匹配第一个不超过剩余时间的档位 */
+        private List<StopLossTier> stopLossTiers = new ArrayList<>();
+        /** 是否启用趋势加速止损（连续 N 期下跌时提前止损） */
+        private boolean trendStopLossEnabled = false;
+        /** 趋势加速止损连续下跌周期数（每周期 = 一次 checkStopLoss 扫描，约 5 分钟） */
+        private int trendStopLossConsecutivePeriods = 3;
+
         /**
          * Backward-compatible accessors for existing YAML keys:
          *   smart-wallet.signal-risk.enable-ev-gate
@@ -218,6 +234,14 @@ public class SmartWalletProperties {
         public void setMinExpectedNetEvUsdc(BigDecimal minExpectedNetEvUsdc) {
             this.minEstimatedNetProfitabilityUsdc = minExpectedNetEvUsdc;
         }
+    }
+
+    @Data
+    public static class StopLossTier {
+        /** 此阈值适用的最大市场剩余小时数（remainingHours <= this value） */
+        private int remainingHours;
+        /** 止损触发阈值（正数，0.25 = -25% ROI 触发） */
+        private BigDecimal thresholdRate;
     }
 
     @Data
