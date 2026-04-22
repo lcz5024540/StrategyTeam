@@ -1,11 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
-import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
@@ -37,7 +35,6 @@ public class FollowTradeAttributionService {
 
     private final SmartWalletPositionMapper positionMapper;
     private final SmartWalletOrderMapper orderMapper;
-    private final SmartWalletFollowTaskMapper followTaskMapper;
     private final SmartWalletProfileMapper profileMapper;
     private final SmartWalletMarketInfoService marketInfoService;
 
@@ -119,24 +116,28 @@ public class FollowTradeAttributionService {
     private List<FollowTradeAttributionView> groupByWalletScore(
             List<SmartWalletPositionEntity> positions,
             Map<Long, String> exitReasonByPositionId) {
-        // Find related follow tasks for each position via marketInfoId
-        Map<Long, String> walletAddressByMarketInfoId = new LinkedHashMap<>();
-        List<Long> marketInfoIds = positions.stream()
-                .map(SmartWalletPositionEntity::getMarketInfoId)
+        // Resolve wallet address from entry orders: position → BUY/ENTRY order → walletAddress
+        // This is more accurate than marketInfoId → followTask, which may have multiple tasks per market
+        Map<Long, String> walletAddressByPositionId = new LinkedHashMap<>();
+        List<Long> positionIds = positions.stream()
+                .map(SmartWalletPositionEntity::getId)
                 .filter(Objects::nonNull)
-                .distinct()
                 .toList();
-        if (!marketInfoIds.isEmpty()) {
-            List<SmartWalletFollowTaskEntity> followTasks = followTaskMapper.selectList(
-                    new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                            .in(SmartWalletFollowTaskEntity::getMarketInfoId, marketInfoIds)
-                            .eq(SmartWalletFollowTaskEntity::getStatus, "FOLLOWED"));
-            followTasks.forEach(ft -> walletAddressByMarketInfoId.putIfAbsent(
-                    ft.getMarketInfoId(), ft.getWalletAddress()));
+        if (!positionIds.isEmpty()) {
+            List<SmartWalletOrderEntity> entryOrders = orderMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                            .in(SmartWalletOrderEntity::getPositionId, positionIds)
+                            .eq(SmartWalletOrderEntity::getSide, "BUY")
+                            .eq(SmartWalletOrderEntity::getOrderType, "ENTRY"));
+            entryOrders.forEach(order -> {
+                if (order.getPositionId() != null && order.getWalletAddress() != null) {
+                    walletAddressByPositionId.putIfAbsent(order.getPositionId(), order.getWalletAddress());
+                }
+            });
         }
 
         // Fetch profiles
-        List<String> walletAddresses = walletAddressByMarketInfoId.values().stream()
+        List<String> walletAddresses = walletAddressByPositionId.values().stream()
                 .filter(Objects::nonNull).distinct().toList();
         Map<String, BigDecimal> walletScoreByAddress = new LinkedHashMap<>();
         if (!walletAddresses.isEmpty()) {
@@ -149,7 +150,7 @@ public class FollowTradeAttributionService {
 
         Map<String, List<SmartWalletPositionEntity>> grouped = positions.stream()
                 .collect(Collectors.groupingBy(p -> {
-                    String wallet = walletAddressByMarketInfoId.get(p.getMarketInfoId());
+                    String wallet = walletAddressByPositionId.get(p.getId());
                     BigDecimal score = wallet == null ? null : walletScoreByAddress.get(wallet);
                     return resolveScoreBucket(score);
                 }));
