@@ -21,11 +21,11 @@ function pointTime(item: TimelinePoint | DailyReport) {
 }
 
 function profitAmount(item: TimelinePoint | DailyReport) {
-  return 'profitPnlUsdc' in item ? item.profitPnlUsdc || 0 : Math.max(item.realizedPnlUsdc || 0, 0)
+  return 'profitPnlUsdc' in item ? item.profitPnlUsdc || 0 : Math.max(item.netPnlUsdc || 0, 0)
 }
 
 function lossAmount(item: TimelinePoint | DailyReport) {
-  return 'lossPnlUsdc' in item ? item.lossPnlUsdc || 0 : Math.min(item.realizedPnlUsdc || 0, 0)
+  return 'lossPnlUsdc' in item ? item.lossPnlUsdc || 0 : Math.min(item.netPnlUsdc || 0, 0)
 }
 
 export function DailyPnlBars({ data, bucketHours = 24 }: DailyPnlBarsProps) {

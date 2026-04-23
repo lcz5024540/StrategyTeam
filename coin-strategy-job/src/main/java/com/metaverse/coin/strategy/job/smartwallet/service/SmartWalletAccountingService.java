@@ -1072,14 +1072,14 @@ public class SmartWalletAccountingService {
         BigDecimal cumulativeNet = BigDecimal.ZERO;
         for (Map.Entry<LocalDateTime, TimelineBucketAccumulator> entry : buckets.entrySet()) {
             TimelineBucketAccumulator bucket = entry.getValue();
-            cumulativeLoss = cumulativeLoss.add(bucket.lossPnl);
+            cumulativeLoss = cumulativeLoss.add(bucket.lossPnl());
             cumulativeRealized = cumulativeRealized.add(bucket.realizedPnl);
             cumulativeFee = cumulativeFee.add(bucket.fee);
             cumulativeNet = cumulativeNet.add(bucket.netPnl());
             points.add(SmartWalletPnlTimelinePoint.builder()
                     .bucketAt(Date.from(entry.getKey().atZone(zoneId).toInstant()))
-                    .profitPnlUsdc(bucket.profitPnl.setScale(8, RoundingMode.HALF_UP))
-                    .lossPnlUsdc(bucket.lossPnl.setScale(8, RoundingMode.HALF_UP))
+                    .profitPnlUsdc(bucket.profitPnl().setScale(8, RoundingMode.HALF_UP))
+                    .lossPnlUsdc(bucket.lossPnl().setScale(8, RoundingMode.HALF_UP))
                     .realizedPnlUsdc(bucket.realizedPnl.setScale(8, RoundingMode.HALF_UP))
                     .feeUsdc(bucket.fee.setScale(8, RoundingMode.HALF_UP))
                     .netPnlUsdc(bucket.netPnl().setScale(8, RoundingMode.HALF_UP))
@@ -1107,10 +1107,10 @@ public class SmartWalletAccountingService {
         BigDecimal cumulative = BigDecimal.ZERO;
         for (SmartWalletDailyReportEntity report : filteredReports.subList(fromIndex, filteredReports.size())) {
             BigDecimal realized = safe(report.getRealizedPnlUsdc());
-            BigDecimal profit = realized.max(BigDecimal.ZERO);
-            BigDecimal loss = realized.compareTo(BigDecimal.ZERO) < 0 ? realized : BigDecimal.ZERO;
             BigDecimal fee = safe(report.getFeeUsdc());
             BigDecimal net = safe(report.getNetPnlUsdc(), realized.subtract(fee));
+            BigDecimal profit = net.max(BigDecimal.ZERO);
+            BigDecimal loss = net.compareTo(BigDecimal.ZERO) < 0 ? net : BigDecimal.ZERO;
             cumulativeLoss = cumulativeLoss.add(loss);
             cumulativeRealized = cumulativeRealized.add(realized);
             cumulativeFee = cumulativeFee.add(fee);
@@ -4230,8 +4230,6 @@ public class SmartWalletAccountingService {
     }
 
     private class TimelineBucketAccumulator {
-        private BigDecimal profitPnl = BigDecimal.ZERO;
-        private BigDecimal lossPnl = BigDecimal.ZERO;
         private BigDecimal realizedPnl = BigDecimal.ZERO;
         private BigDecimal fee = BigDecimal.ZERO;
 
@@ -4241,12 +4239,15 @@ public class SmartWalletAccountingService {
                 fee = fee.add(safe(entry.getAmount()));
             } else if ("REALIZED_PNL".equalsIgnoreCase(entry.getEntryType())) {
                 realizedPnl = realizedPnl.add(pnlDelta);
-                if (pnlDelta.compareTo(BigDecimal.ZERO) > 0) {
-                    profitPnl = profitPnl.add(pnlDelta);
-                } else if (pnlDelta.compareTo(BigDecimal.ZERO) < 0) {
-                    lossPnl = lossPnl.add(pnlDelta);
-                }
             }
+        }
+
+        private BigDecimal profitPnl() {
+            return netPnl().max(BigDecimal.ZERO);
+        }
+
+        private BigDecimal lossPnl() {
+            return netPnl().compareTo(BigDecimal.ZERO) < 0 ? netPnl() : BigDecimal.ZERO;
         }
 
         private BigDecimal netPnl() {

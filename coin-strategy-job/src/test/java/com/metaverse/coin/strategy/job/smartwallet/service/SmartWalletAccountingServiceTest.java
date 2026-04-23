@@ -983,7 +983,7 @@ class SmartWalletAccountingServiceTest {
     }
 
     @Test
-    void shouldSplitTimelineProfitLossAndCumulativeLoss() {
+    void shouldSplitTimelineProfitLossAndCumulativeLossUsingNetPnl() {
         ZoneId zoneId = ZoneId.systemDefault();
         LocalDateTime now = LocalDateTime.now(zoneId).withMinute(0).withSecond(0).withNano(0);
         Date profitAt = Date.from(now.minusHours(6).atZone(zoneId).toInstant());
@@ -1021,13 +1021,35 @@ class SmartWalletAccountingServiceTest {
         assertEquals(0, BigDecimal.ZERO.compareTo(profitBucket.getLossPnlUsdc()));
 
         SmartWalletPnlTimelinePoint lossBucket = timeline.stream()
-                .filter(point -> new BigDecimal("-4.20000000").compareTo(point.getLossPnlUsdc()) == 0)
+                .filter(point -> new BigDecimal("-5.50000000").compareTo(point.getLossPnlUsdc()) == 0)
                 .findFirst()
                 .orElseThrow();
         assertEquals(0, BigDecimal.ZERO.compareTo(lossBucket.getProfitPnlUsdc()));
-        assertEquals(0, new BigDecimal("-4.20000000").compareTo(lossBucket.getLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-5.50000000").compareTo(lossBucket.getLossPnlUsdc()));
         assertEquals(0, new BigDecimal("-5.50000000").compareTo(lossBucket.getNetPnlUsdc()));
-        assertEquals(0, new BigDecimal("-4.20000000").compareTo(lossBucket.getCumulativeLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-5.50000000").compareTo(lossBucket.getCumulativeLossPnlUsdc()));
+    }
+
+    @Test
+    void shouldUseNetPnlForLossWhenTimelineFallsBackToDailyReports() {
+        SmartWalletDailyReportEntity report = new SmartWalletDailyReportEntity()
+                .setReportDate(java.sql.Date.valueOf(LocalDate.now(ZoneId.systemDefault())))
+                .setExecutionAddress("paper-book")
+                .setRealizedPnlUsdc(new BigDecimal("-4.20"))
+                .setFeeUsdc(new BigDecimal("1.30"))
+                .setNetPnlUsdc(new BigDecimal("-5.50"));
+
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of());
+        when(dailyReportMapper.selectList(any())).thenReturn(List.of(report));
+
+        List<SmartWalletPnlTimelinePoint> timeline = service.pnlTimeline(7, 24, "PAPER");
+
+        assertEquals(1, timeline.size());
+        SmartWalletPnlTimelinePoint point = timeline.get(0);
+        assertEquals(0, BigDecimal.ZERO.compareTo(point.getProfitPnlUsdc()));
+        assertEquals(0, new BigDecimal("-5.50").compareTo(point.getLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-5.50").compareTo(point.getCumulativeLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-5.50").compareTo(point.getNetPnlUsdc()));
     }
 
     @Test

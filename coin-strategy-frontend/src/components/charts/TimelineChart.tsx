@@ -39,7 +39,7 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
       return
     }
     runningNet += item.netPnlUsdc || 0
-    runningLoss += Math.min(item.realizedPnlUsdc || 0, 0)
+    runningLoss += Math.min(item.netPnlUsdc || 0, 0)
     cumulativeNet.push(Number(runningNet.toFixed(2)))
     cumulativeLoss.push(Number(runningLoss.toFixed(2)))
   })
