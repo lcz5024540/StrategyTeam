@@ -74,7 +74,7 @@ pip3 install py-clob-client
 
 示例环境文件：
 
-- [`deploy/linux/env/smart-wallet.env.example`](env/smart-wallet.env)
+- [`deploy/linux/env/smart-wallet.env`](env/smart-wallet.env)
 
 建议重点维护这些变量：
 

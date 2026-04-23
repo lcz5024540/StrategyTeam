@@ -558,18 +558,32 @@ smart-wallet:
 
 weather-arbitrage:
   enabled: false
+  mode: OFF
   capital-pool-usdc: 500
   max-single-stake-usdc: 50
   max-open-positions: 5
   entry-edge-threshold: 0.10
+  expected-value-floor: 0.02
   min-liquidity-usdc: 50
   min-hours-to-settlement: 12
   max-hours-to-settlement: 72
   sigma-f: 3.5
+  min-calibration-sample-size: 20
+  max-forecast-age-minutes: 180
+  allowed-lead-hour-buckets: [12, 24, 48, 72]
+  min-data-source-count: 1
+  confidence-floor: 0.55
+  max-markets-per-scan: 150
   cities:
-    - London
-    - New York
-    - Seoul
+    - name: London
+      time-zone: Europe/London
+      aliases: [London]
+    - name: New York
+      time-zone: America/New_York
+      aliases: [New York, NYC]
+    - name: Seoul
+      time-zone: Asia/Seoul
+      aliases: [Seoul]
   tomorrow-io-api-key: ${TOMORROW_IO_API_KEY:}
   scan-fixed-delay-ms: 900000
   sync-fixed-delay-ms: 300000

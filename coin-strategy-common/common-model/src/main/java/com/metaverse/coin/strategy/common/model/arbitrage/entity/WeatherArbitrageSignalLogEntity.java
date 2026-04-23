@@ -22,6 +22,12 @@ public class WeatherArbitrageSignalLogEntity {
     private BigDecimal marketPrice;
     private BigDecimal fairValue;
     private BigDecimal edge;
+    private BigDecimal confidence;
+    private Integer forecastAgeMinutes;
+    private Integer leadHours;
+    private String calibrationVersion;
+    private String mode;
+    private String resultLabel;
     /** PASS / BUY_YES / BUY_NO */
     private String action;
     private String reason;

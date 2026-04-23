@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.weather.service;
 
 import com.metaverse.coin.strategy.job.weather.model.WeatherMarketSpec;
+import com.metaverse.coin.strategy.job.weather.config.WeatherArbitrageProperties;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -10,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class WeatherMarketTitleParserTest {
 
-    private final WeatherMarketTitleParser parser = new WeatherMarketTitleParser();
+    private final WeatherMarketTitleParser parser = new WeatherMarketTitleParser(new WeatherArbitrageProperties());
 
     @Test
     void parse_londonHighExceed_returnsMaxSpec() {
@@ -25,6 +26,7 @@ class WeatherMarketTitleParserTest {
         assertEquals("London", spec.getCity());
         assertEquals(WeatherMarketSpec.TemperatureType.MAX, spec.getTemperatureType());
         assertEquals(new BigDecimal("68"), spec.getThresholdF());
+        assertTrue(spec.getParseConfidence().compareTo(new BigDecimal("0.70")) >= 0);
     }
 
     @Test
@@ -74,5 +76,17 @@ class WeatherMarketTitleParserTest {
                 new BigDecimal("100"), System.currentTimeMillis() / 1000 + 3600 * 20);
 
         assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void parse_explicitDate_usesDateFromQuestion() {
+        Optional<WeatherMarketSpec> result = parser.parse(
+                "mkt-006", "tok-006",
+                "Will London high exceed 68°F on April 23?",
+                new BigDecimal("0.05"), new BigDecimal("0.95"),
+                new BigDecimal("100"), System.currentTimeMillis() / 1000 + 3600 * 20);
+
+        assertTrue(result.isPresent());
+        assertEquals(23, result.get().getTargetDate().getDayOfMonth());
     }
 }

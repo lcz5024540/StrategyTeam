@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /**
  * Parsed structure of a Polymarket weather market.
@@ -32,4 +33,7 @@ public class WeatherMarketSpec {
     private BigDecimal liquidityUsdc;
     /** Unix epoch seconds of market resolution */
     private long endTimestampSeconds;
+    private LocalDate targetDate;
+    private BigDecimal parseConfidence;
+    private String parseReason;
 }

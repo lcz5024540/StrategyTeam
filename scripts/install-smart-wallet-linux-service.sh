@@ -17,7 +17,7 @@ NGINX_CONF="${SMART_WALLET_NGINX_CONF:-/etc/nginx/conf.d/smart-wallet.conf}"
 
 SYSTEMD_TEMPLATE="$ROOT_DIR/deploy/linux/systemd/smart-wallet-backend.service.template"
 NGINX_TEMPLATE="$ROOT_DIR/deploy/linux/nginx/smart-wallet.conf.template"
-ENV_TEMPLATE="$ROOT_DIR/deploy/linux/env/smart-wallet.env.example"
+ENV_TEMPLATE="$ROOT_DIR/deploy/linux/env/smart-wallet.env"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "[install-smart-wallet-linux-service] please run as root or with sudo." >&2
