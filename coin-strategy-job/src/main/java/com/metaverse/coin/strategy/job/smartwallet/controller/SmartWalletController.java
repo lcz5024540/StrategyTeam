@@ -1059,7 +1059,7 @@ public class SmartWalletController {
                 .body(csv);
     }
 
-    private String csv(List<String> headers, List<List<?>> rows) {
+    private String csv(List<String> headers, List<? extends List<?>> rows) {
         StringBuilder sb = new StringBuilder("\uFEFF");
         sb.append(String.join(",", headers)).append('\n');
         for (List<?> row : rows) {
