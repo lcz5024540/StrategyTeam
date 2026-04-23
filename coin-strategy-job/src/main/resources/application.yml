@@ -200,12 +200,25 @@ smart-wallet:
     leaderboard-order-by: "PNL"
     # [TUNE] Candidate pool size before deeper analysis.
     leaderboard-limit: 50
+    leaderboard-queries:
+      - category: "OVERALL"
+        time-period: "ALL"
+        order-by: "PNL"
+        limit: 50
+      - category: "OVERALL"
+        time-period: "ALL"
+        order-by: "VOLUME"
+        limit: 50
     # [TUNE] Number of top wallets to score each cycle.
     analyze-top-n: 30
     # [TUNE] Historical closed positions fetched per wallet.
     closed-position-limit: 50
     # [TUNE] Recent trades fetched per watchlist wallet.
     recent-trade-limit: 30
+    # [TUNE] Recent trades fetched during discovery for session-profile enrichment.
+    discovery-profile-trade-limit: 30
+    # [TUNE] Lookback window used by discovery session coverage diagnostics.
+    session-coverage-lookback-days: 30
     # [FIXED-ONCE] Discovery job interval.
     discovery-fixed-delay-ms: 3600000
     # [FIXED-ONCE] Watchlist trade sync interval.

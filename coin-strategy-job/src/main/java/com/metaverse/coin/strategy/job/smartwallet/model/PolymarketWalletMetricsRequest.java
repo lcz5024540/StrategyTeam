@@ -17,4 +17,13 @@ public class PolymarketWalletMetricsRequest {
     private BigDecimal averageRoiRate = BigDecimal.ZERO;
     private BigDecimal maxDrawdownRate = BigDecimal.ZERO;
     private Date lastTradeAt;
+    private Date lastDiscoveredAt;
+    private String lastDiscoveryQuery;
+    private Integer leaderboardHitCount30d;
+    private String dominantSession;
+    private BigDecimal asiaTradeRatio30d;
+    private BigDecimal euTradeRatio30d;
+    private BigDecimal usTradeRatio30d;
+    private String activeHourHistogramJson;
+    private BigDecimal recentWinRate30d;
 }

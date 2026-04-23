@@ -32,6 +32,15 @@ public class SmartWalletProfileEntity {
     private Boolean watchEnabled;
     private Date lastTradeAt;
     private Date lastEvaluatedAt;
+    private Date lastDiscoveredAt;
+    private String lastDiscoveryQuery;
+    private Integer leaderboardHitCount30d;
+    private String dominantSession;
+    private BigDecimal asiaTradeRatio30d;
+    private BigDecimal euTradeRatio30d;
+    private BigDecimal usTradeRatio30d;
+    private String activeHourHistogramJson;
+    private BigDecimal recentWinRate30d;
     private Date createdAt;
     private Date updatedAt;
 }

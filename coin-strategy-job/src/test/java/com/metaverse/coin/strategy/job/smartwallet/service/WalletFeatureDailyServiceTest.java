@@ -91,6 +91,31 @@ class WalletFeatureDailyServiceTest {
         assertEquals("wallet-1", captor.getValue().getWalletAddress());
     }
 
+    @Test
+    void shouldPreferRecentlyDiscoveredWalletsForScheduledFeatureBuild() {
+        LocalDate featureDate = LocalDate.now();
+        when(profileMapper.selectList(any())).thenReturn(List.of(
+                new SmartWalletProfileEntity()
+                        .setWalletAddress("wallet-discovered")
+                        .setSource("POLYMARKET")
+                        .setLastDiscoveredAt(new Date())
+        ));
+        when(walletFeatureDailyMapper.selectCount(any())).thenReturn(0L);
+        when(tradeEventMapper.selectList(any())).thenReturn(List.of(
+                event("wallet-discovered", "market-a", "5", asDate(featureDate))
+        ));
+        when(tradeEffectLabelMapper.selectList(any())).thenReturn(List.of());
+        when(profileMapper.selectOne(any())).thenReturn(new SmartWalletProfileEntity()
+                .setWalletAddress("wallet-discovered")
+                .setWinRate(new BigDecimal("0.70"))
+                .setMaxDrawdownRate(new BigDecimal("0.10")));
+
+        List<SmartWalletWalletFeatureDailyEntity> result = service.buildRecentDiscoveryFeatures(200, 1, true);
+
+        assertEquals(1, result.size());
+        assertEquals("wallet-discovered", result.get(0).getWalletAddress());
+    }
+
     private SmartWalletTradeEventEntity event(String walletAddress, String marketId, String sizeUsdc, Date openedAt) {
         return new SmartWalletTradeEventEntity()
                 .setWalletAddress(walletAddress)

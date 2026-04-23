@@ -21,6 +21,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusVie
 import com.metaverse.coin.strategy.job.smartwallet.model.LocalSettlementConfirmRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
+import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMockWsEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
@@ -218,6 +219,12 @@ public class SmartWalletController {
     @GetMapping("/watchlist")
     public List<SmartWalletProfileEntity> watchlist() {
         return polymarketMonitorService.listWatchlist();
+    }
+
+    @Operation(summary = "地址时段覆盖诊断", description = "按 dominant_session 聚合 profiles 与 watchlist，查看地址池是否集中在某个区域/时段。")
+    @GetMapping("/discovery/session-coverage")
+    public DiscoverySessionCoverageView discoverySessionCoverage() {
+        return polymarketWalletDiscoveryService.sessionCoverage();
     }
 
     @Operation(summary = "共识信号", description = "查看最近窗口内多个 smart wallet 在同一市场上的聚合共识信号。")

@@ -52,6 +52,7 @@ public class SmartWalletProfileStoreService {
             entity.setQualified(Boolean.FALSE);
             entity.setWatchEnabled(Boolean.FALSE);
         }
+        Date previousDiscoveredAt = entity.getLastDiscoveredAt();
 
         entity.setAlias(request.getAlias())
                 .setWinRate(safe(request.getWinRate()))
@@ -63,12 +64,27 @@ public class SmartWalletProfileStoreService {
                 .setLastTradeAt(request.getLastTradeAt())
                 .setWalletScore(scoringService.score(
                         safe(request.getWinRate()),
+                        firstNonNull(request.getRecentWinRate30d(), entity.getRecentWinRate30d()),
                         safe(request.getRealizedPnlUsdc()),
                         request.getTotalTrades() == null ? 0 : request.getTotalTrades(),
                         safe(request.getAverageRoiRate()),
                         safe(request.getMaxDrawdownRate())
                 ))
                 .setUpdatedAt(new Date());
+
+        if (request.getRecentWinRate30d() != null) {
+            entity.setRecentWinRate30d(safe(request.getRecentWinRate30d()));
+        }
+        if (request.getLastDiscoveredAt() != null) {
+            entity.setLastDiscoveredAt(request.getLastDiscoveredAt());
+            entity.setLastDiscoveryQuery(request.getLastDiscoveryQuery());
+            entity.setLeaderboardHitCount30d(nextLeaderboardHitCount(previousDiscoveredAt, entity.getLeaderboardHitCount30d(), request));
+            entity.setDominantSession(request.getDominantSession());
+            entity.setAsiaTradeRatio30d(safe(request.getAsiaTradeRatio30d()));
+            entity.setEuTradeRatio30d(safe(request.getEuTradeRatio30d()));
+            entity.setUsTradeRatio30d(safe(request.getUsTradeRatio30d()));
+            entity.setActiveHourHistogramJson(request.getActiveHourHistogramJson());
+        }
 
         if (entity.getId() == null) {
             profileMapper.insert(entity);
@@ -91,6 +107,15 @@ public class SmartWalletProfileStoreService {
                 .eq(SmartWalletProfileEntity::getQualified, Boolean.TRUE)
                 .eq(SmartWalletProfileEntity::getWatchEnabled, Boolean.TRUE)
                 .orderByDesc(SmartWalletProfileEntity::getWalletScore));
+    }
+
+    public List<SmartWalletProfileEntity> listRecentlyDiscovered(Date since, int limit) {
+        return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                .ge(SmartWalletProfileEntity::getLastDiscoveredAt, since)
+                .isNotNull(SmartWalletProfileEntity::getLastDiscoveredAt)
+                .orderByDesc(SmartWalletProfileEntity::getLastDiscoveredAt)
+                .last("limit " + Math.max(limit, 1)));
     }
 
     public void update(SmartWalletProfileEntity entity) {
@@ -198,6 +223,7 @@ public class SmartWalletProfileStoreService {
                 if (suspiciouslyPerfect && currentWinRate.compareTo(LEADERBOARD_BIAS_FALLBACK_WIN_RATE) > 0) {
                     BigDecimal fallbackScore = scoringService.score(
                             LEADERBOARD_BIAS_FALLBACK_WIN_RATE,
+                            wallet.getRecentWinRate30d(),
                             safe(wallet.getRealizedPnlUsdc()),
                             leaderboardTrades,
                             safe(wallet.getAverageRoiRate()),
@@ -224,6 +250,7 @@ public class SmartWalletProfileStoreService {
             // Re-score wallet with blended win rate
             BigDecimal newScore = scoringService.score(
                     blendedWinRate,
+                    wallet.getRecentWinRate30d(),
                     safe(wallet.getRealizedPnlUsdc()),
                     leaderboardTrades,
                     safe(wallet.getAverageRoiRate()),
@@ -240,5 +267,21 @@ public class SmartWalletProfileStoreService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private BigDecimal firstNonNull(BigDecimal primary, BigDecimal fallback) {
+        return primary != null ? primary : fallback;
+    }
+
+    private int nextLeaderboardHitCount(Date previousDiscoveredAt, Integer currentHitCount, PolymarketWalletMetricsRequest request) {
+        int increment = request.getLeaderboardHitCount30d() == null ? 1 : Math.max(request.getLeaderboardHitCount30d(), 1);
+        if (previousDiscoveredAt == null) {
+            return increment;
+        }
+        long elapsedMs = request.getLastDiscoveredAt().getTime() - previousDiscoveredAt.getTime();
+        if (elapsedMs > TimeUnit.DAYS.toMillis(30)) {
+            return increment;
+        }
+        return (currentHitCount == null ? 0 : currentHitCount) + increment;
     }
 }

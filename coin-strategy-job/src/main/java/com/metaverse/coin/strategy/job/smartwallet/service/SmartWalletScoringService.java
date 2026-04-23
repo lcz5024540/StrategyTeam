@@ -17,6 +17,7 @@ public class SmartWalletScoringService {
     public BigDecimal score(SmartWalletProfile wallet) {
         return score(
                 wallet.getWinRate(),
+                null,
                 wallet.getRealizedPnlUsdc(),
                 wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades(),
                 BigDecimal.ZERO,
@@ -25,15 +26,17 @@ public class SmartWalletScoringService {
     }
 
     public BigDecimal score(BigDecimal winRate,
+                            BigDecimal recentWinRate30d,
                             BigDecimal realizedPnlUsdc,
                             Integer totalTrades,
                             BigDecimal averageRoiRate,
                             BigDecimal maxDrawdownRate) {
-        BigDecimal winComponent = sanitize(winRate).multiply(new BigDecimal("0.45"));
-        BigDecimal pnlComponent = cappedRatio(realizedPnlUsdc, new BigDecimal("50000")).multiply(new BigDecimal("0.20"));
-        BigDecimal sampleComponent = cappedRatio(new BigDecimal(totalTrades == null ? 0 : totalTrades), new BigDecimal("250")).multiply(new BigDecimal("0.15"));
-        BigDecimal roiComponent = sanitize(averageRoiRate).multiply(new BigDecimal("0.20"));
-        BigDecimal drawdownPenalty = sanitize(maxDrawdownRate).multiply(new BigDecimal("0.20"));
+        BigDecimal effectiveWinRate = effectiveWinRate(winRate, recentWinRate30d);
+        BigDecimal winComponent = effectiveWinRate.multiply(new BigDecimal("0.60"));
+        BigDecimal pnlComponent = cappedRatio(realizedPnlUsdc, new BigDecimal("50000")).multiply(new BigDecimal("0.15"));
+        BigDecimal sampleComponent = cappedRatio(new BigDecimal(totalTrades == null ? 0 : totalTrades), new BigDecimal("250")).multiply(new BigDecimal("0.10"));
+        BigDecimal roiComponent = sanitize(averageRoiRate).multiply(new BigDecimal("0.15"));
+        BigDecimal drawdownPenalty = sanitize(maxDrawdownRate).multiply(new BigDecimal("0.10"));
 
         BigDecimal total = winComponent
                 .add(pnlComponent)
@@ -42,6 +45,14 @@ public class SmartWalletScoringService {
                 .subtract(drawdownPenalty);
 
         return normalizeScore(total);
+    }
+
+    public BigDecimal score(BigDecimal winRate,
+                            BigDecimal realizedPnlUsdc,
+                            Integer totalTrades,
+                            BigDecimal averageRoiRate,
+                            BigDecimal maxDrawdownRate) {
+        return score(winRate, null, realizedPnlUsdc, totalTrades, averageRoiRate, maxDrawdownRate);
     }
 
     private BigDecimal cappedRatio(BigDecimal value, BigDecimal cap) {
@@ -88,7 +99,7 @@ public class SmartWalletScoringService {
         }
         if (profiles.size() == 1) {
             SmartWalletProfileEntity single = profiles.get(0);
-            return score(single.getWinRate(), single.getRealizedPnlUsdc(),
+            return score(single.getWinRate(), single.getRecentWinRate30d(), single.getRealizedPnlUsdc(),
                     single.getTotalTrades(), single.getAverageRoiRate(), single.getMaxDrawdownRate());
         }
 
@@ -122,11 +133,11 @@ public class SmartWalletScoringService {
         }
 
         // 使用与单钱包相同的权重公式
-        BigDecimal winRateComp = cap(weightedWinRate).multiply(new BigDecimal("0.45"));
-        BigDecimal pnlComp = cap(totalPnl, new BigDecimal("50000")).multiply(new BigDecimal("0.20"));
-        BigDecimal sampleComp = cap(BigDecimal.valueOf(totalTrades), new BigDecimal("250")).multiply(new BigDecimal("0.15"));
-        BigDecimal roiComp = cap(weightedRoi).multiply(new BigDecimal("0.20"));
-        BigDecimal drawdownPenalty = cap(maxDrawdown).multiply(new BigDecimal("0.20"));
+        BigDecimal winRateComp = cap(weightedWinRate).multiply(new BigDecimal("0.60"));
+        BigDecimal pnlComp = cap(totalPnl, new BigDecimal("50000")).multiply(new BigDecimal("0.15"));
+        BigDecimal sampleComp = cap(BigDecimal.valueOf(totalTrades), new BigDecimal("250")).multiply(new BigDecimal("0.10"));
+        BigDecimal roiComp = cap(weightedRoi).multiply(new BigDecimal("0.15"));
+        BigDecimal drawdownPenalty = cap(maxDrawdown).multiply(new BigDecimal("0.10"));
 
         BigDecimal raw = winRateComp.add(pnlComp).add(sampleComp).add(roiComp).subtract(drawdownPenalty);
         return raw.max(BigDecimal.ZERO).min(BigDecimal.ONE).setScale(4, RoundingMode.HALF_UP);
@@ -139,5 +150,15 @@ public class SmartWalletScoringService {
     private BigDecimal cap(BigDecimal value, BigDecimal max) {
         if (value == null) return BigDecimal.ZERO;
         return value.max(BigDecimal.ZERO).min(max).divide(max, 6, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal effectiveWinRate(BigDecimal winRate, BigDecimal recentWinRate30d) {
+        BigDecimal base = sanitize(winRate);
+        if (recentWinRate30d == null) {
+            return base;
+        }
+        return base.multiply(new BigDecimal("0.80"))
+                .add(sanitize(recentWinRate30d).multiply(new BigDecimal("0.20")))
+                .setScale(6, RoundingMode.HALF_UP);
     }
 }

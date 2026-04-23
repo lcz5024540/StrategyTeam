@@ -57,14 +57,23 @@ public class PolymarketApiClient {
 
     public List<LeaderboardEntry> fetchLeaderboard() {
         SmartWalletProperties.PolymarketMonitor monitor = properties.getPolymarket();
+        SmartWalletProperties.PolymarketMonitor.LeaderboardQuery query = new SmartWalletProperties.PolymarketMonitor.LeaderboardQuery();
+        query.setCategory(monitor.getLeaderboardCategory());
+        query.setTimePeriod(monitor.getLeaderboardTimePeriod());
+        query.setOrderBy(monitor.getLeaderboardOrderBy());
+        query.setLimit(monitor.getLeaderboardLimit());
+        return fetchLeaderboard(query);
+    }
+
+    public List<LeaderboardEntry> fetchLeaderboard(SmartWalletProperties.PolymarketMonitor.LeaderboardQuery query) {
         Map<String, String> params = new LinkedHashMap<>();
-        params.put("category", monitor.getLeaderboardCategory());
-        params.put("timePeriod", monitor.getLeaderboardTimePeriod());
-        params.put("sortBy", monitor.getLeaderboardOrderBy());
-        params.put("limit", String.valueOf(monitor.getLeaderboardLimit()));
+        params.put("category", query.getCategory());
+        params.put("timePeriod", query.getTimePeriod());
+        params.put("sortBy", query.getOrderBy());
+        params.put("limit", String.valueOf(query.getLimit()));
 
         params.put("offset", "0");
-        JsonNode body = getJson(buildUri(monitor.getDataApiBaseUrl(), "/v1/leaderboard", params));
+        JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(), "/v1/leaderboard", params));
         List<LeaderboardEntry> result = new ArrayList<>();
         for (JsonNode node : iterableArray(extractArray(body))) {
             String walletAddress = text(node, "proxyWallet", "walletAddress", "wallet", "address");
@@ -185,9 +194,13 @@ public class PolymarketApiClient {
     }
 
     public List<UserTrade> fetchUserTrades(String walletAddress) {
+        return fetchUserTrades(walletAddress, properties.getPolymarket().getRecentTradeLimit());
+    }
+
+    public List<UserTrade> fetchUserTrades(String walletAddress, Integer limit) {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("user", walletAddress);
-        params.put("limit", String.valueOf(properties.getPolymarket().getRecentTradeLimit()));
+        params.put("limit", String.valueOf(limit == null ? properties.getPolymarket().getRecentTradeLimit() : limit));
         params.put("offset", "0");
         params.put("takerOnly", "true");
 

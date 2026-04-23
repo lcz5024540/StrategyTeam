@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigAppli
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketMarketDataStreamService;
@@ -16,6 +17,8 @@ import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOver
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PredictionMarketOpportunityService;
+import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
+import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletAccountingService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
@@ -101,6 +104,10 @@ class SmartWalletControllerTest {
     private BaselineModelConfigApplicationService baselineModelConfigApplicationService;
     @Mock
     private StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
+    @Mock
+    private MarketConcentrationService marketConcentrationService;
+    @Mock
+    private FollowTradeAttributionService followTradeAttributionService;
 
     @InjectMocks
     private SmartWalletController controller;
@@ -171,6 +178,19 @@ class SmartWalletControllerTest {
                 .andExpect(status().isOk());
 
         verify(polymarketWalletDiscoveryService).analyzeWalletAndAdmitWatchlist("0xabc");
+    }
+
+    @Test
+    void shouldExposeDiscoverySessionCoverageEndpoint() throws Exception {
+        when(polymarketWalletDiscoveryService.sessionCoverage())
+                .thenReturn(DiscoverySessionCoverageView.builder().lookbackDays(30).build());
+
+        mockMvc.perform(get("/strategy/api/smart-wallet/discovery/session-coverage")
+                        .contextPath("/strategy/api"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lookbackDays").value(30));
+
+        verify(polymarketWalletDiscoveryService).sessionCoverage();
     }
 
     @Test

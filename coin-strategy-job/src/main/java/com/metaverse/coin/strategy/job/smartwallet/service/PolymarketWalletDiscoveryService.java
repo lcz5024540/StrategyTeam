@@ -2,6 +2,8 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageBucketView;
+import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
@@ -15,13 +17,18 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -41,19 +48,38 @@ public class PolymarketWalletDiscoveryService {
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
     public PolymarketDiscoverySummary analyzeTopWallets() {
-        return analyzeTopWallets(resolveAnalyzeTopN(), true);
+        return analyzeTopWallets(null, true);
     }
 
     public PolymarketDiscoverySummary refreshLeaderboardWatchlist() {
         return analyzeTopWallets(resolveRefreshTopN(), false);
     }
 
-    private PolymarketDiscoverySummary analyzeTopWallets(int analyzeLimit, boolean syncTradesAfterRefresh) {
+    public DiscoverySessionCoverageView sessionCoverage() {
+        int lookbackDays = resolveSessionCoverageLookbackDays();
+        Date since = new Date(System.currentTimeMillis() - lookbackDays * 24L * 3600_000L);
+        List<SmartWalletProfileEntity> recentProfiles = profileStoreService.listAll().stream()
+                .filter(item -> item.getLastDiscoveredAt() != null && !item.getLastDiscoveredAt().before(since))
+                .toList();
+        List<SmartWalletProfileEntity> recentWatchlist = profileStoreService.listWatchEnabled().stream()
+                .filter(item -> item.getLastDiscoveredAt() != null && !item.getLastDiscoveredAt().before(since))
+                .toList();
+        return DiscoverySessionCoverageView.builder()
+                .generatedAt(new Date())
+                .lookbackDays(lookbackDays)
+                .profileBuckets(bucketCoverage(recentProfiles))
+                .watchlistBuckets(bucketCoverage(recentWatchlist))
+                .build();
+    }
+
+    private PolymarketDiscoverySummary analyzeTopWallets(Integer perQueryLimit, boolean syncTradesAfterRefresh) {
         List<String> notes = new ArrayList<>();
-        List<PolymarketApiClient.LeaderboardEntry> candidates;
+        List<DiscoveryCandidate> candidates;
         try {
-            candidates = polymarketApiClient.fetchLeaderboard();
-            leaderboardStateService.refreshSnapshot(candidates);
+            candidates = fetchLeaderboardCandidates(perQueryLimit, notes);
+            leaderboardStateService.refreshSnapshot(candidates.stream()
+                    .map(DiscoveryCandidate::toLeaderboardEntry)
+                    .toList());
         } catch (Exception e) {
             log.warn("Failed to fetch Polymarket leaderboard", e);
             notes.add("Leaderboard fetch failed: " + rootMessage(e));
@@ -67,20 +93,12 @@ public class PolymarketWalletDiscoveryService {
                     .notes(notes)
                     .build();
         }
-        Map<String, PolymarketApiClient.LeaderboardEntry> deduped = new LinkedHashMap<>();
-        for (PolymarketApiClient.LeaderboardEntry candidate : candidates) {
-            if (candidate == null || !StringUtils.hasText(candidate.getWalletAddress())) {
-                continue;
-            }
-            deduped.putIfAbsent(candidate.getWalletAddress().toLowerCase(), candidate);
-        }
 
         int importedProfiles = 0;
         int analyzedWallets = 0;
         int importedTradeEvents = 0;
 
-        int limit = Math.min(deduped.size(), Math.max(analyzeLimit, 0));
-        for (PolymarketApiClient.LeaderboardEntry candidate : deduped.values().stream().limit(limit).toList()) {
+        for (DiscoveryCandidate candidate : candidates) {
             try {
                 PolymarketWalletMetricsRequest metrics = buildMetrics(candidate);
                 if (metrics == null || metrics.getTotalTrades() == null || metrics.getTotalTrades() == 0) {
@@ -107,8 +125,9 @@ public class PolymarketWalletDiscoveryService {
 
         notes.add("Candidates come from Polymarket official leaderboard and are re-ranked by local wallet score.");
         notes.add("Wallet metrics are calculated from official closed positions and recent trade data.");
+        notes.add("Leaderboard candidate pool is unioned across " + resolveLeaderboardQueries().size() + " query slices.");
         return PolymarketDiscoverySummary.builder()
-                .candidateWallets(deduped.size())
+                .candidateWallets(candidates.size())
                 .analyzedWallets(analyzedWallets)
                 .importedProfiles(importedProfiles)
                 .importedTradeEvents(importedTradeEvents)
@@ -123,8 +142,10 @@ public class PolymarketWalletDiscoveryService {
             return false;
         }
         String normalizedWalletAddress = walletAddress.trim();
-        PolymarketApiClient.LeaderboardEntry candidate = PolymarketApiClient.LeaderboardEntry.builder()
+        DiscoveryCandidate candidate = DiscoveryCandidate.builder()
                 .walletAddress(normalizedWalletAddress)
+                .lastDiscoveryQuery("MANUAL_ADMIT")
+                .leaderboardHitCount(1)
                 .build();
 
         PolymarketWalletMetricsRequest metrics;
@@ -294,11 +315,15 @@ public class PolymarketWalletDiscoveryService {
         return walletAddress == null ? "" : walletAddress.trim().toLowerCase();
     }
 
-    private PolymarketWalletMetricsRequest buildMetrics(PolymarketApiClient.LeaderboardEntry candidate) {
+    private PolymarketWalletMetricsRequest buildMetrics(DiscoveryCandidate candidate) {
         List<PolymarketApiClient.ClosedPosition> positions = polymarketApiClient.fetchClosedPositions(candidate.getWalletAddress());
         if (CollectionUtils.isEmpty(positions)) {
             return null;
         }
+        List<PolymarketApiClient.UserTrade> userTrades = polymarketApiClient.fetchUserTrades(
+                candidate.getWalletAddress(),
+                properties.getPolymarket().getDiscoveryProfileTradeLimit()
+        );
 
         PolymarketApiClient.WalletProfile profile = null;
         try {
@@ -312,7 +337,10 @@ public class PolymarketWalletDiscoveryService {
         BigDecimal roiSum = BigDecimal.ZERO;
         int roiCount = 0;
         int wins = 0;
+        int recentWins = 0;
+        int recentTrades = 0;
         long lastTradeAt = 0L;
+        long recentCutoffMs = System.currentTimeMillis() - 30L * 24L * 3600_000L;
 
         List<PolymarketApiClient.ClosedPosition> orderedPositions = positions.stream()
                 .sorted(Comparator.comparing(PolymarketApiClient.ClosedPosition::getClosedAt,
@@ -330,6 +358,12 @@ public class PolymarketWalletDiscoveryService {
             totalSize = totalSize.add(size);
             if (pnl.compareTo(BigDecimal.ZERO) > 0) {
                 wins++;
+            }
+            if (position.getClosedAt() != null && position.getClosedAt() >= recentCutoffMs) {
+                recentTrades++;
+                if (pnl.compareTo(BigDecimal.ZERO) > 0) {
+                    recentWins++;
+                }
             }
             if (size.compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal roi = pnl.divide(size, 6, RoundingMode.HALF_UP);
@@ -361,6 +395,9 @@ public class PolymarketWalletDiscoveryService {
                 : totalSize.divide(BigDecimal.valueOf(totalTrades), 4, RoundingMode.HALF_UP);
         BigDecimal averageRoi = roiCount == 0 ? BigDecimal.ZERO
                 : roiSum.divide(BigDecimal.valueOf(roiCount), 4, RoundingMode.HALF_UP);
+        BigDecimal recentWinRate30d = recentTrades == 0 ? null : BigDecimal.valueOf(recentWins)
+                .divide(BigDecimal.valueOf(recentTrades), 4, RoundingMode.HALF_UP);
+        SessionProfile sessionProfile = buildSessionProfile(userTrades);
 
         PolymarketWalletMetricsRequest request = new PolymarketWalletMetricsRequest();
         request.setWalletAddress(candidate.getWalletAddress());
@@ -373,6 +410,15 @@ public class PolymarketWalletDiscoveryService {
         request.setAverageRoiRate(averageRoi);
         request.setMaxDrawdownRate(maxDrawdown.setScale(4, RoundingMode.HALF_UP));
         request.setLastTradeAt(lastTradeAt > 0 ? new Date(lastTradeAt) : null);
+        request.setLastDiscoveredAt(new Date());
+        request.setLastDiscoveryQuery(candidate.getLastDiscoveryQuery());
+        request.setLeaderboardHitCount30d(candidate.getLeaderboardHitCount());
+        request.setDominantSession(sessionProfile.dominantSession);
+        request.setAsiaTradeRatio30d(sessionProfile.asiaTradeRatio);
+        request.setEuTradeRatio30d(sessionProfile.euTradeRatio);
+        request.setUsTradeRatio30d(sessionProfile.usTradeRatio);
+        request.setActiveHourHistogramJson(sessionProfile.activeHourHistogramJson);
+        request.setRecentWinRate30d(recentWinRate30d);
         return request;
     }
 
@@ -398,7 +444,14 @@ public class PolymarketWalletDiscoveryService {
         int totalTrades = metrics.getTotalTrades() == null ? 0 : metrics.getTotalTrades();
         BigDecimal averageRoiRate = safe(metrics.getAverageRoiRate());
         BigDecimal maxDrawdownRate = safe(metrics.getMaxDrawdownRate());
-        BigDecimal walletScore = scoringService.score(winRate, realizedPnlUsdc, totalTrades, averageRoiRate, maxDrawdownRate);
+        BigDecimal walletScore = scoringService.score(
+                winRate,
+                metrics.getRecentWinRate30d(),
+                realizedPnlUsdc,
+                totalTrades,
+                averageRoiRate,
+                maxDrawdownRate
+        );
 
         return winRate.compareTo(properties.getMinWinRate()) >= 0
                 && walletScore.compareTo(properties.getMinWalletScore()) >= 0
@@ -417,5 +470,249 @@ public class PolymarketWalletDiscoveryService {
             current = current.getCause();
         }
         return current.getMessage() == null ? throwable.getMessage() : current.getMessage();
+    }
+
+    private List<DiscoveryCandidate> fetchLeaderboardCandidates(Integer perQueryLimit, List<String> notes) {
+        Map<String, DiscoveryCandidate> deduped = new LinkedHashMap<>();
+        for (SmartWalletProperties.PolymarketMonitor.LeaderboardQuery query : resolveLeaderboardQueries()) {
+            SmartWalletProperties.PolymarketMonitor.LeaderboardQuery effectiveQuery = effectiveQuery(query, perQueryLimit);
+            List<PolymarketApiClient.LeaderboardEntry> entries;
+            try {
+                entries = polymarketApiClient.fetchLeaderboard(effectiveQuery);
+            } catch (Exception ex) {
+                notes.add("Leaderboard fetch failed for " + queryKey(effectiveQuery) + ": " + rootMessage(ex));
+                continue;
+            }
+            for (PolymarketApiClient.LeaderboardEntry entry : entries) {
+                if (entry == null || !StringUtils.hasText(entry.getWalletAddress())) {
+                    continue;
+                }
+                String walletKey = normalizeWalletKey(entry.getWalletAddress());
+                DiscoveryCandidate existing = deduped.get(walletKey);
+                if (existing == null) {
+                    deduped.put(walletKey, DiscoveryCandidate.builder()
+                            .walletAddress(entry.getWalletAddress())
+                            .alias(entry.getAlias())
+                            .pnl(entry.getPnl())
+                            .volume(entry.getVolume())
+                            .leaderboardHitCount(1)
+                            .lastDiscoveryQuery(queryKey(effectiveQuery))
+                            .build());
+                    continue;
+                }
+                existing.setLeaderboardHitCount(existing.getLeaderboardHitCount() + 1);
+                existing.setLastDiscoveryQuery(queryKey(effectiveQuery));
+                if (!StringUtils.hasText(existing.getAlias()) && StringUtils.hasText(entry.getAlias())) {
+                    existing.setAlias(entry.getAlias());
+                }
+                if (entry.getPnl() != null && (existing.getPnl() == null || entry.getPnl().compareTo(existing.getPnl()) > 0)) {
+                    existing.setPnl(entry.getPnl());
+                }
+                if (entry.getVolume() != null && (existing.getVolume() == null || entry.getVolume().compareTo(existing.getVolume()) > 0)) {
+                    existing.setVolume(entry.getVolume());
+                }
+            }
+        }
+        return new ArrayList<>(deduped.values());
+    }
+
+    private SmartWalletProperties.PolymarketMonitor.LeaderboardQuery effectiveQuery(
+            SmartWalletProperties.PolymarketMonitor.LeaderboardQuery query,
+            Integer perQueryLimit) {
+        SmartWalletProperties.PolymarketMonitor.LeaderboardQuery effective = new SmartWalletProperties.PolymarketMonitor.LeaderboardQuery();
+        effective.setCategory(query.getCategory());
+        effective.setTimePeriod(query.getTimePeriod());
+        effective.setOrderBy(query.getOrderBy());
+        int queryLimit = query.getLimit() == null ? properties.getPolymarket().getLeaderboardLimit() : query.getLimit();
+        effective.setLimit(perQueryLimit == null ? queryLimit : Math.min(queryLimit, Math.max(perQueryLimit, 1)));
+        return effective;
+    }
+
+    private List<SmartWalletProperties.PolymarketMonitor.LeaderboardQuery> resolveLeaderboardQueries() {
+        List<SmartWalletProperties.PolymarketMonitor.LeaderboardQuery> queries = properties.getPolymarket().getLeaderboardQueries();
+        if (queries != null && !queries.isEmpty()) {
+            return queries;
+        }
+        SmartWalletProperties.PolymarketMonitor.LeaderboardQuery pnlQuery = new SmartWalletProperties.PolymarketMonitor.LeaderboardQuery();
+        pnlQuery.setCategory(properties.getPolymarket().getLeaderboardCategory());
+        pnlQuery.setTimePeriod(properties.getPolymarket().getLeaderboardTimePeriod());
+        pnlQuery.setOrderBy(properties.getPolymarket().getLeaderboardOrderBy());
+        pnlQuery.setLimit(properties.getPolymarket().getLeaderboardLimit());
+
+        SmartWalletProperties.PolymarketMonitor.LeaderboardQuery volumeQuery = new SmartWalletProperties.PolymarketMonitor.LeaderboardQuery();
+        volumeQuery.setCategory(properties.getPolymarket().getLeaderboardCategory());
+        volumeQuery.setTimePeriod(properties.getPolymarket().getLeaderboardTimePeriod());
+        volumeQuery.setOrderBy("VOLUME");
+        volumeQuery.setLimit(properties.getPolymarket().getLeaderboardLimit());
+        return List.of(pnlQuery, volumeQuery);
+    }
+
+    private String queryKey(SmartWalletProperties.PolymarketMonitor.LeaderboardQuery query) {
+        return String.join("|",
+                safeText(query.getCategory(), "OVERALL"),
+                safeText(query.getTimePeriod(), "ALL"),
+                safeText(query.getOrderBy(), "PNL"),
+                String.valueOf(query.getLimit() == null ? properties.getPolymarket().getLeaderboardLimit() : query.getLimit()));
+    }
+
+    private String safeText(String value, String fallback) {
+        return StringUtils.hasText(value) ? value.trim().toUpperCase() : fallback;
+    }
+
+    private SessionProfile buildSessionProfile(List<PolymarketApiClient.UserTrade> userTrades) {
+        int[] hourlyHistogram = new int[24];
+        if (CollectionUtils.isEmpty(userTrades)) {
+            return SessionProfile.empty();
+        }
+        int asiaCount = 0;
+        int euCount = 0;
+        int usCount = 0;
+        int consideredTrades = 0;
+        long cutoffMs = System.currentTimeMillis() - resolveSessionCoverageLookbackDays() * 24L * 3600_000L;
+        for (PolymarketApiClient.UserTrade trade : userTrades) {
+            if (trade == null || trade.getTradedAt() == null || trade.getTradedAt() < cutoffMs) {
+                continue;
+            }
+            int utcHour = ZonedDateTime.ofInstant(Instant.ofEpochMilli(trade.getTradedAt()), ZoneOffset.UTC).getHour();
+            hourlyHistogram[utcHour]++;
+            consideredTrades++;
+            if (utcHour < 8) {
+                asiaCount++;
+            } else if (utcHour < 16) {
+                euCount++;
+            } else {
+                usCount++;
+            }
+        }
+        if (consideredTrades == 0) {
+            return SessionProfile.empty();
+        }
+        BigDecimal asiaRatio = ratio(asiaCount, consideredTrades);
+        BigDecimal euRatio = ratio(euCount, consideredTrades);
+        BigDecimal usRatio = ratio(usCount, consideredTrades);
+        String dominantSession = resolveDominantSession(asiaRatio, euRatio, usRatio);
+        return new SessionProfile(
+                dominantSession,
+                asiaRatio,
+                euRatio,
+                usRatio,
+                histogramJson(hourlyHistogram)
+        );
+    }
+
+    private int resolveSessionCoverageLookbackDays() {
+        Integer value = properties.getPolymarket().getSessionCoverageLookbackDays();
+        return value == null ? 30 : Math.max(value, 1);
+    }
+
+    private BigDecimal ratio(int numerator, int denominator) {
+        if (denominator <= 0) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(numerator)
+                .divide(BigDecimal.valueOf(denominator), 4, RoundingMode.HALF_UP);
+    }
+
+    private String resolveDominantSession(BigDecimal asiaRatio, BigDecimal euRatio, BigDecimal usRatio) {
+        Map<String, BigDecimal> ratios = new HashMap<>();
+        ratios.put("ASIA", safe(asiaRatio));
+        ratios.put("EU", safe(euRatio));
+        ratios.put("US", safe(usRatio));
+        Map.Entry<String, BigDecimal> dominant = ratios.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .orElse(null);
+        if (dominant == null || dominant.getValue().compareTo(new BigDecimal("0.50")) < 0) {
+            return "MIXED";
+        }
+        return dominant.getKey();
+    }
+
+    private String histogramJson(int[] hourlyHistogram) {
+        StringBuilder builder = new StringBuilder("[");
+        for (int i = 0; i < hourlyHistogram.length; i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append(hourlyHistogram[i]);
+        }
+        return builder.append(']').toString();
+    }
+
+    private List<DiscoverySessionCoverageBucketView> bucketCoverage(List<SmartWalletProfileEntity> profiles) {
+        Map<String, List<SmartWalletProfileEntity>> grouped = profiles.stream()
+                .collect(Collectors.groupingBy(item -> StringUtils.hasText(item.getDominantSession())
+                        ? item.getDominantSession().trim().toUpperCase()
+                        : "UNKNOWN", LinkedHashMap::new, Collectors.toList()));
+        List<String> orderedSessions = List.of("ASIA", "EU", "US", "MIXED", "UNKNOWN");
+        List<DiscoverySessionCoverageBucketView> result = new ArrayList<>();
+        for (String session : orderedSessions) {
+            List<SmartWalletProfileEntity> bucket = grouped.get(session);
+            if (bucket == null || bucket.isEmpty()) {
+                continue;
+            }
+            result.add(DiscoverySessionCoverageBucketView.builder()
+                    .dominantSession(session)
+                    .walletCount(bucket.size())
+                    .avgWinRate(avg(bucket.stream().map(SmartWalletProfileEntity::getWinRate).toList()))
+                    .avgRecentWinRate30d(avg(bucket.stream().map(SmartWalletProfileEntity::getRecentWinRate30d).toList()))
+                    .avgWalletScore(avg(bucket.stream().map(SmartWalletProfileEntity::getWalletScore).toList()))
+                    .avgAsiaTradeRatio30d(avg(bucket.stream().map(SmartWalletProfileEntity::getAsiaTradeRatio30d).toList()))
+                    .avgEuTradeRatio30d(avg(bucket.stream().map(SmartWalletProfileEntity::getEuTradeRatio30d).toList()))
+                    .avgUsTradeRatio30d(avg(bucket.stream().map(SmartWalletProfileEntity::getUsTradeRatio30d).toList()))
+                    .build());
+        }
+        return result;
+    }
+
+    private BigDecimal avg(List<BigDecimal> values) {
+        List<BigDecimal> normalized = values.stream()
+                .filter(item -> item != null)
+                .toList();
+        if (normalized.isEmpty()) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (BigDecimal value : normalized) {
+            total = total.add(value);
+        }
+        return total.divide(BigDecimal.valueOf(normalized.size()), 4, RoundingMode.HALF_UP);
+    }
+
+    @lombok.Data
+    @lombok.Builder
+    private static class DiscoveryCandidate {
+        private String walletAddress;
+        private String alias;
+        private BigDecimal pnl;
+        private BigDecimal volume;
+        private int leaderboardHitCount;
+        private String lastDiscoveryQuery;
+
+        private PolymarketApiClient.LeaderboardEntry toLeaderboardEntry() {
+            return PolymarketApiClient.LeaderboardEntry.builder()
+                    .walletAddress(walletAddress)
+                    .alias(alias)
+                    .pnl(pnl)
+                    .volume(volume)
+                    .build();
+        }
+    }
+
+    private record SessionProfile(
+            String dominantSession,
+            BigDecimal asiaTradeRatio,
+            BigDecimal euTradeRatio,
+            BigDecimal usTradeRatio,
+            String activeHourHistogramJson
+    ) {
+        private static SessionProfile empty() {
+            return new SessionProfile(
+                    "MIXED",
+                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+                    "[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]"
+            );
+        }
     }
 }

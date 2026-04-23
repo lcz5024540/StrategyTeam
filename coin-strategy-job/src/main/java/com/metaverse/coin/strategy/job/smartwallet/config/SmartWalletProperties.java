@@ -51,9 +51,12 @@ public class SmartWalletProperties {
         private String leaderboardTimePeriod = "ALL";
         private String leaderboardOrderBy = "PNL";
         private Integer leaderboardLimit = 50;
+        private List<LeaderboardQuery> leaderboardQueries = new ArrayList<>();
         private Integer analyzeTopN = 30;
         private Integer closedPositionLimit = 50;
         private Integer recentTradeLimit = 30;
+        private Integer discoveryProfileTradeLimit = 30;
+        private Integer sessionCoverageLookbackDays = 30;
         private Long discoveryFixedDelayMs = 3600000L;
         private Long leaderboardRefreshFixedDelayMs = 300000L;
         private Integer leaderboardRefreshTopN = 10;
@@ -67,6 +70,14 @@ public class SmartWalletProperties {
         private Long walletTradeSyncMinIntervalMs = 30000L;
         private Long walletTradeErrorCooldownMs = 300000L;
         private BigDecimal staleAddressWeightFactor = new BigDecimal("0.35");
+
+        @Data
+        public static class LeaderboardQuery {
+            private String category = "OVERALL";
+            private String timePeriod = "ALL";
+            private String orderBy = "PNL";
+            private Integer limit = 50;
+        }
     }
 
     @Data
