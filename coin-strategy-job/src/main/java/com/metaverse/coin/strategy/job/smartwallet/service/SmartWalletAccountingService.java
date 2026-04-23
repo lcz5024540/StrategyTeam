@@ -2927,13 +2927,14 @@ public class SmartWalletAccountingService {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
         if (order.getRealizedPnlUsdc() != null
-                && (order.getRealizedPnlUsdc().compareTo(BigDecimal.ZERO) != 0
-                || !"SELL".equalsIgnoreCase(order.getSide())
-                || order.getPositionId() == null)) {
+                && order.getRealizedPnlUsdc().compareTo(BigDecimal.ZERO) != 0) {
             return safe(order.getRealizedPnlUsdc()).setScale(8, RoundingMode.HALF_UP);
         }
-        if (!"SELL".equalsIgnoreCase(order.getSide()) || order.getPositionId() == null) {
+        if (!"SELL".equalsIgnoreCase(order.getSide())) {
             return resolveSettledEntryOrderRealizedPnl(order, fillsByPositionId);
+        }
+        if (order.getPositionId() == null) {
+            return safe(order.getRealizedPnlUsdc()).setScale(8, RoundingMode.HALF_UP);
         }
         List<SmartWalletFillEntity> fills = fillsByPositionId == null
                 ? fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
@@ -2988,11 +2989,6 @@ public class SmartWalletAccountingService {
         if (order == null || order.getPositionId() == null) {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
-        if (!ORDER_STATUS_SETTLED_WIN.equalsIgnoreCase(order.getStatus())
-                && !ORDER_STATUS_SETTLED_LOSS.equalsIgnoreCase(order.getStatus())) {
-            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
-        }
-
         List<SmartWalletFillEntity> fills = fillsByPositionId == null
                 ? fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
                 .eq(SmartWalletFillEntity::getPositionId, order.getPositionId())
@@ -3000,16 +2996,18 @@ public class SmartWalletAccountingService {
                 .orderByAsc(SmartWalletFillEntity::getId))
                 : fillsByPositionId.getOrDefault(order.getPositionId(), List.of());
         if (fills == null || fills.isEmpty()) {
-            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
-        }
-
-        boolean hasSellFill = fills.stream().anyMatch(fill -> "SELL".equalsIgnoreCase(fill.getSide()));
-        if (hasSellFill) {
-            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+            SmartWalletPositionEntity position = positionMapper.selectById(order.getPositionId());
+            if (position == null || !isPositionClosedForRealizedPnl(position)) {
+                return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+            }
+            return safe(position.getRealizedPnlUsdc()).setScale(8, RoundingMode.HALF_UP);
         }
 
         SmartWalletPositionEntity position = positionMapper.selectById(order.getPositionId());
         if (position == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+        if (!isEntryOrderRealized(order, position, fills)) {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
 
@@ -3033,6 +3031,27 @@ public class SmartWalletAccountingService {
                 .multiply(orderEntryCost)
                 .divide(totalEntryCost, 8, RoundingMode.HALF_UP)
                 .setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private boolean isEntryOrderRealized(SmartWalletOrderEntity order,
+                                         SmartWalletPositionEntity position,
+                                         List<SmartWalletFillEntity> fills) {
+        if (ORDER_STATUS_SETTLED_WIN.equalsIgnoreCase(order.getStatus())
+                || ORDER_STATUS_SETTLED_LOSS.equalsIgnoreCase(order.getStatus())) {
+            return true;
+        }
+        boolean hasSellFill = fills != null && fills.stream().anyMatch(fill -> "SELL".equalsIgnoreCase(fill.getSide()));
+        return hasSellFill && isPositionClosedForRealizedPnl(position);
+    }
+
+    private boolean isPositionClosedForRealizedPnl(SmartWalletPositionEntity position) {
+        if (position == null) {
+            return false;
+        }
+        String status = position.getStatus();
+        return "CLOSED".equalsIgnoreCase(status)
+                || "RESOLVED_UNCLAIMED".equalsIgnoreCase(status)
+                || "CLAIMED".equalsIgnoreCase(status);
     }
 
     private int countOrdersByMode(String mode) {
@@ -3175,7 +3194,7 @@ public class SmartWalletAccountingService {
         String exitReason = resolveOrderExitReason(order);
         BigDecimal realizedPnlUsdc = resolveOrderRealizedPnl(order, null);
         BigDecimal costBasisUsdc = resolveOrderCostBasis(order, realizedPnlUsdc);
-        String displayStatus = resolveDisplayOrderStatus(order);
+        String displayStatus = resolveDisplayOrderStatus(order, realizedPnlUsdc);
         return SmartWalletOrderView.builder()
                 .id(order.getId())
                 .followTaskId(order.getFollowTaskId())
@@ -3212,9 +3231,21 @@ public class SmartWalletAccountingService {
                 .build();
     }
 
-    private String resolveDisplayOrderStatus(SmartWalletOrderEntity order) {
+    private String resolveDisplayOrderStatus(SmartWalletOrderEntity order, BigDecimal realizedPnlUsdc) {
         if (order == null || !isEarlyExitOrder(order)) {
-            return order == null ? null : order.getStatus();
+            if (order == null) {
+                return null;
+            }
+            if (!"SELL".equalsIgnoreCase(order.getSide())
+                    && !ORDER_STATUS_SETTLED_WIN.equalsIgnoreCase(order.getStatus())
+                    && !ORDER_STATUS_SETTLED_LOSS.equalsIgnoreCase(order.getStatus())
+                    && realizedPnlUsdc != null
+                    && realizedPnlUsdc.compareTo(BigDecimal.ZERO) != 0) {
+                return realizedPnlUsdc.compareTo(BigDecimal.ZERO) > 0
+                        ? ORDER_STATUS_SETTLED_WIN
+                        : ORDER_STATUS_SETTLED_LOSS;
+            }
+            return order.getStatus();
         }
         String earlyExitStatus = resolveEarlyExitOrderStatus(order);
         if (StringUtils.hasText(earlyExitStatus)) {

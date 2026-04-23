@@ -9,11 +9,13 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletCashLedgerEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFillEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
@@ -66,6 +68,8 @@ class SmartWalletAccountingServiceTest {
     private PolymarketMarketMetadataService marketMetadataService;
     @Mock
     private ObjectProvider<SmartWalletFollowTaskService> followTaskServiceProvider;
+    @Mock
+    private SmartWalletMarketInfoService marketInfoService;
 
     private SmartWalletAccountingService service;
 
@@ -83,7 +87,8 @@ class SmartWalletAccountingServiceTest {
                 marketMetadataService,
                 new SmartWalletTimeFormatter(),
                 properties,
-                followTaskServiceProvider
+                followTaskServiceProvider,
+                marketInfoService
         );
     }
 
@@ -275,6 +280,126 @@ class SmartWalletAccountingServiceTest {
         verify(positionMapper, atLeastOnce()).updateById(positionCaptor.capture());
         assertTrue(positionCaptor.getAllValues().stream()
                 .anyMatch(updated -> "RESOLVED_UNCLAIMED".equals(updated.getStatus()) && "YES".equals(updated.getOutcome())));
+    }
+
+    @Test
+    void shouldExposeSettledEntryOrderRealizedPnlFromPosition() {
+        Date filledAt = new Date();
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(167L)
+                .setFollowTaskId(15182L)
+                .setPositionId(125L)
+                .setWalletAddress("wallet")
+                .setExecutionMode("PAPER")
+                .setExecutionAddress("paper-book")
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-settled-entry")
+                        .setOutcome("CALVIN HEMERY"))
+                .setSide("BUY")
+                .setOrderType("GTC")
+                .setStatus("SETTLED_WIN")
+                .setPrice(new BigDecimal("0.81000000"))
+                .setSize(new BigDecimal("101.37037037"))
+                .setNotionalUsdc(new BigDecimal("82.11000000"))
+                .setFeeUsdc(new BigDecimal("0.12316500"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setPlacedAt(filledAt)
+                .setFilledAt(filledAt);
+        SmartWalletFillEntity fill = new SmartWalletFillEntity()
+                .setId(501L)
+                .setOrderId(167L)
+                .setPositionId(125L)
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-settled-entry")
+                        .setOutcome("CALVIN HEMERY"))
+                .setSide("BUY")
+                .setNotionalUsdc(new BigDecimal("82.11000000"))
+                .setFeeUsdc(new BigDecimal("0.12316500"))
+                .setFilledAt(filledAt);
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(125L)
+                .setExecutionAddress("paper-book")
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-settled-entry")
+                        .setOutcome("CALVIN HEMERY"))
+                .setStatus("CLAIMED")
+                .setRealizedPnlUsdc(new BigDecimal("19.13720537"));
+
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(fillMapper.selectList(any())).thenReturn(List.of(fill));
+        when(positionMapper.selectById(125L)).thenReturn(position);
+
+        List<SmartWalletOrderView> orders = service.listOrders(10, "PAPER");
+
+        assertEquals(1, orders.size());
+        assertEquals("SETTLED_WIN", orders.get(0).getStatus());
+        assertEquals(new BigDecimal("19.13720537"), orders.get(0).getRealizedPnlUsdc());
+    }
+
+    @Test
+    void shouldExposePairedExitRealizedPnlOnEntryOrderView() {
+        Date entryAt = new Date(System.currentTimeMillis() - 60_000L);
+        Date exitAt = new Date();
+        SmartWalletOrderEntity entryOrder = new SmartWalletOrderEntity()
+                .setId(170L)
+                .setFollowTaskId(15780L)
+                .setPositionId(127L)
+                .setWalletAddress("wallet")
+                .setExecutionMode("PAPER")
+                .setExecutionAddress("paper-book")
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-early-exit")
+                        .setOutcome("J.J. WOLF"))
+                .setSide("BUY")
+                .setOrderType("GTC")
+                .setStatus("FILLED")
+                .setPrice(new BigDecimal("0.20000000"))
+                .setSize(new BigDecimal("750.00000000"))
+                .setNotionalUsdc(new BigDecimal("150.00000000"))
+                .setFeeUsdc(new BigDecimal("0.22500000"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setPlacedAt(entryAt)
+                .setFilledAt(entryAt);
+        SmartWalletFillEntity entryFill = new SmartWalletFillEntity()
+                .setId(601L)
+                .setOrderId(170L)
+                .setPositionId(127L)
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-early-exit")
+                        .setOutcome("J.J. WOLF"))
+                .setSide("BUY")
+                .setNotionalUsdc(new BigDecimal("150.00000000"))
+                .setFeeUsdc(new BigDecimal("0.22500000"))
+                .setFilledAt(entryAt);
+        SmartWalletFillEntity exitFill = new SmartWalletFillEntity()
+                .setId(602L)
+                .setOrderId(172L)
+                .setPositionId(127L)
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-early-exit")
+                        .setOutcome("J.J. WOLF"))
+                .setSide("SELL")
+                .setNotionalUsdc(new BigDecimal("307.50000000"))
+                .setFeeUsdc(BigDecimal.ZERO)
+                .setFilledAt(exitAt);
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(127L)
+                .setExecutionAddress("paper-book")
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-early-exit")
+                        .setOutcome("J.J. WOLF"))
+                .setStatus("CLOSED")
+                .setRealizedPnlUsdc(new BigDecimal("157.27500000"));
+
+        when(orderMapper.selectList(any())).thenReturn(List.of(entryOrder));
+        when(fillMapper.selectList(any())).thenReturn(List.of(entryFill, exitFill));
+        when(positionMapper.selectById(127L)).thenReturn(position);
+
+        List<SmartWalletOrderView> orders = service.listOrders(10, "PAPER");
+
+        assertEquals(1, orders.size());
+        assertEquals("SETTLED_WIN", orders.get(0).getStatus());
+        assertEquals(new BigDecimal("157.27500000"), orders.get(0).getRealizedPnlUsdc());
     }
 
     @Test
