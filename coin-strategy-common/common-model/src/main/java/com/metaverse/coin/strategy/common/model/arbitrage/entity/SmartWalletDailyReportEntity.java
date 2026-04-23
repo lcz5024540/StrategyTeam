@@ -29,7 +29,6 @@ public class SmartWalletDailyReportEntity {
     private Integer winningPositions;
     private Integer losingPositions;
     private BigDecimal winRate;
-    private BigDecimal lossRate;
     private Date createdAt;
     private Date updatedAt;
 }

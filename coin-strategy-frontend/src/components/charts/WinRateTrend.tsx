@@ -14,7 +14,7 @@ export function WinRateTrend({ data }: WinRateTrendProps) {
   const sorted = [...data].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
   const dates = sorted.map((item) => item.reportDate)
   const winRates = sorted.map((item) => Number(((item.winRate || 0) * 100).toFixed(2)))
-  const lossRates = sorted.map((item) => Number(((item.lossRate || 0) * 100).toFixed(2)))
+  const lossRates = sorted.map((item) => Number((((1 - (item.winRate || 0)) || 0) * 100).toFixed(2)))
 
   const option: EChartsOption = {
     backgroundColor: 'transparent',

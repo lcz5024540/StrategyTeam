@@ -21,6 +21,10 @@ function pointTime(item: TimelinePoint | DailyReport) {
   return 'bucketAt' in item ? item.bucketAt : item.reportDate
 }
 
+function lossAmount(item: TimelinePoint | DailyReport) {
+  return 'lossPnlUsdc' in item ? item.lossPnlUsdc || 0 : Math.min(item.realizedPnlUsdc || 0, 0)
+}
+
 export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
   if (data.length === 0) {
     return <div className="empty-state">暂无收益时间线数据</div>
@@ -39,7 +43,7 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
       return
     }
     runningNet += item.netPnlUsdc || 0
-    runningLoss += Math.min(item.netPnlUsdc || 0, 0)
+    runningLoss += lossAmount(item)
     cumulativeNet.push(Number(runningNet.toFixed(2)))
     cumulativeLoss.push(Number(runningLoss.toFixed(2)))
   })

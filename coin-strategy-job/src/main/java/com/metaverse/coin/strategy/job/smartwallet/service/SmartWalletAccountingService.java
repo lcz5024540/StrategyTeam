@@ -1096,21 +1096,31 @@ public class SmartWalletAccountingService {
         int safeDays = Math.max(days, 1);
         List<SmartWalletDailyReportEntity> reports = dailyReportMapper.selectList(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
                 .orderByAsc(SmartWalletDailyReportEntity::getReportDate));
+        if (reports == null) {
+            reports = List.of();
+        }
         List<SmartWalletDailyReportEntity> filteredReports = reports.stream()
                 .filter(report -> matchesDashboardMode(report.getExecutionAddress(), mode))
                 .toList();
         int fromIndex = Math.max(filteredReports.size() - safeDays, 0);
+        List<SmartWalletDailyReportEntity> selectedReports = filteredReports.subList(fromIndex, filteredReports.size());
+        Map<LocalDate, DailyOutcomeBreakdown> outcomeBreakdowns = loadDailyOutcomeBreakdowns(selectedReports, mode);
         List<SmartWalletPnlTimelinePoint> points = new ArrayList<>();
         BigDecimal cumulativeLoss = BigDecimal.ZERO;
         BigDecimal cumulativeRealized = BigDecimal.ZERO;
         BigDecimal cumulativeFee = BigDecimal.ZERO;
         BigDecimal cumulative = BigDecimal.ZERO;
-        for (SmartWalletDailyReportEntity report : filteredReports.subList(fromIndex, filteredReports.size())) {
+        for (SmartWalletDailyReportEntity report : selectedReports) {
             BigDecimal realized = safe(report.getRealizedPnlUsdc());
             BigDecimal fee = safe(report.getFeeUsdc());
             BigDecimal net = safe(report.getNetPnlUsdc(), realized.subtract(fee));
-            BigDecimal profit = net.max(BigDecimal.ZERO);
-            BigDecimal loss = net.compareTo(BigDecimal.ZERO) < 0 ? net : BigDecimal.ZERO;
+            DailyOutcomeBreakdown breakdown = outcomeBreakdowns.get(toLocalDate(report.getReportDate()));
+            BigDecimal profit = breakdown != null && breakdown.hasOutcomeEntries()
+                    ? breakdown.profitPnlUsdc
+                    : realized.max(BigDecimal.ZERO);
+            BigDecimal loss = breakdown != null && breakdown.hasOutcomeEntries()
+                    ? breakdown.lossPnlUsdc
+                    : (realized.compareTo(BigDecimal.ZERO) < 0 ? realized : BigDecimal.ZERO);
             cumulativeLoss = cumulativeLoss.add(loss);
             cumulativeRealized = cumulativeRealized.add(realized);
             cumulativeFee = cumulativeFee.add(fee);
@@ -1160,16 +1170,24 @@ public class SmartWalletAccountingService {
     public List<SmartWalletDailyReportView> listDailyReports(int limit, String mode) {
         List<SmartWalletDailyReportEntity> reports = dailyReportMapper.selectList(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
                 .orderByDesc(SmartWalletDailyReportEntity::getReportDate));
+        if (reports == null) {
+            reports = List.of();
+        }
         List<SmartWalletDailyReportView> result = new ArrayList<>();
         int safeLimit = Math.max(limit, 1);
+        List<SmartWalletDailyReportEntity> selectedReports = new ArrayList<>();
         for (SmartWalletDailyReportEntity report : reports) {
             if (!matchesDashboardMode(report.getExecutionAddress(), mode)) {
                 continue;
             }
-            result.add(toDailyReportView(report));
-            if (result.size() >= safeLimit) {
+            selectedReports.add(report);
+            if (selectedReports.size() >= safeLimit) {
                 break;
             }
+        }
+        Map<LocalDate, DailyOutcomeBreakdown> outcomeBreakdowns = loadDailyOutcomeBreakdowns(selectedReports, mode);
+        for (SmartWalletDailyReportEntity report : selectedReports) {
+            result.add(toDailyReportView(report, outcomeBreakdowns.get(toLocalDate(report.getReportDate()))));
         }
         return result;
     }
@@ -2399,32 +2417,20 @@ public class SmartWalletAccountingService {
                 .last("limit 1"));
 
         BigDecimal unrealized = BigDecimal.ZERO;
-        int closedPositions = 0;
-        int wins = 0;
-        int losses = 0;
+        DailyOutcomeBreakdown outcomeBreakdown = deriveDailyOutcomeBreakdown(ledgerEntries);
+        int wins = outcomeBreakdown.winningPositions;
+        int losses = outcomeBreakdown.losingPositions;
         boolean currentDay = reportDate.equals(LocalDate.now(ZoneId.systemDefault()));
         for (SmartWalletPositionEntity position : positions) {
             if (currentDay && isActivePositionStatus(position.getStatus())) {
                 markToMarket(position);
                 unrealized = unrealized.add(safe(position.getUnrealizedPnlUsdc()));
             }
-            if (position.getClosedAt() != null && reportDate.equals(toLocalDate(position.getClosedAt()))) {
-                closedPositions++;
-                if (safe(position.getRealizedPnlUsdc()).compareTo(BigDecimal.ZERO) > 0) {
-                    wins++;
-                } else if (safe(position.getRealizedPnlUsdc()).compareTo(BigDecimal.ZERO) < 0) {
-                    losses++;
-                }
-            }
         }
         if (!currentDay) {
             unrealized = BigDecimal.ZERO;
         }
-        int completedPositions = wins + losses;
-        BigDecimal winRate = completedPositions == 0 ? BigDecimal.ZERO
-                : BigDecimal.valueOf(wins).divide(BigDecimal.valueOf(completedPositions), 4, RoundingMode.HALF_UP);
-        BigDecimal lossRate = completedPositions == 0 ? BigDecimal.ZERO
-                : BigDecimal.valueOf(losses).divide(BigDecimal.valueOf(completedPositions), 4, RoundingMode.HALF_UP);
+        BigDecimal winRate = outcomeBreakdown.winRate();
 
         if (entity == null) {
             entity = new SmartWalletDailyReportEntity()
@@ -2442,7 +2448,6 @@ public class SmartWalletAccountingService {
                 .setWinningPositions(wins)
                 .setLosingPositions(losses)
                 .setWinRate(winRate)
-                .setLossRate(lossRate)
                 .setUpdatedAt(new Date());
         if (entity.getId() == null) {
             dailyReportMapper.insert(entity);
@@ -3836,7 +3841,10 @@ public class SmartWalletAccountingService {
                 .build();
     }
 
-    private SmartWalletDailyReportView toDailyReportView(SmartWalletDailyReportEntity report) {
+    private SmartWalletDailyReportView toDailyReportView(SmartWalletDailyReportEntity report, DailyOutcomeBreakdown breakdown) {
+        DailyOutcomeBreakdown effectiveBreakdown = breakdown != null && breakdown.hasOutcomeEntries()
+                ? breakdown
+                : DailyOutcomeBreakdown.fromStoredReport(report);
         return SmartWalletDailyReportView.builder()
                 .id(report.getId())
                 .reportDate(report.getReportDate())
@@ -3845,17 +3853,185 @@ public class SmartWalletAccountingService {
                 .filledOrders(report.getFilledOrders())
                 .totalVolumeUsdc(report.getTotalVolumeUsdc())
                 .feeUsdc(report.getFeeUsdc())
+                .profitPnlUsdc(effectiveBreakdown.profitPnlUsdc)
+                .lossPnlUsdc(effectiveBreakdown.lossPnlUsdc)
                 .realizedPnlUsdc(report.getRealizedPnlUsdc())
                 .unrealizedPnlUsdc(report.getUnrealizedPnlUsdc())
                 .netPnlUsdc(report.getNetPnlUsdc())
-                .winningPositions(report.getWinningPositions())
-                .losingPositions(report.getLosingPositions())
-                .winRate(report.getWinRate())
-                .lossRate(report.getLossRate())
+                .winningPositions(effectiveBreakdown.winningPositions)
+                .losingPositions(effectiveBreakdown.losingPositions)
+                .winRate(effectiveBreakdown.winRate())
                 .conflictingMarkets(calculateDailyConflictSummary(report).conflictingMarkets())
                 .conflictingPositions(calculateDailyConflictSummary(report).conflictingPositions())
                 .conflictNetPnlUsdc(calculateDailyConflictSummary(report).conflictNetPnlUsdc())
                 .build();
+    }
+
+    private Map<LocalDate, DailyOutcomeBreakdown> loadDailyOutcomeBreakdowns(List<SmartWalletDailyReportEntity> reports, String mode) {
+        if (reports == null || reports.isEmpty()) {
+            return Map.of();
+        }
+        LocalDate minDate = null;
+        LocalDate maxDate = null;
+        for (SmartWalletDailyReportEntity report : reports) {
+            LocalDate reportDate = toLocalDate(report.getReportDate());
+            if (reportDate == null) {
+                continue;
+            }
+            if (minDate == null || reportDate.isBefore(minDate)) {
+                minDate = reportDate;
+            }
+            if (maxDate == null || reportDate.isAfter(maxDate)) {
+                maxDate = reportDate;
+            }
+        }
+        if (minDate == null || maxDate == null) {
+            return Map.of();
+        }
+        return loadDailyOutcomeBreakdowns(minDate, maxDate, mode);
+    }
+
+    private Map<LocalDate, DailyOutcomeBreakdown> loadDailyOutcomeBreakdowns(LocalDate fromDate, LocalDate toDate, String mode) {
+        if (fromDate == null || toDate == null || toDate.isBefore(fromDate)) {
+            return Map.of();
+        }
+        ZoneId zoneId = ZoneId.systemDefault();
+        Date start = Date.from(fromDate.atStartOfDay(zoneId).toInstant());
+        Date endExclusive = Date.from(toDate.plusDays(1).atStartOfDay(zoneId).toInstant());
+        List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
+                .eq(SmartWalletCashLedgerEntity::getEntryType, "REALIZED_PNL")
+                .ge(SmartWalletCashLedgerEntity::getOccurredAt, start)
+                .lt(SmartWalletCashLedgerEntity::getOccurredAt, endExclusive)
+                .orderByAsc(SmartWalletCashLedgerEntity::getOccurredAt)
+                .orderByAsc(SmartWalletCashLedgerEntity::getId));
+        if (entries == null || entries.isEmpty()) {
+            return Map.of();
+        }
+        Map<LocalDate, Map<String, BigDecimal>> grouped = new LinkedHashMap<>();
+        for (SmartWalletCashLedgerEntity entry : entries) {
+            if (entry == null || entry.getOccurredAt() == null || !matchesDashboardMode(entry.getExecutionAddress(), mode)) {
+                continue;
+            }
+            LocalDate reportDate = toLocalDate(entry.getOccurredAt());
+            if (reportDate == null || reportDate.isBefore(fromDate) || reportDate.isAfter(toDate)) {
+                continue;
+            }
+            grouped.computeIfAbsent(reportDate, key -> new LinkedHashMap<>())
+                    .merge(outcomeReferenceKey(entry), ledgerPnlDelta(entry), BigDecimal::add);
+        }
+        Map<LocalDate, DailyOutcomeBreakdown> result = new LinkedHashMap<>();
+        for (LocalDate cursor = fromDate; !cursor.isAfter(toDate); cursor = cursor.plusDays(1)) {
+            result.put(cursor, deriveDailyOutcomeBreakdown(grouped.get(cursor)));
+        }
+        return result;
+    }
+
+    private DailyOutcomeBreakdown deriveDailyOutcomeBreakdown(List<SmartWalletCashLedgerEntity> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return DailyOutcomeBreakdown.empty();
+        }
+        Map<String, BigDecimal> grouped = new LinkedHashMap<>();
+        for (SmartWalletCashLedgerEntity entry : entries) {
+            if (entry == null || !"REALIZED_PNL".equalsIgnoreCase(entry.getEntryType())) {
+                continue;
+            }
+            grouped.merge(outcomeReferenceKey(entry), ledgerPnlDelta(entry), BigDecimal::add);
+        }
+        return deriveDailyOutcomeBreakdown(grouped);
+    }
+
+    private DailyOutcomeBreakdown deriveDailyOutcomeBreakdown(Map<String, BigDecimal> grouped) {
+        if (grouped == null || grouped.isEmpty()) {
+            return DailyOutcomeBreakdown.empty();
+        }
+        BigDecimal profit = BigDecimal.ZERO;
+        BigDecimal loss = BigDecimal.ZERO;
+        int wins = 0;
+        int losses = 0;
+        for (BigDecimal pnl : grouped.values()) {
+            BigDecimal signedPnl = safe(pnl);
+            if (signedPnl.compareTo(BigDecimal.ZERO) > 0) {
+                profit = profit.add(signedPnl);
+                wins++;
+            } else if (signedPnl.compareTo(BigDecimal.ZERO) < 0) {
+                loss = loss.add(signedPnl);
+                losses++;
+            }
+        }
+        return new DailyOutcomeBreakdown(
+                profit.setScale(8, RoundingMode.HALF_UP),
+                loss.setScale(8, RoundingMode.HALF_UP),
+                wins,
+                losses
+        );
+    }
+
+    private String outcomeReferenceKey(SmartWalletCashLedgerEntity entry) {
+        if (entry == null) {
+            return "ledger:null";
+        }
+        if (StringUtils.hasText(entry.getReferenceType()) && entry.getReferenceId() != null) {
+            return entry.getReferenceType() + ":" + entry.getReferenceId();
+        }
+        if (entry.getReferenceId() != null) {
+            return "ref:" + entry.getReferenceId();
+        }
+        if (entry.getId() != null) {
+            return "ledger:" + entry.getId();
+        }
+        return "occurred:" + String.valueOf(entry.getOccurredAt());
+    }
+
+    private static final class DailyOutcomeBreakdown {
+        private final BigDecimal profitPnlUsdc;
+        private final BigDecimal lossPnlUsdc;
+        private final int winningPositions;
+        private final int losingPositions;
+
+        private DailyOutcomeBreakdown(BigDecimal profitPnlUsdc,
+                                      BigDecimal lossPnlUsdc,
+                                      int winningPositions,
+                                      int losingPositions) {
+            this.profitPnlUsdc = profitPnlUsdc;
+            this.lossPnlUsdc = lossPnlUsdc;
+            this.winningPositions = winningPositions;
+            this.losingPositions = losingPositions;
+        }
+
+        private static DailyOutcomeBreakdown empty() {
+            return new DailyOutcomeBreakdown(
+                    BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP),
+                    BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP),
+                    0,
+                    0
+            );
+        }
+
+        private static DailyOutcomeBreakdown fromStoredReport(SmartWalletDailyReportEntity report) {
+            BigDecimal realized = report == null || report.getRealizedPnlUsdc() == null
+                    ? BigDecimal.ZERO
+                    : report.getRealizedPnlUsdc();
+            return new DailyOutcomeBreakdown(
+                    realized.max(BigDecimal.ZERO).setScale(8, RoundingMode.HALF_UP),
+                    (realized.compareTo(BigDecimal.ZERO) < 0 ? realized : BigDecimal.ZERO).setScale(8, RoundingMode.HALF_UP),
+                    report == null || report.getWinningPositions() == null ? 0 : report.getWinningPositions(),
+                    report == null || report.getLosingPositions() == null ? 0 : report.getLosingPositions()
+            );
+        }
+
+        private boolean hasOutcomeEntries() {
+            return winningPositions > 0 || losingPositions > 0
+                    || profitPnlUsdc.compareTo(BigDecimal.ZERO) != 0
+                    || lossPnlUsdc.compareTo(BigDecimal.ZERO) != 0;
+        }
+
+        private BigDecimal winRate() {
+            int completed = winningPositions + losingPositions;
+            return completed == 0
+                    ? BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP)
+                    : BigDecimal.valueOf(winningPositions).divide(BigDecimal.valueOf(completed), 4, RoundingMode.HALF_UP);
+        }
+
     }
 
     private ConflictSummary calculateDailyConflictSummary(SmartWalletDailyReportEntity report) {
@@ -4230,6 +4406,8 @@ public class SmartWalletAccountingService {
     }
 
     private class TimelineBucketAccumulator {
+        private BigDecimal profitPnl = BigDecimal.ZERO;
+        private BigDecimal lossPnl = BigDecimal.ZERO;
         private BigDecimal realizedPnl = BigDecimal.ZERO;
         private BigDecimal fee = BigDecimal.ZERO;
 
@@ -4239,15 +4417,20 @@ public class SmartWalletAccountingService {
                 fee = fee.add(safe(entry.getAmount()));
             } else if ("REALIZED_PNL".equalsIgnoreCase(entry.getEntryType())) {
                 realizedPnl = realizedPnl.add(pnlDelta);
+                if (pnlDelta.compareTo(BigDecimal.ZERO) > 0) {
+                    profitPnl = profitPnl.add(pnlDelta);
+                } else if (pnlDelta.compareTo(BigDecimal.ZERO) < 0) {
+                    lossPnl = lossPnl.add(pnlDelta);
+                }
             }
         }
 
         private BigDecimal profitPnl() {
-            return netPnl().max(BigDecimal.ZERO);
+            return profitPnl;
         }
 
         private BigDecimal lossPnl() {
-            return netPnl().compareTo(BigDecimal.ZERO) < 0 ? netPnl() : BigDecimal.ZERO;
+            return lossPnl;
         }
 
         private BigDecimal netPnl() {

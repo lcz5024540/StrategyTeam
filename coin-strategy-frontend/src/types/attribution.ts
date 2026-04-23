@@ -20,13 +20,14 @@ export interface DailyReport {
   closedPositions: number
   totalVolumeUsdc: number
   feeUsdc: number
+  profitPnlUsdc: number
+  lossPnlUsdc: number
   realizedPnlUsdc: number
   unrealizedPnlUsdc: number
   netPnlUsdc: number
   winningPositions: number
   losingPositions: number
   winRate: number
-  lossRate: number
 }
 
 export interface ConflictMarket {

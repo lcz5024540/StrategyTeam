@@ -983,7 +983,7 @@ class SmartWalletAccountingServiceTest {
     }
 
     @Test
-    void shouldSplitTimelineProfitLossAndCumulativeLossUsingNetPnl() {
+    void shouldSplitTimelineProfitLossAndCumulativeLoss() {
         ZoneId zoneId = ZoneId.systemDefault();
         LocalDateTime now = LocalDateTime.now(zoneId).withMinute(0).withSecond(0).withNano(0);
         Date profitAt = Date.from(now.minusHours(6).atZone(zoneId).toInstant());
@@ -1021,13 +1021,13 @@ class SmartWalletAccountingServiceTest {
         assertEquals(0, BigDecimal.ZERO.compareTo(profitBucket.getLossPnlUsdc()));
 
         SmartWalletPnlTimelinePoint lossBucket = timeline.stream()
-                .filter(point -> new BigDecimal("-5.50000000").compareTo(point.getLossPnlUsdc()) == 0)
+                .filter(point -> new BigDecimal("-4.20000000").compareTo(point.getLossPnlUsdc()) == 0)
                 .findFirst()
                 .orElseThrow();
         assertEquals(0, BigDecimal.ZERO.compareTo(lossBucket.getProfitPnlUsdc()));
-        assertEquals(0, new BigDecimal("-5.50000000").compareTo(lossBucket.getLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-4.20000000").compareTo(lossBucket.getLossPnlUsdc()));
         assertEquals(0, new BigDecimal("-5.50000000").compareTo(lossBucket.getNetPnlUsdc()));
-        assertEquals(0, new BigDecimal("-5.50000000").compareTo(lossBucket.getCumulativeLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-4.20000000").compareTo(lossBucket.getCumulativeLossPnlUsdc()));
     }
 
     @Test
@@ -1047,8 +1047,8 @@ class SmartWalletAccountingServiceTest {
         assertEquals(1, timeline.size());
         SmartWalletPnlTimelinePoint point = timeline.get(0);
         assertEquals(0, BigDecimal.ZERO.compareTo(point.getProfitPnlUsdc()));
-        assertEquals(0, new BigDecimal("-5.50").compareTo(point.getLossPnlUsdc()));
-        assertEquals(0, new BigDecimal("-5.50").compareTo(point.getCumulativeLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-4.20").compareTo(point.getLossPnlUsdc()));
+        assertEquals(0, new BigDecimal("-4.20").compareTo(point.getCumulativeLossPnlUsdc()));
         assertEquals(0, new BigDecimal("-5.50").compareTo(point.getNetPnlUsdc()));
     }
 
@@ -1114,7 +1114,6 @@ class SmartWalletAccountingServiceTest {
         assertEquals(1, saved.getWinningPositions());
         assertEquals(1, saved.getLosingPositions());
         assertEquals(new BigDecimal("0.5000"), saved.getWinRate());
-        assertEquals(new BigDecimal("0.5000"), saved.getLossRate());
     }
 
     @Test
@@ -1130,12 +1129,31 @@ class SmartWalletAccountingServiceTest {
                 .setRealizedPnlUsdc(new BigDecimal("10.00"))
                 .setUnrealizedPnlUsdc(BigDecimal.ZERO)
                 .setNetPnlUsdc(new BigDecimal("8.80"))
-                .setWinningPositions(2)
-                .setLosingPositions(1)
-                .setWinRate(new BigDecimal("0.6667"))
-                .setLossRate(new BigDecimal("0.3333"));
+                .setWinningPositions(0)
+                .setLosingPositions(0)
+                .setWinRate(BigDecimal.ZERO);
+
+        SmartWalletCashLedgerEntity realizedWin = new SmartWalletCashLedgerEntity()
+                .setId(501L)
+                .setExecutionAddress("paper-book")
+                .setEntryType("REALIZED_PNL")
+                .setDirection("IN")
+                .setAmount(new BigDecimal("12.00"))
+                .setReferenceType("POSITION")
+                .setReferenceId(9001L)
+                .setOccurredAt(entity.getReportDate());
+        SmartWalletCashLedgerEntity realizedLoss = new SmartWalletCashLedgerEntity()
+                .setId(502L)
+                .setExecutionAddress("paper-book")
+                .setEntryType("REALIZED_PNL")
+                .setDirection("OUT")
+                .setAmount(new BigDecimal("2.00"))
+                .setReferenceType("POSITION")
+                .setReferenceId(9002L)
+                .setOccurredAt(entity.getReportDate());
 
         when(dailyReportMapper.selectList(any())).thenReturn(List.of(entity));
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of(realizedWin, realizedLoss));
         when(positionMapper.selectList(any())).thenReturn(List.of());
 
         List<SmartWalletDailyReportView> reports = service.listDailyReports(10, "PAPER");
@@ -1143,8 +1161,11 @@ class SmartWalletAccountingServiceTest {
         assertEquals(1, reports.size());
         SmartWalletDailyReportView report = reports.get(0);
         assertNotNull(report);
-        assertEquals(2, report.getWinningPositions());
+        assertEquals(1, report.getWinningPositions());
         assertEquals(1, report.getLosingPositions());
-        assertEquals(new BigDecimal("0.3333"), report.getLossRate());
+        assertEquals(new BigDecimal("0.5000"), report.getWinRate());
+        assertEquals(new BigDecimal("0.5000"), report.getLossRate());
+        assertEquals(new BigDecimal("12.00000000"), report.getProfitPnlUsdc());
+        assertEquals(new BigDecimal("-2.00000000"), report.getLossPnlUsdc());
     }
 }

@@ -242,7 +242,6 @@ export function PolymarketHedgePage() {
           winningPositions: pair.realizedPnlUsdc > 0 ? 1 : 0,
           losingPositions: pair.realizedPnlUsdc < 0 ? 1 : 0,
           winRate: 0,
-          lossRate: 0,
         })
       }
     })
