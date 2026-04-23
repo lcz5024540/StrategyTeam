@@ -42,6 +42,12 @@ class SmartWalletSignalRiskServiceTest {
     private MarketConcentrationService concentrationService;
     @Mock
     private SmartWalletLeaderboardStateService leaderboardStateService;
+    @Mock
+    private SmartWalletMarketInfoService marketInfoService;
+    @Mock
+    private KellyStakeCalculator kellyStakeCalculator;
+    @Mock
+    private PolymarketApiClient polymarketApiClient;
 
     private SmartWalletProperties properties;
     private SmartWalletSignalRiskService service;
@@ -62,7 +68,10 @@ class SmartWalletSignalRiskServiceTest {
                 tradeProfitabilityScoringService,
                 concentrationService,
                 leaderboardStateService,
-                new SmartWalletEntryStrategyRouter()
+                new SmartWalletEntryStrategyRouter(),
+                marketInfoService,
+                kellyStakeCalculator,
+                polymarketApiClient
         );
     }
 
@@ -112,6 +121,40 @@ class SmartWalletSignalRiskServiceTest {
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("Consensus wallet count")));
     }
 
+    @Test
+    void shouldDownsizeStakeWhenLiveWalletBalanceIsBelowConfiguredBudget() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.80"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("500"));
+        when(polymarketApiClient.fetchBalance("0xlive")).thenReturn(new BigDecimal("100"));
+        when(executionWalletContextLoader.load()).thenReturn(ExecutionWalletContextLoader.ExecutionWalletContext.builder()
+                .enabled(true)
+                .address("0xlive")
+                .minOrderUsdc(new BigDecimal("0.10"))
+                .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted());
+        org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("0.48"), decision.getRecommendedStakeUsdc());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("Live wallet balance sizing applied")));
+    }
+
     private void prepareCommonMocks(ConsensusSignalView consensus) {
         when(positionMapper.selectCount(any())).thenReturn(0L);
         when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
@@ -130,6 +173,7 @@ class SmartWalletSignalRiskServiceTest {
         when(executionWalletContextLoader.load()).thenReturn(ExecutionWalletContextLoader.ExecutionWalletContext.builder()
                 .minOrderUsdc(BigDecimal.ONE)
                 .build());
+        when(polymarketApiClient.fetchBalance(any())).thenReturn(new BigDecimal("100"));
         when(tradeProfitabilityScoringService.estimate(any(), any(), any(), any()))
                 .thenReturn(TradeProfitabilityScoringService.ProfitabilityEstimate.builder()
                         .estimatedNetProfitabilityUsdc(new BigDecimal("1.50"))

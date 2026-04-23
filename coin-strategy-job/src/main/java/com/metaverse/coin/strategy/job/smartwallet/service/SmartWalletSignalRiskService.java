@@ -39,6 +39,7 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletEntryStrategyRouter entryStrategyRouter;
     private final SmartWalletMarketInfoService marketInfoService;
     private final KellyStakeCalculator kellyStakeCalculator;
+    private final PolymarketApiClient polymarketApiClient;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -107,10 +108,17 @@ public class SmartWalletSignalRiskService {
             reasons.add("Total open position cost has reached the portfolio budget limit.");
         }
 
-        BigDecimal availableCapital = accountingService.availableCapitalUsdc();
+        CapitalContext capitalContext = resolveCapitalContext();
+        BigDecimal availableCapital = capitalContext.effectiveCapital();
         if (availableCapital.compareTo(BigDecimal.ZERO) <= 0) {
             accepted = false;
             reasons.add("Available capital is depleted. Strategy is paused to avoid bankroll penetration.");
+        }
+        if (capitalContext.liveWalletBalanceApplied()) {
+            reasons.add("Live wallet balance sizing applied. liveBalanceUsdc="
+                    + capitalContext.liveWalletBalance().setScale(2, RoundingMode.HALF_UP)
+                    + ", effectiveCapitalUsdc="
+                    + capitalContext.effectiveCapital().setScale(2, RoundingMode.HALF_UP) + ".");
         }
 
         if (event.getOpenedAt() != null) {
@@ -201,6 +209,7 @@ public class SmartWalletSignalRiskService {
                 .multiply(properties.getBankrollUtilizationRate())
                 .min(properties.getMaxStakeUsdc())
                 .setScale(2, RoundingMode.HALF_UP);
+        preliminaryStake = applyDynamicCapitalScale(preliminaryStake, capitalContext);
         preliminaryStake = preliminaryStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal minOrderUsdc = executionWalletContextLoader.load().getMinOrderUsdc();
@@ -301,6 +310,11 @@ public class SmartWalletSignalRiskService {
         } else {
             recommendedStake = preliminaryStake;
         }
+        recommendedStake = safe(recommendedStake).min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
+        if (accepted && recommendedStake.compareTo(minOrderUsdc) < 0) {
+            accepted = false;
+            reasons.add("Recommended stake is below execution wallet minimum order after capital scaling.");
+        }
 
         if (profitabilityEstimate.getEstimateSampleSize() != null && profitabilityEstimate.getEstimateSampleSize() > 0) {
             reasons.add("Local risk estimate sample size=" + profitabilityEstimate.getEstimateSampleSize() + ".");
@@ -379,6 +393,36 @@ public class SmartWalletSignalRiskService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private CapitalContext resolveCapitalContext() {
+        BigDecimal strategyCapital = safe(accountingService.availableCapitalUsdc());
+        ExecutionWalletContextLoader.ExecutionWalletContext wallet = executionWalletContextLoader.load();
+        if (wallet == null || !wallet.isEnabled() || !org.springframework.util.StringUtils.hasText(wallet.getAddress())) {
+            return new CapitalContext(strategyCapital, null, strategyCapital, false);
+        }
+        try {
+            BigDecimal liveWalletBalance = safe(polymarketApiClient.fetchBalance(wallet.getAddress()));
+            BigDecimal effectiveCapital = strategyCapital.min(liveWalletBalance);
+            return new CapitalContext(strategyCapital, liveWalletBalance, effectiveCapital, true);
+        } catch (Exception ex) {
+            return new CapitalContext(strategyCapital, null, strategyCapital, false);
+        }
+    }
+
+    private BigDecimal applyDynamicCapitalScale(BigDecimal stake, CapitalContext capitalContext) {
+        BigDecimal normalizedStake = safe(stake);
+        BigDecimal configuredBudget = safe(properties.getSignalRisk().getMaxTotalOpenCostUsdc());
+        if (normalizedStake.compareTo(BigDecimal.ZERO) <= 0
+                || configuredBudget.compareTo(BigDecimal.ZERO) <= 0
+                || capitalContext == null) {
+            return normalizedStake.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal scale = capitalContext.effectiveCapital()
+                .divide(configuredBudget, 8, RoundingMode.HALF_UP)
+                .min(BigDecimal.ONE)
+                .max(BigDecimal.ZERO);
+        return normalizedStake.multiply(scale).setScale(2, RoundingMode.HALF_UP);
     }
 
     private boolean qualifiesSingleWalletOverride(SmartWalletProfileEntity profile,
@@ -607,5 +651,11 @@ public class SmartWalletSignalRiskService {
 
     private int defaultInt(Integer value, int fallback) {
         return value == null || value <= 0 ? fallback : value;
+    }
+
+    private record CapitalContext(BigDecimal strategyCapital,
+                                  BigDecimal liveWalletBalance,
+                                  BigDecimal effectiveCapital,
+                                  boolean liveWalletBalanceApplied) {
     }
 }
