@@ -235,6 +235,7 @@ public class PolymarketClobExecutionService {
                 .size(order.getSize())
                 .notionalUsdc(liveNotional)
                 .feeUsdc(liveFee)
+                .tradingFeeUsdc(liveFee)
                 .build();
     }
 

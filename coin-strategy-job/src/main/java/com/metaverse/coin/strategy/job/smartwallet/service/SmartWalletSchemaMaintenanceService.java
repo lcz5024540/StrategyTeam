@@ -41,14 +41,34 @@ public class SmartWalletSchemaMaintenanceService {
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `position_id` BIGINT NULL COMMENT '关联持仓轮次ID' AFTER `follow_task_id`");
         ensureColumnExists("smart_wallet_order", "realized_pnl_usdc",
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '该订单已实现收益' AFTER `fee_usdc`");
+        ensureColumnExists("smart_wallet_order", "trading_fee_usdc",
+                "ALTER TABLE `smart_wallet_order` ADD COLUMN `trading_fee_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '交易手续费USDC' AFTER `fee_usdc`");
+        ensureColumnExists("smart_wallet_order", "fee_pol",
+                "ALTER TABLE `smart_wallet_order` ADD COLUMN `fee_pol` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '手续费POL' AFTER `trading_fee_usdc`");
+        ensureColumnExists("smart_wallet_order", "gas_fee_usdc",
+                "ALTER TABLE `smart_wallet_order` ADD COLUMN `gas_fee_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '链上手续费USDC折算' AFTER `fee_pol`");
         ensureColumnExists("smart_wallet_order", "exit_reason",
                 "ALTER TABLE `smart_wallet_order` ADD COLUMN `exit_reason` VARCHAR(64) NULL COMMENT '提前退出原因' AFTER `realized_pnl_usdc`");
         ensureLegacyColumnExists("smart_wallet_position", "market_end_at", "outcome",
                 "ALTER TABLE `smart_wallet_position` ADD COLUMN `market_end_at` BIGINT NULL COMMENT '市场预计结算时间戳(毫秒)' AFTER `outcome`");
         ensureColumnExists("smart_wallet_position", "original_cost_basis_usdc",
                 "ALTER TABLE `smart_wallet_position` ADD COLUMN `original_cost_basis_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '原始持仓成本(用于结算后展示)' AFTER `cost_basis_usdc`");
+        ensureColumnExists("smart_wallet_position", "fee_pol_total",
+                "ALTER TABLE `smart_wallet_position` ADD COLUMN `fee_pol_total` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '累计手续费POL' AFTER `original_cost_basis_usdc`");
         ensureColumnExists("smart_wallet_fill", "position_id",
                 "ALTER TABLE `smart_wallet_fill` ADD COLUMN `position_id` BIGINT NULL COMMENT '关联持仓轮次ID' AFTER `order_id`");
+        ensureColumnExists("smart_wallet_fill", "trading_fee_usdc",
+                "ALTER TABLE `smart_wallet_fill` ADD COLUMN `trading_fee_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '交易手续费USDC' AFTER `fee_usdc`");
+        ensureColumnExists("smart_wallet_fill", "fee_pol",
+                "ALTER TABLE `smart_wallet_fill` ADD COLUMN `fee_pol` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '手续费POL' AFTER `trading_fee_usdc`");
+        ensureColumnExists("smart_wallet_fill", "gas_fee_usdc",
+                "ALTER TABLE `smart_wallet_fill` ADD COLUMN `gas_fee_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '链上手续费USDC折算' AFTER `fee_pol`");
+        ensureColumnExists("smart_wallet_daily_report", "winning_positions",
+                "ALTER TABLE `smart_wallet_daily_report` ADD COLUMN `winning_positions` INT NOT NULL DEFAULT 0 COMMENT '盈利仓位数' AFTER `net_pnl_usdc`");
+        ensureColumnExists("smart_wallet_daily_report", "losing_positions",
+                "ALTER TABLE `smart_wallet_daily_report` ADD COLUMN `losing_positions` INT NOT NULL DEFAULT 0 COMMENT '亏损仓位数' AFTER `winning_positions`");
+        ensureColumnExists("smart_wallet_daily_report", "loss_rate",
+                "ALTER TABLE `smart_wallet_daily_report` ADD COLUMN `loss_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '亏损率' AFTER `win_rate`");
         dropLegacyIndexIfExists("smart_wallet_position", "uk_position_execution_market_outcome", "market_id", "outcome");
         ensureIndexExists("smart_wallet_order", "idx_order_position",
                 "CREATE INDEX `idx_order_position` ON `smart_wallet_order` (`position_id`, `placed_at`)");

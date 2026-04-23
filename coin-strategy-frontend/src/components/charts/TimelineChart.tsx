@@ -29,19 +29,19 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
   const sorted = [...data].sort((a, b) => new Date(pointTime(a)).getTime() - new Date(pointTime(b)).getTime())
   const dates = sorted.map((item) => formatBucketLabel(pointTime(item), bucketHours))
   const cumulativeNet: number[] = []
-  const cumulativeRealized: number[] = []
+  const cumulativeLoss: number[] = []
   let runningNet = 0
-  let runningRealized = 0
+  let runningLoss = 0
   sorted.forEach((item) => {
     if ('cumulativeNetPnlUsdc' in item) {
       cumulativeNet.push(Number((item.cumulativeNetPnlUsdc || 0).toFixed(2)))
-      cumulativeRealized.push(Number((item.cumulativeRealizedPnlUsdc || 0).toFixed(2)))
+      cumulativeLoss.push(Number((item.cumulativeLossPnlUsdc || 0).toFixed(2)))
       return
     }
     runningNet += item.netPnlUsdc || 0
-    runningRealized += item.realizedPnlUsdc || 0
+    runningLoss += Math.min(item.realizedPnlUsdc || 0, 0)
     cumulativeNet.push(Number(runningNet.toFixed(2)))
-    cumulativeRealized.push(Number(runningRealized.toFixed(2)))
+    cumulativeLoss.push(Number(runningLoss.toFixed(2)))
   })
   const sliderStart = sorted.length > 45 ? Math.max(0, 100 - (45 / sorted.length) * 100) : 0
 
@@ -117,12 +117,12 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
         symbolSize: 6,
       },
       {
-        name: '扣费前累计',
+        name: '累计亏损额',
         type: 'line',
         smooth: true,
-        data: cumulativeRealized,
-        lineStyle: { width: 2, color: '#ffaa00', type: 'dashed', shadowBlur: 6, shadowColor: 'rgba(255, 170, 0, 0.35)' },
-        itemStyle: { color: '#ffaa00', borderColor: '#020904', borderWidth: 2 },
+        data: cumulativeLoss,
+        lineStyle: { width: 2, color: '#ff4d6d', type: 'dashed', shadowBlur: 6, shadowColor: 'rgba(255, 77, 109, 0.35)' },
+        itemStyle: { color: '#ff4d6d', borderColor: '#020904', borderWidth: 2 },
         symbol: 'circle',
         symbolSize: 5,
       },

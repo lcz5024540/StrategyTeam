@@ -5,6 +5,7 @@ import { useStrategyStore } from '@/store/useStrategyStore'
 import { TimelineChart } from '@/components/charts/TimelineChart'
 import { DailyPnlBars } from '@/components/charts/DailyPnlBars'
 import { WinRateTrend } from '@/components/charts/WinRateTrend'
+import { OutcomeTrendChart } from '@/components/charts/OutcomeTrendChart'
 import { AttributionBars } from '@/components/charts/AttributionBars'
 import { OrdersTable } from '@/components/tables/OrdersTable'
 import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
@@ -104,7 +105,7 @@ export function ChartsPage() {
         <div className="section-head section-head-row">
           <div>
             <h2>累计收益时间线</h2>
-            <p>{bucketLabel(bucketHours)}一个点，绿色为扣费后净收益，黄色为扣费前收益</p>
+            <p>{bucketLabel(bucketHours)}一个点，绿色为累计净收益，红色为累计亏损额</p>
           </div>
           <div className="chart-controls" aria-label="收益图时间粒度">
             <button
@@ -147,18 +148,26 @@ export function ChartsPage() {
         <section className="panel">
           <div className="section-head">
             <h2>区间收益</h2>
-            <p>{bucketLabel(bucketHours)}收益柱状图</p>
+            <p>{bucketLabel(bucketHours)}三柱：收益 / 亏损 / 净收益</p>
           </div>
           <DailyPnlBars data={pnlTimeline} bucketHours={bucketHours} />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>胜率趋势</h2>
-            <p>滚动胜率变化</p>
+            <p>滚动胜率与亏损率变化</p>
           </div>
           <WinRateTrend data={dailyReports} />
         </section>
       </div>
+
+      <section className="panel">
+        <div className="section-head">
+          <h2>胜负订单趋势</h2>
+          <p>胜率、盈利订单数与亏损订单数联动变化</p>
+        </div>
+        <OutcomeTrendChart data={dailyReports} />
+      </section>
 
       {/* 归因分析 */}
       <div className="split-grid">

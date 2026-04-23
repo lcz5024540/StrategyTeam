@@ -37,6 +37,36 @@ export const walletApi = {
   getFills: (limit = 100, mode?: PositionMode): Promise<Fill[]> =>
     apiClient.get('/strategy/api/smart-wallet/fills', { params: { limit, mode } }),
 
+  exportOrdersCsv: (limit = 5000, mode?: PositionMode): Promise<Blob> =>
+    apiClient.get('/strategy/api/smart-wallet/orders/export', {
+      params: { limit, mode },
+      responseType: 'blob',
+    }),
+
+  exportFillsCsv: (limit = 5000, mode?: PositionMode): Promise<Blob> =>
+    apiClient.get('/strategy/api/smart-wallet/fills/export', {
+      params: { limit, mode },
+      responseType: 'blob',
+    }),
+
+  exportLivePositionsCsv: (mode?: PositionMode): Promise<Blob> =>
+    apiClient.get('/strategy/api/smart-wallet/positions/live/export', {
+      params: { mode },
+      responseType: 'blob',
+    }),
+
+  exportNextSettlementsCsv: (limit = 5000, mode?: PositionMode): Promise<Blob> =>
+    apiClient.get('/strategy/api/smart-wallet/positions/next-settlements/export', {
+      params: { limit, mode },
+      responseType: 'blob',
+    }),
+
+  exportPositionHistoryCsv: (closedOnly = false, mode?: PositionMode): Promise<Blob> =>
+    apiClient.get('/strategy/api/smart-wallet/positions/history/export', {
+      params: { closedOnly, mode },
+      responseType: 'blob',
+    }),
+
   getHealth: (): Promise<Record<string, unknown>> =>
     apiClient.get('/strategy/api/smart-wallet/health'),
 }

@@ -26,6 +26,7 @@ public class SmartWalletPositionView {
     private BigDecimal averageEntryPrice;
     private BigDecimal costBasisUsdc;
     private BigDecimal originalCostBasisUsdc;
+    private BigDecimal feePolTotal;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
     private BigDecimal pendingSettlementNetPnlUsdc;

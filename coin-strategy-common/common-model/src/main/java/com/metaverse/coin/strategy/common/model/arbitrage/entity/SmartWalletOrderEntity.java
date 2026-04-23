@@ -33,6 +33,9 @@ public class SmartWalletOrderEntity {
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal tradingFeeUsdc;
+    private BigDecimal feePol;
+    private BigDecimal gasFeeUsdc;
     private BigDecimal realizedPnlUsdc;
     private String exitReason;
     private String errorMessage;

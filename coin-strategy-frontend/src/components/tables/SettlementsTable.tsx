@@ -107,6 +107,7 @@ export function SettlementsTable({ positions }: SettlementsTableProps) {
               <th>市场</th>
               <th>Outcome</th>
               <th>成本</th>
+              <th>POL Gas</th>
               <th>待结算净收益</th>
               <th>可领取</th>
               <th>预计结算</th>
@@ -115,7 +116,7 @@ export function SettlementsTable({ positions }: SettlementsTableProps) {
           <tbody>
             {visiblePositions.length === 0 ? (
               <tr>
-                <td colSpan={7} className="empty-state">当前筛选条件下暂无待结算仓位</td>
+                <td colSpan={8} className="empty-state">当前筛选条件下暂无待结算仓位</td>
               </tr>
             ) : (
               visiblePositions.map((position) => (
@@ -124,6 +125,7 @@ export function SettlementsTable({ positions }: SettlementsTableProps) {
                   <td title={position.question}>{truncateText(position.question, 36)}</td>
                   <td>{position.outcome}</td>
                   <td>{formatAmount(position.costBasisUsdc)}</td>
+                  <td>{position.feePolTotal ? formatAmount(position.feePolTotal) : '-'}</td>
                   <td className={getAmountClass(position.pendingSettlementNetPnlUsdc)}>
                     {formatMoney(position.pendingSettlementNetPnlUsdc)}
                   </td>

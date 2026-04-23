@@ -765,6 +765,7 @@ public class SmartWalletFollowTaskService {
                         .price(task.getTriggerPrice())
                         .notionalUsdc(task.getRecommendedStakeUsdc())
                         .feeUsdc(BigDecimal.ZERO)
+                        .tradingFeeUsdc(BigDecimal.ZERO)
                         .build();
             }
             if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
@@ -819,6 +820,7 @@ public class SmartWalletFollowTaskService {
                     .price(task.getTriggerPrice())
                     .notionalUsdc(task.getRecommendedStakeUsdc())
                     .feeUsdc(BigDecimal.ZERO)
+                    .tradingFeeUsdc(BigDecimal.ZERO)
                     .build();
             accountingService.recordExecution(task, failedResult);
             return failedResult;

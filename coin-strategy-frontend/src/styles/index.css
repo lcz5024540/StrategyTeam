@@ -770,6 +770,23 @@ tbody tr:hover td {
   letter-spacing: 0.08em;
 }
 
+.export-status {
+  margin-bottom: var(--space-md);
+  padding: 12px 14px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 255, 65, 0.04);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.export-status-error {
+  border-color: rgba(255, 82, 82, 0.35);
+  background: rgba(255, 82, 82, 0.08);
+  color: var(--danger);
+}
+
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════ */

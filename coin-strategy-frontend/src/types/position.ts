@@ -12,6 +12,7 @@ export interface Position {
   averageEntryPrice: number
   costBasisUsdc: number
   originalCostBasisUsdc: number
+  feePolTotal?: number
   realizedPnlUsdc: number
   unrealizedPnlUsdc: number
   pendingSettlementNetPnlUsdc?: number
@@ -27,6 +28,7 @@ export interface Order {
   id: string
   executionAddress: string
   marketId: string
+  tokenId?: string
   question: string
   outcome: string
   side: string
@@ -35,6 +37,10 @@ export interface Order {
   exitReason?: string
   notionalUsdc: number
   costBasisUsdc?: number
+  feeUsdc?: number
+  tradingFeeUsdc?: number
+  feePol?: number
+  gasFeeUsdc?: number
   realizedPnlUsdc?: number
   status: string
   placedAt: string
@@ -48,6 +54,7 @@ export interface Fill {
   orderId: string
   executionAddress: string
   marketId: string
+  tokenId?: string
   question: string
   outcome: string
   side: string
@@ -55,5 +62,9 @@ export interface Fill {
   size: number
   notionalUsdc: number
   feeUsdc: number
+  tradingFeeUsdc?: number
+  feePol?: number
+  gasFeeUsdc?: number
+  realizedPnlUsdc?: number
   filledAt: string
 }

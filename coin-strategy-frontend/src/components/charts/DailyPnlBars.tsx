@@ -20,6 +20,14 @@ function pointTime(item: TimelinePoint | DailyReport) {
   return 'bucketAt' in item ? item.bucketAt : item.reportDate
 }
 
+function profitAmount(item: TimelinePoint | DailyReport) {
+  return 'profitPnlUsdc' in item ? item.profitPnlUsdc || 0 : Math.max(item.realizedPnlUsdc || 0, 0)
+}
+
+function lossAmount(item: TimelinePoint | DailyReport) {
+  return 'lossPnlUsdc' in item ? item.lossPnlUsdc || 0 : Math.min(item.realizedPnlUsdc || 0, 0)
+}
+
 export function DailyPnlBars({ data, bucketHours = 24 }: DailyPnlBarsProps) {
   if (data.length === 0) {
     return <div className="empty-state">暂无分时收益数据</div>
@@ -27,12 +35,21 @@ export function DailyPnlBars({ data, bucketHours = 24 }: DailyPnlBarsProps) {
 
   const sorted = [...data].sort((a, b) => new Date(pointTime(a)).getTime() - new Date(pointTime(b)).getTime())
   const dates = sorted.map((item) => formatBucketLabel(pointTime(item), bucketHours))
-  const pnl = sorted.map((item) => Number((item.netPnlUsdc || 0).toFixed(2)))
+  const profitPnl = sorted.map((item) => Number(profitAmount(item).toFixed(2)))
+  const lossPnl = sorted.map((item) => Number(lossAmount(item).toFixed(2)))
+  const netPnl = sorted.map((item) => Number((item.netPnlUsdc || 0).toFixed(2)))
   const sliderStart = sorted.length > 38 ? Math.max(0, 100 - (38 / sorted.length) * 100) : 0
 
   const option: EChartsOption = {
     backgroundColor: 'transparent',
     grid: { left: 56, right: 20, top: 24, bottom: 72 },
+    legend: {
+      top: 0,
+      right: 0,
+      textStyle: { color: '#6f9f75', fontFamily: 'monospace', fontSize: 11 },
+      itemWidth: 14,
+      itemHeight: 8,
+    },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(0, 255, 65, 0.05)' } },
@@ -74,14 +91,34 @@ export function DailyPnlBars({ data, bucketHours = 24 }: DailyPnlBarsProps) {
     },
     series: [
       {
-        name: '区间收益',
+        name: '收益柱',
         type: 'bar',
-        data: pnl,
+        data: profitPnl,
+        barMaxWidth: 32,
+        itemStyle: {
+          color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#00ff41' }, { offset: 1, color: '#00cc33' }] },
+          borderRadius: [3, 3, 0, 0],
+        },
+      },
+      {
+        name: '亏损柱',
+        type: 'bar',
+        data: lossPnl,
+        barMaxWidth: 32,
+        itemStyle: {
+          color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#ff5a76' }, { offset: 1, color: '#d7263d' }] },
+          borderRadius: [3, 3, 0, 0],
+        },
+      },
+      {
+        name: '净收益柱',
+        type: 'bar',
+        data: netPnl,
         barMaxWidth: 32,
         itemStyle: {
           color: (params) => Number(params.value) >= 0
-            ? { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#00ff41' }, { offset: 1, color: '#00cc33' }] }
-            : { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#ff2244' }, { offset: 1, color: '#cc1133' }] },
+            ? { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#6ce5e8' }, { offset: 1, color: '#2fa7b1' }] }
+            : { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#ff9f43' }, { offset: 1, color: '#ff6b35' }] },
           borderRadius: [3, 3, 0, 0],
         },
       },

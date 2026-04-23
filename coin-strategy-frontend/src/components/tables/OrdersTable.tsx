@@ -39,6 +39,23 @@ function shouldShowRealizedPnl(order: {
   return pnl !== 0 || order.status === 'SETTLED_WIN' || order.status === 'SETTLED_LOSS'
 }
 
+function formatFeeBreakdown(order: {
+  feeUsdc?: number
+  tradingFeeUsdc?: number
+  gasFeeUsdc?: number
+  feePol?: number
+}): string {
+  const total = Number(order.feeUsdc || 0)
+  const trading = Number(order.tradingFeeUsdc || 0)
+  const gas = Number(order.gasFeeUsdc || 0)
+  const feePol = Number(order.feePol || 0)
+  const parts = [`总 ${formatMoney(total)}`]
+  if (trading) parts.push(`交易 ${formatMoney(trading)}`)
+  if (gas) parts.push(`Gas ${formatMoney(gas)}`)
+  if (feePol) parts.push(`POL ${formatAmount(feePol)}`)
+  return parts.join(' / ')
+}
+
 interface OrdersTableProps {
   mode?: 'PAPER' | 'LIVE'
 }
@@ -170,6 +187,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
               <th>方向</th>
               <th>标签 / 收益</th>
               <th>成本</th>
+              <th>手续费</th>
               <th>状态</th>
               <th>下单时间</th>
             </tr>
@@ -177,7 +195,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
           <tbody>
             {visibleOrders.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state">
+                <td colSpan={10} className="empty-state">
                   {isPageLoading ? '订单加载中...' : '当前筛选条件下暂无订单记录'}
                 </td>
               </tr>
@@ -212,6 +230,9 @@ export function OrdersTable({ mode }: OrdersTableProps) {
                     </div>
                   </td>
                   <td>{formatAmount(order.costBasisUsdc ?? order.notionalUsdc)}</td>
+                  <td title={formatFeeBreakdown(order)}>
+                    {order.feeUsdc ? formatMoney(order.feeUsdc) : '-'}
+                  </td>
                   <td>
                     <span className="badge">{order.status}</span>
                   </td>

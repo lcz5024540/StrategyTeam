@@ -30,6 +30,9 @@ public class SmartWalletFillEntity {
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal tradingFeeUsdc;
+    private BigDecimal feePol;
+    private BigDecimal gasFeeUsdc;
     private BigDecimal realizedPnlUsdc;
     private Date filledAt;
     private Date createdAt;

@@ -60,6 +60,7 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     .size(order.getSize())
                     .notionalUsdc(liveNotional)
                     .feeUsdc(liveFee)
+                    .tradingFeeUsdc(liveFee)
                     .build();
         }
         java.math.BigDecimal paperNotional = signal.getRecommendedStakeUsdc();
@@ -85,6 +86,7 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                 .price(paperPrice)
                 .notionalUsdc(paperNotional)
                 .feeUsdc(paperFee)
+                .tradingFeeUsdc(paperFee)
                 .build();
     }
 

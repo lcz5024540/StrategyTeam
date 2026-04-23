@@ -23,7 +23,10 @@ export interface DailyReport {
   realizedPnlUsdc: number
   unrealizedPnlUsdc: number
   netPnlUsdc: number
+  winningPositions: number
+  losingPositions: number
   winRate: number
+  lossRate: number
 }
 
 export interface ConflictMarket {
@@ -64,9 +67,12 @@ export interface FollowAddressDailyReport {
 
 export interface TimelinePoint {
   bucketAt: string
+  profitPnlUsdc: number
+  lossPnlUsdc: number
   realizedPnlUsdc: number
   feeUsdc: number
   netPnlUsdc: number
+  cumulativeLossPnlUsdc: number
   cumulativeRealizedPnlUsdc: number
   cumulativeFeeUsdc: number
   cumulativeNetPnlUsdc: number

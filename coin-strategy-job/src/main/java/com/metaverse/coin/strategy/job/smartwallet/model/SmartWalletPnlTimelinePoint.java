@@ -10,9 +10,12 @@ import java.util.Date;
 @Builder
 public class SmartWalletPnlTimelinePoint {
     private Date bucketAt;
+    private BigDecimal profitPnlUsdc;
+    private BigDecimal lossPnlUsdc;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal feeUsdc;
     private BigDecimal netPnlUsdc;
+    private BigDecimal cumulativeLossPnlUsdc;
     private BigDecimal cumulativeRealizedPnlUsdc;
     private BigDecimal cumulativeFeeUsdc;
     private BigDecimal cumulativeNetPnlUsdc;
