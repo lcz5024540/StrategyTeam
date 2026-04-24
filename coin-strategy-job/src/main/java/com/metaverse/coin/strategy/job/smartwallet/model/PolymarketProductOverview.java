@@ -16,6 +16,8 @@ public class PolymarketProductOverview {
     private boolean eventSyncEnabled;
     private boolean liveExecutionEnabled;
     private int profiles;
+    private int candidateWatchlist;
+    private int executableWatchlist;
     private int watchlist;
     private long tradeEvents;
     private BigDecimal totalDeployedUsdc;

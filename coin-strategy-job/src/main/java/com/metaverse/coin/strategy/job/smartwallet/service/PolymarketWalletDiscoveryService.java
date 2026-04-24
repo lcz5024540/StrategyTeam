@@ -44,6 +44,7 @@ public class PolymarketWalletDiscoveryService {
     private final SmartWalletProperties properties;
     private final SmartWalletScoringService scoringService;
     private final SmartWalletLeaderboardStateService leaderboardStateService;
+    private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
@@ -88,8 +89,8 @@ public class PolymarketWalletDiscoveryService {
                     .analyzedWallets(0)
                     .importedProfiles(0)
                     .importedTradeEvents(0)
-                    .qualifiedCount(profileStoreService.listWatchEnabled().size())
-                    .watchlistCount(profileStoreService.listWatchEnabled().size())
+                    .qualifiedCount(profileStoreService.listQualified().size())
+                    .watchlistCount(profileStoreService.listExecutableWatchlist().size())
                     .notes(notes)
                     .build();
         }
@@ -132,7 +133,7 @@ public class PolymarketWalletDiscoveryService {
                 .importedProfiles(importedProfiles)
                 .importedTradeEvents(importedTradeEvents)
                 .qualifiedCount(selection.getQualifiedCount())
-                .watchlistCount(profileStoreService.listWatchEnabled().size())
+                .watchlistCount(selection.getExecutableCount())
                 .notes(notes)
                 .build();
     }
@@ -198,7 +199,7 @@ public class PolymarketWalletDiscoveryService {
             try {
                 trades = polymarketApiClient.fetchUserTrades(wallet.getWalletAddress());
                 if (useCooldown) {
-                    walletTradeNextAllowedAt.put(walletKey, now + tradeSyncMinIntervalMs());
+                    walletTradeNextAllowedAt.put(walletKey, now + dynamicTradeSyncIntervalMs(wallet));
                 }
             } catch (Exception e) {
                 log.warn("Skip syncing wallet {} because Polymarket trades request failed: {}",
@@ -265,6 +266,12 @@ public class PolymarketWalletDiscoveryService {
         if (wallets.isEmpty()) {
             return Collections.emptyList();
         }
+        wallets = wallets.stream()
+                .sorted(Comparator
+                        .comparingLong((SmartWalletProfileEntity wallet) ->
+                                walletArchetypeClassifierService.recommendedSyncIntervalMs(wallet.getWalletAddress(), wallet))
+                        .thenComparing(SmartWalletProfileEntity::getWalletScore, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
         int batchSize = Math.max(1, monitorService.getWatchlistTradeSyncBatchSize());
         int size = wallets.size();
         int start = Math.floorMod(watchlistSyncCursor.getAndAdd(batchSize), size);
@@ -291,6 +298,15 @@ public class PolymarketWalletDiscoveryService {
     private long tradeSyncMinIntervalMs() {
         Long value = monitorService.getWalletTradeSyncMinIntervalMs();
         return value == null ? 120000L : Math.max(value, 5000L);
+    }
+
+    private long dynamicTradeSyncIntervalMs(SmartWalletProfileEntity wallet) {
+        long baseline = tradeSyncMinIntervalMs();
+        if (wallet == null || !StringUtils.hasText(wallet.getWalletAddress())) {
+            return baseline;
+        }
+        long recommended = walletArchetypeClassifierService.recommendedSyncIntervalMs(wallet.getWalletAddress(), wallet);
+        return Math.max(5_000L, Math.min(recommended, Math.max(baseline, recommended)));
     }
 
     private long tradeErrorCooldownMs() {

@@ -71,6 +71,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSum
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
@@ -92,6 +93,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionV
 import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletArchetypeClassifierService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import io.swagger.v3.oas.annotations.Operation;
@@ -154,14 +156,19 @@ public class SmartWalletController {
     private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
     private final MarketConcentrationService marketConcentrationService;
     private final FollowTradeAttributionService followTradeAttributionService;
+    private final WalletArchetypeClassifierService walletArchetypeClassifierService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
     public Map<String, Object> health() {
+        int candidateWatchlist = polymarketMonitorService.listQualifiedCandidates().size();
+        int executableWatchlist = polymarketMonitorService.listExecutableWatchlist().size();
         return Map.of(
                 "service", "smart-wallet",
                 "profiles", polymarketMonitorService.listProfiles().size(),
-                "watchlist", polymarketMonitorService.listWatchlist().size(),
+                "candidateWatchlist", candidateWatchlist,
+                "executableWatchlist", executableWatchlist,
+                "watchlist", executableWatchlist,
                 "wallets", followService.listWalletsForScan().size(),
                 "markets", opportunityService.list().size(),
                 "status", "UP"
@@ -215,10 +222,42 @@ public class SmartWalletController {
         return polymarketMonitorService.listProfiles();
     }
 
-    @Operation(summary = "观察名单", description = "查看当前被筛选进入 watchlist 的聪明钱包。")
+    @Operation(summary = "可执行观察名单", description = "查看当前仍允许进入执行链路的 smart wallet 地址。")
     @GetMapping("/watchlist")
     public List<SmartWalletProfileEntity> watchlist() {
-        return polymarketMonitorService.listWatchlist();
+        return polymarketMonitorService.listExecutableWatchlist();
+    }
+
+    @Operation(summary = "候选观察名单", description = "查看通过外部画像筛选但未必仍允许执行的 smart wallet 候选地址。")
+    @GetMapping("/watchlist/candidates")
+    public List<SmartWalletProfileEntity> candidateWatchlist() {
+        return polymarketMonitorService.listQualifiedCandidates();
+    }
+
+    @Operation(summary = "可执行观察名单", description = "查看当前仍允许进入执行链路的 smart wallet 地址。")
+    @GetMapping("/watchlist/executable")
+    public List<SmartWalletProfileEntity> executableWatchlist() {
+        return polymarketMonitorService.listExecutableWatchlist();
+    }
+
+    @Operation(summary = "观察名单地址分型", description = "基于 wallet_feature_daily、trade_effect_label 与 profile 计算候选/可执行地址的交易风格分型与建议跟单 lane。")
+    @GetMapping("/watchlist/archetypes")
+    public List<WalletArchetypeView> watchlistArchetypes(@RequestParam(defaultValue = "50") Integer limit,
+                                                          @RequestParam(defaultValue = "candidates") String scope) {
+        return resolveWatchlistScope(scope).stream()
+                .limit(Math.max(1, Math.min(limit, 200)))
+                .map(profile -> walletArchetypeClassifierService.classify(profile.getWalletAddress(), profile))
+                .toList();
+    }
+
+    private List<SmartWalletProfileEntity> resolveWatchlistScope(String scope) {
+        if ("all".equalsIgnoreCase(scope)) {
+            return polymarketMonitorService.listProfiles();
+        }
+        if ("executable".equalsIgnoreCase(scope)) {
+            return polymarketMonitorService.listExecutableWatchlist();
+        }
+        return polymarketMonitorService.listQualifiedCandidates();
     }
 
     @Operation(summary = "地址时段覆盖诊断", description = "按 dominant_session 聚合 profiles 与 watchlist，查看地址池是否集中在某个区域/时段。")
@@ -867,7 +906,7 @@ public class SmartWalletController {
     @GetMapping("/reports/follow-addresses/daily")
     public List<SmartWalletFollowAddressDailyReportView> followAddressDailyReports(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate reportDate,
-            @RequestParam(defaultValue = "20") Integer limit,
+            @RequestParam(defaultValue = "500") Integer limit,
             @RequestParam(required = false) String mode) {
         return accountingService.followAddressDailyReport(reportDate, limit, mode);
     }

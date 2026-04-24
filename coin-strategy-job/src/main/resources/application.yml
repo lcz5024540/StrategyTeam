@@ -235,6 +235,8 @@ smart-wallet:
     trade-effect-label-fixed-delay-ms: 60000
     # [TUNE] Background cadence for building wallet_feature_daily snapshots.
     wallet-feature-daily-fixed-delay-ms: 300000
+    # [TUNE] Internal follow-result feedback loop cadence. Lower than 6h so heavy-loss leaders can be downgraded the same day.
+    internal-win-rate-refresh-fixed-delay-ms: 900000
     # [TUNE] Sync only a small batch of watchlist wallets each round to avoid bursty API traffic.
     watchlist-trade-sync-batch-size: 3
     # [TUNE] Minimum spacing between two trade-sync requests for the same wallet.

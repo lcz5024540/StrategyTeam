@@ -2,12 +2,16 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,8 +19,12 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -30,11 +38,16 @@ public class SmartWalletProfileStoreService {
     private static final long OFFLINE_DAYS        = 90L;
     // Score penalty per week of inactivity after DECAY_START_DAYS
     private static final BigDecimal DECAY_PER_WEEK = new BigDecimal("0.05");
+    private static final int MIN_ARCHETYPE_EVIDENCE_SAMPLE = 5;
+    private static final BigDecimal MIN_EXECUTABLE_FOLLOW_FIT_SCORE = new BigDecimal("0.42");
 
+    private final SmartWalletProperties properties;
     private final SmartWalletProfileMapper profileMapper;
     private final SmartWalletScoringService scoringService;
     private final SmartWalletFollowTaskMapper followTaskMapper;
+    private final SmartWalletOrderMapper orderMapper;
     private final SmartWalletPositionMapper positionMapper;
+    private final WalletArchetypeClassifierService walletArchetypeClassifierService;
 
     public SmartWalletProfileEntity upsertMetrics(PolymarketWalletMetricsRequest request) {
         SmartWalletProfileEntity entity = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
@@ -102,10 +115,21 @@ public class SmartWalletProfileStoreService {
     }
 
     public List<SmartWalletProfileEntity> listWatchEnabled() {
+        return listExecutableWatchlist();
+    }
+
+    public List<SmartWalletProfileEntity> listExecutableWatchlist() {
         return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
                 .eq(SmartWalletProfileEntity::getSource, SOURCE)
                 .eq(SmartWalletProfileEntity::getQualified, Boolean.TRUE)
                 .eq(SmartWalletProfileEntity::getWatchEnabled, Boolean.TRUE)
+                .orderByDesc(SmartWalletProfileEntity::getWalletScore));
+    }
+
+    public List<SmartWalletProfileEntity> listQualified() {
+        return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                .eq(SmartWalletProfileEntity::getQualified, Boolean.TRUE)
                 .orderByDesc(SmartWalletProfileEntity::getWalletScore));
     }
 
@@ -157,6 +181,7 @@ public class SmartWalletProfileStoreService {
                     .setScale(4, RoundingMode.HALF_UP);
             if (decayedScore.compareTo(safe(wallet.getWalletScore())) < 0) {
                 wallet.setWalletScore(decayedScore);
+                applyQualificationState(wallet);
                 wallet.setUpdatedAt(now);
                 profileMapper.updateById(wallet);
                 log.debug("WALLET_DECAY score walletAddress={} daysSince={} newScore={}", wallet.getWalletAddress(), daysSince, decayedScore);
@@ -165,7 +190,7 @@ public class SmartWalletProfileStoreService {
     }
 
     // -------------------------------------------------------------------------
-    // P2: Internal win-rate refresh — runs every 6 hours.
+    // P2: Internal win-rate refresh — runs every 15 minutes by default.
     // Computes real win rate from our own closed positions for each wallet and
     // blends it with the external leaderboard win rate (weight 0.4 internal / 0.6 external)
     // to correct for survivorship bias in the official leaderboard data.
@@ -180,34 +205,24 @@ public class SmartWalletProfileStoreService {
     private static final BigDecimal LEADERBOARD_BIAS_WIN_RATE_TRIGGER = new BigDecimal("1.0");
     private static final BigDecimal LEADERBOARD_BIAS_FALLBACK_WIN_RATE = new BigDecimal("0.65");
 
-    @Scheduled(fixedDelay = 6 * 3600_000L + 60_000L) // offset by 1 min so both jobs don't run simultaneously
+    @Scheduled(fixedDelayString = "${smart-wallet.polymarket.internal-win-rate-refresh-fixed-delay-ms:900000}")
     public void refreshInternalWinRate() {
         List<SmartWalletProfileEntity> wallets = profileMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletProfileEntity>()
                         .eq(SmartWalletProfileEntity::getSource, SOURCE));
 
         for (SmartWalletProfileEntity wallet : wallets) {
-            // Count our own followed tasks that resulted in closed positions for this wallet
             List<SmartWalletFollowTaskEntity> followedTasks = followTaskMapper.selectList(
                     new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                             .eq(SmartWalletFollowTaskEntity::getWalletAddress, wallet.getWalletAddress())
                             .eq(SmartWalletFollowTaskEntity::getStatus, "FOLLOWED"));
 
-            int total = 0, wins = 0;
-            for (SmartWalletFollowTaskEntity task : followedTasks) {
-                // Find the closed position for this task via marketInfoId FK (after migration)
-                if (task.getMarketInfoId() == null) {
-                    continue; // Skip tasks without market info reference
-                }
-                List<SmartWalletPositionEntity> closed = positionMapper.selectList(
-                        new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                                .eq(SmartWalletPositionEntity::getMarketInfoId, task.getMarketInfoId())
-                                .in(SmartWalletPositionEntity::getStatus, List.of("CLAIMED", "RESOLVED_UNCLAIMED")));
-                for (SmartWalletPositionEntity pos : closed) {
-                    total++;
-                    if (pos.getRealizedPnlUsdc() != null && pos.getRealizedPnlUsdc().compareTo(BigDecimal.ZERO) > 0) {
-                        wins++;
-                    }
+            int total = 0;
+            int wins = 0;
+            for (SmartWalletPositionEntity pos : resolveClosedPositionsForWallet(followedTasks)) {
+                total++;
+                if (safe(pos.getRealizedPnlUsdc()).compareTo(BigDecimal.ZERO) > 0) {
+                    wins++;
                 }
             }
 
@@ -231,6 +246,7 @@ public class SmartWalletProfileStoreService {
                     );
                     wallet.setWinRate(LEADERBOARD_BIAS_FALLBACK_WIN_RATE);
                     wallet.setWalletScore(fallbackScore);
+                    applyQualificationState(wallet);
                     wallet.setUpdatedAt(new Date());
                     profileMapper.updateById(wallet);
                     log.info("WIN_RATE_BIAS_FALLBACK walletAddress={} leaderboardTrades={} winRate reset {} -> {} newScore={}",
@@ -258,6 +274,7 @@ public class SmartWalletProfileStoreService {
             );
             wallet.setWinRate(blendedWinRate);
             wallet.setWalletScore(newScore);
+            applyQualificationState(wallet);
             wallet.setUpdatedAt(new Date());
             profileMapper.updateById(wallet);
             log.info("WIN_RATE_REFRESH walletAddress={} internalWinRate={} blended={} newScore={} sampleSize={}",
@@ -265,8 +282,75 @@ public class SmartWalletProfileStoreService {
         }
     }
 
+    private List<SmartWalletPositionEntity> resolveClosedPositionsForWallet(List<SmartWalletFollowTaskEntity> followedTasks) {
+        if (followedTasks == null || followedTasks.isEmpty()) {
+            return List.of();
+        }
+        List<Long> followTaskIds = followedTasks.stream()
+                .map(SmartWalletFollowTaskEntity::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (followTaskIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<SmartWalletOrderEntity> relatedOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                        .in(SmartWalletOrderEntity::getFollowTaskId, followTaskIds)
+                        .isNotNull(SmartWalletOrderEntity::getPositionId));
+        Set<Long> positionIds = relatedOrders.stream()
+                .map(SmartWalletOrderEntity::getPositionId)
+                .filter(Objects::nonNull)
+                .collect(LinkedHashSet::new, Set::add, Set::addAll);
+        if (positionIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<SmartWalletPositionEntity> positions = new ArrayList<>(positionMapper.selectBatchIds(positionIds));
+        return positions.stream()
+                .filter(Objects::nonNull)
+                .filter(position -> List.of("CLOSED", "RESOLVED_UNCLAIMED", "CLAIMED").contains(
+                        position.getStatus() == null ? "" : position.getStatus().toUpperCase()))
+                .toList();
+    }
+
+    public void applyQualificationState(SmartWalletProfileEntity wallet) {
+        boolean qualified = isQualified(wallet);
+        wallet.setQualified(qualified);
+        wallet.setWatchEnabled(qualified && isExecutableCandidate(wallet));
+    }
+
+    private boolean isQualified(SmartWalletProfileEntity wallet) {
+        return safe(wallet.getWinRate()).compareTo(safe(properties.getMinWinRate())) >= 0
+                && safe(wallet.getWalletScore()).compareTo(safe(properties.getMinWalletScore())) >= 0
+                && (wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades()) >= defaultInt(properties.getMinTotalTrades())
+                && safe(wallet.getRealizedPnlUsdc()).compareTo(safe(properties.getMinRealizedPnlUsdc())) >= 0
+                && safe(wallet.getMaxDrawdownRate()).compareTo(safe(properties.getMaxDrawdownRate())) <= 0;
+    }
+
+    private boolean isExecutableCandidate(SmartWalletProfileEntity wallet) {
+        if (wallet == null || !Boolean.TRUE.equals(wallet.getQualified())) {
+            return false;
+        }
+        WalletArchetypeView archetype = walletArchetypeClassifierService.classify(wallet.getWalletAddress(), wallet);
+        if (archetype == null) {
+            return true;
+        }
+        if (archetype.labelSampleSize() < MIN_ARCHETYPE_EVIDENCE_SAMPLE) {
+            return true;
+        }
+        if ("OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
+            return false;
+        }
+        return safe(archetype.followFitScore()).compareTo(MIN_EXECUTABLE_FOLLOW_FIT_SCORE) >= 0;
+    }
+
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private int defaultInt(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private BigDecimal firstNonNull(BigDecimal primary, BigDecimal fallback) {

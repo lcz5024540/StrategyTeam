@@ -9,6 +9,7 @@ import { OutcomeTrendChart } from '@/components/charts/OutcomeTrendChart'
 import { AttributionBars } from '@/components/charts/AttributionBars'
 import { OrdersTable } from '@/components/tables/OrdersTable'
 import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
+import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
 const BUCKET_OPTIONS = [
   { hours: 8, label: '8 小时' },
@@ -69,7 +70,7 @@ export function ChartsPage() {
 
   const { data: followAddressDailyReports = [] } = useQuery({
     queryKey: ['followAddressDailyReports', mode],
-    queryFn: () => reportsApi.getFollowAddressDailyReports(20, mode),
+    queryFn: () => reportsApi.getFollowAddressDailyReports(TABLE_FETCH_LIMIT, mode),
   })
 
   const { data: conflicts = [] } = useQuery({

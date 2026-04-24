@@ -69,7 +69,7 @@ export function HomePage() {
 
   const { data: followAddressDailyReports = [] } = useQuery({
     queryKey: ['followAddressDailyReports', mode],
-    queryFn: () => reportsApi.getFollowAddressDailyReports(20, mode),
+    queryFn: () => reportsApi.getFollowAddressDailyReports(TABLE_FETCH_LIMIT, mode),
   })
 
   if (detailLoading) {

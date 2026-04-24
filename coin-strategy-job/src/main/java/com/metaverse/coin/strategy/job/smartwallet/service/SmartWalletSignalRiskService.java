@@ -12,6 +12,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyCheckResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyRouteResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService.ConcentrationSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletMarketInfoService marketInfoService;
     private final KellyStakeCalculator kellyStakeCalculator;
     private final PolymarketApiClient polymarketApiClient;
+    private final WalletArchetypeClassifierService walletArchetypeClassifierService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -66,6 +68,18 @@ public class SmartWalletSignalRiskService {
 
         SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
         boolean suspiciouslyPerfectWinRate = false;
+        WalletArchetypeView archetype = walletArchetypeClassifierService.classify(
+                profile == null ? null : profile.getWalletAddress(),
+                profile
+        );
+        reasons.add("[ARCHETYPE] archetype=" + archetype.archetype()
+                + ", lane=" + archetype.followLane()
+                + ", fit=" + archetype.followFitScore()
+                + ", confidence=" + archetype.confidence() + ".");
+        if ("OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
+            accepted = false;
+            reasons.add("[ARCHETYPE_BLOCK] Wallet is currently classified as observe-only under local followability.");
+        }
 
         // Warn early when this wallet has a suspiciously perfect win rate (leaderboard survivorship bias).
         // Single-wallet override will be blocked for these wallets; consensus path still allowed but flagged.
@@ -123,9 +137,10 @@ public class SmartWalletSignalRiskService {
 
         if (event.getOpenedAt() != null) {
             long ageMs = Math.max(0L, System.currentTimeMillis() - event.getOpenedAt().getTime());
-            if (ageMs > risk.getMaxSignalAgeSeconds() * 1000L) {
+            long effectiveMaxSignalAgeMs = resolveEffectiveSignalAgeMs(risk, archetype);
+            if (ageMs > effectiveMaxSignalAgeMs) {
                 accepted = false;
-                reasons.add("Signal is stale.");
+                reasons.add("Signal is stale for lane " + archetype.followLane() + ".");
             }
         }
 
@@ -209,6 +224,7 @@ public class SmartWalletSignalRiskService {
                 .multiply(properties.getBankrollUtilizationRate())
                 .min(properties.getMaxStakeUsdc())
                 .setScale(2, RoundingMode.HALF_UP);
+        preliminaryStake = applyArchetypeStakeAdjustments(preliminaryStake, archetype, event, reasons);
         preliminaryStake = applyDynamicCapitalScale(preliminaryStake, capitalContext);
         preliminaryStake = preliminaryStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
 
@@ -393,6 +409,44 @@ public class SmartWalletSignalRiskService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private long resolveEffectiveSignalAgeMs(SmartWalletProperties.SignalRisk risk, WalletArchetypeView archetype) {
+        long baseMs = defaultInt(risk.getMaxSignalAgeSeconds(), 300) * 1000L;
+        return switch (archetype.archetype()) {
+            case "HF" -> Math.min(baseMs, 45_000L);
+            case "THEMATIC" -> Math.max(baseMs, 1_800_000L);
+            case "SWING" -> Math.max(baseMs, 900_000L);
+            default -> baseMs;
+        };
+    }
+
+    private BigDecimal applyArchetypeStakeAdjustments(BigDecimal stake,
+                                                      WalletArchetypeView archetype,
+                                                      SmartWalletTradeEventEntity event,
+                                                      List<String> reasons) {
+        BigDecimal adjusted = safe(stake);
+        if ("HF".equals(archetype.archetype()) && event != null && event.getOpenedAt() != null) {
+            long ageMs = Math.max(0L, System.currentTimeMillis() - event.getOpenedAt().getTime());
+            if (ageMs > 30_000L) {
+                adjusted = adjusted.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[ARCHETYPE_STAKE] HF signal older than 30s, stake reduced to 25%.");
+            } else if (ageMs > 15_000L) {
+                adjusted = adjusted.multiply(new BigDecimal("0.50")).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[ARCHETYPE_STAKE] HF signal older than 15s, stake reduced to 50%.");
+            }
+        }
+        if ("THEMATIC".equals(archetype.archetype())
+                && safe(archetype.followFitScore()).compareTo(new BigDecimal("0.65")) >= 0) {
+            adjusted = adjusted.multiply(new BigDecimal("1.10"))
+                    .min(properties.getMaxStakeUsdc())
+                    .setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[ARCHETYPE_STAKE] Thematic signal with strong fit score, stake boosted by 10% within cap.");
+        }
+        if ("NOISE".equals(archetype.archetype())) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return adjusted;
     }
 
     private CapitalContext resolveCapitalContext() {

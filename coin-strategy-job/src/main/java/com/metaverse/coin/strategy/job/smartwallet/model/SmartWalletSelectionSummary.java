@@ -10,6 +10,7 @@ import java.util.List;
 @Builder
 public class SmartWalletSelectionSummary {
     private int qualifiedCount;
+    private int executableCount;
     private int rejectedCount;
     @Builder.Default
     private List<String> notes = new ArrayList<>();
