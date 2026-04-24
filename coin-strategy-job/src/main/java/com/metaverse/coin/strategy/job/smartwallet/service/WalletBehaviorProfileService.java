@@ -104,6 +104,7 @@ public class WalletBehaviorProfileService {
                         .add(paceScore(medianInterTradeMinutes).multiply(new BigDecimal("0.05")))
                         .subtract(earlyExitPenalty(orderStats.earlyExitRate, highFrequency, medianInterTradeMinutes))
         );
+        BigDecimal behaviorComposite = behaviorComposite(replicabilityScore, qualityScore, stabilityScore);
         String winSourceType = determineWinSourceType(alphaStats, orderStats, profile);
 
         String recommendedExitLane = recommendExitLane(highFrequency, medianInterTradeMinutes, orderStats, winSourceType);
@@ -137,6 +138,7 @@ public class WalletBehaviorProfileService {
                 .stabilityScore(scale(stabilityScore, 4))
                 .qualityScore(scale(qualityScore, 4))
                 .replicabilityScore(scale(replicabilityScore, 4))
+                .behaviorComposite(scale(behaviorComposite, 4))
                 .recommendedExitLane(recommendedExitLane)
                 .summary(buildSummary(highFrequency, orderStats, recommendedExitLane, profile.getManualRecommendedExitLane(),
                         winSourceType, qualityScore, replicabilityScore))
@@ -200,9 +202,29 @@ public class WalletBehaviorProfileService {
                 .stabilityScore(BigDecimal.ZERO)
                 .qualityScore(BigDecimal.ZERO)
                 .replicabilityScore(BigDecimal.ZERO)
+                .behaviorComposite(BigDecimal.ZERO)
                 .recommendedExitLane("OBSERVE_ONLY")
                 .summary("No wallet behavior evidence yet.")
                 .build();
+    }
+
+    public BigDecimal behaviorComposite(WalletBehaviorProfileView view) {
+        if (view == null) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        if (view.behaviorComposite() != null) {
+            return safe(view.behaviorComposite()).setScale(4, RoundingMode.HALF_UP);
+        }
+        return behaviorComposite(view.replicabilityScore(), view.qualityScore(), view.stabilityScore());
+    }
+
+    public BigDecimal behaviorComposite(BigDecimal replicabilityScore,
+                                        BigDecimal qualityScore,
+                                        BigDecimal stabilityScore) {
+        return clamp(safe(replicabilityScore).multiply(new BigDecimal("0.45"))
+                .add(safe(qualityScore).multiply(new BigDecimal("0.35")))
+                .add(safe(stabilityScore).multiply(new BigDecimal("0.20"))))
+                .setScale(4, RoundingMode.HALF_UP);
     }
 
     private void persistBehaviorProfile(SmartWalletProfileEntity profile, WalletBehaviorProfileView view) {

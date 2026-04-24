@@ -1170,7 +1170,9 @@ public class SmartWalletFollowTaskService {
         if (text.contains("capital is depleted") || text.contains("bankroll penetration")) {
             return "CAPITAL_DEPLETED";
         }
-        if (text.contains("[concentration]") || text.contains("[concentration_penalty]") || text.contains("[whale_signal]")) {
+        if (text.contains("[concentration]") || text.contains("[concentration_penalty]")
+                || text.contains("[concentration_downsize]") || text.contains("[concentration_warn]")
+                || text.contains("[whale_signal]")) {
             return "CONCENTRATION";
         }
         if (text.contains("[auto_expired]")) {
@@ -1204,6 +1206,7 @@ public class SmartWalletFollowTaskService {
     public SmartWalletProperties.SignalRisk buildSimulationRisk(SmartWalletRiskSimulationRequest request) {
         SmartWalletProperties.SignalRisk source = properties.getSignalRisk();
         SmartWalletProperties.SignalRisk risk = new SmartWalletProperties.SignalRisk();
+        risk.setPolicyTag(request.getPolicyTag() == null ? source.getPolicyTag() : request.getPolicyTag());
         risk.setAllowSellSignal(request.getAllowSellSignal() == null ? source.isAllowSellSignal() : request.getAllowSellSignal());
         risk.setMaxSignalAgeSeconds(request.getMaxSignalAgeSeconds() == null ? source.getMaxSignalAgeSeconds() : request.getMaxSignalAgeSeconds());
         risk.setMinTriggerSizeUsdc(request.getMinTriggerSizeUsdc() == null ? source.getMinTriggerSizeUsdc() : request.getMinTriggerSizeUsdc());
@@ -1211,13 +1214,51 @@ public class SmartWalletFollowTaskService {
         risk.setMaxFollowPrice(request.getMaxFollowPrice() == null ? source.getMaxFollowPrice() : request.getMaxFollowPrice());
         risk.setEnableConsensusGate(request.getEnableConsensusGate() == null ? source.isEnableConsensusGate() : request.getEnableConsensusGate());
         risk.setMinDistinctWallets(request.getMinDistinctWallets() == null ? source.getMinDistinctWallets() : request.getMinDistinctWallets());
+        risk.setMinDistinctEntities(request.getMinDistinctEntities() == null ? source.getMinDistinctEntities() : request.getMinDistinctEntities());
         risk.setMinConsensusScore(request.getMinConsensusScore() == null ? source.getMinConsensusScore() : request.getMinConsensusScore());
+        risk.setQualityWeightedConsensusEnabled(request.getQualityWeightedConsensusEnabled() == null
+                ? source.isQualityWeightedConsensusEnabled()
+                : request.getQualityWeightedConsensusEnabled());
+        risk.setConsensusEntityBaseWeight(request.getConsensusEntityBaseWeight() == null ? source.getConsensusEntityBaseWeight() : request.getConsensusEntityBaseWeight());
+        risk.setConsensusBehaviorWeight(request.getConsensusBehaviorWeight() == null ? source.getConsensusBehaviorWeight() : request.getConsensusBehaviorWeight());
+        risk.setConsensusRecencyWeight(request.getConsensusRecencyWeight() == null ? source.getConsensusRecencyWeight() : request.getConsensusRecencyWeight());
+        risk.setConsensusLeaderFollowerWeight(request.getConsensusLeaderFollowerWeight() == null ? source.getConsensusLeaderFollowerWeight() : request.getConsensusLeaderFollowerWeight());
+        risk.setConsensusIndependenceWeight(request.getConsensusIndependenceWeight() == null ? source.getConsensusIndependenceWeight() : request.getConsensusIndependenceWeight());
+        risk.setConsensusRecentConsistencyWeight(request.getConsensusRecentConsistencyWeight() == null ? source.getConsensusRecentConsistencyWeight() : request.getConsensusRecentConsistencyWeight());
         risk.setEnableSingleWalletOverride(request.getEnableSingleWalletOverride() == null ? source.isEnableSingleWalletOverride() : request.getEnableSingleWalletOverride());
+        risk.setEnableSingleWalletOverrideCanary(request.getEnableSingleWalletOverrideCanary() == null
+                ? source.isEnableSingleWalletOverrideCanary()
+                : request.getEnableSingleWalletOverrideCanary());
+        risk.setSingleWalletOverrideCanaryRate(request.getSingleWalletOverrideCanaryRate() == null
+                ? source.getSingleWalletOverrideCanaryRate()
+                : request.getSingleWalletOverrideCanaryRate());
+        risk.setSingleWalletOverrideWhitelist(source.getSingleWalletOverrideWhitelist() == null
+                ? List.of()
+                : new ArrayList<>(source.getSingleWalletOverrideWhitelist()));
         risk.setSingleWalletOverrideMinWalletScore(request.getSingleWalletOverrideMinWalletScore() == null ? source.getSingleWalletOverrideMinWalletScore() : request.getSingleWalletOverrideMinWalletScore());
         risk.setSingleWalletOverrideMinWinRate(request.getSingleWalletOverrideMinWinRate() == null ? source.getSingleWalletOverrideMinWinRate() : request.getSingleWalletOverrideMinWinRate());
         risk.setSingleWalletOverrideMinTrades(request.getSingleWalletOverrideMinTrades() == null ? source.getSingleWalletOverrideMinTrades() : request.getSingleWalletOverrideMinTrades());
+        risk.setSingleWalletOverrideMinRecentTrades7d(request.getSingleWalletOverrideMinRecentTrades7d() == null
+                ? source.getSingleWalletOverrideMinRecentTrades7d()
+                : request.getSingleWalletOverrideMinRecentTrades7d());
+        risk.setSingleWalletOverrideMinRecentWinRate7d(request.getSingleWalletOverrideMinRecentWinRate7d() == null
+                ? source.getSingleWalletOverrideMinRecentWinRate7d()
+                : request.getSingleWalletOverrideMinRecentWinRate7d());
+        risk.setSingleWalletOverrideMinReplicabilityScore(request.getSingleWalletOverrideMinReplicabilityScore() == null
+                ? source.getSingleWalletOverrideMinReplicabilityScore()
+                : request.getSingleWalletOverrideMinReplicabilityScore());
+        risk.setSingleWalletOverrideMinQualityScore(request.getSingleWalletOverrideMinQualityScore() == null
+                ? source.getSingleWalletOverrideMinQualityScore()
+                : request.getSingleWalletOverrideMinQualityScore());
         risk.setSingleWalletOverrideMinTriggerSizeUsdc(request.getSingleWalletOverrideMinTriggerSizeUsdc() == null ? source.getSingleWalletOverrideMinTriggerSizeUsdc() : request.getSingleWalletOverrideMinTriggerSizeUsdc());
         risk.setSingleWalletOverrideMinRecommendedStakeUsdc(request.getSingleWalletOverrideMinRecommendedStakeUsdc() == null ? source.getSingleWalletOverrideMinRecommendedStakeUsdc() : request.getSingleWalletOverrideMinRecommendedStakeUsdc());
+        risk.setEnableConcentrationGate(request.getEnableConcentrationGate() == null ? source.isEnableConcentrationGate() : request.getEnableConcentrationGate());
+        risk.setConcentrationHighRiskMode(request.getConcentrationHighRiskMode() == null ? source.getConcentrationHighRiskMode() : request.getConcentrationHighRiskMode());
+        risk.setConcentrationHighRiskDownsizeRate(request.getConcentrationHighRiskDownsizeRate() == null ? source.getConcentrationHighRiskDownsizeRate() : request.getConcentrationHighRiskDownsizeRate());
+        risk.setWhaleSignalSourceMode(request.getWhaleSignalSourceMode() == null ? source.getWhaleSignalSourceMode() : request.getWhaleSignalSourceMode());
+        risk.setKellyStakeEnabled(request.getKellyStakeEnabled() == null ? source.isKellyStakeEnabled() : request.getKellyStakeEnabled());
+        risk.setKellyFraction(request.getKellyFraction() == null ? source.getKellyFraction() : request.getKellyFraction());
+        risk.setExitSignalProviderMode(request.getExitSignalProviderMode() == null ? source.getExitSignalProviderMode() : request.getExitSignalProviderMode());
         return risk;
     }
 

@@ -2,11 +2,15 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;
@@ -20,6 +24,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
@@ -37,6 +42,9 @@ public class SmartWalletPositionSyncService {
     private final SmartWalletRecoveryService recoveryService;
     private final SmartWalletMarketInfoService marketInfoService;
     private final ExitSignalProvider exitSignalProvider;
+    private final SmartWalletTradeEventMapper tradeEventMapper;
+    private final PolymarketConsensusSignalService consensusSignalService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
@@ -275,6 +283,7 @@ public class SmartWalletPositionSyncService {
             // Resolve dynamic threshold (falls back to fixed threshold when feature is disabled)
             BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
             threshold = adjustThresholdByWalletBehavior(position, threshold, mode);
+            threshold = adjustThresholdByExitScoringContext(position, threshold, mode);
 
             // Check threshold-based stop-loss
             ExitDecision decision = buildExitDecision(position, threshold, mode);
@@ -339,6 +348,7 @@ public class SmartWalletPositionSyncService {
         for (SmartWalletPositionEntity position : openPositions) {
             BigDecimal threshold = resolveTakeProfitThreshold(position);
             threshold = adjustThresholdByWalletBehavior(position, threshold, AutoExitMode.TAKE_PROFIT);
+            threshold = adjustThresholdByExitScoringContext(position, threshold, AutoExitMode.TAKE_PROFIT);
             ExitDecision decision = buildExitDecision(position, threshold, AutoExitMode.TAKE_PROFIT);
             if (!decision.triggered()) {
                 continue;
@@ -397,6 +407,7 @@ public class SmartWalletPositionSyncService {
             }
             BigDecimal threshold = resolveTakeProfitThreshold(position);
             threshold = adjustThresholdByWalletBehavior(position, threshold, AutoExitMode.TAKE_PROFIT);
+            threshold = adjustThresholdByExitScoringContext(position, threshold, AutoExitMode.TAKE_PROFIT);
             ExitDecision decision = buildExitDecision(position, threshold, AutoExitMode.TAKE_PROFIT);
             if (!decision.triggered()) {
                 continue;
@@ -497,6 +508,42 @@ public class SmartWalletPositionSyncService {
         return normalized;
     }
 
+    private BigDecimal adjustThresholdByExitScoringContext(SmartWalletPositionEntity position,
+                                                           BigDecimal baseThreshold,
+                                                           AutoExitMode mode) {
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        if (position == null
+                || baseThreshold == null
+                || baseThreshold.compareTo(BigDecimal.ZERO) <= 0
+                || !"SCORING".equalsIgnoreCase(risk.getExitSignalProviderMode())) {
+            return baseThreshold;
+        }
+        ExitScoringContext context = buildExitScoringContext(position);
+        BigDecimal pressure = safe(risk.getExitScoringConsensusDecayWeight()).multiply(context.consensusDecay())
+                .add(safe(risk.getExitScoringOrderbookDeteriorationWeight()).multiply(context.orderbookDeterioration()))
+                .add(safe(risk.getExitScoringSourceWalletReductionWeight()).multiply(context.sourceWalletReduction()))
+                .subtract(safe(risk.getExitScoringSourceWalletAddWeight()).multiply(context.sourceWalletAdd()))
+                .max(new BigDecimal("-0.50"))
+                .min(BigDecimal.ONE);
+        BigDecimal multiplier = mode == AutoExitMode.STOP_LOSS
+                ? BigDecimal.ONE.subtract(pressure.multiply(new BigDecimal("0.35")))
+                : BigDecimal.ONE.subtract(pressure.multiply(new BigDecimal("0.45")));
+        BigDecimal adjusted = normalizeThreshold(baseThreshold.multiply(multiplier), mode);
+        if (adjusted.compareTo(baseThreshold) != 0) {
+            log.debug("Exit scoring context adjusted {} threshold for positionId={} marketId={} {} -> {} (consensusDecay={}, orderbook={}, sourceReduce={}, sourceAdd={})",
+                    mode.logLabel(),
+                    position.getId(),
+                    position.getMarketId(),
+                    baseThreshold.setScale(4, RoundingMode.HALF_UP),
+                    adjusted.setScale(4, RoundingMode.HALF_UP),
+                    context.consensusDecay().setScale(4, RoundingMode.HALF_UP),
+                    context.orderbookDeterioration().setScale(4, RoundingMode.HALF_UP),
+                    context.sourceWalletReduction().setScale(4, RoundingMode.HALF_UP),
+                    context.sourceWalletAdd().setScale(4, RoundingMode.HALF_UP));
+        }
+        return adjusted;
+    }
+
     private String resolveDrivingWalletAddress(Long positionId) {
         if (positionId == null) {
             return null;
@@ -510,6 +557,93 @@ public class SmartWalletPositionSyncService {
                 .orderByDesc(SmartWalletOrderEntity::getId)
                 .last("limit 1"));
         return entryOrder == null ? null : entryOrder.getWalletAddress();
+    }
+
+    private ExitScoringContext buildExitScoringContext(SmartWalletPositionEntity position) {
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        String drivingWallet = resolveDrivingWalletAddress(position.getId());
+        BigDecimal consensusDecay = resolveConsensusDecay(position, risk);
+        BigDecimal sourceReduction = BigDecimal.ZERO;
+        BigDecimal sourceAdd = BigDecimal.ZERO;
+        if (StringUtils.hasText(drivingWallet)) {
+            SmartWalletTradeEventEntity latestFollowOnEvent = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                    .eq(SmartWalletTradeEventEntity::getWalletAddress, drivingWallet)
+                    .eq(SmartWalletTradeEventEntity::getMarketId, position.getMarketId())
+                    .eq(SmartWalletTradeEventEntity::getOutcome, position.getOutcome())
+                    .gt(position.getOpenedAt() != null, SmartWalletTradeEventEntity::getOpenedAt, position.getOpenedAt())
+                    .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
+                    .orderByDesc(SmartWalletTradeEventEntity::getId)
+                    .last("limit 1"));
+            if (latestFollowOnEvent != null) {
+                if ("SELL".equalsIgnoreCase(latestFollowOnEvent.getSide())) {
+                    sourceReduction = BigDecimal.ONE;
+                } else if ("BUY".equalsIgnoreCase(latestFollowOnEvent.getSide())) {
+                    sourceAdd = new BigDecimal("0.65");
+                }
+            }
+        }
+        BigDecimal orderbookDeterioration = resolveOrderbookDeterioration(position);
+        return new ExitScoringContext(
+                consensusDecay.max(BigDecimal.ZERO).min(BigDecimal.ONE),
+                orderbookDeterioration.max(BigDecimal.ZERO).min(BigDecimal.ONE),
+                sourceReduction.max(BigDecimal.ZERO).min(BigDecimal.ONE),
+                sourceAdd.max(BigDecimal.ZERO).min(BigDecimal.ONE)
+        );
+    }
+
+    private BigDecimal resolveConsensusDecay(SmartWalletPositionEntity position, SmartWalletProperties.SignalRisk risk) {
+        if (position == null || !StringUtils.hasText(position.getMarketId())) {
+            return BigDecimal.ZERO;
+        }
+        ConsensusSignalView consensus = consensusSignalService.listConsensusSignals(
+                        risk.getConsensusWindowSeconds(),
+                        position.getMarketId(),
+                        position.getOutcome(),
+                        "BUY",
+                        5)
+                .stream()
+                .filter(item -> Objects.equals(item.getMarketId(), position.getMarketId()))
+                .filter(item -> Objects.equals(item.getOutcome(), position.getOutcome()))
+                .findFirst()
+                .orElse(null);
+        BigDecimal currentConsensus = consensus == null ? BigDecimal.ZERO : safe(
+                consensus.getQualityWeightedConsensusScore() == null ? consensus.getConsensusScore() : consensus.getQualityWeightedConsensusScore()
+        );
+        BigDecimal baseline = safe(risk.getExitScoringBaselineConsensus());
+        if (baseline.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return baseline.subtract(currentConsensus)
+                .divide(baseline, 8, RoundingMode.HALF_UP)
+                .max(BigDecimal.ZERO)
+                .min(BigDecimal.ONE);
+    }
+
+    private BigDecimal resolveOrderbookDeterioration(SmartWalletPositionEntity position) {
+        if (position == null || !StringUtils.hasText(position.getMarketId())) {
+            return BigDecimal.ZERO;
+        }
+        Date now = new Date();
+        SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
+                position.getMarketId(),
+                position.getOutcome(),
+                now
+        );
+        if (snapshot == null) {
+            snapshot = marketSnapshotCollectorService.findNearestSnapshotAtOrAfter(position.getMarketId(), position.getOutcome(), now);
+        }
+        if (snapshot == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal spreadRisk = safe(snapshot.getSpreadBps()).divide(new BigDecimal("200"), 8, RoundingMode.HALF_UP).min(BigDecimal.ONE);
+        BigDecimal volatilityRisk = safe(snapshot.getRealizedVol30s()).divide(new BigDecimal("0.20"), 8, RoundingMode.HALF_UP).min(BigDecimal.ONE);
+        BigDecimal imbalanceRisk = safe(snapshot.getOrderImbalance()).compareTo(BigDecimal.ZERO) >= 0
+                ? BigDecimal.ZERO
+                : safe(snapshot.getOrderImbalance()).abs().min(BigDecimal.ONE);
+        return spreadRisk.multiply(new BigDecimal("0.45"))
+                .add(volatilityRisk.multiply(new BigDecimal("0.30")))
+                .add(imbalanceRisk.multiply(new BigDecimal("0.25")))
+                .setScale(4, RoundingMode.HALF_UP);
     }
 
     private BigDecimal normalizeThreshold(BigDecimal threshold, AutoExitMode mode) {
@@ -641,5 +775,11 @@ public class SmartWalletPositionSyncService {
         private static ExitDecision notTriggered() {
             return new ExitDecision(false, BigDecimal.ZERO, BigDecimal.ZERO);
         }
+    }
+
+    private record ExitScoringContext(BigDecimal consensusDecay,
+                                      BigDecimal orderbookDeterioration,
+                                      BigDecimal sourceWalletReduction,
+                                      BigDecimal sourceWalletAdd) {
     }
 }

@@ -49,6 +49,8 @@ public class EntityAwareConsensusService {
                     .dedupedEntityCount(0)
                     .entityIds(new ArrayList<>())
                     .entityAvgScore(BigDecimal.ZERO)
+                    .entityMaxScoreMap(new LinkedHashMap<>())
+                    .entityWalletsMap(new LinkedHashMap<>())
                     .hasSuspiciousMultiWallet(false)
                     .suspiciousEntityIds(new ArrayList<>())
                     .build();
@@ -59,6 +61,7 @@ public class EntityAwareConsensusService {
 
         // 按实体ID分组：entityId → [walletAddresses]
         Map<String, List<String>> entityToWallets = new LinkedHashMap<>();
+        Map<String, EntityResolutionResult> entityResolutionMap = new LinkedHashMap<>();
         for (String wallet : walletAddresses) {
             EntityResolutionResult res = resolutions.getOrDefault(wallet.toLowerCase(),
                     EntityResolutionResult.selfEntity(wallet));
@@ -66,12 +69,14 @@ public class EntityAwareConsensusService {
                     ? res.getEntityId()
                     : wallet.toLowerCase();
             entityToWallets.computeIfAbsent(effectiveEntityKey, k -> new ArrayList<>()).add(wallet);
+            entityResolutionMap.merge(effectiveEntityKey, res, this::pickHigherConfidence);
         }
 
         // 统计实体级最高分（一个实体内取 walletScore 最大值）
         Set<String> entityIds = new LinkedHashSet<>(entityToWallets.keySet());
         List<String> suspiciousEntityIds = new ArrayList<>();
         BigDecimal totalEntityScore = BigDecimal.ZERO;
+        Map<String, BigDecimal> entityMaxScoreMap = new LinkedHashMap<>();
 
         for (Map.Entry<String, List<String>> entry : entityToWallets.entrySet()) {
             String entityId = entry.getKey();
@@ -89,6 +94,7 @@ public class EntityAwareConsensusService {
                     .map(w -> walletScoreMap.getOrDefault(w.toLowerCase(), BigDecimal.ZERO))
                     .max(BigDecimal::compareTo)
                     .orElse(BigDecimal.ZERO);
+            entityMaxScoreMap.put(entityId, maxScore);
             totalEntityScore = totalEntityScore.add(maxScore);
         }
 
@@ -101,6 +107,9 @@ public class EntityAwareConsensusService {
                 .dedupedEntityCount(entityIds.size())
                 .entityIds(new ArrayList<>(entityIds))
                 .entityAvgScore(entityAvgScore)
+                .entityMaxScoreMap(entityMaxScoreMap)
+                .entityWalletsMap(entityToWallets)
+                .entityResolutionMap(entityResolutionMap)
                 .hasSuspiciousMultiWallet(!suspiciousEntityIds.isEmpty())
                 .suspiciousEntityIds(suspiciousEntityIds)
                 .build();
@@ -132,5 +141,17 @@ public class EntityAwareConsensusService {
             return false;
         }
         return entityId.equalsIgnoreCase(wallets.get(0));
+    }
+
+    private EntityResolutionResult pickHigherConfidence(EntityResolutionResult left, EntityResolutionResult right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        BigDecimal leftScore = left.getConfidenceScore() == null ? BigDecimal.ZERO : left.getConfidenceScore();
+        BigDecimal rightScore = right.getConfidenceScore() == null ? BigDecimal.ZERO : right.getConfidenceScore();
+        return rightScore.compareTo(leftScore) >= 0 ? right : left;
     }
 }

@@ -22,6 +22,14 @@ public class SmartWalletProperties {
     private Integer minTotalTrades = 25;
     private BigDecimal minRealizedPnlUsdc = new BigDecimal("1000");
     private BigDecimal maxDrawdownRate = new BigDecimal("0.25");
+    private boolean observeCooldownEnabled = true;
+    private Integer observeCooldownMinRecentTrades7d = 6;
+    private BigDecimal observeCooldownLowRecentWinRate7d = new BigDecimal("0.45");
+    private BigDecimal observeCooldownMaxRecent30dGap = new BigDecimal("0.20");
+    private BigDecimal observeCooldownMaxHistorical7dGap = new BigDecimal("0.25");
+    private BigDecimal observeCooldownRecoverMinRecentWinRate7d = new BigDecimal("0.55");
+    private BigDecimal observeCooldownRecoverMaxRecent30dGap = new BigDecimal("0.10");
+    private Integer observeCooldownDays = 7;
     private BigDecimal minMarketLiquidity = new BigDecimal("25000");
     private BigDecimal maxStakeUsdc = new BigDecimal("150");
     private BigDecimal bankrollUtilizationRate = new BigDecimal("0.03");
@@ -138,6 +146,7 @@ public class SmartWalletProperties {
         private boolean blockOppositeOpenPositionSameMarket = true;
         private boolean blockOppositePendingTaskSameMarket = true;
         private boolean enableConsensusGate = true;
+        private String policyTag = "candidate-v2";
         /**
          * 开单策略路由模式：
          * ANY = 命中任一策略即可开单
@@ -155,7 +164,17 @@ public class SmartWalletProperties {
         /** 实体去重后的最小实体数门控（替代 minDistinctWallets）。默认与 minDistinctWallets 保持一致 */
         private Integer minDistinctEntities = 2;
         private BigDecimal minConsensusScore = new BigDecimal("0.72");
+        private boolean qualityWeightedConsensusEnabled = true;
+        private BigDecimal consensusEntityBaseWeight = new BigDecimal("0.60");
+        private BigDecimal consensusBehaviorWeight = new BigDecimal("0.15");
+        private BigDecimal consensusRecencyWeight = new BigDecimal("0.10");
+        private BigDecimal consensusLeaderFollowerWeight = new BigDecimal("0.05");
+        private BigDecimal consensusIndependenceWeight = new BigDecimal("0.05");
+        private BigDecimal consensusRecentConsistencyWeight = new BigDecimal("0.05");
         private boolean enableSingleWalletOverride = true;
+        private boolean enableSingleWalletOverrideCanary = true;
+        private BigDecimal singleWalletOverrideCanaryRate = new BigDecimal("0.10");
+        private List<String> singleWalletOverrideWhitelist = new ArrayList<>();
         // Leaderboard survivorship-bias guard: when a wallet shows winRate >= threshold with only a small sample,
         // the number is almost certainly inflated (only top-N positions visible). Block single-wallet override for them.
         private boolean blockUnreliableLeaderboardWinRate = true;
@@ -164,12 +183,20 @@ public class SmartWalletProperties {
         private BigDecimal singleWalletOverrideMinWalletScore = new BigDecimal("0.88");
         private BigDecimal singleWalletOverrideMinWinRate = new BigDecimal("0.68");
         private Integer singleWalletOverrideMinTrades = 60;
+        private Integer singleWalletOverrideMinRecentTrades7d = 5;
+        private BigDecimal singleWalletOverrideMinRecentWinRate7d = new BigDecimal("0.60");
+        private BigDecimal singleWalletOverrideMinReplicabilityScore = new BigDecimal("0.60");
+        private BigDecimal singleWalletOverrideMinQualityScore = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
         private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("5");
 
         // ── 持仓集中度门控（防控盘） ──────────────────────────────────────────
         /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */
         private boolean enableConcentrationGate = false;
+        /** 高风险集中度的处置模式：BLOCK / DOWNSIZE / WARN_ONLY */
+        private String concentrationHighRiskMode = "DOWNSIZE";
+        /** 高风险集中度 DOWNSIZE 模式下保留的仓位比例 */
+        private BigDecimal concentrationHighRiskDownsizeRate = new BigDecimal("0.35");
         /** CR_1 上限：单一持仓者占比超过此值则拒绝信号 */
         private BigDecimal maxTop1ConcentrationPct = new BigDecimal("0.40");
         /** CR_3 上限：前三持仓者合计占比超过此值则拒绝信号 */
@@ -199,6 +226,20 @@ public class SmartWalletProperties {
         private boolean kellyStakeEnabled = false;
         /** Kelly 折扣因子（0.3 = 30% Kelly，保守值） */
         private BigDecimal kellyFraction = new BigDecimal("0.30");
+        /** 行为稳定度过低时开始缩仓 */
+        private BigDecimal stakeStabilityLowScore = new BigDecimal("0.45");
+        /** 行为稳定度过低时的保留仓位比例 */
+        private BigDecimal stakeStabilityLowMultiplier = new BigDecimal("0.70");
+        /** 行为稳定度较高时允许的小幅加仓阈值 */
+        private BigDecimal stakeStabilityHighScore = new BigDecimal("0.75");
+        /** 行为稳定度较高时的加仓倍率 */
+        private BigDecimal stakeStabilityHighMultiplier = new BigDecimal("1.05");
+        /** 预计滑点 / 仓位超过该比例后开始缩仓 */
+        private BigDecimal stakeSlippagePenaltyStartRate = new BigDecimal("0.04");
+        /** 滑点/主题相关性等高级缩仓后的最低保留比例 */
+        private BigDecimal stakePenaltyFloorMultiplier = new BigDecimal("0.55");
+        /** 同主题持仓相关性惩罚倍率 */
+        private BigDecimal stakeThemeCorrelationPenaltyMultiplier = new BigDecimal("0.75");
 
         // ── 时间感知止损 ──────────────────────────────────────────────
         /** 是否启用时间感知动态止损阈值（false = 使用 autoStopLossThresholdRate 固定值） */
@@ -219,6 +260,16 @@ public class SmartWalletProperties {
         private String exitSignalProviderMode = "RULES";
         /** 评分退出：ROI 动量权重（每 1% 亏损对基准阈值的缩减量，默认 0.10 = 每亏 10% 收紧 1%） */
         private BigDecimal exitScoringRoiMomentumWeight = new BigDecimal("0.10");
+        /** 评分退出：当前共识衰减对退出分的影响权重 */
+        private BigDecimal exitScoringConsensusDecayWeight = new BigDecimal("0.30");
+        /** 评分退出：盘口恶化对退出分的影响权重 */
+        private BigDecimal exitScoringOrderbookDeteriorationWeight = new BigDecimal("0.25");
+        /** 评分退出：源钱包后续减仓/反向交易对退出分的影响权重 */
+        private BigDecimal exitScoringSourceWalletReductionWeight = new BigDecimal("0.35");
+        /** 评分退出：源钱包继续加仓时对持有耐心的缓冲权重 */
+        private BigDecimal exitScoringSourceWalletAddWeight = new BigDecimal("0.10");
+        /** 评分退出：共识基准线，用于计算当前共识衰减程度 */
+        private BigDecimal exitScoringBaselineConsensus = new BigDecimal("0.72");
         /** 评分退出：最小止损阈值下限（防止评分后阈值过小导致频繁止损） */
         private BigDecimal exitScoringMinThreshold = new BigDecimal("0.03");
         /** 评分退出：最大止损阈值上限（防止评分后阈值过大导致止损失效） */
@@ -332,6 +383,7 @@ public class SmartWalletProperties {
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;
+        private Integer staleOraclePendingHours = 12;
     }
 
     @Data
@@ -348,6 +400,7 @@ public class SmartWalletProperties {
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;
+        private Integer staleResolvedUnclaimedHours = 12;
     }
 
     @Data

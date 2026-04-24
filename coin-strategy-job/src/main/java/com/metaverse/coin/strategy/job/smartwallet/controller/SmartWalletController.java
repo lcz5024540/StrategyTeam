@@ -70,6 +70,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryVi
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRunView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimSummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
@@ -107,6 +109,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.WalletArchetypeClassi
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletBehaviorProfileService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletOrderAnalysisService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletProfileStoreService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletReplayBacktestService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletProfileAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -177,6 +180,7 @@ public class SmartWalletController {
     private final SmartWalletOrderAnalysisService smartWalletOrderAnalysisService;
     private final SmartWalletProfileStoreService smartWalletProfileStoreService;
     private final WalletProfileAnalysisService walletProfileAnalysisService;
+    private final SmartWalletReplayBacktestService smartWalletReplayBacktestService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -744,22 +748,40 @@ public class SmartWalletController {
     public List<SmartWalletFollowTaskView> singleWalletOverrideFollowTasks(@RequestParam(defaultValue = "20") Integer limit,
                                                                            @RequestParam(required = false) String preset,
                                                                            @RequestParam(required = false) Integer taskLimit,
+                                                                           @RequestParam(required = false) String policyTag,
                                                                            @RequestParam(required = false) Integer maxSignalAgeSeconds,
                                                                            @RequestParam(required = false) Integer minDistinctWallets,
+                                                                           @RequestParam(required = false) Integer minDistinctEntities,
                                                                            @RequestParam(required = false) BigDecimal minConsensusScore,
+                                                                           @RequestParam(required = false) Boolean qualityWeightedConsensusEnabled,
+                                                                           @RequestParam(required = false) Boolean enableSingleWalletOverrideCanary,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideCanaryRate,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinWalletScore,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinWinRate,
                                                                            @RequestParam(required = false) Integer singleWalletOverrideMinTrades,
+                                                                           @RequestParam(required = false) Integer singleWalletOverrideMinRecentTrades7d,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinRecentWinRate7d,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinReplicabilityScore,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinQualityScore,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinTriggerSizeUsdc,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinRecommendedStakeUsdc) {
         SmartWalletRiskSimulationRequest request = new SmartWalletRiskSimulationRequest();
         request.setTaskLimit(taskLimit);
+        request.setPolicyTag(policyTag);
         request.setMaxSignalAgeSeconds(maxSignalAgeSeconds);
         request.setMinDistinctWallets(minDistinctWallets);
+        request.setMinDistinctEntities(minDistinctEntities);
         request.setMinConsensusScore(minConsensusScore);
+        request.setQualityWeightedConsensusEnabled(qualityWeightedConsensusEnabled);
+        request.setEnableSingleWalletOverrideCanary(enableSingleWalletOverrideCanary);
+        request.setSingleWalletOverrideCanaryRate(singleWalletOverrideCanaryRate);
         request.setSingleWalletOverrideMinWalletScore(singleWalletOverrideMinWalletScore);
         request.setSingleWalletOverrideMinWinRate(singleWalletOverrideMinWinRate);
         request.setSingleWalletOverrideMinTrades(singleWalletOverrideMinTrades);
+        request.setSingleWalletOverrideMinRecentTrades7d(singleWalletOverrideMinRecentTrades7d);
+        request.setSingleWalletOverrideMinRecentWinRate7d(singleWalletOverrideMinRecentWinRate7d);
+        request.setSingleWalletOverrideMinReplicabilityScore(singleWalletOverrideMinReplicabilityScore);
+        request.setSingleWalletOverrideMinQualityScore(singleWalletOverrideMinQualityScore);
         request.setSingleWalletOverrideMinTriggerSizeUsdc(singleWalletOverrideMinTriggerSizeUsdc);
         request.setSingleWalletOverrideMinRecommendedStakeUsdc(singleWalletOverrideMinRecommendedStakeUsdc);
         applySingleWalletOverridePreset(request, preset);
@@ -849,6 +871,12 @@ public class SmartWalletController {
     @PostMapping("/follow-tasks/simulate-risk")
     public SmartWalletRiskSimulationResult simulateRisk(@RequestBody(required = false) SmartWalletRiskSimulationRequest request) {
         return followTaskApplicationService.simulateRisk(request);
+    }
+
+    @Operation(summary = "策略回放回测", description = "基于历史 smart_wallet_trade_event 回放 baseline 与新策略，在 30d/60d/90d 窗口输出接受率、收益、回撤、override 与拦截分布。")
+    @PostMapping("/follow-tasks/replay-backtest")
+    public SmartWalletReplayBacktestResult replayBacktest(@RequestBody(required = false) SmartWalletReplayBacktestRequest request) {
+        return smartWalletReplayBacktestService.replay(request);
     }
 
     @Operation(summary = "处理跟单任务", description = "手动触发一轮待执行 follow task 处理。")
@@ -1382,11 +1410,26 @@ public class SmartWalletController {
         if (request.getMaxSignalAgeSeconds() == null) {
             request.setMaxSignalAgeSeconds(presetRisk.getMaxSignalAgeSeconds());
         }
+        if (request.getPolicyTag() == null) {
+            request.setPolicyTag(presetRisk.getPolicyTag());
+        }
         if (request.getMinDistinctWallets() == null) {
             request.setMinDistinctWallets(presetRisk.getMinDistinctWallets());
         }
+        if (request.getMinDistinctEntities() == null) {
+            request.setMinDistinctEntities(presetRisk.getMinDistinctEntities());
+        }
         if (request.getMinConsensusScore() == null) {
             request.setMinConsensusScore(presetRisk.getMinConsensusScore());
+        }
+        if (request.getQualityWeightedConsensusEnabled() == null) {
+            request.setQualityWeightedConsensusEnabled(presetRisk.isQualityWeightedConsensusEnabled());
+        }
+        if (request.getEnableSingleWalletOverrideCanary() == null) {
+            request.setEnableSingleWalletOverrideCanary(presetRisk.isEnableSingleWalletOverrideCanary());
+        }
+        if (request.getSingleWalletOverrideCanaryRate() == null) {
+            request.setSingleWalletOverrideCanaryRate(presetRisk.getSingleWalletOverrideCanaryRate());
         }
         if (request.getSingleWalletOverrideMinWalletScore() == null) {
             request.setSingleWalletOverrideMinWalletScore(presetRisk.getSingleWalletOverrideMinWalletScore());
@@ -1396,6 +1439,18 @@ public class SmartWalletController {
         }
         if (request.getSingleWalletOverrideMinTrades() == null) {
             request.setSingleWalletOverrideMinTrades(presetRisk.getSingleWalletOverrideMinTrades());
+        }
+        if (request.getSingleWalletOverrideMinRecentTrades7d() == null) {
+            request.setSingleWalletOverrideMinRecentTrades7d(presetRisk.getSingleWalletOverrideMinRecentTrades7d());
+        }
+        if (request.getSingleWalletOverrideMinRecentWinRate7d() == null) {
+            request.setSingleWalletOverrideMinRecentWinRate7d(presetRisk.getSingleWalletOverrideMinRecentWinRate7d());
+        }
+        if (request.getSingleWalletOverrideMinReplicabilityScore() == null) {
+            request.setSingleWalletOverrideMinReplicabilityScore(presetRisk.getSingleWalletOverrideMinReplicabilityScore());
+        }
+        if (request.getSingleWalletOverrideMinQualityScore() == null) {
+            request.setSingleWalletOverrideMinQualityScore(presetRisk.getSingleWalletOverrideMinQualityScore());
         }
         if (request.getSingleWalletOverrideMinTriggerSizeUsdc() == null) {
             request.setSingleWalletOverrideMinTriggerSizeUsdc(presetRisk.getSingleWalletOverrideMinTriggerSizeUsdc());

@@ -173,11 +173,39 @@ public class SmartWalletClaimService {
     }
 
     public SmartWalletClaimStatusView status() {
+        Date now = new Date();
+        Date staleThreshold = Date.from(Instant.ofEpochMilli(now.getTime())
+                .minus(properties.getClaim().getStaleResolvedUnclaimedHours() == null ? 12 : properties.getClaim().getStaleResolvedUnclaimedHours(), ChronoUnit.HOURS));
+        int resolvedUnclaimedCount = safeCount(positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getStatus, "RESOLVED_UNCLAIMED")));
+        int staleResolvedUnclaimedCount = safeCount(positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getStatus, "RESOLVED_UNCLAIMED")
+                .lt(SmartWalletPositionEntity::getClosedAt, staleThreshold)));
+        int dueRetryCount = safeCount(claimRetryMapper.selectCount(new LambdaQueryWrapper<SmartWalletClaimRetryEntity>()
+                .in(SmartWalletClaimRetryEntity::getStatus, List.of("PENDING", "RETRYING"))
+                .le(SmartWalletClaimRetryEntity::getNextRetryAt, now)));
+        int waitingConfirmationRetryCount = safeCount(claimRetryMapper.selectCount(new LambdaQueryWrapper<SmartWalletClaimRetryEntity>()
+                .eq(SmartWalletClaimRetryEntity::getStatus, "WAITING_CONFIRMATION")));
+        List<String> anomalyNotes = new ArrayList<>();
+        if (staleResolvedUnclaimedCount > 0) {
+            anomalyNotes.add("stale_resolved_unclaimed=" + staleResolvedUnclaimedCount);
+        }
+        if (waitingConfirmationRetryCount > 0) {
+            anomalyNotes.add("waiting_confirmation=" + waitingConfirmationRetryCount);
+        }
+        if (dueRetryCount > 0) {
+            anomalyNotes.add("due_claim_retries=" + dueRetryCount);
+        }
         return SmartWalletClaimStatusView.builder()
                 .enabled(properties.isEnabled() && properties.getClaim().isEnabled())
                 .running(running.get())
                 .lastRunAt(lastRunAt)
                 .invocationCount(invocationCount.get())
+                .resolvedUnclaimedCount(resolvedUnclaimedCount)
+                .dueRetryCount(dueRetryCount)
+                .waitingConfirmationRetryCount(waitingConfirmationRetryCount)
+                .staleResolvedUnclaimedCount(staleResolvedUnclaimedCount)
+                .anomalyNotes(anomalyNotes)
                 .lastSummary(lastSummary)
                 .build();
     }
@@ -258,6 +286,10 @@ public class SmartWalletClaimService {
                 .orderByAsc(SmartWalletPositionEntity::getClosedAt)
                 .orderByAsc(SmartWalletPositionEntity::getId)
                 .last("limit " + Math.max(limit, 1)));
+    }
+
+    private int safeCount(Long count) {
+        return count == null ? 0 : count.intValue();
     }
 
     private SmartWalletClaimSummary runLocked(List<SmartWalletPositionEntity> positions, String triggerType) {

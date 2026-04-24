@@ -33,6 +33,8 @@ class PolymarketWalletDiscoveryServiceTest {
     private SmartWalletProfileStoreService profileStoreService;
     @Mock
     private SmartWalletLeaderboardStateService leaderboardStateService;
+    @Mock
+    private WalletArchetypeClassifierService walletArchetypeClassifierService;
 
     @Test
     void shouldDeduplicateAcrossLeaderboardQueriesAndTrackHitCount() {
@@ -86,7 +88,8 @@ class PolymarketWalletDiscoveryServiceTest {
                 profileStoreService,
                 properties,
                 new SmartWalletScoringService(),
-                leaderboardStateService
+                leaderboardStateService,
+                walletArchetypeClassifierService
         );
 
         PolymarketDiscoverySummary summary = service.refreshLeaderboardWatchlist();

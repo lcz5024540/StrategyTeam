@@ -25,8 +25,14 @@ public class SignalRiskDecision {
     /** 实体去重后的参与实体数（真实共识强度，风控门控使用此字段） */
     private Integer consensusEntities;
     private BigDecimal consensusScore;
+    private BigDecimal qualityWeightedConsensusScore;
+    private BigDecimal topEntityWeightShare;
+    private BigDecimal leaderFollowerScore;
+    private BigDecimal entityIndependenceScore;
+    private BigDecimal recentConsistencyScore;
     /** 是否检测到同一实体多钱包触发同一信号（告警标志） */
     private boolean hasSuspiciousMultiWallet;
+    private String policyTag;
     private String strategyRouteMode;
     @Builder.Default
     private List<String> enabledStrategies = new ArrayList<>();

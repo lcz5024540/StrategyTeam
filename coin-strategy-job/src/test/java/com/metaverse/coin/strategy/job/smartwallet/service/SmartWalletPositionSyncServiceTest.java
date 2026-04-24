@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
@@ -49,6 +50,12 @@ class SmartWalletPositionSyncServiceTest {
     private ExitSignalProvider exitSignalProvider;
     @Mock
     private WalletBehaviorProfileService walletBehaviorProfileService;
+    @Mock
+    private SmartWalletTradeEventMapper tradeEventMapper;
+    @Mock
+    private PolymarketConsensusSignalService consensusSignalService;
+    @Mock
+    private MarketSnapshotCollectorService marketSnapshotCollectorService;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -72,6 +79,9 @@ class SmartWalletPositionSyncServiceTest {
                 recoveryService,
                 marketInfoService,
                 exitSignalProvider,
+                tradeEventMapper,
+                consensusSignalService,
+                marketSnapshotCollectorService,
                 walletBehaviorProfileService
         );
     }

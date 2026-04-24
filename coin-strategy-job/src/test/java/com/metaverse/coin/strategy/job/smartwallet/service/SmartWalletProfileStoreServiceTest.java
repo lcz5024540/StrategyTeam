@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -358,5 +359,133 @@ class SmartWalletProfileStoreServiceTest {
         assertEquals(1, result.missingCount());
         assertEquals(List.of("0xmanual"), result.updatedWalletAddresses());
         assertEquals(List.of("0xmissing"), result.missingWalletAddresses());
+    }
+
+    @Test
+    void shouldDowngradeWatchEnabledWhenRecentSevenDayPerformanceDegrades() {
+        SmartWalletProfileEntity wallet = new SmartWalletProfileEntity()
+                .setWalletAddress("0xcooldown")
+                .setSource("POLYMARKET")
+                .setWinRate(new BigDecimal("0.78"))
+                .setRecentWinRate30d(new BigDecimal("0.76"))
+                .setRecentWinRate7d(new BigDecimal("0.32"))
+                .setRecentTradeCount7d(8)
+                .setRecentTradeCount30d(20)
+                .setRealizedPnlUsdc(new BigDecimal("3000"))
+                .setTotalTrades(120)
+                .setAverageRoiRate(new BigDecimal("0.18"))
+                .setMaxDrawdownRate(new BigDecimal("0.12"))
+                .setWalletScore(new BigDecimal("0.88"));
+
+        SmartWalletProperties properties = new SmartWalletProperties();
+        properties.setMinWinRate(new BigDecimal("0.60"));
+        properties.setMinWalletScore(new BigDecimal("0.70"));
+        properties.setMinTotalTrades(10);
+        properties.setMinRealizedPnlUsdc(new BigDecimal("100"));
+        properties.setMaxDrawdownRate(new BigDecimal("0.30"));
+
+        SmartWalletProfileStoreService service = new SmartWalletProfileStoreService(
+                properties,
+                profileMapper,
+                new SmartWalletScoringService(),
+                followTaskMapper,
+                orderMapper,
+                positionMapper,
+                walletArchetypeClassifierService,
+                walletBehaviorProfileService
+        );
+
+        service.applyQualificationState(wallet);
+
+        assertEquals(Boolean.TRUE, wallet.getQualified());
+        assertEquals(Boolean.FALSE, wallet.getWatchEnabled());
+        assertNotNull(wallet.getObserveCooldownUntil());
+        assertTrue(wallet.getObserveCooldownReason().contains("LOW_7D_WIN_RATE"));
+    }
+
+    @Test
+    void shouldRecoverWatchEnabledWhenObserveCooldownMetricsNormalize() {
+        SmartWalletProfileEntity wallet = new SmartWalletProfileEntity()
+                .setWalletAddress("0xrecover")
+                .setSource("POLYMARKET")
+                .setWinRate(new BigDecimal("0.78"))
+                .setRecentWinRate30d(new BigDecimal("0.64"))
+                .setRecentWinRate7d(new BigDecimal("0.62"))
+                .setRecentTradeCount7d(8)
+                .setRecentTradeCount30d(20)
+                .setRealizedPnlUsdc(new BigDecimal("3000"))
+                .setTotalTrades(120)
+                .setAverageRoiRate(new BigDecimal("0.18"))
+                .setMaxDrawdownRate(new BigDecimal("0.12"))
+                .setWalletScore(new BigDecimal("0.88"))
+                .setObserveCooldownUntil(new Date(System.currentTimeMillis() + TimeUnit.DAYS.toMillis(2)))
+                .setObserveCooldownReason("old reason");
+
+        SmartWalletProperties properties = new SmartWalletProperties();
+        properties.setMinWinRate(new BigDecimal("0.60"));
+        properties.setMinWalletScore(new BigDecimal("0.70"));
+        properties.setMinTotalTrades(10);
+        properties.setMinRealizedPnlUsdc(new BigDecimal("100"));
+        properties.setMaxDrawdownRate(new BigDecimal("0.30"));
+
+        SmartWalletProfileStoreService service = new SmartWalletProfileStoreService(
+                properties,
+                profileMapper,
+                new SmartWalletScoringService(),
+                followTaskMapper,
+                orderMapper,
+                positionMapper,
+                walletArchetypeClassifierService,
+                walletBehaviorProfileService
+        );
+
+        service.applyQualificationState(wallet);
+
+        assertEquals(Boolean.TRUE, wallet.getQualified());
+        assertEquals(Boolean.TRUE, wallet.getWatchEnabled());
+        assertEquals(null, wallet.getObserveCooldownUntil());
+        assertEquals(null, wallet.getObserveCooldownReason());
+    }
+
+    @Test
+    void shouldAllowManualWatchOverrideToBypassObserveCooldownBlock() {
+        SmartWalletProfileEntity wallet = new SmartWalletProfileEntity()
+                .setWalletAddress("0xmanual-force")
+                .setSource("POLYMARKET")
+                .setWinRate(new BigDecimal("0.78"))
+                .setRecentWinRate30d(new BigDecimal("0.76"))
+                .setRecentWinRate7d(new BigDecimal("0.30"))
+                .setRecentTradeCount7d(8)
+                .setRecentTradeCount30d(20)
+                .setRealizedPnlUsdc(new BigDecimal("3000"))
+                .setTotalTrades(120)
+                .setAverageRoiRate(new BigDecimal("0.18"))
+                .setMaxDrawdownRate(new BigDecimal("0.12"))
+                .setWalletScore(new BigDecimal("0.88"))
+                .setManualWatchEnabled(Boolean.TRUE);
+
+        SmartWalletProperties properties = new SmartWalletProperties();
+        properties.setMinWinRate(new BigDecimal("0.60"));
+        properties.setMinWalletScore(new BigDecimal("0.70"));
+        properties.setMinTotalTrades(10);
+        properties.setMinRealizedPnlUsdc(new BigDecimal("100"));
+        properties.setMaxDrawdownRate(new BigDecimal("0.30"));
+
+        SmartWalletProfileStoreService service = new SmartWalletProfileStoreService(
+                properties,
+                profileMapper,
+                new SmartWalletScoringService(),
+                followTaskMapper,
+                orderMapper,
+                positionMapper,
+                walletArchetypeClassifierService,
+                walletBehaviorProfileService
+        );
+
+        service.applyQualificationState(wallet);
+
+        assertEquals(Boolean.TRUE, wallet.getQualified());
+        assertEquals(Boolean.TRUE, wallet.getWatchEnabled());
+        assertTrue(service.isObserveCooldownActive(wallet));
     }
 }

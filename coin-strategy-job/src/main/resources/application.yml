@@ -173,6 +173,15 @@ smart-wallet:
   min-realized-pnl-usdc: 1000
   # [TUNE] Maximum tolerated drawdown for watchlist qualification.
   max-drawdown-rate: 0.25
+  # [TUNE] Enable recent-degradation observe cooldown instead of immediately dropping profile qualification.
+  observe-cooldown-enabled: true
+  observe-cooldown-min-recent-trades-7d: 6
+  observe-cooldown-low-recent-win-rate-7d: 0.45
+  observe-cooldown-max-recent30d-gap: 0.20
+  observe-cooldown-max-historical7d-gap: 0.25
+  observe-cooldown-recover-min-recent-win-rate-7d: 0.55
+  observe-cooldown-recover-max-recent30d-gap: 0.10
+  observe-cooldown-days: 7
   # [TUNE] Ignore very illiquid markets.
   min-market-liquidity: 25000
   # [TUNE] Global cap for a single recommended stake.
@@ -345,6 +354,7 @@ smart-wallet:
     block-opposite-pending-task-same-market: true
     # [TUNE] Multi-wallet consensus gate for stricter entry.
     enable-consensus-gate: true
+    policy-tag: "candidate-v2"
     # [FIX-CONSENSUS-WINDOW] Root cause of zero-position deadlock.
     # Smart wallets react to the same market signal over minutes to hours, not within 3 minutes.
     # With watchlist-trade-sync-batch-size=3 and many wallets, even the sync rotation alone
@@ -357,8 +367,17 @@ smart-wallet:
     # threshold average to 0.70, which failed the previous 0.72 gate. 0.65 allows consensus
     # from near-threshold wallets while still requiring meaningful quality.
     min-consensus-score: 0.65
+    quality-weighted-consensus-enabled: true
+    consensus-entity-base-weight: 0.60
+    consensus-behavior-weight: 0.15
+    consensus-recency-weight: 0.10
+    consensus-leader-follower-weight: 0.05
+    consensus-independence-weight: 0.05
+    consensus-recent-consistency-weight: 0.05
     # [TUNE] Special strategy lane for one exceptional wallet.
-    enable-single-wallet-override: false
+    enable-single-wallet-override: true
+    enable-single-wallet-override-canary: true
+    single-wallet-override-canary-rate: 0.10
     # [FIX-BIAS-GUARD] Survivorship bias guard: only flag wallets with winRate=1.0 AND
     # ≤20 trades as suspicious. Raising the sample-size threshold from 50→20 breaks the
     # structural deadlock: previously a wallet with ≥50 trades AND winRate=1.0 was blocked
@@ -367,17 +386,20 @@ smart-wallet:
     block-unreliable-leaderboard-win-rate: true
     unreliable-win-rate-threshold: 1.0
     unreliable-max-sample-size: 20
-    # [FIX-SINGLE-WALLET] Reduced min-trades 50→20 to match realistic Polymarket leaderboard
-    # data (top-50 positions shown; wallets with fewer visible trades are not necessarily bad).
-    # Reduced min-trigger-size 100→30 since many quality signals are <$100.
-    single-wallet-override-min-wallet-score: 0.79
-    single-wallet-override-min-win-rate: 0.65
-    single-wallet-override-min-trades: 20
-    single-wallet-override-min-trigger-size-usdc: 30
+    single-wallet-override-min-wallet-score: 0.88
+    single-wallet-override-min-win-rate: 0.68
+    single-wallet-override-min-trades: 60
+    single-wallet-override-min-recent-trades-7d: 5
+    single-wallet-override-min-recent-win-rate-7d: 0.60
+    single-wallet-override-min-replicability-score: 0.60
+    single-wallet-override-min-quality-score: 0.60
+    single-wallet-override-min-trigger-size-usdc: 100
     single-wallet-override-min-recommended-stake-usdc: 5
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
-    # [FEATURE] 集中度门控总开关（默认关闭，先验证 /positions 接口返回格式后再上线）
-    enable-concentration-gate: false
+    # [FEATURE] 集中度门控总开关。先以 DOWNSIZE 方式灰度，而不是直接 BLOCK。
+    enable-concentration-gate: true
+    concentration-high-risk-mode: DOWNSIZE
+    concentration-high-risk-downsize-rate: 0.35
     # [TUNE] CR_1 上限：单一持仓者占比超过此值拒绝信号
     max-top1-concentration-pct: 0.40
     # [TUNE] CR_3 上限：前三持仓者合计占比超过此值拒绝信号
@@ -385,7 +407,7 @@ smart-wallet:
     # [TUNE] HHI 上限（0=禁用）
     max-hhi: 2500
     # [TUNE] 鲸鱼信号来源处置模式：BLOCK / DOWNSIZE / WARN_ONLY
-    whale-signal-source-mode: BLOCK
+    whale-signal-source-mode: DOWNSIZE
     # [TUNE] DOWNSIZE 模式下仓位保留比例
     whale-signal-downsize-rate: 0.20
     # [TUNE] 集中度缓存有效期（ms）
@@ -401,6 +423,13 @@ smart-wallet:
     kelly-stake-enabled: true
     # [TUNE] Kelly 折扣因子，0.3 = 保守半 Kelly 以下
     kelly-fraction: 0.30
+    stake-stability-low-score: 0.45
+    stake-stability-low-multiplier: 0.70
+    stake-stability-high-score: 0.75
+    stake-stability-high-multiplier: 1.05
+    stake-slippage-penalty-start-rate: 0.04
+    stake-penalty-floor-multiplier: 0.55
+    stake-theme-correlation-penalty-multiplier: 0.75
     # ── 时间感知止损 ──────────────────────────────────────────
     # [TUNE] 启用后按市场剩余时间动态收紧止损线
     time-aware-stop-loss-enabled: true
@@ -419,8 +448,13 @@ smart-wallet:
     # [TUNE] 连续多少个扫描周期（约 5 分钟/周期）价格单调下跌且 ROI<0 时触发
     trend-stop-loss-consecutive-periods: 3
     # [METHOD-C] 退出信号提供者模式: RULES=时间感知止损; SCORING=特征评分退出
-    exit-signal-provider-mode: RULES
+    exit-signal-provider-mode: SCORING
     exit-scoring-roi-momentum-weight: 0.10
+    exit-scoring-consensus-decay-weight: 0.30
+    exit-scoring-orderbook-deterioration-weight: 0.25
+    exit-scoring-source-wallet-reduction-weight: 0.35
+    exit-scoring-source-wallet-add-weight: 0.10
+    exit-scoring-baseline-consensus: 0.72
     exit-scoring-min-threshold: 0.03
     exit-scoring-max-threshold: 0.50
   model-calibration:
@@ -464,12 +498,17 @@ smart-wallet:
     followable:
       max-signal-age-seconds: 3600
       min-distinct-wallets: 1
+      min-distinct-entities: 1
       min-consensus-score: 0
-      single-wallet-override-min-wallet-score: 0.79
-      single-wallet-override-min-win-rate: 0.65
-      # [FIX-PRESET] Synced with main config fix: 50→20 trades, 100→30 trigger
-      single-wallet-override-min-trades: 20
-      single-wallet-override-min-trigger-size-usdc: 30
+      quality-weighted-consensus-enabled: true
+      single-wallet-override-min-wallet-score: 0.88
+      single-wallet-override-min-win-rate: 0.68
+      single-wallet-override-min-trades: 60
+      single-wallet-override-min-recent-trades-7d: 5
+      single-wallet-override-min-recent-win-rate-7d: 0.60
+      single-wallet-override-min-replicability-score: 0.60
+      single-wallet-override-min-quality-score: 0.60
+      single-wallet-override-min-trigger-size-usdc: 100
       single-wallet-override-min-recommended-stake-usdc: 5
   live-validation:
     # [TUNE] Auxiliary LIVE lane. Keep disabled by default; enable only in a geoblock-safe environment when you want tiny real-fund validation.

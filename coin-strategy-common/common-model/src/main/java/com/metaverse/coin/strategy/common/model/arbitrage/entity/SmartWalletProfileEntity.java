@@ -45,8 +45,18 @@ public class SmartWalletProfileEntity {
     @TableField("us_trade_ratio_30d")
     private BigDecimal usTradeRatio30d;
     private String activeHourHistogramJson;
+    @TableField("recent_win_rate_7d")
+    private BigDecimal recentWinRate7d;
     @TableField("recent_win_rate_30d")
     private BigDecimal recentWinRate30d;
+    @TableField("recent_trade_count_7d")
+    private Integer recentTradeCount7d;
+    @TableField("recent_trade_count_30d")
+    private Integer recentTradeCount30d;
+    @TableField("observe_cooldown_until")
+    private Date observeCooldownUntil;
+    @TableField("observe_cooldown_reason")
+    private String observeCooldownReason;
     @TableField("manual_watch_enabled")
     private Boolean manualWatchEnabled;
     @TableField("manual_recommended_exit_lane")

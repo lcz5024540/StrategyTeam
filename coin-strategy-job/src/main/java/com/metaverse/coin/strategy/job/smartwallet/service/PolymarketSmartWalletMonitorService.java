@@ -97,10 +97,21 @@ public class PolymarketSmartWalletMonitorService {
         request.setAverageSizeUsdc(safe(request.getAverageSizeUsdc()));
         request.setAverageRoiRate(safe(request.getAverageRoiRate()));
         request.setMaxDrawdownRate(safe(request.getMaxDrawdownRate()));
+        request.setRecentWinRate7d(request.getRecentWinRate7d() == null ? null : safe(request.getRecentWinRate7d()));
+        request.setRecentWinRate30d(request.getRecentWinRate30d() == null ? null : safe(request.getRecentWinRate30d()));
+        request.setRecentTradeCount7d(nonNegative(request.getRecentTradeCount7d()));
+        request.setRecentTradeCount30d(nonNegative(request.getRecentTradeCount30d()));
     }
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private Integer nonNegative(Integer value) {
+        if (value == null) {
+            return null;
+        }
+        return Math.max(value, 0);
     }
 
     private String normalizeUpper(String value, String defaultValue) {

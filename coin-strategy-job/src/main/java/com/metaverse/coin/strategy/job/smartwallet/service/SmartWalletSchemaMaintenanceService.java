@@ -140,6 +140,18 @@ public class SmartWalletSchemaMaintenanceService {
                 "ALTER TABLE `smart_wallet_daily_report` ADD COLUMN `loss_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '亏损率' AFTER `win_rate`");
         ensureColumnExists("smart_wallet_profile", "manual_watch_enabled",
                 "ALTER TABLE `smart_wallet_profile` ADD COLUMN `manual_watch_enabled` TINYINT(1) NULL COMMENT '人工覆盖是否允许进入 executable watchlist' AFTER `watch_enabled`");
+        ensureColumnExists("smart_wallet_profile", "recent_win_rate_7d",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `recent_win_rate_7d` DECIMAL(10,4) DEFAULT NULL COMMENT '近7日胜率' AFTER `active_hour_histogram_json`");
+        ensureColumnExists("smart_wallet_profile", "recent_win_rate_30d",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `recent_win_rate_30d` DECIMAL(10,4) DEFAULT NULL COMMENT '近30日胜率' AFTER `recent_win_rate_7d`");
+        ensureColumnExists("smart_wallet_profile", "recent_trade_count_7d",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `recent_trade_count_7d` INT NOT NULL DEFAULT 0 COMMENT '近7日交易样本数' AFTER `recent_win_rate_7d`");
+        ensureColumnExists("smart_wallet_profile", "recent_trade_count_30d",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `recent_trade_count_30d` INT NOT NULL DEFAULT 0 COMMENT '近30日交易样本数' AFTER `recent_win_rate_30d`");
+        ensureColumnExists("smart_wallet_profile", "observe_cooldown_until",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `observe_cooldown_until` TIMESTAMP NULL COMMENT '近期退化观察冷却截止时间' AFTER `recent_trade_count_30d`");
+        ensureColumnExists("smart_wallet_profile", "observe_cooldown_reason",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `observe_cooldown_reason` VARCHAR(255) DEFAULT NULL COMMENT '近期退化观察原因' AFTER `observe_cooldown_until`");
         ensureColumnExists("smart_wallet_profile", "manual_recommended_exit_lane",
                 "ALTER TABLE `smart_wallet_profile` ADD COLUMN `manual_recommended_exit_lane` VARCHAR(64) NULL COMMENT '人工覆盖的退出风格 lane' AFTER `manual_watch_enabled`");
         ensureColumnExists("smart_wallet_profile", "manual_override_note",

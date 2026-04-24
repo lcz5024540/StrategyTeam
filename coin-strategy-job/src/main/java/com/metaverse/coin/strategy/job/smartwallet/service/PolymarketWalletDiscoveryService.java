@@ -353,9 +353,12 @@ public class PolymarketWalletDiscoveryService {
         BigDecimal roiSum = BigDecimal.ZERO;
         int roiCount = 0;
         int wins = 0;
+        int recentWins7d = 0;
+        int recentTrades7d = 0;
         int recentWins = 0;
         int recentTrades = 0;
         long lastTradeAt = 0L;
+        long recent7dCutoffMs = System.currentTimeMillis() - 7L * 24L * 3600_000L;
         long recentCutoffMs = System.currentTimeMillis() - 30L * 24L * 3600_000L;
 
         List<PolymarketApiClient.ClosedPosition> orderedPositions = positions.stream()
@@ -379,6 +382,12 @@ public class PolymarketWalletDiscoveryService {
                 recentTrades++;
                 if (pnl.compareTo(BigDecimal.ZERO) > 0) {
                     recentWins++;
+                }
+            }
+            if (position.getClosedAt() != null && position.getClosedAt() >= recent7dCutoffMs) {
+                recentTrades7d++;
+                if (pnl.compareTo(BigDecimal.ZERO) > 0) {
+                    recentWins7d++;
                 }
             }
             if (size.compareTo(BigDecimal.ZERO) > 0) {
@@ -411,6 +420,8 @@ public class PolymarketWalletDiscoveryService {
                 : totalSize.divide(BigDecimal.valueOf(totalTrades), 4, RoundingMode.HALF_UP);
         BigDecimal averageRoi = roiCount == 0 ? BigDecimal.ZERO
                 : roiSum.divide(BigDecimal.valueOf(roiCount), 4, RoundingMode.HALF_UP);
+        BigDecimal recentWinRate7d = recentTrades7d == 0 ? null : BigDecimal.valueOf(recentWins7d)
+                .divide(BigDecimal.valueOf(recentTrades7d), 4, RoundingMode.HALF_UP);
         BigDecimal recentWinRate30d = recentTrades == 0 ? null : BigDecimal.valueOf(recentWins)
                 .divide(BigDecimal.valueOf(recentTrades), 4, RoundingMode.HALF_UP);
         SessionProfile sessionProfile = buildSessionProfile(userTrades);
@@ -434,7 +445,10 @@ public class PolymarketWalletDiscoveryService {
         request.setEuTradeRatio30d(sessionProfile.euTradeRatio);
         request.setUsTradeRatio30d(sessionProfile.usTradeRatio);
         request.setActiveHourHistogramJson(sessionProfile.activeHourHistogramJson);
+        request.setRecentWinRate7d(recentWinRate7d);
         request.setRecentWinRate30d(recentWinRate30d);
+        request.setRecentTradeCount7d(recentTrades7d);
+        request.setRecentTradeCount30d(recentTrades);
         return request;
     }
 
@@ -462,9 +476,12 @@ public class PolymarketWalletDiscoveryService {
         BigDecimal maxDrawdownRate = safe(metrics.getMaxDrawdownRate());
         BigDecimal walletScore = scoringService.score(
                 winRate,
+                metrics.getRecentWinRate7d(),
                 metrics.getRecentWinRate30d(),
                 realizedPnlUsdc,
                 totalTrades,
+                metrics.getRecentTradeCount7d(),
+                metrics.getRecentTradeCount30d(),
                 averageRoiRate,
                 maxDrawdownRate
         );

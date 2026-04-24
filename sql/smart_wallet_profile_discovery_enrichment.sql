@@ -7,4 +7,11 @@ ALTER TABLE `smart_wallet_profile`
     ADD COLUMN `eu_trade_ratio_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日欧洲时段成交占比' AFTER `asia_trade_ratio_30d`,
     ADD COLUMN `us_trade_ratio_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日美洲时段成交占比' AFTER `eu_trade_ratio_30d`,
     ADD COLUMN `active_hour_histogram_json` TEXT DEFAULT NULL COMMENT '近30日按UTC小时聚合的成交直方图' AFTER `us_trade_ratio_30d`,
-    ADD COLUMN `recent_win_rate_30d` DECIMAL(10, 4) DEFAULT NULL COMMENT '近30日胜率' AFTER `active_hour_histogram_json`;
+    ADD COLUMN `recent_win_rate_7d` DECIMAL(10, 4) DEFAULT NULL COMMENT '近7日胜率' AFTER `active_hour_histogram_json`,
+    ADD COLUMN `recent_win_rate_30d` DECIMAL(10, 4) DEFAULT NULL COMMENT '近30日胜率' AFTER `recent_win_rate_7d`;
+
+ALTER TABLE `smart_wallet_profile`
+    ADD COLUMN `recent_trade_count_7d` INT NOT NULL DEFAULT 0 COMMENT '近7日交易样本数' AFTER `recent_win_rate_7d`,
+    ADD COLUMN `recent_trade_count_30d` INT NOT NULL DEFAULT 0 COMMENT '近30日交易样本数' AFTER `recent_win_rate_30d`,
+    ADD COLUMN `observe_cooldown_until` TIMESTAMP NULL COMMENT '近期退化观察冷却截止时间' AFTER `recent_trade_count_30d`,
+    ADD COLUMN `observe_cooldown_reason` VARCHAR(255) DEFAULT NULL COMMENT '近期退化观察原因' AFTER `observe_cooldown_until`;

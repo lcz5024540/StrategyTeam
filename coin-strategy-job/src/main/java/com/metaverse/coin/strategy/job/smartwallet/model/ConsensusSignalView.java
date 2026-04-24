@@ -37,6 +37,11 @@ public class ConsensusSignalView {
 
     /** 实体维度的平均评分（去重后，一个实体取最高钱包分） */
     private BigDecimal consensusScore;
+    private BigDecimal qualityWeightedConsensusScore;
+    private BigDecimal topEntityWeightShare;
+    private BigDecimal leaderFollowerScore;
+    private BigDecimal entityIndependenceScore;
+    private BigDecimal recentConsistencyScore;
 
     private Date latestOpenedAt;
     @Builder.Default

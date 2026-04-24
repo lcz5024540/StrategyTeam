@@ -24,6 +24,10 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -66,7 +70,14 @@ public class SmartWalletSignalRiskService {
 
         if (profile == null || !Boolean.TRUE.equals(profile.getQualified()) || !Boolean.TRUE.equals(profile.getWatchEnabled())) {
             accepted = false;
-            reasons.add("Wallet is not qualified in watchlist.");
+            if (profile != null
+                    && profile.getObserveCooldownUntil() != null
+                    && profile.getObserveCooldownUntil().after(new Date())) {
+                reasons.add("[OBSERVE_COOLDOWN_BLOCK] Wallet is currently in recent-degradation observe cooldown until "
+                        + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
+            } else {
+                reasons.add("Wallet is not qualified in watchlist.");
+            }
         }
 
         SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
@@ -205,7 +216,7 @@ public class SmartWalletSignalRiskService {
             reasons.add("A pending follow task already exists for the same market with a different outcome.");
         }
 
-        ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event);
+        ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event, risk);
 
         // 告警：检测到同一实体多钱包同时触发（记录但不拒绝）
         if (consensus.isHasSuspiciousMultiWallet()) {
@@ -213,6 +224,24 @@ public class SmartWalletSignalRiskService {
                     + "Raw wallets=" + consensus.getDistinctWallets()
                     + ", Deduped entities=" + consensus.getDedupedEntityCount()
                     + ". Using entity count for gate evaluation.");
+        }
+        if (safe(consensus.getTopEntityWeightShare()).compareTo(new BigDecimal("0.75")) > 0
+                && consensus.getDedupedEntityCount() < 3) {
+            reasons.add("[CONSENSUS_DOMINANCE] One entity contributes "
+                    + safe(consensus.getTopEntityWeightShare()).multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP)
+                    + "% of weighted consensus with only " + consensus.getDedupedEntityCount() + " deduped entities.");
+        }
+        if (safe(consensus.getEntityIndependenceScore()).compareTo(new BigDecimal("0.45")) < 0) {
+            reasons.add("[CONSENSUS_INDEPENDENCE] Entity independence score is weak at "
+                    + safe(consensus.getEntityIndependenceScore()).setScale(3, RoundingMode.HALF_UP) + ".");
+        }
+        if (safe(consensus.getRecentConsistencyScore()).compareTo(new BigDecimal("0.50")) < 0) {
+            reasons.add("[CONSENSUS_CONSISTENCY] Recent entity consistency is weak at "
+                    + safe(consensus.getRecentConsistencyScore()).setScale(3, RoundingMode.HALF_UP) + ".");
+        }
+        if (safe(consensus.getLeaderFollowerScore()).compareTo(new BigDecimal("0.40")) < 0) {
+            reasons.add("[CONSENSUS_TIMING] Consensus is driven by weak leader/follower sequencing at "
+                    + safe(consensus.getLeaderFollowerScore()).setScale(3, RoundingMode.HALF_UP) + ".");
         }
 
         boolean consensusEntityCountFailed = false;
@@ -256,14 +285,32 @@ public class SmartWalletSignalRiskService {
         if (risk.isEnableConcentrationGate()) {
             ConcentrationSnapshot snap = concentrationService.analyze(event.getMarketId(), event.getOutcome());
             if (snap.isDataAvailable()) {
-                // Gate 1：市场集中度过高 → 直接拒绝
+                // Gate 1：市场集中度过高 → 根据模式选择 BLOCK / DOWNSIZE / WARN_ONLY
                 if (snap.isHighlyConcentrated()) {
-                    accepted = false;
-                    reasons.add("[CONCENTRATION] Market is highly concentrated. " +
-                            "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
-                            " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                            " HHI=" + snap.hhi() +
-                            " holders=" + snap.observedHolders());
+                    String mode = normalizeMode(risk.getConcentrationHighRiskMode(), "DOWNSIZE");
+                    switch (mode) {
+                        case "BLOCK" -> {
+                            accepted = false;
+                            reasons.add("[CONCENTRATION] Market is highly concentrated. " +
+                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " HHI=" + snap.hhi() +
+                                    " holders=" + snap.observedHolders());
+                        }
+                        case "DOWNSIZE" -> {
+                            BigDecimal retainRate = safe(risk.getConcentrationHighRiskDownsizeRate()).max(new BigDecimal("0.05")).min(BigDecimal.ONE);
+                            preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
+                            reasons.add("[CONCENTRATION_DOWNSIZE] Highly concentrated market. " +
+                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " HHI=" + snap.hhi() +
+                                    ". Stake retained at " + retainRate.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
+                        }
+                        default -> reasons.add("[CONCENTRATION_WARN] Highly concentrated market detected but warn-only mode is enabled. " +
+                                "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                " HHI=" + snap.hhi() + ".");
+                    }
                 } else {
                     // Gate 2（告警区间）：集中度达到警戒但未触阈值 → 按比例削减 recommendedStake
                     BigDecimal safeTop3 = safe(risk.getConcentrationStakeSafeTop3Pct());
@@ -343,6 +390,7 @@ public class SmartWalletSignalRiskService {
         } else {
             recommendedStake = preliminaryStake;
         }
+        recommendedStake = applyAdvancedStakeAdjustments(recommendedStake, behaviorProfile, profitabilityEstimate, event, risk, reasons);
         recommendedStake = safe(recommendedStake).min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
         if (accepted && recommendedStake.compareTo(minOrderUsdc) < 0) {
             accepted = false;
@@ -379,13 +427,15 @@ public class SmartWalletSignalRiskService {
 
         List<SignalStrategyCheckResult> strategyChecks = buildEntryStrategyChecks(
                 profile,
+                behaviorProfile,
                 risk,
                 triggerSize,
                 recommendedStake,
                 consensus,
                 consensusEntityCountFailed,
                 consensusScoreFailed,
-                suspiciouslyPerfectWinRate
+                suspiciouslyPerfectWinRate,
+                event
         );
         SignalStrategyRouteResult strategyRoute = entryStrategyRouter.route(risk, strategyChecks);
         if (!strategyRoute.isAccepted()) {
@@ -415,7 +465,13 @@ public class SmartWalletSignalRiskService {
                 .consensusWallets(consensus.getDistinctWallets())        // 原始钱包数（历史兼容）
                 .consensusEntities(consensus.getDedupedEntityCount())    // 实体去重后数量（真实强度）
                 .consensusScore(consensus.getConsensusScore())
+                .qualityWeightedConsensusScore(consensus.getQualityWeightedConsensusScore())
+                .topEntityWeightShare(consensus.getTopEntityWeightShare())
+                .leaderFollowerScore(consensus.getLeaderFollowerScore())
+                .entityIndependenceScore(consensus.getEntityIndependenceScore())
+                .recentConsistencyScore(consensus.getRecentConsistencyScore())
                 .hasSuspiciousMultiWallet(consensus.isHasSuspiciousMultiWallet())
+                .policyTag(risk.getPolicyTag())
                 .strategyRouteMode(strategyRoute.getRouteMode())
                 .enabledStrategies(strategyRoute.getEnabledStrategies())
                 .matchedStrategies(strategyRoute.getMatchedStrategies())
@@ -503,6 +559,64 @@ public class SmartWalletSignalRiskService {
         };
     }
 
+    private BigDecimal applyAdvancedStakeAdjustments(BigDecimal stake,
+                                                     WalletBehaviorProfileView behaviorProfile,
+                                                     TradeProfitabilityScoringService.ProfitabilityEstimate profitabilityEstimate,
+                                                     SmartWalletTradeEventEntity event,
+                                                     SmartWalletProperties.SignalRisk risk,
+                                                     List<String> reasons) {
+        BigDecimal adjusted = safe(stake);
+        if (adjusted.compareTo(BigDecimal.ZERO) <= 0) {
+            return adjusted;
+        }
+        if (behaviorProfile != null && behaviorProfile.stabilityScore() != null) {
+            BigDecimal stability = safe(behaviorProfile.stabilityScore());
+            if (stability.compareTo(safe(risk.getStakeStabilityLowScore())) < 0) {
+                adjusted = adjusted.multiply(safe(risk.getStakeStabilityLowMultiplier())).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[STABILITY_STAKE] Wallet stability score is low at "
+                        + stability.setScale(3, RoundingMode.HALF_UP) + ", stake reduced.");
+            } else if (stability.compareTo(safe(risk.getStakeStabilityHighScore())) >= 0) {
+                adjusted = adjusted.multiply(safe(risk.getStakeStabilityHighMultiplier()))
+                        .min(properties.getMaxStakeUsdc())
+                        .setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[STABILITY_STAKE] Wallet stability is strong at "
+                        + stability.setScale(3, RoundingMode.HALF_UP) + ", stake modestly boosted.");
+            }
+        }
+        BigDecimal slippageRate = adjusted.compareTo(BigDecimal.ZERO) <= 0
+                ? BigDecimal.ZERO
+                : safe(profitabilityEstimate.getEstimatedSlippageUsdc()).divide(adjusted, 8, RoundingMode.HALF_UP);
+        if (slippageRate.compareTo(safe(risk.getStakeSlippagePenaltyStartRate())) > 0) {
+            BigDecimal severity = slippageRate.subtract(safe(risk.getStakeSlippagePenaltyStartRate()))
+                    .divide(new BigDecimal("0.20"), 8, RoundingMode.HALF_UP)
+                    .max(BigDecimal.ZERO)
+                    .min(BigDecimal.ONE);
+            BigDecimal multiplier = BigDecimal.ONE.subtract(severity.multiply(new BigDecimal("0.35")))
+                    .max(safe(risk.getStakePenaltyFloorMultiplier()));
+            adjusted = adjusted.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[SLIPPAGE_STAKE] Estimated slippage/stake ratio is "
+                    + slippageRate.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP)
+                    + "%, stake reduced.");
+        }
+        if (safe(profitabilityEstimate.getSlippageSpikeProbability()).compareTo(new BigDecimal("0.45")) > 0) {
+            BigDecimal multiplier = BigDecimal.ONE.subtract(
+                            safe(profitabilityEstimate.getSlippageSpikeProbability()).subtract(new BigDecimal("0.45"))
+                                    .multiply(new BigDecimal("0.40")))
+                    .max(safe(risk.getStakePenaltyFloorMultiplier()));
+            adjusted = adjusted.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[SPIKE_STAKE] Slippage spike probability is elevated at "
+                    + safe(profitabilityEstimate.getSlippageSpikeProbability()).setScale(3, RoundingMode.HALF_UP)
+                    + ", stake reduced.");
+        }
+        int correlatedOpenPositions = countCorrelatedOpenPositions(event);
+        if (correlatedOpenPositions > 0) {
+            adjusted = adjusted.multiply(safe(risk.getStakeThemeCorrelationPenaltyMultiplier())).setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[THEME_CORRELATION] Found " + correlatedOpenPositions
+                    + " open positions with similar market theme, stake reduced.");
+        }
+        return adjusted.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+    }
+
     private CapitalContext resolveCapitalContext() {
         BigDecimal strategyCapital = safe(accountingService.availableCapitalUsdc());
         ExecutionWalletContextLoader.ExecutionWalletContext wallet = executionWalletContextLoader.load();
@@ -533,51 +647,88 @@ public class SmartWalletSignalRiskService {
         return normalizedStake.multiply(scale).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private boolean qualifiesSingleWalletOverride(SmartWalletProfileEntity profile,
-                                                  SmartWalletProperties.SignalRisk risk,
-                                                  BigDecimal triggerSize,
-                                                  BigDecimal recommendedStake) {
-        if (!risk.isEnableSingleWalletOverride() || profile == null) {
-            return false;
+    private SingleWalletOverrideAssessment assessSingleWalletOverride(SmartWalletProfileEntity profile,
+                                                                     WalletBehaviorProfileView behaviorProfile,
+                                                                     SmartWalletProperties.SignalRisk risk,
+                                                                     BigDecimal triggerSize,
+                                                                     BigDecimal recommendedStake,
+                                                                     boolean suspiciouslyPerfectWinRate,
+                                                                     SmartWalletTradeEventEntity event) {
+        if (!risk.isEnableSingleWalletOverride()) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_DISABLED",
+                    "Single-wallet override strategy is disabled.");
         }
-        // Block single-wallet override for wallets with suspiciously perfect win rates:
-        // winRate >= unreliableWinRateThreshold (default 1.0) AND totalTrades <= unreliableMaxSampleSize (default 50)
-        // This catches leaderboard survivorship bias where only top-50 positions are shown, inflating win rate to 1.0.
-        if (risk.isBlockUnreliableLeaderboardWinRate()) {
-            BigDecimal winRate = safe(profile.getWinRate());
-            int totalTrades = profile.getTotalTrades() == null ? 0 : profile.getTotalTrades();
-            boolean suspiciouslyPerfect = winRate.compareTo(safe(risk.getUnreliableWinRateThreshold())) >= 0
-                    && totalTrades <= (risk.getUnreliableMaxSampleSize() == null ? 50 : risk.getUnreliableMaxSampleSize());
-            if (suspiciouslyPerfect) {
-                return false;
-            }
+        if (profile == null) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_BLOCK_LOW_SCORE",
+                    "Single-wallet override requires a qualified wallet profile.");
         }
-        return safe(profile.getWalletScore()).compareTo(safe(risk.getSingleWalletOverrideMinWalletScore())) >= 0
-                && safe(profile.getWinRate()).compareTo(safe(risk.getSingleWalletOverrideMinWinRate())) >= 0
-                && (profile.getTotalTrades() == null ? 0 : profile.getTotalTrades()) >= (risk.getSingleWalletOverrideMinTrades() == null ? 0 : risk.getSingleWalletOverrideMinTrades())
-                && triggerSize.compareTo(safe(risk.getSingleWalletOverrideMinTriggerSizeUsdc())) >= 0
-                && recommendedStake.compareTo(safe(risk.getSingleWalletOverrideMinRecommendedStakeUsdc())) >= 0;
+        if (suspiciouslyPerfectWinRate) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_BLOCK_SAMPLE",
+                    "Single-wallet override is blocked by unreliable leaderboard win-rate protection.");
+        }
+        if (profile.getObserveCooldownUntil() != null && profile.getObserveCooldownUntil().after(new Date())) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_BLOCK_RECENT_DEGRADATION",
+                    "Wallet is in recent-degradation observe cooldown until " + profile.getObserveCooldownUntil() + ".");
+        }
+        if ((profile.getTotalTrades() == null ? 0 : profile.getTotalTrades()) < defaultInt(risk.getSingleWalletOverrideMinTrades(), 0)
+                || (profile.getRecentTradeCount7d() == null ? 0 : profile.getRecentTradeCount7d()) < defaultInt(risk.getSingleWalletOverrideMinRecentTrades7d(), 0)) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_BLOCK_SAMPLE",
+                    "Single-wallet override sample thresholds are not met.");
+        }
+        if (safe(profile.getWalletScore()).compareTo(safe(risk.getSingleWalletOverrideMinWalletScore())) < 0
+                || safe(profile.getWinRate()).compareTo(safe(risk.getSingleWalletOverrideMinWinRate())) < 0
+                || safe(profile.getRecentWinRate7d()).compareTo(safe(risk.getSingleWalletOverrideMinRecentWinRate7d())) < 0
+                || triggerSize.compareTo(safe(risk.getSingleWalletOverrideMinTriggerSizeUsdc())) < 0
+                || recommendedStake.compareTo(safe(risk.getSingleWalletOverrideMinRecommendedStakeUsdc())) < 0) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_BLOCK_LOW_SCORE",
+                    "Single-wallet override score, recent win-rate or stake thresholds are not met.");
+        }
+        if (behaviorProfile == null
+                || safe(behaviorProfile.replicabilityScore()).compareTo(safe(risk.getSingleWalletOverrideMinReplicabilityScore())) < 0
+                || safe(behaviorProfile.qualityScore()).compareTo(safe(risk.getSingleWalletOverrideMinQualityScore())) < 0) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_BLOCK_BEHAVIOR",
+                    "Single-wallet override behavior quality thresholds are not met.");
+        }
+        if (!isSingleWalletOverrideSelected(profile.getWalletAddress(), event, risk)) {
+            return new SingleWalletOverrideAssessment(false,
+                    "SINGLE_OVERRIDE_BLOCK_CANARY",
+                    "Single-wallet override is currently gated by whitelist/canary policy.");
+        }
+        return new SingleWalletOverrideAssessment(true,
+                "SINGLE_OVERRIDE_PASS",
+                "Single-wallet override thresholds are fully satisfied.");
     }
 
     private List<SignalStrategyCheckResult> buildEntryStrategyChecks(SmartWalletProfileEntity profile,
+                                                                     WalletBehaviorProfileView behaviorProfile,
                                                                      SmartWalletProperties.SignalRisk risk,
                                                                      BigDecimal triggerSize,
                                                                      BigDecimal recommendedStake,
                                                                      ConsensusSignalView consensus,
                                                                      boolean consensusEntityCountFailed,
                                                                      boolean consensusScoreFailed,
-                                                                     boolean suspiciouslyPerfectWinRate) {
+                                                                     boolean suspiciouslyPerfectWinRate,
+                                                                     SmartWalletTradeEventEntity event) {
         List<SignalStrategyCheckResult> checks = new ArrayList<>();
         checks.add(buildConsensusStrategyCheck(risk, consensus, consensusEntityCountFailed, consensusScoreFailed));
         checks.add(buildSingleWalletOverrideCheck(
                 profile,
+                behaviorProfile,
                 risk,
                 triggerSize,
                 recommendedStake,
                 consensus,
                 consensusEntityCountFailed,
                 consensusScoreFailed,
-                suspiciouslyPerfectWinRate
+                suspiciouslyPerfectWinRate,
+                event
         ));
         return checks;
     }
@@ -607,31 +758,40 @@ public class SmartWalletSignalRiskService {
     }
 
     private SignalStrategyCheckResult buildSingleWalletOverrideCheck(SmartWalletProfileEntity profile,
+                                                                     WalletBehaviorProfileView behaviorProfile,
                                                                      SmartWalletProperties.SignalRisk risk,
                                                                      BigDecimal triggerSize,
                                                                      BigDecimal recommendedStake,
                                                                      ConsensusSignalView consensus,
                                                                      boolean consensusEntityCountFailed,
                                                                      boolean consensusScoreFailed,
-                                                                     boolean suspiciouslyPerfectWinRate) {
+                                                                     boolean suspiciouslyPerfectWinRate,
+                                                                     SmartWalletTradeEventEntity event) {
         List<String> reasons = new ArrayList<>();
-        boolean qualifies = qualifiesSingleWalletOverride(profile, risk, triggerSize, recommendedStake);
-        boolean accepted = qualifies && !consensusScoreFailed;
+        SingleWalletOverrideAssessment assessment = assessSingleWalletOverride(
+                profile,
+                behaviorProfile,
+                risk,
+                triggerSize,
+                recommendedStake,
+                suspiciouslyPerfectWinRate,
+                event
+        );
+        boolean accepted = assessment.qualifies()
+                && consensusEntityCountFailed
+                && !consensusScoreFailed;
 
-        if (!risk.isEnableSingleWalletOverride()) {
-            reasons.add("Single-wallet override strategy is disabled.");
-        } else if (suspiciouslyPerfectWinRate) {
-            reasons.add("Single-wallet override is blocked by unreliable leaderboard win-rate protection.");
-        } else if (!qualifies) {
-            reasons.add("Single-wallet override requirements are not met.");
+        if (!assessment.qualifies()) {
+            reasons.add("[" + assessment.reasonCode() + "] " + assessment.reasonDetail());
         }
-
-        if (qualifies && consensusScoreFailed) {
-            reasons.add("Single-wallet override cannot bypass consensus score gate.");
+        if (assessment.qualifies() && !consensusEntityCountFailed) {
+            reasons.add("[SINGLE_OVERRIDE_NOT_NEEDED] Single-wallet override only applies when consensus entity-count gate fails.");
         }
-
-        if (accepted && consensusEntityCountFailed) {
-            reasons.add("Single-wallet override matched and can bypass consensus entity-count gate (deduped entities="
+        if (assessment.qualifies() && consensusScoreFailed) {
+            reasons.add("[SINGLE_OVERRIDE_BLOCK_CONSENSUS_SCORE] Single-wallet override cannot bypass consensus score gate.");
+        }
+        if (accepted) {
+            reasons.add("[SINGLE_OVERRIDE_PASS] Single-wallet override matched and bypassed consensus entity-count gate (deduped entities="
                     + consensus.getDedupedEntityCount() + ").");
         }
 
@@ -642,10 +802,82 @@ public class SmartWalletSignalRiskService {
                 .build();
     }
 
+    private record SingleWalletOverrideAssessment(boolean qualifies,
+                                                  String reasonCode,
+                                                  String reasonDetail) {
+    }
+
     private Integer countOpenPositions() {
         Long count = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
                 .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
         return count == null ? 0 : count.intValue();
+    }
+
+    private int countCorrelatedOpenPositions(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getQuestion())) {
+            return 0;
+        }
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        marketInfoService.populatePositions(positions);
+        Set<String> currentTokens = themeTokens(event.getQuestion());
+        if (currentTokens.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (SmartWalletPositionEntity position : positions) {
+            if (!StringUtils.hasText(position.getQuestion())) {
+                continue;
+            }
+            Set<String> overlap = themeTokens(position.getQuestion());
+            overlap.retainAll(currentTokens);
+            if (overlap.size() >= 2) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private Set<String> themeTokens(String text) {
+        if (!StringUtils.hasText(text)) {
+            return Set.of();
+        }
+        return List.of(text.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")).stream()
+                .filter(StringUtils::hasText)
+                .filter(token -> token.length() >= 4)
+                .collect(Collectors.toSet());
+    }
+
+    private boolean isSingleWalletOverrideSelected(String walletAddress,
+                                                   SmartWalletTradeEventEntity event,
+                                                   SmartWalletProperties.SignalRisk risk) {
+        String normalizedWallet = normalizeWallet(walletAddress);
+        if (!StringUtils.hasText(normalizedWallet)) {
+            return false;
+        }
+        List<String> whitelist = risk.getSingleWalletOverrideWhitelist();
+        if (whitelist != null && whitelist.stream().filter(StringUtils::hasText)
+                .map(this::normalizeWallet)
+                .anyMatch(normalizedWallet::equals)) {
+            return true;
+        }
+        if (!risk.isEnableSingleWalletOverrideCanary()) {
+            return true;
+        }
+        BigDecimal rate = safe(risk.getSingleWalletOverrideCanaryRate()).max(BigDecimal.ZERO).min(BigDecimal.ONE);
+        String seed = normalizedWallet + "|" + (event == null ? "" : normalizeWallet(event.getMarketId()))
+                + "|" + (event == null ? "" : normalizeWallet(event.getOutcome()));
+        int bucket = Math.floorMod(Objects.hash(seed), 10_000);
+        int threshold = rate.multiply(new BigDecimal("10000")).setScale(0, RoundingMode.HALF_UP).intValue();
+        return bucket < threshold;
+    }
+
+    private String normalizeWallet(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeMode(String value, String fallback) {
+        return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : fallback;
     }
 
     private BigDecimal totalOpenCostUsdc() {

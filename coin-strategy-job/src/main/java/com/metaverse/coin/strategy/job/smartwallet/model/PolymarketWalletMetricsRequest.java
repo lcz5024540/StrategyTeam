@@ -25,5 +25,8 @@ public class PolymarketWalletMetricsRequest {
     private BigDecimal euTradeRatio30d;
     private BigDecimal usTradeRatio30d;
     private String activeHourHistogramJson;
+    private BigDecimal recentWinRate7d;
     private BigDecimal recentWinRate30d;
+    private Integer recentTradeCount7d;
+    private Integer recentTradeCount30d;
 }

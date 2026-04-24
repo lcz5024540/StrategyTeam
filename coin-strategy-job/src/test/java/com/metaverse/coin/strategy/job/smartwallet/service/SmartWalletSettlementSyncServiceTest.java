@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRetryMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRunMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSettlementRetryEntity;
@@ -32,6 +33,8 @@ class SmartWalletSettlementSyncServiceTest {
     @Mock
     private SmartWalletAccountingService accountingService;
     @Mock
+    private SmartWalletPositionMapper positionMapper;
+    @Mock
     private SmartWalletSettlementRunMapper settlementRunMapper;
     @Mock
     private SmartWalletSettlementRetryMapper settlementRetryMapper;
@@ -48,6 +51,7 @@ class SmartWalletSettlementSyncServiceTest {
         service = new SmartWalletSettlementSyncService(
                 properties,
                 accountingService,
+                positionMapper,
                 settlementRunMapper,
                 settlementRetryMapper,
                 new ObjectMapper(),
