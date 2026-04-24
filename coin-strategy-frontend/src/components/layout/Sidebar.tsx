@@ -19,7 +19,8 @@ export function Sidebar() {
       path === '/dashboard' ||
       path.startsWith('/dashboard/detail') ||
       path.startsWith('/dashboard/charts') ||
-      path.startsWith('/dashboard/monitoring')
+      path.startsWith('/dashboard/monitoring') ||
+      path.startsWith('/dashboard/markets')
     ) {
       return 'POLYMARKET_COPY'
     }
@@ -52,6 +53,7 @@ export function Sidebar() {
             <NavLink to={`/dashboard/detail?strategy=${strategyParam}`}>详情</NavLink>
             <NavLink to={`/dashboard/charts?strategy=${strategyParam}`}>图表</NavLink>
             <NavLink to={`/dashboard/monitoring?strategy=${strategyParam}`}>监控</NavLink>
+            <NavLink to={`/dashboard/markets?strategy=${strategyParam}`}>市场</NavLink>
           </nav>
         </div>
       )}

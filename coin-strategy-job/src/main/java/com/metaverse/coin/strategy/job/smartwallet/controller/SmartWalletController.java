@@ -35,6 +35,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportu
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCandidateView;
@@ -72,6 +73,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimStatusV
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationSummaryResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
@@ -96,6 +98,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowServ
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
@@ -181,6 +184,7 @@ public class SmartWalletController {
     private final SmartWalletProfileStoreService smartWalletProfileStoreService;
     private final WalletProfileAnalysisService walletProfileAnalysisService;
     private final SmartWalletReplayBacktestService smartWalletReplayBacktestService;
+    private final SmartWalletMarketMonitoringService smartWalletMarketMonitoringService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -879,6 +883,12 @@ public class SmartWalletController {
         return smartWalletReplayBacktestService.replay(request);
     }
 
+    @Operation(summary = "集中度影响回放摘要", description = "基于 replay-backtest 结果提取 concentration-only 视图，重点展示 concentration / extreme concentration 的拦截、降仓与代理收益影响。")
+    @PostMapping("/follow-tasks/replay-backtest/concentration-summary")
+    public SmartWalletReplayConcentrationSummaryResult replayConcentrationSummary(@RequestBody(required = false) SmartWalletReplayBacktestRequest request) {
+        return smartWalletReplayBacktestService.replayConcentrationSummary(request);
+    }
+
     @Operation(summary = "处理跟单任务", description = "手动触发一轮待执行 follow task 处理。")
     @PostMapping("/follow-tasks/process")
     public Map<String, Object> processFollowTasks() {
@@ -1289,6 +1299,15 @@ public class SmartWalletController {
     public List<SmartWalletReportAttributionItem> marketReports(@RequestParam(defaultValue = "20") Integer limit,
                                                                 @RequestParam(required = false) String mode) {
         return accountingService.marketAttribution(limit, mode);
+    }
+
+    @Operation(summary = "市场监控总览", description = "面向前端市场页的聚合接口，汇总当前监控市场、有效市场、高集中/极端集中市场、趋势和市场表格。")
+    @GetMapping("/reports/market-monitoring")
+    public SmartWalletMarketMonitoringSummaryView marketMonitoringSummary(
+            @RequestParam(defaultValue = "40") Integer limit,
+            @RequestParam(defaultValue = "14") Integer lookbackDays,
+            @RequestParam(defaultValue = "7") Integer trendDays) {
+        return smartWalletMarketMonitoringService.summary(limit, lookbackDays, trendDays);
     }
 
     @Operation(summary = "派生 CLOB API 凭证", description = "基于执行钱包派生 Polymarket CLOB API key、secret 与 passphrase。")

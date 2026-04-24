@@ -45,6 +45,7 @@ public class SmartWalletPositionSyncService {
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final PolymarketConsensusSignalService consensusSignalService;
     private final MarketSnapshotCollectorService marketSnapshotCollectorService;
+    private final MarketConcentrationService marketConcentrationService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
@@ -521,6 +522,8 @@ public class SmartWalletPositionSyncService {
         ExitScoringContext context = buildExitScoringContext(position);
         BigDecimal pressure = safe(risk.getExitScoringConsensusDecayWeight()).multiply(context.consensusDecay())
                 .add(safe(risk.getExitScoringOrderbookDeteriorationWeight()).multiply(context.orderbookDeterioration()))
+                .add(safe(risk.getExitScoringHighConcentrationWeight()).multiply(context.highConcentrationPressure()))
+                .add(safe(risk.getExitScoringExtremeConcentrationWeight()).multiply(context.extremeConcentrationPressure()))
                 .add(safe(risk.getExitScoringSourceWalletReductionWeight()).multiply(context.sourceWalletReduction()))
                 .subtract(safe(risk.getExitScoringSourceWalletAddWeight()).multiply(context.sourceWalletAdd()))
                 .max(new BigDecimal("-0.50"))
@@ -530,7 +533,7 @@ public class SmartWalletPositionSyncService {
                 : BigDecimal.ONE.subtract(pressure.multiply(new BigDecimal("0.45")));
         BigDecimal adjusted = normalizeThreshold(baseThreshold.multiply(multiplier), mode);
         if (adjusted.compareTo(baseThreshold) != 0) {
-            log.debug("Exit scoring context adjusted {} threshold for positionId={} marketId={} {} -> {} (consensusDecay={}, orderbook={}, sourceReduce={}, sourceAdd={})",
+            log.debug("Exit scoring context adjusted {} threshold for positionId={} marketId={} {} -> {} (consensusDecay={}, orderbook={}, highConcentration={}, extremeConcentration={}, sourceReduce={}, sourceAdd={})",
                     mode.logLabel(),
                     position.getId(),
                     position.getMarketId(),
@@ -538,6 +541,8 @@ public class SmartWalletPositionSyncService {
                     adjusted.setScale(4, RoundingMode.HALF_UP),
                     context.consensusDecay().setScale(4, RoundingMode.HALF_UP),
                     context.orderbookDeterioration().setScale(4, RoundingMode.HALF_UP),
+                    context.highConcentrationPressure().setScale(4, RoundingMode.HALF_UP),
+                    context.extremeConcentrationPressure().setScale(4, RoundingMode.HALF_UP),
                     context.sourceWalletReduction().setScale(4, RoundingMode.HALF_UP),
                     context.sourceWalletAdd().setScale(4, RoundingMode.HALF_UP));
         }
@@ -583,9 +588,12 @@ public class SmartWalletPositionSyncService {
             }
         }
         BigDecimal orderbookDeterioration = resolveOrderbookDeterioration(position);
+        ConcentrationPressure concentrationPressure = resolveConcentrationPressure(position);
         return new ExitScoringContext(
                 consensusDecay.max(BigDecimal.ZERO).min(BigDecimal.ONE),
                 orderbookDeterioration.max(BigDecimal.ZERO).min(BigDecimal.ONE),
+                concentrationPressure.highPressure(),
+                concentrationPressure.extremePressure(),
                 sourceReduction.max(BigDecimal.ZERO).min(BigDecimal.ONE),
                 sourceAdd.max(BigDecimal.ZERO).min(BigDecimal.ONE)
         );
@@ -644,6 +652,35 @@ public class SmartWalletPositionSyncService {
                 .add(volatilityRisk.multiply(new BigDecimal("0.30")))
                 .add(imbalanceRisk.multiply(new BigDecimal("0.25")))
                 .setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private ConcentrationPressure resolveConcentrationPressure(SmartWalletPositionEntity position) {
+        if (position == null || !StringUtils.hasText(position.getMarketId())) {
+            return ConcentrationPressure.none();
+        }
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        MarketConcentrationService.ConcentrationSnapshot snap =
+                marketConcentrationService.analyze(position.getMarketId(), position.getOutcome());
+        if (snap == null || !snap.isDataAvailable()) {
+            return ConcentrationPressure.none();
+        }
+        if (snap.isExtremelyConcentrated()) {
+            return new ConcentrationPressure(BigDecimal.ONE, BigDecimal.ONE);
+        }
+        if (snap.isHighlyConcentrated()) {
+            return new ConcentrationPressure(BigDecimal.ONE, BigDecimal.ZERO);
+        }
+        BigDecimal safeTop3 = safe(risk.getConcentrationStakeSafeTop3Pct());
+        BigDecimal blockTop3 = safe(risk.getMaxTop3ConcentrationPct());
+        BigDecimal top3 = safe(snap.top3Pct());
+        if (top3.compareTo(safeTop3) <= 0 || blockTop3.compareTo(safeTop3) <= 0) {
+            return ConcentrationPressure.none();
+        }
+        BigDecimal scaled = top3.subtract(safeTop3)
+                .divide(blockTop3.subtract(safeTop3), 8, RoundingMode.HALF_UP)
+                .max(BigDecimal.ZERO)
+                .min(BigDecimal.ONE);
+        return new ConcentrationPressure(scaled, BigDecimal.ZERO);
     }
 
     private BigDecimal normalizeThreshold(BigDecimal threshold, AutoExitMode mode) {
@@ -779,7 +816,16 @@ public class SmartWalletPositionSyncService {
 
     private record ExitScoringContext(BigDecimal consensusDecay,
                                       BigDecimal orderbookDeterioration,
+                                      BigDecimal highConcentrationPressure,
+                                      BigDecimal extremeConcentrationPressure,
                                       BigDecimal sourceWalletReduction,
                                       BigDecimal sourceWalletAdd) {
+    }
+
+    private record ConcentrationPressure(BigDecimal highPressure,
+                                         BigDecimal extremePressure) {
+        private static ConcentrationPressure none() {
+            return new ConcentrationPressure(BigDecimal.ZERO, BigDecimal.ZERO);
+        }
     }
 }

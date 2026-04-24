@@ -541,20 +541,30 @@
 当前默认：
 
 - `enable-concentration-gate = true`
+- `extreme-concentration-mode = BLOCK`
 - `concentration-high-risk-mode = DOWNSIZE`
 - `whale-signal-source-mode = DOWNSIZE`
+- `max-top1-extreme-concentration-pct = 0.70`
+- `max-top3-extreme-concentration-pct = 0.90`
+- `max-top5-extreme-concentration-pct = 0.95`
+- `extreme-concentration-max-observed-holders = 10`
+- `max-extreme-hhi = 6000`
 
 打开后会：
 
-- 市场过度集中 -> 可按 `BLOCK / DOWNSIZE / WARN_ONLY` 处理
+- 极端集中市场 -> 默认直接 `BLOCK`
+- 普通高集中市场 -> 可按 `BLOCK / DOWNSIZE / WARN_ONLY` 处理
 - 市场处于警戒区 -> 下调 stake
 - 若触发信号的钱包本身就是 top holder，可按 `BLOCK / DOWNSIZE / WARN_ONLY` 处理
 
 当前实际默认是更保守的灰度方式：
 
-- 高风险集中市场先记 `CONCENTRATION_DOWNSIZE`
+- 极端集中市场优先记 `EXTREME_CONCENTRATION`
+- 高风险集中市场再记 `CONCENTRATION_DOWNSIZE`
 - 警戒区继续叠加 `CONCENTRATION_PENALTY`
 - 触发钱包本身是 top holder，则再走一层 `WHALE_SIGNAL`
+
+也就是说，像“Top1/Top3 持仓占比已经到 90%+”这类市场，不再和普通高集中市场共用同一套 downsizing，而是进入单独的极端控盘分支。
 
 ### H. 模型门控
 
@@ -725,6 +735,8 @@ EV gate 在配置对象中叫 `enableProfitabilityGate`，当前 YAML 通过兼�
 
 - `exit-scoring-consensus-decay-weight`
 - `exit-scoring-orderbook-deterioration-weight`
+- `exit-scoring-high-concentration-weight`
+- `exit-scoring-extreme-concentration-weight`
 - `exit-scoring-source-wallet-reduction-weight`
 - `exit-scoring-source-wallet-add-weight`
 
@@ -732,6 +744,13 @@ EV gate 在配置对象中叫 `enableProfitabilityGate`，当前 YAML 通过兼�
 
 - 止损阈值更紧
 - 止盈阈值更早
+
+另外，当前持仓如果后续市场集中度继续恶化：
+
+- 普通高集中会提高 exit pressure
+- 极端集中会显著提高 exit pressure
+
+也就是说，“极端控盘”现在不只在入场前拦截，也会在持仓期推动更积极的退出。
 
 ---
 
@@ -1103,6 +1122,9 @@ flowchart TD
 当前代码已经补上独立的 replay/backtest 服务：
 
 - 入口：`POST /smart-wallet/follow-tasks/replay-backtest`
+- concentration-only 摘要入口：`POST /smart-wallet/follow-tasks/replay-backtest/concentration-summary`
+- 前端市场页入口：`coin-strategy-frontend -> /dashboard/markets`
+- 市场监控聚合接口：`GET /smart-wallet/reports/market-monitoring`
 - 请求体：
   - `windowDays`，默认 `[30, 60, 90]`
   - `maxEventsPerWindow`，默认 `2000`
@@ -1119,10 +1141,17 @@ flowchart TD
     - `exitMode`
     - `overrideCount`
     - `recentDegradationBlockCount`
+    - `concentrationBlockedCount`
+    - `extremeConcentrationBlockedCount`
+    - `concentrationDownsizedAcceptedCount`
     - `winRate`
     - `realizedPnlUsdc`
     - `settlementProxyPnlUsdc`
     - `maxDrawdownUsdc`
+    - `concentrationBlockedProxyPnlUsdc`
+    - `concentrationBlockedProxyMaxDrawdownUsdc`
+    - `extremeConcentrationBlockedProxyPnlUsdc`
+    - `extremeConcentrationBlockedProxyMaxDrawdownUsdc`
     - `averageHoldMinutes`
     - `skipReasonDistribution`
 
@@ -1136,6 +1165,66 @@ curl -X POST "http://127.0.0.1:8081/strategy/api/smart-wallet/follow-tasks/repla
     "maxEventsPerWindow": 2000
   }'
 ```
+
+concentration-only 摘要示例：
+
+```bash
+curl -X POST "http://127.0.0.1:8081/strategy/api/smart-wallet/follow-tasks/replay-backtest/concentration-summary" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "windowDays": [30, 60, 90],
+    "maxEventsPerWindow": 2000
+  }'
+```
+
+这个 summary 视图不是再跑一套独立回测逻辑，而是从当前 replay 结果里提炼 concentration 相关指标，重点只看：
+
+- `concentrationBlockedCount`
+- `extremeConcentrationBlockedCount`
+- `totalConcentrationBlockedCount`
+- `concentrationBlockedRate`
+- `concentrationDownsizedAcceptedCount`
+- `concentrationBlockedProxyPnlUsdc`
+- `extremeConcentrationBlockedProxyPnlUsdc`
+- `totalConcentrationBlockedProxyPnlUsdc`
+- `worstConcentrationBlockedProxyMaxDrawdownUsdc`
+- `candidateConcentrationReasonDistribution`
+- 同时保留 `baseline vs candidate` 的：
+  - `acceptanceRateDelta`
+  - `realizedPnlDeltaUsdc`
+  - `maxDrawdownDeltaUsdc`
+
+这能更直接回答两个问题：
+
+- 高集中 / 极端集中市场到底拦掉了多少
+- 如果当时没拦，这部分事件大概会贡献多少代理收益与代理回撤
+
+### 市场监控控制台
+
+为避免把页面塞进 `job` 服务，市场可视化已经迁到独立前端 `coin-strategy-frontend`。
+
+- Polymarket 跟单策略侧边导航新增 `市场`
+- 页面路由：`/dashboard/markets`
+- 数据接口：`GET /strategy/api/smart-wallet/reports/market-monitoring`
+
+这个接口会一次性返回：
+
+- `monitoredMarketCount / effectiveMarketCount / concentratedMarketCount / extremeConcentratedMarketCount`
+- `openPositionMarketCount / pendingTaskMarketCount / signalDrivenMarketCount`
+- `concentrationCoverageRate`
+- `trend`
+  - 最近 `N` 天的监控市场、有效市场、高集中市场、极端集中市场、信号数、pending 任务数
+- `items`
+  - 每个市场的 `top1/top3/top5`、`HHI`、持仓人数、信号数、地址数、pending 任务数、持仓数、成本、未实现盈亏、最新信号时间、市场结束时间
+
+前端页面当前默认提供 3 组图：
+
+- 市场趋势图
+  - 监控市场 / 有效市场 / 高集中 / 极端集中 + 信号数
+- 控盘排行图
+  - 按 `Top3` 控盘占比排序，并叠加 `HHI`
+- 控盘分布图
+  - `Top3` 控盘占比 vs `HHI` 的市场散点气泡图，气泡大小反映市场活跃度
 
 ### baseline 与 candidate 的差异
 
@@ -1175,6 +1264,11 @@ curl -X POST "http://127.0.0.1:8081/strategy/api/smart-wallet/follow-tasks/repla
 - 拦截原因分析
 - override / observe cooldown / 共识加权 / concentration / exit mode 的结构对比
 - entry -> exit proxy -> settlement proxy 的统一评估
+
+现在 replay 还会额外回答两个更具体的问题：
+
+- 高集中市场总共拦掉了多少次
+- 极端集中市场如果当时真的跟了，代理收益和代理回撤大概会怎样
 
 ### 参数治理能力
 

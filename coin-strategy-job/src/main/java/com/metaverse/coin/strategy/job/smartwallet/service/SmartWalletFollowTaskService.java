@@ -1171,6 +1171,8 @@ public class SmartWalletFollowTaskService {
             return "CAPITAL_DEPLETED";
         }
         if (text.contains("[concentration]") || text.contains("[concentration_penalty]")
+                || text.contains("[extreme_concentration]") || text.contains("[extreme_concentration_downsize]")
+                || text.contains("[extreme_concentration_warn]")
                 || text.contains("[concentration_downsize]") || text.contains("[concentration_warn]")
                 || text.contains("[whale_signal]")) {
             return "CONCENTRATION";

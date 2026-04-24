@@ -139,7 +139,8 @@ public class MarketConcentrationService {
                 .collect(Collectors.toList());
 
         // ── 是否高度集中判定 ─────────────────────────────────────────────────
-        boolean highlyConcentrated = isHighlyConcentrated(cr1, cr3, hhi, risk);
+        boolean extremelyConcentrated = isExtremelyConcentrated(cr1, cr3, cr5, hhi, filtered.size(), risk);
+        boolean highlyConcentrated = extremelyConcentrated || isHighlyConcentrated(cr1, cr3, hhi, risk);
 
         ConcentrationSnapshot snapshot = new ConcentrationSnapshot(
                 conditionId,
@@ -149,16 +150,18 @@ public class MarketConcentrationService {
                 cr3,
                 cr5,
                 hhi,
+                extremelyConcentrated,
                 highlyConcentrated,
                 topAddresses,
                 System.currentTimeMillis()
         );
 
-        log.debug("[Concentration] market={} outcome={} holders={} CR1={} CR3={} HHI={} concentrated={}",
+        log.debug("[Concentration] market={} outcome={} holders={} CR1={} CR3={} CR5={} HHI={} extreme={} concentrated={}",
                 conditionId, normalizedOutcome, filtered.size(),
                 cr1.setScale(3, RoundingMode.HALF_UP),
                 cr3.setScale(3, RoundingMode.HALF_UP),
-                hhi, highlyConcentrated);
+                cr5.setScale(3, RoundingMode.HALF_UP),
+                hhi, extremelyConcentrated, highlyConcentrated);
 
         return snapshot;
     }
@@ -193,6 +196,22 @@ public class MarketConcentrationService {
         return false;
     }
 
+    private boolean isExtremelyConcentrated(BigDecimal cr1,
+                                            BigDecimal cr3,
+                                            BigDecimal cr5,
+                                            int hhi,
+                                            int observedHolders,
+                                            SmartWalletProperties.SignalRisk risk) {
+        if (cr1.compareTo(safe(risk.getMaxTop1ExtremeConcentrationPct())) >= 0) return true;
+        if (cr3.compareTo(safe(risk.getMaxTop3ExtremeConcentrationPct())) >= 0) return true;
+        if (risk.getMaxExtremeHhi() > 0 && hhi >= risk.getMaxExtremeHhi()) return true;
+        int holderThreshold = risk.getExtremeConcentrationMaxObservedHolders() == null
+                ? 10
+                : Math.max(1, risk.getExtremeConcentrationMaxObservedHolders());
+        return observedHolders <= holderThreshold
+                && cr5.compareTo(safe(risk.getMaxTop5ExtremeConcentrationPct())) >= 0;
+    }
+
     private BigDecimal safe(BigDecimal val) {
         return val != null ? val : BigDecimal.ONE;
     }
@@ -209,6 +228,7 @@ public class MarketConcentrationService {
      * @param top3Pct             CR_3：前三持仓者合计占比
      * @param top5Pct             CR_5：前五持仓者合计占比
      * @param hhi                 HHI 指数（0-10000）
+     * @param isExtremelyConcentrated 是否触发极端集中阈值
      * @param isHighlyConcentrated 是否触发集中度阈值
      * @param topHolderAddresses  前5持仓者地址（用于鲸鱼身份检测）
      * @param capturedAt          数据采集时间戳（ms）
@@ -221,6 +241,7 @@ public class MarketConcentrationService {
             BigDecimal top3Pct,
             BigDecimal top5Pct,
             int hhi,
+            boolean isExtremelyConcentrated,
             boolean isHighlyConcentrated,
             List<String> topHolderAddresses,
             long capturedAt
@@ -229,7 +250,7 @@ public class MarketConcentrationService {
         public static final ConcentrationSnapshot UNKNOWN = new ConcentrationSnapshot(
                 null, "UNKNOWN", 0,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                0, false,
+                0, false, false,
                 Collections.emptyList(),
                 0L
         );

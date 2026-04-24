@@ -6,6 +6,7 @@ import { ChartsPage } from '../pages/ChartsPage'
 import { MonitoringPage } from '../pages/MonitoringPage'
 import { PolymarketHedgePage } from '../pages/PolymarketHedgePage'
 import { FundingArbPage } from '../pages/FundingArbPage'
+import { MarketsPage } from '../pages/MarketsPage'
 
 export const router = createBrowserRouter([
   {
@@ -31,6 +32,10 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard/monitoring',
         element: <MonitoringPage />,
+      },
+      {
+        path: 'dashboard/markets',
+        element: <MarketsPage />,
       },
       {
         path: 'dashboard/polymarket-hedge',

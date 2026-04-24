@@ -11,6 +11,8 @@ import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationSummaryResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationWindowSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayStrategyMetrics;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayWindowResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
@@ -60,6 +62,29 @@ public class SmartWalletReplayBacktestService {
                 .build();
     }
 
+    public SmartWalletReplayConcentrationSummaryResult replayConcentrationSummary(SmartWalletReplayBacktestRequest request) {
+        return summarizeConcentration(replay(request));
+    }
+
+    public SmartWalletReplayConcentrationSummaryResult summarizeConcentration(SmartWalletReplayBacktestResult replayResult) {
+        SmartWalletReplayBacktestResult safeResult = replayResult == null
+                ? SmartWalletReplayBacktestResult.builder().generatedAt(new Date()).build()
+                : replayResult;
+        List<SmartWalletReplayConcentrationWindowSummary> windows = safeResult.getWindows() == null
+                ? List.of()
+                : safeResult.getWindows().stream()
+                .filter(Objects::nonNull)
+                .map(this::toConcentrationSummaryWindow)
+                .toList();
+        return SmartWalletReplayConcentrationSummaryResult.builder()
+                .generatedAt(new Date())
+                .sourceReplayGeneratedAt(safeResult.getGeneratedAt())
+                .applied(safeResult.getApplied())
+                .summaryScope("Filters replay output down to concentration-specific impacts from the candidate policy while preserving baseline-vs-candidate deltas for context.")
+                .windows(windows)
+                .build();
+    }
+
     private SmartWalletReplayWindowResult replayWindow(Integer windowDays, Integer maxEventsPerWindow) {
         int safeWindowDays = windowDays == null ? 30 : Math.max(windowDays, 1);
         int safeLimit = maxEventsPerWindow == null ? 2000 : Math.max(1, Math.min(maxEventsPerWindow, 10000));
@@ -100,6 +125,56 @@ public class SmartWalletReplayBacktestService {
                 .build();
     }
 
+    private SmartWalletReplayConcentrationWindowSummary toConcentrationSummaryWindow(SmartWalletReplayWindowResult window) {
+        SmartWalletReplayStrategyMetrics baseline = window == null || window.getBaseline() == null
+                ? SmartWalletReplayStrategyMetrics.builder().build()
+                : window.getBaseline();
+        SmartWalletReplayStrategyMetrics candidate = window == null || window.getCandidate() == null
+                ? SmartWalletReplayStrategyMetrics.builder().build()
+                : window.getCandidate();
+        int scannedEvents = safeInt(window == null ? null : window.getScannedEvents());
+        int concentrationBlockedCount = safeInt(candidate.getConcentrationBlockedCount());
+        int extremeConcentrationBlockedCount = safeInt(candidate.getExtremeConcentrationBlockedCount());
+        int totalConcentrationBlockedCount = concentrationBlockedCount + extremeConcentrationBlockedCount;
+        BigDecimal totalBlockedProxyPnl = safeDecimal(candidate.getConcentrationBlockedProxyPnlUsdc())
+                .add(safeDecimal(candidate.getExtremeConcentrationBlockedProxyPnlUsdc()))
+                .setScale(4, RoundingMode.HALF_UP);
+        BigDecimal worstBlockedProxyMaxDrawdown = safeDecimal(candidate.getConcentrationBlockedProxyMaxDrawdownUsdc())
+                .max(safeDecimal(candidate.getExtremeConcentrationBlockedProxyMaxDrawdownUsdc()))
+                .setScale(4, RoundingMode.HALF_UP);
+        return SmartWalletReplayConcentrationWindowSummary.builder()
+                .windowDays(window == null ? null : window.getWindowDays())
+                .scannedEvents(scannedEvents)
+                .baselinePolicyTag(baseline.getPolicyTag())
+                .candidatePolicyTag(candidate.getPolicyTag())
+                .baselineAcceptedEvents(safeInt(baseline.getAcceptedEvents()))
+                .candidateAcceptedEvents(safeInt(candidate.getAcceptedEvents()))
+                .acceptedDelta(safeInt(candidate.getAcceptedEvents()) - safeInt(baseline.getAcceptedEvents()))
+                .baselineAcceptanceRate(scaleRate(baseline.getAcceptanceRate()))
+                .candidateAcceptanceRate(scaleRate(candidate.getAcceptanceRate()))
+                .acceptanceRateDelta(scaleRate(safeDecimal(candidate.getAcceptanceRate()).subtract(safeDecimal(baseline.getAcceptanceRate()))))
+                .concentrationBlockedCount(concentrationBlockedCount)
+                .extremeConcentrationBlockedCount(extremeConcentrationBlockedCount)
+                .totalConcentrationBlockedCount(totalConcentrationBlockedCount)
+                .concentrationBlockedRate(ratio(totalConcentrationBlockedCount, scannedEvents))
+                .concentrationDownsizedAcceptedCount(safeInt(candidate.getConcentrationDownsizedAcceptedCount()))
+                .concentrationDownsizedAcceptedRate(ratio(candidate.getConcentrationDownsizedAcceptedCount(), scannedEvents))
+                .concentrationBlockedProxyPnlUsdc(scaleMoney(candidate.getConcentrationBlockedProxyPnlUsdc()))
+                .extremeConcentrationBlockedProxyPnlUsdc(scaleMoney(candidate.getExtremeConcentrationBlockedProxyPnlUsdc()))
+                .totalConcentrationBlockedProxyPnlUsdc(totalBlockedProxyPnl)
+                .concentrationBlockedProxyMaxDrawdownUsdc(scaleMoney(candidate.getConcentrationBlockedProxyMaxDrawdownUsdc()))
+                .extremeConcentrationBlockedProxyMaxDrawdownUsdc(scaleMoney(candidate.getExtremeConcentrationBlockedProxyMaxDrawdownUsdc()))
+                .worstConcentrationBlockedProxyMaxDrawdownUsdc(worstBlockedProxyMaxDrawdown)
+                .baselineRealizedPnlUsdc(scaleMoney(baseline.getRealizedPnlUsdc()))
+                .candidateRealizedPnlUsdc(scaleMoney(candidate.getRealizedPnlUsdc()))
+                .realizedPnlDeltaUsdc(scaleMoney(safeDecimal(candidate.getRealizedPnlUsdc()).subtract(safeDecimal(baseline.getRealizedPnlUsdc()))))
+                .baselineMaxDrawdownUsdc(scaleMoney(baseline.getMaxDrawdownUsdc()))
+                .candidateMaxDrawdownUsdc(scaleMoney(candidate.getMaxDrawdownUsdc()))
+                .maxDrawdownDeltaUsdc(scaleMoney(safeDecimal(candidate.getMaxDrawdownUsdc()).subtract(safeDecimal(baseline.getMaxDrawdownUsdc()))))
+                .candidateConcentrationReasonDistribution(filterConcentrationReasons(candidate.getSkipReasonDistribution()))
+                .build();
+    }
+
     private void evaluateScenario(SmartWalletTradeEventEntity event,
                                   SmartWalletProfileEntity sourceProfile,
                                   WalletBehaviorProfileView behaviorProfile,
@@ -134,6 +209,9 @@ public class SmartWalletReplayBacktestService {
             if (decision.isOverrideApplied()) {
                 accumulator.overrideCount++;
             }
+            if (hasConcentrationDownsize(decision.getReasons())) {
+                accumulator.concentrationDownsizedAcceptedCount++;
+            }
             BigDecimal scaledPnl = scalePnl(resolveExitPnl(label, risk), label, decision.getRecommendedStakeUsdc());
             BigDecimal settlementProxyPnl = scalePnl(label == null ? null : label.getNetPnlRule(), label, decision.getRecommendedStakeUsdc());
             if (scaledPnl != null) {
@@ -156,6 +234,7 @@ public class SmartWalletReplayBacktestService {
         if (decision.getReasons() != null && decision.getReasons().stream().anyMatch(reason -> reason.contains("[OBSERVE_COOLDOWN_BLOCK]"))) {
             accumulator.recentDegradationBlockCount++;
         }
+        accumulateConcentrationReplayStats(accumulator, decision, risk, label);
         if (decision.getReasons() != null) {
             for (String reason : decision.getReasons()) {
                 accumulator.skipReasonDistribution.merge(classifyReason(reason), 1, Integer::sum);
@@ -412,6 +491,40 @@ public class SmartWalletReplayBacktestService {
         return new BigDecimal("15");
     }
 
+    private void accumulateConcentrationReplayStats(StrategyAccumulator accumulator,
+                                                    SignalRiskDecision decision,
+                                                    SmartWalletProperties.SignalRisk risk,
+                                                    SmartWalletTradeEffectLabelEntity label) {
+        if (decision == null || decision.getReasons() == null || decision.getReasons().isEmpty()) {
+            return;
+        }
+        boolean extremeBlocked = decision.getReasons().stream().anyMatch(reason -> reason.contains("[EXTREME_CONCENTRATION]"));
+        boolean concentrationBlocked = !extremeBlocked
+                && decision.getReasons().stream().anyMatch(reason -> reason.contains("[CONCENTRATION]"));
+        if (!extremeBlocked && !concentrationBlocked) {
+            return;
+        }
+        BigDecimal proxyPnl = scalePnl(resolveExitPnl(label, risk), label, decision.getRecommendedStakeUsdc());
+        if (extremeBlocked) {
+            accumulator.extremeConcentrationBlockedCount++;
+            accumulator.accumulateExtremeConcentrationProxy(proxyPnl);
+        } else {
+            accumulator.concentrationBlockedCount++;
+            accumulator.accumulateConcentrationProxy(proxyPnl);
+        }
+    }
+
+    private boolean hasConcentrationDownsize(List<String> reasons) {
+        if (reasons == null || reasons.isEmpty()) {
+            return false;
+        }
+        return reasons.stream().anyMatch(reason ->
+                reason.contains("[CONCENTRATION_DOWNSIZE]")
+                        || reason.contains("[CONCENTRATION_PENALTY]")
+                        || reason.contains("[EXTREME_CONCENTRATION_DOWNSIZE]")
+                        || reason.contains("[WHALE_SIGNAL]"));
+    }
+
     private SmartWalletReplayBacktestRequest normalizeRequest(SmartWalletReplayBacktestRequest request) {
         SmartWalletReplayBacktestRequest applied = request == null ? new SmartWalletReplayBacktestRequest() : request;
         List<Integer> windows = (applied.getWindowDays() == null || applied.getWindowDays().isEmpty() ? DEFAULT_WINDOWS : applied.getWindowDays())
@@ -424,6 +537,48 @@ public class SmartWalletReplayBacktestService {
         applied.setWindowDays(windows.isEmpty() ? DEFAULT_WINDOWS : windows);
         applied.setMaxEventsPerWindow(applied.getMaxEventsPerWindow() == null ? 2000 : Math.max(1, Math.min(applied.getMaxEventsPerWindow(), 10000)));
         return applied;
+    }
+
+    private Map<String, Integer> filterConcentrationReasons(Map<String, Integer> reasons) {
+        LinkedHashMap<String, Integer> filtered = new LinkedHashMap<>();
+        if (reasons == null || reasons.isEmpty()) {
+            return filtered;
+        }
+        reasons.forEach((key, value) -> {
+            if (key == null) {
+                return;
+            }
+            String normalized = key.trim().toUpperCase(Locale.ROOT);
+            if (normalized.contains("CONCENTRATION") || normalized.contains("WHALE_SIGNAL")) {
+                filtered.put(normalized, value);
+            }
+        });
+        return filtered;
+    }
+
+    private int safeInt(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private BigDecimal safeDecimal(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private BigDecimal scaleRate(BigDecimal value) {
+        return safeDecimal(value).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal scaleMoney(BigDecimal value) {
+        return safeDecimal(value).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal ratio(Integer numerator, Integer denominator) {
+        int safeDenominator = denominator == null ? 0 : denominator;
+        if (safeDenominator <= 0) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(safeInt(numerator))
+                .divide(BigDecimal.valueOf(safeDenominator), 4, RoundingMode.HALF_UP);
     }
 
     private String normalizeWallet(String wallet) {
@@ -467,11 +622,22 @@ public class SmartWalletReplayBacktestService {
         private int positivePnlCount;
         private int overrideCount;
         private int recentDegradationBlockCount;
+        private int concentrationBlockedCount;
+        private int extremeConcentrationBlockedCount;
+        private int concentrationDownsizedAcceptedCount;
         private BigDecimal realizedPnl = BigDecimal.ZERO;
         private BigDecimal settlementProxyPnl = BigDecimal.ZERO;
         private BigDecimal cumulativePnl = BigDecimal.ZERO;
         private BigDecimal cumulativePeak = BigDecimal.ZERO;
         private BigDecimal maxDrawdown = BigDecimal.ZERO;
+        private BigDecimal concentrationBlockedProxyPnl = BigDecimal.ZERO;
+        private BigDecimal concentrationBlockedProxyCumulative = BigDecimal.ZERO;
+        private BigDecimal concentrationBlockedProxyPeak = BigDecimal.ZERO;
+        private BigDecimal concentrationBlockedProxyMaxDrawdown = BigDecimal.ZERO;
+        private BigDecimal extremeConcentrationBlockedProxyPnl = BigDecimal.ZERO;
+        private BigDecimal extremeConcentrationBlockedProxyCumulative = BigDecimal.ZERO;
+        private BigDecimal extremeConcentrationBlockedProxyPeak = BigDecimal.ZERO;
+        private BigDecimal extremeConcentrationBlockedProxyMaxDrawdown = BigDecimal.ZERO;
         private BigDecimal totalHoldMinutes = BigDecimal.ZERO;
         private final Map<String, Integer> skipReasonDistribution = new LinkedHashMap<>();
 
@@ -495,13 +661,42 @@ public class SmartWalletReplayBacktestService {
                     .labelCoverageRate(BigDecimal.valueOf(acceptedWithLabels).divide(BigDecimal.valueOf(Math.max(acceptedEvents, 1)), 4, RoundingMode.HALF_UP))
                     .overrideCount(overrideCount)
                     .recentDegradationBlockCount(recentDegradationBlockCount)
+                    .concentrationBlockedCount(concentrationBlockedCount)
+                    .extremeConcentrationBlockedCount(extremeConcentrationBlockedCount)
+                    .concentrationDownsizedAcceptedCount(concentrationDownsizedAcceptedCount)
                     .winRate(BigDecimal.valueOf(positivePnlCount).divide(labeledAccepted, 4, RoundingMode.HALF_UP))
                     .realizedPnlUsdc(realizedPnl.setScale(4, RoundingMode.HALF_UP))
                     .settlementProxyPnlUsdc(settlementProxyPnl.setScale(4, RoundingMode.HALF_UP))
                     .maxDrawdownUsdc(maxDrawdown.setScale(4, RoundingMode.HALF_UP))
+                    .concentrationBlockedProxyPnlUsdc(concentrationBlockedProxyPnl.setScale(4, RoundingMode.HALF_UP))
+                    .concentrationBlockedProxyMaxDrawdownUsdc(concentrationBlockedProxyMaxDrawdown.setScale(4, RoundingMode.HALF_UP))
+                    .extremeConcentrationBlockedProxyPnlUsdc(extremeConcentrationBlockedProxyPnl.setScale(4, RoundingMode.HALF_UP))
+                    .extremeConcentrationBlockedProxyMaxDrawdownUsdc(extremeConcentrationBlockedProxyMaxDrawdown.setScale(4, RoundingMode.HALF_UP))
                     .averageHoldMinutes(totalHoldMinutes.divide(labeledAccepted, 2, RoundingMode.HALF_UP))
                     .skipReasonDistribution(new LinkedHashMap<>(skipReasonDistribution))
                     .build();
+        }
+
+        private void accumulateConcentrationProxy(BigDecimal pnl) {
+            if (pnl == null) {
+                return;
+            }
+            concentrationBlockedProxyPnl = concentrationBlockedProxyPnl.add(pnl);
+            concentrationBlockedProxyCumulative = concentrationBlockedProxyCumulative.add(pnl);
+            concentrationBlockedProxyPeak = concentrationBlockedProxyPeak.max(concentrationBlockedProxyCumulative);
+            concentrationBlockedProxyMaxDrawdown = concentrationBlockedProxyMaxDrawdown.max(
+                    concentrationBlockedProxyPeak.subtract(concentrationBlockedProxyCumulative));
+        }
+
+        private void accumulateExtremeConcentrationProxy(BigDecimal pnl) {
+            if (pnl == null) {
+                return;
+            }
+            extremeConcentrationBlockedProxyPnl = extremeConcentrationBlockedProxyPnl.add(pnl);
+            extremeConcentrationBlockedProxyCumulative = extremeConcentrationBlockedProxyCumulative.add(pnl);
+            extremeConcentrationBlockedProxyPeak = extremeConcentrationBlockedProxyPeak.max(extremeConcentrationBlockedProxyCumulative);
+            extremeConcentrationBlockedProxyMaxDrawdown = extremeConcentrationBlockedProxyMaxDrawdown.max(
+                    extremeConcentrationBlockedProxyPeak.subtract(extremeConcentrationBlockedProxyCumulative));
         }
     }
 }

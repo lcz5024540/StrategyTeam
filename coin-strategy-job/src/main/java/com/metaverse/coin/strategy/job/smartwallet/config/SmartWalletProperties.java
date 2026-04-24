@@ -193,8 +193,20 @@ public class SmartWalletProperties {
         // ── 持仓集中度门控（防控盘） ──────────────────────────────────────────
         /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */
         private boolean enableConcentrationGate = false;
+        /** 极端集中度的处置模式：BLOCK / DOWNSIZE / WARN_ONLY */
+        private String extremeConcentrationMode = "BLOCK";
         /** 高风险集中度的处置模式：BLOCK / DOWNSIZE / WARN_ONLY */
         private String concentrationHighRiskMode = "DOWNSIZE";
+        /** CR_1 极端集中阈值：单一持仓者超过此值视为极端集中 */
+        private BigDecimal maxTop1ExtremeConcentrationPct = new BigDecimal("0.70");
+        /** CR_3 极端集中阈值：前三持仓者合计超过此值视为极端集中 */
+        private BigDecimal maxTop3ExtremeConcentrationPct = new BigDecimal("0.90");
+        /** CR_5 极端集中阈值：仅在 holder 数较少时启用 */
+        private BigDecimal maxTop5ExtremeConcentrationPct = new BigDecimal("0.95");
+        /** holder 数低于该值时，CR_5 触发极端集中判定 */
+        private Integer extremeConcentrationMaxObservedHolders = 10;
+        /** 极端集中 HHI 阈值 */
+        private int maxExtremeHhi = 6000;
         /** 高风险集中度 DOWNSIZE 模式下保留的仓位比例 */
         private BigDecimal concentrationHighRiskDownsizeRate = new BigDecimal("0.35");
         /** CR_1 上限：单一持仓者占比超过此值则拒绝信号 */
@@ -264,6 +276,10 @@ public class SmartWalletProperties {
         private BigDecimal exitScoringConsensusDecayWeight = new BigDecimal("0.30");
         /** 评分退出：盘口恶化对退出分的影响权重 */
         private BigDecimal exitScoringOrderbookDeteriorationWeight = new BigDecimal("0.25");
+        /** 评分退出：普通高集中市场对退出分的影响权重 */
+        private BigDecimal exitScoringHighConcentrationWeight = new BigDecimal("0.20");
+        /** 评分退出：极端集中市场对退出分的影响权重 */
+        private BigDecimal exitScoringExtremeConcentrationWeight = new BigDecimal("0.40");
         /** 评分退出：源钱包后续减仓/反向交易对退出分的影响权重 */
         private BigDecimal exitScoringSourceWalletReductionWeight = new BigDecimal("0.35");
         /** 评分退出：源钱包继续加仓时对持有耐心的缓冲权重 */

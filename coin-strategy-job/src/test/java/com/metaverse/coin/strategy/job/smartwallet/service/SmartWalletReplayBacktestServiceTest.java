@@ -10,6 +10,7 @@ import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationSummaryResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -137,5 +138,63 @@ class SmartWalletReplayBacktestServiceTest {
         assertEquals("candidate-v2", result.getWindows().get(0).getCandidate().getPolicyTag());
         assertTrue(result.getWindows().get(0).getCandidate().getRealizedPnlUsdc().compareTo(BigDecimal.ZERO) > 0);
         assertTrue(result.getWindows().get(0).getBaseline().getSkipReasonDistribution().containsKey("CONSENSUS"));
+    }
+
+    @Test
+    void shouldBuildConcentrationSummaryFromReplayResult() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        SmartWalletReplayBacktestService service = new SmartWalletReplayBacktestService(
+                properties,
+                tradeEventMapper,
+                tradeEffectLabelMapper,
+                profileMapper,
+                new SmartWalletScoringService(),
+                profileStoreService,
+                signalRiskService,
+                walletBehaviorProfileService
+        );
+
+        SmartWalletReplayBacktestResult replayResult = SmartWalletReplayBacktestResult.builder()
+                .generatedAt(new Date())
+                .applied(new SmartWalletReplayBacktestRequest())
+                .windows(List.of(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayWindowResult.builder()
+                        .windowDays(30)
+                        .scannedEvents(100)
+                        .baseline(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayStrategyMetrics.builder()
+                                .policyTag("baseline-v1")
+                                .acceptedEvents(40)
+                                .acceptanceRate(new BigDecimal("0.4000"))
+                                .realizedPnlUsdc(new BigDecimal("11.0000"))
+                                .maxDrawdownUsdc(new BigDecimal("6.5000"))
+                                .build())
+                        .candidate(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayStrategyMetrics.builder()
+                                .policyTag("candidate-v2")
+                                .acceptedEvents(34)
+                                .acceptanceRate(new BigDecimal("0.3400"))
+                                .concentrationBlockedCount(4)
+                                .extremeConcentrationBlockedCount(2)
+                                .concentrationDownsizedAcceptedCount(5)
+                                .concentrationBlockedProxyPnlUsdc(new BigDecimal("-3.2000"))
+                                .extremeConcentrationBlockedProxyPnlUsdc(new BigDecimal("-5.1000"))
+                                .concentrationBlockedProxyMaxDrawdownUsdc(new BigDecimal("2.4000"))
+                                .extremeConcentrationBlockedProxyMaxDrawdownUsdc(new BigDecimal("7.9000"))
+                                .realizedPnlUsdc(new BigDecimal("8.8000"))
+                                .maxDrawdownUsdc(new BigDecimal("4.2000"))
+                                .skipReasonDistribution(java.util.Map.of(
+                                        "EXTREME_CONCENTRATION", 2,
+                                        "CONCENTRATION", 4,
+                                        "CONSENSUS", 3))
+                                .build())
+                        .build()))
+                .build();
+
+        SmartWalletReplayConcentrationSummaryResult summary = service.summarizeConcentration(replayResult);
+
+        assertEquals(1, summary.getWindows().size());
+        assertEquals(6, summary.getWindows().get(0).getTotalConcentrationBlockedCount());
+        assertEquals(new BigDecimal("-8.3000"), summary.getWindows().get(0).getTotalConcentrationBlockedProxyPnlUsdc());
+        assertEquals(new BigDecimal("0.0600"), summary.getWindows().get(0).getConcentrationBlockedRate());
+        assertEquals(new BigDecimal("-2.2000"), summary.getWindows().get(0).getRealizedPnlDeltaUsdc());
+        assertEquals(2, summary.getWindows().get(0).getCandidateConcentrationReasonDistribution().size());
     }
 }

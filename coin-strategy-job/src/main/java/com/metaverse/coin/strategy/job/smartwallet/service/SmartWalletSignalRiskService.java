@@ -285,8 +285,37 @@ public class SmartWalletSignalRiskService {
         if (risk.isEnableConcentrationGate()) {
             ConcentrationSnapshot snap = concentrationService.analyze(event.getMarketId(), event.getOutcome());
             if (snap.isDataAvailable()) {
-                // Gate 1：市场集中度过高 → 根据模式选择 BLOCK / DOWNSIZE / WARN_ONLY
-                if (snap.isHighlyConcentrated()) {
+                // Gate 1：极端集中市场优先处理，避免和普通高集中共用同一套 downsizing
+                if (snap.isExtremelyConcentrated()) {
+                    String mode = normalizeMode(risk.getExtremeConcentrationMode(), "BLOCK");
+                    switch (mode) {
+                        case "BLOCK" -> {
+                            accepted = false;
+                            reasons.add("[EXTREME_CONCENTRATION] Market is extremely concentrated. " +
+                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " HHI=" + snap.hhi() +
+                                    " holders=" + snap.observedHolders());
+                        }
+                        case "DOWNSIZE" -> {
+                            BigDecimal retainRate = new BigDecimal("0.10");
+                            preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
+                            reasons.add("[EXTREME_CONCENTRATION_DOWNSIZE] Market is extremely concentrated. " +
+                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " HHI=" + snap.hhi() +
+                                    ". Stake retained at " + retainRate.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
+                        }
+                        default -> reasons.add("[EXTREME_CONCENTRATION_WARN] Extremely concentrated market detected but warn-only mode is enabled. " +
+                                "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
+                                " HHI=" + snap.hhi() + ".");
+                    }
+                } else if (snap.isHighlyConcentrated()) {
+                    // Gate 2：普通高集中市场 → 根据模式选择 BLOCK / DOWNSIZE / WARN_ONLY
                     String mode = normalizeMode(risk.getConcentrationHighRiskMode(), "DOWNSIZE");
                     switch (mode) {
                         case "BLOCK" -> {
@@ -330,7 +359,7 @@ public class SmartWalletSignalRiskService {
                     }
                 }
 
-                // Gate 3：信号源钱包本身是鲸鱼
+                // Gate 4：信号源钱包本身是鲸鱼
                 String triggerWallet = event.getWalletAddress();
                 if (org.springframework.util.StringUtils.hasText(triggerWallet)
                         && snap.topHolderAddresses().stream()

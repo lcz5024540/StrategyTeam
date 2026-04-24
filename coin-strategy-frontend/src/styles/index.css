@@ -216,6 +216,78 @@ body::before {
   color: var(--accent-dim);
 }
 
+.market-console-controls {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.market-cell-title {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-bright);
+}
+
+.market-cell-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.market-chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.market-holder-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 255, 65, 0.06);
+  border: 1px solid rgba(0, 255, 65, 0.12);
+  color: var(--muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.market-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  font-family: var(--font-mono);
+}
+
+.market-risk-badge.healthy {
+  color: #54ffb2;
+  background: rgba(0, 255, 101, 0.08);
+  border-color: rgba(0, 255, 101, 0.22);
+}
+
+.market-risk-badge.high {
+  color: #ffbf47;
+  background: rgba(255, 176, 32, 0.08);
+  border-color: rgba(255, 176, 32, 0.22);
+}
+
+.market-risk-badge.extreme {
+  color: #ff7d7d;
+  background: rgba(255, 93, 93, 0.1);
+  border-color: rgba(255, 93, 93, 0.24);
+}
+
+.market-risk-badge.muted {
+  color: var(--muted);
+  background: rgba(126, 137, 147, 0.08);
+  border-color: rgba(126, 137, 147, 0.18);
+}
+
 /* ═══════════════════════════════════════════════════════════
    PANEL — 面板基础样式
 ═══════════════════════════════════════════════════════════ */

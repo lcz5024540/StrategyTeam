@@ -398,8 +398,15 @@ smart-wallet:
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
     # [FEATURE] 集中度门控总开关。先以 DOWNSIZE 方式灰度，而不是直接 BLOCK。
     enable-concentration-gate: true
+    extreme-concentration-mode: BLOCK
     concentration-high-risk-mode: DOWNSIZE
     concentration-high-risk-downsize-rate: 0.35
+    # [TUNE] 极端集中阈值。命中时默认直接拒单，而不是只缩仓。
+    max-top1-extreme-concentration-pct: 0.70
+    max-top3-extreme-concentration-pct: 0.90
+    max-top5-extreme-concentration-pct: 0.95
+    extreme-concentration-max-observed-holders: 10
+    max-extreme-hhi: 6000
     # [TUNE] CR_1 上限：单一持仓者占比超过此值拒绝信号
     max-top1-concentration-pct: 0.40
     # [TUNE] CR_3 上限：前三持仓者合计占比超过此值拒绝信号
@@ -452,6 +459,8 @@ smart-wallet:
     exit-scoring-roi-momentum-weight: 0.10
     exit-scoring-consensus-decay-weight: 0.30
     exit-scoring-orderbook-deterioration-weight: 0.25
+    exit-scoring-high-concentration-weight: 0.20
+    exit-scoring-extreme-concentration-weight: 0.40
     exit-scoring-source-wallet-reduction-weight: 0.35
     exit-scoring-source-wallet-add-weight: 0.10
     exit-scoring-baseline-consensus: 0.72

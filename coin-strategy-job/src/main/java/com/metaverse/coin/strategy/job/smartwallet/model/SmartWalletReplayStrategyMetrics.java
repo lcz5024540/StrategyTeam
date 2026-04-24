@@ -20,10 +20,17 @@ public class SmartWalletReplayStrategyMetrics {
     private BigDecimal labelCoverageRate;
     private Integer overrideCount;
     private Integer recentDegradationBlockCount;
+    private Integer concentrationBlockedCount;
+    private Integer extremeConcentrationBlockedCount;
+    private Integer concentrationDownsizedAcceptedCount;
     private BigDecimal winRate;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal settlementProxyPnlUsdc;
     private BigDecimal maxDrawdownUsdc;
+    private BigDecimal concentrationBlockedProxyPnlUsdc;
+    private BigDecimal concentrationBlockedProxyMaxDrawdownUsdc;
+    private BigDecimal extremeConcentrationBlockedProxyPnlUsdc;
+    private BigDecimal extremeConcentrationBlockedProxyMaxDrawdownUsdc;
     private BigDecimal averageHoldMinutes;
     @Builder.Default
     private Map<String, Integer> skipReasonDistribution = new LinkedHashMap<>();

@@ -77,3 +77,58 @@ export interface SmartWalletProfileOverrideRequest {
   clearManualRecommendedExitLane?: boolean | null
   note?: string | null
 }
+
+export interface SmartWalletMarketMonitorItem {
+  marketId: string
+  question: string | null
+  marketEndAt: number | null
+  marketEndAtBjt: string | null
+  lastSignalAt: string | null
+  lastSignalAtBjt: string | null
+  signalCount: number
+  uniqueWalletCount: number
+  pendingTaskCount: number
+  openPositionCount: number
+  openCostUsdc: number
+  realizedPnlUsdc: number
+  unrealizedPnlUsdc: number
+  activeMarket: boolean
+  effectiveMarket: boolean
+  concentrationAvailable: boolean
+  observedHolders: number
+  top1Pct: number
+  top3Pct: number
+  top5Pct: number
+  hhi: number
+  highlyConcentrated: boolean
+  extremelyConcentrated: boolean
+  concentrationBand: 'HEALTHY' | 'HIGH' | 'EXTREME' | 'UNKNOWN' | string
+  topHolderAddresses: string[]
+}
+
+export interface SmartWalletMarketMonitorTrendPoint {
+  date: string
+  monitoredMarketCount: number
+  effectiveMarketCount: number
+  concentratedMarketCount: number
+  extremeConcentratedMarketCount: number
+  signalCount: number
+  pendingTaskCount: number
+}
+
+export interface SmartWalletMarketMonitoringSummary {
+  generatedAt: string
+  lookbackDays: number
+  trendDays: number
+  monitoredMarketCount: number
+  activeMarketCount: number
+  effectiveMarketCount: number
+  concentratedMarketCount: number
+  extremeConcentratedMarketCount: number
+  openPositionMarketCount: number
+  pendingTaskMarketCount: number
+  signalDrivenMarketCount: number
+  concentrationCoverageRate: number
+  trend: SmartWalletMarketMonitorTrendPoint[]
+  items: SmartWalletMarketMonitorItem[]
+}

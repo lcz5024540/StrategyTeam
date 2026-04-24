@@ -1,6 +1,7 @@
 import { apiClient } from './client'
 import type { PositionMode } from '@/utils/constants'
 import type { Attribution, DailyReport, ConflictMarket, FollowAddressDailyReport, TimelinePoint } from '@/types/attribution'
+import type { SmartWalletMarketMonitoringSummary } from '@/types/smartwallet'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
 export const reportsApi = {
@@ -21,4 +22,7 @@ export const reportsApi = {
 
   getConflictingMarkets: (limit = 50, openOnly = false): Promise<ConflictMarket[]> =>
     apiClient.get('/strategy/api/smart-wallet/reports/conflicting-markets', { params: { limit, openOnly } }),
+
+  getMarketMonitoringSummary: (limit = 40, lookbackDays = 14, trendDays = 7): Promise<SmartWalletMarketMonitoringSummary> =>
+    apiClient.get('/strategy/api/smart-wallet/reports/market-monitoring', { params: { limit, lookbackDays, trendDays } }),
 }
