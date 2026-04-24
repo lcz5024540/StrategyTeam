@@ -22,7 +22,10 @@ function pointTime(item: TimelinePoint | DailyReport) {
 }
 
 function lossAmount(item: TimelinePoint | DailyReport) {
-  return 'lossPnlUsdc' in item ? item.lossPnlUsdc || 0 : Math.min(item.realizedPnlUsdc || 0, 0)
+  if ('bucketAt' in item) {
+    return item.lossPnlUsdc || 0
+  }
+  return item.lossPnlUsdc ?? Math.min(item.realizedPnlUsdc || 0, 0)
 }
 
 export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {

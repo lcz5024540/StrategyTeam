@@ -227,6 +227,8 @@ export function PolymarketHedgePage() {
         existing.openPositions += 1
         existing.winningPositions += pair.realizedPnlUsdc > 0 ? 1 : 0
         existing.losingPositions += pair.realizedPnlUsdc < 0 ? 1 : 0
+        existing.profitPnlUsdc += pair.realizedPnlUsdc > 0 ? pair.realizedPnlUsdc : 0
+        existing.lossPnlUsdc += pair.realizedPnlUsdc < 0 ? pair.realizedPnlUsdc : 0
       } else {
         map.set(date, {
           reportDate: date,
@@ -236,6 +238,8 @@ export function PolymarketHedgePage() {
           closedPositions: 0,
           totalVolumeUsdc: pair.totalCostUsdc,
           feeUsdc: pair.feeUsdc,
+          profitPnlUsdc: pair.realizedPnlUsdc > 0 ? pair.realizedPnlUsdc : 0,
+          lossPnlUsdc: pair.realizedPnlUsdc < 0 ? pair.realizedPnlUsdc : 0,
           realizedPnlUsdc: pair.realizedPnlUsdc,
           unrealizedPnlUsdc: pair.expectedProfitUsdc,
           netPnlUsdc: pair.realizedPnlUsdc,

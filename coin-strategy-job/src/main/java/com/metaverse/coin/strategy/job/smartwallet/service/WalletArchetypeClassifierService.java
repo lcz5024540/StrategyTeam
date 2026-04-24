@@ -26,6 +26,7 @@ public class WalletArchetypeClassifierService {
     private static final long HF_SYNC_INTERVAL_MS = 30_000L;
     private static final long SWING_SYNC_INTERVAL_MS = 120_000L;
     private static final long THEMATIC_SYNC_INTERVAL_MS = 300_000L;
+    private static final long VALUE_SYNC_INTERVAL_MS = 600_000L;
     private static final long NOISE_SYNC_INTERVAL_MS = 900_000L;
 
     private final SmartWalletWalletFeatureDailyMapper walletFeatureDailyMapper;
@@ -89,6 +90,12 @@ public class WalletArchetypeClassifierService {
                 && alphaRule.compareTo(alpha30s.add(new BigDecimal("0.08"))) >= 0
                 && alphaRule.compareTo(new BigDecimal("0.58")) >= 0) {
             archetype = "THEMATIC";
+        } else if (trades30d > 0 && trades30d < 18
+                && medianInterTradeMinutes != null
+                && medianInterTradeMinutes.compareTo(new BigDecimal("180")) >= 0
+                && winRate30d.compareTo(new BigDecimal("0.58")) >= 0
+                && followableRate.compareTo(new BigDecimal("0.45")) >= 0) {
+            archetype = "LOW_FREQ_VALUE";
         } else if (alpha5m.compareTo(new BigDecimal("0.55")) >= 0
                 || alphaRule.compareTo(new BigDecimal("0.55")) >= 0
                 || followableRate.compareTo(new BigDecimal("0.55")) >= 0) {
@@ -100,6 +107,7 @@ public class WalletArchetypeClassifierService {
         String followLane = switch (archetype) {
             case "HF" -> "HF_FOLLOW";
             case "THEMATIC" -> "THEMATIC_FOLLOW";
+            case "LOW_FREQ_VALUE" -> "VALUE_FOLLOW";
             case "SWING" -> "SWING_FOLLOW";
             default -> "OBSERVE_ONLY";
         };
@@ -120,6 +128,10 @@ public class WalletArchetypeClassifierService {
         if ("THEMATIC".equals(archetype) && concentration.compareTo(new BigDecimal("0.60")) >= 0) {
             followFitScore = followFitScore.add(new BigDecimal("0.05"));
         }
+        if ("LOW_FREQ_VALUE".equals(archetype) && medianInterTradeMinutes != null
+                && medianInterTradeMinutes.compareTo(new BigDecimal("360")) >= 0) {
+            followFitScore = followFitScore.add(new BigDecimal("0.05"));
+        }
         followFitScore = clamp(followFitScore);
 
         BigDecimal confidence = clamp(new BigDecimal("0.45")
@@ -129,6 +141,7 @@ public class WalletArchetypeClassifierService {
         long recommendedSyncIntervalMs = switch (archetype) {
             case "HF" -> HF_SYNC_INTERVAL_MS;
             case "THEMATIC" -> THEMATIC_SYNC_INTERVAL_MS;
+            case "LOW_FREQ_VALUE" -> VALUE_SYNC_INTERVAL_MS;
             case "SWING" -> SWING_SYNC_INTERVAL_MS;
             default -> NOISE_SYNC_INTERVAL_MS;
         };
@@ -193,6 +206,8 @@ public class WalletArchetypeClassifierService {
                 ? "High-frequency wallet: fast turnover, short alpha window, should use low-latency follow."
                 : "THEMATIC".equals(archetype)
                 ? "Thematic wallet: concentrated markets with stronger rule-horizon alpha, suitable for slower follow."
+                : "LOW_FREQ_VALUE".equals(archetype)
+                ? "Low-frequency value wallet: slower turnover with healthy hit rate and more patient hold profile."
                 : "SWING".equals(archetype)
                 ? "Swing wallet: medium turnover with more stable 5m/rule alpha."
                 : "Noise wallet: local followability is weak under current execution style. trades7d=" + trades7d

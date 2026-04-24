@@ -10,14 +10,17 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExit
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -40,6 +43,12 @@ class SmartWalletPositionSyncServiceTest {
     private PolymarketClobExecutionService clobExecutionService;
     @Mock
     private SmartWalletRecoveryService recoveryService;
+    @Mock
+    private SmartWalletMarketInfoService marketInfoService;
+    @Mock
+    private ExitSignalProvider exitSignalProvider;
+    @Mock
+    private WalletBehaviorProfileService walletBehaviorProfileService;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -49,6 +58,9 @@ class SmartWalletPositionSyncServiceTest {
         properties = new SmartWalletProperties();
         properties.setEnabled(true);
         properties.getPolymarket().setEnabled(true);
+        when(exitSignalProvider.resolveStopLossThreshold(any())).thenReturn(new BigDecimal("0.20"));
+        when(exitSignalProvider.isTrendStopLossTriggered(any(), any(), any())).thenReturn(false);
+        doNothing().when(exitSignalProvider).recordMarkPrice(any(), any(), any());
         service = new SmartWalletPositionSyncService(
                 properties,
                 polymarketApiClient,
@@ -57,7 +69,10 @@ class SmartWalletPositionSyncServiceTest {
                 orderMapper,
                 accountingService,
                 clobExecutionService,
-                recoveryService
+                recoveryService,
+                marketInfoService,
+                exitSignalProvider,
+                walletBehaviorProfileService
         );
     }
 
@@ -148,6 +163,34 @@ class SmartWalletPositionSyncServiceTest {
     }
 
     @Test
+    void shouldUseThresholdPriceForPaperStopLossExit() {
+        properties.getSignalRisk().setEnableAutoStopLoss(true);
+        when(exitSignalProvider.resolveStopLossThreshold(any())).thenReturn(new BigDecimal("0.25"));
+        when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
+                .positionId(44L)
+                .currentStatus("CLOSED")
+                .realizedPnlDeltaUsdc(new BigDecimal("-37.50"))
+                .build());
+        when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                .setId(44L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-stop")
+                .setOutcome("YES")
+                .setAverageEntryPrice(new BigDecimal("0.68"))
+                .setLastMarkPrice(new BigDecimal("0.04"))
+                .setQuantity(new BigDecimal("220.58823529"))
+                .setCostBasisUsdc(new BigDecimal("150.00"))
+                .setStatus("OPEN")));
+
+        service.checkStopLoss();
+
+        ArgumentCaptor<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest> captor =
+                ArgumentCaptor.forClass(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest.class);
+        verify(accountingService).exitPosition(eq(44L), captor.capture());
+        assertEquals(new BigDecimal("0.51000000"), captor.getValue().getPrice());
+    }
+
+    @Test
     void shouldUseUnifiedExitFlowWhenTakeProfitTriggers() {
         properties.getSignalRisk().setEnableAutoTakeProfit(true);
         properties.getSignalRisk().setAutoTakeProfitThresholdRate(new BigDecimal("0.15"));
@@ -170,6 +213,98 @@ class SmartWalletPositionSyncServiceTest {
         service.checkTakeProfit();
 
         verify(accountingService).exitPosition(eq(21L), any());
+    }
+
+    @Test
+    void shouldUseReachableDynamicTakeProfitThresholdForHighEntryBinaryPosition() {
+        properties.getSignalRisk().setEnableAutoTakeProfit(true);
+        properties.getSignalRisk().setAutoTakeProfitThresholdRate(new BigDecimal("0.60"));
+        when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
+                .positionId(29L)
+                .currentStatus("CLOSED")
+                .realizedPnlDeltaUsdc(new BigDecimal("1.00"))
+                .build());
+        when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                .setId(29L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-tp")
+                .setOutcome("YES")
+                .setAverageEntryPrice(new BigDecimal("0.84"))
+                .setLastMarkPrice(new BigDecimal("0.99"))
+                .setQuantity(new BigDecimal("10.00"))
+                .setCostBasisUsdc(new BigDecimal("8.40"))
+                .setStatus("OPEN")));
+
+        service.checkTakeProfit();
+
+        ArgumentCaptor<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest> captor =
+                ArgumentCaptor.forClass(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest.class);
+        verify(accountingService).exitPosition(eq(29L), captor.capture());
+        assertEquals(new BigDecimal("0.96800000"), captor.getValue().getPrice());
+    }
+
+    @Test
+    void shouldTightenTakeProfitThresholdForEarlyTakeProfitWallet() {
+        properties.getSignalRisk().setEnableAutoTakeProfit(true);
+        properties.getSignalRisk().setAutoTakeProfitThresholdRate(new BigDecimal("0.20"));
+        when(orderMapper.selectOne(any())).thenReturn(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity()
+                .setPositionId(55L)
+                .setWalletAddress("0xwallet"));
+        when(walletBehaviorProfileService.recommendedExitLane("0xwallet")).thenReturn("EARLY_TAKE_PROFIT");
+        when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
+                .positionId(55L)
+                .currentStatus("CLOSED")
+                .realizedPnlDeltaUsdc(new BigDecimal("0.75"))
+                .build());
+        when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                .setId(55L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-wallet-tp")
+                .setOutcome("YES")
+                .setAverageEntryPrice(new BigDecimal("0.50"))
+                .setLastMarkPrice(new BigDecimal("0.66"))
+                .setQuantity(new BigDecimal("10.00"))
+                .setCostBasisUsdc(new BigDecimal("5.00"))
+                .setStatus("OPEN")));
+
+        service.checkTakeProfit();
+
+        ArgumentCaptor<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest> captor =
+                ArgumentCaptor.forClass(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest.class);
+        verify(accountingService).exitPosition(eq(55L), captor.capture());
+        assertEquals(new BigDecimal("0.57500000"), captor.getValue().getPrice());
+    }
+
+    @Test
+    void shouldTightenStopLossThresholdForFastStopLossWallet() {
+        properties.getSignalRisk().setEnableAutoStopLoss(true);
+        when(exitSignalProvider.resolveStopLossThreshold(any())).thenReturn(new BigDecimal("0.25"));
+        when(orderMapper.selectOne(any())).thenReturn(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity()
+                .setPositionId(56L)
+                .setWalletAddress("0xwallet"));
+        when(walletBehaviorProfileService.recommendedExitLane("0xwallet")).thenReturn("FAST_STOP_LOSS");
+        when(accountingService.exitPosition(any(), any())).thenReturn(SmartWalletPositionExitResultView.builder()
+                .positionId(56L)
+                .currentStatus("CLOSED")
+                .realizedPnlDeltaUsdc(new BigDecimal("-30.00"))
+                .build());
+        when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                .setId(56L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-wallet-sl")
+                .setOutcome("YES")
+                .setAverageEntryPrice(new BigDecimal("0.68"))
+                .setLastMarkPrice(new BigDecimal("0.50"))
+                .setQuantity(new BigDecimal("220.58823529"))
+                .setCostBasisUsdc(new BigDecimal("150.00"))
+                .setStatus("OPEN")));
+
+        service.checkStopLoss();
+
+        ArgumentCaptor<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest> captor =
+                ArgumentCaptor.forClass(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest.class);
+        verify(accountingService).exitPosition(eq(56L), captor.capture());
+        assertEquals(new BigDecimal("0.54400000"), captor.getValue().getPrice());
     }
 
     @Test

@@ -15,7 +15,12 @@ export function Sidebar() {
     const matched = STRATEGY_CATALOG.find((s) => s.route !== '/dashboard' && path.startsWith(s.route))
     if (matched) return matched.code
     // 默认路由 /dashboard 对应 POLYMARKET_COPY
-    if (path === '/dashboard' || path.startsWith('/dashboard/detail') || path.startsWith('/dashboard/charts')) {
+    if (
+      path === '/dashboard' ||
+      path.startsWith('/dashboard/detail') ||
+      path.startsWith('/dashboard/charts') ||
+      path.startsWith('/dashboard/monitoring')
+    ) {
       return 'POLYMARKET_COPY'
     }
     return strategyParam
@@ -46,6 +51,7 @@ export function Sidebar() {
             <NavLink to={`/dashboard?strategy=${strategyParam}`}>总览</NavLink>
             <NavLink to={`/dashboard/detail?strategy=${strategyParam}`}>详情</NavLink>
             <NavLink to={`/dashboard/charts?strategy=${strategyParam}`}>图表</NavLink>
+            <NavLink to={`/dashboard/monitoring?strategy=${strategyParam}`}>监控</NavLink>
           </nav>
         </div>
       )}

@@ -13,9 +13,11 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyCheckResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyRouteResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService.ConcentrationSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -42,6 +44,7 @@ public class SmartWalletSignalRiskService {
     private final KellyStakeCalculator kellyStakeCalculator;
     private final PolymarketApiClient polymarketApiClient;
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
+    private final WalletBehaviorProfileService walletBehaviorProfileService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -79,6 +82,19 @@ public class SmartWalletSignalRiskService {
         if ("OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
             accepted = false;
             reasons.add("[ARCHETYPE_BLOCK] Wallet is currently classified as observe-only under local followability.");
+        }
+        WalletBehaviorProfileView behaviorProfile = profile == null
+                ? null
+                : walletBehaviorProfileService.getProfile(profile.getWalletAddress());
+        if (behaviorProfile != null) {
+            reasons.add("[BEHAVIOR] exitLane=" + behaviorProfile.recommendedExitLane()
+                    + ", replicability=" + behaviorProfile.replicabilityScore()
+                    + ", earlyExitRate=" + behaviorProfile.earlyExitRate()
+                    + ", settlementCompletionRate=" + behaviorProfile.settlementCompletionRate() + ".");
+            if ("FAST_EXIT_OR_SKIP".equalsIgnoreCase(behaviorProfile.recommendedExitLane())) {
+                accepted = false;
+                reasons.add("[BEHAVIOR_BLOCK] Wallet relies on very fast exits or low-replicability timing. Skip follow entry.");
+            }
         }
 
         // Warn early when this wallet has a suspiciously perfect win rate (leaderboard survivorship bias).
@@ -225,6 +241,7 @@ public class SmartWalletSignalRiskService {
                 .min(properties.getMaxStakeUsdc())
                 .setScale(2, RoundingMode.HALF_UP);
         preliminaryStake = applyArchetypeStakeAdjustments(preliminaryStake, archetype, event, reasons);
+        preliminaryStake = applyBehaviorStakeAdjustments(preliminaryStake, behaviorProfile, reasons);
         preliminaryStake = applyDynamicCapitalScale(preliminaryStake, capitalContext);
         preliminaryStake = preliminaryStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
 
@@ -416,6 +433,7 @@ public class SmartWalletSignalRiskService {
         return switch (archetype.archetype()) {
             case "HF" -> Math.min(baseMs, 45_000L);
             case "THEMATIC" -> Math.max(baseMs, 1_800_000L);
+            case "LOW_FREQ_VALUE" -> Math.max(baseMs, 2_700_000L);
             case "SWING" -> Math.max(baseMs, 900_000L);
             default -> baseMs;
         };
@@ -443,10 +461,46 @@ public class SmartWalletSignalRiskService {
                     .setScale(2, RoundingMode.HALF_UP);
             reasons.add("[ARCHETYPE_STAKE] Thematic signal with strong fit score, stake boosted by 10% within cap.");
         }
+        if ("LOW_FREQ_VALUE".equals(archetype.archetype())
+                && safe(archetype.followFitScore()).compareTo(new BigDecimal("0.70")) >= 0) {
+            adjusted = adjusted.multiply(new BigDecimal("1.05"))
+                    .min(properties.getMaxStakeUsdc())
+                    .setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[ARCHETYPE_STAKE] Low-frequency value signal with strong fit score, stake boosted by 5% within cap.");
+        }
         if ("NOISE".equals(archetype.archetype())) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
         return adjusted;
+    }
+
+    private BigDecimal applyBehaviorStakeAdjustments(BigDecimal stake,
+                                                     WalletBehaviorProfileView behaviorProfile,
+                                                     List<String> reasons) {
+        BigDecimal adjusted = safe(stake);
+        if (behaviorProfile == null || !StringUtils.hasText(behaviorProfile.recommendedExitLane())) {
+            return adjusted;
+        }
+        return switch (behaviorProfile.recommendedExitLane().trim().toUpperCase()) {
+            case "EARLY_TAKE_PROFIT" -> {
+                BigDecimal value = adjusted.multiply(new BigDecimal("0.90")).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[BEHAVIOR_STAKE] Early-take-profit wallet, stake reduced to 90% for safer replication.");
+                yield value;
+            }
+            case "FAST_STOP_LOSS" -> {
+                BigDecimal value = adjusted.multiply(new BigDecimal("0.85")).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[BEHAVIOR_STAKE] Fast-stop-loss wallet, stake reduced to 85% to keep exits nimble.");
+                yield value;
+            }
+            case "HYBRID_EARLY_EXIT" -> {
+                BigDecimal value = adjusted.multiply(new BigDecimal("0.75")).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[BEHAVIOR_STAKE] Hybrid early-exit wallet, stake reduced to 75%.");
+                yield value;
+            }
+            case "HOLD_TO_SETTLEMENT" -> adjusted;
+            case "FOLLOW_ARCHETYPE" -> adjusted;
+            default -> adjusted;
+        };
     }
 
     private CapitalContext resolveCapitalContext() {

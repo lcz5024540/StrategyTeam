@@ -35,6 +35,12 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportu
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCandidateView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
@@ -71,7 +77,11 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSum
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderAnalysisView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
@@ -94,6 +104,10 @@ import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributio
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletArchetypeClassifierService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletBehaviorProfileService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletOrderAnalysisService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletProfileStoreService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletProfileAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import io.swagger.v3.oas.annotations.Operation;
@@ -110,11 +124,13 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -157,6 +173,10 @@ public class SmartWalletController {
     private final MarketConcentrationService marketConcentrationService;
     private final FollowTradeAttributionService followTradeAttributionService;
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
+    private final WalletBehaviorProfileService walletBehaviorProfileService;
+    private final SmartWalletOrderAnalysisService smartWalletOrderAnalysisService;
+    private final SmartWalletProfileStoreService smartWalletProfileStoreService;
+    private final WalletProfileAnalysisService walletProfileAnalysisService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -222,6 +242,147 @@ public class SmartWalletController {
         return polymarketMonitorService.listProfiles();
     }
 
+    @Operation(summary = "地址画像筛选器", description = "按地址质量、可复制性、胜率来源和退出风格筛选 smart-wallet 地址，并支持排序、过滤和游标分页。")
+    @GetMapping("/profiles/screener")
+    public CursorPageView<WalletScreenerView> profileScreener(
+            @RequestParam(defaultValue = "candidates") String scope,
+            @RequestParam(defaultValue = "20") Integer limit,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "replicabilityScore") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDirection,
+            @RequestParam(required = false) String screenerTier,
+            @RequestParam(required = false) Boolean highQualityAddress,
+            @RequestParam(required = false) Boolean highFrequencyTradingAddress,
+            @RequestParam(required = false) String winSourceType,
+            @RequestParam(required = false) String recommendedExitLane,
+            @RequestParam(required = false) BigDecimal minQualityScore,
+            @RequestParam(required = false) BigDecimal minReplicabilityScore) {
+        return walletProfileAnalysisService.screen(
+                resolveWatchlistScope(scope),
+                limit,
+                cursor,
+                sortBy,
+                sortDirection,
+                screenerTier,
+                highQualityAddress,
+                highFrequencyTradingAddress,
+                winSourceType,
+                recommendedExitLane,
+                minQualityScore,
+                minReplicabilityScore
+        );
+    }
+
+    @Operation(summary = "地址单笔分析", description = "查看单地址逐单 ROI、持有时长，以及是提前退出还是等到结算。")
+    @GetMapping("/profiles/{walletAddress}/order-analysis")
+    public CursorPageView<WalletOrderAnalysisView> walletOrderAnalysis(@PathVariable String walletAddress,
+                                                                       @RequestParam(defaultValue = "20") Integer limit,
+                                                                       @RequestParam(required = false) String cursor,
+                                                                       @RequestParam(required = false) String exitStyle,
+                                                                       @RequestParam(required = false) Boolean isWin,
+                                                                       @RequestParam(defaultValue = "false") boolean refresh) {
+        List<WalletOrderAnalysisView> rows = smartWalletOrderAnalysisService.toViews(
+                smartWalletOrderAnalysisService.listByWalletAddress(walletAddress, refresh, exitStyle, isWin)
+        );
+        int safeLimit = limit == null ? 20 : Math.max(1, Math.min(limit, 200));
+        int start = parseCursor(cursor);
+        if (start >= rows.size()) {
+            return CursorPageView.empty();
+        }
+        int end = Math.min(rows.size(), start + safeLimit);
+        String nextCursor = end < rows.size() ? String.valueOf(end) : null;
+        return CursorPageView.of(rows.subList(start, end), nextCursor);
+    }
+
+    @Operation(summary = "地址胜率诊断", description = "输出这个地址为什么赢、适不适合跟、以及推荐的退出方式。")
+    @GetMapping("/profiles/{walletAddress}/diagnosis")
+    public WalletDiagnosisView walletDiagnosis(@PathVariable String walletAddress,
+                                               @RequestParam(defaultValue = "false") boolean refreshOrderAnalysis) {
+        return walletProfileAnalysisService.diagnose(walletAddress, refreshOrderAnalysis);
+    }
+
+    @Operation(summary = "人工覆盖列表", description = "查看当前被人工强制只观察、强制可执行或手工指定退出风格的地址。")
+    @GetMapping("/profiles/overrides")
+    public List<SmartWalletProfileOverrideView> profileOverrides(@RequestParam(defaultValue = "100") Integer limit) {
+        return smartWalletProfileStoreService.listManualOverrides(limit);
+    }
+
+    @Operation(summary = "人工覆盖摘要", description = "聚合当前人工覆盖的地址数量、类型分布和最近 24 小时变更情况。")
+    @GetMapping("/profiles/overrides/summary")
+    public SmartWalletProfileOverrideSummaryView profileOverridesSummary() {
+        return smartWalletProfileStoreService.summarizeManualOverrides();
+    }
+
+    @Operation(summary = "导出人工覆盖 CSV", description = "导出当前所有人工覆盖项，方便运营排查和复盘。")
+    @GetMapping(value = "/profiles/overrides/export", produces = "text/csv")
+    public ResponseEntity<String> exportProfileOverrides(@RequestParam(defaultValue = "500") Integer limit) {
+        List<SmartWalletProfileOverrideView> rows = smartWalletProfileStoreService.listManualOverrides(limit);
+        String csv = csv(
+                List.of("walletAddress", "alias", "qualified", "watchEnabled", "manualWatchEnabled",
+                        "manualRecommendedExitLane", "manualOverrideNote", "manualOverrideUpdatedAt"),
+                rows.stream().map(row -> java.util.Arrays.asList(
+                        row.walletAddress(), row.alias(), row.qualified(), row.watchEnabled(),
+                        row.manualWatchEnabled(), row.manualRecommendedExitLane(),
+                        row.manualOverrideNote(), row.manualOverrideUpdatedAt()
+                )).toList()
+        );
+        return csvResponse(csv, "smart_wallet_profile_overrides", "manual");
+    }
+
+    @Operation(summary = "更新地址人工覆盖", description = "可人工强制某地址仅观察/恢复可执行，或手工指定 recommendedExitLane。")
+    @PostMapping("/profiles/{walletAddress}/override")
+    public SmartWalletProfileEntity updateProfileOverride(@PathVariable String walletAddress,
+                                                          @RequestBody SmartWalletProfileOverrideRequest request) {
+        return smartWalletProfileStoreService.updateManualOverride(walletAddress, request);
+    }
+
+    @Operation(summary = "批量更新地址人工覆盖", description = "按钱包地址列表批量设置 observe only、恢复执行、指定或清除 recommendedExitLane。")
+    @PostMapping("/profiles/overrides/batch")
+    public SmartWalletProfileBatchOverrideResultView batchUpdateProfileOverrides(@RequestBody SmartWalletProfileBatchOverrideRequest request) {
+        return smartWalletProfileStoreService.batchUpdateManualOverrides(request);
+    }
+
+    @Operation(summary = "人工覆盖筛选候选", description = "按 scope、recommendedExitLane、watchEnabled、manualWatchEnabled、updatedWithinHours 等条件筛出一批可执行运营动作的地址。")
+    @GetMapping("/profiles/overrides/candidates")
+    public List<SmartWalletProfileOpsCandidateView> profileOverrideCandidates(
+            @RequestParam(defaultValue = "candidates") String scope,
+            @RequestParam(defaultValue = "100") Integer limit,
+            @RequestParam(required = false) String recommendedExitLane,
+            @RequestParam(required = false) Boolean watchEnabled,
+            @RequestParam(required = false) Boolean qualified,
+            @RequestParam(required = false) Boolean manualWatchEnabled,
+            @RequestParam(required = false, defaultValue = "false") boolean manualOnly,
+            @RequestParam(required = false) Integer updatedWithinHours,
+            @RequestParam(required = false) Boolean highFrequencyTradingAddress,
+            @RequestParam(required = false) BigDecimal minReplicabilityScore,
+            @RequestParam(required = false) BigDecimal maxReplicabilityScore) {
+        int safeLimit = Math.max(1, Math.min(limit, 300));
+        Long updatedCutoffMillis = updatedWithinHours == null
+                ? null
+                : System.currentTimeMillis() - java.util.concurrent.TimeUnit.HOURS.toMillis(Math.max(updatedWithinHours, 0));
+
+        return resolveWatchlistScope(scope).stream()
+                .map(profile -> toOpsCandidateView(profile, walletBehaviorProfileService.buildProfile(profile)))
+                .filter(candidate -> matchesOverrideCandidateFilters(
+                        candidate,
+                        recommendedExitLane,
+                        watchEnabled,
+                        qualified,
+                        manualWatchEnabled,
+                        manualOnly,
+                        updatedCutoffMillis,
+                        highFrequencyTradingAddress,
+                        minReplicabilityScore,
+                        maxReplicabilityScore
+                ))
+                .sorted(Comparator
+                        .comparing(SmartWalletProfileOpsCandidateView::replicabilityScore,
+                                Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(SmartWalletProfileOpsCandidateView::walletAddress, Comparator.nullsLast(String::compareTo)))
+                .limit(safeLimit)
+                .toList();
+    }
+
     @Operation(summary = "可执行观察名单", description = "查看当前仍允许进入执行链路的 smart wallet 地址。")
     @GetMapping("/watchlist")
     public List<SmartWalletProfileEntity> watchlist() {
@@ -244,10 +405,50 @@ public class SmartWalletController {
     @GetMapping("/watchlist/archetypes")
     public List<WalletArchetypeView> watchlistArchetypes(@RequestParam(defaultValue = "50") Integer limit,
                                                           @RequestParam(defaultValue = "candidates") String scope) {
-        return resolveWatchlistScope(scope).stream()
-                .limit(Math.max(1, Math.min(limit, 200)))
-                .map(profile -> walletArchetypeClassifierService.classify(profile.getWalletAddress(), profile))
-                .toList();
+        return buildWatchlistArchetypes(limit, scope);
+    }
+
+    @Operation(summary = "导出观察名单地址分型 CSV", description = "导出增强版地址分型结果，包含退出风格、提前退出率和可复制分数。")
+    @GetMapping(value = "/watchlist/archetypes/export", produces = "text/csv")
+    public ResponseEntity<String> exportWatchlistArchetypes(@RequestParam(defaultValue = "200") Integer limit,
+                                                            @RequestParam(defaultValue = "candidates") String scope) {
+        List<WalletArchetypeView> rows = buildWatchlistArchetypes(limit, scope);
+        String csv = csv(
+                List.of("walletAddress", "archetype", "followLane", "recommendedExitLane",
+                        "highFrequencyTradingAddress", "trades7d", "trades30d", "orderWinRate",
+                        "averageOrderRoiRate", "medianOrderRoiRate", "settlementCompletionRate",
+                        "earlyExitRate", "profitEarlyExitRate", "lossEarlyExitRate",
+                        "winSourceType", "settlementWinRate", "medianHoldMinutes", "stabilityScore",
+                        "qualityScore", "replicabilityScore", "followFitScore", "confidence", "summary"),
+                rows.stream().map(row -> java.util.Arrays.asList(
+                        row.walletAddress(), row.archetype(), row.followLane(), row.recommendedExitLane(),
+                        row.highFrequencyTradingAddress(), row.trades7d(), row.trades30d(), row.orderWinRate(),
+                        row.averageOrderRoiRate(), row.medianOrderRoiRate(), row.settlementCompletionRate(),
+                        row.earlyExitRate(), row.profitEarlyExitRate(), row.lossEarlyExitRate(),
+                        row.winSourceType(), row.settlementWinRate(), row.medianHoldMinutes(), row.stabilityScore(),
+                        row.qualityScore(), row.replicabilityScore(), row.followFitScore(), row.confidence(), row.summary()
+                )).toList()
+        );
+        return csvResponse(csv, "smart_wallet_watchlist_archetypes", scope);
+    }
+
+    @Operation(summary = "观察名单地址行为画像", description = "分析监控地址的高频特征、订单胜率、收益率、提前退出比例，以及推荐的跟单退出节奏。")
+    @GetMapping("/watchlist/behavior-profiles")
+    public List<WalletBehaviorProfileView> watchlistBehaviorProfiles(@RequestParam(defaultValue = "30") Integer limit,
+                                                                     @RequestParam(defaultValue = "candidates") String scope) {
+        return walletBehaviorProfileService.buildProfiles(resolveWatchlistScope(scope), limit);
+    }
+
+    @Operation(summary = "刷新并落库地址行为画像", description = "按 scope 批量重算监控地址行为画像，并 upsert 到 smart_wallet_behavior_profile 表。")
+    @PostMapping("/watchlist/behavior-profiles/refresh")
+    public Map<String, Object> refreshWatchlistBehaviorProfiles(@RequestParam(defaultValue = "30") Integer limit,
+                                                                @RequestParam(defaultValue = "candidates") String scope) {
+        List<WalletBehaviorProfileView> rows = walletBehaviorProfileService.refreshAndPersistProfiles(resolveWatchlistScope(scope), limit);
+        return Map.of(
+                "scope", scope,
+                "limit", limit,
+                "persisted", rows.size()
+        );
     }
 
     private List<SmartWalletProfileEntity> resolveWatchlistScope(String scope) {
@@ -258,6 +459,150 @@ public class SmartWalletController {
             return polymarketMonitorService.listExecutableWatchlist();
         }
         return polymarketMonitorService.listQualifiedCandidates();
+    }
+
+    private List<WalletArchetypeView> buildWatchlistArchetypes(Integer limit, String scope) {
+        return resolveWatchlistScope(scope).stream()
+                .limit(Math.max(1, Math.min(limit, 200)))
+                .map(profile -> enrichArchetypeView(
+                        walletArchetypeClassifierService.classify(profile.getWalletAddress(), profile),
+                        walletBehaviorProfileService.buildProfile(profile)
+                ))
+                .toList();
+    }
+
+    private WalletArchetypeView enrichArchetypeView(WalletArchetypeView archetype,
+                                                    WalletBehaviorProfileView behaviorProfile) {
+        if (archetype == null) {
+            return null;
+        }
+        return WalletArchetypeView.builder()
+                .walletAddress(archetype.walletAddress())
+                .archetype(archetype.archetype())
+                .followLane(archetype.followLane())
+                .confidence(archetype.confidence())
+                .leaderQualityScore(archetype.leaderQualityScore())
+                .followFitScore(archetype.followFitScore())
+                .recommendedSyncIntervalMs(archetype.recommendedSyncIntervalMs())
+                .labelSampleSize(archetype.labelSampleSize())
+                .trades7d(archetype.trades7d())
+                .trades30d(archetype.trades30d())
+                .markets30d(archetype.markets30d())
+                .concentrationMarket30d(archetype.concentrationMarket30d())
+                .followableRate30d(archetype.followableRate30d())
+                .alpha30s(archetype.alpha30s())
+                .alpha5m(archetype.alpha5m())
+                .alphaRule(archetype.alphaRule())
+                .medianInterTradeMinutes(archetype.medianInterTradeMinutes())
+                .highFrequencyTradingAddress(behaviorProfile == null ? null : behaviorProfile.highFrequencyTradingAddress())
+                .closedPositionSampleSize(behaviorProfile == null ? null : behaviorProfile.closedPositionSampleSize())
+                .orderWinRate(behaviorProfile == null ? null : behaviorProfile.orderWinRate())
+                .averageOrderRoiRate(behaviorProfile == null ? null : behaviorProfile.averageOrderRoiRate())
+                .medianOrderRoiRate(behaviorProfile == null ? null : behaviorProfile.medianOrderRoiRate())
+                .settlementCompletionRate(behaviorProfile == null ? null : behaviorProfile.settlementCompletionRate())
+                .earlyExitRate(behaviorProfile == null ? null : behaviorProfile.earlyExitRate())
+                .profitEarlyExitRate(behaviorProfile == null ? null : behaviorProfile.profitEarlyExitRate())
+                .lossEarlyExitRate(behaviorProfile == null ? null : behaviorProfile.lossEarlyExitRate())
+                .winSourceType(behaviorProfile == null ? null : behaviorProfile.winSourceType())
+                .settlementWinRate(behaviorProfile == null ? null : behaviorProfile.settlementWinRate())
+                .medianHoldMinutes(behaviorProfile == null ? null : behaviorProfile.medianHoldMinutes())
+                .stabilityScore(behaviorProfile == null ? null : behaviorProfile.stabilityScore())
+                .qualityScore(behaviorProfile == null ? null : behaviorProfile.qualityScore())
+                .replicabilityScore(behaviorProfile == null ? null : behaviorProfile.replicabilityScore())
+                .recommendedExitLane(behaviorProfile == null ? null : behaviorProfile.recommendedExitLane())
+                .summary(behaviorProfile != null && behaviorProfile.summary() != null
+                        ? behaviorProfile.summary()
+                        : archetype.summary())
+                .build();
+    }
+
+    private SmartWalletProfileOpsCandidateView toOpsCandidateView(SmartWalletProfileEntity profile,
+                                                                  WalletBehaviorProfileView behaviorProfile) {
+        return SmartWalletProfileOpsCandidateView.builder()
+                .walletAddress(profile.getWalletAddress())
+                .alias(profile.getAlias())
+                .qualified(profile.getQualified())
+                .watchEnabled(profile.getWatchEnabled())
+                .manualWatchEnabled(profile.getManualWatchEnabled())
+                .manualRecommendedExitLane(profile.getManualRecommendedExitLane())
+                .manualOverrideUpdatedAt(profile.getManualOverrideUpdatedAt())
+                .archetype(behaviorProfile == null ? null : behaviorProfile.archetype())
+                .followLane(behaviorProfile == null ? null : behaviorProfile.followLane())
+                .highFrequencyTradingAddress(behaviorProfile == null ? null : behaviorProfile.highFrequencyTradingAddress())
+                .orderWinRate(behaviorProfile == null ? null : behaviorProfile.orderWinRate())
+                .averageOrderRoiRate(behaviorProfile == null ? null : behaviorProfile.averageOrderRoiRate())
+                .settlementCompletionRate(behaviorProfile == null ? null : behaviorProfile.settlementCompletionRate())
+                .earlyExitRate(behaviorProfile == null ? null : behaviorProfile.earlyExitRate())
+                .replicabilityScore(behaviorProfile == null ? null : behaviorProfile.replicabilityScore())
+                .recommendedExitLane(behaviorProfile == null ? null : behaviorProfile.recommendedExitLane())
+                .summary(behaviorProfile == null ? null : behaviorProfile.summary())
+                .build();
+    }
+
+    private boolean matchesOverrideCandidateFilters(SmartWalletProfileOpsCandidateView candidate,
+                                                    String recommendedExitLane,
+                                                    Boolean watchEnabled,
+                                                    Boolean qualified,
+                                                    Boolean manualWatchEnabled,
+                                                    boolean manualOnly,
+                                                    Long updatedCutoffMillis,
+                                                    Boolean highFrequencyTradingAddress,
+                                                    BigDecimal minReplicabilityScore,
+                                                    BigDecimal maxReplicabilityScore) {
+        if (candidate == null) {
+            return false;
+        }
+        if (watchEnabled != null && !watchEnabled.equals(candidate.watchEnabled())) {
+            return false;
+        }
+        if (qualified != null && !qualified.equals(candidate.qualified())) {
+            return false;
+        }
+        if (manualWatchEnabled != null && !manualWatchEnabled.equals(candidate.manualWatchEnabled())) {
+            return false;
+        }
+        if (manualOnly
+                && candidate.manualWatchEnabled() == null
+                && candidate.manualRecommendedExitLane() == null
+                && candidate.manualOverrideUpdatedAt() == null) {
+            return false;
+        }
+        if (recommendedExitLane != null) {
+            String actualLane = candidate.recommendedExitLane() == null ? "" : candidate.recommendedExitLane().trim();
+            if (!recommendedExitLane.trim().equalsIgnoreCase(actualLane)) {
+                return false;
+            }
+        }
+        if (updatedCutoffMillis != null) {
+            if (candidate.manualOverrideUpdatedAt() == null || candidate.manualOverrideUpdatedAt().getTime() < updatedCutoffMillis) {
+                return false;
+            }
+        }
+        if (highFrequencyTradingAddress != null
+                && !highFrequencyTradingAddress.equals(candidate.highFrequencyTradingAddress())) {
+            return false;
+        }
+        if (minReplicabilityScore != null
+                && (candidate.replicabilityScore() == null || candidate.replicabilityScore().compareTo(minReplicabilityScore) < 0)) {
+            return false;
+        }
+        if (maxReplicabilityScore != null
+                && candidate.replicabilityScore() != null
+                && candidate.replicabilityScore().compareTo(maxReplicabilityScore) > 0) {
+            return false;
+        }
+        return true;
+    }
+
+    private int parseCursor(String cursor) {
+        if (!StringUtils.hasText(cursor)) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(cursor.trim()));
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
     }
 
     @Operation(summary = "地址时段覆盖诊断", description = "按 dominant_session 聚合 profiles 与 watchlist，查看地址池是否集中在某个区域/时段。")

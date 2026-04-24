@@ -16,6 +16,75 @@ public class SmartWalletSchemaMaintenanceService {
 
     @PostConstruct
     public void ensureSmartWalletOutcomeColumns() {
+        ensureTableExists("smart_wallet_behavior_profile",
+                """
+                CREATE TABLE `smart_wallet_behavior_profile` (
+                  `id` BIGINT NOT NULL AUTO_INCREMENT,
+                  `wallet_address` VARCHAR(128) NOT NULL COMMENT '监控钱包地址',
+                  `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+                  `alias` VARCHAR(255) DEFAULT NULL COMMENT '钱包别名',
+                  `archetype` VARCHAR(64) DEFAULT NULL COMMENT '交易风格分型',
+                  `follow_lane` VARCHAR(64) DEFAULT NULL COMMENT '建议跟随 lane',
+                  `high_frequency_trading_address` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否高频交易地址',
+                  `trades_7d` INT NOT NULL DEFAULT 0 COMMENT '近7天交易数',
+                  `trades_30d` INT NOT NULL DEFAULT 0 COMMENT '近30天交易数',
+                  `median_inter_trade_minutes` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '交易间隔中位数(分钟)',
+                  `closed_position_sample_size` INT NOT NULL DEFAULT 0 COMMENT '已关闭仓位样本数',
+                  `order_win_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '订单胜率',
+                  `average_order_roi_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '平均订单收益率',
+                  `median_order_roi_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中位订单收益率',
+                  `total_realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '总实现收益USDC',
+                  `settlement_completion_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '持有到结算比例',
+                  `early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前退出比例',
+                  `profit_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '盈利单提前退出比例',
+                  `loss_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '亏损单提前退出比例',
+                  `win_source_type` VARCHAR(64) DEFAULT NULL COMMENT '胜率来源类型',
+                  `latency_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '短周期 alpha 比例',
+                  `swing_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中周期 alpha 比例',
+                  `settlement_win_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '等待结算胜率',
+                  `median_hold_minutes` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持仓时长中位数(分钟)',
+                  `stability_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '稳定性分数',
+                  `quality_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '地址质量分数',
+                  `replicability_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '可复制分数',
+                  `recommended_exit_lane` VARCHAR(64) DEFAULT NULL COMMENT '推荐退出 lane',
+                  `summary` VARCHAR(1024) DEFAULT NULL COMMENT '画像摘要',
+                  `computed_at` DATETIME NOT NULL COMMENT '画像计算时间',
+                  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (`id`),
+                  UNIQUE KEY `uk_sw_behavior_wallet_source` (`wallet_address`,`source`),
+                  KEY `idx_sw_behavior_lane` (`recommended_exit_lane`,`updated_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 行为画像快照'
+                """);
+        ensureTableExists("smart_wallet_order_analysis",
+                """
+                CREATE TABLE `smart_wallet_order_analysis` (
+                  `id` BIGINT NOT NULL AUTO_INCREMENT,
+                  `wallet_address` VARCHAR(128) NOT NULL COMMENT '地址',
+                  `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+                  `market_id` VARCHAR(128) NOT NULL COMMENT '市场ID',
+                  `question` VARCHAR(512) DEFAULT NULL COMMENT '问题',
+                  `outcome` VARCHAR(128) DEFAULT NULL COMMENT '结果标签',
+                  `opened_at` DATETIME DEFAULT NULL COMMENT '建仓时间',
+                  `closed_at` DATETIME DEFAULT NULL COMMENT '平仓时间',
+                  `market_end_at` BIGINT DEFAULT NULL COMMENT '市场预计结算时间戳(毫秒)',
+                  `average_entry_price` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '平均建仓价格',
+                  `invested_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '投入本金USDC',
+                  `realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '已实现收益USDC',
+                  `roi_rate` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '单笔收益率',
+                  `hold_minutes` DECIMAL(12,2) DEFAULT NULL COMMENT '持有时长(分钟)',
+                  `exit_style` VARCHAR(64) DEFAULT NULL COMMENT '退出类型',
+                  `exit_lead_minutes` DECIMAL(12,2) DEFAULT NULL COMMENT '相对结算提前退出分钟数',
+                  `is_win` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否盈利',
+                  `source_confidence` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '分析可信度',
+                  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (`id`),
+                  UNIQUE KEY `uk_sw_order_analysis_wallet_market_outcome_closed` (`wallet_address`,`market_id`,`outcome`,`closed_at`),
+                  KEY `idx_sw_order_analysis_wallet_closed` (`wallet_address`,`source`,`closed_at`),
+                  KEY `idx_sw_order_analysis_exit` (`exit_style`,`closed_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 单笔闭环分析'
+                """);
         widenOutcomeColumn("smart_wallet_trade_event");
         widenOutcomeColumn("smart_wallet_follow_task");
         widenOutcomeColumn("smart_wallet_order");
@@ -69,11 +138,35 @@ public class SmartWalletSchemaMaintenanceService {
                 "ALTER TABLE `smart_wallet_daily_report` ADD COLUMN `losing_positions` INT NOT NULL DEFAULT 0 COMMENT '亏损仓位数' AFTER `winning_positions`");
         ensureColumnExists("smart_wallet_daily_report", "loss_rate",
                 "ALTER TABLE `smart_wallet_daily_report` ADD COLUMN `loss_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '亏损率' AFTER `win_rate`");
+        ensureColumnExists("smart_wallet_profile", "manual_watch_enabled",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `manual_watch_enabled` TINYINT(1) NULL COMMENT '人工覆盖是否允许进入 executable watchlist' AFTER `watch_enabled`");
+        ensureColumnExists("smart_wallet_profile", "manual_recommended_exit_lane",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `manual_recommended_exit_lane` VARCHAR(64) NULL COMMENT '人工覆盖的退出风格 lane' AFTER `manual_watch_enabled`");
+        ensureColumnExists("smart_wallet_profile", "manual_override_note",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `manual_override_note` VARCHAR(255) NULL COMMENT '人工覆盖备注' AFTER `manual_recommended_exit_lane`");
+        ensureColumnExists("smart_wallet_profile", "manual_override_updated_at",
+                "ALTER TABLE `smart_wallet_profile` ADD COLUMN `manual_override_updated_at` DATETIME NULL COMMENT '人工覆盖更新时间' AFTER `manual_override_note`");
+        ensureColumnExists("smart_wallet_behavior_profile", "win_source_type",
+                "ALTER TABLE `smart_wallet_behavior_profile` ADD COLUMN `win_source_type` VARCHAR(64) NULL COMMENT '胜率来源类型' AFTER `loss_early_exit_rate`");
+        ensureColumnExists("smart_wallet_behavior_profile", "latency_alpha_rate",
+                "ALTER TABLE `smart_wallet_behavior_profile` ADD COLUMN `latency_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '短周期 alpha 比例' AFTER `win_source_type`");
+        ensureColumnExists("smart_wallet_behavior_profile", "swing_alpha_rate",
+                "ALTER TABLE `smart_wallet_behavior_profile` ADD COLUMN `swing_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中周期 alpha 比例' AFTER `latency_alpha_rate`");
+        ensureColumnExists("smart_wallet_behavior_profile", "settlement_win_rate",
+                "ALTER TABLE `smart_wallet_behavior_profile` ADD COLUMN `settlement_win_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '等待结算胜率' AFTER `swing_alpha_rate`");
+        ensureColumnExists("smart_wallet_behavior_profile", "median_hold_minutes",
+                "ALTER TABLE `smart_wallet_behavior_profile` ADD COLUMN `median_hold_minutes` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持仓时长中位数(分钟)' AFTER `settlement_win_rate`");
+        ensureColumnExists("smart_wallet_behavior_profile", "stability_score",
+                "ALTER TABLE `smart_wallet_behavior_profile` ADD COLUMN `stability_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '稳定性分数' AFTER `median_hold_minutes`");
+        ensureColumnExists("smart_wallet_behavior_profile", "quality_score",
+                "ALTER TABLE `smart_wallet_behavior_profile` ADD COLUMN `quality_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '地址质量分数' AFTER `stability_score`");
         dropLegacyIndexIfExists("smart_wallet_position", "uk_position_execution_market_outcome", "market_id", "outcome");
         ensureIndexExists("smart_wallet_order", "idx_order_position",
                 "CREATE INDEX `idx_order_position` ON `smart_wallet_order` (`position_id`, `placed_at`)");
         ensureIndexExists("smart_wallet_fill", "idx_fill_position",
                 "CREATE INDEX `idx_fill_position` ON `smart_wallet_fill` (`position_id`, `filled_at`)");
+        ensureIndexExists("smart_wallet_behavior_profile", "idx_sw_behavior_quality",
+                "CREATE INDEX `idx_sw_behavior_quality` ON `smart_wallet_behavior_profile` (`quality_score`, `replicability_score`, `updated_at`)");
         ensureLegacyIndexExists("smart_wallet_position", "idx_position_execution_market_outcome",
                 new String[]{"market_id", "outcome"},
                 "CREATE INDEX `idx_position_execution_market_outcome` ON `smart_wallet_position` (`execution_address`, `market_id`, `outcome`, `status`, `last_filled_at`)");
@@ -87,6 +180,17 @@ public class SmartWalletSchemaMaintenanceService {
             jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN `outcome` VARCHAR(128) NOT NULL COMMENT 'Polymarket outcome label'");
         } catch (Exception ex) {
             log.warn("Failed to widen outcome column for table {}: {}", tableName, ex.getMessage());
+        }
+    }
+
+    private void ensureTableExists(String tableName, String ddl) {
+        if (tableExists(tableName)) {
+            return;
+        }
+        try {
+            jdbcTemplate.execute(ddl);
+        } catch (Exception ex) {
+            log.warn("Failed to create table {}: {}", tableName, ex.getMessage());
         }
     }
 

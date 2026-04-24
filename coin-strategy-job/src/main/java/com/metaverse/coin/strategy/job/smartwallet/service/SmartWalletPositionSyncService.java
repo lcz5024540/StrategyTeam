@@ -1,9 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
-import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -37,6 +37,7 @@ public class SmartWalletPositionSyncService {
     private final SmartWalletRecoveryService recoveryService;
     private final SmartWalletMarketInfoService marketInfoService;
     private final ExitSignalProvider exitSignalProvider;
+    private final WalletBehaviorProfileService walletBehaviorProfileService;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
     private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
@@ -187,10 +188,8 @@ public class SmartWalletPositionSyncService {
         if (!properties.isEnabled() || risk == null || !risk.isEnableAutoTakeProfit()) {
             return;
         }
-        BigDecimal threshold = risk.getAutoTakeProfitThresholdRate() == null
-                ? new BigDecimal("0.20") : risk.getAutoTakeProfitThresholdRate();
-        scanPaperPositionsForExit(threshold, AutoExitMode.TAKE_PROFIT);
-        scanLivePositionsForTakeProfit(threshold);
+        scanPaperPositionsForTakeProfit();
+        scanLivePositionsForTakeProfit();
     }
 
     private boolean isNotFoundError(Exception e) {
@@ -228,19 +227,21 @@ public class SmartWalletPositionSyncService {
                 continue;
             }
             try {
+                BigDecimal paperExitPrice = resolvePaperThresholdExitPrice(position, threshold, mode, decision.markPrice());
                 SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
-                exitRequest.setPrice(decision.markPrice());
+                exitRequest.setPrice(paperExitPrice);
                 exitRequest.setQuantity(position.getQuantity());
                 exitRequest.setReason(mode.reason());
                 SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
 
-                log.info("{} triggered positionId={} marketId={} outcome={} entry={} mark={} threshold={}% actual={}% pnl={} currentStatus={}",
+                log.info("{} triggered positionId={} marketId={} outcome={} entry={} mark={} exitPrice={} threshold={}% actual={}% pnl={} currentStatus={}",
                         mode.logLabel(),
                         position.getId(),
                         position.getMarketId(),
                         position.getOutcome(),
                         position.getAverageEntryPrice(),
                         decision.markPrice(),
+                        paperExitPrice,
                         threshold.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
                         decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
                         safe(exitResult.getRealizedPnlDeltaUsdc()).setScale(2, RoundingMode.HALF_UP),
@@ -273,6 +274,7 @@ public class SmartWalletPositionSyncService {
 
             // Resolve dynamic threshold (falls back to fixed threshold when feature is disabled)
             BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
+            threshold = adjustThresholdByWalletBehavior(position, threshold, mode);
 
             // Check threshold-based stop-loss
             ExitDecision decision = buildExitDecision(position, threshold, mode);
@@ -292,7 +294,9 @@ public class SmartWalletPositionSyncService {
             String exitReason = trendTriggered && !decision.triggered()
                     ? "TREND_STOP_LOSS_AUTO_EXIT"
                     : mode.reason();
-            BigDecimal exitPrice = decision.triggered() ? decision.markPrice() : safe(position.getLastMarkPrice());
+            BigDecimal exitPrice = trendTriggered && !decision.triggered()
+                    ? safe(position.getLastMarkPrice())
+                    : resolvePaperThresholdExitPrice(position, threshold, mode, decision.markPrice());
 
             try {
                 SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
@@ -302,11 +306,12 @@ public class SmartWalletPositionSyncService {
                 SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
                 exitSignalProvider.clearPositionHistory(position.getId());
 
-                log.info("{} triggered positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% pnl={} trendTriggered={} currentStatus={}",
+                log.info("{} triggered positionId={} marketId={} outcome={} mark={} exitPrice={} threshold={}% actual={}% pnl={} trendTriggered={} currentStatus={}",
                         mode.logLabel(),
                         position.getId(),
                         position.getMarketId(),
                         position.getOutcome(),
+                        safe(position.getLastMarkPrice()),
                         exitPrice,
                         threshold.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
                         decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
@@ -324,7 +329,52 @@ public class SmartWalletPositionSyncService {
         }
     }
 
-    private void scanLivePositionsForTakeProfit(BigDecimal threshold) {
+    private void scanPaperPositionsForTakeProfit() {
+        List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        marketInfoService.populatePositions(openPositions);
+
+        for (SmartWalletPositionEntity position : openPositions) {
+            BigDecimal threshold = resolveTakeProfitThreshold(position);
+            threshold = adjustThresholdByWalletBehavior(position, threshold, AutoExitMode.TAKE_PROFIT);
+            ExitDecision decision = buildExitDecision(position, threshold, AutoExitMode.TAKE_PROFIT);
+            if (!decision.triggered()) {
+                continue;
+            }
+            try {
+                BigDecimal paperExitPrice = resolvePaperThresholdExitPrice(position, threshold, AutoExitMode.TAKE_PROFIT, decision.markPrice());
+                SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
+                exitRequest.setPrice(paperExitPrice);
+                exitRequest.setQuantity(position.getQuantity());
+                exitRequest.setReason(AutoExitMode.TAKE_PROFIT.reason());
+                SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
+
+                log.info("{} triggered positionId={} marketId={} outcome={} entry={} mark={} exitPrice={} threshold={}% actual={}% pnl={} currentStatus={}",
+                        AutoExitMode.TAKE_PROFIT.logLabel(),
+                        position.getId(),
+                        position.getMarketId(),
+                        position.getOutcome(),
+                        position.getAverageEntryPrice(),
+                        decision.markPrice(),
+                        paperExitPrice,
+                        threshold.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                        decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                        safe(exitResult.getRealizedPnlDeltaUsdc()).setScale(2, RoundingMode.HALF_UP),
+                        exitResult.getCurrentStatus());
+            } catch (Exception ex) {
+                log.warn("{} exit failed for positionId={} marketId={}: {}",
+                        AutoExitMode.TAKE_PROFIT.logLabel(),
+                        position.getId(),
+                        position.getMarketId(),
+                        ex.getMessage(),
+                        ex);
+            }
+        }
+    }
+
+    private void scanLivePositionsForTakeProfit() {
         ExecutionWalletContextLoader.ExecutionWalletContext wallet;
         try {
             wallet = walletContextLoader.requireLiveContext();
@@ -345,6 +395,8 @@ public class SmartWalletPositionSyncService {
             if (hasPendingLiveExitOrder(position.getId())) {
                 continue;
             }
+            BigDecimal threshold = resolveTakeProfitThreshold(position);
+            threshold = adjustThresholdByWalletBehavior(position, threshold, AutoExitMode.TAKE_PROFIT);
             ExitDecision decision = buildExitDecision(position, threshold, AutoExitMode.TAKE_PROFIT);
             if (!decision.triggered()) {
                 continue;
@@ -373,6 +425,140 @@ public class SmartWalletPositionSyncService {
                         ex);
             }
         }
+    }
+
+    private BigDecimal resolveTakeProfitThreshold(SmartWalletPositionEntity position) {
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        BigDecimal configured = risk.getAutoTakeProfitThresholdRate() == null
+                ? new BigDecimal("0.20")
+                : risk.getAutoTakeProfitThresholdRate();
+        BigDecimal unitCost = resolveUnitCostBasis(position);
+        if (unitCost.compareTo(BigDecimal.ZERO) <= 0 || unitCost.compareTo(BigDecimal.ONE) >= 0) {
+            return configured;
+        }
+
+        BigDecimal maxAchievableThreshold = BigDecimal.ONE.subtract(unitCost)
+                .divide(unitCost, 8, RoundingMode.HALF_UP);
+        if (maxAchievableThreshold.compareTo(BigDecimal.ZERO) <= 0) {
+            return configured;
+        }
+
+        // Binary markets cap settlement proceeds at 1. Keep 20% upside headroom so
+        // take-profit remains reachable for high-entry positions without requiring a
+        // perfect move to 1.00 before the next scan.
+        BigDecimal reachableThreshold = maxAchievableThreshold.multiply(new BigDecimal("0.80"))
+                .setScale(4, RoundingMode.HALF_UP);
+        if (reachableThreshold.compareTo(BigDecimal.ZERO) <= 0) {
+            return configured;
+        }
+        return configured.min(reachableThreshold);
+    }
+
+    private BigDecimal adjustThresholdByWalletBehavior(SmartWalletPositionEntity position,
+                                                       BigDecimal baseThreshold,
+                                                       AutoExitMode mode) {
+        if (position == null || baseThreshold == null || baseThreshold.compareTo(BigDecimal.ZERO) <= 0) {
+            return baseThreshold;
+        }
+        String walletAddress = resolveDrivingWalletAddress(position.getId());
+        if (!StringUtils.hasText(walletAddress)) {
+            return baseThreshold;
+        }
+        String lane = walletBehaviorProfileService.recommendedExitLane(walletAddress);
+        if (!StringUtils.hasText(lane)) {
+            return baseThreshold;
+        }
+        BigDecimal adjusted = switch (lane.trim().toUpperCase()) {
+            case "EARLY_TAKE_PROFIT" -> mode == AutoExitMode.TAKE_PROFIT
+                    ? baseThreshold.multiply(new BigDecimal("0.75"))
+                    : baseThreshold;
+            case "FAST_STOP_LOSS" -> mode == AutoExitMode.STOP_LOSS
+                    ? baseThreshold.multiply(new BigDecimal("0.80"))
+                    : baseThreshold;
+            case "FAST_EXIT_OR_SKIP" -> mode == AutoExitMode.STOP_LOSS
+                    ? baseThreshold.multiply(new BigDecimal("0.70"))
+                    : baseThreshold.multiply(new BigDecimal("0.60"));
+            case "HYBRID_EARLY_EXIT" -> mode == AutoExitMode.STOP_LOSS
+                    ? baseThreshold.multiply(new BigDecimal("0.85"))
+                    : baseThreshold.multiply(new BigDecimal("0.80"));
+            default -> baseThreshold;
+        };
+        BigDecimal normalized = normalizeThreshold(adjusted, mode);
+        if (normalized.compareTo(baseThreshold) != 0) {
+            log.debug("Adjusted {} threshold for positionId={} marketId={} walletAddress={} lane={} {} -> {}",
+                    mode.logLabel(),
+                    position.getId(),
+                    position.getMarketId(),
+                    walletAddress,
+                    lane,
+                    baseThreshold.setScale(4, RoundingMode.HALF_UP),
+                    normalized.setScale(4, RoundingMode.HALF_UP));
+        }
+        return normalized;
+    }
+
+    private String resolveDrivingWalletAddress(Long positionId) {
+        if (positionId == null) {
+            return null;
+        }
+        SmartWalletOrderEntity entryOrder = orderMapper.selectOne(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                .eq(SmartWalletOrderEntity::getPositionId, positionId)
+                .eq(SmartWalletOrderEntity::getSide, "BUY")
+                .eq(SmartWalletOrderEntity::getOrderType, "ENTRY")
+                .isNotNull(SmartWalletOrderEntity::getWalletAddress)
+                .orderByDesc(SmartWalletOrderEntity::getPlacedAt)
+                .orderByDesc(SmartWalletOrderEntity::getId)
+                .last("limit 1"));
+        return entryOrder == null ? null : entryOrder.getWalletAddress();
+    }
+
+    private BigDecimal normalizeThreshold(BigDecimal threshold, AutoExitMode mode) {
+        if (threshold == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal min = new BigDecimal("0.03");
+        BigDecimal max = mode == AutoExitMode.STOP_LOSS ? new BigDecimal("0.50") : BigDecimal.ONE;
+        BigDecimal normalized = threshold.setScale(4, RoundingMode.HALF_UP);
+        if (normalized.compareTo(min) < 0) {
+            return min.setScale(4, RoundingMode.HALF_UP);
+        }
+        if (normalized.compareTo(max) > 0) {
+            return max.setScale(4, RoundingMode.HALF_UP);
+        }
+        return normalized;
+    }
+
+    private BigDecimal resolvePaperThresholdExitPrice(SmartWalletPositionEntity position,
+                                                      BigDecimal threshold,
+                                                      AutoExitMode mode,
+                                                      BigDecimal fallbackPrice) {
+        BigDecimal quantity = safe(position == null ? null : position.getQuantity());
+        BigDecimal costBasis = safe(position == null ? null : position.getCostBasisUsdc());
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0 || costBasis.compareTo(BigDecimal.ZERO) <= 0 || threshold == null) {
+            return safe(fallbackPrice);
+        }
+
+        BigDecimal multiplier = mode == AutoExitMode.STOP_LOSS
+                ? BigDecimal.ONE.subtract(threshold)
+                : BigDecimal.ONE.add(threshold);
+        BigDecimal thresholdPrice = costBasis.multiply(multiplier)
+                .divide(quantity, 8, RoundingMode.HALF_UP);
+        if (thresholdPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return safe(fallbackPrice);
+        }
+        if (thresholdPrice.compareTo(BigDecimal.ONE) > 0) {
+            return BigDecimal.ONE.setScale(8, RoundingMode.HALF_UP);
+        }
+        return thresholdPrice.setScale(8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal resolveUnitCostBasis(SmartWalletPositionEntity position) {
+        BigDecimal quantity = safe(position == null ? null : position.getQuantity());
+        BigDecimal costBasis = safe(position == null ? null : position.getCostBasisUsdc());
+        if (quantity.compareTo(BigDecimal.ZERO) > 0 && costBasis.compareTo(BigDecimal.ZERO) > 0) {
+            return costBasis.divide(quantity, 8, RoundingMode.HALF_UP);
+        }
+        return safe(position == null ? null : position.getAverageEntryPrice());
     }
 
     private ExitDecision buildExitDecision(SmartWalletPositionEntity position,

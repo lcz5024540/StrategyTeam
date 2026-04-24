@@ -11,18 +11,27 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPosi
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +57,7 @@ public class SmartWalletProfileStoreService {
     private final SmartWalletOrderMapper orderMapper;
     private final SmartWalletPositionMapper positionMapper;
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
+    private final WalletBehaviorProfileService walletBehaviorProfileService;
 
     public SmartWalletProfileEntity upsertMetrics(PolymarketWalletMetricsRequest request) {
         SmartWalletProfileEntity entity = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
@@ -104,6 +114,7 @@ public class SmartWalletProfileStoreService {
         } else {
             profileMapper.updateById(entity);
         }
+        walletBehaviorProfileService.evictProfileCache(entity.getWalletAddress());
         return entity;
     }
 
@@ -145,6 +156,149 @@ public class SmartWalletProfileStoreService {
     public void update(SmartWalletProfileEntity entity) {
         entity.setUpdatedAt(new Date());
         profileMapper.updateById(entity);
+        walletBehaviorProfileService.evictProfileCache(entity.getWalletAddress());
+    }
+
+    public List<SmartWalletProfileOverrideView> listManualOverrides(Integer limit) {
+        int safeLimit = limit == null ? 100 : Math.max(1, Math.min(limit, 500));
+        return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                        .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                        .and(wrapper -> wrapper
+                                .isNotNull(SmartWalletProfileEntity::getManualWatchEnabled)
+                                .or()
+                                .isNotNull(SmartWalletProfileEntity::getManualRecommendedExitLane)
+                                .or()
+                                .isNotNull(SmartWalletProfileEntity::getManualOverrideNote))
+                        .orderByDesc(SmartWalletProfileEntity::getManualOverrideUpdatedAt)
+                        .last("limit " + safeLimit))
+                .stream()
+                .map(this::toOverrideView)
+                .toList();
+    }
+
+    public SmartWalletProfileOverrideSummaryView summarizeManualOverrides() {
+        List<SmartWalletProfileEntity> rows = profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                .and(wrapper -> wrapper
+                        .isNotNull(SmartWalletProfileEntity::getManualWatchEnabled)
+                        .or()
+                        .isNotNull(SmartWalletProfileEntity::getManualRecommendedExitLane)
+                        .or()
+                        .isNotNull(SmartWalletProfileEntity::getManualOverrideNote)));
+
+        int observeOnlyOverrides = 0;
+        int forceExecutableOverrides = 0;
+        int exitLaneOverrides = 0;
+        int noteOnlyOverrides = 0;
+        int updatedLast24h = 0;
+        long recentCutoff = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(24);
+        LinkedHashMap<String, Integer> exitLaneCounts = new LinkedHashMap<>();
+        for (SmartWalletProfileEntity row : rows) {
+            boolean hasManualWatch = row.getManualWatchEnabled() != null;
+            boolean hasExitLane = StringUtils.hasText(row.getManualRecommendedExitLane());
+            boolean hasNote = StringUtils.hasText(row.getManualOverrideNote());
+            if (Boolean.FALSE.equals(row.getManualWatchEnabled())) {
+                observeOnlyOverrides++;
+            }
+            if (Boolean.TRUE.equals(row.getManualWatchEnabled())) {
+                forceExecutableOverrides++;
+            }
+            if (hasExitLane) {
+                exitLaneOverrides++;
+                String lane = row.getManualRecommendedExitLane().trim().toUpperCase(Locale.ROOT);
+                exitLaneCounts.merge(lane, 1, Integer::sum);
+            }
+            if (!hasManualWatch && !hasExitLane && hasNote) {
+                noteOnlyOverrides++;
+            }
+            if (row.getManualOverrideUpdatedAt() != null && row.getManualOverrideUpdatedAt().getTime() >= recentCutoff) {
+                updatedLast24h++;
+            }
+        }
+        return SmartWalletProfileOverrideSummaryView.builder()
+                .totalOverrides(rows.size())
+                .observeOnlyOverrides(observeOnlyOverrides)
+                .forceExecutableOverrides(forceExecutableOverrides)
+                .exitLaneOverrides(exitLaneOverrides)
+                .noteOnlyOverrides(noteOnlyOverrides)
+                .updatedLast24h(updatedLast24h)
+                .exitLaneCounts(exitLaneCounts)
+                .build();
+    }
+
+    public SmartWalletProfileEntity updateManualOverride(String walletAddress, SmartWalletProfileOverrideRequest request) {
+        if (!org.springframework.util.StringUtils.hasText(walletAddress)) {
+            throw new IllegalArgumentException("walletAddress is required");
+        }
+        SmartWalletProfileEntity entity = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getWalletAddress, walletAddress.trim())
+                .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                .last("limit 1"));
+        if (entity == null) {
+            throw new IllegalArgumentException("Smart-wallet profile not found: " + walletAddress);
+        }
+        Date now = new Date();
+        if (request != null) {
+            if (Boolean.TRUE.equals(request.getClearManualWatchEnabled())) {
+                entity.setManualWatchEnabled(null);
+            } else if (request.getManualWatchEnabled() != null) {
+                entity.setManualWatchEnabled(request.getManualWatchEnabled());
+            }
+
+            if (Boolean.TRUE.equals(request.getClearManualRecommendedExitLane())) {
+                entity.setManualRecommendedExitLane(null);
+            } else if (org.springframework.util.StringUtils.hasText(request.getManualRecommendedExitLane())) {
+                entity.setManualRecommendedExitLane(request.getManualRecommendedExitLane().trim());
+            }
+
+            if (request.getNote() != null) {
+                entity.setManualOverrideNote(request.getNote().trim().isEmpty() ? null : request.getNote().trim());
+            }
+        }
+        entity.setManualOverrideUpdatedAt(now);
+        applyQualificationState(entity);
+        entity.setUpdatedAt(now);
+        profileMapper.updateById(entity);
+        walletBehaviorProfileService.evictProfileCache(entity.getWalletAddress());
+        return entity;
+    }
+
+    public SmartWalletProfileBatchOverrideResultView batchUpdateManualOverrides(SmartWalletProfileBatchOverrideRequest request) {
+        if (request == null || request.getWalletAddresses() == null || request.getWalletAddresses().isEmpty()) {
+            throw new IllegalArgumentException("walletAddresses is required");
+        }
+        List<String> uniqueWalletAddresses = request.getWalletAddresses().stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (uniqueWalletAddresses.isEmpty()) {
+            throw new IllegalArgumentException("walletAddresses is required");
+        }
+
+        SmartWalletProfileOverrideRequest singleRequest = request.toSingleOverrideRequest();
+        List<String> updatedWallets = new ArrayList<>();
+        List<String> missingWallets = new ArrayList<>();
+        for (String walletAddress : uniqueWalletAddresses) {
+            try {
+                updateManualOverride(walletAddress, singleRequest);
+                updatedWallets.add(walletAddress);
+            } catch (IllegalArgumentException ex) {
+                if (ex.getMessage() != null && ex.getMessage().startsWith("Smart-wallet profile not found")) {
+                    missingWallets.add(walletAddress);
+                    continue;
+                }
+                throw ex;
+            }
+        }
+        return SmartWalletProfileBatchOverrideResultView.builder()
+                .requestedCount(request.getWalletAddresses().size())
+                .uniqueWalletCount(uniqueWalletAddresses.size())
+                .updatedCount(updatedWallets.size())
+                .missingCount(missingWallets.size())
+                .updatedWalletAddresses(updatedWallets)
+                .missingWalletAddresses(missingWallets)
+                .build();
     }
 
     // -------------------------------------------------------------------------
@@ -317,7 +471,12 @@ public class SmartWalletProfileStoreService {
     public void applyQualificationState(SmartWalletProfileEntity wallet) {
         boolean qualified = isQualified(wallet);
         wallet.setQualified(qualified);
-        wallet.setWatchEnabled(qualified && isExecutableCandidate(wallet));
+        boolean executableCandidate = qualified && isExecutableCandidate(wallet);
+        if (wallet.getManualWatchEnabled() != null) {
+            wallet.setWatchEnabled(qualified && wallet.getManualWatchEnabled());
+            return;
+        }
+        wallet.setWatchEnabled(executableCandidate);
     }
 
     private boolean isQualified(SmartWalletProfileEntity wallet) {
@@ -330,6 +489,12 @@ public class SmartWalletProfileStoreService {
 
     private boolean isExecutableCandidate(SmartWalletProfileEntity wallet) {
         if (wallet == null || !Boolean.TRUE.equals(wallet.getQualified())) {
+            return false;
+        }
+        WalletBehaviorProfileView behaviorProfile = walletBehaviorProfileService.getProfile(wallet.getWalletAddress());
+        if (behaviorProfile != null
+                && StringUtils.hasText(behaviorProfile.recommendedExitLane())
+                && "FAST_EXIT_OR_SKIP".equalsIgnoreCase(behaviorProfile.recommendedExitLane())) {
             return false;
         }
         WalletArchetypeView archetype = walletArchetypeClassifierService.classify(wallet.getWalletAddress(), wallet);
@@ -355,6 +520,19 @@ public class SmartWalletProfileStoreService {
 
     private BigDecimal firstNonNull(BigDecimal primary, BigDecimal fallback) {
         return primary != null ? primary : fallback;
+    }
+
+    private SmartWalletProfileOverrideView toOverrideView(SmartWalletProfileEntity entity) {
+        return SmartWalletProfileOverrideView.builder()
+                .walletAddress(entity.getWalletAddress())
+                .alias(entity.getAlias())
+                .qualified(entity.getQualified())
+                .watchEnabled(entity.getWatchEnabled())
+                .manualWatchEnabled(entity.getManualWatchEnabled())
+                .manualRecommendedExitLane(entity.getManualRecommendedExitLane())
+                .manualOverrideNote(entity.getManualOverrideNote())
+                .manualOverrideUpdatedAt(entity.getManualOverrideUpdatedAt())
+                .build();
     }
 
     private int nextLeaderboardHitCount(Date previousDiscoveredAt, Integer currentHitCount, PolymarketWalletMetricsRequest request) {

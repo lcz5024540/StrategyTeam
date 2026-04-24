@@ -23,6 +23,22 @@ public record WalletArchetypeView(
         BigDecimal alpha5m,
         BigDecimal alphaRule,
         BigDecimal medianInterTradeMinutes,
+        Boolean highFrequencyTradingAddress,
+        Integer closedPositionSampleSize,
+        BigDecimal orderWinRate,
+        BigDecimal averageOrderRoiRate,
+        BigDecimal medianOrderRoiRate,
+        BigDecimal settlementCompletionRate,
+        BigDecimal earlyExitRate,
+        BigDecimal profitEarlyExitRate,
+        BigDecimal lossEarlyExitRate,
+        String winSourceType,
+        BigDecimal settlementWinRate,
+        BigDecimal medianHoldMinutes,
+        BigDecimal stabilityScore,
+        BigDecimal qualityScore,
+        BigDecimal replicabilityScore,
+        String recommendedExitLane,
         String summary
 ) {
 }

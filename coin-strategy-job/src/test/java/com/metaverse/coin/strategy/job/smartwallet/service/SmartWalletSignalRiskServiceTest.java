@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTrad
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,6 +49,8 @@ class SmartWalletSignalRiskServiceTest {
     private KellyStakeCalculator kellyStakeCalculator;
     @Mock
     private PolymarketApiClient polymarketApiClient;
+    @Mock
+    private WalletBehaviorProfileService walletBehaviorProfileService;
 
     private SmartWalletProperties properties;
     private SmartWalletSignalRiskService service;
@@ -71,7 +74,8 @@ class SmartWalletSignalRiskServiceTest {
                 new SmartWalletEntryStrategyRouter(),
                 marketInfoService,
                 kellyStakeCalculator,
-                polymarketApiClient
+                polymarketApiClient,
+                walletBehaviorProfileService
         );
     }
 
@@ -90,6 +94,13 @@ class SmartWalletSignalRiskServiceTest {
                 .build();
 
         prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile(any())).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xabc")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.80"))
+                .earlyExitRate(new BigDecimal("0.20"))
+                .settlementCompletionRate(new BigDecimal("0.80"))
+                .build());
 
         SignalRiskDecision decision = service.evaluate(profile, event);
 
@@ -113,6 +124,13 @@ class SmartWalletSignalRiskServiceTest {
                 .build();
 
         prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile(any())).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xabc")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.50"))
+                .earlyExitRate(new BigDecimal("0.30"))
+                .settlementCompletionRate(new BigDecimal("0.60"))
+                .build());
 
         SignalRiskDecision decision = service.evaluate(profile, event);
 
@@ -140,6 +158,13 @@ class SmartWalletSignalRiskServiceTest {
                 .build();
 
         prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile(any())).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xabc")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.70"))
+                .earlyExitRate(new BigDecimal("0.20"))
+                .settlementCompletionRate(new BigDecimal("0.80"))
+                .build());
         when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("500"));
         when(polymarketApiClient.fetchBalance("0xlive")).thenReturn(new BigDecimal("100"));
         when(executionWalletContextLoader.load()).thenReturn(ExecutionWalletContextLoader.ExecutionWalletContext.builder()
@@ -153,6 +178,71 @@ class SmartWalletSignalRiskServiceTest {
         assertTrue(decision.isAccepted());
         org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("0.48"), decision.getRecommendedStakeUsdc());
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("Live wallet balance sizing applied")));
+    }
+
+    @Test
+    void shouldRejectFastExitOrSkipWalletAtEntry() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xfast")
+                .setWalletScore(new BigDecimal("0.90"))
+                .setWinRate(new BigDecimal("0.75"))
+                .setTotalTrades(90);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setSizeUsdc(new BigDecimal("150"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(3)
+                .dedupedEntityCount(3)
+                .consensusScore(new BigDecimal("0.90"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile("0xfast")).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xfast")
+                .recommendedExitLane("FAST_EXIT_OR_SKIP")
+                .replicabilityScore(new BigDecimal("0.22"))
+                .earlyExitRate(new BigDecimal("0.78"))
+                .settlementCompletionRate(new BigDecimal("0.10"))
+                .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[BEHAVIOR_BLOCK]")));
+    }
+
+    @Test
+    void shouldDownsizeStakeForHybridEarlyExitWallet() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xhybrid")
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.80"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile("0xhybrid")).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xhybrid")
+                .recommendedExitLane("HYBRID_EARLY_EXIT")
+                .replicabilityScore(new BigDecimal("0.58"))
+                .earlyExitRate(new BigDecimal("0.45"))
+                .settlementCompletionRate(new BigDecimal("0.40"))
+                .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted());
+        org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("0.36"), decision.getRecommendedStakeUsdc());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[BEHAVIOR_STAKE]")));
     }
 
     private void prepareCommonMocks(ConsensusSignalView consensus) {

@@ -47,6 +47,14 @@ public class SmartWalletProfileEntity {
     private String activeHourHistogramJson;
     @TableField("recent_win_rate_30d")
     private BigDecimal recentWinRate30d;
+    @TableField("manual_watch_enabled")
+    private Boolean manualWatchEnabled;
+    @TableField("manual_recommended_exit_lane")
+    private String manualRecommendedExitLane;
+    @TableField("manual_override_note")
+    private String manualOverrideNote;
+    @TableField("manual_override_updated_at")
+    private Date manualOverrideUpdatedAt;
     private Date createdAt;
     private Date updatedAt;
 }
