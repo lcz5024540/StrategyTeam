@@ -45,6 +45,7 @@ public class PolymarketWalletDiscoveryService {
     private final SmartWalletScoringService scoringService;
     private final SmartWalletLeaderboardStateService leaderboardStateService;
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
+    private final PolymarketMarketMetadataService marketMetadataService;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
@@ -455,10 +456,15 @@ public class PolymarketWalletDiscoveryService {
     private PolymarketTradeEventRequest toTradeEventRequest(PolymarketApiClient.UserTrade trade,
                                                             SmartWalletProfileEntity wallet) {
         PolymarketTradeEventRequest request = new PolymarketTradeEventRequest();
+        String canonicalConditionId = marketMetadataService.resolveCanonicalConditionId(
+                trade.getMarketId(),
+                trade.getQuestion(),
+                StringUtils.hasText(trade.getOutcome()) ? List.of(trade.getOutcome()) : List.of()
+        );
         request.setWalletAddress(wallet.getWalletAddress());
         request.setChain(wallet.getChain());
         request.setExternalTradeId(trade.getTradeId());
-        request.setMarketId(trade.getMarketId());
+        request.setMarketId(canonicalConditionId);
         request.setQuestion(trade.getQuestion());
         request.setOutcome(trade.getOutcome());
         request.setSide(trade.getSide());

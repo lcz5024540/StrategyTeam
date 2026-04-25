@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSummary;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,8 @@ class PolymarketWalletDiscoveryServiceTest {
     private SmartWalletLeaderboardStateService leaderboardStateService;
     @Mock
     private WalletArchetypeClassifierService walletArchetypeClassifierService;
+    @Mock
+    private PolymarketMarketMetadataService marketMetadataService;
 
     @Test
     void shouldDeduplicateAcrossLeaderboardQueriesAndTrackHitCount() {
@@ -89,7 +92,8 @@ class PolymarketWalletDiscoveryServiceTest {
                 properties,
                 new SmartWalletScoringService(),
                 leaderboardStateService,
-                walletArchetypeClassifierService
+                walletArchetypeClassifierService,
+                marketMetadataService
         );
 
         PolymarketDiscoverySummary summary = service.refreshLeaderboardWatchlist();
@@ -103,5 +107,49 @@ class PolymarketWalletDiscoveryServiceTest {
                 .orElseThrow();
         assertEquals(Integer.valueOf(2), first.getLeaderboardHitCount30d());
         assertEquals("OVERALL|ALL|VOLUME|50", first.getLastDiscoveryQuery());
+    }
+
+    @Test
+    void shouldNormalizeTradeMarketIdToCanonicalConditionIdBeforeIngest() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        SmartWalletProfileEntity wallet = new SmartWalletProfileEntity()
+                .setWalletAddress("0xwallet")
+                .setChain("polygon");
+        when(profileStoreService.listWatchEnabled()).thenReturn(List.of(wallet));
+        when(polymarketApiClient.fetchUserTrades("0xwallet")).thenReturn(List.of(
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("trade-1")
+                        .marketId("market-legacy")
+                        .question("76ers vs. Celtics: O/U 217.5")
+                        .outcome("OVER")
+                        .side("BUY")
+                        .price(new BigDecimal("0.46"))
+                        .size(new BigDecimal("5.53"))
+                        .tradedAt(System.currentTimeMillis())
+                        .build()
+        ));
+        when(marketMetadataService.resolveCanonicalConditionId(
+                "market-legacy",
+                "76ers vs. Celtics: O/U 217.5",
+                List.of("OVER")
+        )).thenReturn("0xcondition");
+
+        PolymarketWalletDiscoveryService service = new PolymarketWalletDiscoveryService(
+                polymarketApiClient,
+                monitorService,
+                selectionService,
+                profileStoreService,
+                properties,
+                new SmartWalletScoringService(),
+                leaderboardStateService,
+                walletArchetypeClassifierService,
+                marketMetadataService
+        );
+
+        service.syncWatchlistTrades();
+
+        ArgumentCaptor<PolymarketTradeEventRequest> captor = ArgumentCaptor.forClass(PolymarketTradeEventRequest.class);
+        verify(monitorService).ingestTradeEvent(captor.capture());
+        assertEquals("0xcondition", captor.getValue().getMarketId());
     }
 }

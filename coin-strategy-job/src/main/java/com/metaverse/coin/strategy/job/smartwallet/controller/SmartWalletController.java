@@ -36,6 +36,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalog
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCandidateView;
@@ -98,6 +100,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowServ
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketRepairService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
@@ -137,6 +140,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -165,6 +169,7 @@ public class SmartWalletController {
     private final SmartWalletFollowTaskService followTaskService;
     private final SmartWalletClaimService claimService;
     private final SmartWalletLiveValidationService liveValidationService;
+    private final SmartWalletMarketRepairService smartWalletMarketRepairService;
     private final SmartWalletSettlementSyncService settlementSyncService;
     private final SmartWalletDataResetService dataResetService;
     private final SmartWalletRecoveryService recoveryService;
@@ -1170,6 +1175,20 @@ public class SmartWalletController {
             return accountingService.repairPrematureResolvedPaperPositionsByIds(request.getPositionIds());
         }
         return accountingService.repairPrematureResolvedPaperPositionsByItems(request.getItems());
+    }
+
+    @Operation(summary = "按 position 修复 marketId", description = "按 positionId 精准修复 legacy marketId/conditionId 混用，并可选择在修复后立即重跑 settlement sync。")
+    @PostMapping("/accounting/repair-market-ids/by-positions")
+    public Map<String, Object> repairMarketIdsByPositions(@RequestBody SmartWalletMarketIdRepairRequest request,
+                                                          @RequestParam(defaultValue = "true") boolean syncAfterRepair,
+                                                          @RequestParam(defaultValue = "true") boolean refreshCache) {
+        SmartWalletMarketIdRepairSummary repairSummary = smartWalletMarketRepairService.repairPositionMarketIds(request);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("repair", repairSummary);
+        if (syncAfterRepair && repairSummary.getRepairedMarketIds() != null && !repairSummary.getRepairedMarketIds().isEmpty()) {
+            result.put("settlementSync", accountingService.syncSettlementsForMarkets(repairSummary.getRepairedMarketIds(), refreshCache));
+        }
+        return result;
     }
 
     @Operation(summary = "手动同步结算", description = "手动触发一轮 settlement sync，检查市场是否已经真正结算。")
