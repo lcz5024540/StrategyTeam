@@ -206,6 +206,31 @@ class SmartWalletMarketMonitoringServiceTest {
         verify(marketStateService, never()).refreshMarkets(any(), anyBoolean());
     }
 
+    @Test
+    void shouldHideExpiredMarketsEvenIfPersistedSnapshotStillSaysActive() {
+        when(tradeEventMapper.selectList(any())).thenReturn(List.of(
+                event("market-expired", "Will expired active market disappear?")
+        ));
+        when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
+                "market-expired", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-expired")
+                        .question("Will expired active market disappear?")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .marketEndAt(System.currentTimeMillis() - 60_000L)
+                        .build()
+        ));
+
+        SmartWalletMarketMonitoringSummaryView summary = service.summary(20, 14, 7);
+
+        assertEquals(0, summary.getItems().size());
+        assertEquals(0, summary.getMonitoredMarketCount());
+        assertEquals(0, summary.getActiveMarketCount());
+        verify(marketStateService).loadPersistedMarkets(any());
+        verify(marketStateService, never()).refreshMarkets(any(), anyBoolean());
+    }
+
     private SmartWalletTradeEventEntity event(String marketId, String question) {
         return new SmartWalletTradeEventEntity()
                 .setSource("POLYMARKET")

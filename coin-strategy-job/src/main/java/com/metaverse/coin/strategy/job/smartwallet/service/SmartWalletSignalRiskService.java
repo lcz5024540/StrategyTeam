@@ -964,7 +964,7 @@ public class SmartWalletSignalRiskService {
         }
         LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                 .eq(SmartWalletFollowTaskEntity::getMarketInfoId, marketInfoId)
-                .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
+                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "EXECUTING"));
         if (currentFollowTaskId != null) {
             query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
         }
@@ -1008,7 +1008,7 @@ public class SmartWalletSignalRiskService {
         for (Long marketInfoId : marketInfoIds) {
             LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                     .eq(SmartWalletFollowTaskEntity::getMarketInfoId, marketInfoId)
-                    .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING");
+                    .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "EXECUTING"));
             if (currentFollowTaskId != null) {
                 query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
             }

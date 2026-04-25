@@ -32,6 +32,8 @@ import org.springframework.util.StringUtils;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -221,6 +223,10 @@ public class SmartWalletFollowTaskService {
                 .orderByAsc(SmartWalletFollowTaskEntity::getScheduledAt)
                 .last("limit 20"));
         for (SmartWalletFollowTaskEntity task : pending) {
+            if (!claimTaskForExecution(task)) {
+                log.debug("Task {} already claimed by another thread, skipping", task.getId());
+                continue;
+            }
             executeTask(task);
         }
     }
@@ -231,10 +237,35 @@ public class SmartWalletFollowTaskService {
                 .le(SmartWalletFollowTaskEntity::getScheduledAt, new Date())
                 .orderByAsc(SmartWalletFollowTaskEntity::getScheduledAt)
                 .last("limit 50"));
+        int executed = 0;
         for (SmartWalletFollowTaskEntity task : pending) {
+            if (!claimTaskForExecution(task)) {
+                log.debug("Task {} already claimed by another thread, skipping", task.getId());
+                continue;
+            }
             executeTask(task);
+            executed++;
         }
-        return pending.size();
+        return executed;
+    }
+
+    /**
+     * CAS 乐观锁：原子性地将任务从 PENDING → EXECUTING，防止重复下单。
+     * 使用 UPDATE ... WHERE id=? AND status='PENDING'，只有一个线程能成功（affected=1）。
+     *
+     * @return true 如果当前线程成功获取了任务执行权
+     */
+    private boolean claimTaskForExecution(SmartWalletFollowTaskEntity task) {
+        int affected = followTaskMapper.update(null,
+                new LambdaUpdateWrapper<SmartWalletFollowTaskEntity>()
+                        .set(SmartWalletFollowTaskEntity::getStatus, "EXECUTING")
+                        .set(SmartWalletFollowTaskEntity::getUpdatedAt, new Date())
+                        .eq(SmartWalletFollowTaskEntity::getId, task.getId())
+                        .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING"));
+        if (affected == 1) {
+            task.setStatus("EXECUTING");
+        }
+        return affected == 1;
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.intelligence.candidate-reevaluation-fixed-delay-ms:120000}")
@@ -1130,7 +1161,7 @@ public class SmartWalletFollowTaskService {
 
         List<SmartWalletFollowTaskEntity> staleTasks = followTaskMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                        .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING")
+                        .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "EXECUTING"))
                         .le(SmartWalletFollowTaskEntity::getCreatedAt, expiryThreshold)
                         .last("limit 100"));
 

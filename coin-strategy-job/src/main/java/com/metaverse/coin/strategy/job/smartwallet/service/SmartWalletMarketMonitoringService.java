@@ -283,7 +283,8 @@ public class SmartWalletMarketMonitoringService {
         SmartWalletMarketStateService.MarketStateSnapshot snapshot = stateSnapshot == null
                 ? SmartWalletMarketStateService.MarketStateSnapshot.unknown(accumulator.marketId)
                 : stateSnapshot;
-        if (!snapshot.isActive()) {
+        Long displayMarketEndAt = firstNonNull(snapshot.marketEndAt(), accumulator.marketEndAt);
+        if (!shouldDisplayActiveMarket(snapshot, displayMarketEndAt)) {
             return null;
         }
         MarketConcentrationService.ConcentrationSnapshot concentration =
@@ -299,8 +300,8 @@ public class SmartWalletMarketMonitoringService {
         return SmartWalletMarketMonitorItemView.builder()
                 .marketId(accumulator.marketId)
                 .question(firstNonBlank(snapshot.question(), accumulator.question))
-                .marketEndAt(firstNonNull(snapshot.marketEndAt(), accumulator.marketEndAt))
-                .marketEndAtBjt(formatEpoch(firstNonNull(snapshot.marketEndAt(), accumulator.marketEndAt)))
+                .marketEndAt(displayMarketEndAt)
+                .marketEndAtBjt(formatEpoch(displayMarketEndAt))
                 .marketState("ACTIVE")
                 .marketLifecycle(snapshot.marketLifecycle())
                 .sourceCategory(firstNonBlank(snapshot.sourceCategory(), accumulator.sourceCategory))
@@ -333,6 +334,14 @@ public class SmartWalletMarketMonitoringService {
                 .concentrationStale(concentrationView != null && concentrationView.stale())
                 .topHolderAddresses(concentrationAvailable ? concentration.topHolderAddresses() : List.of())
                 .build();
+    }
+
+    private boolean shouldDisplayActiveMarket(SmartWalletMarketStateService.MarketStateSnapshot snapshot,
+                                              Long marketEndAt) {
+        if (snapshot == null || !snapshot.isActive()) {
+            return false;
+        }
+        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
     }
 
     private List<SmartWalletMarketMonitorTrendPointView> buildTrendPoints(Map<String, SmartWalletMarketMonitorItemView> visibleByMarket,

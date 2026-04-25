@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -156,6 +157,32 @@ class SmartWalletMarketStateServiceTest {
         assertEquals(1, snapshots.size());
         assertEquals("market-db-only", snapshots.get("market-db-only").marketId());
         assertEquals("Will persisted rows be enough?", snapshots.get("market-db-only").question());
+        verify(marketMetadataService, never()).getBestEffortByConditionId(any(), anyBoolean(), any(), anyList());
+    }
+
+    @Test
+    void shouldTreatPersistedExpiredActiveSnapshotAsClosedUnresolved() {
+        SmartWalletMarketInfoEntity row = new SmartWalletMarketInfoEntity()
+                .setId(5L)
+                .setMarketId("market-expired")
+                .setQuestion("Will expired persisted rows be hidden?")
+                .setOutcome("YES")
+                .setNormalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                .setMarketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                .setAcceptingOrders(true)
+                .setClosed(false)
+                .setMarketEndAt(System.currentTimeMillis() - 60_000L)
+                .setLastMetadataSyncAt(new java.util.Date(System.currentTimeMillis() - 3_600_000L));
+        when(marketInfoService.batchListByMarketIds(List.of("market-expired")))
+                .thenReturn(Map.of("market-expired", List.of(row)));
+
+        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> snapshots =
+                service.loadPersistedMarkets(List.of("market-expired"));
+
+        assertEquals(1, snapshots.size());
+        assertEquals(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED,
+                snapshots.get("market-expired").marketLifecycle());
+        assertFalse(snapshots.get("market-expired").isActive());
         verify(marketMetadataService, never()).getBestEffortByConditionId(any(), anyBoolean(), any(), anyList());
     }
 }

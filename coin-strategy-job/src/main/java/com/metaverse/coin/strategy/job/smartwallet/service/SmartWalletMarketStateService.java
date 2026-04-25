@@ -195,6 +195,10 @@ public class SmartWalletMarketStateService {
             return null;
         }
         SmartWalletMarketInfoEntity primary = primaryRow(rows);
+        String resolvedOutcome = normalizeValue(primary.getResolvedOutcome());
+        boolean closed = Boolean.TRUE.equals(primary.getClosed());
+        boolean acceptingOrders = primary.getAcceptingOrders() == null || primary.getAcceptingOrders();
+        String lifecycle = resolvePersistedLifecycle(primary, resolvedOutcome, closed, acceptingOrders);
         Date lastSyncAt = rows.stream()
                 .map(SmartWalletMarketInfoEntity::getLastMetadataSyncAt)
                 .filter(java.util.Objects::nonNull)
@@ -206,12 +210,39 @@ public class SmartWalletMarketStateService {
                 .marketEndAt(primary.getMarketEndAt())
                 .sourceCategory(primary.getSourceCategory())
                 .normalizedCategory(firstNonBlank(primary.getNormalizedCategory(), CATEGORY_OTHER))
-                .marketLifecycle(firstNonBlank(primary.getMarketLifecycle(), LIFECYCLE_ACTIVE))
-                .closed(Boolean.TRUE.equals(primary.getClosed()))
-                .acceptingOrders(primary.getAcceptingOrders() == null || primary.getAcceptingOrders())
-                .resolvedOutcome(primary.getResolvedOutcome())
+                .marketLifecycle(lifecycle)
+                .closed(closed)
+                .acceptingOrders(acceptingOrders)
+                .resolvedOutcome(resolvedOutcome)
                 .lastMetadataSyncAt(lastSyncAt)
                 .build();
+    }
+
+    private String resolvePersistedLifecycle(SmartWalletMarketInfoEntity primary,
+                                             String resolvedOutcome,
+                                             boolean closed,
+                                             boolean acceptingOrders) {
+        String persistedLifecycle = firstNonBlank(
+                primary == null ? null : primary.getMarketLifecycle(),
+                LIFECYCLE_ACTIVE
+        );
+        if (primary == null) {
+            return persistedLifecycle;
+        }
+        if (StringUtils.hasText(resolvedOutcome) || LIFECYCLE_RESOLVED.equalsIgnoreCase(persistedLifecycle)) {
+            return LIFECYCLE_RESOLVED;
+        }
+        if (closed) {
+            return LIFECYCLE_CLOSED_UNRESOLVED;
+        }
+        if (!acceptingOrders) {
+            return LIFECYCLE_CLOSED_UNRESOLVED;
+        }
+        Long marketEndAt = primary.getMarketEndAt();
+        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
+            return LIFECYCLE_CLOSED_UNRESOLVED;
+        }
+        return persistedLifecycle;
     }
 
     private MarketStateSnapshot buildSnapshot(String marketId,
