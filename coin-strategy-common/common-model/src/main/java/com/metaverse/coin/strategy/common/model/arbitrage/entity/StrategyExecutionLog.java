@@ -14,7 +14,7 @@ import java.util.Date;
  */
 @Data
 @Accessors(chain = true)
-@TableName("strategy_execution_log")
+@TableName("single_exchange_strategy_execution_log")
 public class StrategyExecutionLog {
 
     @TableId(type = IdType.AUTO)

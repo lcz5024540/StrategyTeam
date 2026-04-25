@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.common.model.arbitrage.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -23,7 +24,9 @@ public class SmartWalletBehaviorProfileEntity {
     private String archetype;
     private String followLane;
     private Boolean highFrequencyTradingAddress;
+    @TableField("trades_7d")
     private Integer trades7d;
+    @TableField("trades_30d")
     private Integer trades30d;
     private BigDecimal medianInterTradeMinutes;
     private Integer closedPositionSampleSize;
