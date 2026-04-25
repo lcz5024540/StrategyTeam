@@ -64,6 +64,7 @@ public class SmartWalletFollowTaskService {
     private final WalletEntityResolutionService entityResolutionService;
     private final WalletFollowCandidateMapper followCandidateMapper;
     private final SmartWalletMarketInfoService marketInfoService;
+    private final SmartWalletMarketStateService marketStateService;
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
         SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
@@ -79,6 +80,7 @@ public class SmartWalletFollowTaskService {
         event.setCreatedAt(new Date());
         event.setUpdatedAt(new Date());
         tradeEventMapper.insert(event);
+        ensureMarketInfoForEvent(event);
         createFollowTaskIfQualified(event);
         return event;
     }
@@ -440,11 +442,17 @@ public class SmartWalletFollowTaskService {
         // 将钱包地址解析为实体 ID + 聚类置信度，写入 wallet_follow_candidate 作为中间记录
         WalletFollowCandidateEntity candidate = enrichAndSaveCandidate(event);
 
+        SmartWalletMarketInfoEntity marketInfo = ensureMarketInfoForEvent(event);
+        SmartWalletMarketStateService.MarketStateSnapshot marketState = refreshMarketState(event);
+        if (!marketState.isActive()) {
+            createLifecycleSkippedTask(event, candidate, marketInfo, marketState);
+            markSourceEventProcessed(event);
+            return;
+        }
+
         if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
-            createSkippedTaskForPendingCandidate(event, candidate);
-            event.setProcessed(Boolean.TRUE);
-            event.setUpdatedAt(new Date());
-            tradeEventMapper.updateById(event);
+            createSkippedTaskForPendingCandidate(event, candidate, marketInfo);
+            markSourceEventProcessed(event);
             return;
         }
 
@@ -453,17 +461,14 @@ public class SmartWalletFollowTaskService {
         BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
-        Long marketEndAt = resolveMarketEndAt(event.getMarketId(), event.getQuestion());
-
         // ---- Step 3: Create Follow Task（附带实体维度字段）----
-        SmartWalletMarketInfoEntity mi = marketInfoService.getOrCreate(event.getMarketId(), event.getOutcome(), event.getQuestion(), null, null, marketEndAt);
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
                 .setEntityId(candidate.getEntityId())
                 .setFollowCandidateId(candidate.getId())
                 .setSourceEventId(event.getId())
-                .setMarketInfoId(mi.getId())
-                .setMarketInfo(mi)
+                .setMarketInfoId(marketInfo.getId())
+                .setMarketInfo(marketInfo)
                 .setSide(event.getSide())
                 .setTriggerPrice(event.getPrice())
                 .setTriggerSizeUsdc(event.getSizeUsdc())
@@ -481,9 +486,7 @@ public class SmartWalletFollowTaskService {
                 .setUpdatedAt(new Date());
         followCandidateMapper.updateById(candidate);
 
-        event.setProcessed(Boolean.TRUE);
-        event.setUpdatedAt(new Date());
-        tradeEventMapper.updateById(event);
+        markSourceEventProcessed(event);
     }
 
     /**
@@ -550,6 +553,18 @@ public class SmartWalletFollowTaskService {
                 .findFirst()
                 .orElse(null);
         if (profile == null || task == null) {
+            return true;
+        }
+
+        ensureMarketInfoForEvent(event);
+        SmartWalletMarketStateService.MarketStateSnapshot marketState = refreshMarketState(event);
+        if (!marketState.isActive()) {
+            task.setEntityId(candidate.getEntityId())
+                    .setFollowCandidateId(candidate.getId())
+                    .setStatus("SKIPPED")
+                    .setErrorMessage(marketState.blockingReasonMessage())
+                    .setUpdatedAt(new Date());
+            followTaskMapper.updateById(task);
             return true;
         }
 
@@ -668,16 +683,16 @@ public class SmartWalletFollowTaskService {
                 .toList();
     }
 
-    private void createSkippedTaskForPendingCandidate(SmartWalletTradeEventEntity event, WalletFollowCandidateEntity candidate) {
-        Long marketEndAt = resolveMarketEndAt(event.getMarketId(), event.getQuestion());
-        SmartWalletMarketInfoEntity mi = marketInfoService.getOrCreate(event.getMarketId(), event.getOutcome(), event.getQuestion(), null, null, marketEndAt);
+    private void createSkippedTaskForPendingCandidate(SmartWalletTradeEventEntity event,
+                                                      WalletFollowCandidateEntity candidate,
+                                                      SmartWalletMarketInfoEntity marketInfo) {
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
                 .setEntityId(candidate.getEntityId())
                 .setFollowCandidateId(candidate.getId())
                 .setSourceEventId(event.getId())
-                .setMarketInfoId(mi.getId())
-                .setMarketInfo(mi)
+                .setMarketInfoId(marketInfo.getId())
+                .setMarketInfo(marketInfo)
                 .setSide(event.getSide())
                 .setTriggerPrice(event.getPrice())
                 .setTriggerSizeUsdc(event.getSizeUsdc())
@@ -692,6 +707,35 @@ public class SmartWalletFollowTaskService {
         candidate.setFollowTaskId(task.getId())
                 .setUpdatedAt(new Date());
         followCandidateMapper.updateById(candidate);
+    }
+
+    private void createLifecycleSkippedTask(SmartWalletTradeEventEntity event,
+                                            WalletFollowCandidateEntity candidate,
+                                            SmartWalletMarketInfoEntity marketInfo,
+                                            SmartWalletMarketStateService.MarketStateSnapshot marketState) {
+        SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
+                .setWalletAddress(event.getWalletAddress())
+                .setEntityId(candidate == null ? null : candidate.getEntityId())
+                .setFollowCandidateId(candidate == null ? null : candidate.getId())
+                .setSourceEventId(event.getId())
+                .setMarketInfoId(marketInfo == null ? null : marketInfo.getId())
+                .setMarketInfo(marketInfo)
+                .setSide(event.getSide())
+                .setTriggerPrice(event.getPrice())
+                .setTriggerSizeUsdc(event.getSizeUsdc())
+                .setRecommendedStakeUsdc(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .setStatus("SKIPPED")
+                .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
+                .setErrorMessage(marketState.blockingReasonMessage())
+                .setScheduledAt(new Date())
+                .setCreatedAt(new Date())
+                .setUpdatedAt(new Date());
+        followTaskMapper.insert(task);
+        if (candidate != null) {
+            candidate.setFollowTaskId(task.getId())
+                    .setUpdatedAt(new Date());
+            followCandidateMapper.updateById(candidate);
+        }
     }
 
     private WalletFollowCandidateEntity findCandidateBySourceEventId(Long sourceEventId) {
@@ -905,6 +949,43 @@ public class SmartWalletFollowTaskService {
             }
         }
         return marketEndAt;
+    }
+
+    private SmartWalletMarketInfoEntity ensureMarketInfoForEvent(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getMarketId()) || !StringUtils.hasText(event.getOutcome())) {
+            return null;
+        }
+        Long marketEndAt = resolveMarketEndAt(event.getMarketId(), event.getQuestion());
+        SmartWalletMarketInfoEntity marketInfo = marketInfoService.getOrCreate(
+                event.getMarketId(),
+                event.getOutcome(),
+                event.getQuestion(),
+                null,
+                null,
+                marketEndAt
+        );
+        refreshMarketState(event);
+        return marketInfoService.getById(marketInfo.getId());
+    }
+
+    private SmartWalletMarketStateService.MarketStateSnapshot refreshMarketState(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())) {
+            return SmartWalletMarketStateService.MarketStateSnapshot.unknown(null);
+        }
+        return marketStateService.refreshMarket(
+                event.getMarketId(),
+                event.getQuestion(),
+                StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
+        );
+    }
+
+    private void markSourceEventProcessed(SmartWalletTradeEventEntity event) {
+        if (event == null || event.getId() == null) {
+            return;
+        }
+        event.setProcessed(Boolean.TRUE);
+        event.setUpdatedAt(new Date());
+        tradeEventMapper.updateById(event);
     }
 
     private Long resolveMarketEndAt(String marketId, String questionHint) {

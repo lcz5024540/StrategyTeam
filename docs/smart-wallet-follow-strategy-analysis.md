@@ -12,7 +12,7 @@
 
 本文聚焦当前代码中的“主生产链路”，即：
 
-`leaderboard/discovery -> profile -> watchlist -> trade_event -> follow_task -> risk evaluation -> execution -> position/order/fill/accounting -> settlement -> claim`
+`leaderboard/discovery -> profile -> HOT/WARM/COLD monitor tier -> HOT watchlist trade_event -> follow_task -> risk evaluation -> execution -> position/order/fill/accounting -> settlement -> claim`
 
 需要特别说明：
 
@@ -33,10 +33,12 @@
    - 第一层是基础画像：`smart_wallet_profile`
    - 第二层是行为画像：`wallet archetype + behavior profile`
    - 第三层是实体画像：把疑似同一真实交易者的多钱包做 entity 去重
+   - 当前基础画像内还会持久化 `monitor_tier(HOT/WARM/COLD)` 与同步 checkpoint，用来区分“可执行”与“继续保温监控”
 
 2. 开单是事件驱动
-   - 不是主动全市场扫描开仓，而是监控 watchlist 地址的新成交，生成 `smart_wallet_trade_event`
+   - 不是主动全市场扫描开仓，而是监控 HOT 层 watchlist 地址的新成交，生成 `smart_wallet_trade_event`
    - 再由 `smart_wallet_follow_task` 驱动开单
+   - WARM 层只做低频画像刷新，不直接进入 follow task
 
 3. 风控不是单点规则，而是多层门控
    - watchlist 准入
@@ -72,6 +74,7 @@
    - `PolymarketWalletDiscoveryService`
    - 从 Polymarket leaderboard 拉取候选地址
    - 生成 `PolymarketWalletMetricsRequest`
+   - `buildMetrics()` 已改为基于 `WalletOrderAggregationService.snapshot(walletAddress)` 的统一快照重算，不再只看单页 `closed-positions(limit)` 结果
    - 写入 `smart_wallet_profile`
 
 2. 地址历史交易与成交事件
@@ -90,6 +93,7 @@
 5. 闭环订单分析
    - `SmartWalletOrderAnalysisService`
    - 生成 `smart_wallet_order_analysis`
+   - 明细仍是 closed-order 列表；地址详情页的 `closed + active` 窗口汇总由 `WalletOrderStatsService` 单独输出
    - 识别地址的历史 exit style，例如：
      - `EARLY_PROFIT`
      - `EARLY_STOP`
@@ -101,6 +105,22 @@
    - `wallet_follow_candidate`
    - `WalletEntityResolutionService`
    - 用于识别“一个真实交易者多个地址”的情况，避免把多地址误当成多共识
+
+### 本轮地址统计口径适配
+
+本轮已经把外部钱包画像、详情页统计和订单分析统一到同一套后端聚合器：
+
+- 统一入口是 `WalletOrderAggregationService.snapshot(walletAddress)`
+- 它会同时拉取：
+  - `fetchAllClosedPositions()`：全量分页 closed positions，不再只看 `closed-positions(limit)` 首屏
+  - `fetchActivePositions()`：active positions
+  - `fetchAllUserTrades()`：全量 trades，用于回推 `openedAt`
+  - `PolymarketMarketMetadataService`：市场结束时间等 metadata
+- discovery / diagnosis / `order-analysis` / `order-stats` 复用同一套快照基础，不再各自各算一套
+- 这意味着：
+  - 基础画像里的 `win_rate / recent_win_rate_7d / recent_win_rate_30d / total_trades` 仍然只基于 closed orders 统计，避免把 active 浮盈浮亏混进闭环胜率
+  - 地址详情页的净收益、待结算数量和窗口汇总，则由 `order-stats` 在 `closed + active` 层统一输出
+  - 前端不再用 `order-analysis?limit=200` 的前几页结果本地推导 7d / 30d / all 统计，避免出现“只看高盈利 closed 样本导致胜率虚高”的偏差
 
 ---
 
@@ -122,6 +142,10 @@
 - `recent_trade_count_30d`
 - `observe_cooldown_until`
 - `observe_cooldown_reason`
+- `monitor_tier`
+- `monitor_reason`
+- `last_event_sync_at`
+- `last_metrics_refresh_at`
 - `last_trade_at`
 - `dominant_session`
 
@@ -167,7 +191,7 @@
 这次不是只改打分函数，而是把 `7d/30d` 指标打通成完整链路：
 
 1. `PolymarketWalletDiscoveryService.buildMetrics()`
-   - 基于 closed positions 统计：
+   - 基于统一快照中的全量 closed orders 统计：
    - 全量 `win_rate`
    - `recent_win_rate_30d`
    - `recent_win_rate_7d`
@@ -191,6 +215,10 @@
 - `recent_trade_count_30d`
 - `observe_cooldown_until`
 - `observe_cooldown_reason`
+- `monitor_tier`
+- `monitor_reason`
+- `last_event_sync_at`
+- `last_metrics_refresh_at`
 
 对应也补了：
 
@@ -199,6 +227,66 @@
 - 增量 migration SQL
 
 这样无论是新环境建表，还是老环境平滑升级，都可以落地这套评分逻辑。
+
+### 本轮分层保活适配
+
+本轮已经把“是否可执行”和“是否继续保温监控”明确拆开，不再把地址简单理解成 `watch_enabled=true/false` 的二元状态。
+
+#### 监控层级定义
+
+- `HOT`
+  - 条件：`qualified=true && watch_enabled=true`
+  - 含义：进入高频事件同步，允许继续生成 `smart_wallet_trade_event -> follow_task`
+- `WARM`
+  - 条件：不是 `HOT`，但满足以下任一：
+    - `observe_cooldown_until > now`
+    - `manualWatchEnabled != null`
+    - `lastDiscoveredAt` 在近 30 天内
+    - `walletScore >= minWalletScore - 0.10`
+  - 含义：保留画像与历史、继续低频保温刷新，但不直接参与执行链路
+- `COLD`
+  - 条件：不满足 `HOT/WARM`
+  - 强制规则：若 `lastTradeAt > 90d`，无论其他条件如何都直接进入 `COLD`
+  - 含义：停止常规监控，只等待 leaderboard 或 manual admit 再次激活
+
+#### 调度与增量同步适配
+
+- `HOT`
+  - 继续沿用高频 trade sync
+  - 每次成功同步后写回 `last_event_sync_at`
+  - 进程重启后仍可基于持久化 checkpoint 继续增量运行
+- `WARM`
+  - 新增低频 `refreshWarmWalletMetricsBatch()`
+  - 只重算画像、行为和分数，不写 `follow_task`
+  - 每次刷新后写回 `last_metrics_refresh_at`
+- `WARM -> HOT`
+  - 会执行一次 recent backfill
+  - 分页拉 recent trades，遇到 `tradeTime <= last_event_sync_at` 即停止
+  - 最终事件去重键仍然是 `source + externalTradeId`
+
+#### 运维与接口适配
+
+- 新增 `GET /smart-wallet/watchlist/warm`
+- 现有 `scope` 参数支持 `warm`
+- `overview` 新增：
+  - `warmWatchlist`
+  - `coldProfiles`
+
+#### 配置项适配
+
+当前已新增以下配置项：
+
+- `smart-wallet.polymarket.warm-metrics-refresh-fixed-delay-ms`
+- `smart-wallet.polymarket.warm-metrics-refresh-batch-size`
+- `smart-wallet.polymarket.warm-wallet-refresh-min-interval-ms`
+
+#### Migration 执行器兼容性适配
+
+本轮新增的 `smart_wallet_profile_monitor_tier_migration.sql` 已改成不依赖 `DELIMITER / PROCEDURE` 的版本：
+
+- 兼容 JDBC / DBeaver / SQL IDE 直接执行
+- 通过 `information_schema + PREPARE/EXECUTE` 做幂等 DDL
+- 避免 MySQL 客户端指令被执行器原样转发而导致 `1064`
 
 ### 基础准入规则
 
@@ -283,8 +371,10 @@
 - `settlementWinRate`
 - `latencyAlphaRate`
 - `swingAlphaRate`
-- `medianHoldMinutes`
+- `earlySettlementRate`
 - `recommendedExitLane`
+
+公开画像层已经不再暴露 `medianHoldMinutes`；`WalletDiagnosisView` / `WalletBehaviorProfileView` / `WalletArchetypeView` 及对应导出字段已经统一改为 `earlySettlementRate`。逐单层的 `holdMinutes` 仍保留在 `order-analysis` 明细里，用于查看单笔持有时长。
 
 `recommendedExitLane` 是后续止盈止损的重要输入，常见值包括：
 
@@ -294,6 +384,41 @@
 - `HYBRID_EARLY_EXIT`
 - `FAST_EXIT_OR_SKIP`
 - `FOLLOW_ARCHETYPE`
+
+### 地址详情页统计口径
+
+本轮已经把地址详情页从“前端拿前 200 条 closed 自己算”改成“后端统一聚合、前端直显”。
+
+1. 逐单明细：`GET /strategy/api/smart-wallet/profiles/{walletAddress}/order-analysis`
+   - 仍然返回 closed-order 列表，主要用于逐单复盘
+   - 行模型补充了 `settlementAt / earlySettlement / pendingSettlement`
+   - 当前这个列表仍只落 closed rows，因此待结算中的 active 行不会出现在列表里；待结算统计以 `order-stats.pendingSettlementCount` 为准
+   - 当前实现里：
+     - `settlementAt = closedAt`
+     - `earlySettlement = settlementAt < marketEndAt`
+     - `openedAt = closed position 自带 openedAt；若缺失，则回退到同 marketId + outcome 下、settlementAt 之前第一笔 trade 时间`
+     - `holdMinutes = max(0, settlementAt - openedAt) / 60000`
+
+2. 窗口汇总：`GET /strategy/api/smart-wallet/profiles/{walletAddress}/order-stats?window=7d|30d|all&refresh=false`
+   - `closed` 订单按 `settlementAt` 归窗
+   - `active` 仓位按 `openedAt` 归窗
+   - `pendingSettlement = marketEndAt <= now && settlementAt == null`
+   - `closedWinRate = 盈利 closed 订单数 / 总 closed 订单数`
+   - `netPnlUsdc = closedRealizedPnlUsdc + activeUnrealizedPnlUsdc`
+   - 待结算 active 订单会从 `netPnlUsdc` 中剔除，也不参与闭环胜率
+   - `earlySettlementRate = 提前结算订单数 / 总已关闭订单数`
+   - `settlementWinRate = 等到市场结算后才结束且盈利的 closed 订单数 / 等到市场结算后才结束的 closed 订单数`
+
+3. 批量回填：`POST /strategy/api/smart-wallet/profiles/metrics/rebuild?scope=candidates|executable|warm|all&limit=...`
+   - 批量重算 `order-analysis`
+   - 批量触发 `order-stats` 依赖的统一聚合
+   - 重建 behavior profile，避免只刷新一半口径
+
+4. 前端适配
+   - `FollowAddressPanel` 现在直接请求 `order-stats`
+   - `7d / 30d / all` 卡片不再从 `order-analysis?limit=200` 本地推导
+   - “中位持有时长” 已被 “提前结算占比” 替换
+   - 地址详情页会单独展示 `pendingSettlementCount`
 
 ### 可执行 watchlist 规则
 
@@ -308,6 +433,10 @@
 
 - `qualified` 是“地址质量过关”
 - `watch_enabled` 是“地址质量过关、近期没有明显退化、且本地复制性过关”
+- 但当前实际执行层已经进一步细分为：
+  - `HOT = 可执行并同步 trade event`
+  - `WARM = 不执行但继续保温刷新`
+  - `COLD = 暂停常规监控`
 
 ---
 
@@ -961,12 +1090,14 @@ EV gate 在配置对象中叫 `enableProfitabilityGate`，当前 YAML 通过兼�
 
 - `qualified`
 - `watch_enabled`
+- `monitor_tier`
 - `observe_cooldown_until / reason`
 
 即：
 
 - 画像不达标，连 trade event 都不会被当成有效跟单信号来源
-- 近期退化明显，即使历史画像仍然优秀，也会被降级到 observe-only
+- 近期退化明显，即使历史画像仍然优秀，也会先被降级到 `WARM`
+- 只有 `HOT` 地址会继续进入 trade-event 驱动执行链路
 
 ### 第二层：决定是否具备本地可复制性
 
@@ -1028,10 +1159,11 @@ EV gate 在配置对象中叫 `enableProfitabilityGate`，当前 YAML 通过兼�
    - 此时 `wallet_score` 已包含近期 7d 失真惩罚
    - 同时已吸收 `replicability / quality / stability`
 6. 根据基础画像决定 `qualified`
-7. 根据 observe cooldown + archetype + behavior 决定 `watch_enabled`
-8. watchlist 地址真实下单，生成 `smart_wallet_trade_event`
-9. 事件先经过 entity enrich，避免同一人多钱包灌共识
-10. 风控计算：
+7. 根据 observe cooldown + archetype + behavior + 保活规则决定 `watch_enabled / monitor_tier`
+8. 若地址处于 `WARM`，只低频刷新画像并等待恢复
+9. 若地址处于 `HOT`，其真实下单才会生成 `smart_wallet_trade_event`
+10. 事件先经过 entity enrich，避免同一人多钱包灌共识
+11. 风控计算：
    - 地址够不够强
    - 信号够不够新
    - 市场是否合适
@@ -1039,10 +1171,10 @@ EV gate 在配置对象中叫 `enableProfitabilityGate`，当前 YAML 通过兼�
    - 质量加权后的共识是否足够
    - 是否满足严格版 single-wallet override
    - 模型估计是否划算
-11. 若通过，生成 `PENDING` follow task
-12. 定时任务执行开单
-13. 仓位运行期间，退出逻辑再依据该地址的 behavior profile 调整止盈止损
-14. 若未提前退出，则最终进入 settlement/claim
+12. 若通过，生成 `PENDING` follow task
+13. 定时任务执行开单
+14. 仓位运行期间，退出逻辑再依据该地址的 behavior profile 调整止盈止损
+15. 若未提前退出，则最终进入 settlement/claim
 
 对应流程图如下：
 
@@ -1058,11 +1190,11 @@ flowchart TD
     H --> I{"qualified ?"}
     I -- "No" --> Z1["仅保留画像，不进入有效信号来源"]
     I -- "Yes" --> J{"observe cooldown ?"}
-    J -- "Yes" --> Z2["降级观察，watch_enabled = false"]
+    J -- "Yes" --> Z2["降级到 WARM 观察层"]
     J -- "No" --> K["WalletArchetypeClassifierService<br/>WalletBehaviorProfileService"]
     K --> L{"watch_enabled ?"}
-    L -- "No" --> Z3["只观察，不进入执行 watchlist"]
-    L -- "Yes" --> M["syncWatchlistTrades<br/>生成 smart_wallet_trade_event"]
+    L -- "No" --> Z3["进入 WARM/COLD，不进入执行 watchlist"]
+    L -- "Yes" --> M["HOT 地址 syncWatchlistTrades<br/>生成 smart_wallet_trade_event"]
     M --> N["Entity Enrich / Dedup"]
     N --> O["质量加权共识<br/>qualityWeightedConsensusScore / topEntityWeightShare"]
     O --> P["SmartWalletSignalRiskService"]
@@ -1086,7 +1218,7 @@ flowchart TD
 核心链路表关系如下：
 
 `smart_wallet_profile`
--> 描述地址画像与 watchlist 状态
+-> 描述地址画像、HOT/WARM/COLD 监控层级与同步 checkpoint 状态
 
 `smart_wallet_trade_event`
 -> 记录 watchlist 地址真实交易事件
@@ -1305,6 +1437,23 @@ curl -X POST "http://127.0.0.1:8081/strategy/api/smart-wallet/follow-tasks/repla
 - 基于本地真实数据库跑出一轮 `30d / 60d / 90d` 的实测 replay 指标
 
 如果本地服务和数据库就绪，下一步可以直接调用该接口输出真实窗口结果。
+
+### 本轮监控分层改造的验证情况
+
+除 replay 以外，本轮针对监控分层保活链路做了单独验证：
+
+- `SmartWalletProfileStoreServiceTest`
+  - 覆盖 `HOT/WARM/COLD` 层级判定
+  - 覆盖 follow-task 闭环胜率刷新与 leaderboard bias fallback
+- `PolymarketWalletDiscoveryServiceTest`
+  - 覆盖 `WARM` 画像刷新不生成 follow task
+  - 覆盖 `WARM -> HOT` recent backfill
+  - 覆盖 leaderboard 去重与 canonical market id 归一化
+- `SmartWalletControllerTest`
+  - 覆盖 `/smart-wallet/watchlist/warm`
+  - 覆盖 `scope=warm`
+
+由于 `coin-strategy-job` 全量测试当前仍存在一些与本轮需求无关的历史编译噪音，这次采用独立 classpath 的方式顺序编译并执行目标测试类；当前相关用例结果为 `41 / 41` 全通过。
 
 ---
 

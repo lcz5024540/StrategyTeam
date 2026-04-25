@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { profilesApi } from '@/api'
-import type { WalletDiagnosisView, WalletOrderAnalysisView, WalletScreenerView } from '@/types'
+import type { WalletDiagnosisView, WalletOrderAnalysisView, WalletOrderStatsView, WalletScreenerView } from '@/types'
 import {
   compactAddress,
   formatAmount,
@@ -15,18 +15,6 @@ import {
 
 type AnalysisWindow = '7d' | '30d' | 'all'
 type WatchGroup = 'all' | 'priority' | 'open' | 'observe'
-
-interface WindowStats {
-  trades: number
-  wins: number
-  losses: number
-  winRate: number
-  netPnlUsdc: number
-  averageRoiRate: number
-  medianHoldMinutes: number
-  earlyExitRate: number
-  settlementWinRate: number
-}
 
 interface TrendPoint {
   key: string
@@ -48,6 +36,24 @@ const WATCH_GROUP_OPTIONS: Array<{ value: WatchGroup; label: string; hint: strin
   { value: 'open', label: '开放', hint: '当前允许跟单的地址' },
   { value: 'observe', label: '观察', hint: '仅观察或阻断地址' },
 ]
+
+const EMPTY_ORDER_STATS: WalletOrderStatsView = {
+  walletAddress: '',
+  window: '30D',
+  generatedAt: null,
+  closedOrderCount: 0,
+  winCount: 0,
+  lossCount: 0,
+  closedWinRate: 0,
+  closedRealizedPnlUsdc: 0,
+  activeUnrealizedPnlUsdc: 0,
+  netPnlUsdc: 0,
+  averageRoiRate: 0,
+  activePositionCount: 0,
+  pendingSettlementCount: 0,
+  earlySettlementRate: 0,
+  settlementWinRate: 0,
+}
 
 function getTierBadgeClass(tier: string | null | undefined) {
   if (tier === 'EXECUTABLE_A') return 'badge accent'
@@ -259,81 +265,13 @@ function getWindowRecords(records: WalletOrderAnalysisView[], window: AnalysisWi
   const days = window === '7d' ? 7 : 30
   const cutoff = Date.now() - days * 24 * 3600_000
   return records.filter((record) => {
-    const time = record.closedAt ? new Date(record.closedAt).getTime() : 0
+    const time = record.settlementAt
+      ? new Date(record.settlementAt).getTime()
+      : record.closedAt
+        ? new Date(record.closedAt).getTime()
+        : 0
     return time >= cutoff
   })
-}
-
-function calculateWindowStats(records: WalletOrderAnalysisView[]): WindowStats {
-  if (records.length === 0) {
-    return {
-      trades: 0,
-      wins: 0,
-      losses: 0,
-      winRate: 0,
-      netPnlUsdc: 0,
-      averageRoiRate: 0,
-      medianHoldMinutes: 0,
-      earlyExitRate: 0,
-      settlementWinRate: 0,
-    }
-  }
-
-  let wins = 0
-  let losses = 0
-  let netPnlUsdc = 0
-  let totalRoiRate = 0
-  let roiSample = 0
-  let earlyExitCount = 0
-  let settledCount = 0
-  let settledWins = 0
-  const holdMinutes: number[] = []
-
-  records.forEach((record) => {
-    const pnl = Number(record.realizedPnlUsdc || 0)
-    const roi = Number(record.roiRate || 0)
-    const hold = Number(record.holdMinutes || 0)
-    const exitStyle = record.exitStyle || ''
-    netPnlUsdc += pnl
-    if (pnl > 0) wins += 1
-    if (pnl < 0) losses += 1
-    if (record.roiRate != null) {
-      totalRoiRate += roi
-      roiSample += 1
-    }
-    if (hold > 0) {
-      holdMinutes.push(hold)
-    }
-    if (exitStyle.startsWith('EARLY_')) {
-      earlyExitCount += 1
-    }
-    if (exitStyle.startsWith('SETTLED_')) {
-      settledCount += 1
-      if (exitStyle === 'SETTLED_WIN') {
-        settledWins += 1
-      }
-    }
-  })
-
-  holdMinutes.sort((a, b) => a - b)
-  const medianHoldMinutes =
-    holdMinutes.length === 0
-      ? 0
-      : holdMinutes.length % 2 === 1
-        ? holdMinutes[(holdMinutes.length - 1) / 2]
-        : (holdMinutes[holdMinutes.length / 2 - 1] + holdMinutes[holdMinutes.length / 2]) / 2
-
-  return {
-    trades: records.length,
-    wins,
-    losses,
-    winRate: wins / records.length,
-    netPnlUsdc,
-    averageRoiRate: roiSample === 0 ? 0 : totalRoiRate / roiSample,
-    medianHoldMinutes,
-    earlyExitRate: earlyExitCount / records.length,
-    settlementWinRate: settledCount === 0 ? 0 : settledWins / settledCount,
-  }
 }
 
 function buildStatusNote(row: WalletScreenerView) {
@@ -368,10 +306,14 @@ function buildRecentTradeTrend(records: WalletOrderAnalysisView[]): TrendPoint[]
   }
   const maxAbsRoi = Math.max(...recent.map((record) => Math.abs(Number(record.roiRate || 0))), 0.01)
   return recent.map((record, index) => ({
-    key: `${record.marketId}-${record.closedAt || index}`,
+    key: `${record.marketId}-${record.settlementAt || record.closedAt || index}`,
     value: Number(record.roiRate || 0),
     height: Math.max(10, (Math.abs(Number(record.roiRate || 0)) / maxAbsRoi) * 88),
-    label: record.closedAt ? formatCompactDateTime(record.closedAt) : record.marketId,
+    label: record.settlementAt
+      ? formatCompactDateTime(record.settlementAt)
+      : record.closedAt
+        ? formatCompactDateTime(record.closedAt)
+        : record.marketId,
     exitStyle: record.exitStyle || 'UNKNOWN',
   }))
 }
@@ -401,7 +343,7 @@ function averageMetric(rows: WalletScreenerView[], picker: (row: WalletScreenerV
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-function buildFocusSummary(row?: WalletScreenerView, diagnosis?: WalletDiagnosisView, stats?: WindowStats) {
+function buildFocusSummary(row?: WalletScreenerView, diagnosis?: WalletDiagnosisView, stats?: WalletOrderStatsView) {
   if (!row && !diagnosis) {
     return '从监控列表点击一个地址后，这里会输出面向运营的聚焦结论。'
   }
@@ -426,8 +368,8 @@ function buildFocusSummary(row?: WalletScreenerView, diagnosis?: WalletDiagnosis
   } else {
     parts.push('交易节奏偏中低频')
   }
-  if (stats && stats.trades > 0) {
-    parts.push(`当前窗口胜率 ${formatPercent(stats.winRate)}，净收益 ${formatMoney(stats.netPnlUsdc)}`)
+  if (stats && stats.closedOrderCount > 0) {
+    parts.push(`当前窗口胜率 ${formatPercent(stats.closedWinRate)}，净收益 ${formatMoney(stats.netPnlUsdc)}`)
   }
   if (diagnosis?.recommendedExitLane || row?.recommendedExitLane) {
     parts.push(`建议退出节奏为 ${exitLaneMeta.label}`)
@@ -530,7 +472,6 @@ export function FollowAddressPanel() {
   const [analysisWindow, setAnalysisWindow] = useState<AnalysisWindow>('30d')
   const [watchGroup, setWatchGroup] = useState<WatchGroup>('all')
   const [keyword, setKeyword] = useState('')
-  const [tierFilter, setTierFilter] = useState('ALL')
   const [sourceFilter, setSourceFilter] = useState('ALL')
   const [archetypeFilter, setArchetypeFilter] = useState('ALL')
   const [managementMessage, setManagementMessage] = useState<string>('')
@@ -581,6 +522,12 @@ export function FollowAddressPanel() {
     enabled: detailMode,
   })
 
+  const { data: orderStats, isLoading: orderStatsLoading } = useQuery({
+    queryKey: ['copyAddressOrderStats', selectedWalletAddress, analysisWindow],
+    queryFn: () => profilesApi.getOrderStats(selectedWalletAddress, { window: analysisWindow }),
+    enabled: detailMode,
+  })
+
   const observeOnlyMutation = useMutation({
     mutationFn: (walletAddress: string) =>
       profilesApi.updateProfileOverride(walletAddress, {
@@ -599,7 +546,7 @@ export function FollowAddressPanel() {
 
   const selectedOrders = orderAnalysisPage?.items || []
   const filteredOrders = getWindowRecords(selectedOrders, analysisWindow)
-  const windowStats = calculateWindowStats(filteredOrders)
+  const windowStats = orderStats || EMPTY_ORDER_STATS
   const recentTradeTrend = buildRecentTradeTrend(filteredOrders)
   const normalizedKeyword = keyword.trim().toLowerCase()
 
@@ -609,12 +556,10 @@ export function FollowAddressPanel() {
       row.walletAddress.toLowerCase().includes(normalizedKeyword) ||
       (row.alias || '').toLowerCase().includes(normalizedKeyword) ||
       (row.summary || '').toLowerCase().includes(normalizedKeyword)
-    const tierMatched = tierFilter === 'ALL' || row.screenerTier === tierFilter
     const sourceMatched = sourceFilter === 'ALL' || row.winSourceType === sourceFilter
     const archetypeMatched = archetypeFilter === 'ALL' || row.archetype === archetypeFilter
     return (
       keywordMatched &&
-      tierMatched &&
       sourceMatched &&
       archetypeMatched &&
       matchesWatchGroup(row, watchGroup)
@@ -648,47 +593,15 @@ export function FollowAddressPanel() {
     },
   ].filter((group) => group.rows.length > 0)
 
+  const priorityCount = monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_A').length
+  const limitedOpenCount = monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_B').length
   const activeCopyCount = executableAddresses.length
-  const observeCount = monitoredAddresses.filter((item) => item.screenerTier === 'OBSERVE').length
+  const openPoolCount = priorityCount + limitedOpenCount
+  const watchGroupMeta = WATCH_GROUP_OPTIONS.find((option) => option.value === watchGroup) ?? WATCH_GROUP_OPTIONS[0]
 
   const selectedRow =
     monitoredAddresses.find((item) => item.walletAddress === selectedWalletAddress) ||
     executableAddresses.find((item) => item.walletAddress === selectedWalletAddress)
-
-  const overviewCards = [
-    {
-      key: 'ALL',
-      title: '监控总池',
-      subtitle: '全量候选地址',
-      count: monitoredAddresses.length,
-      avgQuality: averageMetric(monitoredAddresses, (row) => row.qualityScore),
-      avgWinRate: averageMetric(monitoredAddresses, (row) => row.recentWinRate30d),
-    },
-    {
-      key: 'EXECUTABLE_A',
-      title: '重点开放',
-      subtitle: '优先跟单地址',
-      count: monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_A').length,
-      avgQuality: averageMetric(monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_A'), (row) => row.qualityScore),
-      avgWinRate: averageMetric(monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_A'), (row) => row.recentWinRate30d),
-    },
-    {
-      key: 'EXECUTABLE_B',
-      title: '跟单观察',
-      subtitle: '开放但限额',
-      count: monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_B').length,
-      avgQuality: averageMetric(monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_B'), (row) => row.qualityScore),
-      avgWinRate: averageMetric(monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_B'), (row) => row.recentWinRate30d),
-    },
-    {
-      key: 'OBSERVE',
-      title: '只观察',
-      subtitle: '保留研究信号',
-      count: monitoredAddresses.filter((row) => row.screenerTier === 'OBSERVE').length,
-      avgQuality: averageMetric(monitoredAddresses.filter((row) => row.screenerTier === 'OBSERVE'), (row) => row.qualityScore),
-      avgWinRate: averageMetric(monitoredAddresses.filter((row) => row.screenerTier === 'OBSERVE'), (row) => row.recentWinRate30d),
-    },
-  ]
 
   const focusSummary = buildFocusSummary(selectedRow, diagnosis, windowStats)
   const trendPositiveCount = recentTradeTrend.filter((item) => item.value > 0).length
@@ -711,9 +624,13 @@ export function FollowAddressPanel() {
   const selectedFollowabilityRate = selectedRow?.followabilityRate
   const selectedFreshnessScore = selectedRow?.freshnessScore
   const selectedSettlementWinRate = diagnosis?.settlementWinRate ?? selectedRow?.settlementWinRate
-  const currentAddressLabel = selectedWalletAddress
-    ? (selectedRow?.alias || compactAddress(selectedWalletAddress, 8, 6))
-    : '未选择'
+  const filterSummary = [
+    `${watchGroupMeta.label}视图`,
+    `${formatNumber(filteredMonitoredAddresses.length, 0)} 个地址`,
+    normalizedKeyword.length > 0 ? `关键词 ${keyword.trim()}` : null,
+    sourceFilter !== 'ALL' ? getWinSourceMeta(sourceFilter).label : null,
+    archetypeFilter !== 'ALL' ? getArchetypeMeta(archetypeFilter).label : null,
+  ].filter((item): item is string => Boolean(item))
 
   if (detailMode) {
     return (
@@ -836,14 +753,14 @@ export function FollowAddressPanel() {
                   <small>最近趋势里亏的交易</small>
                 </div>
                 <div className="address-trend-summary-card">
-                  <span>提前退出率</span>
-                  <strong>{formatPercent(windowStats.earlyExitRate)}</strong>
-                  <small>当前分析窗口内提前退出占比（EARLY_*）</small>
+                  <span>提前结算占比</span>
+                  <strong>{formatPercent(windowStats.earlySettlementRate)}</strong>
+                  <small>提前结算订单数 / 总已关闭订单数</small>
                 </div>
                 <div className="address-trend-summary-card">
-                  <span>中位持有时长</span>
-                  <strong>{`${formatNumber(windowStats.medianHoldMinutes, 1)}m`}</strong>
-                  <small>当前分析窗口的持仓节奏</small>
+                  <span>待结算订单</span>
+                  <strong>{formatNumber(windowStats.pendingSettlementCount, 0)}</strong>
+                  <small>市场已关闭但订单尚未完成结算</small>
                 </div>
               </div>
 
@@ -899,16 +816,16 @@ export function FollowAddressPanel() {
                   </div>
                 </div>
 
-                {orderAnalysisLoading ? (
+                {orderAnalysisLoading || orderStatsLoading ? (
                   <div className="loading">交易分析加载中...</div>
                 ) : (
                   <div className="metric-grid address-analysis-grid">
-                    <AddressMetricStrip title="交易数" value={formatNumber(windowStats.trades, 0)} hint="当前窗口内已关闭交易样本数" />
-                    <AddressMetricStrip title="胜率" value={formatPercent(windowStats.winRate)} hint={`${windowStats.wins} 胜 / ${windowStats.losses} 负`} className={getAmountClass(windowStats.winRate - 0.5)} />
-                    <AddressMetricStrip title="净收益" value={formatMoney(windowStats.netPnlUsdc)} hint="当前窗口内累计已实现收益" className={getAmountClass(windowStats.netPnlUsdc)} />
-                    <AddressMetricStrip title="平均 ROI" value={formatPercent(windowStats.averageRoiRate)} hint="逐单收益率平均值" className={getAmountClass(windowStats.averageRoiRate)} />
-                    <AddressMetricStrip title="中位持有时长" value={`${formatNumber(windowStats.medianHoldMinutes, 1)}m`} hint="单笔持有分钟数中位数" />
-                    <AddressMetricStrip title="等待结算胜率" value={formatPercent(windowStats.settlementWinRate)} hint="只统计等待结算类退出（SETTLED_*）" className={getAmountClass(windowStats.settlementWinRate - 0.5)} />
+                    <AddressMetricStrip title="已关闭订单" value={formatNumber(windowStats.closedOrderCount, 0)} hint="当前窗口闭环完成的订单数" />
+                    <AddressMetricStrip title="胜率" value={formatPercent(windowStats.closedWinRate)} hint={`${windowStats.winCount} 胜 / ${windowStats.lossCount} 负`} className={getAmountClass((windowStats.closedWinRate || 0) - 0.5)} />
+                    <AddressMetricStrip title="净收益" value={formatMoney(windowStats.netPnlUsdc)} hint="closed realized + active unrealized，剔除待结算" className={getAmountClass(windowStats.netPnlUsdc)} />
+                    <AddressMetricStrip title="平均 ROI" value={formatPercent(windowStats.averageRoiRate)} hint="已关闭订单的平均收益率" className={getAmountClass(windowStats.averageRoiRate)} />
+                    <AddressMetricStrip title="提前结算占比" value={formatPercent(windowStats.earlySettlementRate)} hint="提前结算订单数 / 总已关闭订单数" />
+                    <AddressMetricStrip title="等待结算胜率" value={formatPercent(windowStats.settlementWinRate)} hint="只统计等到市场结算后才结束的 closed 订单" className={getAmountClass((windowStats.settlementWinRate || 0) - 0.5)} />
                   </div>
                 )}
               </section>
@@ -946,7 +863,7 @@ export function FollowAddressPanel() {
                     </tr>
                   ) : (
                     filteredOrders.map((row, index) => (
-                      <tr key={`${row.walletAddress}-${row.marketId}-${row.closedAt || index}`}>
+                      <tr key={`${row.walletAddress}-${row.marketId}-${row.settlementAt || row.closedAt || index}`}>
                         <td>
                           <div className="address-primary-cell">
                             <strong>{row.outcome || '-'}</strong>
@@ -955,7 +872,13 @@ export function FollowAddressPanel() {
                         </td>
                         <td>
                           <div>{row.openedAt ? new Date(row.openedAt).toLocaleString('zh-CN') : '-'}</div>
-                          <div className="table-subtext">{row.closedAt ? new Date(row.closedAt).toLocaleString('zh-CN') : '-'}</div>
+                          <div className="table-subtext">
+                            {row.settlementAt
+                              ? new Date(row.settlementAt).toLocaleString('zh-CN')
+                              : row.closedAt
+                                ? new Date(row.closedAt).toLocaleString('zh-CN')
+                                : '-'}
+                          </div>
                         </td>
                         <td>{formatAmount(row.investedUsdc)}</td>
                         <td className={getAmountClass(row.realizedPnlUsdc)}>{formatMoney(row.realizedPnlUsdc)}</td>
@@ -983,6 +906,16 @@ export function FollowAddressPanel() {
           <div className="address-hero-copy">
             <p className="eyebrow">ADDRESS MONITOR</p>
             <h2>地址监控</h2>
+            <p className="address-hero-intro">
+              聚焦正在跟踪的钱包地址，快速切换重点、开放和观察队列。
+            </p>
+            <div className="address-hero-summary">
+              {filterSummary.map((item) => (
+                <span key={item} className="address-hero-summary-chip">
+                  {item}
+                </span>
+              ))}
+            </div>
           </div>
           <div className="address-hero-stats">
             <div className="address-hero-stat">
@@ -990,16 +923,16 @@ export function FollowAddressPanel() {
               <strong>{formatNumber(monitoredAddresses.length, 0)}</strong>
             </div>
             <div className="address-hero-stat">
-              <span>开放跟单</span>
+              <span>开放地址</span>
+              <strong>{formatNumber(openPoolCount, 0)}</strong>
+            </div>
+            <div className="address-hero-stat">
+              <span>重点地址</span>
+              <strong>{formatNumber(priorityCount, 0)}</strong>
+            </div>
+            <div className="address-hero-stat">
+              <span>正在跟单</span>
               <strong>{formatNumber(activeCopyCount, 0)}</strong>
-            </div>
-            <div className="address-hero-stat">
-              <span>只观察</span>
-              <strong>{formatNumber(observeCount, 0)}</strong>
-            </div>
-            <div className="address-hero-stat">
-              <span>当前地址</span>
-              <strong>{currentAddressLabel}</strong>
             </div>
           </div>
         </div>
@@ -1009,94 +942,74 @@ export function FollowAddressPanel() {
 
       <section className="panel address-control-panel">
         <div className="address-control-deck sticky-toolbar">
-          <div className="address-control-copy">
+          <div className="address-control-copy address-control-row">
             <div>
-              <p className="eyebrow">COMMAND DECK</p>
+              <p className="eyebrow">FILTERS</p>
               <h2>地址筛选</h2>
             </div>
+            <div className="address-filter-caption">{filterSummary.join(' / ')}</div>
           </div>
 
-          <div className="address-kpi-ribbon">
-            {overviewCards.map((card) => {
-              const active = tierFilter === card.key || (card.key === 'ALL' && tierFilter === 'ALL')
-              return (
+          <div className="address-filter-top">
+            <div className="segmented-control address-watch-segmented">
+              {WATCH_GROUP_OPTIONS.map((option) => (
                 <button
-                  key={card.key}
+                  key={option.value}
                   type="button"
-                  className={`address-kpi-chip ${active ? 'active' : ''}`}
-                  onClick={() => setTierFilter(card.key === 'ALL' ? 'ALL' : card.key)}
+                  className={watchGroup === option.value ? 'active' : ''}
+                  onClick={() => setWatchGroup(option.value)}
+                  title={option.hint}
                 >
-                  <span className="address-kpi-label">{card.title}</span>
-                  <strong>{formatNumber(card.count, 0)}</strong>
-                  <span>{card.subtitle}</span>
-                  <small>均值质量 {formatPercent(card.avgQuality)} / 30D 胜率 {formatPercent(card.avgWinRate)}</small>
+                  {option.label}
                 </button>
-              )
-            })}
+              ))}
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary table-reset-btn address-toolbar-reset"
+              onClick={() => {
+                setKeyword('')
+                setSourceFilter('ALL')
+                setArchetypeFilter('ALL')
+                setWatchGroup('all')
+              }}
+            >
+              重置
+            </button>
           </div>
 
-          <div className="table-toolbar address-toolbar">
-            <div className="filter-bar">
-              <input
-                className="table-input"
-                value={keyword}
-                placeholder="搜索地址 / 别名 / 摘要"
-                onChange={(event) => setKeyword(event.target.value)}
-              />
-              <select value={tierFilter} onChange={(event) => setTierFilter(event.target.value)}>
-                <option value="ALL">全部分层</option>
-                <option value="EXECUTABLE_A">EXECUTABLE_A 重点开放</option>
-                <option value="EXECUTABLE_B">EXECUTABLE_B 可跟单观察</option>
-                <option value="OBSERVE">OBSERVE 只观察</option>
-                <option value="BLOCKLIST">BLOCKLIST 阻断</option>
-              </select>
-              <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-                <option value="ALL">全部胜率来源</option>
-                <option value="LATENCY_ALPHA">{getWinSourceMeta('LATENCY_ALPHA').label}</option>
-                <option value="SWING_ALPHA">{getWinSourceMeta('SWING_ALPHA').label}</option>
-                <option value="SETTLEMENT_ALPHA">{getWinSourceMeta('SETTLEMENT_ALPHA').label}</option>
-                <option value="RISK_CONTROL_ALPHA">{getWinSourceMeta('RISK_CONTROL_ALPHA').label}</option>
-                <option value="UNKNOWN">UNKNOWN 未知</option>
-              </select>
-              <select value={archetypeFilter} onChange={(event) => setArchetypeFilter(event.target.value)}>
-                <option value="ALL">全部地址类型</option>
-                <option value="HF">{getArchetypeMeta('HF').label}</option>
-                <option value="SWING">{getArchetypeMeta('SWING').label}</option>
-                <option value="THEMATIC">{getArchetypeMeta('THEMATIC').label}</option>
-                <option value="LOW_FREQ_VALUE">{getArchetypeMeta('LOW_FREQ_VALUE').label}</option>
-                <option value="NOISE">{getArchetypeMeta('NOISE').label}</option>
-                <option value="UNKNOWN">UNKNOWN 未定型</option>
-              </select>
-            </div>
-
-            <div className="address-toolbar-actions">
-              <div className="segmented-control">
-                {WATCH_GROUP_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={watchGroup === option.value ? 'active' : ''}
-                    onClick={() => setWatchGroup(option.value)}
-                    title={option.hint}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="btn btn-secondary table-reset-btn"
-                onClick={() => {
-                  setKeyword('')
-                  setTierFilter('ALL')
-                  setSourceFilter('ALL')
-                  setArchetypeFilter('ALL')
-                  setWatchGroup('all')
-                }}
-              >
-                重置
-              </button>
-            </div>
+          <div className="address-filter-fields">
+            <input
+              className="table-input address-search-input"
+              value={keyword}
+              placeholder="搜索地址 / 别名 / 摘要"
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+            <select
+              className="address-filter-select"
+              value={sourceFilter}
+              onChange={(event) => setSourceFilter(event.target.value)}
+            >
+              <option value="ALL">全部胜率来源</option>
+              <option value="LATENCY_ALPHA">{getWinSourceMeta('LATENCY_ALPHA').label}</option>
+              <option value="SWING_ALPHA">{getWinSourceMeta('SWING_ALPHA').label}</option>
+              <option value="SETTLEMENT_ALPHA">{getWinSourceMeta('SETTLEMENT_ALPHA').label}</option>
+              <option value="RISK_CONTROL_ALPHA">{getWinSourceMeta('RISK_CONTROL_ALPHA').label}</option>
+              <option value="UNKNOWN">UNKNOWN 未知</option>
+            </select>
+            <select
+              className="address-filter-select"
+              value={archetypeFilter}
+              onChange={(event) => setArchetypeFilter(event.target.value)}
+            >
+              <option value="ALL">全部地址类型</option>
+              <option value="HF">{getArchetypeMeta('HF').label}</option>
+              <option value="SWING">{getArchetypeMeta('SWING').label}</option>
+              <option value="THEMATIC">{getArchetypeMeta('THEMATIC').label}</option>
+              <option value="LOW_FREQ_VALUE">{getArchetypeMeta('LOW_FREQ_VALUE').label}</option>
+              <option value="NOISE">{getArchetypeMeta('NOISE').label}</option>
+              <option value="UNKNOWN">UNKNOWN 未定型</option>
+            </select>
           </div>
         </div>
       </section>
@@ -1104,29 +1017,6 @@ export function FollowAddressPanel() {
       <section className="panel address-full-panel">
         <div className="section-head">
           <h2>监控地址</h2>
-        </div>
-
-        <div className="address-group-rail">
-          {groupedMonitoredAddresses.map((group) => (
-            <button
-              key={group.key}
-              type="button"
-              className={`address-group-card ${tierFilter === group.key ? 'active' : ''}`}
-              onClick={() => setTierFilter(group.key)}
-            >
-              <div className="address-group-card-head">
-                <div>
-                  <h3>{group.title}</h3>
-                </div>
-                <span className={getTierBadgeClass(group.key)}>{group.key}</span>
-              </div>
-              <div className="address-group-card-metrics">
-                <span>地址数 {formatNumber(group.rows.length, 0)}</span>
-                <span>均值质量 {formatPercent(averageMetric(group.rows, (row) => row.qualityScore))}</span>
-                <span>30D 胜率 {formatPercent(averageMetric(group.rows, (row) => row.recentWinRate30d))}</span>
-              </div>
-            </button>
-          ))}
         </div>
 
         {monitoredLoading ? (

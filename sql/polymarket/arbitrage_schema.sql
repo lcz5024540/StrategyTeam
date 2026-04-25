@@ -36,10 +36,15 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_profile` (
     `recent_trade_count_30d` INT NOT NULL DEFAULT 0 COMMENT '近30日交易样本数',
     `observe_cooldown_until` TIMESTAMP NULL COMMENT '近期退化观察冷却截止时间',
     `observe_cooldown_reason` VARCHAR(255) DEFAULT NULL COMMENT '近期退化观察原因',
+    `monitor_tier` VARCHAR(16) DEFAULT NULL COMMENT '地址监控层级 HOT/WARM/COLD',
+    `monitor_reason` VARCHAR(255) DEFAULT NULL COMMENT '监控层级判定原因',
+    `last_event_sync_at` TIMESTAMP NULL COMMENT '最近一次 HOT 事件同步时间',
+    `last_metrics_refresh_at` TIMESTAMP NULL COMMENT '最近一次 WARM 画像刷新时间',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY `uk_wallet_chain_source` (`wallet_address`, `chain`, `source`),
-    INDEX `idx_profile_qualified` (`qualified`, `watch_enabled`, `wallet_score`)
+    INDEX `idx_profile_qualified` (`qualified`, `watch_enabled`, `wallet_score`),
+    INDEX `idx_profile_monitor_tier` (`monitor_tier`, `wallet_score`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket聪明钱包画像表';
 
 -- 2. Polymarket 钱包开单事件表
@@ -313,11 +318,39 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_market_info` (
     `token_id`      VARCHAR(128) DEFAULT NULL COMMENT 'CLOB outcome token id',
     `index_set`     INT DEFAULT NULL COMMENT 'CTF indexSet bitmask (1=outcome0/YES, 2=outcome1/NO)',
     `market_end_at` BIGINT DEFAULT NULL COMMENT '市场预计结算时间戳(毫秒)',
+    `source_category` VARCHAR(128) DEFAULT NULL COMMENT 'Gamma 原始市场分类',
+    `normalized_category` VARCHAR(64) DEFAULT NULL COMMENT '内部统一市场大类',
+    `market_lifecycle` VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '市场生命周期：ACTIVE/CLOSED_UNRESOLVED/RESOLVED',
+    `closed` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Gamma closed 标记',
+    `accepting_orders` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Gamma acceptingOrders 标记',
+    `resolved_outcome` VARCHAR(128) DEFAULT NULL COMMENT '市场最终获胜 outcome',
+    `last_metadata_sync_at` TIMESTAMP NULL DEFAULT NULL COMMENT '最近一次元数据同步时间',
     `created_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY `uk_market_outcome` (`market_id`, `outcome`),
-    INDEX `idx_market_end_at` (`market_end_at`)
+    INDEX `idx_market_end_at` (`market_end_at`),
+    INDEX `idx_market_lifecycle` (`market_lifecycle`, `market_id`),
+    INDEX `idx_market_category` (`normalized_category`, `market_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='公共市场信息表 — 收敛跟单链路中各表的市场维度冗余字段';
+
+CREATE TABLE IF NOT EXISTS `smart_wallet_market_concentration_snapshot` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `market_id` VARCHAR(128) NOT NULL COMMENT 'Polymarket conditionId / 市场ID',
+    `outcome` VARCHAR(32) NOT NULL DEFAULT 'ALL' COMMENT 'YES/NO/ALL',
+    `observed_holders` INT NOT NULL DEFAULT 0 COMMENT '观测到的持仓地址数',
+    `top1_pct` DECIMAL(10, 6) NOT NULL DEFAULT 0 COMMENT 'CR1',
+    `top3_pct` DECIMAL(10, 6) NOT NULL DEFAULT 0 COMMENT 'CR3',
+    `top5_pct` DECIMAL(10, 6) NOT NULL DEFAULT 0 COMMENT 'CR5',
+    `hhi` INT NOT NULL DEFAULT 0 COMMENT 'HHI',
+    `highly_concentrated` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否高集中',
+    `extremely_concentrated` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否极端集中',
+    `snapshot_at` TIMESTAMP NOT NULL COMMENT '快照采集时间',
+    `top_holder_addresses_json` TEXT DEFAULT NULL COMMENT 'Top holder 地址 JSON 列表',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_market_concentration_snapshot` (`market_id`, `outcome`),
+    INDEX `idx_market_concentration_snapshot_at` (`snapshot_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='市场集中度快照表';
 
 
 

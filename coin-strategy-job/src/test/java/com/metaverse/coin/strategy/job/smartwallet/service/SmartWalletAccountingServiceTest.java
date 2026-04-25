@@ -76,6 +76,8 @@ class SmartWalletAccountingServiceTest {
     private ObjectProvider<SmartWalletFollowTaskService> followTaskServiceProvider;
     @Mock
     private SmartWalletMarketInfoService marketInfoService;
+    @Mock
+    private SmartWalletMarketStateService marketStateService;
 
     private SmartWalletAccountingService service;
 
@@ -94,7 +96,8 @@ class SmartWalletAccountingServiceTest {
                 new SmartWalletTimeFormatter(),
                 properties,
                 followTaskServiceProvider,
-                marketInfoService
+                marketInfoService,
+                marketStateService
         );
     }
 
@@ -286,6 +289,70 @@ class SmartWalletAccountingServiceTest {
         verify(positionMapper, atLeastOnce()).updateById(positionCaptor.capture());
         assertTrue(positionCaptor.getAllValues().stream()
                 .anyMatch(updated -> "RESOLVED_UNCLAIMED".equals(updated.getStatus()) && "YES".equals(updated.getOutcome())));
+    }
+
+    @Test
+    void shouldHideClosedMarketFromLivePositionsAndSkipMarkToMarketUpdate() {
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(901L)
+                .setExecutionAddress("live-wallet")
+                .setStatus("OPEN")
+                .setQuantity(new BigDecimal("10.00000000"))
+                .setCostBasisUsdc(new BigDecimal("4.00000000"))
+                .setLastMarkPrice(new BigDecimal("0.40"))
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setId(8001L)
+                        .setMarketId("market-closed")
+                        .setQuestion("Will closed market stay out of live positions?")
+                        .setOutcome("YES"));
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(position));
+        when(marketStateService.refreshMarkets(any(), eq(false))).thenReturn(Map.of(
+                "market-closed",
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-closed")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(false)
+                        .marketEndAt(System.currentTimeMillis() - 60_000L)
+                        .build()
+        ));
+
+        List<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView> result = service.listActivePositions("LIVE");
+
+        assertTrue(result.isEmpty());
+        verify(positionMapper, never()).updateById(any(SmartWalletPositionEntity.class));
+    }
+
+    @Test
+    void shouldRouteClosedOpenPositionIntoNextSettlements() {
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(902L)
+                .setExecutionAddress("live-wallet")
+                .setStatus("OPEN")
+                .setQuantity(new BigDecimal("5.00000000"))
+                .setCostBasisUsdc(new BigDecimal("2.50000000"))
+                .setLastMarkPrice(new BigDecimal("0.50"))
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setId(8002L)
+                        .setMarketId("market-settlement")
+                        .setQuestion("Will closed market appear in next settlements?")
+                        .setOutcome("YES"));
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(position));
+        when(marketStateService.refreshMarkets(any(), eq(false))).thenReturn(Map.of(
+                "market-settlement",
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-settlement")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(false)
+                        .marketEndAt(System.currentTimeMillis() - 60_000L)
+                        .build()
+        ));
+
+        List<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView> result = service.listNextSettlements(10, "LIVE");
+
+        assertEquals(1, result.size());
+        assertEquals("market-settlement", result.get(0).getMarketId());
     }
 
     @Test
@@ -1028,6 +1095,37 @@ class SmartWalletAccountingServiceTest {
         assertEquals(0, new BigDecimal("-4.20000000").compareTo(lossBucket.getLossPnlUsdc()));
         assertEquals(0, new BigDecimal("-5.50000000").compareTo(lossBucket.getNetPnlUsdc()));
         assertEquals(0, new BigDecimal("-4.20000000").compareTo(lossBucket.getCumulativeLossPnlUsdc()));
+    }
+
+    @Test
+    void shouldStartTimelineFromFirstMatchingDataBucket() {
+        ZoneId zoneId = ZoneId.systemDefault();
+        LocalDateTime now = LocalDateTime.now(zoneId).withHour(12).withMinute(0).withSecond(0).withNano(0);
+        Date liveAt = Date.from(now.minusDays(20).atZone(zoneId).toInstant());
+        Date paperAt = Date.from(now.minusDays(2).withHour(9).atZone(zoneId).toInstant());
+
+        SmartWalletCashLedgerEntity liveProfit = new SmartWalletCashLedgerEntity()
+                .setExecutionAddress("live-wallet")
+                .setEntryType("REALIZED_PNL")
+                .setDirection("IN")
+                .setAmount(new BigDecimal("9.00"))
+                .setOccurredAt(liveAt);
+        SmartWalletCashLedgerEntity paperProfit = new SmartWalletCashLedgerEntity()
+                .setExecutionAddress("paper-book")
+                .setEntryType("REALIZED_PNL")
+                .setDirection("IN")
+                .setAmount(new BigDecimal("5.00"))
+                .setOccurredAt(paperAt);
+
+        when(cashLedgerMapper.selectList(any())).thenReturn(List.of(liveProfit, paperProfit));
+
+        List<SmartWalletPnlTimelinePoint> timeline = service.pnlTimeline(30, 24, "PAPER");
+
+        assertTrue(!timeline.isEmpty());
+        LocalDateTime firstBucket = LocalDateTime.ofInstant(timeline.get(0).getBucketAt().toInstant(), zoneId);
+        assertEquals(paperAt.toInstant().atZone(zoneId).toLocalDate().atStartOfDay(), firstBucket);
+        assertEquals(0, new BigDecimal("5.00000000").compareTo(timeline.get(0).getNetPnlUsdc()));
+        assertEquals(0, new BigDecimal("5.00000000").compareTo(timeline.get(0).getCumulativeNetPnlUsdc()));
     }
 
     @Test

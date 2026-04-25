@@ -37,6 +37,8 @@ public class PolymarketProductOverviewService {
         var capacity = accountingService.capacitySummary();
         int candidateWatchlist = monitorService.listQualifiedCandidates().size();
         int executableWatchlist = monitorService.listExecutableWatchlist().size();
+        int warmWatchlist = monitorService.listWarmWatchlist().size();
+        int coldProfiles = monitorService.listColdProfiles().size();
         return PolymarketProductOverview.builder()
                 .mode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
                 .discoveryEnabled(monitorService.isDiscoveryEnabled())
@@ -45,6 +47,8 @@ public class PolymarketProductOverviewService {
                 .profiles(monitorService.listProfiles().size())
                 .candidateWatchlist(candidateWatchlist)
                 .executableWatchlist(executableWatchlist)
+                .warmWatchlist(warmWatchlist)
+                .coldProfiles(coldProfiles)
                 .watchlist(executableWatchlist)
                 .tradeEvents(tradeEvents)
                 .totalDeployedUsdc(capacity.getTotalOpenCostUsdc())

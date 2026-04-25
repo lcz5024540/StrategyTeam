@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_HOME="${SMART_WALLET_APP_HOME:-/opt/coinstrategy/smart-wallet}"
-APP_USER="${SMART_WALLET_APP_USER:-coinstrategy}"
+APP_USER="${SMART_WALLET_APP_USER:-${SUDO_USER:-ubuntu}}"
 APP_GROUP="${SMART_WALLET_APP_GROUP:-$APP_USER}"
 SERVICE_NAME="${SMART_WALLET_SERVICE_NAME:-smart-wallet-backend}"
 BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-8081}"
@@ -18,6 +18,7 @@ NGINX_CONF="${SMART_WALLET_NGINX_CONF:-/etc/nginx/conf.d/smart-wallet.conf}"
 SYSTEMD_TEMPLATE="$ROOT_DIR/deploy/linux/systemd/smart-wallet-backend.service.template"
 NGINX_TEMPLATE="$ROOT_DIR/deploy/linux/nginx/smart-wallet.conf.template"
 ENV_TEMPLATE="$ROOT_DIR/deploy/linux/env/smart-wallet.env"
+RESTART_HELPER_SOURCE="$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-backend.sh"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "[install-smart-wallet-linux-service] please run as root or with sudo." >&2
@@ -63,6 +64,11 @@ fi
 if [ -n "$START_SCRIPT_SOURCE" ]; then
   install -m 755 "$START_SCRIPT_SOURCE" "$APP_HOME/bin/start-smart-wallet-backend.sh"
   chown "$APP_USER:$APP_GROUP" "$APP_HOME/bin/start-smart-wallet-backend.sh"
+fi
+
+if [ -f "$RESTART_HELPER_SOURCE" ]; then
+  install -m 755 "$RESTART_HELPER_SOURCE" "$APP_HOME/bin/restart-smart-wallet-backend.sh"
+  chown "$APP_USER:$APP_GROUP" "$APP_HOME/bin/restart-smart-wallet-backend.sh"
 fi
 
 sed \

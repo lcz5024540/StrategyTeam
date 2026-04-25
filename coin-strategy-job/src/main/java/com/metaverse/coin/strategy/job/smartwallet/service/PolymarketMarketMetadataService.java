@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -71,6 +72,40 @@ public class PolymarketMarketMetadataService {
         } catch (RuntimeException ex) {
             return buildSyntheticMetadata(conditionId, questionHint, outcomeHints);
         }
+    }
+
+    public Map<String, PolymarketApiClient.MarketMetadata> refreshBatchByConditionIds(java.util.Collection<String> conditionIds,
+                                                                                       int chunkSize) {
+        if (conditionIds == null || conditionIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> normalizedIds = conditionIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (normalizedIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, PolymarketApiClient.MarketMetadata> fetched =
+                polymarketApiClient.fetchMarketMetadataBatch(normalizedIds, chunkSize);
+        Map<String, PolymarketApiClient.MarketMetadata> result = new LinkedHashMap<>();
+        for (String conditionId : normalizedIds) {
+            PolymarketApiClient.MarketMetadata primary = fetched.get(conditionId);
+            if (primary == null) {
+                continue;
+            }
+            PolymarketApiClient.MarketMetadata merged = mergeMetadata(
+                    conditionId,
+                    localMetadata.get(conditionId),
+                    cache.get(conditionId),
+                    withSource(primary, "GAMMA_MARKETS_BATCH"),
+                    null
+            );
+            cache.put(conditionId, merged);
+            result.put(conditionId, merged);
+        }
+        return result;
     }
 
     public PolymarketApiClient.MarketMetadata findManualSettlementSignal(String conditionId,

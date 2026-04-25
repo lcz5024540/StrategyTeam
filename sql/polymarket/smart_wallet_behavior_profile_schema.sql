@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_behavior_profile` (
     `early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前退出比例',
     `profit_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '盈利单提前退出比例',
     `loss_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '亏损单提前退出比例',
+    `early_settlement_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前结算占比',
     `win_source_type` VARCHAR(64) DEFAULT NULL COMMENT '胜率来源类型',
     `latency_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '短周期 alpha 比例',
     `swing_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中周期 alpha 比例',

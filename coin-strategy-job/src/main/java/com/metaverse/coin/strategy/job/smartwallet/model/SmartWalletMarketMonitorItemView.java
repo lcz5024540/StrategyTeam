@@ -16,6 +16,11 @@ public class SmartWalletMarketMonitorItemView {
     private Long marketEndAt;
     private String marketEndAtBjt;
     private String marketState;
+    private String marketLifecycle;
+    private String sourceCategory;
+    private String normalizedCategory;
+    private Date lastMetadataSyncAt;
+    private Boolean metadataStale;
     private Date lastSignalAt;
     private String lastSignalAtBjt;
     private Integer signalCount;
@@ -38,6 +43,8 @@ public class SmartWalletMarketMonitorItemView {
     private Boolean highlyConcentrated;
     private Boolean extremelyConcentrated;
     private String concentrationBand;
+    private Date lastConcentrationSnapshotAt;
+    private Boolean concentrationStale;
     @Builder.Default
     private List<String> topHolderAddresses = new ArrayList<>();
 }

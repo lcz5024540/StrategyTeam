@@ -44,6 +44,7 @@ public class SmartWalletProperties {
     private LiveValidation liveValidation = new LiveValidation();
     private SettlementSync settlementSync = new SettlementSync();
     private Claim claim = new Claim();
+    private MarketMonitoring marketMonitoring = new MarketMonitoring();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
     private Intelligence intelligence = new Intelligence();
@@ -77,6 +78,9 @@ public class SmartWalletProperties {
         private Integer watchlistTradeSyncBatchSize = 3;
         private Long walletTradeSyncMinIntervalMs = 30000L;
         private Long walletTradeErrorCooldownMs = 300000L;
+        private Long warmMetricsRefreshFixedDelayMs = 600000L;
+        private Integer warmMetricsRefreshBatchSize = 10;
+        private Long warmWalletRefreshMinIntervalMs = 1800000L;
         private BigDecimal staleAddressWeightFactor = new BigDecimal("0.35");
 
         @Data
@@ -417,6 +421,76 @@ public class SmartWalletProperties {
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;
         private Integer staleResolvedUnclaimedHours = 12;
+    }
+
+    @Data
+    public static class MarketMonitoring {
+        private MetadataRefresh metadataRefresh = new MetadataRefresh();
+        private ConcentrationSnapshot concentrationSnapshot = new ConcentrationSnapshot();
+
+        @Data
+        public static class MetadataRefresh {
+            /**
+             * 是否开启市场元数据后台刷新。页面查询只读数据库，不再请求内补刷。
+             */
+            private boolean enabled = true;
+            /**
+             * 调度固定间隔。默认 5 分钟刷新一次。
+             */
+            private Long refreshFixedDelayMs = 300000L;
+            /**
+             * 候选市场回看窗口，覆盖页面常用视角。
+             */
+            private Integer candidateLookbackDays = 30;
+            /**
+             * 单轮最多纳入多少候选市场。
+             */
+            private Integer maxCandidateMarkets = 120;
+            /**
+             * 单轮最多刷新多少个市场。
+             */
+            private Integer refreshBatchSize = 120;
+            /**
+             * Gamma markets 批量请求的 conditionId 分块大小。
+             */
+            private Integer gammaChunkSize = 20;
+            /**
+             * 页面判定元数据过期的阈值。
+             */
+            private Long maxStaleMs = 900000L;
+        }
+
+        @Data
+        public static class ConcentrationSnapshot {
+            /**
+             * 是否开启集中度快照刷新。市场页只读快照，不再触发实时外部调用。
+             */
+            private boolean enabled = true;
+            /**
+             * 调度固定间隔。默认 3 分钟，在时效和限频之间做保守平衡。
+             */
+            private Long refreshFixedDelayMs = 180000L;
+            /**
+             * 单轮最多刷新多少个市场，避免一次性打太多外部请求。
+             */
+            private Integer refreshBatchSize = 24;
+            /**
+             * 候选市场回看窗口。需覆盖市场页常用 7/14/30d 视角。
+             */
+            private Integer candidateLookbackDays = 30;
+            /**
+             * 每轮最多纳入多少候选市场参与排队刷新。
+             */
+            private Integer maxCandidateMarkets = 60;
+            /**
+             * 同一市场最小刷新间隔，防止热门市场在短时间内被重复抓取。
+             */
+            private Long minMarketRefreshIntervalMs = 300000L;
+            /**
+             * 页面可接受的最大快照年龄。超过后按 UNKNOWN 展示，避免拿过期数据做判断。
+             */
+            private Long maxSnapshotAgeMs = 900000L;
+        }
     }
 
     @Data

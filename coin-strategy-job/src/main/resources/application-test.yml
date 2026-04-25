@@ -14,3 +14,22 @@ spring:
     username: "${DB_USERNAME:root}"
     password: "${DB_PASSWORD:}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
+
+smart-wallet:
+  # Keep test on PAPER unless an operator explicitly overrides via environment.
+  auto-execution-enabled: false
+  polymarket:
+    # Test-only discovery override: stop pulling VOLUME leaders because the current
+    # candidate pool is dominated by high-frequency, observe-only wallets.
+    leaderboard-category: "OVERALL"
+    leaderboard-time-period: "ALL"
+    leaderboard-order-by: "PNL"
+    leaderboard-limit: 100
+    leaderboard-queries:
+      - category: "OVERALL"
+        time-period: "ALL"
+        order-by: "PNL"
+        limit: 100
+    # Expand the scoring pass so test can inspect a larger PnL-only candidate set
+    # without loosening any execution or risk gates.
+    analyze-top-n: 100

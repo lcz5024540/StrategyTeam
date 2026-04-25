@@ -252,6 +252,12 @@ smart-wallet:
     wallet-trade-sync-min-interval-ms: 120000
     # [TUNE] Back off longer after one wallet hits a network/TLS failure.
     wallet-trade-error-cooldown-ms: 300000
+    # [FIXED-ONCE] Background cadence for refreshing WARM-tier wallet metrics.
+    warm-metrics-refresh-fixed-delay-ms: 600000
+    # [TUNE] Refresh only part of the WARM pool each round to avoid bursty profile recomputation.
+    warm-metrics-refresh-batch-size: 10
+    # [TUNE] Minimum spacing between two WARM-tier profile refreshes for the same wallet.
+    warm-wallet-refresh-min-interval-ms: 1800000
   execution-wallet:
     # [SCRIPT][FIXED-ONCE] Live routing master switch. Requires env secrets to be present.
     enabled: true
@@ -578,6 +584,23 @@ smart-wallet:
     retry-batch-limit: 20
     retry-backoff-minutes: 15
     max-retry-failures: 8
+  market-monitoring:
+    metadata-refresh:
+      enabled: true
+      refresh-fixed-delay-ms: 300000
+      candidate-lookback-days: 30
+      max-candidate-markets: 120
+      refresh-batch-size: 120
+      gamma-chunk-size: 20
+      max-stale-ms: 900000
+    concentration-snapshot:
+      enabled: true
+      refresh-fixed-delay-ms: 180000
+      refresh-batch-size: 24
+      candidate-lookback-days: 30
+      max-candidate-markets: 60
+      min-market-refresh-interval-ms: 300000
+      max-snapshot-age-ms: 900000
   wallets:
     # [FIXED-ONCE] Example seed wallets for local bootstrap/demo only.
     - address: "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"

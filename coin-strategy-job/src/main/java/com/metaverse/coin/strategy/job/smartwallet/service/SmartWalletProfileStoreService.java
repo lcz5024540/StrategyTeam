@@ -49,6 +49,11 @@ public class SmartWalletProfileStoreService {
     private static final BigDecimal DECAY_PER_WEEK = new BigDecimal("0.05");
     private static final int MIN_ARCHETYPE_EVIDENCE_SAMPLE = 5;
     private static final BigDecimal MIN_EXECUTABLE_FOLLOW_FIT_SCORE = new BigDecimal("0.42");
+    private static final BigDecimal WARM_SCORE_BUFFER = new BigDecimal("0.10");
+    private static final long WARM_RECENT_DISCOVERY_DAYS = 30L;
+    private static final String MONITOR_TIER_HOT = "HOT";
+    private static final String MONITOR_TIER_WARM = "WARM";
+    private static final String MONITOR_TIER_COLD = "COLD";
 
     private final SmartWalletProperties properties;
     private final SmartWalletProfileMapper profileMapper;
@@ -124,10 +129,10 @@ public class SmartWalletProfileStoreService {
     }
 
     public List<SmartWalletProfileEntity> listAll() {
-        return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+        return applyMonitorTierState(profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
                 .eq(SmartWalletProfileEntity::getSource, SOURCE)
                 .orderByDesc(SmartWalletProfileEntity::getWalletScore)
-                .orderByDesc(SmartWalletProfileEntity::getRealizedPnlUsdc));
+                .orderByDesc(SmartWalletProfileEntity::getRealizedPnlUsdc)));
     }
 
     public List<SmartWalletProfileEntity> listWatchEnabled() {
@@ -135,33 +140,69 @@ public class SmartWalletProfileStoreService {
     }
 
     public List<SmartWalletProfileEntity> listExecutableWatchlist() {
-        return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
-                .eq(SmartWalletProfileEntity::getSource, SOURCE)
-                .eq(SmartWalletProfileEntity::getQualified, Boolean.TRUE)
-                .eq(SmartWalletProfileEntity::getWatchEnabled, Boolean.TRUE)
-                .orderByDesc(SmartWalletProfileEntity::getWalletScore));
+        return listAll().stream()
+                .filter(this::isHotMonitorTier)
+                .toList();
+    }
+
+    public List<SmartWalletProfileEntity> listWarmWatchlist() {
+        return listAll().stream()
+                .filter(this::isWarmMonitorTier)
+                .toList();
+    }
+
+    public List<SmartWalletProfileEntity> listColdProfiles() {
+        return listAll().stream()
+                .filter(this::isColdMonitorTier)
+                .toList();
     }
 
     public List<SmartWalletProfileEntity> listQualified() {
-        return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
-                .eq(SmartWalletProfileEntity::getSource, SOURCE)
-                .eq(SmartWalletProfileEntity::getQualified, Boolean.TRUE)
-                .orderByDesc(SmartWalletProfileEntity::getWalletScore));
+        return listAll().stream()
+                .filter(item -> Boolean.TRUE.equals(item.getQualified()))
+                .toList();
     }
 
     public List<SmartWalletProfileEntity> listRecentlyDiscovered(Date since, int limit) {
-        return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+        return applyMonitorTierState(profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
                 .eq(SmartWalletProfileEntity::getSource, SOURCE)
                 .ge(SmartWalletProfileEntity::getLastDiscoveredAt, since)
                 .isNotNull(SmartWalletProfileEntity::getLastDiscoveredAt)
                 .orderByDesc(SmartWalletProfileEntity::getLastDiscoveredAt)
-                .last("limit " + Math.max(limit, 1)));
+                .last("limit " + Math.max(limit, 1))));
     }
 
     public void update(SmartWalletProfileEntity entity) {
+        applyMonitorTierState(entity);
         entity.setUpdatedAt(new Date());
         profileMapper.updateById(entity);
         walletBehaviorProfileService.evictProfileCache(entity.getWalletAddress());
+    }
+
+    public void recordHotEventSync(SmartWalletProfileEntity entity, Date syncedAt) {
+        if (entity == null || entity.getId() == null || syncedAt == null) {
+            return;
+        }
+        entity.setLastEventSyncAt(syncedAt);
+        entity.setUpdatedAt(new Date());
+        SmartWalletProfileEntity update = new SmartWalletProfileEntity()
+                .setId(entity.getId())
+                .setLastEventSyncAt(entity.getLastEventSyncAt())
+                .setUpdatedAt(entity.getUpdatedAt());
+        profileMapper.updateById(update);
+    }
+
+    public void recordWarmMetricsRefresh(SmartWalletProfileEntity entity, Date refreshedAt) {
+        if (entity == null || entity.getId() == null || refreshedAt == null) {
+            return;
+        }
+        entity.setLastMetricsRefreshAt(refreshedAt);
+        entity.setUpdatedAt(new Date());
+        SmartWalletProfileEntity update = new SmartWalletProfileEntity()
+                .setId(entity.getId())
+                .setLastMetricsRefreshAt(entity.getLastMetricsRefreshAt())
+                .setUpdatedAt(entity.getUpdatedAt());
+        profileMapper.updateById(update);
     }
 
     public List<SmartWalletProfileOverrideView> listManualOverrides(Integer limit) {
@@ -329,6 +370,7 @@ public class SmartWalletProfileStoreService {
             }
             if (daysSince >= OFFLINE_DAYS && Boolean.TRUE.equals(wallet.getWatchEnabled())) {
                 wallet.setWatchEnabled(Boolean.FALSE);
+                applyMonitorTierState(wallet);
                 wallet.setUpdatedAt(now);
                 profileMapper.updateById(wallet);
                 log.info("WALLET_DECAY offline walletAddress={} daysSinceLastTrade={}", wallet.getWalletAddress(), daysSince);
@@ -476,15 +518,22 @@ public class SmartWalletProfileStoreService {
         if (wallet == null) {
             return;
         }
+        Date now = new Date();
         boolean qualified = isQualified(wallet);
         wallet.setQualified(qualified);
         boolean observeBlocked = includeObserveCooldown && applyObserveCooldownState(wallet);
         boolean executableCandidate = qualified && !observeBlocked && isExecutableCandidate(wallet, behaviorProfile);
+        boolean watchEnabled;
         if (wallet.getManualWatchEnabled() != null) {
-            wallet.setWatchEnabled(qualified && wallet.getManualWatchEnabled());
-            return;
+            watchEnabled = qualified && wallet.getManualWatchEnabled();
+        } else {
+            watchEnabled = executableCandidate;
         }
-        wallet.setWatchEnabled(executableCandidate);
+        if (isForceColdByInactivity(wallet, now)) {
+            watchEnabled = false;
+        }
+        wallet.setWatchEnabled(watchEnabled);
+        applyMonitorTierState(wallet, now);
     }
 
     private boolean isQualified(SmartWalletProfileEntity wallet) {
@@ -601,6 +650,92 @@ public class SmartWalletProfileStoreService {
                 + ", winRate=" + historicalWinRate.setScale(4, RoundingMode.HALF_UP)
                 + ", recentWinRate30d=" + recentWinRate30d.setScale(4, RoundingMode.HALF_UP)
                 + ", recentWinRate7d=" + recentWinRate7d.setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private List<SmartWalletProfileEntity> applyMonitorTierState(List<SmartWalletProfileEntity> wallets) {
+        if (wallets == null || wallets.isEmpty()) {
+            return List.of();
+        }
+        Date now = new Date();
+        for (SmartWalletProfileEntity wallet : wallets) {
+            applyMonitorTierState(wallet, now);
+        }
+        return wallets;
+    }
+
+    private void applyMonitorTierState(SmartWalletProfileEntity wallet) {
+        applyMonitorTierState(wallet, new Date());
+    }
+
+    private void applyMonitorTierState(SmartWalletProfileEntity wallet, Date now) {
+        if (wallet == null) {
+            return;
+        }
+        Date effectiveNow = now == null ? new Date() : now;
+        if (isForceColdByInactivity(wallet, effectiveNow)) {
+            wallet.setMonitorTier(MONITOR_TIER_COLD);
+            wallet.setMonitorReason("STALE_LAST_TRADE_GT_" + OFFLINE_DAYS + "D");
+            return;
+        }
+        if (Boolean.TRUE.equals(wallet.getQualified()) && Boolean.TRUE.equals(wallet.getWatchEnabled())) {
+            wallet.setMonitorTier(MONITOR_TIER_HOT);
+            wallet.setMonitorReason("QUALIFIED_EXECUTABLE");
+            return;
+        }
+
+        List<String> warmReasons = warmReasons(wallet, effectiveNow);
+        if (!warmReasons.isEmpty()) {
+            wallet.setMonitorTier(MONITOR_TIER_WARM);
+            wallet.setMonitorReason(String.join("|", warmReasons));
+            return;
+        }
+
+        wallet.setMonitorTier(MONITOR_TIER_COLD);
+        wallet.setMonitorReason("NO_ACTIVE_MONITOR_SIGNAL");
+    }
+
+    private boolean isForceColdByInactivity(SmartWalletProfileEntity wallet, Date now) {
+        if (wallet == null || wallet.getLastTradeAt() == null) {
+            return false;
+        }
+        Date effectiveNow = now == null ? new Date() : now;
+        long daysSinceLastTrade = TimeUnit.MILLISECONDS.toDays(Math.max(0L, effectiveNow.getTime() - wallet.getLastTradeAt().getTime()));
+        return daysSinceLastTrade > OFFLINE_DAYS;
+    }
+
+    private List<String> warmReasons(SmartWalletProfileEntity wallet, Date now) {
+        List<String> reasons = new ArrayList<>();
+        if (wallet == null) {
+            return reasons;
+        }
+        Date effectiveNow = now == null ? new Date() : now;
+        if (isObserveCooldownActive(wallet)) {
+            reasons.add("OBSERVE_COOLDOWN");
+        }
+        if (wallet.getManualWatchEnabled() != null) {
+            reasons.add("MANUAL_OVERRIDE_PRESENT");
+        }
+        if (wallet.getLastDiscoveredAt() != null
+                && wallet.getLastDiscoveredAt().getTime() >= effectiveNow.getTime() - TimeUnit.DAYS.toMillis(WARM_RECENT_DISCOVERY_DAYS)) {
+            reasons.add("RECENT_DISCOVERY_" + WARM_RECENT_DISCOVERY_DAYS + "D");
+        }
+        BigDecimal warmThreshold = safe(properties.getMinWalletScore()).subtract(WARM_SCORE_BUFFER).max(BigDecimal.ZERO);
+        if (safe(wallet.getWalletScore()).compareTo(warmThreshold) >= 0) {
+            reasons.add("SCORE_NEAR_THRESHOLD");
+        }
+        return reasons;
+    }
+
+    private boolean isHotMonitorTier(SmartWalletProfileEntity wallet) {
+        return wallet != null && MONITOR_TIER_HOT.equalsIgnoreCase(wallet.getMonitorTier());
+    }
+
+    private boolean isWarmMonitorTier(SmartWalletProfileEntity wallet) {
+        return wallet != null && MONITOR_TIER_WARM.equalsIgnoreCase(wallet.getMonitorTier());
+    }
+
+    private boolean isColdMonitorTier(SmartWalletProfileEntity wallet) {
+        return wallet != null && MONITOR_TIER_COLD.equalsIgnoreCase(wallet.getMonitorTier());
     }
 
     private WalletBehaviorProfileView refreshBehaviorProfile(SmartWalletProfileEntity wallet) {

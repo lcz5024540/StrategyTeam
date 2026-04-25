@@ -39,6 +39,7 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletPositionMapper positionMapper;
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final PolymarketMarketMetadataService marketMetadataService;
+    private final SmartWalletMarketStateService marketStateService;
     private final SmartWalletAccountingService accountingService;
     private final TradeProfitabilityScoringService tradeProfitabilityScoringService;
     private final MarketConcentrationService concentrationService;
@@ -171,13 +172,16 @@ public class SmartWalletSignalRiskService {
             }
         }
 
-        PolymarketApiClient.MarketMetadata metadata = null;
-        try {
-            metadata = marketMetadataService.getByConditionId(event.getMarketId());
-        } catch (Exception ignored) {
-            // Keep risk evaluation resilient when metadata endpoint is temporarily flaky.
+        SmartWalletMarketStateService.MarketStateSnapshot marketState = marketStateService.refreshMarket(
+                event.getMarketId(),
+                event.getQuestion(),
+                StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
+        );
+        if (!marketState.isActive()) {
+            accepted = false;
+            reasons.add(marketState.blockingReasonMessage());
         }
-        Long endAt = metadata == null ? null : metadata.getEndAt();
+        Long endAt = marketState.marketEndAt();
         if (endAt != null && endAt > 0) {
             long remainingMs = endAt - System.currentTimeMillis();
             if (remainingMs <= 0) {

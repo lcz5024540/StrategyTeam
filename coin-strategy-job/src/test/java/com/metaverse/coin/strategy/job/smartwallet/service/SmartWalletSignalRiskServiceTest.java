@@ -38,6 +38,8 @@ class SmartWalletSignalRiskServiceTest {
     @Mock
     private PolymarketMarketMetadataService marketMetadataService;
     @Mock
+    private SmartWalletMarketStateService marketStateService;
+    @Mock
     private SmartWalletAccountingService accountingService;
     @Mock
     private TradeProfitabilityScoringService tradeProfitabilityScoringService;
@@ -71,6 +73,7 @@ class SmartWalletSignalRiskServiceTest {
                 positionMapper,
                 followTaskMapper,
                 marketMetadataService,
+                marketStateService,
                 accountingService,
                 tradeProfitabilityScoringService,
                 concentrationService,
@@ -450,6 +453,123 @@ class SmartWalletSignalRiskServiceTest {
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[CONCENTRATION_DOWNSIZE]")));
     }
 
+    @Test
+    void shouldRejectClosedMarketLifecycle() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xclosed")
+                .setWalletScore(new BigDecimal("0.85"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(50);
+        SmartWalletTradeEventEntity event = baseEvent();
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.90"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(true)
+                        .closed(true)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[MARKET_CLOSED]")));
+    }
+
+    @Test
+    void shouldRejectResolvedMarketLifecycle() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xresolved")
+                .setWalletScore(new BigDecimal("0.85"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(50);
+        SmartWalletTradeEventEntity event = baseEvent();
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.90"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_RESOLVED)
+                        .acceptingOrders(false)
+                        .closed(true)
+                        .resolvedOutcome("YES")
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[MARKET_RESOLVED]")));
+    }
+
+    @Test
+    void shouldRejectMarketNotAcceptingOrders() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xhalted")
+                .setWalletScore(new BigDecimal("0.85"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(50);
+        SmartWalletTradeEventEntity event = baseEvent();
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.90"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(false)
+                        .closed(false)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[MARKET_NOT_ACCEPTING_ORDERS]")));
+    }
+
+    @Test
+    void shouldRejectPastEndAtMarketLifecycle() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xpast")
+                .setWalletScore(new BigDecimal("0.85"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(50);
+        SmartWalletTradeEventEntity event = baseEvent();
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.90"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(true)
+                        .marketEndAt(System.currentTimeMillis() - 60_000L)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("past expected end time")));
+    }
+
     private void prepareCommonMocks(ConsensusSignalView consensus) {
         when(positionMapper.selectCount(any())).thenReturn(0L);
         when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
@@ -460,6 +580,14 @@ class SmartWalletSignalRiskServiceTest {
                 .marketId("market-1")
                 .endAt(System.currentTimeMillis() + 3_600_000L)
                 .build());
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(System.currentTimeMillis() + 3_600_000L)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
         when(consensusSignalService.buildConsensusForEvent(any())).thenReturn(consensus);
         when(consensusSignalService.buildConsensusForEvent(any(), any())).thenReturn(consensus);
         when(leaderboardStateService.adjustWalletScore(any(), any())).thenAnswer(invocation -> {

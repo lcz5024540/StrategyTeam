@@ -19,12 +19,27 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
-DEFAULT_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
+SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
+BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet.env"
 DEFAULT_APP_JAR="$APP_HOME/backend/app.jar"
 DEFAULT_RUNTIME_DIR="$APP_HOME/runtime"
 
+resolve_default_env_file() {
+  if [ -f "$SYSTEM_ENV_FILE" ]; then
+    echo "$SYSTEM_ENV_FILE"
+    return 0
+  fi
+
+  if [ -f "$BUNDLED_ENV_FILE" ]; then
+    echo "$BUNDLED_ENV_FILE"
+    return 0
+  fi
+
+  echo "$SYSTEM_ENV_FILE"
+}
+
 # ── 配置 ──────────────────────────────────────────────────────
-ENV_FILE="${SMART_WALLET_ENV_FILE:-$DEFAULT_ENV_FILE}"
+ENV_FILE="${SMART_WALLET_ENV_FILE:-$(resolve_default_env_file)}"
 SPRING_PROFILE="${SPRING_PROFILES_ACTIVE:-prod}"
 BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-}"
 APP_JAR="${SMART_WALLET_APP_JAR:-$DEFAULT_APP_JAR}"

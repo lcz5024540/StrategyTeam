@@ -65,6 +65,10 @@ public class SmartWalletProfileEntity {
     private String manualOverrideNote;
     @TableField("manual_override_updated_at")
     private Date manualOverrideUpdatedAt;
+    private String monitorTier;
+    private String monitorReason;
+    private Date lastEventSyncAt;
+    private Date lastMetricsRefreshAt;
     private Date createdAt;
     private Date updatedAt;
 }

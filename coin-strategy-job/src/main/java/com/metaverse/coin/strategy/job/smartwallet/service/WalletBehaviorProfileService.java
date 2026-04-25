@@ -130,11 +130,11 @@ public class WalletBehaviorProfileService {
                 .earlyExitRate(scale(orderStats.earlyExitRate, 4))
                 .profitEarlyExitRate(scale(orderStats.profitEarlyExitRate, 4))
                 .lossEarlyExitRate(scale(orderStats.lossEarlyExitRate, 4))
+                .earlySettlementRate(scale(orderStats.earlySettlementRate, 4))
                 .winSourceType(winSourceType)
                 .latencyAlphaRate(scale(alphaStats.latencyAlphaRate, 4))
                 .swingAlphaRate(scale(alphaStats.swingAlphaRate, 4))
                 .settlementWinRate(scale(orderStats.settlementWinRate, 4))
-                .medianHoldMinutes(scale(orderStats.medianHoldMinutes, 2))
                 .stabilityScore(scale(stabilityScore, 4))
                 .qualityScore(scale(qualityScore, 4))
                 .replicabilityScore(scale(replicabilityScore, 4))
@@ -194,11 +194,11 @@ public class WalletBehaviorProfileService {
                 .earlyExitRate(BigDecimal.ZERO)
                 .profitEarlyExitRate(BigDecimal.ZERO)
                 .lossEarlyExitRate(BigDecimal.ZERO)
+                .earlySettlementRate(BigDecimal.ZERO)
                 .winSourceType("UNKNOWN")
                 .latencyAlphaRate(BigDecimal.ZERO)
                 .swingAlphaRate(BigDecimal.ZERO)
                 .settlementWinRate(BigDecimal.ZERO)
-                .medianHoldMinutes(BigDecimal.ZERO)
                 .stabilityScore(BigDecimal.ZERO)
                 .qualityScore(BigDecimal.ZERO)
                 .replicabilityScore(BigDecimal.ZERO)
@@ -260,11 +260,11 @@ public class WalletBehaviorProfileService {
                 .setEarlyExitRate(safe(view.earlyExitRate()))
                 .setProfitEarlyExitRate(safe(view.profitEarlyExitRate()))
                 .setLossEarlyExitRate(safe(view.lossEarlyExitRate()))
+                .setEarlySettlementRate(safe(view.earlySettlementRate()))
                 .setWinSourceType(view.winSourceType())
                 .setLatencyAlphaRate(safe(view.latencyAlphaRate()))
                 .setSwingAlphaRate(safe(view.swingAlphaRate()))
                 .setSettlementWinRate(safe(view.settlementWinRate()))
-                .setMedianHoldMinutes(safe(view.medianHoldMinutes()))
                 .setStabilityScore(safe(view.stabilityScore()))
                 .setQualityScore(safe(view.qualityScore()))
                 .setReplicabilityScore(safe(view.replicabilityScore()))
@@ -355,10 +355,11 @@ public class WalletBehaviorProfileService {
                 .averageRoiRate(average(roiRates))
                 .medianRoiRate(median(roiRates))
                 .totalRealizedPnlUsdc(totalRealizedPnl)
-                .settlementCompletionRate(knownExitStyleCount == 0 ? BigDecimal.ZERO : ratio(settledCount, knownExitStyleCount))
-                .earlyExitRate(knownExitStyleCount == 0 ? BigDecimal.ZERO : ratio(earlyExitCount, knownExitStyleCount))
+                .settlementCompletionRate(orders.isEmpty() ? BigDecimal.ZERO : ratio(settledCount, orders.size()))
+                .earlyExitRate(orders.isEmpty() ? BigDecimal.ZERO : ratio(earlyExitCount, orders.size()))
                 .profitEarlyExitRate(profitableKnown == 0 ? BigDecimal.ZERO : ratio(profitableEarly, profitableKnown))
                 .lossEarlyExitRate(losingKnown == 0 ? BigDecimal.ZERO : ratio(losingEarly, losingKnown))
+                .earlySettlementRate(orders.isEmpty() ? BigDecimal.ZERO : ratio(earlyExitCount, orders.size()))
                 .settlementWinRate(settledCount == 0 ? BigDecimal.ZERO : ratio(settledWins, settledCount))
                 .medianHoldMinutes(median(holdMinutes))
                 .build();
@@ -744,6 +745,7 @@ public class WalletBehaviorProfileService {
         private final BigDecimal earlyExitRate;
         private final BigDecimal profitEarlyExitRate;
         private final BigDecimal lossEarlyExitRate;
+        private final BigDecimal earlySettlementRate;
         private final BigDecimal settlementWinRate;
         private final BigDecimal medianHoldMinutes;
 
@@ -758,6 +760,7 @@ public class WalletBehaviorProfileService {
                     .earlyExitRate(BigDecimal.ZERO)
                     .profitEarlyExitRate(BigDecimal.ZERO)
                     .lossEarlyExitRate(BigDecimal.ZERO)
+                    .earlySettlementRate(BigDecimal.ZERO)
                     .settlementWinRate(BigDecimal.ZERO)
                     .medianHoldMinutes(BigDecimal.ZERO)
                     .build();

@@ -11,6 +11,17 @@ import { compactAddress, formatNumber, formatPercent, truncateText } from '@/uti
 const LOOKBACK_OPTIONS = [7, 14, 30]
 const LIMIT_OPTIONS = [24, 40, 60]
 const PAGE_SIZE_OPTIONS = [10, 20, 40]
+const CATEGORY_OPTIONS = [
+  'POLITICS',
+  'WEATHER',
+  'SPORTS',
+  'CRYPTO',
+  'MACRO',
+  'BUSINESS',
+  'ENTERTAINMENT',
+  'CURRENT_EVENTS',
+  'OTHER',
+] as const
 
 function buildTrendOption(data: SmartWalletMarketMonitorTrendPoint[]): EChartsOption {
   return {
@@ -219,8 +230,25 @@ function riskClass(item: SmartWalletMarketMonitorItem) {
   return 'market-risk-badge muted'
 }
 
-function marketStateBadgeClass(item: SmartWalletMarketMonitorItem) {
-  return item.marketState === 'ACTIVE' ? 'badge accent' : 'badge warn'
+function categoryBadgeClass(category: string | null | undefined) {
+  if (category === 'POLITICS' || category === 'CURRENT_EVENTS') return 'badge accent'
+  if (category === 'WEATHER' || category === 'SPORTS') return 'badge positive'
+  if (category === 'CRYPTO' || category === 'BUSINESS' || category === 'MACRO') return 'badge warn'
+  return 'badge'
+}
+
+function formatSyncTime(value: string | null | undefined) {
+  if (!value) return '未同步'
+  return new Date(value).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function queryErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback
 }
 
 export function MarketsPage() {
@@ -237,7 +265,7 @@ export function MarketsPage() {
     ? Number(searchParams.get('pageSize'))
     : 10
   const keyword = searchParams.get('keyword')?.trim() || ''
-  const marketState = searchParams.get('marketState')?.trim() || ''
+  const category = searchParams.get('category')?.trim() || ''
   const concentrationBand = searchParams.get('concentrationBand')?.trim() || ''
   const positionDirection = searchParams.get('positionDirection')?.trim() || ''
   const hasPositionParam = searchParams.get('hasPosition')?.trim() || ''
@@ -269,19 +297,31 @@ export function MarketsPage() {
     })
   }
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    error: summaryError,
+    refetch: refetchSummary,
+  } = useQuery({
     queryKey: ['marketMonitoringSummary', limit, lookbackDays, trendDays],
     queryFn: () => reportsApi.getMarketMonitoringSummary(limit, lookbackDays, trendDays),
   })
 
-  const { data: marketTablePage, isLoading: tableLoading } = useQuery({
+  const canLoadTable = Boolean(data) || Boolean(summaryError)
+
+  const {
+    data: marketTablePage,
+    isLoading: tableLoading,
+    error: tableError,
+    refetch: refetchTable,
+  } = useQuery({
     queryKey: [
       'marketMonitoringTablePage',
       lookbackDays,
       page,
       pageSize,
       keyword,
-      marketState,
+      category,
       concentrationBand,
       hasPosition,
       positionDirection,
@@ -292,18 +332,15 @@ export function MarketsPage() {
         pageSize,
         lookbackDays,
         keyword: keyword || undefined,
-        marketState: marketState || undefined,
+        category: category || undefined,
         concentrationBand: concentrationBand || undefined,
         hasPosition,
         positionDirection: positionDirection || undefined,
       }),
+    enabled: canLoadTable,
   })
 
-  if (isLoading || !data) {
-    return <div className="loading">加载市场监控中...</div>
-  }
-
-  const metricCards = [
+  const metricCards = data ? [
     {
       label: '监控市场',
       value: formatNumber(data.monitoredMarketCount, 0),
@@ -340,7 +377,7 @@ export function MarketsPage() {
       hint: '存在待执行 follow task',
       tone: 'warn',
     },
-  ]
+  ] : []
 
   return (
     <>
@@ -386,42 +423,58 @@ export function MarketsPage() {
         <div className="section-head">
           <h2>市场总览</h2>
         </div>
-        <div className="metric-grid">
-          {metricCards.map((item) => (
-            <article key={item.label} className="metric-card">
-              <div className="label">{item.label}</div>
-              <div className={`value ${item.tone}`}>{item.value}</div>
-              <div className="hint">{item.hint}</div>
-            </article>
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="loading">加载市场监控中...</div>
+        ) : summaryError || !data ? (
+          <div className="query-state">
+            <strong>市场总览暂时不可用</strong>
+            <div className="table-subtext">{queryErrorMessage(summaryError, '市场监控摘要加载失败')}</div>
+            <button type="button" className="btn btn-secondary" onClick={() => void refetchSummary()}>
+              重试摘要
+            </button>
+          </div>
+        ) : (
+          <div className="metric-grid">
+            {metricCards.map((item) => (
+              <article key={item.label} className="metric-card">
+                <div className="label">{item.label}</div>
+                <div className={`value ${item.tone}`}>{item.value}</div>
+                <div className="hint">{item.hint}</div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
-      <div className="split-grid">
-        <section className="panel">
-          <div className="section-head">
-            <h2>市场趋势</h2>
+      {data ? (
+        <>
+          <div className="split-grid">
+            <section className="panel">
+              <div className="section-head">
+                <h2>市场趋势</h2>
+              </div>
+              <ReactECharts option={buildTrendOption(data.trend)} style={{ height: 340, width: '100%' }} />
+            </section>
+            <section className="panel">
+              <div className="section-head">
+                <h2>控盘排行</h2>
+              </div>
+              <ReactECharts option={buildRankingOption(data.items)} style={{ height: 340, width: '100%' }} />
+            </section>
           </div>
-          <ReactECharts option={buildTrendOption(data.trend)} style={{ height: 340, width: '100%' }} />
-        </section>
-        <section className="panel">
-          <div className="section-head">
-            <h2>控盘排行</h2>
-          </div>
-          <ReactECharts option={buildRankingOption(data.items)} style={{ height: 340, width: '100%' }} />
-        </section>
-      </div>
+
+          <section className="panel">
+            <div className="section-head">
+              <h2>控盘分布图</h2>
+            </div>
+            <ReactECharts option={buildScatterOption(data.items)} style={{ height: 360, width: '100%' }} />
+          </section>
+        </>
+      ) : null}
 
       <section className="panel">
         <div className="section-head">
-          <h2>控盘分布图</h2>
-        </div>
-        <ReactECharts option={buildScatterOption(data.items)} style={{ height: 360, width: '100%' }} />
-      </section>
-
-      <section className="panel">
-        <div className="section-head">
-          <h2>市场状态</h2>
+          <h2>活跃市场</h2>
         </div>
 
         <div className="table-toolbar">
@@ -433,12 +486,13 @@ export function MarketsPage() {
               onChange={(event) => updateParams({ keyword: event.target.value }, { resetPage: true })}
             />
             <select
-              value={marketState}
-              onChange={(event) => updateParams({ marketState: event.target.value }, { resetPage: true })}
+              value={category}
+              onChange={(event) => updateParams({ category: event.target.value }, { resetPage: true })}
             >
-              <option value="">全部市场状态</option>
-              <option value="ACTIVE">ACTIVE 进行中</option>
-              <option value="ENDED">ENDED 已结束</option>
+              <option value="">全部分类</option>
+              {CATEGORY_OPTIONS.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
             </select>
             <select
               value={concentrationBand}
@@ -481,12 +535,20 @@ export function MarketsPage() {
           <div className="table-toolbar-meta">
             {marketTablePage
               ? `筛选后 ${formatNumber(marketTablePage.totalItems, 0)} 条`
-              : '表格筛选中...'}
+              : canLoadTable ? '表格筛选中...' : '等待市场总览加载完成...'}
           </div>
         </div>
 
-        {tableLoading || !marketTablePage ? (
+        {!canLoadTable || tableLoading ? (
           <div className="loading">加载市场状态表中...</div>
+        ) : tableError || !marketTablePage ? (
+          <div className="query-state">
+            <strong>市场状态表暂时不可用</strong>
+            <div className="table-subtext">{queryErrorMessage(tableError, '市场状态表加载失败')}</div>
+            <button type="button" className="btn btn-secondary" onClick={() => void refetchTable()}>
+              重试表格
+            </button>
+          </div>
         ) : (
           <>
             <div className="table-wrap">
@@ -494,7 +556,7 @@ export function MarketsPage() {
                 <thead>
                   <tr>
                     <th>市场</th>
-                    <th>市场状态</th>
+                    <th>分类</th>
                     <th>集中度</th>
                     <th>Top1</th>
                     <th>Top3</th>
@@ -519,6 +581,13 @@ export function MarketsPage() {
                       <td>
                         <div className="market-cell-title">{truncateText(item.question || item.marketId, 48)}</div>
                         <div className="market-cell-sub mono">{item.marketId}</div>
+                        <div className="market-cell-sub">
+                          生命周期: {item.marketLifecycle || item.marketState}
+                        </div>
+                        <div className="market-cell-sub">
+                          元数据: {formatSyncTime(item.lastMetadataSyncAt)}
+                          {item.metadataStale ? ' · 已过期' : ' · 最新'}
+                        </div>
                         {item.topHolderAddresses?.length ? (
                           <div className="market-chip-row">
                             {item.topHolderAddresses.slice(0, 3).map((address) => (
@@ -527,8 +596,20 @@ export function MarketsPage() {
                           </div>
                         ) : null}
                       </td>
-                      <td><span className={marketStateBadgeClass(item)}>{item.marketState}</span></td>
-                      <td><span className={riskClass(item)}>{item.concentrationBand}</span></td>
+                      <td>
+                        <span className={categoryBadgeClass(item.normalizedCategory)}>
+                          {item.normalizedCategory || 'OTHER'}
+                        </span>
+                        <div className="market-cell-sub">{item.sourceCategory || '-'}</div>
+                      </td>
+                      <td>
+                        <span className={riskClass(item)}>{item.concentrationBand}</span>
+                        <div className="market-cell-sub">
+                          {item.lastConcentrationSnapshotAt
+                            ? `快照 ${formatSyncTime(item.lastConcentrationSnapshotAt)}${item.concentrationStale ? ' · 已过期' : ''}`
+                            : '快照未采样'}
+                        </div>
+                      </td>
                       <td className="mono">{formatPercent(item.top1Pct)}</td>
                       <td className="mono">{formatPercent(item.top3Pct)}</td>
                       <td className="mono">{formatPercent(item.top5Pct)}</td>

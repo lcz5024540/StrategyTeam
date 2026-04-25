@@ -99,15 +99,18 @@ class SmartWalletProfileStoreServiceTest {
                 .setWatchEnabled(Boolean.TRUE);
         SmartWalletFollowTaskEntity task1 = new SmartWalletFollowTaskEntity().setId(101L).setWalletAddress("0xee613b").setStatus("FOLLOWED");
         SmartWalletFollowTaskEntity task2 = new SmartWalletFollowTaskEntity().setId(102L).setWalletAddress("0xee613b").setStatus("FOLLOWED");
+        SmartWalletFollowTaskEntity task3 = new SmartWalletFollowTaskEntity().setId(103L).setWalletAddress("0xee613b").setStatus("FOLLOWED");
         SmartWalletOrderEntity order1 = new SmartWalletOrderEntity().setFollowTaskId(101L).setPositionId(1001L);
         SmartWalletOrderEntity order2 = new SmartWalletOrderEntity().setFollowTaskId(102L).setPositionId(1002L);
+        SmartWalletOrderEntity order3 = new SmartWalletOrderEntity().setFollowTaskId(103L).setPositionId(1003L);
         SmartWalletPositionEntity closedLoss = new SmartWalletPositionEntity().setId(1001L).setStatus("CLOSED").setRealizedPnlUsdc(new BigDecimal("-50"));
         SmartWalletPositionEntity claimedWin = new SmartWalletPositionEntity().setId(1002L).setStatus("CLAIMED").setRealizedPnlUsdc(new BigDecimal("20"));
+        SmartWalletPositionEntity resolvedLoss = new SmartWalletPositionEntity().setId(1003L).setStatus("RESOLVED_UNCLAIMED").setRealizedPnlUsdc(new BigDecimal("-10"));
 
         when(profileMapper.selectList(any())).thenReturn(List.of(wallet));
-        when(followTaskMapper.selectList(any())).thenReturn(List.of(task1, task2));
-        when(orderMapper.selectList(any())).thenReturn(List.of(order1, order2));
-        when(positionMapper.selectBatchIds(any())).thenReturn(List.of(closedLoss, claimedWin));
+        when(followTaskMapper.selectList(any())).thenReturn(List.of(task1, task2, task3));
+        when(orderMapper.selectList(any())).thenReturn(List.of(order1, order2, order3));
+        when(positionMapper.selectBatchIds(any())).thenReturn(List.of(closedLoss, claimedWin, resolvedLoss));
 
         SmartWalletProperties properties = new SmartWalletProperties();
         properties.setMinWinRate(new BigDecimal("0.80"));
@@ -122,20 +125,11 @@ class SmartWalletProfileStoreServiceTest {
                 walletBehaviorProfileService
         );
 
-        when(walletBehaviorProfileService.getProfile("0xee613b")).thenReturn(null);
-        when(walletArchetypeClassifierService.classify("0xee613b", wallet)).thenReturn(WalletArchetypeView.builder()
-                .walletAddress("0xee613b")
-                .archetype("SWING")
-                .followLane("SWING_FOLLOW")
-                .labelSampleSize(10)
-                .followFitScore(new BigDecimal("0.65"))
-                .build());
-
         service.refreshInternalWinRate();
 
         ArgumentCaptor<SmartWalletProfileEntity> captor = ArgumentCaptor.forClass(SmartWalletProfileEntity.class);
         verify(profileMapper).updateById(captor.capture());
-        assertEquals(new BigDecimal("0.7000"), captor.getValue().getWinRate());
+        assertEquals(new BigDecimal("0.7333"), captor.getValue().getWinRate());
         assertEquals(Boolean.FALSE, captor.getValue().getQualified());
         assertEquals(Boolean.FALSE, captor.getValue().getWatchEnabled());
     }
@@ -487,5 +481,89 @@ class SmartWalletProfileStoreServiceTest {
         assertEquals(Boolean.TRUE, wallet.getQualified());
         assertEquals(Boolean.TRUE, wallet.getWatchEnabled());
         assertTrue(service.isObserveCooldownActive(wallet));
+    }
+
+    @Test
+    void shouldPlaceObservedWalletIntoWarmMonitorTier() {
+        SmartWalletProfileEntity wallet = new SmartWalletProfileEntity()
+                .setWalletAddress("0xwarm")
+                .setSource("POLYMARKET")
+                .setWinRate(new BigDecimal("0.80"))
+                .setRecentWinRate30d(new BigDecimal("0.78"))
+                .setRecentWinRate7d(new BigDecimal("0.32"))
+                .setRecentTradeCount7d(8)
+                .setRecentTradeCount30d(20)
+                .setRealizedPnlUsdc(new BigDecimal("2500"))
+                .setTotalTrades(120)
+                .setAverageRoiRate(new BigDecimal("0.18"))
+                .setMaxDrawdownRate(new BigDecimal("0.12"))
+                .setWalletScore(new BigDecimal("0.89"));
+
+        SmartWalletProperties properties = new SmartWalletProperties();
+        properties.setMinWinRate(new BigDecimal("0.60"));
+        properties.setMinWalletScore(new BigDecimal("0.70"));
+        properties.setMinTotalTrades(10);
+        properties.setMinRealizedPnlUsdc(new BigDecimal("100"));
+        properties.setMaxDrawdownRate(new BigDecimal("0.30"));
+
+        SmartWalletProfileStoreService service = new SmartWalletProfileStoreService(
+                properties,
+                profileMapper,
+                new SmartWalletScoringService(),
+                followTaskMapper,
+                orderMapper,
+                positionMapper,
+                walletArchetypeClassifierService,
+                walletBehaviorProfileService
+        );
+
+        service.applyQualificationState(wallet);
+
+        assertEquals(Boolean.TRUE, wallet.getQualified());
+        assertEquals(Boolean.FALSE, wallet.getWatchEnabled());
+        assertEquals("WARM", wallet.getMonitorTier());
+        assertTrue(wallet.getMonitorReason().contains("OBSERVE_COOLDOWN"));
+    }
+
+    @Test
+    void shouldForceColdMonitorTierForStaleWallets() {
+        SmartWalletProfileEntity wallet = new SmartWalletProfileEntity()
+                .setWalletAddress("0xcold")
+                .setSource("POLYMARKET")
+                .setWinRate(new BigDecimal("0.82"))
+                .setRecentWinRate30d(new BigDecimal("0.79"))
+                .setRecentTradeCount7d(0)
+                .setRecentTradeCount30d(2)
+                .setRealizedPnlUsdc(new BigDecimal("2800"))
+                .setTotalTrades(160)
+                .setAverageRoiRate(new BigDecimal("0.15"))
+                .setMaxDrawdownRate(new BigDecimal("0.12"))
+                .setWalletScore(new BigDecimal("0.91"))
+                .setLastTradeAt(new Date(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(91)));
+
+        SmartWalletProperties properties = new SmartWalletProperties();
+        properties.setMinWinRate(new BigDecimal("0.60"));
+        properties.setMinWalletScore(new BigDecimal("0.70"));
+        properties.setMinTotalTrades(10);
+        properties.setMinRealizedPnlUsdc(new BigDecimal("100"));
+        properties.setMaxDrawdownRate(new BigDecimal("0.30"));
+
+        SmartWalletProfileStoreService service = new SmartWalletProfileStoreService(
+                properties,
+                profileMapper,
+                new SmartWalletScoringService(),
+                followTaskMapper,
+                orderMapper,
+                positionMapper,
+                walletArchetypeClassifierService,
+                walletBehaviorProfileService
+        );
+
+        service.applyQualificationState(wallet);
+
+        assertEquals(Boolean.TRUE, wallet.getQualified());
+        assertEquals(Boolean.FALSE, wallet.getWatchEnabled());
+        assertEquals("COLD", wallet.getMonitorTier());
+        assertTrue(wallet.getMonitorReason().contains("STALE_LAST_TRADE_GT_90D"));
     }
 }

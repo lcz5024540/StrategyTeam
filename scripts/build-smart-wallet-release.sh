@@ -36,6 +36,7 @@ mkdir -p "$RELEASE_DIR/backend" "$RELEASE_DIR/frontend" "$RELEASE_DIR/bin" "$REL
 cp "$APP_JAR" "$RELEASE_DIR/backend/app.jar"
 cp -R "$FRONTEND_DIR/dist" "$RELEASE_DIR/frontend/"
 cp "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
+cp "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
 cp "$ROOT_DIR/scripts/install-smart-wallet-artifacts.sh" "$ROOT_DIR/scripts/install-smart-wallet-linux-service.sh" "$RELEASE_DIR/bin/"
 cp "$ROOT_DIR/scripts/polymarket_clob_client.py" "$ROOT_DIR/scripts/polymarket_http.py" "$RELEASE_DIR/runtime/"
 cp -R "$ROOT_DIR/deploy/linux" "$RELEASE_DIR/deploy/"

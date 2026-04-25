@@ -21,7 +21,7 @@ public record WalletDiagnosisView(
         BigDecimal settlementWinRate,
         BigDecimal latencyAlphaRate,
         BigDecimal swingAlphaRate,
-        BigDecimal medianHoldMinutes,
+        BigDecimal earlySettlementRate,
         String recommendedExitLane,
         String summary,
         List<String> strengths,

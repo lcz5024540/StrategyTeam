@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.WalletFollowCandidateMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletFollowCandidateEntity;
@@ -14,6 +15,7 @@ import com.metaverse.coin.strategy.job.smartwallet.intelligence.service.WalletEn
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -29,6 +31,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,9 +69,47 @@ class SmartWalletFollowTaskServiceTest {
     private PolymarketMarketMetadataService marketMetadataService;
     @Mock
     private SmartWalletTimeFormatter timeFormatter;
+    @Mock
+    private SmartWalletMarketInfoService marketInfoService;
+    @Mock
+    private SmartWalletMarketStateService marketStateService;
 
     @InjectMocks
     private SmartWalletFollowTaskService service;
+
+    @BeforeEach
+    void setUp() {
+        AtomicReference<SmartWalletMarketInfoEntity> marketInfoRef = new AtomicReference<>();
+        when(marketInfoService.populate(any(SmartWalletFollowTaskEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(marketInfoService.getOrCreate(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    SmartWalletMarketInfoEntity marketInfo = new SmartWalletMarketInfoEntity()
+                        .setId(9001L)
+                        .setMarketId(invocation.getArgument(0))
+                        .setQuestion(invocation.getArgument(2))
+                        .setOutcome(invocation.getArgument(1))
+                        .setMarketEndAt(invocation.getArgument(5));
+                    marketInfoRef.set(marketInfo);
+                    return marketInfo;
+                });
+        when(marketInfoService.getById(anyLong()))
+                .thenAnswer(invocation -> {
+                    SmartWalletMarketInfoEntity marketInfo = marketInfoRef.get();
+                    if (marketInfo != null && marketInfo.getId().equals(invocation.getArgument(0))) {
+                        return marketInfo;
+                    }
+                    return new SmartWalletMarketInfoEntity().setId(invocation.getArgument(0));
+                });
+        when(marketStateService.refreshMarket(any(), any(), any()))
+                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(System.currentTimeMillis() + 3_600_000L)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+    }
 
     @Test
     void shouldSortExecutableTasksByEvBeforeStake() {
@@ -233,6 +274,73 @@ class SmartWalletFollowTaskServiceTest {
         assertEquals("PENDING", taskRef.get().getStatus());
         assertEquals(candidateRef.get().getId(), taskRef.get().getFollowCandidateId());
         assertEquals(Long.valueOf(123456789L), taskRef.get().getMarketEndAt());
+    }
+
+    @Test
+    void shouldCreateSkippedTaskWhenMarketLifecycleIsClosed() {
+        SmartWalletTradeEventEntity event = tradeEvent()
+                .setId(null)
+                .setSource("POLYMARKET")
+                .setExternalTradeId("trade-closed")
+                .setProcessed(Boolean.FALSE);
+        SmartWalletProfileEntity profile = profile();
+        AtomicReference<WalletFollowCandidateEntity> candidateRef = new AtomicReference<>();
+        AtomicReference<SmartWalletFollowTaskEntity> taskRef = new AtomicReference<>();
+
+        when(properties.getFollowDelaySeconds()).thenReturn(3);
+        when(properties.isAutoExecutionEnabled()).thenReturn(false);
+        when(tradeEventMapper.selectOne(any())).thenReturn(null);
+        doAnswer(invocation -> {
+            SmartWalletTradeEventEntity inserted = invocation.getArgument(0);
+            inserted.setId(1001L);
+            return 1;
+        }).when(tradeEventMapper).insert(any());
+        when(profileStoreService.listWatchEnabled()).thenReturn(List.of(profile));
+        when(entityResolutionService.resolveEntity("0xabc")).thenReturn(EntityResolutionResult.selfEntity("0xabc"));
+        when(consensusSignalService.buildConsensusForEvent(any(SmartWalletTradeEventEntity.class))).thenReturn(ConsensusSignalView.builder()
+                .dedupedEntityCount(1)
+                .build());
+        doAnswer(invocation -> {
+            WalletFollowCandidateEntity inserted = invocation.getArgument(0);
+            inserted.setId(501L);
+            candidateRef.set(inserted);
+            return 1;
+        }).when(followCandidateMapper).insert(any());
+        doAnswer(invocation -> {
+            SmartWalletFollowTaskEntity inserted = invocation.getArgument(0);
+            inserted.setId(601L);
+            taskRef.set(inserted);
+            return 1;
+        }).when(followTaskMapper).insert(any());
+        when(marketInfoService.getOrCreate(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new SmartWalletMarketInfoEntity()
+                        .setId(901L)
+                        .setMarketId("market-1")
+                        .setQuestion("Will this market resolve yes?")
+                        .setOutcome("YES"));
+        when(marketInfoService.getById(901L)).thenReturn(new SmartWalletMarketInfoEntity()
+                .setId(901L)
+                .setMarketId("market-1")
+                .setQuestion("Will this market resolve yes?")
+                .setOutcome("YES"));
+        when(marketStateService.refreshMarket(eq("market-1"), any(), any()))
+                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(false)
+                        .closed(true)
+                        .marketEndAt(System.currentTimeMillis() - 60_000L)
+                        .build());
+
+        SmartWalletTradeEventEntity recorded = service.recordTradeEvent(event);
+
+        assertNotNull(recorded.getId());
+        assertNotNull(candidateRef.get());
+        assertNotNull(taskRef.get());
+        assertEquals("SKIPPED", taskRef.get().getStatus());
+        assertTrue(taskRef.get().getErrorMessage().contains("[MARKET_CLOSED]")
+                || taskRef.get().getErrorMessage().contains("[MARKET_NOT_ACCEPTING_ORDERS]"));
+        assertEquals(Boolean.TRUE, event.getProcessed());
     }
 
     private SmartWalletFollowTaskEntity followTask(Long id, BigDecimal stake) {

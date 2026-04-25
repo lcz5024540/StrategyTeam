@@ -87,6 +87,16 @@ BEGIN
     FROM information_schema.columns
     WHERE table_schema = v_schema_name
       AND table_name = 'smart_wallet_behavior_profile'
+      AND column_name = 'early_settlement_rate';
+    IF v_exists = 0 THEN
+        ALTER TABLE `smart_wallet_behavior_profile`
+            ADD COLUMN `early_settlement_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前结算占比' AFTER `loss_early_exit_rate`;
+    END IF;
+
+    SELECT COUNT(1) INTO v_exists
+    FROM information_schema.columns
+    WHERE table_schema = v_schema_name
+      AND table_name = 'smart_wallet_behavior_profile'
       AND column_name = 'median_hold_minutes';
     IF v_exists = 0 THEN
         ALTER TABLE `smart_wallet_behavior_profile`

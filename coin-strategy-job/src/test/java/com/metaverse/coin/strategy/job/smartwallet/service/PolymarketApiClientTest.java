@@ -5,13 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PolymarketApiClientTest {
@@ -112,5 +116,43 @@ class PolymarketApiClientTest {
         assertEquals(0, new BigDecimal("30").compareTo(entries.get(0).getSize()));
         assertEquals(0, new BigDecimal("12.6").compareTo(entries.get(0).getInitialValue()));
         assertEquals("YES", entries.get(1).getOutcome());
+    }
+
+    @Test
+    void shouldRejectNonJsonResponseBodiesBeforeParsing() throws Exception {
+        PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
+        Method method = PolymarketApiClient.class.getDeclaredMethod("parseJsonBody", String.class, URI.class, String.class);
+        method.setAccessible(true);
+
+        InvocationTargetException error = assertThrows(InvocationTargetException.class,
+                () -> method.invoke(client,
+                        "error code: 524",
+                        URI.create("https://gamma-api.polymarket.com/markets?condition_ids=condition-3"),
+                        "curl fallback"));
+
+        assertTrue(error.getCause() instanceof IOException);
+        assertTrue(error.getCause().getMessage().contains("non-JSON response"));
+        assertTrue(error.getCause().getMessage().contains("error code: 524"));
+    }
+
+    @Test
+    void shouldParseValidJsonResponseBodiesThroughSharedHelper() throws Exception {
+        PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
+        Method method = PolymarketApiClient.class.getDeclaredMethod("parseJsonBody", String.class, URI.class, String.class);
+        method.setAccessible(true);
+
+        JsonNode parsed = (JsonNode) method.invoke(client,
+                """
+                [
+                  {
+                    "conditionId": "condition-4"
+                  }
+                ]
+                """,
+                URI.create("https://gamma-api.polymarket.com/markets?condition_ids=condition-4"),
+                "http");
+
+        assertTrue(parsed.isArray());
+        assertEquals("condition-4", parsed.get(0).get("conditionId").asText());
     }
 }

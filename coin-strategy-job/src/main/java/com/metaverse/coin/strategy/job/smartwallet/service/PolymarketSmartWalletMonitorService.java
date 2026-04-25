@@ -55,6 +55,14 @@ public class PolymarketSmartWalletMonitorService {
         return profileStoreService.listWatchEnabled();
     }
 
+    public List<SmartWalletProfileEntity> listWarmWatchlist() {
+        return profileStoreService.listWarmWatchlist();
+    }
+
+    public List<SmartWalletProfileEntity> listColdProfiles() {
+        return profileStoreService.listColdProfiles();
+    }
+
     public List<SmartWalletProfileEntity> listWatchlist() {
         return listExecutableWatchlist();
     }

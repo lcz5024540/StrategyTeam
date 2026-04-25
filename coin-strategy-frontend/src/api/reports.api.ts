@@ -31,7 +31,7 @@ export const reportsApi = {
     pageSize?: number
     lookbackDays?: number
     keyword?: string
-    marketState?: string
+    category?: string
     concentrationBand?: string
     hasPosition?: boolean | null
     positionDirection?: string

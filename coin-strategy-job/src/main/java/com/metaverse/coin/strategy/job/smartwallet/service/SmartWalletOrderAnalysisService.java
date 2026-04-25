@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -26,53 +25,28 @@ import java.util.Map;
 public class SmartWalletOrderAnalysisService {
 
     private static final String SOURCE = "POLYMARKET";
-    private static final long EARLY_EXIT_TOLERANCE_MS = 15L * 60_000L;
 
     private final SmartWalletOrderAnalysisMapper orderAnalysisMapper;
-    private final PolymarketApiClient polymarketApiClient;
-    private final PolymarketMarketMetadataService marketMetadataService;
+    private final WalletOrderAggregationService walletOrderAggregationService;
 
     public List<SmartWalletOrderAnalysisEntity> analyzeAndPersist(String walletAddress) {
         if (!StringUtils.hasText(walletAddress)) {
             return List.of();
         }
         String normalizedWallet = walletAddress.trim();
-
-        List<PolymarketApiClient.ClosedPosition> closedPositions;
-        try {
-            closedPositions = polymarketApiClient.fetchClosedPositions(normalizedWallet);
-        } catch (Exception ex) {
-            log.debug("Failed to fetch closed positions for wallet={}: {}", normalizedWallet, ex.getMessage());
+        WalletOrderAggregationService.WalletSnapshot snapshot = walletOrderAggregationService.snapshot(normalizedWallet);
+        List<WalletOrderAggregationService.ClosedOrderSnapshot> closedOrders = snapshot.getClosedOrders();
+        if (closedOrders == null || closedOrders.isEmpty()) {
             return listPersisted(normalizedWallet);
         }
-        if (closedPositions == null || closedPositions.isEmpty()) {
-            return listPersisted(normalizedWallet);
-        }
-
-        List<PolymarketApiClient.UserTrade> trades;
-        try {
-            trades = polymarketApiClient.fetchUserTrades(normalizedWallet, 200);
-        } catch (Exception ex) {
-            log.debug("Failed to fetch user trades for wallet={}: {}", normalizedWallet, ex.getMessage());
-            trades = List.of();
-        }
-
-        Map<String, TradeCursor> tradeCursorByKey = buildTradeCursorByKey(trades);
         Map<String, SmartWalletOrderAnalysisEntity> existingByKey = new HashMap<>();
         for (SmartWalletOrderAnalysisEntity existing : listPersisted(normalizedWallet)) {
             existingByKey.put(uniqueKey(existing.getMarketId(), existing.getOutcome(), existing.getClosedAt()), existing);
         }
 
         List<SmartWalletOrderAnalysisEntity> built = new ArrayList<>();
-        List<PolymarketApiClient.ClosedPosition> sortedPositions = closedPositions.stream()
-                .filter(position -> position != null)
-                .sorted(Comparator.comparing(PolymarketApiClient.ClosedPosition::getClosedAt,
-                        Comparator.nullsLast(Comparator.naturalOrder())))
-                .toList();
-
-        for (PolymarketApiClient.ClosedPosition position : sortedPositions) {
-            SmartWalletOrderAnalysisEntity entity = buildEntity(normalizedWallet, position,
-                    tradeCursorByKey.get(tradeKey(position.getMarketId(), position.getOutcome())));
+        for (WalletOrderAggregationService.ClosedOrderSnapshot order : closedOrders) {
+            SmartWalletOrderAnalysisEntity entity = buildEntity(order);
             String uniqueKey = uniqueKey(entity.getMarketId(), entity.getOutcome(), entity.getClosedAt());
             SmartWalletOrderAnalysisEntity existing = existingByKey.get(uniqueKey);
             if (existing == null) {
@@ -126,6 +100,9 @@ public class SmartWalletOrderAnalysisService {
         if (row == null) {
             return null;
         }
+        boolean earlySettlement = row.getClosedAt() != null
+                && row.getMarketEndAt() != null
+                && row.getClosedAt().getTime() < row.getMarketEndAt();
         return WalletOrderAnalysisView.builder()
                 .walletAddress(row.getWalletAddress())
                 .marketId(row.getMarketId())
@@ -133,6 +110,7 @@ public class SmartWalletOrderAnalysisService {
                 .outcome(row.getOutcome())
                 .openedAt(row.getOpenedAt())
                 .closedAt(row.getClosedAt())
+                .settlementAt(row.getClosedAt())
                 .marketEndAt(row.getMarketEndAt())
                 .investedUsdc(scale(row.getInvestedUsdc(), 4))
                 .realizedPnlUsdc(scale(row.getRealizedPnlUsdc(), 4))
@@ -142,6 +120,8 @@ public class SmartWalletOrderAnalysisService {
                 .exitLeadMinutes(scale(row.getExitLeadMinutes(), 2))
                 .isWin(Boolean.TRUE.equals(row.getIsWin()))
                 .sourceConfidence(scale(row.getSourceConfidence(), 4))
+                .pendingSettlement(false)
+                .earlySettlement(earlySettlement)
                 .build();
     }
 
@@ -155,125 +135,32 @@ public class SmartWalletOrderAnalysisService {
                 .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt));
     }
 
-    private SmartWalletOrderAnalysisEntity buildEntity(String walletAddress,
-                                                       PolymarketApiClient.ClosedPosition position,
-                                                       TradeCursor tradeCursor) {
+    private SmartWalletOrderAnalysisEntity buildEntity(WalletOrderAggregationService.ClosedOrderSnapshot order) {
         Date now = new Date();
-        Long openedAt = tradeCursor == null ? null : tradeCursor.consumeOpenTime(position.getClosedAt());
-        PolymarketApiClient.MarketMetadata metadata = null;
-        try {
-            metadata = marketMetadataService.getBestEffortByConditionId(
-                    position.getMarketId(),
-                    false,
-                    position.getQuestion(),
-                    StringUtils.hasText(position.getOutcome()) ? List.of(position.getOutcome()) : List.of()
-            );
-        } catch (Exception ex) {
-            log.debug("Failed to resolve metadata for wallet={} marketId={}: {}", walletAddress, position.getMarketId(), ex.getMessage());
-        }
-
-        BigDecimal investedUsdc = safe(position.getSizeBought());
-        BigDecimal realizedPnlUsdc = safe(position.getRealizedPnl()).add(safe(position.getCashPnl()));
-        BigDecimal roiRate = investedUsdc.compareTo(BigDecimal.ZERO) <= 0
-                ? BigDecimal.ZERO
-                : realizedPnlUsdc.divide(investedUsdc, 8, RoundingMode.HALF_UP);
-        Long closedAt = position.getClosedAt();
-        Long marketEndAt = metadata == null ? null : metadata.getEndAt();
-        String exitStyle = resolveExitStyle(closedAt, marketEndAt, realizedPnlUsdc);
-        BigDecimal holdMinutes = openedAt == null || closedAt == null
-                ? null
-                : BigDecimal.valueOf(Math.max(0L, closedAt - openedAt))
-                .divide(new BigDecimal("60000"), 2, RoundingMode.HALF_UP);
-        BigDecimal exitLeadMinutes = closedAt == null || marketEndAt == null
-                ? null
-                : BigDecimal.valueOf(Math.max(0L, marketEndAt - closedAt))
-                .divide(new BigDecimal("60000"), 2, RoundingMode.HALF_UP);
-
         return new SmartWalletOrderAnalysisEntity()
-                .setWalletAddress(walletAddress)
+                .setWalletAddress(order.getWalletAddress())
                 .setSource(SOURCE)
-                .setMarketId(position.getMarketId())
-                .setQuestion(position.getQuestion())
-                .setOutcome(normalizeOutcome(position.getOutcome()))
-                .setOpenedAt(openedAt == null ? null : new Date(openedAt))
-                .setClosedAt(closedAt == null ? null : new Date(closedAt))
-                .setMarketEndAt(marketEndAt)
-                .setAverageEntryPrice(safe(position.getAvgPrice()))
-                .setInvestedUsdc(investedUsdc)
-                .setRealizedPnlUsdc(realizedPnlUsdc)
-                .setRoiRate(roiRate)
-                .setHoldMinutes(holdMinutes)
-                .setExitStyle(exitStyle)
-                .setExitLeadMinutes(exitLeadMinutes)
-                .setIsWin(realizedPnlUsdc.compareTo(BigDecimal.ZERO) > 0)
-                .setSourceConfidence(sourceConfidence(openedAt, marketEndAt, investedUsdc, closedAt))
+                .setMarketId(order.getMarketId())
+                .setQuestion(order.getQuestion())
+                .setOutcome(normalizeOutcome(order.getOutcome()))
+                .setOpenedAt(order.getOpenedAt())
+                .setClosedAt(order.getSettlementAt())
+                .setMarketEndAt(order.getMarketEndAt())
+                .setAverageEntryPrice(BigDecimal.ZERO)
+                .setInvestedUsdc(safe(order.getInvestedUsdc()))
+                .setRealizedPnlUsdc(safe(order.getRealizedPnlUsdc()))
+                .setRoiRate(order.getRoiRate() == null ? BigDecimal.ZERO : order.getRoiRate())
+                .setHoldMinutes(order.getHoldMinutes())
+                .setExitStyle(order.getExitStyle())
+                .setExitLeadMinutes(order.getExitLeadMinutes())
+                .setIsWin(Boolean.TRUE.equals(order.getIsWin()))
+                .setSourceConfidence(order.getSourceConfidence())
                 .setCreatedAt(now)
                 .setUpdatedAt(now);
     }
 
-    private Map<String, TradeCursor> buildTradeCursorByKey(List<PolymarketApiClient.UserTrade> trades) {
-        Map<String, List<PolymarketApiClient.UserTrade>> grouped = new LinkedHashMap<>();
-        if (trades != null) {
-            for (PolymarketApiClient.UserTrade trade : trades) {
-                if (trade == null || !StringUtils.hasText(trade.getMarketId()) || trade.getTradedAt() == null) {
-                    continue;
-                }
-                grouped.computeIfAbsent(tradeKey(trade.getMarketId(), trade.getOutcome()), key -> new ArrayList<>()).add(trade);
-            }
-        }
-        Map<String, TradeCursor> cursorByKey = new HashMap<>();
-        for (Map.Entry<String, List<PolymarketApiClient.UserTrade>> entry : grouped.entrySet()) {
-            List<PolymarketApiClient.UserTrade> sorted = entry.getValue().stream()
-                    .sorted(Comparator.comparing(PolymarketApiClient.UserTrade::getTradedAt))
-                    .toList();
-            cursorByKey.put(entry.getKey(), new TradeCursor(sorted));
-        }
-        return cursorByKey;
-    }
-
-    private String resolveExitStyle(Long closedAt, Long marketEndAt, BigDecimal realizedPnlUsdc) {
-        if (closedAt == null || marketEndAt == null) {
-            return "UNKNOWN";
-        }
-        boolean earlyExit = closedAt + EARLY_EXIT_TOLERANCE_MS < marketEndAt;
-        if (earlyExit) {
-            if (realizedPnlUsdc.compareTo(BigDecimal.ZERO) > 0) {
-                return "EARLY_PROFIT";
-            }
-            if (realizedPnlUsdc.compareTo(BigDecimal.ZERO) < 0) {
-                return "EARLY_STOP";
-            }
-            return "UNKNOWN";
-        }
-        if (realizedPnlUsdc.compareTo(BigDecimal.ZERO) > 0) {
-            return "SETTLED_WIN";
-        }
-        if (realizedPnlUsdc.compareTo(BigDecimal.ZERO) < 0) {
-            return "SETTLED_LOSS";
-        }
-        return "UNKNOWN";
-    }
-
-    private BigDecimal sourceConfidence(Long openedAt, Long marketEndAt, BigDecimal investedUsdc, Long closedAt) {
-        BigDecimal confidence = new BigDecimal("0.35");
-        if (openedAt != null) {
-            confidence = confidence.add(new BigDecimal("0.25"));
-        }
-        if (marketEndAt != null && closedAt != null) {
-            confidence = confidence.add(new BigDecimal("0.25"));
-        }
-        if (safe(investedUsdc).compareTo(BigDecimal.ZERO) > 0) {
-            confidence = confidence.add(new BigDecimal("0.15"));
-        }
-        return confidence.min(BigDecimal.ONE).setScale(4, RoundingMode.HALF_UP);
-    }
-
-    private String tradeKey(String marketId, String outcome) {
-        return defaultString(marketId) + "|" + normalizeOutcome(outcome);
-    }
-
     private String uniqueKey(String marketId, String outcome, Date closedAt) {
-        return tradeKey(marketId, outcome) + "|" + (closedAt == null ? "NULL" : closedAt.getTime());
+        return defaultString(marketId) + "|" + normalizeOutcome(outcome) + "|" + (closedAt == null ? "NULL" : closedAt.getTime());
     }
 
     private String normalizeOutcome(String outcome) {
@@ -290,36 +177,5 @@ public class SmartWalletOrderAnalysisService {
 
     private BigDecimal scale(BigDecimal value, int scale) {
         return value == null ? null : value.setScale(scale, RoundingMode.HALF_UP);
-    }
-
-    private static class TradeCursor {
-        private final List<PolymarketApiClient.UserTrade> trades;
-        private int nextIndex = 0;
-
-        private TradeCursor(List<PolymarketApiClient.UserTrade> trades) {
-            this.trades = trades == null ? List.of() : trades;
-        }
-
-        private Long consumeOpenTime(Long closedAt) {
-            if (closedAt == null || trades.isEmpty()) {
-                return null;
-            }
-            Long openedAt = null;
-            while (nextIndex < trades.size()) {
-                PolymarketApiClient.UserTrade trade = trades.get(nextIndex);
-                if (trade == null || trade.getTradedAt() == null) {
-                    nextIndex++;
-                    continue;
-                }
-                if (trade.getTradedAt() > closedAt) {
-                    break;
-                }
-                if (openedAt == null) {
-                    openedAt = trade.getTradedAt();
-                }
-                nextIndex++;
-            }
-            return openedAt;
-        }
     }
 }

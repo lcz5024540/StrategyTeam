@@ -46,6 +46,7 @@ export interface WalletOrderAnalysisView {
   outcome: string | null
   openedAt: string | null
   closedAt: string | null
+  settlementAt: string | null
   marketEndAt: number | null
   investedUsdc: number | null
   realizedPnlUsdc: number | null
@@ -55,6 +56,26 @@ export interface WalletOrderAnalysisView {
   exitLeadMinutes: number | null
   isWin: boolean | null
   sourceConfidence: number | null
+  pendingSettlement: boolean | null
+  earlySettlement: boolean | null
+}
+
+export interface WalletOrderStatsView {
+  walletAddress: string
+  window: string
+  generatedAt: string | null
+  closedOrderCount: number
+  winCount: number
+  lossCount: number
+  closedWinRate: number | null
+  closedRealizedPnlUsdc: number | null
+  activeUnrealizedPnlUsdc: number | null
+  netPnlUsdc: number | null
+  averageRoiRate: number | null
+  activePositionCount: number
+  pendingSettlementCount: number
+  earlySettlementRate: number | null
+  settlementWinRate: number | null
 }
 
 export interface WalletDiagnosisView {
@@ -72,7 +93,7 @@ export interface WalletDiagnosisView {
   settlementWinRate: number | null
   latencyAlphaRate: number | null
   swingAlphaRate: number | null
-  medianHoldMinutes: number | null
+  earlySettlementRate: number | null
   recommendedExitLane: string | null
   summary: string | null
   strengths: string[]
@@ -93,6 +114,11 @@ export interface SmartWalletMarketMonitorItem {
   marketEndAt: number | null
   marketEndAtBjt: string | null
   marketState: string
+  marketLifecycle: string
+  sourceCategory: string | null
+  normalizedCategory: string | null
+  lastMetadataSyncAt: string | null
+  metadataStale: boolean
   lastSignalAt: string | null
   lastSignalAtBjt: string | null
   signalCount: number
@@ -115,6 +141,8 @@ export interface SmartWalletMarketMonitorItem {
   highlyConcentrated: boolean
   extremelyConcentrated: boolean
   concentrationBand: 'HEALTHY' | 'HIGH' | 'EXTREME' | 'UNKNOWN' | string
+  lastConcentrationSnapshotAt: string | null
+  concentrationStale: boolean
   topHolderAddresses: string[]
 }
 

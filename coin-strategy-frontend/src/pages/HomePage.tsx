@@ -50,10 +50,10 @@ export function HomePage() {
     queryFn: () => tasksApi.getOpportunities(8, 3),
   })
 
-  // 获取日报
-  const { data: dailyReports = [] } = useQuery({
-    queryKey: ['dailyReports', days, mode],
-    queryFn: () => reportsApi.getDailyReports(Math.max(days, 7), mode),
+  // 获取收益时间线
+  const { data: pnlTimeline = [], isLoading: timelineLoading } = useQuery({
+    queryKey: ['pnlTimeline', days, 24, mode],
+    queryFn: () => reportsApi.getPnlTimeline(Math.max(days, 1), 24, mode),
   })
 
   // 获取归因
@@ -72,7 +72,7 @@ export function HomePage() {
     queryFn: () => reportsApi.getFollowAddressDailyReports(TABLE_FETCH_LIMIT, mode),
   })
 
-  if (detailLoading) {
+  if (detailLoading || timelineLoading) {
     return <div className="loading">加载中...</div>
   }
 
@@ -82,7 +82,7 @@ export function HomePage() {
     detail.totalTrades === 0 &&
     positions.length === 0 &&
     settlements.length === 0 &&
-    dailyReports.length === 0
+    pnlTimeline.length === 0
 
   return (
     <>
@@ -119,7 +119,7 @@ export function HomePage() {
         <div className="section-head">
           <h2>收益时间线</h2>
         </div>
-        <TimelineChart data={dailyReports} />
+        <TimelineChart data={pnlTimeline} bucketHours={24} />
       </section>
 
       {/* 归因分析 */}

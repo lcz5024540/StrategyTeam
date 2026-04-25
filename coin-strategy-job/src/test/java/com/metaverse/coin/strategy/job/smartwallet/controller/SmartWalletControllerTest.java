@@ -21,6 +21,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderAnalysisView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderStatsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletArchetypeClassifierService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
@@ -45,6 +46,8 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlement
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletBehaviorProfileService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletOrderAnalysisService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletProfileStoreService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletOrderStatsService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletProfileAnalysisService;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import org.junit.jupiter.api.BeforeEach;
@@ -137,9 +140,13 @@ class SmartWalletControllerTest {
     @Mock
     private SmartWalletOrderAnalysisService smartWalletOrderAnalysisService;
     @Mock
+    private WalletOrderStatsService walletOrderStatsService;
+    @Mock
     private SmartWalletProfileStoreService smartWalletProfileStoreService;
     @Mock
     private WalletProfileAnalysisService walletProfileAnalysisService;
+    @Mock
+    private SmartWalletMarketMonitoringService smartWalletMarketMonitoringService;
 
     @InjectMocks
     private SmartWalletController controller;
@@ -223,6 +230,26 @@ class SmartWalletControllerTest {
                 .andExpect(jsonPath("$.lookbackDays").value(30));
 
         verify(polymarketWalletDiscoveryService).sessionCoverage();
+    }
+
+    @Test
+    void shouldForwardMarketMonitoringCategoryFilter() throws Exception {
+        when(smartWalletMarketMonitoringService.tablePage(2, 20, 14, "election", "POLITICS", "HIGH", true, "YES"))
+                .thenReturn(com.metaverse.coin.strategy.job.strategy.model.OffsetPageView.of(List.of(), 2, 20, 0));
+
+        mockMvc.perform(get("/strategy/api/smart-wallet/reports/market-monitoring/page")
+                        .contextPath("/strategy/api")
+                        .param("page", "2")
+                        .param("pageSize", "20")
+                        .param("lookbackDays", "14")
+                        .param("keyword", "election")
+                        .param("category", "POLITICS")
+                        .param("concentrationBand", "HIGH")
+                        .param("hasPosition", "true")
+                        .param("positionDirection", "YES"))
+                .andExpect(status().isOk());
+
+        verify(smartWalletMarketMonitoringService).tablePage(2, 20, 14, "election", "POLITICS", "HIGH", true, "YES");
     }
 
     @Test
@@ -338,6 +365,28 @@ class SmartWalletControllerTest {
     }
 
     @Test
+    void shouldExposeWalletOrderStatsEndpoint() throws Exception {
+        when(walletOrderStatsService.summarize("0xabc", "30d")).thenReturn(
+                WalletOrderStatsView.builder()
+                        .walletAddress("0xabc")
+                        .window("30D")
+                        .closedOrderCount(12)
+                        .closedWinRate(new java.math.BigDecimal("0.7500"))
+                        .netPnlUsdc(new java.math.BigDecimal("88.5000"))
+                        .build()
+        );
+
+        mockMvc.perform(get("/strategy/api/smart-wallet/profiles/0xabc/order-stats")
+                        .contextPath("/strategy/api")
+                        .param("window", "30d"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.walletAddress").value("0xabc"))
+                .andExpect(jsonPath("$.closedOrderCount").value(12))
+                .andExpect(jsonPath("$.closedWinRate").value(0.75))
+                .andExpect(jsonPath("$.netPnlUsdc").value(88.5));
+    }
+
+    @Test
     void shouldRefreshAndPersistWatchlistBehaviorProfiles() throws Exception {
         when(walletBehaviorProfileService.refreshAndPersistProfiles(any(), any())).thenReturn(List.of(
                 WalletBehaviorProfileView.builder()
@@ -357,6 +406,45 @@ class SmartWalletControllerTest {
     }
 
     @Test
+    void shouldExposeWarmWatchlistEndpoint() throws Exception {
+        when(polymarketMonitorService.listWarmWatchlist()).thenReturn(List.of(
+                new SmartWalletProfileEntity()
+                        .setWalletAddress("0xwarm")
+                        .setMonitorTier("WARM")
+        ));
+
+        mockMvc.perform(get("/strategy/api/smart-wallet/watchlist/warm")
+                        .contextPath("/strategy/api"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].walletAddress").value("0xwarm"))
+                .andExpect(jsonPath("$[0].monitorTier").value("WARM"));
+    }
+
+    @Test
+    void shouldAllowWarmScopeForBehaviorProfiles() throws Exception {
+        SmartWalletProfileEntity profile = new SmartWalletProfileEntity()
+                .setWalletAddress("0xwarm")
+                .setMonitorTier("WARM");
+        when(polymarketMonitorService.listWarmWatchlist()).thenReturn(List.of(profile));
+        when(walletBehaviorProfileService.buildProfiles(any(), eq(10))).thenReturn(List.of(
+                WalletBehaviorProfileView.builder()
+                        .walletAddress("0xwarm")
+                        .recommendedExitLane("OBSERVE_ONLY")
+                        .build()
+        ));
+
+        mockMvc.perform(get("/strategy/api/smart-wallet/watchlist/behavior-profiles")
+                        .contextPath("/strategy/api")
+                        .param("limit", "10")
+                        .param("scope", "warm"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].walletAddress").value("0xwarm"))
+                .andExpect(jsonPath("$[0].recommendedExitLane").value("OBSERVE_ONLY"));
+
+        verify(polymarketMonitorService).listWarmWatchlist();
+    }
+
+    @Test
     void shouldExposeEnrichedWatchlistArchetypesEndpoint() throws Exception {
         SmartWalletProfileEntity profile = new SmartWalletProfileEntity()
                 .setWalletAddress("0xabc");
@@ -371,6 +459,7 @@ class SmartWalletControllerTest {
                 .recommendedExitLane("EARLY_TAKE_PROFIT")
                 .replicabilityScore(new java.math.BigDecimal("0.72"))
                 .earlyExitRate(new java.math.BigDecimal("0.40"))
+                .earlySettlementRate(new java.math.BigDecimal("0.40"))
                 .build());
 
         mockMvc.perform(get("/strategy/api/smart-wallet/watchlist/archetypes")
@@ -399,6 +488,7 @@ class SmartWalletControllerTest {
                 .recommendedExitLane("EARLY_TAKE_PROFIT")
                 .replicabilityScore(new java.math.BigDecimal("0.72"))
                 .earlyExitRate(new java.math.BigDecimal("0.40"))
+                .earlySettlementRate(new java.math.BigDecimal("0.40"))
                 .summary("Wallet behaves like a non-high-frequency trader.")
                 .build());
 

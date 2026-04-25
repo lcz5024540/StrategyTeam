@@ -18,6 +18,8 @@ public class PolymarketProductOverview {
     private int profiles;
     private int candidateWatchlist;
     private int executableWatchlist;
+    private int warmWatchlist;
+    private int coldProfiles;
     private int watchlist;
     private long tradeEvents;
     private BigDecimal totalDeployedUsdc;

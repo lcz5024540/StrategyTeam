@@ -24,45 +24,40 @@ class SmartWalletOrderAnalysisServiceTest {
     @Mock
     private SmartWalletOrderAnalysisMapper orderAnalysisMapper;
     @Mock
-    private PolymarketApiClient polymarketApiClient;
-    @Mock
-    private PolymarketMarketMetadataService marketMetadataService;
+    private WalletOrderAggregationService walletOrderAggregationService;
 
     private SmartWalletOrderAnalysisService service;
 
     @BeforeEach
     void setUp() {
-        service = new SmartWalletOrderAnalysisService(orderAnalysisMapper, polymarketApiClient, marketMetadataService);
+        service = new SmartWalletOrderAnalysisService(orderAnalysisMapper, walletOrderAggregationService);
     }
 
     @Test
     void shouldClassifyEarlyProfitAndPersistOrderAnalysis() {
-        when(polymarketApiClient.fetchClosedPositions("0xabc")).thenReturn(List.of(
-                PolymarketApiClient.ClosedPosition.builder()
+        when(walletOrderAggregationService.snapshot("0xabc")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
+                .walletAddress("0xabc")
+                .closedOrders(List.of(
+                        WalletOrderAggregationService.ClosedOrderSnapshot.builder()
+                                .walletAddress("0xabc")
                         .marketId("market-1")
                         .question("Question")
                         .outcome("YES")
-                        .sizeBought(new BigDecimal("100"))
-                        .realizedPnl(new BigDecimal("20"))
-                        .cashPnl(BigDecimal.ZERO)
-                        .avgPrice(new BigDecimal("0.62"))
-                        .closedAt(1_000_000L)
-                        .build()
-        ));
-        when(polymarketApiClient.fetchUserTrades("0xabc", 200)).thenReturn(List.of(
-                PolymarketApiClient.UserTrade.builder()
-                        .marketId("market-1")
-                        .outcome("YES")
-                        .tradedAt(700_000L)
-                        .build()
-        ));
-        when(marketMetadataService.getBestEffortByConditionId(any(), any(), any(), any())).thenReturn(
-                PolymarketApiClient.MarketMetadata.builder()
-                        .conditionId("market-1")
-                        .marketId("market-1")
-                        .endAt(2_000_000L)
-                        .build()
-        );
+                                .openedAt(new java.util.Date(700_000L))
+                                .settlementAt(new java.util.Date(1_000_000L))
+                                .marketEndAt(2_000_000L)
+                                .investedUsdc(new BigDecimal("100"))
+                                .realizedPnlUsdc(new BigDecimal("20"))
+                                .roiRate(new BigDecimal("0.20000000"))
+                                .holdMinutes(new BigDecimal("5.00"))
+                                .exitStyle("EARLY_PROFIT")
+                                .exitLeadMinutes(new BigDecimal("16.67"))
+                                .isWin(true)
+                                .sourceConfidence(new BigDecimal("1.0000"))
+                                .earlySettlement(true)
+                                .build()
+                ))
+                .build());
         when(orderAnalysisMapper.selectList(any())).thenReturn(List.of());
 
         List<SmartWalletOrderAnalysisEntity> rows = service.analyzeAndPersist("0xabc");
@@ -77,24 +72,24 @@ class SmartWalletOrderAnalysisServiceTest {
 
     @Test
     void shouldReturnUnknownExitStyleWithoutMarketEndTime() {
-        when(polymarketApiClient.fetchClosedPositions("0xabc")).thenReturn(List.of(
-                PolymarketApiClient.ClosedPosition.builder()
-                        .marketId("market-1")
-                        .question("Question")
-                        .outcome("NO")
-                        .sizeBought(new BigDecimal("50"))
-                        .realizedPnl(new BigDecimal("-5"))
-                        .cashPnl(BigDecimal.ZERO)
-                        .closedAt(1_000_000L)
-                        .build()
-        ));
-        when(polymarketApiClient.fetchUserTrades("0xabc", 200)).thenReturn(List.of());
-        when(marketMetadataService.getBestEffortByConditionId(any(), any(), any(), any())).thenReturn(
-                PolymarketApiClient.MarketMetadata.builder()
-                        .conditionId("market-1")
-                        .marketId("market-1")
-                        .build()
-        );
+        when(walletOrderAggregationService.snapshot("0xabc")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
+                .walletAddress("0xabc")
+                .closedOrders(List.of(
+                        WalletOrderAggregationService.ClosedOrderSnapshot.builder()
+                                .walletAddress("0xabc")
+                                .marketId("market-1")
+                                .question("Question")
+                                .outcome("NO")
+                                .settlementAt(new java.util.Date(1_000_000L))
+                                .investedUsdc(new BigDecimal("50"))
+                                .realizedPnlUsdc(new BigDecimal("-5"))
+                                .roiRate(new BigDecimal("-0.10000000"))
+                                .exitStyle("UNKNOWN")
+                                .isWin(false)
+                                .sourceConfidence(new BigDecimal("0.7500"))
+                                .build()
+                ))
+                .build());
         when(orderAnalysisMapper.selectList(any())).thenReturn(List.of());
 
         List<SmartWalletOrderAnalysisEntity> rows = service.analyzeAndPersist("0xabc");

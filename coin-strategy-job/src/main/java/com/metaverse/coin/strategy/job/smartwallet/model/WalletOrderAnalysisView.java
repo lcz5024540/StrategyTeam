@@ -13,6 +13,7 @@ public record WalletOrderAnalysisView(
         String outcome,
         Date openedAt,
         Date closedAt,
+        Date settlementAt,
         Long marketEndAt,
         BigDecimal investedUsdc,
         BigDecimal realizedPnlUsdc,
@@ -21,6 +22,8 @@ public record WalletOrderAnalysisView(
         String exitStyle,
         BigDecimal exitLeadMinutes,
         Boolean isWin,
-        BigDecimal sourceConfidence
+        BigDecimal sourceConfidence,
+        Boolean pendingSettlement,
+        Boolean earlySettlement
 ) {
 }

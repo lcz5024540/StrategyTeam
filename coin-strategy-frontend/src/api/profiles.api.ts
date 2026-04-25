@@ -4,6 +4,7 @@ import type {
   SmartWalletProfileOverrideRequest,
   WalletDiagnosisView,
   WalletOrderAnalysisView,
+  WalletOrderStatsView,
   WalletScreenerView,
 } from '@/types'
 
@@ -30,6 +31,11 @@ interface OrderAnalysisParams {
   refresh?: boolean
 }
 
+interface OrderStatsParams {
+  window?: '7d' | '30d' | 'all'
+  refresh?: boolean
+}
+
 export const profilesApi = {
   getScreener: (params: ScreenerParams = {}): Promise<CursorPageView<WalletScreenerView>> =>
     apiClient.get('/strategy/api/smart-wallet/profiles/screener', { params }),
@@ -44,6 +50,12 @@ export const profilesApi = {
     params: OrderAnalysisParams = {}
   ): Promise<CursorPageView<WalletOrderAnalysisView>> =>
     apiClient.get(`/strategy/api/smart-wallet/profiles/${walletAddress}/order-analysis`, { params }),
+
+  getOrderStats: (
+    walletAddress: string,
+    params: OrderStatsParams = {}
+  ): Promise<WalletOrderStatsView> =>
+    apiClient.get(`/strategy/api/smart-wallet/profiles/${walletAddress}/order-stats`, { params }),
 
   updateProfileOverride: (
     walletAddress: string,

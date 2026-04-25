@@ -134,7 +134,7 @@ public class WalletProfileAnalysisService {
                 .settlementWinRate(scale(behavior.settlementWinRate(), 4))
                 .latencyAlphaRate(scale(behavior.latencyAlphaRate(), 4))
                 .swingAlphaRate(scale(behavior.swingAlphaRate(), 4))
-                .medianHoldMinutes(scale(behavior.medianHoldMinutes(), 2))
+                .earlySettlementRate(scale(behavior.earlySettlementRate(), 4))
                 .recommendedExitLane(behavior.recommendedExitLane())
                 .summary(behavior.summary())
                 .strengths(strengths)

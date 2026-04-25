@@ -38,6 +38,7 @@ public class SmartWalletBehaviorProfileEntity {
     private BigDecimal earlyExitRate;
     private BigDecimal profitEarlyExitRate;
     private BigDecimal lossEarlyExitRate;
+    private BigDecimal earlySettlementRate;
     private String winSourceType;
     private BigDecimal latencyAlphaRate;
     private BigDecimal swingAlphaRate;

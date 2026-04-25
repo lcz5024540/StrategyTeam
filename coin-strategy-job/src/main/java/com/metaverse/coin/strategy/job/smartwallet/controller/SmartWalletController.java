@@ -87,6 +87,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConf
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderAnalysisView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderStatsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
@@ -118,6 +119,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.WalletBehaviorProfile
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletOrderAnalysisService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletProfileStoreService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletReplayBacktestService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletOrderStatsService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletProfileAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -188,6 +190,7 @@ public class SmartWalletController {
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final SmartWalletOrderAnalysisService smartWalletOrderAnalysisService;
+    private final WalletOrderStatsService walletOrderStatsService;
     private final SmartWalletProfileStoreService smartWalletProfileStoreService;
     private final WalletProfileAnalysisService walletProfileAnalysisService;
     private final SmartWalletReplayBacktestService smartWalletReplayBacktestService;
@@ -309,6 +312,17 @@ public class SmartWalletController {
         return CursorPageView.of(rows.subList(start, end), nextCursor);
     }
 
+    @Operation(summary = "地址窗口统计", description = "统一输出 closed + active 的地址统计口径，剔除待结算订单。")
+    @GetMapping("/profiles/{walletAddress}/order-stats")
+    public WalletOrderStatsView walletOrderStats(@PathVariable String walletAddress,
+                                                 @RequestParam(defaultValue = "30d") String window,
+                                                 @RequestParam(defaultValue = "false") boolean refresh) {
+        if (refresh) {
+            smartWalletOrderAnalysisService.analyzeAndPersist(walletAddress);
+        }
+        return walletOrderStatsService.summarize(walletAddress, window);
+    }
+
     @Operation(summary = "地址胜率诊断", description = "输出这个地址为什么赢、适不适合跟、以及推荐的退出方式。")
     @GetMapping("/profiles/{walletAddress}/diagnosis")
     public WalletDiagnosisView walletDiagnosis(@PathVariable String walletAddress,
@@ -416,6 +430,12 @@ public class SmartWalletController {
         return polymarketMonitorService.listExecutableWatchlist();
     }
 
+    @Operation(summary = "保温观察名单", description = "查看当前退出执行链路但仍处于 WARM 保温监控层的 smart wallet 地址。")
+    @GetMapping("/watchlist/warm")
+    public List<SmartWalletProfileEntity> warmWatchlist() {
+        return polymarketMonitorService.listWarmWatchlist();
+    }
+
     @Operation(summary = "观察名单地址分型", description = "基于 wallet_feature_daily、trade_effect_label 与 profile 计算候选/可执行地址的交易风格分型与建议跟单 lane。")
     @GetMapping("/watchlist/archetypes")
     public List<WalletArchetypeView> watchlistArchetypes(@RequestParam(defaultValue = "50") Integer limit,
@@ -433,14 +453,14 @@ public class SmartWalletController {
                         "highFrequencyTradingAddress", "trades7d", "trades30d", "orderWinRate",
                         "averageOrderRoiRate", "medianOrderRoiRate", "settlementCompletionRate",
                         "earlyExitRate", "profitEarlyExitRate", "lossEarlyExitRate",
-                        "winSourceType", "settlementWinRate", "medianHoldMinutes", "stabilityScore",
+                        "winSourceType", "settlementWinRate", "earlySettlementRate", "stabilityScore",
                         "qualityScore", "replicabilityScore", "followFitScore", "confidence", "summary"),
                 rows.stream().map(row -> java.util.Arrays.asList(
                         row.walletAddress(), row.archetype(), row.followLane(), row.recommendedExitLane(),
                         row.highFrequencyTradingAddress(), row.trades7d(), row.trades30d(), row.orderWinRate(),
                         row.averageOrderRoiRate(), row.medianOrderRoiRate(), row.settlementCompletionRate(),
                         row.earlyExitRate(), row.profitEarlyExitRate(), row.lossEarlyExitRate(),
-                        row.winSourceType(), row.settlementWinRate(), row.medianHoldMinutes(), row.stabilityScore(),
+                        row.winSourceType(), row.settlementWinRate(), row.earlySettlementRate(), row.stabilityScore(),
                         row.qualityScore(), row.replicabilityScore(), row.followFitScore(), row.confidence(), row.summary()
                 )).toList()
         );
@@ -466,9 +486,40 @@ public class SmartWalletController {
         );
     }
 
+    @Operation(summary = "批量回填地址画像口径", description = "按 scope 批量重算 order-analysis、order-stats 依赖与 behavior profile。")
+    @PostMapping("/profiles/metrics/rebuild")
+    public Map<String, Object> rebuildProfileMetrics(@RequestParam(defaultValue = "candidates") String scope,
+                                                     @RequestParam(defaultValue = "30") Integer limit) {
+        List<SmartWalletProfileEntity> profiles = resolveWatchlistScope(scope).stream()
+                .limit(Math.max(1, Math.min(limit, 500)))
+                .toList();
+        int rebuiltOrders = 0;
+        int rebuiltProfiles = 0;
+        for (SmartWalletProfileEntity profile : profiles) {
+            if (profile == null || !StringUtils.hasText(profile.getWalletAddress())) {
+                continue;
+            }
+            smartWalletOrderAnalysisService.analyzeAndPersist(profile.getWalletAddress());
+            walletOrderStatsService.summarize(profile.getWalletAddress(), "all");
+            walletBehaviorProfileService.buildProfile(profile);
+            rebuiltOrders++;
+            rebuiltProfiles++;
+        }
+        return Map.of(
+                "scope", scope,
+                "limit", limit,
+                "walletCount", profiles.size(),
+                "orderAnalysisRebuilt", rebuiltOrders,
+                "behaviorProfilesRebuilt", rebuiltProfiles
+        );
+    }
+
     private List<SmartWalletProfileEntity> resolveWatchlistScope(String scope) {
         if ("all".equalsIgnoreCase(scope)) {
             return polymarketMonitorService.listProfiles();
+        }
+        if ("warm".equalsIgnoreCase(scope)) {
+            return polymarketMonitorService.listWarmWatchlist();
         }
         if ("executable".equalsIgnoreCase(scope)) {
             return polymarketMonitorService.listExecutableWatchlist();
@@ -518,9 +569,9 @@ public class SmartWalletController {
                 .earlyExitRate(behaviorProfile == null ? null : behaviorProfile.earlyExitRate())
                 .profitEarlyExitRate(behaviorProfile == null ? null : behaviorProfile.profitEarlyExitRate())
                 .lossEarlyExitRate(behaviorProfile == null ? null : behaviorProfile.lossEarlyExitRate())
+                .earlySettlementRate(behaviorProfile == null ? null : behaviorProfile.earlySettlementRate())
                 .winSourceType(behaviorProfile == null ? null : behaviorProfile.winSourceType())
                 .settlementWinRate(behaviorProfile == null ? null : behaviorProfile.settlementWinRate())
-                .medianHoldMinutes(behaviorProfile == null ? null : behaviorProfile.medianHoldMinutes())
                 .stabilityScore(behaviorProfile == null ? null : behaviorProfile.stabilityScore())
                 .qualityScore(behaviorProfile == null ? null : behaviorProfile.qualityScore())
                 .replicabilityScore(behaviorProfile == null ? null : behaviorProfile.replicabilityScore())
@@ -1331,14 +1382,14 @@ public class SmartWalletController {
         return smartWalletMarketMonitoringService.summary(limit, lookbackDays, trendDays);
     }
 
-    @Operation(summary = "市场状态表分页", description = "仅供市场状态表使用的分页接口，支持按关键词、市场状态、集中度、是否有持仓和持仓方向筛选。")
+    @Operation(summary = "市场状态表分页", description = "仅供市场状态表使用的分页接口，支持按关键词、分类、集中度、是否有持仓和持仓方向筛选。")
     @GetMapping("/reports/market-monitoring/page")
     public OffsetPageView<SmartWalletMarketMonitorItemView> marketMonitoringTablePage(
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "10") Integer pageSize,
             @RequestParam(defaultValue = "14") Integer lookbackDays,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) String marketState,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) String concentrationBand,
             @RequestParam(required = false) Boolean hasPosition,
             @RequestParam(required = false) String positionDirection) {
@@ -1347,7 +1398,7 @@ public class SmartWalletController {
                 pageSize,
                 lookbackDays,
                 keyword,
-                marketState,
+                category,
                 concentrationBand,
                 hasPosition,
                 positionDirection);

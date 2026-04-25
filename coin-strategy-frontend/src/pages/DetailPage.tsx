@@ -28,9 +28,10 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function DetailPage() {
   const [searchParams] = useSearchParams()
-  const { selectedStrategy, positionMode } = useStrategyStore()
+  const { selectedStrategy, positionMode, selectedDays } = useStrategyStore()
 
   const strategy = searchParams.get('strategy') || selectedStrategy
+  const days = Number(searchParams.get('days')) || selectedDays
   const mode = (searchParams.get('mode') || positionMode) as 'PAPER' | 'LIVE'
   const [exportingKey, setExportingKey] = useState<string | null>(null)
   const [exportMessage, setExportMessage] = useState<string>('')
@@ -61,12 +62,12 @@ export function DetailPage() {
     queryFn: () => tasksApi.getOpportunities(20, 3),
   })
 
-  const { data: dailyReports = [] } = useQuery({
-    queryKey: ['dailyReports', 30, mode],
-    queryFn: () => reportsApi.getDailyReports(30, mode),
+  const { data: pnlTimeline = [], isLoading: timelineLoading } = useQuery({
+    queryKey: ['pnlTimeline', days, 24, mode],
+    queryFn: () => reportsApi.getPnlTimeline(Math.max(days, 1), 24, mode),
   })
 
-  if (isLoading) {
+  if (isLoading || timelineLoading) {
     return <div className="loading">加载中...</div>
   }
 
@@ -174,13 +175,13 @@ export function DetailPage() {
           <div className="section-head">
             <h2>收益时间线</h2>
           </div>
-          <TimelineChart data={dailyReports} />
+          <TimelineChart data={pnlTimeline} bucketHours={24} />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>收益分布</h2>
           </div>
-          <DailyPnlBars data={dailyReports} />
+          <DailyPnlBars data={pnlTimeline} bucketHours={24} />
         </section>
       </div>
 
