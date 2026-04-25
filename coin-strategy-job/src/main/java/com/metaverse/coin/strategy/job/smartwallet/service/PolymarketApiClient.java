@@ -141,9 +141,9 @@ public class PolymarketApiClient {
     }
 
     /**
-     * 获取某市场全量持仓分布（不传 user），用于集中度分析。
-     * 调用 Data API /positions?market={conditionId}&sizeThreshold=1&limit=N
-     * 返回按 size 降序排列的持仓列表（Polymarket 默认排序）。
+     * 获取某市场的持仓分布，用于集中度分析。
+     * 调用 Data API /v1/market-positions?market={conditionId}&status=OPEN&limit=N
+     * 返回结果按 outcome token 分组，这里会打平后再按 size 全局降序排列。
      */
     public List<MarketPositionEntry> fetchMarketTopPositions(String conditionId, int limit) {
         if (!StringUtils.hasText(conditionId)) {
@@ -151,25 +151,38 @@ public class PolymarketApiClient {
         }
         Map<String, String> params = new LinkedHashMap<>();
         params.put("market", conditionId.trim());
-        params.put("sizeThreshold", "1");
-        params.put("limit", String.valueOf(Math.max(1, Math.min(limit, 100))));
+        params.put("status", "OPEN");
+        params.put("sortBy", "TOKENS");
+        params.put("sortDirection", "DESC");
+        params.put("limit", String.valueOf(Math.max(1, Math.min(limit, 500))));
 
         JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
-                "/positions", params));
+                "/v1/market-positions", params));
+        return parseMarketTopPositions(body);
+    }
+
+    private List<MarketPositionEntry> parseMarketTopPositions(JsonNode body) {
         List<MarketPositionEntry> result = new ArrayList<>();
-        for (JsonNode node : iterableArray(extractArray(body))) {
-            String walletAddress = text(node, "proxyWallet", "user", "walletAddress", "address");
-            if (!StringUtils.hasText(walletAddress)) {
-                continue;
+        for (JsonNode group : iterableArray(extractArray(body))) {
+            JsonNode positions = group == null ? null : group.get("positions");
+            for (JsonNode node : iterableArray(positions)) {
+                String walletAddress = text(node, "proxyWallet", "user", "walletAddress", "address");
+                if (!StringUtils.hasText(walletAddress)) {
+                    continue;
+                }
+                result.add(MarketPositionEntry.builder()
+                        .walletAddress(walletAddress)
+                        .outcome(normalizeOutcome(text(node, "outcome", "outcomeName", "asset")))
+                        .size(firstNonZero(num(node, "size"), num(node, "currentTokens")))
+                        .avgPrice(num(node, "avgPrice", "averagePrice"))
+                        .initialValue(firstNonZero(
+                                num(node, "initialValue"),
+                                num(node, "totalBought"),
+                                num(node, "cashInvested")))
+                        .build());
             }
-            result.add(MarketPositionEntry.builder()
-                    .walletAddress(walletAddress)
-                    .outcome(normalizeOutcome(text(node, "outcome", "outcomeName")))
-                    .size(firstNonZero(num(node, "size"), num(node, "currentTokens")))
-                    .avgPrice(num(node, "avgPrice", "averagePrice"))
-                    .initialValue(num(node, "initialValue", "cashInvested"))
-                    .build());
         }
+        result.sort(Comparator.comparing(MarketPositionEntry::getSize, Comparator.nullsLast(Comparator.reverseOrder())));
         return result;
     }
 

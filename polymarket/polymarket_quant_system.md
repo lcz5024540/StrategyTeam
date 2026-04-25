@@ -347,7 +347,7 @@ GET https://clob.polymarket.com/prices-history
 
 ### 步骤 3 — 持仓同步
 
-#### 3a. 查询持仓
+#### 3a. 查询用户持仓
 
 ```http
 GET https://data-api.polymarket.com/positions
@@ -367,6 +367,19 @@ GET https://data-api.polymarket.com/positions
 | `currentValue` | 当前市值（基于最新价）|
 | `unrealizedPnl` | 未实现盈亏 |
 | `conditionId` | 所属市场 |
+
+#### 3a-补充. 查询某市场持仓分布
+
+```http
+GET https://data-api.polymarket.com/v1/market-positions
+    ?market={conditionId}
+    &status=OPEN
+    &sortBy=TOKENS
+    &sortDirection=DESC
+    &limit=50
+```
+
+这个接口用于看某个 market 的持仓人分布；`user` 为可选过滤条件。当前官方接口里，`/positions` 仍然是“按用户查持仓”，不能只传 `market`。
 
 #### 3b. 查询余额
 

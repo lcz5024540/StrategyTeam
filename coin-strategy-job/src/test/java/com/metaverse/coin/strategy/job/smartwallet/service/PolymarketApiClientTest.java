@@ -6,6 +6,8 @@ import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -64,5 +66,51 @@ class PolymarketApiClientTest {
         assertEquals("0xquestion", metadata.getQuestionId());
         assertEquals("disputed", metadata.getUmaResolutionStatus());
         assertEquals(1776038400000L, metadata.getUmaEndAt());
+    }
+
+    @Test
+    void shouldFlattenMarketPositionsResponseFromNewEndpoint() throws Exception {
+        PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
+        JsonNode body = new ObjectMapper().readTree("""
+                [
+                  {
+                    "token": "yes-token",
+                    "positions": [
+                      {
+                        "proxyWallet": "0x1111111111111111111111111111111111111111",
+                        "outcome": "Yes",
+                        "size": 15,
+                        "avgPrice": 0.61,
+                        "totalBought": 9.15
+                      }
+                    ]
+                  },
+                  {
+                    "token": "no-token",
+                    "positions": [
+                      {
+                        "proxyWallet": "0x2222222222222222222222222222222222222222",
+                        "outcome": "No",
+                        "size": 30,
+                        "avgPrice": 0.42,
+                        "totalBought": 12.6
+                      }
+                    ]
+                  }
+                ]
+                """);
+
+        Method method = PolymarketApiClient.class.getDeclaredMethod("parseMarketTopPositions", JsonNode.class);
+        method.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        List<PolymarketApiClient.MarketPositionEntry> entries =
+                (List<PolymarketApiClient.MarketPositionEntry>) method.invoke(client, body);
+
+        assertEquals(2, entries.size());
+        assertEquals("0x2222222222222222222222222222222222222222", entries.get(0).getWalletAddress());
+        assertEquals("NO", entries.get(0).getOutcome());
+        assertEquals(0, new BigDecimal("30").compareTo(entries.get(0).getSize()));
+        assertEquals(0, new BigDecimal("12.6").compareTo(entries.get(0).getInitialValue()));
+        assertEquals("YES", entries.get(1).getOutcome());
     }
 }
