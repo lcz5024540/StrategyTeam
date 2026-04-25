@@ -18,6 +18,7 @@ public record WalletScreenerView(
         BigDecimal qualityScore,
         BigDecimal replicabilityScore,
         BigDecimal stabilityScore,
+        BigDecimal recentWinRate7d,
         BigDecimal recentWinRate30d,
         BigDecimal orderWinRate,
         BigDecimal averageOrderRoiRate,

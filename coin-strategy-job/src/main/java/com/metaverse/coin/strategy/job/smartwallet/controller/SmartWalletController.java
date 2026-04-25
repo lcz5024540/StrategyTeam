@@ -36,6 +36,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalog
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
@@ -45,6 +46,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverr
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
+import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
@@ -1327,6 +1329,28 @@ public class SmartWalletController {
             @RequestParam(defaultValue = "14") Integer lookbackDays,
             @RequestParam(defaultValue = "7") Integer trendDays) {
         return smartWalletMarketMonitoringService.summary(limit, lookbackDays, trendDays);
+    }
+
+    @Operation(summary = "市场状态表分页", description = "仅供市场状态表使用的分页接口，支持按关键词、市场状态、集中度、是否有持仓和持仓方向筛选。")
+    @GetMapping("/reports/market-monitoring/page")
+    public OffsetPageView<SmartWalletMarketMonitorItemView> marketMonitoringTablePage(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(defaultValue = "14") Integer lookbackDays,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String marketState,
+            @RequestParam(required = false) String concentrationBand,
+            @RequestParam(required = false) Boolean hasPosition,
+            @RequestParam(required = false) String positionDirection) {
+        return smartWalletMarketMonitoringService.tablePage(
+                page,
+                pageSize,
+                lookbackDays,
+                keyword,
+                marketState,
+                concentrationBand,
+                hasPosition,
+                positionDirection);
     }
 
     @Operation(summary = "派生 CLOB API 凭证", description = "基于执行钱包派生 Polymarket CLOB API key、secret 与 passphrase。")

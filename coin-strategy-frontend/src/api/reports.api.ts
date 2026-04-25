@@ -1,7 +1,7 @@
 import { apiClient } from './client'
 import type { PositionMode } from '@/utils/constants'
 import type { Attribution, DailyReport, ConflictMarket, FollowAddressDailyReport, TimelinePoint } from '@/types/attribution'
-import type { SmartWalletMarketMonitoringSummary } from '@/types/smartwallet'
+import type { OffsetPageView, SmartWalletMarketMonitorItem, SmartWalletMarketMonitoringSummary } from '@/types/smartwallet'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
 export const reportsApi = {
@@ -25,4 +25,16 @@ export const reportsApi = {
 
   getMarketMonitoringSummary: (limit = 40, lookbackDays = 14, trendDays = 7): Promise<SmartWalletMarketMonitoringSummary> =>
     apiClient.get('/strategy/api/smart-wallet/reports/market-monitoring', { params: { limit, lookbackDays, trendDays } }),
+
+  getMarketMonitoringTablePage: (params: {
+    page?: number
+    pageSize?: number
+    lookbackDays?: number
+    keyword?: string
+    marketState?: string
+    concentrationBand?: string
+    hasPosition?: boolean | null
+    positionDirection?: string
+  }): Promise<OffsetPageView<SmartWalletMarketMonitorItem>> =>
+    apiClient.get('/strategy/api/smart-wallet/reports/market-monitoring/page', { params }),
 }

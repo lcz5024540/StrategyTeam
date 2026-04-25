@@ -23,9 +23,7 @@ export function Header() {
   return (
     <header className="hero">
       <div>
-        <p className="eyebrow">{currentStrategy?.code || 'Dashboard'}</p>
         <h1>{currentStrategy?.name || '策略总览'}</h1>
-        <p className="subtitle">{currentStrategy?.description || '查看和管理您的量化策略'}</p>
       </div>
       <div className="filter-bar">
         <select

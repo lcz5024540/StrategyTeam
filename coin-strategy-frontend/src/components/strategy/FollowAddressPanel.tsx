@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { profilesApi } from '@/api'
 import type { WalletDiagnosisView, WalletOrderAnalysisView, WalletScreenerView } from '@/types'
@@ -35,6 +36,12 @@ interface TrendPoint {
   exitStyle: string
 }
 
+interface CodeMeta {
+  code: string
+  label: string
+  description: string
+}
+
 const WATCH_GROUP_OPTIONS: Array<{ value: WatchGroup; label: string; hint: string }> = [
   { value: 'all', label: '全部', hint: '监控池全量地址' },
   { value: 'priority', label: '重点', hint: '优先关注 EXECUTABLE_A' },
@@ -55,6 +62,194 @@ function getSourceBadgeClass(source: string | null | undefined) {
   if (source === 'SETTLEMENT_ALPHA') return 'badge warn'
   if (source === 'RISK_CONTROL_ALPHA') return 'badge danger'
   return 'badge'
+}
+
+function normalizeCode(value: string | null | undefined) {
+  const normalized = value?.trim().toUpperCase()
+  return normalized && normalized.length > 0 ? normalized : 'UNKNOWN'
+}
+
+function getArchetypeMeta(value: string | null | undefined): CodeMeta {
+  const code = normalizeCode(value)
+  if (code === 'HF') {
+    return {
+      code,
+      label: 'HF 高频快进快出',
+      description: '交易节奏快，alpha 窗口短，需要更低延迟的跟随方式。',
+    }
+  }
+  if (code === 'THEMATIC') {
+    return {
+      code,
+      label: 'THEMATIC 主题集中型',
+      description: '围绕少量主题市场反复下注，更适合较慢节奏的主题跟随。',
+    }
+  }
+  if (code === 'LOW_FREQ_VALUE') {
+    return {
+      code,
+      label: 'LOW_FREQ_VALUE 低频价值型',
+      description: '出手频率低，但命中率和持有耐心通常更好。',
+    }
+  }
+  if (code === 'SWING') {
+    return {
+      code,
+      label: 'SWING 波段型',
+      description: '中等频率，偏向 5 分钟到规则级别的稳定 alpha。',
+    }
+  }
+  if (code === 'NOISE') {
+    return {
+      code,
+      label: 'NOISE 噪声型',
+      description: '当前执行风格下复制性较弱，不适合直接自动跟单。',
+    }
+  }
+  return {
+    code,
+    label: 'UNKNOWN 未定型',
+    description: '当前样本不足，暂时无法稳定判断地址风格。',
+  }
+}
+
+function getFollowLaneMeta(value: string | null | undefined): CodeMeta {
+  const code = normalizeCode(value)
+  if (code === 'HF_FOLLOW') {
+    return {
+      code,
+      label: 'HF_FOLLOW 高频跟随通道',
+      description: '适合快节奏、低延迟复制。',
+    }
+  }
+  if (code === 'THEMATIC_FOLLOW') {
+    return {
+      code,
+      label: 'THEMATIC_FOLLOW 主题跟随通道',
+      description: '适合围绕主题市场的中慢速跟随。',
+    }
+  }
+  if (code === 'VALUE_FOLLOW') {
+    return {
+      code,
+      label: 'VALUE_FOLLOW 价值跟随通道',
+      description: '适合低频、耐心持有的价值型跟随。',
+    }
+  }
+  if (code === 'SWING_FOLLOW') {
+    return {
+      code,
+      label: 'SWING_FOLLOW 波段跟随通道',
+      description: '适合中等频率的波段复制。',
+    }
+  }
+  if (code === 'OBSERVE_ONLY') {
+    return {
+      code,
+      label: 'OBSERVE_ONLY 仅观察',
+      description: '保留监控，但不进入自动跟单执行。',
+    }
+  }
+  return {
+    code,
+    label: 'UNKNOWN 未知跟随通道',
+    description: '暂未给出明确的跟随执行通道。',
+  }
+}
+
+function getExitLaneMeta(value: string | null | undefined): CodeMeta {
+  const code = normalizeCode(value)
+  if (code === 'HOLD_TO_SETTLEMENT') {
+    return {
+      code,
+      label: 'HOLD_TO_SETTLEMENT 持有到结算',
+      description: '更适合等市场结算，不急于中途退出。',
+    }
+  }
+  if (code === 'EARLY_TAKE_PROFIT') {
+    return {
+      code,
+      label: 'EARLY_TAKE_PROFIT 提前止盈',
+      description: '盈利后优先尽早兑现，避免回撤。',
+    }
+  }
+  if (code === 'FAST_STOP_LOSS') {
+    return {
+      code,
+      label: 'FAST_STOP_LOSS 快速止损',
+      description: '一旦走势不利，应更快退出控制亏损。',
+    }
+  }
+  if (code === 'HYBRID_EARLY_EXIT') {
+    return {
+      code,
+      label: 'HYBRID_EARLY_EXIT 混合提前退出',
+      description: '部分仓位提前落袋，剩余仓位保留弹性。',
+    }
+  }
+  if (code === 'FAST_EXIT_OR_SKIP') {
+    return {
+      code,
+      label: 'FAST_EXIT_OR_SKIP 快出或跳过',
+      description: '信号窗口太短，不适合常规复制，通常只观察或直接跳过。',
+    }
+  }
+  if (code === 'FOLLOW_ARCHETYPE') {
+    return {
+      code,
+      label: 'FOLLOW_ARCHETYPE 跟随地址风格',
+      description: '按地址 archetype 的默认节奏执行退出。',
+    }
+  }
+  if (code === 'OBSERVE_ONLY') {
+    return {
+      code,
+      label: 'OBSERVE_ONLY 仅观察',
+      description: '仅保留研究价值，不建议进入自动跟单。',
+    }
+  }
+  return {
+    code,
+    label: 'UNKNOWN 未知退出建议',
+    description: '当前没有稳定的退出建议。',
+  }
+}
+
+function getWinSourceMeta(value: string | null | undefined): CodeMeta {
+  const code = normalizeCode(value)
+  if (code === 'LATENCY_ALPHA') {
+    return {
+      code,
+      label: 'LATENCY_ALPHA 延迟优势',
+      description: '胜率更多来自短时间差抢占，需要更快执行。',
+    }
+  }
+  if (code === 'SWING_ALPHA') {
+    return {
+      code,
+      label: 'SWING_ALPHA 波段优势',
+      description: '胜率更多来自中短周期波段，而非超短线。',
+    }
+  }
+  if (code === 'SETTLEMENT_ALPHA') {
+    return {
+      code,
+      label: 'SETTLEMENT_ALPHA 结算优势',
+      description: '更适合持有到临近结算或最终结算兑现收益。',
+    }
+  }
+  if (code === 'RISK_CONTROL_ALPHA') {
+    return {
+      code,
+      label: 'RISK_CONTROL_ALPHA 风控优势',
+      description: '主要强在止损和风控，而不是高进攻型 alpha。',
+    }
+  }
+  return {
+    code,
+    label: 'UNKNOWN 未知胜率来源',
+    description: '样本不足，暂时无法判断主要胜率来源。',
+  }
 }
 
 function getWindowRecords(records: WalletOrderAnalysisView[], window: AnalysisWindow) {
@@ -207,18 +402,26 @@ function averageMetric(rows: WalletScreenerView[], picker: (row: WalletScreenerV
 }
 
 function buildFocusSummary(row?: WalletScreenerView, diagnosis?: WalletDiagnosisView, stats?: WindowStats) {
-  if (!row) {
-    return '从监控池中选择地址后，这里会输出一段面向运营的结论摘要。'
+  if (!row && !diagnosis) {
+    return '从监控列表点击一个地址后，这里会输出面向运营的聚焦结论。'
+  }
+
+  if (!row && diagnosis?.summary) {
+    return diagnosis.summary
   }
 
   const parts: string[] = []
-  if (row.winSourceType) {
-    parts.push(`核心胜率来源偏向 ${row.winSourceType}`)
+  const winSourceMeta = getWinSourceMeta(row?.winSourceType || diagnosis?.winSourceType)
+  const archetypeMeta = getArchetypeMeta(row?.archetype || diagnosis?.archetype)
+  const exitLaneMeta = getExitLaneMeta(diagnosis?.recommendedExitLane || row?.recommendedExitLane)
+
+  if (row?.winSourceType || diagnosis?.winSourceType) {
+    parts.push(`核心胜率来源偏向 ${winSourceMeta.label}`)
   }
-  if (row.archetype) {
-    parts.push(`地址类型归为 ${row.archetype}`)
+  if (row?.archetype || diagnosis?.archetype) {
+    parts.push(`地址类型归为 ${archetypeMeta.label}`)
   }
-  if (row.highFrequencyTradingAddress) {
+  if (row?.highFrequencyTradingAddress || diagnosis?.highFrequencyTradingAddress) {
     parts.push('交易节奏偏高频')
   } else {
     parts.push('交易节奏偏中低频')
@@ -226,15 +429,10 @@ function buildFocusSummary(row?: WalletScreenerView, diagnosis?: WalletDiagnosis
   if (stats && stats.trades > 0) {
     parts.push(`当前窗口胜率 ${formatPercent(stats.winRate)}，净收益 ${formatMoney(stats.netPnlUsdc)}`)
   }
-  if (diagnosis?.recommendedExitLane) {
-    parts.push(`建议跟单退出节奏为 ${diagnosis.recommendedExitLane}`)
+  if (diagnosis?.recommendedExitLane || row?.recommendedExitLane) {
+    parts.push(`建议退出节奏为 ${exitLaneMeta.label}`)
   }
   return `${parts.join('，')}。`
-}
-
-function buildMonitorNote(monitoredCount: number, filteredCount: number, watchGroup: WatchGroup) {
-  const groupHint = WATCH_GROUP_OPTIONS.find((item) => item.value === watchGroup)?.hint || '监控池地址'
-  return `当前视图展示 ${formatNumber(filteredCount, 0)} / ${formatNumber(monitoredCount, 0)} 个地址，重点聚焦 ${groupHint}。`
 }
 
 function AddressMetricStrip({
@@ -262,11 +460,13 @@ function DiagnosisCard({ diagnosis }: { diagnosis?: WalletDiagnosisView }) {
     return <div className="empty-state">选择一个地址后查看胜率来源、风格与风险诊断</div>
   }
 
+  const exitLaneMeta = getExitLaneMeta(diagnosis.recommendedExitLane)
+
   return (
     <div className="address-diagnosis">
       <div className="address-diagnosis-hero">
         <div>
-          <div className="eyebrow">地址诊断</div>
+          <div className="eyebrow">ADDRESS DIAGNOSIS 地址诊断</div>
           <h3>{diagnosis.alias || compactAddress(diagnosis.walletAddress, 10, 6)}</h3>
           <p>{diagnosis.summary || '暂无画像摘要'}</p>
         </div>
@@ -295,7 +495,7 @@ function DiagnosisCard({ diagnosis }: { diagnosis?: WalletDiagnosisView }) {
           hint="避免一次性好运地址"
           className={getAmountClass((diagnosis.stabilityScore || 0) - 0.5)}
         />
-        <AddressMetricStrip title="推荐退出" value={diagnosis.recommendedExitLane || '-'} hint="系统建议的跟单退出节奏" />
+        <AddressMetricStrip title="建议退出" value={exitLaneMeta.label} hint={exitLaneMeta.description} />
       </div>
 
       <div className="split-grid">
@@ -326,7 +526,7 @@ function DiagnosisCard({ diagnosis }: { diagnosis?: WalletDiagnosisView }) {
 
 export function FollowAddressPanel() {
   const queryClient = useQueryClient()
-  const [selectedWalletAddress, setSelectedWalletAddress] = useState<string>('')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [analysisWindow, setAnalysisWindow] = useState<AnalysisWindow>('30d')
   const [watchGroup, setWatchGroup] = useState<WatchGroup>('all')
   const [keyword, setKeyword] = useState('')
@@ -334,6 +534,27 @@ export function FollowAddressPanel() {
   const [sourceFilter, setSourceFilter] = useState('ALL')
   const [archetypeFilter, setArchetypeFilter] = useState('ALL')
   const [managementMessage, setManagementMessage] = useState<string>('')
+
+  const selectedWalletAddress = searchParams.get('wallet')?.trim() || ''
+  const detailMode = searchParams.get('view') === 'detail' && Boolean(selectedWalletAddress)
+
+  const openWalletDetail = (walletAddress: string) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set('view', 'detail')
+      next.set('wallet', walletAddress)
+      return next
+    })
+  }
+
+  const closeWalletDetail = () => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete('view')
+      next.delete('wallet')
+      return next
+    })
+  }
 
   const { data: monitoredPage, isLoading: monitoredLoading } = useQuery({
     queryKey: ['copyAddressScreener', 'candidates'],
@@ -348,22 +569,16 @@ export function FollowAddressPanel() {
   const monitoredAddresses = monitoredPage?.items || []
   const executableAddresses = executablePage?.items || []
 
-  useEffect(() => {
-    if (!selectedWalletAddress && monitoredAddresses.length > 0) {
-      setSelectedWalletAddress(monitoredAddresses[0].walletAddress)
-    }
-  }, [selectedWalletAddress, monitoredAddresses])
-
   const { data: diagnosis, isLoading: diagnosisLoading } = useQuery({
     queryKey: ['copyAddressDiagnosis', selectedWalletAddress],
     queryFn: () => profilesApi.getDiagnosis(selectedWalletAddress, false),
-    enabled: Boolean(selectedWalletAddress),
+    enabled: detailMode,
   })
 
   const { data: orderAnalysisPage, isLoading: orderAnalysisLoading } = useQuery({
     queryKey: ['copyAddressOrderAnalysis', selectedWalletAddress],
     queryFn: () => profilesApi.getOrderAnalysis(selectedWalletAddress, { limit: 200 }),
-    enabled: Boolean(selectedWalletAddress),
+    enabled: detailMode,
   })
 
   const observeOnlyMutation = useMutation({
@@ -433,13 +648,10 @@ export function FollowAddressPanel() {
     },
   ].filter((group) => group.rows.length > 0)
 
-  const activeQualityCount = monitoredAddresses.filter((item) => item.highQualityAddress).length
   const activeCopyCount = executableAddresses.length
-  const latencyDrivenCount = monitoredAddresses.filter((item) => item.winSourceType === 'LATENCY_ALPHA').length
   const observeCount = monitoredAddresses.filter((item) => item.screenerTier === 'OBSERVE').length
 
   const selectedRow =
-    filteredMonitoredAddresses.find((item) => item.walletAddress === selectedWalletAddress) ||
     monitoredAddresses.find((item) => item.walletAddress === selectedWalletAddress) ||
     executableAddresses.find((item) => item.walletAddress === selectedWalletAddress)
 
@@ -482,36 +694,314 @@ export function FollowAddressPanel() {
   const trendPositiveCount = recentTradeTrend.filter((item) => item.value > 0).length
   const trendNegativeCount = recentTradeTrend.filter((item) => item.value < 0).length
 
+  const selectedName =
+    selectedRow?.alias ||
+    diagnosis?.alias ||
+    (selectedWalletAddress ? compactAddress(selectedWalletAddress, 10, 6) : '未选择')
+  const selectedArchetypeMeta = getArchetypeMeta(selectedRow?.archetype || diagnosis?.archetype)
+  const selectedFollowLaneMeta = getFollowLaneMeta(selectedRow?.followLane || diagnosis?.followLane)
+  const selectedExitLaneMeta = getExitLaneMeta(diagnosis?.recommendedExitLane || selectedRow?.recommendedExitLane)
+  const selectedWinSourceMeta = getWinSourceMeta(selectedRow?.winSourceType || diagnosis?.winSourceType)
+  const selectedTier = selectedRow?.screenerTier || diagnosis?.screenerTier || 'UNKNOWN'
+  const selectedQualityScore = diagnosis?.qualityScore ?? selectedRow?.qualityScore
+  const selectedReplicabilityScore = diagnosis?.replicabilityScore ?? selectedRow?.replicabilityScore
+  const selectedStabilityScore = diagnosis?.stabilityScore ?? selectedRow?.stabilityScore
+  const selectedRecentWinRate30d = selectedRow?.recentWinRate30d
+  const selectedRecentWinRate7d = selectedRow?.recentWinRate7d
+  const selectedFollowabilityRate = selectedRow?.followabilityRate
+  const selectedFreshnessScore = selectedRow?.freshnessScore
+  const selectedSettlementWinRate = diagnosis?.settlementWinRate ?? selectedRow?.settlementWinRate
+  const currentAddressLabel = selectedWalletAddress
+    ? (selectedRow?.alias || compactAddress(selectedWalletAddress, 8, 6))
+    : '未选择'
+
+  if (detailMode) {
+    return (
+      <>
+        <section className="panel address-focus-panel">
+          <div className="address-window-toolbar" style={{ marginBottom: 18 }}>
+            <div className="section-head compact" style={{ marginBottom: 0 }}>
+              <h2>地址详情</h2>
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={closeWalletDetail}>
+              返回地址列表
+            </button>
+          </div>
+
+          <div className="address-focus-stage">
+            <div className="address-focus-hero">
+              <div className="address-focus-copy">
+                <p className="eyebrow">ADDRESS ANALYSIS</p>
+                <h3>{selectedName}</h3>
+                <p>{focusSummary}</p>
+                <div className="address-badge-stack">
+                  <span className="badge" title={selectedArchetypeMeta.description}>{selectedArchetypeMeta.code}</span>
+                  <span className={getTierBadgeClass(selectedTier)}>{selectedTier}</span>
+                  <span className={getSourceBadgeClass(selectedWinSourceMeta.code)}>{selectedWinSourceMeta.code}</span>
+                </div>
+                <div className="address-focus-meta">
+                  <span>{selectedWalletAddress || '-'}</span>
+                  <span>{`最近活跃 ${selectedRow?.lastTradeAt ? new Date(selectedRow.lastTradeAt).toLocaleDateString('zh-CN') : '-'}`}</span>
+                </div>
+              </div>
+
+              <div className="address-focus-metrics">
+                <AddressMetricStrip
+                  title="地址质量"
+                  value={formatPercent(selectedQualityScore)}
+                  hint="强不强"
+                  className={getAmountClass((selectedQualityScore || 0) - 0.5)}
+                />
+                <AddressMetricStrip
+                  title="可复制性"
+                  value={formatPercent(selectedReplicabilityScore)}
+                  hint="能不能跟"
+                  className={getAmountClass((selectedReplicabilityScore || 0) - 0.5)}
+                />
+                <AddressMetricStrip
+                  title="7D 胜率"
+                  value={formatPercent(selectedRecentWinRate7d)}
+                  hint="最近 7 天是否仍然有效"
+                  className={getAmountClass((selectedRecentWinRate7d || 0) - 0.5)}
+                />
+                <AddressMetricStrip
+                  title="30D 胜率"
+                  value={formatPercent(selectedRecentWinRate30d)}
+                  hint="近 30 天胜率表现"
+                  className={getAmountClass((selectedRecentWinRate30d || 0) - 0.5)}
+                />
+              </div>
+            </div>
+
+            <div className="address-focus-signal-rail">
+              <div className="address-focus-signal" title={selectedArchetypeMeta.description}>
+                <span>地址类型</span>
+                <strong>{selectedArchetypeMeta.label}</strong>
+              </div>
+              <div className="address-focus-signal" title={selectedFollowLaneMeta.description}>
+                <span>跟随通道</span>
+                <strong>{selectedFollowLaneMeta.label}</strong>
+              </div>
+              <div className="address-focus-signal" title={selectedExitLaneMeta.description}>
+                <span>建议退出</span>
+                <strong>{selectedExitLaneMeta.label}</strong>
+              </div>
+              <div className="address-focus-signal" title={selectedWinSourceMeta.description}>
+                <span>胜率来源</span>
+                <strong>{selectedWinSourceMeta.label}</strong>
+              </div>
+            </div>
+
+            <div className="metric-grid address-analysis-grid">
+              <AddressMetricStrip
+                title="可复制率"
+                value={formatPercent(selectedFollowabilityRate)}
+                hint="滑点复制可行性"
+                className={getAmountClass((selectedFollowabilityRate || 0) - 0.5)}
+              />
+              <AddressMetricStrip
+                title="等待结算胜率"
+                value={formatPercent(selectedSettlementWinRate)}
+                hint="只看 SETTLED_* 类订单"
+                className={getAmountClass((selectedSettlementWinRate || 0) - 0.5)}
+              />
+              <AddressMetricStrip
+                title="稳定性"
+                value={formatPercent(selectedStabilityScore)}
+                hint="避免一次性好运地址"
+                className={getAmountClass((selectedStabilityScore || 0) - 0.5)}
+              />
+              <AddressMetricStrip
+                title="新鲜度"
+                value={formatPercent(selectedFreshnessScore)}
+                hint="距离最近有效交易越近越高"
+                className={getAmountClass((selectedFreshnessScore || 0) - 0.5)}
+              />
+            </div>
+
+            <section className="address-trend-panel">
+              <div className="section-head compact">
+                <h2>近期交易节奏带</h2>
+              </div>
+
+              <div className="address-trend-summary-grid">
+                <div className="address-trend-summary-card">
+                  <span>正收益笔数</span>
+                  <strong>{formatNumber(trendPositiveCount, 0)}</strong>
+                  <small>最近趋势里赢的交易</small>
+                </div>
+                <div className="address-trend-summary-card">
+                  <span>负收益笔数</span>
+                  <strong>{formatNumber(trendNegativeCount, 0)}</strong>
+                  <small>最近趋势里亏的交易</small>
+                </div>
+                <div className="address-trend-summary-card">
+                  <span>提前退出率</span>
+                  <strong>{formatPercent(windowStats.earlyExitRate)}</strong>
+                  <small>当前分析窗口内提前退出占比（EARLY_*）</small>
+                </div>
+                <div className="address-trend-summary-card">
+                  <span>中位持有时长</span>
+                  <strong>{`${formatNumber(windowStats.medianHoldMinutes, 1)}m`}</strong>
+                  <small>当前分析窗口的持仓节奏</small>
+                </div>
+              </div>
+
+              {recentTradeTrend.length === 0 ? (
+                <div className="empty-state">当前窗口暂无可展示的趋势样本</div>
+              ) : (
+                <div className="address-trend-strip">
+                  {recentTradeTrend.map((item) => (
+                    <div key={item.key} className="address-trend-item">
+                      <div className="address-trend-bar-wrap">
+                        <div
+                          className={`address-trend-bar ${item.value >= 0 ? 'positive' : 'negative'}`}
+                          style={{ height: `${item.height}px` }}
+                          title={`${formatPercent(item.value)} / ${item.exitStyle}`}
+                        />
+                      </div>
+                      <div className="address-trend-value">{formatPercent(item.value)}</div>
+                      <div className="address-trend-label">{item.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <div className="address-focus-stack">
+              <section className="address-stack-block">
+                <div className="section-head compact">
+                  <h2>地址诊断</h2>
+                </div>
+                {diagnosisLoading ? <div className="loading">地址诊断加载中...</div> : <DiagnosisCard diagnosis={diagnosis} />}
+              </section>
+
+              <section className="address-stack-block">
+                <div className="section-head compact">
+                  <h2>交易分析</h2>
+                </div>
+
+                <div className="address-window-toolbar">
+                  <div className="segmented-control address-window-tabs">
+                    {(['7d', '30d', 'all'] as AnalysisWindow[]).map((window) => (
+                      <button
+                        key={window}
+                        type="button"
+                        className={analysisWindow === window ? 'active' : ''}
+                        onClick={() => setAnalysisWindow(window)}
+                      >
+                        {window.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="table-toolbar-meta">
+                    {selectedOrders.length === 0 ? '暂无单笔样本' : `当前窗口 ${formatNumber(filteredOrders.length, 0)} 笔 / 全量 ${formatNumber(selectedOrders.length, 0)} 笔`}
+                  </div>
+                </div>
+
+                {orderAnalysisLoading ? (
+                  <div className="loading">交易分析加载中...</div>
+                ) : (
+                  <div className="metric-grid address-analysis-grid">
+                    <AddressMetricStrip title="交易数" value={formatNumber(windowStats.trades, 0)} hint="当前窗口内已关闭交易样本数" />
+                    <AddressMetricStrip title="胜率" value={formatPercent(windowStats.winRate)} hint={`${windowStats.wins} 胜 / ${windowStats.losses} 负`} className={getAmountClass(windowStats.winRate - 0.5)} />
+                    <AddressMetricStrip title="净收益" value={formatMoney(windowStats.netPnlUsdc)} hint="当前窗口内累计已实现收益" className={getAmountClass(windowStats.netPnlUsdc)} />
+                    <AddressMetricStrip title="平均 ROI" value={formatPercent(windowStats.averageRoiRate)} hint="逐单收益率平均值" className={getAmountClass(windowStats.averageRoiRate)} />
+                    <AddressMetricStrip title="中位持有时长" value={`${formatNumber(windowStats.medianHoldMinutes, 1)}m`} hint="单笔持有分钟数中位数" />
+                    <AddressMetricStrip title="等待结算胜率" value={formatPercent(windowStats.settlementWinRate)} hint="只统计等待结算类退出（SETTLED_*）" className={getAmountClass(windowStats.settlementWinRate - 0.5)} />
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-head">
+            <h2>逐单分析</h2>
+          </div>
+
+          {orderAnalysisLoading ? (
+            <div className="loading">逐单分析加载中...</div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>市场 / 方向</th>
+                    <th>开仓 / 平仓</th>
+                    <th>投入</th>
+                    <th>收益</th>
+                    <th>ROI</th>
+                    <th>持有时长</th>
+                    <th>退出风格</th>
+                    <th>提前分钟</th>
+                    <th>可信度</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="empty-state">当前窗口暂无已关闭交易分析记录</td>
+                    </tr>
+                  ) : (
+                    filteredOrders.map((row, index) => (
+                      <tr key={`${row.walletAddress}-${row.marketId}-${row.closedAt || index}`}>
+                        <td>
+                          <div className="address-primary-cell">
+                            <strong>{row.outcome || '-'}</strong>
+                            <span title={row.question || ''}>{truncateText(row.question, 52) || row.marketId}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div>{row.openedAt ? new Date(row.openedAt).toLocaleString('zh-CN') : '-'}</div>
+                          <div className="table-subtext">{row.closedAt ? new Date(row.closedAt).toLocaleString('zh-CN') : '-'}</div>
+                        </td>
+                        <td>{formatAmount(row.investedUsdc)}</td>
+                        <td className={getAmountClass(row.realizedPnlUsdc)}>{formatMoney(row.realizedPnlUsdc)}</td>
+                        <td className={getAmountClass(row.roiRate)}>{formatPercent(row.roiRate)}</td>
+                        <td>{formatNumber(row.holdMinutes, 1)}m</td>
+                        <td><span className="badge">{row.exitStyle || 'UNKNOWN'}</span></td>
+                        <td>{row.exitLeadMinutes == null ? '-' : `${formatNumber(row.exitLeadMinutes, 1)}m`}</td>
+                        <td>{formatPercent(row.sourceConfidence)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </>
+    )
+  }
+
   return (
     <>
       <section className="panel address-hero-panel">
         <div className="address-hero">
           <div className="address-hero-copy">
-            <p className="eyebrow">Monitoring Console</p>
-            <h2>跟单地址监控中心</h2>
-            <p>
-              这里把监控池、开放名单、胜率来源、人工管理和逐单复盘放进同一个驾驶舱。
-              本轮排版改成纵向主导的节奏，先给总控，再给主表，再给聚焦分析。
-            </p>
+            <p className="eyebrow">ADDRESS MONITOR</p>
+            <h2>地址监控</h2>
           </div>
-          <div className="address-hero-highlight">
-            <div className="address-badge-stack">
-              <span className="badge accent">监控池 {formatNumber(monitoredAddresses.length, 0)}</span>
-              <span className="badge">{`开放跟单 ${formatNumber(activeCopyCount, 0)}`}</span>
-              <span className="badge warn">{`只观察 ${formatNumber(observeCount, 0)}`}</span>
+          <div className="address-hero-stats">
+            <div className="address-hero-stat">
+              <span>监控池</span>
+              <strong>{formatNumber(monitoredAddresses.length, 0)}</strong>
             </div>
-            <div className="address-hero-note">
-              当前选中地址：
-              <strong>{selectedRow?.alias || (selectedWalletAddress ? compactAddress(selectedWalletAddress, 10, 6) : '未选择')}</strong>
+            <div className="address-hero-stat">
+              <span>开放跟单</span>
+              <strong>{formatNumber(activeCopyCount, 0)}</strong>
+            </div>
+            <div className="address-hero-stat">
+              <span>只观察</span>
+              <strong>{formatNumber(observeCount, 0)}</strong>
+            </div>
+            <div className="address-hero-stat">
+              <span>当前地址</span>
+              <strong>{currentAddressLabel}</strong>
             </div>
           </div>
-        </div>
-
-        <div className="metric-grid address-summary-grid">
-          <AddressMetricStrip title="监控中地址" value={formatNumber(monitoredAddresses.length, 0)} hint="候选池中正在持续监控的地址数量" />
-          <AddressMetricStrip title="正在跟单地址" value={formatNumber(activeCopyCount, 0)} hint="当前仍在 executable 队列中的地址数量" />
-          <AddressMetricStrip title="高质量地址" value={formatNumber(activeQualityCount, 0)} hint="满足当前高质量阈值的地址数量" className="positive" />
-          <AddressMetricStrip title="延迟型胜率" value={formatNumber(latencyDrivenCount, 0)} hint="胜率主要来自短周期 alpha 的地址数量" />
         </div>
 
         {managementMessage ? <div className="export-status">{managementMessage}</div> : null}
@@ -521,11 +1011,9 @@ export function FollowAddressPanel() {
         <div className="address-control-deck sticky-toolbar">
           <div className="address-control-copy">
             <div>
-              <p className="eyebrow">Command Deck</p>
-              <h2>监控筛选与优先级编排</h2>
-              <p>{buildMonitorNote(monitoredAddresses.length, filteredMonitoredAddresses.length, watchGroup)}</p>
+              <p className="eyebrow">COMMAND DECK</p>
+              <h2>地址筛选</h2>
             </div>
-            <div className="table-toolbar-meta">搜索、分层、胜率来源和地址类型都在这里统一控制</div>
           </div>
 
           <div className="address-kpi-ribbon">
@@ -536,16 +1024,7 @@ export function FollowAddressPanel() {
                   key={card.key}
                   type="button"
                   className={`address-kpi-chip ${active ? 'active' : ''}`}
-                  onClick={() => {
-                    setTierFilter(card.key === 'ALL' ? 'ALL' : card.key)
-                    const firstRow =
-                      card.key === 'ALL'
-                        ? filteredMonitoredAddresses[0] || monitoredAddresses[0]
-                        : monitoredAddresses.find((row) => row.screenerTier === card.key)
-                    if (firstRow) {
-                      setSelectedWalletAddress(firstRow.walletAddress)
-                    }
-                  }}
+                  onClick={() => setTierFilter(card.key === 'ALL' ? 'ALL' : card.key)}
                 >
                   <span className="address-kpi-label">{card.title}</span>
                   <strong>{formatNumber(card.count, 0)}</strong>
@@ -566,27 +1045,27 @@ export function FollowAddressPanel() {
               />
               <select value={tierFilter} onChange={(event) => setTierFilter(event.target.value)}>
                 <option value="ALL">全部分层</option>
-                <option value="EXECUTABLE_A">EXECUTABLE_A</option>
-                <option value="EXECUTABLE_B">EXECUTABLE_B</option>
-                <option value="OBSERVE">OBSERVE</option>
-                <option value="BLOCKLIST">BLOCKLIST</option>
+                <option value="EXECUTABLE_A">EXECUTABLE_A 重点开放</option>
+                <option value="EXECUTABLE_B">EXECUTABLE_B 可跟单观察</option>
+                <option value="OBSERVE">OBSERVE 只观察</option>
+                <option value="BLOCKLIST">BLOCKLIST 阻断</option>
               </select>
               <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
                 <option value="ALL">全部胜率来源</option>
-                <option value="LATENCY_ALPHA">LATENCY_ALPHA</option>
-                <option value="SWING_ALPHA">SWING_ALPHA</option>
-                <option value="SETTLEMENT_ALPHA">SETTLEMENT_ALPHA</option>
-                <option value="RISK_CONTROL_ALPHA">RISK_CONTROL_ALPHA</option>
-                <option value="UNKNOWN">UNKNOWN</option>
+                <option value="LATENCY_ALPHA">{getWinSourceMeta('LATENCY_ALPHA').label}</option>
+                <option value="SWING_ALPHA">{getWinSourceMeta('SWING_ALPHA').label}</option>
+                <option value="SETTLEMENT_ALPHA">{getWinSourceMeta('SETTLEMENT_ALPHA').label}</option>
+                <option value="RISK_CONTROL_ALPHA">{getWinSourceMeta('RISK_CONTROL_ALPHA').label}</option>
+                <option value="UNKNOWN">UNKNOWN 未知</option>
               </select>
               <select value={archetypeFilter} onChange={(event) => setArchetypeFilter(event.target.value)}>
                 <option value="ALL">全部地址类型</option>
-                <option value="HF">HF</option>
-                <option value="SWING">SWING</option>
-                <option value="THEMATIC">THEMATIC</option>
-                <option value="LOW_FREQ_VALUE">LOW_FREQ_VALUE</option>
-                <option value="NOISE">NOISE</option>
-                <option value="UNKNOWN">UNKNOWN</option>
+                <option value="HF">{getArchetypeMeta('HF').label}</option>
+                <option value="SWING">{getArchetypeMeta('SWING').label}</option>
+                <option value="THEMATIC">{getArchetypeMeta('THEMATIC').label}</option>
+                <option value="LOW_FREQ_VALUE">{getArchetypeMeta('LOW_FREQ_VALUE').label}</option>
+                <option value="NOISE">{getArchetypeMeta('NOISE').label}</option>
+                <option value="UNKNOWN">UNKNOWN 未定型</option>
               </select>
             </div>
 
@@ -624,8 +1103,7 @@ export function FollowAddressPanel() {
 
       <section className="panel address-full-panel">
         <div className="section-head">
-          <h2>监控中的地址面板</h2>
-          <p>先看分组，再看主表，让运营能快速识别重点开放、观察池和阻断池的结构差异</p>
+          <h2>监控地址</h2>
         </div>
 
         <div className="address-group-rail">
@@ -634,17 +1112,11 @@ export function FollowAddressPanel() {
               key={group.key}
               type="button"
               className={`address-group-card ${tierFilter === group.key ? 'active' : ''}`}
-              onClick={() => {
-                setTierFilter(group.key)
-                if (group.rows[0]) {
-                  setSelectedWalletAddress(group.rows[0].walletAddress)
-                }
-              }}
+              onClick={() => setTierFilter(group.key)}
             >
               <div className="address-group-card-head">
                 <div>
                   <h3>{group.title}</h3>
-                  <p>{group.description}</p>
                 </div>
                 <span className={getTierBadgeClass(group.key)}>{group.key}</span>
               </div>
@@ -667,7 +1139,6 @@ export function FollowAddressPanel() {
               <div className="address-group-head">
                 <div>
                   <h3>{group.title}</h3>
-                  <p>{group.description}</p>
                 </div>
                 <div className="address-group-head-meta">
                   <span>{group.rows.length} 个地址</span>
@@ -683,18 +1154,18 @@ export function FollowAddressPanel() {
                       <th>类型</th>
                       <th>分层</th>
                       <th>胜率来源</th>
+                      <th>7D胜率</th>
                       <th>30D胜率</th>
                       <th>订单胜率</th>
                       <th>质量 / 复制 / 稳定</th>
                       <th>建议退出</th>
                       <th>补充判断</th>
                       <th>最近活跃</th>
-                      <th>管理</th>
+                      <th>操作</th>
                     </tr>
                   </thead>
                   <tbody>
                     {group.rows.map((row) => {
-                      const isSelected = selectedWalletAddress === row.walletAddress
                       const actionDisabled =
                         observeOnlyMutation.isPending ||
                         row.screenerTier === 'OBSERVE' ||
@@ -703,12 +1174,16 @@ export function FollowAddressPanel() {
                         row.screenerTier === 'OBSERVE' || row.screenerTier === 'BLOCKLIST'
                           ? '不开放'
                           : '只观察'
+                      const archetypeMeta = getArchetypeMeta(row.archetype)
+                      const followLaneMeta = getFollowLaneMeta(row.followLane)
+                      const winSourceMeta = getWinSourceMeta(row.winSourceType)
+                      const exitLaneMeta = getExitLaneMeta(row.recommendedExitLane)
 
                       return (
                         <tr
                           key={row.walletAddress}
-                          className={isSelected ? 'address-row-selected' : undefined}
-                          onClick={() => setSelectedWalletAddress(row.walletAddress)}
+                          onClick={() => openWalletDetail(row.walletAddress)}
+                          style={{ cursor: 'pointer' }}
                         >
                           <td>
                             <div className="address-primary-cell">
@@ -718,45 +1193,64 @@ export function FollowAddressPanel() {
                           </td>
                           <td>
                             <div className="address-badge-stack">
-                              <span className="badge">{row.archetype || 'UNKNOWN'}</span>
-                              {row.highFrequencyTradingAddress ? <span className="badge warn">HF</span> : null}
+                              <span className="badge" title={archetypeMeta.description}>{archetypeMeta.code}</span>
+                              {row.highFrequencyTradingAddress && row.archetype !== 'HF' ? <span className="badge warn">HF</span> : null}
                             </div>
+                            <div className="table-subtext">{archetypeMeta.label}</div>
+                            <div className="table-subtext">{followLaneMeta.label}</div>
                           </td>
                           <td>
                             <span className={getTierBadgeClass(row.screenerTier)}>{row.screenerTier}</span>
                             <div className="table-subtext">{buildStatusNote(row)}</div>
                           </td>
                           <td>
-                            <span className={getSourceBadgeClass(row.winSourceType)}>{row.winSourceType || 'UNKNOWN'}</span>
+                            <span className={getSourceBadgeClass(row.winSourceType)}>{winSourceMeta.code}</span>
+                            <div className="table-subtext">{winSourceMeta.label}</div>
                           </td>
+                          <td>{formatPercent(row.recentWinRate7d)}</td>
                           <td>{formatPercent(row.recentWinRate30d)}</td>
                           <td>{formatPercent(row.orderWinRate)}</td>
                           <td>
                             <div>{formatPercent(row.qualityScore)} / {formatPercent(row.replicabilityScore)} / {formatPercent(row.stabilityScore)}</div>
-                            <div className="table-subtext">followability {formatPercent(row.followabilityRate)}</div>
+                            <div className="table-subtext">可复制率 {formatPercent(row.followabilityRate)}</div>
                           </td>
-                          <td>{row.recommendedExitLane || '-'}</td>
                           <td>
-                            <div>{`freshness ${formatPercent(row.freshnessScore)}`}</div>
+                            <div>{exitLaneMeta.label}</div>
+                            <div className="table-subtext">{exitLaneMeta.description}</div>
+                          </td>
+                          <td>
+                            <div>{`新鲜度 ${formatPercent(row.freshnessScore)}`}</div>
                             <div className="table-subtext">{`市场集中 ${formatPercent(row.concentrationMarket30d)}`}</div>
                           </td>
                           <td>{row.lastTradeAt ? new Date(row.lastTradeAt).toLocaleDateString('zh-CN') : '-'}</td>
                           <td>
-                            <button
-                              type="button"
-                              className="btn btn-secondary address-action-btn"
-                              disabled={actionDisabled}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                if (!actionDisabled) {
-                                  observeOnlyMutation.mutate(row.walletAddress)
-                                }
-                              }}
-                            >
-                              {observeOnlyMutation.isPending && observeOnlyMutation.variables === row.walletAddress
-                                ? '处理中'
-                                : actionLabel}
-                            </button>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className="btn btn-primary address-action-btn"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  openWalletDetail(row.walletAddress)
+                                }}
+                              >
+                                查看详情
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary address-action-btn"
+                                disabled={actionDisabled}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  if (!actionDisabled) {
+                                    observeOnlyMutation.mutate(row.walletAddress)
+                                  }
+                                }}
+                              >
+                                {observeOnlyMutation.isPending && observeOnlyMutation.variables === row.walletAddress
+                                  ? '处理中'
+                                  : actionLabel}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -771,8 +1265,7 @@ export function FollowAddressPanel() {
 
       <section className="panel address-full-panel">
         <div className="section-head">
-          <h2>正在跟单地址面板</h2>
-          <p>用横向精选卡带呈现开放地址，适合快速扫一遍正在执行的核心队列</p>
+          <h2>跟单地址</h2>
         </div>
 
         {executableLoading ? (
@@ -781,244 +1274,41 @@ export function FollowAddressPanel() {
           <div className="empty-state">当前没有开放中的跟单地址</div>
         ) : (
           <div className="address-card-strip">
-            {executableAddresses.map((row) => (
-              <button
-                key={row.walletAddress}
-                type="button"
-                className={`address-card ${selectedWalletAddress === row.walletAddress ? 'active' : ''}`}
-                onClick={() => setSelectedWalletAddress(row.walletAddress)}
-              >
-                <div className="address-card-top">
-                  <strong>{row.alias || compactAddress(row.walletAddress, 8, 6)}</strong>
-                  <span className={getTierBadgeClass(row.screenerTier)}>{row.screenerTier}</span>
-                </div>
-                <div className="address-card-meta">
-                  <span>{row.archetype || 'UNKNOWN'}</span>
-                  <span>{row.followLane || 'OBSERVE_ONLY'}</span>
-                </div>
-                <div className="address-card-metrics">
-                  <span>质量 {formatPercent(row.qualityScore)}</span>
-                  <span>复制 {formatPercent(row.replicabilityScore)}</span>
-                </div>
-                <div className="address-card-metrics">
-                  <span>胜率来源 {row.winSourceType || 'UNKNOWN'}</span>
-                  <span>结算 {formatPercent(row.settlementWinRate)}</span>
-                </div>
-                <div className="address-card-summary">{truncateText(row.summary, 120) || '暂无摘要'}</div>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="panel address-focus-panel">
-        <div className="section-head">
-          <h2>选中地址聚焦分析</h2>
-          <p>先给一句运营结论，再给趋势和诊断，最后再下沉到窗口分析，阅读节奏会更自然</p>
-        </div>
-
-        {selectedRow ? (
-          <div className="address-focus-stage">
-            <div className="address-focus-hero">
-              <div className="address-focus-copy">
-                <p className="eyebrow">Focused Wallet</p>
-                <h3>{selectedRow.alias || compactAddress(selectedRow.walletAddress, 10, 6)}</h3>
-                <p>{focusSummary}</p>
-                <div className="address-badge-stack">
-                  <span className="badge">{selectedRow.archetype || 'UNKNOWN'}</span>
-                  <span className={getTierBadgeClass(selectedRow.screenerTier)}>{selectedRow.screenerTier}</span>
-                  <span className={getSourceBadgeClass(selectedRow.winSourceType)}>{selectedRow.winSourceType || 'UNKNOWN'}</span>
-                </div>
-                <div className="address-focus-meta">
-                  <span>{selectedRow.walletAddress}</span>
-                  <span>{`最近活跃 ${selectedRow.lastTradeAt ? new Date(selectedRow.lastTradeAt).toLocaleDateString('zh-CN') : '-'}`}</span>
-                </div>
-              </div>
-
-              <div className="address-focus-metrics">
-                <AddressMetricStrip title="地址质量" value={formatPercent(selectedRow.qualityScore)} hint="强不强" className={getAmountClass((selectedRow.qualityScore || 0) - 0.5)} />
-                <AddressMetricStrip title="可复制性" value={formatPercent(selectedRow.replicabilityScore)} hint="能不能跟" className={getAmountClass((selectedRow.replicabilityScore || 0) - 0.5)} />
-                <AddressMetricStrip title="30D 胜率" value={formatPercent(selectedRow.recentWinRate30d)} hint="近期胜率表现" className={getAmountClass((selectedRow.recentWinRate30d || 0) - 0.5)} />
-                <AddressMetricStrip title="Followability" value={formatPercent(selectedRow.followabilityRate)} hint="滑点复制可行性" className={getAmountClass((selectedRow.followabilityRate || 0) - 0.5)} />
-              </div>
-            </div>
-
-            <div className="address-focus-signal-rail">
-              <div className="address-focus-signal">
-                <span>推荐退出</span>
-                <strong>{selectedRow.recommendedExitLane || '-'}</strong>
-              </div>
-              <div className="address-focus-signal">
-                <span>等待结算胜率</span>
-                <strong>{formatPercent(diagnosis?.settlementWinRate ?? selectedRow.settlementWinRate)}</strong>
-              </div>
-              <div className="address-focus-signal">
-                <span>稳定性</span>
-                <strong>{formatPercent(selectedRow.stabilityScore)}</strong>
-              </div>
-              <div className="address-focus-signal">
-                <span>Freshness</span>
-                <strong>{formatPercent(selectedRow.freshnessScore)}</strong>
-              </div>
-            </div>
-
-            <section className="address-trend-panel">
-              <div className="section-head compact">
-                <h2>近期交易节奏带</h2>
-                <p>最近 8 笔交易用趋势条直观看节奏，同时给出当前窗口的胜负分布和提前退出占比</p>
-              </div>
-
-              <div className="address-trend-summary-grid">
-                <div className="address-trend-summary-card">
-                  <span>正收益笔数</span>
-                  <strong>{formatNumber(trendPositiveCount, 0)}</strong>
-                  <small>最近趋势里赢的交易</small>
-                </div>
-                <div className="address-trend-summary-card">
-                  <span>负收益笔数</span>
-                  <strong>{formatNumber(trendNegativeCount, 0)}</strong>
-                  <small>最近趋势里亏的交易</small>
-                </div>
-                <div className="address-trend-summary-card">
-                  <span>提前退出率</span>
-                  <strong>{formatPercent(windowStats.earlyExitRate)}</strong>
-                  <small>当前分析窗口内 EARLY_* 占比</small>
-                </div>
-                <div className="address-trend-summary-card">
-                  <span>中位持有时长</span>
-                  <strong>{`${formatNumber(windowStats.medianHoldMinutes, 1)}m`}</strong>
-                  <small>当前分析窗口的持仓节奏</small>
-                </div>
-              </div>
-
-              {recentTradeTrend.length === 0 ? (
-                <div className="empty-state">当前窗口暂无可展示的趋势样本</div>
-              ) : (
-                <div className="address-trend-strip">
-                  {recentTradeTrend.map((item) => (
-                    <div key={item.key} className="address-trend-item">
-                      <div className="address-trend-bar-wrap">
-                        <div
-                          className={`address-trend-bar ${item.value >= 0 ? 'positive' : 'negative'}`}
-                          style={{ height: `${item.height}px` }}
-                          title={`${formatPercent(item.value)} / ${item.exitStyle}`}
-                        />
-                      </div>
-                      <div className="address-trend-value">{formatPercent(item.value)}</div>
-                      <div className="address-trend-label">{item.label}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <div className="address-focus-stack">
-              <section className="address-stack-block">
-                <div className="section-head compact">
-                  <h2>地址诊断面板</h2>
-                  <p>解释这个地址为什么赢、适不适合跟、以及应该怎么退出</p>
-                </div>
-                {diagnosisLoading ? <div className="loading">地址诊断加载中...</div> : <DiagnosisCard diagnosis={diagnosis} />}
-              </section>
-
-              <section className="address-stack-block">
-                <div className="section-head compact">
-                  <h2>7D / 30D / 全量交易分析</h2>
-                  <p>按窗口比较收益、胜率、持有时长与结算风格，方便判断近期有效性和风格漂移</p>
-                </div>
-
-                <div className="address-window-toolbar">
-                  <div className="segmented-control address-window-tabs">
-                    {(['7d', '30d', 'all'] as AnalysisWindow[]).map((window) => (
-                      <button
-                        key={window}
-                        type="button"
-                        className={analysisWindow === window ? 'active' : ''}
-                        onClick={() => setAnalysisWindow(window)}
-                      >
-                        {window.toUpperCase()}
-                      </button>
-                    ))}
+            {executableAddresses.map((row) => {
+              const archetypeMeta = getArchetypeMeta(row.archetype)
+              const followLaneMeta = getFollowLaneMeta(row.followLane)
+              const winSourceMeta = getWinSourceMeta(row.winSourceType)
+              return (
+                <button
+                  key={row.walletAddress}
+                  type="button"
+                  className="address-card"
+                  onClick={() => openWalletDetail(row.walletAddress)}
+                >
+                  <div className="address-card-top">
+                    <strong>{row.alias || compactAddress(row.walletAddress, 8, 6)}</strong>
+                    <span className={getTierBadgeClass(row.screenerTier)}>{row.screenerTier}</span>
                   </div>
-                  <div className="table-toolbar-meta">
-                    {selectedOrders.length === 0 ? '暂无单笔样本' : `当前窗口 ${formatNumber(filteredOrders.length, 0)} 笔 / 全量 ${formatNumber(selectedOrders.length, 0)} 笔`}
+                  <div className="address-card-meta">
+                    <span>{archetypeMeta.label}</span>
+                    <span>{followLaneMeta.label}</span>
                   </div>
-                </div>
-
-                {orderAnalysisLoading ? (
-                  <div className="loading">交易分析加载中...</div>
-                ) : (
-                  <div className="metric-grid address-analysis-grid">
-                    <AddressMetricStrip title="交易数" value={formatNumber(windowStats.trades, 0)} hint="当前窗口内已关闭交易样本数" />
-                    <AddressMetricStrip title="胜率" value={formatPercent(windowStats.winRate)} hint={`${windowStats.wins} 胜 / ${windowStats.losses} 负`} className={getAmountClass(windowStats.winRate - 0.5)} />
-                    <AddressMetricStrip title="净收益" value={formatMoney(windowStats.netPnlUsdc)} hint="当前窗口内累计已实现收益" className={getAmountClass(windowStats.netPnlUsdc)} />
-                    <AddressMetricStrip title="平均ROI" value={formatPercent(windowStats.averageRoiRate)} hint="逐单收益率平均值" className={getAmountClass(windowStats.averageRoiRate)} />
-                    <AddressMetricStrip title="中位持有时长" value={`${formatNumber(windowStats.medianHoldMinutes, 1)}m`} hint="单笔持有分钟数中位数" />
-                    <AddressMetricStrip title="等待结算胜率" value={formatPercent(windowStats.settlementWinRate)} hint="只统计 SETTLED_* 的交易" className={getAmountClass(windowStats.settlementWinRate - 0.5)} />
+                  <div className="address-card-metrics">
+                    <span>质量 {formatPercent(row.qualityScore)}</span>
+                    <span>复制 {formatPercent(row.replicabilityScore)}</span>
                   </div>
-                )}
-              </section>
-            </div>
-          </div>
-        ) : (
-          <div className="empty-state">从监控中的地址面板或正在跟单地址面板中选择一个地址开始分析</div>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="section-head">
-          <h2>地址逐单分析详情</h2>
-          <p>展示 {analysisWindow.toUpperCase()} 窗口内逐单 ROI、提前退出 / 等待结算与可信度，方便人工复核</p>
-        </div>
-
-        {orderAnalysisLoading ? (
-          <div className="loading">逐单分析加载中...</div>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>市场 / 方向</th>
-                  <th>开仓 / 平仓</th>
-                  <th>投入</th>
-                  <th>收益</th>
-                  <th>ROI</th>
-                  <th>持有时长</th>
-                  <th>退出风格</th>
-                  <th>提前分钟</th>
-                  <th>可信度</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOrders.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="empty-state">当前窗口暂无已关闭交易分析记录</td>
-                  </tr>
-                ) : (
-                  filteredOrders.map((row, index) => (
-                    <tr key={`${row.walletAddress}-${row.marketId}-${row.closedAt || index}`}>
-                      <td>
-                        <div className="address-primary-cell">
-                          <strong>{row.outcome || '-'}</strong>
-                          <span title={row.question || ''}>{truncateText(row.question, 52) || row.marketId}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div>{row.openedAt ? new Date(row.openedAt).toLocaleString('zh-CN') : '-'}</div>
-                        <div className="table-subtext">{row.closedAt ? new Date(row.closedAt).toLocaleString('zh-CN') : '-'}</div>
-                      </td>
-                      <td>{formatAmount(row.investedUsdc)}</td>
-                      <td className={getAmountClass(row.realizedPnlUsdc)}>{formatMoney(row.realizedPnlUsdc)}</td>
-                      <td className={getAmountClass(row.roiRate)}>{formatPercent(row.roiRate)}</td>
-                      <td>{formatNumber(row.holdMinutes, 1)}m</td>
-                      <td><span className="badge">{row.exitStyle || 'UNKNOWN'}</span></td>
-                      <td>{row.exitLeadMinutes == null ? '-' : `${formatNumber(row.exitLeadMinutes, 1)}m`}</td>
-                      <td>{formatPercent(row.sourceConfidence)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  <div className="address-card-metrics">
+                    <span>7D {formatPercent(row.recentWinRate7d)}</span>
+                    <span>30D {formatPercent(row.recentWinRate30d)}</span>
+                  </div>
+                  <div className="address-card-metrics">
+                    <span>{winSourceMeta.code}</span>
+                    <span>结算 {formatPercent(row.settlementWinRate)}</span>
+                  </div>
+                  <div className="address-card-summary">{truncateText(row.summary, 120) || '暂无摘要'}</div>
+                </button>
+              )
+            })}
           </div>
         )}
       </section>

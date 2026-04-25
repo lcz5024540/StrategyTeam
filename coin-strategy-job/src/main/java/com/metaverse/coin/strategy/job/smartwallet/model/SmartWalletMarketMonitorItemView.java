@@ -15,6 +15,7 @@ public class SmartWalletMarketMonitorItemView {
     private String question;
     private Long marketEndAt;
     private String marketEndAtBjt;
+    private String marketState;
     private Date lastSignalAt;
     private String lastSignalAtBjt;
     private Integer signalCount;
@@ -22,6 +23,8 @@ public class SmartWalletMarketMonitorItemView {
     private Integer pendingTaskCount;
     private Integer openPositionCount;
     private BigDecimal openCostUsdc;
+    private String positionDirection;
+    private String positionDirectionCode;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
     private Boolean activeMarket;

@@ -73,7 +73,6 @@ function HedgeMetricGrid({ dash }: { dash?: HedgeDashboard }) {
     <section className="panel">
       <div className="section-head">
         <h2>核心指标</h2>
-        <p>Polymarket 对冲策略收益、仓位与风险概览</p>
       </div>
       <div className="metric-grid">
         {metrics.map((item) => (
@@ -268,14 +267,12 @@ export function PolymarketHedgePage() {
         <section className="panel">
           <div className="section-head">
             <h2>收益时间线</h2>
-            <p>按开仓日期累计已实现收益</p>
           </div>
           <TimelineChart data={dailyReports} />
         </section>
         <section className="panel">
           <div className="section-head">
-            <h2>全局风险敞口</h2>
-            <p>当前对冲组合的整体风险快照</p>
+            <h2>风险敞口</h2>
           </div>
           <RiskPanel />
         </section>
@@ -284,8 +281,7 @@ export function PolymarketHedgePage() {
       {/* 任务板：套利扫描日志 */}
       <section className="panel">
         <div className="section-head">
-          <h2>套利扫描日志</h2>
-          <p>系统自动扫描到的机会及执行动作记录</p>
+          <h2>扫描日志</h2>
         </div>
         <ArbitrageLogTable />
       </section>
@@ -294,7 +290,6 @@ export function PolymarketHedgePage() {
       <section className="panel">
         <div className="section-head">
           <h2>市场归因</h2>
-          <p>按市场维度的收益归因（基于已实现 PnL）</p>
         </div>
         <AttributionBars data={marketAttribution} type="market" />
       </section>
@@ -303,15 +298,13 @@ export function PolymarketHedgePage() {
       <div className="split-grid">
         <section className="panel">
           <div className="section-head">
-            <h2>当前对冲持仓</h2>
-            <p>已双边建仓、等待市场结算的对冲对</p>
+            <h2>对冲持仓</h2>
           </div>
           <HedgePairsTable pairs={openPairs} loading={openLoading} />
         </section>
         <section className="panel">
           <div className="section-head">
-            <h2>待结算处理</h2>
-            <p>已进入结算窗口或待领取的对冲仓位</p>
+            <h2>待结算</h2>
           </div>
           <HedgeSettlingTable pairs={settlingPairs} />
         </section>
@@ -320,8 +313,7 @@ export function PolymarketHedgePage() {
       {/* 全量订单（开仓 + 待结算合并展示） */}
       <section className="panel">
         <div className="section-head">
-          <h2>对冲订单历史</h2>
-          <p>全部对冲持仓的配对订单记录（PAIR = YES + NO 双边）</p>
+          <h2>订单历史</h2>
         </div>
         <HedgePairsTable pairs={[...openPairs, ...settlingPairs]} />
       </section>

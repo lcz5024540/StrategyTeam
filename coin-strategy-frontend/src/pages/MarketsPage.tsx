@@ -4,11 +4,13 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { useSearchParams } from 'react-router-dom'
 import { reportsApi } from '@/api'
+import { TablePagination } from '@/components/tables/TablePagination'
 import type { SmartWalletMarketMonitorItem, SmartWalletMarketMonitorTrendPoint } from '@/types/smartwallet'
-import { compactAddress, formatAmount, formatMoney, formatNumber, formatPercent, truncateText } from '@/utils/format'
+import { compactAddress, formatNumber, formatPercent, truncateText } from '@/utils/format'
 
 const LOOKBACK_OPTIONS = [7, 14, 30]
 const LIMIT_OPTIONS = [24, 40, 60]
+const PAGE_SIZE_OPTIONS = [10, 20, 40]
 
 function buildTrendOption(data: SmartWalletMarketMonitorTrendPoint[]): EChartsOption {
   return {
@@ -217,6 +219,10 @@ function riskClass(item: SmartWalletMarketMonitorItem) {
   return 'market-risk-badge muted'
 }
 
+function marketStateBadgeClass(item: SmartWalletMarketMonitorItem) {
+  return item.marketState === 'ACTIVE' ? 'badge accent' : 'badge warn'
+}
+
 export function MarketsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const lookbackDays = LOOKBACK_OPTIONS.includes(Number(searchParams.get('lookbackDays')))
@@ -226,11 +232,38 @@ export function MarketsPage() {
     ? Number(searchParams.get('limit'))
     : 40
   const trendDays = Math.min(lookbackDays, lookbackDays >= 30 ? 14 : 7)
+  const page = Math.max(1, Number(searchParams.get('page')) || 1)
+  const pageSize = PAGE_SIZE_OPTIONS.includes(Number(searchParams.get('pageSize')))
+    ? Number(searchParams.get('pageSize'))
+    : 10
+  const keyword = searchParams.get('keyword')?.trim() || ''
+  const marketState = searchParams.get('marketState')?.trim() || ''
+  const concentrationBand = searchParams.get('concentrationBand')?.trim() || ''
+  const positionDirection = searchParams.get('positionDirection')?.trim() || ''
+  const hasPositionParam = searchParams.get('hasPosition')?.trim() || ''
+  const hasPosition =
+    hasPositionParam === 'true'
+      ? true
+      : hasPositionParam === 'false'
+        ? false
+        : null
 
-  const updateParam = (key: 'lookbackDays' | 'limit', value: number) => {
+  const updateParams = (
+    updates: Record<string, string | number | boolean | null | undefined>,
+    options: { resetPage?: boolean } = {}
+  ) => {
     startTransition(() => {
       const nextParams = new URLSearchParams(searchParams)
-      nextParams.set(key, String(value))
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '') {
+          nextParams.delete(key)
+        } else {
+          nextParams.set(key, String(value))
+        }
+      })
+      if (options.resetPage) {
+        nextParams.set('page', '1')
+      }
       nextParams.set('strategy', 'POLYMARKET_COPY')
       setSearchParams(nextParams)
     })
@@ -239,6 +272,31 @@ export function MarketsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['marketMonitoringSummary', limit, lookbackDays, trendDays],
     queryFn: () => reportsApi.getMarketMonitoringSummary(limit, lookbackDays, trendDays),
+  })
+
+  const { data: marketTablePage, isLoading: tableLoading } = useQuery({
+    queryKey: [
+      'marketMonitoringTablePage',
+      lookbackDays,
+      page,
+      pageSize,
+      keyword,
+      marketState,
+      concentrationBand,
+      hasPosition,
+      positionDirection,
+    ],
+    queryFn: () =>
+      reportsApi.getMarketMonitoringTablePage({
+        page,
+        pageSize,
+        lookbackDays,
+        keyword: keyword || undefined,
+        marketState: marketState || undefined,
+        concentrationBand: concentrationBand || undefined,
+        hasPosition,
+        positionDirection: positionDirection || undefined,
+      }),
   })
 
   if (isLoading || !data) {
@@ -255,7 +313,7 @@ export function MarketsPage() {
     {
       label: '有效市场',
       value: formatNumber(data.effectiveMarketCount, 0),
-      hint: `活跃且未触发高集中风险`,
+      hint: '活跃且未触发高集中风险',
       tone: 'positive',
     },
     {
@@ -273,13 +331,13 @@ export function MarketsPage() {
     {
       label: '持仓市场',
       value: formatNumber(data.openPositionMarketCount, 0),
-      hint: `仍有跟单仓位暴露`,
+      hint: '仍有跟单仓位暴露',
       tone: 'warn',
     },
     {
       label: '待执行市场',
       value: formatNumber(data.pendingTaskMarketCount, 0),
-      hint: `存在 pending follow task`,
+      hint: '存在待执行 follow task',
       tone: 'warn',
     },
   ]
@@ -288,23 +346,18 @@ export function MarketsPage() {
     <>
       <section className="hero">
         <div>
-          <p className="eyebrow">Market Console</p>
-          <h1>Polymarket 市场监控</h1>
-          <p className="subtitle">
-            这页专门看市场，而不是看地址。我们把近期有信号、有待执行任务、或仍有持仓暴露的市场拉成一个监控面，
-            用集中度、HHI、活跃度和持仓风险去判断哪些市场值得继续跟，哪些市场已经像“控盘场”。
-          </p>
+          <h1>市场监控</h1>
         </div>
         <div className="market-console-controls">
           <div>
-            <p className="eyebrow">Lookback</p>
+            <p className="eyebrow">回看</p>
             <div className="segmented-control">
               {LOOKBACK_OPTIONS.map((option) => (
                 <button
                   key={option}
                   type="button"
                   className={option === lookbackDays ? 'active' : ''}
-                  onClick={() => updateParam('lookbackDays', option)}
+                  onClick={() => updateParams({ lookbackDays: option }, { resetPage: true })}
                 >
                   {option}d
                 </button>
@@ -312,14 +365,14 @@ export function MarketsPage() {
             </div>
           </div>
           <div>
-            <p className="eyebrow">Rows</p>
+            <p className="eyebrow">样本</p>
             <div className="segmented-control">
               {LIMIT_OPTIONS.map((option) => (
                 <button
                   key={option}
                   type="button"
                   className={option === limit ? 'active' : ''}
-                  onClick={() => updateParam('limit', option)}
+                  onClick={() => updateParams({ limit: option })}
                 >
                   {option}
                 </button>
@@ -332,7 +385,6 @@ export function MarketsPage() {
       <section className="panel">
         <div className="section-head">
           <h2>市场总览</h2>
-          <p>从“当前监控的市场集合”看有效性、控盘风险与待执行压力</p>
         </div>
         <div className="metric-grid">
           {metricCards.map((item) => (
@@ -349,14 +401,12 @@ export function MarketsPage() {
         <section className="panel">
           <div className="section-head">
             <h2>市场趋势</h2>
-            <p>最近几天的监控市场、有效市场和高集中市场变化</p>
           </div>
           <ReactECharts option={buildTrendOption(data.trend)} style={{ height: 340, width: '100%' }} />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>控盘排行</h2>
-            <p>按 Top3 控盘占比排序，同时叠加 HHI 看“集中且不均衡”的市场</p>
           </div>
           <ReactECharts option={buildRankingOption(data.items)} style={{ height: 340, width: '100%' }} />
         </section>
@@ -365,74 +415,145 @@ export function MarketsPage() {
       <section className="panel">
         <div className="section-head">
           <h2>控盘分布图</h2>
-          <p>横轴 Top3 控盘占比，纵轴 HHI，气泡越大代表该市场近期信号/任务/持仓越活跃</p>
         </div>
         <ReactECharts option={buildScatterOption(data.items)} style={{ height: 360, width: '100%' }} />
       </section>
 
       <section className="panel">
         <div className="section-head">
-          <h2>市场状态表</h2>
-          <p>把集中度、信号活跃度、持仓暴露和市场生命周期放在一张表里，方便快速筛出异常市场</p>
+          <h2>市场状态</h2>
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>市场</th>
-                <th>状态</th>
-                <th>Top1</th>
-                <th>Top3</th>
-                <th>Top5</th>
-                <th>HHI</th>
-                <th>持仓人</th>
-                <th>信号</th>
-                <th>地址</th>
-                <th>Pending</th>
-                <th>持仓</th>
-                <th>成本</th>
-                <th>未实现</th>
-                <th>最新信号</th>
-                <th>结束时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.length === 0 ? (
-                <tr>
-                  <td colSpan={15} className="empty-state">暂无市场监控数据</td>
-                </tr>
-              ) : data.items.map((item) => (
-                <tr key={item.marketId}>
-                  <td>
-                    <div className="market-cell-title">{truncateText(item.question || item.marketId, 48)}</div>
-                    <div className="market-cell-sub mono">{item.marketId}</div>
-                    {item.topHolderAddresses?.length ? (
-                      <div className="market-chip-row">
-                        {item.topHolderAddresses.slice(0, 3).map((address) => (
-                          <span key={address} className="market-holder-chip">{compactAddress(address)}</span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td><span className={riskClass(item)}>{item.concentrationBand}</span></td>
-                  <td className="mono">{formatPercent(item.top1Pct)}</td>
-                  <td className="mono">{formatPercent(item.top3Pct)}</td>
-                  <td className="mono">{formatPercent(item.top5Pct)}</td>
-                  <td className="mono">{formatNumber(item.hhi, 0)}</td>
-                  <td>{formatNumber(item.observedHolders, 0)}</td>
-                  <td>{formatNumber(item.signalCount, 0)}</td>
-                  <td>{formatNumber(item.uniqueWalletCount, 0)}</td>
-                  <td>{formatNumber(item.pendingTaskCount, 0)}</td>
-                  <td>{formatNumber(item.openPositionCount, 0)}</td>
-                  <td className="mono">{formatAmount(item.openCostUsdc)}</td>
-                  <td className={item.unrealizedPnlUsdc >= 0 ? 'positive' : 'negative'}>{formatMoney(item.unrealizedPnlUsdc)}</td>
-                  <td>{item.lastSignalAtBjt || '-'}</td>
-                  <td>{item.marketEndAtBjt || '-'}</td>
-                </tr>
+
+        <div className="table-toolbar">
+          <div className="filter-bar">
+            <input
+              className="table-input"
+              value={keyword}
+              placeholder="搜索市场标题 / marketId / 持仓方向"
+              onChange={(event) => updateParams({ keyword: event.target.value }, { resetPage: true })}
+            />
+            <select
+              value={marketState}
+              onChange={(event) => updateParams({ marketState: event.target.value }, { resetPage: true })}
+            >
+              <option value="">全部市场状态</option>
+              <option value="ACTIVE">ACTIVE 进行中</option>
+              <option value="ENDED">ENDED 已结束</option>
+            </select>
+            <select
+              value={concentrationBand}
+              onChange={(event) => updateParams({ concentrationBand: event.target.value }, { resetPage: true })}
+            >
+              <option value="">全部集中度</option>
+              <option value="HEALTHY">HEALTHY 健康</option>
+              <option value="HIGH">HIGH 高集中</option>
+              <option value="EXTREME">EXTREME 极端集中</option>
+              <option value="UNKNOWN">UNKNOWN 未知</option>
+            </select>
+            <select
+              value={hasPositionParam}
+              onChange={(event) => updateParams({ hasPosition: event.target.value }, { resetPage: true })}
+            >
+              <option value="">全部持仓情况</option>
+              <option value="true">仅有持仓</option>
+              <option value="false">仅无持仓</option>
+            </select>
+            <select
+              value={positionDirection}
+              onChange={(event) => updateParams({ positionDirection: event.target.value }, { resetPage: true })}
+            >
+              <option value="">全部持仓方向</option>
+              <option value="YES">YES</option>
+              <option value="NO">NO</option>
+              <option value="MULTI">YES / NO</option>
+              <option value="NONE">无持仓方向</option>
+            </select>
+            <select
+              value={String(pageSize)}
+              onChange={(event) => updateParams({ pageSize: Number(event.target.value) }, { resetPage: true })}
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>{`每页 ${option} 条`}</option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </div>
+
+          <div className="table-toolbar-meta">
+            {marketTablePage
+              ? `筛选后 ${formatNumber(marketTablePage.totalItems, 0)} 条`
+              : '表格筛选中...'}
+          </div>
         </div>
+
+        {tableLoading || !marketTablePage ? (
+          <div className="loading">加载市场状态表中...</div>
+        ) : (
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>市场</th>
+                    <th>市场状态</th>
+                    <th>集中度</th>
+                    <th>Top1</th>
+                    <th>Top3</th>
+                    <th>Top5</th>
+                    <th>HHI</th>
+                    <th>持仓人</th>
+                    <th>信号</th>
+                    <th>地址</th>
+                    <th>持仓</th>
+                    <th>持仓方向</th>
+                    <th>最新信号</th>
+                    <th>结束时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {marketTablePage.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={14} className="empty-state">当前筛选条件下暂无市场监控数据</td>
+                    </tr>
+                  ) : marketTablePage.items.map((item) => (
+                    <tr key={item.marketId}>
+                      <td>
+                        <div className="market-cell-title">{truncateText(item.question || item.marketId, 48)}</div>
+                        <div className="market-cell-sub mono">{item.marketId}</div>
+                        {item.topHolderAddresses?.length ? (
+                          <div className="market-chip-row">
+                            {item.topHolderAddresses.slice(0, 3).map((address) => (
+                              <span key={address} className="market-holder-chip">{compactAddress(address)}</span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td><span className={marketStateBadgeClass(item)}>{item.marketState}</span></td>
+                      <td><span className={riskClass(item)}>{item.concentrationBand}</span></td>
+                      <td className="mono">{formatPercent(item.top1Pct)}</td>
+                      <td className="mono">{formatPercent(item.top3Pct)}</td>
+                      <td className="mono">{formatPercent(item.top5Pct)}</td>
+                      <td className="mono">{formatNumber(item.hhi, 0)}</td>
+                      <td>{formatNumber(item.observedHolders, 0)}</td>
+                      <td>{formatNumber(item.signalCount, 0)}</td>
+                      <td>{formatNumber(item.uniqueWalletCount, 0)}</td>
+                      <td>{formatNumber(item.openPositionCount, 0)}</td>
+                      <td>{item.positionDirection || '-'}</td>
+                      <td>{item.lastSignalAtBjt || '-'}</td>
+                      <td>{item.marketEndAtBjt || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <TablePagination
+              page={marketTablePage.page}
+              pageSize={marketTablePage.pageSize}
+              totalItems={marketTablePage.totalItems}
+              onPageChange={(nextPage) => updateParams({ page: nextPage })}
+            />
+          </>
+        )}
       </section>
     </>
   )

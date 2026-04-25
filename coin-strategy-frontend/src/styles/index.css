@@ -490,13 +490,12 @@ body::before {
 .address-hero {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 24px;
-  margin-bottom: 18px;
 }
 
 .address-hero-copy h2 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 28px;
   line-height: 1.1;
   color: var(--accent);
@@ -511,34 +510,38 @@ body::before {
   font-size: 13px;
 }
 
-.address-hero-highlight {
-  display: flex;
-  flex-direction: column;
+.address-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
   gap: 12px;
-  min-width: 280px;
-  align-items: flex-end;
+  min-width: 340px;
 }
 
-.address-hero-note {
-  padding: 12px 14px;
+.address-hero-stat {
+  padding: 14px 16px;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: rgba(0, 255, 65, 0.04);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.address-hero-stat span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   font-family: var(--font-mono);
-  text-align: right;
 }
 
-.address-hero-note strong {
-  display: block;
-  margin-top: 4px;
+.address-hero-stat strong {
   color: var(--text-bright);
-  font-size: 13px;
-}
-
-.address-summary-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  font-size: 18px;
+  line-height: 1.25;
+  font-family: var(--font-mono);
+  word-break: break-word;
 }
 
 .address-control-panel,
@@ -567,23 +570,13 @@ body::before {
 }
 
 .address-control-copy {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: flex-end;
+  display: block;
 }
 
 .address-control-copy h2 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 24px;
   color: var(--text-bright);
-}
-
-.address-control-copy p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.75;
-  font-size: 13px;
 }
 
 .address-kpi-ribbon {
@@ -679,7 +672,7 @@ body::before {
 }
 
 .address-group-card-head h3 {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 15px;
   color: var(--text-bright);
 }
@@ -714,7 +707,7 @@ body::before {
 }
 
 .address-group-head h3 {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 18px;
   color: var(--text-bright);
 }
@@ -1538,21 +1531,15 @@ tbody tr:hover td {
 
   .address-hero,
   .address-diagnosis-hero,
-  .address-control-copy,
   .address-group-head,
   .address-window-toolbar {
     flex-direction: column;
   }
 
-  .address-hero-highlight {
+  .address-hero-stats {
+    width: 100%;
     min-width: 0;
-    width: 100%;
-    align-items: flex-start;
-  }
-
-  .address-hero-note {
-    width: 100%;
-    text-align: left;
+    grid-template-columns: 1fr 1fr;
   }
 
   .table-toolbar {

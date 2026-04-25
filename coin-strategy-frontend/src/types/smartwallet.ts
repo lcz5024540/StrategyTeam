@@ -5,6 +5,14 @@ export interface CursorPageView<T> {
   hasMore: boolean
 }
 
+export interface OffsetPageView<T> {
+  items: T[]
+  page: number
+  pageSize: number
+  totalItems: number
+  totalPages: number
+}
+
 export interface WalletScreenerView {
   walletAddress: string
   alias: string | null
@@ -17,6 +25,7 @@ export interface WalletScreenerView {
   qualityScore: number | null
   replicabilityScore: number | null
   stabilityScore: number | null
+  recentWinRate7d: number | null
   recentWinRate30d: number | null
   orderWinRate: number | null
   averageOrderRoiRate: number | null
@@ -83,6 +92,7 @@ export interface SmartWalletMarketMonitorItem {
   question: string | null
   marketEndAt: number | null
   marketEndAtBjt: string | null
+  marketState: string
   lastSignalAt: string | null
   lastSignalAtBjt: string | null
   signalCount: number
@@ -90,6 +100,8 @@ export interface SmartWalletMarketMonitorItem {
   pendingTaskCount: number
   openPositionCount: number
   openCostUsdc: number
+  positionDirection: string
+  positionDirectionCode: string
   realizedPnlUsdc: number
   unrealizedPnlUsdc: number
   activeMarket: boolean

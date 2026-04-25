@@ -100,7 +100,6 @@ export function MetricGrid({ detail }: MetricGridProps) {
     <section className="panel">
       <div className="section-head">
         <h2>核心指标</h2>
-        <p>策略收益、仓位与风险概览</p>
       </div>
       <div className="metric-grid">
         {metrics.map((item) => (

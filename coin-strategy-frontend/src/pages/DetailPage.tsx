@@ -115,14 +115,12 @@ export function DetailPage() {
         <section className="panel">
           <div className="section-head">
             <h2>可执行任务</h2>
-            <p>通过风控的待执行任务</p>
           </div>
           <TasksTable tasks={executableTasks} type="executable" />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>机会看板</h2>
-            <p>最接近可执行但仍被拦住的任务</p>
           </div>
           <TasksTable tasks={opportunityTasks} type="opportunity" />
         </section>
@@ -133,7 +131,6 @@ export function DetailPage() {
           <div className="section-head section-head-row">
             <div>
               <h2>当前持仓</h2>
-              <p>展示当前 open positions</p>
             </div>
             <button
               type="button"
@@ -153,8 +150,7 @@ export function DetailPage() {
         <section className="panel">
           <div className="section-head section-head-row">
             <div>
-              <h2>待结算处理</h2>
-              <p>已到结算窗口或待领取的仓位</p>
+              <h2>待结算</h2>
             </div>
             <button
               type="button"
@@ -177,14 +173,12 @@ export function DetailPage() {
         <section className="panel">
           <div className="section-head">
             <h2>收益时间线</h2>
-            <p>按日查看累计收益变化</p>
           </div>
           <TimelineChart data={dailyReports} />
         </section>
         <section className="panel">
           <div className="section-head">
-            <h2>订单收益柱状图</h2>
-            <p>按日报查看净收益分布</p>
+            <h2>收益分布</h2>
           </div>
           <DailyPnlBars data={dailyReports} />
         </section>
@@ -194,7 +188,6 @@ export function DetailPage() {
         <div className="section-head section-head-row">
           <div>
             <h2>交易历史</h2>
-            <p>最近的订单记录</p>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button

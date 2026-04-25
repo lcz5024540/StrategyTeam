@@ -153,6 +153,7 @@ public class WalletProfileAnalysisService {
             return null;
         }
         BigDecimal recentWinRate = safe(firstNonNull(profile.getRecentWinRate30d(), profile.getWinRate()));
+        BigDecimal recentWinRate7d = scale(profile.getRecentWinRate7d(), 4);
         BigDecimal freshnessScore = freshnessScore(profile.getLastTradeAt());
         boolean highQuality = recentWinRate.compareTo(new BigDecimal("0.58")) >= 0
                 && defaultInt(behavior == null ? null : behavior.closedPositionSampleSize()) >= 20
@@ -172,6 +173,7 @@ public class WalletProfileAnalysisService {
                 .qualityScore(scale(behavior == null ? null : behavior.qualityScore(), 4))
                 .replicabilityScore(scale(behavior == null ? null : behavior.replicabilityScore(), 4))
                 .stabilityScore(scale(behavior == null ? null : behavior.stabilityScore(), 4))
+                .recentWinRate7d(recentWinRate7d)
                 .recentWinRate30d(scale(recentWinRate, 4))
                 .orderWinRate(scale(behavior == null ? null : behavior.orderWinRate(), 4))
                 .averageOrderRoiRate(scale(behavior == null ? null : behavior.averageOrderRoiRate(), 4))
