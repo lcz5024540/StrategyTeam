@@ -358,8 +358,8 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_market_concentration_snapshot` (
 
 -- 表17：钱包 → 实体映射（核心）
 CREATE TABLE IF NOT EXISTS `wallet_entity_map` (
-                                                   `id`                    BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-                                                   `wallet_address`        VARCHAR(128) NOT NULL COMMENT '钱包地址（小写）',
+    `id`                    BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `wallet_address`        VARCHAR(128) NOT NULL COMMENT '钱包地址（小写）',
     `entity_id`             VARCHAR(64)  NOT NULL COMMENT '实体UUID，同一真实交易者共享',
     `cluster_method`        VARCHAR(30)  NOT NULL COMMENT '聚类方法: FUNDING_SOURCE / BEHAVIOR_SIM / MANUAL / SELF',
     `cluster_confidence`    DECIMAL(5,4) NOT NULL DEFAULT 0.0000 COMMENT '聚类置信度 0-1',
@@ -377,8 +377,8 @@ CREATE TABLE IF NOT EXISTS `wallet_entity_map` (
 
 -- 表18：实体级特征快照（合并同实体所有钱包数据后的指标）
 CREATE TABLE IF NOT EXISTS `wallet_entity_feature_snapshot` (
-                                                                `id`                    BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-                                                                `entity_id`             VARCHAR(64)  NOT NULL COMMENT '实体ID',
+    `id`                    BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `entity_id`             VARCHAR(64)  NOT NULL COMMENT '实体ID',
     `snapshot_time`         DATETIME NOT NULL COMMENT '快照时间',
     `wallet_count`          INT NOT NULL DEFAULT 1 COMMENT '该实体下的钱包数',
     `aggregated_win_rate`   DECIMAL(5,4) DEFAULT NULL COMMENT '合并后胜率（加权平均）',
@@ -395,9 +395,9 @@ CREATE TABLE IF NOT EXISTS `wallet_entity_feature_snapshot` (
 
 -- 表19：候选跟单信号（intelligence enrich 的输出，follow task 的前置记录）
 CREATE TABLE IF NOT EXISTS `wallet_follow_candidate` (
-                                                         `id`                    BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-                                                         `source_event_id`       BIGINT UNSIGNED NOT NULL COMMENT '来源交易事件ID',
-                                                         `wallet_address`        VARCHAR(128) NOT NULL COMMENT '触发钱包地址',
+    `id`                    BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `source_event_id`       BIGINT UNSIGNED NOT NULL COMMENT '来源交易事件ID',
+    `wallet_address`        VARCHAR(128) NOT NULL COMMENT '触发钱包地址',
     `entity_id`             VARCHAR(64)  NOT NULL COMMENT '解析到的实体ID',
     `cluster_confidence`    DECIMAL(5,4) NOT NULL DEFAULT 0.0000 COMMENT '聚类置信度 0-1',
     `cluster_method`        VARCHAR(30)  NOT NULL DEFAULT 'SELF' COMMENT '聚类方法',
@@ -414,4 +414,28 @@ CREATE TABLE IF NOT EXISTS `wallet_follow_candidate` (
     INDEX `idx_wallet_address` (`wallet_address`),
     INDEX `idx_follow_task` (`follow_task_id`),
     INDEX `idx_enrichment_status` (`enrichment_status`, `created_at`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='候选跟单信号表（Intelligence Enrich 输出）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='候选跟单信号表（Intelligence Enrich 输出）';
+
+
+-- 用途：
+-- 1. 创建 Polymarket 手工地址白名单表
+-- 2. 支持绕过地址画像准入，但保留交易级和执行级风控
+
+CREATE TABLE IF NOT EXISTS `smart_wallet_manual_allowlist` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '白名单钱包地址，小写归一化',
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/DISABLED',
+    `allowed_execution_modes` VARCHAR(16) NOT NULL DEFAULT 'PAPER' COMMENT 'PAPER/LIVE/BOTH',
+    `stake_multiplier` DECIMAL(10,4) NOT NULL DEFAULT 0.5000 COMMENT '白名单仓位乘数',
+    `max_live_orders_per_day` INT NOT NULL DEFAULT 5 COMMENT '单地址每日最多 LIVE 单数',
+    `max_live_orders_per_run` INT NOT NULL DEFAULT 2 COMMENT '单地址每轮最多 LIVE 单数',
+    `expires_at` DATETIME DEFAULT NULL COMMENT '过期时间',
+    `reason` VARCHAR(255) DEFAULT NULL COMMENT '白名单原因',
+    `created_by` VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_sw_manual_allowlist_wallet_source` (`wallet_address`, `source`),
+    KEY `idx_sw_manual_allowlist_status_expiry` (`status`, `expires_at`),
+    KEY `idx_sw_manual_allowlist_updated` (`updated_at`)
+ ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 手工地址白名单';

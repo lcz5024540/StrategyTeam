@@ -37,6 +37,9 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionRes
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
@@ -105,6 +108,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimServi
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketRepairService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletManualAllowlistService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
@@ -195,6 +199,7 @@ public class SmartWalletController {
     private final WalletProfileAnalysisService walletProfileAnalysisService;
     private final SmartWalletReplayBacktestService smartWalletReplayBacktestService;
     private final SmartWalletMarketMonitoringService smartWalletMarketMonitoringService;
+    private final SmartWalletManualAllowlistService smartWalletManualAllowlistService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -370,6 +375,43 @@ public class SmartWalletController {
     @PostMapping("/profiles/overrides/batch")
     public SmartWalletProfileBatchOverrideResultView batchUpdateProfileOverrides(@RequestBody SmartWalletProfileBatchOverrideRequest request) {
         return smartWalletProfileStoreService.batchUpdateManualOverrides(request);
+    }
+
+    @Operation(summary = "手工地址白名单列表", description = "查看当前用于绕过地址画像准入的手工 allowlist。交易级和执行级风控仍会生效。")
+    @GetMapping("/allowlist")
+    public List<SmartWalletManualAllowlistView> manualAllowlist(@RequestParam(defaultValue = "100") Integer limit) {
+        return smartWalletManualAllowlistService.list(limit);
+    }
+
+    @Operation(summary = "新增或更新手工地址白名单", description = "创建或更新 allowlist 项。默认 PAPER、仓位乘数 0.50、每日 LIVE 5 单、每轮 LIVE 2 单、30 天过期。")
+    @PostMapping("/allowlist")
+    public SmartWalletManualAllowlistView upsertManualAllowlist(@RequestBody SmartWalletManualAllowlistRequest request) {
+        return smartWalletManualAllowlistService.upsert(request);
+    }
+
+    @Operation(summary = "按地址更新手工地址白名单", description = "按路径地址创建或更新 allowlist 项。")
+    @PostMapping("/allowlist/{walletAddress}")
+    public SmartWalletManualAllowlistView upsertManualAllowlistByWallet(@PathVariable String walletAddress,
+                                                                        @RequestBody(required = false) SmartWalletManualAllowlistRequest request) {
+        return smartWalletManualAllowlistService.upsert(walletAddress, request);
+    }
+
+    @Operation(summary = "禁用手工地址白名单", description = "将指定地址 allowlist 项置为 DISABLED。")
+    @PostMapping("/allowlist/{walletAddress}/disable")
+    public SmartWalletManualAllowlistView disableManualAllowlist(@PathVariable String walletAddress) {
+        return smartWalletManualAllowlistService.disable(walletAddress);
+    }
+
+    @Operation(summary = "手工地址白名单摘要", description = "聚合 allowlist 总数、活跃数、过期数、禁用数和执行模式分布。")
+    @GetMapping("/allowlist/summary")
+    public SmartWalletManualAllowlistSummaryView manualAllowlistSummary() {
+        return smartWalletManualAllowlistService.summary();
+    }
+
+    @Operation(summary = "清理过期手工地址白名单", description = "将已过期且仍为 ACTIVE 的 allowlist 项置为 DISABLED。")
+    @PostMapping("/allowlist/cleanup-expired")
+    public Map<String, Object> cleanupExpiredManualAllowlist() {
+        return Map.of("updated", smartWalletManualAllowlistService.cleanupExpired());
     }
 
     @Operation(summary = "人工覆盖筛选候选", description = "按 scope、recommendedExitLane、watchEnabled、manualWatchEnabled、updatedWithinHours 等条件筛出一批可执行运营动作的地址。")
@@ -786,6 +828,13 @@ public class SmartWalletController {
             log.error("Failed to load executable follow tasks limit={}", limit, e);
             throw e;
         }
+    }
+
+    @Operation(summary = "手工白名单跟单任务", description = "查看命中 manual allowlist 的可执行或候选任务。默认只返回可执行任务。")
+    @GetMapping("/follow-tasks/manual-allowlist")
+    public List<SmartWalletFollowTaskView> manualAllowlistFollowTasks(@RequestParam(defaultValue = "50") Integer limit,
+                                                                      @RequestParam(defaultValue = "false") Boolean includeBlocked) {
+        return followTaskService.listManualAllowlistTasks(limit, includeBlocked);
     }
 
     @Operation(summary = "重评延迟候选", description = "手动重评 enrichment_status=PENDING/LOW_CONFIDENCE_LINK 的候选，并尝试恢复此前被 intelligence 暂时拦截的跟单任务。")

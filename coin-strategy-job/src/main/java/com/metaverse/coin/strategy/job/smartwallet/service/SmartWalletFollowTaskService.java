@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.dao.mapper.WalletFollowCandidateMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletFollowCandidateEntity;
@@ -69,6 +70,7 @@ public class SmartWalletFollowTaskService {
     private final WalletFollowCandidateMapper followCandidateMapper;
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
         log.info("{} action=记录Polymarket钱包交易事件 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
@@ -150,6 +152,37 @@ public class SmartWalletFollowTaskService {
                 continue;
             }
             result.add(toView(task, decision, appliedPreset));
+        }
+        result.sort(this::compareTaskPriority);
+        return truncate(result, normalizeLimit(limit, 20));
+    }
+
+    public List<SmartWalletFollowTaskView> listManualAllowlistTasks(Integer limit, Boolean includeBlocked) {
+        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
+                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
+                .last("limit " + normalizeLimit(limit == null ? 100 : Math.max(limit * 4, 50), 200)));
+        List<SmartWalletFollowTaskView> result = new ArrayList<>();
+        Map<String, Integer> liveAcceptedByWallet = new LinkedHashMap<>();
+        for (SmartWalletFollowTaskEntity task : tasks) {
+            SignalRiskDecision decision = evaluateTask(task.getId());
+            if (!decision.isManualAllowlistApplied()) {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(includeBlocked) && !decision.isAccepted()) {
+                continue;
+            }
+            if (decision.isAccepted() && "LIVE".equalsIgnoreCase(task.getExecutionMode())) {
+                SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(task.getWalletAddress()).orElse(null);
+                int maxPerRun = manualAllowlistService.maxLiveOrdersPerRun(allowlist);
+                String walletKey = normalizeWalletEntityId(task.getWalletAddress());
+                int current = liveAcceptedByWallet.getOrDefault(walletKey, 0);
+                if (current >= maxPerRun) {
+                    continue;
+                }
+                liveAcceptedByWallet.put(walletKey, current + 1);
+            }
+            result.add(toView(task, decision));
         }
         result.sort(this::compareTaskPriority);
         return truncate(result, normalizeLimit(limit, 20));
@@ -385,10 +418,44 @@ public class SmartWalletFollowTaskService {
         if (task == null || task.getWalletAddress() == null) {
             return null;
         }
+        return getWalletProfileByAddress(task.getWalletAddress());
+    }
+
+    private SmartWalletProfileEntity getWalletProfileByAddress(String walletAddress) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return null;
+        }
         return profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
-                .eq(SmartWalletProfileEntity::getWalletAddress, task.getWalletAddress())
+                .eq(SmartWalletProfileEntity::getWalletAddress, walletAddress)
                 .eq(SmartWalletProfileEntity::getSource, "POLYMARKET")
                 .last("limit 1"));
+    }
+
+    private String resolveTaskExecutionMode(String walletAddress) {
+        if (!properties.isAutoExecutionEnabled()) {
+            return "PAPER";
+        }
+        return manualAllowlistService.findActive(walletAddress)
+                .map(allowlist -> manualAllowlistService.allowsLive(allowlist)
+                        && getWalletProfileByAddress(walletAddress) != null ? "LIVE" : "PAPER")
+                .orElse("LIVE");
+    }
+
+    private void enforceManualAllowlistLiveLimits(SmartWalletFollowTaskEntity task, SignalRiskDecision decision) {
+        if (task == null || decision == null || !decision.isManualAllowlistApplied()) {
+            return;
+        }
+        SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(task.getWalletAddress())
+                .orElseThrow(() -> new IllegalStateException("[MANUAL_ALLOWLIST_LIVE_LIMIT_BLOCK] Manual allowlist is no longer active."));
+        if (!manualAllowlistService.allowsLive(allowlist)) {
+            throw new IllegalStateException("[MANUAL_ALLOWLIST_LIVE_LIMIT_BLOCK] Manual allowlist does not permit LIVE execution for this wallet.");
+        }
+        if (getWalletProfileByAddress(task.getWalletAddress()) == null) {
+            throw new IllegalStateException("[MANUAL_ALLOWLIST_LIVE_LIMIT_BLOCK] Manual allowlist LIVE requires an existing wallet profile.");
+        }
+        if (manualAllowlistService.exceedsDailyLiveLimit(task.getWalletAddress(), allowlist)) {
+            throw new IllegalStateException("[MANUAL_ALLOWLIST_LIVE_LIMIT_BLOCK] Manual allowlist daily LIVE order limit reached for this wallet.");
+        }
     }
 
     public SignalRiskDecision evaluateTask(Long taskId) {
@@ -470,6 +537,7 @@ public class SmartWalletFollowTaskService {
             if (!decision.isAccepted()) {
                 throw new IllegalStateException("Follow task is not executable: " + String.join(" | ", decision.getReasons()));
             }
+            enforceManualAllowlistLiveLimits(task, decision);
             task.setExecutionMode("LIVE");
             if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
                 task.setRecommendedStakeUsdc(decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP));
@@ -488,7 +556,11 @@ public class SmartWalletFollowTaskService {
                 .filter(item -> item.getWalletAddress().equalsIgnoreCase(event.getWalletAddress()))
                 .findFirst()
                 .orElse(null);
-        if (profile == null) {
+        SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(event.getWalletAddress()).orElse(null);
+        if (profile == null && allowlist != null) {
+            profile = getWalletProfileByAddress(event.getWalletAddress());
+        }
+        if (profile == null && allowlist == null) {
             log.info("{} action=根据交易事件生成跟单任务 result=跳过 reason=钱包未在可执行观察名单 eventId={} wallet={} marketId={} outcome={}",
                     LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome());
             return;
@@ -553,7 +625,7 @@ public class SmartWalletFollowTaskService {
                 .setTriggerSizeUsdc(event.getSizeUsdc())
                 .setRecommendedStakeUsdc(recommendedStake)
                 .setStatus(decision.isAccepted() ? "PENDING" : "SKIPPED")
-                .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
+                .setExecutionMode(resolveTaskExecutionMode(event.getWalletAddress()))
                 .setErrorMessage(String.join(" | ", decision.getReasons()))
                 .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
                 .setCreatedAt(new Date())
@@ -651,10 +723,14 @@ public class SmartWalletFollowTaskService {
                 .filter(item -> item.getWalletAddress().equalsIgnoreCase(event.getWalletAddress()))
                 .findFirst()
                 .orElse(null);
-        if (profile == null || task == null) {
+        SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(event.getWalletAddress()).orElse(null);
+        if (profile == null && allowlist != null) {
+            profile = getWalletProfileByAddress(event.getWalletAddress());
+        }
+        if ((profile == null && allowlist == null) || task == null) {
             log.info("{} action=重评延迟智能候选 result=无法恢复任务 eventId={} candidateId={} followTaskId={} reason={}",
                     LOG_PREFIX, event.getId(), candidate.getId(), task == null ? null : task.getId(),
-                    profile == null ? "钱包不在可执行观察名单" : "任务不存在");
+                    profile == null ? "钱包不在可执行观察名单或白名单" : "任务不存在");
             return true;
         }
 
@@ -684,6 +760,7 @@ public class SmartWalletFollowTaskService {
                 .setFollowCandidateId(candidate.getId())
                 .setRecommendedStakeUsdc(recommendedStake)
                 .setStatus(decision.isAccepted() ? "PENDING" : "SKIPPED")
+                .setExecutionMode(resolveTaskExecutionMode(event.getWalletAddress()))
                 .setErrorMessage(String.join(" | ", decision.getReasons()))
                 .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
                 .setUpdatedAt(new Date());
@@ -1057,6 +1134,9 @@ public class SmartWalletFollowTaskService {
                 .estimateSampleSize(decision == null ? null : decision.getEstimateSampleSize())
                 .taskExecutable(decision == null ? null : decision.isAccepted())
                 .overrideApplied(decision == null ? null : decision.isOverrideApplied())
+                .manualAllowlistApplied(decision == null ? null : decision.isManualAllowlistApplied())
+                .manualAllowlistReason(decision == null ? null : decision.getManualAllowlistReason())
+                .stakeMultiplierApplied(decision == null ? null : decision.getStakeMultiplierApplied())
                 .appliedPreset(appliedPreset)
                 .blockerCount(decision == null || decision.getReasons() == null ? null : decision.getReasons().size())
                 .primaryBlockerCategory(blockerCategories.isEmpty() ? null : blockerCategories.get(0))

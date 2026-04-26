@@ -12,6 +12,9 @@ import java.util.List;
 public class SignalRiskDecision {
     private boolean accepted;
     private boolean overrideApplied;
+    private boolean manualAllowlistApplied;
+    private String manualAllowlistReason;
+    private BigDecimal stakeMultiplierApplied;
     private BigDecimal recommendedStakeUsdc;
     private BigDecimal estimatedNetProfitabilityUsdc;
     private BigDecimal estimatedFeeUsdc;

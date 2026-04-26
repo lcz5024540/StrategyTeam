@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
@@ -54,6 +55,7 @@ public class SmartWalletSignalRiskService {
     private final PolymarketApiClient polymarketApiClient;
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -72,8 +74,25 @@ public class SmartWalletSignalRiskService {
         List<String> reasons = new ArrayList<>();
         boolean accepted = true;
         boolean overrideApplied = false;
+        SmartWalletManualAllowlistEntity manualAllowlist = manualAllowlistService
+                .findActive(event == null ? null : event.getWalletAddress())
+                .orElse(null);
+        boolean manualAllowlistApplied = manualAllowlist != null;
+        boolean manualWatchDisabled = profile != null && Boolean.FALSE.equals(profile.getManualWatchEnabled());
+        if (manualWatchDisabled) {
+            accepted = false;
+            manualAllowlistApplied = false;
+            reasons.add("[MANUAL_WATCH_DISABLED] Wallet is manually forced to observe-only; manual allowlist cannot override it.");
+        } else if (manualAllowlistApplied) {
+            reasons.add("[MANUAL_ALLOWLIST_PASS] Wallet matched active manual allowlist. Address-profile admission checks are bypassed only.");
+            if (profile == null) {
+                accepted = false;
+                reasons.add("[MANUAL_ALLOWLIST_PROFILE_MISSING] Wallet has no profile yet. PAPER observation is allowed, but executable follow is blocked until profile metrics exist.");
+            }
+        }
 
-        if (profile == null || !Boolean.TRUE.equals(profile.getQualified()) || !Boolean.TRUE.equals(profile.getWatchEnabled())) {
+        if (!manualAllowlistApplied
+                && (profile == null || !Boolean.TRUE.equals(profile.getQualified()) || !Boolean.TRUE.equals(profile.getWatchEnabled()))) {
             accepted = false;
             if (profile != null
                     && profile.getObserveCooldownUntil() != null
@@ -95,7 +114,7 @@ public class SmartWalletSignalRiskService {
                 + ", lane=" + archetype.followLane()
                 + ", fit=" + archetype.followFitScore()
                 + ", confidence=" + archetype.confidence() + ".");
-        if ("OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
+        if (!manualAllowlistApplied && "OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
             accepted = false;
             reasons.add("[ARCHETYPE_BLOCK] Wallet is currently classified as observe-only under local followability.");
         }
@@ -107,7 +126,7 @@ public class SmartWalletSignalRiskService {
                     + ", replicability=" + behaviorProfile.replicabilityScore()
                     + ", earlyExitRate=" + behaviorProfile.earlyExitRate()
                     + ", settlementCompletionRate=" + behaviorProfile.settlementCompletionRate() + ".");
-            if ("FAST_EXIT_OR_SKIP".equalsIgnoreCase(behaviorProfile.recommendedExitLane())) {
+            if (!manualAllowlistApplied && "FAST_EXIT_OR_SKIP".equalsIgnoreCase(behaviorProfile.recommendedExitLane())) {
                 accepted = false;
                 reasons.add("[BEHAVIOR_BLOCK] Wallet relies on very fast exits or low-replicability timing. Skip follow entry.");
             }
@@ -429,6 +448,13 @@ public class SmartWalletSignalRiskService {
         }
         recommendedStake = applyAdvancedStakeAdjustments(recommendedStake, behaviorProfile, profitabilityEstimate, event, risk, reasons);
         recommendedStake = safe(recommendedStake).min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stakeMultiplierApplied = null;
+        if (manualAllowlistApplied) {
+            stakeMultiplierApplied = manualAllowlistService.stakeMultiplier(manualAllowlist);
+            recommendedStake = recommendedStake.multiply(stakeMultiplierApplied).setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[MANUAL_ALLOWLIST_STAKE_MULTIPLIER] Applied manual allowlist stake multiplier="
+                    + stakeMultiplierApplied.setScale(4, RoundingMode.HALF_UP) + ".");
+        }
         if (accepted && recommendedStake.compareTo(minOrderUsdc) < 0) {
             accepted = false;
             reasons.add("Recommended stake is below execution wallet minimum order after capital scaling.");
@@ -476,8 +502,16 @@ public class SmartWalletSignalRiskService {
         );
         SignalStrategyRouteResult strategyRoute = entryStrategyRouter.route(risk, strategyChecks);
         if (!strategyRoute.isAccepted()) {
-            accepted = false;
-            reasons.addAll(strategyRoute.getReasons());
+            if (manualAllowlistApplied && !consensusScoreFailed) {
+                overrideApplied = true;
+                reasons.add("[MANUAL_ALLOWLIST_PASS] Manual allowlist bypassed entry strategy address-admission blockers while preserving trade-level gates.");
+            } else {
+                accepted = false;
+                reasons.addAll(strategyRoute.getReasons());
+                if (manualAllowlistApplied && consensusScoreFailed) {
+                    reasons.add("[MANUAL_ALLOWLIST_CONSENSUS_SCORE_BLOCK] Manual allowlist cannot bypass consensus score gate.");
+                }
+            }
         } else if (strategyRoute.getMatchedStrategies().contains("SINGLE_WALLET_OVERRIDE") && consensusEntityCountFailed) {
             overrideApplied = true;
             reasons.add("Single-wallet override bypassed consensus entity-count gate (deduped entities="
@@ -491,6 +525,9 @@ public class SmartWalletSignalRiskService {
         SignalRiskDecision result = SignalRiskDecision.builder()
                 .accepted(accepted)
                 .overrideApplied(overrideApplied)
+                .manualAllowlistApplied(manualAllowlistApplied)
+                .manualAllowlistReason(manualAllowlist == null ? null : manualAllowlist.getReason())
+                .stakeMultiplierApplied(stakeMultiplierApplied)
                 .recommendedStakeUsdc(recommendedStake)
                 .estimatedNetProfitabilityUsdc(profitabilityEstimate.getEstimatedNetProfitabilityUsdc())
                 .estimatedFeeUsdc(profitabilityEstimate.getEstimatedFeeUsdc())

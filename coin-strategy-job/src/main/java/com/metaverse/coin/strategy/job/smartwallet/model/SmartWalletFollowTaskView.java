@@ -35,6 +35,9 @@ public class SmartWalletFollowTaskView {
     private Integer estimateSampleSize;
     private Boolean taskExecutable;
     private Boolean overrideApplied;
+    private Boolean manualAllowlistApplied;
+    private String manualAllowlistReason;
+    private BigDecimal stakeMultiplierApplied;
     private String appliedPreset;
     private Integer blockerCount;
     private String primaryBlockerCategory;
