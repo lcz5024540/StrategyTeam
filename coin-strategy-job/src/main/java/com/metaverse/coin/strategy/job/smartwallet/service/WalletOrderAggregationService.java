@@ -55,6 +55,23 @@ public class WalletOrderAggregationService {
                 .build();
     }
 
+    public List<ActivePositionSnapshot> activePositions(String walletAddress) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return List.of();
+        }
+        String normalizedWallet = walletAddress.trim();
+        List<PolymarketApiClient.ActivePosition> activePositions = fetchActivePositions(normalizedWallet);
+        List<PolymarketApiClient.UserTrade> trades = fetchUserTrades(normalizedWallet);
+        Map<String, PolymarketApiClient.MarketMetadata> metadataByMarketId = loadMetadata(List.of(), activePositions);
+        Map<String, TradeCursor> tradeCursorByKey = buildTradeCursorByKey(trades);
+        return buildActivePositions(
+                normalizedWallet,
+                activePositions,
+                tradeCursorByKey,
+                metadataByMarketId
+        );
+    }
+
     private List<PolymarketApiClient.ClosedPosition> fetchClosedPositions(String walletAddress) {
         try {
             return polymarketApiClient.fetchAllClosedPositions(walletAddress);

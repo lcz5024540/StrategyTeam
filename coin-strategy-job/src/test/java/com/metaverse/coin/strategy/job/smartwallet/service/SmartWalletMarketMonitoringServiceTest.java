@@ -231,6 +231,38 @@ class SmartWalletMarketMonitoringServiceTest {
         verify(marketStateService, never()).refreshMarkets(any(), anyBoolean());
     }
 
+    @Test
+    void shouldExcludeExpiredMarketsFromRefreshCandidates() {
+        when(tradeEventMapper.selectList(any())).thenReturn(List.of(
+                event("market-live", "Will live market stay monitored?"),
+                event("market-expired", "Will expired market be dropped from candidates?")
+        ));
+        when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
+                "market-live", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-live")
+                        .question("Will live market stay monitored?")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .marketEndAt(System.currentTimeMillis() + 3_600_000L)
+                        .build(),
+                "market-expired", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-expired")
+                        .question("Will expired market be dropped from candidates?")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .marketEndAt(System.currentTimeMillis() - 60_000L)
+                        .build()
+        ));
+
+        List<String> candidates = service.listCandidateMarketIds(20, 14);
+
+        assertEquals(List.of("market-live"), candidates);
+        verify(marketStateService).loadPersistedMarkets(any());
+        verify(marketStateService, never()).refreshMarkets(any(), anyBoolean());
+    }
+
     private SmartWalletTradeEventEntity event(String marketId, String question) {
         return new SmartWalletTradeEventEntity()
                 .setSource("POLYMARKET")

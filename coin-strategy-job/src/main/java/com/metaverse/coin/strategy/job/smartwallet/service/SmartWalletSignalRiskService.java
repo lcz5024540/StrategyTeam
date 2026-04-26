@@ -16,6 +16,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService.ConcentrationSnapshot;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -30,8 +31,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class SmartWalletSignalRiskService {
+
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
 
     private final SmartWalletProperties properties;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
@@ -484,7 +488,7 @@ public class SmartWalletSignalRiskService {
             reasons.add("Signal passed watchlist, freshness, size and price checks.");
         }
 
-        return SignalRiskDecision.builder()
+        SignalRiskDecision result = SignalRiskDecision.builder()
                 .accepted(accepted)
                 .overrideApplied(overrideApplied)
                 .recommendedStakeUsdc(recommendedStake)
@@ -511,6 +515,14 @@ public class SmartWalletSignalRiskService {
                 .strategyChecks(strategyChecks)
                 .reasons(reasons)
                 .build();
+        log.info("{} action=完成跟单风控评估 result={} followTaskId={} wallet={} marketId={} outcome={} side={} recommendedStakeUsdc={} consensusWallets={} consensusEntities={} consensusScore={} routeMode={} matchedStrategies={} reasons={}",
+                LOG_PREFIX, result.isAccepted() ? "通过" : "拒绝", currentFollowTaskId,
+                profile == null ? null : profile.getWalletAddress(), event == null ? null : event.getMarketId(),
+                event == null ? null : event.getOutcome(), event == null ? null : event.getSide(),
+                result.getRecommendedStakeUsdc(), result.getConsensusWallets(), result.getConsensusEntities(),
+                result.getConsensusScore(), result.getStrategyRouteMode(), result.getMatchedStrategies(),
+                String.join(" | ", result.getReasons()));
+        return result;
     }
 
     private BigDecimal safe(BigDecimal value) {

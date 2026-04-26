@@ -62,6 +62,7 @@ import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 
 @Service
 @Slf4j
@@ -171,7 +172,7 @@ public class SmartWalletAccountingService {
 
         Date now = new Date();
         order.setFilledAt(now);
-        orderMapper.updateById(order);
+        updateOrderChecked(order, "processOrderFill");
 
         marketInfoService.populate(order);
         executeFillAndAccounting(order,
@@ -713,9 +714,9 @@ public class SmartWalletAccountingService {
             rebuildDailyReport(position.getExecutionAddress(), toLocalDate(now));
         }
 
-        position.setStatus("CLAIMED")
-                .setUpdatedAt(new Date());
-        positionMapper.updateById(position);
+        position = updatePositionWithRetry(position.getId(), p -> {
+            p.setStatus("CLAIMED");
+        }, "claimResolvedPosition", 3);
 
         return SmartWalletClaimResultView.builder()
                 .positionId(position.getId())
@@ -1399,11 +1400,12 @@ public class SmartWalletAccountingService {
                     .setClosedAt(snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null)
                     .setStatus(snapshot.status())
                     .setUpdatedAt(new Date());
-            positionMapper.updateById(position);
-            if (position.getLastFilledAt() != null) {
-                rebuildDailyReport(position.getExecutionAddress(), toLocalDate(position.getLastFilledAt()));
+            if (updatePositionChecked(position, "rebuildPositionFromFills")) {
+                if (position.getLastFilledAt() != null) {
+                    rebuildDailyReport(position.getExecutionAddress(), toLocalDate(position.getLastFilledAt()));
+                }
+                rebuilt++;
             }
-            rebuilt++;
         }
         return rebuilt;
     }
@@ -2032,7 +2034,7 @@ public class SmartWalletAccountingService {
             }
             order.setStatus(ORDER_STATUS_SETTLEMENT_PENDING_ORACLE)
                     .setUpdatedAt(now);
-            orderMapper.updateById(order);
+            updateOrderChecked(order, "syncResolvedPaperOrderStatuses");
         }
     }
 
@@ -2059,7 +2061,7 @@ public class SmartWalletAccountingService {
             }
             position.setStatus(POSITION_STATUS_SETTLEMENT_PENDING_ORACLE)
                     .setUpdatedAt(now);
-            positionMapper.updateById(position);
+            updatePositionChecked(position, "syncResolvedPaperPositionStatuses");
         }
     }
 
@@ -2083,7 +2085,7 @@ public class SmartWalletAccountingService {
                 if (StringUtils.hasText(earlyExitStatus) && !earlyExitStatus.equalsIgnoreCase(order.getStatus())) {
                     order.setStatus(earlyExitStatus);
                     order.setUpdatedAt(now);
-                    orderMapper.updateById(order);
+                    updateOrderChecked(order, "settleEarlyExitOrder");
                 }
                 continue;
             }
@@ -2094,7 +2096,7 @@ public class SmartWalletAccountingService {
             if (!nextStatus.equalsIgnoreCase(order.getStatus())) {
                 order.setStatus(nextStatus);
                 order.setUpdatedAt(now);
-                orderMapper.updateById(order);
+                updateOrderChecked(order, "settleOrderWinLoss");
             }
         }
     }
@@ -2228,7 +2230,10 @@ public class SmartWalletAccountingService {
         if (position.getId() == null) {
             positionMapper.insert(position);
         } else {
-            positionMapper.updateById(position);
+            if (!updatePositionChecked(position, "upsertPosition")) {
+                log.error("upsertPosition: version conflict for position {}, fill will be reconciled on next rebuild",
+                        position.getId());
+            }
         }
         return new PositionUpdateResult(position, realizedDelta);
     }
@@ -2316,7 +2321,7 @@ public class SmartWalletAccountingService {
         }
         if (!Objects.equals(order.getPositionId(), positionId)) {
             order.setPositionId(positionId);
-            orderMapper.updateById(order);
+            updateOrderChecked(order, "linkPositionToOrder");
         }
     }
 
@@ -2490,19 +2495,21 @@ public class SmartWalletAccountingService {
                     .setCreatedAt(new Date()));
         }
 
-        position.setRealizedPnlUsdc(safe(position.getRealizedPnlUsdc()).add(realizedDelta))
-                .setUnrealizedPnlUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
-                .setLastMarkPrice(resolutionPrice)
-                .setQuantity(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
-                .setOriginalCostBasisUsdc(safe(position.getCostBasisUsdc()).setScale(8, RoundingMode.HALF_UP))
-                .setCostBasisUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
-                .setAverageEntryPrice(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
-                .setNetSide("FLAT")
-                .setStatus("RESOLVED_UNCLAIMED")
-                .setClosedAt(now)
-                .setLastFilledAt(now)
-                .setUpdatedAt(new Date());
-        positionMapper.updateById(position);
+        final BigDecimal finalResolutionPrice = resolutionPrice;
+        final BigDecimal finalRealizedDelta = realizedDelta;
+        position = updatePositionWithRetry(position.getId(), p -> {
+            p.setRealizedPnlUsdc(safe(p.getRealizedPnlUsdc()).add(finalRealizedDelta))
+                    .setUnrealizedPnlUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
+                    .setLastMarkPrice(finalResolutionPrice)
+                    .setQuantity(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
+                    .setOriginalCostBasisUsdc(safe(p.getCostBasisUsdc()).setScale(8, RoundingMode.HALF_UP))
+                    .setCostBasisUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
+                    .setAverageEntryPrice(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
+                    .setNetSide("FLAT")
+                    .setStatus("RESOLVED_UNCLAIMED")
+                    .setClosedAt(now)
+                    .setLastFilledAt(now);
+        }, "resolvePosition", 3);
         rebuildDailyReport(position.getExecutionAddress(), toLocalDate(now));
     }
 
@@ -2560,7 +2567,7 @@ public class SmartWalletAccountingService {
                 .setUnrealizedPnlUsdc(unrealized)
                 .setUpdatedAt(new Date());
         if (position.getId() != null) {
-            positionMapper.updateById(position);
+            updatePositionChecked(position, "markToMarket");
         }
     }
 
@@ -2694,7 +2701,10 @@ public class SmartWalletAccountingService {
                 .setClosedAt(snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null)
                 .setStatus(snapshot.status())
                 .setUpdatedAt(new Date());
-        positionMapper.updateById(position);
+        if (!updatePositionChecked(position, "repairPrematureSettlement")) {
+            notes.add("Version conflict repairing position " + position.getId() + ", will retry next cycle");
+            return false;
+        }
         if (snapshot.openedAt() != null) {
             rebuildDailyReport(position.getExecutionAddress(), toLocalDate(snapshot.openedAt()));
         }
@@ -3100,7 +3110,7 @@ public class SmartWalletAccountingService {
         }
         order.setRealizedPnlUsdc(safe(order.getRealizedPnlUsdc()).add(delta).setScale(8, RoundingMode.HALF_UP))
                 .setUpdatedAt(now == null ? new Date() : now);
-        orderMapper.updateById(order);
+        updateOrderChecked(order, "updateOrderRealizedPnl");
     }
 
     private ExitOrderSummary summarizeExitOrders(List<SmartWalletOrderEntity> orders,
@@ -3730,8 +3740,9 @@ public class SmartWalletAccountingService {
                 if (positionId != null) {
                     order.setPositionId(positionId);
                     order.setUpdatedAt(new Date());
-                    orderMapper.updateById(order);
-                    updated++;
+                    if (updateOrderChecked(order, "backfillOrderPositionId")) {
+                        updated++;
+                    }
                 }
             }
         }
@@ -4531,5 +4542,69 @@ public class SmartWalletAccountingService {
         private BigDecimal netPnl() {
             return realizedPnl.subtract(fee);
         }
+    }
+
+    // ── 乐观锁工具方法 ──────────────────────────────────────────────────────
+
+    /**
+     * 带重试的 Position 更新。当 @Version 乐观锁导致 updateById 返回 0 时，
+     * 重新读取最新数据，通过 mutator 重新应用业务变更，再次尝试更新。
+     * 最多重试 {@code maxRetries} 次，全部失败后抛出 IllegalStateException。
+     *
+     * @param positionId 待更新的 position 主键
+     * @param mutator    对最新 position 施加业务变更的 lambda
+     * @param context    日志描述（如 "claimResolvedPosition"）
+     * @param maxRetries 最大重试次数（不含首次）
+     * @return 更新成功后的 position 实体
+     */
+    private SmartWalletPositionEntity updatePositionWithRetry(Long positionId,
+                                                               Consumer<SmartWalletPositionEntity> mutator,
+                                                               String context,
+                                                               int maxRetries) {
+        SmartWalletPositionEntity position = positionMapper.selectById(positionId);
+        if (position == null) {
+            throw new IllegalStateException(context + ": position not found, id=" + positionId);
+        }
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            mutator.accept(position);
+            position.setUpdatedAt(new Date());
+            int affected = positionMapper.updateById(position);
+            if (affected == 1) {
+                return position;
+            }
+            log.warn("[OptimisticLock] {} position {} version conflict (attempt {}/{}), re-reading...",
+                    context, positionId, attempt + 1, maxRetries + 1);
+            position = positionMapper.selectById(positionId);
+            if (position == null) {
+                throw new IllegalStateException(context + ": position disappeared during retry, id=" + positionId);
+            }
+        }
+        throw new IllegalStateException(context + ": optimistic lock failed after " + (maxRetries + 1)
+                + " attempts for position id=" + positionId);
+    }
+
+    /**
+     * 非关键 Position 更新——检查 updateById 返回值，版本冲突时仅打印 WARN 日志。
+     * 适用于定时任务场景：本轮跳过，下一轮自然重试。
+     */
+    private boolean updatePositionChecked(SmartWalletPositionEntity position, String context) {
+        int affected = positionMapper.updateById(position);
+        if (affected == 0) {
+            log.warn("[OptimisticLock] {} position {} version conflict, skipping (will retry next cycle)",
+                    context, position.getId());
+        }
+        return affected == 1;
+    }
+
+    /**
+     * 非关键 Order 更新——检查 updateById 返回值，版本冲突时仅打印 WARN 日志。
+     */
+    private boolean updateOrderChecked(SmartWalletOrderEntity order, String context) {
+        int affected = orderMapper.updateById(order);
+        if (affected == 0) {
+            log.warn("[OptimisticLock] {} order {} version conflict, skipping (will retry next cycle)",
+                    context, order.getId());
+        }
+        return affected == 1;
     }
 }

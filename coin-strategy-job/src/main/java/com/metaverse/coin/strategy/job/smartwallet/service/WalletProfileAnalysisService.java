@@ -10,6 +10,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -20,10 +21,14 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class WalletProfileAnalysisService {
+
+    private static final long BEHAVIOR_PROFILE_STALE_MS = 24L * 3600_000L;
 
     private final SmartWalletProfileMapper profileMapper;
     private final SmartWalletWalletFeatureDailyMapper walletFeatureDailyMapper;
@@ -52,8 +57,16 @@ public class WalletProfileAnalysisService {
         String normalizedWinSourceType = normalize(winSourceType);
         String normalizedExitLane = normalize(recommendedExitLane);
 
-        List<WalletScreenerView> filtered = profiles.stream()
-                .map(this::buildScreenerView)
+        long startedAt = System.currentTimeMillis();
+        List<WalletScreenerView> views = profiles.stream()
+                .map(this::buildScreenerViewFromSnapshot)
+                .filter(Objects::nonNull)
+                .toList();
+        long fallbackCount = views.stream().filter(view -> Boolean.TRUE.equals(view.fallbackUsed())).count();
+        long staleCount = views.stream().filter(view -> Boolean.TRUE.equals(view.behaviorStale())).count();
+        long snapshotCount = views.size() - fallbackCount;
+
+        List<WalletScreenerView> filtered = views.stream()
                 .filter(view -> normalizedTier == null || normalizedTier.equals(normalize(view.screenerTier())))
                 .filter(view -> highQualityAddress == null || highQualityAddress.equals(Boolean.TRUE.equals(view.highQualityAddress())))
                 .filter(view -> highFrequencyTradingAddress == null
@@ -64,6 +77,10 @@ public class WalletProfileAnalysisService {
                 .filter(view -> minReplicabilityScore == null || safe(view.replicabilityScore()).compareTo(minReplicabilityScore) >= 0)
                 .sorted(comparator)
                 .toList();
+
+        log.info("[WalletProfileAnalysis] screener scopeSize={} limit={} cursor={} snapshotProfiles={} fallbackProfiles={} staleProfiles={} filtered={} elapsedMs={}",
+                profiles.size(), safeLimit, cursor, snapshotCount, fallbackCount, staleCount, filtered.size(),
+                System.currentTimeMillis() - startedAt);
 
         if (start >= filtered.size()) {
             return CursorPageView.empty();
@@ -124,6 +141,8 @@ public class WalletProfileAnalysisService {
                 .alias(profile.getAlias())
                 .archetype(behavior.archetype())
                 .followLane(behavior.followLane())
+                .archetypeReason(behavior.archetypeReason())
+                .archetypeConfidence(scale(behavior.archetypeConfidence(), 4))
                 .screenerTier(screenerView.screenerTier())
                 .highQualityAddress(screenerView.highQualityAddress())
                 .highFrequencyTradingAddress(behavior.highFrequencyTradingAddress())
@@ -135,6 +154,10 @@ public class WalletProfileAnalysisService {
                 .latencyAlphaRate(scale(behavior.latencyAlphaRate(), 4))
                 .swingAlphaRate(scale(behavior.swingAlphaRate(), 4))
                 .earlySettlementRate(scale(behavior.earlySettlementRate(), 4))
+                .dedupOrderCount7d(behavior.dedupOrderCount7d())
+                .dedupOrderCount30d(behavior.dedupOrderCount30d())
+                .medianHoldMinutes(scale(behavior.medianHoldMinutes(), 2))
+                .dataQuality(behavior.dataQuality())
                 .recommendedExitLane(behavior.recommendedExitLane())
                 .summary(behavior.summary())
                 .strengths(strengths)
@@ -146,15 +169,28 @@ public class WalletProfileAnalysisService {
         return buildScreenerView(profile, walletBehaviorProfileService.buildProfile(profile), latestFeature(profile == null ? null : profile.getWalletAddress()));
     }
 
+    private WalletScreenerView buildScreenerViewFromSnapshot(SmartWalletProfileEntity profile) {
+        WalletBehaviorProfileView behavior = walletBehaviorProfileService.getPersistedProfile(profile == null ? null : profile.getWalletAddress());
+        return buildScreenerView(profile, behavior, latestFeature(profile == null ? null : profile.getWalletAddress()));
+    }
+
     private WalletScreenerView buildScreenerView(SmartWalletProfileEntity profile,
                                                  WalletBehaviorProfileView behavior,
                                                  SmartWalletWalletFeatureDailyEntity feature) {
         if (profile == null) {
             return null;
         }
-        BigDecimal recentWinRate = safe(firstNonNull(profile.getRecentWinRate30d(), profile.getWinRate()));
-        BigDecimal recentWinRate7d = scale(profile.getRecentWinRate7d(), 4);
+        BigDecimal recentWinRate = behavior != null && behavior.winRate30d() != null
+                ? behavior.winRate30d()
+                : safe(firstNonNull(profile.getRecentWinRate30d(), profile.getWinRate()));
+        BigDecimal recentWinRate7d = behavior != null && behavior.winRate7d() != null
+                ? behavior.winRate7d()
+                : profile.getRecentWinRate7d();
         BigDecimal freshnessScore = freshnessScore(profile.getLastTradeAt());
+        Date behaviorComputedAt = behavior == null ? null : behavior.computedAt();
+        boolean fallbackUsed = behaviorComputedAt == null;
+        boolean behaviorStale = behaviorComputedAt == null
+                || System.currentTimeMillis() - behaviorComputedAt.getTime() > BEHAVIOR_PROFILE_STALE_MS;
         boolean highQuality = recentWinRate.compareTo(new BigDecimal("0.58")) >= 0
                 && defaultInt(behavior == null ? null : behavior.closedPositionSampleSize()) >= 20
                 && safe(firstNonNull(feature == null ? null : feature.getPnl30d(), profile.getRealizedPnlUsdc())).compareTo(BigDecimal.ZERO) > 0
@@ -166,6 +202,8 @@ public class WalletProfileAnalysisService {
                 .alias(profile.getAlias())
                 .archetype(behavior == null ? null : behavior.archetype())
                 .followLane(behavior == null ? null : behavior.followLane())
+                .archetypeReason(behavior == null ? null : behavior.archetypeReason())
+                .archetypeConfidence(scale(behavior == null ? null : behavior.archetypeConfidence(), 4))
                 .screenerTier(tier)
                 .highQualityAddress(highQuality)
                 .highFrequencyTradingAddress(behavior == null ? null : behavior.highFrequencyTradingAddress())
@@ -175,6 +213,10 @@ public class WalletProfileAnalysisService {
                 .stabilityScore(scale(behavior == null ? null : behavior.stabilityScore(), 4))
                 .recentWinRate7d(recentWinRate7d)
                 .recentWinRate30d(scale(recentWinRate, 4))
+                .dedupOrderCount7d(behavior == null ? null : behavior.dedupOrderCount7d())
+                .dedupOrderCount30d(behavior == null ? null : behavior.dedupOrderCount30d())
+                .medianHoldMinutes(scale(behavior == null ? null : behavior.medianHoldMinutes(), 2))
+                .dataQuality(behavior == null ? null : behavior.dataQuality())
                 .orderWinRate(scale(behavior == null ? null : behavior.orderWinRate(), 4))
                 .averageOrderRoiRate(scale(behavior == null ? null : behavior.averageOrderRoiRate(), 4))
                 .medianOrderRoiRate(scale(behavior == null ? null : behavior.medianOrderRoiRate(), 4))
@@ -185,6 +227,9 @@ public class WalletProfileAnalysisService {
                 .recommendedExitLane(behavior == null ? null : behavior.recommendedExitLane())
                 .lastTradeAt(profile.getLastTradeAt())
                 .summary(behavior == null ? null : behavior.summary())
+                .behaviorComputedAt(behaviorComputedAt)
+                .behaviorStale(behaviorStale)
+                .fallbackUsed(fallbackUsed)
                 .build();
     }
 

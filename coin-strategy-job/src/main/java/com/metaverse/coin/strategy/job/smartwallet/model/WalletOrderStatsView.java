@@ -13,6 +13,7 @@ public record WalletOrderStatsView(
         Integer closedOrderCount,
         Integer winCount,
         Integer lossCount,
+        Integer drawCount,
         BigDecimal closedWinRate,
         BigDecimal closedRealizedPnlUsdc,
         BigDecimal activeUnrealizedPnlUsdc,

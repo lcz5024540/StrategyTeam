@@ -25,6 +25,7 @@ import java.util.Map;
 public class SmartWalletOrderAnalysisService {
 
     private static final String SOURCE = "POLYMARKET";
+    static final long ORDER_ANALYSIS_STALE_MS = 10L * 60L * 1000L;
 
     private final SmartWalletOrderAnalysisMapper orderAnalysisMapper;
     private final WalletOrderAggregationService walletOrderAggregationService;
@@ -73,12 +74,7 @@ public class SmartWalletOrderAnalysisService {
                                                                     boolean refresh,
                                                                     String exitStyle,
                                                                     Boolean isWin) {
-        List<SmartWalletOrderAnalysisEntity> rows = refresh
-                ? analyzeAndPersist(walletAddress)
-                : listPersisted(walletAddress);
-        if ((rows == null || rows.isEmpty()) && !refresh) {
-            rows = analyzeAndPersist(walletAddress);
-        }
+        List<SmartWalletOrderAnalysisEntity> rows = listFreshOrRefresh(walletAddress, refresh);
         String normalizedExitStyle = StringUtils.hasText(exitStyle) ? exitStyle.trim().toUpperCase(Locale.ROOT) : null;
         return rows.stream()
                 .filter(row -> normalizedExitStyle == null
@@ -87,6 +83,38 @@ public class SmartWalletOrderAnalysisService {
                 .sorted(Comparator.comparing(SmartWalletOrderAnalysisEntity::getClosedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
+    }
+
+    public List<SmartWalletOrderAnalysisEntity> listFreshOrRefresh(String walletAddress, boolean refresh) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return List.of();
+        }
+        if (refresh) {
+            return analyzeAndPersist(walletAddress);
+        }
+        List<SmartWalletOrderAnalysisEntity> rows = listPersisted(walletAddress);
+        if (isStale(rows)) {
+            rows = analyzeAndPersist(walletAddress);
+        }
+        return rows == null ? List.of() : rows.stream()
+                .sorted(Comparator.comparing(SmartWalletOrderAnalysisEntity::getClosedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+    }
+
+    boolean isStale(List<SmartWalletOrderAnalysisEntity> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return true;
+        }
+        Date latestUpdatedAt = rows.stream()
+                .map(SmartWalletOrderAnalysisEntity::getUpdatedAt)
+                .filter(date -> date != null)
+                .max(Date::compareTo)
+                .orElse(null);
+        if (latestUpdatedAt == null) {
+            return true;
+        }
+        return System.currentTimeMillis() - latestUpdatedAt.getTime() > ORDER_ANALYSIS_STALE_MS;
     }
 
     public List<WalletOrderAnalysisView> toViews(List<SmartWalletOrderAnalysisEntity> rows) {

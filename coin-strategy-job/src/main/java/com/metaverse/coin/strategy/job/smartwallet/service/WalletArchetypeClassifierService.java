@@ -80,11 +80,11 @@ public class WalletArchetypeClassifierService {
 
         String archetype;
         if (labelSampleSize >= 5 && followableRate.compareTo(new BigDecimal("0.40")) < 0 && alphaRule.compareTo(new BigDecimal("0.45")) < 0) {
-            archetype = "NOISE";
+            archetype = "NOISE_OR_INSUFFICIENT";
         } else if (trades7d >= 18
                 || (medianInterTradeMinutes != null && medianInterTradeMinutes.compareTo(new BigDecimal("45")) <= 0)
                 || alpha30s.compareTo(alphaRule.max(alpha5m)) > 0) {
-            archetype = "HF";
+            archetype = "HF_SCALPER";
         } else if (concentration.compareTo(new BigDecimal("0.55")) >= 0
                 && markets30d > 0 && markets30d <= 6
                 && alphaRule.compareTo(alpha30s.add(new BigDecimal("0.08"))) >= 0
@@ -101,11 +101,11 @@ public class WalletArchetypeClassifierService {
                 || followableRate.compareTo(new BigDecimal("0.55")) >= 0) {
             archetype = "SWING";
         } else {
-            archetype = "NOISE";
+            archetype = "NOISE_OR_INSUFFICIENT";
         }
 
         String followLane = switch (archetype) {
-            case "HF" -> "HF_FOLLOW";
+            case "HF_SCALPER" -> "HF_FOLLOW";
             case "THEMATIC" -> "THEMATIC_FOLLOW";
             case "LOW_FREQ_VALUE" -> "VALUE_FOLLOW";
             case "SWING" -> "SWING_FOLLOW";
@@ -119,10 +119,10 @@ public class WalletArchetypeClassifierService {
                 .add(alpha5m.multiply(new BigDecimal("0.15")))
                 .add(alphaRule.multiply(new BigDecimal("0.20")))
                 .add(winRate30d.multiply(new BigDecimal("0.05")));
-        if ("NOISE".equals(archetype)) {
+        if ("NOISE_OR_INSUFFICIENT".equals(archetype)) {
             followFitScore = followFitScore.subtract(new BigDecimal("0.25"));
         }
-        if ("HF".equals(archetype) && medianInterTradeMinutes != null && medianInterTradeMinutes.compareTo(new BigDecimal("20")) <= 0) {
+        if ("HF_SCALPER".equals(archetype) && medianInterTradeMinutes != null && medianInterTradeMinutes.compareTo(new BigDecimal("20")) <= 0) {
             followFitScore = followFitScore.add(new BigDecimal("0.05"));
         }
         if ("THEMATIC".equals(archetype) && concentration.compareTo(new BigDecimal("0.60")) >= 0) {
@@ -150,6 +150,8 @@ public class WalletArchetypeClassifierService {
                 .walletAddress(walletAddress)
                 .archetype(archetype)
                 .followLane(followLane)
+                .archetypeReason(summary(archetype, trades7d, markets30d, medianInterTradeMinutes, alpha30s, alpha5m, alphaRule, followableRate))
+                .archetypeConfidence(confidence.setScale(4, RoundingMode.HALF_UP))
                 .confidence(confidence.setScale(4, RoundingMode.HALF_UP))
                 .leaderQualityScore(leaderQuality.setScale(4, RoundingMode.HALF_UP))
                 .followFitScore(followFitScore.setScale(4, RoundingMode.HALF_UP))
@@ -157,6 +159,8 @@ public class WalletArchetypeClassifierService {
                 .labelSampleSize(labelSampleSize)
                 .trades7d(trades7d)
                 .trades30d(trades30d)
+                .dedupOrderCount7d(trades7d)
+                .dedupOrderCount30d(trades30d)
                 .markets30d(markets30d)
                 .concentrationMarket30d(concentration.setScale(4, RoundingMode.HALF_UP))
                 .followableRate30d(followableRate.setScale(4, RoundingMode.HALF_UP))
@@ -164,6 +168,8 @@ public class WalletArchetypeClassifierService {
                 .alpha5m(alpha5m.setScale(4, RoundingMode.HALF_UP))
                 .alphaRule(alphaRule.setScale(4, RoundingMode.HALF_UP))
                 .medianInterTradeMinutes(medianInterTradeMinutes == null ? null : medianInterTradeMinutes.setScale(2, RoundingMode.HALF_UP))
+                .medianHoldMinutes(null)
+                .dataQuality(labelSampleSize >= 5 ? "MEDIUM" : "LOW")
                 .summary(summary(archetype, trades7d, markets30d, medianInterTradeMinutes, alpha30s, alpha5m, alphaRule, followableRate))
                 .build();
     }
@@ -175,8 +181,10 @@ public class WalletArchetypeClassifierService {
     private WalletArchetypeView emptyView(String walletAddress) {
         return WalletArchetypeView.builder()
                 .walletAddress(walletAddress)
-                .archetype("UNKNOWN")
+                .archetype("NOISE_OR_INSUFFICIENT")
                 .followLane("OBSERVE_ONLY")
+                .archetypeReason("No wallet archetype evidence yet.")
+                .archetypeConfidence(BigDecimal.ZERO)
                 .confidence(BigDecimal.ZERO)
                 .leaderQualityScore(BigDecimal.ZERO)
                 .followFitScore(BigDecimal.ZERO)
@@ -184,12 +192,16 @@ public class WalletArchetypeClassifierService {
                 .labelSampleSize(0)
                 .trades7d(0)
                 .trades30d(0)
+                .dedupOrderCount7d(0)
+                .dedupOrderCount30d(0)
                 .markets30d(0)
                 .concentrationMarket30d(BigDecimal.ZERO)
                 .followableRate30d(BigDecimal.ZERO)
                 .alpha30s(BigDecimal.ZERO)
                 .alpha5m(BigDecimal.ZERO)
                 .alphaRule(BigDecimal.ZERO)
+                .medianHoldMinutes(BigDecimal.ZERO)
+                .dataQuality("LOW")
                 .summary("No wallet archetype evidence yet.")
                 .build();
     }
@@ -202,7 +214,7 @@ public class WalletArchetypeClassifierService {
                            BigDecimal alpha5m,
                            BigDecimal alphaRule,
                            BigDecimal followableRate) {
-        return "HF".equals(archetype)
+        return "HF_SCALPER".equals(archetype)
                 ? "High-frequency wallet: fast turnover, short alpha window, should use low-latency follow."
                 : "THEMATIC".equals(archetype)
                 ? "Thematic wallet: concentrated markets with stronger rule-horizon alpha, suitable for slower follow."

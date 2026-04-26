@@ -4,6 +4,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -18,8 +19,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class PolymarketClobExecutionService {
+
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
 
     private final ExecutionWalletContextLoader walletContextLoader;
     private final PolymarketClobClientRouter clobClientRouter;
@@ -31,15 +35,27 @@ public class PolymarketClobExecutionService {
     private final SmartWalletFollowTaskService followTaskService;
 
     public Map<String, Object> deriveApiCreds() {
-        return clobClientRouter.deriveApiCreds(walletContextLoader.requireLiveContext());
+        log.info("{} action=派生Polymarket CLOB API凭证 result=开始", LOG_PREFIX);
+        Map<String, Object> result = clobClientRouter.deriveApiCreds(walletContextLoader.requireLiveContext());
+        log.info("{} action=派生Polymarket CLOB API凭证 result=完成 responseKeys={}",
+                LOG_PREFIX, result == null ? null : result.keySet());
+        return result;
     }
 
     public Map<String, Object> getOrder(String orderId) {
-        return clobClientRouter.getOrder(walletContextLoader.requireLiveContext(), orderId);
+        log.info("{} action=查询Polymarket CLOB订单 result=开始 orderId={}", LOG_PREFIX, orderId);
+        Map<String, Object> result = clobClientRouter.getOrder(walletContextLoader.requireLiveContext(), orderId);
+        log.info("{} action=查询Polymarket CLOB订单 result=完成 orderId={} responseKeys={}",
+                LOG_PREFIX, orderId, result == null ? null : result.keySet());
+        return result;
     }
 
     public Map<String, Object> cancelOrder(String orderId) {
-        return clobClientRouter.cancelOrder(walletContextLoader.requireLiveContext(), orderId);
+        log.info("{} action=取消Polymarket CLOB订单 result=开始 orderId={}", LOG_PREFIX, orderId);
+        Map<String, Object> result = clobClientRouter.cancelOrder(walletContextLoader.requireLiveContext(), orderId);
+        log.info("{} action=取消Polymarket CLOB订单 result=完成 orderId={} responseKeys={}",
+                LOG_PREFIX, orderId, result == null ? null : result.keySet());
+        return result;
     }
 
     public PolymarketApiClient.MarketMetadata marketMetadata(String conditionId) {
@@ -78,6 +94,8 @@ public class PolymarketClobExecutionService {
         if (request == null || !StringUtils.hasText(request.getConditionId())) {
             throw new IllegalArgumentException("conditionId must be provided for dry-run.");
         }
+        log.info("{} action=预演Polymarket订单 result=开始 conditionId={} outcome={} price={} stakeUsdc={}",
+                LOG_PREFIX, request.getConditionId(), request.getOutcome(), request.getPrice(), request.getStakeUsdc());
         ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.load();
         String outcome = normalizeOutcome(request.getOutcome());
         PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
@@ -115,6 +133,9 @@ public class PolymarketClobExecutionService {
         response.put("marketSelection", buildMarketSelection(request.getConditionId(), question, outcome, metadata, resolvedTokenId));
         response.put("localPositionDraft", buildLocalPositionDraft(prepared, entryPrice));
         response.put("settlementSimulation", buildSettlementSimulation(prepared));
+        log.info("{} action=预演Polymarket订单 result=完成 conditionId={} outcome={} tokenId={} limitPrice={} size={} stakeUsdc={} walletReady={}",
+                LOG_PREFIX, request.getConditionId(), outcome, resolvedTokenId, prepared.getLimitPrice(),
+                prepared.getSize(), prepared.getStakeUsdc(), wallet.isLiveReady());
         return response;
     }
 
@@ -122,6 +143,7 @@ public class PolymarketClobExecutionService {
         if (followTaskId == null) {
             throw new IllegalArgumentException("followTaskId must be provided.");
         }
+        log.info("{} action=按跟单任务预演LIVE下单 result=开始 followTaskId={}", LOG_PREFIX, followTaskId);
         SmartWalletFollowTaskEntity task = followTaskMapper.selectById(followTaskId);
         if (task == null) {
             throw new IllegalArgumentException("Smart-wallet follow task not found: " + followTaskId);
@@ -179,11 +201,19 @@ public class PolymarketClobExecutionService {
         response.put("marketSelection", buildMarketSelection(task.getMarketId(), firstNonBlank(task.getQuestion(), metadata == null ? null : metadata.getQuestion(), task.getMarketId()), outcome, metadata, resolvedTokenId));
         response.put("localPositionDraft", buildLocalPositionDraft(prepared, prepared.getLimitPrice()));
         response.put("settlementSimulation", buildSettlementSimulation(prepared));
+        log.info("{} action=按跟单任务预演LIVE下单 result=完成 followTaskId={} executable={} marketId={} outcome={} tokenId={} limitPrice={} size={} stakeUsdc={}",
+                LOG_PREFIX, followTaskId, decision.isAccepted(), task.getMarketId(), outcome, resolvedTokenId,
+                prepared.getLimitPrice(), prepared.getSize(), prepared.getStakeUsdc());
         return response;
     }
 
     public SmartWalletExecutionResult executeFollowTask(Long followTaskId) {
-        return followTaskService.executeTaskNow(followTaskId, com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode.LIVE);
+        log.info("{} action=按跟单任务触发LIVE执行 result=开始 followTaskId={}", LOG_PREFIX, followTaskId);
+        SmartWalletExecutionResult result = followTaskService.executeTaskNow(followTaskId, com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode.LIVE);
+        log.info("{} action=按跟单任务触发LIVE执行 result={} followTaskId={} externalOrderId={} status={} message={}",
+                LOG_PREFIX, result.isSuccess() ? "成功" : "失败", followTaskId, result.getExternalOrderId(),
+                result.getStatus(), result.getMessage());
+        return result;
     }
 
     public SmartWalletExecutionResult executeLiveExit(SmartWalletPositionEntity position,
@@ -192,9 +222,14 @@ public class PolymarketClobExecutionService {
         if (position == null) {
             throw new IllegalArgumentException("position must be provided for live exit.");
         }
+        log.info("{} action=提交LIVE退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={} exitReason={}",
+                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice, exitReason);
         ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
         ExitPriceReference priceReference = resolveLiveExitPriceReference(position, requestedPrice);
         PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepareExit(position, priceReference.price(), wallet);
+        log.info("{} action=准备LIVE退出下单参数 result=完成 positionId={} marketId={} outcome={} tokenId={} side={} limitPrice={} size={} notionalUsdc={} pricingSource={}",
+                LOG_PREFIX, position.getId(), order.getMarketId(), order.getOutcome(), order.getTokenId(), order.getSide(),
+                order.getLimitPrice(), order.getSize(), order.getStakeUsdc(), priceReference.source());
         Map<String, Object> response = clobClientRouter.placeOrder(wallet, order);
         @SuppressWarnings("unchecked")
         Map<String, Object> orderResponse = response.get("response") instanceof Map<?, ?>
@@ -211,6 +246,9 @@ public class PolymarketClobExecutionService {
         String normalizedStatus = normalizeLiveStatus(rawStatus, orderId, success);
         BigDecimal liveNotional = order.getStakeUsdc();
         BigDecimal liveFee = estimateFee(liveNotional, wallet.getEstimatedFeeRate());
+        log.info("{} action=提交LIVE退出订单 result={} positionId={} marketId={} outcome={} orderId={} rawStatus={} normalizedStatus={} notionalUsdc={} feeUsdc={} pricingSource={} reason={}",
+                LOG_PREFIX, success ? "成功" : "失败", position.getId(), order.getMarketId(), order.getOutcome(), orderId,
+                rawStatus, normalizedStatus, liveNotional, liveFee, priceReference.source(), exitReason);
         return SmartWalletExecutionResult.builder()
                 .signalId(order.getSignalId())
                 .mode(com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode.LIVE)

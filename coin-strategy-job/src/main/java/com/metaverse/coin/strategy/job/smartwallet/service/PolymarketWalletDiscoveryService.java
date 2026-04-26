@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class PolymarketWalletDiscoveryService {
 
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
     private static final String MONITOR_TIER_HOT = "HOT";
     private static final String MONITOR_TIER_WARM = "WARM";
     private final PolymarketApiClient polymarketApiClient;
@@ -81,13 +82,17 @@ public class PolymarketWalletDiscoveryService {
     private PolymarketDiscoverySummary analyzeTopWallets(Integer perQueryLimit, boolean syncTradesAfterRefresh) {
         List<String> notes = new ArrayList<>();
         List<DiscoveryCandidate> candidates;
+        log.info("{} action=发现Polymarket聪明钱包 result=开始 perQueryLimit={} syncTradesAfterRefresh={}",
+                LOG_PREFIX, perQueryLimit, syncTradesAfterRefresh);
         try {
             candidates = fetchLeaderboardCandidates(perQueryLimit, notes);
             leaderboardStateService.refreshSnapshot(candidates.stream()
                     .map(DiscoveryCandidate::toLeaderboardEntry)
                     .toList());
+            log.info("{} action=拉取Polymarket排行榜候选 result=完成 candidateCount={} querySlices={}",
+                    LOG_PREFIX, candidates.size(), resolveLeaderboardQueries().size());
         } catch (Exception e) {
-            log.warn("Failed to fetch Polymarket leaderboard", e);
+            log.warn("{} action=拉取Polymarket排行榜候选 result=失败 reason={}", LOG_PREFIX, rootMessage(e), e);
             notes.add("Leaderboard fetch failed: " + rootMessage(e));
             return PolymarketDiscoverySummary.builder()
                     .candidateWallets(0)
@@ -108,13 +113,19 @@ public class PolymarketWalletDiscoveryService {
             try {
                 PolymarketWalletMetricsRequest metrics = buildMetrics(candidate);
                 if (metrics == null || metrics.getTotalTrades() == null || metrics.getTotalTrades() == 0) {
+                    log.info("{} action=分析Polymarket候选钱包 result=跳过 reason=无已结算交易 wallet={}",
+                            LOG_PREFIX, candidate.getWalletAddress());
                     continue;
                 }
                 monitorService.ingestWalletMetrics(metrics);
                 importedProfiles++;
                 analyzedWallets++;
+                log.info("{} action=分析Polymarket候选钱包 result=完成 wallet={} totalTrades={} winRate={} pnlUsdc={}",
+                        LOG_PREFIX, candidate.getWalletAddress(), metrics.getTotalTrades(), metrics.getWinRate(),
+                        metrics.getRealizedPnlUsdc());
             } catch (Exception e) {
-                log.warn("Failed to analyze Polymarket wallet {}", candidate.getWalletAddress());
+                log.warn("{} action=分析Polymarket候选钱包 result=失败 wallet={} reason={}",
+                        LOG_PREFIX, candidate.getWalletAddress(), rootMessage(e));
                 notes.add("Analyze failed for " + candidate.getWalletAddress() + ": " + rootMessage(e));
             }
         }
@@ -124,7 +135,7 @@ public class PolymarketWalletDiscoveryService {
             try {
                 importedTradeEvents = syncWatchlistTrades();
             } catch (Exception e) {
-                log.warn("Failed to sync watchlist trades after discovery");
+                log.warn("{} action=发现后同步观察名单交易 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
                 notes.add("Trade sync failed after discovery: " + rootMessage(e));
             }
         }
@@ -132,7 +143,7 @@ public class PolymarketWalletDiscoveryService {
         notes.add("Candidates come from Polymarket official leaderboard and are re-ranked by local wallet score.");
         notes.add("Wallet metrics are calculated from official closed positions and recent trade data.");
         notes.add("Leaderboard candidate pool is unioned across " + resolveLeaderboardQueries().size() + " query slices.");
-        return PolymarketDiscoverySummary.builder()
+        PolymarketDiscoverySummary summary = PolymarketDiscoverySummary.builder()
                 .candidateWallets(candidates.size())
                 .analyzedWallets(analyzedWallets)
                 .importedProfiles(importedProfiles)
@@ -141,6 +152,10 @@ public class PolymarketWalletDiscoveryService {
                 .watchlistCount(selection.getExecutableCount())
                 .notes(notes)
                 .build();
+        log.info("{} action=发现Polymarket聪明钱包 result=完成 candidateWallets={} analyzedWallets={} importedProfiles={} importedTradeEvents={} qualifiedCount={} watchlistCount={}",
+                LOG_PREFIX, summary.getCandidateWallets(), summary.getAnalyzedWallets(), summary.getImportedProfiles(),
+                summary.getImportedTradeEvents(), summary.getQualifiedCount(), summary.getWatchlistCount());
+        return summary;
     }
 
     public boolean analyzeWalletAndAdmitWatchlist(String walletAddress) {
@@ -158,14 +173,20 @@ public class PolymarketWalletDiscoveryService {
         try {
             metrics = buildMetrics(candidate);
         } catch (Exception e) {
-            log.warn("Failed to analyze Polymarket wallet {}: {}", normalizedWalletAddress, rootMessage(e));
+            log.warn("{} action=手动分析并纳入观察名单 result=失败 wallet={} reason={}",
+                    LOG_PREFIX, normalizedWalletAddress, rootMessage(e));
             return false;
         }
         if (metrics == null || metrics.getTotalTrades() == null || metrics.getTotalTrades() <= 0) {
+            log.info("{} action=手动分析并纳入观察名单 result=拒绝 wallet={} reason=无已结算交易",
+                    LOG_PREFIX, normalizedWalletAddress);
             return false;
         }
 
         if (!isQualified(metrics)) {
+            log.info("{} action=手动分析并纳入观察名单 result=拒绝 wallet={} reason=未达到准入阈值 totalTrades={} winRate={} pnlUsdc={}",
+                    LOG_PREFIX, normalizedWalletAddress, metrics.getTotalTrades(), metrics.getWinRate(),
+                    metrics.getRealizedPnlUsdc());
             return false;
         }
 
@@ -174,6 +195,9 @@ public class PolymarketWalletDiscoveryService {
         entity.setWatchEnabled(Boolean.TRUE);
         entity.setLastEvaluatedAt(new Date());
         profileStoreService.update(entity);
+        log.info("{} action=手动分析并纳入观察名单 result=通过 wallet={} profileId={} totalTrades={} winRate={} pnlUsdc={}",
+                LOG_PREFIX, normalizedWalletAddress, entity.getId(), metrics.getTotalTrades(), metrics.getWinRate(),
+                metrics.getRealizedPnlUsdc());
         return true;
     }
 
@@ -227,6 +251,8 @@ public class PolymarketWalletDiscoveryService {
     private int refreshWarmWalletMetrics(List<SmartWalletProfileEntity> wallets, boolean enforceDueWindow) {
         int refreshedProfiles = 0;
         long now = System.currentTimeMillis();
+        log.info("{} action=刷新WARM钱包指标批次 result=开始 walletCount={} enforceDueWindow={}",
+                LOG_PREFIX, wallets == null ? 0 : wallets.size(), enforceDueWindow);
         for (SmartWalletProfileEntity wallet : wallets) {
             if (wallet == null || !StringUtils.hasText(wallet.getWalletAddress())) {
                 continue;
@@ -250,62 +276,86 @@ public class PolymarketWalletDiscoveryService {
                 }
                 profileStoreService.recordWarmMetricsRefresh(updatedWallet, refreshedAt);
                 refreshedProfiles++;
+                log.info("{} action=刷新WARM钱包指标 result=完成 wallet={} profileId={} monitorTier={} refreshedAt={}",
+                        LOG_PREFIX, updatedWallet == null ? wallet.getWalletAddress() : updatedWallet.getWalletAddress(),
+                        updatedWallet == null ? wallet.getId() : updatedWallet.getId(),
+                        updatedWallet == null ? wallet.getMonitorTier() : updatedWallet.getMonitorTier(), refreshedAt);
                 if (wasWarm && isHotWallet(updatedWallet)) {
+                    log.info("{} action=WARM钱包晋升后补同步HOT交易 result=开始 wallet={}",
+                            LOG_PREFIX, updatedWallet.getWalletAddress());
                     refreshHotWallet(updatedWallet, false, System.currentTimeMillis());
                 }
             } catch (Exception e) {
-                log.warn("Skip refreshing WARM wallet {} because metrics rebuild failed: {}",
-                        wallet.getWalletAddress(), rootMessage(e));
+                log.warn("{} action=刷新WARM钱包指标 result=失败 wallet={} reason={}",
+                        LOG_PREFIX, wallet.getWalletAddress(), rootMessage(e));
             }
         }
+        log.info("{} action=刷新WARM钱包指标批次 result=完成 refreshedProfiles={}",
+                LOG_PREFIX, refreshedProfiles);
         return refreshedProfiles;
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.discovery-fixed-delay-ms:3600000}")
     public void scheduledDiscoverWallets() {
         if (!monitorService.isDiscoveryEnabled()) {
+            log.debug("{} action=定时发现Polymarket聪明钱包 result=跳过 reason=发现开关未开启", LOG_PREFIX);
             return;
         }
         try {
-            analyzeTopWallets();
+            log.info("{} action=定时发现Polymarket聪明钱包 result=开始", LOG_PREFIX);
+            PolymarketDiscoverySummary summary = analyzeTopWallets();
+            log.info("{} action=定时发现Polymarket聪明钱包 result=完成 candidateWallets={} importedProfiles={} importedTradeEvents={}",
+                    LOG_PREFIX, summary.getCandidateWallets(), summary.getImportedProfiles(), summary.getImportedTradeEvents());
         } catch (Exception e) {
-            log.warn("Scheduled Polymarket discovery failed: {}", rootMessage(e));
+            log.warn("{} action=定时发现Polymarket聪明钱包 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
         }
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.leaderboard-refresh-fixed-delay-ms:300000}")
     public void scheduledRefreshLeaderboardWatchlist() {
         if (!monitorService.isDiscoveryEnabled()) {
+            log.debug("{} action=定时刷新Polymarket观察名单 result=跳过 reason=发现开关未开启", LOG_PREFIX);
             return;
         }
         try {
-            refreshLeaderboardWatchlist();
+            log.info("{} action=定时刷新Polymarket观察名单 result=开始", LOG_PREFIX);
+            PolymarketDiscoverySummary summary = refreshLeaderboardWatchlist();
+            log.info("{} action=定时刷新Polymarket观察名单 result=完成 candidateWallets={} importedProfiles={} watchlistCount={}",
+                    LOG_PREFIX, summary.getCandidateWallets(), summary.getImportedProfiles(), summary.getWatchlistCount());
         } catch (Exception e) {
-            log.warn("Scheduled Polymarket watchlist refresh failed: {}", rootMessage(e));
+            log.warn("{} action=定时刷新Polymarket观察名单 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
         }
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.event-sync-fixed-delay-ms:30000}")
     public void scheduledSyncWatchlistTrades() {
         if (!monitorService.isEventSyncEnabled()) {
+            log.debug("{} action=定时同步Polymarket观察名单交易 result=跳过 reason=事件同步开关未开启", LOG_PREFIX);
             return;
         }
         try {
-            syncWatchlistTradesBatch();
+            log.info("{} action=定时同步Polymarket观察名单交易 result=开始", LOG_PREFIX);
+            int imported = syncWatchlistTradesBatch();
+            log.info("{} action=定时同步Polymarket观察名单交易 result=完成 importedTradeEvents={}",
+                    LOG_PREFIX, imported);
         } catch (Exception e) {
-            log.warn("Scheduled Polymarket trade sync failed: {}", rootMessage(e));
+            log.warn("{} action=定时同步Polymarket观察名单交易 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
         }
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.warm-metrics-refresh-fixed-delay-ms:600000}")
     public void scheduledRefreshWarmWalletMetrics() {
         if (!monitorService.isEventSyncEnabled()) {
+            log.debug("{} action=定时刷新Polymarket WARM钱包指标 result=跳过 reason=事件同步开关未开启", LOG_PREFIX);
             return;
         }
         try {
-            refreshWarmWalletMetricsBatch();
+            log.info("{} action=定时刷新Polymarket WARM钱包指标 result=开始", LOG_PREFIX);
+            int refreshed = refreshWarmWalletMetricsBatch();
+            log.info("{} action=定时刷新Polymarket WARM钱包指标 result=完成 refreshedProfiles={}",
+                    LOG_PREFIX, refreshed);
         } catch (Exception e) {
-            log.warn("Scheduled Polymarket WARM metrics refresh failed: {}", rootMessage(e));
+            log.warn("{} action=定时刷新Polymarket WARM钱包指标 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
         }
     }
 
@@ -353,14 +403,16 @@ public class PolymarketWalletDiscoveryService {
     private int refreshHotWallet(SmartWalletProfileEntity wallet, boolean enforceDueWindow, long now) {
         String walletKey = normalizeWalletKey(wallet.getWalletAddress());
         List<PolymarketApiClient.UserTrade> trades;
+        log.info("{} action=同步HOT钱包交易 result=开始 wallet={} enforceDueWindow={} lastEventSyncAt={}",
+                LOG_PREFIX, wallet.getWalletAddress(), enforceDueWindow, wallet.getLastEventSyncAt());
         try {
             trades = fetchIncrementalTradesForHotWallet(wallet);
             if (enforceDueWindow) {
                 walletTradeNextAllowedAt.put(walletKey, now + dynamicTradeSyncIntervalMs(wallet));
             }
         } catch (Exception e) {
-            log.warn("Skip syncing HOT wallet {} because Polymarket trades request failed: {}",
-                    wallet.getWalletAddress(), rootMessage(e));
+            log.warn("{} action=同步HOT钱包交易 result=失败 wallet={} reason={}",
+                    LOG_PREFIX, wallet.getWalletAddress(), rootMessage(e));
             if (enforceDueWindow) {
                 walletTradeNextAllowedAt.put(walletKey, now + tradeErrorCooldownMs());
             }
@@ -379,12 +431,17 @@ public class PolymarketWalletDiscoveryService {
             try {
                 monitorService.ingestTradeEvent(toTradeEventRequest(trade, wallet));
                 importedTradeEvents++;
+                log.info("{} action=导入HOT钱包交易 result=完成 wallet={} tradeId={} marketId={} outcome={} side={} tradedAt={}",
+                        LOG_PREFIX, wallet.getWalletAddress(), trade.getTradeId(), trade.getMarketId(),
+                        trade.getOutcome(), trade.getSide(), trade.getTradedAt());
             } catch (Exception e) {
-                log.warn("Skip trade {} for HOT wallet {}: {}",
-                        trade.getTradeId(), wallet.getWalletAddress(), rootMessage(e));
+                log.warn("{} action=导入HOT钱包交易 result=失败 wallet={} tradeId={} reason={}",
+                        LOG_PREFIX, wallet.getWalletAddress(), trade.getTradeId(), rootMessage(e));
             }
         }
         profileStoreService.recordHotEventSync(wallet, resolveHotSyncCheckpoint(checkpointMillis, now));
+        log.info("{} action=同步HOT钱包交易 result=完成 wallet={} fetchedTrades={} importedTradeEvents={} checkpointMillis={}",
+                LOG_PREFIX, wallet.getWalletAddress(), trades.size(), importedTradeEvents, checkpointMillis);
         return importedTradeEvents;
     }
 
@@ -559,7 +616,8 @@ public class PolymarketWalletDiscoveryService {
         try {
             profile = polymarketApiClient.fetchProfile(candidate.getWalletAddress());
         } catch (Exception e) {
-            log.debug("Failed to fetch Polymarket profile for {}", candidate.getWalletAddress(), e);
+            log.debug("{} action=拉取Polymarket钱包资料 result=失败 wallet={} reason={}",
+                    LOG_PREFIX, candidate.getWalletAddress(), rootMessage(e), e);
         }
 
         BigDecimal realizedPnl = BigDecimal.ZERO;

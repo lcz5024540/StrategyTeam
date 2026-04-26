@@ -18,6 +18,8 @@ export interface WalletScreenerView {
   alias: string | null
   archetype: string | null
   followLane: string | null
+  archetypeReason: string | null
+  archetypeConfidence: number | null
   screenerTier: 'EXECUTABLE_A' | 'EXECUTABLE_B' | 'OBSERVE' | 'BLOCKLIST' | string
   highQualityAddress: boolean | null
   highFrequencyTradingAddress: boolean | null
@@ -27,6 +29,10 @@ export interface WalletScreenerView {
   stabilityScore: number | null
   recentWinRate7d: number | null
   recentWinRate30d: number | null
+  dedupOrderCount7d: number | null
+  dedupOrderCount30d: number | null
+  medianHoldMinutes: number | null
+  dataQuality: string | null
   orderWinRate: number | null
   averageOrderRoiRate: number | null
   medianOrderRoiRate: number | null
@@ -37,6 +43,9 @@ export interface WalletScreenerView {
   recommendedExitLane: string | null
   lastTradeAt: string | null
   summary: string | null
+  behaviorComputedAt: string | null
+  behaviorStale: boolean | null
+  fallbackUsed: boolean | null
 }
 
 export interface WalletOrderAnalysisView {
@@ -67,6 +76,7 @@ export interface WalletOrderStatsView {
   closedOrderCount: number
   winCount: number
   lossCount: number
+  drawCount: number
   closedWinRate: number | null
   closedRealizedPnlUsdc: number | null
   activeUnrealizedPnlUsdc: number | null
@@ -83,6 +93,8 @@ export interface WalletDiagnosisView {
   alias: string | null
   archetype: string | null
   followLane: string | null
+  archetypeReason: string | null
+  archetypeConfidence: number | null
   screenerTier: string | null
   highQualityAddress: boolean | null
   highFrequencyTradingAddress: boolean | null
@@ -94,6 +106,10 @@ export interface WalletDiagnosisView {
   latencyAlphaRate: number | null
   swingAlphaRate: number | null
   earlySettlementRate: number | null
+  dedupOrderCount7d: number | null
+  dedupOrderCount30d: number | null
+  medianHoldMinutes: number | null
+  dataQuality: string | null
   recommendedExitLane: string | null
   summary: string | null
   strengths: string[]

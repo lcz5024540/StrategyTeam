@@ -317,10 +317,11 @@ public class SmartWalletController {
     public WalletOrderStatsView walletOrderStats(@PathVariable String walletAddress,
                                                  @RequestParam(defaultValue = "30d") String window,
                                                  @RequestParam(defaultValue = "false") boolean refresh) {
-        if (refresh) {
-            smartWalletOrderAnalysisService.analyzeAndPersist(walletAddress);
-        }
-        return walletOrderStatsService.summarize(walletAddress, window);
+        return walletOrderStatsService.summarize(
+                walletAddress,
+                smartWalletOrderAnalysisService.listFreshOrRefresh(walletAddress, refresh),
+                window
+        );
     }
 
     @Operation(summary = "地址胜率诊断", description = "输出这个地址为什么赢、适不适合跟、以及推荐的退出方式。")
@@ -546,6 +547,8 @@ public class SmartWalletController {
                 .walletAddress(archetype.walletAddress())
                 .archetype(archetype.archetype())
                 .followLane(archetype.followLane())
+                .archetypeReason(behaviorProfile == null ? archetype.archetypeReason() : behaviorProfile.archetypeReason())
+                .archetypeConfidence(behaviorProfile == null ? archetype.archetypeConfidence() : behaviorProfile.archetypeConfidence())
                 .confidence(archetype.confidence())
                 .leaderQualityScore(archetype.leaderQualityScore())
                 .followFitScore(archetype.followFitScore())
@@ -553,6 +556,8 @@ public class SmartWalletController {
                 .labelSampleSize(archetype.labelSampleSize())
                 .trades7d(archetype.trades7d())
                 .trades30d(archetype.trades30d())
+                .dedupOrderCount7d(behaviorProfile == null ? archetype.dedupOrderCount7d() : behaviorProfile.dedupOrderCount7d())
+                .dedupOrderCount30d(behaviorProfile == null ? archetype.dedupOrderCount30d() : behaviorProfile.dedupOrderCount30d())
                 .markets30d(archetype.markets30d())
                 .concentrationMarket30d(archetype.concentrationMarket30d())
                 .followableRate30d(archetype.followableRate30d())
@@ -560,6 +565,8 @@ public class SmartWalletController {
                 .alpha5m(archetype.alpha5m())
                 .alphaRule(archetype.alphaRule())
                 .medianInterTradeMinutes(archetype.medianInterTradeMinutes())
+                .medianHoldMinutes(behaviorProfile == null ? archetype.medianHoldMinutes() : behaviorProfile.medianHoldMinutes())
+                .dataQuality(behaviorProfile == null ? archetype.dataQuality() : behaviorProfile.dataQuality())
                 .highFrequencyTradingAddress(behaviorProfile == null ? null : behaviorProfile.highFrequencyTradingAddress())
                 .closedPositionSampleSize(behaviorProfile == null ? null : behaviorProfile.closedPositionSampleSize())
                 .orderWinRate(behaviorProfile == null ? null : behaviorProfile.orderWinRate())

@@ -12,6 +12,8 @@ import java.util.Map;
 @Slf4j
 public class PolymarketClobClientRouter {
 
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
+
     private final List<PolymarketClobClient> clients;
 
     public boolean isAvailable(ExecutionWalletContextLoader.ExecutionWalletContext context) {
@@ -21,34 +23,50 @@ public class PolymarketClobClientRouter {
 
     public Map<String, Object> deriveApiCreds(ExecutionWalletContextLoader.ExecutionWalletContext context) {
         PolymarketClobClient client = resolve(context);
-        log.info("Polymarket CLOB route operation=derive-api-creds sdkMode={} client={}",
-                sdkMode(context), client.getClass().getSimpleName());
-        return client.deriveApiCreds(context);
+        log.info("{} action=路由CLOB派生凭证请求 result=开始 sdkMode={} client={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName());
+        Map<String, Object> result = client.deriveApiCreds(context);
+        log.info("{} action=路由CLOB派生凭证请求 result=完成 sdkMode={} client={} responseKeys={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName(), result == null ? null : result.keySet());
+        return result;
     }
 
     public Map<String, Object> placeOrder(ExecutionWalletContextLoader.ExecutionWalletContext context,
                                           PolymarketOrderRequestFactory.PreparedPolymarketOrder order) {
         PolymarketClobClient client = resolve(context);
-        log.info("Polymarket CLOB route operation=place-order sdkMode={} client={} marketId={} tokenId={} signalId={}",
-                sdkMode(context), client.getClass().getSimpleName(),
+        log.info("{} action=路由CLOB下单请求 result=开始 sdkMode={} client={} marketId={} tokenId={} signalId={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName(),
                 order == null ? null : order.getMarketId(),
                 order == null ? null : order.getTokenId(),
                 order == null ? null : order.getSignalId());
-        return client.placeOrder(context, order);
+        Map<String, Object> result = client.placeOrder(context, order);
+        log.info("{} action=路由CLOB下单请求 result=完成 sdkMode={} client={} marketId={} tokenId={} signalId={} responseKeys={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName(),
+                order == null ? null : order.getMarketId(),
+                order == null ? null : order.getTokenId(),
+                order == null ? null : order.getSignalId(),
+                result == null ? null : result.keySet());
+        return result;
     }
 
     public Map<String, Object> getOrder(ExecutionWalletContextLoader.ExecutionWalletContext context, String orderId) {
         PolymarketClobClient client = resolve(context);
-        log.info("Polymarket CLOB route operation=get-order sdkMode={} client={} orderId={}",
-                sdkMode(context), client.getClass().getSimpleName(), orderId);
-        return client.getOrder(context, orderId);
+        log.info("{} action=路由CLOB查单请求 result=开始 sdkMode={} client={} orderId={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName(), orderId);
+        Map<String, Object> result = client.getOrder(context, orderId);
+        log.info("{} action=路由CLOB查单请求 result=完成 sdkMode={} client={} orderId={} responseKeys={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName(), orderId, result == null ? null : result.keySet());
+        return result;
     }
 
     public Map<String, Object> cancelOrder(ExecutionWalletContextLoader.ExecutionWalletContext context, String orderId) {
         PolymarketClobClient client = resolve(context);
-        log.info("Polymarket CLOB route operation=cancel-order sdkMode={} client={} orderId={}",
-                sdkMode(context), client.getClass().getSimpleName(), orderId);
-        return client.cancelOrder(context, orderId);
+        log.info("{} action=路由CLOB撤单请求 result=开始 sdkMode={} client={} orderId={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName(), orderId);
+        Map<String, Object> result = client.cancelOrder(context, orderId);
+        log.info("{} action=路由CLOB撤单请求 result=完成 sdkMode={} client={} orderId={} responseKeys={}",
+                LOG_PREFIX, sdkMode(context), client.getClass().getSimpleName(), orderId, result == null ? null : result.keySet());
+        return result;
     }
 
     private PolymarketClobClient resolve(ExecutionWalletContextLoader.ExecutionWalletContext context) {

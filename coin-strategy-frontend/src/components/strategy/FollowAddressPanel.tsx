@@ -75,13 +75,33 @@ function normalizeCode(value: string | null | undefined) {
   return normalized && normalized.length > 0 ? normalized : 'UNKNOWN'
 }
 
+function hasActionableEvidence(dataQuality: string | null | undefined, archetype?: string | null) {
+  return normalizeCode(dataQuality) !== 'LOW' && normalizeCode(archetype) !== 'NOISE_OR_INSUFFICIENT'
+}
+
+function formatEvidencePercent(value: number | null | undefined, dataQuality: string | null | undefined, archetype?: string | null) {
+  if (value == null) return '-'
+  const formatted = formatPercent(value)
+  if (!hasActionableEvidence(dataQuality, archetype)) {
+    return `${formatted}*`
+  }
+  return formatted
+}
+
 function getArchetypeMeta(value: string | null | undefined): CodeMeta {
   const code = normalizeCode(value)
-  if (code === 'HF') {
+  if (code === 'HF' || code === 'HF_SCALPER') {
+    return {
+      code: 'HF_SCALPER',
+      label: 'HF_SCALPER 高频快进快出',
+      description: '去重订单频率高、间隔短、持仓短，并且多数订单提前退出。',
+    }
+  }
+  if (code === 'EVENT_DRIVEN') {
     return {
       code,
-      label: 'HF 高频快进快出',
-      description: '交易节奏快，alpha 窗口短，需要更低延迟的跟随方式。',
+      label: 'EVENT_DRIVEN 事件驱动型',
+      description: '交易集中在事件窗口，市场主题集中，但不一定是高频。',
     }
   }
   if (code === 'THEMATIC') {
@@ -105,11 +125,25 @@ function getArchetypeMeta(value: string | null | undefined): CodeMeta {
       description: '中等频率，偏向 5 分钟到规则级别的稳定 alpha。',
     }
   }
-  if (code === 'NOISE') {
+  if (code === 'SETTLEMENT_HOLDER') {
     return {
       code,
-      label: 'NOISE 噪声型',
-      description: '当前执行风格下复制性较弱，不适合直接自动跟单。',
+      label: 'SETTLEMENT_HOLDER 持有结算型',
+      description: '更多订单持有到市场结算，胜率主要来自最终结果判断。',
+    }
+  }
+  if (code === 'RISK_CONTROL') {
+    return {
+      code,
+      label: 'RISK_CONTROL 风控退出型',
+      description: '优势更多来自亏损快速退出和回撤控制。',
+    }
+  }
+  if (code === 'NOISE' || code === 'NOISE_OR_INSUFFICIENT') {
+    return {
+      code: 'NOISE_OR_INSUFFICIENT',
+      label: 'NOISE_OR_INSUFFICIENT 样本不足',
+      description: '去重订单样本或数据质量不足，暂不输出强跟单建议。',
     }
   }
   return {
@@ -147,6 +181,13 @@ function getFollowLaneMeta(value: string | null | undefined): CodeMeta {
       code,
       label: 'SWING_FOLLOW 波段跟随通道',
       description: '适合中等频率的波段复制。',
+    }
+  }
+  if (code === 'CAUTIOUS_FOLLOW') {
+    return {
+      code,
+      label: 'CAUTIOUS_FOLLOW 谨慎跟随通道',
+      description: '适合风控退出型地址，跟随时需要更严格止损。',
     }
   }
   if (code === 'OBSERVE_ONLY') {
@@ -624,6 +665,12 @@ export function FollowAddressPanel() {
   const selectedFollowabilityRate = selectedRow?.followabilityRate
   const selectedFreshnessScore = selectedRow?.freshnessScore
   const selectedSettlementWinRate = diagnosis?.settlementWinRate ?? selectedRow?.settlementWinRate
+  const selectedArchetypeReason = diagnosis?.archetypeReason ?? selectedRow?.archetypeReason
+  const selectedArchetypeConfidence = diagnosis?.archetypeConfidence ?? selectedRow?.archetypeConfidence
+  const selectedDedupOrderCount7d = diagnosis?.dedupOrderCount7d ?? selectedRow?.dedupOrderCount7d
+  const selectedDedupOrderCount30d = diagnosis?.dedupOrderCount30d ?? selectedRow?.dedupOrderCount30d
+  const selectedMedianHoldMinutes = diagnosis?.medianHoldMinutes ?? selectedRow?.medianHoldMinutes
+  const selectedDataQuality = diagnosis?.dataQuality ?? selectedRow?.dataQuality
   const filterSummary = [
     `${watchGroupMeta.label}视图`,
     `${formatNumber(filteredMonitoredAddresses.length, 0)} 个地址`,
@@ -677,14 +724,14 @@ export function FollowAddressPanel() {
                 />
                 <AddressMetricStrip
                   title="7D 胜率"
-                  value={formatPercent(selectedRecentWinRate7d)}
-                  hint="最近 7 天是否仍然有效"
+                  value={formatEvidencePercent(selectedRecentWinRate7d, selectedDataQuality, selectedArchetypeMeta.code)}
+                  hint={hasActionableEvidence(selectedDataQuality, selectedArchetypeMeta.code) ? '最近 7 天是否仍然有效' : '* 低置信：样本较少或退出风格识别率低'}
                   className={getAmountClass((selectedRecentWinRate7d || 0) - 0.5)}
                 />
                 <AddressMetricStrip
                   title="30D 胜率"
-                  value={formatPercent(selectedRecentWinRate30d)}
-                  hint="近 30 天胜率表现"
+                  value={formatEvidencePercent(selectedRecentWinRate30d, selectedDataQuality, selectedArchetypeMeta.code)}
+                  hint={hasActionableEvidence(selectedDataQuality, selectedArchetypeMeta.code) ? '近 30 天胜率表现' : '* 低置信：样本较少或退出风格识别率低'}
                   className={getAmountClass((selectedRecentWinRate30d || 0) - 0.5)}
                 />
               </div>
@@ -709,23 +756,55 @@ export function FollowAddressPanel() {
               </div>
             </div>
 
+            <section className="address-trend-panel">
+              <div className="section-head compact">
+                <h2>类型判断依据</h2>
+              </div>
+              <div className="address-trend-summary-grid">
+                <div className="address-trend-summary-card">
+                  <span>7D 去重订单</span>
+                  <strong>{formatNumber(selectedDedupOrderCount7d, 0)}</strong>
+                  <small>按 market + outcome 聚合</small>
+                </div>
+                <div className="address-trend-summary-card">
+                  <span>30D 去重订单</span>
+                  <strong>{formatNumber(selectedDedupOrderCount30d, 0)}</strong>
+                  <small>避免多 fill 误判高频</small>
+                </div>
+                <div className="address-trend-summary-card">
+                  <span>持仓中位数</span>
+                  <strong>{selectedMedianHoldMinutes == null ? '-' : `${formatNumber(selectedMedianHoldMinutes, 1)}m`}</strong>
+                  <small>用于区分快进快出和低频持有</small>
+                </div>
+                <div className="address-trend-summary-card">
+                  <span>类型置信度</span>
+                  <strong>{formatPercent(selectedArchetypeConfidence)}</strong>
+                  <small>{selectedDataQuality ? `数据质量 ${selectedDataQuality}` : '数据质量未知'}</small>
+                </div>
+              </div>
+              <div className="address-note-card">
+                <h4>判断说明</h4>
+                <p>{selectedArchetypeReason || '暂无可解释的地址类型依据'}</p>
+              </div>
+            </section>
+
             <div className="metric-grid address-analysis-grid">
               <AddressMetricStrip
                 title="可复制率"
-                value={formatPercent(selectedFollowabilityRate)}
-                hint="滑点复制可行性"
+                value={formatEvidencePercent(selectedFollowabilityRate, selectedDataQuality, selectedArchetypeMeta.code)}
+                hint={hasActionableEvidence(selectedDataQuality, selectedArchetypeMeta.code) ? '滑点复制可行性' : '样本或数据质量不足，不输出强结论'}
                 className={getAmountClass((selectedFollowabilityRate || 0) - 0.5)}
               />
               <AddressMetricStrip
                 title="等待结算胜率"
-                value={formatPercent(selectedSettlementWinRate)}
-                hint="只看 SETTLED_* 类订单"
+                value={formatEvidencePercent(selectedSettlementWinRate, selectedDataQuality, selectedArchetypeMeta.code)}
+                hint={hasActionableEvidence(selectedDataQuality, selectedArchetypeMeta.code) ? '只看 SETTLED_* 类订单' : '样本或数据质量不足，不输出强结论'}
                 className={getAmountClass((selectedSettlementWinRate || 0) - 0.5)}
               />
               <AddressMetricStrip
                 title="稳定性"
-                value={formatPercent(selectedStabilityScore)}
-                hint="避免一次性好运地址"
+                value={formatEvidencePercent(selectedStabilityScore, selectedDataQuality, selectedArchetypeMeta.code)}
+                hint={hasActionableEvidence(selectedDataQuality, selectedArchetypeMeta.code) ? '避免一次性好运地址' : '样本或数据质量不足，不输出强结论'}
                 className={getAmountClass((selectedStabilityScore || 0) - 0.5)}
               />
               <AddressMetricStrip
@@ -820,7 +899,7 @@ export function FollowAddressPanel() {
                   <div className="loading">交易分析加载中...</div>
                 ) : (
                   <div className="metric-grid address-analysis-grid">
-                    <AddressMetricStrip title="已关闭订单" value={formatNumber(windowStats.closedOrderCount, 0)} hint="当前窗口闭环完成的订单数" />
+                    <AddressMetricStrip title="已关闭订单" value={formatNumber(filteredOrders.length, 0)} hint="当前窗口闭环完成的订单数（与上方笔数一致）" />
                     <AddressMetricStrip title="胜率" value={formatPercent(windowStats.closedWinRate)} hint={`${windowStats.winCount} 胜 / ${windowStats.lossCount} 负`} className={getAmountClass((windowStats.closedWinRate || 0) - 0.5)} />
                     <AddressMetricStrip title="净收益" value={formatMoney(windowStats.netPnlUsdc)} hint="closed realized + active unrealized，剔除待结算" className={getAmountClass(windowStats.netPnlUsdc)} />
                     <AddressMetricStrip title="平均 ROI" value={formatPercent(windowStats.averageRoiRate)} hint="已关闭订单的平均收益率" className={getAmountClass(windowStats.averageRoiRate)} />
@@ -1003,11 +1082,14 @@ export function FollowAddressPanel() {
               onChange={(event) => setArchetypeFilter(event.target.value)}
             >
               <option value="ALL">全部地址类型</option>
-              <option value="HF">{getArchetypeMeta('HF').label}</option>
-              <option value="SWING">{getArchetypeMeta('SWING').label}</option>
-              <option value="THEMATIC">{getArchetypeMeta('THEMATIC').label}</option>
+              <option value="HF_SCALPER">{getArchetypeMeta('HF_SCALPER').label}</option>
               <option value="LOW_FREQ_VALUE">{getArchetypeMeta('LOW_FREQ_VALUE').label}</option>
-              <option value="NOISE">{getArchetypeMeta('NOISE').label}</option>
+              <option value="EVENT_DRIVEN">{getArchetypeMeta('EVENT_DRIVEN').label}</option>
+              <option value="THEMATIC">{getArchetypeMeta('THEMATIC').label}</option>
+              <option value="SWING">{getArchetypeMeta('SWING').label}</option>
+              <option value="SETTLEMENT_HOLDER">{getArchetypeMeta('SETTLEMENT_HOLDER').label}</option>
+              <option value="RISK_CONTROL">{getArchetypeMeta('RISK_CONTROL').label}</option>
+              <option value="NOISE_OR_INSUFFICIENT">{getArchetypeMeta('NOISE_OR_INSUFFICIENT').label}</option>
               <option value="UNKNOWN">UNKNOWN 未定型</option>
             </select>
           </div>
@@ -1088,6 +1170,9 @@ export function FollowAddressPanel() {
                             </div>
                             <div className="table-subtext">{archetypeMeta.label}</div>
                             <div className="table-subtext">{followLaneMeta.label}</div>
+                            <div className="table-subtext" title="按 closedAt 统计的去重已关闭市场数（marketId|outcome 去重）">
+                              {`7D/30D 已关闭 ${formatNumber(row.dedupOrderCount7d, 0)} / ${formatNumber(row.dedupOrderCount30d, 0)}`}
+                            </div>
                           </td>
                           <td>
                             <span className={getTierBadgeClass(row.screenerTier)}>{row.screenerTier}</span>
@@ -1097,12 +1182,17 @@ export function FollowAddressPanel() {
                             <span className={getSourceBadgeClass(row.winSourceType)}>{winSourceMeta.code}</span>
                             <div className="table-subtext">{winSourceMeta.label}</div>
                           </td>
-                          <td>{formatPercent(row.recentWinRate7d)}</td>
-                          <td>{formatPercent(row.recentWinRate30d)}</td>
-                          <td>{formatPercent(row.orderWinRate)}</td>
+                          <td>{formatEvidencePercent(row.recentWinRate7d, row.dataQuality, archetypeMeta.code)}</td>
+                          <td>{formatEvidencePercent(row.recentWinRate30d, row.dataQuality, archetypeMeta.code)}</td>
+                          <td>{formatEvidencePercent(row.orderWinRate, row.dataQuality, archetypeMeta.code)}</td>
                           <td>
-                            <div>{formatPercent(row.qualityScore)} / {formatPercent(row.replicabilityScore)} / {formatPercent(row.stabilityScore)}</div>
-                            <div className="table-subtext">可复制率 {formatPercent(row.followabilityRate)}</div>
+                            <div>
+                              {formatPercent(row.qualityScore)} / {formatEvidencePercent(row.replicabilityScore, row.dataQuality, archetypeMeta.code)} / {formatEvidencePercent(row.stabilityScore, row.dataQuality, archetypeMeta.code)}
+                            </div>
+                            <div className="table-subtext">可复制率 {formatEvidencePercent(row.followabilityRate, row.dataQuality, archetypeMeta.code)}</div>
+                            <div className="table-subtext">
+                              {`类型置信 ${formatPercent(row.archetypeConfidence)} · ${row.dataQuality || 'UNKNOWN'}`}
+                            </div>
                           </td>
                           <td>
                             <div>{exitLaneMeta.label}</div>
@@ -1185,15 +1275,15 @@ export function FollowAddressPanel() {
                   </div>
                   <div className="address-card-metrics">
                     <span>质量 {formatPercent(row.qualityScore)}</span>
-                    <span>复制 {formatPercent(row.replicabilityScore)}</span>
+                    <span>复制 {formatEvidencePercent(row.replicabilityScore, row.dataQuality, archetypeMeta.code)}</span>
                   </div>
                   <div className="address-card-metrics">
-                    <span>7D {formatPercent(row.recentWinRate7d)}</span>
-                    <span>30D {formatPercent(row.recentWinRate30d)}</span>
+                    <span>7D {formatEvidencePercent(row.recentWinRate7d, row.dataQuality, archetypeMeta.code)}</span>
+                    <span>30D {formatEvidencePercent(row.recentWinRate30d, row.dataQuality, archetypeMeta.code)}</span>
                   </div>
                   <div className="address-card-metrics">
                     <span>{winSourceMeta.code}</span>
-                    <span>结算 {formatPercent(row.settlementWinRate)}</span>
+                    <span>结算 {formatEvidencePercent(row.settlementWinRate, row.dataQuality, archetypeMeta.code)}</span>
                   </div>
                   <div className="address-card-summary">{truncateText(row.summary, 120) || '暂无摘要'}</div>
                 </button>

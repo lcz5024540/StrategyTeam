@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.model;
 import lombok.Builder;
 
 import java.math.BigDecimal;
+import java.util.Date;
 
 @Builder
 public record WalletBehaviorProfileView(
@@ -10,10 +11,18 @@ public record WalletBehaviorProfileView(
         String alias,
         String archetype,
         String followLane,
+        String archetypeReason,
+        BigDecimal archetypeConfidence,
         Boolean highFrequencyTradingAddress,
         Integer trades7d,
         Integer trades30d,
+        Integer dedupOrderCount7d,
+        Integer dedupOrderCount30d,
+        BigDecimal winRate7d,
+        BigDecimal winRate30d,
         BigDecimal medianInterTradeMinutes,
+        BigDecimal medianHoldMinutes,
+        String dataQuality,
         Integer closedPositionSampleSize,
         BigDecimal orderWinRate,
         BigDecimal averageOrderRoiRate,
@@ -33,6 +42,7 @@ public record WalletBehaviorProfileView(
         BigDecimal replicabilityScore,
         BigDecimal behaviorComposite,
         String recommendedExitLane,
-        String summary
+        String summary,
+        Date computedAt
 ) {
 }

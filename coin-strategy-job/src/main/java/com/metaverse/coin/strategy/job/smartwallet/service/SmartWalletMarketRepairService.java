@@ -172,7 +172,10 @@ public class SmartWalletMarketRepairService {
             return;
         }
         position.setMarketInfoId(canonicalMarketInfoId);
-        positionMapper.updateById(position);
+        int affected = positionMapper.updateById(position);
+        if (affected == 0) {
+            log.warn("[OptimisticLock] relinkPosition: position {} version conflict, will retry next repair cycle", position.getId());
+        }
     }
 
     private RepairLinks relinkOrdersAndFills(Long positionId, Long canonicalMarketInfoId) {
@@ -187,7 +190,10 @@ public class SmartWalletMarketRepairService {
             }
             if (!Objects.equals(order.getMarketInfoId(), canonicalMarketInfoId)) {
                 order.setMarketInfoId(canonicalMarketInfoId);
-                orderMapper.updateById(order);
+                int affected = orderMapper.updateById(order);
+                if (affected == 0) {
+                    log.warn("[OptimisticLock] relinkOrder: order {} version conflict", order.getId());
+                }
             }
             if (order.getFollowTaskId() != null) {
                 followTaskIds.add(order.getFollowTaskId());

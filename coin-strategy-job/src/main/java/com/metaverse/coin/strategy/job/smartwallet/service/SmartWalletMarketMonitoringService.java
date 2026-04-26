@@ -123,10 +123,9 @@ public class SmartWalletMarketMonitoringService {
                 dataset.accumulators().stream().map(MarketAccumulator::marketId).toList()
         );
         return dataset.accumulators().stream()
-                .filter(accumulator -> {
-                    SmartWalletMarketStateService.MarketStateSnapshot snapshot = stateByMarketId.get(accumulator.marketId());
-                    return snapshot == null || snapshot.isActive();
-                })
+                .filter(accumulator -> shouldTrackCandidateMarket(
+                        accumulator,
+                        stateByMarketId.get(accumulator.marketId())))
                 .map(MarketAccumulator::marketId)
                 .limit(safeLimit)
                 .toList();
@@ -140,11 +139,9 @@ public class SmartWalletMarketMonitoringService {
         Map<String, MarketConcentrationSnapshotService.SnapshotView> concentrationSnapshots =
                 concentrationSnapshotService.batchGetLatestSnapshots(
                         baseData.accumulators().stream()
-                                .filter(accumulator -> {
-                                    SmartWalletMarketStateService.MarketStateSnapshot snapshot =
-                                            stateByMarketId.get(accumulator.marketId());
-                                    return snapshot == null || snapshot.isActive();
-                                })
+                                .filter(accumulator -> shouldTrackCandidateMarket(
+                                        accumulator,
+                                        stateByMarketId.get(accumulator.marketId())))
                                 .map(MarketAccumulator::marketId)
                                 .toList(),
                         null);
@@ -174,25 +171,58 @@ public class SmartWalletMarketMonitoringService {
                 .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
                 .last("limit " + Math.max(safeFetchHint * 8, 1800)));
         List<SmartWalletPositionEntity> activePositions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE"))
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
                 .orderByDesc(SmartWalletPositionEntity::getUpdatedAt)
                 .last("limit " + Math.max(safeFetchHint * 6, 1200)));
 
         Map<Long, SmartWalletMarketInfoEntity> marketInfoById = loadMarketInfo(recentTasks, activePositions);
+        Map<String, SmartWalletMarketInfoEntity> primaryInfoByMarketId = marketInfoService.batchGetPrimaryByMarketIds(
+                collectCandidateMarketIds(recentEvents, recentTasks, activePositions, marketInfoById)
+        );
         LinkedHashMap<String, MarketAccumulator> accumulators = new LinkedHashMap<>();
-        ingestEvents(accumulators, recentEvents);
-        ingestTasks(accumulators, recentTasks, marketInfoById);
-        ingestPositions(accumulators, activePositions, marketInfoById);
-        Map<String, SmartWalletMarketInfoEntity> primaryInfoByMarketId =
-                marketInfoService.batchGetPrimaryByMarketIds(accumulators.keySet());
+        ingestEvents(accumulators, recentEvents, primaryInfoByMarketId);
+        ingestTasks(accumulators, recentTasks, marketInfoById, primaryInfoByMarketId);
+        ingestPositions(accumulators, activePositions, marketInfoById, primaryInfoByMarketId);
         accumulators.values().forEach(accumulator -> applyPrimaryMarketInfo(
                 accumulator,
                 primaryInfoByMarketId.get(accumulator.marketId())));
         List<MarketAccumulator> prioritizedAccumulators = accumulators.values().stream()
+                .filter(this::shouldTrackByKnownFacts)
                 .sorted(Comparator.comparing(MarketAccumulator::priorityScore).reversed()
                         .thenComparing(MarketAccumulator::lastSignalAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
         return new MonitoringBaseData(recentEvents, recentTasks, marketInfoById, prioritizedAccumulators);
+    }
+
+    private List<String> collectCandidateMarketIds(List<SmartWalletTradeEventEntity> recentEvents,
+                                                   List<SmartWalletFollowTaskEntity> recentTasks,
+                                                   List<SmartWalletPositionEntity> activePositions,
+                                                   Map<Long, SmartWalletMarketInfoEntity> marketInfoById) {
+        LinkedHashSet<String> marketIds = new LinkedHashSet<>();
+        for (SmartWalletTradeEventEntity event : recentEvents) {
+            if (event != null && StringUtils.hasText(event.getMarketId())) {
+                marketIds.add(event.getMarketId().trim());
+            }
+        }
+        for (SmartWalletFollowTaskEntity task : recentTasks) {
+            if (task == null || task.getMarketInfoId() == null) {
+                continue;
+            }
+            SmartWalletMarketInfoEntity marketInfo = marketInfoById.get(task.getMarketInfoId());
+            if (marketInfo != null && StringUtils.hasText(marketInfo.getMarketId())) {
+                marketIds.add(marketInfo.getMarketId().trim());
+            }
+        }
+        for (SmartWalletPositionEntity position : activePositions) {
+            if (position == null || position.getMarketInfoId() == null) {
+                continue;
+            }
+            SmartWalletMarketInfoEntity marketInfo = marketInfoById.get(position.getMarketInfoId());
+            if (marketInfo != null && StringUtils.hasText(marketInfo.getMarketId())) {
+                marketIds.add(marketInfo.getMarketId().trim());
+            }
+        }
+        return marketIds.stream().toList();
     }
 
     private Map<Long, SmartWalletMarketInfoEntity> loadMarketInfo(List<SmartWalletFollowTaskEntity> tasks,
@@ -203,12 +233,18 @@ public class SmartWalletMarketMonitoringService {
         return marketInfoService.batchGetByIds(marketInfoIds);
     }
 
-    private void ingestEvents(Map<String, MarketAccumulator> accumulators, List<SmartWalletTradeEventEntity> recentEvents) {
+    private void ingestEvents(Map<String, MarketAccumulator> accumulators,
+                              List<SmartWalletTradeEventEntity> recentEvents,
+                              Map<String, SmartWalletMarketInfoEntity> primaryInfoByMarketId) {
         for (SmartWalletTradeEventEntity event : recentEvents) {
             if (event == null || !StringUtils.hasText(event.getMarketId())) {
                 continue;
             }
-            MarketAccumulator item = accumulators.computeIfAbsent(event.getMarketId().trim(),
+            String marketId = event.getMarketId().trim();
+            if (!shouldTrackKnownMarket(primaryInfoByMarketId.get(marketId))) {
+                continue;
+            }
+            MarketAccumulator item = accumulators.computeIfAbsent(marketId,
                     key -> new MarketAccumulator(key, event.getQuestion()));
             item.question = firstNonBlank(item.question, event.getQuestion());
             item.signalCount++;
@@ -223,7 +259,8 @@ public class SmartWalletMarketMonitoringService {
 
     private void ingestTasks(Map<String, MarketAccumulator> accumulators,
                              List<SmartWalletFollowTaskEntity> recentTasks,
-                             Map<Long, SmartWalletMarketInfoEntity> marketInfoById) {
+                             Map<Long, SmartWalletMarketInfoEntity> marketInfoById,
+                             Map<String, SmartWalletMarketInfoEntity> primaryInfoByMarketId) {
         for (SmartWalletFollowTaskEntity task : recentTasks) {
             if (task == null || task.getMarketInfoId() == null) {
                 continue;
@@ -232,7 +269,11 @@ public class SmartWalletMarketMonitoringService {
             if (marketInfo == null || !StringUtils.hasText(marketInfo.getMarketId())) {
                 continue;
             }
-            MarketAccumulator item = accumulators.computeIfAbsent(marketInfo.getMarketId().trim(),
+            String marketId = marketInfo.getMarketId().trim();
+            if (!shouldTrackKnownMarket(primaryInfoByMarketId.get(marketId))) {
+                continue;
+            }
+            MarketAccumulator item = accumulators.computeIfAbsent(marketId,
                     key -> new MarketAccumulator(key, marketInfo.getQuestion()));
             applyPrimaryMarketInfo(item, marketInfo);
             if ("PENDING".equalsIgnoreCase(task.getStatus())) {
@@ -243,7 +284,8 @@ public class SmartWalletMarketMonitoringService {
 
     private void ingestPositions(Map<String, MarketAccumulator> accumulators,
                                  List<SmartWalletPositionEntity> activePositions,
-                                 Map<Long, SmartWalletMarketInfoEntity> marketInfoById) {
+                                 Map<Long, SmartWalletMarketInfoEntity> marketInfoById,
+                                 Map<String, SmartWalletMarketInfoEntity> primaryInfoByMarketId) {
         for (SmartWalletPositionEntity position : activePositions) {
             if (position == null || position.getMarketInfoId() == null) {
                 continue;
@@ -252,7 +294,11 @@ public class SmartWalletMarketMonitoringService {
             if (marketInfo == null || !StringUtils.hasText(marketInfo.getMarketId())) {
                 continue;
             }
-            MarketAccumulator item = accumulators.computeIfAbsent(marketInfo.getMarketId().trim(),
+            String marketId = marketInfo.getMarketId().trim();
+            if (!shouldTrackKnownMarket(primaryInfoByMarketId.get(marketId))) {
+                continue;
+            }
+            MarketAccumulator item = accumulators.computeIfAbsent(marketId,
                     key -> new MarketAccumulator(key, marketInfo.getQuestion()));
             applyPrimaryMarketInfo(item, marketInfo);
             item.openPositionCount++;
@@ -342,6 +388,57 @@ public class SmartWalletMarketMonitoringService {
             return false;
         }
         return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+    }
+
+    private boolean shouldTrackCandidateMarket(MarketAccumulator accumulator,
+                                               SmartWalletMarketStateService.MarketStateSnapshot snapshot) {
+        if (accumulator == null) {
+            return false;
+        }
+        Long marketEndAt = firstNonNull(snapshot == null ? null : snapshot.marketEndAt(), accumulator.marketEndAt);
+        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
+            return false;
+        }
+        if (snapshot != null) {
+            return snapshot.isActive();
+        }
+        return isActiveLifecycle(accumulator.marketLifecycle);
+    }
+
+    private boolean shouldTrackByKnownFacts(MarketAccumulator accumulator) {
+        if (accumulator == null) {
+            return false;
+        }
+        if (!isActiveLifecycle(accumulator.marketLifecycle)) {
+            return false;
+        }
+        Long marketEndAt = accumulator.marketEndAt;
+        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+    }
+
+    private boolean shouldTrackKnownMarket(SmartWalletMarketInfoEntity marketInfo) {
+        if (marketInfo == null) {
+            return true;
+        }
+        if (StringUtils.hasText(marketInfo.getResolvedOutcome())) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(marketInfo.getClosed())) {
+            return false;
+        }
+        if (marketInfo.getAcceptingOrders() != null && !marketInfo.getAcceptingOrders()) {
+            return false;
+        }
+        if (!isActiveLifecycle(marketInfo.getMarketLifecycle())) {
+            return false;
+        }
+        Long marketEndAt = marketInfo.getMarketEndAt();
+        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+    }
+
+    private boolean isActiveLifecycle(String lifecycle) {
+        return !StringUtils.hasText(lifecycle)
+                || SmartWalletMarketStateService.LIFECYCLE_ACTIVE.equalsIgnoreCase(lifecycle);
     }
 
     private List<SmartWalletMarketMonitorTrendPointView> buildTrendPoints(Map<String, SmartWalletMarketMonitorItemView> visibleByMarket,
