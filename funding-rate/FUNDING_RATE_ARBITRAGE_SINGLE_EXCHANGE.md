@@ -1,5 +1,10 @@
 # 单交易所资金费率套利策略
 
+## 0. 代码对齐版补充文档
+
+- 流程图：`./SINGLE_EXCHANGE_FUNDING_RATE_ARBITRAGE_FLOW.md`
+- 链路执行文档：`./SINGLE_EXCHANGE_FUNDING_RATE_ARBITRAGE_EXECUTION_CHAIN.md`
+
 ## 1. 策略定位
 
 单交易所套利本质上是同一交易所内的期现对冲策略：买入现货、做空同标的永续合约，使净方向敞口尽量接近 0，主要赚取永续空头收到的资金费，并在基差收敛时争取额外收益。
