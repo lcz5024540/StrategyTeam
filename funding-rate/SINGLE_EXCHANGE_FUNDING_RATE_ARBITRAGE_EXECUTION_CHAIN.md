@@ -235,7 +235,7 @@
 - 在 `single_exchange_arbitrage_position` 中插入一条 `OPENING` 记录
 - 在 `single_exchange_arbitrage_risk_snapshot` 中插入一条 `PRE_OPEN` 记录
 
-### 6.5 双腿并发开仓
+### 6.5 双侧并发开仓
 
 执行：
 
@@ -245,11 +245,11 @@
 
 1. 并发发起 Spot `BUY MARKET`
 2. 并发发起 Futures `SELL MARKET` + `SHORT`
-3. 汇总双腿结果
+3. 汇总双侧结果
 4. 构建 `SingleExchangeArbitrageExecutionResult`
 5. 返回两条订单流水对象
 
-### 6.6 单腿失败的回滚逻辑
+### 6.6 单侧失败的回滚逻辑
 
 在 `SingleExchangeArbitrageOrderExecutor` 中：
 
@@ -337,7 +337,7 @@
 - 风险快照写入 `single_exchange_arbitrage_risk_snapshot`
 - 持仓状态更新为 `CLOSING`
 
-### 8.3 双腿并发平仓
+### 8.3 双侧并发平仓
 
 执行：
 

@@ -32,7 +32,7 @@ flowchart TD
     N --> O["写 PRE_OPEN 风险快照"]
     O --> P["并发下单<br/>现货 BUY + 合约 SHORT<br/>openArbitragePosition(plan)"]
     P --> Q["落订单流水<br/>single_exchange_arbitrage_order"]
-    Q --> R{"双腿都成功?"}
+    Q --> R{"双侧都成功?"}
     R -- 是 --> S["更新持仓为 OPENED<br/>写开仓价格/订单号/nextFundingTime"]
     R -- 否 --> T["执行回滚或标记 FAILED"]
     S --> U["加入内存 activePositions"]
@@ -95,7 +95,7 @@ flowchart LR
 - 开仓准入：资金费率、结算保护窗口、基差区间、预期净收益、流动性、账户余额、保证金率。
 - 持仓中检查：是否跨过资金费结算点、是否需要累计 funding settlement。
 - 平仓触发：资金费率转非正、低于平仓阈值、基差恶化超阈值、保证金率跌破紧急阈值。
-- 失败保护：双腿任一侧失败时回滚；平仓失败则把状态恢复为 `OPENED`，等待下一轮继续退出。
+- 失败保护：双侧任一侧失败时回滚；平仓失败则把状态恢复为 `OPENED`，等待下一轮继续退出。
 
 ## 4. 相关落库表
 
