@@ -1,19 +1,13 @@
 package com.metaverse.coin.strategy.common.client.binance.service;
 
 import com.binance.connector.client.SpotClient;
+import com.binance.connector.client.exceptions.BinanceConnectorException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.*;
 import lombok.extern.slf4j.Slf4j;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 
-import java.math.BigDecimal;
 import java.util.Calendar;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,13 +46,25 @@ public class BinanceSpotService {
         parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
         parameters.put("omitZeroBalances", false);
         parameters.put("timestamp", Calendar.getInstance().getTime().getTime());
-        String json = spotClient.createTrade().account(parameters);
         try {
+            String json = spotClient.createTrade().account(parameters);
             return objectMapper.readValue(json, BinanceAccountInfo.class);
+        } catch (BinanceConnectorException e) {
+            String message = buildSpotConnectivityErrorMessage(e);
+            log.error(message, e);
+            throw new IllegalStateException(message, e);
         } catch (JsonProcessingException e) {
             log.error("Failed to parse Binance account info", e);
             throw new RuntimeException("Failed to parse Binance account info", e);
         }
+    }
+
+    private String buildSpotConnectivityErrorMessage(BinanceConnectorException exception) {
+        String detail = exception.getMessage();
+        if (detail != null && detail.contains("unexpected end of stream")) {
+            return "Failed to connect to Binance Spot API. The proxy or upstream endpoint closed the TLS stream unexpectedly. Prefer binance.api.spot-url=https://api.binance.com and verify the proxy protocol matches the proxy server.";
+        }
+        return "Failed to connect to Binance Spot API. Check binance.api.spot-url or configure binance.api.proxy-host/binance.api.proxy-port for the current network.";
     }
 
     /**

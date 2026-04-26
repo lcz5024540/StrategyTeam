@@ -1,5 +1,7 @@
 package com.metaverse.coin.strategy.job.controller;
 
+import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
+import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.job.service.BinanceTradingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -12,8 +14,14 @@ import org.springframework.web.bind.annotation.*;
 public class BinanceController {
 
     private final BinanceTradingService binanceTradingService;
+    private final BinanceApiService binanceApiService;
+     //================= SPOT =================
 
-    // ================= SPOT =================
+    @GetMapping("/getAccount")
+    public BinanceAccountInfo getAccountInfo(){
+        BinanceAccountInfo accountInfo = binanceApiService.getAccountInfo();
+        return accountInfo;
+    }
 
     @PostMapping("/spot/buy")
     public String spotBuy(@RequestParam String symbol, @RequestParam String quantity, @RequestParam(required = false) String price) {
