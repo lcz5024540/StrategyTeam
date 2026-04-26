@@ -92,6 +92,7 @@ public class SmartWalletFollowTaskService {
         tradeEventMapper.insert(event);
         log.info("{} action=记录Polymarket钱包交易事件 result=已入库 eventId={} wallet={} marketId={} outcome={} side={}",
                 LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide());
+        profileStoreService.recordObservedTradeActivity(event.getWalletAddress(), event.getOpenedAt());
         ensureMarketInfoForEvent(event);
         createFollowTaskIfQualified(event);
         return event;

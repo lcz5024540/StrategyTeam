@@ -299,6 +299,7 @@ body::before {
   padding: var(--space-lg);
   position: relative;
   overflow: hidden;
+  min-width: 0;
 }
 
 /* 面板顶部霓虹光线 */
@@ -463,7 +464,7 @@ body::before {
 ═══════════════════════════════════════════════════════════ */
 .split-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-lg);
 }
 
@@ -498,6 +499,7 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
 }
 
 .address-hero-copy h2 {
@@ -534,6 +536,9 @@ body::before {
   font-size: 11px;
   line-height: 1.4;
   font-family: var(--font-mono);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .address-hero-stats {
@@ -552,6 +557,7 @@ body::before {
   flex-direction: column;
   justify-content: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .address-hero-stat span {
@@ -616,6 +622,8 @@ body::before {
   font-size: 11px;
   line-height: 1.5;
   font-family: var(--font-mono);
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .address-filter-top {
@@ -789,6 +797,7 @@ body::before {
   cursor: pointer;
   transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
   scroll-snap-align: start;
+  overflow: hidden;
 }
 
 .address-card:hover,
@@ -805,11 +814,14 @@ body::before {
   justify-content: space-between;
   gap: var(--space-sm);
   align-items: flex-start;
+  min-width: 0;
 }
 
 .address-card-top strong {
   color: var(--text-bright);
   font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .address-card-meta,
@@ -820,11 +832,18 @@ body::before {
   font-family: var(--font-mono);
 }
 
+.address-card-meta span,
+.address-card-metrics span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .address-card-summary {
   margin-top: 12px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .address-focus-stage {
@@ -851,6 +870,7 @@ body::before {
   line-height: 1.05;
   color: var(--accent);
   text-shadow: var(--accent-glow-sm);
+  overflow-wrap: anywhere;
 }
 
 .address-focus-copy p {
@@ -859,6 +879,7 @@ body::before {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 
 .address-focus-meta {
@@ -869,6 +890,14 @@ body::before {
   color: var(--muted);
   font-size: 11px;
   font-family: var(--font-mono);
+}
+
+.address-focus-meta span,
+.address-full-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .address-focus-metrics {
@@ -888,6 +917,7 @@ body::before {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: rgba(0, 255, 65, 0.03);
+  min-width: 0;
 }
 
 .address-focus-signal span,
@@ -906,8 +936,10 @@ body::before {
 .address-focus-signal strong {
   margin-top: 8px;
   color: var(--text-bright);
-  font-size: 20px;
+  font-size: 17px;
+  line-height: 1.35;
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .address-diagnosis {
@@ -921,12 +953,14 @@ body::before {
   justify-content: space-between;
   gap: var(--space-md);
   align-items: flex-start;
+  min-width: 0;
 }
 
 .address-diagnosis-hero h3 {
   margin: 2px 0 8px;
   font-size: 22px;
   color: var(--accent);
+  overflow-wrap: anywhere;
 }
 
 .address-diagnosis-hero p {
@@ -934,6 +968,7 @@ body::before {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .address-note-card {
@@ -941,6 +976,7 @@ body::before {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   padding: 16px;
+  min-width: 0;
 }
 
 .address-note-card h4 {
@@ -955,6 +991,7 @@ body::before {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
 .address-note-row {
@@ -964,6 +1001,7 @@ body::before {
   background: rgba(255, 255, 255, 0.02);
   font-size: 12px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .address-note-card .address-note-row + .address-note-row {
@@ -981,6 +1019,7 @@ body::before {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: rgba(0, 255, 65, 0.025);
+  min-width: 0;
 }
 
 .section-head.compact {
@@ -1008,6 +1047,7 @@ body::before {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: rgba(0, 255, 65, 0.03);
+  min-width: 0;
 }
 
 .address-trend-summary-grid {
@@ -1022,6 +1062,7 @@ body::before {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
 }
 
 .address-trend-summary-card span,
@@ -1042,6 +1083,7 @@ body::before {
   color: var(--text-bright);
   font-size: 22px;
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .address-trend-strip {
@@ -1117,6 +1159,7 @@ body::before {
 ═══════════════════════════════════════════════════════════ */
 .table-wrap {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 table {
@@ -1135,6 +1178,7 @@ th {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.10em;
+  vertical-align: top;
 }
 
 td {
@@ -1142,6 +1186,9 @@ td {
   text-align: left;
   border-bottom: 1px solid rgba(0, 255, 65, 0.06);
   color: var(--text);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 tbody tr {
@@ -1170,6 +1217,11 @@ tbody tr:hover td {
   font-family: var(--font-mono);
   letter-spacing: 0.06em;
   color: var(--muted);
+  max-width: 100%;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .badge.accent {
@@ -1198,17 +1250,21 @@ tbody tr:hover td {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .address-primary-cell {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .address-primary-cell strong {
   color: var(--text-bright);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .address-primary-cell span,
@@ -1216,6 +1272,8 @@ tbody tr:hover td {
   color: var(--muted);
   font-size: 11px;
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1229,6 +1287,7 @@ tbody tr:hover td {
   transition: border-color 0.2s, box-shadow 0.2s;
   position: relative;
   overflow: hidden;
+  min-width: 0;
 }
 
 .metric-card:hover {
@@ -1260,6 +1319,9 @@ tbody tr:hover td {
   font-weight: 600;
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .metric-card .hint {
@@ -1267,10 +1329,12 @@ tbody tr:hover td {
   color: var(--muted);
   margin-top: 6px;
   font-family: var(--font-mono);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .address-metric-card .value {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 /* ═══════════════════════════════════════════════════════════

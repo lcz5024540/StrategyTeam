@@ -57,6 +57,10 @@ public class SmartWalletProfileEntity {
     private Date observeCooldownUntil;
     @TableField("observe_cooldown_reason")
     private String observeCooldownReason;
+    @TableField("hot_retention_until")
+    private Date hotRetentionUntil;
+    @TableField("hot_retention_reason")
+    private String hotRetentionReason;
     @TableField("manual_watch_enabled")
     private Boolean manualWatchEnabled;
     @TableField("manual_recommended_exit_lane")

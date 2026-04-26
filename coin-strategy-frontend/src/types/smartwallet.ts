@@ -40,6 +40,8 @@ export interface WalletScreenerView {
   followabilityRate: number | null
   concentrationMarket30d: number | null
   freshnessScore: number | null
+  monitorTier: 'HOT' | 'WARM' | 'COLD' | string | null
+  monitorReason: string | null
   recommendedExitLane: string | null
   lastTradeAt: string | null
   summary: string | null

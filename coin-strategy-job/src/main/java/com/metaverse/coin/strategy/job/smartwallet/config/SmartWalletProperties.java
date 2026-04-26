@@ -81,7 +81,17 @@ public class SmartWalletProperties {
         private Long warmMetricsRefreshFixedDelayMs = 600000L;
         private Integer warmMetricsRefreshBatchSize = 10;
         private Long warmWalletRefreshMinIntervalMs = 1800000L;
+        private boolean hotRetentionEnabled = true;
+        private Integer hotRetentionHours = 24;
+        private BigDecimal scoreHysteresisBuffer = new BigDecimal("0.08");
+        private BigDecimal winRateHysteresisBuffer = new BigDecimal("0.04");
+        private Integer warmWalletInactivityDays = 30;
         private BigDecimal staleAddressWeightFactor = new BigDecimal("0.35");
+        /**
+         * 地址超过该天数没有任何交易动作后进入 COLD，停止 HOT/WARM 轮询资源占用。
+         * 后续通过排行榜刷新、手动导入或外部事件观察到新交易时会重新评估。
+         */
+        private Integer coldWalletInactivityDays = 60;
 
         @Data
         public static class LeaderboardQuery {

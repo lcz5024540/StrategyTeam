@@ -18,6 +18,47 @@ spring:
 smart-wallet:
   # Keep test on PAPER unless an operator explicitly overrides via environment.
   auto-execution-enabled: false
+
+  # ── 测试环境：降低钱包准入门槛以便更多地址进入 HOT 监控 ──
+  # 注意：walletScore 由 scoreWallet() 公式计算，满分 1.0，
+  # 典型地址（winRate=0.60, trades=30, pnl=$500）得分仅约 0.30。
+  # 0.55 是非常严格的阈值，只有 winRate>0.85 或 pnl>$20k 的地址才能达到。
+  min-wallet-score: 0.35
+  min-win-rate: 0.55
+  min-total-trades: 10
+  min-realized-pnl-usdc: 0
+  max-drawdown-rate: 0.45
+  observe-cooldown-enabled: false
+
+  signal-risk:
+    # ── 基础风控放宽 ──
+    max-signal-age-seconds: 3600
+    min-trigger-size-usdc: 1
+    # ── 共识门控：单实体即可触发 ──
+    enable-consensus-gate: true
+    min-distinct-wallets: 1
+    min-distinct-entities: 1
+    min-consensus-score: 0
+    # ── 关闭高级门控 ──
+    enable-probability-gate: false
+    enable-slippage-gate: false
+    enable-ev-gate: false
+    enable-concentration-gate: false
+    # ── Single-wallet override：降低门槛 ──
+    # 注意：single-wallet-override-min-wallet-score 也需要与 min-wallet-score 保持一致，
+    # 否则通过准入层的地址仍会在 override 检查中被拒。
+    enable-single-wallet-override-canary: false
+    single-wallet-override-canary-rate: 1
+    single-wallet-override-min-wallet-score: 0.35
+    single-wallet-override-min-win-rate: 0.55
+    single-wallet-override-min-trades: 10
+    single-wallet-override-min-recent-trades-7d: 0
+    single-wallet-override-min-recent-win-rate-7d: 0
+    single-wallet-override-min-replicability-score: 0.30
+    single-wallet-override-min-quality-score: 0.30
+    single-wallet-override-min-trigger-size-usdc: 1
+    single-wallet-override-min-recommended-stake-usdc: 1
+
   polymarket:
     # Test-only discovery override: stop pulling VOLUME leaders because the current
     # candidate pool is dominated by high-frequency, observe-only wallets.
@@ -33,3 +74,9 @@ smart-wallet:
     # Expand the scoring pass so test can inspect a larger PnL-only candidate set
     # without loosening any execution or risk gates.
     analyze-top-n: 100
+    hot-retention-enabled: true
+    hot-retention-hours: 24
+    score-hysteresis-buffer: 0.08
+    win-rate-hysteresis-buffer: 0.04
+    warm-wallet-inactivity-days: 30
+    cold-wallet-inactivity-days: 60

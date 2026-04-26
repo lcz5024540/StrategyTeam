@@ -40,6 +40,7 @@ public class PolymarketApiClient {
 
     private static final int DEFAULT_FULL_HISTORY_PAGE_SIZE = 200;
     private static final int MAX_FULL_HISTORY_PAGES = 20;
+    public static final int MAX_USER_TRADE_HISTORY_OFFSET = 3_000;
 
     private final SmartWalletProperties properties;
     private final ObjectMapper objectMapper;
@@ -282,10 +283,16 @@ public class PolymarketApiClient {
     }
 
     public List<UserTrade> fetchUserTrades(String walletAddress, Integer limit, int offset) {
+        int safeOffset = Math.max(0, offset);
+        if (safeOffset > MAX_USER_TRADE_HISTORY_OFFSET) {
+            log.debug("Skip Polymarket user trades fetch because offset exceeds supported history window: wallet={} offset={} maxOffset={}",
+                    walletAddress, safeOffset, MAX_USER_TRADE_HISTORY_OFFSET);
+            return List.of();
+        }
         Map<String, String> params = new LinkedHashMap<>();
         params.put("user", walletAddress);
         params.put("limit", String.valueOf(limit == null ? properties.getPolymarket().getRecentTradeLimit() : limit));
-        params.put("offset", String.valueOf(Math.max(0, offset)));
+        params.put("offset", String.valueOf(safeOffset));
         params.put("takerOnly", "true");
 
         JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
@@ -323,6 +330,9 @@ public class PolymarketApiClient {
         Map<String, UserTrade> deduped = new LinkedHashMap<>();
         for (int page = 0; page < MAX_FULL_HISTORY_PAGES; page++) {
             int offset = page * safePageSize;
+            if (offset > MAX_USER_TRADE_HISTORY_OFFSET) {
+                break;
+            }
             List<UserTrade> chunk = fetchUserTrades(walletAddress, safePageSize, offset);
             if (chunk.isEmpty()) {
                 break;

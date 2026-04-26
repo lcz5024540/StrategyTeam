@@ -33,6 +33,8 @@ public record WalletScreenerView(
         BigDecimal followabilityRate,
         BigDecimal concentrationMarket30d,
         BigDecimal freshnessScore,
+        String monitorTier,
+        String monitorReason,
         String recommendedExitLane,
         Date lastTradeAt,
         String summary,

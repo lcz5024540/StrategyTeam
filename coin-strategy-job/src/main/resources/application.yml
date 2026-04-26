@@ -258,6 +258,14 @@ smart-wallet:
     warm-metrics-refresh-batch-size: 10
     # [TUNE] Minimum spacing between two WARM-tier profile refreshes for the same wallet.
     warm-wallet-refresh-min-interval-ms: 1800000
+    # [TUNE] Keep existing HOT wallets during small score/win-rate drift instead of dropping them immediately.
+    hot-retention-enabled: true
+    hot-retention-hours: 24
+    score-hysteresis-buffer: 0.08
+    win-rate-hysteresis-buffer: 0.04
+    # [TUNE] Wallets with no observed trade for this many days are moved to WARM, then COLD after the cold threshold.
+    warm-wallet-inactivity-days: 30
+    cold-wallet-inactivity-days: 60
   execution-wallet:
     # [SCRIPT][FIXED-ONCE] Live routing master switch. Requires env secrets to be present.
     enabled: true

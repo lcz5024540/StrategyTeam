@@ -14,7 +14,7 @@ import {
 } from '@/utils/format'
 
 type AnalysisWindow = '7d' | '30d' | 'all'
-type WatchGroup = 'all' | 'priority' | 'open' | 'observe'
+type WatchGroup = 'all' | 'priority' | 'open' | 'observe' | 'cold'
 
 interface TrendPoint {
   key: string
@@ -35,6 +35,7 @@ const WATCH_GROUP_OPTIONS: Array<{ value: WatchGroup; label: string; hint: strin
   { value: 'priority', label: '重点', hint: '优先关注 EXECUTABLE_A' },
   { value: 'open', label: '开放', hint: '当前允许跟单的地址' },
   { value: 'observe', label: '观察', hint: '仅观察或阻断地址' },
+  { value: 'cold', label: '冷处理', hint: '长期无交易，停止 HOT/WARM 轮询' },
 ]
 
 const EMPTY_ORDER_STATS: WalletOrderStatsView = {
@@ -44,6 +45,7 @@ const EMPTY_ORDER_STATS: WalletOrderStatsView = {
   closedOrderCount: 0,
   winCount: 0,
   lossCount: 0,
+  drawCount: 0,
   closedWinRate: 0,
   closedRealizedPnlUsdc: 0,
   activeUnrealizedPnlUsdc: 0,
@@ -316,6 +318,9 @@ function getWindowRecords(records: WalletOrderAnalysisView[], window: AnalysisWi
 }
 
 function buildStatusNote(row: WalletScreenerView) {
+  if (row.monitorTier === 'COLD') {
+    return '长期无新交易，已停止轮询，后续出现新动作再恢复评估'
+  }
   if (row.screenerTier === 'EXECUTABLE_A') {
     return '可直接纳入重点跟单队列'
   }
@@ -368,6 +373,9 @@ function matchesWatchGroup(row: WalletScreenerView, watchGroup: WatchGroup) {
   }
   if (watchGroup === 'observe') {
     return row.screenerTier === 'OBSERVE' || row.screenerTier === 'BLOCKLIST'
+  }
+  if (watchGroup === 'cold') {
+    return row.monitorTier === 'COLD'
   }
   return true
 }
@@ -609,33 +617,40 @@ export function FollowAddressPanel() {
 
   const groupedMonitoredAddresses = [
     {
+      key: 'COLD',
+      title: '冷处理地址',
+      description: '长期无动作，已停止 HOT/WARM 轮询，后续出现新交易再恢复评估。',
+      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier === 'COLD'),
+    },
+    {
       key: 'EXECUTABLE_A',
       title: '重点开放地址',
       description: '优先执行跟单，适合主队列配置。',
-      rows: filteredMonitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_A'),
+      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_A'),
     },
     {
       key: 'EXECUTABLE_B',
       title: '可跟单观察地址',
       description: '可以开放，但建议控制额度或仓位。',
-      rows: filteredMonitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_B'),
+      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_B'),
     },
     {
       key: 'OBSERVE',
       title: '只观察地址',
       description: '保留监控信号，不自动跟单。',
-      rows: filteredMonitoredAddresses.filter((row) => row.screenerTier === 'OBSERVE'),
+      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'OBSERVE'),
     },
     {
       key: 'BLOCKLIST',
       title: '阻断地址',
       description: '持续跟踪风险，不进入开放名单。',
-      rows: filteredMonitoredAddresses.filter((row) => row.screenerTier === 'BLOCKLIST'),
+      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'BLOCKLIST'),
     },
   ].filter((group) => group.rows.length > 0)
 
-  const priorityCount = monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_A').length
-  const limitedOpenCount = monitoredAddresses.filter((row) => row.screenerTier === 'EXECUTABLE_B').length
+  const priorityCount = monitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_A').length
+  const limitedOpenCount = monitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_B').length
+  const coldCount = monitoredAddresses.filter((row) => row.monitorTier === 'COLD').length
   const activeCopyCount = executableAddresses.length
   const openPoolCount = priorityCount + limitedOpenCount
   const watchGroupMeta = WATCH_GROUP_OPTIONS.find((option) => option.value === watchGroup) ?? WATCH_GROUP_OPTIONS[0]
@@ -704,7 +719,7 @@ export function FollowAddressPanel() {
                   <span className={getSourceBadgeClass(selectedWinSourceMeta.code)}>{selectedWinSourceMeta.code}</span>
                 </div>
                 <div className="address-focus-meta">
-                  <span>{selectedWalletAddress || '-'}</span>
+                  <span className="address-full-text">{selectedWalletAddress || '-'}</span>
                   <span>{`最近活跃 ${selectedRow?.lastTradeAt ? new Date(selectedRow.lastTradeAt).toLocaleDateString('zh-CN') : '-'}`}</span>
                 </div>
               </div>
@@ -1010,6 +1025,10 @@ export function FollowAddressPanel() {
               <strong>{formatNumber(priorityCount, 0)}</strong>
             </div>
             <div className="address-hero-stat">
+              <span>冷处理</span>
+              <strong>{formatNumber(coldCount, 0)}</strong>
+            </div>
+            <div className="address-hero-stat">
               <span>正在跟单</span>
               <strong>{formatNumber(activeCopyCount, 0)}</strong>
             </div>
@@ -1140,10 +1159,11 @@ export function FollowAddressPanel() {
                     {group.rows.map((row) => {
                       const actionDisabled =
                         observeOnlyMutation.isPending ||
+                        row.monitorTier === 'COLD' ||
                         row.screenerTier === 'OBSERVE' ||
                         row.screenerTier === 'BLOCKLIST'
                       const actionLabel =
-                        row.screenerTier === 'OBSERVE' || row.screenerTier === 'BLOCKLIST'
+                        row.monitorTier === 'COLD' || row.screenerTier === 'OBSERVE' || row.screenerTier === 'BLOCKLIST'
                           ? '不开放'
                           : '只观察'
                       const archetypeMeta = getArchetypeMeta(row.archetype)
@@ -1200,7 +1220,9 @@ export function FollowAddressPanel() {
                           </td>
                           <td>
                             <div>{`新鲜度 ${formatPercent(row.freshnessScore)}`}</div>
+                            <div className="table-subtext">{`监控层 ${row.monitorTier || '-'}`}</div>
                             <div className="table-subtext">{`市场集中 ${formatPercent(row.concentrationMarket30d)}`}</div>
+                            {row.monitorReason ? <div className="table-subtext">{row.monitorReason}</div> : null}
                           </td>
                           <td>{row.lastTradeAt ? new Date(row.lastTradeAt).toLocaleDateString('zh-CN') : '-'}</td>
                           <td>

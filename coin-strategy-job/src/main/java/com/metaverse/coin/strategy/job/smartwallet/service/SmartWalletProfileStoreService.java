@@ -44,9 +44,8 @@ public class SmartWalletProfileStoreService {
     private static final String SOURCE = "POLYMARKET";
     // Days thresholds for activity decay (P2)
     private static final long DECAY_START_DAYS   = 30L;
-    private static final long OFFLINE_DAYS        = 90L;
-    // Score penalty per week of inactivity after DECAY_START_DAYS
-    private static final BigDecimal DECAY_PER_WEEK = new BigDecimal("0.05");
+    private static final long DEFAULT_WARM_INACTIVITY_DAYS = 30L;
+    private static final long DEFAULT_COLD_INACTIVITY_DAYS = 60L;
     private static final int MIN_ARCHETYPE_EVIDENCE_SAMPLE = 5;
     private static final BigDecimal MIN_EXECUTABLE_FOLLOW_FIT_SCORE = new BigDecimal("0.42");
     private static final BigDecimal WARM_SCORE_BUFFER = new BigDecimal("0.10");
@@ -205,6 +204,32 @@ public class SmartWalletProfileStoreService {
         profileMapper.updateById(update);
     }
 
+    public void recordObservedTradeActivity(String walletAddress, Date tradedAt) {
+        if (!StringUtils.hasText(walletAddress) || tradedAt == null) {
+            return;
+        }
+        SmartWalletProfileEntity entity = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getWalletAddress, walletAddress.trim())
+                .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                .last("limit 1"));
+        if (entity == null) {
+            return;
+        }
+        Date previousLastTradeAt = entity.getLastTradeAt();
+        if (previousLastTradeAt != null && !tradedAt.after(previousLastTradeAt)) {
+            return;
+        }
+        boolean wasCold = isColdMonitorTier(entity) || isForceColdByInactivity(entity, new Date());
+        entity.setLastTradeAt(tradedAt);
+        applyQualificationState(entity);
+        entity.setUpdatedAt(new Date());
+        profileMapper.updateById(entity);
+        if (wasCold && !isColdMonitorTier(entity)) {
+            log.info("WALLET_COLD_RECOVERY walletAddress={} lastTradeAt={} monitorTier={} watchEnabled={}",
+                    entity.getWalletAddress(), entity.getLastTradeAt(), entity.getMonitorTier(), entity.getWatchEnabled());
+        }
+    }
+
     public List<SmartWalletProfileOverrideView> listManualOverrides(Integer limit) {
         int safeLimit = limit == null ? 100 : Math.max(1, Math.min(limit, 500));
         return profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
@@ -350,8 +375,8 @@ public class SmartWalletProfileStoreService {
 
     // -------------------------------------------------------------------------
     // P2: Activity-decay job — runs every 6 hours.
-    // Wallets inactive >30 days lose walletScore by DECAY_PER_WEEK per week.
-    // Wallets inactive >90 days are disabled (watchEnabled=false).
+    // Inactivity now moves wallets through HOT -> WARM -> COLD instead of
+    // repeatedly subtracting from the persisted walletScore every run.
     // -------------------------------------------------------------------------
     @Scheduled(fixedDelay = 6 * 3600_000L)
     public void applyActivityDecay() {
@@ -368,25 +393,18 @@ public class SmartWalletProfileStoreService {
             if (daysSince <= DECAY_START_DAYS) {
                 continue;
             }
-            if (daysSince >= OFFLINE_DAYS && Boolean.TRUE.equals(wallet.getWatchEnabled())) {
-                wallet.setWatchEnabled(Boolean.FALSE);
-                applyMonitorTierState(wallet);
-                wallet.setUpdatedAt(now);
-                profileMapper.updateById(wallet);
-                log.info("WALLET_DECAY offline walletAddress={} daysSinceLastTrade={}", wallet.getWalletAddress(), daysSince);
-                continue;
-            }
-            // Decay: 5% per week beyond the 30-day grace period
-            long weeksOverThreshold = (daysSince - DECAY_START_DAYS) / 7 + 1;
-            BigDecimal penalty = DECAY_PER_WEEK.multiply(BigDecimal.valueOf(weeksOverThreshold));
-            BigDecimal decayedScore = safe(wallet.getWalletScore()).subtract(penalty).max(BigDecimal.ZERO)
-                    .setScale(4, RoundingMode.HALF_UP);
-            if (decayedScore.compareTo(safe(wallet.getWalletScore())) < 0) {
-                wallet.setWalletScore(decayedScore);
-                applyQualificationState(wallet);
-                wallet.setUpdatedAt(now);
-                profileMapper.updateById(wallet);
-                log.debug("WALLET_DECAY score walletAddress={} daysSince={} newScore={}", wallet.getWalletAddress(), daysSince, decayedScore);
+            long offlineDays = resolveColdWalletInactivityDays();
+            boolean wasWatchEnabled = Boolean.TRUE.equals(wallet.getWatchEnabled());
+            String previousTier = wallet.getMonitorTier();
+            applyQualificationState(wallet);
+            wallet.setUpdatedAt(now);
+            profileMapper.updateById(wallet);
+            if (daysSince >= offlineDays && wasWatchEnabled) {
+                log.info("WALLET_DECAY cold walletAddress={} daysSinceLastTrade={} monitorTier={}",
+                        wallet.getWalletAddress(), daysSince, wallet.getMonitorTier());
+            } else if (!Objects.equals(previousTier, wallet.getMonitorTier())) {
+                log.info("WALLET_DECAY tier walletAddress={} daysSinceLastTrade={} monitorTier={}",
+                        wallet.getWalletAddress(), daysSince, wallet.getMonitorTier());
             }
         }
     }
@@ -438,14 +456,14 @@ public class SmartWalletProfileStoreService {
                 boolean suspiciouslyPerfect = currentWinRate.compareTo(LEADERBOARD_BIAS_WIN_RATE_TRIGGER) >= 0
                         && leaderboardTrades <= LEADERBOARD_POSITION_CAP;
                 if (suspiciouslyPerfect && currentWinRate.compareTo(LEADERBOARD_BIAS_FALLBACK_WIN_RATE) > 0) {
-                    wallet.setWinRate(LEADERBOARD_BIAS_FALLBACK_WIN_RATE);
                     WalletBehaviorProfileView behaviorProfile = refreshBehaviorProfile(wallet);
-                    BigDecimal fallbackScore = scoreWallet(wallet, behaviorProfile);
+                    BigDecimal fallbackScore = scoreWalletWithWinRate(wallet, behaviorProfile, LEADERBOARD_BIAS_FALLBACK_WIN_RATE);
                     wallet.setWalletScore(fallbackScore);
-                    applyQualificationState(wallet, behaviorProfile, true);
+                    wallet.setHotRetentionReason("LEADERBOARD_BIAS_FALLBACK");
+                    applyQualificationState(wallet, behaviorProfile, true, "LEADERBOARD_BIAS_FALLBACK");
                     wallet.setUpdatedAt(new Date());
                     profileMapper.updateById(wallet);
-                    log.info("WIN_RATE_BIAS_FALLBACK walletAddress={} leaderboardTrades={} winRate reset {} -> {} newScore={}",
+                    log.info("WIN_RATE_BIAS_FALLBACK walletAddress={} leaderboardTrades={} effectiveWinRate {} -> {} newScore={}",
                             wallet.getWalletAddress(), leaderboardTrades, currentWinRate,
                             LEADERBOARD_BIAS_FALLBACK_WIN_RATE, fallbackScore);
                 }
@@ -515,19 +533,46 @@ public class SmartWalletProfileStoreService {
     private void applyQualificationState(SmartWalletProfileEntity wallet,
                                          WalletBehaviorProfileView behaviorProfile,
                                          boolean includeObserveCooldown) {
+        applyQualificationState(wallet, behaviorProfile, includeObserveCooldown, null);
+    }
+
+    private void applyQualificationState(SmartWalletProfileEntity wallet,
+                                         WalletBehaviorProfileView behaviorProfile,
+                                         boolean includeObserveCooldown,
+                                         String retentionReasonHint) {
         if (wallet == null) {
             return;
         }
         Date now = new Date();
-        boolean qualified = isQualified(wallet);
+        boolean wasHot = isHotMonitorTier(wallet) || Boolean.TRUE.equals(wallet.getWatchEnabled());
+        QualificationEvaluation qualification = evaluateQualification(wallet);
+        boolean qualified = qualification.qualified();
         wallet.setQualified(qualified);
         boolean observeBlocked = includeObserveCooldown && applyObserveCooldownState(wallet);
-        boolean executableCandidate = qualified && !observeBlocked && isExecutableCandidate(wallet, behaviorProfile);
+        ExecutableEvaluation executable = (qualified || qualification.retentionEligible())
+                ? evaluateExecutableCandidate(wallet, behaviorProfile)
+                : ExecutableEvaluation.allow();
+        boolean executableCandidate = qualified && !observeBlocked && executable.allowed();
         boolean watchEnabled;
         if (wallet.getManualWatchEnabled() != null) {
             watchEnabled = qualified && wallet.getManualWatchEnabled();
         } else {
             watchEnabled = executableCandidate;
+        }
+        boolean hardBlocked = qualification.hardFailure()
+                || observeBlocked
+                || (qualified && !executable.allowed());
+        if (!watchEnabled && !hardBlocked
+                && shouldRetainHotWallet(wallet, qualification, wasHot, now)) {
+            watchEnabled = true;
+            startOrKeepHotRetention(wallet, qualification, retentionReasonHint, now);
+        } else if (qualified && executableCandidate && !observeBlocked) {
+            clearHotRetention(wallet);
+        } else if (!isHotRetentionActive(wallet, now)) {
+            clearExpiredHotRetention(wallet, now);
+        }
+        if (isWarmByInactivity(wallet, now)) {
+            watchEnabled = false;
         }
         if (isForceColdByInactivity(wallet, now)) {
             watchEnabled = false;
@@ -537,11 +582,120 @@ public class SmartWalletProfileStoreService {
     }
 
     private boolean isQualified(SmartWalletProfileEntity wallet) {
-        return safe(wallet.getWinRate()).compareTo(safe(properties.getMinWinRate())) >= 0
-                && safe(wallet.getWalletScore()).compareTo(safe(properties.getMinWalletScore())) >= 0
-                && (wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades()) >= defaultInt(properties.getMinTotalTrades())
-                && safe(wallet.getRealizedPnlUsdc()).compareTo(safe(properties.getMinRealizedPnlUsdc())) >= 0
-                && safe(wallet.getMaxDrawdownRate()).compareTo(safe(properties.getMaxDrawdownRate())) <= 0;
+        return evaluateQualification(wallet).qualified();
+    }
+
+    private QualificationEvaluation evaluateQualification(SmartWalletProfileEntity wallet) {
+        BigDecimal winRate = safe(wallet.getWinRate());
+        BigDecimal minWinRate = safe(properties.getMinWinRate());
+        BigDecimal walletScore = safe(wallet.getWalletScore());
+        BigDecimal minWalletScore = safe(properties.getMinWalletScore());
+        BigDecimal minScoreWithBuffer = minWalletScore.subtract(resolveScoreHysteresisBuffer()).max(BigDecimal.ZERO);
+        BigDecimal minWinRateWithBuffer = minWinRate.subtract(resolveWinRateHysteresisBuffer()).max(BigDecimal.ZERO);
+
+        boolean winOk = winRate.compareTo(minWinRate) >= 0;
+        boolean scoreOk = walletScore.compareTo(minWalletScore) >= 0;
+        boolean tradesOk = (wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades()) >= defaultInt(properties.getMinTotalTrades());
+        boolean pnlOk = safe(wallet.getRealizedPnlUsdc()).compareTo(safe(properties.getMinRealizedPnlUsdc())) >= 0;
+        boolean drawdownOk = safe(wallet.getMaxDrawdownRate()).compareTo(safe(properties.getMaxDrawdownRate())) <= 0;
+        boolean qualified = winOk && scoreOk && tradesOk && pnlOk && drawdownOk;
+        if (qualified) {
+            return new QualificationEvaluation(true, false, false, "QUALIFIED");
+        }
+
+        boolean nearWin = !winOk && winRate.compareTo(minWinRateWithBuffer) >= 0;
+        boolean nearScore = !scoreOk && walletScore.compareTo(minScoreWithBuffer) >= 0;
+        boolean hardFailure = !tradesOk
+                || !pnlOk
+                || !drawdownOk
+                || (!winOk && !nearWin)
+                || (!scoreOk && !nearScore);
+        boolean retentionEligible = !hardFailure && (nearWin || nearScore);
+        List<String> reasons = new ArrayList<>();
+        if (!winOk) {
+            reasons.add(nearWin ? "WIN_RATE_NEAR_THRESHOLD" : "WIN_RATE_HARD_BELOW_THRESHOLD");
+        }
+        if (!scoreOk) {
+            reasons.add(nearScore ? "SCORE_NEAR_THRESHOLD" : "SCORE_HARD_BELOW_THRESHOLD");
+        }
+        if (!tradesOk) {
+            reasons.add("TOTAL_TRADES_BELOW_THRESHOLD");
+        }
+        if (!pnlOk) {
+            reasons.add("PNL_BELOW_THRESHOLD");
+        }
+        if (!drawdownOk) {
+            reasons.add("DRAWDOWN_ABOVE_THRESHOLD");
+        }
+        return new QualificationEvaluation(false, hardFailure, retentionEligible, String.join("|", reasons));
+    }
+
+    private boolean shouldRetainHotWallet(SmartWalletProfileEntity wallet,
+                                          QualificationEvaluation qualification,
+                                          boolean wasHot,
+                                          Date now) {
+        if (wallet == null || qualification == null || !qualification.retentionEligible()) {
+            return false;
+        }
+        if (!properties.getPolymarket().isHotRetentionEnabled()) {
+            return false;
+        }
+        if (isHotRetentionExpired(wallet, now)) {
+            return false;
+        }
+        return wasHot || isHotRetentionActive(wallet, now);
+    }
+
+    private void startOrKeepHotRetention(SmartWalletProfileEntity wallet,
+                                         QualificationEvaluation qualification,
+                                         String reasonHint,
+                                         Date now) {
+        Date effectiveNow = now == null ? new Date() : now;
+        if (!isHotRetentionActive(wallet, effectiveNow)) {
+            long retentionHours = properties.getPolymarket().getHotRetentionHours() == null
+                    ? 24L
+                    : Math.max(properties.getPolymarket().getHotRetentionHours(), 1);
+            wallet.setHotRetentionUntil(new Date(effectiveNow.getTime() + TimeUnit.HOURS.toMillis(retentionHours)));
+        }
+        String reason = firstText(reasonHint, qualification.reason());
+        wallet.setHotRetentionReason(reason);
+    }
+
+    private void clearHotRetention(SmartWalletProfileEntity wallet) {
+        wallet.setHotRetentionUntil(null);
+        wallet.setHotRetentionReason(null);
+    }
+
+    private void clearExpiredHotRetention(SmartWalletProfileEntity wallet, Date now) {
+        if (wallet != null && isHotRetentionExpired(wallet, now)) {
+            wallet.setHotRetentionReason(firstText(wallet.getHotRetentionReason(), "HOT_RETENTION_EXPIRED"));
+        }
+    }
+
+    private boolean isHotRetentionActive(SmartWalletProfileEntity wallet, Date now) {
+        if (wallet == null || wallet.getHotRetentionUntil() == null) {
+            return false;
+        }
+        Date effectiveNow = now == null ? new Date() : now;
+        return wallet.getHotRetentionUntil().after(effectiveNow);
+    }
+
+    private boolean isHotRetentionExpired(SmartWalletProfileEntity wallet, Date now) {
+        if (wallet == null || wallet.getHotRetentionUntil() == null) {
+            return false;
+        }
+        Date effectiveNow = now == null ? new Date() : now;
+        return !wallet.getHotRetentionUntil().after(effectiveNow);
+    }
+
+    private BigDecimal resolveScoreHysteresisBuffer() {
+        BigDecimal value = properties.getPolymarket().getScoreHysteresisBuffer();
+        return value == null ? new BigDecimal("0.08") : value.max(BigDecimal.ZERO);
+    }
+
+    private BigDecimal resolveWinRateHysteresisBuffer() {
+        BigDecimal value = properties.getPolymarket().getWinRateHysteresisBuffer();
+        return value == null ? new BigDecimal("0.04") : value.max(BigDecimal.ZERO);
     }
 
     public boolean isObserveCooldownActive(SmartWalletProfileEntity wallet) {
@@ -552,8 +706,12 @@ public class SmartWalletProfileStoreService {
     }
 
     private boolean isExecutableCandidate(SmartWalletProfileEntity wallet, WalletBehaviorProfileView behaviorProfile) {
-        if (wallet == null || !Boolean.TRUE.equals(wallet.getQualified())) {
-            return false;
+        return evaluateExecutableCandidate(wallet, behaviorProfile).allowed();
+    }
+
+    private ExecutableEvaluation evaluateExecutableCandidate(SmartWalletProfileEntity wallet, WalletBehaviorProfileView behaviorProfile) {
+        if (wallet == null) {
+            return ExecutableEvaluation.block("MISSING_WALLET");
         }
         WalletBehaviorProfileView effectiveBehavior = behaviorProfile != null
                 ? behaviorProfile
@@ -561,19 +719,22 @@ public class SmartWalletProfileStoreService {
         if (effectiveBehavior != null
                 && StringUtils.hasText(effectiveBehavior.recommendedExitLane())
                 && "FAST_EXIT_OR_SKIP".equalsIgnoreCase(effectiveBehavior.recommendedExitLane())) {
-            return false;
+            return ExecutableEvaluation.block("FAST_EXIT_OR_SKIP");
         }
         WalletArchetypeView archetype = walletArchetypeClassifierService.classify(wallet.getWalletAddress(), wallet);
         if (archetype == null) {
-            return true;
+            return ExecutableEvaluation.allow();
         }
         if (archetype.labelSampleSize() < MIN_ARCHETYPE_EVIDENCE_SAMPLE) {
-            return true;
+            return ExecutableEvaluation.allow();
         }
         if ("OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
-            return false;
+            return ExecutableEvaluation.block("OBSERVE_ONLY_ARCHETYPE");
         }
-        return safe(archetype.followFitScore()).compareTo(MIN_EXECUTABLE_FOLLOW_FIT_SCORE) >= 0;
+        if (safe(archetype.followFitScore()).compareTo(MIN_EXECUTABLE_FOLLOW_FIT_SCORE) < 0) {
+            return ExecutableEvaluation.block("LOW_FOLLOW_FIT");
+        }
+        return ExecutableEvaluation.allow();
     }
 
     private boolean applyObserveCooldownState(SmartWalletProfileEntity wallet) {
@@ -674,7 +835,17 @@ public class SmartWalletProfileStoreService {
         Date effectiveNow = now == null ? new Date() : now;
         if (isForceColdByInactivity(wallet, effectiveNow)) {
             wallet.setMonitorTier(MONITOR_TIER_COLD);
-            wallet.setMonitorReason("STALE_LAST_TRADE_GT_" + OFFLINE_DAYS + "D");
+            wallet.setMonitorReason("STALE_LAST_TRADE_GT_" + resolveColdWalletInactivityDays() + "D");
+            return;
+        }
+        if (isWarmByInactivity(wallet, effectiveNow)) {
+            wallet.setMonitorTier(MONITOR_TIER_WARM);
+            wallet.setMonitorReason("STALE_LAST_TRADE_GT_" + resolveWarmWalletInactivityDays() + "D");
+            return;
+        }
+        if (Boolean.TRUE.equals(wallet.getWatchEnabled()) && isHotRetentionActive(wallet, effectiveNow)) {
+            wallet.setMonitorTier(MONITOR_TIER_HOT);
+            wallet.setMonitorReason("HOT_RETENTION|" + firstText(wallet.getHotRetentionReason(), "NEAR_THRESHOLD"));
             return;
         }
         if (Boolean.TRUE.equals(wallet.getQualified()) && Boolean.TRUE.equals(wallet.getWatchEnabled())) {
@@ -700,7 +871,17 @@ public class SmartWalletProfileStoreService {
         }
         Date effectiveNow = now == null ? new Date() : now;
         long daysSinceLastTrade = TimeUnit.MILLISECONDS.toDays(Math.max(0L, effectiveNow.getTime() - wallet.getLastTradeAt().getTime()));
-        return daysSinceLastTrade > OFFLINE_DAYS;
+        return daysSinceLastTrade > resolveColdWalletInactivityDays();
+    }
+
+    private boolean isWarmByInactivity(SmartWalletProfileEntity wallet, Date now) {
+        if (wallet == null || wallet.getLastTradeAt() == null) {
+            return false;
+        }
+        Date effectiveNow = now == null ? new Date() : now;
+        long daysSinceLastTrade = TimeUnit.MILLISECONDS.toDays(Math.max(0L, effectiveNow.getTime() - wallet.getLastTradeAt().getTime()));
+        return daysSinceLastTrade > resolveWarmWalletInactivityDays()
+                && daysSinceLastTrade <= resolveColdWalletInactivityDays();
     }
 
     private List<String> warmReasons(SmartWalletProfileEntity wallet, Date now) {
@@ -738,6 +919,16 @@ public class SmartWalletProfileStoreService {
         return wallet != null && MONITOR_TIER_COLD.equalsIgnoreCase(wallet.getMonitorTier());
     }
 
+    private long resolveColdWalletInactivityDays() {
+        Integer value = properties.getPolymarket().getColdWalletInactivityDays();
+        return value == null ? DEFAULT_COLD_INACTIVITY_DAYS : Math.max(value, resolveWarmWalletInactivityDays());
+    }
+
+    private long resolveWarmWalletInactivityDays() {
+        Integer value = properties.getPolymarket().getWarmWalletInactivityDays();
+        return value == null ? DEFAULT_WARM_INACTIVITY_DAYS : Math.max(value, 1);
+    }
+
     private WalletBehaviorProfileView refreshBehaviorProfile(SmartWalletProfileEntity wallet) {
         if (wallet == null || !StringUtils.hasText(wallet.getWalletAddress())) {
             return null;
@@ -766,8 +957,29 @@ public class SmartWalletProfileStoreService {
         );
     }
 
+    private BigDecimal scoreWalletWithWinRate(SmartWalletProfileEntity wallet,
+                                              WalletBehaviorProfileView behaviorProfile,
+                                              BigDecimal effectiveWinRate) {
+        return scoringService.score(
+                safe(effectiveWinRate),
+                wallet.getRecentWinRate7d(),
+                wallet.getRecentWinRate30d(),
+                safe(wallet.getRealizedPnlUsdc()),
+                wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades(),
+                wallet.getRecentTradeCount7d(),
+                wallet.getRecentTradeCount30d(),
+                safe(wallet.getAverageRoiRate()),
+                safe(wallet.getMaxDrawdownRate()),
+                behaviorProfile == null ? null : scoringService.behaviorComposite(behaviorProfile)
+        );
+    }
+
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String firstText(String primary, String fallback) {
+        return StringUtils.hasText(primary) ? primary : fallback;
     }
 
     private int defaultInt(Integer value) {
@@ -805,5 +1017,21 @@ public class SmartWalletProfileStoreService {
             return increment;
         }
         return (currentHitCount == null ? 0 : currentHitCount) + increment;
+    }
+
+    private record QualificationEvaluation(boolean qualified,
+                                           boolean hardFailure,
+                                           boolean retentionEligible,
+                                           String reason) {
+    }
+
+    private record ExecutableEvaluation(boolean allowed, String reason) {
+        private static ExecutableEvaluation allow() {
+            return new ExecutableEvaluation(true, "ALLOWED");
+        }
+
+        private static ExecutableEvaluation block(String reason) {
+            return new ExecutableEvaluation(false, reason);
+        }
     }
 }

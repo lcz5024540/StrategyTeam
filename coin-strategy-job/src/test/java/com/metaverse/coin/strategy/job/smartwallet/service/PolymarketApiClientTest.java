@@ -21,6 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PolymarketApiClientTest {
 
     @Test
+    void shouldSkipUserTradesWhenOffsetExceedsPolymarketHistoryWindow() {
+        PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
+
+        List<PolymarketApiClient.UserTrade> trades = client.fetchUserTrades(
+                "0xdc876e6873772d38716fda7f2452a78d426d7ab6",
+                30,
+                PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET + 30);
+
+        assertTrue(trades.isEmpty());
+    }
+
+    @Test
     void shouldNotInferResolvedOutcomeOnlyFromClosedMarketPrices() throws Exception {
         PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
         JsonNode market = new ObjectMapper().readTree("""

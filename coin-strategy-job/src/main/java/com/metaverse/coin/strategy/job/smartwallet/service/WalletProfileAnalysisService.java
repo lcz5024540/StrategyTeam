@@ -224,6 +224,8 @@ public class WalletProfileAnalysisService {
                 .followabilityRate(scale(feature == null ? null : feature.getFollowableRate30d(), 4))
                 .concentrationMarket30d(scale(feature == null ? null : feature.getConcentrationMarket30d(), 4))
                 .freshnessScore(scale(freshnessScore, 4))
+                .monitorTier(profile.getMonitorTier())
+                .monitorReason(profile.getMonitorReason())
                 .recommendedExitLane(behavior == null ? null : behavior.recommendedExitLane())
                 .lastTradeAt(profile.getLastTradeAt())
                 .summary(behavior == null ? null : behavior.summary())

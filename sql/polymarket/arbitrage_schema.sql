@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_profile` (
     `recent_trade_count_30d` INT NOT NULL DEFAULT 0 COMMENT '近30日交易样本数',
     `observe_cooldown_until` TIMESTAMP NULL COMMENT '近期退化观察冷却截止时间',
     `observe_cooldown_reason` VARCHAR(255) DEFAULT NULL COMMENT '近期退化观察原因',
+    `hot_retention_until` TIMESTAMP NULL COMMENT 'HOT 保留期截止时间',
+    `hot_retention_reason` VARCHAR(255) DEFAULT NULL COMMENT 'HOT 保留原因',
     `monitor_tier` VARCHAR(16) DEFAULT NULL COMMENT '地址监控层级 HOT/WARM/COLD',
     `monitor_reason` VARCHAR(255) DEFAULT NULL COMMENT '监控层级判定原因',
     `last_event_sync_at` TIMESTAMP NULL COMMENT '最近一次 HOT 事件同步时间',

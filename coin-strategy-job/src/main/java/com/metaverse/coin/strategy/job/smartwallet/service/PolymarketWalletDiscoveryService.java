@@ -459,7 +459,7 @@ public class PolymarketWalletDiscoveryService {
         int offset = 0;
         boolean reachedCheckpoint = false;
         Map<String, PolymarketApiClient.UserTrade> deduped = new LinkedHashMap<>();
-        while (!reachedCheckpoint) {
+        while (!reachedCheckpoint && offset <= PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET) {
             List<PolymarketApiClient.UserTrade> chunk = polymarketApiClient.fetchUserTrades(wallet.getWalletAddress(), pageSize, offset);
             if (chunk == null || chunk.isEmpty()) {
                 break;
