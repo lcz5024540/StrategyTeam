@@ -2,7 +2,7 @@
 
 **日期**：2026-04-22  
 **分支**：polymarket-hedge  
-**模块定位**：独立于跟单/对冲逻辑的全自动天气套利策略
+**模块定位**：独立于跟单逻辑的全自动天气套利策略
 
 ---
 
@@ -14,7 +14,7 @@ Polymarket 上存在低价格（0.1¢–10¢）的天气预测市场，市场定
 **入场条件**：公允价与市场价偏差 > 10%，流动性 ≥ 50 USDC，YES token 价格 < 10¢  
 **执行模式**：全自动，独立资金池，每15分钟扫描一次
 
-**不影响**：现有跟单逻辑（`SmartWalletFollowTaskService`）和对冲逻辑（`HedgeSettlementMonitorJob`）。
+**不影响**：现有跟单逻辑（`SmartWalletFollowTaskService`）。
 
 ---
 

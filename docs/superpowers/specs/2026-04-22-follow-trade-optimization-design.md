@@ -216,4 +216,4 @@ public interface ExitSignalProvider {
 
 - 入场信号源的改造（watchlist 钱包筛选标准调整）
 - 共识门控参数调整
-- 对冲策略（polymarket.hedge）的任何改动
+- 非跟单策略模块的任何改动

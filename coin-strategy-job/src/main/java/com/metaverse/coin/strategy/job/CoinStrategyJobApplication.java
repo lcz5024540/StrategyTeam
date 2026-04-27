@@ -1,6 +1,5 @@
 package com.metaverse.coin.strategy.job;
 
-import com.metaverse.coin.strategy.job.hedge.config.HedgeProperties;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.weather.config.WeatherArbitrageProperties;
 import org.mybatis.spring.annotation.MapperScan;
@@ -11,7 +10,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @MapperScan("com.metaverse.coin.strategy.common.dao.mapper")
-@EnableConfigurationProperties({SmartWalletProperties.class, HedgeProperties.class, WeatherArbitrageProperties.class})
+@EnableConfigurationProperties({SmartWalletProperties.class, WeatherArbitrageProperties.class})
 @EnableScheduling
 public class CoinStrategyJobApplication {
 

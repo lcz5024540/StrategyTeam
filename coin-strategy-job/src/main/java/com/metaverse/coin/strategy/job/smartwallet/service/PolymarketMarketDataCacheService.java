@@ -14,20 +14,18 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Polymarket 市场数据集中缓存服务
  *
- * 解决两个策略（跟单 + 对冲）并发调用相同 Polymarket REST API 导致的限频风险：
+ * 集中管理 Polymarket REST API 调用，降低多处模块重复请求导致的限频风险：
  *
  * 1. 活跃市场列表 —— 由单一 @Scheduled 任务每 {@code polymarket.market-data-cache.markets-refresh-ms}
- *    毫秒刷新一次，所有调用方通过 {@link #getActiveMarkets()} 读取同一份缓存，
- *    彻底消除 HedgeScanJob 每 10s 一次 searchMarkets() 调用。
+ *    毫秒刷新一次，所有调用方通过 {@link #getActiveMarkets()} 读取同一份缓存。
  *
  * 2. 订单簿 —— cache-aside 模式，TTL = {@code polymarket.market-data-cache.order-book-ttl-ms}（默认 20s）。
- *    同一 tokenId 在 TTL 内被多个调用方（ArbitrageDetectorService、MarketSnapshotCollectorService）
- *    复用，最多每 20s 发起一次真实 REST 请求。
+ *    同一 tokenId 在 TTL 内被多个调用方复用，最多每 20s 发起一次真实 REST 请求。
  *
  * 线程安全：
  *   - cachedActiveMarkets 是 volatile 引用替换，读取无锁
  *   - orderBookCache 使用 ConcurrentHashMap；同一 tokenId 在缓存过期时极端情况下可能
- *     触发两次并发 API 调用（不加锁是有意的，避免 HedgeScanJob 批量扫描时形成锁竞争）
+ *     触发两次并发 API 调用（不加锁是有意的，避免批量读取时形成锁竞争）
  */
 @Service
 @Slf4j
@@ -57,7 +55,7 @@ public class PolymarketMarketDataCacheService {
 
     /**
      * 定时刷新活跃市场列表。
-     * 默认每 60s 一次，将原来 HedgeScanJob 每 10s 调用 searchMarkets() 减少为 1/6。
+     * 默认每 60s 一次，供市场监控等只读模块复用。
      */
     @Scheduled(fixedDelayString = "${polymarket.market-data-cache.markets-refresh-ms:60000}")
     public void refreshActiveMarkets() {

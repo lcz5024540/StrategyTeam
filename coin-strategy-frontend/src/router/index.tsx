@@ -4,7 +4,6 @@ import { HomePage } from '../pages/HomePage'
 import { DetailPage } from '../pages/DetailPage'
 import { ChartsPage } from '../pages/ChartsPage'
 import { MonitoringPage } from '../pages/MonitoringPage'
-import { PolymarketHedgePage } from '../pages/PolymarketHedgePage'
 import { FundingArbPage } from '../pages/FundingArbPage'
 import { MarketsPage } from '../pages/MarketsPage'
 
@@ -36,10 +35,6 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard/markets',
         element: <MarketsPage />,
-      },
-      {
-        path: 'dashboard/polymarket-hedge',
-        element: <PolymarketHedgePage />,
       },
       {
         path: 'dashboard/funding-arb',
