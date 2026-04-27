@@ -272,6 +272,12 @@ public class SmartWalletProperties {
         private boolean kellyStakeEnabled = false;
         /** Kelly 折扣因子（0.3 = 30% Kelly，保守值） */
         private BigDecimal kellyFraction = new BigDecimal("0.30");
+        /**
+         * Kelly 概率边际因子：将 calibratedFollowProbability（跟单价值综合评分）
+         * 转换为事件胜率估计：p_win = 0.5 + (followProb - 0.5) * edgeFactor。
+         * null = 直接使用 followProb（向后兼容）。
+         */
+        private BigDecimal kellySignalEdgeFactor = new BigDecimal("0.15");
         /** 行为稳定度过低时开始缩仓 */
         private BigDecimal stakeStabilityLowScore = new BigDecimal("0.45");
         /** 行为稳定度过低时的保留仓位比例 */

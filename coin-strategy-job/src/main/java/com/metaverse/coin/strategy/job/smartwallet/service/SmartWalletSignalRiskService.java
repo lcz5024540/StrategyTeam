@@ -463,7 +463,8 @@ public class SmartWalletSignalRiskService {
                     availableCapital,
                     risk.getKellyFraction(),
                     minOrderUsdc,
-                    properties.getMaxStakeUsdc()
+                    properties.getMaxStakeUsdc(),
+                    risk.getKellySignalEdgeFactor()
             );
             if (kellyStake == null) {
                 // 概率未知，回退到 preliminaryStake
@@ -801,7 +802,7 @@ public class SmartWalletSignalRiskService {
     private long resolveEffectiveSignalAgeMs(SmartWalletProperties.SignalRisk risk, WalletArchetypeView archetype) {
         long baseMs = defaultInt(risk.getMaxSignalAgeSeconds(), 300) * 1000L;
         return switch (archetype.archetype()) {
-            case "HF" -> Math.min(baseMs, 45_000L);
+            case "HF_SCALPER" -> Math.min(baseMs, 45_000L);
             case "THEMATIC" -> Math.max(baseMs, 1_800_000L);
             case "LOW_FREQ_VALUE" -> Math.max(baseMs, 2_700_000L);
             case "SWING" -> Math.max(baseMs, 900_000L);
@@ -814,7 +815,7 @@ public class SmartWalletSignalRiskService {
                                                       SmartWalletTradeEventEntity event,
                                                       List<String> reasons) {
         BigDecimal adjusted = safe(stake);
-        if ("HF".equals(archetype.archetype()) && event != null && event.getOpenedAt() != null) {
+        if ("HF_SCALPER".equals(archetype.archetype()) && event != null && event.getOpenedAt() != null) {
             long ageMs = Math.max(0L, System.currentTimeMillis() - event.getOpenedAt().getTime());
             if (ageMs > 30_000L) {
                 adjusted = adjusted.multiply(new BigDecimal("0.25")).setScale(2, RoundingMode.HALF_UP);

@@ -139,7 +139,7 @@ public class WalletArchetypeClassifierService {
                 .add(followableRate.multiply(new BigDecimal("0.20"))));
 
         long recommendedSyncIntervalMs = switch (archetype) {
-            case "HF" -> HF_SYNC_INTERVAL_MS;
+            case "HF_SCALPER" -> HF_SYNC_INTERVAL_MS;
             case "THEMATIC" -> THEMATIC_SYNC_INTERVAL_MS;
             case "LOW_FREQ_VALUE" -> VALUE_SYNC_INTERVAL_MS;
             case "SWING" -> SWING_SYNC_INTERVAL_MS;

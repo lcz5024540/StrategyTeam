@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -27,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class SmartWalletSignalRiskServiceTest {
 
     @Mock
@@ -718,23 +721,163 @@ class SmartWalletSignalRiskServiceTest {
         assertTrue(decision.getMatchedStrategies().contains("HIGH_QUALITY_SINGLE_WALLET"));
     }
 
-    private void prepareCommonMocks(ConsensusSignalView consensus) {
+    // ─── HF_SCALPER archetype string mismatch tests ──────────────────────────────
+
+    private void prepareHfScalperMocks(ConsensusSignalView consensus, long standardBinaryEndAt) {
         when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
         when(positionMapper.selectCount(any())).thenReturn(0L);
         when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
         when(followTaskMapper.selectCount(any())).thenReturn(0L);
-        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
-        when(marketMetadataService.getByConditionId(any())).thenReturn(PolymarketApiClient.MarketMetadata.builder()
-                .conditionId("market-1")
-                .marketId("market-1")
-                .endAt(System.currentTimeMillis() + 3_600_000L)
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("500"));
+        when(walletArchetypeClassifierService.classify(any(), any())).thenReturn(WalletArchetypeView.builder()
+                .walletAddress("0xhf")
+                .archetype("HF_SCALPER")
+                .followLane("HF_FOLLOW")
+                .followFitScore(new BigDecimal("0.70"))
+                .confidence(new BigDecimal("0.80"))
+                .labelSampleSize(10)
+                .build());
+        when(walletBehaviorProfileService.getProfile(any())).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xhf")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.80"))
+                .earlyExitRate(new BigDecimal("0.20"))
+                .settlementCompletionRate(new BigDecimal("0.80"))
                 .build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
                 SmartWalletMarketStateService.MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
-                        .marketEndAt(System.currentTimeMillis() + 3_600_000L)
+                        .marketEndAt(standardBinaryEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+        when(leaderboardStateService.adjustWalletScore(
+                any(SmartWalletProfileEntity.class),
+                any(SmartWalletTradeEventEntity.class))).thenAnswer(invocation -> {
+            SmartWalletProfileEntity p = invocation.getArgument(0);
+            return p.getWalletScore();
+        });
+        when(consensusSignalService.buildConsensusForEvent(any())).thenReturn(consensus);
+        when(consensusSignalService.buildConsensusForEvent(any(), any())).thenReturn(consensus);
+        when(executionWalletContextLoader.load()).thenReturn(
+                ExecutionWalletContextLoader.ExecutionWalletContext.builder()
+                        .minOrderUsdc(new BigDecimal("0.10"))
+                        .build());
+        when(tradeProfitabilityScoringService.estimate(any(), any(), any(), any()))
+                .thenReturn(TradeProfitabilityScoringService.ProfitabilityEstimate.builder()
+                        .estimatedNetProfitabilityUsdc(new BigDecimal("2.00"))
+                        .estimatedFeeUsdc(BigDecimal.ZERO)
+                        .estimatedSlippageUsdc(BigDecimal.ZERO)
+                        .followProbability(new BigDecimal("0.70"))
+                        .calibratedFollowProbability(new BigDecimal("0.72"))
+                        .slippageSpikeProbability(BigDecimal.ZERO)
+                        .estimateSampleSize(10)
+                        .build());
+    }
+
+    @Test
+    void shouldRejectHfScalperSignalWhenOlderThan45Seconds() {
+        // HF_SCALPER wallets must enforce a 45s max signal age.
+        // Bug: case "HF" in resolveEffectiveSignalAgeMs never matches "HF_SCALPER",
+        // so the default baseMs (3600s) is used and a 75s old signal is incorrectly accepted.
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setMaxSignalAgeSeconds(3600);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xhf")
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        // 75s old: older than the 45s HF limit, but younger than the 3600s default
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.48"))
+                .setSizeUsdc(new BigDecimal("200"))
+                .setOpenedAt(new Date(System.currentTimeMillis() - 75_000L));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        // 30h → STANDARD_BINARY (beyond 24h FAST_EVENT, below 36h LONG_HORIZON threshold)
+        long standardBinaryEnd = System.currentTimeMillis() + 30 * 3_600_000L;
+        prepareHfScalperMocks(consensus, standardBinaryEnd);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // With bug ("HF" never matches "HF_SCALPER"): effectiveMax=3600s, 75s < 3600s → accepted
+        // After fix ("HF_SCALPER" matches): effectiveMax=45s, 75s > 45s → rejected as stale
+        assertFalse(decision.isAccepted(),
+                "HF_SCALPER signal older than 45s must be rejected as stale. Reasons: " + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("stale")),
+                "Rejection reason must mention staleness. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldReduceHfScalperStakeWhenSignalOlderThan30Seconds() {
+        // HF_SCALPER wallets with signals older than 30s must have stake reduced to 25%.
+        // Bug: "HF".equals(archetype.archetype()) never matches "HF_SCALPER", no reduction applied.
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setMaxSignalAgeSeconds(300); // 300s base; HF cap = min(300s,45s) = 45s
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xhf")
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        // 35s old: older than 30s HF penalty, but younger than 45s HF max → passes freshness, gets penalty
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.48"))
+                .setSizeUsdc(new BigDecimal("100"))
+                .setOpenedAt(new Date(System.currentTimeMillis() - 35_000L));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        long standardBinaryEnd = System.currentTimeMillis() + 30 * 3_600_000L;
+        prepareHfScalperMocks(consensus, standardBinaryEnd);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // stake = 100 * 0.80 * 0.03 = 2.40; HF >30s → 2.40 * 0.25 = 0.60
+        // With bug: no HF reduction → stake remains 2.40
+        assertTrue(decision.isAccepted(),
+                "Signal is 35s old (< 45s HF max): must be accepted. Reasons: " + decision.getReasons());
+        assertEquals(new BigDecimal("0.60"), decision.getRecommendedStakeUsdc(),
+                "HF_SCALPER signal >30s old must cut stake to 25% of base (2.40×0.25=0.60). Reasons: "
+                        + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("[ARCHETYPE_STAKE]")),
+                "Must log ARCHETYPE_STAKE reason. Reasons: " + decision.getReasons());
+    }
+
+    private void prepareCommonMocks(ConsensusSignalView consensus) {
+        when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
+        when(positionMapper.selectCount(any())).thenReturn(0L);
+        when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
+        when(followTaskMapper.selectCount(any())).thenReturn(0L);
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
+        // 30h: beyond FAST_EVENT window (<24h) and below LONG_HORIZON threshold (>maxHoursToMarketEnd/2 = 36h)
+        long farFutureEndAt = System.currentTimeMillis() + 30 * 3_600_000L;
+        when(marketMetadataService.getByConditionId(any())).thenReturn(PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("market-1")
+                .marketId("market-1")
+                .endAt(farFutureEndAt)
+                .build());
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(farFutureEndAt)
                         .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
                         .build());
         when(consensusSignalService.buildConsensusForEvent(any())).thenReturn(consensus);
