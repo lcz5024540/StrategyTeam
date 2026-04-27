@@ -2,32 +2,28 @@ package com.metaverse.coin.strategy.common.client.binance;
 
 import com.binance.connector.client.SpotClient;
 import com.binance.connector.client.impl.SpotClientImpl;
-import com.binance.connector.futures.client.impl.UMFuturesClientImpl;
 import com.binance.connector.futures.client.impl.CMFuturesClientImpl;
+import com.binance.connector.futures.client.impl.UMFuturesClientImpl;
 import com.metaverse.coin.strategy.common.client.binance.service.*;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPositionRisk;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceAggTrade;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceAveragePrice;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceBookTicker;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceExchangeInfo;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceKline;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTicker;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTrade;
-import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceOpenSymbol;
 import com.metaverse.coin.strategy.common.model.binance.entity.margin.*;
+import com.metaverse.coin.strategy.common.model.binance.entity.market.*;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder;
-import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrderList;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceTradeHistory;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceUniversalTransferResult;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.Credentials;
 
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.List;
 
 @Slf4j
@@ -54,9 +50,26 @@ public class BinanceApiService {
     }
 
     public BinanceApiService(String apiKey, String secretKey, String spotBaseUrl, String futuresBaseUrl) {
-        this.spotClient = new SpotClientImpl(apiKey, secretKey, spotBaseUrl);
-        this.futuresClient = new UMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl);
-        this.coinFuturesClient = new CMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com");
+        this(apiKey, secretKey, spotBaseUrl, futuresBaseUrl, null, 0, null, null, null);
+    }
+
+    public BinanceApiService(String apiKey,
+                             String secretKey,
+                             String spotBaseUrl,
+                             String futuresBaseUrl,
+                             String proxyHost,
+                             int proxyPort,
+                             String proxyType,
+                             String proxyUsername,
+                             String proxyPassword) {
+        SpotClientImpl spotClient = new SpotClientImpl(apiKey, secretKey, spotBaseUrl);
+        UMFuturesClientImpl futuresClient = new UMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl);
+        CMFuturesClientImpl coinFuturesClient = new CMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com");
+        applyProxyIfConfigured(spotClient, futuresClient, coinFuturesClient, proxyHost, proxyPort, proxyType, proxyUsername, proxyPassword);
+
+        this.spotClient = spotClient;
+        this.futuresClient = futuresClient;
+        this.coinFuturesClient = coinFuturesClient;
 
         this.spotService = new BinanceSpotService(spotClient);
         this.futuresService = new BinanceFuturesService(futuresClient);
@@ -68,6 +81,79 @@ public class BinanceApiService {
         this.miningService = new BinanceMiningService(spotBaseUrl, apiKey, secretKey);
         this.simpleEarnService = new BinanceSimpleEarnService(spotClient, spotBaseUrl, apiKey, secretKey);
         this.alphaService = new BinanceAlphaService(spotClient, spotBaseUrl, apiKey, secretKey);
+    }
+
+    private static void applyProxyIfConfigured(SpotClientImpl spotClient,
+                                               UMFuturesClientImpl futuresClient,
+                                               CMFuturesClientImpl coinFuturesClient,
+                                               String proxyHost,
+                                               int proxyPort,
+                                               String proxyType,
+                                               String proxyUsername,
+                                               String proxyPassword) {
+        if (!hasText(proxyHost)) {
+            return;
+        }
+
+        ProxySettings proxySettings = normalizeProxySettings(proxyHost, proxyPort, proxyType);
+        Proxy proxy = new Proxy(proxySettings.type(), new InetSocketAddress(proxySettings.host(), proxySettings.port()));
+        okhttp3.Authenticator authenticator = buildProxyAuthenticator(proxyUsername, proxyPassword);
+
+        spotClient.setProxy(new com.binance.connector.client.utils.ProxyAuth(proxy, authenticator));
+        futuresClient.setProxy(new com.binance.connector.futures.client.utils.ProxyAuth(proxy, authenticator));
+        coinFuturesClient.setProxy(new com.binance.connector.futures.client.utils.ProxyAuth(proxy, authenticator));
+
+        log.info("Configured Binance clients to use {} proxy {}:{}", proxy.type(), proxySettings.host(), proxySettings.port());
+    }
+
+    private static Proxy.Type resolveProxyType(String proxyType) {
+        if ("SOCKS".equalsIgnoreCase(proxyType) || "SOCKS5".equalsIgnoreCase(proxyType)) {
+            return Proxy.Type.SOCKS;
+        }
+        return Proxy.Type.HTTP;
+    }
+
+    private static okhttp3.Authenticator buildProxyAuthenticator(String proxyUsername, String proxyPassword) {
+        if (!hasText(proxyUsername)) {
+            return (route, response) -> null;
+        }
+        String password = proxyPassword == null ? "" : proxyPassword;
+        return (route, response) -> response.request().newBuilder()
+                .header("Proxy-Authorization", Credentials.basic(proxyUsername, password))
+                .build();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private static ProxySettings normalizeProxySettings(String proxyHost, int proxyPort, String proxyType) {
+        String trimmedProxyHost = proxyHost.trim();
+        if (!trimmedProxyHost.contains("://")) {
+            if (proxyPort <= 0) {
+                throw new IllegalArgumentException("Proxy port must be greater than 0 when proxy-host does not include a port");
+            }
+            return new ProxySettings(trimmedProxyHost, proxyPort, resolveProxyType(proxyType));
+        }
+
+        try {
+            URI proxyUri = new URI(trimmedProxyHost);
+            String normalizedHost = proxyUri.getHost();
+            int normalizedPort = proxyUri.getPort() > 0 ? proxyUri.getPort() : proxyPort;
+            if (!hasText(normalizedHost)) {
+                throw new IllegalArgumentException("Proxy host is empty");
+            }
+            if (normalizedPort <= 0) {
+                throw new IllegalArgumentException("Proxy port is missing");
+            }
+            Proxy.Type normalizedType = hasText(proxyUri.getScheme()) ? resolveProxyType(proxyUri.getScheme()) : resolveProxyType(proxyType);
+            return new ProxySettings(normalizedHost, normalizedPort, normalizedType);
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("Invalid proxy host: " + proxyHost, e);
+        }
+    }
+
+    private record ProxySettings(String host, int port, Proxy.Type type) {
     }
 
     // ================= DELEGATED METHODS (For backward compatibility) =================

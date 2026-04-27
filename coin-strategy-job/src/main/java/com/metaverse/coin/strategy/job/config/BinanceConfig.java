@@ -22,8 +22,33 @@ public class BinanceConfig {
     @Value("${binance.api.futures-url:https://fapi.binance.com}")
     private String futuresUrl;
 
+    @Value("${binance.api.proxy-host:}")
+    private String proxyHost;
+
+    @Value("${binance.api.proxy-port:}")
+    private int proxyPort;
+
+    @Value("${binance.api.proxy-type:}")
+    private String proxyType;
+
+    @Value("${binance.api.proxy-username:}")
+    private String proxyUsername;
+
+    @Value("${binance.api.proxy-password:}")
+    private String proxyPassword;
+
     @Bean
     public BinanceApiService binanceApiService() {
-        return new BinanceApiService(apiKey, secretKey, spotUrl, futuresUrl);
+        return new BinanceApiService(
+                apiKey,
+                secretKey,
+                spotUrl,
+                futuresUrl,
+                proxyHost,
+                proxyPort,
+                proxyType,
+                proxyUsername,
+                proxyPassword
+        );
     }
 }

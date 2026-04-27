@@ -11,7 +11,7 @@ export const STRATEGY_CATALOG = [
     name: '资金费套利策略',
     description: '利用永续合约资金费率差异进行套利',
     route: '/dashboard/funding-arb',
-    status: 'PLANNED' as const,
+    status: 'ACTIVE' as const,
   },
   {
     code: 'ROBOT',

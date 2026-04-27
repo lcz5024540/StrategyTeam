@@ -1586,6 +1586,163 @@ tbody tr:hover td {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   FUNDING ARB
+═══════════════════════════════════════════════════════════ */
+.funding-arb-main-grid {
+  align-items: start;
+}
+
+.funding-arb-monitor-grid {
+  align-items: start;
+}
+
+.funding-arb-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.funding-arb-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.funding-arb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.funding-arb-field span {
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.funding-arb-field input,
+.funding-arb-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 255, 65, 0.04);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.funding-arb-field textarea {
+  resize: vertical;
+  min-height: 104px;
+}
+
+.funding-arb-field input:hover,
+.funding-arb-field input:focus,
+.funding-arb-field textarea:hover,
+.funding-arb-field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow-sm);
+}
+
+.funding-arb-field small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  font-family: var(--font-mono);
+}
+
+.funding-arb-inline-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.funding-arb-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.funding-arb-error {
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 34, 68, 0.35);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  box-shadow: var(--danger-glow);
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: var(--font-mono);
+}
+
+.funding-arb-note-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+}
+
+.funding-arb-note-card {
+  min-height: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(0, 255, 65, 0.03);
+}
+
+.funding-arb-note-card h3 {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.funding-arb-note-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.funding-arb-log {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.8;
+  font-family: var(--font-mono);
+}
+
+.funding-arb-cell-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.funding-arb-cell-subtitle {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.funding-arb-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* ═══════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════ */
 @media (max-width: 1200px) {
@@ -1602,7 +1759,10 @@ tbody tr:hover td {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .address-focus-hero {
+  .address-focus-hero ,
+  .funding-arb-form-grid,
+  .funding-arb-note-list,
+  .funding-arb-summary-grid {
     grid-template-columns: 1fr;
   }
 }

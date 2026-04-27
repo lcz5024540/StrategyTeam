@@ -1,12 +1,17 @@
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useStrategyStore } from '@/store/useStrategyStore'
 import { STRATEGY_CATALOG } from '@/utils/constants'
 
 export function Header() {
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { selectedStrategy, positionMode, selectedDays, setPositionMode, setSelectedDays } = useStrategyStore()
 
-  const strategy = searchParams.get('strategy') || selectedStrategy
+  const strategy = (() => {
+    const matched = STRATEGY_CATALOG.find((item) => item.route !== '/dashboard' && location.pathname.startsWith(item.route))
+    if (matched) return matched.code
+    return searchParams.get('strategy') || selectedStrategy
+  })()
   const days = Number(searchParams.get('days')) || selectedDays
   const mode = (searchParams.get('mode') || positionMode) as 'PAPER' | 'LIVE'
 

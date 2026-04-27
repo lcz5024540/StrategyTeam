@@ -20,13 +20,13 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Risk Controller
+ * Risk Service
  * Handles pre-trade risk checks and account health monitoring.
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
-public class SingleExchangeRiskController {
+public class SingleExchangeRiskService {
 
     public static final String PHASE_OPEN = "OPEN";
     public static final String PHASE_CLOSE = "CLOSE";

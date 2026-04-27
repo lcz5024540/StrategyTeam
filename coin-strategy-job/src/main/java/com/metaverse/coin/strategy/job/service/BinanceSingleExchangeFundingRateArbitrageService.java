@@ -5,7 +5,7 @@ import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFu
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
-import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -32,7 +32,7 @@ public class BinanceSingleExchangeFundingRateArbitrageService {
 
     private final BinanceApiService binanceApiService;
     private final SingleExchangeArbitrageOrderExecutor orderExecutor;
-    private final SingleExchangeRiskController riskController;
+    private final SingleExchangeRiskService riskService;
 
     public String executeArbitrage(String symbol, BigDecimal usdtAmount, BigDecimal minFundingRate) {
         return executeArbitrage(parseSymbols(symbol), usdtAmount, minFundingRate, 3);
@@ -90,7 +90,7 @@ public class BinanceSingleExchangeFundingRateArbitrageService {
                     continue;
                 }
 
-                if (!riskController.checkTradeRisk(plan)) {
+                if (!riskService.checkTradeRisk(plan)) {
                     executionSummary.put(symbol, "Rejected: risk check failed");
                     logAndAppend(resultLog, "Rejected: risk check failed");
                     continue;

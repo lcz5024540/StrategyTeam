@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class SingleExchangeRiskControllerTest {
+class SingleExchangeRiskServiceTest {
 
     @Mock
     private BinanceApiService binanceApiService;
@@ -36,7 +36,7 @@ class SingleExchangeRiskControllerTest {
     private SingleExchangeSpotFuturesProperties properties = new SingleExchangeSpotFuturesProperties();
 
     @InjectMocks
-    private SingleExchangeRiskController riskController;
+    private SingleExchangeRiskService riskService;
 
     @Test
     void testRejectOpenWhenOrderBookDepthIsInsufficient() {
@@ -52,7 +52,7 @@ class SingleExchangeRiskControllerTest {
                 ))
                 .build());
 
-        SingleExchangeLiquidityAssessment assessment = riskController.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskController.PHASE_OPEN);
+        SingleExchangeLiquidityAssessment assessment = riskService.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskService.PHASE_OPEN);
 
         assertFalse(assessment.isPassed());
         assertFalse(assessment.isFallbackUsed());
@@ -74,7 +74,7 @@ class SingleExchangeRiskControllerTest {
                 ))
                 .build());
 
-        SingleExchangeLiquidityAssessment assessment = riskController.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskController.PHASE_OPEN);
+        SingleExchangeLiquidityAssessment assessment = riskService.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskService.PHASE_OPEN);
 
         assertFalse(assessment.isPassed());
         assertTrue(assessment.getRejectionReason().contains("estimated slippage"));
@@ -94,7 +94,7 @@ class SingleExchangeRiskControllerTest {
                 ))
                 .build());
 
-        SingleExchangeLiquidityAssessment assessment = riskController.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskController.PHASE_OPEN);
+        SingleExchangeLiquidityAssessment assessment = riskService.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskService.PHASE_OPEN);
 
         assertTrue(assessment.isPassed());
         assertEquals(new BigDecimal("50014.00000000"), assessment.getSpotExpectedPrice());
@@ -107,7 +107,7 @@ class SingleExchangeRiskControllerTest {
                 .fallbackUsed(true)
                 .build());
 
-        SingleExchangeLiquidityAssessment assessment = riskController.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskController.PHASE_OPEN);
+        SingleExchangeLiquidityAssessment assessment = riskService.evaluateLiquidityRisk(buildPlan(), SingleExchangeRiskService.PHASE_OPEN);
 
         assertFalse(assessment.isPassed());
         assertTrue(assessment.isFallbackUsed());
