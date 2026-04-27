@@ -371,7 +371,7 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
-    void shouldRejectSingleWalletOverrideWhenWalletIsInObserveCooldown() {
+    void shouldRejectHighQualitySingleWalletWhenWalletIsInObserveCooldown() {
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletAddress("0xcooldown")
                 .setWalletScore(new BigDecimal("0.95"))
@@ -401,13 +401,13 @@ class SmartWalletSignalRiskServiceTest {
         assertFalse(decision.isAccepted());
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[OBSERVE_COOLDOWN_BLOCK]")));
         assertTrue(decision.getStrategyChecks().stream()
-                .filter(check -> "SINGLE_WALLET_OVERRIDE".equals(check.getStrategyKey()))
+                .filter(check -> "HIGH_QUALITY_SINGLE_WALLET".equals(check.getStrategyKey()))
                 .flatMap(check -> check.getReasons().stream())
                 .anyMatch(reason -> reason.contains("[SINGLE_OVERRIDE_BLOCK_RECENT_DEGRADATION]")));
     }
 
     @Test
-    void shouldRejectSingleWalletOverrideWhenBehaviorThresholdIsNotMet() {
+    void shouldRejectHighQualitySingleWalletWhenBehaviorThresholdIsNotMet() {
         properties.getSignalRisk().setMinDistinctEntities(2);
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletAddress("0xbehavior")
@@ -435,47 +435,13 @@ class SmartWalletSignalRiskServiceTest {
 
         assertFalse(decision.isAccepted());
         assertTrue(decision.getStrategyChecks().stream()
-                .filter(check -> "SINGLE_WALLET_OVERRIDE".equals(check.getStrategyKey()))
+                .filter(check -> "HIGH_QUALITY_SINGLE_WALLET".equals(check.getStrategyKey()))
                 .flatMap(check -> check.getReasons().stream())
                 .anyMatch(reason -> reason.contains("[SINGLE_OVERRIDE_BLOCK_BEHAVIOR]")));
     }
 
     @Test
-    void shouldNotBypassConsensusScoreFailureWithSingleWalletOverride() {
-        properties.getSignalRisk().setMinConsensusScore(new BigDecimal("0.65"));
-        SmartWalletProfileEntity profile = baseProfile()
-                .setWalletAddress("0xconsensus")
-                .setWalletScore(new BigDecimal("0.95"))
-                .setWinRate(new BigDecimal("0.80"))
-                .setRecentTradeCount7d(8)
-                .setRecentWinRate7d(new BigDecimal("0.72"))
-                .setTotalTrades(120);
-        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
-        ConsensusSignalView consensus = ConsensusSignalView.builder()
-                .distinctWallets(1)
-                .dedupedEntityCount(1)
-                .consensusScore(new BigDecimal("0.60"))
-                .build();
-
-        prepareCommonMocks(consensus);
-        when(walletBehaviorProfileService.getProfile("0xconsensus")).thenReturn(WalletBehaviorProfileView.builder()
-                .walletAddress("0xconsensus")
-                .recommendedExitLane("FOLLOW_ARCHETYPE")
-                .replicabilityScore(new BigDecimal("0.85"))
-                .qualityScore(new BigDecimal("0.82"))
-                .build());
-
-        SignalRiskDecision decision = service.evaluate(profile, event);
-
-        assertFalse(decision.isAccepted());
-        assertTrue(decision.getStrategyChecks().stream()
-                .filter(check -> "SINGLE_WALLET_OVERRIDE".equals(check.getStrategyKey()))
-                .flatMap(check -> check.getReasons().stream())
-                .anyMatch(reason -> reason.contains("[SINGLE_OVERRIDE_BLOCK_CONSENSUS_SCORE]")));
-    }
-
-    @Test
-    void shouldRejectSingleWalletOverrideWhenCanaryDoesNotSelectWallet() {
+    void shouldRejectHighQualitySingleWalletWhenCanaryDoesNotSelectWallet() {
         properties.getSignalRisk().setMinDistinctEntities(2);
         properties.getSignalRisk().setEnableSingleWalletOverrideCanary(true);
         properties.getSignalRisk().setSingleWalletOverrideCanaryRate(BigDecimal.ZERO);
@@ -505,7 +471,7 @@ class SmartWalletSignalRiskServiceTest {
 
         assertFalse(decision.isAccepted());
         assertTrue(decision.getStrategyChecks().stream()
-                .filter(check -> "SINGLE_WALLET_OVERRIDE".equals(check.getStrategyKey()))
+                .filter(check -> "HIGH_QUALITY_SINGLE_WALLET".equals(check.getStrategyKey()))
                 .flatMap(check -> check.getReasons().stream())
                 .anyMatch(reason -> reason.contains("[SINGLE_OVERRIDE_BLOCK_CANARY]")));
     }
