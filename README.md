@@ -80,6 +80,63 @@ graph TD
 
 *   [量化策略平台 MVP Java 架构设计文档](MVP_ARCHITECTURE.md)
 
+## 前端启动与停止
+
+如需本地查看页面效果，可启动 `coin-strategy-frontend` 前端开发服务。
+
+### 启动步骤
+
+1. 在项目根目录进入前端目录：
+
+```powershell
+cd coin-strategy-frontend
+```
+
+2. 安装依赖（前端使用 `npm`，仓库中包含 `package-lock.json`）：
+
+```powershell
+npm install
+```
+
+3. 启动开发服务：
+
+```powershell
+npm run dev
+```
+
+4. 启动成功后，在浏览器访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+### 默认后端配置
+
+*   前端默认请求后端地址为 `http://127.0.0.1:8081`
+*   该值定义在 `coin-strategy-frontend/.env.development`
+*   开发代理仅代理 `/strategy/api`，相关配置定义在 `coin-strategy-frontend/vite.config.ts`
+
+### 注意事项
+
+*   如果后端服务没有启动，或者后端端口不是 `8081`，页面虽然可以打开，但接口请求会失败
+*   如果你的后端不是运行在 `8081`，可以修改 `coin-strategy-frontend/.env.development` 中的 `VITE_API_BASE_URL`
+
+### 停止前端服务
+
+在启动前端服务的终端窗口中按：
+
+```powershell
+Ctrl + C
+```
+
+如果终端提示是否终止批处理，输入：
+
+```powershell
+Y
+```
+
+然后回车即可停止服务。
+
 ## 策略文档索引 (Strategy Documentation)
 
 *   [资金费率套利策略 (Funding Rate Arbitrage)](funding-rate/FUNDING_RATE_ARBITRAGE.md_ARBITRAGE.md)

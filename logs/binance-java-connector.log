@@ -1,3 +1,0 @@
-2026-04-14 00:00:42.003[1776096042003] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=4984
-2026-04-14 00:01:36.998[1776096096998] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=5009
-2026-04-14 00:02:33.007[1776096153007] | INFO  | scheduling-1 | c.m.c.s.j.s.s.MarketSnapshotCollectorService - Scheduled market snapshot collection finished: snapshots=0 wsHits=0 restFallbacks=5034

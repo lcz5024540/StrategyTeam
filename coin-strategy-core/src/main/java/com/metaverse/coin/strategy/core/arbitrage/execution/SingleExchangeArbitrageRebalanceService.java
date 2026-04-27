@@ -13,7 +13,7 @@ import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccou
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceUniversalTransferResult;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
-import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController;
+import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -54,7 +54,7 @@ public class SingleExchangeArbitrageRebalanceService {
     private static final List<String> ACTIVE_POSITION_STATUSES = Arrays.asList("OPENING", "OPENED", "CLOSING");
     private static final String SPOT_TO_UM_FUTURES_TRANSFER_TYPE = "MAIN_UMFUTURE";
 
-    private final SingleExchangeRiskController riskController;
+    private final SingleExchangeRiskService riskService;
     private final BinanceApiService binanceApiService;
     private final SingleExchangeArbitrageRebalanceRecordMapper rebalanceRecordMapper;
     private final SingleExchangeArbitrageRiskSnapshotMapper riskSnapshotMapper;
@@ -72,7 +72,7 @@ public class SingleExchangeArbitrageRebalanceService {
         log.info("Checking for Margin Rebalancing...");
 
         try {
-            BigDecimal marginRatio = riskController.getMarginRatio();
+        BigDecimal marginRatio = riskService.getMarginRatio();
             if (marginRatio == null) {
                 log.warn("Skip rebalance because margin ratio is unavailable");
                 return;

@@ -1,4 +1,4 @@
-package com.metaverse.coin.strategy.job.controller;
+package com.metaverse.coin.strategy.job.hedge.controller;
 
 import com.metaverse.coin.strategy.job.service.BinanceHedgeStrategyService;
 import lombok.RequiredArgsConstructor;
