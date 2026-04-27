@@ -505,7 +505,7 @@ public class SmartWalletSignalRiskService {
                 suspiciouslyPerfectWinRate,
                 event
         );
-        SignalStrategyRouteResult strategyRoute = entryStrategyRouter.route(risk, strategyChecks);
+        SignalStrategyRouteResult strategyRoute = entryStrategyRouter.route(risk, strategyChecks, consensus.getDedupedEntityCount());
         if (!strategyRoute.isAccepted()) {
             if (manualAllowlistApplied && !consensusScoreFailed) {
                 overrideApplied = true;
@@ -517,10 +517,9 @@ public class SmartWalletSignalRiskService {
                     reasons.add("[MANUAL_ALLOWLIST_CONSENSUS_SCORE_BLOCK] Manual allowlist cannot bypass consensus score gate.");
                 }
             }
-        } else if (strategyRoute.getMatchedStrategies().contains("SINGLE_WALLET_OVERRIDE") && consensusEntityCountFailed) {
+        } else if (strategyRoute.getMatchedStrategies().contains("HIGH_QUALITY_SINGLE_WALLET")) {
             overrideApplied = true;
-            reasons.add("Single-wallet override bypassed consensus entity-count gate (deduped entities="
-                    + consensus.getDedupedEntityCount() + ").");
+            reasons.add("[HIGH_QUALITY_SINGLE_WALLET] High-quality single-wallet strategy accepted this signal independently.");
         }
 
         if (accepted) {
@@ -766,7 +765,7 @@ public class SmartWalletSignalRiskService {
         return normalizedStake.multiply(scale).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private SingleWalletOverrideAssessment assessSingleWalletOverride(SmartWalletProfileEntity profile,
+    private SingleWalletOverrideAssessment assessHighQualitySingleWallet(SmartWalletProfileEntity profile,
                                                                      WalletBehaviorProfileView behaviorProfile,
                                                                      SmartWalletProperties.SignalRisk risk,
                                                                      BigDecimal triggerSize,
@@ -837,15 +836,12 @@ public class SmartWalletSignalRiskService {
                                                                      SmartWalletTradeEventEntity event) {
         List<SignalStrategyCheckResult> checks = new ArrayList<>();
         checks.add(buildConsensusStrategyCheck(risk, consensus, consensusEntityCountFailed, consensusScoreFailed));
-        checks.add(buildSingleWalletOverrideCheck(
+        checks.add(buildHighQualitySingleWalletCheck(
                 profile,
                 behaviorProfile,
                 risk,
                 triggerSize,
                 recommendedStake,
-                consensus,
-                consensusEntityCountFailed,
-                consensusScoreFailed,
                 suspiciouslyPerfectWinRate,
                 event
         ));
@@ -876,18 +872,15 @@ public class SmartWalletSignalRiskService {
                 .build();
     }
 
-    private SignalStrategyCheckResult buildSingleWalletOverrideCheck(SmartWalletProfileEntity profile,
-                                                                     WalletBehaviorProfileView behaviorProfile,
-                                                                     SmartWalletProperties.SignalRisk risk,
-                                                                     BigDecimal triggerSize,
-                                                                     BigDecimal recommendedStake,
-                                                                     ConsensusSignalView consensus,
-                                                                     boolean consensusEntityCountFailed,
-                                                                     boolean consensusScoreFailed,
-                                                                     boolean suspiciouslyPerfectWinRate,
-                                                                     SmartWalletTradeEventEntity event) {
+    private SignalStrategyCheckResult buildHighQualitySingleWalletCheck(SmartWalletProfileEntity profile,
+                                                                    WalletBehaviorProfileView behaviorProfile,
+                                                                    SmartWalletProperties.SignalRisk risk,
+                                                                    BigDecimal triggerSize,
+                                                                    BigDecimal recommendedStake,
+                                                                    boolean suspiciouslyPerfectWinRate,
+                                                                    SmartWalletTradeEventEntity event) {
         List<String> reasons = new ArrayList<>();
-        SingleWalletOverrideAssessment assessment = assessSingleWalletOverride(
+        SingleWalletOverrideAssessment assessment = assessHighQualitySingleWallet(
                 profile,
                 behaviorProfile,
                 risk,
@@ -896,26 +889,17 @@ public class SmartWalletSignalRiskService {
                 suspiciouslyPerfectWinRate,
                 event
         );
-        boolean accepted = assessment.qualifies()
-                && consensusEntityCountFailed
-                && !consensusScoreFailed;
+        boolean accepted = assessment.qualifies();
 
         if (!assessment.qualifies()) {
             reasons.add("[" + assessment.reasonCode() + "] " + assessment.reasonDetail());
         }
-        if (assessment.qualifies() && !consensusEntityCountFailed) {
-            reasons.add("[SINGLE_OVERRIDE_NOT_NEEDED] Single-wallet override only applies when consensus entity-count gate fails.");
-        }
-        if (assessment.qualifies() && consensusScoreFailed) {
-            reasons.add("[SINGLE_OVERRIDE_BLOCK_CONSENSUS_SCORE] Single-wallet override cannot bypass consensus score gate.");
-        }
         if (accepted) {
-            reasons.add("[SINGLE_OVERRIDE_PASS] Single-wallet override matched and bypassed consensus entity-count gate (deduped entities="
-                    + consensus.getDedupedEntityCount() + ").");
+            reasons.add("[HIGH_QUALITY_SINGLE_WALLET_PASS] High-quality single-wallet strategy passed independently.");
         }
 
         return SignalStrategyCheckResult.builder()
-                .strategyKey("SINGLE_WALLET_OVERRIDE")
+                .strategyKey("HIGH_QUALITY_SINGLE_WALLET")
                 .accepted(accepted)
                 .reasons(reasons)
                 .build();
