@@ -224,11 +224,8 @@ public class SmartWalletSignalRiskService {
             }
         }
 
-        if (risk.isBlockDuplicateOpenPosition()
-                && hasOpenPosition(event.getMarketId(), event.getOutcome())) {
-            accepted = false;
-            reasons.add("An open position already exists for the same market and outcome.");
-        }
+        boolean hasDuplicatePosition = risk.isBlockDuplicateOpenPosition()
+                && hasOpenPosition(event.getMarketId(), event.getOutcome());
 
         if (risk.isBlockOppositeOpenPositionSameMarket()
                 && hasOpenPositionOnSameMarketDifferentOutcome(event.getMarketId(), event.getOutcome())) {
@@ -526,6 +523,70 @@ public class SmartWalletSignalRiskService {
             reasons.add("Signal passed watchlist, freshness, size and price checks.");
         }
 
+        // ── Consensus Stake Amplifier ─────────────────────────────────────────────
+        if (accepted && strategyRoute.getStakeMultiplier().compareTo(BigDecimal.ONE) > 0) {
+            recommendedStake = recommendedStake
+                    .multiply(strategyRoute.getStakeMultiplier())
+                    .min(properties.getMaxStakeUsdc())
+                    .setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[CONSENSUS_AMPLIFIER] dedupedEntities=" + consensus.getDedupedEntityCount()
+                    + ", stakeMultiplier=\u00d7" + strategyRoute.getStakeMultiplier().setScale(2, RoundingMode.HALF_UP) + ".");
+        }
+
+        // ── Late-phase duplicate-position check (scale-up path) ───────────────────
+        boolean isScaleUpSignal = false;
+        BigDecimal scaleUpAddOnStake = BigDecimal.ZERO;
+        if (hasDuplicatePosition) {
+            if (risk.isEnableScaleUpOnHighQualityConsensus()) {
+                SingleWalletOverrideAssessment scaleUpAssessment = assessHighQualitySingleWallet(
+                        profile, behaviorProfile, risk, triggerSize,
+                        recommendedStake, suspiciouslyPerfectWinRate, event);
+                if (scaleUpAssessment.qualifies()) {
+                    BigDecimal existingCost = getExistingPositionCost(event.getMarketId(), event.getOutcome());
+                    BigDecimal currentPrice = safe(event.getPrice());
+                    BigDecimal avgCost = getExistingPositionAvgPrice(event.getMarketId(), event.getOutcome());
+
+                    boolean priceAbsOk = currentPrice.compareTo(safe(risk.getMaxFollowPrice())) <= 0;
+                    boolean priceRelOk = avgCost.compareTo(BigDecimal.ZERO) <= 0
+                            || currentPrice.compareTo(
+                                    avgCost.multiply(BigDecimal.ONE.add(safe(risk.getScaleUpMaxPriceRelativeDrift())))
+                            ) <= 0;
+
+                    if (priceAbsOk && priceRelOk) {
+                        BigDecimal addOn = recommendedStake.subtract(existingCost)
+                                .max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+                        if (addOn.compareTo(minOrderUsdc) >= 0) {
+                            isScaleUpSignal = true;
+                            scaleUpAddOnStake = addOn;
+                            reasons.add("[SCALE_UP] High-quality wallet triggered scale-up on existing position. addOn="
+                                    + addOn + " existingCost=" + existingCost + ".");
+                        } else {
+                            accepted = false;
+                            reasons.add("[SCALE_UP_SKIP] Existing position cost is already at or above amplified target.");
+                        }
+                    } else {
+                        accepted = false;
+                        if (!priceAbsOk) {
+                            reasons.add("[SCALE_UP_PRICE_BLOCK] Current price exceeds maxFollowPrice="
+                                    + safe(risk.getMaxFollowPrice()) + ".");
+                        }
+                        if (!priceRelOk) {
+                            reasons.add("[SCALE_UP_PRICE_BLOCK] Price drift exceeds relative limit. current="
+                                    + currentPrice.setScale(4, RoundingMode.HALF_UP)
+                                    + " avgCost=" + avgCost.setScale(4, RoundingMode.HALF_UP)
+                                    + " maxDrift=" + risk.getScaleUpMaxPriceRelativeDrift() + ".");
+                        }
+                    }
+                } else {
+                    accepted = false;
+                    reasons.add("An open position already exists for the same market and outcome.");
+                }
+            } else {
+                accepted = false;
+                reasons.add("An open position already exists for the same market and outcome.");
+            }
+        }
+
         SignalRiskDecision result = SignalRiskDecision.builder()
                 .accepted(accepted)
                 .overrideApplied(overrideApplied)
@@ -554,6 +615,8 @@ public class SmartWalletSignalRiskService {
                 .enabledStrategies(strategyRoute.getEnabledStrategies())
                 .matchedStrategies(strategyRoute.getMatchedStrategies())
                 .strategyChecks(strategyChecks)
+                .scaleUpSignal(isScaleUpSignal)
+                .scaleUpAddOnStake(isScaleUpSignal ? scaleUpAddOnStake : null)
                 .reasons(reasons)
                 .build();
         log.info("{} action=完成跟单风控评估 result={} followTaskId={} wallet={} marketId={} outcome={} side={} recommendedStakeUsdc={} consensusWallets={} consensusEntities={} consensusScore={} routeMode={} matchedStrategies={} reasons={}",
@@ -1100,5 +1163,52 @@ public class SmartWalletSignalRiskService {
                                   BigDecimal liveWalletBalance,
                                   BigDecimal effectiveCapital,
                                   boolean liveWalletBalanceApplied) {
+    }
+
+    private BigDecimal getExistingPositionCost(String marketId, String outcome) {
+        if (marketId == null || outcome == null) {
+            return BigDecimal.ZERO;
+        }
+        List<Long> marketInfoIds = marketInfoService.findIdsByMarketId(marketId);
+        BigDecimal total = BigDecimal.ZERO;
+        for (Long marketInfoId : marketInfoIds) {
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                            .eq(SmartWalletPositionEntity::getMarketInfoId, marketInfoId)
+                            .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+            for (SmartWalletPositionEntity pos : positions) {
+                if (outcome.equalsIgnoreCase(pos.getOutcome())) {
+                    total = total.add(safe(pos.getCostBasisUsdc()));
+                }
+            }
+        }
+        return total;
+    }
+
+    private BigDecimal getExistingPositionAvgPrice(String marketId, String outcome) {
+        if (marketId == null || outcome == null) {
+            return BigDecimal.ZERO;
+        }
+        List<Long> marketInfoIds = marketInfoService.findIdsByMarketId(marketId);
+        BigDecimal totalCost = BigDecimal.ZERO;
+        BigDecimal totalQty = BigDecimal.ZERO;
+        for (Long marketInfoId : marketInfoIds) {
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                            .eq(SmartWalletPositionEntity::getMarketInfoId, marketInfoId)
+                            .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+            for (SmartWalletPositionEntity pos : positions) {
+                if (outcome.equalsIgnoreCase(pos.getOutcome())) {
+                    BigDecimal qty = safe(pos.getQuantity());
+                    BigDecimal price = safe(pos.getAverageEntryPrice());
+                    totalCost = totalCost.add(qty.multiply(price));
+                    totalQty = totalQty.add(qty);
+                }
+            }
+        }
+        if (totalQty.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return totalCost.divide(totalQty, 8, RoundingMode.HALF_UP);
     }
 }
