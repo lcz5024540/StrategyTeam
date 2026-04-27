@@ -1013,8 +1013,16 @@ public class SmartWalletFollowTaskService {
                         .tradingFeeUsdc(BigDecimal.ZERO)
                         .build();
             }
-            if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
-                task.setRecommendedStakeUsdc(decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP));
+            // Scale-up: if this is an add-on signal, use scaleUpAddOnStake instead of recommendedStake
+            BigDecimal effectiveStake = decision.getRecommendedStakeUsdc();
+            if (decision.isScaleUpSignal() && decision.getScaleUpAddOnStake() != null
+                    && decision.getScaleUpAddOnStake().compareTo(BigDecimal.ZERO) > 0) {
+                effectiveStake = decision.getScaleUpAddOnStake();
+                log.info("{} action=追加仓位 taskId={} addOnStake={} originalRecommended={}",
+                        LOG_PREFIX, task.getId(), effectiveStake, decision.getRecommendedStakeUsdc());
+            }
+            if (effectiveStake != null && effectiveStake.compareTo(BigDecimal.ZERO) > 0) {
+                task.setRecommendedStakeUsdc(effectiveStake.setScale(2, RoundingMode.HALF_UP));
             }
             SmartWalletSignal signal = SmartWalletSignal.builder()
                     .signalId(String.valueOf(task.getId()))
