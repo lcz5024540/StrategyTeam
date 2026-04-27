@@ -69,6 +69,7 @@ pip3 install py-clob-client
 
 - `application-prod.yml` 放“默认配置”
 - `/etc/coinstrategy/smart-wallet.env` 放“敏感信息和服务器差异化配置”
+- 如果是测试包直接解压运行，也可以先直接维护 `/opt/coinstrategy/smart-wallet/deploy/linux/env/smart-wallet.env`
 
 你不应该在服务器上改源码里的 `application-prod.yml`，而是通过环境变量覆盖。
 
@@ -94,8 +95,8 @@ pip3 install py-clob-client
 1. Spring Boot 后端只监听 `127.0.0.1:8081`
 2. 外网只开放 `80/443`
 3. `nginx` 反代 `/strategy/api/` 到本机 `127.0.0.1:8081`
-4. `systemd` 使用独立低权限用户 `coinstrategy`
-5. 环境变量文件放在 `/etc/coinstrategy/smart-wallet.env`，权限为 `640`
+4. `systemd` 当前可以直接使用 `ubuntu` 用户运行；后续如果要隔离，再单独切换服务用户
+5. 环境变量文件优先放在 `/etc/coinstrategy/smart-wallet.env`；如果你是直接解压测试包，也可以直接使用包内的 `deploy/linux/env/smart-wallet.env`
 6. 后端服务加了基础 `systemd` 加固项：`NoNewPrivileges`、`ProtectSystem`、`PrivateTmp`
 
 如果 MySQL 也在这台机器上，建议把数据库地址也改成：
@@ -147,13 +148,14 @@ dist/smart-wallet-release/smart-wallet-release.tar.gz
 
 ```bash
 sudo SMART_WALLET_APP_HOME=/opt/coinstrategy/smart-wallet \
+SMART_WALLET_APP_USER=ubuntu \
 SMART_WALLET_SERVER_NAME=49.51.250.174 \
 bash /tmp/smart-wallet-release/bin/install-smart-wallet-linux-service.sh
 ```
 
 这个脚本只做“一次性骨架安装”：
 
-- 创建 `coinstrategy` 用户
+- 默认使用 `ubuntu` 作为运行用户（如果你显式指定了 `SMART_WALLET_APP_USER`，则按指定值处理）
 - 创建 `/opt/coinstrategy/smart-wallet` 目录结构
 - 创建 `/etc/coinstrategy/smart-wallet.env`
 - 安装 `systemd`
@@ -170,6 +172,7 @@ bash /tmp/smart-wallet-release/bin/install-smart-wallet-linux-service.sh
 
 ```bash
 sudo SMART_WALLET_APP_HOME=/opt/coinstrategy/smart-wallet \
+SMART_WALLET_APP_USER=ubuntu \
 bash /tmp/smart-wallet-release/bin/install-smart-wallet-artifacts.sh
 ```
 
@@ -178,6 +181,7 @@ bash /tmp/smart-wallet-release/bin/install-smart-wallet-artifacts.sh
 - 替换 `backend/app.jar`
 - 替换 `frontend/dist/`
 - 同步 `bin/start-smart-wallet-backend.sh`
+- 同步 `bin/restart-smart-wallet-backend.sh`
 - 如果存在则同步 `runtime/*.py`
 
 然后重启服务：
@@ -186,6 +190,28 @@ bash /tmp/smart-wallet-release/bin/install-smart-wallet-artifacts.sh
 sudo systemctl restart smart-wallet-backend
 sudo systemctl reload nginx
 ```
+
+如果你想在 Linux 上手工兜底处理“8081 端口被占用、先杀进程再启动并追日志”这一套动作，也可以直接用新脚本。
+
+如果你是把 `smart-wallet-test.tar.gz` 直接解压到 `/opt/coinstrategy/smart-wallet`，推荐优先执行：
+
+```bash
+sudo /opt/coinstrategy/smart-wallet/bin/restart-smart-wallet-backend.sh
+```
+
+如果你还没把脚本同步到根目录 `bin/`，也可以直接执行解压包里的原始路径：
+
+```bash
+sudo /opt/coinstrategy/smart-wallet/deploy/linux/bin/restart-smart-wallet-backend.sh
+```
+
+这个脚本会自动做这些事：
+
+- 用 `sudo` 检查 `8081` 端口
+- 用 `sudo kill` 清理占用端口的进程
+- 如果检测到 `systemd` 服务 `smart-wallet-backend`，会先 `sudo systemctl stop/start`
+- 如果没有 `systemd` 服务，才会用 `sudo -u ubuntu` 调用 `start-smart-wallet-backend.sh`
+- 用 `sudo tail -n 500 -f` 持续查看日志
 
 ## 8. 启动与验证
 
@@ -208,19 +234,19 @@ curl http://127.0.0.1:8081/strategy/api/smart-wallet/health
 curl http://49.51.250.174/strategy/api/smart-wallet/health
 ```
 
-如果启动时报 `Failed to load RSA private key from: /etc/coinstrategy/app-private.pem`，优先检查私钥文件是否存在、格式是否为 PKCS#8 PEM、以及 `coinstrategy` 服务用户是否可读：
+如果启动时报 `Failed to load RSA private key from: /opt/coinstrategy/app-private.pem`，优先检查私钥文件是否存在、格式是否为 PKCS#8 PEM、以及 `ubuntu` 运行用户是否可读：
 
 ```bash
-sudo ls -l /etc/coinstrategy/app-private.pem
-sudo -u coinstrategy test -r /etc/coinstrategy/app-private.pem && echo readable
-sudo head -n 1 /etc/coinstrategy/app-private.pem
-sudo openssl pkey -in /etc/coinstrategy/app-private.pem -noout
+sudo ls -l /opt/coinstrategy/app-private.pem
+sudo -u ubuntu test -r /opt/coinstrategy/app-private.pem && echo readable
+sudo head -n 1 /opt/coinstrategy/app-private.pem
+sudo openssl pkey -in /opt/coinstrategy/app-private.pem -noout
 ```
 
-私钥推荐用 root 拥有、服务组可读的方式安装：
+私钥推荐用 root 拥有、`ubuntu` 组可读的方式安装：
 
 ```bash
-sudo install -o root -g coinstrategy -m 640 /tmp/app-private.pem /etc/coinstrategy/app-private.pem
+sudo install -o root -g ubuntu -m 640 /tmp/app-private.pem /opt/coinstrategy/app-private.pem
 ```
 
 访问地址：
@@ -229,7 +255,60 @@ sudo install -o root -g coinstrategy -m 640 /tmp/app-private.pem /etc/coinstrate
 - 前端首页: `http://49.51.250.174/`
 - 前端 dashboard: `http://49.51.250.174/dashboard`
 
-## 9. 当前脚本职责
+## 9. Test 环境可执行钱包池验收
+
+当前 `test` profile 已将 smart-wallet discovery 收敛为：
+
+- 只使用 `OVERALL|ALL|PNL|100`
+- `leaderboard-limit=100`
+- `analyze-top-n=100`
+- 不放宽执行风控，继续保持 `PAPER`
+
+部署前先记录一次基线：
+
+```bash
+curl http://49.51.250.174/strategy/api/smart-wallet/overview
+curl "http://49.51.250.174/strategy/api/smart-wallet/diagnostics/signal-health?lookbackHours=24"
+curl http://49.51.250.174/strategy/api/smart-wallet/watchlist/candidates
+curl http://49.51.250.174/strategy/api/smart-wallet/watchlist/executable
+curl "http://49.51.250.174/strategy/api/smart-wallet/profiles/screener?scope=all&sortBy=replicabilityScore&sortDirection=desc"
+```
+
+部署后优先等待两个 discovery 周期再看结果。默认 discovery 周期来自：
+
+```bash
+smart-wallet.polymarket.discovery-fixed-delay-ms=3600000
+```
+
+如果不想等待两个定时周期，可以在部署后手工触发一次全链路恢复，它会顺带执行 `leaderboardRefresh` 和 `selectionRefresh`：
+
+```bash
+curl -X POST "http://49.51.250.174/strategy/api/smart-wallet/admin/recover-state?reason=test-wallet-pool-refresh"
+```
+
+建议固定按这个顺序复核：
+
+```bash
+curl http://49.51.250.174/strategy/api/smart-wallet/overview
+curl http://49.51.250.174/strategy/api/smart-wallet/watchlist/candidates
+curl http://49.51.250.174/strategy/api/smart-wallet/watchlist/executable
+curl "http://49.51.250.174/strategy/api/smart-wallet/profiles/screener?scope=all&sortBy=replicabilityScore&sortDirection=desc"
+curl http://49.51.250.174/strategy/api/smart-wallet/consensus-signals
+curl "http://49.51.250.174/strategy/api/smart-wallet/follow-tasks/executable?limit=20"
+curl "http://49.51.250.174/strategy/api/smart-wallet/orders?limit=20"
+```
+
+成功标准：
+
+- `candidateWatchlist >= 2`
+- `executableWatchlist >= 1`
+- 至少有 `1` 个地址不是 `FAST_EXIT_OR_SKIP`
+- `qualifiedWatchlistCount > 0`
+- 4 小时窗口内出现新的 `FOLLOWED` PAPER 任务，或至少出现 `consensusSignalCount > 0`
+
+如果两个周期后仍然全部是 `OBSERVE_ONLY / FAST_EXIT_OR_SKIP`，不要继续调 `MIN_ORDER`、`PRICE_RANGE`、`MARKET_TIMING`，先回到 discovery 扩源。
+
+## 10. 当前脚本职责
 
 - [`scripts/build-smart-wallet-release.sh`](../../scripts/build-smart-wallet-release.sh)
   本地构建上传包
@@ -238,9 +317,11 @@ sudo install -o root -g coinstrategy -m 640 /tmp/app-private.pem /etc/coinstrate
 - [`scripts/install-smart-wallet-linux-service.sh`](../../scripts/install-smart-wallet-linux-service.sh)
   服务器首次安装服务骨架
 - [`scripts/start-smart-wallet-backend.sh`](../../scripts/start-smart-wallet-backend.sh)
-  手动管理后端服务时使用的启动脚本
+  后端服务启动/停止/重启脚本
+- [`deploy/linux/bin/restart-smart-wallet-backend.sh`](bin/restart-smart-wallet-backend.sh)
+  Linux 手工兜底重启脚本，兼容解压包目录和安装目录，自动清理 `8081` 端口并追日志
 
-## 10. 精简建议
+## 11. 精简建议
 
 如果你当前阶段只跑后端接口和前端展示，可以继续精简：
 
@@ -252,6 +333,6 @@ sudo install -o root -g coinstrategy -m 640 /tmp/app-private.pem /etc/coinstrate
 
 - 一个 `app.jar`
 - 一个 `dist/`
-- 一个 `/etc/coinstrategy/smart-wallet.env`
+- 一个环境文件：`/etc/coinstrategy/smart-wallet.env` 或解压包里的 `deploy/linux/env/smart-wallet.env`
 
 这就是比较安全、可控的制品部署方式。

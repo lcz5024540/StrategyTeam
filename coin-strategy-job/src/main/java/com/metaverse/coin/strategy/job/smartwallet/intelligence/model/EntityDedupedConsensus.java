@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 对共识信号进行实体去重后的结果
@@ -25,6 +26,12 @@ public class EntityDedupedConsensus {
 
     /** 按实体维度计算的平均评分（实体评分 = 该实体所有钱包评分的最大值） */
     private BigDecimal entityAvgScore;
+    /** 实体评分映射（entityId -> 该实体最高钱包分） */
+    private Map<String, BigDecimal> entityMaxScoreMap;
+    /** 实体钱包映射（entityId -> 该实体下触发的钱包列表） */
+    private Map<String, List<String>> entityWalletsMap;
+    /** 实体解析结果映射（entityId -> 代表性解析结果） */
+    private Map<String, EntityResolutionResult> entityResolutionMap;
 
     /**
      * 是否存在可疑的多钱包膨胀行为：

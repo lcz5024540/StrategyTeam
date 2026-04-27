@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.Version;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -46,6 +47,10 @@ public class SmartWalletOrderEntity {
     private Date createdAt;
     private Date updatedAt;
 
+    /** 乐观锁版本号，防止 OrderPollingService 与 AccountingService 并发更新冲突 */
+    @Version
+    private Integer version;
+
     // ── 运行时关联对象，不映射数据库列 ──
     @TableField(exist = false)
     private SmartWalletMarketInfoEntity marketInfo;
@@ -57,4 +62,10 @@ public class SmartWalletOrderEntity {
     public String getTokenId()     { return marketInfo == null ? null : marketInfo.getTokenId(); }
     public Integer getIndexSet()   { return marketInfo == null ? null : marketInfo.getIndexSet(); }
     public Long getMarketEndAt()   { return marketInfo == null ? null : marketInfo.getMarketEndAt(); }
+    public String getSourceCategory() { return marketInfo == null ? null : marketInfo.getSourceCategory(); }
+    public String getNormalizedCategory() { return marketInfo == null ? null : marketInfo.getNormalizedCategory(); }
+    public String getMarketLifecycle() { return marketInfo == null ? null : marketInfo.getMarketLifecycle(); }
+    public Boolean getClosed() { return marketInfo == null ? null : marketInfo.getClosed(); }
+    public Boolean getAcceptingOrders() { return marketInfo == null ? null : marketInfo.getAcceptingOrders(); }
+    public String getResolvedOutcome() { return marketInfo == null ? null : marketInfo.getResolvedOutcome(); }
 }

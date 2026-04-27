@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -73,6 +74,40 @@ public class PolymarketMarketMetadataService {
         }
     }
 
+    public Map<String, PolymarketApiClient.MarketMetadata> refreshBatchByConditionIds(java.util.Collection<String> conditionIds,
+                                                                                       int chunkSize) {
+        if (conditionIds == null || conditionIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> normalizedIds = conditionIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (normalizedIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, PolymarketApiClient.MarketMetadata> fetched =
+                polymarketApiClient.fetchMarketMetadataBatch(normalizedIds, chunkSize);
+        Map<String, PolymarketApiClient.MarketMetadata> result = new LinkedHashMap<>();
+        for (String conditionId : normalizedIds) {
+            PolymarketApiClient.MarketMetadata primary = fetched.get(conditionId);
+            if (primary == null) {
+                continue;
+            }
+            PolymarketApiClient.MarketMetadata merged = mergeMetadata(
+                    conditionId,
+                    localMetadata.get(conditionId),
+                    cache.get(conditionId),
+                    withSource(primary, "GAMMA_MARKETS_BATCH"),
+                    null
+            );
+            cache.put(conditionId, merged);
+            result.put(conditionId, merged);
+        }
+        return result;
+    }
+
     public PolymarketApiClient.MarketMetadata findManualSettlementSignal(String conditionId,
                                                                          boolean refresh,
                                                                          String questionHint,
@@ -98,6 +133,45 @@ public class PolymarketMarketMetadataService {
             return null;
         }
         return withSource(candidates.get(0), "MANUAL_SEARCH_FINAL_PRICE");
+    }
+
+    public String resolveCanonicalConditionId(String marketIdentifier,
+                                              String questionHint,
+                                              List<String> outcomeHints) {
+        if (!StringUtils.hasText(marketIdentifier)) {
+            return marketIdentifier;
+        }
+        String normalizedIdentifier = marketIdentifier.trim();
+        try {
+            PolymarketApiClient.MarketMetadata direct = getByConditionId(normalizedIdentifier, false, questionHint);
+            if (direct != null
+                    && isAuthoritativeCacheEntry(direct)
+                    && StringUtils.hasText(direct.getConditionId())) {
+                return direct.getConditionId().trim();
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to question/outcome based normalization.
+        }
+        if (!StringUtils.hasText(questionHint)) {
+            return normalizedIdentifier;
+        }
+        String normalizedQuestion = normalizeQuestion(questionHint);
+        List<String> normalizedOutcomeHints = normalizeOutcomeHints(outcomeHints);
+        List<PolymarketApiClient.MarketMetadata> candidates = polymarketApiClient.searchMarkets(questionHint, 20, true).stream()
+                .filter(candidate -> candidate != null && StringUtils.hasText(candidate.getConditionId()))
+                .filter(candidate -> normalizedQuestion.equals(normalizeQuestion(candidate.getQuestion())))
+                .filter(candidate -> matchesOutcomeHints(normalizedOutcomeHints, candidate.getOutcomes()))
+                .toList();
+        List<PolymarketApiClient.MarketMetadata> identifierMatches = candidates.stream()
+                .filter(candidate -> matchesIdentifier(normalizedIdentifier, candidate))
+                .toList();
+        if (identifierMatches.size() == 1) {
+            return identifierMatches.get(0).getConditionId().trim();
+        }
+        if (candidates.size() == 1) {
+            return candidates.get(0).getConditionId().trim();
+        }
+        return normalizedIdentifier;
     }
 
     public String resolveOutcomeByTokenId(PolymarketApiClient.MarketMetadata metadata,
@@ -606,6 +680,15 @@ public class PolymarketMarketMetadataService {
             }
         }
         return new ArrayList<>(normalized);
+    }
+
+    private boolean matchesIdentifier(String normalizedIdentifier,
+                                      PolymarketApiClient.MarketMetadata candidate) {
+        if (!StringUtils.hasText(normalizedIdentifier) || candidate == null) {
+            return false;
+        }
+        return normalizedIdentifier.equalsIgnoreCase(candidate.getConditionId())
+                || normalizedIdentifier.equalsIgnoreCase(candidate.getMarketId());
     }
 
     private String firstText(String... candidates) {

@@ -13,7 +13,7 @@
 # 生成后：
 #   1. 将私钥文件路径配置到 APP_RSA_PRIVATE_KEY_PATH 环境变量
 #   2. 本地：放在 scripts/keys/（已在 .gitignore 中）
-#   3. 生产：上传到服务器后安装为 root:coinstrategy 640，确保服务用户可读
+#   3. 生产：上传到服务器后安装为 root:ubuntu 640，确保服务运行用户可读
 # ============================================================
 set -euo pipefail
 
@@ -55,7 +55,7 @@ echo "  export APP_RSA_PRIVATE_KEY_PATH=\"$PRIVATE_KEY\""
 echo ""
 echo "生产部署：将私钥上传到服务器："
 echo "  scp $PRIVATE_KEY user@server:/tmp/app-private.pem"
-echo "  ssh user@server 'sudo install -o root -g coinstrategy -m 640 /tmp/app-private.pem /opt/coinstrategy/app-private.pem'"
+echo "  ssh user@server 'sudo install -o root -g ubuntu -m 640 /tmp/app-private.pem /opt/coinstrategy/app-private.pem'"
 echo "  # 然后在 env 文件中设置："
 echo "  # export APP_RSA_PRIVATE_KEY_PATH=/opt/coinstrategy/app-private.pem"
 echo ""

@@ -176,10 +176,44 @@ public class WalletFeatureDailyService {
     @Scheduled(fixedDelayString = "${smart-wallet.polymarket.wallet-feature-daily-fixed-delay-ms:300000}")
     public void scheduledBuildRecentFeatures() {
         try {
-            buildRecentFeatures(30, 1, true);
+            buildRecentDiscoveryFeatures(200, 1, true);
         } catch (Exception ex) {
             log.warn("Scheduled wallet-feature-daily build failed: {}", ex.getMessage());
         }
+    }
+
+    public List<SmartWalletWalletFeatureDailyEntity> buildRecentDiscoveryFeatures(Integer walletLimit, Integer days, boolean missingOnly) {
+        int safeWalletLimit = walletLimit == null ? 200 : Math.max(1, Math.min(walletLimit, 500));
+        int safeDays = days == null ? 1 : Math.max(1, Math.min(days, 30));
+        Date since = new Date(System.currentTimeMillis() - 24L * 3600_000L);
+        List<SmartWalletProfileEntity> profiles = profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getSource, "POLYMARKET")
+                .isNotNull(SmartWalletProfileEntity::getLastDiscoveredAt)
+                .ge(SmartWalletProfileEntity::getLastDiscoveredAt, since)
+                .orderByDesc(SmartWalletProfileEntity::getLastDiscoveredAt)
+                .last("limit " + safeWalletLimit));
+        if (profiles.isEmpty()) {
+            return buildRecentFeatures(Math.min(safeWalletLimit, 30), safeDays, missingOnly);
+        }
+        List<SmartWalletWalletFeatureDailyEntity> result = new java.util.ArrayList<>();
+        for (SmartWalletProfileEntity profile : profiles) {
+            if (profile == null || !StringUtils.hasText(profile.getWalletAddress())) {
+                continue;
+            }
+            for (int offset = 0; offset < safeDays; offset++) {
+                LocalDate date = LocalDate.now().minusDays(offset);
+                if (missingOnly && existsFeature(profile.getWalletAddress(), date)) {
+                    continue;
+                }
+                try {
+                    result.add(buildFeature(profile.getWalletAddress(), date));
+                } catch (Exception ex) {
+                    log.debug("Skip discovered wallet feature build for wallet={} date={} because {}",
+                            profile.getWalletAddress(), date, ex.getMessage());
+                }
+            }
+        }
+        return result;
     }
 
     private boolean existsFeature(String walletAddress, LocalDate date) {

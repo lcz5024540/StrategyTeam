@@ -5,14 +5,18 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.Map;
 
 @Component
+@Slf4j
 @RequiredArgsConstructor
 public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGateway {
+
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
 
     private final ExecutionWalletContextLoader walletContextLoader;
     private final PolymarketOrderRequestFactory orderRequestFactory;
@@ -22,9 +26,21 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
 
     @Override
     public SmartWalletExecutionResult execute(SmartWalletSignal signal, ExecutionMode mode) {
+        String marketId = signal.getMarket() == null ? null : signal.getMarket().getMarketId();
+        String question = signal.getMarket() == null ? null : signal.getMarket().getQuestion();
+        String outcome = signal.getFollowOutcome();
+        log.info("{} action=执行Polymarket跟单订单 result=开始 signalId={} mode={} marketId={} outcome={} requestedStakeUsdc={}",
+                LOG_PREFIX, signal.getSignalId(), mode, marketId, outcome, signal.getRecommendedStakeUsdc());
         if (mode == ExecutionMode.LIVE) {
             ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
+            log.info("{} action=加载LIVE执行钱包 result=完成 signalId={} address={} funderAddress={} orderType={} minOrderUsdc={} maxOrderUsdc={}",
+                    LOG_PREFIX, signal.getSignalId(), wallet.getAddress(), wallet.getFunderAddress(), wallet.getOrderType(),
+                    wallet.getMinOrderUsdc(), wallet.getMaxOrderUsdc());
             PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepare(signal, wallet);
+            log.info("{} action=准备LIVE CLOB下单参数 result=完成 signalId={} marketId={} outcome={} tokenId={} side={} limitPrice={} size={} stakeUsdc={} tickSize={} negRisk={}",
+                    LOG_PREFIX, signal.getSignalId(), order.getMarketId(), order.getOutcome(), order.getTokenId(),
+                    order.getSide(), order.getLimitPrice(), order.getSize(), order.getStakeUsdc(), order.getTickSize(),
+                    order.isNegRisk());
             Map<String, Object> response = clobClientRouter.placeOrder(wallet, order);
             @SuppressWarnings("unchecked")
             Map<String, Object> orderResponse = response.get("response") instanceof Map<?, ?>
@@ -42,6 +58,10 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
             java.math.BigDecimal liveNotional = order.getStakeUsdc();
             java.math.BigDecimal liveFee = estimateFee(liveNotional, properties.getExecutionWallet().getEstimatedFeeRate());
             Integer liveIndexSet = resolveLiveIndexSet(order.getMarketId(), order.getTokenId(), order.getQuestion(), order.getOutcome());
+            log.info("{} action=提交LIVE CLOB下单 result={} signalId={} marketId={} outcome={} tokenId={} orderId={} rawStatus={} normalizedStatus={} notionalUsdc={} feeUsdc={} message={}",
+                    LOG_PREFIX, success ? "成功" : "失败", signal.getSignalId(), order.getMarketId(), order.getOutcome(),
+                    order.getTokenId(), orderId, rawStatus, normalizedStatus, liveNotional, liveFee,
+                    stringify(firstNonNull(response.get("message"), rawStatus)));
             return SmartWalletExecutionResult.builder()
                     .signalId(signal.getSignalId())
                     .mode(mode)
@@ -66,10 +86,10 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
         java.math.BigDecimal paperNotional = signal.getRecommendedStakeUsdc();
         java.math.BigDecimal paperPrice    = signal.getMarket() == null ? null : signal.getMarket().getPrice();
         java.math.BigDecimal paperFee = estimateFee(paperNotional, properties.getExecutionWallet().getEstimatedFeeRate());
-        String marketId = signal.getMarket() == null ? null : signal.getMarket().getMarketId();
-        String question = signal.getMarket() == null ? null : signal.getMarket().getQuestion();
-        String outcome = signal.getFollowOutcome();
         PaperTokenInfo paperTokenInfo = resolvePaperTokenInfo(marketId, question, outcome);
+        log.info("{} action=创建PAPER模拟跟单订单 result=成功 signalId={} marketId={} outcome={} tokenId={} indexSet={} price={} notionalUsdc={} feeUsdc={} externalOrderId={}",
+                LOG_PREFIX, signal.getSignalId(), marketId, outcome, paperTokenInfo.tokenId(), paperTokenInfo.indexSet(),
+                paperPrice, paperNotional, paperFee, "paper-" + signal.getSignalId());
         return SmartWalletExecutionResult.builder()
                 .signalId(signal.getSignalId())
                 .mode(ExecutionMode.PAPER)

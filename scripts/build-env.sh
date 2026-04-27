@@ -113,7 +113,9 @@ fi
 
 # 复制通用管理脚本
 cp "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
+cp "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
 chmod +x "$RELEASE_DIR/bin/start-smart-wallet-backend.sh"
+chmod +x "$RELEASE_DIR/bin/restart-smart-wallet-backend.sh"
 
 # 生成环境快捷脚本
 cat > "$RELEASE_DIR/bin/start-backend-${ENV}.sh" << SCRIPT_EOF
@@ -134,7 +136,7 @@ APP_HOME="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 
 # 环境配置
 export SPRING_PROFILES_ACTIVE="${ENV}"
-export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-${ENV}.env}"
+export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet.env}"
 export LOG_DIR="\${LOG_DIR:-/home/ubuntu/logs}"
 
 # 委托给通用管理脚本

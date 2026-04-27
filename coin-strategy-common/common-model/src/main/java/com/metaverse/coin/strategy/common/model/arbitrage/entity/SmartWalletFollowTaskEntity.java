@@ -49,4 +49,10 @@ public class SmartWalletFollowTaskEntity {
     public String getQuestion()    { return marketInfo == null ? null : marketInfo.getQuestion(); }
     public String getOutcome()     { return marketInfo == null ? null : marketInfo.getOutcome(); }
     public Long getMarketEndAt()   { return marketInfo == null ? null : marketInfo.getMarketEndAt(); }
+    public String getSourceCategory() { return marketInfo == null ? null : marketInfo.getSourceCategory(); }
+    public String getNormalizedCategory() { return marketInfo == null ? null : marketInfo.getNormalizedCategory(); }
+    public String getMarketLifecycle() { return marketInfo == null ? null : marketInfo.getMarketLifecycle(); }
+    public Boolean getClosed() { return marketInfo == null ? null : marketInfo.getClosed(); }
+    public Boolean getAcceptingOrders() { return marketInfo == null ? null : marketInfo.getAcceptingOrders(); }
+    public String getResolvedOutcome() { return marketInfo == null ? null : marketInfo.getResolvedOutcome(); }
 }

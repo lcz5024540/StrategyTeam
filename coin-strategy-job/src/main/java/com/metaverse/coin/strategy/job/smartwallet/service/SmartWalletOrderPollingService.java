@@ -59,8 +59,12 @@ public class SmartWalletOrderPollingService {
                         }
                         
                         order.setUpdatedAt(new Date());
-                        orderMapper.updateById(order);
-                        
+                        int affected = orderMapper.updateById(order);
+                        if (affected == 0) {
+                            log.warn("[OptimisticLock] pollPendingOrders: order {} version conflict, skipping", order.getId());
+                            continue;
+                        }
+
                         if ("MATCHED".equalsIgnoreCase(status) || "FILLED".equalsIgnoreCase(status) || "PARTIALLY_FILLED".equalsIgnoreCase(status)) {
                             java.math.BigDecimal filledSize = java.math.BigDecimal.ZERO;
                             java.math.BigDecimal avgPrice = order.getPrice(); // Fallback to limit price
@@ -82,7 +86,10 @@ public class SmartWalletOrderPollingService {
                 log.warn("Failed to poll order status for {}: {}", order.getExternalOrderId(), e.getMessage());
                 applyExponentialBackoff(order, now);
                 order.setUpdatedAt(new Date());
-                orderMapper.updateById(order);
+                int affected = orderMapper.updateById(order);
+                if (affected == 0) {
+                    log.warn("[OptimisticLock] pollPendingOrders error-path: order {} version conflict", order.getId());
+                }
             }
         }
     }

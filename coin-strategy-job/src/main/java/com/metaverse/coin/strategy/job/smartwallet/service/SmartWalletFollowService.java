@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
@@ -35,6 +36,7 @@ public class SmartWalletFollowService {
     private final SmartWalletLeaderboardStateService leaderboardStateService;
     private final PolymarketExecutionGateway executionGateway;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
 
     public SmartWalletFollowService(SmartWalletProperties properties,
                                     SmartWalletRegistryService walletRegistryService,
@@ -43,7 +45,8 @@ public class SmartWalletFollowService {
                                     SmartWalletScoringService scoringService,
                                     SmartWalletLeaderboardStateService leaderboardStateService,
                                     PolymarketExecutionGateway executionGateway,
-                                    ExecutionWalletContextLoader executionWalletContextLoader) {
+                                    ExecutionWalletContextLoader executionWalletContextLoader,
+                                    SmartWalletManualAllowlistService manualAllowlistService) {
         this.properties = properties;
         this.walletRegistryService = walletRegistryService;
         this.profileStoreService = profileStoreService;
@@ -52,6 +55,7 @@ public class SmartWalletFollowService {
         this.leaderboardStateService = leaderboardStateService;
         this.executionGateway = executionGateway;
         this.executionWalletContextLoader = executionWalletContextLoader;
+        this.manualAllowlistService = manualAllowlistService;
     }
 
     public SmartWalletScanResponse scan(BigDecimal bankrollUsdc) {
@@ -108,6 +112,24 @@ public class SmartWalletFollowService {
         for (SmartWalletProfileEntity entity : profileStoreService.listWatchEnabled()) {
             SmartWalletProfile runtimeWallet = toRuntimeWallet(entity);
             combined.put(normalizeAddress(runtimeWallet.getAddress()), runtimeWallet);
+        }
+        for (SmartWalletManualAllowlistEntity allowlist : manualAllowlistService.listActiveEntities()) {
+            if (!manualAllowlistService.isActive(allowlist)) {
+                continue;
+            }
+            combined.putIfAbsent(normalizeAddress(allowlist.getWalletAddress()), SmartWalletProfile.builder()
+                    .address(allowlist.getWalletAddress())
+                    .chain("polygon")
+                    .alias("manual-allowlist")
+                    .winRate(BigDecimal.ZERO)
+                    .realizedPnlUsdc(BigDecimal.ZERO)
+                    .totalTrades(0)
+                    .averageSizeUsdc(BigDecimal.ZERO)
+                    .averageRoiRate(BigDecimal.ZERO)
+                    .maxDrawdownRate(BigDecimal.ZERO)
+                    .preferredOutcome("YES")
+                    .tags(List.of())
+                    .build());
         }
         for (SmartWalletProfile wallet : walletRegistryService.list()) {
             combined.putIfAbsent(normalizeAddress(wallet.getAddress()), wallet);
@@ -238,9 +260,16 @@ public class SmartWalletFollowService {
                 .chain(entity.getChain())
                 .alias(entity.getAlias())
                 .winRate(entity.getWinRate())
+                .recentWinRate7d(entity.getRecentWinRate7d())
+                .recentWinRate30d(entity.getRecentWinRate30d())
                 .realizedPnlUsdc(entity.getRealizedPnlUsdc())
                 .totalTrades(entity.getTotalTrades())
+                .recentTradeCount7d(entity.getRecentTradeCount7d())
+                .recentTradeCount30d(entity.getRecentTradeCount30d())
+                .observeCooldownUntil(entity.getObserveCooldownUntil())
+                .observeCooldownReason(entity.getObserveCooldownReason())
                 .averageSizeUsdc(entity.getAverageSizeUsdc())
+                .averageRoiRate(entity.getAverageRoiRate())
                 .maxDrawdownRate(entity.getMaxDrawdownRate())
                 .preferredOutcome("YES")
                 .tags(List.of())

@@ -51,10 +51,10 @@ HHI = Σ(每个持仓者市场份额²) × 10000
 #### P0-1：PolymarketApiClient 新增 `fetchMarketTopPositions()`
 **文件**：`PolymarketApiClient.java`
 
-调用 Polymarket Data API `/positions?market={conditionId}` 获取市场所有持仓人排名。
+调用 Polymarket Data API `/v1/market-positions?market={conditionId}` 获取市场持仓分布。
 
 ```
-GET {dataApiBaseUrl}/positions?market={conditionId}&sizeThreshold=1&limit=50
+GET {dataApiBaseUrl}/v1/market-positions?market={conditionId}&status=OPEN&sortBy=TOKENS&sortDirection=DESC&limit=50
 ```
 
 返回模型 `MarketPositionEntry`：
@@ -69,7 +69,7 @@ public static class MarketPositionEntry {
 }
 ```
 
-**注意**：不传 `user` 参数时，接口返回整个市场所有持仓，按 size 降序。
+**注意**：Polymarket 当前接口里 `/positions` 要求必须传 `user`；市场维度持仓分布需改用 `/v1/market-positions`。
 
 ---
 

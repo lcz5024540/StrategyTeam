@@ -50,10 +50,10 @@ export function HomePage() {
     queryFn: () => tasksApi.getOpportunities(8, 3),
   })
 
-  // 获取日报
-  const { data: dailyReports = [] } = useQuery({
-    queryKey: ['dailyReports', days, mode],
-    queryFn: () => reportsApi.getDailyReports(Math.max(days, 7), mode),
+  // 获取收益时间线
+  const { data: pnlTimeline = [], isLoading: timelineLoading } = useQuery({
+    queryKey: ['pnlTimeline', days, 24, mode],
+    queryFn: () => reportsApi.getPnlTimeline(Math.max(days, 1), 24, mode),
   })
 
   // 获取归因
@@ -69,10 +69,10 @@ export function HomePage() {
 
   const { data: followAddressDailyReports = [] } = useQuery({
     queryKey: ['followAddressDailyReports', mode],
-    queryFn: () => reportsApi.getFollowAddressDailyReports(20, mode),
+    queryFn: () => reportsApi.getFollowAddressDailyReports(TABLE_FETCH_LIMIT, mode),
   })
 
-  if (detailLoading) {
+  if (detailLoading || timelineLoading) {
     return <div className="loading">加载中...</div>
   }
 
@@ -82,7 +82,7 @@ export function HomePage() {
     detail.totalTrades === 0 &&
     positions.length === 0 &&
     settlements.length === 0 &&
-    dailyReports.length === 0
+    pnlTimeline.length === 0
 
   return (
     <>
@@ -103,14 +103,12 @@ export function HomePage() {
         <section className="panel">
           <div className="section-head">
             <h2>可执行任务</h2>
-            <p>通过风控的待执行任务</p>
           </div>
           <TasksTable tasks={executableTasks} type="executable" />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>机会看板</h2>
-            <p>最接近可执行但仍被拦住的任务</p>
           </div>
           <TasksTable tasks={opportunityTasks} type="opportunity" />
         </section>
@@ -120,9 +118,8 @@ export function HomePage() {
       <section className="panel">
         <div className="section-head">
           <h2>收益时间线</h2>
-          <p>按日查看累计收益变化</p>
         </div>
-        <TimelineChart data={dailyReports} />
+        <TimelineChart data={pnlTimeline} bucketHours={24} />
       </section>
 
       {/* 归因分析 */}
@@ -130,14 +127,12 @@ export function HomePage() {
         <section className="panel">
           <div className="section-head">
             <h2>钱包归因</h2>
-            <p>按执行钱包维度的收益归因</p>
           </div>
           <AttributionBars data={walletAttribution} type="wallet" />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>市场归因</h2>
-            <p>按市场维度的收益归因</p>
           </div>
           <AttributionBars data={marketAttribution} type="market" />
         </section>
@@ -145,8 +140,7 @@ export function HomePage() {
 
       <section className="panel">
         <div className="section-head">
-          <h2>今日跟单地址分析</h2>
-          <p>按源地址查看胜负笔数、净利润、手续费和在途风险敞口</p>
+          <h2>地址分析</h2>
         </div>
         <FollowAddressDailyTable data={followAddressDailyReports} />
       </section>
@@ -156,14 +150,12 @@ export function HomePage() {
         <section className="panel">
           <div className="section-head">
             <h2>当前持仓</h2>
-            <p>展示当前 open positions</p>
           </div>
           <PositionsTable positions={positions} loading={positionsLoading} />
         </section>
         <section className="panel">
           <div className="section-head">
-            <h2>待结算处理</h2>
-            <p>已到结算窗口或待领取的仓位</p>
+            <h2>待结算</h2>
           </div>
           <SettlementsTable positions={settlements} />
         </section>
@@ -173,7 +165,6 @@ export function HomePage() {
       <section className="panel">
         <div className="section-head">
           <h2>交易历史</h2>
-          <p>最近的订单记录</p>
         </div>
         <OrdersTable mode={mode} />
       </section>

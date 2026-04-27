@@ -12,7 +12,13 @@ import java.util.List;
 public class SignalRiskDecision {
     private boolean accepted;
     private boolean overrideApplied;
+    private boolean manualAllowlistApplied;
+    private String manualAllowlistReason;
+    private BigDecimal stakeMultiplierApplied;
     private BigDecimal recommendedStakeUsdc;
+    private String marketType;
+    private String entryLane;
+    private String exitIntent;
     private BigDecimal estimatedNetProfitabilityUsdc;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
@@ -25,8 +31,18 @@ public class SignalRiskDecision {
     /** 实体去重后的参与实体数（真实共识强度，风控门控使用此字段） */
     private Integer consensusEntities;
     private BigDecimal consensusScore;
+    private BigDecimal qualityWeightedConsensusScore;
+    private BigDecimal topEntityWeightShare;
+    private BigDecimal leaderFollowerScore;
+    private BigDecimal entityIndependenceScore;
+    private BigDecimal recentConsistencyScore;
     /** 是否检测到同一实体多钱包触发同一信号（告警标志） */
     private boolean hasSuspiciousMultiWallet;
+    /** true = 追加加仓信号（已有仓位 + 高质量钱包），非新开仓 */
+    private boolean scaleUpSignal;
+    /** 本次应追加的金额（仅当 scaleUpSignal=true 时有意义） */
+    private BigDecimal scaleUpAddOnStake;
+    private String policyTag;
     private String strategyRouteMode;
     @Builder.Default
     private List<String> enabledStrategies = new ArrayList<>();

@@ -108,8 +108,17 @@ public class MarketConcentrationMonitorJob {
         String baselineKey = position.getMarketId() + ":" + (position.getOutcome() != null ? position.getOutcome() : "ALL");
         boolean alerted = false;
 
-        // Gate 1：当前已进入高度集中状态
-        if (snap.isHighlyConcentrated()) {
+        // Gate 1：当前已进入极端/高度集中状态
+        if (snap.isExtremelyConcentrated()) {
+            log.warn("[ConcentrationMonitor] EXTREME ALERT: positionId={} market={} outcome={} is now EXTREMELY CONCENTRATED. " +
+                            "CR1={} CR3={} CR5={} HHI={} holders={}. Review exit urgency immediately.",
+                    position.getId(), position.getMarketId(), position.getOutcome(),
+                    snap.top1Pct().setScale(3, RoundingMode.HALF_UP),
+                    snap.top3Pct().setScale(3, RoundingMode.HALF_UP),
+                    snap.top5Pct().setScale(3, RoundingMode.HALF_UP),
+                    snap.hhi(), snap.observedHolders());
+            alerted = true;
+        } else if (snap.isHighlyConcentrated()) {
             log.warn("[ConcentrationMonitor] ALERT: positionId={} market={} outcome={} is now HIGHLY CONCENTRATED. " +
                             "CR1={} CR3={} HHI={} holders={}. Consider reviewing this position.",
                     position.getId(), position.getMarketId(), position.getOutcome(),

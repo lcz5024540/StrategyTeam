@@ -22,7 +22,39 @@ function pointTime(item: TimelinePoint | DailyReport) {
 }
 
 function lossAmount(item: TimelinePoint | DailyReport) {
-  return 'lossPnlUsdc' in item ? item.lossPnlUsdc || 0 : Math.min(item.realizedPnlUsdc || 0, 0)
+  if ('bucketAt' in item) {
+    return item.lossPnlUsdc || 0
+  }
+  return item.lossPnlUsdc ?? Math.min(item.realizedPnlUsdc || 0, 0)
+}
+
+function hasChartActivity(item: TimelinePoint | DailyReport) {
+  if ('bucketAt' in item) {
+    return [
+      item.profitPnlUsdc,
+      item.lossPnlUsdc,
+      item.realizedPnlUsdc,
+      item.feeUsdc,
+      item.netPnlUsdc,
+      item.cumulativeLossPnlUsdc,
+      item.cumulativeRealizedPnlUsdc,
+      item.cumulativeFeeUsdc,
+      item.cumulativeNetPnlUsdc,
+    ].some((value) => Number(value || 0) !== 0)
+  }
+  return [
+    item.totalVolumeUsdc,
+    item.feeUsdc,
+    item.profitPnlUsdc,
+    item.lossPnlUsdc,
+    item.realizedPnlUsdc,
+    item.unrealizedPnlUsdc,
+    item.netPnlUsdc,
+    item.openPositions,
+    item.closedPositions,
+    item.winningPositions,
+    item.losingPositions,
+  ].some((value) => Number(value || 0) !== 0)
 }
 
 export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
@@ -31,12 +63,18 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
   }
 
   const sorted = [...data].sort((a, b) => new Date(pointTime(a)).getTime() - new Date(pointTime(b)).getTime())
-  const dates = sorted.map((item) => formatBucketLabel(pointTime(item), bucketHours))
+  const firstActiveIndex = sorted.findIndex(hasChartActivity)
+  const visible = firstActiveIndex >= 0 ? sorted.slice(firstActiveIndex) : sorted
+  if (visible.length === 0) {
+    return <div className="empty-state">暂无收益时间线数据</div>
+  }
+
+  const dates = visible.map((item) => formatBucketLabel(pointTime(item), bucketHours))
   const cumulativeNet: number[] = []
   const cumulativeLoss: number[] = []
   let runningNet = 0
   let runningLoss = 0
-  sorted.forEach((item) => {
+  visible.forEach((item) => {
     if ('cumulativeNetPnlUsdc' in item) {
       cumulativeNet.push(Number((item.cumulativeNetPnlUsdc || 0).toFixed(2)))
       cumulativeLoss.push(Number((item.cumulativeLossPnlUsdc || 0).toFixed(2)))
@@ -47,7 +85,7 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
     cumulativeNet.push(Number(runningNet.toFixed(2)))
     cumulativeLoss.push(Number(runningLoss.toFixed(2)))
   })
-  const sliderStart = sorted.length > 45 ? Math.max(0, 100 - (45 / sorted.length) * 100) : 0
+  const sliderStart = visible.length > 45 ? Math.max(0, 100 - (45 / visible.length) * 100) : 0
 
   const option: EChartsOption = {
     backgroundColor: 'transparent',

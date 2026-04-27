@@ -1,0 +1,43 @@
+-- 用途：
+-- 1. 显式创建 smart_wallet_behavior_profile 表
+-- 2. 与当前代码中的 SmartWalletBehaviorProfileEntity 保持一致
+
+CREATE TABLE IF NOT EXISTS `smart_wallet_behavior_profile` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '监控钱包地址',
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+    `alias` VARCHAR(255) DEFAULT NULL COMMENT '钱包别名',
+    `archetype` VARCHAR(64) DEFAULT NULL COMMENT '交易风格分型',
+    `follow_lane` VARCHAR(64) DEFAULT NULL COMMENT '建议跟随 lane',
+    `high_frequency_trading_address` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否高频交易地址',
+    `trades_7d` INT NOT NULL DEFAULT 0 COMMENT '近7天交易数',
+    `trades_30d` INT NOT NULL DEFAULT 0 COMMENT '近30天交易数',
+    `median_inter_trade_minutes` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '交易间隔中位数(分钟)',
+    `closed_position_sample_size` INT NOT NULL DEFAULT 0 COMMENT '已关闭仓位样本数',
+    `order_win_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '订单胜率',
+    `average_order_roi_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '平均订单收益率',
+    `median_order_roi_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中位订单收益率',
+    `total_realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '总实现收益USDC',
+    `settlement_completion_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '持有到结算比例',
+    `early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前退出比例',
+    `profit_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '盈利单提前退出比例',
+    `loss_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '亏损单提前退出比例',
+    `early_settlement_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前结算占比',
+    `win_source_type` VARCHAR(64) DEFAULT NULL COMMENT '胜率来源类型',
+    `latency_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '短周期 alpha 比例',
+    `swing_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中周期 alpha 比例',
+    `settlement_win_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '等待结算胜率',
+    `median_hold_minutes` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持仓时长中位数(分钟)',
+    `stability_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '稳定性分数',
+    `quality_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '地址质量分数',
+    `replicability_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '可复制分数',
+    `recommended_exit_lane` VARCHAR(64) DEFAULT NULL COMMENT '推荐退出 lane',
+    `summary` VARCHAR(1024) DEFAULT NULL COMMENT '画像摘要',
+    `computed_at` DATETIME NOT NULL COMMENT '画像计算时间',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_sw_behavior_wallet_source` (`wallet_address`, `source`),
+    KEY `idx_sw_behavior_lane` (`recommended_exit_lane`, `updated_at`),
+    KEY `idx_sw_behavior_quality` (`quality_score`, `replicability_score`, `updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 行为画像快照';

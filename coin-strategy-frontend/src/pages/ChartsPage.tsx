@@ -9,6 +9,7 @@ import { OutcomeTrendChart } from '@/components/charts/OutcomeTrendChart'
 import { AttributionBars } from '@/components/charts/AttributionBars'
 import { OrdersTable } from '@/components/tables/OrdersTable'
 import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
+import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
 const BUCKET_OPTIONS = [
   { hours: 8, label: '8 小时' },
@@ -19,10 +20,6 @@ const BUCKET_OPTIONS = [
 
 function normalizeBucketHours(value: number) {
   return BUCKET_OPTIONS.some((item) => item.hours === value) ? value : 24
-}
-
-function bucketLabel(bucketHours: number) {
-  return BUCKET_OPTIONS.find((item) => item.hours === bucketHours)?.label || '1 天'
 }
 
 export function ChartsPage() {
@@ -69,7 +66,7 @@ export function ChartsPage() {
 
   const { data: followAddressDailyReports = [] } = useQuery({
     queryKey: ['followAddressDailyReports', mode],
-    queryFn: () => reportsApi.getFollowAddressDailyReports(20, mode),
+    queryFn: () => reportsApi.getFollowAddressDailyReports(TABLE_FETCH_LIMIT, mode),
   })
 
   const { data: conflicts = [] } = useQuery({
@@ -104,8 +101,7 @@ export function ChartsPage() {
       <section className="panel">
         <div className="section-head section-head-row">
           <div>
-            <h2>累计收益时间线</h2>
-            <p>{bucketLabel(bucketHours)}一个点，绿色为累计净收益，红色为累计亏损额</p>
+            <h2>收益时间线</h2>
           </div>
           <div className="chart-controls" aria-label="收益图时间粒度">
             <button
@@ -148,14 +144,12 @@ export function ChartsPage() {
         <section className="panel">
           <div className="section-head">
             <h2>区间收益</h2>
-            <p>{bucketLabel(bucketHours)}三柱：收益 / 亏损 / 净收益</p>
           </div>
           <DailyPnlBars data={pnlTimeline} bucketHours={bucketHours} />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>胜率趋势</h2>
-            <p>滚动胜率与亏损率变化</p>
           </div>
           <WinRateTrend data={dailyReports} />
         </section>
@@ -163,8 +157,7 @@ export function ChartsPage() {
 
       <section className="panel">
         <div className="section-head">
-          <h2>胜负订单趋势</h2>
-          <p>胜率、盈利订单数与亏损订单数联动变化</p>
+          <h2>胜负趋势</h2>
         </div>
         <OutcomeTrendChart data={dailyReports} />
       </section>
@@ -174,14 +167,12 @@ export function ChartsPage() {
         <section className="panel">
           <div className="section-head">
             <h2>钱包归因</h2>
-            <p>按执行钱包维度的收益归因</p>
           </div>
           <AttributionBars data={walletAttribution} type="wallet" />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>市场归因</h2>
-            <p>按市场维度的收益归因</p>
           </div>
           <AttributionBars data={marketAttribution} type="market" />
         </section>
@@ -189,8 +180,7 @@ export function ChartsPage() {
 
       <section className="panel">
         <div className="section-head">
-          <h2>今日跟单地址分析</h2>
-          <p>按跟单源地址拆解胜率结构、净盈亏与未平仓暴露</p>
+          <h2>地址分析</h2>
         </div>
         <FollowAddressDailyTable data={followAddressDailyReports} />
       </section>
@@ -199,7 +189,6 @@ export function ChartsPage() {
       <section className="panel">
         <div className="section-head">
           <h2>冲突市场</h2>
-          <p>同一市场持有多个 outcome 的冲突</p>
         </div>
         <div className="table-wrap">
           <table>
@@ -240,7 +229,6 @@ export function ChartsPage() {
       <section className="panel">
         <div className="section-head">
           <h2>交易历史</h2>
-          <p>最近的订单记录，便于对照图表回看策略行为</p>
         </div>
         <OrdersTable mode={mode} />
       </section>

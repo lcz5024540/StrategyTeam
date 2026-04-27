@@ -21,6 +21,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusVie
 import com.metaverse.coin.strategy.job.smartwallet.model.LocalSettlementConfirmRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
+import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMockWsEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
@@ -34,7 +35,21 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportu
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairSummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCandidateView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
+import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
@@ -63,6 +78,9 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryVi
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRunView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimSummary;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationSummaryResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
@@ -70,6 +88,12 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSum
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderAnalysisView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderStatsView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
@@ -82,6 +106,9 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowServ
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketRepairService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletManualAllowlistService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
@@ -91,6 +118,13 @@ import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionV
 import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletArchetypeClassifierService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletBehaviorProfileService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletOrderAnalysisService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletProfileStoreService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletReplayBacktestService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletOrderStatsService;
+import com.metaverse.coin.strategy.job.smartwallet.service.WalletProfileAnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import io.swagger.v3.oas.annotations.Operation;
@@ -107,11 +141,14 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -140,6 +177,7 @@ public class SmartWalletController {
     private final SmartWalletFollowTaskService followTaskService;
     private final SmartWalletClaimService claimService;
     private final SmartWalletLiveValidationService liveValidationService;
+    private final SmartWalletMarketRepairService smartWalletMarketRepairService;
     private final SmartWalletSettlementSyncService settlementSyncService;
     private final SmartWalletDataResetService dataResetService;
     private final SmartWalletRecoveryService recoveryService;
@@ -153,14 +191,27 @@ public class SmartWalletController {
     private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
     private final MarketConcentrationService marketConcentrationService;
     private final FollowTradeAttributionService followTradeAttributionService;
+    private final WalletArchetypeClassifierService walletArchetypeClassifierService;
+    private final WalletBehaviorProfileService walletBehaviorProfileService;
+    private final SmartWalletOrderAnalysisService smartWalletOrderAnalysisService;
+    private final WalletOrderStatsService walletOrderStatsService;
+    private final SmartWalletProfileStoreService smartWalletProfileStoreService;
+    private final WalletProfileAnalysisService walletProfileAnalysisService;
+    private final SmartWalletReplayBacktestService smartWalletReplayBacktestService;
+    private final SmartWalletMarketMonitoringService smartWalletMarketMonitoringService;
+    private final SmartWalletManualAllowlistService smartWalletManualAllowlistService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
     public Map<String, Object> health() {
+        int candidateWatchlist = polymarketMonitorService.listQualifiedCandidates().size();
+        int executableWatchlist = polymarketMonitorService.listExecutableWatchlist().size();
         return Map.of(
                 "service", "smart-wallet",
                 "profiles", polymarketMonitorService.listProfiles().size(),
-                "watchlist", polymarketMonitorService.listWatchlist().size(),
+                "candidateWatchlist", candidateWatchlist,
+                "executableWatchlist", executableWatchlist,
+                "watchlist", executableWatchlist,
                 "wallets", followService.listWalletsForScan().size(),
                 "markets", opportunityService.list().size(),
                 "status", "UP"
@@ -214,10 +265,465 @@ public class SmartWalletController {
         return polymarketMonitorService.listProfiles();
     }
 
-    @Operation(summary = "观察名单", description = "查看当前被筛选进入 watchlist 的聪明钱包。")
+    @Operation(summary = "地址画像筛选器", description = "按地址质量、可复制性、胜率来源和退出风格筛选 smart-wallet 地址，并支持排序、过滤和游标分页。")
+    @GetMapping("/profiles/screener")
+    public CursorPageView<WalletScreenerView> profileScreener(
+            @RequestParam(defaultValue = "candidates") String scope,
+            @RequestParam(defaultValue = "20") Integer limit,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "replicabilityScore") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDirection,
+            @RequestParam(required = false) String screenerTier,
+            @RequestParam(required = false) Boolean highQualityAddress,
+            @RequestParam(required = false) Boolean highFrequencyTradingAddress,
+            @RequestParam(required = false) String winSourceType,
+            @RequestParam(required = false) String recommendedExitLane,
+            @RequestParam(required = false) BigDecimal minQualityScore,
+            @RequestParam(required = false) BigDecimal minReplicabilityScore) {
+        return walletProfileAnalysisService.screen(
+                resolveWatchlistScope(scope),
+                limit,
+                cursor,
+                sortBy,
+                sortDirection,
+                screenerTier,
+                highQualityAddress,
+                highFrequencyTradingAddress,
+                winSourceType,
+                recommendedExitLane,
+                minQualityScore,
+                minReplicabilityScore
+        );
+    }
+
+    @Operation(summary = "地址单笔分析", description = "查看单地址逐单 ROI、持有时长，以及是提前退出还是等到结算。")
+    @GetMapping("/profiles/{walletAddress}/order-analysis")
+    public CursorPageView<WalletOrderAnalysisView> walletOrderAnalysis(@PathVariable String walletAddress,
+                                                                       @RequestParam(defaultValue = "20") Integer limit,
+                                                                       @RequestParam(required = false) String cursor,
+                                                                       @RequestParam(required = false) String exitStyle,
+                                                                       @RequestParam(required = false) Boolean isWin,
+                                                                       @RequestParam(defaultValue = "false") boolean refresh) {
+        List<WalletOrderAnalysisView> rows = smartWalletOrderAnalysisService.toViews(
+                smartWalletOrderAnalysisService.listByWalletAddress(walletAddress, refresh, exitStyle, isWin)
+        );
+        int safeLimit = limit == null ? 20 : Math.max(1, Math.min(limit, 200));
+        int start = parseCursor(cursor);
+        if (start >= rows.size()) {
+            return CursorPageView.empty();
+        }
+        int end = Math.min(rows.size(), start + safeLimit);
+        String nextCursor = end < rows.size() ? String.valueOf(end) : null;
+        return CursorPageView.of(rows.subList(start, end), nextCursor);
+    }
+
+    @Operation(summary = "地址窗口统计", description = "统一输出 closed + active 的地址统计口径，剔除待结算订单。")
+    @GetMapping("/profiles/{walletAddress}/order-stats")
+    public WalletOrderStatsView walletOrderStats(@PathVariable String walletAddress,
+                                                 @RequestParam(defaultValue = "30d") String window,
+                                                 @RequestParam(defaultValue = "false") boolean refresh) {
+        return walletOrderStatsService.summarize(
+                walletAddress,
+                smartWalletOrderAnalysisService.listFreshOrRefresh(walletAddress, refresh),
+                window
+        );
+    }
+
+    @Operation(summary = "地址胜率诊断", description = "输出这个地址为什么赢、适不适合跟、以及推荐的退出方式。")
+    @GetMapping("/profiles/{walletAddress}/diagnosis")
+    public WalletDiagnosisView walletDiagnosis(@PathVariable String walletAddress,
+                                               @RequestParam(defaultValue = "false") boolean refreshOrderAnalysis) {
+        return walletProfileAnalysisService.diagnose(walletAddress, refreshOrderAnalysis);
+    }
+
+    @Operation(summary = "人工覆盖列表", description = "查看当前被人工强制只观察、强制可执行或手工指定退出风格的地址。")
+    @GetMapping("/profiles/overrides")
+    public List<SmartWalletProfileOverrideView> profileOverrides(@RequestParam(defaultValue = "100") Integer limit) {
+        return smartWalletProfileStoreService.listManualOverrides(limit);
+    }
+
+    @Operation(summary = "人工覆盖摘要", description = "聚合当前人工覆盖的地址数量、类型分布和最近 24 小时变更情况。")
+    @GetMapping("/profiles/overrides/summary")
+    public SmartWalletProfileOverrideSummaryView profileOverridesSummary() {
+        return smartWalletProfileStoreService.summarizeManualOverrides();
+    }
+
+    @Operation(summary = "导出人工覆盖 CSV", description = "导出当前所有人工覆盖项，方便运营排查和复盘。")
+    @GetMapping(value = "/profiles/overrides/export", produces = "text/csv")
+    public ResponseEntity<String> exportProfileOverrides(@RequestParam(defaultValue = "500") Integer limit) {
+        List<SmartWalletProfileOverrideView> rows = smartWalletProfileStoreService.listManualOverrides(limit);
+        String csv = csv(
+                List.of("walletAddress", "alias", "qualified", "watchEnabled", "manualWatchEnabled",
+                        "manualRecommendedExitLane", "manualOverrideNote", "manualOverrideUpdatedAt"),
+                rows.stream().map(row -> java.util.Arrays.asList(
+                        row.walletAddress(), row.alias(), row.qualified(), row.watchEnabled(),
+                        row.manualWatchEnabled(), row.manualRecommendedExitLane(),
+                        row.manualOverrideNote(), row.manualOverrideUpdatedAt()
+                )).toList()
+        );
+        return csvResponse(csv, "smart_wallet_profile_overrides", "manual");
+    }
+
+    @Operation(summary = "更新地址人工覆盖", description = "可人工强制某地址仅观察/恢复可执行，或手工指定 recommendedExitLane。")
+    @PostMapping("/profiles/{walletAddress}/override")
+    public SmartWalletProfileEntity updateProfileOverride(@PathVariable String walletAddress,
+                                                          @RequestBody SmartWalletProfileOverrideRequest request) {
+        return smartWalletProfileStoreService.updateManualOverride(walletAddress, request);
+    }
+
+    @Operation(summary = "批量更新地址人工覆盖", description = "按钱包地址列表批量设置 observe only、恢复执行、指定或清除 recommendedExitLane。")
+    @PostMapping("/profiles/overrides/batch")
+    public SmartWalletProfileBatchOverrideResultView batchUpdateProfileOverrides(@RequestBody SmartWalletProfileBatchOverrideRequest request) {
+        return smartWalletProfileStoreService.batchUpdateManualOverrides(request);
+    }
+
+    @Operation(summary = "手工地址白名单列表", description = "查看当前用于绕过地址画像准入的手工 allowlist。交易级和执行级风控仍会生效。")
+    @GetMapping("/allowlist")
+    public List<SmartWalletManualAllowlistView> manualAllowlist(@RequestParam(defaultValue = "100") Integer limit) {
+        return smartWalletManualAllowlistService.list(limit);
+    }
+
+    @Operation(summary = "新增或更新手工地址白名单", description = "创建或更新 allowlist 项。默认 PAPER、仓位乘数 0.50、每日 LIVE 5 单、每轮 LIVE 2 单、30 天过期。")
+    @PostMapping("/allowlist")
+    public SmartWalletManualAllowlistView upsertManualAllowlist(@RequestBody SmartWalletManualAllowlistRequest request) {
+        return smartWalletManualAllowlistService.upsert(request);
+    }
+
+    @Operation(summary = "按地址更新手工地址白名单", description = "按路径地址创建或更新 allowlist 项。")
+    @PostMapping("/allowlist/{walletAddress}")
+    public SmartWalletManualAllowlistView upsertManualAllowlistByWallet(@PathVariable String walletAddress,
+                                                                        @RequestBody(required = false) SmartWalletManualAllowlistRequest request) {
+        return smartWalletManualAllowlistService.upsert(walletAddress, request);
+    }
+
+    @Operation(summary = "禁用手工地址白名单", description = "将指定地址 allowlist 项置为 DISABLED。")
+    @PostMapping("/allowlist/{walletAddress}/disable")
+    public SmartWalletManualAllowlistView disableManualAllowlist(@PathVariable String walletAddress) {
+        return smartWalletManualAllowlistService.disable(walletAddress);
+    }
+
+    @Operation(summary = "手工地址白名单摘要", description = "聚合 allowlist 总数、活跃数、过期数、禁用数和执行模式分布。")
+    @GetMapping("/allowlist/summary")
+    public SmartWalletManualAllowlistSummaryView manualAllowlistSummary() {
+        return smartWalletManualAllowlistService.summary();
+    }
+
+    @Operation(summary = "清理过期手工地址白名单", description = "将已过期且仍为 ACTIVE 的 allowlist 项置为 DISABLED。")
+    @PostMapping("/allowlist/cleanup-expired")
+    public Map<String, Object> cleanupExpiredManualAllowlist() {
+        return Map.of("updated", smartWalletManualAllowlistService.cleanupExpired());
+    }
+
+    @Operation(summary = "人工覆盖筛选候选", description = "按 scope、recommendedExitLane、watchEnabled、manualWatchEnabled、updatedWithinHours 等条件筛出一批可执行运营动作的地址。")
+    @GetMapping("/profiles/overrides/candidates")
+    public List<SmartWalletProfileOpsCandidateView> profileOverrideCandidates(
+            @RequestParam(defaultValue = "candidates") String scope,
+            @RequestParam(defaultValue = "100") Integer limit,
+            @RequestParam(required = false) String recommendedExitLane,
+            @RequestParam(required = false) Boolean watchEnabled,
+            @RequestParam(required = false) Boolean qualified,
+            @RequestParam(required = false) Boolean manualWatchEnabled,
+            @RequestParam(required = false, defaultValue = "false") boolean manualOnly,
+            @RequestParam(required = false) Integer updatedWithinHours,
+            @RequestParam(required = false) Boolean highFrequencyTradingAddress,
+            @RequestParam(required = false) BigDecimal minReplicabilityScore,
+            @RequestParam(required = false) BigDecimal maxReplicabilityScore) {
+        int safeLimit = Math.max(1, Math.min(limit, 300));
+        Long updatedCutoffMillis = updatedWithinHours == null
+                ? null
+                : System.currentTimeMillis() - java.util.concurrent.TimeUnit.HOURS.toMillis(Math.max(updatedWithinHours, 0));
+
+        return resolveWatchlistScope(scope).stream()
+                .map(profile -> toOpsCandidateView(profile, walletBehaviorProfileService.buildProfile(profile)))
+                .filter(candidate -> matchesOverrideCandidateFilters(
+                        candidate,
+                        recommendedExitLane,
+                        watchEnabled,
+                        qualified,
+                        manualWatchEnabled,
+                        manualOnly,
+                        updatedCutoffMillis,
+                        highFrequencyTradingAddress,
+                        minReplicabilityScore,
+                        maxReplicabilityScore
+                ))
+                .sorted(Comparator
+                        .comparing(SmartWalletProfileOpsCandidateView::replicabilityScore,
+                                Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(SmartWalletProfileOpsCandidateView::walletAddress, Comparator.nullsLast(String::compareTo)))
+                .limit(safeLimit)
+                .toList();
+    }
+
+    @Operation(summary = "可执行观察名单", description = "查看当前仍允许进入执行链路的 smart wallet 地址。")
     @GetMapping("/watchlist")
     public List<SmartWalletProfileEntity> watchlist() {
-        return polymarketMonitorService.listWatchlist();
+        return polymarketMonitorService.listExecutableWatchlist();
+    }
+
+    @Operation(summary = "候选观察名单", description = "查看通过外部画像筛选但未必仍允许执行的 smart wallet 候选地址。")
+    @GetMapping("/watchlist/candidates")
+    public List<SmartWalletProfileEntity> candidateWatchlist() {
+        return polymarketMonitorService.listQualifiedCandidates();
+    }
+
+    @Operation(summary = "可执行观察名单", description = "查看当前仍允许进入执行链路的 smart wallet 地址。")
+    @GetMapping("/watchlist/executable")
+    public List<SmartWalletProfileEntity> executableWatchlist() {
+        return polymarketMonitorService.listExecutableWatchlist();
+    }
+
+    @Operation(summary = "保温观察名单", description = "查看当前退出执行链路但仍处于 WARM 保温监控层的 smart wallet 地址。")
+    @GetMapping("/watchlist/warm")
+    public List<SmartWalletProfileEntity> warmWatchlist() {
+        return polymarketMonitorService.listWarmWatchlist();
+    }
+
+    @Operation(summary = "观察名单地址分型", description = "基于 wallet_feature_daily、trade_effect_label 与 profile 计算候选/可执行地址的交易风格分型与建议跟单 lane。")
+    @GetMapping("/watchlist/archetypes")
+    public List<WalletArchetypeView> watchlistArchetypes(@RequestParam(defaultValue = "50") Integer limit,
+                                                          @RequestParam(defaultValue = "candidates") String scope) {
+        return buildWatchlistArchetypes(limit, scope);
+    }
+
+    @Operation(summary = "导出观察名单地址分型 CSV", description = "导出增强版地址分型结果，包含退出风格、提前退出率和可复制分数。")
+    @GetMapping(value = "/watchlist/archetypes/export", produces = "text/csv")
+    public ResponseEntity<String> exportWatchlistArchetypes(@RequestParam(defaultValue = "200") Integer limit,
+                                                            @RequestParam(defaultValue = "candidates") String scope) {
+        List<WalletArchetypeView> rows = buildWatchlistArchetypes(limit, scope);
+        String csv = csv(
+                List.of("walletAddress", "archetype", "followLane", "recommendedExitLane",
+                        "highFrequencyTradingAddress", "trades7d", "trades30d", "orderWinRate",
+                        "averageOrderRoiRate", "medianOrderRoiRate", "settlementCompletionRate",
+                        "earlyExitRate", "profitEarlyExitRate", "lossEarlyExitRate",
+                        "winSourceType", "settlementWinRate", "earlySettlementRate", "stabilityScore",
+                        "qualityScore", "replicabilityScore", "followFitScore", "confidence", "summary"),
+                rows.stream().map(row -> java.util.Arrays.asList(
+                        row.walletAddress(), row.archetype(), row.followLane(), row.recommendedExitLane(),
+                        row.highFrequencyTradingAddress(), row.trades7d(), row.trades30d(), row.orderWinRate(),
+                        row.averageOrderRoiRate(), row.medianOrderRoiRate(), row.settlementCompletionRate(),
+                        row.earlyExitRate(), row.profitEarlyExitRate(), row.lossEarlyExitRate(),
+                        row.winSourceType(), row.settlementWinRate(), row.earlySettlementRate(), row.stabilityScore(),
+                        row.qualityScore(), row.replicabilityScore(), row.followFitScore(), row.confidence(), row.summary()
+                )).toList()
+        );
+        return csvResponse(csv, "smart_wallet_watchlist_archetypes", scope);
+    }
+
+    @Operation(summary = "观察名单地址行为画像", description = "分析监控地址的高频特征、订单胜率、收益率、提前退出比例，以及推荐的跟单退出节奏。")
+    @GetMapping("/watchlist/behavior-profiles")
+    public List<WalletBehaviorProfileView> watchlistBehaviorProfiles(@RequestParam(defaultValue = "30") Integer limit,
+                                                                     @RequestParam(defaultValue = "candidates") String scope) {
+        return walletBehaviorProfileService.buildProfiles(resolveWatchlistScope(scope), limit);
+    }
+
+    @Operation(summary = "刷新并落库地址行为画像", description = "按 scope 批量重算监控地址行为画像，并 upsert 到 smart_wallet_behavior_profile 表。")
+    @PostMapping("/watchlist/behavior-profiles/refresh")
+    public Map<String, Object> refreshWatchlistBehaviorProfiles(@RequestParam(defaultValue = "30") Integer limit,
+                                                                @RequestParam(defaultValue = "candidates") String scope) {
+        List<WalletBehaviorProfileView> rows = walletBehaviorProfileService.refreshAndPersistProfiles(resolveWatchlistScope(scope), limit);
+        return Map.of(
+                "scope", scope,
+                "limit", limit,
+                "persisted", rows.size()
+        );
+    }
+
+    @Operation(summary = "批量回填地址画像口径", description = "按 scope 批量重算 order-analysis、order-stats 依赖与 behavior profile。")
+    @PostMapping("/profiles/metrics/rebuild")
+    public Map<String, Object> rebuildProfileMetrics(@RequestParam(defaultValue = "candidates") String scope,
+                                                     @RequestParam(defaultValue = "30") Integer limit) {
+        List<SmartWalletProfileEntity> profiles = resolveWatchlistScope(scope).stream()
+                .limit(Math.max(1, Math.min(limit, 500)))
+                .toList();
+        int rebuiltOrders = 0;
+        int rebuiltProfiles = 0;
+        for (SmartWalletProfileEntity profile : profiles) {
+            if (profile == null || !StringUtils.hasText(profile.getWalletAddress())) {
+                continue;
+            }
+            smartWalletOrderAnalysisService.analyzeAndPersist(profile.getWalletAddress());
+            walletOrderStatsService.summarize(profile.getWalletAddress(), "all");
+            walletBehaviorProfileService.buildProfile(profile);
+            rebuiltOrders++;
+            rebuiltProfiles++;
+        }
+        return Map.of(
+                "scope", scope,
+                "limit", limit,
+                "walletCount", profiles.size(),
+                "orderAnalysisRebuilt", rebuiltOrders,
+                "behaviorProfilesRebuilt", rebuiltProfiles
+        );
+    }
+
+    private List<SmartWalletProfileEntity> resolveWatchlistScope(String scope) {
+        if ("all".equalsIgnoreCase(scope)) {
+            return polymarketMonitorService.listProfiles();
+        }
+        if ("warm".equalsIgnoreCase(scope)) {
+            return polymarketMonitorService.listWarmWatchlist();
+        }
+        if ("executable".equalsIgnoreCase(scope)) {
+            return polymarketMonitorService.listExecutableWatchlist();
+        }
+        return polymarketMonitorService.listQualifiedCandidates();
+    }
+
+    private List<WalletArchetypeView> buildWatchlistArchetypes(Integer limit, String scope) {
+        return resolveWatchlistScope(scope).stream()
+                .limit(Math.max(1, Math.min(limit, 200)))
+                .map(profile -> enrichArchetypeView(
+                        walletArchetypeClassifierService.classify(profile.getWalletAddress(), profile),
+                        walletBehaviorProfileService.buildProfile(profile)
+                ))
+                .toList();
+    }
+
+    private WalletArchetypeView enrichArchetypeView(WalletArchetypeView archetype,
+                                                    WalletBehaviorProfileView behaviorProfile) {
+        if (archetype == null) {
+            return null;
+        }
+        return WalletArchetypeView.builder()
+                .walletAddress(archetype.walletAddress())
+                .archetype(archetype.archetype())
+                .followLane(archetype.followLane())
+                .archetypeReason(behaviorProfile == null ? archetype.archetypeReason() : behaviorProfile.archetypeReason())
+                .archetypeConfidence(behaviorProfile == null ? archetype.archetypeConfidence() : behaviorProfile.archetypeConfidence())
+                .confidence(archetype.confidence())
+                .leaderQualityScore(archetype.leaderQualityScore())
+                .followFitScore(archetype.followFitScore())
+                .recommendedSyncIntervalMs(archetype.recommendedSyncIntervalMs())
+                .labelSampleSize(archetype.labelSampleSize())
+                .trades7d(archetype.trades7d())
+                .trades30d(archetype.trades30d())
+                .dedupOrderCount7d(behaviorProfile == null ? archetype.dedupOrderCount7d() : behaviorProfile.dedupOrderCount7d())
+                .dedupOrderCount30d(behaviorProfile == null ? archetype.dedupOrderCount30d() : behaviorProfile.dedupOrderCount30d())
+                .markets30d(archetype.markets30d())
+                .concentrationMarket30d(archetype.concentrationMarket30d())
+                .followableRate30d(archetype.followableRate30d())
+                .alpha30s(archetype.alpha30s())
+                .alpha5m(archetype.alpha5m())
+                .alphaRule(archetype.alphaRule())
+                .medianInterTradeMinutes(archetype.medianInterTradeMinutes())
+                .medianHoldMinutes(behaviorProfile == null ? archetype.medianHoldMinutes() : behaviorProfile.medianHoldMinutes())
+                .dataQuality(behaviorProfile == null ? archetype.dataQuality() : behaviorProfile.dataQuality())
+                .highFrequencyTradingAddress(behaviorProfile == null ? null : behaviorProfile.highFrequencyTradingAddress())
+                .closedPositionSampleSize(behaviorProfile == null ? null : behaviorProfile.closedPositionSampleSize())
+                .orderWinRate(behaviorProfile == null ? null : behaviorProfile.orderWinRate())
+                .averageOrderRoiRate(behaviorProfile == null ? null : behaviorProfile.averageOrderRoiRate())
+                .medianOrderRoiRate(behaviorProfile == null ? null : behaviorProfile.medianOrderRoiRate())
+                .settlementCompletionRate(behaviorProfile == null ? null : behaviorProfile.settlementCompletionRate())
+                .earlyExitRate(behaviorProfile == null ? null : behaviorProfile.earlyExitRate())
+                .profitEarlyExitRate(behaviorProfile == null ? null : behaviorProfile.profitEarlyExitRate())
+                .lossEarlyExitRate(behaviorProfile == null ? null : behaviorProfile.lossEarlyExitRate())
+                .earlySettlementRate(behaviorProfile == null ? null : behaviorProfile.earlySettlementRate())
+                .winSourceType(behaviorProfile == null ? null : behaviorProfile.winSourceType())
+                .settlementWinRate(behaviorProfile == null ? null : behaviorProfile.settlementWinRate())
+                .stabilityScore(behaviorProfile == null ? null : behaviorProfile.stabilityScore())
+                .qualityScore(behaviorProfile == null ? null : behaviorProfile.qualityScore())
+                .replicabilityScore(behaviorProfile == null ? null : behaviorProfile.replicabilityScore())
+                .recommendedExitLane(behaviorProfile == null ? null : behaviorProfile.recommendedExitLane())
+                .summary(behaviorProfile != null && behaviorProfile.summary() != null
+                        ? behaviorProfile.summary()
+                        : archetype.summary())
+                .build();
+    }
+
+    private SmartWalletProfileOpsCandidateView toOpsCandidateView(SmartWalletProfileEntity profile,
+                                                                  WalletBehaviorProfileView behaviorProfile) {
+        return SmartWalletProfileOpsCandidateView.builder()
+                .walletAddress(profile.getWalletAddress())
+                .alias(profile.getAlias())
+                .qualified(profile.getQualified())
+                .watchEnabled(profile.getWatchEnabled())
+                .manualWatchEnabled(profile.getManualWatchEnabled())
+                .manualRecommendedExitLane(profile.getManualRecommendedExitLane())
+                .manualOverrideUpdatedAt(profile.getManualOverrideUpdatedAt())
+                .archetype(behaviorProfile == null ? null : behaviorProfile.archetype())
+                .followLane(behaviorProfile == null ? null : behaviorProfile.followLane())
+                .highFrequencyTradingAddress(behaviorProfile == null ? null : behaviorProfile.highFrequencyTradingAddress())
+                .orderWinRate(behaviorProfile == null ? null : behaviorProfile.orderWinRate())
+                .averageOrderRoiRate(behaviorProfile == null ? null : behaviorProfile.averageOrderRoiRate())
+                .settlementCompletionRate(behaviorProfile == null ? null : behaviorProfile.settlementCompletionRate())
+                .earlyExitRate(behaviorProfile == null ? null : behaviorProfile.earlyExitRate())
+                .replicabilityScore(behaviorProfile == null ? null : behaviorProfile.replicabilityScore())
+                .recommendedExitLane(behaviorProfile == null ? null : behaviorProfile.recommendedExitLane())
+                .summary(behaviorProfile == null ? null : behaviorProfile.summary())
+                .build();
+    }
+
+    private boolean matchesOverrideCandidateFilters(SmartWalletProfileOpsCandidateView candidate,
+                                                    String recommendedExitLane,
+                                                    Boolean watchEnabled,
+                                                    Boolean qualified,
+                                                    Boolean manualWatchEnabled,
+                                                    boolean manualOnly,
+                                                    Long updatedCutoffMillis,
+                                                    Boolean highFrequencyTradingAddress,
+                                                    BigDecimal minReplicabilityScore,
+                                                    BigDecimal maxReplicabilityScore) {
+        if (candidate == null) {
+            return false;
+        }
+        if (watchEnabled != null && !watchEnabled.equals(candidate.watchEnabled())) {
+            return false;
+        }
+        if (qualified != null && !qualified.equals(candidate.qualified())) {
+            return false;
+        }
+        if (manualWatchEnabled != null && !manualWatchEnabled.equals(candidate.manualWatchEnabled())) {
+            return false;
+        }
+        if (manualOnly
+                && candidate.manualWatchEnabled() == null
+                && candidate.manualRecommendedExitLane() == null
+                && candidate.manualOverrideUpdatedAt() == null) {
+            return false;
+        }
+        if (recommendedExitLane != null) {
+            String actualLane = candidate.recommendedExitLane() == null ? "" : candidate.recommendedExitLane().trim();
+            if (!recommendedExitLane.trim().equalsIgnoreCase(actualLane)) {
+                return false;
+            }
+        }
+        if (updatedCutoffMillis != null) {
+            if (candidate.manualOverrideUpdatedAt() == null || candidate.manualOverrideUpdatedAt().getTime() < updatedCutoffMillis) {
+                return false;
+            }
+        }
+        if (highFrequencyTradingAddress != null
+                && !highFrequencyTradingAddress.equals(candidate.highFrequencyTradingAddress())) {
+            return false;
+        }
+        if (minReplicabilityScore != null
+                && (candidate.replicabilityScore() == null || candidate.replicabilityScore().compareTo(minReplicabilityScore) < 0)) {
+            return false;
+        }
+        if (maxReplicabilityScore != null
+                && candidate.replicabilityScore() != null
+                && candidate.replicabilityScore().compareTo(maxReplicabilityScore) > 0) {
+            return false;
+        }
+        return true;
+    }
+
+    private int parseCursor(String cursor) {
+        if (!StringUtils.hasText(cursor)) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(cursor.trim()));
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    @Operation(summary = "地址时段覆盖诊断", description = "按 dominant_session 聚合 profiles 与 watchlist，查看地址池是否集中在某个区域/时段。")
+    @GetMapping("/discovery/session-coverage")
+    public DiscoverySessionCoverageView discoverySessionCoverage() {
+        return polymarketWalletDiscoveryService.sessionCoverage();
     }
 
     @Operation(summary = "共识信号", description = "查看最近窗口内多个 smart wallet 在同一市场上的聚合共识信号。")
@@ -324,6 +830,13 @@ public class SmartWalletController {
         }
     }
 
+    @Operation(summary = "手工白名单跟单任务", description = "查看命中 manual allowlist 的可执行或候选任务。默认只返回可执行任务。")
+    @GetMapping("/follow-tasks/manual-allowlist")
+    public List<SmartWalletFollowTaskView> manualAllowlistFollowTasks(@RequestParam(defaultValue = "50") Integer limit,
+                                                                      @RequestParam(defaultValue = "false") Boolean includeBlocked) {
+        return followTaskService.listManualAllowlistTasks(limit, includeBlocked);
+    }
+
     @Operation(summary = "重评延迟候选", description = "手动重评 enrichment_status=PENDING/LOW_CONFIDENCE_LINK 的候选，并尝试恢复此前被 intelligence 暂时拦截的跟单任务。")
     @PostMapping("/follow-tasks/intelligence/reevaluate-deferred")
     public Map<String, Object> reevaluateDeferredCandidates(@RequestParam(defaultValue = "50") Integer limit) {
@@ -353,22 +866,40 @@ public class SmartWalletController {
     public List<SmartWalletFollowTaskView> singleWalletOverrideFollowTasks(@RequestParam(defaultValue = "20") Integer limit,
                                                                            @RequestParam(required = false) String preset,
                                                                            @RequestParam(required = false) Integer taskLimit,
+                                                                           @RequestParam(required = false) String policyTag,
                                                                            @RequestParam(required = false) Integer maxSignalAgeSeconds,
                                                                            @RequestParam(required = false) Integer minDistinctWallets,
+                                                                           @RequestParam(required = false) Integer minDistinctEntities,
                                                                            @RequestParam(required = false) BigDecimal minConsensusScore,
+                                                                           @RequestParam(required = false) Boolean qualityWeightedConsensusEnabled,
+                                                                           @RequestParam(required = false) Boolean enableSingleWalletOverrideCanary,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideCanaryRate,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinWalletScore,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinWinRate,
                                                                            @RequestParam(required = false) Integer singleWalletOverrideMinTrades,
+                                                                           @RequestParam(required = false) Integer singleWalletOverrideMinRecentTrades7d,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinRecentWinRate7d,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinReplicabilityScore,
+                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinQualityScore,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinTriggerSizeUsdc,
                                                                            @RequestParam(required = false) BigDecimal singleWalletOverrideMinRecommendedStakeUsdc) {
         SmartWalletRiskSimulationRequest request = new SmartWalletRiskSimulationRequest();
         request.setTaskLimit(taskLimit);
+        request.setPolicyTag(policyTag);
         request.setMaxSignalAgeSeconds(maxSignalAgeSeconds);
         request.setMinDistinctWallets(minDistinctWallets);
+        request.setMinDistinctEntities(minDistinctEntities);
         request.setMinConsensusScore(minConsensusScore);
+        request.setQualityWeightedConsensusEnabled(qualityWeightedConsensusEnabled);
+        request.setEnableSingleWalletOverrideCanary(enableSingleWalletOverrideCanary);
+        request.setSingleWalletOverrideCanaryRate(singleWalletOverrideCanaryRate);
         request.setSingleWalletOverrideMinWalletScore(singleWalletOverrideMinWalletScore);
         request.setSingleWalletOverrideMinWinRate(singleWalletOverrideMinWinRate);
         request.setSingleWalletOverrideMinTrades(singleWalletOverrideMinTrades);
+        request.setSingleWalletOverrideMinRecentTrades7d(singleWalletOverrideMinRecentTrades7d);
+        request.setSingleWalletOverrideMinRecentWinRate7d(singleWalletOverrideMinRecentWinRate7d);
+        request.setSingleWalletOverrideMinReplicabilityScore(singleWalletOverrideMinReplicabilityScore);
+        request.setSingleWalletOverrideMinQualityScore(singleWalletOverrideMinQualityScore);
         request.setSingleWalletOverrideMinTriggerSizeUsdc(singleWalletOverrideMinTriggerSizeUsdc);
         request.setSingleWalletOverrideMinRecommendedStakeUsdc(singleWalletOverrideMinRecommendedStakeUsdc);
         applySingleWalletOverridePreset(request, preset);
@@ -458,6 +989,18 @@ public class SmartWalletController {
     @PostMapping("/follow-tasks/simulate-risk")
     public SmartWalletRiskSimulationResult simulateRisk(@RequestBody(required = false) SmartWalletRiskSimulationRequest request) {
         return followTaskApplicationService.simulateRisk(request);
+    }
+
+    @Operation(summary = "策略回放回测", description = "基于历史 smart_wallet_trade_event 回放 baseline 与新策略，在 30d/60d/90d 窗口输出接受率、收益、回撤、override 与拦截分布。")
+    @PostMapping("/follow-tasks/replay-backtest")
+    public SmartWalletReplayBacktestResult replayBacktest(@RequestBody(required = false) SmartWalletReplayBacktestRequest request) {
+        return smartWalletReplayBacktestService.replay(request);
+    }
+
+    @Operation(summary = "集中度影响回放摘要", description = "基于 replay-backtest 结果提取 concentration-only 视图，重点展示 concentration / extreme concentration 的拦截、降仓与代理收益影响。")
+    @PostMapping("/follow-tasks/replay-backtest/concentration-summary")
+    public SmartWalletReplayConcentrationSummaryResult replayConcentrationSummary(@RequestBody(required = false) SmartWalletReplayBacktestRequest request) {
+        return smartWalletReplayBacktestService.replayConcentrationSummary(request);
     }
 
     @Operation(summary = "处理跟单任务", description = "手动触发一轮待执行 follow task 处理。")
@@ -743,6 +1286,20 @@ public class SmartWalletController {
         return accountingService.repairPrematureResolvedPaperPositionsByItems(request.getItems());
     }
 
+    @Operation(summary = "按 position 修复 marketId", description = "按 positionId 精准修复 legacy marketId/conditionId 混用，并可选择在修复后立即重跑 settlement sync。")
+    @PostMapping("/accounting/repair-market-ids/by-positions")
+    public Map<String, Object> repairMarketIdsByPositions(@RequestBody SmartWalletMarketIdRepairRequest request,
+                                                          @RequestParam(defaultValue = "true") boolean syncAfterRepair,
+                                                          @RequestParam(defaultValue = "true") boolean refreshCache) {
+        SmartWalletMarketIdRepairSummary repairSummary = smartWalletMarketRepairService.repairPositionMarketIds(request);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("repair", repairSummary);
+        if (syncAfterRepair && repairSummary.getRepairedMarketIds() != null && !repairSummary.getRepairedMarketIds().isEmpty()) {
+            result.put("settlementSync", accountingService.syncSettlementsForMarkets(repairSummary.getRepairedMarketIds(), refreshCache));
+        }
+        return result;
+    }
+
     @Operation(summary = "手动同步结算", description = "手动触发一轮 settlement sync，检查市场是否已经真正结算。")
     @PostMapping("/settlement/sync")
     public SettlementSyncSummary syncSettlements(@RequestParam(defaultValue = "500") Integer positionLimit,
@@ -860,7 +1417,7 @@ public class SmartWalletController {
     @GetMapping("/reports/follow-addresses/daily")
     public List<SmartWalletFollowAddressDailyReportView> followAddressDailyReports(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate reportDate,
-            @RequestParam(defaultValue = "20") Integer limit,
+            @RequestParam(defaultValue = "500") Integer limit,
             @RequestParam(required = false) String mode) {
         return accountingService.followAddressDailyReport(reportDate, limit, mode);
     }
@@ -870,6 +1427,37 @@ public class SmartWalletController {
     public List<SmartWalletReportAttributionItem> marketReports(@RequestParam(defaultValue = "20") Integer limit,
                                                                 @RequestParam(required = false) String mode) {
         return accountingService.marketAttribution(limit, mode);
+    }
+
+    @Operation(summary = "市场监控总览", description = "面向前端市场页的聚合接口，汇总当前监控市场、有效市场、高集中/极端集中市场、趋势和市场表格。")
+    @GetMapping("/reports/market-monitoring")
+    public SmartWalletMarketMonitoringSummaryView marketMonitoringSummary(
+            @RequestParam(defaultValue = "40") Integer limit,
+            @RequestParam(defaultValue = "14") Integer lookbackDays,
+            @RequestParam(defaultValue = "7") Integer trendDays) {
+        return smartWalletMarketMonitoringService.summary(limit, lookbackDays, trendDays);
+    }
+
+    @Operation(summary = "市场状态表分页", description = "仅供市场状态表使用的分页接口，支持按关键词、分类、集中度、是否有持仓和持仓方向筛选。")
+    @GetMapping("/reports/market-monitoring/page")
+    public OffsetPageView<SmartWalletMarketMonitorItemView> marketMonitoringTablePage(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(defaultValue = "14") Integer lookbackDays,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String concentrationBand,
+            @RequestParam(required = false) Boolean hasPosition,
+            @RequestParam(required = false) String positionDirection) {
+        return smartWalletMarketMonitoringService.tablePage(
+                page,
+                pageSize,
+                lookbackDays,
+                keyword,
+                category,
+                concentrationBand,
+                hasPosition,
+                positionDirection);
     }
 
     @Operation(summary = "派生 CLOB API 凭证", description = "基于执行钱包派生 Polymarket CLOB API key、secret 与 passphrase。")
@@ -991,11 +1579,26 @@ public class SmartWalletController {
         if (request.getMaxSignalAgeSeconds() == null) {
             request.setMaxSignalAgeSeconds(presetRisk.getMaxSignalAgeSeconds());
         }
+        if (request.getPolicyTag() == null) {
+            request.setPolicyTag(presetRisk.getPolicyTag());
+        }
         if (request.getMinDistinctWallets() == null) {
             request.setMinDistinctWallets(presetRisk.getMinDistinctWallets());
         }
+        if (request.getMinDistinctEntities() == null) {
+            request.setMinDistinctEntities(presetRisk.getMinDistinctEntities());
+        }
         if (request.getMinConsensusScore() == null) {
             request.setMinConsensusScore(presetRisk.getMinConsensusScore());
+        }
+        if (request.getQualityWeightedConsensusEnabled() == null) {
+            request.setQualityWeightedConsensusEnabled(presetRisk.isQualityWeightedConsensusEnabled());
+        }
+        if (request.getEnableSingleWalletOverrideCanary() == null) {
+            request.setEnableSingleWalletOverrideCanary(presetRisk.isEnableSingleWalletOverrideCanary());
+        }
+        if (request.getSingleWalletOverrideCanaryRate() == null) {
+            request.setSingleWalletOverrideCanaryRate(presetRisk.getSingleWalletOverrideCanaryRate());
         }
         if (request.getSingleWalletOverrideMinWalletScore() == null) {
             request.setSingleWalletOverrideMinWalletScore(presetRisk.getSingleWalletOverrideMinWalletScore());
@@ -1005,6 +1608,18 @@ public class SmartWalletController {
         }
         if (request.getSingleWalletOverrideMinTrades() == null) {
             request.setSingleWalletOverrideMinTrades(presetRisk.getSingleWalletOverrideMinTrades());
+        }
+        if (request.getSingleWalletOverrideMinRecentTrades7d() == null) {
+            request.setSingleWalletOverrideMinRecentTrades7d(presetRisk.getSingleWalletOverrideMinRecentTrades7d());
+        }
+        if (request.getSingleWalletOverrideMinRecentWinRate7d() == null) {
+            request.setSingleWalletOverrideMinRecentWinRate7d(presetRisk.getSingleWalletOverrideMinRecentWinRate7d());
+        }
+        if (request.getSingleWalletOverrideMinReplicabilityScore() == null) {
+            request.setSingleWalletOverrideMinReplicabilityScore(presetRisk.getSingleWalletOverrideMinReplicabilityScore());
+        }
+        if (request.getSingleWalletOverrideMinQualityScore() == null) {
+            request.setSingleWalletOverrideMinQualityScore(presetRisk.getSingleWalletOverrideMinQualityScore());
         }
         if (request.getSingleWalletOverrideMinTriggerSizeUsdc() == null) {
             request.setSingleWalletOverrideMinTriggerSizeUsdc(presetRisk.getSingleWalletOverrideMinTriggerSizeUsdc());

@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -13,21 +14,33 @@ import java.util.Date;
 import java.util.List;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class PolymarketSmartWalletMonitorService {
 
     private static final String SOURCE = "POLYMARKET";
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
 
     private final SmartWalletProperties properties;
     private final SmartWalletProfileStoreService profileStoreService;
     private final SmartWalletFollowTaskService followTaskService;
 
     public SmartWalletProfileEntity ingestWalletMetrics(PolymarketWalletMetricsRequest request) {
+        log.info("{} action=导入Polymarket钱包指标 result=开始 wallet={} chain={} winRate={} pnlUsdc={} totalTrades={}",
+                LOG_PREFIX, request.getWalletAddress(), request.getChain(), request.getWinRate(),
+                request.getRealizedPnlUsdc(), request.getTotalTrades());
         normalizeMetricsRequest(request);
-        return profileStoreService.upsertMetrics(request);
+        SmartWalletProfileEntity profile = profileStoreService.upsertMetrics(request);
+        log.info("{} action=导入Polymarket钱包指标 result=完成 wallet={} profileId={} qualified={} watchEnabled={} walletScore={} monitorTier={}",
+                LOG_PREFIX, profile.getWalletAddress(), profile.getId(), profile.getQualified(),
+                profile.getWatchEnabled(), profile.getWalletScore(), profile.getMonitorTier());
+        return profile;
     }
 
     public SmartWalletTradeEventEntity ingestTradeEvent(PolymarketTradeEventRequest request) {
+        log.info("{} action=导入Polymarket钱包交易 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
+                LOG_PREFIX, request.getWalletAddress(), request.getMarketId(), request.getOutcome(), request.getSide(),
+                request.getExternalTradeId(), request.getPrice(), request.getSizeUsdc());
         SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
                 .setWalletAddress(request.getWalletAddress())
                 .setChain(request.getChain())
@@ -40,15 +53,35 @@ public class PolymarketSmartWalletMonitorService {
                 .setPrice(safe(request.getPrice()))
                 .setSizeUsdc(safe(request.getSizeUsdc()))
                 .setOpenedAt(request.getOpenedAt() == null ? new Date() : request.getOpenedAt());
-        return followTaskService.recordTradeEvent(event);
+        SmartWalletTradeEventEntity saved = followTaskService.recordTradeEvent(event);
+        log.info("{} action=导入Polymarket钱包交易 result=完成 eventId={} wallet={} marketId={} outcome={} side={} processed={}",
+                LOG_PREFIX, saved.getId(), saved.getWalletAddress(), saved.getMarketId(), saved.getOutcome(),
+                saved.getSide(), saved.getProcessed());
+        return saved;
     }
 
     public List<SmartWalletProfileEntity> listProfiles() {
         return profileStoreService.listAll();
     }
 
-    public List<SmartWalletProfileEntity> listWatchlist() {
+    public List<SmartWalletProfileEntity> listQualifiedCandidates() {
+        return profileStoreService.listQualified();
+    }
+
+    public List<SmartWalletProfileEntity> listExecutableWatchlist() {
         return profileStoreService.listWatchEnabled();
+    }
+
+    public List<SmartWalletProfileEntity> listWarmWatchlist() {
+        return profileStoreService.listWarmWatchlist();
+    }
+
+    public List<SmartWalletProfileEntity> listColdProfiles() {
+        return profileStoreService.listColdProfiles();
+    }
+
+    public List<SmartWalletProfileEntity> listWatchlist() {
+        return listExecutableWatchlist();
     }
 
     public int getAnalyzeTopN() {
@@ -89,10 +122,21 @@ public class PolymarketSmartWalletMonitorService {
         request.setAverageSizeUsdc(safe(request.getAverageSizeUsdc()));
         request.setAverageRoiRate(safe(request.getAverageRoiRate()));
         request.setMaxDrawdownRate(safe(request.getMaxDrawdownRate()));
+        request.setRecentWinRate7d(request.getRecentWinRate7d() == null ? null : safe(request.getRecentWinRate7d()));
+        request.setRecentWinRate30d(request.getRecentWinRate30d() == null ? null : safe(request.getRecentWinRate30d()));
+        request.setRecentTradeCount7d(nonNegative(request.getRecentTradeCount7d()));
+        request.setRecentTradeCount30d(nonNegative(request.getRecentTradeCount30d()));
     }
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private Integer nonNegative(Integer value) {
+        if (value == null) {
+            return null;
+        }
+        return Math.max(value, 0);
     }
 
     private String normalizeUpper(String value, String defaultValue) {

@@ -4,12 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE_DIR="${SMART_WALLET_SOURCE_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 APP_HOME="${SMART_WALLET_APP_HOME:-/opt/coinstrategy/smart-wallet}"
-APP_USER="${SMART_WALLET_APP_USER:-coinstrategy}"
+APP_USER="${SMART_WALLET_APP_USER:-${SUDO_USER:-ubuntu}}"
 APP_GROUP="${SMART_WALLET_APP_GROUP:-$APP_USER}"
 
 SRC_BACKEND_JAR="${SMART_WALLET_SOURCE_JAR:-$SOURCE_DIR/backend/app.jar}"
 SRC_FRONTEND_DIST="${SMART_WALLET_SOURCE_FRONTEND_DIST:-$SOURCE_DIR/frontend/dist}"
 SRC_BIN_DIR="${SMART_WALLET_SOURCE_BIN_DIR:-$SOURCE_DIR/bin}"
+SRC_DEPLOY_LINUX_BIN_DIR="${SMART_WALLET_SOURCE_DEPLOY_LINUX_BIN_DIR:-$SOURCE_DIR/deploy/linux/bin}"
 SRC_RUNTIME_DIR="${SMART_WALLET_SOURCE_RUNTIME_DIR:-$SOURCE_DIR/runtime}"
 
 DST_BACKEND_DIR="$APP_HOME/backend"
@@ -35,6 +36,10 @@ cp -R "$SRC_FRONTEND_DIST" "$DST_FRONTEND_DIR/"
 
 if [ -f "$SRC_BIN_DIR/start-smart-wallet-backend.sh" ]; then
   install -m 755 "$SRC_BIN_DIR/start-smart-wallet-backend.sh" "$DST_BIN_DIR/start-smart-wallet-backend.sh"
+fi
+
+if [ -f "$SRC_DEPLOY_LINUX_BIN_DIR/restart-smart-wallet-backend.sh" ]; then
+  install -m 755 "$SRC_DEPLOY_LINUX_BIN_DIR/restart-smart-wallet-backend.sh" "$DST_BIN_DIR/restart-smart-wallet-backend.sh"
 fi
 
 if [ -d "$SRC_RUNTIME_DIR" ]; then

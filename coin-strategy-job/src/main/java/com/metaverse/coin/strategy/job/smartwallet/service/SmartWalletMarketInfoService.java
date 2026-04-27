@@ -12,11 +12,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * 公共市场信息服务 —— 负责 smart_wallet_market_info 表的查询、缓存与实体填充。
@@ -55,6 +56,53 @@ public class SmartWalletMarketInfoService {
                 .last("limit 1"));
     }
 
+    public List<SmartWalletMarketInfoEntity> listByMarketId(String marketId) {
+        if (!StringUtils.hasText(marketId)) {
+            return List.of();
+        }
+        List<SmartWalletMarketInfoEntity> rows = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                .eq(SmartWalletMarketInfoEntity::getMarketId, marketId.trim())
+                .orderByDesc(SmartWalletMarketInfoEntity::getUpdatedAt)
+                .orderByDesc(SmartWalletMarketInfoEntity::getId));
+        rows.forEach(row -> cacheById.put(row.getId(), row));
+        return rows;
+    }
+
+    public Map<String, List<SmartWalletMarketInfoEntity>> batchListByMarketIds(Collection<String> marketIds) {
+        if (marketIds == null || marketIds.isEmpty()) {
+            return Map.of();
+        }
+        List<String> normalizedIds = marketIds.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (normalizedIds.isEmpty()) {
+            return Map.of();
+        }
+        List<SmartWalletMarketInfoEntity> rows = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                .in(SmartWalletMarketInfoEntity::getMarketId, normalizedIds)
+                .orderByDesc(SmartWalletMarketInfoEntity::getUpdatedAt)
+                .orderByDesc(SmartWalletMarketInfoEntity::getId));
+        Map<String, List<SmartWalletMarketInfoEntity>> result = new LinkedHashMap<>();
+        for (SmartWalletMarketInfoEntity row : rows) {
+            cacheById.put(row.getId(), row);
+            result.computeIfAbsent(row.getMarketId(), key -> new java.util.ArrayList<>()).add(row);
+        }
+        return result;
+    }
+
+    public Map<String, SmartWalletMarketInfoEntity> batchGetPrimaryByMarketIds(Collection<String> marketIds) {
+        Map<String, List<SmartWalletMarketInfoEntity>> rowsByMarketId = batchListByMarketIds(marketIds);
+        Map<String, SmartWalletMarketInfoEntity> result = new LinkedHashMap<>();
+        rowsByMarketId.forEach((marketId, rows) -> rows.stream()
+                .sorted(Comparator.comparing(SmartWalletMarketInfoEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(SmartWalletMarketInfoEntity::getId, Comparator.nullsLast(Comparator.reverseOrder())))
+                .findFirst()
+                .ifPresent(row -> result.put(marketId, row)));
+        return result;
+    }
+
     /**
      * 按 marketId + outcome 查询，不存在则自动创建一行。
      * 用于写入场景（创建 order / fill / position / follow_task 时需要关联 market_info_id）。
@@ -88,8 +136,7 @@ public class SmartWalletMarketInfoService {
                 updated = true;
             }
             if (updated) {
-                marketInfoMapper.updateById(existing);
-                cacheById.put(existing.getId(), existing);
+                update(existing);
             }
             return existing;
         }
@@ -103,6 +150,15 @@ public class SmartWalletMarketInfoService {
         marketInfoMapper.insert(newInfo);
         cacheById.put(newInfo.getId(), newInfo);
         return newInfo;
+    }
+
+    public void update(SmartWalletMarketInfoEntity entity) {
+        if (entity == null || entity.getId() == null) {
+            return;
+        }
+        entity.setUpdatedAt(new Date());
+        marketInfoMapper.updateById(entity);
+        cacheById.put(entity.getId(), entity);
     }
 
     /**

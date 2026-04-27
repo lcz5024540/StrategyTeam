@@ -201,13 +201,21 @@ public class TradeProfitabilityScoringService {
                                             HistoricalStats historical) {
         SmartWalletProperties.BaselineModel.FollowProbability config = properties.getBaselineModel().getFollowProbability();
         BigDecimal walletScore = safe(profile == null ? null : profile.getWalletScore());
-        BigDecimal consensusScore = safe(consensus == null ? null : consensus.getConsensusScore());
-        BigDecimal consensusWallets = BigDecimal.valueOf(consensus == null ? 0 : consensus.getDistinctWallets());
+        BigDecimal consensusScore = safe(consensus == null ? null : consensus.getQualityWeightedConsensusScore());
+        if (consensusScore.compareTo(BigDecimal.ZERO) <= 0) {
+            consensusScore = safe(consensus == null ? null : consensus.getConsensusScore());
+        }
+        BigDecimal consensusWallets = BigDecimal.valueOf(consensus == null ? 0 : Math.max(
+                consensus.getDedupedEntityCount(),
+                consensus.getDistinctWallets()
+        ));
         BigDecimal positiveRate = historical.positiveRate;
         BigDecimal triggerSizeScore = normalizedLogScale(event == null ? null : event.getSizeUsdc(), config.getTriggerSizeCapUsdc());
         BigDecimal spreadPenalty = ratio(safe(snapshot == null ? null : snapshot.getSpreadBps()), config.getSpreadPenaltyScaleBps());
         BigDecimal volatilityPenalty = ratio(safe(snapshot == null ? null : snapshot.getRealizedVol30s()), config.getVolatilityPenaltyScale());
         BigDecimal imbalanceBoost = safe(snapshot == null ? null : snapshot.getOrderImbalance()).max(BigDecimal.ZERO);
+        BigDecimal independenceBoost = safe(consensus == null ? null : consensus.getEntityIndependenceScore());
+        BigDecimal consistencyBoost = safe(consensus == null ? null : consensus.getRecentConsistencyScore());
         BigDecimal distinctWalletCap = safe(config.getDistinctWalletCap()).compareTo(BigDecimal.ZERO) <= 0
                 ? BigDecimal.ONE
                 : safe(config.getDistinctWalletCap());
@@ -218,6 +226,8 @@ public class TradeProfitabilityScoringService {
                 .add(triggerSizeScore.multiply(safe(config.getTriggerSizeWeight())))
                 .add(consensusWallets.min(distinctWalletCap).divide(distinctWalletCap, 8, RoundingMode.HALF_UP)
                         .multiply(safe(config.getDistinctWalletWeight())))
+                .add(independenceBoost.multiply(new BigDecimal("0.20")))
+                .add(consistencyBoost.multiply(new BigDecimal("0.20")))
                 .add(imbalanceBoost.multiply(safe(config.getImbalanceWeight())))
                 .subtract(spreadPenalty.multiply(safe(config.getSpreadPenaltyWeight())))
                 .subtract(volatilityPenalty.multiply(safe(config.getVolatilityPenaltyWeight())));

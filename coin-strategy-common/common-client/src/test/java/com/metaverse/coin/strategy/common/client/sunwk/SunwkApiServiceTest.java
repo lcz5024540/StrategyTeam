@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.common.client.sunwk;
 import com.metaverse.coin.strategy.common.model.sunwk.entity.*;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -12,6 +13,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @Slf4j
+@Disabled("Disabled by default because Sunwk API tests depend on live external network and credentials.")
 public class SunwkApiServiceTest {
 
     private SunwkApiService sunwkApiService;
