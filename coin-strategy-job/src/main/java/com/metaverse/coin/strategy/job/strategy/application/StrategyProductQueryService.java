@@ -29,16 +29,12 @@ import com.metaverse.coin.strategy.job.strategy.model.StrategyTimelinePointView;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -617,6 +613,7 @@ public class StrategyProductQueryService {
                 BigDecimal.ZERO,
                 safe(row.getFeeAmount()),
                 BigDecimal.ZERO,
+                BigDecimal.ZERO,
                 null,
                 null,
                 null,
@@ -718,6 +715,30 @@ public class StrategyProductQueryService {
             return null;
         }
         return date.toInstant().atZone(ZoneId.of("Asia/Shanghai")).toLocalDate();
+    }
+
+    private String formatEpochMillis(Long epochMillis) {
+        if (epochMillis == null || epochMillis <= 0) {
+            return null;
+        }
+        return BJT_FORMATTER.format(Instant.ofEpochMilli(epochMillis));
+    }
+
+    private String formatDate(Date date) {
+        if (date == null) {
+            return null;
+        }
+        return BJT_FORMATTER.format(date.toInstant());
+    }
+
+    private <T> BigDecimal sum(List<T> rows, Function<T, BigDecimal> mapper) {
+        if (rows == null || rows.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return rows.stream()
+                .map(mapper)
+                .map(this::safe)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private BigDecimal calculateMaxDrawdown(List<StrategyTimelinePointView> timeline) {
