@@ -172,7 +172,7 @@ public class SmartWalletProperties {
          * 1. 共识策略
          * 2. 单钱包 override 策略
          */
-        private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "SINGLE_WALLET_OVERRIDE"));
+        private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "HIGH_QUALITY_SINGLE_WALLET"));
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 1;
         /** 实体去重后的最小实体数门控（替代 minDistinctWallets）。默认与 minDistinctWallets 保持一致 */
@@ -203,6 +203,22 @@ public class SmartWalletProperties {
         private BigDecimal singleWalletOverrideMinQualityScore = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
         private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("1");
+
+        // ── Consensus Stake Amplifier ─────────────────────────────────────────────
+        /** 是否启用共识多实体仓位放大器 */
+        private boolean enableConsensusStakeAmplifier = true;
+        /** dedupedEntityCount=2 时的仓位放大倍率 */
+        private BigDecimal consensusAmplifierTier2Multiplier = new BigDecimal("1.15");
+        /** dedupedEntityCount>=3 时的仓位放大倍率 */
+        private BigDecimal consensusAmplifierTier3PlusMultiplier = new BigDecimal("1.30");
+        /** 放大倍率上限（防止极端场景） */
+        private BigDecimal consensusAmplifierMaxMultiplier = new BigDecimal("1.50");
+
+        // ── Scale-up on High-Quality Consensus ───────────────────────────────────
+        /** 是否允许高质量钱包对已有仓位执行追加买入 */
+        private boolean enableScaleUpOnHighQualityConsensus = true;
+        /** 追加时允许的最大价格相对漂移（相对已有仓位平均成本） */
+        private BigDecimal scaleUpMaxPriceRelativeDrift = new BigDecimal("0.20");
 
         // ── 持仓集中度门控（防控盘） ──────────────────────────────────────────
         /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */
