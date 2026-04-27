@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.core.technical.analysis.MarketAnalysisService
 import com.metaverse.coin.strategy.core.technical.indicator.TechnicalIndicatorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
 
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Uses MACD, EMA, Volume, and Order Book Imbalance.
  */
 @Component
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class TechnicalAnalysisStrategy implements Strategy {
 
     private static final Logger log = LoggerFactory.getLogger(TechnicalAnalysisStrategy.class);

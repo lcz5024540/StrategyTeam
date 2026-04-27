@@ -22,6 +22,7 @@ import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskSnapsho
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeTradeRiskAssessment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -45,6 +46,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 3. Close when funding weakens, basis deteriorates or margin health becomes unsafe.
  */
 @Component
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 @Slf4j
 @RequiredArgsConstructor
 public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {

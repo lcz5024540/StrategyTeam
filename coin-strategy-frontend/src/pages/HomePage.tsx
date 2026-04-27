@@ -11,12 +11,13 @@ import { TimelineChart } from '@/components/charts/TimelineChart'
 import { AttributionBars } from '@/components/charts/AttributionBars'
 import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
+import { DEFAULT_STRATEGY_CODE } from '@/utils/constants'
 
 export function HomePage() {
   const [searchParams] = useSearchParams()
-  const { selectedStrategy, positionMode, selectedDays } = useStrategyStore()
+  const { positionMode, selectedDays } = useStrategyStore()
 
-  const strategy = searchParams.get('strategy') || selectedStrategy
+  const strategy = DEFAULT_STRATEGY_CODE
   const mode = (searchParams.get('mode') || positionMode) as 'PAPER' | 'LIVE'
   const days = Number(searchParams.get('days')) || selectedDays
 

@@ -12,6 +12,7 @@ import { TimelineChart } from '@/components/charts/TimelineChart'
 import { DailyPnlBars } from '@/components/charts/DailyPnlBars'
 import { reportsApi } from '@/api'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
+import { DEFAULT_STRATEGY_CODE } from '@/utils/constants'
 
 const EXPORT_LIMIT = 5000
 
@@ -28,9 +29,9 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function DetailPage() {
   const [searchParams] = useSearchParams()
-  const { selectedStrategy, positionMode, selectedDays } = useStrategyStore()
+  const { positionMode, selectedDays } = useStrategyStore()
 
-  const strategy = searchParams.get('strategy') || selectedStrategy
+  const strategy = DEFAULT_STRATEGY_CODE
   const days = Number(searchParams.get('days')) || selectedDays
   const mode = (searchParams.get('mode') || positionMode) as 'PAPER' | 'LIVE'
   const [exportingKey, setExportingKey] = useState<string | null>(null)

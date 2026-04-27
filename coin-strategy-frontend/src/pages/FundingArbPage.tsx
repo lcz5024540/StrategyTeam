@@ -98,9 +98,13 @@ function buildTimelineReports(points: FundingArbTimelinePoint[], mode: string): 
       closedPositions: 0,
       totalVolumeUsdc: 0,
       feeUsdc: 0,
+      profitPnlUsdc: Math.max(Number(point.netPnlUsdc || 0), 0),
+      lossPnlUsdc: Math.min(Number(point.netPnlUsdc || 0), 0),
       realizedPnlUsdc: Number(point.netPnlUsdc || 0),
       unrealizedPnlUsdc: 0,
       netPnlUsdc: Number(point.netPnlUsdc || 0),
+      winningPositions: Number(point.netPnlUsdc || 0) > 0 ? 1 : 0,
+      losingPositions: Number(point.netPnlUsdc || 0) < 0 ? 1 : 0,
       winRate: 0,
     }))
 }

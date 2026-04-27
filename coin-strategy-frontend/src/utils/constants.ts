@@ -29,5 +29,13 @@ export const STRATEGY_CATALOG = [
   },
 ]
 
+export const DEFAULT_STRATEGY_CODE = 'POLYMARKET_COPY'
+
 export type StrategyCode = typeof STRATEGY_CATALOG[number]['code']
 export type PositionMode = 'PAPER' | 'LIVE'
+
+export function normalizeStrategyCode(code: unknown): StrategyCode {
+  const value = typeof code === 'string' ? code.trim() : ''
+  const matched = STRATEGY_CATALOG.find((strategy) => strategy.code === value)
+  return (matched?.code || DEFAULT_STRATEGY_CODE) as StrategyCode
+}

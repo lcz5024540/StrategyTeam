@@ -11,6 +11,7 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceSym
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -29,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
  * Handles trade execution for Spot and Futures.
  */
 @Service
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 @Slf4j
 @RequiredArgsConstructor
 public class SingleExchangeArbitrageOrderExecutor {

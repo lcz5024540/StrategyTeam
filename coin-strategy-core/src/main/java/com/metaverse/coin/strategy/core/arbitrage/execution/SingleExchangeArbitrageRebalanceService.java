@@ -16,6 +16,7 @@ import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFutur
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -33,6 +34,7 @@ import java.util.Optional;
  * Monitors margin ratio and performs transfers between Spot and Futures.
  */
 @Service
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 @Slf4j
 @RequiredArgsConstructor
 public class SingleExchangeArbitrageRebalanceService {

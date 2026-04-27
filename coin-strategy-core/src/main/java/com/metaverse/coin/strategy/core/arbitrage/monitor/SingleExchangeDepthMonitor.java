@@ -6,11 +6,13 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceOrd
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 @Slf4j
 @RequiredArgsConstructor
 public class SingleExchangeDepthMonitor {

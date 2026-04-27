@@ -12,6 +12,7 @@ import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeDepthMon
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeDepthSnapshot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -24,6 +25,7 @@ import java.util.Optional;
  * Handles pre-trade risk checks and account health monitoring.
  */
 @Service
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 @Slf4j
 @RequiredArgsConstructor
 public class SingleExchangeRiskService {

@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceBoo
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceKline;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.BaseBarSeriesBuilder;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 
 @Service
+@ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class MarketAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketAnalysisService.class);

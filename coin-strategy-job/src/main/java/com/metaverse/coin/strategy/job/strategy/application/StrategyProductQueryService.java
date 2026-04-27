@@ -90,13 +90,14 @@ public class StrategyProductQueryService {
      * 策略概要（summary + metrics + insights），不含列表数据，首屏快速加载。
      */
     public StrategySummaryDetailView summaryDetail(String strategyCode, String mode) {
-        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+        String normalizedStrategyCode = normalizeStrategyCode(strategyCode);
+        if (POLYMARKET_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return buildPolymarketSummaryDetail(mode);
         }
-        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return buildFundingArbSummaryDetail(mode);
         }
-        StrategySummaryView summary = placeholder(strategyCode, strategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
+        StrategySummaryView summary = placeholder(normalizedStrategyCode, normalizedStrategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
         return new StrategySummaryDetailView(
                 summary,
                 emptyMetrics(),
@@ -108,10 +109,11 @@ public class StrategyProductQueryService {
      * 策略持仓列表（当前活跃持仓）。
      */
     public List<StrategyPositionRowView> positions(String strategyCode, String mode) {
-        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+        String normalizedStrategyCode = normalizeStrategyCode(strategyCode);
+        if (POLYMARKET_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return accountingService.listActivePositions(mode).stream().map(this::toPosition).toList();
         }
-        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return loadFundingArbOpenPositions().stream().map(this::toFundingArbPosition).toList();
         }
         return List.of();
@@ -121,10 +123,11 @@ public class StrategyProductQueryService {
      * 待结算持仓列表。
      */
     public List<StrategyPositionRowView> nextSettlements(String strategyCode, int limit, String mode) {
-        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+        String normalizedStrategyCode = normalizeStrategyCode(strategyCode);
+        if (POLYMARKET_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return accountingService.listNextSettlements(limit, mode).stream().map(this::toPosition).toList();
         }
-        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return loadFundingArbNextSettlements(limit).stream().map(this::toFundingArbPosition).toList();
         }
         return List.of();
@@ -134,10 +137,11 @@ public class StrategyProductQueryService {
      * 最近订单列表。
      */
     public List<StrategyOrderRowView> recentOrders(String strategyCode, int limit, String mode) {
-        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+        String normalizedStrategyCode = normalizeStrategyCode(strategyCode);
+        if (POLYMARKET_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return accountingService.listOrders(limit, mode).stream().map(this::toOrder).toList();
         }
-        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return loadFundingArbRecentOrders(limit).stream().map(this::toFundingArbOrder).toList();
         }
         return List.of();
@@ -147,10 +151,11 @@ public class StrategyProductQueryService {
      * 收益时间线。
      */
     public List<StrategyTimelinePointView> timeline(String strategyCode, int days, String mode) {
-        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+        String normalizedStrategyCode = normalizeStrategyCode(strategyCode);
+        if (POLYMARKET_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return accountingService.pnlTimeline(days, mode).stream().map(this::toTimeline).toList();
         }
-        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return buildFundingArbTimeline(days);
         }
         return List.of();
@@ -160,7 +165,8 @@ public class StrategyProductQueryService {
      * 冲突市场列表。
      */
     public List<StrategyConflictRowView> conflicts(String strategyCode, int limit, String mode) {
-        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+        String normalizedStrategyCode = normalizeStrategyCode(strategyCode);
+        if (POLYMARKET_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return accountingService.conflictingMarkets(limit, false, mode).stream().map(this::toConflict).toList();
         }
         return List.of();
@@ -175,24 +181,29 @@ public class StrategyProductQueryService {
     /** @deprecated 使用拆分后的子接口替代全量查询 */
     @Deprecated
     public StrategyDetailView detail(String strategyCode, String mode) {
-        if (POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
+        String normalizedStrategyCode = normalizeStrategyCode(strategyCode);
+        if (POLYMARKET_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return buildPolymarketDetail(mode);
         }
-        if (FUNDING_ARB_CODE.equalsIgnoreCase(strategyCode)) {
+        if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return buildFundingArbDetail(mode);
         }
-        if (!POLYMARKET_CODE.equalsIgnoreCase(strategyCode)) {
-            StrategySummaryView summary = placeholder(strategyCode, strategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
-            return new StrategyDetailView(summary,
-                    new StrategyMetricsView(0, 0, 0, 0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                            BigDecimal.ZERO, BigDecimal.ZERO,
-                            0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                            0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO),
-                    List.of(new StrategyInsightView("INFO", "策略待接入", "当前页面结构已预留，后续可继续接入真实策略数据。")),
-                    List.of(), List.of(), List.of(), List.of(), List.of());
+        StrategySummaryView summary = placeholder(normalizedStrategyCode, normalizedStrategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
+        return new StrategyDetailView(summary,
+                new StrategyMetricsView(0, 0, 0, 0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, BigDecimal.ZERO,
+                        0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                        0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO),
+                List.of(new StrategyInsightView("INFO", "策略待接入", "当前页面结构已预留，后续可继续接入真实策略数据。")),
+                List.of(), List.of(), List.of(), List.of(), List.of());
+    }
+
+    private String normalizeStrategyCode(String strategyCode) {
+        if (strategyCode == null || strategyCode.isBlank()) {
+            return POLYMARKET_CODE;
         }
-        return buildPolymarketDetail(mode);
+        return strategyCode.trim();
     }
 
     private StrategyDetailView buildPolymarketDetail(String mode) {

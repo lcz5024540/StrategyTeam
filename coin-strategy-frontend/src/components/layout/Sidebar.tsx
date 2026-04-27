@@ -1,13 +1,13 @@
 import { NavLink, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { useStrategyStore } from '@/store/useStrategyStore'
-import { STRATEGY_CATALOG } from '@/utils/constants'
+import { DEFAULT_STRATEGY_CODE, STRATEGY_CATALOG, normalizeStrategyCode } from '@/utils/constants'
 
 export function Sidebar() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
   const { selectedStrategy, setSelectedStrategy } = useStrategyStore()
-  const strategyParam = searchParams.get('strategy') || selectedStrategy
+  const strategyParam = normalizeStrategyCode(searchParams.get('strategy') || selectedStrategy)
 
   // 判断当前激活的策略：根据路由路径确定
   const activeStrategyCode = (() => {
@@ -22,7 +22,7 @@ export function Sidebar() {
       path.startsWith('/dashboard/monitoring') ||
       path.startsWith('/dashboard/markets')
     ) {
-      return 'POLYMARKET_COPY'
+      return DEFAULT_STRATEGY_CODE
     }
     return strategyParam
   })()
@@ -30,7 +30,7 @@ export function Sidebar() {
   const handleStrategyClick = (strategy: typeof STRATEGY_CATALOG[number]) => {
     if (strategy.status !== 'ACTIVE') return
     setSelectedStrategy(strategy.code)
-    navigate(strategy.route)
+    navigate(`${strategy.route}?strategy=${strategy.code}`)
   }
 
   // 子导航链接：根据当前策略决定是否显示详情/图表
@@ -47,11 +47,11 @@ export function Sidebar() {
         <div className="sidebar-card">
           <h3>导航</h3>
           <nav className="sidebar-links">
-            <NavLink to={`/dashboard?strategy=${strategyParam}`}>总览</NavLink>
-            <NavLink to={`/dashboard/detail?strategy=${strategyParam}`}>详情</NavLink>
-            <NavLink to={`/dashboard/charts?strategy=${strategyParam}`}>图表</NavLink>
-            <NavLink to={`/dashboard/monitoring?strategy=${strategyParam}`}>监控</NavLink>
-            <NavLink to={`/dashboard/markets?strategy=${strategyParam}`}>市场</NavLink>
+            <NavLink to={`/dashboard?strategy=${DEFAULT_STRATEGY_CODE}`}>总览</NavLink>
+            <NavLink to={`/dashboard/detail?strategy=${DEFAULT_STRATEGY_CODE}`}>详情</NavLink>
+            <NavLink to={`/dashboard/charts?strategy=${DEFAULT_STRATEGY_CODE}`}>图表</NavLink>
+            <NavLink to={`/dashboard/monitoring?strategy=${DEFAULT_STRATEGY_CODE}`}>监控</NavLink>
+            <NavLink to={`/dashboard/markets?strategy=${DEFAULT_STRATEGY_CODE}`}>市场</NavLink>
           </nav>
         </div>
       )}
