@@ -137,8 +137,20 @@ function renderTableRows(targetId, rows, mapper, emptyText) {
 function renderTimeline(detail) {
   const svg = document.getElementById("timelineChart");
   const empty = document.getElementById("chartEmpty");
-  const points = detail.timeline || [];
-  if (points.length < 2) {
+  const points = (detail.timeline || []).slice();
+  const firstActiveIndex = points.findIndex((item) => [
+    item.profitPnlUsdc,
+    item.lossPnlUsdc,
+    item.realizedPnlUsdc,
+    item.feeUsdc,
+    item.netPnlUsdc,
+    item.cumulativeLossPnlUsdc,
+    item.cumulativeRealizedPnlUsdc,
+    item.cumulativeFeeUsdc,
+    item.cumulativeNetPnlUsdc,
+  ].some((value) => Number(value || 0) !== 0));
+  const visiblePoints = firstActiveIndex >= 0 ? points.slice(firstActiveIndex) : points;
+  if (visiblePoints.length < 2) {
     svg.innerHTML = "";
     empty.style.display = "block";
     return;
@@ -148,12 +160,12 @@ function renderTimeline(detail) {
   const width = 700;
   const height = 260;
   const padding = 24;
-  const values = points.map(item => Number(item.cumulativeNetPnlUsdc || 0));
+  const values = visiblePoints.map(item => Number(item.cumulativeNetPnlUsdc || 0));
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = Math.max(max - min, 1);
-  const coords = points.map((item, index) => {
-    const x = padding + (index * (width - padding * 2)) / (points.length - 1);
+  const coords = visiblePoints.map((item, index) => {
+    const x = padding + (index * (width - padding * 2)) / (visiblePoints.length - 1);
     const y = height - padding - ((Number(item.cumulativeNetPnlUsdc || 0) - min) * (height - padding * 2)) / range;
     return `${x},${y}`;
   }).join(" ");
@@ -162,7 +174,7 @@ function renderTimeline(detail) {
     <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="rgba(23,33,23,0.15)" />
     <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="rgba(23,33,23,0.15)" />
     <polyline fill="none" stroke="#1f7a4d" stroke-width="3" points="${coords}" />
-    ${points.map((item, index) => {
+    ${visiblePoints.map((item, index) => {
       const [x, y] = coords.split(" ")[index].split(",");
       return `<circle cx="${x}" cy="${y}" r="4" fill="#1f7a4d"><title>${item.bucketAt}: ${item.cumulativeNetPnlUsdc}</title></circle>`;
     }).join("")}
@@ -202,7 +214,7 @@ function renderDetail(detail) {
       <td>${row.question}</td>
       <td><span class="badge">${row.outcome}</span></td>
       <td>${row.side}</td>
-      <td>${formatMoney(row.notionalUsdc)}</td>
+      <td>${formatMoney(row.costBasisUsdc ?? row.notionalUsdc)}</td>
       <td>${row.status}</td>
       <td>${row.placedAt || "-"}</td>
     </tr>

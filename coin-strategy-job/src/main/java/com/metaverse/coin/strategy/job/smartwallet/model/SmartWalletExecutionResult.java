@@ -25,4 +25,7 @@ public class SmartWalletExecutionResult {
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal tradingFeeUsdc;
+    private BigDecimal feePol;
+    private BigDecimal gasFeeUsdc;
 }

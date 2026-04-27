@@ -4,6 +4,11 @@ server:
   servlet:
     context-path: /strategy/api
 
+spring:
+  profiles:
+    # 默认激活 local 环境；部署时通过 --spring.profiles.active=test/prod 覆盖
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
 springdoc:
   # [FIXED-ONCE] Swagger UI entry path for local API inspection.
   swagger-ui:
@@ -13,15 +18,8 @@ springdoc:
   api-docs:
     path: /v3/api-docs
 
-spring:
-  datasource:
-    # [FIXED-ONCE] Local MySQL connection. Usually fixed per environment.
-    url: "jdbc:mysql://43.139.186.27:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    # [FIXED-ONCE] DB username for the local environment.
-    username: "devuser"
-    # [FIXED-ONCE] DB password for the local environment.
-    password: "Lroot1234"
-    driver-class-name: "com.mysql.cj.jdbc.Driver"
+  # datasource 配置已移至各环境 profile 文件:
+  # application-local.yml / application-test.yml / application-prod.yml
 
 sunwk:
   api:
@@ -94,71 +92,6 @@ arbitrage:
     # [TUNE] 自动再平衡默认划转的资产，当前单交易所策略默认使用 USDT。
     rebalance-asset: "USDT"
 
-polymarket:
-  hedge:
-    # ─── 总开关 ───
-    # [FIXED-ONCE] 对冲套利策略总开关。关闭后三个 @Scheduled 任务全部短路。
-    enabled: true
-    # [TUNE] PAPER 模式下也用此开关控制是否真的落地模拟仓；
-    # LIVE 模式下打开才会下真实订单。
-    auto-execution-enabled: true
-    # [TUNE] PAPER | LIVE。首次接入强烈建议保持 PAPER 至少一周以观察 PnL。
-    execution-mode: PAPER
-
-    # ─── 模拟仓（PAPER）子配置 ───
-    paper:
-      # [TUNE] PAPER 仓位是否计入 GlobalRiskGuard 全局敞口。
-      # 默认 false：模拟仓不占 USDC 额度，不影响跟单/实盘策略。
-      include-in-global-exposure: false
-      # [TUNE] 模拟成交时叠加的滑点比例，0 = 完全按 bestAsk 成交；
-      # 回测保守可设 0.001 ~ 0.003。
-      simulate-fill-slippage-rate: 0.000
-
-    # ─── 套利识别 ───
-    # [TUNE] 毛利率下限（= 1 - askY - askN）。
-    min-gross-edge-rate: 0.025
-    # [TUNE] 扣 2 倍手续费后的净利率下限。
-    min-net-edge-rate: 0.015
-    # [TUNE] 双边单侧最小可用流动性（USDC）。
-    min-side-liquidity-usdc: 2000
-    # [FIXED-ONCE] 扫描间隔。
-    scan-fixed-delay-ms: 10000
-    # [TUNE] 单次扫描处理市场数上限，避免一次性扫描数百市场压垮上游。
-    scan-batch-size: 50
-
-    # ─── 仓位与资金 ───
-    # [TUNE] 单笔最大投入 USDC（双边合计）。
-    max-single-position-usdc: 3000
-    # [TUNE] 单笔最小投入 USDC，低于此不建仓。
-    min-single-position-usdc: 50
-    # [TUNE] 对冲策略同时持仓数上限。
-    max-open-positions: 20
-    # [TUNE] 对冲策略总敞口上限 USDC。
-    max-total-exposure-usdc: 30000
-    # [TUNE] Kelly 折扣因子，0.5 = 半 Kelly。
-    kelly-fraction: 0.5
-
-    # ─── 执行参数 ───
-    # [TUNE] 预估单边手续费率，双边各收一次。
-    estimated-fee-rate: 0.0015
-    # [TUNE] 下单相对 bestAsk 允许的最大正向滑点。
-    max-slippage-rate: 0.005
-    # [FIXED-ONCE] 订单类型。
-    order-type: GTC
-
-    # ─── 结算监控 ───
-    # [FIXED-ONCE] 结算轮询间隔。
-    settlement-fixed-delay-ms: 30000
-    settlement-batch-size: 30
-    # [FIXED-ONCE] 订单轮询间隔（仅 LIVE 使用；PAPER 创建时已 FILLED 不进轮询）。
-    order-polling-fixed-delay-ms: 5000
-
-    # ─── 全局跨策略风控 ───
-    # [TUNE] 跟单 + 对冲合计敞口上限（0 = 禁用）。
-    global-max-total-exposure-usdc: 80000
-    # [TUNE] 对冲策略占全局敞口的最大比例。
-    max-hedge-share-of-global-exposure: 0.5
-
 smart-wallet:
   # [FIXED-ONCE] Master switch for this module.
   enabled: true
@@ -178,6 +111,15 @@ smart-wallet:
   min-realized-pnl-usdc: 1000
   # [TUNE] Maximum tolerated drawdown for watchlist qualification.
   max-drawdown-rate: 0.25
+  # [TUNE] Enable recent-degradation observe cooldown instead of immediately dropping profile qualification.
+  observe-cooldown-enabled: true
+  observe-cooldown-min-recent-trades-7d: 6
+  observe-cooldown-low-recent-win-rate-7d: 0.45
+  observe-cooldown-max-recent30d-gap: 0.20
+  observe-cooldown-max-historical7d-gap: 0.25
+  observe-cooldown-recover-min-recent-win-rate-7d: 0.55
+  observe-cooldown-recover-max-recent30d-gap: 0.10
+  observe-cooldown-days: 7
   # [TUNE] Ignore very illiquid markets.
   min-market-liquidity: 25000
   # [TUNE] Global cap for a single recommended stake.
@@ -205,12 +147,25 @@ smart-wallet:
     leaderboard-order-by: "PNL"
     # [TUNE] Candidate pool size before deeper analysis.
     leaderboard-limit: 50
+    leaderboard-queries:
+      - category: "OVERALL"
+        time-period: "ALL"
+        order-by: "PNL"
+        limit: 50
+      - category: "OVERALL"
+        time-period: "ALL"
+        order-by: "VOLUME"
+        limit: 50
     # [TUNE] Number of top wallets to score each cycle.
     analyze-top-n: 30
     # [TUNE] Historical closed positions fetched per wallet.
     closed-position-limit: 50
     # [TUNE] Recent trades fetched per watchlist wallet.
     recent-trade-limit: 30
+    # [TUNE] Recent trades fetched during discovery for session-profile enrichment.
+    discovery-profile-trade-limit: 30
+    # [TUNE] Lookback window used by discovery session coverage diagnostics.
+    session-coverage-lookback-days: 30
     # [FIXED-ONCE] Discovery job interval.
     discovery-fixed-delay-ms: 3600000
     # [FIXED-ONCE] Watchlist trade sync interval.
@@ -227,12 +182,28 @@ smart-wallet:
     trade-effect-label-fixed-delay-ms: 60000
     # [TUNE] Background cadence for building wallet_feature_daily snapshots.
     wallet-feature-daily-fixed-delay-ms: 300000
+    # [TUNE] Internal follow-result feedback loop cadence. Lower than 6h so heavy-loss leaders can be downgraded the same day.
+    internal-win-rate-refresh-fixed-delay-ms: 900000
     # [TUNE] Sync only a small batch of watchlist wallets each round to avoid bursty API traffic.
     watchlist-trade-sync-batch-size: 3
     # [TUNE] Minimum spacing between two trade-sync requests for the same wallet.
     wallet-trade-sync-min-interval-ms: 120000
     # [TUNE] Back off longer after one wallet hits a network/TLS failure.
     wallet-trade-error-cooldown-ms: 300000
+    # [FIXED-ONCE] Background cadence for refreshing WARM-tier wallet metrics.
+    warm-metrics-refresh-fixed-delay-ms: 600000
+    # [TUNE] Refresh only part of the WARM pool each round to avoid bursty profile recomputation.
+    warm-metrics-refresh-batch-size: 10
+    # [TUNE] Minimum spacing between two WARM-tier profile refreshes for the same wallet.
+    warm-wallet-refresh-min-interval-ms: 1800000
+    # [TUNE] Keep existing HOT wallets during small score/win-rate drift instead of dropping them immediately.
+    hot-retention-enabled: true
+    hot-retention-hours: 24
+    score-hysteresis-buffer: 0.08
+    win-rate-hysteresis-buffer: 0.04
+    # [TUNE] Wallets with no observed trade for this many days are moved to WARM, then COLD after the cold threshold.
+    warm-wallet-inactivity-days: 30
+    cold-wallet-inactivity-days: 60
   execution-wallet:
     # [SCRIPT][FIXED-ONCE] Live routing master switch. Requires env secrets to be present.
     enabled: true
@@ -288,8 +259,7 @@ smart-wallet:
     # [TUNE] Keep SELL disabled unless you explicitly want reverse / exit following.
     allow-sell-signal: false
     # [TUNE] Optional automatic stop-loss automation for open positions.
-    # Default off for now to avoid premature defensive exits.
-    enable-auto-stop-loss: false
+    enable-auto-stop-loss: true
     # [TUNE] Trigger automatic stop-loss once unrealized ROI <= -threshold.
     auto-stop-loss-threshold-rate: 0.35
     # [TUNE] Optional automatic take-profit automation for open positions.
@@ -298,8 +268,10 @@ smart-wallet:
     enable-auto-take-profit: true
     # [TUNE] Trigger automatic take-profit once unrealized ROI >= this threshold.
     auto-take-profit-threshold-rate: 0.60
-    # [TUNE] Main freshness gate. Most sensitive live-strategy parameter.
-    max-signal-age-seconds: 300
+    fast-event-max-hours: 24
+    long-horizon-stake-multiplier: 0.50
+    # [TUNE] Main freshness gate. Keep LIVE/PAPER consistent and tolerate test sync latency.
+    max-signal-age-seconds: 3600
     # [TUNE] Ignore tiny smart-wallet prints.
     min-trigger-size-usdc: 5
     # [TUNE] Follow only inside this market price band.
@@ -336,20 +308,29 @@ smart-wallet:
     block-opposite-pending-task-same-market: true
     # [TUNE] Multi-wallet consensus gate for stricter entry.
     enable-consensus-gate: true
+    policy-tag: "candidate-v2"
     # [FIX-CONSENSUS-WINDOW] Root cause of zero-position deadlock.
     # Smart wallets react to the same market signal over minutes to hours, not within 3 minutes.
     # With watchlist-trade-sync-batch-size=3 and many wallets, even the sync rotation alone
     # takes >180s. Increased to 3600s (1h) so multi-wallet consensus is actually detectable.
     consensus-window-seconds: 3600
     # [TUNE] Minimum distinct entities (after wallet deduplication) before consensus is trusted.
-    min-distinct-wallets: 2
-    # [FIX-CONSENSUS-SCORE] Lowered from 0.72 → 0.65. The consensus score is the average
-    # wallet score of participating entities. With minWalletScore=0.70, two wallets at the
-    # threshold average to 0.70, which failed the previous 0.72 gate. 0.65 allows consensus
-    # from near-threshold wallets while still requiring meaningful quality.
-    min-consensus-score: 0.65
+    # Keep LIVE/PAPER on the same loosened gate so single high-quality wallets can open.
+    min-distinct-wallets: 1
+    min-distinct-entities: 1
+    # [TUNE] Loosened from 0.65 to unblock low-but-nonzero single-entity consensus.
+    min-consensus-score: 0.20
+    quality-weighted-consensus-enabled: true
+    consensus-entity-base-weight: 0.60
+    consensus-behavior-weight: 0.15
+    consensus-recency-weight: 0.10
+    consensus-leader-follower-weight: 0.05
+    consensus-independence-weight: 0.05
+    consensus-recent-consistency-weight: 0.05
     # [TUNE] Special strategy lane for one exceptional wallet.
-    enable-single-wallet-override: false
+    enable-single-wallet-override: true
+    enable-single-wallet-override-canary: true
+    single-wallet-override-canary-rate: 0.10
     # [FIX-BIAS-GUARD] Survivorship bias guard: only flag wallets with winRate=1.0 AND
     # ≤20 trades as suspicious. Raising the sample-size threshold from 50→20 breaks the
     # structural deadlock: previously a wallet with ≥50 trades AND winRate=1.0 was blocked
@@ -358,17 +339,28 @@ smart-wallet:
     block-unreliable-leaderboard-win-rate: true
     unreliable-win-rate-threshold: 1.0
     unreliable-max-sample-size: 20
-    # [FIX-SINGLE-WALLET] Reduced min-trades 50→20 to match realistic Polymarket leaderboard
-    # data (top-50 positions shown; wallets with fewer visible trades are not necessarily bad).
-    # Reduced min-trigger-size 100→30 since many quality signals are <$100.
-    single-wallet-override-min-wallet-score: 0.79
-    single-wallet-override-min-win-rate: 0.65
-    single-wallet-override-min-trades: 20
-    single-wallet-override-min-trigger-size-usdc: 30
-    single-wallet-override-min-recommended-stake-usdc: 5
+    single-wallet-override-min-wallet-score: 0.88
+    single-wallet-override-min-win-rate: 0.68
+    single-wallet-override-min-trades: 30
+    single-wallet-override-min-recent-trades-7d: 1
+    single-wallet-override-min-recent-win-rate-7d: 0.60
+    single-wallet-override-min-replicability-score: 0.60
+    single-wallet-override-min-quality-score: 0.60
+    single-wallet-override-min-trigger-size-usdc: 100
+    single-wallet-override-min-recommended-stake-usdc: 1
+    scale-up-max-market-outcome-cost-usdc: 30
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
-    # [FEATURE] 集中度门控总开关（默认关闭，先验证 /positions 接口返回格式后再上线）
-    enable-concentration-gate: false
+    # [FEATURE] 集中度门控总开关。先以 DOWNSIZE 方式灰度，而不是直接 BLOCK。
+    enable-concentration-gate: true
+    extreme-concentration-mode: BLOCK
+    concentration-high-risk-mode: DOWNSIZE
+    concentration-high-risk-downsize-rate: 0.35
+    # [TUNE] 极端集中阈值。命中时默认直接拒单，而不是只缩仓。
+    max-top1-extreme-concentration-pct: 0.70
+    max-top3-extreme-concentration-pct: 0.90
+    max-top5-extreme-concentration-pct: 0.95
+    extreme-concentration-max-observed-holders: 10
+    max-extreme-hhi: 6000
     # [TUNE] CR_1 上限：单一持仓者占比超过此值拒绝信号
     max-top1-concentration-pct: 0.40
     # [TUNE] CR_3 上限：前三持仓者合计占比超过此值拒绝信号
@@ -376,7 +368,7 @@ smart-wallet:
     # [TUNE] HHI 上限（0=禁用）
     max-hhi: 2500
     # [TUNE] 鲸鱼信号来源处置模式：BLOCK / DOWNSIZE / WARN_ONLY
-    whale-signal-source-mode: BLOCK
+    whale-signal-source-mode: DOWNSIZE
     # [TUNE] DOWNSIZE 模式下仓位保留比例
     whale-signal-downsize-rate: 0.20
     # [TUNE] 集中度缓存有效期（ms）
@@ -387,6 +379,47 @@ smart-wallet:
     concentration-stake-safe-top3-pct: 0.40
     # [TUNE] 集中度惩罚最大削减比例
     concentration-stake-penalty-max-rate: 0.50
+    # ── Kelly 动态仓位 ─────────────────────────────────────────
+    # [TUNE] 启用后使用 calibratedFollowProbability 和入场价格计算 Kelly 仓位
+    kelly-stake-enabled: true
+    # [TUNE] Kelly 折扣因子，0.3 = 保守半 Kelly 以下
+    kelly-fraction: 0.30
+    stake-stability-low-score: 0.45
+    stake-stability-low-multiplier: 0.70
+    stake-stability-high-score: 0.75
+    stake-stability-high-multiplier: 1.05
+    stake-slippage-penalty-start-rate: 0.04
+    stake-penalty-floor-multiplier: 0.55
+    stake-theme-correlation-penalty-multiplier: 0.75
+    # ── 时间感知止损 ──────────────────────────────────────────
+    # [TUNE] 启用后按市场剩余时间动态收紧止损线
+    time-aware-stop-loss-enabled: true
+    # [TUNE] 止损分段（remainingHours 降序排列，matches first tier where remaining <= remainingHours）
+    stop-loss-tiers:
+      - remaining-hours: 168
+        threshold-rate: 0.35
+      - remaining-hours: 24
+        threshold-rate: 0.25
+      - remaining-hours: 6
+        threshold-rate: 0.15
+      - remaining-hours: 0
+        threshold-rate: 0.05
+    # [TUNE] 启用趋势加速止损
+    trend-stop-loss-enabled: true
+    # [TUNE] 连续多少个扫描周期（约 5 分钟/周期）价格单调下跌且 ROI<0 时触发
+    trend-stop-loss-consecutive-periods: 3
+    # [METHOD-C] 退出信号提供者模式: RULES=时间感知止损; SCORING=特征评分退出
+    exit-signal-provider-mode: SCORING
+    exit-scoring-roi-momentum-weight: 0.10
+    exit-scoring-consensus-decay-weight: 0.30
+    exit-scoring-orderbook-deterioration-weight: 0.25
+    exit-scoring-high-concentration-weight: 0.20
+    exit-scoring-extreme-concentration-weight: 0.40
+    exit-scoring-source-wallet-reduction-weight: 0.35
+    exit-scoring-source-wallet-add-weight: 0.10
+    exit-scoring-baseline-consensus: 0.72
+    exit-scoring-min-threshold: 0.03
+    exit-scoring-max-threshold: 0.50
   model-calibration:
     # [TUNE] Platt-style calibration params for baseline follow-probability output.
     follow-probability-scale: 1.15
@@ -428,13 +461,18 @@ smart-wallet:
     followable:
       max-signal-age-seconds: 3600
       min-distinct-wallets: 1
-      min-consensus-score: 0
-      single-wallet-override-min-wallet-score: 0.79
-      single-wallet-override-min-win-rate: 0.65
-      # [FIX-PRESET] Synced with main config fix: 50→20 trades, 100→30 trigger
-      single-wallet-override-min-trades: 20
-      single-wallet-override-min-trigger-size-usdc: 30
-      single-wallet-override-min-recommended-stake-usdc: 5
+      min-distinct-entities: 1
+      min-consensus-score: 0.20
+      quality-weighted-consensus-enabled: true
+      single-wallet-override-min-wallet-score: 0.88
+      single-wallet-override-min-win-rate: 0.68
+      single-wallet-override-min-trades: 30
+      single-wallet-override-min-recent-trades-7d: 1
+      single-wallet-override-min-recent-win-rate-7d: 0.60
+      single-wallet-override-min-replicability-score: 0.60
+      single-wallet-override-min-quality-score: 0.60
+      single-wallet-override-min-trigger-size-usdc: 100
+      single-wallet-override-min-recommended-stake-usdc: 1
   live-validation:
     # [TUNE] Auxiliary LIVE lane. Keep disabled by default; enable only in a geoblock-safe environment when you want tiny real-fund validation.
     enabled: false
@@ -494,6 +532,23 @@ smart-wallet:
     retry-batch-limit: 20
     retry-backoff-minutes: 15
     max-retry-failures: 8
+  market-monitoring:
+    metadata-refresh:
+      enabled: true
+      refresh-fixed-delay-ms: 300000
+      candidate-lookback-days: 30
+      max-candidate-markets: 120
+      refresh-batch-size: 120
+      gamma-chunk-size: 20
+      max-stale-ms: 900000
+    concentration-snapshot:
+      enabled: true
+      refresh-fixed-delay-ms: 180000
+      refresh-batch-size: 24
+      candidate-lookback-days: 30
+      max-candidate-markets: 60
+      min-market-refresh-interval-ms: 300000
+      max-snapshot-age-ms: 900000
   wallets:
     # [FIXED-ONCE] Example seed wallets for local bootstrap/demo only.
     - address: "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
@@ -534,3 +589,35 @@ smart-wallet:
       liquidity-usdc: 112000
       category: "politics"
       tags: [ "politics", "elections" ]
+
+weather-arbitrage:
+  enabled: false
+  mode: OFF
+  capital-pool-usdc: 500
+  max-single-stake-usdc: 50
+  max-open-positions: 5
+  entry-edge-threshold: 0.10
+  expected-value-floor: 0.02
+  min-liquidity-usdc: 50
+  min-hours-to-settlement: 12
+  max-hours-to-settlement: 72
+  sigma-f: 3.5
+  min-calibration-sample-size: 20
+  max-forecast-age-minutes: 180
+  allowed-lead-hour-buckets: [12, 24, 48, 72]
+  min-data-source-count: 1
+  confidence-floor: 0.55
+  max-markets-per-scan: 150
+  cities:
+    - name: London
+      time-zone: Europe/London
+      aliases: [London]
+    - name: New York
+      time-zone: America/New_York
+      aliases: [New York, NYC]
+    - name: Seoul
+      time-zone: Asia/Seoul
+      aliases: [Seoul]
+  tomorrow-io-api-key: ${TOMORROW_IO_API_KEY:}
+  scan-fixed-delay-ms: 900000
+  sync-fixed-delay-ms: 300000

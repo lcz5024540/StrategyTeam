@@ -14,6 +14,7 @@ export function WinRateTrend({ data }: WinRateTrendProps) {
   const sorted = [...data].sort((a, b) => a.reportDate.localeCompare(b.reportDate))
   const dates = sorted.map((item) => item.reportDate)
   const winRates = sorted.map((item) => Number(((item.winRate || 0) * 100).toFixed(2)))
+  const lossRates = sorted.map((item) => Number((((1 - (item.winRate || 0)) || 0) * 100).toFixed(2)))
 
   const option: EChartsOption = {
     backgroundColor: 'transparent',
@@ -69,6 +70,16 @@ export function WinRateTrend({ data }: WinRateTrendProps) {
           lineStyle: { color: 'rgba(255, 170, 0, 0.30)', type: 'dashed', width: 1 },
           label: { formatter: '50%', color: '#ffaa00', fontFamily: 'monospace', fontSize: 10 },
         },
+      },
+      {
+        name: '亏损率',
+        type: 'line',
+        smooth: true,
+        data: lossRates,
+        lineStyle: { width: 2, color: '#ff4d6d', shadowBlur: 8, shadowColor: 'rgba(255, 77, 109, 0.45)' },
+        itemStyle: { color: '#ff4d6d', borderColor: '#020904', borderWidth: 2 },
+        symbol: 'circle',
+        symbolSize: 5,
       },
     ],
   }

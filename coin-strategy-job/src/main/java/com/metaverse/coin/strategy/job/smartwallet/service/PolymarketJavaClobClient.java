@@ -43,6 +43,8 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class PolymarketJavaClobClient implements PolymarketClobClient {
 
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
+
     private static final MediaType JSON = MediaType.get("application/json");
     private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
     private static final String AUTH_DOMAIN_NAME = "ClobAuthDomain";
@@ -87,24 +89,31 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
 
     @Override
     public Map<String, Object> deriveApiCreds(ExecutionWalletContextLoader.ExecutionWalletContext context) {
-        log.info("Polymarket Java CLOB invoke operation=derive-api-creds address={} chainId={}",
-                context.getAddress(), context.getChainId());
+        log.info("{} action=Java客户端派生CLOB凭证 result=开始 address={} chainId={}",
+                LOG_PREFIX, context.getAddress(), context.getChainId());
         Map<String, String> headers = createLevel1Headers(context, 0);
         try {
             Map<String, Object> created = executeJson("POST", context, "/auth/api-key", headers, null);
-            return normalizeApiCreds(created, false);
+            Map<String, Object> result = normalizeApiCreds(created, false);
+            log.info("{} action=Java客户端派生CLOB凭证 result=完成 method=create-api-key responseKeys={}",
+                    LOG_PREFIX, result.keySet());
+            return result;
         } catch (IllegalStateException ex) {
-            log.warn("Polymarket Java CLOB create api-key failed, trying derive fallback: {}", ex.getMessage());
+            log.warn("{} action=Java客户端创建CLOB凭证 result=失败后降级派生 reason={}", LOG_PREFIX, ex.getMessage());
             Map<String, Object> derived = executeJson("GET", context, "/auth/derive-api-key", headers, null);
-            return normalizeApiCreds(derived, true);
+            Map<String, Object> result = normalizeApiCreds(derived, true);
+            log.info("{} action=Java客户端派生CLOB凭证 result=完成 method=derive-api-key responseKeys={}",
+                    LOG_PREFIX, result.keySet());
+            return result;
         }
     }
 
     @Override
     public Map<String, Object> placeOrder(ExecutionWalletContextLoader.ExecutionWalletContext context,
                                           PolymarketOrderRequestFactory.PreparedPolymarketOrder order) {
-        log.info("Polymarket Java CLOB invoke operation=place-order marketId={} tokenId={} side={} orderType={}",
-                order.getMarketId(), order.getTokenId(), order.getSide(), context.getOrderType());
+        log.info("{} action=Java客户端提交CLOB订单 result=开始 marketId={} tokenId={} side={} orderType={} price={} size={} stakeUsdc={}",
+                LOG_PREFIX, order.getMarketId(), order.getTokenId(), order.getSide(), context.getOrderType(),
+                order.getLimitPrice(), order.getSize(), order.getStakeUsdc());
         ApiCreds creds = ensureApiCreds(context);
         SignedOrder signedOrder = signOrder(context, order);
 
@@ -130,33 +139,41 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
         } else {
             result.put("derivedApiCreds", false);
         }
+        log.info("{} action=Java客户端提交CLOB订单 result=完成 marketId={} tokenId={} side={} orderId={} responseKeys={}",
+                LOG_PREFIX, order.getMarketId(), order.getTokenId(), order.getSide(), result.get("orderID"), response.keySet());
         return result;
     }
 
     @Override
     public Map<String, Object> getOrder(ExecutionWalletContextLoader.ExecutionWalletContext context, String orderId) {
-        log.info("Polymarket Java CLOB invoke operation=get-order orderId={}", orderId);
+        log.info("{} action=Java客户端查询CLOB订单 result=开始 orderId={}", LOG_PREFIX, orderId);
         ApiCreds creds = ensureApiCreds(context);
         String path = "/data/order/" + orderId;
         Map<String, String> headers = createLevel2Headers(context, creds, "GET", path, null);
-        return Map.of(
+        Map<String, Object> result = Map.of(
                 "success", true,
                 "response", executeJson("GET", context, path, headers, null)
         );
+        log.info("{} action=Java客户端查询CLOB订单 result=完成 orderId={} responseKeys={}",
+                LOG_PREFIX, orderId, result.keySet());
+        return result;
     }
 
     @Override
     public Map<String, Object> cancelOrder(ExecutionWalletContextLoader.ExecutionWalletContext context, String orderId) {
-        log.info("Polymarket Java CLOB invoke operation=cancel-order orderId={}", orderId);
+        log.info("{} action=Java客户端取消CLOB订单 result=开始 orderId={}", LOG_PREFIX, orderId);
         ApiCreds creds = ensureApiCreds(context);
         LinkedHashMap<String, Object> body = new LinkedHashMap<>();
         body.put("orderID", orderId);
         String serializedBody = serialize(body);
         Map<String, String> headers = createLevel2Headers(context, creds, "DELETE", "/order", serializedBody);
-        return Map.of(
+        Map<String, Object> result = Map.of(
                 "success", true,
                 "response", executeJson("DELETE", context, "/order", headers, serializedBody)
         );
+        log.info("{} action=Java客户端取消CLOB订单 result=完成 orderId={} responseKeys={}",
+                LOG_PREFIX, orderId, result.keySet());
+        return result;
     }
 
     private ApiCreds ensureApiCreds(ExecutionWalletContextLoader.ExecutionWalletContext context) {

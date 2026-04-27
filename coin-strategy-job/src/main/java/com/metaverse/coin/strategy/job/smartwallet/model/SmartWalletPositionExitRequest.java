@@ -9,5 +9,8 @@ public class SmartWalletPositionExitRequest {
     private BigDecimal price;
     private BigDecimal quantity;
     private BigDecimal feeUsdc;
+    private BigDecimal tradingFeeUsdc;
+    private BigDecimal feePol;
+    private BigDecimal gasFeeUsdc;
     private String reason;
 }

@@ -21,6 +21,9 @@ public class SmartWalletFollowTaskView {
     private BigDecimal triggerPrice;
     private BigDecimal triggerSizeUsdc;
     private BigDecimal recommendedStakeUsdc;
+    private String marketType;
+    private String entryLane;
+    private String exitIntent;
     private String status;
     private String executionMode;
     private String externalOrderId;
@@ -35,6 +38,9 @@ public class SmartWalletFollowTaskView {
     private Integer estimateSampleSize;
     private Boolean taskExecutable;
     private Boolean overrideApplied;
+    private Boolean manualAllowlistApplied;
+    private String manualAllowlistReason;
+    private BigDecimal stakeMultiplierApplied;
     private String appliedPreset;
     private Integer blockerCount;
     private String primaryBlockerCategory;

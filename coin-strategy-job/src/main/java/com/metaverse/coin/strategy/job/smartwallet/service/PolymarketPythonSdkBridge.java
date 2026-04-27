@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class PolymarketPythonSdkBridge implements PolymarketClobClient {
 
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
+
     private final ObjectMapper objectMapper;
 
     @Override
@@ -93,7 +95,8 @@ public class PolymarketPythonSdkBridge implements PolymarketClobClient {
         if (!"PYTHON".equalsIgnoreCase(context.getSdkMode())) {
             throw new IllegalStateException("Unsupported Polymarket CLOB sdk-mode: " + context.getSdkMode());
         }
-        log.info("Polymarket Python SDK invoke command={} helperScript={} python={} payloadKeys={}",
+        log.info("{} action=调用Python CLOB桥接脚本 result=开始 command={} helperScript={} python={} payloadKeys={}",
+                LOG_PREFIX,
                 command,
                 context.getHelperScriptPath(),
                 context.getPythonExecutable(),
@@ -133,9 +136,14 @@ public class PolymarketPythonSdkBridge implements PolymarketClobClient {
                 throw new IllegalStateException("Polymarket Python SDK bridge failed: " + firstNonBlank(stderr, stdout));
             }
             if (!StringUtils.hasText(stdout)) {
+                log.info("{} action=调用Python CLOB桥接脚本 result=完成 command={} stdoutEmpty=true",
+                        LOG_PREFIX, command);
                 return Map.of();
             }
-            return objectMapper.readValue(stdout, new TypeReference<Map<String, Object>>() {});
+            Map<String, Object> result = objectMapper.readValue(stdout, new TypeReference<Map<String, Object>>() {});
+            log.info("{} action=调用Python CLOB桥接脚本 result=完成 command={} responseKeys={}",
+                    LOG_PREFIX, command, result.keySet());
+            return result;
         } catch (IOException e) {
             throw new IllegalStateException("Failed to launch Polymarket Python SDK bridge. Check python executable and helper script path.", e);
         } catch (InterruptedException e) {
@@ -179,13 +187,13 @@ public class PolymarketPythonSdkBridge implements PolymarketClobClient {
             }
             String trimmed = line.trim();
             if (success) {
-                log.info("[python-bridge:{}] {}", command, trimmed);
+                log.info("{} action=读取Python CLOB桥接日志 result=成功 command={} line={}", LOG_PREFIX, command, trimmed);
                 continue;
             }
             if (isOperationalPythonLine(trimmed)) {
-                log.warn("[python-bridge:{}] {}", command, trimmed);
+                log.warn("{} action=读取Python CLOB桥接日志 result=可恢复异常 command={} line={}", LOG_PREFIX, command, trimmed);
             } else {
-                log.error("[python-bridge:{}] {}", command, trimmed);
+                log.error("{} action=读取Python CLOB桥接日志 result=异常 command={} line={}", LOG_PREFIX, command, trimmed);
             }
         }
     }

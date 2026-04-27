@@ -3,8 +3,10 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRetryMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRunMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSettlementRetryEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSettlementRunEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -43,6 +45,7 @@ public class SmartWalletSettlementSyncService {
 
     private final SmartWalletProperties properties;
     private final SmartWalletAccountingService accountingService;
+    private final SmartWalletPositionMapper positionMapper;
     private final SmartWalletSettlementRunMapper settlementRunMapper;
     private final SmartWalletSettlementRetryMapper settlementRetryMapper;
     private final ObjectMapper objectMapper;
@@ -205,12 +208,45 @@ public class SmartWalletSettlementSyncService {
                 || (config.getRefreshCacheEveryRuns() != null
                 && config.getRefreshCacheEveryRuns() > 0
                 && (runs + 1) % config.getRefreshCacheEveryRuns() == 0);
+        Date now = new Date();
+        Date staleThreshold = Date.from(Instant.ofEpochMilli(now.getTime())
+                .minus(config.getStaleOraclePendingHours() == null ? 12 : config.getStaleOraclePendingHours(), ChronoUnit.HOURS));
+        int pendingRetryCount = safeCount(settlementRetryMapper.selectCount(new LambdaQueryWrapper<SmartWalletSettlementRetryEntity>()
+                .in(SmartWalletSettlementRetryEntity::getStatus, List.of("PENDING", "RETRYING"))));
+        int dueRetryCount = safeCount(settlementRetryMapper.selectCount(new LambdaQueryWrapper<SmartWalletSettlementRetryEntity>()
+                .in(SmartWalletSettlementRetryEntity::getStatus, List.of("PENDING", "RETRYING"))
+                .le(SmartWalletSettlementRetryEntity::getNextRetryAt, now)));
+        int oraclePendingPositionCount = safeCount(positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getStatus, "SETTLEMENT_PENDING_ORACLE")));
+        int staleOraclePendingCount = safeCount(positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .eq(SmartWalletPositionEntity::getStatus, "SETTLEMENT_PENDING_ORACLE")
+                .lt(SmartWalletPositionEntity::getUpdatedAt, staleThreshold)));
+        int manualConfirmRetryCount = safeCount(settlementRetryMapper.selectCount(new LambdaQueryWrapper<SmartWalletSettlementRetryEntity>()
+                .in(SmartWalletSettlementRetryEntity::getStatus, List.of("PENDING", "RETRYING"))
+                .eq(SmartWalletSettlementRetryEntity::getRetryType, "ORACLE_PENDING")
+                .like(SmartWalletSettlementRetryEntity::getLastErrorMessage, "resolutionSource=LOCAL")));
+        List<String> anomalyNotes = new ArrayList<>();
+        if (staleOraclePendingCount > 0) {
+            anomalyNotes.add("stale_oracle_pending=" + staleOraclePendingCount);
+        }
+        if (manualConfirmRetryCount > 0) {
+            anomalyNotes.add("manual_confirm_backlog=" + manualConfirmRetryCount);
+        }
+        if (dueRetryCount > 0) {
+            anomalyNotes.add("due_settlement_retries=" + dueRetryCount);
+        }
         return SettlementSyncStatusView.builder()
                 .enabled(properties.isEnabled() && config.isEnabled())
                 .running(running.get())
                 .lastRunAt(lastRunAt)
                 .invocationCount(runs)
                 .nextRunRefreshesCache(nextRefresh)
+                .pendingRetryCount(pendingRetryCount)
+                .dueRetryCount(dueRetryCount)
+                .oraclePendingPositionCount(oraclePendingPositionCount)
+                .staleOraclePendingCount(staleOraclePendingCount)
+                .manualConfirmRetryCount(manualConfirmRetryCount)
+                .anomalyNotes(anomalyNotes)
                 .lastSummary(lastSummary)
                 .build();
     }
@@ -279,6 +315,10 @@ public class SmartWalletSettlementSyncService {
                 .maxFailureCount(maxFailure)
                 .latestFailedAt(latestFailedAt)
                 .build();
+    }
+
+    private int safeCount(Long count) {
+        return count == null ? 0 : count.intValue();
     }
 
     private boolean shouldRefreshCacheForNextRun() {

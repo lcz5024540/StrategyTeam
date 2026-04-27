@@ -157,4 +157,27 @@ class PolymarketMarketMetadataServiceTest {
         assertEquals("YES", service.resolveOutcomeByTokenId(metadata, "token-yes", "NO"));
         assertEquals("token-yes", service.resolveWinningTokenId(metadata));
     }
+
+    @Test
+    void shouldResolveCanonicalConditionIdFromSearchMarketIdMatch() {
+        when(polymarketApiClient.fetchMarketMetadata("market-legacy"))
+                .thenThrow(new IllegalStateException("Polymarket market metadata not found"));
+        when(polymarketApiClient.searchMarkets("76ers vs. Celtics: O/U 217.5", 20, true))
+                .thenReturn(List.of(
+                        PolymarketApiClient.MarketMetadata.builder()
+                                .conditionId("0xcondition")
+                                .marketId("market-legacy")
+                                .question("76ers vs. Celtics: O/U 217.5")
+                                .outcomes(List.of("OVER", "UNDER"))
+                                .build()
+                ));
+
+        String canonical = service.resolveCanonicalConditionId(
+                "market-legacy",
+                "76ers vs. Celtics: O/U 217.5",
+                List.of("OVER")
+        );
+
+        assertEquals("0xcondition", canonical);
+    }
 }

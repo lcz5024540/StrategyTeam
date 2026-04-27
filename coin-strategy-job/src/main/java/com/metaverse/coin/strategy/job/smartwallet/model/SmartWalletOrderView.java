@@ -29,7 +29,11 @@ public class SmartWalletOrderView {
     private BigDecimal price;
     private BigDecimal size;
     private BigDecimal notionalUsdc;
+    private BigDecimal costBasisUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal tradingFeeUsdc;
+    private BigDecimal feePol;
+    private BigDecimal gasFeeUsdc;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;

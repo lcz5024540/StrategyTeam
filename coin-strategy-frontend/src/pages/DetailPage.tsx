@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { strategyApi, walletApi, tasksApi } from '@/api'
 import { useStrategyStore } from '@/store/useStrategyStore'
@@ -12,12 +13,29 @@ import { DailyPnlBars } from '@/components/charts/DailyPnlBars'
 import { reportsApi } from '@/api'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
+const EXPORT_LIMIT = 5000
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.URL.revokeObjectURL(url)
+}
+
 export function DetailPage() {
   const [searchParams] = useSearchParams()
-  const { selectedStrategy, positionMode } = useStrategyStore()
+  const { selectedStrategy, positionMode, selectedDays } = useStrategyStore()
 
   const strategy = searchParams.get('strategy') || selectedStrategy
+  const days = Number(searchParams.get('days')) || selectedDays
   const mode = (searchParams.get('mode') || positionMode) as 'PAPER' | 'LIVE'
+  const [exportingKey, setExportingKey] = useState<string | null>(null)
+  const [exportMessage, setExportMessage] = useState<string>('')
+  const [exportError, setExportError] = useState<string>('')
 
   const { data: detail, isLoading } = useQuery({
     queryKey: ['strategyDetail', strategy, mode],
@@ -44,12 +62,12 @@ export function DetailPage() {
     queryFn: () => tasksApi.getOpportunities(20, 3),
   })
 
-  const { data: dailyReports = [] } = useQuery({
-    queryKey: ['dailyReports', 30, mode],
-    queryFn: () => reportsApi.getDailyReports(30, mode),
+  const { data: pnlTimeline = [], isLoading: timelineLoading } = useQuery({
+    queryKey: ['pnlTimeline', days, 24, mode],
+    queryFn: () => reportsApi.getPnlTimeline(Math.max(days, 1), 24, mode),
   })
 
-  if (isLoading) {
+  if (isLoading || timelineLoading) {
     return <div className="loading">加载中...</div>
   }
 
@@ -59,6 +77,24 @@ export function DetailPage() {
     detail.totalTrades === 0 &&
     positions.length === 0 &&
     settlements.length === 0
+
+  const exportName = (name: string) => `smart_wallet_${name}_${mode.toLowerCase()}.csv`
+  const handleExport = async (key: string, filename: string, run: () => Promise<Blob>) => {
+    try {
+      setExportingKey(key)
+      setExportError('')
+      setExportMessage(`正在导出 ${filename} ...`)
+      const blob = await run()
+      downloadBlob(blob, filename)
+      setExportMessage(`导出完成：${filename}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出失败'
+      setExportError(message)
+      setExportMessage('')
+    } finally {
+      setExportingKey(null)
+    }
+  }
 
   return (
     <>
@@ -73,18 +109,19 @@ export function DetailPage() {
 
       <MetricGrid detail={detail} />
 
+      {exportMessage ? <section className="export-status">{exportMessage}</section> : null}
+      {exportError ? <section className="export-status export-status-error">{exportError}</section> : null}
+
       <div className="split-grid">
         <section className="panel">
           <div className="section-head">
             <h2>可执行任务</h2>
-            <p>通过风控的待执行任务</p>
           </div>
           <TasksTable tasks={executableTasks} type="executable" />
         </section>
         <section className="panel">
           <div className="section-head">
             <h2>机会看板</h2>
-            <p>最接近可执行但仍被拦住的任务</p>
           </div>
           <TasksTable tasks={opportunityTasks} type="opportunity" />
         </section>
@@ -92,16 +129,42 @@ export function DetailPage() {
 
       <div className="split-grid">
         <section className="panel">
-          <div className="section-head">
-            <h2>当前持仓</h2>
-            <p>展示当前 open positions</p>
+          <div className="section-head section-head-row">
+            <div>
+              <h2>当前持仓</h2>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={exportingKey !== null}
+              onClick={() => handleExport(
+                'live_positions',
+                exportName('live_positions'),
+                () => walletApi.exportLivePositionsCsv(mode),
+              )}
+            >
+              {exportingKey === 'live_positions' ? '导出中...' : '导出 CSV'}
+            </button>
           </div>
           <PositionsTable positions={positions} />
         </section>
         <section className="panel">
-          <div className="section-head">
-            <h2>待结算处理</h2>
-            <p>已到结算窗口或待领取的仓位</p>
+          <div className="section-head section-head-row">
+            <div>
+              <h2>待结算</h2>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={exportingKey !== null}
+              onClick={() => handleExport(
+                'next_settlements',
+                exportName('next_settlements'),
+                () => walletApi.exportNextSettlementsCsv(EXPORT_LIMIT, mode),
+              )}
+            >
+              {exportingKey === 'next_settlements' ? '导出中...' : '导出 CSV'}
+            </button>
           </div>
           <SettlementsTable positions={settlements} />
         </section>
@@ -111,23 +174,60 @@ export function DetailPage() {
         <section className="panel">
           <div className="section-head">
             <h2>收益时间线</h2>
-            <p>按日查看累计收益变化</p>
           </div>
-          <TimelineChart data={dailyReports} />
+          <TimelineChart data={pnlTimeline} bucketHours={24} />
         </section>
         <section className="panel">
           <div className="section-head">
-            <h2>订单收益柱状图</h2>
-            <p>按日报查看净收益分布</p>
+            <h2>收益分布</h2>
           </div>
-          <DailyPnlBars data={dailyReports} />
+          <DailyPnlBars data={pnlTimeline} bucketHours={24} />
         </section>
       </div>
 
       <section className="panel">
-        <div className="section-head">
-          <h2>交易历史</h2>
-          <p>最近的订单记录</p>
+        <div className="section-head section-head-row">
+          <div>
+            <h2>交易历史</h2>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={exportingKey !== null}
+              onClick={() => handleExport(
+                'orders',
+                exportName('orders'),
+                () => walletApi.exportOrdersCsv(EXPORT_LIMIT, mode),
+              )}
+            >
+              {exportingKey === 'orders' ? '导出中...' : '导出订单'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={exportingKey !== null}
+              onClick={() => handleExport(
+                'fills',
+                exportName('fills'),
+                () => walletApi.exportFillsCsv(EXPORT_LIMIT, mode),
+              )}
+            >
+              {exportingKey === 'fills' ? '导出中...' : '导出成交'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={exportingKey !== null}
+              onClick={() => handleExport(
+                'position_history',
+                exportName('position_history'),
+                () => walletApi.exportPositionHistoryCsv(false, mode),
+              )}
+            >
+              {exportingKey === 'position_history' ? '导出中...' : '导出持仓历史'}
+            </button>
+          </div>
         </div>
         <OrdersTable mode={mode} />
       </section>

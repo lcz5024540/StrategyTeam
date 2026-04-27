@@ -37,6 +37,8 @@ class SmartWalletClaimServiceTest {
     @Mock
     private SmartWalletOnChainClaimGateway onChainClaimGateway;
     @Mock
+    private SmartWalletMarketInfoService marketInfoService;
+    @Mock
     private JdbcTemplate jdbcTemplate;
 
     private SmartWalletClaimService service;
@@ -53,6 +55,7 @@ class SmartWalletClaimServiceTest {
                 claimRetryMapper,
                 accountingService,
                 onChainClaimGateway,
+                marketInfoService,
                 new ObjectMapper(),
                 jdbcTemplate
         );

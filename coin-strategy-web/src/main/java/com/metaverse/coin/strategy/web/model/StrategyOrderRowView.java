@@ -16,6 +16,7 @@ public record StrategyOrderRowView(
         BigDecimal price,
         BigDecimal size,
         BigDecimal notionalUsdc,
+        BigDecimal costBasisUsdc,
         BigDecimal realizedPnlUsdc,
         BigDecimal estimatedFeeUsdc,
         BigDecimal estimatedSlippageUsdc,

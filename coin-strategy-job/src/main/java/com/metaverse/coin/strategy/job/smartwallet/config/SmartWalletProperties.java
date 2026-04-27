@@ -22,6 +22,14 @@ public class SmartWalletProperties {
     private Integer minTotalTrades = 25;
     private BigDecimal minRealizedPnlUsdc = new BigDecimal("1000");
     private BigDecimal maxDrawdownRate = new BigDecimal("0.25");
+    private boolean observeCooldownEnabled = true;
+    private Integer observeCooldownMinRecentTrades7d = 6;
+    private BigDecimal observeCooldownLowRecentWinRate7d = new BigDecimal("0.45");
+    private BigDecimal observeCooldownMaxRecent30dGap = new BigDecimal("0.20");
+    private BigDecimal observeCooldownMaxHistorical7dGap = new BigDecimal("0.25");
+    private BigDecimal observeCooldownRecoverMinRecentWinRate7d = new BigDecimal("0.55");
+    private BigDecimal observeCooldownRecoverMaxRecent30dGap = new BigDecimal("0.10");
+    private Integer observeCooldownDays = 7;
     private BigDecimal minMarketLiquidity = new BigDecimal("25000");
     private BigDecimal maxStakeUsdc = new BigDecimal("150");
     private BigDecimal bankrollUtilizationRate = new BigDecimal("0.03");
@@ -36,6 +44,7 @@ public class SmartWalletProperties {
     private LiveValidation liveValidation = new LiveValidation();
     private SettlementSync settlementSync = new SettlementSync();
     private Claim claim = new Claim();
+    private MarketMonitoring marketMonitoring = new MarketMonitoring();
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
     private Intelligence intelligence = new Intelligence();
@@ -51,9 +60,12 @@ public class SmartWalletProperties {
         private String leaderboardTimePeriod = "ALL";
         private String leaderboardOrderBy = "PNL";
         private Integer leaderboardLimit = 50;
+        private List<LeaderboardQuery> leaderboardQueries = new ArrayList<>();
         private Integer analyzeTopN = 30;
         private Integer closedPositionLimit = 50;
         private Integer recentTradeLimit = 30;
+        private Integer discoveryProfileTradeLimit = 30;
+        private Integer sessionCoverageLookbackDays = 30;
         private Long discoveryFixedDelayMs = 3600000L;
         private Long leaderboardRefreshFixedDelayMs = 300000L;
         private Integer leaderboardRefreshTopN = 10;
@@ -66,7 +78,28 @@ public class SmartWalletProperties {
         private Integer watchlistTradeSyncBatchSize = 3;
         private Long walletTradeSyncMinIntervalMs = 30000L;
         private Long walletTradeErrorCooldownMs = 300000L;
+        private Long warmMetricsRefreshFixedDelayMs = 600000L;
+        private Integer warmMetricsRefreshBatchSize = 10;
+        private Long warmWalletRefreshMinIntervalMs = 1800000L;
+        private boolean hotRetentionEnabled = true;
+        private Integer hotRetentionHours = 24;
+        private BigDecimal scoreHysteresisBuffer = new BigDecimal("0.08");
+        private BigDecimal winRateHysteresisBuffer = new BigDecimal("0.04");
+        private Integer warmWalletInactivityDays = 30;
         private BigDecimal staleAddressWeightFactor = new BigDecimal("0.35");
+        /**
+         * 地址超过该天数没有任何交易动作后进入 COLD，停止 HOT/WARM 轮询资源占用。
+         * 后续通过排行榜刷新、手动导入或外部事件观察到新交易时会重新评估。
+         */
+        private Integer coldWalletInactivityDays = 60;
+
+        @Data
+        public static class LeaderboardQuery {
+            private String category = "OVERALL";
+            private String timePeriod = "ALL";
+            private String orderBy = "PNL";
+            private Integer limit = 50;
+        }
     }
 
     @Data
@@ -107,7 +140,9 @@ public class SmartWalletProperties {
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
         private boolean enableAutoTakeProfit = false;
         private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.20");
-        private Integer maxSignalAgeSeconds = 300;
+        private Integer fastEventMaxHours = 24;
+        private BigDecimal longHorizonStakeMultiplier = new BigDecimal("0.50");
+        private Integer maxSignalAgeSeconds = 3600;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         private BigDecimal minFollowPrice = new BigDecimal("0.05");
         private BigDecimal maxFollowPrice = new BigDecimal("0.95");
@@ -127,6 +162,7 @@ public class SmartWalletProperties {
         private boolean blockOppositeOpenPositionSameMarket = true;
         private boolean blockOppositePendingTaskSameMarket = true;
         private boolean enableConsensusGate = true;
+        private String policyTag = "candidate-v2";
         /**
          * 开单策略路由模式：
          * ANY = 命中任一策略即可开单
@@ -138,13 +174,23 @@ public class SmartWalletProperties {
          * 1. 共识策略
          * 2. 单钱包 override 策略
          */
-        private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "SINGLE_WALLET_OVERRIDE"));
+        private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "HIGH_QUALITY_SINGLE_WALLET"));
         private Integer consensusWindowSeconds = 180;
-        private Integer minDistinctWallets = 2;
+        private Integer minDistinctWallets = 1;
         /** 实体去重后的最小实体数门控（替代 minDistinctWallets）。默认与 minDistinctWallets 保持一致 */
-        private Integer minDistinctEntities = 2;
-        private BigDecimal minConsensusScore = new BigDecimal("0.72");
+        private Integer minDistinctEntities = 1;
+        private BigDecimal minConsensusScore = new BigDecimal("0.20");
+        private boolean qualityWeightedConsensusEnabled = true;
+        private BigDecimal consensusEntityBaseWeight = new BigDecimal("0.60");
+        private BigDecimal consensusBehaviorWeight = new BigDecimal("0.15");
+        private BigDecimal consensusRecencyWeight = new BigDecimal("0.10");
+        private BigDecimal consensusLeaderFollowerWeight = new BigDecimal("0.05");
+        private BigDecimal consensusIndependenceWeight = new BigDecimal("0.05");
+        private BigDecimal consensusRecentConsistencyWeight = new BigDecimal("0.05");
         private boolean enableSingleWalletOverride = true;
+        private boolean enableSingleWalletOverrideCanary = true;
+        private BigDecimal singleWalletOverrideCanaryRate = new BigDecimal("0.10");
+        private List<String> singleWalletOverrideWhitelist = new ArrayList<>();
         // Leaderboard survivorship-bias guard: when a wallet shows winRate >= threshold with only a small sample,
         // the number is almost certainly inflated (only top-N positions visible). Block single-wallet override for them.
         private boolean blockUnreliableLeaderboardWinRate = true;
@@ -152,13 +198,51 @@ public class SmartWalletProperties {
         private Integer unreliableMaxSampleSize = 50;
         private BigDecimal singleWalletOverrideMinWalletScore = new BigDecimal("0.88");
         private BigDecimal singleWalletOverrideMinWinRate = new BigDecimal("0.68");
-        private Integer singleWalletOverrideMinTrades = 60;
+        private Integer singleWalletOverrideMinTrades = 30;
+        private Integer singleWalletOverrideMinRecentTrades7d = 1;
+        private BigDecimal singleWalletOverrideMinRecentWinRate7d = new BigDecimal("0.60");
+        private BigDecimal singleWalletOverrideMinReplicabilityScore = new BigDecimal("0.60");
+        private BigDecimal singleWalletOverrideMinQualityScore = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
-        private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("5");
+        private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("1");
+
+        // ── Consensus Stake Amplifier ─────────────────────────────────────────────
+        /** 是否启用共识多实体仓位放大器 */
+        private boolean enableConsensusStakeAmplifier = true;
+        /** dedupedEntityCount=2 时的仓位放大倍率 */
+        private BigDecimal consensusAmplifierTier2Multiplier = new BigDecimal("1.15");
+        /** dedupedEntityCount>=3 时的仓位放大倍率 */
+        private BigDecimal consensusAmplifierTier3PlusMultiplier = new BigDecimal("1.30");
+        /** 放大倍率上限（防止极端场景） */
+        private BigDecimal consensusAmplifierMaxMultiplier = new BigDecimal("1.50");
+
+        // ── Scale-up on High-Quality Consensus ───────────────────────────────────
+        /** 是否允许高质量钱包对已有仓位执行追加买入 */
+        private boolean enableScaleUpOnHighQualityConsensus = true;
+        /** 追加时允许的最大价格相对漂移（相对已有仓位平均成本） */
+        private BigDecimal scaleUpMaxPriceRelativeDrift = new BigDecimal("0.20");
+        /** 单个 market/outcome 追加后的最大成本；为空时回退到 smart-wallet.max-stake-usdc */
+        private BigDecimal scaleUpMaxMarketOutcomeCostUsdc;
 
         // ── 持仓集中度门控（防控盘） ──────────────────────────────────────────
         /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */
         private boolean enableConcentrationGate = false;
+        /** 极端集中度的处置模式：BLOCK / DOWNSIZE / WARN_ONLY */
+        private String extremeConcentrationMode = "BLOCK";
+        /** 高风险集中度的处置模式：BLOCK / DOWNSIZE / WARN_ONLY */
+        private String concentrationHighRiskMode = "DOWNSIZE";
+        /** CR_1 极端集中阈值：单一持仓者超过此值视为极端集中 */
+        private BigDecimal maxTop1ExtremeConcentrationPct = new BigDecimal("0.70");
+        /** CR_3 极端集中阈值：前三持仓者合计超过此值视为极端集中 */
+        private BigDecimal maxTop3ExtremeConcentrationPct = new BigDecimal("0.90");
+        /** CR_5 极端集中阈值：仅在 holder 数较少时启用 */
+        private BigDecimal maxTop5ExtremeConcentrationPct = new BigDecimal("0.95");
+        /** holder 数低于该值时，CR_5 触发极端集中判定 */
+        private Integer extremeConcentrationMaxObservedHolders = 10;
+        /** 极端集中 HHI 阈值 */
+        private int maxExtremeHhi = 6000;
+        /** 高风险集中度 DOWNSIZE 模式下保留的仓位比例 */
+        private BigDecimal concentrationHighRiskDownsizeRate = new BigDecimal("0.35");
         /** CR_1 上限：单一持仓者占比超过此值则拒绝信号 */
         private BigDecimal maxTop1ConcentrationPct = new BigDecimal("0.40");
         /** CR_3 上限：前三持仓者合计占比超过此值则拒绝信号 */
@@ -182,6 +266,70 @@ public class SmartWalletProperties {
         private BigDecimal concentrationStakeSafeTop3Pct = new BigDecimal("0.40");
         /** 集中度惩罚最大削减比例（0.5 = 最多缩减 50%） */
         private BigDecimal concentrationStakePenaltyMaxRate = new BigDecimal("0.50");
+
+        // ── Kelly 动态仓位 ────────────────────────────────────────────
+        /** 是否启用 Kelly 仓位计算（false = 回退到原有 triggerSize * walletScore 公式） */
+        private boolean kellyStakeEnabled = false;
+        /** Kelly 折扣因子（0.3 = 30% Kelly，保守值） */
+        private BigDecimal kellyFraction = new BigDecimal("0.30");
+        /**
+         * Kelly 概率边际因子：将 calibratedFollowProbability（跟单价值综合评分）
+         * 转换为事件胜率估计：p_win = 0.5 + (followProb - 0.5) * edgeFactor。
+         * null = 直接使用 followProb（向后兼容）。
+         */
+        private BigDecimal kellySignalEdgeFactor = new BigDecimal("0.15");
+        /** 行为稳定度过低时开始缩仓 */
+        private BigDecimal stakeStabilityLowScore = new BigDecimal("0.45");
+        /** 行为稳定度过低时的保留仓位比例 */
+        private BigDecimal stakeStabilityLowMultiplier = new BigDecimal("0.70");
+        /** 行为稳定度较高时允许的小幅加仓阈值 */
+        private BigDecimal stakeStabilityHighScore = new BigDecimal("0.75");
+        /** 行为稳定度较高时的加仓倍率 */
+        private BigDecimal stakeStabilityHighMultiplier = new BigDecimal("1.05");
+        /** 预计滑点 / 仓位超过该比例后开始缩仓 */
+        private BigDecimal stakeSlippagePenaltyStartRate = new BigDecimal("0.04");
+        /** 滑点/主题相关性等高级缩仓后的最低保留比例 */
+        private BigDecimal stakePenaltyFloorMultiplier = new BigDecimal("0.55");
+        /** 同主题持仓相关性惩罚倍率 */
+        private BigDecimal stakeThemeCorrelationPenaltyMultiplier = new BigDecimal("0.75");
+
+        // ── 时间感知止损 ──────────────────────────────────────────────
+        /** 是否启用时间感知动态止损阈值（false = 使用 autoStopLossThresholdRate 固定值） */
+        private boolean timeAwareStopLossEnabled = false;
+        /** 止损阈值分段列表，按 remainingHours 降序排列，匹配第一个不超过剩余时间的档位 */
+        private List<StopLossTier> stopLossTiers = new ArrayList<>();
+        /** 是否启用趋势加速止损（连续 N 期下跌时提前止损） */
+        private boolean trendStopLossEnabled = false;
+        /** 趋势加速止损连续下跌周期数（每周期 = 一次 checkStopLoss 扫描，约 5 分钟） */
+        private int trendStopLossConsecutivePeriods = 3;
+
+        // ── 方案C：退出信号提供者模式 ────────────────────────────────────
+        /**
+         * 退出信号提供者模式：
+         *   RULES   - 规则退出（时间感知止损 + 趋势止损，即 TimeAwareStopLossService）
+         *   SCORING - 特征评分退出（时间层级基准 + ROI 动量调整，即 ScoredExitSignalProvider）
+         */
+        private String exitSignalProviderMode = "RULES";
+        /** 评分退出：ROI 动量权重（每 1% 亏损对基准阈值的缩减量，默认 0.10 = 每亏 10% 收紧 1%） */
+        private BigDecimal exitScoringRoiMomentumWeight = new BigDecimal("0.10");
+        /** 评分退出：当前共识衰减对退出分的影响权重 */
+        private BigDecimal exitScoringConsensusDecayWeight = new BigDecimal("0.30");
+        /** 评分退出：盘口恶化对退出分的影响权重 */
+        private BigDecimal exitScoringOrderbookDeteriorationWeight = new BigDecimal("0.25");
+        /** 评分退出：普通高集中市场对退出分的影响权重 */
+        private BigDecimal exitScoringHighConcentrationWeight = new BigDecimal("0.20");
+        /** 评分退出：极端集中市场对退出分的影响权重 */
+        private BigDecimal exitScoringExtremeConcentrationWeight = new BigDecimal("0.40");
+        /** 评分退出：源钱包后续减仓/反向交易对退出分的影响权重 */
+        private BigDecimal exitScoringSourceWalletReductionWeight = new BigDecimal("0.35");
+        /** 评分退出：源钱包继续加仓时对持有耐心的缓冲权重 */
+        private BigDecimal exitScoringSourceWalletAddWeight = new BigDecimal("0.10");
+        /** 评分退出：共识基准线，用于计算当前共识衰减程度 */
+        private BigDecimal exitScoringBaselineConsensus = new BigDecimal("0.72");
+        /** 评分退出：最小止损阈值下限（防止评分后阈值过小导致频繁止损） */
+        private BigDecimal exitScoringMinThreshold = new BigDecimal("0.03");
+        /** 评分退出：最大止损阈值上限（防止评分后阈值过大导致止损失效） */
+        private BigDecimal exitScoringMaxThreshold = new BigDecimal("0.50");
 
         /**
          * Backward-compatible accessors for existing YAML keys:
@@ -218,6 +366,14 @@ public class SmartWalletProperties {
         public void setMinExpectedNetEvUsdc(BigDecimal minExpectedNetEvUsdc) {
             this.minEstimatedNetProfitabilityUsdc = minExpectedNetEvUsdc;
         }
+    }
+
+    @Data
+    public static class StopLossTier {
+        /** 此阈值适用的最大市场剩余小时数（remainingHours <= this value） */
+        private int remainingHours;
+        /** 止损触发阈值（正数，0.25 = -25% ROI 触发） */
+        private BigDecimal thresholdRate;
     }
 
     @Data
@@ -283,6 +439,7 @@ public class SmartWalletProperties {
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;
+        private Integer staleOraclePendingHours = 12;
     }
 
     @Data
@@ -299,6 +456,77 @@ public class SmartWalletProperties {
         private Integer retryBatchLimit = 20;
         private Integer retryBackoffMinutes = 15;
         private Integer maxRetryFailures = 8;
+        private Integer staleResolvedUnclaimedHours = 12;
+    }
+
+    @Data
+    public static class MarketMonitoring {
+        private MetadataRefresh metadataRefresh = new MetadataRefresh();
+        private ConcentrationSnapshot concentrationSnapshot = new ConcentrationSnapshot();
+
+        @Data
+        public static class MetadataRefresh {
+            /**
+             * 是否开启市场元数据后台刷新。页面查询只读数据库，不再请求内补刷。
+             */
+            private boolean enabled = true;
+            /**
+             * 调度固定间隔。默认 5 分钟刷新一次。
+             */
+            private Long refreshFixedDelayMs = 300000L;
+            /**
+             * 候选市场回看窗口，覆盖页面常用视角。
+             */
+            private Integer candidateLookbackDays = 30;
+            /**
+             * 单轮最多纳入多少候选市场。
+             */
+            private Integer maxCandidateMarkets = 120;
+            /**
+             * 单轮最多刷新多少个市场。
+             */
+            private Integer refreshBatchSize = 120;
+            /**
+             * Gamma markets 批量请求的 conditionId 分块大小。
+             */
+            private Integer gammaChunkSize = 20;
+            /**
+             * 页面判定元数据过期的阈值。
+             */
+            private Long maxStaleMs = 900000L;
+        }
+
+        @Data
+        public static class ConcentrationSnapshot {
+            /**
+             * 是否开启集中度快照刷新。市场页只读快照，不再触发实时外部调用。
+             */
+            private boolean enabled = true;
+            /**
+             * 调度固定间隔。默认 3 分钟，在时效和限频之间做保守平衡。
+             */
+            private Long refreshFixedDelayMs = 180000L;
+            /**
+             * 单轮最多刷新多少个市场，避免一次性打太多外部请求。
+             */
+            private Integer refreshBatchSize = 24;
+            /**
+             * 候选市场回看窗口。需覆盖市场页常用 7/14/30d 视角。
+             */
+            private Integer candidateLookbackDays = 30;
+            /**
+             * 每轮最多纳入多少候选市场参与排队刷新。
+             */
+            private Integer maxCandidateMarkets = 60;
+            /**
+             * 同一市场最小刷新间隔，防止热门市场在短时间内被重复抓取。
+             */
+            private Long minMarketRefreshIntervalMs = 300000L;
+            /**
+             * 页面可接受的最大快照年龄。超过后按 UNKNOWN 展示，避免拿过期数据做判断。
+             */
+            private Long maxSnapshotAgeMs = 900000L;
+        }
     }
 
     @Data

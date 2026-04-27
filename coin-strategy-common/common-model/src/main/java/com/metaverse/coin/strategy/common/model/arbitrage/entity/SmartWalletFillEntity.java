@@ -30,6 +30,10 @@ public class SmartWalletFillEntity {
     private BigDecimal size;
     private BigDecimal notionalUsdc;
     private BigDecimal feeUsdc;
+    private BigDecimal tradingFeeUsdc;
+    private BigDecimal feePol;
+    private BigDecimal gasFeeUsdc;
+    private BigDecimal realizedPnlUsdc;
     private Date filledAt;
     private Date createdAt;
 
@@ -41,4 +45,11 @@ public class SmartWalletFillEntity {
     public String getOutcome()     { return marketInfo == null ? null : marketInfo.getOutcome(); }
     public String getTokenId()     { return marketInfo == null ? null : marketInfo.getTokenId(); }
     public Integer getIndexSet()   { return marketInfo == null ? null : marketInfo.getIndexSet(); }
+    public Long getMarketEndAt()   { return marketInfo == null ? null : marketInfo.getMarketEndAt(); }
+    public String getSourceCategory() { return marketInfo == null ? null : marketInfo.getSourceCategory(); }
+    public String getNormalizedCategory() { return marketInfo == null ? null : marketInfo.getNormalizedCategory(); }
+    public String getMarketLifecycle() { return marketInfo == null ? null : marketInfo.getMarketLifecycle(); }
+    public Boolean getClosed() { return marketInfo == null ? null : marketInfo.getClosed(); }
+    public Boolean getAcceptingOrders() { return marketInfo == null ? null : marketInfo.getAcceptingOrders(); }
+    public String getResolvedOutcome() { return marketInfo == null ? null : marketInfo.getResolvedOutcome(); }
 }

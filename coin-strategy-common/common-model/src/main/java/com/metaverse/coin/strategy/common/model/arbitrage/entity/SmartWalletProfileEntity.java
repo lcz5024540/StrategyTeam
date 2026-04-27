@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.common.model.arbitrage.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -32,6 +33,46 @@ public class SmartWalletProfileEntity {
     private Boolean watchEnabled;
     private Date lastTradeAt;
     private Date lastEvaluatedAt;
+    private Date lastDiscoveredAt;
+    private String lastDiscoveryQuery;
+    @TableField("leaderboard_hit_count_30d")
+    private Integer leaderboardHitCount30d;
+    private String dominantSession;
+    @TableField("asia_trade_ratio_30d")
+    private BigDecimal asiaTradeRatio30d;
+    @TableField("eu_trade_ratio_30d")
+    private BigDecimal euTradeRatio30d;
+    @TableField("us_trade_ratio_30d")
+    private BigDecimal usTradeRatio30d;
+    private String activeHourHistogramJson;
+    @TableField("recent_win_rate_7d")
+    private BigDecimal recentWinRate7d;
+    @TableField("recent_win_rate_30d")
+    private BigDecimal recentWinRate30d;
+    @TableField("recent_trade_count_7d")
+    private Integer recentTradeCount7d;
+    @TableField("recent_trade_count_30d")
+    private Integer recentTradeCount30d;
+    @TableField("observe_cooldown_until")
+    private Date observeCooldownUntil;
+    @TableField("observe_cooldown_reason")
+    private String observeCooldownReason;
+    @TableField("hot_retention_until")
+    private Date hotRetentionUntil;
+    @TableField("hot_retention_reason")
+    private String hotRetentionReason;
+    @TableField("manual_watch_enabled")
+    private Boolean manualWatchEnabled;
+    @TableField("manual_recommended_exit_lane")
+    private String manualRecommendedExitLane;
+    @TableField("manual_override_note")
+    private String manualOverrideNote;
+    @TableField("manual_override_updated_at")
+    private Date manualOverrideUpdatedAt;
+    private String monitorTier;
+    private String monitorReason;
+    private Date lastEventSyncAt;
+    private Date lastMetricsRefreshAt;
     private Date createdAt;
     private Date updatedAt;
 }

@@ -105,6 +105,7 @@ export function PositionsTable({ positions, loading = false }: PositionsTablePro
               <th>Outcome</th>
               <th>数量</th>
               <th>成本</th>
+              <th>POL Gas</th>
               <th>未实现</th>
               <th>状态</th>
               <th>到期</th>
@@ -113,7 +114,7 @@ export function PositionsTable({ positions, loading = false }: PositionsTablePro
           <tbody>
             {visiblePositions.length === 0 ? (
               <tr>
-                <td colSpan={8} className="empty-state">当前筛选条件下暂无持仓</td>
+                <td colSpan={9} className="empty-state">当前筛选条件下暂无持仓</td>
               </tr>
             ) : (
               visiblePositions.map((position) => (
@@ -123,6 +124,7 @@ export function PositionsTable({ positions, loading = false }: PositionsTablePro
                   <td>{position.outcome}</td>
                   <td>{formatAmount(position.quantity)}</td>
                   <td>{formatAmount(position.costBasisUsdc)}</td>
+                  <td>{position.feePolTotal ? formatAmount(position.feePolTotal) : '-'}</td>
                   <td className={getAmountClass(position.unrealizedPnlUsdc)}>{formatMoney(position.unrealizedPnlUsdc)}</td>
                   <td>
                     <span className={`badge ${position.status === 'OPEN' ? 'accent' : ''}`}>

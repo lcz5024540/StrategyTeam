@@ -15,7 +15,13 @@ export function Sidebar() {
     const matched = STRATEGY_CATALOG.find((s) => s.route !== '/dashboard' && path.startsWith(s.route))
     if (matched) return matched.code
     // 默认路由 /dashboard 对应 POLYMARKET_COPY
-    if (path === '/dashboard' || path.startsWith('/dashboard/detail') || path.startsWith('/dashboard/charts')) {
+    if (
+      path === '/dashboard' ||
+      path.startsWith('/dashboard/detail') ||
+      path.startsWith('/dashboard/charts') ||
+      path.startsWith('/dashboard/monitoring') ||
+      path.startsWith('/dashboard/markets')
+    ) {
       return 'POLYMARKET_COPY'
     }
     return strategyParam
@@ -34,9 +40,7 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-card brand">
         <div className="brand-mark">CS</div>
-        <p className="eyebrow">Strategy Platform</p>
         <h2>Coin Strategy</h2>
-        <p>多策略量化交易平台，支持 Polymarket 跟单、对冲套利等多种策略。</p>
       </div>
 
       {showSubNav && (
@@ -46,12 +50,14 @@ export function Sidebar() {
             <NavLink to={`/dashboard?strategy=${strategyParam}`}>总览</NavLink>
             <NavLink to={`/dashboard/detail?strategy=${strategyParam}`}>详情</NavLink>
             <NavLink to={`/dashboard/charts?strategy=${strategyParam}`}>图表</NavLink>
+            <NavLink to={`/dashboard/monitoring?strategy=${strategyParam}`}>监控</NavLink>
+            <NavLink to={`/dashboard/markets?strategy=${strategyParam}`}>市场</NavLink>
           </nav>
         </div>
       )}
 
       <div className="sidebar-card">
-        <h3>策略列表</h3>
+        <h3>策略</h3>
         <div className="sidebar-strategies">
           {STRATEGY_CATALOG.map((strategy) => (
             <div

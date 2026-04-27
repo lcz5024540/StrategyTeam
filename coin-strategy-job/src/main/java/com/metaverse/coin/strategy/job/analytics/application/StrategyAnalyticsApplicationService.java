@@ -35,6 +35,10 @@ public class StrategyAnalyticsApplicationService {
         return smartWalletAccountingService.pnlTimeline(days);
     }
 
+    public List<SmartWalletPnlTimelinePoint> pnlTimeline(int days, int bucketHours, String mode) {
+        return smartWalletAccountingService.pnlTimeline(days, bucketHours, mode);
+    }
+
     public List<SmartWalletConflictMarketView> conflictingMarkets(int limit, boolean openOnly) {
         return smartWalletAccountingService.conflictingMarkets(limit, openOnly);
     }

@@ -14,13 +14,6 @@ export const STRATEGY_CATALOG = [
     status: 'ACTIVE' as const,
   },
   {
-    code: 'POLYMARKET_HEDGE',
-    name: 'Polymarket 对冲',
-    description: 'Polymarket YES/NO 双边对冲套利，锁定概率偏差利润',
-    route: '/dashboard/polymarket-hedge',
-    status: 'ACTIVE' as const,
-  },
-  {
     code: 'ROBOT',
     name: '机器人策略',
     description: '自动化量化交易机器人',

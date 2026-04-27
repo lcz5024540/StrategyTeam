@@ -36,7 +36,14 @@ build/
 binance-test.properties
 
 ### Local Secrets ###
+# 本地运行环境变量（含真实密码/私钥），绝不提交 git
 scripts/polymarket-env.sh
+scripts/local-dev.env
+# RSA 密钥对（generate-rsa-keys.sh 的输出目录）
+scripts/keys/
+# 部署环境变量文件（含真实密码），只保留 .example 模板进 git
+deploy/linux/env/smart-wallet-prod.env
+deploy/linux/env/smart-wallet-test.env
 
 ### Local Maven Cache ###
 .m2/

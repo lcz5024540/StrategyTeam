@@ -40,6 +40,27 @@ public class SmartWalletMarketInfoEntity {
     /** 市场预计结算时间戳 (毫秒) */
     private Long marketEndAt;
 
+    /** Gamma 原始分类 */
+    private String sourceCategory;
+
+    /** 内部统一市场大类 */
+    private String normalizedCategory;
+
+    /** ACTIVE / CLOSED_UNRESOLVED / RESOLVED */
+    private String marketLifecycle;
+
+    /** Gamma closed 标记 */
+    private Boolean closed;
+
+    /** Gamma acceptingOrders 标记 */
+    private Boolean acceptingOrders;
+
+    /** 市场最终获胜 outcome */
+    private String resolvedOutcome;
+
+    /** 最近一次元数据同步时间 */
+    private Date lastMetadataSyncAt;
+
     private Date createdAt;
     private Date updatedAt;
 }

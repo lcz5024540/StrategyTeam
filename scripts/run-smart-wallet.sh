@@ -1,9 +1,15 @@
 #!/bin/zsh
+# ============================================================
+# 本地开发一键启动脚本 — 启动后端 + 前端 dev server
+# 后端后台运行, 日志输出到 LOG_DIR
+# 前端前台运行 (支持 HMR)
+# ============================================================
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/scripts/polymarket-env.sh"
 FRONTEND_DIR="$ROOT_DIR/coin-strategy-frontend"
+LOG_DIR="${LOG_DIR:-$ROOT_DIR/logs}"
 
 REQUESTED_BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-8081}"
 REQUESTED_FRONTEND_PORT="${SMART_WALLET_FRONTEND_PORT:-5173}"
@@ -73,9 +79,18 @@ if [ -z "$APP_JAR" ]; then
   exit 1
 fi
 
-echo "[run-smart-wallet] starting backend on $APP_URL ..."
-java -Dserver.port="$BACKEND_PORT" -jar "$APP_JAR" &
+# 创建日志目录
+mkdir -p "$LOG_DIR"
+
+echo "[run-smart-wallet] starting backend on $APP_URL (后台运行) ..."
+nohup java \
+  -Dserver.port="$BACKEND_PORT" \
+  -Dspring.profiles.active=local \
+  -Dlog.dir="$LOG_DIR" \
+  -jar "$APP_JAR" \
+  > "$LOG_DIR/job-startup.log" 2>&1 &
 APP_PID=$!
+echo "$APP_PID" > "$ROOT_DIR/backend.pid"
 FRONTEND_PID=""
 
 cleanup() {
@@ -85,9 +100,12 @@ cleanup() {
   if [ -n "${APP_PID:-}" ] && kill -0 "$APP_PID" >/dev/null 2>&1; then
     kill "$APP_PID" >/dev/null 2>&1 || true
   fi
+  rm -f "$ROOT_DIR/backend.pid"
 }
 
 trap cleanup EXIT INT TERM
+
+echo "[run-smart-wallet] 后端 PID=$APP_PID, 日志: $LOG_DIR/job-current.log"
 
 for _ in {1..90}; do
   if curl -s "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
@@ -95,6 +113,7 @@ for _ in {1..90}; do
   fi
   if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
     echo "[run-smart-wallet] backend exited before becoming healthy." >&2
+    echo "[run-smart-wallet] 查看日志: cat $LOG_DIR/job-startup.log"
     wait "$APP_PID"
     exit 1
   fi
@@ -144,8 +163,9 @@ echo ""
 echo "[run-smart-wallet] services are ready."
 echo "[run-smart-wallet] backend health:   $BACKEND_HEALTH_URL"
 echo "[run-smart-wallet] backend swagger:  $BACKEND_SWAGGER_URL"
+echo "[run-smart-wallet] backend log:      $LOG_DIR/job-current.log"
 echo "[run-smart-wallet] frontend dashboard: $FRONTEND_URL/dashboard"
 echo "[run-smart-wallet] frontend app:       $FRONTEND_URL"
 echo ""
 
-wait "$APP_PID"
+wait "$FRONTEND_PID"

@@ -1,2 +1,7 @@
+# ============================================================
+# coin-strategy-web — PROD 生产环境
+# 说明: 生产环境 web 和 job 在不同服务器上
+#       需要通过环境变量 JOB_SERVER_HOST 指定 job 服务器 IP
+# ============================================================
 dashboard:
-  smart-wallet-base-url: http://49.51.250.174:8081
+  smart-wallet-base-url: http://${JOB_SERVER_HOST:127.0.0.1}:8081

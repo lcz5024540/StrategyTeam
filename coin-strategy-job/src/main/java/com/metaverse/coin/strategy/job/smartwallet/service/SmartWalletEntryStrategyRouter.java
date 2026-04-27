@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyRouteResu
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,7 +20,8 @@ public class SmartWalletEntryStrategyRouter {
     private static final String MODE_ALL = "ALL";
 
     public SignalStrategyRouteResult route(SmartWalletProperties.SignalRisk risk,
-                                           List<SignalStrategyCheckResult> availableChecks) {
+                                           List<SignalStrategyCheckResult> availableChecks,
+                                           int dedupedEntityCount) {
         List<String> enabledStrategies = resolveEnabledStrategies(risk);
         List<SignalStrategyCheckResult> activeChecks = availableChecks == null
                 ? List.of()
@@ -52,13 +54,35 @@ public class SmartWalletEntryStrategyRouter {
             }
         }
 
+        BigDecimal stakeMultiplier = computeStakeMultiplier(risk, dedupedEntityCount, accepted);
+
         return SignalStrategyRouteResult.builder()
                 .accepted(accepted)
                 .routeMode(routeMode)
                 .enabledStrategies(enabledStrategies)
                 .matchedStrategies(new ArrayList<>(matchedStrategies))
                 .reasons(reasons)
+                .stakeMultiplier(stakeMultiplier)
                 .build();
+    }
+
+    private BigDecimal computeStakeMultiplier(SmartWalletProperties.SignalRisk risk,
+                                              int dedupedEntityCount,
+                                              boolean accepted) {
+        if (!accepted || risk == null || !risk.isEnableConsensusStakeAmplifier()) {
+            return BigDecimal.ONE;
+        }
+        if (dedupedEntityCount < 2) {
+            return BigDecimal.ONE;
+        }
+        BigDecimal raw = dedupedEntityCount == 2
+                ? safe(risk.getConsensusAmplifierTier2Multiplier())
+                : safe(risk.getConsensusAmplifierTier3PlusMultiplier());
+        BigDecimal cap = safe(risk.getConsensusAmplifierMaxMultiplier());
+        if (cap.compareTo(BigDecimal.ONE) < 0) {
+            cap = BigDecimal.ONE;
+        }
+        return raw.min(cap);
     }
 
     private List<String> resolveEnabledStrategies(SmartWalletProperties.SignalRisk risk) {
@@ -78,6 +102,10 @@ public class SmartWalletEntryStrategyRouter {
     private String normalizeRouteMode(SmartWalletProperties.SignalRisk risk) {
         String configured = risk == null ? null : risk.getEntryStrategyRouteMode();
         return MODE_ALL.equals(normalize(configured)) ? MODE_ALL : "ANY";
+    }
+
+    private BigDecimal safe(BigDecimal value) {
+        return value == null ? BigDecimal.ONE : value;
     }
 
     private String normalize(String value) {

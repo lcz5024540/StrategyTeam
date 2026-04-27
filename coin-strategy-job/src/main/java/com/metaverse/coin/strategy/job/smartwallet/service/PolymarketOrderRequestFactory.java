@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -16,8 +17,11 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class PolymarketOrderRequestFactory {
+
+    private static final String LOG_PREFIX = "[POLY_FOLLOW]";
 
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletMarketInfoService marketInfoService;
@@ -25,6 +29,10 @@ public class PolymarketOrderRequestFactory {
     public PreparedPolymarketOrder prepare(SmartWalletSignal signal,
                                            ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
         String outcome = signal.getFollowOutcome() == null ? "YES" : signal.getFollowOutcome().trim().toUpperCase();
+        String conditionId = signal.getMarket() == null ? null : signal.getMarket().getMarketId();
+        log.info("{} action=准备Polymarket跟单买入订单 result=开始 signalId={} marketId={} outcome={} requestedStakeUsdc={} requestedPrice={}",
+                LOG_PREFIX, signal.getSignalId(), conditionId, outcome, signal.getRecommendedStakeUsdc(),
+                signal.getMarket() == null ? null : signal.getMarket().getPrice());
         if ("YES".equals(outcome) && !wallet.isAllowYes()) {
             throw new IllegalStateException("Execution wallet is configured to block YES orders.");
         }
@@ -32,13 +40,12 @@ public class PolymarketOrderRequestFactory {
             throw new IllegalStateException("Execution wallet is configured to block NO orders.");
         }
 
-        String conditionId = signal.getMarket() == null ? null : signal.getMarket().getMarketId();
         PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(conditionId);
         String tokenId = resolveTokenId(metadata, outcome);
         BigDecimal minimumTickSize = metadata.getMinimumTickSize() == null || metadata.getMinimumTickSize().compareTo(BigDecimal.ZERO) <= 0
                 ? new BigDecimal("0.01")
                 : metadata.getMinimumTickSize();
-        return prepareLocalDraft(
+        PreparedPolymarketOrder prepared = prepareLocalDraft(
                 signal.getSignalId(),
                 conditionId,
                 metadata.getQuestion() == null && signal.getMarket() != null ? signal.getMarket().getQuestion() : metadata.getQuestion(),
@@ -50,6 +57,11 @@ public class PolymarketOrderRequestFactory {
                 metadata.isNegRisk(),
                 wallet
         );
+        log.info("{} action=准备Polymarket跟单买入订单 result=完成 signalId={} marketId={} outcome={} tokenId={} limitPrice={} size={} stakeUsdc={} tickSize={} negRisk={}",
+                LOG_PREFIX, signal.getSignalId(), prepared.getMarketId(), prepared.getOutcome(), prepared.getTokenId(),
+                prepared.getLimitPrice(), prepared.getSize(), prepared.getStakeUsdc(), prepared.getTickSize(),
+                prepared.isNegRisk());
+        return prepared;
     }
 
     public PreparedPolymarketOrder prepareExit(SmartWalletPositionEntity position,
@@ -58,6 +70,8 @@ public class PolymarketOrderRequestFactory {
         if (position == null) {
             throw new IllegalArgumentException("position must be provided for exit order preparation.");
         }
+        log.info("{} action=准备Polymarket退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={}",
+                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice);
         // Populate position with market info to enable delegate getters
         marketInfoService.populate(position);
         if (!StringUtils.hasText(position.getMarketId())) {
@@ -94,7 +108,7 @@ public class PolymarketOrderRequestFactory {
         BigDecimal normalizedSize = quantity.setScale(6, RoundingMode.DOWN);
         BigDecimal exitNotional = normalizedSize.multiply(normalizedLimitPrice).setScale(8, RoundingMode.HALF_UP);
 
-        return PreparedPolymarketOrder.builder()
+        PreparedPolymarketOrder prepared = PreparedPolymarketOrder.builder()
                 .signalId("position-exit-" + position.getId())
                 .marketId(position.getMarketId())
                 .question(position.getQuestion())
@@ -109,6 +123,11 @@ public class PolymarketOrderRequestFactory {
                 .executionAddress(wallet.getAddress())
                 .funderAddress(wallet.getFunderAddress())
                 .build();
+        log.info("{} action=准备Polymarket退出订单 result=完成 positionId={} marketId={} outcome={} tokenId={} limitPrice={} size={} notionalUsdc={} tickSize={} negRisk={}",
+                LOG_PREFIX, position.getId(), prepared.getMarketId(), prepared.getOutcome(), prepared.getTokenId(),
+                prepared.getLimitPrice(), prepared.getSize(), prepared.getStakeUsdc(), prepared.getTickSize(),
+                prepared.isNegRisk());
+        return prepared;
     }
 
     public PreparedPolymarketOrder prepareLocalDraft(String signalId,
@@ -119,8 +138,10 @@ public class PolymarketOrderRequestFactory {
                                                      BigDecimal requestedPrice,
                                                      String tokenId,
                                                      BigDecimal tickSize,
-                                                     boolean negRisk,
-                                                     ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
+                                                    boolean negRisk,
+                                                    ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
+        log.info("{} action=构造Polymarket本地下单草稿 result=开始 signalId={} marketId={} outcome={} requestedStakeUsdc={} requestedPrice={} tokenId={} tickSize={}",
+                LOG_PREFIX, signalId, conditionId, outcome, requestedStakeUsdc, requestedPrice, tokenId, tickSize);
         if ("YES".equalsIgnoreCase(outcome) && !wallet.isAllowYes()) {
             throw new IllegalStateException("Execution wallet is configured to block YES orders.");
         }
@@ -144,7 +165,7 @@ public class PolymarketOrderRequestFactory {
                 ? BigDecimal.ZERO
                 : cappedStake.divide(normalizedLimitPrice, 6, RoundingMode.DOWN);
 
-        return PreparedPolymarketOrder.builder()
+        PreparedPolymarketOrder prepared = PreparedPolymarketOrder.builder()
                 .signalId(signalId)
                 .marketId(conditionId)
                 .question(question)
@@ -159,6 +180,10 @@ public class PolymarketOrderRequestFactory {
                 .executionAddress(wallet.getAddress())
                 .funderAddress(wallet.getFunderAddress())
                 .build();
+        log.info("{} action=构造Polymarket本地下单草稿 result=完成 signalId={} marketId={} outcome={} side={} requestedStakeUsdc={} cappedStakeUsdc={} rawPrice={} limitPrice={} size={} tokenId={}",
+                LOG_PREFIX, signalId, conditionId, outcome, prepared.getSide(), requestedStakeUsdc, cappedStake,
+                rawPrice, prepared.getLimitPrice(), prepared.getSize(), prepared.getTokenId());
+        return prepared;
     }
 
     private String resolveTokenId(PolymarketApiClient.MarketMetadata metadata, String outcome) {

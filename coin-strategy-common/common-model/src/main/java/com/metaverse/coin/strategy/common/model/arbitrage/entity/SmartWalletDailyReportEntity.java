@@ -26,6 +26,8 @@ public class SmartWalletDailyReportEntity {
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
     private BigDecimal netPnlUsdc;
+    private Integer winningPositions;
+    private Integer losingPositions;
     private BigDecimal winRate;
     private Date createdAt;
     private Date updatedAt;
