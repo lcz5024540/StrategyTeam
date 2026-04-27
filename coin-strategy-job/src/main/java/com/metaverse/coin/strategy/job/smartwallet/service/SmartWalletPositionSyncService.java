@@ -184,6 +184,7 @@ public class SmartWalletPositionSyncService {
             return;
         }
         scanPaperPositionsForExitWithDynamicThreshold(AutoExitMode.STOP_LOSS);
+        scanLivePositionsForStopLoss();
     }
 
     // -------------------------------------------------------------------------
@@ -431,6 +432,79 @@ public class SmartWalletPositionSyncService {
                         result.getExternalOrderId());
             } catch (Exception ex) {
                 log.warn("LIVE take-profit failed for positionId={} marketId={}: {}",
+                        position.getId(),
+                        position.getMarketId(),
+                        ex.getMessage(),
+                        ex);
+            }
+        }
+    }
+
+    private void scanLivePositionsForStopLoss() {
+        ExecutionWalletContextLoader.ExecutionWalletContext wallet;
+        try {
+            wallet = walletContextLoader.requireLiveContext();
+        } catch (Exception ex) {
+            log.debug("Skip LIVE stop-loss scan because execution wallet is not ready: {}", ex.getMessage());
+            return;
+        }
+        if (!StringUtils.hasText(wallet.getAddress())) {
+            return;
+        }
+        List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        marketInfoService.populatePositions(openPositions);
+        for (SmartWalletPositionEntity position : openPositions) {
+            if (hasPendingLiveExitOrder(position.getId())) {
+                continue;
+            }
+            exitSignalProvider.recordMarkPrice(
+                    position.getId(),
+                    position.getLastMarkPrice(),
+                    position.getAverageEntryPrice()
+            );
+            BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
+            threshold = adjustThresholdByWalletBehavior(position, threshold, AutoExitMode.STOP_LOSS);
+            threshold = adjustThresholdByExitScoringContext(position, threshold, AutoExitMode.STOP_LOSS);
+            ExitDecision decision = buildExitDecision(position, threshold, AutoExitMode.STOP_LOSS);
+            boolean trendTriggered = exitSignalProvider.isTrendStopLossTriggered(
+                    position.getId(),
+                    position.getLastMarkPrice(),
+                    position.getAverageEntryPrice()
+            );
+            if (!decision.triggered() && !trendTriggered) {
+                continue;
+            }
+            String exitReason = trendTriggered && !decision.triggered()
+                    ? "TREND_STOP_LOSS_AUTO_EXIT"
+                    : AutoExitMode.STOP_LOSS.reason();
+            BigDecimal exitPrice = trendTriggered && !decision.triggered()
+                    ? safe(position.getLastMarkPrice())
+                    : decision.markPrice();
+            try {
+                SmartWalletExecutionResult result = clobExecutionService.executeLiveExit(
+                        position,
+                        exitPrice,
+                        exitReason
+                );
+                accountingService.recordLiveExitExecution(position, result, exitReason);
+                if (result != null && result.isSuccess()) {
+                    exitSignalProvider.clearPositionHistory(position.getId());
+                }
+                log.info("LIVE stop-loss submitted positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% trendTriggered={} status={} orderId={}",
+                        position.getId(),
+                        position.getMarketId(),
+                        position.getOutcome(),
+                        exitPrice,
+                        threshold.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                        decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                        trendTriggered,
+                        result == null ? null : result.getStatus(),
+                        result == null ? null : result.getExternalOrderId());
+            } catch (Exception ex) {
+                log.warn("LIVE stop-loss failed for positionId={} marketId={}: {}",
                         position.getId(),
                         position.getMarketId(),
                         ex.getMessage(),

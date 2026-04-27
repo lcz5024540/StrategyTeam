@@ -1013,6 +1013,26 @@ public class SmartWalletFollowTaskService {
                         .tradingFeeUsdc(BigDecimal.ZERO)
                         .build();
             }
+            if ("DYNAMIC_FOLLOW_EXIT".equalsIgnoreCase(decision.getEntryLane())) {
+                task.setStatus("SKIPPED");
+                task.setErrorMessage("[DYNAMIC_FOLLOW_EXIT] Signal was classified as an exit/rebalance lane and is not submitted as a new entry order.");
+                task.setUpdatedAt(new Date());
+                followTaskMapper.updateById(task);
+                return SmartWalletExecutionResult.builder()
+                        .signalId(String.valueOf(task.getId()))
+                        .mode("LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER)
+                        .success(false)
+                        .message(task.getErrorMessage())
+                        .marketId(task.getMarketId())
+                        .outcome(task.getOutcome())
+                        .side(task.getSide())
+                        .status("SKIPPED")
+                        .price(task.getTriggerPrice())
+                        .notionalUsdc(task.getRecommendedStakeUsdc())
+                        .feeUsdc(BigDecimal.ZERO)
+                        .tradingFeeUsdc(BigDecimal.ZERO)
+                        .build();
+            }
             // Scale-up: if this is an add-on signal, use scaleUpAddOnStake instead of recommendedStake
             BigDecimal effectiveStake = decision.getRecommendedStakeUsdc();
             if (decision.isScaleUpSignal() && decision.getScaleUpAddOnStake() != null
@@ -1124,6 +1144,9 @@ public class SmartWalletFollowTaskService {
                 .triggerPrice(task.getTriggerPrice())
                 .triggerSizeUsdc(task.getTriggerSizeUsdc())
                 .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
+                .marketType(decision == null ? null : decision.getMarketType())
+                .entryLane(decision == null ? null : decision.getEntryLane())
+                .exitIntent(decision == null ? null : decision.getExitIntent())
                 .status(task.getStatus())
                 .executionMode(task.getExecutionMode())
                 .externalOrderId(task.getExternalOrderId())

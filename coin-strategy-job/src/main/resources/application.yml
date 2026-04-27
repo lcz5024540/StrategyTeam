@@ -265,6 +265,8 @@ smart-wallet:
     enable-auto-take-profit: true
     # [TUNE] Trigger automatic take-profit once unrealized ROI >= this threshold.
     auto-take-profit-threshold-rate: 0.60
+    fast-event-max-hours: 24
+    long-horizon-stake-multiplier: 0.50
     # [TUNE] Main freshness gate. Keep LIVE/PAPER consistent and tolerate test sync latency.
     max-signal-age-seconds: 3600
     # [TUNE] Ignore tiny smart-wallet prints.
@@ -343,6 +345,7 @@ smart-wallet:
     single-wallet-override-min-quality-score: 0.60
     single-wallet-override-min-trigger-size-usdc: 100
     single-wallet-override-min-recommended-stake-usdc: 1
+    scale-up-max-market-outcome-cost-usdc: 30
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
     # [FEATURE] 集中度门控总开关。先以 DOWNSIZE 方式灰度，而不是直接 BLOCK。
     enable-concentration-gate: true

@@ -140,6 +140,8 @@ public class SmartWalletProperties {
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
         private boolean enableAutoTakeProfit = false;
         private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.20");
+        private Integer fastEventMaxHours = 24;
+        private BigDecimal longHorizonStakeMultiplier = new BigDecimal("0.50");
         private Integer maxSignalAgeSeconds = 3600;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         private BigDecimal minFollowPrice = new BigDecimal("0.05");
@@ -219,6 +221,8 @@ public class SmartWalletProperties {
         private boolean enableScaleUpOnHighQualityConsensus = true;
         /** 追加时允许的最大价格相对漂移（相对已有仓位平均成本） */
         private BigDecimal scaleUpMaxPriceRelativeDrift = new BigDecimal("0.20");
+        /** 单个 market/outcome 追加后的最大成本；为空时回退到 smart-wallet.max-stake-usdc */
+        private BigDecimal scaleUpMaxMarketOutcomeCostUsdc;
 
         // ── 持仓集中度门控（防控盘） ──────────────────────────────────────────
         /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */

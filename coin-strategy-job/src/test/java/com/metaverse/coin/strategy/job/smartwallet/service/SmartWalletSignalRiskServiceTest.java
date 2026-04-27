@@ -1,7 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -35,6 +37,10 @@ class SmartWalletSignalRiskServiceTest {
     private SmartWalletPositionMapper positionMapper;
     @Mock
     private SmartWalletFollowTaskMapper followTaskMapper;
+    @Mock
+    private SmartWalletOrderMapper orderMapper;
+    @Mock
+    private SmartWalletTradeEventMapper tradeEventMapper;
     @Mock
     private PolymarketMarketMetadataService marketMetadataService;
     @Mock
@@ -74,6 +80,8 @@ class SmartWalletSignalRiskServiceTest {
                 consensusSignalService,
                 positionMapper,
                 followTaskMapper,
+                orderMapper,
+                tradeEventMapper,
                 marketMetadataService,
                 marketStateService,
                 accountingService,

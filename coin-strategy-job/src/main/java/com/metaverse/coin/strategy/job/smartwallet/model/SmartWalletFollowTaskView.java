@@ -21,6 +21,9 @@ public class SmartWalletFollowTaskView {
     private BigDecimal triggerPrice;
     private BigDecimal triggerSizeUsdc;
     private BigDecimal recommendedStakeUsdc;
+    private String marketType;
+    private String entryLane;
+    private String exitIntent;
     private String status;
     private String executionMode;
     private String externalOrderId;

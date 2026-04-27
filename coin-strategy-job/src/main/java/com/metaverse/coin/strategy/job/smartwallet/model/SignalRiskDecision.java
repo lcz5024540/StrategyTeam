@@ -16,6 +16,9 @@ public class SignalRiskDecision {
     private String manualAllowlistReason;
     private BigDecimal stakeMultiplierApplied;
     private BigDecimal recommendedStakeUsdc;
+    private String marketType;
+    private String entryLane;
+    private String exitIntent;
     private BigDecimal estimatedNetProfitabilityUsdc;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
