@@ -67,7 +67,7 @@ class SmartWalletSignalRiskServiceTest {
     void setUp() {
         properties = new SmartWalletProperties();
         properties.getSignalRisk().setEntryStrategyRouteMode("ANY");
-        properties.getSignalRisk().setEnabledEntryStrategies(java.util.List.of("CONSENSUS", "SINGLE_WALLET_OVERRIDE"));
+        properties.getSignalRisk().setEnabledEntryStrategies(java.util.List.of("CONSENSUS", "HIGH_QUALITY_SINGLE_WALLET"));
         service = new SmartWalletSignalRiskService(
                 properties,
                 executionWalletContextLoader,
@@ -91,7 +91,7 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
-    void shouldAllowOpenWhenSingleWalletOverrideMatches() {
+    void shouldAllowOpenWhenHighQualitySingleWalletMatches() {
         properties.getSignalRisk().setMinDistinctEntities(2);
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletScore(new BigDecimal("0.95"))
@@ -104,7 +104,7 @@ class SmartWalletSignalRiskServiceTest {
         ConsensusSignalView consensus = ConsensusSignalView.builder()
                 .distinctWallets(1)
                 .dedupedEntityCount(1)
-                .consensusScore(new BigDecimal("0.90"))
+                .consensusScore(new BigDecimal("0.10"))
                 .build();
 
         prepareCommonMocks(consensus);
@@ -119,9 +119,11 @@ class SmartWalletSignalRiskServiceTest {
 
         SignalRiskDecision decision = service.evaluate(profile, event);
 
-        assertTrue(decision.isAccepted());
+        assertTrue(decision.isAccepted(),
+                "High-quality single wallet should be accepted regardless of consensusScore. Reasons: "
+                        + decision.getReasons());
         assertTrue(decision.isOverrideApplied());
-        assertTrue(decision.getMatchedStrategies().contains("SINGLE_WALLET_OVERRIDE"));
+        assertTrue(decision.getMatchedStrategies().contains("HIGH_QUALITY_SINGLE_WALLET"));
     }
 
     @Test
@@ -677,6 +679,69 @@ class SmartWalletSignalRiskServiceTest {
 
         assertFalse(decision.isAccepted());
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("past expected end time")));
+    }
+
+    @Test
+    void shouldAmplifyStakeWhenTwoEntitiesInConsensus() {
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(true);
+        properties.getSignalRisk().setConsensusAmplifierTier2Multiplier(new BigDecimal("1.15"));
+        properties.getSignalRisk().setConsensusAmplifierMaxMultiplier(new BigDecimal("1.50"));
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(60)
+                .setRecentTradeCount7d(4)
+                .setRecentWinRate7d(new BigDecimal("0.65"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.75"))
+                .build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(),
+                "Should be accepted. Reasons: " + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("[CONSENSUS_AMPLIFIER]")),
+                "Should log amplifier reason. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldNotBlockHighQualitySingleWalletWhenConsensusScoreIsLow() {
+        properties.getSignalRisk().setMinConsensusScore(new BigDecimal("0.65"));
+        properties.getSignalRisk().setMinDistinctEntities(1);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.85"))
+                .setTotalTrades(150)
+                .setRecentTradeCount7d(10)
+                .setRecentWinRate7d(new BigDecimal("0.80"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1)
+                .dedupedEntityCount(1)
+                .consensusScore(new BigDecimal("0.05"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile(any())).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xabc")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.80"))
+                .qualityScore(new BigDecimal("0.75"))
+                .earlyExitRate(new BigDecimal("0.20"))
+                .settlementCompletionRate(new BigDecimal("0.80"))
+                .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(),
+                "HIGH_QUALITY_SINGLE_WALLET should accept regardless of consensusScore. Reasons: "
+                        + decision.getReasons());
+        assertTrue(decision.getMatchedStrategies().contains("HIGH_QUALITY_SINGLE_WALLET"));
     }
 
     private void prepareCommonMocks(ConsensusSignalView consensus) {
