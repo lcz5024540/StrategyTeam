@@ -140,7 +140,7 @@ public class SmartWalletProperties {
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
         private boolean enableAutoTakeProfit = false;
         private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.20");
-        private Integer maxSignalAgeSeconds = 300;
+        private Integer maxSignalAgeSeconds = 3600;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         private BigDecimal minFollowPrice = new BigDecimal("0.05");
         private BigDecimal maxFollowPrice = new BigDecimal("0.95");
@@ -174,10 +174,10 @@ public class SmartWalletProperties {
          */
         private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "SINGLE_WALLET_OVERRIDE"));
         private Integer consensusWindowSeconds = 180;
-        private Integer minDistinctWallets = 2;
+        private Integer minDistinctWallets = 1;
         /** 实体去重后的最小实体数门控（替代 minDistinctWallets）。默认与 minDistinctWallets 保持一致 */
-        private Integer minDistinctEntities = 2;
-        private BigDecimal minConsensusScore = new BigDecimal("0.72");
+        private Integer minDistinctEntities = 1;
+        private BigDecimal minConsensusScore = new BigDecimal("0.20");
         private boolean qualityWeightedConsensusEnabled = true;
         private BigDecimal consensusEntityBaseWeight = new BigDecimal("0.60");
         private BigDecimal consensusBehaviorWeight = new BigDecimal("0.15");
@@ -196,13 +196,13 @@ public class SmartWalletProperties {
         private Integer unreliableMaxSampleSize = 50;
         private BigDecimal singleWalletOverrideMinWalletScore = new BigDecimal("0.88");
         private BigDecimal singleWalletOverrideMinWinRate = new BigDecimal("0.68");
-        private Integer singleWalletOverrideMinTrades = 60;
-        private Integer singleWalletOverrideMinRecentTrades7d = 5;
+        private Integer singleWalletOverrideMinTrades = 30;
+        private Integer singleWalletOverrideMinRecentTrades7d = 1;
         private BigDecimal singleWalletOverrideMinRecentWinRate7d = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinReplicabilityScore = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinQualityScore = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
-        private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("5");
+        private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("1");
 
         // ── 持仓集中度门控（防控盘） ──────────────────────────────────────────
         /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */

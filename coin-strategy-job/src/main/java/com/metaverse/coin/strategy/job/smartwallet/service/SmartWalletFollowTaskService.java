@@ -1428,6 +1428,9 @@ public class SmartWalletFollowTaskService {
         if (text.contains("total open position cost") || text.contains("portfolio budget")) {
             return "CAPITAL_LIMIT";
         }
+        if (text.contains("[market_end_at_data_quality]")) {
+            return "MARKET_DATA_QUALITY";
+        }
         if (text.contains("market end time is too far away") || text.contains("past expected end time")) {
             return "MARKET_TIMING";
         }

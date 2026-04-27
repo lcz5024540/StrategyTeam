@@ -57,6 +57,8 @@ class SmartWalletSignalRiskServiceTest {
     private WalletBehaviorProfileService walletBehaviorProfileService;
     @Mock
     private WalletArchetypeClassifierService walletArchetypeClassifierService;
+    @Mock
+    private SmartWalletManualAllowlistService manualAllowlistService;
 
     private SmartWalletProperties properties;
     private SmartWalletSignalRiskService service;
@@ -83,12 +85,14 @@ class SmartWalletSignalRiskServiceTest {
                 kellyStakeCalculator,
                 polymarketApiClient,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
     }
 
     @Test
     void shouldAllowOpenWhenSingleWalletOverrideMatches() {
+        properties.getSignalRisk().setMinDistinctEntities(2);
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletScore(new BigDecimal("0.95"))
                 .setWinRate(new BigDecimal("0.80"))
@@ -121,7 +125,108 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
+    void shouldAllowHotRetentionWalletThroughWatchlistAdmission() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setQualified(Boolean.FALSE)
+                .setWatchEnabled(Boolean.TRUE)
+                .setMonitorTier("HOT")
+                .setWalletScore(new BigDecimal("0.64"))
+                .setWinRate(BigDecimal.ONE)
+                .setTotalTrades(50)
+                .setRecentTradeCount7d(3)
+                .setRecentWinRate7d(BigDecimal.ONE);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1)
+                .dedupedEntityCount(1)
+                .consensusScore(new BigDecimal("0.25"))
+                .build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted());
+        assertTrue(decision.getMatchedStrategies().contains("CONSENSUS"));
+        assertFalse(decision.getReasons().stream().anyMatch(item -> item.contains("Wallet is not qualified in watchlist")));
+    }
+
+    @Test
+    void shouldRejectWarmWalletEvenWhenQualifiedAndWatchEnabled() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setMonitorTier("WARM")
+                .setWalletScore(new BigDecimal("0.85"))
+                .setWinRate(new BigDecimal("0.75"))
+                .setTotalTrades(80)
+                .setRecentTradeCount7d(5)
+                .setRecentWinRate7d(new BigDecimal("0.70"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1)
+                .dedupedEntityCount(1)
+                .consensusScore(new BigDecimal("0.80"))
+                .build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("Wallet is not qualified in watchlist")));
+    }
+
+    @Test
+    void shouldRejectColdWalletEvenWhenQualifiedAndWatchEnabled() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setMonitorTier("COLD")
+                .setWalletScore(new BigDecimal("0.85"))
+                .setWinRate(new BigDecimal("0.75"))
+                .setTotalTrades(80)
+                .setRecentTradeCount7d(5)
+                .setRecentWinRate7d(new BigDecimal("0.70"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1)
+                .dedupedEntityCount(1)
+                .consensusScore(new BigDecimal("0.80"))
+                .build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("Wallet is not qualified in watchlist")));
+    }
+
+    @Test
+    void shouldRejectManuallyDisabledHotWallet() {
+        SmartWalletProfileEntity profile = baseProfile()
+                .setManualWatchEnabled(Boolean.FALSE)
+                .setWalletScore(new BigDecimal("0.85"))
+                .setWinRate(new BigDecimal("0.75"))
+                .setTotalTrades(80)
+                .setRecentTradeCount7d(5)
+                .setRecentWinRate7d(new BigDecimal("0.70"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1)
+                .dedupedEntityCount(1)
+                .consensusScore(new BigDecimal("0.80"))
+                .build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[MANUAL_WATCH_DISABLED]")));
+    }
+
+    @Test
     void shouldRejectWhenNoEntryStrategyMatches() {
+        properties.getSignalRisk().setMinDistinctEntities(2);
+        properties.getSignalRisk().setMinConsensusScore(new BigDecimal("0.65"));
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletScore(new BigDecimal("0.70"))
                 .setWinRate(new BigDecimal("0.60"))
@@ -301,6 +406,7 @@ class SmartWalletSignalRiskServiceTest {
 
     @Test
     void shouldRejectSingleWalletOverrideWhenBehaviorThresholdIsNotMet() {
+        properties.getSignalRisk().setMinDistinctEntities(2);
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletAddress("0xbehavior")
                 .setWalletScore(new BigDecimal("0.95"))
@@ -334,6 +440,7 @@ class SmartWalletSignalRiskServiceTest {
 
     @Test
     void shouldNotBypassConsensusScoreFailureWithSingleWalletOverride() {
+        properties.getSignalRisk().setMinConsensusScore(new BigDecimal("0.65"));
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletAddress("0xconsensus")
                 .setWalletScore(new BigDecimal("0.95"))
@@ -367,6 +474,7 @@ class SmartWalletSignalRiskServiceTest {
 
     @Test
     void shouldRejectSingleWalletOverrideWhenCanaryDoesNotSelectWallet() {
+        properties.getSignalRisk().setMinDistinctEntities(2);
         properties.getSignalRisk().setEnableSingleWalletOverrideCanary(true);
         properties.getSignalRisk().setSingleWalletOverrideCanaryRate(BigDecimal.ZERO);
         SmartWalletProfileEntity profile = baseProfile()
@@ -441,6 +549,7 @@ class SmartWalletSignalRiskServiceTest {
                 new BigDecimal("0.78"),
                 new BigDecimal("0.90"),
                 3200,
+                false,
                 true,
                 java.util.List.of("0xwhale"),
                 System.currentTimeMillis()
@@ -571,6 +680,7 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     private void prepareCommonMocks(ConsensusSignalView consensus) {
+        when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
         when(positionMapper.selectCount(any())).thenReturn(0L);
         when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
         when(followTaskMapper.selectCount(any())).thenReturn(0L);
@@ -590,7 +700,9 @@ class SmartWalletSignalRiskServiceTest {
                         .build());
         when(consensusSignalService.buildConsensusForEvent(any())).thenReturn(consensus);
         when(consensusSignalService.buildConsensusForEvent(any(), any())).thenReturn(consensus);
-        when(leaderboardStateService.adjustWalletScore(any(), any())).thenAnswer(invocation -> {
+        when(leaderboardStateService.adjustWalletScore(
+                any(SmartWalletProfileEntity.class),
+                any(SmartWalletTradeEventEntity.class))).thenAnswer(invocation -> {
             SmartWalletProfileEntity profile = invocation.getArgument(0);
             return profile.getWalletScore();
         });
@@ -620,8 +732,10 @@ class SmartWalletSignalRiskServiceTest {
 
     private SmartWalletProfileEntity baseProfile() {
         return new SmartWalletProfileEntity()
+                .setWalletAddress("0xabc")
                 .setQualified(Boolean.TRUE)
-                .setWatchEnabled(Boolean.TRUE);
+                .setWatchEnabled(Boolean.TRUE)
+                .setMonitorTier("HOT");
     }
 
     private SmartWalletTradeEventEntity baseEvent() {

@@ -330,8 +330,8 @@ smart-wallet:
     enable-auto-take-profit: true
     # [TUNE] Trigger automatic take-profit once unrealized ROI >= this threshold.
     auto-take-profit-threshold-rate: 0.60
-    # [TUNE] Main freshness gate. Most sensitive live-strategy parameter.
-    max-signal-age-seconds: 300
+    # [TUNE] Main freshness gate. Keep LIVE/PAPER consistent and tolerate test sync latency.
+    max-signal-age-seconds: 3600
     # [TUNE] Ignore tiny smart-wallet prints.
     min-trigger-size-usdc: 5
     # [TUNE] Follow only inside this market price band.
@@ -375,12 +375,11 @@ smart-wallet:
     # takes >180s. Increased to 3600s (1h) so multi-wallet consensus is actually detectable.
     consensus-window-seconds: 3600
     # [TUNE] Minimum distinct entities (after wallet deduplication) before consensus is trusted.
-    min-distinct-wallets: 2
-    # [FIX-CONSENSUS-SCORE] Lowered from 0.72 → 0.65. The consensus score is the average
-    # wallet score of participating entities. With minWalletScore=0.70, two wallets at the
-    # threshold average to 0.70, which failed the previous 0.72 gate. 0.65 allows consensus
-    # from near-threshold wallets while still requiring meaningful quality.
-    min-consensus-score: 0.65
+    # Keep LIVE/PAPER on the same loosened gate so single high-quality wallets can open.
+    min-distinct-wallets: 1
+    min-distinct-entities: 1
+    # [TUNE] Loosened from 0.65 to unblock low-but-nonzero single-entity consensus.
+    min-consensus-score: 0.20
     quality-weighted-consensus-enabled: true
     consensus-entity-base-weight: 0.60
     consensus-behavior-weight: 0.15
@@ -402,13 +401,13 @@ smart-wallet:
     unreliable-max-sample-size: 20
     single-wallet-override-min-wallet-score: 0.88
     single-wallet-override-min-win-rate: 0.68
-    single-wallet-override-min-trades: 60
-    single-wallet-override-min-recent-trades-7d: 5
+    single-wallet-override-min-trades: 30
+    single-wallet-override-min-recent-trades-7d: 1
     single-wallet-override-min-recent-win-rate-7d: 0.60
     single-wallet-override-min-replicability-score: 0.60
     single-wallet-override-min-quality-score: 0.60
     single-wallet-override-min-trigger-size-usdc: 100
-    single-wallet-override-min-recommended-stake-usdc: 5
+    single-wallet-override-min-recommended-stake-usdc: 1
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
     # [FEATURE] 集中度门控总开关。先以 DOWNSIZE 方式灰度，而不是直接 BLOCK。
     enable-concentration-gate: true
@@ -522,17 +521,17 @@ smart-wallet:
       max-signal-age-seconds: 3600
       min-distinct-wallets: 1
       min-distinct-entities: 1
-      min-consensus-score: 0
+      min-consensus-score: 0.20
       quality-weighted-consensus-enabled: true
       single-wallet-override-min-wallet-score: 0.88
       single-wallet-override-min-win-rate: 0.68
-      single-wallet-override-min-trades: 60
-      single-wallet-override-min-recent-trades-7d: 5
+      single-wallet-override-min-trades: 30
+      single-wallet-override-min-recent-trades-7d: 1
       single-wallet-override-min-recent-win-rate-7d: 0.60
       single-wallet-override-min-replicability-score: 0.60
       single-wallet-override-min-quality-score: 0.60
       single-wallet-override-min-trigger-size-usdc: 100
-      single-wallet-override-min-recommended-stake-usdc: 5
+      single-wallet-override-min-recommended-stake-usdc: 1
   live-validation:
     # [TUNE] Auxiliary LIVE lane. Keep disabled by default; enable only in a geoblock-safe environment when you want tiny real-fund validation.
     enabled: false

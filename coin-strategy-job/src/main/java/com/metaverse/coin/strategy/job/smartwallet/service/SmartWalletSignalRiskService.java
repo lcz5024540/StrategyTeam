@@ -37,6 +37,8 @@ import java.util.stream.Collectors;
 public class SmartWalletSignalRiskService {
 
     private static final String LOG_PREFIX = "[POLY_FOLLOW]";
+    private static final String MONITOR_TIER_HOT = "HOT";
+    private static final long OBVIOUSLY_FUTURE_MARKET_END_MS = 365L * 24L * 3600_000L;
 
     private final SmartWalletProperties properties;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
@@ -79,10 +81,18 @@ public class SmartWalletSignalRiskService {
                 .orElse(null);
         boolean manualAllowlistApplied = manualAllowlist != null;
         boolean manualWatchDisabled = profile != null && Boolean.FALSE.equals(profile.getManualWatchEnabled());
+        boolean addressAdmissionRejected = false;
         if (manualWatchDisabled) {
             accepted = false;
             manualAllowlistApplied = false;
+            addressAdmissionRejected = true;
             reasons.add("[MANUAL_WATCH_DISABLED] Wallet is manually forced to observe-only; manual allowlist cannot override it.");
+        } else if (isObserveCooldownActive(profile)) {
+            accepted = false;
+            manualAllowlistApplied = false;
+            addressAdmissionRejected = true;
+            reasons.add("[OBSERVE_COOLDOWN_BLOCK] Wallet is currently in recent-degradation observe cooldown until "
+                    + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
         } else if (manualAllowlistApplied) {
             reasons.add("[MANUAL_ALLOWLIST_PASS] Wallet matched active manual allowlist. Address-profile admission checks are bypassed only.");
             if (profile == null) {
@@ -91,17 +101,9 @@ public class SmartWalletSignalRiskService {
             }
         }
 
-        if (!manualAllowlistApplied
-                && (profile == null || !Boolean.TRUE.equals(profile.getQualified()) || !Boolean.TRUE.equals(profile.getWatchEnabled()))) {
+        if (!manualAllowlistApplied && !addressAdmissionRejected && !isExecutableProfile(profile)) {
             accepted = false;
-            if (profile != null
-                    && profile.getObserveCooldownUntil() != null
-                    && profile.getObserveCooldownUntil().after(new Date())) {
-                reasons.add("[OBSERVE_COOLDOWN_BLOCK] Wallet is currently in recent-degradation observe cooldown until "
-                        + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
-            } else {
-                reasons.add("Wallet is not qualified in watchlist.");
-            }
+            reasons.add(watchlistBlockReason(profile));
         }
 
         SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
@@ -212,7 +214,10 @@ public class SmartWalletSignalRiskService {
                 reasons.add("Market is already at or past expected end time.");
             } else {
                 long maxHours = defaultInt(risk.getMaxHoursToMarketEnd(), Integer.MAX_VALUE);
-                if (remainingMs > maxHours * 3600_000L) {
+                if (remainingMs > OBVIOUSLY_FUTURE_MARKET_END_MS) {
+                    accepted = false;
+                    reasons.add("[MARKET_END_AT_DATA_QUALITY] Market end time is unexpectedly far in the future; verify metadata before following.");
+                } else if (remainingMs > maxHours * 3600_000L) {
                     accepted = false;
                     reasons.add("Market end time is too far away for the current capital-turnover policy.");
                 }
@@ -564,6 +569,38 @@ public class SmartWalletSignalRiskService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private boolean isExecutableProfile(SmartWalletProfileEntity profile) {
+        if (profile == null || isObserveCooldownActive(profile)) {
+            return false;
+        }
+        return Boolean.TRUE.equals(profile.getWatchEnabled())
+                && MONITOR_TIER_HOT.equalsIgnoreCase(profile.getMonitorTier());
+    }
+
+    private boolean isObserveCooldownActive(SmartWalletProfileEntity profile) {
+        return profile != null
+                && profile.getObserveCooldownUntil() != null
+                && profile.getObserveCooldownUntil().after(new Date());
+    }
+
+    private String watchlistBlockReason(SmartWalletProfileEntity profile) {
+        if (profile == null) {
+            return "Wallet is not qualified in watchlist.";
+        }
+        if (Boolean.FALSE.equals(profile.getManualWatchEnabled())) {
+            return "[MANUAL_WATCH_DISABLED] Wallet is manually forced to observe-only.";
+        }
+        if (isObserveCooldownActive(profile)) {
+            return "[OBSERVE_COOLDOWN_BLOCK] Wallet is currently in recent-degradation observe cooldown until "
+                    + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason();
+        }
+        if (!Boolean.TRUE.equals(profile.getWatchEnabled())) {
+            return "Wallet is not qualified in watchlist.";
+        }
+        return "Wallet is not qualified in watchlist. monitorTier="
+                + (StringUtils.hasText(profile.getMonitorTier()) ? profile.getMonitorTier() : "UNKNOWN") + ".";
     }
 
     private long resolveEffectiveSignalAgeMs(SmartWalletProperties.SignalRisk risk, WalletArchetypeView archetype) {
