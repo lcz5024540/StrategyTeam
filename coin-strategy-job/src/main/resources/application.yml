@@ -168,6 +168,10 @@ smart-wallet:
     session-coverage-lookback-days: 30
     # [FIXED-ONCE] Discovery job interval.
     discovery-fixed-delay-ms: 3600000
+    # [FIXED-ONCE] Incremental leaderboard refresh should not churn the HOT watchlist every few minutes.
+    leaderboard-refresh-fixed-delay-ms: 1800000
+    # [TUNE] Use the same per-query coverage as the main leaderboard pool during incremental refresh.
+    leaderboard-refresh-top-n: 50
     # [FIXED-ONCE] Watchlist trade sync interval.
     event-sync-fixed-delay-ms: 60000
     # [TUNE] Balance/positions sync cadence for the configured live execution wallet.
@@ -198,9 +202,9 @@ smart-wallet:
     warm-wallet-refresh-min-interval-ms: 1800000
     # [TUNE] Keep existing HOT wallets during small score/win-rate drift instead of dropping them immediately.
     hot-retention-enabled: true
-    hot-retention-hours: 24
-    score-hysteresis-buffer: 0.08
-    win-rate-hysteresis-buffer: 0.04
+    hot-retention-hours: 72
+    score-hysteresis-buffer: 0.12
+    win-rate-hysteresis-buffer: 0.06
     # [TUNE] Wallets with no observed trade for this many days are moved to WARM, then COLD after the cold threshold.
     warm-wallet-inactivity-days: 30
     cold-wallet-inactivity-days: 60
@@ -352,9 +356,10 @@ smart-wallet:
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
     # [FEATURE] 集中度门控总开关。先以 DOWNSIZE 方式灰度，而不是直接 BLOCK。
     enable-concentration-gate: true
-    extreme-concentration-mode: BLOCK
+    extreme-concentration-mode: DOWNSIZE
+    extreme-concentration-downsize-rate: 0.50
     concentration-high-risk-mode: DOWNSIZE
-    concentration-high-risk-downsize-rate: 0.35
+    concentration-high-risk-downsize-rate: 0.50
     # [TUNE] 极端集中阈值。命中时默认直接拒单，而不是只缩仓。
     max-top1-extreme-concentration-pct: 0.70
     max-top3-extreme-concentration-pct: 0.90
@@ -375,6 +380,8 @@ smart-wallet:
     concentration-cache-ttl-ms: 60000
     # [TUNE] 拉取前 N 名持仓人
     concentration-top-n: 50
+    # [TUNE] 样本过小时只提示不拦截，避免 top-N/单方向持仓数据把普通市场误判为控盘。
+    concentration-min-observed-holders-for-gate: 12
     # [TUNE] CR_3 低于此值不施加仓位惩罚
     concentration-stake-safe-top3-pct: 0.40
     # [TUNE] 集中度惩罚最大削减比例

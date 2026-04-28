@@ -542,6 +542,57 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
+    void shouldNotEnforceConcentrationGateWhenObservedHolderSampleIsTooSmall() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setEnableConcentrationGate(true);
+        properties.getSignalRisk().setConcentrationMinObservedHoldersForGate(12);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xlowcoverage")
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80)
+                .setRecentTradeCount7d(8)
+                .setRecentWinRate7d(new BigDecimal("0.70"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.85"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile("0xlowcoverage")).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xlowcoverage")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.80"))
+                .qualityScore(new BigDecimal("0.78"))
+                .stabilityScore(new BigDecimal("0.60"))
+                .build());
+        when(concentrationService.analyze(any(), any())).thenReturn(new MarketConcentrationService.ConcentrationSnapshot(
+                "market-1",
+                "YES",
+                5,
+                new BigDecimal("0.80"),
+                new BigDecimal("0.95"),
+                new BigDecimal("1.00"),
+                7200,
+                true,
+                true,
+                java.util.List.of("0xwhale"),
+                System.currentTimeMillis()
+        ));
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted());
+        assertEquals(new BigDecimal("2.40"), decision.getRecommendedStakeUsdc());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[CONCENTRATION_LOW_COVERAGE]")));
+        assertFalse(decision.getReasons().stream().anyMatch(item -> item.contains("[EXTREME_CONCENTRATION_DOWNSIZE]")));
+    }
+
+    @Test
     void shouldRejectClosedMarketLifecycle() {
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletAddress("0xclosed")

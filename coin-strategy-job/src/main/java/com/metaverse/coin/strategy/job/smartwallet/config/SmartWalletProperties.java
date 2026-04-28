@@ -228,7 +228,9 @@ public class SmartWalletProperties {
         /** 是否开启持仓集中度门控（默认关闭，验证 API 格式后再上线） */
         private boolean enableConcentrationGate = false;
         /** 极端集中度的处置模式：BLOCK / DOWNSIZE / WARN_ONLY */
-        private String extremeConcentrationMode = "BLOCK";
+        private String extremeConcentrationMode = "DOWNSIZE";
+        /** 极端集中度 DOWNSIZE 模式下保留的仓位比例 */
+        private BigDecimal extremeConcentrationDownsizeRate = new BigDecimal("0.35");
         /** 高风险集中度的处置模式：BLOCK / DOWNSIZE / WARN_ONLY */
         private String concentrationHighRiskMode = "DOWNSIZE";
         /** CR_1 极端集中阈值：单一持仓者超过此值视为极端集中 */
@@ -262,6 +264,8 @@ public class SmartWalletProperties {
         private int concentrationCacheTtlMs = 60000;
         /** 集中度分析拉取的最大持仓人数（Polymarket limit 上限 100） */
         private int concentrationTopN = 50;
+        /** 观测持仓人数低于该值时，不用集中度结果阻断或缩仓，避免 top-N 样本过小误判控盘 */
+        private Integer concentrationMinObservedHoldersForGate = 12;
         /** CR_3 低于此值时不施加仓位惩罚 */
         private BigDecimal concentrationStakeSafeTop3Pct = new BigDecimal("0.40");
         /** 集中度惩罚最大削减比例（0.5 = 最多缩减 50%） */

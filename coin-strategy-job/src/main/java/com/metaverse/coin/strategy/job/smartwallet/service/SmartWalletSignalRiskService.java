@@ -349,102 +349,110 @@ public class SmartWalletSignalRiskService {
         if (risk.isEnableConcentrationGate()) {
             ConcentrationSnapshot snap = concentrationService.analyze(event.getMarketId(), event.getOutcome());
             if (snap.isDataAvailable()) {
-                // Gate 1：极端集中市场优先处理，避免和普通高集中共用同一套 downsizing
-                if (snap.isExtremelyConcentrated()) {
-                    String mode = normalizeMode(risk.getExtremeConcentrationMode(), "BLOCK");
-                    switch (mode) {
-                        case "BLOCK" -> {
-                            accepted = false;
-                            reasons.add("[EXTREME_CONCENTRATION] Market is extremely concentrated. " +
-                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " HHI=" + snap.hhi() +
-                                    " holders=" + snap.observedHolders());
-                        }
-                        case "DOWNSIZE" -> {
-                            BigDecimal retainRate = new BigDecimal("0.10");
-                            preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
-                            reasons.add("[EXTREME_CONCENTRATION_DOWNSIZE] Market is extremely concentrated. " +
-                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " HHI=" + snap.hhi() +
-                                    ". Stake retained at " + retainRate.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
-                        }
-                        default -> reasons.add("[EXTREME_CONCENTRATION_WARN] Extremely concentrated market detected but warn-only mode is enabled. " +
-                                "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
-                                " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                                " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
-                                " HHI=" + snap.hhi() + ".");
-                    }
-                } else if (snap.isHighlyConcentrated()) {
-                    // Gate 2：普通高集中市场 → 根据模式选择 BLOCK / DOWNSIZE / WARN_ONLY
-                    String mode = normalizeMode(risk.getConcentrationHighRiskMode(), "DOWNSIZE");
-                    switch (mode) {
-                        case "BLOCK" -> {
-                            accepted = false;
-                            reasons.add("[CONCENTRATION] Market is highly concentrated. " +
-                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " HHI=" + snap.hhi() +
-                                    " holders=" + snap.observedHolders());
-                        }
-                        case "DOWNSIZE" -> {
-                            BigDecimal retainRate = safe(risk.getConcentrationHighRiskDownsizeRate()).max(new BigDecimal("0.05")).min(BigDecimal.ONE);
-                            preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
-                            reasons.add("[CONCENTRATION_DOWNSIZE] Highly concentrated market. " +
-                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                                    " HHI=" + snap.hhi() +
-                                    ". Stake retained at " + retainRate.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
-                        }
-                        default -> reasons.add("[CONCENTRATION_WARN] Highly concentrated market detected but warn-only mode is enabled. " +
-                                "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
-                                " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                                " HHI=" + snap.hhi() + ".");
-                    }
+                int minObservedHolders = risk.getConcentrationMinObservedHoldersForGate() == null
+                        ? 0
+                        : Math.max(0, risk.getConcentrationMinObservedHoldersForGate());
+                if (snap.observedHolders() < minObservedHolders) {
+                    reasons.add("[CONCENTRATION_LOW_COVERAGE] Only " + snap.observedHolders()
+                            + " holders observed for concentration sample; gate requires at least "
+                            + minObservedHolders + ". Concentration result is not enforced.");
                 } else {
-                    // Gate 2（告警区间）：集中度达到警戒但未触阈值 → 按比例削减 recommendedStake
-                    BigDecimal safeTop3 = safe(risk.getConcentrationStakeSafeTop3Pct());
-                    BigDecimal blockTop3 = safe(risk.getMaxTop3ConcentrationPct());
-                    if (snap.top3Pct().compareTo(safeTop3) > 0
-                            && blockTop3.compareTo(safeTop3) > 0) {
-                        BigDecimal penaltyRate = snap.top3Pct().subtract(safeTop3)
-                                .divide(blockTop3.subtract(safeTop3), 4, RoundingMode.HALF_UP)
-                                .multiply(safe(risk.getConcentrationStakePenaltyMaxRate()))
-                                .min(safe(risk.getConcentrationStakePenaltyMaxRate()));
-                        BigDecimal retainRate = BigDecimal.ONE.subtract(penaltyRate);
-                        preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
-                        reasons.add("[CONCENTRATION_PENALTY] CR3=" +
-                                snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
-                                " in caution zone. Stake reduced by " +
-                                penaltyRate.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP) + "%.");
+                    // Gate 1：极端集中市场优先处理，避免和普通高集中共用同一套 downsizing
+                    if (snap.isExtremelyConcentrated()) {
+                        String mode = normalizeMode(risk.getExtremeConcentrationMode(), "DOWNSIZE");
+                        switch (mode) {
+                            case "BLOCK" -> {
+                                accepted = false;
+                                reasons.add("[EXTREME_CONCENTRATION] Market is extremely concentrated. " +
+                                        "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " HHI=" + snap.hhi() +
+                                        " holders=" + snap.observedHolders());
+                            }
+                            case "DOWNSIZE" -> {
+                                BigDecimal retainRate = safe(risk.getExtremeConcentrationDownsizeRate()).max(new BigDecimal("0.05")).min(BigDecimal.ONE);
+                                preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
+                                reasons.add("[EXTREME_CONCENTRATION_DOWNSIZE] Market is extremely concentrated. " +
+                                        "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " HHI=" + snap.hhi() +
+                                        ". Stake retained at " + retainRate.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
+                            }
+                            default -> reasons.add("[EXTREME_CONCENTRATION_WARN] Extremely concentrated market detected but warn-only mode is enabled. " +
+                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR5=" + snap.top5Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " HHI=" + snap.hhi() + ".");
+                        }
+                    } else if (snap.isHighlyConcentrated()) {
+                        // Gate 2：普通高集中市场 → 根据模式选择 BLOCK / DOWNSIZE / WARN_ONLY
+                        String mode = normalizeMode(risk.getConcentrationHighRiskMode(), "DOWNSIZE");
+                        switch (mode) {
+                            case "BLOCK" -> {
+                                accepted = false;
+                                reasons.add("[CONCENTRATION] Market is highly concentrated. " +
+                                        "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " HHI=" + snap.hhi() +
+                                        " holders=" + snap.observedHolders());
+                            }
+                            case "DOWNSIZE" -> {
+                                BigDecimal retainRate = safe(risk.getConcentrationHighRiskDownsizeRate()).max(new BigDecimal("0.05")).min(BigDecimal.ONE);
+                                preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
+                                reasons.add("[CONCENTRATION_DOWNSIZE] Highly concentrated market. " +
+                                        "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                        " HHI=" + snap.hhi() +
+                                        ". Stake retained at " + retainRate.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
+                            }
+                            default -> reasons.add("[CONCENTRATION_WARN] Highly concentrated market detected but warn-only mode is enabled. " +
+                                    "CR1=" + snap.top1Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " CR3=" + snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " HHI=" + snap.hhi() + ".");
+                        }
+                    } else {
+                        // Gate 2（告警区间）：集中度达到警戒但未触阈值 → 按比例削减 recommendedStake
+                        BigDecimal safeTop3 = safe(risk.getConcentrationStakeSafeTop3Pct());
+                        BigDecimal blockTop3 = safe(risk.getMaxTop3ConcentrationPct());
+                        if (snap.top3Pct().compareTo(safeTop3) > 0
+                                && blockTop3.compareTo(safeTop3) > 0) {
+                            BigDecimal penaltyRate = snap.top3Pct().subtract(safeTop3)
+                                    .divide(blockTop3.subtract(safeTop3), 4, RoundingMode.HALF_UP)
+                                    .multiply(safe(risk.getConcentrationStakePenaltyMaxRate()))
+                                    .min(safe(risk.getConcentrationStakePenaltyMaxRate()));
+                            BigDecimal retainRate = BigDecimal.ONE.subtract(penaltyRate);
+                            preliminaryStake = preliminaryStake.multiply(retainRate).setScale(2, RoundingMode.HALF_UP);
+                            reasons.add("[CONCENTRATION_PENALTY] CR3=" +
+                                    snap.top3Pct().setScale(3, RoundingMode.HALF_UP) +
+                                    " in caution zone. Stake reduced by " +
+                                    penaltyRate.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP) + "%.");
+                        }
                     }
-                }
 
-                // Gate 4：信号源钱包本身是鲸鱼
-                String triggerWallet = event.getWalletAddress();
-                if (org.springframework.util.StringUtils.hasText(triggerWallet)
-                        && snap.topHolderAddresses().stream()
-                                .anyMatch(addr -> addr.equalsIgnoreCase(triggerWallet))) {
-                    String mode = risk.getWhaleSignalSourceMode() == null ? "BLOCK" : risk.getWhaleSignalSourceMode().toUpperCase();
-                    switch (mode) {
-                        case "BLOCK" -> {
-                            accepted = false;
-                            reasons.add("[WHALE_SIGNAL] Signal source wallet is a top-5 holder in this market. " +
-                                    "Possible pump-and-dump. Blocked.");
-                        }
-                        case "DOWNSIZE" -> {
-                            BigDecimal downsize = safe(risk.getWhaleSignalDownsizeRate());
-                            preliminaryStake = preliminaryStake.multiply(downsize).setScale(2, RoundingMode.HALF_UP);
-                            reasons.add("[WHALE_SIGNAL] Signal source is a top-5 holder. " +
-                                    "Stake downsized to " +
-                                    downsize.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
-                        }
-                        default ->  // WARN_ONLY
-                            reasons.add("[WHALE_SIGNAL] Signal source is a top-5 holder. " +
+                    // Gate 4：信号源钱包本身是鲸鱼
+                    String triggerWallet = event.getWalletAddress();
+                    if (org.springframework.util.StringUtils.hasText(triggerWallet)
+                            && snap.topHolderAddresses().stream()
+                                    .anyMatch(addr -> addr.equalsIgnoreCase(triggerWallet))) {
+                        String mode = risk.getWhaleSignalSourceMode() == null ? "BLOCK" : risk.getWhaleSignalSourceMode().toUpperCase();
+                        switch (mode) {
+                            case "BLOCK" -> {
+                                accepted = false;
+                                reasons.add("[WHALE_SIGNAL] Signal source wallet is a top-5 holder in this market. " +
+                                        "Possible pump-and-dump. Blocked.");
+                            }
+                            case "DOWNSIZE" -> {
+                                BigDecimal downsize = safe(risk.getWhaleSignalDownsizeRate());
+                                preliminaryStake = preliminaryStake.multiply(downsize).setScale(2, RoundingMode.HALF_UP);
+                                reasons.add("[WHALE_SIGNAL] Signal source is a top-5 holder. " +
+                                        "Stake downsized to " +
+                                        downsize.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP) + "%.");
+                            }
+                            default -> reasons.add("[WHALE_SIGNAL] Signal source is a top-5 holder. " +
                                     "WARN_ONLY mode — signal not blocked.");
+                        }
                     }
                 }
             }

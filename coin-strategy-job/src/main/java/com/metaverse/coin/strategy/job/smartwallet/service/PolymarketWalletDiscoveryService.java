@@ -130,7 +130,9 @@ public class PolymarketWalletDiscoveryService {
             }
         }
 
-        SmartWalletSelectionSummary selection = selectionService.refreshQualifiedWallets();
+        SmartWalletSelectionSummary selection = syncTradesAfterRefresh
+                ? selectionService.refreshQualifiedWallets()
+                : currentSelectionSummary();
         if (syncTradesAfterRefresh) {
             try {
                 importedTradeEvents = syncWatchlistTrades();
@@ -143,6 +145,9 @@ public class PolymarketWalletDiscoveryService {
         notes.add("Candidates come from Polymarket official leaderboard and are re-ranked by local wallet score.");
         notes.add("Wallet metrics are calculated from official closed positions and recent trade data.");
         notes.add("Leaderboard candidate pool is unioned across " + resolveLeaderboardQueries().size() + " query slices.");
+        if (!syncTradesAfterRefresh) {
+            notes.add("Incremental leaderboard refresh updates only wallets seen in this cycle; existing HOT wallets are not globally re-qualified here.");
+        }
         PolymarketDiscoverySummary summary = PolymarketDiscoverySummary.builder()
                 .candidateWallets(candidates.size())
                 .analyzedWallets(analyzedWallets)
@@ -156,6 +161,21 @@ public class PolymarketWalletDiscoveryService {
                 LOG_PREFIX, summary.getCandidateWallets(), summary.getAnalyzedWallets(), summary.getImportedProfiles(),
                 summary.getImportedTradeEvents(), summary.getQualifiedCount(), summary.getWatchlistCount());
         return summary;
+    }
+
+    private SmartWalletSelectionSummary currentSelectionSummary() {
+        int qualifiedCount = safeSize(profileStoreService.listQualified());
+        int executableCount = safeSize(profileStoreService.listExecutableWatchlist());
+        return SmartWalletSelectionSummary.builder()
+                .qualifiedCount(qualifiedCount)
+                .executableCount(executableCount)
+                .rejectedCount(Math.max(0, safeSize(profileStoreService.listAll()) - qualifiedCount))
+                .notes(List.of("Incremental refresh preserved existing wallet admission state."))
+                .build();
+    }
+
+    private int safeSize(List<?> values) {
+        return values == null ? 0 : values.size();
     }
 
     public boolean analyzeWalletAndAdmitWatchlist(String walletAddress) {
