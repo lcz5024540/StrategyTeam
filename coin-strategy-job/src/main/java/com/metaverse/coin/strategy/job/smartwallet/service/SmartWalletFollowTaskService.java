@@ -24,6 +24,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulati
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
+import com.metaverse.coin.strategy.job.strategy.application.StrategyFlowLogFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -76,6 +77,10 @@ public class SmartWalletFollowTaskService {
         log.info("{} action=记录Polymarket钱包交易事件 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
                 LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide(),
                 event.getExternalTradeId(), event.getPrice(), event.getSizeUsdc());
+        log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "开始", event, null,
+                "price", event.getPrice(),
+                "stakeUsdc", event.getSizeUsdc(),
+                "reasonSummary", "开始记录观察钱包交易事件"));
         SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
                 .eq(SmartWalletTradeEventEntity::getSource, event.getSource())
                 .eq(SmartWalletTradeEventEntity::getExternalTradeId, event.getExternalTradeId())
@@ -85,6 +90,8 @@ public class SmartWalletFollowTaskService {
             log.info("{} action=记录Polymarket钱包交易事件 result=跳过重复事件 eventId={} wallet={} marketId={} outcome={} externalTradeId={}",
                     LOG_PREFIX, existing.getId(), existing.getWalletAddress(), existing.getMarketId(), existing.getOutcome(),
                     existing.getExternalTradeId());
+            log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "跳过重复事件", existing, null,
+                    "reasonSummary", "externalTradeId already recorded"));
             return existing;
         }
 
@@ -94,6 +101,10 @@ public class SmartWalletFollowTaskService {
         tradeEventMapper.insert(event);
         log.info("{} action=记录Polymarket钱包交易事件 result=已入库 eventId={} wallet={} marketId={} outcome={} side={}",
                 LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide());
+        log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "已入库", event, null,
+                "price", event.getPrice(),
+                "stakeUsdc", event.getSizeUsdc(),
+                "reasonSummary", "交易事件已入库，准备进入候选增强和风控链路"));
         profileStoreService.recordObservedTradeActivity(event.getWalletAddress(), event.getOpenedAt());
         ensureMarketInfoForEvent(event);
         createFollowTaskIfQualified(event);
@@ -318,9 +329,17 @@ public class SmartWalletFollowTaskService {
             task.setStatus("EXECUTING");
             log.info("{} action=抢占跟单任务执行权 result=成功 taskId={} wallet={} marketId={} outcome={} scheduledAt={}",
                     LOG_PREFIX, task.getId(), task.getWalletAddress(), task.getMarketId(), task.getOutcome(), task.getScheduledAt());
+            log.info("{}", flow("S7_TASK_CLAIMED", "抢占跟单任务执行权", "成功", null, task,
+                    "mode", task.getExecutionMode(),
+                    "stakeUsdc", task.getRecommendedStakeUsdc(),
+                    "reasonSummary", "任务状态 PENDING -> EXECUTING"));
         } else {
             log.debug("{} action=抢占跟单任务执行权 result=失败 taskId={} expectedStatus=PENDING affectedRows={}",
                     LOG_PREFIX, task.getId(), affected);
+            log.info("{}", flow("S7_TASK_CLAIMED", "抢占跟单任务执行权", "失败", null, task,
+                    "mode", task.getExecutionMode(),
+                    "stakeUsdc", task.getRecommendedStakeUsdc(),
+                    "reasonSummary", "未能从 PENDING 抢占任务，可能已被其他线程处理"));
         }
         return affected == 1;
     }
@@ -432,6 +451,15 @@ public class SmartWalletFollowTaskService {
     }
 
     private String resolveTaskExecutionMode(String walletAddress) {
+        return resolveTaskExecutionMode(walletAddress, null);
+    }
+
+    private String resolveTaskExecutionMode(String walletAddress, SignalRiskDecision decision) {
+        if (decision != null
+                && decision.getMatchedStrategies() != null
+                && decision.getMatchedStrategies().contains("SINGLE_WALLET_PAPER_CANARY")) {
+            return "PAPER";
+        }
         if (!properties.isAutoExecutionEnabled()) {
             return "PAPER";
         }
@@ -563,8 +591,15 @@ public class SmartWalletFollowTaskService {
         if (profile == null && allowlist == null) {
             log.info("{} action=根据交易事件生成跟单任务 result=跳过 reason=钱包未在可执行观察名单 eventId={} wallet={} marketId={} outcome={}",
                     LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome());
+            log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "拒绝", event, null,
+                    "firstRejectGate", "G1_WATCHLIST_UNQUALIFIED",
+                    "blockerCategories", "WATCHLIST",
+                    "reasonSummary", "钱包未在可执行观察名单"));
             return;
         }
+        log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "通过", event, null,
+                "entryLane", profile == null ? "MANUAL_ALLOWLIST" : profile.getMonitorTier(),
+                "reasonSummary", "钱包已进入候选任务生成链路"));
 
         SmartWalletFollowTaskEntity existingTask = followTaskMapper.selectOne(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                 .eq(SmartWalletFollowTaskEntity::getSourceEventId, event.getId())
@@ -573,6 +608,10 @@ public class SmartWalletFollowTaskService {
             log.info("{} action=根据交易事件生成跟单任务 result=跳过重复任务 eventId={} followTaskId={} status={} wallet={} marketId={} outcome={}",
                     LOG_PREFIX, event.getId(), existingTask.getId(), existingTask.getStatus(), event.getWalletAddress(),
                     event.getMarketId(), event.getOutcome());
+            log.info("{}", flow("S6_TASK_CREATED", "创建跟单任务", "跳过重复任务", event, existingTask,
+                    "mode", existingTask.getExecutionMode(),
+                    "stakeUsdc", existingTask.getRecommendedStakeUsdc(),
+                    "reasonSummary", "sourceEventId 已存在跟单任务"));
             return;
         }
 
@@ -583,6 +622,11 @@ public class SmartWalletFollowTaskService {
                 LOG_PREFIX, candidate.getEnrichmentStatus(), event.getId(), candidate.getId(), event.getWalletAddress(),
                 candidate.getEntityId(), candidate.getClusterConfidence(), candidate.getIsEntityFirstSignal(),
                 candidate.getEntityConsensusDedupCount(), candidate.getRejectionReason());
+        log.info("{}", flow("S3_CANDIDATE_ENRICHED", "智能增强候选信号", candidate.getEnrichmentStatus(), event, null,
+                "candidateId", candidate.getId(),
+                "entityId", candidate.getEntityId(),
+                "consensusEntities", candidate.getEntityConsensusDedupCount(),
+                "reasonSummary", candidate.getRejectionReason()));
 
         SmartWalletMarketInfoEntity marketInfo = ensureMarketInfoForEvent(event);
         SmartWalletMarketStateService.MarketStateSnapshot marketState = refreshMarketState(event);
@@ -592,8 +636,16 @@ public class SmartWalletFollowTaskService {
             log.info("{} action=根据交易事件生成跟单任务 result=已创建生命周期拦截任务 eventId={} candidateId={} marketId={} outcome={} reason={}",
                     LOG_PREFIX, event.getId(), candidate.getId(), event.getMarketId(), event.getOutcome(),
                     marketState.blockingReasonMessage());
+            log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "拒绝", event, null,
+                    "candidateId", candidate.getId(),
+                    "firstRejectGate", "G6_MARKET_NOT_ACTIVE",
+                    "blockerCategories", "MARKET_STATE",
+                    "reasonSummary", marketState.blockingReasonMessage()));
             return;
         }
+        log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "通过", event, null,
+                "candidateId", candidate.getId(),
+                "reasonSummary", "市场可交易，继续风控评估"));
 
         if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
             createSkippedTaskForPendingCandidate(event, candidate, marketInfo);
@@ -601,6 +653,10 @@ public class SmartWalletFollowTaskService {
             log.info("{} action=根据交易事件生成跟单任务 result=已创建智能增强等待任务 eventId={} candidateId={} marketId={} outcome={} reason={}",
                     LOG_PREFIX, event.getId(), candidate.getId(), event.getMarketId(), event.getOutcome(),
                     candidate.getRejectionReason());
+            log.info("{}", flow("S3_CANDIDATE_ENRICHED", "智能增强候选信号", "等待", event, null,
+                    "candidateId", candidate.getId(),
+                    "blockerCategories", "INTELLIGENCE",
+                    "reasonSummary", candidate.getRejectionReason()));
             return;
         }
 
@@ -609,6 +665,15 @@ public class SmartWalletFollowTaskService {
         log.info("{} action=评估跟单风控 result={} eventId={} wallet={} marketId={} outcome={} recommendedStakeUsdc={} reasons={}",
                 LOG_PREFIX, decision.isAccepted() ? "通过" : "拒绝", event.getId(), event.getWalletAddress(),
                 event.getMarketId(), event.getOutcome(), decision.getRecommendedStakeUsdc(), String.join(" | ", decision.getReasons()));
+        List<String> blockerCategories = classifyBlockerCategories(decision);
+        log.info("{}", flow("S5_RISK_EVALUATED", "评估跟单风控", decision.isAccepted() ? "通过" : "拒绝", event, null,
+                "stakeUsdc", decision.getRecommendedStakeUsdc(),
+                "entryLane", decision.getEntryLane(),
+                "matchedStrategies", String.join(",", decision.getMatchedStrategies()),
+                "gateHighWaterMark", decision.getGateHighWaterMark(),
+                "firstRejectGate", decision.getFirstRejectGate(),
+                "blockerCategories", String.join(",", blockerCategories),
+                "reasonSummary", summarizeReasons(decision.getReasons())));
         BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
@@ -625,7 +690,7 @@ public class SmartWalletFollowTaskService {
                 .setTriggerSizeUsdc(event.getSizeUsdc())
                 .setRecommendedStakeUsdc(recommendedStake)
                 .setStatus(decision.isAccepted() ? "PENDING" : "SKIPPED")
-                .setExecutionMode(resolveTaskExecutionMode(event.getWalletAddress()))
+                .setExecutionMode(resolveTaskExecutionMode(event.getWalletAddress(), decision))
                 .setErrorMessage(String.join(" | ", decision.getReasons()))
                 .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
                 .setCreatedAt(new Date())
@@ -635,6 +700,16 @@ public class SmartWalletFollowTaskService {
                 LOG_PREFIX, task.getStatus(), task.getId(), event.getId(), candidate.getId(), task.getWalletAddress(),
                 task.getEntityId(), task.getMarketId(), task.getOutcome(), task.getExecutionMode(),
                 task.getRecommendedStakeUsdc(), task.getScheduledAt(), task.getErrorMessage());
+        log.info("{}", flow("S6_TASK_CREATED", "创建跟单任务", task.getStatus(), event, task,
+                "candidateId", candidate.getId(),
+                "mode", task.getExecutionMode(),
+                "stakeUsdc", task.getRecommendedStakeUsdc(),
+                "entryLane", decision.getEntryLane(),
+                "matchedStrategies", String.join(",", decision.getMatchedStrategies()),
+                "gateHighWaterMark", decision.getGateHighWaterMark(),
+                "firstRejectGate", decision.getFirstRejectGate(),
+                "blockerCategories", String.join(",", blockerCategories),
+                "reasonSummary", task.getErrorMessage()));
 
         // 回填 candidate 的 follow_task_id
         candidate.setFollowTaskId(task.getId())
@@ -1063,6 +1138,12 @@ public class SmartWalletFollowTaskService {
             log.info("{} action=提交跟单执行网关 result={} followTaskId={} mode={} marketId={} outcome={} externalOrderId={} orderStatus={} message={}",
                     LOG_PREFIX, result.isSuccess() ? "成功" : "失败", task.getId(), mode, task.getMarketId(),
                     task.getOutcome(), result.getExternalOrderId(), result.getStatus(), result.getMessage());
+            log.info("{}", flow("S8_ORDER_EXECUTED", "提交跟单执行网关", result.isSuccess() ? "成功" : "失败", null, task,
+                    "mode", mode,
+                    "stakeUsdc", task.getRecommendedStakeUsdc(),
+                    "orderStatus", result.getStatus(),
+                    "externalOrderId", result.getExternalOrderId(),
+                    "reasonSummary", result.getMessage()));
             task.setStatus(result.isSuccess() ? "FOLLOWED" : "FAILED");
             task.setExternalOrderId(result.getExternalOrderId());
             task.setErrorMessage(result.isSuccess() ? null : result.getMessage());
@@ -1089,6 +1170,10 @@ public class SmartWalletFollowTaskService {
                     LOG_PREFIX, task == null ? null : task.getId(), task == null ? null : task.getWalletAddress(),
                     task == null ? null : task.getMarketId(), task == null ? null : task.getOutcome(),
                     task == null ? null : task.getExecutionMode(), e.getMessage(), e);
+            log.info("{}", flow("S8_ORDER_EXECUTED", "执行跟单任务", "异常", null, task,
+                    "mode", task == null ? null : task.getExecutionMode(),
+                    "stakeUsdc", task == null ? null : task.getRecommendedStakeUsdc(),
+                    "reasonSummary", e.getMessage()));
             task.setStatus("FAILED");
             task.setErrorMessage(e.getMessage());
             task.setExecutedAt(new Date());
@@ -1422,6 +1507,56 @@ public class SmartWalletFollowTaskService {
             }
         }
         return new ArrayList<>(categories);
+    }
+
+    private String flow(String stage,
+                        String action,
+                        String result,
+                        SmartWalletTradeEventEntity event,
+                        SmartWalletFollowTaskEntity task,
+                        Object... extra) {
+        List<Object> fields = new ArrayList<>();
+        fields.add("flowStage");
+        fields.add(stage);
+        fields.add("action");
+        fields.add(action);
+        fields.add("result");
+        fields.add(result);
+        fields.add("eventId");
+        fields.add(event == null ? (task == null ? null : task.getSourceEventId()) : event.getId());
+        fields.add("followTaskId");
+        fields.add(task == null ? null : task.getId());
+        fields.add("wallet");
+        fields.add(event == null ? (task == null ? null : task.getWalletAddress()) : event.getWalletAddress());
+        fields.add("marketId");
+        fields.add(event == null ? (task == null ? null : task.getMarketId()) : event.getMarketId());
+        fields.add("outcome");
+        fields.add(event == null ? (task == null ? null : task.getOutcome()) : event.getOutcome());
+        fields.add("side");
+        fields.add(event == null ? (task == null ? null : task.getSide()) : event.getSide());
+        if (extra != null) {
+            for (Object item : extra) {
+                fields.add(item);
+            }
+        }
+        return StrategyFlowLogFormatter.flow(fields.toArray());
+    }
+
+    private String summarizeReasons(List<String> reasons) {
+        if (reasons == null || reasons.isEmpty()) {
+            return null;
+        }
+        return reasons.stream()
+                .filter(StringUtils::hasText)
+                .filter(reason -> reason.contains("BLOCK")
+                        || reason.contains("REJECT")
+                        || reason.contains("stale")
+                        || reason.contains("below")
+                        || reason.contains("outside")
+                        || reason.contains("通过")
+                        || reason.contains("拒绝"))
+                .findFirst()
+                .orElse(reasons.get(0));
     }
 
     private int compareTaskPriority(SmartWalletFollowTaskView left, SmartWalletFollowTaskView right) {

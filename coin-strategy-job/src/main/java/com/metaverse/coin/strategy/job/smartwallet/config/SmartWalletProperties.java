@@ -176,7 +176,7 @@ public class SmartWalletProperties {
          * 1. 共识策略
          * 2. 单钱包 override 策略
          */
-        private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "HIGH_QUALITY_SINGLE_WALLET"));
+        private List<String> enabledEntryStrategies = new ArrayList<>(List.of("CONSENSUS", "HIGH_QUALITY_SINGLE_WALLET", "SINGLE_WALLET_PAPER_CANARY"));
         private Integer consensusWindowSeconds = 180;
         private Integer minDistinctWallets = 1;
         /** 实体去重后的最小实体数门控（替代 minDistinctWallets）。默认与 minDistinctWallets 保持一致 */
@@ -207,6 +207,18 @@ public class SmartWalletProperties {
         private BigDecimal singleWalletOverrideMinQualityScore = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
         private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("1");
+        /** 是否启用单钱包 paper canary 入场通道，用于受控验证 OBSERVE_ONLY/共识不足的优质 HOT 钱包 */
+        private boolean enableSingleWalletPaperCanary = true;
+        /** paper canary 最低钱包评分 */
+        private BigDecimal paperCanaryMinWalletScore = new BigDecimal("0.70");
+        /** paper canary 最低触发交易金额 */
+        private BigDecimal paperCanaryMinTriggerSizeUsdc = new BigDecimal("100");
+        /** paper canary 最低校准跟随概率 */
+        private BigDecimal paperCanaryMinFollowProbability = new BigDecimal("0.70");
+        /** paper canary 固定最小试单金额 */
+        private BigDecimal paperCanaryStakeUsdc = new BigDecimal("1.00");
+        /** paper canary 可容忍的最大信号年龄，避免同步延迟让验证通道完全无样本 */
+        private Integer paperCanaryMaxSignalAgeSeconds = 10800;
 
         // ── Consensus Stake Amplifier ─────────────────────────────────────────────
         /** 是否启用共识多实体仓位放大器 */

@@ -4,12 +4,46 @@ import type { Attribution, DailyReport, ConflictMarket, FollowAddressDailyReport
 import type { OffsetPageView, SmartWalletMarketMonitorItem, SmartWalletMarketMonitoringSummary } from '@/types/smartwallet'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
 
+type AttributionApiResponse = Partial<Attribution> & {
+  key?: string
+  walletAddress?: string
+  orderCount?: number
+  tradedVolumeUsdc?: number
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+function normalizeAttribution(item: AttributionApiResponse, type: 'wallet' | 'market'): Attribution {
+  const key = String(item.key || '')
+  const label = String(item.label || item.question || key || '-')
+  return {
+    label,
+    address: type === 'wallet' ? String(item.address || item.walletAddress || key || '') : item.address,
+    marketId: type === 'market' ? String(item.marketId || key || '') : item.marketId,
+    question: type === 'market' ? String(item.question || item.label || '') : item.question,
+    netPnlUsdc: toNumber(item.netPnlUsdc),
+    realizedPnlUsdc: toNumber(item.realizedPnlUsdc),
+    unrealizedPnlUsdc: toNumber(item.unrealizedPnlUsdc),
+    pendingSettlementPnlUsdc: toNumber(item.pendingSettlementPnlUsdc),
+    totalVolumeUsdc: toNumber(item.totalVolumeUsdc ?? item.tradedVolumeUsdc),
+    tradeCount: toNumber(item.tradeCount ?? item.orderCount),
+    winRate: toNumber(item.winRate),
+  }
+}
+
 export const reportsApi = {
   getWalletAttribution: (limit = 10, mode: PositionMode = 'PAPER'): Promise<Attribution[]> =>
-    apiClient.get('/strategy/api/smart-wallet/reports/wallets', { params: { limit, mode } }),
+    apiClient
+      .get('/strategy/api/smart-wallet/reports/wallets', { params: { limit, mode } })
+      .then((rows) => ((rows || []) as unknown as AttributionApiResponse[]).map((item) => normalizeAttribution(item, 'wallet'))),
 
   getMarketAttribution: (limit = 10, mode: PositionMode = 'PAPER'): Promise<Attribution[]> =>
-    apiClient.get('/strategy/api/smart-wallet/reports/markets', { params: { limit, mode } }),
+    apiClient
+      .get('/strategy/api/smart-wallet/reports/markets', { params: { limit, mode } })
+      .then((rows) => ((rows || []) as unknown as AttributionApiResponse[]).map((item) => normalizeAttribution(item, 'market'))),
 
   getDailyReports: (limit = 30, mode: PositionMode = 'PAPER'): Promise<DailyReport[]> =>
     apiClient.get('/strategy/api/smart-wallet/reports/daily', { params: { limit, mode } }),

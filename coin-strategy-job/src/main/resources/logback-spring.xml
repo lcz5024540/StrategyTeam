@@ -4,9 +4,9 @@
          日志目录优先级:
          1. JVM 参数 -Dlog.dir=/xxx
          2. 环境变量 LOG_DIR
-         3. 默认值 /home/ubuntu/logs
+         3. 默认值 /opt/coinstrategy/smart-wallet/logs
     ============================================================ -->
-    <property name="LOG_DIR" value="${log.dir:-${LOG_DIR:-/home/ubuntu/logs}}"/>
+    <property name="LOG_DIR" value="${log.dir:-${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}}"/>
     <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"/>
 
     <!-- 控制台输出 (本地开发 / 前台启动时使用) -->
@@ -16,18 +16,18 @@
         </encoder>
     </appender>
 
-    <!-- 文件输出 — 按天滚动, 文件名: job-2026-04-20.log -->
+    <!-- 文件输出 — 按天滚动, 当前生产文件名: binance-java-connector.log -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <!-- 当前活跃日志文件 -->
-        <file>${LOG_DIR}/job-current.log</file>
+        <file>${LOG_DIR}/binance-java-connector.log</file>
         <append>true</append>
         <encoder>
             <pattern>${LOG_PATTERN}</pattern>
             <charset>UTF-8</charset>
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <!-- 按天滚动: 每天 00:00 自动归档为 job-yyyy-MM-dd.log -->
-            <fileNamePattern>${LOG_DIR}/job-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <!-- 按天滚动: 每天 00:00 自动归档 -->
+            <fileNamePattern>${LOG_DIR}/binance-java-connector-%d{yyyy-MM-dd}.log</fileNamePattern>
             <!-- 保留最近 30 天的日志 -->
             <maxHistory>30</maxHistory>
             <!-- 所有归档日志总大小上限 -->

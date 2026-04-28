@@ -1,6 +1,7 @@
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useStrategyStore } from '@/store/useStrategyStore'
 import { STRATEGY_CATALOG, normalizeRunnableStrategyCode } from '@/utils/constants'
+import { getStrategyPages } from '@/utils/strategyPages'
 import { getStrategyVisual, PRIME_NAV_ITEMS } from '@/utils/strategyVisuals'
 
 function getActiveNav(pathname: string) {
@@ -19,6 +20,7 @@ export function PageLabelBar() {
   const nav = getActiveNav(location.pathname)
   const strategyMeta = STRATEGY_CATALOG.find((item) => item.code === strategy)
   const visual = getStrategyVisual(strategy)
+  const page = getStrategyPages(strategy).find((item) => item.route === location.pathname)
 
   return (
     <div className="ms-label-bar">
@@ -27,6 +29,12 @@ export function PageLabelBar() {
         <>
           <i>›</i>
           <strong className={visual.className}>{strategyMeta?.name || strategy}</strong>
+          {page && page.key !== 'dashboard' ? (
+            <>
+              <i>›</i>
+              <strong>{page.label}</strong>
+            </>
+          ) : null}
         </>
       ) : null}
     </div>

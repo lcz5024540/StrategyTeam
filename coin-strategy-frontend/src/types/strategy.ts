@@ -197,3 +197,82 @@ export interface StrategyFactor {
   sampleSize: number
   metadata: Record<string, unknown>
 }
+
+export type StrategyLogSource = 'app' | 'error' | 'startup'
+export type StrategyLogLevel = 'ALL' | 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+export type StrategyLogFilter = 'ALL' | 'POLYMARKET_COPY' | 'FUNDING_ARB' | 'SYSTEM'
+
+export interface StrategyLogEntry {
+  timestamp: string
+  level: Exclude<StrategyLogLevel, 'ALL'> | string
+  thread: string
+  logger: string
+  strategy: Exclude<StrategyLogFilter, 'ALL'> | string
+  source: StrategyLogSource | string
+  message: string
+  action?: string | null
+  result?: string | null
+  flowStage?: string | null
+  eventId?: string | null
+  followTaskId?: string | null
+  wallet?: string | null
+  marketId?: string | null
+  outcome?: string | null
+  mode?: string | null
+  stakeUsdc?: string | null
+  entryLane?: string | null
+  matchedStrategies?: string | null
+  gateHighWaterMark?: string | null
+  firstRejectGate?: string | null
+  blockerCategories?: string | null
+}
+
+export interface StrategyFlowLogEvent {
+  timestamp: string
+  level: string
+  thread: string
+  logger: string
+  strategy: string
+  source: string
+  rawMessage: string
+  flowId: string
+  flowStage?: string | null
+  action?: string | null
+  result?: string | null
+  eventId?: string | null
+  followTaskId?: string | null
+  wallet?: string | null
+  marketId?: string | null
+  outcome?: string | null
+  mode?: string | null
+  stakeUsdc?: string | null
+  entryLane?: string | null
+  matchedStrategies?: string | null
+  gateHighWaterMark?: string | null
+  firstRejectGate?: string | null
+  blockerCategories?: string | null
+  reasonSummary?: string | null
+}
+
+export interface StrategyLogFlow {
+  flowId: string
+  strategy: string
+  source: string
+  latestTimestamp?: string | null
+  status?: string | null
+  currentStage?: string | null
+  eventId?: string | null
+  followTaskId?: string | null
+  wallet?: string | null
+  marketId?: string | null
+  outcome?: string | null
+  mode?: string | null
+  stakeUsdc?: string | null
+  entryLane?: string | null
+  matchedStrategies?: string | null
+  gateHighWaterMark?: string | null
+  firstRejectGate?: string | null
+  blockerCategories?: string | null
+  summary?: string | null
+  entries: StrategyFlowLogEvent[]
+}

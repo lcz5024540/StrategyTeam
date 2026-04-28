@@ -44,6 +44,8 @@ public class SignalRiskDecision {
     private BigDecimal scaleUpAddOnStake;
     private String policyTag;
     private String strategyRouteMode;
+    private Integer gateHighWaterMark;
+    private String firstRejectGate;
     @Builder.Default
     private List<String> enabledStrategies = new ArrayList<>();
     @Builder.Default

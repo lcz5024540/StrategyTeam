@@ -145,6 +145,24 @@ class StrategyProductQueryServiceTest {
         assertEquals("SHARED", fundingRate.metadata().get("modeBehavior"));
     }
 
+    @Test
+    void fundingArbDataSourceFailureShouldNotBreakPolymarketOverview() {
+        mockPolymarketSummary();
+        when(positionMapper.selectList(any())).thenThrow(new IllegalStateException("missing funding table"));
+
+        StrategyDashboardOverviewView overview = service.overview("PAPER");
+        StrategySummaryDetailView fundingSummary = service.summaryDetail("FUNDING_ARB", "PAPER");
+
+        assertEquals(4, overview.strategies().size());
+        assertEquals("POLYMARKET_COPY", overview.strategies().get(0).code());
+        assertEquals(new BigDecimal("13.50"), overview.strategies().get(0).netPnlUsdc());
+        assertEquals("FUNDING_ARB", overview.strategies().get(1).code());
+        assertEquals(BigDecimal.ZERO, overview.strategies().get(1).netPnlUsdc());
+        assertEquals(BigDecimal.ZERO, fundingSummary.metrics().netPnlUsdc());
+        assertTrue(fundingSummary.insights().stream()
+                .anyMatch(item -> item.title().contains("暂不可用")));
+    }
+
     private void mockPolymarketSummary() {
         lenient().when(accountingService.performance(any())).thenReturn(SmartWalletPerformanceView.builder()
                 .totalOrders(10)

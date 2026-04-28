@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { PrimeTopbar } from './components/layout/PrimeTopbar'
 import { PrimeRail } from './components/layout/PrimeRail'
 import { PageLabelBar } from './components/layout/PageLabelBar'
+import { StrategySubnav } from './components/layout/StrategySubnav'
 
 export function App() {
   return (
@@ -11,6 +12,7 @@ export function App() {
         <PrimeRail />
         <main className="ms-main">
           <PageLabelBar />
+          <StrategySubnav />
           <div className="ms-content">
             <Outlet />
           </div>

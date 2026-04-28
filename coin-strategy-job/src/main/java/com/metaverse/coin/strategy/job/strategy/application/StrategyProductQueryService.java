@@ -30,6 +30,8 @@ import com.metaverse.coin.strategy.job.strategy.model.StrategyPositionRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyRegistryView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategySummaryView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyTimelinePointView;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -40,10 +42,13 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
 public class StrategyProductQueryService {
+
+    private static final Logger log = LoggerFactory.getLogger(StrategyProductQueryService.class);
 
     private static final String POLYMARKET_CODE = "POLYMARKET_COPY";
     private static final String FUNDING_ARB_CODE = "FUNDING_ARB";
@@ -87,8 +92,10 @@ public class StrategyProductQueryService {
 
     public StrategyDashboardOverviewView overview(String mode) {
         List<StrategyRegistryView> strategies = new ArrayList<>();
-        strategies.add(buildPolymarketRegistry(mode));
-        strategies.add(buildFundingArbRegistry(mode));
+        strategies.add(registryOrFallback(POLYMARKET_CODE, () -> buildPolymarketRegistry(mode),
+                fallbackPolymarketRegistry(mode)));
+        strategies.add(registryOrFallback(FUNDING_ARB_CODE, () -> buildFundingArbRegistry(mode),
+                fallbackFundingArbRegistry(mode)));
         strategies.add(placeholderRegistry("ROBOT", "机器人策略", "机器人", "PLANNED", "后续用于事件驱动机器人、盘口套利和自动化规则执行。"));
         strategies.add(placeholderRegistry("INTELLIGENT", "智能策略", "智能", "PLANNED", "后续用于模型评分、智能分层择时和多因子调度。"));
         return new StrategyDashboardOverviewView(BJT_FORMATTER.format(Instant.now()), POLYMARKET_CODE, strategies);
@@ -107,7 +114,12 @@ public class StrategyProductQueryService {
             return buildPolymarketSummaryDetail(mode);
         }
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
-            return buildFundingArbSummaryDetail(mode);
+            try {
+                return buildFundingArbSummaryDetail(mode);
+            } catch (RuntimeException ex) {
+                log.warn("Failed to build funding-arb summary, returning degraded response", ex);
+                return fallbackFundingArbSummaryDetail(mode);
+            }
         }
         StrategyIdentityView summary = placeholderIdentity(normalizedStrategyCode, normalizedStrategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
         return new StrategySummaryDetailView(
@@ -126,7 +138,7 @@ public class StrategyProductQueryService {
             return accountingService.listActivePositions(mode).stream().map(this::toPosition).toList();
         }
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
-            return loadFundingArbOpenPositions().stream().map(this::toFundingArbPosition).toList();
+            return fundingArbListOrEmpty("positions", () -> loadFundingArbOpenPositions().stream().map(this::toFundingArbPosition).toList());
         }
         return List.of();
     }
@@ -140,7 +152,7 @@ public class StrategyProductQueryService {
             return accountingService.listNextSettlements(limit, mode).stream().map(this::toPosition).toList();
         }
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
-            return loadFundingArbNextSettlements(limit).stream().map(this::toFundingArbPosition).toList();
+            return fundingArbListOrEmpty("next settlements", () -> loadFundingArbNextSettlements(limit).stream().map(this::toFundingArbPosition).toList());
         }
         return List.of();
     }
@@ -154,7 +166,7 @@ public class StrategyProductQueryService {
             return accountingService.listOrders(limit, mode).stream().map(this::toOrder).toList();
         }
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
-            return loadFundingArbRecentOrders(limit).stream().map(this::toFundingArbOrder).toList();
+            return fundingArbListOrEmpty("orders", () -> loadFundingArbRecentOrders(limit).stream().map(this::toFundingArbOrder).toList());
         }
         return List.of();
     }
@@ -168,7 +180,7 @@ public class StrategyProductQueryService {
             return accountingService.pnlTimeline(days, mode).stream().map(this::toTimeline).toList();
         }
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
-            return buildFundingArbTimeline(days);
+            return fundingArbListOrEmpty("timeline", () -> buildFundingArbTimeline(days));
         }
         return List.of();
     }
@@ -193,7 +205,7 @@ public class StrategyProductQueryService {
             return buildPolymarketFactors(mode, window);
         }
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
-            return buildFundingArbFactors(mode, window);
+            return fundingArbListOrEmpty("factors", () -> buildFundingArbFactors(mode, window));
         }
         return List.of();
     }
@@ -220,7 +232,14 @@ public class StrategyProductQueryService {
             return buildPolymarketDetail(mode);
         }
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
-            return buildFundingArbDetail(mode);
+            try {
+                return buildFundingArbDetail(mode);
+            } catch (RuntimeException ex) {
+                log.warn("Failed to build funding-arb detail, returning degraded response", ex);
+                StrategySummaryView summary = buildFundingArbSummary(emptyMetrics(), mode);
+                return new StrategyDetailView(summary, emptyMetrics(), fallbackFundingArbInsights(),
+                        List.of(), List.of(), List.of(), List.of(), List.of());
+            }
         }
         StrategySummaryView summary = placeholder(normalizedStrategyCode, normalizedStrategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
         return new StrategyDetailView(summary,
@@ -400,7 +419,7 @@ public class StrategyProductQueryService {
                 ? BigDecimal.ZERO
                 : BigDecimal.valueOf(winningPositions)
                 .divide(BigDecimal.valueOf(snapshot.closedPositions().size()), 4, RoundingMode.HALF_UP);
-        BigDecimal maxDrawdown = calculateMaxDrawdown(buildFundingArbTimeline(3650));
+        BigDecimal maxDrawdown = calculateMaxDrawdown(buildFundingArbTimeline(snapshot, 3650));
 
         return new StrategyMetricsView(
                 snapshot.orders().size(),
@@ -550,6 +569,10 @@ public class StrategyProductQueryService {
 
     private List<StrategyTimelinePointView> buildFundingArbTimeline(int days) {
         FundingArbSnapshot snapshot = loadFundingArbSnapshot();
+        return buildFundingArbTimeline(snapshot, days);
+    }
+
+    private List<StrategyTimelinePointView> buildFundingArbTimeline(FundingArbSnapshot snapshot, int days) {
         if (snapshot.positions().isEmpty()) {
             return List.of();
         }
@@ -578,6 +601,72 @@ public class StrategyProductQueryService {
             timeline.add(new StrategyTimelinePointView(entry.getKey().toString(), safe(entry.getValue()), cumulative));
         }
         return timeline;
+    }
+
+    private StrategyRegistryView registryOrFallback(String strategyCode,
+                                                    Supplier<StrategyRegistryView> supplier,
+                                                    StrategyRegistryView fallback) {
+        try {
+            return supplier.get();
+        } catch (RuntimeException ex) {
+            log.warn("Failed to build {} registry, returning fallback row", strategyCode, ex);
+            return fallback;
+        }
+    }
+
+    private <T> List<T> fundingArbListOrEmpty(String dataSet, Supplier<List<T>> supplier) {
+        try {
+            return supplier.get();
+        } catch (RuntimeException ex) {
+            log.warn("Failed to load funding-arb {}, returning empty list", dataSet, ex);
+            return List.of();
+        }
+    }
+
+    private StrategyRegistryView fallbackPolymarketRegistry(String mode) {
+        return new StrategyRegistryView(
+                POLYMARKET_CODE,
+                "Polymarket 跟单策略",
+                "Polymarket",
+                "ACTIVE",
+                buildDescription(mode),
+                ISOLATED_MODES,
+                POLYMARKET_CAPABILITIES,
+                "ISOLATED",
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                0
+        );
+    }
+
+    private StrategyRegistryView fallbackFundingArbRegistry(String mode) {
+        return new StrategyRegistryView(
+                FUNDING_ARB_CODE,
+                "资金费套利策略",
+                "Funding",
+                "ACTIVE",
+                buildFundingArbDescription(mode),
+                SHARED_MODES,
+                FUNDING_ARB_CAPABILITIES,
+                "SHARED",
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                0
+        );
+    }
+
+    private StrategySummaryDetailView fallbackFundingArbSummaryDetail(String mode) {
+        return new StrategySummaryDetailView(buildFundingArbIdentity(mode), toDashboardMetrics(emptyMetrics()), fallbackFundingArbInsights());
+    }
+
+    private List<StrategyInsightView> fallbackFundingArbInsights() {
+        return List.of(new StrategyInsightView(
+                "WARN",
+                "资金费套利数据源暂不可用",
+                "当前测试环境无法读取资金费套利库表，已降级为空数据，Polymarket 策略数据不受影响。"
+        ));
     }
 
     private List<StrategyInsightView> buildFundingArbInsights(FundingArbSnapshot snapshot,

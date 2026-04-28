@@ -3,80 +3,300 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { strategyApi } from '@/api'
 import { PrimeCard } from '@/components/ui/PrimePrimitives'
+import type { StrategyFlowLogEvent, StrategyLogEntry, StrategyLogFilter, StrategyLogFlow, StrategyLogLevel, StrategyLogSource } from '@/types/strategy'
 import { type PositionMode } from '@/utils/constants'
 import { isEnterableStrategy, toRegistryItems } from '@/utils/strategyViewModels'
 
-const LEVELS = ['ALL', 'info', 'warn'] as const
+const SOURCES: Array<{ value: StrategyLogSource; label: string }> = [
+  { value: 'app', label: 'Application' },
+  { value: 'error', label: 'Errors' },
+  { value: 'startup', label: 'Startup' },
+]
+const LEVELS: StrategyLogLevel[] = ['ALL', 'INFO', 'WARN', 'ERROR', 'DEBUG']
+const FLOW_STAGES = [
+  'S1_EVENT_CAPTURED',
+  'S2_PROFILE_ADMISSION',
+  'S3_CANDIDATE_ENRICHED',
+  'S4_MARKET_CHECK',
+  'S5_RISK_EVALUATED',
+  'S6_TASK_CREATED',
+  'S7_TASK_CLAIMED',
+  'S8_ORDER_EXECUTED',
+]
+
+type LogTab = 'flow' | 'raw'
 
 export function StrategyLogsPage() {
   const [searchParams] = useSearchParams()
   const mode = (searchParams.get('mode') || 'PAPER') as PositionMode
-  const [strategyFilter, setStrategyFilter] = useState('ALL')
-  const [levelFilter, setLevelFilter] = useState<typeof LEVELS[number]>('ALL')
+  const [activeTab, setActiveTab] = useState<LogTab>('flow')
+  const [source, setSource] = useState<StrategyLogSource>('app')
+  const [strategyFilter, setStrategyFilter] = useState<StrategyLogFilter>('POLYMARKET_COPY')
+  const [levelFilter, setLevelFilter] = useState<StrategyLogLevel>('ALL')
   const [search, setSearch] = useState('')
+  const [wallet, setWallet] = useState('')
+  const [eventId, setEventId] = useState('')
+  const [followTaskId, setFollowTaskId] = useState('')
+  const [marketId, setMarketId] = useState('')
+  const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(true)
 
   const { data: overview } = useQuery({
     queryKey: ['strategyOverview', mode],
     queryFn: () => strategyApi.getOverview(mode),
   })
 
-  const logs = useMemo(() => {
-    const strategies = toRegistryItems(overview?.strategies).filter(isEnterableStrategy)
-    return strategies.flatMap((strategy, index) => [
-      {
-        time: new Date(Date.now() - index * 180000).toTimeString().slice(0, 8),
-        strategy: strategy.name,
-        level: strategy.status === 'ACTIVE' ? 'info' : 'warn',
-        message: `${strategy.code} overview refreshed in ${mode} mode`,
-      },
-      {
-        time: new Date(Date.now() - index * 240000 - 60000).toTimeString().slice(0, 8),
-        strategy: strategy.name,
-        level: strategy.modeBehavior === 'UNSUPPORTED' ? 'warn' : 'info',
-        message: `capabilities: ${strategy.capabilities?.join(', ') || '-'}`,
-      },
-    ])
-  }, [mode, overview?.strategies])
+  const strategies = useMemo(() => toRegistryItems(overview?.strategies).filter(isEnterableStrategy), [overview?.strategies])
 
-  const filtered = logs.filter((log) =>
-    (strategyFilter === 'ALL' || log.strategy === strategyFilter) &&
-    (levelFilter === 'ALL' || log.level === levelFilter) &&
-    (search === '' || `${log.strategy} ${log.message}`.toLowerCase().includes(search.toLowerCase()))
-  )
+  const {
+    data: flows = [],
+    error: flowError,
+    isError: flowIsError,
+    isFetching: flowFetching,
+    isLoading: flowLoading,
+    refetch: refetchFlows,
+  } = useQuery({
+    queryKey: ['strategyLogFlows', source, strategyFilter, search, wallet, eventId, followTaskId, marketId],
+    queryFn: () => strategyApi.getLogFlows({
+      source,
+      strategy: strategyFilter === 'ALL' ? 'POLYMARKET_COPY' : strategyFilter,
+      q: search,
+      wallet,
+      eventId,
+      followTaskId,
+      marketId,
+      limit: 200,
+    }),
+    refetchInterval: autoRefresh && activeTab === 'flow' ? 5000 : false,
+    retry: false,
+  })
 
-  const strategies = toRegistryItems(overview?.strategies).filter(isEnterableStrategy)
+  const {
+    data: logs = [],
+    error,
+    isError,
+    isFetching,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ['strategyLogs', source, levelFilter, strategyFilter, search],
+    queryFn: () => strategyApi.getLogs({
+      source,
+      level: levelFilter,
+      strategy: strategyFilter,
+      q: search,
+      limit: 200,
+    }),
+    refetchInterval: autoRefresh && activeTab === 'raw' ? 5000 : false,
+    retry: false,
+  })
+
+  const selectedFlow = useMemo(() => {
+    if (flows.length === 0) return null
+    return flows.find((item) => item.flowId === selectedFlowId) || flows[0]
+  }, [flows, selectedFlowId])
 
   return (
     <div className="ms-page">
-      <div className="ms-log-toolbar">
-        <strong>SYSTEM EVENTS PREVIEW</strong>
-        <select value={strategyFilter} onChange={(event) => setStrategyFilter(event.target.value)}>
-          <option value="ALL">All Strategies</option>
-          {strategies.map((strategy) => <option key={strategy.code} value={strategy.name}>{strategy.name}</option>)}
-        </select>
-        <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value as typeof LEVELS[number])}>
-          {LEVELS.map((level) => <option key={level} value={level}>{level.toUpperCase()}</option>)}
-        </select>
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." />
-        <span>{filtered.length} entries</span>
+      <div className="ms-log-tabs" role="tablist">
+        <button type="button" className={activeTab === 'flow' ? 'active' : ''} onClick={() => setActiveTab('flow')}>Flow Timeline</button>
+        <button type="button" className={activeTab === 'raw' ? 'active' : ''} onClick={() => setActiveTab('raw')}>Raw Logs</button>
       </div>
 
-      <div className="ms-preview-note">
-        当前日志页为前端预览数据；后端审计日志接口接入后会替换为真实日志流。
+      <div className="ms-log-toolbar">
+        <strong>{activeTab === 'flow' ? 'POLYMARKET FLOW' : 'RUNTIME LOGS'}</strong>
+        <select value={source} onChange={(event) => setSource(event.target.value as StrategyLogSource)}>
+          {SOURCES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+        <select value={strategyFilter} onChange={(event) => setStrategyFilter(event.target.value as StrategyLogFilter)}>
+          <option value="ALL">All Strategies</option>
+          <option value="SYSTEM">System</option>
+          <option value="POLYMARKET_COPY">Polymarket Copy</option>
+          {strategies.map((strategy) => <option key={strategy.code} value={strategy.code}>{strategy.name}</option>)}
+        </select>
+        {activeTab === 'raw' ? (
+          <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value as StrategyLogLevel)}>
+            {LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+          </select>
+        ) : null}
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search flow, gate, reason..." />
+        {activeTab === 'flow' ? (
+          <>
+            <input value={wallet} onChange={(event) => setWallet(event.target.value)} placeholder="Wallet" />
+            <input value={eventId} onChange={(event) => setEventId(event.target.value)} placeholder="Event ID" />
+            <input value={followTaskId} onChange={(event) => setFollowTaskId(event.target.value)} placeholder="Task ID" />
+            <input value={marketId} onChange={(event) => setMarketId(event.target.value)} placeholder="Market ID" />
+          </>
+        ) : null}
+        <label className="ms-log-toggle">
+          <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
+          <span>Auto refresh</span>
+        </label>
+        <button type="button" className="ms-log-action" onClick={() => activeTab === 'flow' ? refetchFlows() : refetch()} disabled={activeTab === 'flow' ? flowFetching : isFetching}>
+          {(activeTab === 'flow' ? flowFetching : isFetching) ? 'Refreshing' : 'Refresh'}
+        </button>
+        <span>{activeTab === 'flow' ? flows.length : logs.length} entries</span>
       </div>
+
+      <div className="ms-log-note">
+        {activeTab === 'flow'
+          ? 'Grouped Polymarket flow logs from [POLY_FLOW]. Each row traces one signal through capture, risk, task creation and execution.'
+          : 'Showing sanitized backend log files from the configured LOG_DIR. Results are capped to the latest 200 matching entries.'}
+      </div>
+
+      {activeTab === 'flow' ? (
+        <FlowTimeline
+          flows={flows}
+          selectedFlow={selectedFlow}
+          setSelectedFlowId={setSelectedFlowId}
+          isLoading={flowLoading}
+          isError={flowIsError}
+          error={flowError}
+        />
+      ) : (
+        <RawLogStream logs={logs} isLoading={isLoading} isError={isError} error={error} />
+      )}
+    </div>
+  )
+}
+
+function FlowTimeline({
+  flows,
+  selectedFlow,
+  setSelectedFlowId,
+  isLoading,
+  isError,
+  error,
+}: {
+  flows: StrategyLogFlow[]
+  selectedFlow: StrategyLogFlow | null
+  setSelectedFlowId: (value: string) => void
+  isLoading: boolean
+  isError: boolean
+  error: unknown
+}) {
+  if (isLoading) return <PrimeCard><div className="loading">流程日志加载中...</div></PrimeCard>
+  if (isError) return <PrimeCard><div className="empty-state">流程日志接口请求失败：{error instanceof Error ? error.message : 'unknown error'}</div></PrimeCard>
+  if (flows.length === 0) return <PrimeCard><div className="empty-state">当前筛选条件下暂无 Polymarket flow 日志</div></PrimeCard>
+
+  return (
+    <div className="ms-flow-layout">
+      <PrimeCard pad={false}>
+        <div className="ms-flow-list">
+          {flows.map((flow) => (
+            <button
+              type="button"
+              key={flow.flowId}
+              className={selectedFlow?.flowId === flow.flowId ? 'active' : ''}
+              onClick={() => setSelectedFlowId(flow.flowId)}
+            >
+              <span>{flow.latestTimestamp || '-'}</span>
+              <strong>{shortAddress(flow.wallet) || flow.flowId}</strong>
+              <em>{flow.marketId || '-'} / {flow.outcome || '-'}</em>
+              <b className={statusClass(flow.status)}>{flow.status || 'ACTIVE'}</b>
+              {flow.firstRejectGate ? <small>{flow.firstRejectGate}</small> : null}
+            </button>
+          ))}
+        </div>
+      </PrimeCard>
 
       <PrimeCard pad={false}>
-        <div className="ms-log-stream">
-          {filtered.map((log, index) => (
-            <div key={`${log.time}-${index}`} className="ms-log-row">
-              <span>{log.time}</span>
-              <strong className={log.level}>{log.level.toUpperCase()}</strong>
-              <em>[{log.strategy.split(' ')[0]}]</em>
-              <p>{log.message}</p>
+        <div className="ms-flow-detail">
+          <header>
+            <div>
+              <strong>{selectedFlow?.flowId}</strong>
+              <span>{selectedFlow?.summary || '-'}</span>
             </div>
-          ))}
+            <div className="address-badge-stack">
+              <span className={statusClass(selectedFlow?.status)}>{selectedFlow?.status || 'ACTIVE'}</span>
+              {selectedFlow?.mode ? <span className="badge">{selectedFlow.mode}</span> : null}
+              {selectedFlow?.entryLane ? <span className="badge accent">{selectedFlow.entryLane}</span> : null}
+            </div>
+          </header>
+          <div className="ms-flow-meta">
+            <span>wallet <b>{selectedFlow?.wallet || '-'}</b></span>
+            <span>event <b>{selectedFlow?.eventId || '-'}</b></span>
+            <span>task <b>{selectedFlow?.followTaskId || '-'}</b></span>
+            <span>market <b>{selectedFlow?.marketId || '-'}</b></span>
+            <span>stake <b>{selectedFlow?.stakeUsdc || '-'}</b></span>
+            <span>gate <b>{selectedFlow?.firstRejectGate || selectedFlow?.gateHighWaterMark || '-'}</b></span>
+          </div>
+          <div className="ms-flow-stages">
+            {FLOW_STAGES.map((stage) => {
+              const entries = selectedFlow?.entries.filter((entry) => entry.flowStage === stage) || []
+              return <FlowStage key={stage} stage={stage} entries={entries} />
+            })}
+          </div>
         </div>
       </PrimeCard>
     </div>
   )
+}
+
+function FlowStage({ stage, entries }: { stage: string; entries: StrategyFlowLogEvent[] }) {
+  const latest = entries[entries.length - 1]
+  return (
+    <section className={`ms-flow-stage ${entries.length ? 'has-data' : ''}`}>
+      <div className="ms-flow-stage-marker" />
+      <div className="ms-flow-stage-body">
+        <header>
+          <strong>{stage}</strong>
+          {latest ? <span className={statusClass(latest.result)}>{latest.result}</span> : <span className="badge">waiting</span>}
+        </header>
+        {entries.length === 0 ? (
+          <p>No log event captured for this stage.</p>
+        ) : entries.map((entry, index) => (
+          <article key={`${entry.timestamp}-${entry.action}-${index}`}>
+            <div>
+              <span>{entry.timestamp}</span>
+              <b>{entry.action || '-'}</b>
+            </div>
+            <p>{entry.reasonSummary || entry.rawMessage}</p>
+            <div className="address-badge-stack">
+              {entry.firstRejectGate ? <span className="badge danger">{entry.firstRejectGate}</span> : null}
+              {entry.blockerCategories ? <span className="badge warn">{entry.blockerCategories}</span> : null}
+              {entry.matchedStrategies ? <span className="badge accent">{entry.matchedStrategies}</span> : null}
+              {entry.gateHighWaterMark ? <span className="badge">gate {entry.gateHighWaterMark}</span> : null}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RawLogStream({ logs, isLoading, isError, error }: { logs: StrategyLogEntry[]; isLoading: boolean; isError: boolean; error: unknown }) {
+  return (
+    <PrimeCard pad={false}>
+      <div className="ms-log-stream">
+        {isLoading ? (
+          <div className="loading">运行日志加载中...</div>
+        ) : isError ? (
+          <div className="empty-state">日志接口请求失败：{error instanceof Error ? error.message : 'unknown error'}</div>
+        ) : logs.length === 0 ? (
+          <div className="empty-state">当前筛选条件下暂无日志</div>
+        ) : logs.map((log, index) => (
+          <div key={`${log.timestamp}-${log.level}-${index}`} className="ms-log-row">
+            <span>{log.timestamp}</span>
+            <strong className={String(log.level).toLowerCase()}>{log.level}</strong>
+            <em title={log.logger}>[{log.strategy}]</em>
+            <p>{log.message}</p>
+          </div>
+        ))}
+      </div>
+    </PrimeCard>
+  )
+}
+
+function shortAddress(value?: string | null) {
+  if (!value) return ''
+  return value.length > 14 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value
+}
+
+function statusClass(value?: string | null) {
+  const normalized = String(value || '').toUpperCase()
+  if (normalized.includes('FAIL') || normalized.includes('拒绝') || normalized.includes('BLOCK')) return 'badge danger'
+  if (normalized.includes('PENDING') || normalized.includes('WAIT') || normalized.includes('跳过')) return 'badge warn'
+  if (normalized.includes('SUCCESS') || normalized.includes('EXECUT') || normalized.includes('成功') || normalized.includes('通过')) return 'badge accent'
+  return 'badge'
 }

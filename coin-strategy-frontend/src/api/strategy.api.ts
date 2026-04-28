@@ -9,6 +9,11 @@ import type {
   StrategyPositionRow,
   StrategySummary,
   StrategyDetail,
+  StrategyLogEntry,
+  StrategyLogFilter,
+  StrategyLogFlow,
+  StrategyLogLevel,
+  StrategyLogSource,
   StrategyTimelinePoint,
 } from '@/types/strategy'
 
@@ -237,4 +242,52 @@ export const strategyApi = {
     apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/factors/${factorCode}`, {
       params: { mode, window },
     }),
+
+  getLogs: ({
+    source = 'app',
+    level = 'ALL',
+    strategy = 'ALL',
+    q,
+    limit = 200,
+  }: {
+    source?: StrategyLogSource
+    level?: StrategyLogLevel
+    strategy?: StrategyLogFilter
+    q?: string
+    limit?: number
+  } = {}): Promise<StrategyLogEntry[]> =>
+    apiClient.get('/strategy/api/strategy-platform/logs', {
+      params: { source, level, strategy, q: q || undefined, limit },
+    }) as Promise<StrategyLogEntry[]>,
+  getLogFlows: ({
+    source = 'app',
+    strategy = 'POLYMARKET_COPY',
+    q,
+    wallet,
+    eventId,
+    followTaskId,
+    marketId,
+    limit = 200,
+  }: {
+    source?: StrategyLogSource
+    strategy?: StrategyLogFilter
+    q?: string
+    wallet?: string
+    eventId?: string
+    followTaskId?: string
+    marketId?: string
+    limit?: number
+  } = {}): Promise<StrategyLogFlow[]> =>
+    apiClient.get('/strategy/api/strategy-platform/logs/flows', {
+      params: {
+        source,
+        strategy,
+        q: q || undefined,
+        wallet: wallet || undefined,
+        eventId: eventId || undefined,
+        followTaskId: followTaskId || undefined,
+        marketId: marketId || undefined,
+        limit,
+      },
+    }) as Promise<StrategyLogFlow[]>,
 }
