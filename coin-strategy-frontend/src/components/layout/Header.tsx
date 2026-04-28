@@ -1,40 +1,49 @@
-import { useEffect } from 'react'
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { strategyApi } from '@/api'
 import { useStrategyStore } from '@/store/useStrategyStore'
-import { DEFAULT_STRATEGY_CODE, STRATEGY_CATALOG, normalizeStrategyCode } from '@/utils/constants'
+import { normalizeStrategyCode, type PositionMode } from '@/utils/constants'
+import { getDefaultStrategyRoute, getStrategyPageTitle } from '@/utils/strategyPages'
+import { toRegistryItems } from '@/utils/strategyViewModels'
 
 export function Header() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { selectedStrategy, positionMode, selectedDays, setPositionMode, setSelectedDays } = useStrategyStore()
-  const strategyParam = searchParams.get('strategy')
+  const [clock, setClock] = useState(() => new Date().toTimeString().slice(0, 8))
+  const {
+    selectedStrategy,
+    positionMode,
+    selectedDays,
+    setSelectedStrategy,
+    setPositionMode,
+    setSelectedDays,
+  } = useStrategyStore()
 
-  const strategy = (() => {
-    const matched = STRATEGY_CATALOG.find((item) => item.route !== '/dashboard' && location.pathname.startsWith(item.route))
-    if (matched) return matched.code
-    if (
-      location.pathname === '/dashboard' ||
-      location.pathname.startsWith('/dashboard/detail') ||
-      location.pathname.startsWith('/dashboard/charts') ||
-      location.pathname.startsWith('/dashboard/monitoring') ||
-      location.pathname.startsWith('/dashboard/markets')
-    ) {
-      return DEFAULT_STRATEGY_CODE
-    }
-    return normalizeStrategyCode(strategyParam || selectedStrategy)
-  })()
-  const expectedStrategyParam = strategy
+  const strategy = normalizeStrategyCode(searchParams.get('strategy') || selectedStrategy)
   const days = Number(searchParams.get('days')) || selectedDays
-  const mode = (searchParams.get('mode') || positionMode) as 'PAPER' | 'LIVE'
+  const mode = (searchParams.get('mode') || positionMode) as PositionMode
 
-  const currentStrategy = STRATEGY_CATALOG.find(s => s.code === strategy)
+  const { data: overview } = useQuery({
+    queryKey: ['strategyOverview', mode],
+    queryFn: () => strategyApi.getOverview(mode),
+  })
+
+  const strategies = useMemo(() => toRegistryItems(overview?.strategies), [overview?.strategies])
+  const label = getStrategyPageTitle(strategy, location.pathname)
 
   useEffect(() => {
-    if (strategyParam === expectedStrategyParam) return
+    const timer = window.setInterval(() => setClock(new Date().toTimeString().slice(0, 8)), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (searchParams.get('strategy') === strategy) return
     const newParams = new URLSearchParams(searchParams)
-    newParams.set('strategy', expectedStrategyParam)
+    newParams.set('strategy', strategy)
     setSearchParams(newParams, { replace: true })
-  }, [expectedStrategyParam, searchParams, setSearchParams, strategyParam])
+  }, [searchParams, setSearchParams, strategy])
 
   const updateParams = (updates: Record<string, string>) => {
     const newParams = new URLSearchParams(searchParams)
@@ -45,33 +54,66 @@ export function Header() {
   }
 
   return (
-    <header className="hero">
-      <div>
-        <h1>{currentStrategy?.name || '策略总览'}</h1>
+    <header className="prime-topbar">
+      <div className="prime-topbar-title">
+        <span className="prime-wordmark">COIN<span>STRATEGY</span>PRIME</span>
+        <span className="prime-page-label">{label}</span>
       </div>
-      <div className="filter-bar">
+
+      <div className="prime-topbar-controls">
+        <select
+          value={strategy}
+          onChange={(event) => {
+            const nextStrategy = normalizeStrategyCode(event.target.value)
+            const nextParams = new URLSearchParams(searchParams)
+            nextParams.set('strategy', nextStrategy)
+            nextParams.delete('section')
+            setSelectedStrategy(nextStrategy)
+            navigate({
+              pathname: getDefaultStrategyRoute(nextStrategy),
+              search: nextParams.toString(),
+            })
+          }}
+          aria-label="选择策略"
+        >
+          {strategies.map((item) => (
+            <option key={item.code} value={item.code}>
+              {item.name} · {item.status}
+            </option>
+          ))}
+        </select>
+
         <select
           value={days}
-          onChange={(e) => {
-            setSelectedDays(Number(e.target.value))
-            updateParams({ days: e.target.value })
+          onChange={(event) => {
+            setSelectedDays(Number(event.target.value))
+            updateParams({ days: event.target.value })
           }}
+          aria-label="选择时间范围"
         >
-          <option value="7">7 天</option>
-          <option value="14">14 天</option>
-          <option value="30">30 天</option>
-          <option value="60">60 天</option>
+          <option value="7">7D</option>
+          <option value="14">14D</option>
+          <option value="30">30D</option>
+          <option value="60">60D</option>
         </select>
-        <select
-          value={mode}
-          onChange={(e) => {
-            setPositionMode(e.target.value as 'PAPER' | 'LIVE')
-            updateParams({ mode: e.target.value })
-          }}
-        >
-          <option value="PAPER">模拟</option>
-          <option value="LIVE">实盘</option>
-        </select>
+
+        <div className="prime-mode-toggle" aria-label="选择运行模式">
+          {(['PAPER', 'LIVE'] as PositionMode[]).map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={mode === item ? 'active' : ''}
+              onClick={() => {
+                setPositionMode(item)
+                updateParams({ mode: item })
+              }}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+
+        <span className="prime-clock">{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · {clock}</span>
       </div>
     </header>
   )

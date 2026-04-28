@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.strategy.model;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record StrategySummaryView(
         String code,
@@ -15,6 +16,9 @@ public record StrategySummaryView(
         BigDecimal unrealizedPnlUsdc,
         BigDecimal pendingSettlementPnlUsdc,
         BigDecimal winRate,
-        Integer totalOrders
+        Integer totalOrders,
+        List<String> supportedModes,
+        List<String> capabilities,
+        String modeBehavior
 ) {
 }

@@ -31,6 +31,11 @@ public record StrategyMetricsView(
         Integer takeProfitOrderCount,
         BigDecimal takeProfitRealizedPnlUsdc,
         Integer stopLossOrderCount,
-        BigDecimal stopLossRealizedPnlUsdc
+        BigDecimal stopLossRealizedPnlUsdc,
+        BigDecimal tvlUsdc,
+        BigDecimal todayPnlUsdc,
+        BigDecimal capitalUsdc,
+        BigDecimal volatility,
+        BigDecimal sharpe
 ) {
 }

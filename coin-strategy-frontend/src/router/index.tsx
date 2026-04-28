@@ -6,6 +6,11 @@ import { ChartsPage } from '../pages/ChartsPage'
 import { MonitoringPage } from '../pages/MonitoringPage'
 import { FundingArbPage } from '../pages/FundingArbPage'
 import { MarketsPage } from '../pages/MarketsPage'
+import { StrategyFactorsPage } from '../pages/StrategyFactorsPage'
+import { PolymarketSignalsPage } from '../pages/PolymarketSignalsPage'
+import { MultiStrategyMonitorPage } from '../pages/MultiStrategyMonitorPage'
+import { StrategyConfigPage } from '../pages/StrategyConfigPage'
+import { StrategyLogsPage } from '../pages/StrategyLogsPage'
 
 export const router = createBrowserRouter([
   {
@@ -21,8 +26,16 @@ export const router = createBrowserRouter([
         element: <HomePage />,
       },
       {
+        path: 'dashboard/monitor',
+        element: <MultiStrategyMonitorPage />,
+      },
+      {
         path: 'dashboard/detail',
         element: <DetailPage />,
+      },
+      {
+        path: 'dashboard/signals',
+        element: <PolymarketSignalsPage />,
       },
       {
         path: 'dashboard/charts',
@@ -33,11 +46,35 @@ export const router = createBrowserRouter([
         element: <MonitoringPage />,
       },
       {
+        path: 'dashboard/addresses',
+        element: <MonitoringPage />,
+      },
+      {
         path: 'dashboard/markets',
         element: <MarketsPage />,
       },
       {
+        path: 'dashboard/factors',
+        element: <StrategyFactorsPage />,
+      },
+      {
+        path: 'dashboard/config',
+        element: <StrategyConfigPage />,
+      },
+      {
+        path: 'dashboard/logs',
+        element: <StrategyLogsPage />,
+      },
+      {
         path: 'dashboard/funding-arb',
+        element: <FundingArbPage />,
+      },
+      {
+        path: 'dashboard/funding-arb/positions',
+        element: <FundingArbPage />,
+      },
+      {
+        path: 'dashboard/funding-arb/settlement',
         element: <FundingArbPage />,
       },
     ],

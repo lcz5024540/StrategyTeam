@@ -1,6 +1,16 @@
 import { apiClient } from './client'
 import type { PositionMode } from '@/utils/constants'
-import type { StrategyOverview, StrategyDetail } from '@/types/strategy'
+import type {
+  StrategyCapability,
+  StrategyFactor,
+  StrategyModeBehavior,
+  StrategyOrderRow,
+  StrategyOverview,
+  StrategyPositionRow,
+  StrategySummary,
+  StrategyDetail,
+  StrategyTimelinePoint,
+} from '@/types/strategy'
 
 type StrategyDetailApiResponse = Partial<StrategyDetail> & {
   totalOrders?: number
@@ -30,6 +40,11 @@ type StrategyDetailApiResponse = Partial<StrategyDetail> & {
     remainingCapitalBudgetUsdc?: number
     availableCapitalUsdc?: number
     lockedClaimProceedsUsdc?: number
+    tvlUsdc?: number
+    todayPnlUsdc?: number
+    capitalUsdc?: number
+    volatility?: number
+    sharpe?: number
     earlyExitOrderCount?: number
     earlyExitRealizedPnlUsdc?: number
     takeProfitOrderCount?: number
@@ -39,9 +54,25 @@ type StrategyDetailApiResponse = Partial<StrategyDetail> & {
   }
 }
 
+type StrategyOverviewApiResponse = Partial<StrategyOverview> & {
+  strategies?: StrategySummaryApiResponse[]
+}
+
+type StrategySummaryApiResponse = Partial<StrategySummary> & {
+  supportedModes?: string[]
+  capabilities?: string[]
+  modeBehavior?: string
+}
+
 function toNumber(value: unknown, fallback = 0): number {
   const num = Number(value)
   return Number.isFinite(num) ? num : fallback
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const num = Number(value)
+  return Number.isFinite(num) ? num : undefined
 }
 
 function normalizeDetail(detail: StrategyDetailApiResponse): StrategyDetail {
@@ -52,6 +83,11 @@ function normalizeDetail(detail: StrategyDetailApiResponse): StrategyDetail {
     code: String(detail?.code ?? summary.code ?? ''),
     name: String(detail?.name ?? summary.name ?? ''),
     description: String(detail?.description ?? summary.description ?? ''),
+    tvlUsdc: toOptionalNumber(detail?.tvlUsdc ?? metrics.tvlUsdc),
+    todayPnlUsdc: toOptionalNumber(detail?.todayPnlUsdc ?? metrics.todayPnlUsdc),
+    capitalUsdc: toOptionalNumber(detail?.capitalUsdc ?? metrics.capitalUsdc),
+    volatility: toOptionalNumber(detail?.volatility ?? metrics.volatility),
+    sharpe: toOptionalNumber(detail?.sharpe ?? metrics.sharpe),
     netPnlUsdc: toNumber(detail?.netPnlUsdc ?? metrics.netPnlUsdc),
     compositePnlUsdc: toNumber(
       detail?.compositePnlUsdc ?? metrics.compositePnlUsdc ?? detail?.netPnlUsdc ?? metrics.netPnlUsdc
@@ -92,9 +128,63 @@ function normalizeDetail(detail: StrategyDetailApiResponse): StrategyDetail {
   }
 }
 
+function normalizeSummary(summary: StrategySummaryApiResponse): StrategySummary {
+  return {
+    code: String(summary.code ?? ''),
+    name: String(summary.name ?? ''),
+    category: summary.category ? String(summary.category) : undefined,
+    description: String(summary.description ?? ''),
+    status: String(summary.status ?? 'PLANNED'),
+    openPositions: toNumber(summary.openPositions),
+    compositePnlUsdc: toNumber(summary.compositePnlUsdc),
+    netPnlUsdc: toNumber(summary.netPnlUsdc),
+    realizedPnlUsdc: toNumber(summary.realizedPnlUsdc),
+    unrealizedPnlUsdc: toNumber(summary.unrealizedPnlUsdc),
+    pendingSettlementPnlUsdc: toNumber(summary.pendingSettlementPnlUsdc),
+    winRate: toNumber(summary.winRate),
+    totalOrders: toNumber(summary.totalOrders),
+    supportedModes: normalizeModes(summary.supportedModes),
+    capabilities: normalizeCapabilities(summary.capabilities),
+    modeBehavior: normalizeModeBehavior(summary.modeBehavior),
+  }
+}
+
+function normalizeOverview(overview: StrategyOverviewApiResponse): StrategyOverview {
+  const strategies = (overview.strategies || []).map((item) => normalizeSummary(item))
+  return {
+    generatedAtBjt: overview.generatedAtBjt,
+    selectedStrategyCode: overview.selectedStrategyCode,
+    strategies,
+    totalNetPnlUsdc: strategies.reduce((sum, item) => sum + Number(item.netPnlUsdc || 0), 0),
+    totalOpenPositions: strategies.reduce((sum, item) => sum + Number(item.openPositions || 0), 0),
+  }
+}
+
+function normalizeModes(modes?: string[]): PositionMode[] {
+  const normalized = (modes || [])
+    .map((item) => String(item || '').toUpperCase())
+    .filter((item): item is PositionMode => item === 'PAPER' || item === 'LIVE')
+  return normalized.length > 0 ? normalized : ['PAPER', 'LIVE']
+}
+
+function normalizeCapabilities(capabilities?: string[]): StrategyCapability[] {
+  const known = new Set(['POSITIONS', 'ORDERS', 'TIMELINE', 'TASKS', 'ATTRIBUTION', 'FACTORS', 'CONFLICTS'])
+  return (capabilities || [])
+    .map((item) => String(item || '').toUpperCase())
+    .filter((item): item is StrategyCapability => known.has(item))
+}
+
+function normalizeModeBehavior(value?: string): StrategyModeBehavior {
+  const normalized = String(value || '').toUpperCase()
+  if (normalized === 'SHARED' || normalized === 'UNSUPPORTED') return normalized
+  return 'ISOLATED'
+}
+
 export const strategyApi = {
   getOverview: (mode: PositionMode = 'PAPER'): Promise<StrategyOverview> =>
-    apiClient.get('/strategy/api/strategy-platform/strategy/overview', { params: { mode } }),
+    apiClient
+      .get('/strategy/api/strategy-platform/strategy/overview', { params: { mode } })
+      .then((overview) => normalizeOverview((overview || {}) as StrategyOverviewApiResponse)),
 
   /** @deprecated 使用下方拆分接口替代 */
   getDetail: (code: string, mode: PositionMode = 'PAPER'): Promise<StrategyDetail> =>
@@ -112,29 +202,39 @@ export const strategyApi = {
 
   /** 当前持仓列表 */
   getPositions: (code: string, mode: PositionMode = 'PAPER') =>
-    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/positions`, { params: { mode } }),
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/positions`, { params: { mode } }) as Promise<StrategyPositionRow[]>,
 
   /** 待结算持仓列表 */
   getNextSettlements: (code: string, limit = 8, mode: PositionMode = 'PAPER') =>
     apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/next-settlements`, {
       params: { limit, mode },
-    }),
+    }) as Promise<StrategyPositionRow[]>,
 
   /** 最近订单列表 */
   getOrders: (code: string, limit = 30, mode: PositionMode = 'PAPER') =>
     apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/orders`, {
       params: { limit, mode },
-    }),
+    }) as Promise<StrategyOrderRow[]>,
 
   /** 收益时间线 */
   getTimeline: (code: string, days = 30, mode: PositionMode = 'PAPER') =>
     apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/timeline`, {
       params: { days, mode },
-    }),
+    }) as Promise<StrategyTimelinePoint[]>,
 
   /** 冲突市场列表 */
   getConflicts: (code: string, limit = 10, mode: PositionMode = 'PAPER') =>
     apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/conflicts`, {
       params: { limit, mode },
+    }),
+
+  getFactors: (code: string, mode: PositionMode = 'PAPER', window = '30D'): Promise<StrategyFactor[]> =>
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/factors`, {
+      params: { mode, window },
+    }),
+
+  getFactor: (code: string, factorCode: string, mode: PositionMode = 'PAPER', window = '30D'): Promise<StrategyFactor> =>
+    apiClient.get(`/strategy/api/strategy-platform/strategy/${code}/factors/${factorCode}`, {
+      params: { mode, window },
     }),
 }

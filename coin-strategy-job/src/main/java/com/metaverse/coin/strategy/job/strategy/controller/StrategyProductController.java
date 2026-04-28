@@ -4,6 +4,7 @@ import com.metaverse.coin.strategy.job.strategy.application.StrategyProductQuery
 import com.metaverse.coin.strategy.job.strategy.model.StrategyConflictRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyDashboardOverviewView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyDetailView;
+import com.metaverse.coin.strategy.job.strategy.model.StrategyFactorView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyOrderRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyPositionRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategySummaryDetailView;
@@ -95,5 +96,22 @@ public class StrategyProductController {
                                                     @RequestParam(defaultValue = "10") Integer limit,
                                                     @RequestParam(required = false) String mode) {
         return strategyProductQueryService.conflicts(strategyCode, limit, mode);
+    }
+
+    @Operation(summary = "策略因子列表")
+    @GetMapping("/{strategyCode}/factors")
+    public List<StrategyFactorView> factors(@PathVariable String strategyCode,
+                                            @RequestParam(required = false) String mode,
+                                            @RequestParam(defaultValue = "30D") String window) {
+        return strategyProductQueryService.factors(strategyCode, mode, window);
+    }
+
+    @Operation(summary = "策略因子详情")
+    @GetMapping("/{strategyCode}/factors/{factorCode}")
+    public StrategyFactorView factor(@PathVariable String strategyCode,
+                                     @PathVariable String factorCode,
+                                     @RequestParam(required = false) String mode,
+                                     @RequestParam(defaultValue = "30D") String window) {
+        return strategyProductQueryService.factor(strategyCode, factorCode, mode, window);
     }
 }

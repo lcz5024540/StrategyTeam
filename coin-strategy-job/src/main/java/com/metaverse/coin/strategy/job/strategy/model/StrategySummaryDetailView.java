@@ -7,8 +7,8 @@ import java.util.List;
  * 用于首屏快速加载，替代原始的 StrategyDetailView 全量返回。
  */
 public record StrategySummaryDetailView(
-        StrategySummaryView summary,
-        StrategyMetricsView metrics,
+        StrategyIdentityView summary,
+        StrategyDashboardMetricsView metrics,
         List<StrategyInsightView> insights
 ) {
 }

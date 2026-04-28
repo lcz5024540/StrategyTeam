@@ -5,6 +5,6 @@ import java.util.List;
 public record StrategyDashboardOverviewView(
         String generatedAtBjt,
         String selectedStrategyCode,
-        List<StrategySummaryView> strategies
+        List<StrategyRegistryView> strategies
 ) {
 }

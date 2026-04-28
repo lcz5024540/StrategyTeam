@@ -20,11 +20,14 @@ import com.metaverse.coin.strategy.job.strategy.model.StrategyConflictRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyDashboardOverviewView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyDetailView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyFactorView;
+import com.metaverse.coin.strategy.job.strategy.model.StrategyDashboardMetricsView;
+import com.metaverse.coin.strategy.job.strategy.model.StrategyIdentityView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyInsightView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategySummaryDetailView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyMetricsView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyOrderRowView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyPositionRowView;
+import com.metaverse.coin.strategy.job.strategy.model.StrategyRegistryView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategySummaryView;
 import com.metaverse.coin.strategy.job.strategy.model.StrategyTimelinePointView;
 import org.springframework.stereotype.Service;
@@ -83,13 +86,11 @@ public class StrategyProductQueryService {
     }
 
     public StrategyDashboardOverviewView overview(String mode) {
-        StrategySummaryDetailView polymarket = summaryDetail(POLYMARKET_CODE, mode);
-        StrategySummaryDetailView fundingArb = summaryDetail(FUNDING_ARB_CODE, mode);
-        List<StrategySummaryView> strategies = new ArrayList<>();
-        strategies.add(polymarket.summary());
-        strategies.add(fundingArb.summary());
-        strategies.add(placeholder("ROBOT", "机器人策略", "机器人", "PLANNED", "后续用于事件驱动机器人、盘口套利和自动化规则执行。"));
-        strategies.add(placeholder("INTELLIGENT", "智能策略", "智能", "PLANNED", "后续用于模型评分、智能分层择时和多因子调度。"));
+        List<StrategyRegistryView> strategies = new ArrayList<>();
+        strategies.add(buildPolymarketRegistry(mode));
+        strategies.add(buildFundingArbRegistry(mode));
+        strategies.add(placeholderRegistry("ROBOT", "机器人策略", "机器人", "PLANNED", "后续用于事件驱动机器人、盘口套利和自动化规则执行。"));
+        strategies.add(placeholderRegistry("INTELLIGENT", "智能策略", "智能", "PLANNED", "后续用于模型评分、智能分层择时和多因子调度。"));
         return new StrategyDashboardOverviewView(BJT_FORMATTER.format(Instant.now()), POLYMARKET_CODE, strategies);
     }
 
@@ -108,10 +109,10 @@ public class StrategyProductQueryService {
         if (FUNDING_ARB_CODE.equalsIgnoreCase(normalizedStrategyCode)) {
             return buildFundingArbSummaryDetail(mode);
         }
-        StrategySummaryView summary = placeholder(normalizedStrategyCode, normalizedStrategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
+        StrategyIdentityView summary = placeholderIdentity(normalizedStrategyCode, normalizedStrategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
         return new StrategySummaryDetailView(
                 summary,
-                emptyMetrics(),
+                toDashboardMetrics(emptyMetrics()),
                 List.of(new StrategyInsightView("INFO", "策略待接入", "当前页面结构已预留，后续可继续接入真实策略数据。"))
         );
     }
@@ -227,7 +228,8 @@ public class StrategyProductQueryService {
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO,
                         0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                        0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO),
+                        0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO,
+                        BigDecimal.ZERO, null, BigDecimal.ZERO, null, null),
                 List.of(new StrategyInsightView("INFO", "策略待接入", "当前页面结构已预留，后续可继续接入真实策略数据。")),
                 List.of(), List.of(), List.of(), List.of(), List.of());
     }
@@ -268,9 +270,8 @@ public class StrategyProductQueryService {
         SmartWalletPnlSummaryView pnlSummary = accountingService.summary(mode);
         SmartWalletCapacitySummaryView capacity = accountingService.capacitySummary(mode);
         List<SmartWalletPositionView> nextSettlements = accountingService.listNextSettlements(1, mode);
-        StrategySummaryView summary = buildPolymarketSummary(mode, performance);
         StrategyMetricsView metrics = buildPolymarketMetrics(performance, pnlSummary, capacity);
-        return new StrategySummaryDetailView(summary, metrics, buildInsights(metrics, nextSettlements, mode));
+        return new StrategySummaryDetailView(buildPolymarketIdentity(mode), toDashboardMetrics(metrics), buildInsights(metrics, nextSettlements, mode));
     }
 
     private StrategyDetailView buildFundingArbDetail(String mode) {
@@ -292,8 +293,69 @@ public class StrategyProductQueryService {
     private StrategySummaryDetailView buildFundingArbSummaryDetail(String mode) {
         FundingArbSnapshot snapshot = loadFundingArbSnapshot();
         StrategyMetricsView metrics = buildFundingArbMetrics(snapshot);
-        StrategySummaryView summary = buildFundingArbSummary(metrics, mode);
-        return new StrategySummaryDetailView(summary, metrics, buildFundingArbInsights(snapshot, metrics, mode));
+        return new StrategySummaryDetailView(buildFundingArbIdentity(mode), toDashboardMetrics(metrics), buildFundingArbInsights(snapshot, metrics, mode));
+    }
+
+    private StrategyRegistryView buildPolymarketRegistry(String mode) {
+        SmartWalletPerformanceView performance = accountingService.performance(mode);
+        return new StrategyRegistryView(
+                POLYMARKET_CODE,
+                "Polymarket 跟单策略",
+                "Polymarket",
+                "ACTIVE",
+                buildDescription(mode),
+                ISOLATED_MODES,
+                POLYMARKET_CAPABILITIES,
+                "ISOLATED",
+                performance.getOpenPositions(),
+                safe(performance.getNetPnlUsdc()),
+                safe(performance.getWinRate()),
+                performance.getTotalOrders()
+        );
+    }
+
+    private StrategyRegistryView buildFundingArbRegistry(String mode) {
+        StrategyMetricsView metrics = buildFundingArbMetrics(loadFundingArbSnapshot());
+        return new StrategyRegistryView(
+                FUNDING_ARB_CODE,
+                "资金费套利策略",
+                "Funding",
+                "ACTIVE",
+                buildFundingArbDescription(mode),
+                SHARED_MODES,
+                FUNDING_ARB_CAPABILITIES,
+                "SHARED",
+                metrics.openPositions(),
+                metrics.netPnlUsdc(),
+                metrics.winRate(),
+                metrics.totalOrders()
+        );
+    }
+
+    private StrategyIdentityView buildPolymarketIdentity(String mode) {
+        return new StrategyIdentityView(
+                POLYMARKET_CODE,
+                "Polymarket 跟单策略",
+                "Polymarket",
+                "ACTIVE",
+                buildDescription(mode),
+                ISOLATED_MODES,
+                POLYMARKET_CAPABILITIES,
+                "ISOLATED"
+        );
+    }
+
+    private StrategyIdentityView buildFundingArbIdentity(String mode) {
+        return new StrategyIdentityView(
+                FUNDING_ARB_CODE,
+                "资金费套利策略",
+                "Funding",
+                "ACTIVE",
+                buildFundingArbDescription(mode),
+                SHARED_MODES,
+                FUNDING_ARB_CAPABILITIES,
+                "SHARED"
+        );
     }
 
     private StrategySummaryView buildFundingArbSummary(StrategyMetricsView metrics, String mode) {
@@ -325,6 +387,9 @@ public class StrategyProductQueryService {
                 .map(this::resolveFundingArbOrderNotional)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal feeUsdc = sum(snapshot.orders(), SingleExchangeArbitrageOrder::getFeeAmount);
+        BigDecimal openCostBasis = snapshot.openPositions().stream()
+                .map(this::resolveFundingArbCostBasis)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         int winningPositions = (int) snapshot.closedPositions().stream()
                 .filter(position -> resolveFundingArbPositionRealized(position).compareTo(BigDecimal.ZERO) > 0)
                 .count();
@@ -366,7 +431,12 @@ public class StrategyProductQueryService {
                 0,
                 BigDecimal.ZERO,
                 0,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                openCostBasis,
+                null,
+                openCostBasis,
+                null,
+                null
         );
     }
 
@@ -387,6 +457,7 @@ public class StrategyProductQueryService {
     private StrategyMetricsView buildPolymarketMetrics(SmartWalletPerformanceView performance,
                                                        SmartWalletPnlSummaryView pnlSummary,
                                                        SmartWalletCapacitySummaryView capacity) {
+        BigDecimal tvlUsdc = safe(capacity.getAvailableCapitalUsdc()).add(safe(capacity.getLockedClaimProceedsUsdc()));
         return new StrategyMetricsView(
                 performance.getTotalOrders(), performance.getFilledOrders(), performance.getOpenPositions(),
                 performance.getClosedPositions(), performance.getWinningPositions(), performance.getLosingPositions(),
@@ -400,7 +471,12 @@ public class StrategyProductQueryService {
                 safe(capacity.getAvailableCapitalUsdc()), safe(capacity.getLockedClaimProceedsUsdc()),
                 performance.getEarlyExitOrderCount(), safe(performance.getEarlyExitRealizedPnlUsdc()),
                 performance.getTakeProfitOrderCount(), safe(performance.getTakeProfitRealizedPnlUsdc()),
-                performance.getStopLossOrderCount(), safe(performance.getStopLossRealizedPnlUsdc())
+                performance.getStopLossOrderCount(), safe(performance.getStopLossRealizedPnlUsdc()),
+                tvlUsdc,
+                null,
+                tvlUsdc,
+                null,
+                null
         );
     }
 
@@ -558,7 +634,26 @@ public class StrategyProductQueryService {
                 BigDecimal.ZERO, BigDecimal.ZERO,
                 0, 0, BigDecimal.ZERO,
                 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO
+                0, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO,
+                BigDecimal.ZERO, null, BigDecimal.ZERO, null, null
+        );
+    }
+
+    private StrategyDashboardMetricsView toDashboardMetrics(StrategyMetricsView metrics) {
+        return new StrategyDashboardMetricsView(
+                safe(metrics.tvlUsdc()),
+                metrics.todayPnlUsdc(),
+                safe(metrics.capitalUsdc()),
+                safe(metrics.netPnlUsdc()),
+                safe(metrics.realizedPnlUsdc()),
+                safe(metrics.pendingSettlementPnlUsdc()),
+                metrics.totalOrders() == null ? 0 : metrics.totalOrders(),
+                metrics.openPositions() == null ? 0 : metrics.openPositions(),
+                metrics.closedPositions() == null ? 0 : metrics.closedPositions(),
+                safe(metrics.winRate()),
+                metrics.winningPositions() == null ? 0 : metrics.winningPositions(),
+                metrics.losingPositions() == null ? 0 : metrics.losingPositions(),
+                safe(metrics.maxDrawdownUsdc())
         );
     }
 
@@ -935,6 +1030,17 @@ public class StrategyProductQueryService {
     private StrategySummaryView placeholder(String code, String name, String category, String status, String description) {
         return new StrategySummaryView(code, name, category, status, description, 0,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0,
+                PLANNED_MODES, PLANNED_CAPABILITIES, "UNSUPPORTED");
+    }
+
+    private StrategyRegistryView placeholderRegistry(String code, String name, String category, String status, String description) {
+        return new StrategyRegistryView(code, name, category, status, description,
+                PLANNED_MODES, PLANNED_CAPABILITIES, "UNSUPPORTED",
+                0, BigDecimal.ZERO, BigDecimal.ZERO, 0);
+    }
+
+    private StrategyIdentityView placeholderIdentity(String code, String name, String category, String status, String description) {
+        return new StrategyIdentityView(code, name, category, status, description,
                 PLANNED_MODES, PLANNED_CAPABILITIES, "UNSUPPORTED");
     }
 
