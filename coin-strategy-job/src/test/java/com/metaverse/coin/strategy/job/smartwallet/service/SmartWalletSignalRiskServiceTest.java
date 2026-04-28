@@ -1109,6 +1109,51 @@ class SmartWalletSignalRiskServiceTest {
                 "Only stop-word overlap must NOT trigger theme correlation. Reasons: " + decision.getReasons());
     }
 
+    @Test
+    void shouldRejectObviouslyFarFutureMarketEndAtWhenConfiguredThresholdLower() {
+        // Bug: OBVIOUSLY_FUTURE_MARKET_END_MS is hardcoded to 365 days.
+        // Operators cannot tighten the data-quality guard without redeployment.
+        // Fix: read obviouslyFutureMarketEndDays from config.
+        //
+        // Market ends 31 days from now:
+        //   hardcoded 365d: 31d < 365d → not rejected → accepted
+        //   config 30d:     31d > 30d  → rejected as obviously future
+        properties.getSignalRisk().setObviouslyFutureMarketEndDays(30);  // tighten to 30 days
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8)
+                .setRecentWinRate7d(new BigDecimal("0.75"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(3).dedupedEntityCount(3).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        // Override market end to 31 days from now (beyond configured 30d threshold)
+        long endAt31Days = System.currentTimeMillis() + 31L * 24L * 3_600_000L;
+        when(marketMetadataService.getByConditionId(any())).thenReturn(
+                PolymarketApiClient.MarketMetadata.builder()
+                        .conditionId("market-1").marketId("market-1").endAt(endAt31Days).build());
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(endAt31Days)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(),
+                "Market 31 days out must be rejected when obviouslyFutureMarketEndDays=30. Reasons: "
+                        + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("MARKET_END_AT_DATA_QUALITY")),
+                "Must contain [MARKET_END_AT_DATA_QUALITY] reason. Got: " + decision.getReasons());
+    }
+
     private SmartWalletProfileEntity baseProfile() {
         return new SmartWalletProfileEntity()
                 .setWalletAddress("0xabc")

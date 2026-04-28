@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProf
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class WalletArchetypeClassifierService {
     private static final long VALUE_SYNC_INTERVAL_MS = 600_000L;
     private static final long NOISE_SYNC_INTERVAL_MS = 900_000L;
 
+    private final SmartWalletProperties properties;
     private final SmartWalletWalletFeatureDailyMapper walletFeatureDailyMapper;
     private final SmartWalletTradeEffectLabelMapper tradeEffectLabelMapper;
     private final SmartWalletTradeEventMapper tradeEventMapper;
@@ -81,14 +83,14 @@ public class WalletArchetypeClassifierService {
         String archetype;
         if (labelSampleSize >= 5 && followableRate.compareTo(new BigDecimal("0.40")) < 0 && alphaRule.compareTo(new BigDecimal("0.45")) < 0) {
             archetype = "NOISE_OR_INSUFFICIENT";
-        } else if (trades7d >= 18
+        } else if (trades7d >= properties.getSignalRisk().getHfScalperMinTrades7d()
                 || (medianInterTradeMinutes != null && medianInterTradeMinutes.compareTo(new BigDecimal("45")) <= 0)
                 || alpha30s.compareTo(alphaRule.max(alpha5m)) > 0) {
             archetype = "HF_SCALPER";
         } else if (concentration.compareTo(new BigDecimal("0.55")) >= 0
                 && markets30d > 0 && markets30d <= 6
                 && alphaRule.compareTo(alpha30s.add(new BigDecimal("0.08"))) >= 0
-                && alphaRule.compareTo(new BigDecimal("0.58")) >= 0) {
+                && alphaRule.compareTo(properties.getSignalRisk().getThematicMinAlphaRule()) >= 0) {
             archetype = "THEMATIC";
         } else if (trades30d > 0 && trades30d < 18
                 && medianInterTradeMinutes != null
@@ -112,13 +114,14 @@ public class WalletArchetypeClassifierService {
             default -> "OBSERVE_ONLY";
         };
 
+        SmartWalletProperties.FollowFitWeights w = properties.getFollowFitWeights();
         BigDecimal followFitScore = leaderQuality
-                .multiply(new BigDecimal("0.15"))
-                .add(followableRate.multiply(new BigDecimal("0.30")))
-                .add(alpha30s.multiply(new BigDecimal("0.15")))
-                .add(alpha5m.multiply(new BigDecimal("0.15")))
-                .add(alphaRule.multiply(new BigDecimal("0.20")))
-                .add(winRate30d.multiply(new BigDecimal("0.05")));
+                .multiply(w.getLeaderQuality())
+                .add(followableRate.multiply(w.getFollowableRate()))
+                .add(alpha30s.multiply(w.getAlpha30s()))
+                .add(alpha5m.multiply(w.getAlpha5m()))
+                .add(alphaRule.multiply(w.getAlphaRule()))
+                .add(winRate30d.multiply(w.getWinRate30d()));
         if ("NOISE_OR_INSUFFICIENT".equals(archetype)) {
             followFitScore = followFitScore.subtract(new BigDecimal("0.25"));
         }

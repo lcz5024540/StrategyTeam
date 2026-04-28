@@ -41,7 +41,6 @@ public class SmartWalletSignalRiskService {
 
     private static final String LOG_PREFIX = "[POLY_FOLLOW]";
     private static final String MONITOR_TIER_HOT = "HOT";
-    private static final long OBVIOUSLY_FUTURE_MARKET_END_MS = 365L * 24L * 3600_000L;
 
     private final SmartWalletProperties properties;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
@@ -214,7 +213,8 @@ public class SmartWalletSignalRiskService {
                 reasons.add("Market is already at or past expected end time.");
             } else {
                 long maxHours = defaultInt(risk.getMaxHoursToMarketEnd(), Integer.MAX_VALUE);
-                if (remainingMs > OBVIOUSLY_FUTURE_MARKET_END_MS) {
+                long obviousFutureMs = (long) risk.getObviouslyFutureMarketEndDays() * 24L * 3600_000L;
+                if (remainingMs > obviousFutureMs) {
                     accepted = false;
                     reasons.add("[MARKET_END_AT_DATA_QUALITY] Market end time is unexpectedly far in the future; verify metadata before following.");
                 } else if (remainingMs > maxHours * 3600_000L) {

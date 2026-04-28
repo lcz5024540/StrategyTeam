@@ -48,6 +48,7 @@ public class SmartWalletProperties {
     private List<WalletSeed> wallets = new ArrayList<>();
     private List<MarketSeed> markets = new ArrayList<>();
     private Intelligence intelligence = new Intelligence();
+    private FollowFitWeights followFitWeights = new FollowFitWeights();
 
     @Data
     public static class PolymarketMonitor {
@@ -309,6 +310,14 @@ public class SmartWalletProperties {
         private int trendStopLossConsecutivePeriods = 3;
         /** 趋势止损最少历史样本数：低于此值时不触发，防止重启后样本不足误止损 */
         private Integer minPriceHistorySamples;
+
+        // ── 钱包 archetype 分类阈值 ────────────────────────────────────────────
+        /** HF_SCALPER 判定最低 7d 交易次数；低于此值不因交易频率触发 HF 分类 */
+        private int hfScalperMinTrades7d = 18;
+        /** THEMATIC 判定最低 alphaRule 分位；低于此值不触发主题钱包分类 */
+        private BigDecimal thematicMinAlphaRule = new BigDecimal("0.58");
+        /** 市场结束时间数据质量守卫：超过此天数认为结束时间异常（数据错误），拒绝入场 */
+        private int obviouslyFutureMarketEndDays = 365;
 
         // ── 方案C：退出信号提供者模式 ────────────────────────────────────
         /**
@@ -594,5 +603,19 @@ public class SmartWalletProperties {
         private BigDecimal liquidityUsdc = BigDecimal.ZERO;
         private String category;
         private List<String> tags = new ArrayList<>();
+    }
+
+    /**
+     * 钱包跟随适合度评分 (followFitScore) 各维度权重。
+     * 各权重之和建议为 1.0，超出范围时分数会被 clamp 到 [0,1]。
+     */
+    @Data
+    public static class FollowFitWeights {
+        private BigDecimal leaderQuality   = new BigDecimal("0.15");
+        private BigDecimal followableRate  = new BigDecimal("0.30");
+        private BigDecimal alpha30s        = new BigDecimal("0.15");
+        private BigDecimal alpha5m         = new BigDecimal("0.15");
+        private BigDecimal alphaRule       = new BigDecimal("0.20");
+        private BigDecimal winRate30d      = new BigDecimal("0.05");
     }
 }
