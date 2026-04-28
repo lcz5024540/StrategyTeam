@@ -141,6 +141,7 @@ public class SmartWalletProperties {
         private boolean enableAutoTakeProfit = false;
         private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.20");
         private Integer fastEventMaxHours = 24;
+        private Integer longHorizonMinHours = 48;
         private BigDecimal longHorizonStakeMultiplier = new BigDecimal("0.50");
         private Integer maxSignalAgeSeconds = 3600;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
@@ -306,6 +307,8 @@ public class SmartWalletProperties {
         private boolean trendStopLossEnabled = false;
         /** 趋势加速止损连续下跌周期数（每周期 = 一次 checkStopLoss 扫描，约 5 分钟） */
         private int trendStopLossConsecutivePeriods = 3;
+        /** 趋势止损最少历史样本数：低于此值时不触发，防止重启后样本不足误止损 */
+        private Integer minPriceHistorySamples;
 
         // ── 方案C：退出信号提供者模式 ────────────────────────────────────
         /**

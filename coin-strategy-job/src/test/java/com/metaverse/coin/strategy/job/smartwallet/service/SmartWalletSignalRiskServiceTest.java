@@ -896,10 +896,13 @@ class SmartWalletSignalRiskServiceTest {
 
         long standardBinaryEnd = System.currentTimeMillis() + 30 * 3_600_000L;
         prepareHfScalperMocks(consensus, standardBinaryEnd);
+        // Our capital = 100; set budget = capital so applyDynamicCapitalScale is neutral (scale=1.0)
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
+        properties.getSignalRisk().setMaxTotalOpenCostUsdc(new BigDecimal("100"));
 
         SignalRiskDecision decision = service.evaluate(profile, event);
 
-        // stake = 100 * 0.80 * 0.03 = 2.40; HF >30s → 2.40 * 0.25 = 0.60
+        // stake = availableCapital(100) * bankrollRate(0.03) * walletScore(0.80) = 2.40; HF >30s → 2.40 * 0.25 = 0.60
         // With bug: no HF reduction → stake remains 2.40
         assertTrue(decision.isAccepted(),
                 "Signal is 35s old (< 45s HF max): must be accepted. Reasons: " + decision.getReasons());
@@ -910,12 +913,108 @@ class SmartWalletSignalRiskServiceTest {
                 "Must log ARCHETYPE_STAKE reason. Reasons: " + decision.getReasons());
     }
 
+    @Test
+    void shouldBaseStakeOnAvailableCapitalNotSignalSize() {
+        // Bug: preliminaryStake = triggerSize * walletScore * bankrollUtilizationRate
+        //      = 1000 * 0.80 * 0.03 = 24.00  (anchored to signal wallet trade size — over-leveraged)
+        // Fix: preliminaryStake = availableCapital * bankrollUtilizationRate * walletScore
+        //      = 100 * 0.03 * 0.80 = 2.40   (anchored to our own capital — correct)
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        // Set budget = capital so applyDynamicCapitalScale is a no-op (scale = capital/budget = 1.0)
+        properties.getSignalRisk().setMaxTotalOpenCostUsdc(new BigDecimal("100"));
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xhf")
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        // Smart wallet traded 1000 USDC; our account has only 100 USDC — stake must track OUR capital
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.48"))
+                .setSizeUsdc(new BigDecimal("1000"))
+                .setOpenedAt(new Date());
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        long standardBinaryEnd = System.currentTimeMillis() + 30 * 3_600_000L;
+        prepareHfScalperMocks(consensus, standardBinaryEnd);
+        // Override: our account has only 100 USDC, not the 500 set by prepareHfScalperMocks
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // Fixed: 100 * 0.03 * 0.80 = 2.40 (capital-anchored)
+        // Buggy: 1000 * 0.80 * 0.03 = 24.00 (signal-size-anchored, 24x over-leveraged)
+        // (applyDynamicCapitalScale is neutral: scale = availableCapital/maxTotalOpenCost = 100/100 = 1.0)
+        assertTrue(decision.isAccepted(),
+                "Signal should be accepted. Reasons: " + decision.getReasons());
+        assertEquals(new BigDecimal("2.40"), decision.getRecommendedStakeUsdc(),
+                "Stake must be anchored to availableCapital (100*0.03*0.80=2.40), not triggerSize. Reasons: "
+                        + decision.getReasons());
+    }
+
+    @Test
+    void shouldUseLongHorizonMinHoursConfigInsteadOfHalfMaxHoursToMarketEnd() {
+        // Bug: LONG_HORIZON threshold = maxHoursToMarketEnd / 2 (coupled).
+        // Fix: use independent longHorizonMinHours config (default 48h).
+        //
+        // Test case: a 40h-remaining market.
+        // With maxHoursToMarketEnd=72 and the bug: threshold = 72/2 = 36h → 40h > 36h → LONG_HORIZON (wrong)
+        // With longHorizonMinHours=48 (fix): 40h < 48h → STANDARD_BINARY (correct — 40h is not "long horizon")
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        // Set longHorizonMinHours to 48h (independent of maxHoursToMarketEnd=72)
+        properties.getSignalRisk().setLongHorizonMinHours(48);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        // 40h remaining: should be STANDARD_BINARY (not LONG_HORIZON) with longHorizonMinHours=48
+        long fortyHoursFromNow = System.currentTimeMillis() + 40 * 3_600_000L;
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(fortyHoursFromNow)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // With the bug (threshold = 72/2 = 36h): 40h > 36h → LONG_HORIZON → stake multiplied by 0.50
+        // With the fix (threshold = longHorizonMinHours = 48h): 40h < 48h → STANDARD_BINARY → no multiplier
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("STANDARD_BINARY")),
+                "A 40h market with longHorizonMinHours=48 must be classified as STANDARD_BINARY, not LONG_HORIZON. Reasons: "
+                        + decision.getReasons());
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LONG_HORIZON")),
+                "A 40h market must NOT be classified as LONG_HORIZON when longHorizonMinHours=48. Reasons: "
+                        + decision.getReasons());
+    }
+
     private void prepareCommonMocks(ConsensusSignalView consensus) {
         when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
         when(positionMapper.selectCount(any())).thenReturn(0L);
         when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
         when(followTaskMapper.selectCount(any())).thenReturn(0L);
         when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
+        // Set budget = available capital so applyDynamicCapitalScale is neutral (scale = capital/budget = 1.0).
+        // Tests that need capital-scaling behavior must override this explicitly.
+        properties.getSignalRisk().setMaxTotalOpenCostUsdc(new BigDecimal("100"));
         // 30h: beyond FAST_EVENT window (<24h) and below LONG_HORIZON threshold (>maxHoursToMarketEnd/2 = 36h)
         long farFutureEndAt = System.currentTimeMillis() + 30 * 3_600_000L;
         when(marketMetadataService.getByConditionId(any())).thenReturn(PolymarketApiClient.MarketMetadata.builder()
@@ -961,6 +1060,53 @@ class SmartWalletSignalRiskServiceTest {
                         .slippageSpikeProbability(new BigDecimal("0.10"))
                         .estimateSampleSize(10)
                         .build());
+    }
+
+    @Test
+    void shouldNotCountThemeCorrelationWhenOverlapIsOnlyStopWords() {
+        // Bug: "Will bitcoin reach 2024 high?" and "Will ethereum reach 2024 high?"
+        // overlap on {"will","2024","high","reach"} — 4 tokens ≥ threshold(2) → false positive penalty
+        // Fix: stop-words {"will","2024","2025","what","that","this","with","from","when","have","been","more"}
+        // filtered out → only unique topic tokens remain, overlap = {} < 2 → no penalty
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        // Signal event: a bitcoin question
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.48"))
+                .setSizeUsdc(new BigDecimal("100"))
+                .setQuestion("Will bitcoin reach 2024 high?")
+                .setOpenedAt(new Date());
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+
+        // Existing open position: an ethereum question sharing only stop-words with the bitcoin question.
+        // Must set marketInfo so that position.getQuestion() returns the text (derived field).
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity marketInfo =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity()
+                        .setQuestion("Will ethereum reach 2024 high?");
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity existingPosition =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                        .setMarketInfo(marketInfo);
+        when(positionMapper.selectList(any())).thenReturn(java.util.List.of(existingPosition));
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // With bug: "will","2024","high","reach" all pass the ≥4 char filter → 4 shared tokens ≥ 2 → THEME_CORRELATION penalty
+        // With fix: stop-words {"will","2024","high","reach"} filtered → only {"bitcoin"} vs {"ethereum"} → overlap=0 < 2 → no penalty
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("[THEME_CORRELATION]")),
+                "Only stop-word overlap must NOT trigger theme correlation. Reasons: " + decision.getReasons());
     }
 
     private SmartWalletProfileEntity baseProfile() {

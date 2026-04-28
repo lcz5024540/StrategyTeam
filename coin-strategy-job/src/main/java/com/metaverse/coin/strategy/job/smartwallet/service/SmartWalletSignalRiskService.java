@@ -317,9 +317,9 @@ public class SmartWalletSignalRiskService {
         BigDecimal walletScore = profile == null
                 ? BigDecimal.ZERO
                 : leaderboardStateService.adjustWalletScore(profile, event);
-        BigDecimal preliminaryStake = triggerSize
-                .multiply(walletScore)
+        BigDecimal preliminaryStake = availableCapital
                 .multiply(properties.getBankrollUtilizationRate())
+                .multiply(walletScore)
                 .min(properties.getMaxStakeUsdc())
                 .setScale(2, RoundingMode.HALF_UP);
         preliminaryStake = applyArchetypeStakeAdjustments(preliminaryStake, archetype, event, reasons);
@@ -743,8 +743,10 @@ public class SmartWalletSignalRiskService {
         }
         if (marketEndAt != null && marketEndAt > 0) {
             long remainingMs = marketEndAt - System.currentTimeMillis();
-            long maxHours = defaultInt(risk.getMaxHoursToMarketEnd(), Integer.MAX_VALUE);
-            if (remainingMs > (maxHours * 3600_000L) / 2L) {
+            int longHorizonMinHours = risk.getLongHorizonMinHours() != null
+                    ? risk.getLongHorizonMinHours()
+                    : (defaultInt(risk.getMaxHoursToMarketEnd(), Integer.MAX_VALUE) / 2);
+            if (remainingMs > longHorizonMinHours * 3600_000L) {
                 return "LONG_HORIZON";
             }
         }
@@ -1150,6 +1152,17 @@ public class SmartWalletSignalRiskService {
         return count;
     }
 
+    /**
+     * Common tokens that appear in many unrelated prediction markets.
+     * Filtering them prevents false-positive theme correlation (e.g. "2024/will" matching all markets).
+     */
+    private static final Set<String> THEME_STOP_WORDS = Set.of(
+            "will", "what", "when", "this", "that", "with", "from", "have", "been", "more",
+            "than", "then", "does", "would", "could", "should", "their", "there", "about",
+            "2024", "2025", "2026", "high", "reach", "price", "year", "make", "time", "over",
+            "first", "next", "ever", "most", "some", "into", "before", "after"
+    );
+
     private Set<String> themeTokens(String text) {
         if (!StringUtils.hasText(text)) {
             return Set.of();
@@ -1157,6 +1170,7 @@ public class SmartWalletSignalRiskService {
         return List.of(text.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")).stream()
                 .filter(StringUtils::hasText)
                 .filter(token -> token.length() >= 4)
+                .filter(token -> !THEME_STOP_WORDS.contains(token))
                 .collect(Collectors.toSet());
     }
 

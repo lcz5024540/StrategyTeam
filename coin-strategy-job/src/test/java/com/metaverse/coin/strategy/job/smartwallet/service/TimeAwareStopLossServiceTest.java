@@ -120,6 +120,49 @@ class TimeAwareStopLossServiceTest {
         assertFalse(service.isTrendStopLossTriggered(positionId, new BigDecimal("0.40"), new BigDecimal("0.60")));
     }
 
+    @Test
+    void trendStopLoss_insufficientSamples_doesNotTriggerEvenIfConsecutiveDecline() {
+        // Bug: after a service restart, only 3 price points may be recorded (matching consecutivePeriods=3).
+        // With no minPriceHistorySamples guard, this fires immediately on the first "warm" scan after restart,
+        // incorrectly exiting a position based on too little history.
+        // Fix: require at least minPriceHistorySamples total before the trend logic activates.
+        properties.getSignalRisk().setTrendStopLossEnabled(true);
+        properties.getSignalRisk().setTrendStopLossConsecutivePeriods(3);
+        properties.getSignalRisk().setMinPriceHistorySamples(5); // need 5 total samples
+        service = new TimeAwareStopLossService(properties);
+
+        Long positionId = 99L;
+        // Record exactly consecutivePeriods (3) declining prices — enough to trigger without the guard
+        service.recordMarkPrice(positionId, new BigDecimal("0.50"), new BigDecimal("0.60"));
+        service.recordMarkPrice(positionId, new BigDecimal("0.45"), new BigDecimal("0.60"));
+        service.recordMarkPrice(positionId, new BigDecimal("0.40"), new BigDecimal("0.60"));
+
+        // With bug (no minPriceHistorySamples): 3 samples == periods → triggers (insufficient warm-up)
+        // With fix (minPriceHistorySamples=5): 3 < 5 → does NOT trigger (guards against restart false-positives)
+        assertFalse(service.isTrendStopLossTriggered(positionId, new BigDecimal("0.40"), new BigDecimal("0.60")),
+                "Trend stop-loss must NOT trigger with only 3 samples when minPriceHistorySamples=5");
+    }
+
+    @Test
+    void trendStopLoss_sufficientSamples_triggersWhenConsecutiveDecline() {
+        // Once minPriceHistorySamples is met, consecutive decline must still trigger.
+        properties.getSignalRisk().setTrendStopLossEnabled(true);
+        properties.getSignalRisk().setTrendStopLossConsecutivePeriods(3);
+        properties.getSignalRisk().setMinPriceHistorySamples(5);
+        service = new TimeAwareStopLossService(properties);
+
+        Long positionId = 100L;
+        // 2 stable prices to satisfy warm-up, then 3 consecutive decline
+        service.recordMarkPrice(positionId, new BigDecimal("0.55"), new BigDecimal("0.60"));
+        service.recordMarkPrice(positionId, new BigDecimal("0.54"), new BigDecimal("0.60"));
+        service.recordMarkPrice(positionId, new BigDecimal("0.50"), new BigDecimal("0.60"));
+        service.recordMarkPrice(positionId, new BigDecimal("0.45"), new BigDecimal("0.60"));
+        service.recordMarkPrice(positionId, new BigDecimal("0.40"), new BigDecimal("0.60"));
+
+        assertTrue(service.isTrendStopLossTriggered(positionId, new BigDecimal("0.40"), new BigDecimal("0.60")),
+                "Trend stop-loss must trigger with 5 samples (≥ minPriceHistorySamples=5) and 3 consecutive decline");
+    }
+
     // helper
     private SmartWalletPositionEntity positionWithRemainingHours(int hoursRemaining) {
         SmartWalletPositionEntity position = new SmartWalletPositionEntity();
