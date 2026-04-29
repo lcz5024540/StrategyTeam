@@ -65,6 +65,43 @@ class StrategyLogQueryServiceTest {
     }
 
     @Test
+    void parsesServerPipeLogFormat() throws IOException {
+        write("binance-java-connector.log", """
+                2026-04-29 01:15:35.684[1777396535684] | ERROR | main       | o.s.boot.SpringApplication           - Application run failed
+                2026-04-29 01:15:36.001[1777396536001] | WARN  | worker     | com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S4_MARKET_CHECK action="检查Polymarket市场状态" result="拒绝" wallet=0xabc marketId=m1 outcome=YES firstRejectGate=MARKET_RESOLVED blockerCategories=MARKET reasonSummary="market resolved"
+                """);
+
+        List<StrategyLogEntryView> rows = service().query("app", "ALL", "POLYMARKET_COPY", "MARKET_RESOLVED", 20);
+
+        assertEquals(1, rows.size());
+        assertEquals("WARN", rows.get(0).level());
+        assertEquals("worker", rows.get(0).thread());
+        assertEquals("S4_MARKET_CHECK", rows.get(0).flowStage());
+        assertEquals("MARKET_RESOLVED", rows.get(0).firstRejectGate());
+    }
+
+    @Test
+    void flowReaderSearchesFlowLinesBeforeApplyingLimit() throws IOException {
+        StringBuilder content = new StringBuilder();
+        content.append("""
+                2026-04-29 09:09:46.348[1777424986348] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S1_EVENT_CAPTURED action=记录Polymarket钱包交易事件 result=已入库 eventId=49307 followTaskId=- wallet=0xabc marketId=m1 outcome=UP reasonSummary=交易事件已入库
+                2026-04-29 09:09:46.422[1777424986422] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S4_MARKET_CHECK action=市场状态检查 result=拒绝 eventId=49307 followTaskId=- wallet=0xabc marketId=m1 outcome=UP firstRejectGate=G6_MARKET_NOT_ACTIVE blockerCategories=MARKET_STATE reasonSummary="[MARKET_RESOLVED] Market is already resolved."
+                """);
+        for (int i = 0; i < 600; i++) {
+            content.append("2026-04-29 09:38:").append(String.format("%02d", i % 60))
+                    .append(".000[1777426700000] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=扫描待执行跟单任务 result=查到批次 pendingCount=0 limit=20\n");
+        }
+        write("binance-java-connector.log", content.toString());
+
+        FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
+        List<StrategyLogFlowView> flows = reader.queryFlows("app", "POLYMARKET_COPY", null, null, null, null, null, 20);
+
+        assertEquals(1, flows.size());
+        assertEquals("event:49307", flows.get(0).flowId());
+        assertEquals("G6_MARKET_NOT_ACTIVE", flows.get(0).firstRejectGate());
+    }
+
+    @Test
     void returnsEmptyRowsWhenLogFileDoesNotExist() {
         assertTrue(service().query("error", "ALL", "ALL", null, 20).isEmpty());
     }

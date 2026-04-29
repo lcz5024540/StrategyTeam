@@ -36,6 +36,10 @@ public class StrategyLogQueryService {
             "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+" +
                     "(TRACE|DEBUG|INFO|WARN|ERROR)\\s+\\[([^]]*)]\\s+(.+?)\\s+-\\s?(.*)$"
     );
+    private static final Pattern PIPE_LOG_LINE = Pattern.compile(
+            "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3})(?:\\[\\d+])?\\s*\\|\\s*" +
+                    "(TRACE|DEBUG|INFO|WARN|ERROR)\\s*\\|\\s*([^|]+?)\\s*\\|\\s*(.+?)\\s+-\\s?(.*)$"
+    );
     private static final Pattern ENC_SECRET = Pattern.compile("ENC\\([^)]*\\)");
     private static final Pattern ASSIGNMENT_SECRET = Pattern.compile(
             "(?i)\\b(api[-_ ]?key|api[-_ ]?secret|secret[-_ ]?key|private[-_ ]?key|passphrase|password|token)\\b\\s*[:=]\\s*([^\\s,;]+)"
@@ -137,18 +141,12 @@ public class StrategyLogQueryService {
         ParsedLog current = null;
 
         for (String line : lines) {
-            Matcher matcher = LOG_LINE.matcher(line);
-            if (matcher.matches()) {
+            ParsedLog parsed = parseLogLine(line);
+            if (parsed != null) {
                 if (current != null) {
                     parsedLogs.add(current);
                 }
-                current = new ParsedLog(
-                        matcher.group(1),
-                        matcher.group(2),
-                        matcher.group(3),
-                        matcher.group(4),
-                        new StringBuilder(matcher.group(5))
-                );
+                current = parsed;
             } else if (current != null) {
                 current.message().append('\n').append(line);
             }
@@ -164,6 +162,23 @@ public class StrategyLogQueryService {
                     return StrategyFlowLogSupport.enrichEntry(item, strategy, source, message);
                 })
                 .toList();
+    }
+
+    private ParsedLog parseLogLine(String line) {
+        Matcher matcher = LOG_LINE.matcher(line);
+        if (!matcher.matches()) {
+            matcher = PIPE_LOG_LINE.matcher(line);
+        }
+        if (!matcher.matches()) {
+            return null;
+        }
+        return new ParsedLog(
+                matcher.group(1).trim(),
+                matcher.group(2).trim(),
+                matcher.group(3).trim(),
+                matcher.group(4).trim(),
+                new StringBuilder(matcher.group(5))
+        );
     }
 
     private String inferStrategy(ParsedLog item) {

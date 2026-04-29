@@ -34,7 +34,13 @@ public class FileStrategyFlowLogReader implements StrategyFlowLogReader {
                                                 String marketId,
                                                 Integer limit) {
         String normalizedStrategy = strategy == null || strategy.isBlank() ? "POLYMARKET_COPY" : strategy;
-        List<StrategyLogEntryView> rawEntries = logQueryService.query(source, "ALL", normalizedStrategy, null, MAX_LIMIT);
+        List<StrategyLogEntryView> rawEntries = logQueryService.query(
+                source,
+                "ALL",
+                normalizedStrategy,
+                StrategyFlowLogSupport.FLOW_PREFIX,
+                MAX_LIMIT
+        );
         List<StrategyFlowLogEvent> events = rawEntries.stream()
                 .map(StrategyFlowLogSupport::toEvent)
                 .filter(event -> event != null && matchesFilters(event, q, wallet, eventId, followTaskId, marketId))
