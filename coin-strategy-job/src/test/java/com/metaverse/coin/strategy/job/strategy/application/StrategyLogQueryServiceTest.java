@@ -73,7 +73,7 @@ class StrategyLogQueryServiceTest {
 
         assertEquals(1, flows.size());
         assertEquals("task:20050", flows.get(0).flowId());
-        assertEquals("S5_RISK_EVALUATED", flows.get(0).flowStage());
+        assertEquals("S5_RISK_EVALUATED", flows.get(0).currentStage());
         assertEquals("BLOCKED", flows.get(0).status());
     }
 

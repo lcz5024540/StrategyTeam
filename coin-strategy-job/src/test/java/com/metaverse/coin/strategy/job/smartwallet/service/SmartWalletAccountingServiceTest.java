@@ -1262,7 +1262,7 @@ class SmartWalletAccountingServiceTest {
         assertEquals(1, report.getWinningPositions());
         assertEquals(1, report.getLosingPositions());
         assertEquals(new BigDecimal("0.5000"), report.getWinRate());
-        assertEquals(new BigDecimal("0.5000"), report.getLossRate());
+        // getLossRate() removed from SmartWalletDailyReportView
         assertEquals(new BigDecimal("12.00000000"), report.getProfitPnlUsdc());
         assertEquals(new BigDecimal("-2.00000000"), report.getLossPnlUsdc());
     }

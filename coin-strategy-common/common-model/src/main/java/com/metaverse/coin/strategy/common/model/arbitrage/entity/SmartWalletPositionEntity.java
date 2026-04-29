@@ -63,4 +63,22 @@ public class SmartWalletPositionEntity {
     public Boolean getClosed() { return marketInfo == null ? null : marketInfo.getClosed(); }
     public Boolean getAcceptingOrders() { return marketInfo == null ? null : marketInfo.getAcceptingOrders(); }
     public String getResolvedOutcome() { return marketInfo == null ? null : marketInfo.getResolvedOutcome(); }
+
+    // Delegation setters – update the nested marketInfo for test-setup convenience
+    private SmartWalletMarketInfoEntity ensureMarketInfo() {
+        if (marketInfo == null) marketInfo = new SmartWalletMarketInfoEntity();
+        return marketInfo;
+    }
+    public SmartWalletPositionEntity setMarketId(String v)           { ensureMarketInfo().setMarketId(v); return this; }
+    public SmartWalletPositionEntity setQuestion(String v)           { ensureMarketInfo().setQuestion(v); return this; }
+    public SmartWalletPositionEntity setOutcome(String v)            { ensureMarketInfo().setOutcome(v); return this; }
+    public SmartWalletPositionEntity setTokenId(String v)            { ensureMarketInfo().setTokenId(v); return this; }
+    public SmartWalletPositionEntity setIndexSet(Integer v)          { ensureMarketInfo().setIndexSet(v); return this; }
+    public SmartWalletPositionEntity setMarketEndAt(Long v)          { ensureMarketInfo().setMarketEndAt(v); return this; }
+    public SmartWalletPositionEntity setSourceCategory(String v)     { ensureMarketInfo().setSourceCategory(v); return this; }
+    public SmartWalletPositionEntity setNormalizedCategory(String v) { ensureMarketInfo().setNormalizedCategory(v); return this; }
+    public SmartWalletPositionEntity setMarketLifecycle(String v)    { ensureMarketInfo().setMarketLifecycle(v); return this; }
+    public SmartWalletPositionEntity setClosed(Boolean v)            { ensureMarketInfo().setClosed(v); return this; }
+    public SmartWalletPositionEntity setAcceptingOrders(Boolean v)   { ensureMarketInfo().setAcceptingOrders(v); return this; }
+    public SmartWalletPositionEntity setResolvedOutcome(String v)    { ensureMarketInfo().setResolvedOutcome(v); return this; }
 }
