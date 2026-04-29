@@ -205,7 +205,7 @@ function FlowTimeline({
           <header>
             <div>
               <strong>{selectedFlow?.flowId}</strong>
-              <span>{selectedFlow?.summary || '-'}</span>
+              <FormattedFlowMessage message={selectedFlow?.summary} compact />
             </div>
             <div className="address-badge-stack">
               <span className={statusClass(selectedFlow?.status)}>{selectedFlow?.status || 'ACTIVE'}</span>
@@ -240,7 +240,7 @@ function FlowStage({ stage, entries }: { stage: string; entries: StrategyFlowLog
       <div className="ms-flow-stage-marker" />
       <div className="ms-flow-stage-body">
         <header>
-          <strong>{stage}</strong>
+          <StageTitle stage={stage} />
           {latest ? <span className={statusClass(latest.result)}>{latest.result}</span> : <span className="badge">waiting</span>}
         </header>
         {entries.length === 0 ? (
@@ -251,7 +251,7 @@ function FlowStage({ stage, entries }: { stage: string; entries: StrategyFlowLog
               <span>{entry.timestamp}</span>
               <b>{entry.action || '-'}</b>
             </div>
-            <p>{entry.reasonSummary || entry.rawMessage}</p>
+            <FormattedFlowMessage message={entry.reasonSummary || entry.rawMessage} />
             <div className="address-badge-stack">
               {entry.firstRejectGate ? <span className="badge danger">{entry.firstRejectGate}</span> : null}
               {entry.blockerCategories ? <span className="badge warn">{entry.blockerCategories}</span> : null}
@@ -263,6 +263,54 @@ function FlowStage({ stage, entries }: { stage: string; entries: StrategyFlowLog
       </div>
     </section>
   )
+}
+
+function StageTitle({ stage }: { stage: string }) {
+  const [index, ...rest] = stage.split('_')
+  return (
+    <strong className="ms-stage-title">
+      <span>{index}</span>
+      {rest.length ? <em>_{rest.join('_')}</em> : null}
+    </strong>
+  )
+}
+
+function FormattedFlowMessage({ message, compact = false }: { message?: string | null; compact?: boolean }) {
+  if (!message) return <div className="ms-flow-message">-</div>
+  const sections = parseFlowMessage(message)
+  return (
+    <div className={compact ? 'ms-flow-message compact' : 'ms-flow-message'}>
+      {sections.map((section, sectionIndex) => (
+        <section key={`${section.label || 'message'}-${sectionIndex}`}>
+          {section.label ? <span className="ms-flow-message-label">{section.label}</span> : null}
+          <div className="ms-flow-message-content">
+            {section.fields.map((field, fieldIndex) => (
+              <span className="ms-flow-message-field" key={`${sectionIndex}-${field.key}-${fieldIndex}`}>
+                <b>{field.key}</b>
+                <em>{field.value}</em>
+              </span>
+            ))}
+            {section.text ? <p>{section.text}</p> : null}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function parseFlowMessage(message: string) {
+  const parts = message.split(/\s+\|\s+/).map((part) => part.trim()).filter(Boolean)
+  return parts.map((part) => {
+    const match = part.match(/^\[([^\]]+)]\s*(.*)$/)
+    const label = match?.[1]
+    const body = match?.[2] ?? part
+    const fields = Array.from(body.matchAll(/([A-Za-z][A-Za-z0-9_]*)=([^,\s|.]+(?:\.[0-9]+)?)/g)).map((field) => ({
+      key: field[1],
+      value: field[2],
+    }))
+    const text = body.replace(/([A-Za-z][A-Za-z0-9_]*)=([^,\s|.]+(?:\.[0-9]+)?),?\s*/g, '').replace(/^,\s*/, '').trim()
+    return { label, fields, text }
+  })
 }
 
 function RawLogStream({ logs, isLoading, isError, error }: { logs: StrategyLogEntry[]; isLoading: boolean; isError: boolean; error: unknown }) {

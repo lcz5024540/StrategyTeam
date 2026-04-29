@@ -147,7 +147,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: oklch(0.88 0.005 240);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-align: left;
 }
@@ -1086,14 +1086,38 @@
 }
 
 .ms-log-toolbar select,
-.ms-log-toolbar input,
+.ms-log-toolbar input:not([type="checkbox"]),
 .ms-log-action {
-  height: 28px;
-  padding: 0 9px;
+  height: 32px;
+  padding: 0 10px;
   font-family: var(--font-mono);
 }
 
-.ms-log-toolbar input {
+.ms-log-toolbar select {
+  min-width: 120px;
+  appearance: none;
+  padding-right: 30px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b7c3cf'/%3E%3C/svg%3E"),
+    linear-gradient(180deg, oklch(0.19 0.012 240), oklch(0.155 0.012 240));
+  background-repeat: no-repeat;
+  background-position: right 10px center, 0 0;
+  color: oklch(0.82 0.01 240);
+  cursor: pointer;
+}
+
+.ms-log-toolbar select:hover,
+.ms-log-toolbar select:focus {
+  border-color: oklch(0.62 0.14 220 / 0.55);
+  box-shadow: 0 0 0 2px oklch(0.62 0.14 220 / 0.10);
+}
+
+.ms-log-toolbar select option {
+  background: oklch(0.15 0.012 240);
+  color: oklch(0.82 0.01 240);
+}
+
+.ms-log-toolbar input:not([type="checkbox"]) {
   width: 200px;
 }
 
@@ -1113,6 +1137,15 @@
   font-family: var(--font-mono);
   font-size: 11px;
   white-space: nowrap;
+}
+
+.ms-log-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  accent-color: oklch(0.62 0.14 220);
+  cursor: pointer;
 }
 
 .ms-log-toggle span {
@@ -1265,7 +1298,7 @@
   overflow-wrap: anywhere;
 }
 
-.ms-flow-detail > header span {
+.ms-flow-detail > header > div:first-child > span {
   color: oklch(0.48 0.01 240);
   font-size: 12px;
 }
@@ -1333,17 +1366,40 @@
   font-size: 11px;
 }
 
+.ms-stage-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ms-stage-title span {
+  border-radius: 5px;
+  background: oklch(0.22 0.07 220);
+  border: 1px solid oklch(0.62 0.14 220 / 0.40);
+  color: oklch(0.78 0.13 220);
+  padding: 1px 5px;
+  box-shadow: 0 0 0 2px oklch(0.62 0.14 220 / 0.08);
+}
+
+.ms-stage-title em {
+  color: oklch(0.74 0.012 240);
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
 .ms-flow-stage-body p {
   margin: 0;
-  color: oklch(0.42 0.01 240);
-  font-size: 12px;
+  color: oklch(0.62 0.01 240);
+  font-size: 13px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
 .ms-flow-stage-body article {
   border: 1px solid oklch(0.18 0.012 240);
   border-radius: 7px;
-  padding: 9px 10px;
+  padding: 11px 12px;
   margin-bottom: 8px;
   background: oklch(0.135 0.012 240);
 }
@@ -1351,14 +1407,95 @@
 .ms-flow-stage-body article > div:first-child {
   display: flex;
   gap: 8px;
-  margin-bottom: 5px;
-  color: oklch(0.46 0.01 240);
+  margin-bottom: 8px;
+  color: oklch(0.68 0.035 220);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .ms-flow-stage-body article b {
-  color: oklch(0.72 0.01 240);
+  color: oklch(0.82 0.01 240);
+}
+
+.ms-flow-message {
+  display: grid;
+  gap: 8px;
+  color: oklch(0.66 0.01 240);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ms-flow-message.compact {
+  gap: 5px;
+  font-size: 12px;
+}
+
+.ms-flow-message section {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.ms-flow-message-label {
+  border-radius: 5px;
+  background: oklch(0.18 0.045 220 / 0.55);
+  border: 1px solid oklch(0.56 0.12 220 / 0.28);
+  color: oklch(0.74 0.10 220);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.ms-flow-message-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-flow-message-field {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  border-radius: 5px;
+  background: oklch(0.17 0.012 240);
+  border: 1px solid oklch(0.25 0.01 240);
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+
+.ms-flow-message-field b {
+  padding: 2px 5px;
+  color: oklch(0.58 0.01 240);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ms-flow-message-field em {
+  padding: 2px 6px;
+  color: oklch(0.78 0.015 240);
+  font-size: 11px;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.ms-flow-message-content p {
+  flex-basis: 100%;
+  color: oklch(0.68 0.01 240);
+}
+
+@media (max-width: 700px) {
+  .ms-flow-message section {
+    grid-template-columns: 1fr;
+  }
+
+  .ms-flow-message-label {
+    justify-self: start;
+  }
 }
 
 @media (max-width: 900px) {
