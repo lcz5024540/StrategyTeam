@@ -81,7 +81,15 @@ public class WalletArchetypeClassifierService {
         BigDecimal leaderQuality = safe(profile == null ? null : profile.getWalletScore());
 
         String archetype;
-        if (labelSampleSize >= 5 && followableRate.compareTo(new BigDecimal("0.40")) < 0 && alphaRule.compareTo(new BigDecimal("0.45")) < 0) {
+        BigDecimal leaderQualityBypassMin = properties.getSignalRisk().getArchetypeLeaderQualityBypassMin() == null
+                ? new BigDecimal("0.65")
+                : properties.getSignalRisk().getArchetypeLeaderQualityBypassMin();
+        boolean highQualityWallet = leaderQuality.compareTo(leaderQualityBypassMin) >= 0;
+
+        if (labelSampleSize >= 5
+                && followableRate.compareTo(new BigDecimal("0.40")) < 0
+                && alphaRule.compareTo(new BigDecimal("0.45")) < 0
+                && !highQualityWallet) {
             archetype = "NOISE_OR_INSUFFICIENT";
         } else if (trades7d >= properties.getSignalRisk().getHfScalperMinTrades7d()
                 || (medianInterTradeMinutes != null && medianInterTradeMinutes.compareTo(new BigDecimal("45")) <= 0)
@@ -102,6 +110,9 @@ public class WalletArchetypeClassifierService {
                 || alphaRule.compareTo(new BigDecimal("0.55")) >= 0
                 || followableRate.compareTo(new BigDecimal("0.55")) >= 0) {
             archetype = "SWING";
+        } else if (highQualityWallet
+                && trades30d >= safeInt(properties.getSignalRisk().getLongHorizonSpeculatorMinTrades30d(), 3)) {
+            archetype = "LONG_HORIZON_SPECULATOR";
         } else {
             archetype = "NOISE_OR_INSUFFICIENT";
         }
@@ -111,6 +122,7 @@ public class WalletArchetypeClassifierService {
             case "THEMATIC" -> "THEMATIC_FOLLOW";
             case "LOW_FREQ_VALUE" -> "VALUE_FOLLOW";
             case "SWING" -> "SWING_FOLLOW";
+            case "LONG_HORIZON_SPECULATOR" -> "VALUE_FOLLOW";
             default -> "OBSERVE_ONLY";
         };
 
@@ -146,6 +158,7 @@ public class WalletArchetypeClassifierService {
             case "THEMATIC" -> THEMATIC_SYNC_INTERVAL_MS;
             case "LOW_FREQ_VALUE" -> VALUE_SYNC_INTERVAL_MS;
             case "SWING" -> SWING_SYNC_INTERVAL_MS;
+            case "LONG_HORIZON_SPECULATOR" -> VALUE_SYNC_INTERVAL_MS;
             default -> NOISE_SYNC_INTERVAL_MS;
         };
 
@@ -225,6 +238,8 @@ public class WalletArchetypeClassifierService {
                 ? "Low-frequency value wallet: slower turnover with healthy hit rate and more patient hold profile."
                 : "SWING".equals(archetype)
                 ? "Swing wallet: medium turnover with more stable 5m/rule alpha."
+                : "LONG_HORIZON_SPECULATOR".equals(archetype)
+                ? "Long-horizon speculator: high-quality wallet trading slowly-resolving markets. Short-horizon alpha is not meaningful; follow based on leader quality and hold-to-settlement exit."
                 : "Noise wallet: local followability is weak under current execution style. trades7d=" + trades7d
                 + ", markets30d=" + markets30d
                 + ", medianGapMin=" + (medianInterTradeMinutes == null ? "NA" : medianInterTradeMinutes.setScale(2, RoundingMode.HALF_UP))
@@ -311,5 +326,9 @@ public class WalletArchetypeClassifierService {
             return BigDecimal.ONE;
         }
         return value;
+    }
+
+    private int safeInt(Integer value, int fallback) {
+        return value == null ? fallback : value;
     }
 }
