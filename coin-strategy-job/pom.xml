@@ -88,15 +88,6 @@
                             <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
-                    <testExcludes>
-                        <exclude>**/MarketSnapshotCollectorServiceTest.java</exclude>
-                        <exclude>**/PolymarketClobExecutionServiceTest.java</exclude>
-                        <exclude>**/SmartWalletAccountingServiceTest.java</exclude>
-                        <exclude>**/SmartWalletFollowTaskServiceTest.java</exclude>
-                        <exclude>**/SmartWalletMarketMonitoringServiceTest.java</exclude>
-                        <exclude>**/SmartWalletPositionSyncServiceTest.java</exclude>
-                        <exclude>**/StrategyLogQueryServiceTest.java</exclude>
-                    </testExcludes>
                 </configuration>
             </plugin>
             <plugin>
