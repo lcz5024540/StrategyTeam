@@ -220,6 +220,24 @@ public class SmartWalletProperties {
         /** paper canary 可容忍的最大信号年龄，避免同步延迟让验证通道完全无样本 */
         private Integer paperCanaryMaxSignalAgeSeconds = 10800;
 
+        // ── Archetype Bypass for High-Quality Wallets ────────────────────────────
+        /**
+         * Wallets with walletScore >= this threshold are exempt from the explicit
+         * NOISE_OR_INSUFFICIENT early-exit in the archetype classifier, and are
+         * eligible for the LONG_HORIZON_SPECULATOR archetype when no positive
+         * archetype matches. Prevents misclassifying validated high-quality wallets
+         * (sports bettors, long-horizon players) based on inherently poor short-horizon
+         * alpha metrics.
+         */
+        private BigDecimal archetypeLeaderQualityBypassMin = new BigDecimal("0.65");
+
+        /**
+         * Minimum number of trades in the last 30 days required before a wallet
+         * can be classified as LONG_HORIZON_SPECULATOR. Prevents a brand-new wallet
+         * with a synthetic high score (0 local data) from bypassing the NOISE gate.
+         */
+        private Integer longHorizonSpeculatorMinTrades30d = 3;
+
         // ── Consensus Stake Amplifier ─────────────────────────────────────────────
         /** 是否启用共识多实体仓位放大器 */
         private boolean enableConsensusStakeAmplifier = true;
