@@ -914,6 +914,95 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
+    void shouldAcceptLongHorizonSpeculatorSignalUpTo30Minutes() {
+        // LONG_HORIZON_SPECULATOR wallets trade slowly-resolving markets (sports, politics).
+        // Their signals may be posted minutes after the trade, so the effective max signal age
+        // must be at least 1_800_000 ms (30 min) regardless of the configured baseMs.
+        // Specifically: a 20-minute-old signal with baseMs=300s (5 min) must be accepted.
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setMaxSignalAgeSeconds(300); // 5 min base; LONG_HORIZON floor = 30 min
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xlhs")
+                .setWalletScore(new BigDecimal("0.68"))
+                .setWinRate(new BigDecimal("0.60"))
+                .setTotalTrades(20);
+        // 20 min old: older than the 5 min default but within the 30 min LONG_HORIZON floor
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.60"))
+                .setSizeUsdc(new BigDecimal("50"))
+                .setOpenedAt(new Date(System.currentTimeMillis() - 20 * 60_000L));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.75")).build();
+
+        long longEndAt = System.currentTimeMillis() + 72 * 3_600_000L;  // 3 days out
+        when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
+        when(positionMapper.selectCount(any())).thenReturn(0L);
+        when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
+        when(followTaskMapper.selectCount(any())).thenReturn(0L);
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("500"));
+        when(walletArchetypeClassifierService.classify(any(), any())).thenReturn(WalletArchetypeView.builder()
+                .walletAddress("0xlhs")
+                .archetype("LONG_HORIZON_SPECULATOR")
+                .followLane("VALUE_FOLLOW")
+                .followFitScore(new BigDecimal("0.65"))
+                .confidence(new BigDecimal("0.70"))
+                .labelSampleSize(8)
+                .build());
+        when(walletBehaviorProfileService.getProfile(any())).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xlhs")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.70"))
+                .earlyExitRate(new BigDecimal("0.10"))
+                .settlementCompletionRate(new BigDecimal("0.90"))
+                .build());
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(longEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+        when(leaderboardStateService.adjustWalletScore(
+                any(SmartWalletProfileEntity.class),
+                any(SmartWalletTradeEventEntity.class))).thenAnswer(inv -> {
+            SmartWalletProfileEntity p = inv.getArgument(0);
+            return p.getWalletScore();
+        });
+        when(consensusSignalService.buildConsensusForEvent(any())).thenReturn(consensus);
+        when(consensusSignalService.buildConsensusForEvent(any(), any())).thenReturn(consensus);
+        when(executionWalletContextLoader.load()).thenReturn(
+                ExecutionWalletContextLoader.ExecutionWalletContext.builder()
+                        .minOrderUsdc(new BigDecimal("0.10"))
+                        .build());
+        when(tradeProfitabilityScoringService.estimate(any(), any(), any(), any()))
+                .thenReturn(TradeProfitabilityScoringService.ProfitabilityEstimate.builder()
+                        .estimatedNetProfitabilityUsdc(new BigDecimal("1.50"))
+                        .estimatedFeeUsdc(BigDecimal.ZERO)
+                        .estimatedSlippageUsdc(BigDecimal.ZERO)
+                        .followProbability(new BigDecimal("0.65"))
+                        .calibratedFollowProbability(new BigDecimal("0.68"))
+                        .slippageSpikeProbability(BigDecimal.ZERO)
+                        .estimateSampleSize(8)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // effectiveMaxMs = max(300_000, 1_800_000) = 1_800_000 ms (30 min)
+        // signal is 20 min old (1_200_000 ms) < 1_800_000 ms → must be accepted
+        assertTrue(decision.isAccepted(),
+                "LONG_HORIZON_SPECULATOR: 20-min signal must be accepted with 30-min floor. "
+                        + "Reasons: " + decision.getReasons());
+    }
+
+    @Test
     void shouldBaseStakeOnAvailableCapitalNotSignalSize() {
         // Bug: preliminaryStake = triggerSize * walletScore * bankrollUtilizationRate
         //      = 1000 * 0.80 * 0.03 = 24.00  (anchored to signal wallet trade size — over-leveraged)

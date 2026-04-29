@@ -963,6 +963,7 @@ public class SmartWalletSignalRiskService {
             case "THEMATIC" -> Math.max(baseMs, 1_800_000L);
             case "LOW_FREQ_VALUE" -> Math.max(baseMs, 2_700_000L);
             case "SWING" -> Math.max(baseMs, 900_000L);
+            case "LONG_HORIZON_SPECULATOR" -> Math.max(baseMs, 1_800_000L);
             default -> baseMs;
         };
     }
