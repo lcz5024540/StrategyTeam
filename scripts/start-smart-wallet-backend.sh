@@ -13,7 +13,7 @@
 #   SMART_WALLET_ENV_FILE   — 环境变量文件路径
 #   SMART_WALLET_BACKEND_PORT — 端口覆盖
 #   JAVA_OPTS               — JVM 参数
-#   LOG_DIR                 — 日志目录, 默认 /home/ubuntu/logs
+#   LOG_DIR                 — 日志目录, 默认 /opt/coinstrategy/smart-wallet/logs
 # ============================================================
 set -euo pipefail
 
@@ -45,7 +45,7 @@ BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-}"
 APP_JAR="${SMART_WALLET_APP_JAR:-$DEFAULT_APP_JAR}"
 JAVA_OPTS_VALUE="${JAVA_OPTS:--Xms512m -Xmx1024m -XX:+UseG1GC}"
 HELPER_SCRIPT_PATH="${SMART_WALLET_EXECUTION_WALLET_HELPER_SCRIPT_PATH:-}"
-LOG_DIR="${LOG_DIR:-/home/ubuntu/logs}"
+LOG_DIR="${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
 
 PID_FILE="$APP_HOME/backend/app.pid"
 
@@ -58,7 +58,7 @@ load_env() {
     set +a
     # 重新读取可能被 env 文件覆盖的变量
     SPRING_PROFILE="${SPRING_PROFILES_ACTIVE:-$SPRING_PROFILE}"
-    LOG_DIR="${LOG_DIR:-/home/ubuntu/logs}"
+    LOG_DIR="${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
   fi
 
   if [ -z "$HELPER_SCRIPT_PATH" ] && [ -f "$DEFAULT_RUNTIME_DIR/polymarket_clob_client.py" ]; then

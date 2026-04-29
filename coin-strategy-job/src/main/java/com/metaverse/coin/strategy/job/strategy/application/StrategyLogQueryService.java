@@ -13,7 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -27,10 +27,10 @@ public class StrategyLogQueryService {
     private static final int MAX_LIMIT = 500;
     private static final int DEFAULT_MAX_SCAN_LINES = 5_000;
     private static final long DEFAULT_MAX_READ_BYTES = 2L * 1024L * 1024L;
-    private static final Map<String, String> SOURCE_FILES = Map.of(
-            "app", "binance-java-connector.log",
-            "error", "job-error-current.log",
-            "startup", "job-startup.log"
+    private static final Map<String, List<String>> SOURCE_FILES = Map.of(
+            "app", List.of("binance-java-connector.log", "job-current.log", "job-startup.log"),
+            "error", List.of("job-error-current.log"),
+            "startup", List.of("job-startup.log")
     );
     private static final Pattern LOG_LINE = Pattern.compile(
             "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+" +
@@ -63,16 +63,16 @@ public class StrategyLogQueryService {
 
     public List<StrategyLogEntryView> query(String source, String level, String strategy, String q, Integer limit) {
         String normalizedSource = normalizeSource(source);
-        Path logFile = resolveSource(normalizedSource);
-        if (!Files.isRegularFile(logFile) || !Files.isReadable(logFile)) {
-            return List.of();
-        }
-
-        List<StrategyLogEntryView> entries;
-        try {
-            entries = new ArrayList<>(parse(normalizedSource, readTailLines(logFile)));
-        } catch (IOException ex) {
-            return List.of();
+        List<StrategyLogEntryView> entries = new ArrayList<>();
+        for (Path logFile : resolveSources(normalizedSource)) {
+            if (!Files.isRegularFile(logFile) || !Files.isReadable(logFile)) {
+                continue;
+            }
+            try {
+                entries.addAll(parse(normalizedSource, readTailLines(logFile)));
+            } catch (IOException ignored) {
+                // A stale or rotating log file should not hide readable fallback logs.
+            }
         }
 
         String normalizedLevel = normalizeLevel(level);
@@ -80,11 +80,11 @@ public class StrategyLogQueryService {
         String normalizedQuery = normalizeQuery(q);
         int safeLimit = clampLimit(limit);
 
-        Collections.reverse(entries);
         return entries.stream()
                 .filter(entry -> matchesLevel(entry, normalizedLevel))
                 .filter(entry -> matchesStrategy(entry, normalizedStrategy))
                 .filter(entry -> matchesQuery(entry, normalizedQuery))
+                .sorted(Comparator.comparing(StrategyLogEntryView::timestamp).reversed())
                 .limit(safeLimit)
                 .toList();
     }
@@ -99,13 +99,17 @@ public class StrategyLogQueryService {
         return normalized;
     }
 
-    private Path resolveSource(String source) {
+    private List<Path> resolveSources(String source) {
         Path root = logDirectory.toAbsolutePath().normalize();
-        Path target = root.resolve(SOURCE_FILES.get(source)).normalize();
-        if (!target.startsWith(root)) {
-            throw new IllegalArgumentException("Unsupported log source: " + source);
+        List<Path> targets = new ArrayList<>();
+        for (String fileName : SOURCE_FILES.get(source)) {
+            Path target = root.resolve(fileName).normalize();
+            if (!target.startsWith(root)) {
+                throw new IllegalArgumentException("Unsupported log source: " + source);
+            }
+            targets.add(target);
         }
-        return target;
+        return targets;
     }
 
     private List<String> readTailLines(Path file) throws IOException {

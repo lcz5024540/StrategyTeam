@@ -50,6 +50,34 @@ class StrategyLogQueryServiceTest {
     }
 
     @Test
+    void appSourceIncludesStartupLogWhenDeploymentWritesConsoleOutputThere() throws IOException {
+        write("job-startup.log", """
+                2026-04-29 10:49:58.357 INFO  [http-nio-127.0.0.1-8081-exec-3] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSignalRiskService - [POLY_FOLLOW] action=完成跟单风控评估 result=拒绝 followTaskId=20050 marketId=m1
+                """);
+
+        List<StrategyLogEntryView> rows = service().query("app", "ALL", "POLYMARKET_COPY", null, 20);
+
+        assertEquals(1, rows.size());
+        assertEquals("POLYMARKET_COPY", rows.get(0).strategy());
+        assertTrue(rows.get(0).message().contains("[POLY_FOLLOW]"));
+    }
+
+    @Test
+    void flowReaderFallsBackToLegacyPolymarketFollowLogs() throws IOException {
+        write("job-startup.log", """
+                2026-04-29 10:49:58.357 INFO  [http-nio-127.0.0.1-8081-exec-3] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSignalRiskService - [POLY_FOLLOW] action=完成跟单风控评估 result=拒绝 followTaskId=20050 wallet=0xabc marketId=m1 outcome=YES firstRejectGate=G1_WATCHLIST_UNQUALIFIED
+                """);
+
+        FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
+        List<StrategyLogFlowView> flows = reader.queryFlows("app", "POLYMARKET_COPY", null, null, null, null, null, 20);
+
+        assertEquals(1, flows.size());
+        assertEquals("task:20050", flows.get(0).flowId());
+        assertEquals("S5_RISK_EVALUATED", flows.get(0).flowStage());
+        assertEquals("BLOCKED", flows.get(0).status());
+    }
+
+    @Test
     void mergesStackTraceLinesIntoPreviousEntry() throws IOException {
         write("binance-java-connector.log", """
                 2026-04-28 10:00:02.003 ERROR [worker] com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService - CLOB order failed

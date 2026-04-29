@@ -10,6 +10,7 @@ import java.util.Map;
 final class StrategyFlowLogSupport {
 
     static final String FLOW_PREFIX = "[POLY_FLOW]";
+    static final String LEGACY_FOLLOW_PREFIX = "[POLY_FOLLOW]";
 
     private StrategyFlowLogSupport() {
     }
@@ -47,7 +48,8 @@ final class StrategyFlowLogSupport {
 
     static StrategyFlowLogEvent toEvent(StrategyLogEntryView entry) {
         FlowFields fields = parseFields(entry.message());
-        if (!fields.isFlow()) {
+        boolean legacyFollow = isLegacyFollowEntry(entry.message(), fields);
+        if (!fields.isFlow() && !legacyFollow) {
             return null;
         }
         String flowId = resolveFlowId(fields);
@@ -60,7 +62,7 @@ final class StrategyFlowLogSupport {
                 entry.source(),
                 entry.message(),
                 flowId,
-                fields.flowStage(),
+                fields.isFlow() ? fields.flowStage() : inferLegacyFlowStage(fields.action()),
                 fields.action(),
                 fields.result(),
                 fields.eventId(),
@@ -185,6 +187,40 @@ final class StrategyFlowLogSupport {
         String market = fields.marketId() == null ? "-" : fields.marketId();
         String outcome = fields.outcome() == null ? "-" : fields.outcome();
         return "signal:" + wallet + "|" + market + "|" + outcome;
+    }
+
+    private static boolean isLegacyFollowEntry(String message, FlowFields fields) {
+        return message != null
+                && message.contains(LEGACY_FOLLOW_PREFIX)
+                && (fields.action() != null
+                || fields.result() != null
+                || fields.eventId() != null
+                || fields.followTaskId() != null
+                || fields.marketId() != null
+                || fields.wallet() != null);
+    }
+
+    private static String inferLegacyFlowStage(String action) {
+        if (action == null) {
+            return "LEGACY_FOLLOW";
+        }
+        String normalized = action.toLowerCase(Locale.ROOT);
+        if (normalized.contains("风控")) {
+            return "S5_RISK_EVALUATED";
+        }
+        if (normalized.contains("任务")) {
+            return "S6_TASK_CREATED";
+        }
+        if (normalized.contains("执行") || normalized.contains("订单") || normalized.contains("下单")) {
+            return "S8_ORDER_EXECUTED";
+        }
+        if (normalized.contains("市场")) {
+            return "S4_MARKET_CHECK";
+        }
+        if (normalized.contains("钱包")) {
+            return "S2_PROFILE_ADMISSION";
+        }
+        return "LEGACY_FOLLOW";
     }
 
     record FlowFields(

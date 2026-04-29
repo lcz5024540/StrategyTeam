@@ -41,6 +41,15 @@ public class FileStrategyFlowLogReader implements StrategyFlowLogReader {
                 StrategyFlowLogSupport.FLOW_PREFIX,
                 MAX_LIMIT
         );
+        if (rawEntries.isEmpty()) {
+            rawEntries = logQueryService.query(
+                    source,
+                    "ALL",
+                    normalizedStrategy,
+                    StrategyFlowLogSupport.LEGACY_FOLLOW_PREFIX,
+                    MAX_LIMIT
+            );
+        }
         List<StrategyFlowLogEvent> events = rawEntries.stream()
                 .map(StrategyFlowLogSupport::toEvent)
                 .filter(event -> event != null && matchesFilters(event, q, wallet, eventId, followTaskId, marketId))
