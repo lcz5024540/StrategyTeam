@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -134,6 +135,100 @@ class WalletArchetypeClassifierServiceTest {
         assertTrue(view.followFitScore().compareTo(new BigDecimal("0.49")) > 0,
                 "followFitScore must use configured followableRate weight 0.50 (not hardcoded 0.30). Got: "
                         + view.followFitScore());
+    }
+
+    // ─── LONG_HORIZON_SPECULATOR tests ────────────────────────────────────────
+
+    /**
+     * A high-quality wallet (walletScore=0.68) with low short-horizon alpha
+     * (followableRate=0.33, alphaRule=0.30) — typical of sports-market bettors.
+     * Before fix: classified as NOISE_OR_INSUFFICIENT → OBSERVE_ONLY lane → G2 block.
+     * After fix: classified as LONG_HORIZON_SPECULATOR → VALUE_FOLLOW lane → G2 pass.
+     */
+    @Test
+    void classify_highQualityWallet_withLowShortHorizonAlpha_mustBeLongHorizonSpeculator() {
+        SmartWalletWalletFeatureDailyEntity feature = new SmartWalletWalletFeatureDailyEntity();
+        feature.setTrades7d(2);
+        feature.setTrades30d(8);          // >= longHorizonSpeculatorMinTrades30d default 3
+        feature.setMarkets30d(5);
+        feature.setConcentrationMarket30d(new BigDecimal("0.40"));
+        feature.setFollowableRate30d(new BigDecimal("0.33"));  // < 0.40 threshold
+        feature.setWinRate30d(new BigDecimal("0.55"));
+
+        // 10 labels where only 3 are positive-rule → alphaRule=0.30 < 0.45
+        List<SmartWalletTradeEffectLabelEntity> labels = buildLabels(3, 3, 3, 10);
+
+        SmartWalletProfileEntity profile = new SmartWalletProfileEntity();
+        profile.setWalletAddress("0xhq");
+        profile.setWalletScore(new BigDecimal("0.68")); // >= archetypeLeaderQualityBypassMin 0.65
+
+        WalletArchetypeView view = classifier.classify("0xhq", profile, feature, labels, List.of());
+
+        assertEquals("LONG_HORIZON_SPECULATOR", view.archetype(),
+                "High-quality wallet (score=0.68) with low short-horizon alpha must be " +
+                "LONG_HORIZON_SPECULATOR, not NOISE_OR_INSUFFICIENT. Got: " + view.archetype());
+        assertEquals("VALUE_FOLLOW", view.followLane(),
+                "LONG_HORIZON_SPECULATOR must have VALUE_FOLLOW lane. Got: " + view.followLane());
+    }
+
+    /**
+     * A low-quality wallet (walletScore=0.55) with low short-horizon alpha must still be
+     * classified as NOISE_OR_INSUFFICIENT — the bypass only applies to high-quality wallets.
+     */
+    @Test
+    void classify_lowQualityWallet_withLowShortHorizonAlpha_mustRemainNoise() {
+        SmartWalletWalletFeatureDailyEntity feature = new SmartWalletWalletFeatureDailyEntity();
+        feature.setTrades7d(2);
+        feature.setTrades30d(8);
+        feature.setMarkets30d(5);
+        feature.setConcentrationMarket30d(new BigDecimal("0.40"));
+        feature.setFollowableRate30d(new BigDecimal("0.33"));
+        feature.setWinRate30d(new BigDecimal("0.50"));
+
+        List<SmartWalletTradeEffectLabelEntity> labels = buildLabels(3, 3, 3, 10);
+
+        SmartWalletProfileEntity profile = new SmartWalletProfileEntity();
+        profile.setWalletAddress("0xlq");
+        profile.setWalletScore(new BigDecimal("0.55")); // < archetypeLeaderQualityBypassMin 0.65
+
+        WalletArchetypeView view = classifier.classify("0xlq", profile, feature, labels, List.of());
+
+        assertEquals("NOISE_OR_INSUFFICIENT", view.archetype(),
+                "Low-quality wallet (score=0.55) with low short-horizon alpha must remain " +
+                "NOISE_OR_INSUFFICIENT. Got: " + view.archetype());
+        assertEquals("OBSERVE_ONLY", view.followLane(),
+                "NOISE_OR_INSUFFICIENT must map to OBSERVE_ONLY lane.");
+    }
+
+    /**
+     * LONG_HORIZON_SPECULATOR is assigned VALUE_SYNC_INTERVAL_MS (600 s) — the same
+     * as LOW_FREQ_VALUE — because long-horizon wallets trade infrequently and do not
+     * need aggressive sync. The NOISE default (900 s) is incorrect for them.
+     */
+    @Test
+    void classify_longHorizonSpeculator_syncIntervalMustBe600Seconds() {
+        SmartWalletWalletFeatureDailyEntity feature = new SmartWalletWalletFeatureDailyEntity();
+        feature.setTrades7d(1);
+        feature.setTrades30d(5);
+        feature.setMarkets30d(3);
+        feature.setConcentrationMarket30d(new BigDecimal("0.35"));
+        feature.setFollowableRate30d(new BigDecimal("0.30"));
+        feature.setWinRate30d(new BigDecimal("0.60"));
+
+        List<SmartWalletTradeEffectLabelEntity> labels = buildLabels(2, 2, 2, 8);
+
+        SmartWalletProfileEntity profile = new SmartWalletProfileEntity();
+        profile.setWalletAddress("0xsync");
+        profile.setWalletScore(new BigDecimal("0.72"));
+
+        WalletArchetypeView view = classifier.classify("0xsync", profile, feature, labels, List.of());
+
+        assertEquals("LONG_HORIZON_SPECULATOR", view.archetype(),
+                "High-quality wallet with low short-horizon alpha must be LONG_HORIZON_SPECULATOR. Got: "
+                        + view.archetype());
+        assertEquals(600_000L, view.recommendedSyncIntervalMs(),
+                "LONG_HORIZON_SPECULATOR must get 600s sync interval (VALUE_SYNC_INTERVAL_MS). Got: "
+                        + view.recommendedSyncIntervalMs());
     }
 
     // ── helpers ────────────────────────────────────────────────────────────────
