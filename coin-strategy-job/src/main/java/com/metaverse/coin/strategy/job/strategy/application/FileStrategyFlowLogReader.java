@@ -155,10 +155,10 @@ public class FileStrategyFlowLogReader implements StrategyFlowLogReader {
         if (combined.contains("拒绝") || combined.contains("skipped") || combined.contains("block") || hasText(firstRejectGate)) {
             return "BLOCKED";
         }
-        if ("S8_ORDER_EXECUTED".equalsIgnoreCase(latest.flowStage()) && combined.contains("成功")) {
+        if (StrategyFlowLogFormatter.isStage(latest.flowStage(), "S8_ORDER_EXECUTED") && combined.contains("成功")) {
             return "EXECUTED";
         }
-        if (entries.stream().anyMatch(item -> "S6_TASK_CREATED".equalsIgnoreCase(item.flowStage())
+        if (entries.stream().anyMatch(item -> StrategyFlowLogFormatter.isStage(item.flowStage(), "S6_TASK_CREATED")
                 && "PENDING".equalsIgnoreCase(item.result()))) {
             return "PENDING";
         }

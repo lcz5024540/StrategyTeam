@@ -38,6 +38,8 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashSet;
@@ -78,12 +80,17 @@ public class SmartWalletFollowTaskService {
     private final Map<String, CachedRiskDecision> riskDecisionCache = new ConcurrentHashMap<>();
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
-        log.info("{} action=记录Polymarket钱包交易事件 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
-                LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide(),
-                event.getExternalTradeId(), event.getPrice(), event.getSizeUsdc());
+        log.info("{} action=记录Polymarket钱包交易事件 result=开始 wallet={} marketId={} question={} outcome={} side={} externalTradeId={} price={} sizeUsdc={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getQuestion(), event.getOutcome(),
+                event.getSide(), event.getExternalTradeId(), event.getPrice(), event.getSizeUsdc(),
+                openedAtBjt(event), openedAtMillis(event), polymarketSearchUrl(event));
         log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "开始", event, null,
+                "question", event.getQuestion(),
                 "price", event.getPrice(),
                 "stakeUsdc", event.getSizeUsdc(),
+                "openedAtBjt", openedAtBjt(event),
+                "openedAtMs", openedAtMillis(event),
+                "polymarketSearchUrl", polymarketSearchUrl(event),
                 "reasonSummary", "开始记录观察钱包交易事件"));
         SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
                 .eq(SmartWalletTradeEventEntity::getSource, event.getSource())
@@ -91,10 +98,15 @@ public class SmartWalletFollowTaskService {
                 .last("limit 1"));
 
         if (existing != null) {
-            log.info("{} action=记录Polymarket钱包交易事件 result=跳过重复事件 eventId={} wallet={} marketId={} outcome={} externalTradeId={}",
-                    LOG_PREFIX, existing.getId(), existing.getWalletAddress(), existing.getMarketId(), existing.getOutcome(),
-                    existing.getExternalTradeId());
+            log.info("{} action=记录Polymarket钱包交易事件 result=跳过重复事件 eventId={} wallet={} marketId={} question={} outcome={} externalTradeId={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                    LOG_PREFIX, existing.getId(), existing.getWalletAddress(), existing.getMarketId(), existing.getQuestion(),
+                    existing.getOutcome(), existing.getExternalTradeId(), openedAtBjt(existing), openedAtMillis(existing),
+                    polymarketSearchUrl(existing));
             log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "跳过重复事件", existing, null,
+                    "question", existing.getQuestion(),
+                    "openedAtBjt", openedAtBjt(existing),
+                    "openedAtMs", openedAtMillis(existing),
+                    "polymarketSearchUrl", polymarketSearchUrl(existing),
                     "reasonSummary", "externalTradeId already recorded"));
             return existing;
         }
@@ -103,11 +115,16 @@ public class SmartWalletFollowTaskService {
         event.setCreatedAt(new Date());
         event.setUpdatedAt(new Date());
         tradeEventMapper.insert(event);
-        log.info("{} action=记录Polymarket钱包交易事件 result=已入库 eventId={} wallet={} marketId={} outcome={} side={}",
-                LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide());
+        log.info("{} action=记录Polymarket钱包交易事件 result=已入库 eventId={} wallet={} marketId={} question={} outcome={} side={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getQuestion(),
+                event.getOutcome(), event.getSide(), openedAtBjt(event), openedAtMillis(event), polymarketSearchUrl(event));
         log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "已入库", event, null,
+                "question", event.getQuestion(),
                 "price", event.getPrice(),
                 "stakeUsdc", event.getSizeUsdc(),
+                "openedAtBjt", openedAtBjt(event),
+                "openedAtMs", openedAtMillis(event),
+                "polymarketSearchUrl", polymarketSearchUrl(event),
                 "reasonSummary", "交易事件已入库，准备进入候选增强和风控链路"));
         profileStoreService.recordObservedTradeActivity(event.getWalletAddress(), event.getOpenedAt());
         ensureMarketInfoForEvent(event);
@@ -626,8 +643,9 @@ public class SmartWalletFollowTaskService {
     }
 
     private void createFollowTaskIfQualified(SmartWalletTradeEventEntity event) {
-        log.info("{} action=根据交易事件生成跟单任务 result=开始 eventId={} wallet={} marketId={} outcome={} side={}",
-                LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide());
+        log.info("{} action=根据交易事件生成跟单任务 result=开始 eventId={} wallet={} marketId={} outcome={} side={} {}",
+                LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide(),
+                eventTrace(event));
         SmartWalletProfileEntity profile = profileStoreService.listWatchEnabled().stream()
                 .filter(item -> item.getWalletAddress().equalsIgnoreCase(event.getWalletAddress()))
                 .findFirst()
@@ -637,8 +655,9 @@ public class SmartWalletFollowTaskService {
             profile = getWalletProfileByAddress(event.getWalletAddress());
         }
         if (profile == null && allowlist == null) {
-            log.info("{} action=根据交易事件生成跟单任务 result=跳过 reason=钱包未在可执行观察名单 eventId={} wallet={} marketId={} outcome={}",
-                    LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome());
+            log.info("{} action=根据交易事件生成跟单任务 result=跳过 reason=钱包未在可执行观察名单 eventId={} wallet={} marketId={} outcome={} {}",
+                    LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
+                    eventTrace(event));
             log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "拒绝", event, null,
                     "firstRejectGate", "G1_WATCHLIST_UNQUALIFIED",
                     "blockerCategories", "WATCHLIST",
@@ -653,9 +672,9 @@ public class SmartWalletFollowTaskService {
                 .eq(SmartWalletFollowTaskEntity::getSourceEventId, event.getId())
                 .last("limit 1"));
         if (existingTask != null) {
-            log.info("{} action=根据交易事件生成跟单任务 result=跳过重复任务 eventId={} followTaskId={} status={} wallet={} marketId={} outcome={}",
+            log.info("{} action=根据交易事件生成跟单任务 result=跳过重复任务 eventId={} followTaskId={} status={} wallet={} marketId={} outcome={} {} {}",
                     LOG_PREFIX, event.getId(), existingTask.getId(), existingTask.getStatus(), event.getWalletAddress(),
-                    event.getMarketId(), event.getOutcome());
+                    event.getMarketId(), event.getOutcome(), eventTrace(event), taskTrace(existingTask));
             log.info("{}", flow("S6_TASK_CREATED", "创建跟单任务", "跳过重复任务", event, existingTask,
                     "mode", existingTask.getExecutionMode(),
                     "stakeUsdc", existingTask.getRecommendedStakeUsdc(),
@@ -666,10 +685,10 @@ public class SmartWalletFollowTaskService {
         // ---- Step 1: Intelligence Enrich ----
         // 将钱包地址解析为实体 ID + 聚类置信度，写入 wallet_follow_candidate 作为中间记录
         WalletFollowCandidateEntity candidate = enrichAndSaveCandidate(event);
-        log.info("{} action=智能增强候选信号 result={} eventId={} candidateId={} wallet={} entityId={} confidence={} firstSignal={} consensusEntities={} reason={}",
+        log.info("{} action=智能增强候选信号 result={} eventId={} candidateId={} wallet={} entityId={} confidence={} firstSignal={} consensusEntities={} reason={} {}",
                 LOG_PREFIX, candidate.getEnrichmentStatus(), event.getId(), candidate.getId(), event.getWalletAddress(),
                 candidate.getEntityId(), candidate.getClusterConfidence(), candidate.getIsEntityFirstSignal(),
-                candidate.getEntityConsensusDedupCount(), candidate.getRejectionReason());
+                candidate.getEntityConsensusDedupCount(), candidate.getRejectionReason(), eventTrace(event));
         log.info("{}", flow("S3_CANDIDATE_ENRICHED", "智能增强候选信号", candidate.getEnrichmentStatus(), event, null,
                 "candidateId", candidate.getId(),
                 "entityId", candidate.getEntityId(),
@@ -681,9 +700,9 @@ public class SmartWalletFollowTaskService {
         if (!marketState.isActive()) {
             createLifecycleSkippedTask(event, candidate, marketInfo, marketState);
             markSourceEventProcessed(event);
-            log.info("{} action=根据交易事件生成跟单任务 result=已创建生命周期拦截任务 eventId={} candidateId={} marketId={} outcome={} reason={}",
+            log.info("{} action=根据交易事件生成跟单任务 result=已创建生命周期拦截任务 eventId={} candidateId={} marketId={} outcome={} reason={} {}",
                     LOG_PREFIX, event.getId(), candidate.getId(), event.getMarketId(), event.getOutcome(),
-                    marketState.blockingReasonMessage());
+                    marketState.blockingReasonMessage(), eventTrace(event));
             log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "拒绝", event, null,
                     "candidateId", candidate.getId(),
                     "firstRejectGate", "G6_MARKET_NOT_ACTIVE",
@@ -698,9 +717,9 @@ public class SmartWalletFollowTaskService {
         if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
             createSkippedTaskForPendingCandidate(event, candidate, marketInfo);
             markSourceEventProcessed(event);
-            log.info("{} action=根据交易事件生成跟单任务 result=已创建智能增强等待任务 eventId={} candidateId={} marketId={} outcome={} reason={}",
+            log.info("{} action=根据交易事件生成跟单任务 result=已创建智能增强等待任务 eventId={} candidateId={} marketId={} outcome={} reason={} {}",
                     LOG_PREFIX, event.getId(), candidate.getId(), event.getMarketId(), event.getOutcome(),
-                    candidate.getRejectionReason());
+                    candidate.getRejectionReason(), eventTrace(event));
             log.info("{}", flow("S3_CANDIDATE_ENRICHED", "智能增强候选信号", "等待", event, null,
                     "candidateId", candidate.getId(),
                     "blockerCategories", "INTELLIGENCE",
@@ -710,9 +729,10 @@ public class SmartWalletFollowTaskService {
 
         // ---- Step 2: Risk Evaluation（沿用原有逻辑，现在共识内部已用实体去重）----
         SignalRiskDecision decision = signalRiskService.evaluate(profile, event);
-        log.info("{} action=评估跟单风控 result={} eventId={} wallet={} marketId={} outcome={} recommendedStakeUsdc={} reasons={}",
+        log.info("{} action=评估跟单风控 result={} eventId={} wallet={} marketId={} outcome={} recommendedStakeUsdc={} reasons={} {}",
                 LOG_PREFIX, decision.isAccepted() ? "通过" : "拒绝", event.getId(), event.getWalletAddress(),
-                event.getMarketId(), event.getOutcome(), decision.getRecommendedStakeUsdc(), String.join(" | ", decision.getReasons()));
+                event.getMarketId(), event.getOutcome(), decision.getRecommendedStakeUsdc(),
+                String.join(" | ", decision.getReasons()), eventTrace(event));
         List<String> blockerCategories = classifyBlockerCategories(decision);
         log.info("{}", flow("S5_RISK_EVALUATED", "评估跟单风控", decision.isAccepted() ? "通过" : "拒绝", event, null,
                 "stakeUsdc", decision.getRecommendedStakeUsdc(),
@@ -744,10 +764,10 @@ public class SmartWalletFollowTaskService {
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
         followTaskMapper.insert(task);
-        log.info("{} action=创建跟单任务 result={} followTaskId={} eventId={} candidateId={} wallet={} entityId={} marketId={} outcome={} mode={} stakeUsdc={} scheduledAt={} reason={}",
+        log.info("{} action=创建跟单任务 result={} followTaskId={} eventId={} candidateId={} wallet={} entityId={} marketId={} outcome={} mode={} stakeUsdc={} scheduledAt={} reason={} {} {}",
                 LOG_PREFIX, task.getStatus(), task.getId(), event.getId(), candidate.getId(), task.getWalletAddress(),
                 task.getEntityId(), task.getMarketId(), task.getOutcome(), task.getExecutionMode(),
-                task.getRecommendedStakeUsdc(), task.getScheduledAt(), task.getErrorMessage());
+                task.getRecommendedStakeUsdc(), task.getScheduledAt(), task.getErrorMessage(), eventTrace(event), taskTrace(task));
         log.info("{}", flow("S6_TASK_CREATED", "创建跟单任务", task.getStatus(), event, task,
                 "candidateId", candidate.getId(),
                 "mode", task.getExecutionMode(),
@@ -1102,11 +1122,12 @@ public class SmartWalletFollowTaskService {
     private SmartWalletExecutionResult executeTask(SmartWalletFollowTaskEntity task) {
         try {
             marketInfoService.populate(task);
-            log.info("{} action=执行跟单任务 result=开始 followTaskId={} wallet={} marketId={} outcome={} mode={} status={} triggerPrice={} stakeUsdc={}",
+            log.info("{} action=执行跟单任务 result=开始 followTaskId={} wallet={} marketId={} outcome={} mode={} status={} triggerPrice={} stakeUsdc={} {}",
                     LOG_PREFIX, task == null ? null : task.getId(), task == null ? null : task.getWalletAddress(),
                     task == null ? null : task.getMarketId(), task == null ? null : task.getOutcome(),
                     task == null ? null : task.getExecutionMode(), task == null ? null : task.getStatus(),
-                    task == null ? null : task.getTriggerPrice(), task == null ? null : task.getRecommendedStakeUsdc());
+                    task == null ? null : task.getTriggerPrice(), task == null ? null : task.getRecommendedStakeUsdc(),
+                    taskTrace(task));
             if (task == null || !StringUtils.hasText(task.getMarketId()) || !StringUtils.hasText(task.getOutcome())) {
                 throw new IllegalStateException("Follow task market info is missing before execution. taskId="
                         + (task == null ? null : task.getId())
@@ -1118,9 +1139,9 @@ public class SmartWalletFollowTaskService {
                 task.setErrorMessage(String.join(" | ", decision.getReasons()));
                 task.setUpdatedAt(new Date());
                 followTaskMapper.updateById(task);
-                log.info("{} action=执行前复核风控 result=拒绝并跳过 followTaskId={} wallet={} marketId={} outcome={} stakeUsdc={} reasons={}",
+                log.info("{} action=执行前复核风控 result=拒绝并跳过 followTaskId={} wallet={} marketId={} outcome={} stakeUsdc={} reasons={} {}",
                         LOG_PREFIX, task.getId(), task.getWalletAddress(), task.getMarketId(), task.getOutcome(),
-                        task.getRecommendedStakeUsdc(), task.getErrorMessage());
+                        task.getRecommendedStakeUsdc(), task.getErrorMessage(), taskTrace(task));
                 return SmartWalletExecutionResult.builder()
                         .signalId(String.valueOf(task.getId()))
                         .mode("LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER)
@@ -1161,8 +1182,8 @@ public class SmartWalletFollowTaskService {
             if (decision.isScaleUpSignal() && decision.getScaleUpAddOnStake() != null
                     && decision.getScaleUpAddOnStake().compareTo(BigDecimal.ZERO) > 0) {
                 effectiveStake = decision.getScaleUpAddOnStake();
-                log.info("{} action=追加仓位 taskId={} addOnStake={} originalRecommended={}",
-                        LOG_PREFIX, task.getId(), effectiveStake, decision.getRecommendedStakeUsdc());
+                log.info("{} action=追加仓位 result=使用追加金额 followTaskId={} addOnStake={} originalRecommended={} {}",
+                        LOG_PREFIX, task.getId(), effectiveStake, decision.getRecommendedStakeUsdc(), taskTrace(task));
             }
             if (effectiveStake != null && effectiveStake.compareTo(BigDecimal.ZERO) > 0) {
                 task.setRecommendedStakeUsdc(effectiveStake.setScale(2, RoundingMode.HALF_UP));
@@ -1179,13 +1200,13 @@ public class SmartWalletFollowTaskService {
                     .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
                     .build();
             ExecutionMode mode = "LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER;
-            log.info("{} action=提交跟单执行网关 result=开始 followTaskId={} mode={} marketId={} outcome={} price={} stakeUsdc={}",
+            log.info("{} action=提交跟单执行网关 result=开始 followTaskId={} mode={} marketId={} outcome={} price={} stakeUsdc={} {}",
                     LOG_PREFIX, task.getId(), mode, task.getMarketId(), task.getOutcome(), task.getTriggerPrice(),
-                    task.getRecommendedStakeUsdc());
+                    task.getRecommendedStakeUsdc(), taskTrace(task));
             SmartWalletExecutionResult result = executionGateway.execute(signal, mode);
-            log.info("{} action=提交跟单执行网关 result={} followTaskId={} mode={} marketId={} outcome={} externalOrderId={} orderStatus={} message={}",
+            log.info("{} action=提交跟单执行网关 result={} followTaskId={} mode={} marketId={} outcome={} externalOrderId={} orderStatus={} message={} {}",
                     LOG_PREFIX, result.isSuccess() ? "成功" : "失败", task.getId(), mode, task.getMarketId(),
-                    task.getOutcome(), result.getExternalOrderId(), result.getStatus(), result.getMessage());
+                    task.getOutcome(), result.getExternalOrderId(), result.getStatus(), result.getMessage(), taskTrace(task));
             log.info("{}", flow("S8_ORDER_EXECUTED", "提交跟单执行网关", result.isSuccess() ? "成功" : "失败", null, task,
                     "mode", mode,
                     "stakeUsdc", task.getRecommendedStakeUsdc(),
@@ -1199,25 +1220,26 @@ public class SmartWalletFollowTaskService {
             task.setUpdatedAt(new Date());
             followTaskMapper.updateById(task);
             accountingService.recordExecution(task, result);
-            log.info("{} action=记录跟单执行结果到账本 result=完成 followTaskId={} finalStatus={} mode={} externalOrderId={} notionalUsdc={} feeUsdc={}",
+            log.info("{} action=记录跟单执行结果到账本 result=完成 followTaskId={} finalStatus={} mode={} externalOrderId={} notionalUsdc={} feeUsdc={} {}",
                     LOG_PREFIX, task.getId(), task.getStatus(), mode, result.getExternalOrderId(),
-                    result.getNotionalUsdc(), result.getFeeUsdc());
+                    result.getNotionalUsdc(), result.getFeeUsdc(), taskTrace(task));
             if (result.isSuccess() && mode == ExecutionMode.PAPER) {
                 log.info(
-                        "{} action=PAPER模拟跟单 result=成功 followTaskId={} marketId={} outcome={} stakeUsdc={} executionMode=PAPER",
+                        "{} action=PAPER模拟跟单 result=成功 followTaskId={} marketId={} outcome={} stakeUsdc={} executionMode=PAPER {}",
                         LOG_PREFIX,
                         task.getId(),
                         task.getMarketId(),
                         task.getOutcome(),
-                        task.getRecommendedStakeUsdc()
+                        task.getRecommendedStakeUsdc(),
+                        taskTrace(task)
                 );
             }
             return result;
         } catch (Exception e) {
-            log.error("{} action=执行跟单任务 result=异常 followTaskId={} wallet={} marketId={} outcome={} mode={} reason={}",
+            log.error("{} action=执行跟单任务 result=异常 followTaskId={} wallet={} marketId={} outcome={} mode={} reason={} {}",
                     LOG_PREFIX, task == null ? null : task.getId(), task == null ? null : task.getWalletAddress(),
                     task == null ? null : task.getMarketId(), task == null ? null : task.getOutcome(),
-                    task == null ? null : task.getExecutionMode(), e.getMessage(), e);
+                    task == null ? null : task.getExecutionMode(), e.getMessage(), taskTrace(task), e);
             log.info("{}", flow("S8_ORDER_EXECUTED", "执行跟单任务", "异常", null, task,
                     "mode", task == null ? null : task.getExecutionMode(),
                     "stakeUsdc", task == null ? null : task.getRecommendedStakeUsdc(),
@@ -1242,8 +1264,8 @@ public class SmartWalletFollowTaskService {
                     .tradingFeeUsdc(BigDecimal.ZERO)
                     .build();
             accountingService.recordExecution(task, failedResult);
-            log.info("{} action=记录跟单异常结果到账本 result=完成 followTaskId={} finalStatus=FAILED reason={}",
-                    LOG_PREFIX, task.getId(), e.getMessage());
+            log.info("{} action=记录跟单异常结果到账本 result=完成 followTaskId={} finalStatus=FAILED reason={} {}",
+                    LOG_PREFIX, task.getId(), e.getMessage(), taskTrace(task));
             return failedResult;
         }
     }
@@ -1589,6 +1611,107 @@ public class SmartWalletFollowTaskService {
             }
         }
         return StrategyFlowLogFormatter.flow(fields.toArray());
+    }
+
+    private String openedAtBjt(SmartWalletTradeEventEntity event) {
+        Long millis = openedAtMillis(event);
+        return millis == null ? null : timeFormatter.formatEpochMillisToBjt(millis);
+    }
+
+    private Long openedAtMillis(SmartWalletTradeEventEntity event) {
+        return event == null || event.getOpenedAt() == null ? null : event.getOpenedAt().getTime();
+    }
+
+    private String polymarketSearchUrl(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getQuestion())) {
+            return null;
+        }
+        return "https://polymarket.com/search?query=" + URLEncoder.encode(event.getQuestion().trim(), StandardCharsets.UTF_8);
+    }
+
+    private String eventTrace(SmartWalletTradeEventEntity event) {
+        if (event == null) {
+            return "";
+        }
+        return structuredFields(
+                "question", event.getQuestion(),
+                "openedAtBjt", openedAtBjt(event),
+                "openedAtMs", openedAtMillis(event),
+                "polymarketSearchUrl", polymarketSearchUrl(event)
+        );
+    }
+
+    private String taskTrace(SmartWalletFollowTaskEntity task) {
+        if (task == null) {
+            return "";
+        }
+        return structuredFields(
+                "marketInfoId", task.getMarketInfoId(),
+                "question", task.getQuestion(),
+                "tokenId", task.getMarketInfo() == null ? null : task.getMarketInfo().getTokenId(),
+                "scheduledAtBjt", formatDateBjt(task.getScheduledAt()),
+                "scheduledAtMs", dateMillis(task.getScheduledAt()),
+                "executedAtBjt", formatDateBjt(task.getExecutedAt()),
+                "executedAtMs", dateMillis(task.getExecutedAt()),
+                "marketEndAtBjt", timeFormatter.formatEpochMillisToBjt(task.getMarketEndAt()),
+                "marketEndAtMs", task.getMarketEndAt(),
+                "polymarketSearchUrl", polymarketSearchUrl(task.getQuestion())
+        );
+    }
+
+    private String polymarketSearchUrl(String question) {
+        if (!StringUtils.hasText(question)) {
+            return null;
+        }
+        return "https://polymarket.com/search?query=" + URLEncoder.encode(question.trim(), StandardCharsets.UTF_8);
+    }
+
+    private String formatDateBjt(Date date) {
+        Long millis = dateMillis(date);
+        return millis == null ? null : timeFormatter.formatEpochMillisToBjt(millis);
+    }
+
+    private Long dateMillis(Date date) {
+        return date == null ? null : date.getTime();
+    }
+
+    private String structuredFields(Object... keyValues) {
+        StringBuilder builder = new StringBuilder();
+        if (keyValues == null) {
+            return "";
+        }
+        for (int i = 0; i + 1 < keyValues.length; i += 2) {
+            Object key = keyValues[i];
+            if (key == null) {
+                continue;
+            }
+            builder.append(key)
+                    .append('=')
+                    .append(formatStructuredValue(keyValues[i + 1]))
+                    .append(' ');
+        }
+        return builder.toString().trim();
+    }
+
+    private String formatStructuredValue(Object raw) {
+        if (raw == null) {
+            return "-";
+        }
+        String value = String.valueOf(raw)
+                .replace('\r', ' ')
+                .replace('\n', ' ')
+                .trim();
+        if (value.isEmpty()) {
+            return "-";
+        }
+        if (value.length() > 600) {
+            value = value.substring(0, 600) + "...";
+        }
+        boolean quote = value.chars().anyMatch(ch -> Character.isWhitespace(ch) || ch == '"' || ch == '=');
+        String escaped = value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
+        return quote ? "\"" + escaped + "\"" : escaped;
     }
 
     private String summarizeReasons(List<String> reasons) {

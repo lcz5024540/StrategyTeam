@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
@@ -52,6 +53,8 @@ public class PolymarketWalletDiscoveryService {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final WalletOrderAggregationService walletOrderAggregationService;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
+    private final AtomicBoolean firstDiscoveryRun = new AtomicBoolean(true);
+    private final AtomicBoolean firstLeaderboardRefreshRun = new AtomicBoolean(true);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
     public PolymarketDiscoverySummary analyzeTopWallets() {
@@ -321,6 +324,9 @@ public class PolymarketWalletDiscoveryService {
             log.debug("{} action=定时发现Polymarket聪明钱包 result=跳过 reason=发现开关未开启", LOG_PREFIX);
             return;
         }
+        if (shouldSkipInitialAddressPull(firstDiscoveryRun, "定时发现Polymarket聪明钱包")) {
+            return;
+        }
         try {
             log.info("{} action=定时发现Polymarket聪明钱包 result=开始", LOG_PREFIX);
             PolymarketDiscoverySummary summary = analyzeTopWallets();
@@ -335,6 +341,9 @@ public class PolymarketWalletDiscoveryService {
     public void scheduledRefreshLeaderboardWatchlist() {
         if (!monitorService.isDiscoveryEnabled()) {
             log.debug("{} action=定时刷新Polymarket观察名单 result=跳过 reason=发现开关未开启", LOG_PREFIX);
+            return;
+        }
+        if (shouldSkipInitialAddressPull(firstLeaderboardRefreshRun, "定时刷新Polymarket观察名单")) {
             return;
         }
         try {
@@ -377,6 +386,19 @@ public class PolymarketWalletDiscoveryService {
         } catch (Exception e) {
             log.warn("{} action=定时刷新Polymarket WARM钱包指标 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
         }
+    }
+
+    private boolean shouldSkipInitialAddressPull(AtomicBoolean firstRun, String action) {
+        if (!firstRun.compareAndSet(true, false)) {
+            return false;
+        }
+        long existingProfiles = profileStoreService.countPolymarketProfiles();
+        if (existingProfiles <= 0) {
+            return false;
+        }
+        log.info("{} action={} result=跳过 reason=启动首轮且数据库已有地址 existingProfiles={} nextRun=等待fixedDelay",
+                LOG_PREFIX, action, existingProfiles);
+        return true;
     }
 
     private List<SmartWalletProfileEntity> selectHotWatchlistTradeBatch() {

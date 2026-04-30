@@ -14,14 +14,14 @@ const SOURCES: Array<{ value: StrategyLogSource; label: string }> = [
 ]
 const LEVELS: StrategyLogLevel[] = ['ALL', 'INFO', 'WARN', 'ERROR', 'DEBUG']
 const FLOW_STAGES = [
-  'S1_EVENT_CAPTURED',
-  'S2_PROFILE_ADMISSION',
-  'S3_CANDIDATE_ENRICHED',
-  'S4_MARKET_CHECK',
-  'S5_RISK_EVALUATED',
-  'S6_TASK_CREATED',
-  'S7_TASK_CLAIMED',
-  'S8_ORDER_EXECUTED',
+  { code: 'S1_EVENT_CAPTURED', label: 'S1 事件捕获 / Event Captured' },
+  { code: 'S2_PROFILE_ADMISSION', label: 'S2 钱包准入 / Profile Admission' },
+  { code: 'S3_CANDIDATE_ENRICHED', label: 'S3 候选增强 / Candidate Enriched' },
+  { code: 'S4_MARKET_CHECK', label: 'S4 市场检查 / Market Check' },
+  { code: 'S5_RISK_EVALUATED', label: 'S5 风控评估 / Risk Evaluated' },
+  { code: 'S6_TASK_CREATED', label: 'S6 任务创建 / Task Created' },
+  { code: 'S7_TASK_CLAIMED', label: 'S7 任务抢占 / Task Claimed' },
+  { code: 'S8_ORDER_EXECUTED', label: 'S8 订单执行 / Order Executed' },
 ]
 
 type LogTab = 'flow' | 'raw'
@@ -223,8 +223,8 @@ function FlowTimeline({
           </div>
           <div className="ms-flow-stages">
             {FLOW_STAGES.map((stage) => {
-              const entries = selectedFlow?.entries.filter((entry) => entry.flowStage === stage) || []
-              return <FlowStage key={stage} stage={stage} entries={entries} />
+              const entries = selectedFlow?.entries.filter((entry) => isFlowStage(entry.flowStage, stage)) || []
+              return <FlowStage key={stage.code} stage={stage} entries={entries} />
             })}
           </div>
         </div>
@@ -233,7 +233,7 @@ function FlowTimeline({
   )
 }
 
-function FlowStage({ stage, entries }: { stage: string; entries: StrategyFlowLogEvent[] }) {
+function FlowStage({ stage, entries }: { stage: { code: string; label: string }; entries: StrategyFlowLogEvent[] }) {
   const latest = entries[entries.length - 1]
   return (
     <section className={`ms-flow-stage ${entries.length ? 'has-data' : ''}`}>
@@ -265,14 +265,18 @@ function FlowStage({ stage, entries }: { stage: string; entries: StrategyFlowLog
   )
 }
 
-function StageTitle({ stage }: { stage: string }) {
-  const [index, ...rest] = stage.split('_')
+function StageTitle({ stage }: { stage: { code: string; label: string } }) {
+  const [index, ...rest] = stage.label.split(/\s+/)
   return (
     <strong className="ms-stage-title">
       <span>{index}</span>
-      {rest.length ? <em>_{rest.join('_')}</em> : null}
+      {rest.length ? <em>{rest.join(' ')}</em> : null}
     </strong>
   )
+}
+
+function isFlowStage(value: string | null | undefined, stage: { code: string; label: string }) {
+  return value === stage.code || value === stage.label
 }
 
 function FormattedFlowMessage({ message, compact = false }: { message?: string | null; compact?: boolean }) {

@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
 
@@ -24,6 +26,7 @@ public class PolymarketSmartWalletMonitorService {
     private final SmartWalletProperties properties;
     private final SmartWalletProfileStoreService profileStoreService;
     private final SmartWalletFollowTaskService followTaskService;
+    private final SmartWalletTimeFormatter timeFormatter;
 
     public SmartWalletProfileEntity ingestWalletMetrics(PolymarketWalletMetricsRequest request) {
         log.info("{} action=导入Polymarket钱包指标 result=开始 wallet={} chain={} winRate={} pnlUsdc={} totalTrades={}",
@@ -38,9 +41,10 @@ public class PolymarketSmartWalletMonitorService {
     }
 
     public SmartWalletTradeEventEntity ingestTradeEvent(PolymarketTradeEventRequest request) {
-        log.info("{} action=导入Polymarket钱包交易 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
-                LOG_PREFIX, request.getWalletAddress(), request.getMarketId(), request.getOutcome(), request.getSide(),
-                request.getExternalTradeId(), request.getPrice(), request.getSizeUsdc());
+        log.info("{} action=导入Polymarket钱包交易 result=开始 wallet={} marketId={} question={} outcome={} side={} externalTradeId={} price={} sizeUsdc={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                LOG_PREFIX, request.getWalletAddress(), request.getMarketId(), request.getQuestion(), request.getOutcome(),
+                request.getSide(), request.getExternalTradeId(), request.getPrice(), request.getSizeUsdc(),
+                openedAtBjt(request.getOpenedAt()), openedAtMillis(request.getOpenedAt()), polymarketSearchUrl(request.getQuestion()));
         SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
                 .setWalletAddress(request.getWalletAddress())
                 .setChain(request.getChain())
@@ -54,10 +58,27 @@ public class PolymarketSmartWalletMonitorService {
                 .setSizeUsdc(safe(request.getSizeUsdc()))
                 .setOpenedAt(request.getOpenedAt() == null ? new Date() : request.getOpenedAt());
         SmartWalletTradeEventEntity saved = followTaskService.recordTradeEvent(event);
-        log.info("{} action=导入Polymarket钱包交易 result=完成 eventId={} wallet={} marketId={} outcome={} side={} processed={}",
-                LOG_PREFIX, saved.getId(), saved.getWalletAddress(), saved.getMarketId(), saved.getOutcome(),
-                saved.getSide(), saved.getProcessed());
+        log.info("{} action=导入Polymarket钱包交易 result=完成 eventId={} wallet={} marketId={} question={} outcome={} side={} processed={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                LOG_PREFIX, saved.getId(), saved.getWalletAddress(), saved.getMarketId(), saved.getQuestion(),
+                saved.getOutcome(), saved.getSide(), saved.getProcessed(), openedAtBjt(saved.getOpenedAt()),
+                openedAtMillis(saved.getOpenedAt()), polymarketSearchUrl(saved.getQuestion()));
         return saved;
+    }
+
+    private String openedAtBjt(Date openedAt) {
+        Long millis = openedAtMillis(openedAt);
+        return millis == null ? null : timeFormatter.formatEpochMillisToBjt(millis);
+    }
+
+    private Long openedAtMillis(Date openedAt) {
+        return openedAt == null ? null : openedAt.getTime();
+    }
+
+    private String polymarketSearchUrl(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+        return "https://polymarket.com/search?query=" + URLEncoder.encode(question.trim(), StandardCharsets.UTF_8);
     }
 
     public List<SmartWalletProfileEntity> listProfiles() {

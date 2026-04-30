@@ -134,6 +134,12 @@ public class SmartWalletProfileStoreService {
                 .orderByDesc(SmartWalletProfileEntity::getRealizedPnlUsdc)));
     }
 
+    public long countPolymarketProfiles() {
+        Long count = profileMapper.selectCount(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getSource, SOURCE));
+        return count == null ? 0L : count;
+    }
+
     public List<SmartWalletProfileEntity> listWatchEnabled() {
         return listExecutableWatchlist();
     }

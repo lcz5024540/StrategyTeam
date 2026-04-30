@@ -192,9 +192,7 @@ final class StrategyFlowLogSupport {
     private static boolean isLegacyFollowEntry(String message, FlowFields fields) {
         return message != null
                 && message.contains(LEGACY_FOLLOW_PREFIX)
-                && (fields.action() != null
-                || fields.result() != null
-                || fields.eventId() != null
+                && (fields.eventId() != null
                 || fields.followTaskId() != null
                 || fields.marketId() != null
                 || fields.wallet() != null);
