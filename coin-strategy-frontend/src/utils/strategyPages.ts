@@ -19,6 +19,7 @@ export const STRATEGY_PAGE_CONFIG: Record<StrategyCode, StrategyPageConfig[]> = 
     { key: 'markets', label: '市场监控', route: '/dashboard/markets', title: 'Market Monitor' },
     { key: 'signals', label: '任务信号', route: '/dashboard/signals', title: 'Signal Tasks' },
     { key: 'charts', label: '图表归因', route: '/dashboard/charts', title: 'Attribution Charts' },
+    { key: 'orders', label: '订单', route: '/dashboard/orders', title: 'Orders' },
     { key: 'factors', label: '因子', route: '/dashboard/factors', title: 'Factor Analysis' },
   ],
   FUNDING_ARB: [

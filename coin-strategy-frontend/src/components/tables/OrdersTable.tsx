@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { walletApi } from '@/api'
 import { compactAddress, formatAmount, formatMoney, truncateText } from '@/utils/format'
-import { buildTableOptions, matchesTableKeyword, TABLE_PAGE_SIZE } from '@/utils/table'
+import { buildTableOptions, TABLE_PAGE_SIZE } from '@/utils/table'
 import { TableToolbar } from './TableToolbar'
 import { TablePagination } from './TablePagination'
 
@@ -58,6 +58,8 @@ function formatFeeBreakdown(order: {
 
 interface OrdersTableProps {
   mode?: 'PAPER' | 'LIVE'
+  pnl?: 'ALL' | 'PROFIT' | 'LOSS' | 'ZERO'
+  settlement?: 'ALL' | 'SETTLED' | 'UNSETTLED' | 'EARLY_EXIT'
 }
 
 function parseNextCursor(nextCursor?: string | null): number | undefined {
@@ -65,12 +67,12 @@ function parseNextCursor(nextCursor?: string | null): number | undefined {
   return Number.isFinite(cursor) && cursor > 0 ? cursor : undefined
 }
 
-export function OrdersTable({ mode }: OrdersTableProps) {
+export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTableProps) {
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
   const [sideFilter, setSideFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const deferredKeyword = useDeferredValue(keyword.trim().toLowerCase())
+  const deferredKeyword = useDeferredValue(keyword.trim())
 
   const {
     data,
@@ -79,54 +81,41 @@ export function OrdersTable({ mode }: OrdersTableProps) {
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: ['ordersPage', mode],
+    queryKey: ['ordersPage', mode, pnl, settlement, sideFilter, statusFilter, deferredKeyword],
     initialPageParam: null as number | null,
-    queryFn: ({ pageParam }) => walletApi.getOrdersPage(ORDER_CURSOR_PAGE_SIZE, pageParam, mode),
+    queryFn: ({ pageParam }) => walletApi.getOrdersPage(ORDER_CURSOR_PAGE_SIZE, pageParam, mode, {
+      pnl,
+      settlement,
+      side: sideFilter,
+      status: statusFilter,
+      q: deferredKeyword,
+    }),
     getNextPageParam: (lastPage) => parseNextCursor(lastPage.nextCursor),
   })
 
   const orders = data?.pages.flatMap((ordersPage) => ordersPage.items) ?? []
 
-  const filteredOrders = orders.filter((order) => {
-    if (sideFilter && order.side !== sideFilter) {
-      return false
-    }
-
-    if (statusFilter && order.status !== statusFilter) {
-      return false
-    }
-
-    return matchesTableKeyword(
-      deferredKeyword,
-      order.id,
-      order.question,
-      order.outcome,
-      order.executionAddress,
-      order.marketId
-    )
-  })
-
-  const loadedPages = Math.max(1, Math.ceil(filteredOrders.length / TABLE_PAGE_SIZE))
+  const loadedPages = Math.max(1, Math.ceil(orders.length / TABLE_PAGE_SIZE))
   const totalPages = hasNextPage ? Math.max(loadedPages + 1, page) : loadedPages
-  const visibleOrders = filteredOrders.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE)
+  const visibleOrders = orders.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE)
   const hasActiveFilters = Boolean(keyword || sideFilter || statusFilter)
   const requiredItems = page * TABLE_PAGE_SIZE
-  const isPageLoading = isFetchingNextPage && filteredOrders.length < (page - 1) * TABLE_PAGE_SIZE + 1
+  const isPageLoading = isFetchingNextPage && orders.length < (page - 1) * TABLE_PAGE_SIZE + 1
 
   useEffect(() => {
     setPage(1)
-  }, [deferredKeyword, sideFilter, statusFilter, mode])
+  }, [deferredKeyword, sideFilter, statusFilter, mode, pnl, settlement])
 
   useEffect(() => {
     setPage((currentPage) => Math.min(currentPage, totalPages))
   }, [totalPages])
 
   useEffect(() => {
-    if (!hasNextPage || isFetchingNextPage || filteredOrders.length >= requiredItems) {
+    if (!hasNextPage || isFetchingNextPage || orders.length >= requiredItems) {
       return
     }
     void fetchNextPage()
-  }, [fetchNextPage, filteredOrders.length, hasNextPage, isFetchingNextPage, requiredItems])
+  }, [fetchNextPage, orders.length, hasNextPage, isFetchingNextPage, requiredItems])
 
   if (isLoading) {
     return <div className="loading">订单加载中...</div>
@@ -152,7 +141,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
         keyword={keyword}
         onKeywordChange={setKeyword}
         keywordPlaceholder="搜索订单 / 市场 / 钱包"
-        filteredCount={filteredOrders.length}
+        filteredCount={orders.length}
         totalCount={orders.length}
         hasActiveFilters={hasActiveFilters}
         onReset={() => {
@@ -247,7 +236,7 @@ export function OrdersTable({ mode }: OrdersTableProps) {
       <TablePagination
         page={page}
         pageSize={TABLE_PAGE_SIZE}
-        totalItems={filteredOrders.length}
+        totalItems={orders.length}
         onPageChange={setPage}
         hasMore={Boolean(hasNextPage)}
       />

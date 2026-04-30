@@ -1,5 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -8,6 +10,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,6 +24,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PolymarketMarketMetadataService {
 
     private final PolymarketApiClient polymarketApiClient;
+    private final SmartWalletMarketInfoService marketInfoService;
+    private final SmartWalletProperties properties;
     private final Map<String, PolymarketApiClient.MarketMetadata> cache = new ConcurrentHashMap<>();
     private final Map<String, PolymarketApiClient.MarketMetadata> localMetadata = new ConcurrentHashMap<>();
 
@@ -39,8 +44,23 @@ public class PolymarketMarketMetadataService {
         String normalized = conditionId.trim();
         PolymarketApiClient.MarketMetadata local = localMetadata.get(normalized);
         PolymarketApiClient.MarketMetadata cached = cache.get(normalized);
+        PolymarketApiClient.MarketMetadata persisted = loadPersistedMetadata(normalized);
         if (!refresh && isAuthoritativeCacheEntry(cached)) {
             return cached;
+        }
+        if (!refresh && persisted != null) {
+            PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized, local, cached, persisted, null);
+            cache.put(normalized, merged);
+            return merged;
+        }
+        if (!refresh && local != null) {
+            return local;
+        }
+        if (!refresh && cached != null) {
+            return cached;
+        }
+        if (!refresh && !hotPathExternalRefreshEnabled()) {
+            throw new IllegalStateException("Polymarket market metadata is not cached locally for conditionId=" + normalized);
         }
         PolymarketApiClient.MarketMetadata primary = null;
         PolymarketApiClient.MarketMetadata exactFallback = null;
@@ -49,13 +69,13 @@ public class PolymarketMarketMetadataService {
             if (shouldProbeExactFallback(primary, questionHint)) {
                 exactFallback = findExactByQuestionHint(normalized, questionHint);
             }
-            PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized, local, cached, primary, exactFallback);
+            PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized, firstNonNull(local, persisted), cached, primary, exactFallback);
             cache.put(normalized, merged);
             return merged;
         } catch (RuntimeException ex) {
             exactFallback = findExactByQuestionHint(normalized, questionHint);
-            if (exactFallback != null || cached != null || local != null) {
-                PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized, local, cached, primary, exactFallback);
+            if (exactFallback != null || cached != null || local != null || persisted != null) {
+                PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized, firstNonNull(local, persisted), cached, primary, exactFallback);
                 cache.put(normalized, merged);
                 return merged;
             }
@@ -133,6 +153,120 @@ public class PolymarketMarketMetadataService {
             return null;
         }
         return withSource(candidates.get(0), "MANUAL_SEARCH_FINAL_PRICE");
+    }
+
+    private boolean hotPathExternalRefreshEnabled() {
+        SmartWalletProperties.MarketMonitoring.MetadataRefresh refresh =
+                properties.getMarketMonitoring().getMetadataRefresh();
+        return refresh != null && refresh.isHotPathExternalRefreshEnabled();
+    }
+
+    private PolymarketApiClient.MarketMetadata loadPersistedMetadata(String conditionId) {
+        if (!StringUtils.hasText(conditionId)) {
+            return null;
+        }
+        try {
+            return buildPersistedMetadata(conditionId.trim(), marketInfoService.listByMarketId(conditionId.trim()));
+        } catch (RuntimeException ex) {
+            log.debug("Failed to load persisted Polymarket metadata for conditionId={}: {}", conditionId, ex.getMessage());
+            return null;
+        }
+    }
+
+    private PolymarketApiClient.MarketMetadata buildPersistedMetadata(String conditionId,
+                                                                      List<SmartWalletMarketInfoEntity> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        SmartWalletMarketInfoEntity primary = rows.stream()
+                .filter(row -> row != null && StringUtils.hasText(row.getMarketId()))
+                .max(Comparator.comparing(SmartWalletMarketInfoEntity::getLastMetadataSyncAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(SmartWalletMarketInfoEntity::getUpdatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(SmartWalletMarketInfoEntity::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(null);
+        if (primary == null) {
+            return null;
+        }
+        Map<String, String> outcomeTokenIds = new LinkedHashMap<>();
+        Map<String, Integer> tokenIdToIndexSet = new LinkedHashMap<>();
+        List<String> outcomes = new ArrayList<>();
+        for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null || !StringUtils.hasText(row.getOutcome())) {
+                continue;
+            }
+            String outcome = normalizeOutcomeValue(row.getOutcome());
+            if (!outcomes.contains(outcome)) {
+                outcomes.add(outcome);
+            }
+            if (StringUtils.hasText(row.getTokenId())) {
+                outcomeTokenIds.putIfAbsent(outcome, row.getTokenId().trim());
+                if (row.getIndexSet() != null) {
+                    tokenIdToIndexSet.putIfAbsent(row.getTokenId().trim(), row.getIndexSet());
+                }
+            }
+        }
+        if (outcomes.isEmpty()) {
+            outcomes = List.of("YES", "NO");
+        }
+        List<String> outcomePrices = new ArrayList<>();
+        for (int i = 0; i < outcomes.size(); i++) {
+            outcomePrices.add("0.5");
+        }
+        boolean resolved = StringUtils.hasText(primary.getResolvedOutcome())
+                || "RESOLVED".equalsIgnoreCase(primary.getMarketLifecycle());
+        boolean closed = Boolean.TRUE.equals(primary.getClosed())
+                || resolved
+                || "CLOSED_UNRESOLVED".equalsIgnoreCase(primary.getMarketLifecycle());
+        boolean acceptingOrders = Boolean.TRUE.equals(primary.getAcceptingOrders())
+                && !closed
+                && !resolved;
+        Long observedAt = firstDateMillis(primary.getLastMetadataSyncAt(), primary.getUpdatedAt(), primary.getCreatedAt());
+        return PolymarketApiClient.MarketMetadata.builder()
+                .conditionId(conditionId)
+                .marketId(firstText(primary.getMarketId(), conditionId))
+                .question(firstText(primary.getQuestion(), conditionId))
+                .category(firstText(primary.getNormalizedCategory(), primary.getSourceCategory()))
+                .minimumTickSize(new BigDecimal("0.01"))
+                .active(acceptingOrders)
+                .closed(closed)
+                .acceptingOrders(acceptingOrders)
+                .resolvedOutcome(normalizeOutcomeValue(primary.getResolvedOutcome()))
+                .winningTokenId(winningTokenIdFromRows(rows, primary.getResolvedOutcome()))
+                .endAt(primary.getMarketEndAt())
+                .resolutionSource("DB_MARKET_INFO")
+                .resolutionObservedAt(observedAt == null ? System.currentTimeMillis() : observedAt)
+                .outcomes(outcomes)
+                .outcomePrices(outcomePrices)
+                .outcomeTokenIds(outcomeTokenIds)
+                .tokenIdToIndexSet(tokenIdToIndexSet)
+                .build();
+    }
+
+    private Long firstDateMillis(Date... dates) {
+        if (dates == null) {
+            return null;
+        }
+        for (Date date : dates) {
+            if (date != null) {
+                return date.getTime();
+            }
+        }
+        return null;
+    }
+
+    private String winningTokenIdFromRows(List<SmartWalletMarketInfoEntity> rows, String resolvedOutcome) {
+        String normalizedResolved = normalizeOutcomeValue(resolvedOutcome);
+        if (!StringUtils.hasText(normalizedResolved) || rows == null) {
+            return null;
+        }
+        return rows.stream()
+                .filter(row -> row != null && StringUtils.hasText(row.getTokenId()))
+                .filter(row -> normalizedResolved.equals(normalizeOutcomeValue(row.getOutcome())))
+                .map(SmartWalletMarketInfoEntity::getTokenId)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .findFirst()
+                .orElse(null);
     }
 
     public String resolveCanonicalConditionId(String marketIdentifier,

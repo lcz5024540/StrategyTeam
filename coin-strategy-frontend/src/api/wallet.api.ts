@@ -10,6 +10,14 @@ export interface CursorPage<T> {
   hasMore: boolean
 }
 
+export interface OrderPageParams {
+  pnl?: 'ALL' | 'PROFIT' | 'LOSS' | 'ZERO'
+  settlement?: 'ALL' | 'SETTLED' | 'UNSETTLED' | 'EARLY_EXIT'
+  side?: string
+  status?: string
+  q?: string
+}
+
 export const walletApi = {
   getPositionsLive: (mode?: PositionMode): Promise<Position[]> =>
     apiClient.get('/strategy/api/smart-wallet/positions/live', { params: { mode } }),
@@ -29,9 +37,19 @@ export const walletApi = {
     limit = 50,
     lastId?: number | null,
     mode?: PositionMode,
+    filters: OrderPageParams = {},
   ): Promise<CursorPage<Order>> =>
     apiClient.get('/strategy/api/smart-wallet/orders/page', {
-      params: { limit, lastId: lastId ?? undefined, mode },
+      params: {
+        limit,
+        lastId: lastId ?? undefined,
+        mode,
+        pnl: filters.pnl && filters.pnl !== 'ALL' ? filters.pnl : undefined,
+        settlement: filters.settlement && filters.settlement !== 'ALL' ? filters.settlement : undefined,
+        side: filters.side || undefined,
+        status: filters.status || undefined,
+        q: filters.q || undefined,
+      },
     }),
 
   getFills: (limit = 100, mode?: PositionMode): Promise<Fill[]> =>

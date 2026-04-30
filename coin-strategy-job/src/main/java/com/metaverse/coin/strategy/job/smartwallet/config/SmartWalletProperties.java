@@ -146,8 +146,8 @@ public class SmartWalletProperties {
         private BigDecimal longHorizonStakeMultiplier = new BigDecimal("0.50");
         private Integer maxSignalAgeSeconds = 3600;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
-        private BigDecimal minFollowPrice = new BigDecimal("0.05");
-        private BigDecimal maxFollowPrice = new BigDecimal("0.95");
+        private BigDecimal minFollowPrice = new BigDecimal("0.02");
+        private BigDecimal maxFollowPrice = new BigDecimal("0.98");
         private boolean enableProfitabilityGate = false;
         private Integer profitabilityMinSampleSize = 3;
         private BigDecimal minEstimatedNetProfitabilityUsdc = BigDecimal.ZERO;
@@ -198,14 +198,14 @@ public class SmartWalletProperties {
         private boolean blockUnreliableLeaderboardWinRate = true;
         private BigDecimal unreliableWinRateThreshold = new BigDecimal("1.0");
         private Integer unreliableMaxSampleSize = 50;
-        private BigDecimal singleWalletOverrideMinWalletScore = new BigDecimal("0.88");
+        private BigDecimal singleWalletOverrideMinWalletScore = new BigDecimal("0.75");
         private BigDecimal singleWalletOverrideMinWinRate = new BigDecimal("0.68");
         private Integer singleWalletOverrideMinTrades = 30;
         private Integer singleWalletOverrideMinRecentTrades7d = 1;
         private BigDecimal singleWalletOverrideMinRecentWinRate7d = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinReplicabilityScore = new BigDecimal("0.60");
         private BigDecimal singleWalletOverrideMinQualityScore = new BigDecimal("0.60");
-        private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("100");
+        private BigDecimal singleWalletOverrideMinTriggerSizeUsdc = new BigDecimal("15");
         private BigDecimal singleWalletOverrideMinRecommendedStakeUsdc = new BigDecimal("1");
         /** 是否启用单钱包 paper canary 入场通道，用于受控验证 OBSERVE_ONLY/共识不足的优质 HOT 钱包 */
         private boolean enableSingleWalletPaperCanary = true;
@@ -535,7 +535,43 @@ public class SmartWalletProperties {
             /**
              * Gamma markets 批量请求的 conditionId 分块大小。
              */
-            private Integer gammaChunkSize = 20;
+            private Integer gammaChunkSize = 5;
+            /**
+             * Gamma metadata 单 conditionId 失败后的短冷却，避免请求链路反复打同一外部失败。
+             */
+            private Long metadataFailureCooldownMs = 300000L;
+            /**
+             * Gamma public-search 同 question 失败后的短冷却。
+             */
+            private Long publicSearchFailureCooldownMs = 900000L;
+            /**
+             * Gamma /markets?condition_ids= 端点返回 403/429/5xx 后的全局熔断冷却。
+             */
+            private Long metadataEndpointCooldownMs = 120000L;
+            /**
+             * 单次批量刷新最多请求 Gamma metadata 的次数，避免外部异常时放大请求量。
+             */
+            private Integer maxGammaRequestsPerRefresh = 20;
+            /**
+             * 是否允许业务热路径在缓存未命中时同步请求 Gamma。默认关闭，仅后台刷新外部 metadata。
+             */
+            private boolean hotPathExternalRefreshEnabled = false;
+            /**
+             * 活跃市场 metadata 最大陈旧时间。
+             */
+            private Long activeMarketMaxStaleMs = 900000L;
+            /**
+             * 已关闭/已结算市场 metadata 最大陈旧时间。
+             */
+            private Long closedMarketMaxStaleMs = 21600000L;
+            /**
+             * Gamma metadata 端点连续失败达到该阈值后进入端点级熔断。
+             */
+            private Integer endpointFailureThreshold = 2;
+            /**
+             * Gamma metadata 端点熔断最大冷却时间。
+             */
+            private Long endpointCooldownMaxMs = 900000L;
             /**
              * 页面判定元数据过期的阈值。
              */

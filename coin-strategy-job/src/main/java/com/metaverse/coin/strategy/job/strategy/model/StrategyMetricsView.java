@@ -6,6 +6,7 @@ public record StrategyMetricsView(
         Integer totalOrders,
         Integer filledOrders,
         Integer openPositions,
+        Integer pendingPositions,
         Integer closedPositions,
         Integer winningPositions,
         Integer losingPositions,

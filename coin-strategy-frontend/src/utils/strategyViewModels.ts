@@ -91,10 +91,14 @@ export function toDashboardMetrics(detail: StrategyDetail | undefined): Strategy
     capitalUsdc: firstNumber(detail.capitalUsdc, detail.availableCapitalUsdc),
     netPnlUsdc: toNumber(detail.netPnlUsdc),
     realizedPnlUsdc: toNumber(detail.realizedPnlUsdc),
+    unrealizedPnlUsdc: toNumber(detail.unrealizedPnlUsdc),
     pendingSettlementPnlUsdc: toNumber(detail.pendingSettlementPnlUsdc),
     totalOrders: toNumber(detail.totalTrades),
+    filledOrders: toNumber(detail.filledTrades),
     openPositions: toNumber(detail.openPositions),
+    pendingPositions: toNumber(detail.pendingPositions),
     closedPositions: toNumber(detail.closedPositions),
+    remainingPositionSlots: toNumber(detail.remainingPositionSlots),
     winRate: toNumber(detail.winRate),
     winTrades: toNumber(detail.winTrades),
     lossTrades: toNumber(detail.lossTrades),
@@ -112,7 +116,9 @@ export function toOperationalSummary(
     exposureUsdc: positions.reduce((sum, row) => sum + toNumber(row.costBasisUsdc), 0),
     realizedPnlUsdc: positions.reduce((sum, row) => sum + toNumber(row.realizedPnlUsdc), 0),
     unrealizedPnlUsdc: positions.reduce((sum, row) => sum + toNumber(row.unrealizedPnlUsdc), 0),
-    pendingPnlUsdc: positions.reduce((sum, row) => sum + toNumber(row.pendingSettlementNetPnlUsdc), 0),
+    pendingPnlUsdc: positions
+      .filter((row) => ['SETTLEMENT_PENDING_ORACLE', 'RESOLVED_UNCLAIMED'].includes(String(row.status || '').toUpperCase()))
+      .reduce((sum, row) => sum + toNumber(row.pendingSettlementNetPnlUsdc), 0),
     orderNotionalUsdc: orders.reduce((sum, row) => sum + toNumber(row.notionalUsdc), 0),
   }
 }

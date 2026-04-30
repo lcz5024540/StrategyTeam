@@ -279,8 +279,8 @@ smart-wallet:
     # [TUNE] Ignore tiny smart-wallet prints.
     min-trigger-size-usdc: 5
     # [TUNE] Follow only inside this market price band.
-    min-follow-price: 0.05
-    max-follow-price: 0.95
+    min-follow-price: 0.02
+    max-follow-price: 0.98
     # [TUNE] When enabled, reject signals whose local historical net EV estimate is below threshold.
     enable-ev-gate: true
     # [TUNE] Minimum local label sample size before EV gate is trusted.
@@ -350,14 +350,14 @@ smart-wallet:
     block-unreliable-leaderboard-win-rate: true
     unreliable-win-rate-threshold: 1.0
     unreliable-max-sample-size: 20
-    single-wallet-override-min-wallet-score: 0.82
+    single-wallet-override-min-wallet-score: 0.75
     single-wallet-override-min-win-rate: 0.68
     single-wallet-override-min-trades: 30
     single-wallet-override-min-recent-trades-7d: 1
     single-wallet-override-min-recent-win-rate-7d: 0.60
     single-wallet-override-min-replicability-score: 0.60
     single-wallet-override-min-quality-score: 0.60
-    single-wallet-override-min-trigger-size-usdc: 30
+    single-wallet-override-min-trigger-size-usdc: 15
     single-wallet-override-min-recommended-stake-usdc: 1
     # [PAPER-CANARY] Controlled trial lane for HOT watch-enabled wallets when consensus/archetype layers are too strict.
     # FollowTaskService forces this lane to PAPER even if global auto execution is later enabled.
@@ -486,14 +486,14 @@ smart-wallet:
       min-distinct-entities: 1
       min-consensus-score: 0.20
       quality-weighted-consensus-enabled: true
-      single-wallet-override-min-wallet-score: 0.82
+      single-wallet-override-min-wallet-score: 0.75
       single-wallet-override-min-win-rate: 0.68
       single-wallet-override-min-trades: 30
       single-wallet-override-min-recent-trades-7d: 1
       single-wallet-override-min-recent-win-rate-7d: 0.60
       single-wallet-override-min-replicability-score: 0.60
       single-wallet-override-min-quality-score: 0.60
-      single-wallet-override-min-trigger-size-usdc: 30
+      single-wallet-override-min-trigger-size-usdc: 15
       single-wallet-override-min-recommended-stake-usdc: 1
   live-validation:
     # [TUNE] Auxiliary LIVE lane. Keep disabled by default; enable only in a geoblock-safe environment when you want tiny real-fund validation.
@@ -561,7 +561,16 @@ smart-wallet:
       candidate-lookback-days: 30
       max-candidate-markets: 120
       refresh-batch-size: 120
-      gamma-chunk-size: 20
+      gamma-chunk-size: 5
+      metadata-failure-cooldown-ms: 300000
+      public-search-failure-cooldown-ms: 900000
+      metadata-endpoint-cooldown-ms: 120000
+      max-gamma-requests-per-refresh: 20
+      hot-path-external-refresh-enabled: false
+      active-market-max-stale-ms: 900000
+      closed-market-max-stale-ms: 21600000
+      endpoint-failure-threshold: 2
+      endpoint-cooldown-max-ms: 900000
       max-stale-ms: 900000
     concentration-snapshot:
       enabled: true

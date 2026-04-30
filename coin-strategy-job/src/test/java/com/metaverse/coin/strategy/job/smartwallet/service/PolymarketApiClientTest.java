@@ -3,14 +3,23 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -30,6 +39,83 @@ class PolymarketApiClientTest {
                 PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET + 30);
 
         assertTrue(trades.isEmpty());
+    }
+
+    @Test
+    void shouldClampExplicitMarketMetadataChunkSizeToConfiguredGammaChunkSize() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        List<Integer> requestChunkSizes = new ArrayList<>();
+        server.createContext("/markets", exchange -> {
+            String rawQuery = exchange.getRequestURI().getRawQuery();
+            String conditionIds = Arrays.stream(rawQuery.split("&"))
+                    .map(part -> part.split("=", 2))
+                    .filter(parts -> parts.length == 2 && "condition_ids".equals(parts[0]))
+                    .map(parts -> URLDecoder.decode(parts[1], StandardCharsets.UTF_8))
+                    .findFirst()
+                    .orElse("");
+            List<String> ids = conditionIds.isBlank() ? List.of() : Arrays.asList(conditionIds.split(","));
+            requestChunkSizes.add(ids.size());
+            String response = ids.stream()
+                    .map(id -> """
+                            {"conditionId":"%s","question":"Question %s","outcomes":["Yes","No"],"outcomePrices":["0.5","0.5"]}
+                            """.formatted(id, id))
+                    .collect(Collectors.joining(",", "[", "]"));
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            SmartWalletProperties properties = new SmartWalletProperties();
+            properties.getPolymarket().setGammaApiBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            properties.getMarketMonitoring().getMetadataRefresh().setGammaChunkSize(5);
+            PolymarketApiClient client = new PolymarketApiClient(properties, new ObjectMapper());
+
+            Map<String, PolymarketApiClient.MarketMetadata> result = client.fetchMarketMetadataBatch(List.of(
+                    "condition-1", "condition-2", "condition-3", "condition-4", "condition-5", "condition-6",
+                    "condition-7", "condition-8", "condition-9", "condition-10", "condition-11", "condition-12"
+            ), 20);
+
+            assertEquals(12, result.size());
+            assertEquals(List.of(5, 5, 2), requestChunkSizes);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldEnterEndpointCooldownAfterConsecutiveMetadataFailures() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        AtomicInteger requestCount = new AtomicInteger();
+        server.createContext("/markets", exchange -> {
+            requestCount.incrementAndGet();
+            byte[] bytes = "{\"error\":\"temporary\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(500, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            SmartWalletProperties properties = new SmartWalletProperties();
+            properties.getPolymarket().setGammaApiBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            properties.getMarketMonitoring().getMetadataRefresh().setEndpointFailureThreshold(2);
+            properties.getMarketMonitoring().getMetadataRefresh().setMetadataEndpointCooldownMs(300_000L);
+            PolymarketApiClient client = new PolymarketApiClient(properties, new ObjectMapper());
+
+            client.fetchMarketMetadataBatch(List.of("condition-a"), 1);
+            assertFalse(client.isMetadataEndpointCoolingDown());
+
+            client.fetchMarketMetadataBatch(List.of("condition-b"), 1);
+            assertTrue(client.isMetadataEndpointCoolingDown());
+
+            client.fetchMarketMetadataBatch(List.of("condition-c"), 1);
+            assertEquals(2, requestCount.get());
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test

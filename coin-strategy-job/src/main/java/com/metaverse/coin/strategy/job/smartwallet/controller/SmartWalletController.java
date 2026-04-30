@@ -821,11 +821,12 @@ public class SmartWalletController {
 
     @Operation(summary = "可执行任务列表", description = "查看当前通过风控、可直接执行的跟单任务。")
     @GetMapping("/follow-tasks/executable")
-    public List<SmartWalletFollowTaskView> executableFollowTasks(@RequestParam(defaultValue = "50") Integer limit) {
+    public List<SmartWalletFollowTaskView> executableFollowTasks(@RequestParam(defaultValue = "50") Integer limit,
+                                                                 @RequestParam(required = false) Integer scanLimit) {
         try {
-            return followTaskApplicationService.listExecutableTasks(limit);
+            return followTaskApplicationService.listExecutableTasks(limit, scanLimit);
         } catch (Exception e) {
-            log.error("Failed to load executable follow tasks limit={}", limit, e);
+            log.error("Failed to load executable follow tasks limit={} scanLimit={}", limit, scanLimit, e);
             throw e;
         }
     }
@@ -1074,8 +1075,13 @@ public class SmartWalletController {
     public CursorPageView<SmartWalletOrderView> ordersCursor(
             @RequestParam(defaultValue = "50") Integer limit,
             @RequestParam(required = false) Long lastId,
-            @RequestParam(required = false) String mode) {
-        return accountingService.listOrdersCursor(limit, lastId, mode);
+            @RequestParam(required = false) String mode,
+            @RequestParam(required = false) String pnl,
+            @RequestParam(required = false) String settlement,
+            @RequestParam(required = false) String side,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q) {
+        return accountingService.listOrdersCursor(limit, lastId, mode, pnl, settlement, side, status, q);
     }
 
     @Operation(summary = "导出订单 CSV", description = "导出 PAPER 或 LIVE 的订单记录，包含总手续费、交易手续费、链上手续费和 POL。")

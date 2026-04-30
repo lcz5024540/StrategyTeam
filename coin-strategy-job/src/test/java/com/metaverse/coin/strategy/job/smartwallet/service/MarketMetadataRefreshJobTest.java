@@ -24,6 +24,8 @@ class MarketMetadataRefreshJobTest {
     private SmartWalletMarketMonitoringService marketMonitoringService;
     @Mock
     private SmartWalletMarketStateService marketStateService;
+    @Mock
+    private PolymarketApiClient polymarketApiClient;
 
     private SmartWalletProperties properties;
     private MarketMetadataRefreshJob job;
@@ -36,7 +38,7 @@ class MarketMetadataRefreshJobTest {
         properties.getMarketMonitoring().getMetadataRefresh().setCandidateLookbackDays(30);
         properties.getMarketMonitoring().getMetadataRefresh().setGammaChunkSize(20);
         properties.getMarketMonitoring().getMetadataRefresh().setMaxStaleMs(900000L);
-        job = new MarketMetadataRefreshJob(properties, marketMonitoringService, marketStateService);
+        job = new MarketMetadataRefreshJob(properties, marketMonitoringService, marketStateService, polymarketApiClient);
     }
 
     @Test

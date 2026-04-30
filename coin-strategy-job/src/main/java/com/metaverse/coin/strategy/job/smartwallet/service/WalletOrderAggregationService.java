@@ -222,11 +222,6 @@ public class WalletOrderAggregationService {
             return Map.of();
         }
         Map<String, PolymarketApiClient.MarketMetadata> result = new LinkedHashMap<>();
-        try {
-            result.putAll(marketMetadataService.refreshBatchByConditionIds(normalizedIds, 20));
-        } catch (Exception ex) {
-            log.debug("Failed to refresh batch metadata for ids={}: {}", normalizedIds, ex.getMessage());
-        }
         for (String marketId : normalizedIds) {
             if (result.containsKey(marketId)) {
                 continue;

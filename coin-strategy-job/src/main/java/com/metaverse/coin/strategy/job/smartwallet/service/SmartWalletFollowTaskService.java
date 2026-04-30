@@ -47,6 +47,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
@@ -54,6 +55,8 @@ import java.util.TreeMap;
 public class SmartWalletFollowTaskService {
 
     private static final String LOG_PREFIX = "[POLY_FOLLOW]";
+    private static final long RISK_DECISION_CACHE_TTL_MS = 60_000L;
+    private static final long EXECUTABLE_WARN_THRESHOLD_MS = 3_000L;
 
     private final SmartWalletProperties properties;
     private final SmartWalletTradeEventMapper tradeEventMapper;
@@ -72,6 +75,7 @@ public class SmartWalletFollowTaskService {
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final Map<String, CachedRiskDecision> riskDecisionCache = new ConcurrentHashMap<>();
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
         log.info("{} action=记录Polymarket钱包交易事件 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
@@ -128,20 +132,37 @@ public class SmartWalletFollowTaskService {
     }
 
     public List<SmartWalletFollowTaskView> listExecutableTasks(Integer limit) {
+        return listExecutableTasks(limit, null);
+    }
+
+    public List<SmartWalletFollowTaskView> listExecutableTasks(Integer limit, Integer scanLimit) {
+        long startedAt = System.currentTimeMillis();
+        int resultLimit = normalizeLimit(limit, 50);
+        int effectiveScanLimit = normalizeExecutableScanLimit(scanLimit, resultLimit);
         List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                 .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
                 .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + normalizeLimit(limit, 50)));
+                .last("limit " + effectiveScanLimit));
         List<SmartWalletFollowTaskView> result = new ArrayList<>();
+        ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
-            SignalRiskDecision decision = evaluateTask(task.getId());
+            SignalRiskDecision decision = evaluateTaskCached(task, null, stats);
             if (!decision.isAccepted()) {
                 continue;
             }
             result.add(toView(task, decision));
         }
         result.sort(this::compareTaskPriority);
-        return result;
+        List<SmartWalletFollowTaskView> truncated = truncate(result, resultLimit);
+        long elapsedMs = System.currentTimeMillis() - startedAt;
+        if (elapsedMs > EXECUTABLE_WARN_THRESHOLD_MS) {
+            log.warn("{} action=加载可执行跟单任务 result=慢查询 scanCount={} evaluatedCount={} cacheHitCount={} elapsedMs={} executableCount={} requestedLimit={} scanLimit={}",
+                    LOG_PREFIX, tasks.size(), stats.evaluatedCount, stats.cacheHitCount, elapsedMs, truncated.size(), resultLimit, effectiveScanLimit);
+        } else {
+            log.info("{} action=加载可执行跟单任务 result=完成 scanCount={} evaluatedCount={} cacheHitCount={} elapsedMs={} executableCount={} requestedLimit={} scanLimit={}",
+                    LOG_PREFIX, tasks.size(), stats.evaluatedCount, stats.cacheHitCount, elapsedMs, truncated.size(), resultLimit, effectiveScanLimit);
+        }
+        return truncated;
     }
 
     public List<SmartWalletFollowTaskView> listSingleWalletOverrideTasks(Integer limit) {
@@ -492,6 +513,10 @@ public class SmartWalletFollowTaskService {
 
     public SignalRiskDecision evaluateTask(Long taskId, SmartWalletProperties.SignalRisk overrideRisk) {
         SmartWalletFollowTaskEntity task = requireTask(taskId);
+        return evaluateTask(task, overrideRisk);
+    }
+
+    private SignalRiskDecision evaluateTask(SmartWalletFollowTaskEntity task, SmartWalletProperties.SignalRisk overrideRisk) {
         SmartWalletTradeEventEntity event = getSourceEvent(task);
         SmartWalletProfileEntity profile = getWalletProfile(task);
         if (event == null) {
@@ -502,6 +527,29 @@ public class SmartWalletFollowTaskService {
                     .build();
         }
         return signalRiskService.evaluate(profile, event, overrideRisk, task.getId());
+    }
+
+    private SignalRiskDecision evaluateTaskCached(SmartWalletFollowTaskEntity task,
+                                                  SmartWalletProperties.SignalRisk overrideRisk,
+                                                  ExecutableRiskStats stats) {
+        String key = riskDecisionCacheKey(task, overrideRisk);
+        CachedRiskDecision cached = riskDecisionCache.get(key);
+        long now = System.currentTimeMillis();
+        if (cached != null && cached.expiresAtMs > now) {
+            stats.cacheHitCount++;
+            return cached.decision;
+        }
+        stats.evaluatedCount++;
+        SignalRiskDecision decision = evaluateTask(task, overrideRisk);
+        riskDecisionCache.put(key, new CachedRiskDecision(decision, now + RISK_DECISION_CACHE_TTL_MS));
+        return decision;
+    }
+
+    private String riskDecisionCacheKey(SmartWalletFollowTaskEntity task, SmartWalletProperties.SignalRisk overrideRisk) {
+        SmartWalletProperties.SignalRisk applied = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
+        String policyTag = applied == null || !StringUtils.hasText(applied.getPolicyTag()) ? "default" : applied.getPolicyTag();
+        long updatedAtMs = task.getUpdatedAt() == null ? 0L : task.getUpdatedAt().getTime();
+        return task.getId() + "|" + updatedAtMs + "|" + policyTag;
     }
 
     public SmartWalletProperties.SignalRisk resolveSignalRiskPreset(String preset) {
@@ -1228,7 +1276,7 @@ public class SmartWalletFollowTaskService {
                 .side(task.getSide())
                 .triggerPrice(task.getTriggerPrice())
                 .triggerSizeUsdc(task.getTriggerSizeUsdc())
-                .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
+                .recommendedStakeUsdc(decision == null ? task.getRecommendedStakeUsdc() : decision.getRecommendedStakeUsdc())
                 .marketType(decision == null ? null : decision.getMarketType())
                 .entryLane(decision == null ? null : decision.getEntryLane())
                 .exitIntent(decision == null ? null : decision.getExitIntent())
@@ -1244,6 +1292,7 @@ public class SmartWalletFollowTaskService {
                         : decision.getConsensusScore())
                 .estimatedFeeUsdc(decision == null ? null : decision.getEstimatedFeeUsdc())
                 .estimatedSlippageUsdc(decision == null ? null : decision.getEstimatedSlippageUsdc())
+                .estimatedNetProfitabilityUsdc(decision == null ? null : decision.getEstimatedNetProfitabilityUsdc())
                 .followProbability(decision == null ? null : decision.getFollowProbability())
                 .calibratedFollowProbability(decision == null ? null : decision.getCalibratedFollowProbability())
                 .slippageSpikeProbability(decision == null ? null : decision.getSlippageSpikeProbability())
@@ -1567,6 +1616,17 @@ public class SmartWalletFollowTaskService {
             return blockerCompare;
         }
 
+        BigDecimal leftEv = left == null || left.getEstimatedNetProfitabilityUsdc() == null
+                ? BigDecimal.ZERO
+                : left.getEstimatedNetProfitabilityUsdc();
+        BigDecimal rightEv = right == null || right.getEstimatedNetProfitabilityUsdc() == null
+                ? BigDecimal.ZERO
+                : right.getEstimatedNetProfitabilityUsdc();
+        int evCompare = rightEv.compareTo(leftEv);
+        if (evCompare != 0) {
+            return evCompare;
+        }
+
         BigDecimal leftProbability = left == null || left.getCalibratedFollowProbability() == null
                 ? BigDecimal.ZERO
                 : left.getCalibratedFollowProbability();
@@ -1677,6 +1737,13 @@ public class SmartWalletFollowTaskService {
         return Math.min(limit, 200);
     }
 
+    private int normalizeExecutableScanLimit(Integer scanLimit, int resultLimit) {
+        if (scanLimit != null && scanLimit > 0) {
+            return Math.min(scanLimit, 200);
+        }
+        return Math.min(Math.max(resultLimit * 3, resultLimit), 60);
+    }
+
     public SmartWalletProperties.SignalRisk buildSimulationRisk(SmartWalletRiskSimulationRequest request) {
         SmartWalletProperties.SignalRisk source = properties.getSignalRisk();
         SmartWalletProperties.SignalRisk risk = new SmartWalletProperties.SignalRisk();
@@ -1746,5 +1813,13 @@ public class SmartWalletFollowTaskService {
         int scanned;
         int changed;
         int skipped;
+    }
+
+    private static class ExecutableRiskStats {
+        int evaluatedCount;
+        int cacheHitCount;
+    }
+
+    private record CachedRiskDecision(SignalRiskDecision decision, long expiresAtMs) {
     }
 }

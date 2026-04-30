@@ -1182,8 +1182,10 @@
 }
 
 .ms-log-row span {
-  color: oklch(0.30 0.01 240);
+  color: oklch(0.74 0.08 220);
   flex: 0 0 auto;
+  font-weight: 600;
+  text-shadow: 0 0 8px oklch(0.62 0.14 220 / 0.24);
 }
 
 .ms-log-row strong {
@@ -1261,6 +1263,12 @@
   font-size: 10px;
   font-style: normal;
   overflow-wrap: anywhere;
+}
+
+.ms-flow-list button > span:first-child {
+  color: oklch(0.74 0.08 220);
+  font-weight: 600;
+  text-shadow: 0 0 8px oklch(0.62 0.14 220 / 0.22);
 }
 
 .ms-flow-list strong {
@@ -1412,6 +1420,12 @@
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.ms-flow-stage-body article > div:first-child > span:first-child {
+  color: oklch(0.76 0.09 220);
+  font-weight: 600;
+  text-shadow: 0 0 8px oklch(0.62 0.14 220 / 0.22);
 }
 
 .ms-flow-stage-body article b {

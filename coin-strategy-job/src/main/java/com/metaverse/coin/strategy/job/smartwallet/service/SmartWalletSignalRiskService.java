@@ -389,15 +389,9 @@ public class SmartWalletSignalRiskService {
                 : executionWallet.getMinOrderUsdc();
         // ── Gate 8: 最低下单额检查（初步仓位）──
         if (preliminaryStake.compareTo(minOrderUsdc) < 0) {
-            if (risk.isKellyStakeEnabled()) {
-                reasons.add("[PRELIMINARY_STAKE_BELOW_MIN] Preliminary stake=" + preliminaryStake
-                        + " is below minOrder=" + minOrderUsdc
-                        + "; final min-order enforcement is deferred until Kelly stake is computed.");
-            } else {
-                accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G8_PRELIMINARY_STAKE_BELOW_MIN(stake=" + preliminaryStake + ")";
-                reasons.add("Recommended stake is below execution wallet minimum order.");
-            }
+            reasons.add("[PRELIMINARY_STAKE_BELOW_MIN] Preliminary stake=" + preliminaryStake
+                    + " is below minOrder=" + minOrderUsdc
+                    + "; final min-order enforcement is deferred until final stake is computed.");
         }
         if (accepted) gateStage = 8; // 通过初步仓位检查
 
@@ -584,9 +578,19 @@ public class SmartWalletSignalRiskService {
             }
         }
         if (accepted && recommendedStake.compareTo(minOrderUsdc) < 0) {
-            accepted = false;
-            if (firstRejectGate == null) firstRejectGate = "G10_FINAL_STAKE_BELOW_MIN(stake=" + recommendedStake + ")";
-            reasons.add("Recommended stake is below execution wallet minimum order after capital scaling.");
+            BigDecimal flooredStake = minOrderUsdc
+                    .min(properties.getMaxStakeUsdc())
+                    .min(availableCapital.max(BigDecimal.ZERO))
+                    .setScale(2, RoundingMode.HALF_UP);
+            if (flooredStake.compareTo(minOrderUsdc) >= 0) {
+                recommendedStake = flooredStake;
+                reasons.add("[MIN_ORDER_STAKE_FLOOR] Raised positive accepted stake to execution wallet minimum order="
+                        + recommendedStake + ".");
+            } else {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G10_FINAL_STAKE_BELOW_MIN(stake=" + recommendedStake + ")";
+                reasons.add("Recommended stake is below execution wallet minimum order after capital scaling.");
+            }
         }
         if (accepted) gateStage = 10; // 通过 Kelly / 仓位计算
 
@@ -959,7 +963,7 @@ public class SmartWalletSignalRiskService {
     private long resolveEffectiveSignalAgeMs(SmartWalletProperties.SignalRisk risk, WalletArchetypeView archetype) {
         long baseMs = defaultInt(risk.getMaxSignalAgeSeconds(), 300) * 1000L;
         return switch (archetype.archetype()) {
-            case "HF_SCALPER" -> Math.min(baseMs, 45_000L);
+            case "HF_SCALPER" -> baseMs;
             case "THEMATIC" -> Math.max(baseMs, 1_800_000L);
             case "LOW_FREQ_VALUE" -> Math.max(baseMs, 2_700_000L);
             case "SWING" -> Math.max(baseMs, 900_000L);

@@ -31,6 +31,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -41,6 +43,7 @@ public class PolymarketApiClient {
     private static final int DEFAULT_FULL_HISTORY_PAGE_SIZE = 200;
     private static final int MAX_FULL_HISTORY_PAGES = 20;
     public static final int MAX_USER_TRADE_HISTORY_OFFSET = 3_000;
+    private static final String METADATA_ENDPOINT_COOLDOWN_KEY = "metadata-endpoint:markets-condition-ids";
 
     private final SmartWalletProperties properties;
     private final ObjectMapper objectMapper;
@@ -60,6 +63,9 @@ public class PolymarketApiClient {
             .readTimeout(8, TimeUnit.SECONDS)
             .writeTimeout(8, TimeUnit.SECONDS)
             .build();
+    private final Map<String, Long> externalFailureCooldownUntilMs = new ConcurrentHashMap<>();
+    private final AtomicInteger metadataEndpointConsecutiveFailures = new AtomicInteger();
+    private volatile int adaptiveGammaChunkSize = -1;
 
     public List<LeaderboardEntry> fetchLeaderboard() {
         SmartWalletProperties.PolymarketMonitor monitor = properties.getPolymarket();
@@ -422,7 +428,7 @@ public class PolymarketApiClient {
     }
 
     public Map<String, MarketMetadata> fetchMarketMetadataBatch(Collection<String> conditionIds) {
-        return fetchMarketMetadataBatch(conditionIds, 20);
+        return fetchMarketMetadataBatch(conditionIds, configuredGammaChunkSize());
     }
 
     public Map<String, MarketMetadata> fetchMarketMetadataBatch(Collection<String> conditionIds, int chunkSize) {
@@ -437,31 +443,96 @@ public class PolymarketApiClient {
         if (normalizedIds.isEmpty()) {
             return Map.of();
         }
-        int safeChunkSize = Math.max(1, Math.min(chunkSize, 100));
+        int safeChunkSize = effectiveGammaChunkSize(chunkSize);
         Map<String, MarketMetadata> result = new LinkedHashMap<>();
+        List<String> failedIds = new ArrayList<>();
+        List<String> cooledDownIds = new ArrayList<>();
+        GammaRequestBudget requestBudget = new GammaRequestBudget(maxGammaRequestsPerRefresh());
         for (int start = 0; start < normalizedIds.size(); start += safeChunkSize) {
             List<String> chunk = normalizedIds.subList(start, Math.min(start + safeChunkSize, normalizedIds.size()));
-            try {
-                result.putAll(doFetchMarketMetadataBatch(chunk));
-            } catch (RuntimeException batchError) {
-                log.warn("Polymarket batch market metadata request failed for chunkSize={} ids={}: {}. Falling back to per-market fetch.",
-                        chunk.size(), chunk, batchError.getMessage());
-                for (String conditionId : chunk) {
-                    try {
-                        JsonNode body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(),
-                                "/markets", Map.of("condition_ids", conditionId)));
-                        List<MarketMetadata> markets = parseMarketMetadataList(body);
-                        if (!markets.isEmpty()) {
-                            result.put(conditionId, markets.get(0));
-                        }
-                    } catch (RuntimeException singleError) {
-                        log.warn("Polymarket single market metadata fallback failed for conditionId={}: {}",
-                                conditionId, singleError.getMessage());
-                    }
-                }
-            }
+            fetchMarketMetadataChunkResilient(chunk, result, failedIds, cooledDownIds, requestBudget);
+        }
+        if (!failedIds.isEmpty()) {
+            log.warn("Polymarket market metadata fetch degraded status={} failedCount={} cooledDownCount={} requestCount={} endpointCooldownMs={} currentChunkSize={} failedSample={} cooledDownSample={}",
+                    firstFailureStatus(failedIds), failedIds.size(), cooledDownIds.size(), requestBudget.used,
+                    metadataEndpointCooldownMs(), safeChunkSize, sample(failedIds, 5), sample(cooledDownIds, 5));
+        } else if (!cooledDownIds.isEmpty()) {
+            log.debug("Polymarket market metadata fetch skipped by cooldown cooledDownCount={} requestCount={} cooledDownSample={}",
+                    cooledDownIds.size(), requestBudget.used, sample(cooledDownIds, 5));
         }
         return result;
+    }
+
+    private int configuredGammaChunkSize() {
+        SmartWalletProperties.MarketMonitoring.MetadataRefresh refresh = properties.getMarketMonitoring().getMetadataRefresh();
+        Integer configuredChunkSize = refresh == null ? null : refresh.getGammaChunkSize();
+        return configuredChunkSize == null || configuredChunkSize < 1 ? 5 : configuredChunkSize;
+    }
+
+    private int effectiveGammaChunkSize(int requestedChunkSize) {
+        int configured = configuredGammaChunkSize();
+        int adaptive = adaptiveGammaChunkSize > 0 ? adaptiveGammaChunkSize : configured;
+        return Math.max(1, Math.min(Math.min(requestedChunkSize, configured), adaptive));
+    }
+
+    public boolean isMetadataEndpointCoolingDown() {
+        return isCoolingDown(METADATA_ENDPOINT_COOLDOWN_KEY);
+    }
+
+    private void fetchMarketMetadataChunkResilient(List<String> conditionIds,
+                                                   Map<String, MarketMetadata> result,
+                                                   List<String> failedIds,
+                                                   List<String> cooledDownIds,
+                                                   GammaRequestBudget requestBudget) {
+        if (isCoolingDown(METADATA_ENDPOINT_COOLDOWN_KEY)) {
+            cooledDownIds.addAll(conditionIds);
+            return;
+        }
+        List<String> activeIds = conditionIds.stream()
+                .filter(id -> {
+                    boolean coolingDown = isCoolingDown(metadataCooldownKey(id));
+                    if (coolingDown) {
+                        cooledDownIds.add(id);
+                    }
+                    return !coolingDown;
+                })
+                .toList();
+        if (activeIds.isEmpty()) {
+            return;
+        }
+        if (!requestBudget.tryAcquire()) {
+            cooledDownIds.addAll(activeIds);
+            return;
+        }
+        try {
+            Map<String, MarketMetadata> fetched = doFetchMarketMetadataBatch(activeIds);
+            result.putAll(fetched);
+            fetched.keySet().forEach(id -> clearCooldown(metadataCooldownKey(id)));
+            if (!fetched.isEmpty()) {
+                metadataEndpointConsecutiveFailures.set(0);
+                adaptiveGammaChunkSize = configuredGammaChunkSize();
+                clearCooldown(METADATA_ENDPOINT_COOLDOWN_KEY);
+            }
+        } catch (RuntimeException error) {
+            if (isMetadataEndpointBackoffFailure(error)) {
+                activeIds.forEach(id -> markCooldown(metadataCooldownKey(id), metadataFailureCooldownMs()));
+                failedIds.addAll(activeIds.stream().map(id -> id + ":" + rootMessage(error)).toList());
+                adaptiveGammaChunkSize = 1;
+                if (metadataEndpointConsecutiveFailures.incrementAndGet() >= endpointFailureThreshold()) {
+                    markCooldown(METADATA_ENDPOINT_COOLDOWN_KEY, metadataEndpointCooldownMs());
+                }
+                return;
+            }
+            if (activeIds.size() > 1) {
+                int midpoint = activeIds.size() / 2;
+                fetchMarketMetadataChunkResilient(activeIds.subList(0, midpoint), result, failedIds, cooledDownIds, requestBudget);
+                fetchMarketMetadataChunkResilient(activeIds.subList(midpoint, activeIds.size()), result, failedIds, cooledDownIds, requestBudget);
+                return;
+            }
+            String conditionId = activeIds.get(0);
+            failedIds.add(conditionId + ":" + rootMessage(error));
+            markCooldown(metadataCooldownKey(conditionId), metadataFailureCooldownMs());
+        }
     }
 
     /**
@@ -483,11 +554,25 @@ public class PolymarketApiClient {
         if (!StringUtils.hasText(query)) {
             return List.of();
         }
+        String cooldownKey = publicSearchCooldownKey(query);
+        if (isCoolingDown(cooldownKey)) {
+            log.debug("Polymarket public-search skipped during cooldown query={}", query);
+            return List.of();
+        }
         Map<String, String> params = new LinkedHashMap<>();
         params.put("q", query.trim());
         params.put("limit_per_type", String.valueOf(Math.max(limitPerType, 1)));
         params.put("keep_closed_markets", keepClosedMarkets ? "1" : "0");
-        JsonNode body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(), "/public-search", params));
+        JsonNode body;
+        try {
+            body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(), "/public-search", params));
+            clearCooldown(cooldownKey);
+        } catch (RuntimeException error) {
+            markCooldown(cooldownKey, publicSearchFailureCooldownMs());
+            log.warn("Polymarket public-search failed query={} cooldownMs={} error={}",
+                    query.trim(), publicSearchFailureCooldownMs(), rootMessage(error));
+            return List.of();
+        }
         List<MarketMetadata> results = new ArrayList<>();
         collectSearchMarkets(body.get("markets"), results);
         JsonNode events = body.get("events");
@@ -497,6 +582,112 @@ public class PolymarketApiClient {
             }
         }
         return results;
+    }
+
+    private String metadataCooldownKey(String conditionId) {
+        return "metadata:" + (conditionId == null ? "" : conditionId.trim().toLowerCase());
+    }
+
+    private String publicSearchCooldownKey(String query) {
+        return "public-search:" + (query == null ? "" : query.trim().toLowerCase());
+    }
+
+    private boolean isCoolingDown(String key) {
+        Long untilMs = externalFailureCooldownUntilMs.get(key);
+        if (untilMs == null) {
+            return false;
+        }
+        if (untilMs <= System.currentTimeMillis()) {
+            externalFailureCooldownUntilMs.remove(key, untilMs);
+            return false;
+        }
+        return true;
+    }
+
+    private void markCooldown(String key, long ttlMs) {
+        externalFailureCooldownUntilMs.put(key, System.currentTimeMillis() + Math.max(1_000L, ttlMs));
+    }
+
+    private void clearCooldown(String key) {
+        externalFailureCooldownUntilMs.remove(key);
+    }
+
+    private long metadataFailureCooldownMs() {
+        Long configured = properties.getMarketMonitoring().getMetadataRefresh().getMetadataFailureCooldownMs();
+        return configured == null ? 300_000L : Math.max(1_000L, configured);
+    }
+
+    private long publicSearchFailureCooldownMs() {
+        Long configured = properties.getMarketMonitoring().getMetadataRefresh().getPublicSearchFailureCooldownMs();
+        return configured == null ? 900_000L : Math.max(1_000L, configured);
+    }
+
+    private long metadataEndpointCooldownMs() {
+        Long configured = properties.getMarketMonitoring().getMetadataRefresh().getMetadataEndpointCooldownMs();
+        long base = configured == null ? 120_000L : Math.max(1_000L, configured);
+        Long max = properties.getMarketMonitoring().getMetadataRefresh().getEndpointCooldownMaxMs();
+        return Math.min(base, max == null ? 900_000L : Math.max(1_000L, max));
+    }
+
+    private int maxGammaRequestsPerRefresh() {
+        Integer configured = properties.getMarketMonitoring().getMetadataRefresh().getMaxGammaRequestsPerRefresh();
+        return configured == null ? 20 : Math.max(1, Math.min(configured, 100));
+    }
+
+    private int endpointFailureThreshold() {
+        Integer configured = properties.getMarketMonitoring().getMetadataRefresh().getEndpointFailureThreshold();
+        return configured == null ? 2 : Math.max(1, configured);
+    }
+
+    private boolean isMetadataEndpointBackoffFailure(Throwable error) {
+        String message = rootMessage(error).toLowerCase();
+        return message.contains("status=429")
+                || message.contains("status=500")
+                || message.contains("status=502")
+                || message.contains("status=503")
+                || message.contains("status=504")
+                || message.contains("status=403");
+    }
+
+    private String firstFailureStatus(List<String> failedIds) {
+        if (failedIds == null || failedIds.isEmpty()) {
+            return "none";
+        }
+        String first = failedIds.get(0);
+        int index = first == null ? -1 : first.indexOf("status=");
+        if (index < 0) {
+            return "unknown";
+        }
+        int start = index + "status=".length();
+        int end = start;
+        while (end < first.length() && Character.isDigit(first.charAt(end))) {
+            end++;
+        }
+        return end > start ? first.substring(start, end) : "unknown";
+    }
+
+    private List<String> sample(List<String> values, int max) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.size() <= max ? values : values.subList(0, max);
+    }
+
+    private static class GammaRequestBudget {
+        private final int limit;
+        private int used;
+
+        private GammaRequestBudget(int limit) {
+            this.limit = limit;
+        }
+
+        private boolean tryAcquire() {
+            if (used >= limit) {
+                return false;
+            }
+            used++;
+            return true;
+        }
     }
 
     private void collectSearchMarkets(JsonNode marketsNode, List<MarketMetadata> results) {
@@ -513,7 +704,7 @@ public class PolymarketApiClient {
 
     private Map<String, MarketMetadata> doFetchMarketMetadataBatch(List<String> conditionIds) {
         String joinedConditionIds = String.join(",", conditionIds);
-        JsonNode body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(),
+        JsonNode body = getJsonSingleAttempt(buildUri(properties.getPolymarket().getGammaApiBaseUrl(),
                 "/markets", Map.of("condition_ids", joinedConditionIds)));
         Map<String, MarketMetadata> result = new LinkedHashMap<>();
         for (MarketMetadata metadata : parseMarketMetadataList(body)) {
@@ -570,9 +761,6 @@ public class PolymarketApiClient {
             if (StringUtils.hasText(explicitWinner)) {
                 resolvedOutcome = explicitWinner;
             }
-        }
-        if (resolvedOutcome == null) {
-            resolvedOutcome = inferResolvedOutcomeFromPrices(outcomes, outcomePrices, closed);
         }
         if (!StringUtils.hasText(winningTokenId) && StringUtils.hasText(resolvedOutcome)) {
             winningTokenId = outcomeTokenMap.get(resolvedOutcome);
@@ -653,35 +841,6 @@ public class PolymarketApiClient {
                 .build();
     }
 
-    private String inferResolvedOutcomeFromPrices(List<String> outcomes,
-                                                  List<String> outcomePrices,
-                                                  boolean closed) {
-        if (!closed || outcomes == null || outcomePrices == null || outcomes.isEmpty() || outcomePrices.isEmpty()) {
-            return null;
-        }
-        int resolvedIndex = -1;
-        for (int i = 0; i < Math.min(outcomes.size(), outcomePrices.size()); i++) {
-            BigDecimal price = parsePrice(outcomePrices.get(i));
-            if (price == null) {
-                return null;
-            }
-            if (price.compareTo(new BigDecimal("0.999")) >= 0) {
-                if (resolvedIndex >= 0) {
-                    return null;
-                }
-                resolvedIndex = i;
-                continue;
-            }
-            if (price.compareTo(new BigDecimal("0.001")) > 0) {
-                return null;
-            }
-        }
-        if (resolvedIndex < 0 || resolvedIndex >= outcomes.size()) {
-            return null;
-        }
-        return normalizeOutcomeLabel(outcomes.get(resolvedIndex));
-    }
-
     private BigDecimal parsePrice(String raw) {
         if (!StringUtils.hasText(raw)) {
             return null;
@@ -754,6 +913,21 @@ public class PolymarketApiClient {
             }
         }
         throw lastFailure == null ? new IllegalStateException("Failed to request Polymarket API: " + uri) : lastFailure;
+    }
+
+    private JsonNode getJsonSingleAttempt(URI uri) {
+        Request request = buildRequest(uri);
+        try (Response response = fastFallbackClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IllegalStateException("Polymarket API request failed: " + uri + ", status=" + response.code());
+            }
+            if (response.body() == null) {
+                throw new IllegalStateException("Polymarket API response body is empty: " + uri);
+            }
+            return parseJsonBody(response.body().string(), uri, "http");
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to request Polymarket API: " + uri, e);
+        }
     }
 
     private JsonNode getJsonViaCurl(URI uri) {

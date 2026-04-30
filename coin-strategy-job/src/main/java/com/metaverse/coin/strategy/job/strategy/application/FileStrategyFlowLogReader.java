@@ -34,22 +34,21 @@ public class FileStrategyFlowLogReader implements StrategyFlowLogReader {
                                                 String marketId,
                                                 Integer limit) {
         String normalizedStrategy = strategy == null || strategy.isBlank() ? "POLYMARKET_COPY" : strategy;
-        List<StrategyLogEntryView> rawEntries = logQueryService.query(
+        List<StrategyLogEntryView> rawEntries = new ArrayList<>();
+        rawEntries.addAll(logQueryService.query(
                 source,
                 "ALL",
                 normalizedStrategy,
                 StrategyFlowLogSupport.FLOW_PREFIX,
                 MAX_LIMIT
-        );
-        if (rawEntries.isEmpty()) {
-            rawEntries = logQueryService.query(
-                    source,
-                    "ALL",
-                    normalizedStrategy,
-                    StrategyFlowLogSupport.LEGACY_FOLLOW_PREFIX,
-                    MAX_LIMIT
-            );
-        }
+        ));
+        rawEntries.addAll(logQueryService.query(
+                source,
+                "ALL",
+                normalizedStrategy,
+                StrategyFlowLogSupport.LEGACY_FOLLOW_PREFIX,
+                MAX_LIMIT
+        ));
         List<StrategyFlowLogEvent> events = rawEntries.stream()
                 .map(StrategyFlowLogSupport::toEvent)
                 .filter(event -> event != null && matchesFilters(event, q, wallet, eventId, followTaskId, marketId))
@@ -57,7 +56,7 @@ public class FileStrategyFlowLogReader implements StrategyFlowLogReader {
                 .toList();
 
         Map<String, List<StrategyFlowLogEvent>> grouped = new LinkedHashMap<>();
-        for (StrategyFlowLogEvent event : events) {
+        for (StrategyFlowLogEvent event : deduplicateEvents(events)) {
             grouped.computeIfAbsent(event.flowId(), ignored -> new ArrayList<>()).add(event);
         }
 
@@ -182,6 +181,29 @@ public class FileStrategyFlowLogReader implements StrategyFlowLogReader {
 
     private int clampLimit(Integer limit) {
         return limit == null ? DEFAULT_LIMIT : Math.max(1, Math.min(MAX_LIMIT, limit));
+    }
+
+    private List<StrategyFlowLogEvent> deduplicateEvents(List<StrategyFlowLogEvent> events) {
+        Map<String, StrategyFlowLogEvent> unique = new LinkedHashMap<>();
+        for (StrategyFlowLogEvent event : events) {
+            unique.putIfAbsent(deduplicateKey(event), event);
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    private String deduplicateKey(StrategyFlowLogEvent event) {
+        return String.join("\u001F",
+                nullToEmpty(event.flowId()),
+                nullToEmpty(event.flowStage()),
+                nullToEmpty(event.action()),
+                nullToEmpty(event.result()),
+                nullToEmpty(event.eventId()),
+                nullToEmpty(event.followTaskId()),
+                nullToEmpty(event.wallet()),
+                nullToEmpty(event.marketId()),
+                nullToEmpty(event.outcome()),
+                nullToEmpty(event.rawMessage())
+        );
     }
 
     private boolean equalsIgnoreCase(String actual, String expected) {

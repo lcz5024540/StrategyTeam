@@ -26,6 +26,10 @@ public class FollowTaskApplicationService {
         return smartWalletFollowTaskService.listExecutableTasks(limit);
     }
 
+    public List<SmartWalletFollowTaskView> listExecutableTasks(int limit, Integer scanLimit) {
+        return smartWalletFollowTaskService.listExecutableTasks(limit, scanLimit);
+    }
+
     public SmartWalletRiskSimulationResult simulateRisk(SmartWalletRiskSimulationRequest request) {
         return smartWalletFollowTaskService.simulateRisk(request);
     }

@@ -61,43 +61,45 @@ function DashboardStats({ metrics }: { metrics?: StrategyDashboardMetrics }) {
     )
   }
 
+  const pendingPnlUsdc = metrics.unrealizedPnlUsdc + metrics.pendingSettlementPnlUsdc
+
   return (
     <div className="ms-stat-grid six">
       <StatTile
         label="TVL"
         value={unsignedCompactMoney(metrics.tvlUsdc)}
-        sub={`Capital ${unsignedCompactMoney(metrics.capitalUsdc)}`}
+        sub={`资金 ${unsignedCompactMoney(metrics.capitalUsdc)}`}
         tone="neutral"
       />
       <StatTile
-        label="Total PnL"
+        label="总收益"
         value={signedCompactMoney(metrics.netPnlUsdc)}
-        sub={`Realized ${signedCompactMoney(metrics.realizedPnlUsdc)}`}
+        sub={`已实现 ${signedCompactMoney(metrics.realizedPnlUsdc)}`}
         tone={toneFromAmount(metrics.netPnlUsdc)}
       />
       <StatTile
-        label="Pending PnL"
-        value={signedCompactMoney(metrics.pendingSettlementPnlUsdc)}
-        sub="settlement window"
-        tone={toneFromAmount(metrics.pendingSettlementPnlUsdc)}
+        label="浮动收益"
+        value={signedCompactMoney(pendingPnlUsdc)}
+        sub={`未实现 ${signedCompactMoney(metrics.unrealizedPnlUsdc)} / 待结算 ${signedCompactMoney(metrics.pendingSettlementPnlUsdc)}`}
+        tone={toneFromAmount(pendingPnlUsdc)}
       />
       <StatTile
-        label="Orders"
+        label="订单"
         value={formatNumber(metrics.totalOrders, 0)}
-        sub={`Open ${formatNumber(metrics.openPositions, 0)} / Closed ${formatNumber(metrics.closedPositions, 0)}`}
+        sub={`已成交 ${formatNumber(metrics.filledOrders, 0)} 笔`}
         tone="neutral"
       />
       <StatTile
-        label="Win Rate"
-        value={formatPercent(metrics.winRate)}
-        sub={`${formatNumber(metrics.winTrades, 0)} win / ${formatNumber(metrics.lossTrades, 0)} loss`}
-        tone={metrics.winRate >= 0.6 ? 'positive' : metrics.winRate >= 0.5 ? 'warn' : 'negative'}
+        label="仓位"
+        value={formatNumber(metrics.openPositions + metrics.pendingPositions + metrics.closedPositions, 0)}
+        sub={`持有 ${formatNumber(metrics.openPositions, 0)} / 待结算 ${formatNumber(metrics.pendingPositions, 0)} / 已结束 ${formatNumber(metrics.closedPositions, 0)} · 剩余 ${formatNumber(metrics.remainingPositionSlots, 0)}`}
+        tone="neutral"
       />
       <StatTile
-        label="Max DD"
-        value={signedCompactMoney(metrics.maxDrawdownUsdc)}
-        sub="from peak"
-        tone="negative"
+        label="胜率"
+        value={formatPercent(metrics.winRate)}
+        sub={`${formatNumber(metrics.winTrades, 0)} 盈 / ${formatNumber(metrics.lossTrades, 0)} 亏`}
+        tone={metrics.winRate >= 0.6 ? 'positive' : metrics.winRate >= 0.5 ? 'warn' : 'negative'}
       />
     </div>
   )
@@ -121,17 +123,17 @@ function PolymarketModules({ mode }: { mode: PositionMode }) {
   return (
     <div className="ms-module-grid poly">
       <PrimeCard className="span-2">
-        <CardHeader label="Copy Wallet Performance" right={<span className="ms-muted-mono">{wallets.length} wallets tracked</span>} />
+        <CardHeader label="跟单钱包表现" right={<span className="ms-muted-mono">已跟踪 {wallets.length} 个钱包</span>} />
         <div className="ms-table-wrap compact">
           <table>
             <thead>
               <tr>
-                <th>Address</th>
-                <th>Label</th>
-                <th>Total PnL</th>
-                <th>Win Rate</th>
-                <th>Trades</th>
-                <th>Weight Bar</th>
+                <th>地址</th>
+                <th>标签</th>
+                <th>总 PnL</th>
+                <th>胜率</th>
+                <th>交易</th>
+                <th>权重</th>
               </tr>
             </thead>
             <tbody>
@@ -153,7 +155,7 @@ function PolymarketModules({ mode }: { mode: PositionMode }) {
       </PrimeCard>
 
       <PrimeCard>
-        <CardHeader label="Market Distribution" right={<span className="ms-muted-mono">{markets.length} markets</span>} />
+        <CardHeader label="市场分布" right={<span className="ms-muted-mono">{markets.length} 个市场</span>} />
         <div className="ms-list-bars">
           {markets.length === 0 ? <div className="empty-state">暂无市场归因数据</div> : markets.map((market) => (
             <div key={market.marketId || market.label} className="ms-list-bar-row">
@@ -168,7 +170,7 @@ function PolymarketModules({ mode }: { mode: PositionMode }) {
       </PrimeCard>
 
       <PrimeCard>
-        <CardHeader label="Event-Driven PnL" sub="top active markets by net pnl" />
+        <CardHeader label="事件 PnL" sub="按净收益排序的活跃市场" />
         <div className="ms-list-bars">
           {markets.slice(0, 5).map((market) => (
             <div key={`cat-${market.marketId || market.label}`} className="ms-list-bar-row">
@@ -275,7 +277,7 @@ function OperationalOverview({
 
   return (
     <PrimeCard>
-      <CardHeader label="Operational Overview" sub={`${mode} positions and recent orders`} />
+      <CardHeader label="交易概览" sub={`${mode} 仓位与近期订单`} />
       {!canLoadPositions && !canLoadOrders ? (
         <div className="empty-state">当前策略未声明 POSITIONS / ORDERS capability，暂不展示交易概览。</div>
       ) : loading ? (
@@ -283,20 +285,20 @@ function OperationalOverview({
       ) : (
         <div className="ms-operational-grid">
           <div className="ms-stat-grid four">
-            <StatTile label="Positions" value={formatNumber(operational.positionCount, 0)} tone="neutral" />
-            <StatTile label="Orders" value={formatNumber(operational.orderCount, 0)} tone="neutral" />
-            <StatTile label="Exposure" value={signedCompactMoney(operational.exposureUsdc)} tone="neutral" />
-            <StatTile label="Open PnL" value={signedCompactMoney(operational.unrealizedPnlUsdc + operational.pendingPnlUsdc)} tone={toneFromAmount(operational.unrealizedPnlUsdc + operational.pendingPnlUsdc)} />
+            <StatTile label="仓位" value={formatNumber(operational.positionCount, 0)} tone="neutral" />
+            <StatTile label="订单" value={formatNumber(operational.orderCount, 0)} tone="neutral" />
+            <StatTile label="敞口" value={signedCompactMoney(operational.exposureUsdc)} tone="neutral" />
+            <StatTile label="持仓 PnL" value={signedCompactMoney(operational.unrealizedPnlUsdc)} tone={toneFromAmount(operational.unrealizedPnlUsdc)} />
           </div>
 
           <div className="ms-table-wrap compact">
             <table>
               <thead>
                 <tr>
-                  <th>Recent Order</th>
-                  <th>Side</th>
-                  <th>Status</th>
-                  <th>Notional</th>
+                  <th>近期订单</th>
+                  <th>方向</th>
+                  <th>状态</th>
+                  <th>名义金额</th>
                 </tr>
               </thead>
               <tbody>
@@ -379,9 +381,9 @@ export function HomePage() {
             <StatusPill status={activeSummary?.status} />
           </div>
           <p>
-            Capital <strong>{unsignedCompactMoney(dashboardMetrics?.tvlUsdc ?? dashboardMetrics?.capitalUsdc)}</strong>
+            资金 <strong>{unsignedCompactMoney(dashboardMetrics?.tvlUsdc ?? dashboardMetrics?.capitalUsdc)}</strong>
             <span>|</span>
-            Updated <strong>just now</strong>
+            更新 <strong>刚刚</strong>
             {activeSummary?.modeBehavior === 'SHARED' ? <em>Paper / Live shared backend book</em> : null}
           </p>
         </div>

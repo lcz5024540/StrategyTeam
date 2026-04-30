@@ -19,6 +19,9 @@ export function StrategySubnav() {
     const params = new URLSearchParams(searchParams)
     params.set('strategy', strategy)
     params.delete('section')
+    if (route !== '/dashboard/orders') {
+      params.delete('orders')
+    }
     return `${route}?${params.toString()}`
   }
 

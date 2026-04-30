@@ -828,10 +828,9 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
-    void shouldRejectHfScalperSignalWhenOlderThan45Seconds() {
-        // HF_SCALPER wallets must enforce a 45s max signal age.
-        // Bug: case "HF" in resolveEffectiveSignalAgeMs never matches "HF_SCALPER",
-        // so the default baseMs (3600s) is used and a 75s old signal is incorrectly accepted.
+    void shouldUseConfiguredSignalAgeForHfScalperSignals() {
+        // HF_FOLLOW now uses the configured freshness window so sync/polling latency does not
+        // turn otherwise valid copy signals stale after tens of seconds.
         properties.getSignalRisk().setEnableConsensusGate(false);
         properties.getSignalRisk().setEnableSingleWalletOverride(false);
         properties.getSignalRisk().setKellyStakeEnabled(false);
@@ -843,7 +842,7 @@ class SmartWalletSignalRiskServiceTest {
                 .setWalletScore(new BigDecimal("0.80"))
                 .setWinRate(new BigDecimal("0.70"))
                 .setTotalTrades(80);
-        // 75s old: older than the 45s HF limit, but younger than the 3600s default
+        // 75s old: older than the former 45s HF cap, but younger than the configured 3600s window.
         SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
                 .setMarketId("market-1")
                 .setOutcome("YES")
@@ -860,12 +859,10 @@ class SmartWalletSignalRiskServiceTest {
 
         SignalRiskDecision decision = service.evaluate(profile, event);
 
-        // With bug ("HF" never matches "HF_SCALPER"): effectiveMax=3600s, 75s < 3600s → accepted
-        // After fix ("HF_SCALPER" matches): effectiveMax=45s, 75s > 45s → rejected as stale
-        assertFalse(decision.isAccepted(),
-                "HF_SCALPER signal older than 45s must be rejected as stale. Reasons: " + decision.getReasons());
-        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("stale")),
-                "Rejection reason must mention staleness. Reasons: " + decision.getReasons());
+        assertTrue(decision.isAccepted(),
+                "HF_SCALPER signal should follow configured maxSignalAgeSeconds. Reasons: " + decision.getReasons());
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("stale")),
+                "75s HF signal should not be stale with maxSignalAgeSeconds=3600. Reasons: " + decision.getReasons());
     }
 
     @Test
@@ -1314,6 +1311,58 @@ class SmartWalletSignalRiskServiceTest {
         assertFalse(decision.getReasons().stream().anyMatch(r -> r.equals("Recommended stake is below execution wallet minimum order.")),
                 "The preliminary min-order condition must not be a hard rejection when Kelly is enabled. Reasons: "
                         + decision.getReasons());
+    }
+
+    @Test
+    void shouldAllowConfiguredExtremePriceBandEdges() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.02"))
+                .setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(),
+                "Price at the configured lower bound 0.02 should be allowed. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldRaiseAcceptedPositiveStakeToMinOrderFloor() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.01"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(),
+                "An otherwise accepted positive stake below min order should be floored, not rejected. Reasons: "
+                        + decision.getReasons());
+        assertEquals(new BigDecimal("1.00"), decision.getRecommendedStakeUsdc());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("MIN_ORDER_STAKE_FLOOR")),
+                "Decision should explain the min-order floor. Reasons: " + decision.getReasons());
     }
 
     @Test

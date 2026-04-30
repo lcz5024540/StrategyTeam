@@ -11,6 +11,7 @@ import { PolymarketSignalsPage } from '../pages/PolymarketSignalsPage'
 import { MultiStrategyMonitorPage } from '../pages/MultiStrategyMonitorPage'
 import { StrategyConfigPage } from '../pages/StrategyConfigPage'
 import { StrategyLogsPage } from '../pages/StrategyLogsPage'
+import { PolymarketOrdersPage } from '../pages/PolymarketOrdersPage'
 
 export const router = createBrowserRouter([
   {
@@ -40,6 +41,10 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard/charts',
         element: <ChartsPage />,
+      },
+      {
+        path: 'dashboard/orders',
+        element: <PolymarketOrdersPage />,
       },
       {
         path: 'dashboard/monitoring',

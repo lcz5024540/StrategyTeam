@@ -70,6 +70,7 @@ export interface StrategyDetail {
   pendingSettlementPnlUsdc: number
   // 持仓指标
   openPositions: number
+  pendingPositions: number
   closedPositions: number
   openConflictingMarkets: number
   // 风险指标
@@ -87,6 +88,7 @@ export interface StrategyDetail {
   // 胜率
   winRate: number
   totalTrades: number
+  filledTrades: number
   winTrades: number
   lossTrades: number
 }
@@ -100,10 +102,14 @@ export interface StrategyDashboardMetrics {
   capitalUsdc?: number
   netPnlUsdc: number
   realizedPnlUsdc: number
+  unrealizedPnlUsdc: number
   pendingSettlementPnlUsdc: number
   totalOrders: number
+  filledOrders: number
   openPositions: number
+  pendingPositions: number
   closedPositions: number
+  remainingPositionSlots: number
   winRate: number
   winTrades: number
   lossTrades: number

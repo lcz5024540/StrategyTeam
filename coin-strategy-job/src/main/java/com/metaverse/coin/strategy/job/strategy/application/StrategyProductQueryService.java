@@ -243,7 +243,7 @@ public class StrategyProductQueryService {
         }
         StrategySummaryView summary = placeholder(normalizedStrategyCode, normalizedStrategyCode, "待扩展", "PLANNED", "当前策略尚未接入实时数据。");
         return new StrategyDetailView(summary,
-                new StrategyMetricsView(0, 0, 0, 0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                new StrategyMetricsView(0, 0, 0, 0, 0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO,
                         0, 0, BigDecimal.ZERO, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
@@ -425,6 +425,7 @@ public class StrategyProductQueryService {
                 snapshot.orders().size(),
                 (int) snapshot.orders().stream().filter(this::isFundingArbFilledOrder).count(),
                 snapshot.openPositions().size(),
+                0,
                 snapshot.closedPositions().size(),
                 winningPositions,
                 losingPositions,
@@ -479,6 +480,7 @@ public class StrategyProductQueryService {
         BigDecimal tvlUsdc = safe(capacity.getAvailableCapitalUsdc()).add(safe(capacity.getLockedClaimProceedsUsdc()));
         return new StrategyMetricsView(
                 performance.getTotalOrders(), performance.getFilledOrders(), performance.getOpenPositions(),
+                performance.getPendingPositions(),
                 performance.getClosedPositions(), performance.getWinningPositions(), performance.getLosingPositions(),
                 safe(performance.getWinRate()), safe(pnlSummary.getTradedVolumeUsdc()), safe(pnlSummary.getFeeUsdc()),
                 safe(performance.getRealizedPnlUsdc()), safe(performance.getUnrealizedPnlUsdc()),
@@ -717,7 +719,7 @@ public class StrategyProductQueryService {
 
     private StrategyMetricsView emptyMetrics() {
         return new StrategyMetricsView(
-                0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, BigDecimal.ZERO,
@@ -737,8 +739,11 @@ public class StrategyProductQueryService {
                 safe(metrics.realizedPnlUsdc()),
                 safe(metrics.pendingSettlementPnlUsdc()),
                 metrics.totalOrders() == null ? 0 : metrics.totalOrders(),
+                metrics.filledOrders() == null ? 0 : metrics.filledOrders(),
                 metrics.openPositions() == null ? 0 : metrics.openPositions(),
+                metrics.pendingPositions() == null ? 0 : metrics.pendingPositions(),
                 metrics.closedPositions() == null ? 0 : metrics.closedPositions(),
+                metrics.remainingPositionSlots() == null ? 0 : metrics.remainingPositionSlots(),
                 safe(metrics.winRate()),
                 metrics.winningPositions() == null ? 0 : metrics.winningPositions(),
                 metrics.losingPositions() == null ? 0 : metrics.losingPositions(),

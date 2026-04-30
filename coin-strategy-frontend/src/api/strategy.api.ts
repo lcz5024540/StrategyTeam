@@ -19,6 +19,7 @@ import type {
 
 type StrategyDetailApiResponse = Partial<StrategyDetail> & {
   totalOrders?: number
+  filledOrders?: number
   summary?: {
     code?: string
     name?: string
@@ -29,8 +30,12 @@ type StrategyDetailApiResponse = Partial<StrategyDetail> & {
   }
   metrics?: {
     totalOrders?: number
+    filledOrders?: number
     openPositions?: number
+    pendingPositions?: number
     closedPositions?: number
+    winTrades?: number
+    lossTrades?: number
     winningPositions?: number
     losingPositions?: number
     winRate?: number
@@ -106,6 +111,7 @@ function normalizeDetail(detail: StrategyDetailApiResponse): StrategyDetail {
         metrics.unrealizedPnlUsdc
     ),
     openPositions: toNumber(detail?.openPositions ?? metrics.openPositions ?? summary.openPositions),
+    pendingPositions: toNumber(detail?.pendingPositions ?? metrics.pendingPositions),
     closedPositions: toNumber(detail?.closedPositions ?? metrics.closedPositions),
     openConflictingMarkets: toNumber(detail?.openConflictingMarkets ?? metrics.openConflictingMarkets),
     maxDrawdownUsdc: toNumber(detail?.maxDrawdownUsdc ?? metrics.maxDrawdownUsdc),
@@ -128,8 +134,9 @@ function normalizeDetail(detail: StrategyDetailApiResponse): StrategyDetail {
     stopLossRealizedPnlUsdc: toNumber(detail?.stopLossRealizedPnlUsdc ?? metrics.stopLossRealizedPnlUsdc),
     winRate: toNumber(detail?.winRate ?? metrics.winRate ?? summary.winRate),
     totalTrades: toNumber(detail?.totalTrades ?? detail?.totalOrders ?? metrics.totalOrders ?? summary.totalOrders),
-    winTrades: toNumber(detail?.winTrades ?? metrics.winningPositions),
-    lossTrades: toNumber(detail?.lossTrades ?? metrics.losingPositions),
+    filledTrades: toNumber(detail?.filledTrades ?? detail?.filledOrders ?? metrics.filledOrders),
+    winTrades: toNumber(detail?.winTrades ?? metrics.winTrades ?? metrics.winningPositions),
+    lossTrades: toNumber(detail?.lossTrades ?? metrics.lossTrades ?? metrics.losingPositions),
   }
 }
 

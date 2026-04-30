@@ -63,6 +63,35 @@ class StrategyLogQueryServiceTest {
     }
 
     @Test
+    void flowReaderDeduplicatesSameFlowEventAcrossResolvedSourceFiles() throws IOException {
+        String duplicatedLine = "2026-04-29 09:09:46.348[1777424986348] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S1_EVENT_CAPTURED action=记录Polymarket钱包交易事件 result=已入库 eventId=53558 followTaskId=- wallet=0xabc marketId=m1 outcome=UP reasonSummary=交易事件已入库\n";
+        write("binance-java-connector.log", duplicatedLine);
+        write("job-current.log", duplicatedLine);
+
+        FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
+        List<StrategyLogFlowView> flows = reader.queryFlows("app", "POLYMARKET_COPY", null, null, "53558", null, null, 20);
+
+        assertEquals(1, flows.size());
+        assertEquals("event:53558", flows.get(0).flowId());
+        assertEquals(1, flows.get(0).entries().size());
+    }
+
+    @Test
+    void flowReaderCombinesStructuredAndLegacyFlowLogs() throws IOException {
+        write("binance-java-connector.log", """
+                2026-04-29 09:09:46.348[1777424986348] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S1_EVENT_CAPTURED action=记录Polymarket钱包交易事件 result=已入库 eventId=53558 followTaskId=- wallet=0xabc marketId=m1 outcome=UP reasonSummary=交易事件已入库
+                2026-04-29 09:09:47.348[1777424987348] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSignalRiskService - [POLY_FOLLOW] action=完成跟单风控评估 result=拒绝 followTaskId=29927 wallet=0xdef marketId=m2 outcome=DOWN firstRejectGate=G1_WATCHLIST_UNQUALIFIED
+                """);
+
+        FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
+        List<StrategyLogFlowView> flows = reader.queryFlows("app", "POLYMARKET_COPY", null, null, null, null, null, 20);
+
+        assertEquals(2, flows.size());
+        assertTrue(flows.stream().anyMatch(flow -> "event:53558".equals(flow.flowId())));
+        assertTrue(flows.stream().anyMatch(flow -> "task:29927".equals(flow.flowId())));
+    }
+
+    @Test
     void flowReaderFallsBackToLegacyPolymarketFollowLogs() throws IOException {
         write("job-startup.log", """
                 2026-04-29 10:49:58.357 INFO  [http-nio-127.0.0.1-8081-exec-3] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSignalRiskService - [POLY_FOLLOW] action=完成跟单风控评估 result=拒绝 followTaskId=20050 wallet=0xabc marketId=m1 outcome=YES firstRejectGate=G1_WATCHLIST_UNQUALIFIED

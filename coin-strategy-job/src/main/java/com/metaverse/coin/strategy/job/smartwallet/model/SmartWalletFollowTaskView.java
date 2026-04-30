@@ -32,6 +32,7 @@ public class SmartWalletFollowTaskView {
     private BigDecimal consensusScore;
     private BigDecimal estimatedFeeUsdc;
     private BigDecimal estimatedSlippageUsdc;
+    private BigDecimal estimatedNetProfitabilityUsdc;
     private BigDecimal followProbability;
     private BigDecimal calibratedFollowProbability;
     private BigDecimal slippageSpikeProbability;

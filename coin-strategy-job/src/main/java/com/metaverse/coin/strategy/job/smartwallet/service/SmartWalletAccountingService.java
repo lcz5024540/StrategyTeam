@@ -489,6 +489,17 @@ public class SmartWalletAccountingService {
      * @return 游标分页结果
      */
     public CursorPageView<SmartWalletOrderView> listOrdersCursor(int limit, Long lastId, String mode) {
+        return listOrdersCursor(limit, lastId, mode, null, null, null, null, null);
+    }
+
+    public CursorPageView<SmartWalletOrderView> listOrdersCursor(int limit,
+                                                                 Long lastId,
+                                                                 String mode,
+                                                                 String pnl,
+                                                                 String settlement,
+                                                                 String side,
+                                                                 String status,
+                                                                 String q) {
         int safeLimit = Math.max(limit, 1);
         // 多取一条用于判断 hasMore
         int fetchSize = safeLimit + 1;
@@ -505,6 +516,8 @@ public class SmartWalletAccountingService {
         } else if ("LIVE".equals(normalized)) {
             wrapper.ne(SmartWalletOrderEntity::getExecutionAddress, PAPER_BOOK_EXECUTION_ADDRESS);
         }
+
+        applyOrderCursorFilters(wrapper, pnl, settlement, side, status, q);
 
         // ── 游标条件：沿用 placedAt desc, id desc 的稳定排序翻页 ──
         if (lastId != null) {
@@ -532,6 +545,57 @@ public class SmartWalletAccountingService {
                 : null;
 
         return CursorPageView.of(items, nextCursor);
+    }
+
+    private void applyOrderCursorFilters(LambdaQueryWrapper<SmartWalletOrderEntity> wrapper,
+                                         String pnl,
+                                         String settlement,
+                                         String side,
+                                         String status,
+                                         String q) {
+        String normalizedPnl = normalizeFilterValue(pnl);
+        if ("PROFIT".equals(normalizedPnl)) {
+            wrapper.gt(SmartWalletOrderEntity::getRealizedPnlUsdc, BigDecimal.ZERO);
+        } else if ("LOSS".equals(normalizedPnl)) {
+            wrapper.lt(SmartWalletOrderEntity::getRealizedPnlUsdc, BigDecimal.ZERO);
+        } else if ("ZERO".equals(normalizedPnl)) {
+            wrapper.and(condition -> condition
+                    .isNull(SmartWalletOrderEntity::getRealizedPnlUsdc)
+                    .or()
+                    .eq(SmartWalletOrderEntity::getRealizedPnlUsdc, BigDecimal.ZERO));
+        }
+
+        String normalizedSettlement = normalizeFilterValue(settlement);
+        if ("SETTLED".equals(normalizedSettlement)) {
+            wrapper.in(SmartWalletOrderEntity::getStatus, List.of(ORDER_STATUS_SETTLED_WIN, ORDER_STATUS_SETTLED_LOSS));
+        } else if ("UNSETTLED".equals(normalizedSettlement)) {
+            wrapper.notIn(SmartWalletOrderEntity::getStatus, List.of(ORDER_STATUS_SETTLED_WIN, ORDER_STATUS_SETTLED_LOSS));
+        } else if ("EARLY_EXIT".equals(normalizedSettlement)) {
+            wrapper.and(condition -> condition
+                    .isNotNull(SmartWalletOrderEntity::getExitReason)
+                    .or()
+                    .eq(SmartWalletOrderEntity::getOrderType, ORDER_TYPE_EXIT));
+        }
+
+        if (StringUtils.hasText(side)) {
+            wrapper.eq(SmartWalletOrderEntity::getSide, side.trim().toUpperCase(Locale.ROOT));
+        }
+        if (StringUtils.hasText(status)) {
+            wrapper.eq(SmartWalletOrderEntity::getStatus, status.trim().toUpperCase(Locale.ROOT));
+        }
+        if (StringUtils.hasText(q)) {
+            String keyword = q.trim();
+            wrapper.and(condition -> condition
+                    .like(SmartWalletOrderEntity::getExternalOrderId, keyword)
+                    .or()
+                    .like(SmartWalletOrderEntity::getExecutionAddress, keyword)
+                    .or()
+                    .like(SmartWalletOrderEntity::getWalletAddress, keyword)
+                    .or()
+                    .apply("market_info_id IN (SELECT id FROM smart_wallet_market_info WHERE market_id LIKE {0} OR question LIKE {0} OR outcome LIKE {0})", "%" + keyword + "%")
+                    .or()
+                    .apply("CAST(id AS CHAR) LIKE {0}", "%" + keyword + "%"));
+        }
     }
 
     public List<SmartWalletFillView> listFills(int limit) {
@@ -789,7 +853,7 @@ public class SmartWalletAccountingService {
                 .unrealizedPnlUsdc(unrealized)
                 .pendingSettlementPnlUsdc(pendingSettlement)
                 .compositePnlUsdc(composite)
-                .netPnlUsdc(settledNet)
+                .netPnlUsdc(composite)
                 .winRate(winRate)
                 .build();
     }
@@ -808,10 +872,8 @@ public class SmartWalletAccountingService {
             if (!matchesDashboardMode(position.getExecutionAddress(), mode)) {
                 continue;
             }
-            if (isActivePositionStatus(position.getStatus())) {
-                filteredOpenPositionCount++;
-            }
             if (isCapitalLockedPositionStatus(position.getStatus())) {
+                filteredOpenPositionCount++;
                 totalOpenCost = totalOpenCost.add(safe(position.getCostBasisUsdc()));
             }
         }
@@ -931,6 +993,7 @@ public class SmartWalletAccountingService {
         BigDecimal fee = totalFeeAmountByMode(mode, null, null);
         int filledOrders = 0;
         int openPositions = 0;
+        int pendingPositions = 0;
         int closedPositions = 0;
         int winningPositions = 0;
         int losingPositions = 0;
@@ -949,15 +1012,17 @@ public class SmartWalletAccountingService {
         for (SmartWalletPositionEntity position : filteredPositions) {
             markToMarket(position);
             BigDecimal positionRealized = realizedPnlForPosition(position);
-            BigDecimal positionUnrealized = isActivePositionStatus(position.getStatus()) && !isPendingSettlementWindow(position)
-                    ? safe(position.getUnrealizedPnlUsdc())
-                    : BigDecimal.ZERO;
-            unrealized = unrealized.add(positionUnrealized);
-            if (isPendingSettlementWindow(position)) {
+            boolean pendingTracked = isPendingSettlementTracked(position);
+            if (pendingTracked) {
+                pendingPositions++;
                 pendingSettlement = pendingSettlement.add(pendingSettlementNetPnlForPosition(position));
-            }
-            if (isClosedOrSettledStatus(position.getStatus())) {
+            } else if (isActivePositionStatus(position.getStatus())) {
+                unrealized = unrealized.add(safe(position.getUnrealizedPnlUsdc()));
+                openPositions++;
+            } else if (isClosedOrSettledStatus(position.getStatus())) {
                 closedPositions++;
+            }
+            if (pendingTracked || isClosedOrSettledStatus(position.getStatus())) {
                 if (positionRealized.compareTo(BigDecimal.ZERO) > 0) {
                     winningPositions++;
                     totalWins = totalWins.add(positionRealized);
@@ -966,8 +1031,6 @@ public class SmartWalletAccountingService {
                     losingPositions++;
                     totalLosses = totalLosses.add(positionRealized.abs());
                 }
-            } else if (isActivePositionStatus(position.getStatus())) {
-                openPositions++;
             }
         }
         int completed = winningPositions + losingPositions;
@@ -988,6 +1051,7 @@ public class SmartWalletAccountingService {
                 .filledOrders(filledOrders)
                 .closedPositions(closedPositions)
                 .openPositions(openPositions)
+                .pendingPositions(pendingPositions)
                 .winningPositions(winningPositions)
                 .losingPositions(losingPositions)
                 .winRate(winRate)
@@ -997,7 +1061,7 @@ public class SmartWalletAccountingService {
                 .unrealizedPnlUsdc(unrealized)
                 .pendingSettlementPnlUsdc(pendingSettlement)
                 .compositePnlUsdc(composite)
-                .netPnlUsdc(settledNet)
+                .netPnlUsdc(composite)
                 .averageWinUsdc(averageWin)
                 .averageLossUsdc(averageLoss)
                 .profitFactor(profitFactor)
@@ -1027,13 +1091,16 @@ public class SmartWalletAccountingService {
     public List<SmartWalletPnlTimelinePoint> pnlTimeline(int days, int bucketHours, String mode) {
         int safeDays = Math.max(Math.min(days, 180), 1);
         int safeBucketHours = normalizeTimelineBucketHours(bucketHours);
+        if (safeBucketHours >= 24) {
+            return dailyReportTimeline(safeDays, mode);
+        }
         ZoneId zoneId = ZoneId.systemDefault();
         LocalDateTime now = LocalDateTime.now(zoneId);
         LocalDateTime requestedStartBucket = floorToTimelineBucket(now.minusDays(safeDays), safeBucketHours);
         Date startDate = Date.from(requestedStartBucket.atZone(zoneId).toInstant());
 
         List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
-                .in(SmartWalletCashLedgerEntity::getEntryType, List.of("REALIZED_PNL", "FEE"))
+                .in(SmartWalletCashLedgerEntity::getEntryType, List.of("REALIZED_PNL", "FEE", "NETWORK_FEE"))
                 .ge(SmartWalletCashLedgerEntity::getOccurredAt, startDate)
                 .le(SmartWalletCashLedgerEntity::getOccurredAt, Date.from(now.atZone(zoneId).toInstant()))
                 .orderByAsc(SmartWalletCashLedgerEntity::getOccurredAt)
@@ -1076,10 +1143,11 @@ public class SmartWalletAccountingService {
         }
 
         List<SmartWalletPnlTimelinePoint> points = new ArrayList<>();
-        BigDecimal cumulativeLoss = BigDecimal.ZERO;
-        BigDecimal cumulativeRealized = BigDecimal.ZERO;
-        BigDecimal cumulativeFee = BigDecimal.ZERO;
-        BigDecimal cumulativeNet = BigDecimal.ZERO;
+        TimelineBaseline baseline = timelineBaselineBefore(startDate, mode);
+        BigDecimal cumulativeLoss = baseline.cumulativeLossPnlUsdc();
+        BigDecimal cumulativeRealized = baseline.cumulativeRealizedPnlUsdc();
+        BigDecimal cumulativeFee = baseline.cumulativeFeeUsdc();
+        BigDecimal cumulativeNet = baseline.cumulativeNetPnlUsdc();
         for (Map.Entry<LocalDateTime, TimelineBucketAccumulator> entry : buckets.entrySet()) {
             TimelineBucketAccumulator bucket = entry.getValue();
             cumulativeLoss = cumulativeLoss.add(bucket.lossPnl());
@@ -1104,6 +1172,12 @@ public class SmartWalletAccountingService {
 
     private List<SmartWalletPnlTimelinePoint> dailyReportTimeline(int days, String mode) {
         int safeDays = Math.max(days, 1);
+        ZoneId zoneId = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zoneId);
+        TimelineBucketAccumulator currentDayBucket = currentDayTimelineBucket(today, zoneId, mode);
+        BigDecimal currentFloatingPnl = currentFloatingPnl(mode);
+        boolean hasRealtimeToday = currentDayBucket.hasActivity() || currentFloatingPnl.compareTo(BigDecimal.ZERO) != 0;
+
         List<SmartWalletDailyReportEntity> reports = dailyReportMapper.selectList(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
                 .orderByAsc(SmartWalletDailyReportEntity::getReportDate));
         if (reports == null) {
@@ -1120,25 +1194,58 @@ public class SmartWalletAccountingService {
         BigDecimal cumulativeRealized = BigDecimal.ZERO;
         BigDecimal cumulativeFee = BigDecimal.ZERO;
         BigDecimal cumulative = BigDecimal.ZERO;
+        BigDecimal previousFloatingPnl = BigDecimal.ZERO;
+        boolean emittedToday = false;
         for (SmartWalletDailyReportEntity report : selectedReports) {
-            BigDecimal realized = safe(report.getRealizedPnlUsdc());
-            BigDecimal fee = safe(report.getFeeUsdc());
-            BigDecimal net = safe(report.getNetPnlUsdc(), realized.subtract(fee));
-            DailyOutcomeBreakdown breakdown = outcomeBreakdowns.get(toLocalDate(report.getReportDate()));
-            BigDecimal profit = breakdown != null && breakdown.hasOutcomeEntries()
+            LocalDate reportDate = toLocalDate(report.getReportDate());
+            boolean useRealtimeToday = hasRealtimeToday && today.equals(reportDate);
+            BigDecimal realized = useRealtimeToday ? currentDayBucket.realizedPnl : safe(report.getRealizedPnlUsdc());
+            BigDecimal fee = useRealtimeToday ? currentDayBucket.fee : safe(report.getFeeUsdc());
+            BigDecimal floatingPnl = useRealtimeToday ? currentFloatingPnl : safe(report.getUnrealizedPnlUsdc());
+            BigDecimal net = realized.subtract(fee).add(floatingPnl.subtract(previousFloatingPnl));
+            DailyOutcomeBreakdown breakdown = outcomeBreakdowns.get(reportDate);
+            BigDecimal profit = useRealtimeToday
+                    ? currentDayBucket.profitPnl()
+                    : (breakdown != null && breakdown.hasOutcomeEntries()
                     ? breakdown.profitPnlUsdc
-                    : realized.max(BigDecimal.ZERO);
-            BigDecimal loss = breakdown != null && breakdown.hasOutcomeEntries()
+                    : realized.max(BigDecimal.ZERO));
+            BigDecimal loss = useRealtimeToday
+                    ? currentDayBucket.lossPnl()
+                    : (breakdown != null && breakdown.hasOutcomeEntries()
                     ? breakdown.lossPnlUsdc
-                    : (realized.compareTo(BigDecimal.ZERO) < 0 ? realized : BigDecimal.ZERO);
+                    : (realized.compareTo(BigDecimal.ZERO) < 0 ? realized : BigDecimal.ZERO));
             cumulativeLoss = cumulativeLoss.add(loss);
             cumulativeRealized = cumulativeRealized.add(realized);
             cumulativeFee = cumulativeFee.add(fee);
-            cumulative = cumulative.add(net);
+            cumulative = cumulativeRealized.subtract(cumulativeFee).add(floatingPnl);
             points.add(SmartWalletPnlTimelinePoint.builder()
                     .bucketAt(report.getReportDate())
                     .profitPnlUsdc(profit)
                     .lossPnlUsdc(loss)
+                    .realizedPnlUsdc(realized)
+                    .feeUsdc(fee)
+                    .netPnlUsdc(net)
+                    .cumulativeLossPnlUsdc(cumulativeLoss)
+                    .cumulativeRealizedPnlUsdc(cumulativeRealized)
+                    .cumulativeFeeUsdc(cumulativeFee)
+                    .cumulativeNetPnlUsdc(cumulative)
+                    .build());
+            previousFloatingPnl = floatingPnl;
+            emittedToday = emittedToday || useRealtimeToday;
+        }
+        if (hasRealtimeToday && !emittedToday) {
+            BigDecimal realized = currentDayBucket.realizedPnl;
+            BigDecimal fee = currentDayBucket.fee;
+            BigDecimal floatingPnl = currentFloatingPnl;
+            BigDecimal net = realized.subtract(fee).add(floatingPnl.subtract(previousFloatingPnl));
+            cumulativeLoss = cumulativeLoss.add(currentDayBucket.lossPnl());
+            cumulativeRealized = cumulativeRealized.add(realized);
+            cumulativeFee = cumulativeFee.add(fee);
+            cumulative = cumulativeRealized.subtract(cumulativeFee).add(floatingPnl);
+            points.add(SmartWalletPnlTimelinePoint.builder()
+                    .bucketAt(java.sql.Date.valueOf(today))
+                    .profitPnlUsdc(currentDayBucket.profitPnl())
+                    .lossPnlUsdc(currentDayBucket.lossPnl())
                     .realizedPnlUsdc(realized)
                     .feeUsdc(fee)
                     .netPnlUsdc(net)
@@ -1742,6 +1849,23 @@ public class SmartWalletAccountingService {
                             + " [" + abbreviateQuestion(question) + "] because Polymarket did not return a unique final-price signal.");
                     continue;
                 }
+                // Defense-in-depth：手动确认通道也要求 endAt 已过、且 closed。否则同样可能
+                // 把"Gamma 短暂返回 winner 但链上未结算"的市场错误结算。
+                long manualNowMs = System.currentTimeMillis();
+                boolean manualMarketEnded = (metadata.getEndAt() != null && metadata.getEndAt() > 0 && metadata.getEndAt() <= manualNowMs)
+                        || marketPositions.stream()
+                                .map(SmartWalletPositionEntity::getMarketEndAt)
+                                .filter(java.util.Objects::nonNull)
+                                .anyMatch(ts -> ts > 0 && ts <= manualNowMs);
+                if (!manualMarketEnded || !metadata.isClosed()) {
+                    unresolved++;
+                    notes.add("Manual confirmation skipped for market " + marketId
+                            + " [" + abbreviateQuestion(question) + "] because market has not actually ended yet "
+                            + "(endAt=" + metadata.getEndAt() + ", closed=" + metadata.isClosed() + ").");
+                    log.warn("Skipping manual confirmation for market {} despite resolvedOutcome={} because marketEnded={}, closed={}, endAt={}",
+                            marketId, metadata.getResolvedOutcome(), manualMarketEnded, metadata.isClosed(), metadata.getEndAt());
+                    continue;
+                }
                 fetched++;
                 syncResolvedPaperOrderStatuses(marketId, metadata);
                 for (SmartWalletPositionEntity position : marketPositions) {
@@ -1874,6 +1998,26 @@ public class SmartWalletAccountingService {
                             ? buildOraclePendingSettlementNote(position, metadata)
                             : buildUnresolvedSettlementNote(position, metadata));
                 }
+                unresolved++;
+                continue;
+            }
+            // Defense-in-depth: 即使 metadata.isResolved()==true，仍要求市场在链上确实
+            // 已经过了 endAt 才允许结算。此前出现过 Gamma API 短暂返回 winner 标志、
+            // 但市场尚未到达 endAt 的"假结算"状态，导致跟单订单被错误判输。
+            // 同时要求 metadata.isClosed()==true，进一步防止 endAt 缺失/为 0 的极端样本误判。
+            long nowMs = System.currentTimeMillis();
+            boolean marketEnded = (metadata.getEndAt() != null && metadata.getEndAt() > 0 && metadata.getEndAt() <= nowMs)
+                    || (position.getMarketEndAt() != null && position.getMarketEndAt() > 0 && position.getMarketEndAt() <= nowMs);
+            if (!marketEnded || !metadata.isClosed()) {
+                if (StringUtils.hasText(position.getMarketId())
+                        && unresolvedNotedMarkets.add(position.getMarketId())) {
+                    notes.add("Skipped premature settlement: marketId=" + position.getMarketId()
+                            + " (resolvedOutcome=" + metadata.getResolvedOutcome()
+                            + ", endAt=" + metadata.getEndAt()
+                            + ", closed=" + metadata.isClosed() + ")");
+                }
+                log.warn("Skipping settlement for market {} despite resolvedOutcome={} because marketEnded={}, closed={}, endAt={}",
+                        position.getMarketId(), metadata.getResolvedOutcome(), marketEnded, metadata.isClosed(), metadata.getEndAt());
                 unresolved++;
                 continue;
             }
@@ -2043,17 +2187,19 @@ public class SmartWalletAccountingService {
             return;
         }
         List<Long> marketInfoIds = marketInfoService.findIdsByMarketId(marketId);
-        if (marketInfoIds.isEmpty()) {
-            return;
-        }
-        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+        LambdaQueryWrapper<SmartWalletPositionEntity> wrapper = new LambdaQueryWrapper<SmartWalletPositionEntity>()
                 .eq(SmartWalletPositionEntity::getExecutionAddress, PAPER_BOOK_EXECUTION_ADDRESS)
-                .in(SmartWalletPositionEntity::getMarketInfoId, marketInfoIds)
                 .in(SmartWalletPositionEntity::getStatus, List.of(
                         "OPEN",
                         "PARTIALLY_CLOSED",
                         POSITION_STATUS_SETTLEMENT_PENDING_ORACLE
-                )));
+                ));
+        if (marketInfoIds.isEmpty()) {
+            wrapper.eq(SmartWalletPositionEntity::getMarketId, marketId);
+        } else {
+            wrapper.in(SmartWalletPositionEntity::getMarketInfoId, marketInfoIds);
+        }
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(wrapper);
         Date now = new Date();
         for (SmartWalletPositionEntity position : positions) {
             if (POSITION_STATUS_SETTLEMENT_PENDING_ORACLE.equalsIgnoreCase(position.getStatus())) {
@@ -2070,13 +2216,15 @@ public class SmartWalletAccountingService {
             return;
         }
         List<Long> marketInfoIds = marketInfoService.findIdsByMarketId(marketId);
-        if (marketInfoIds.isEmpty()) {
-            return;
-        }
-        List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+        LambdaQueryWrapper<SmartWalletOrderEntity> wrapper = new LambdaQueryWrapper<SmartWalletOrderEntity>()
                 .eq(SmartWalletOrderEntity::getExecutionAddress, PAPER_BOOK_EXECUTION_ADDRESS)
-                .in(SmartWalletOrderEntity::getMarketInfoId, marketInfoIds)
-                .in(SmartWalletOrderEntity::getStatus, EXECUTED_ORDER_STATUSES));
+                .in(SmartWalletOrderEntity::getStatus, EXECUTED_ORDER_STATUSES);
+        if (marketInfoIds.isEmpty()) {
+            wrapper.eq(SmartWalletOrderEntity::getMarketId, marketId);
+        } else {
+            wrapper.in(SmartWalletOrderEntity::getMarketInfoId, marketInfoIds);
+        }
+        List<SmartWalletOrderEntity> orders = orderMapper.selectList(wrapper);
         marketInfoService.populateOrders(orders);
         Date now = new Date();
         for (SmartWalletOrderEntity order : orders) {
@@ -2515,10 +2663,19 @@ public class SmartWalletAccountingService {
 
     private BigDecimal settlementPrice(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {
         if (metadata == null) {
-            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+            // 上游不应该在 metadata=null 时调用本方法，抛错让问题立刻可见
+            throw new IllegalStateException("settlementPrice called with null metadata");
         }
         if (!StringUtils.hasText(metadata.getResolvedOutcome())) {
-            return metadata.isClosed() ? BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP) : safe(position.getLastMarkPrice());
+            // 之前的实现里：closed=true 但 resolvedOutcome 仍为空时返回 ZERO，
+            // 等于直接把仓位估成全损 —— 这是订单被错误判输的根源之一。
+            // 调用方在调用本方法前必须先确认 metadata.isResolved()。这里失败式抛错，
+            // 防止再次出现"链上尚未结算却把仓位估成 0"的静默错误。
+            throw new IllegalStateException(
+                    "settlementPrice called for unresolved market: marketId=" + metadata.getMarketId()
+                            + ", conditionId=" + metadata.getConditionId()
+                            + ", closed=" + metadata.isClosed()
+                            + ", endAt=" + metadata.getEndAt());
         }
         // Path 1 (most reliable): direct winningTokenId comparison
         Boolean isWinning = marketMetadataService.isWinningPosition(
@@ -2551,6 +2708,9 @@ public class SmartWalletAccountingService {
             return;
         }
         SmartWalletMarketStateService.MarketStateSnapshot marketState = resolvePositionMarketState(position);
+        if (marketState == null) {
+            marketState = SmartWalletMarketStateService.MarketStateSnapshot.unknown(position.getMarketId());
+        }
         if (!marketState.isActive()) {
             return;
         }
@@ -2582,6 +2742,9 @@ public class SmartWalletAccountingService {
                         .toList(),
                 false
         );
+        if (statesByMarketId == null) {
+            statesByMarketId = Map.of();
+        }
         for (SmartWalletPositionEntity position : positions) {
             SmartWalletMarketStateService.MarketStateSnapshot snapshot =
                     statesByMarketId.get(position == null ? null : position.getMarketId());
@@ -2621,6 +2784,9 @@ public class SmartWalletAccountingService {
                 position.getQuestion(),
                 StringUtils.hasText(position.getOutcome()) ? List.of(position.getOutcome()) : List.of()
         );
+        if (snapshot == null) {
+            snapshot = SmartWalletMarketStateService.MarketStateSnapshot.unknown(position.getMarketId());
+        }
         applySnapshotToPosition(position, snapshot);
         return snapshot;
     }
@@ -2705,6 +2871,9 @@ public class SmartWalletAccountingService {
             notes.add("Version conflict repairing position " + position.getId() + ", will retry next cycle");
             return false;
         }
+        // 同步把对应 order 的 SETTLED_WIN/LOSS 误判回滚
+        // 仅处理非早退（非 TP/SL）单：早退单的 SETTLED_* 来自真实的 exitReason，应保留
+        rollbackPrematureSettledOrders(position, notes);
         if (snapshot.openedAt() != null) {
             rebuildDailyReport(position.getExecutionAddress(), toLocalDate(snapshot.openedAt()));
         }
@@ -2716,6 +2885,44 @@ public class SmartWalletAccountingService {
         }
         notes.add("Repaired premature settlement for position " + position.getId() + " => " + snapshot.status());
         return true;
+    }
+
+    private void rollbackPrematureSettledOrders(SmartWalletPositionEntity position, List<String> notes) {
+        if (position == null || position.getId() == null) {
+            return;
+        }
+        List<SmartWalletOrderEntity> affectedOrders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                .eq(SmartWalletOrderEntity::getPositionId, position.getId())
+                .in(SmartWalletOrderEntity::getStatus, List.of(ORDER_STATUS_SETTLED_WIN, ORDER_STATUS_SETTLED_LOSS)));
+        if (affectedOrders.isEmpty()) {
+            return;
+        }
+        long nowMs = System.currentTimeMillis();
+        boolean marketStillRunning = position.getMarketEndAt() == null
+                || position.getMarketEndAt() <= 0
+                || position.getMarketEndAt() > nowMs;
+        String resetStatus = marketStillRunning
+                ? "FILLED"
+                : ORDER_STATUS_SETTLEMENT_PENDING_ORACLE;
+        Date now = new Date();
+        int rolledBack = 0;
+        for (SmartWalletOrderEntity order : affectedOrders) {
+            // 早退单（TAKE_PROFIT_AUTO_EXIT / STOP_LOSS_AUTO_EXIT）的 SETTLED_* 来自真实的提前止盈止损，应保留
+            if (isEarlyExitOrder(order)) {
+                continue;
+            }
+            order.setStatus(resetStatus);
+            // 把可能由 prematurely resolvePosition 写入的负值 PnL 抹掉，避免显示层继续把它当成"输"
+            order.setRealizedPnlUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP));
+            order.setUpdatedAt(now);
+            if (updateOrderChecked(order, "rollbackPrematureSettledOrder")) {
+                rolledBack++;
+            }
+        }
+        if (rolledBack > 0) {
+            notes.add("Rolled back " + rolledBack + " prematurely SETTLED_* order(s) for position "
+                    + position.getId() + " => " + resetStatus);
+        }
     }
 
     private PositionSnapshot replayPositionFromFills(List<SmartWalletFillEntity> fills) {
@@ -2801,6 +3008,9 @@ public class SmartWalletAccountingService {
     }
 
     private LocalDate toLocalDate(Date date) {
+        if (date instanceof java.sql.Date sqlDate) {
+            return sqlDate.toLocalDate();
+        }
         return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
     }
 
@@ -2863,6 +3073,81 @@ public class SmartWalletAccountingService {
                     : safe(entry.getAmount());
         }
         return BigDecimal.ZERO;
+    }
+
+    private TimelineBaseline timelineBaselineBefore(Date startDate, String mode) {
+        List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
+                .in(SmartWalletCashLedgerEntity::getEntryType, List.of("REALIZED_PNL", "FEE", "NETWORK_FEE"))
+                .lt(SmartWalletCashLedgerEntity::getOccurredAt, startDate)
+                .orderByAsc(SmartWalletCashLedgerEntity::getOccurredAt)
+                .orderByAsc(SmartWalletCashLedgerEntity::getId));
+        if (entries == null) {
+            entries = List.of();
+        }
+        TimelineBucketAccumulator accumulator = new TimelineBucketAccumulator();
+        for (SmartWalletCashLedgerEntity entry : entries) {
+            if (!matchesDashboardMode(entry.getExecutionAddress(), mode)) {
+                continue;
+            }
+            BigDecimal delta = ledgerPnlDelta(entry);
+            if (delta.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            accumulator.add(entry, delta);
+        }
+        return new TimelineBaseline(
+                accumulator.lossPnl().setScale(8, RoundingMode.HALF_UP),
+                accumulator.realizedPnl.setScale(8, RoundingMode.HALF_UP),
+                accumulator.fee.setScale(8, RoundingMode.HALF_UP),
+                accumulator.netPnl().setScale(8, RoundingMode.HALF_UP)
+        );
+    }
+
+    private TimelineBucketAccumulator currentDayTimelineBucket(LocalDate today, ZoneId zoneId, String mode) {
+        Date start = Date.from(today.atStartOfDay(zoneId).toInstant());
+        Date end = Date.from(today.plusDays(1).atStartOfDay(zoneId).toInstant());
+        List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
+                .in(SmartWalletCashLedgerEntity::getEntryType, List.of("REALIZED_PNL", "FEE", "NETWORK_FEE"))
+                .ge(SmartWalletCashLedgerEntity::getOccurredAt, start)
+                .lt(SmartWalletCashLedgerEntity::getOccurredAt, end)
+                .orderByAsc(SmartWalletCashLedgerEntity::getOccurredAt)
+                .orderByAsc(SmartWalletCashLedgerEntity::getId));
+        TimelineBucketAccumulator accumulator = new TimelineBucketAccumulator();
+        if (entries == null) {
+            return accumulator;
+        }
+        for (SmartWalletCashLedgerEntity entry : entries) {
+            if (!matchesDashboardMode(entry.getExecutionAddress(), mode)) {
+                continue;
+            }
+            BigDecimal delta = ledgerPnlDelta(entry);
+            if (delta.compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            accumulator.add(entry, delta);
+        }
+        return accumulator;
+    }
+
+    private BigDecimal currentFloatingPnl(String mode) {
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>());
+        if (positions == null || positions.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        marketInfoService.populatePositions(positions);
+        BigDecimal floatingPnl = BigDecimal.ZERO;
+        for (SmartWalletPositionEntity position : positions) {
+            if (!matchesDashboardMode(position.getExecutionAddress(), mode)) {
+                continue;
+            }
+            markToMarket(position);
+            if (isPendingSettlementTracked(position)) {
+                floatingPnl = floatingPnl.add(pendingSettlementNetPnlForPosition(position));
+            } else if (isActivePositionStatus(position.getStatus())) {
+                floatingPnl = floatingPnl.add(safe(position.getUnrealizedPnlUsdc()));
+            }
+        }
+        return floatingPnl.setScale(8, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateMaxDrawdownFromDailyReports(String mode) {
@@ -3057,7 +3342,13 @@ public class SmartWalletAccountingService {
         if (position == null || position.getId() == null) {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
-        return sumLedgerSignedAmount("REALIZED_PNL", position.getExecutionAddress(), "POSITION", position.getId());
+        BigDecimal realized = sumLedgerSignedAmount("REALIZED_PNL", position.getExecutionAddress(), "POSITION", position.getId());
+        if (realized.compareTo(BigDecimal.ZERO) == 0 && "RESOLVED_UNCLAIMED".equalsIgnoreCase(position.getStatus())) {
+            return lockedClaimProceedsForPosition(position)
+                    .subtract(originalCostBasisForPosition(position))
+                    .setScale(8, RoundingMode.HALF_UP);
+        }
+        return realized;
     }
 
     private BigDecimal safe(BigDecimal primary) {
@@ -3377,6 +3668,10 @@ public class SmartWalletAccountingService {
         return null;
     }
 
+    private String normalizeFilterValue(String value) {
+        return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : null;
+    }
+
     private boolean matchesDashboardMode(String executionAddress, String mode) {
         String normalized = normalizeDashboardMode(mode);
         if (normalized == null) {
@@ -3513,15 +3808,6 @@ public class SmartWalletAccountingService {
         if (order == null || !isEarlyExitOrder(order)) {
             if (order == null) {
                 return null;
-            }
-            if (!"SELL".equalsIgnoreCase(order.getSide())
-                    && !ORDER_STATUS_SETTLED_WIN.equalsIgnoreCase(order.getStatus())
-                    && !ORDER_STATUS_SETTLED_LOSS.equalsIgnoreCase(order.getStatus())
-                    && realizedPnlUsdc != null
-                    && realizedPnlUsdc.compareTo(BigDecimal.ZERO) != 0) {
-                return realizedPnlUsdc.compareTo(BigDecimal.ZERO) > 0
-                        ? ORDER_STATUS_SETTLED_WIN
-                        : ORDER_STATUS_SETTLED_LOSS;
             }
             return order.getStatus();
         }
@@ -3818,6 +4104,11 @@ public class SmartWalletAccountingService {
 
     private record TokenIdAndIndexSet(String tokenId, Integer indexSet) {}
     private record TimelineLedgerEntry(SmartWalletCashLedgerEntity entity, LocalDateTime bucketAt, BigDecimal delta) {}
+
+    private record TimelineBaseline(BigDecimal cumulativeLossPnlUsdc,
+                                    BigDecimal cumulativeRealizedPnlUsdc,
+                                    BigDecimal cumulativeFeeUsdc,
+                                    BigDecimal cumulativeNetPnlUsdc) {}
 
     /** Resolves both tokenId and indexSet from metadata in a single fetch. */
     private TokenIdAndIndexSet resolveOutcomeTokenIdAndIndexSet(String marketId,
@@ -4542,6 +4833,13 @@ public class SmartWalletAccountingService {
         private BigDecimal netPnl() {
             return realizedPnl.subtract(fee);
         }
+
+        private boolean hasActivity() {
+            return profitPnl.compareTo(BigDecimal.ZERO) != 0
+                    || lossPnl.compareTo(BigDecimal.ZERO) != 0
+                    || realizedPnl.compareTo(BigDecimal.ZERO) != 0
+                    || fee.compareTo(BigDecimal.ZERO) != 0;
+        }
     }
 
     // ── 乐观锁工具方法 ──────────────────────────────────────────────────────
@@ -4589,7 +4887,7 @@ public class SmartWalletAccountingService {
      */
     private boolean updatePositionChecked(SmartWalletPositionEntity position, String context) {
         int affected = positionMapper.updateById(position);
-        if (affected == 0) {
+        if (affected == 0 && !"markToMarket".equals(context)) {
             log.warn("[OptimisticLock] {} position {} version conflict, skipping (will retry next cycle)",
                     context, position.getId());
         }
