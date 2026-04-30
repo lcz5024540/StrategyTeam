@@ -72,7 +72,7 @@ public class BinanceApiService {
         this.coinFuturesClient = coinFuturesClient;
 
         this.spotService = new BinanceSpotService(spotClient);
-        this.futuresService = new BinanceFuturesService(futuresClient);
+        this.futuresService = new BinanceFuturesService(futuresClient, futuresBaseUrl, apiKey, secretKey);
         this.coinFuturesService = new BinanceCoinFuturesService(coinFuturesClient, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com", apiKey, secretKey);
         this.walletService = new BinanceWalletService(spotClient, apiKey, secretKey, spotBaseUrl);
         this.marginService = new BinanceMarginService(spotClient, spotBaseUrl, apiKey, secretKey);
@@ -186,6 +186,10 @@ public class BinanceApiService {
     
     public BinanceOrder placeSpotOrder(String symbol, String side, String type, String timeInForce, String quantity, String price) {
         return spotService.placeOrder(symbol, side, type, timeInForce, quantity, price);
+    }
+
+    public String testSpotOrder(String symbol, String side, String type, String timeInForce, String quantity, String price) {
+        return spotService.testNewOrder(symbol, side, type, timeInForce, quantity, price);
     }
     
     public BinanceOrder getSpotOrder(String symbol, Long orderId, String origClientOrderId) {
@@ -333,6 +337,11 @@ public class BinanceApiService {
     public BinanceFuturesOrder placeFuturesOrder(String symbol, String side, String positionSide, String type, 
                                     String timeInForce, String quantity, String price, Boolean reduceOnly) {
         return futuresService.placeOrder(symbol, side, positionSide, type, timeInForce, quantity, price, reduceOnly);
+    }
+
+    public void testFuturesOrder(String symbol, String side, String positionSide, String type,
+                                 String timeInForce, String quantity, String price, Boolean reduceOnly) {
+        futuresService.testNewOrder(symbol, side, positionSide, type, timeInForce, quantity, price, reduceOnly);
     }
 
     public BinanceFuturesOrder openLong(String symbol, String type, String quantity, String price, String timeInForce) {

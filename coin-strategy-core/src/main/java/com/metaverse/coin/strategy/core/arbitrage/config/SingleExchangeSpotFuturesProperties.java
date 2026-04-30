@@ -36,6 +36,7 @@ public class SingleExchangeSpotFuturesProperties {
     private BigDecimal rebalanceTargetMarginRatio = new BigDecimal("3.0");
     private String rebalanceAsset = "USDT";
     private Boolean emergencyCloseLiquidityOverrideEnabled = true;
+    private String orderExecutionMode = "LIVE";
 
     public SingleExchangeSpotFuturesProperties() {
     }
@@ -69,6 +70,7 @@ public class SingleExchangeSpotFuturesProperties {
         emergencyCloseLiquidityOverrideEnabled = getBoolean(environment,
                 "arbitrage.spot-futures.emergency-close-liquidity-override-enabled",
                 emergencyCloseLiquidityOverrideEnabled);
+        orderExecutionMode = environment.getProperty("arbitrage.spot-futures.order-execution-mode", orderExecutionMode);
     }
 
     private BigDecimal getBigDecimal(Environment environment, String key, BigDecimal defaultValue) {
