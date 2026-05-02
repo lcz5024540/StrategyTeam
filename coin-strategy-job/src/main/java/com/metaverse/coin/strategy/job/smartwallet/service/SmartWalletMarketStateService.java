@@ -207,6 +207,7 @@ public class SmartWalletMarketStateService {
         return MarketStateSnapshot.builder()
                 .marketId(primary.getMarketId())
                 .question(firstNonBlank(primary.getQuestion(), primary.getMarketId()))
+                .marketSlug(primary.getMarketSlug())
                 .marketEndAt(primary.getMarketEndAt())
                 .sourceCategory(primary.getSourceCategory())
                 .normalizedCategory(firstNonBlank(primary.getNormalizedCategory(), CATEGORY_OTHER))
@@ -268,6 +269,7 @@ public class SmartWalletMarketStateService {
         return MarketStateSnapshot.builder()
                 .marketId(marketId)
                 .question(firstNonBlank(metadata == null ? null : metadata.getQuestion(), firstQuestion(existingRows), questionFallback, marketId))
+                .marketSlug(firstNonBlank(metadata == null ? null : metadata.getSlug(), firstMarketSlug(existingRows)))
                 .marketEndAt(marketEndAt)
                 .sourceCategory(sourceCategory)
                 .normalizedCategory(resolveNormalizedCategory(sourceCategory, firstNonBlank(
@@ -323,6 +325,10 @@ public class SmartWalletMarketStateService {
             boolean changed = false;
             if (StringUtils.hasText(snapshot.question()) && !snapshot.question().equals(row.getQuestion())) {
                 row.setQuestion(snapshot.question());
+                changed = true;
+            }
+            if (StringUtils.hasText(snapshot.marketSlug()) && !snapshot.marketSlug().equals(row.getMarketSlug())) {
+                row.setMarketSlug(snapshot.marketSlug());
                 changed = true;
             }
             if (!java.util.Objects.equals(snapshot.marketEndAt(), row.getMarketEndAt())) {
@@ -434,6 +440,18 @@ public class SmartWalletMarketStateService {
         for (SmartWalletMarketInfoEntity row : rows) {
             if (StringUtils.hasText(row.getQuestion())) {
                 return row.getQuestion().trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstMarketSlug(List<SmartWalletMarketInfoEntity> rows) {
+        if (rows == null) {
+            return null;
+        }
+        for (SmartWalletMarketInfoEntity row : rows) {
+            if (StringUtils.hasText(row.getMarketSlug())) {
+                return row.getMarketSlug().trim();
             }
         }
         return null;
@@ -580,6 +598,7 @@ public class SmartWalletMarketStateService {
     public record MarketStateSnapshot(
             String marketId,
             String question,
+            String marketSlug,
             Long marketEndAt,
             String sourceCategory,
             String normalizedCategory,

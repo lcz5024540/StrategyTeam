@@ -808,7 +808,7 @@ public class StrategyProductQueryService {
 
     private StrategyOrderRowView toOrder(SmartWalletOrderView row) {
         return new StrategyOrderRowView(row.getId(), row.getFollowTaskId(), row.getExecutionMode(), row.getQuestion(),
-                row.getOutcome(), row.getSide(), row.getOrderType(), row.getEarlyExit(), row.getExitReason(),
+                row.getMarketSlug(), row.getOutcome(), row.getSide(), row.getOrderType(), row.getEarlyExit(), row.getExitReason(),
                 row.getStatus(), row.getPrice(), row.getSize(),
                 row.getNotionalUsdc(), row.getCostBasisUsdc(), row.getRealizedPnlUsdc(), row.getEstimatedFeeUsdc(), row.getEstimatedSlippageUsdc(),
                 row.getFollowProbability(), row.getCalibratedFollowProbability(), row.getSlippageSpikeProbability(), row.getEstimateSampleSize(),
@@ -840,6 +840,7 @@ public class StrategyProductQueryService {
                 row.getPositionId(),
                 buildFundingArbExecutionMode(row),
                 row.getSymbol(),
+                null,
                 buildFundingArbOrderOutcome(row),
                 row.getSide(),
                 row.getOrderType(),

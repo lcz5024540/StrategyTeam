@@ -13,7 +13,6 @@ export interface CursorPage<T> {
 export interface OrderPageParams {
   pnl?: 'ALL' | 'PROFIT' | 'LOSS' | 'ZERO'
   settlement?: 'ALL' | 'SETTLED' | 'UNSETTLED' | 'EARLY_EXIT'
-  side?: string
   status?: string
   q?: string
 }
@@ -46,7 +45,6 @@ export const walletApi = {
         mode,
         pnl: filters.pnl && filters.pnl !== 'ALL' ? filters.pnl : undefined,
         settlement: filters.settlement && filters.settlement !== 'ALL' ? filters.settlement : undefined,
-        side: filters.side || undefined,
         status: filters.status || undefined,
         q: filters.q || undefined,
       },

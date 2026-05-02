@@ -3227,6 +3227,27 @@ tbody tr:hover td {
   line-height: 1.45;
 }
 
+.market-cell {
+  width: 22ch;
+  max-width: 240px;
+}
+
+.market-link {
+  display: block;
+  max-width: clamp(160px, 18vw, 240px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-bright);
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.market-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .table-secondary {
   margin-top: 4px;
   color: var(--muted);

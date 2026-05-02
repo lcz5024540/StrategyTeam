@@ -225,6 +225,7 @@ public class PolymarketMarketMetadataService {
                 .conditionId(conditionId)
                 .marketId(firstText(primary.getMarketId(), conditionId))
                 .question(firstText(primary.getQuestion(), conditionId))
+                .slug(primary.getMarketSlug())
                 .category(firstText(primary.getNormalizedCategory(), primary.getSourceCategory()))
                 .minimumTickSize(new BigDecimal("0.01"))
                 .active(acceptingOrders)
@@ -530,6 +531,10 @@ public class PolymarketMarketMetadataService {
                         fallback == null ? null : fallback.getQuestion(),
                         cached == null ? null : cached.getQuestion(),
                         local == null ? null : local.getQuestion()))
+                .slug(firstText(base.getSlug(),
+                        fallback == null ? null : fallback.getSlug(),
+                        cached == null ? null : cached.getSlug(),
+                        local == null ? null : local.getSlug()))
                 .category(firstText(base.getCategory(),
                         fallback == null ? null : fallback.getCategory(),
                         cached == null ? null : cached.getCategory(),

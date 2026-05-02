@@ -138,6 +138,7 @@ export interface StrategyOrderRow {
   followTaskId?: number | null
   executionMode?: string | null
   question: string
+  marketSlug?: string | null
   outcome: string
   side: string
   orderType?: string | null

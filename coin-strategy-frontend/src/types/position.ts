@@ -26,11 +26,15 @@ export interface Position {
 
 export interface Order {
   id: string
+  walletAddress?: string
   executionAddress: string
   marketId: string
+  marketSlug?: string
   tokenId?: string
   question: string
   outcome: string
+  marketEndAt?: number | null
+  marketEndAtBjt?: string | null
   side: string
   orderType?: string
   earlyExit?: boolean

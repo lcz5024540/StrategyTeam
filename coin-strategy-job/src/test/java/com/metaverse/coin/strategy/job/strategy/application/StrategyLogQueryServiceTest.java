@@ -159,6 +159,48 @@ class StrategyLogQueryServiceTest {
     }
 
     @Test
+    void flowReaderIgnoresLegacyOperationalLogsThatAreNotSignalStages() throws IOException {
+        write("binance-java-connector.log", """
+                2026-05-01 01:03:32.816 INFO  [worker] c.m.c.s.j.s.s.PolymarketSmartWalletMonitorService - [POLY_FOLLOW] action=导入Polymarket钱包指标 result=开始 wallet=0xabc chain=polygon winRate=1.0000 pnlUsdc=100 totalTrades=50
+                2026-05-01 01:03:33.249 INFO  [worker] c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - [POLY_FOLLOW] action=分析Polymarket候选钱包 result=完成 wallet=0xabc totalTrades=50 winRate=1.0000 pnlUsdc=100
+                2026-05-01 01:03:34.000 INFO  [worker] c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - [POLY_FOLLOW] action=导入HOT钱包交易 result=完成 wallet=0xabc tradeId=t1 marketId=m1 outcome=YES side=BUY tradedAt=1777568614000
+                2026-05-01 01:03:35.000 INFO  [worker] c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - [POLY_FOLLOW] action=同步HOT钱包交易 result=完成 wallet=0xabc fetchedTrades=1 importedTradeEvents=1 checkpointMillis=1777568614000
+                """);
+
+        FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
+        List<StrategyLogFlowView> flows = reader.queryFlows("app", "POLYMARKET_COPY", null, null, null, null, null, 20);
+
+        assertTrue(flows.isEmpty());
+    }
+
+    @Test
+    void flowReaderMapsOnlyWhitelistedLegacyStageActions() throws IOException {
+        write("binance-java-connector.log", """
+                2026-05-01 01:04:00.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=记录Polymarket钱包交易事件 result=已入库 eventId=101 wallet=0xabc marketId=m1 outcome=YES
+                2026-05-01 01:04:01.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=钱包准入检查 result=通过 eventId=101 wallet=0xabc marketId=m1 outcome=YES
+                2026-05-01 01:04:02.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=智能增强候选信号 result=READY eventId=101 wallet=0xabc marketId=m1 outcome=YES
+                2026-05-01 01:04:03.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=市场状态检查 result=通过 eventId=101 wallet=0xabc marketId=m1 outcome=YES
+                2026-05-01 01:04:04.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=评估跟单风控 result=通过 eventId=101 wallet=0xabc marketId=m1 outcome=YES
+                2026-05-01 01:04:05.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=创建跟单任务 result=PENDING eventId=101 followTaskId=202 wallet=0xabc marketId=m1 outcome=YES
+                2026-05-01 01:04:06.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=抢占跟单任务执行权 result=成功 eventId=101 followTaskId=202 wallet=0xabc marketId=m1 outcome=YES
+                2026-05-01 01:04:07.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=提交跟单执行网关 result=成功 eventId=101 followTaskId=202 wallet=0xabc marketId=m1 outcome=YES
+                """);
+
+        FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
+        StrategyLogFlowView flow = reader.queryFlows("app", "POLYMARKET_COPY", null, null, "101", null, null, 20).get(0);
+
+        assertEquals(8, flow.entries().size());
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S1_EVENT_CAPTURED".equals(entry.flowStage())));
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S2_PROFILE_ADMISSION".equals(entry.flowStage())));
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S3_CANDIDATE_ENRICHED".equals(entry.flowStage())));
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S4_MARKET_CHECK".equals(entry.flowStage())));
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S5_RISK_EVALUATED".equals(entry.flowStage())));
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S6_TASK_CREATED".equals(entry.flowStage())));
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S7_TASK_CLAIMED".equals(entry.flowStage())));
+        assertTrue(flow.entries().stream().anyMatch(entry -> "S8_ORDER_EXECUTED".equals(entry.flowStage())));
+    }
+
+    @Test
     void returnsEmptyRowsWhenLogFileDoesNotExist() {
         assertTrue(service().query("error", "ALL", "ALL", null, 20).isEmpty());
     }

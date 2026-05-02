@@ -52,6 +52,10 @@ final class StrategyFlowLogSupport {
         if (!fields.isFlow() && !legacyFollow) {
             return null;
         }
+        String flowStage = fields.isFlow() ? fields.flowStage() : inferLegacyFlowStage(fields.action());
+        if (flowStage == null) {
+            return null;
+        }
         String flowId = resolveFlowId(fields);
         return new StrategyFlowLogEvent(
                 entry.timestamp(),
@@ -62,7 +66,7 @@ final class StrategyFlowLogSupport {
                 entry.source(),
                 entry.message(),
                 flowId,
-                fields.isFlow() ? fields.flowStage() : inferLegacyFlowStage(fields.action()),
+                flowStage,
                 fields.action(),
                 fields.result(),
                 fields.eventId(),
@@ -194,31 +198,52 @@ final class StrategyFlowLogSupport {
                 && message.contains(LEGACY_FOLLOW_PREFIX)
                 && (fields.eventId() != null
                 || fields.followTaskId() != null
-                || fields.marketId() != null
-                || fields.wallet() != null);
+                || fields.marketId() != null);
     }
 
     private static String inferLegacyFlowStage(String action) {
         if (action == null) {
-            return "LEGACY_FOLLOW";
+            return null;
         }
         String normalized = action.toLowerCase(Locale.ROOT);
-        if (normalized.contains("风控")) {
-            return "S5_RISK_EVALUATED";
+        if (containsAny(normalized, "记录polymarket钱包交易事件", "导入polymarket钱包交易")) {
+            return "S1_EVENT_CAPTURED";
         }
-        if (normalized.contains("任务")) {
-            return "S6_TASK_CREATED";
-        }
-        if (normalized.contains("执行") || normalized.contains("订单") || normalized.contains("下单")) {
-            return "S8_ORDER_EXECUTED";
-        }
-        if (normalized.contains("市场")) {
-            return "S4_MARKET_CHECK";
-        }
-        if (normalized.contains("钱包")) {
+        if (containsAny(normalized, "钱包准入检查")) {
             return "S2_PROFILE_ADMISSION";
         }
-        return "LEGACY_FOLLOW";
+        if (containsAny(normalized, "智能增强候选信号")) {
+            return "S3_CANDIDATE_ENRICHED";
+        }
+        if (containsAny(normalized, "市场状态检查", "检查polymarket市场状态")) {
+            return "S4_MARKET_CHECK";
+        }
+        if (containsAny(normalized, "完成跟单风控评估", "评估跟单风控", "执行前复核风控")) {
+            return "S5_RISK_EVALUATED";
+        }
+        if (containsAny(normalized, "创建跟单任务", "根据交易事件生成跟单任务")) {
+            return "S6_TASK_CREATED";
+        }
+        if (containsAny(normalized, "抢占跟单任务执行权")) {
+            return "S7_TASK_CLAIMED";
+        }
+        if (containsAny(normalized, "提交跟单执行网关", "执行跟单任务", "paper模拟跟单",
+                "记录跟单执行结果到账本", "记录跟单异常结果到账本")) {
+            return "S8_ORDER_EXECUTED";
+        }
+        return null;
+    }
+
+    private static boolean containsAny(String value, String... needles) {
+        if (value == null || needles == null) {
+            return false;
+        }
+        for (String needle : needles) {
+            if (needle != null && value.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     record FlowFields(

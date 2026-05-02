@@ -3773,6 +3773,7 @@ public class SmartWalletAccountingService {
                 .executionAddress(order.getExecutionAddress())
                 .externalOrderId(order.getExternalOrderId())
                 .marketId(order.getMarketId())
+                .marketSlug(order.getMarketSlug())
                 .tokenId(order.getTokenId())
                 .question(order.getQuestion())
                 .outcome(order.getOutcome())

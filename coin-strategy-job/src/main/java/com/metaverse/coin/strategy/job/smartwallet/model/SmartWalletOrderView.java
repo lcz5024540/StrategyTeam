@@ -16,6 +16,7 @@ public class SmartWalletOrderView {
     private String executionAddress;
     private String externalOrderId;
     private String marketId;
+    private String marketSlug;
     private String tokenId;
     private String question;
     private String outcome;

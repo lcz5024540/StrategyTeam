@@ -25,6 +25,9 @@ public class SmartWalletMarketInfoEntity {
     /** Polymarket conditionId / 条件市场 ID */
     private String marketId;
 
+    /** Polymarket market URL slug */
+    private String marketSlug;
+
     /** 市场问题描述 */
     private String question;
 

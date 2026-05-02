@@ -56,6 +56,37 @@ function formatFeeBreakdown(order: {
   return parts.join(' / ')
 }
 
+function buildPolymarketMarketUrl(order: {
+  marketSlug?: string | null
+}): string {
+  const slug = (order.marketSlug || '').trim()
+  return slug ? `https://polymarket.com/event/${slug}` : ''
+}
+
+function formatIsoSecond(value?: string | number | null): string {
+  if (value == null || value === '') {
+    return '-'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return String(value)
+  }
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
+}
+
+function formatMarketEnd(order: {
+  marketEndAt?: number | null
+  marketEndAtBjt?: string | null
+}): string {
+  if (order.marketEndAtBjt) {
+    return order.marketEndAtBjt
+  }
+  if (order.marketEndAt) {
+    return formatIsoSecond(order.marketEndAt)
+  }
+  return '-'
+}
+
 interface OrdersTableProps {
   mode?: 'PAPER' | 'LIVE'
   pnl?: 'ALL' | 'PROFIT' | 'LOSS' | 'ZERO'
@@ -70,7 +101,6 @@ function parseNextCursor(nextCursor?: string | null): number | undefined {
 export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTableProps) {
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
-  const [sideFilter, setSideFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const deferredKeyword = useDeferredValue(keyword.trim())
 
@@ -81,12 +111,11 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: ['ordersPage', mode, pnl, settlement, sideFilter, statusFilter, deferredKeyword],
+    queryKey: ['ordersPage', mode, pnl, settlement, statusFilter, deferredKeyword],
     initialPageParam: null as number | null,
     queryFn: ({ pageParam }) => walletApi.getOrdersPage(ORDER_CURSOR_PAGE_SIZE, pageParam, mode, {
       pnl,
       settlement,
-      side: sideFilter,
       status: statusFilter,
       q: deferredKeyword,
     }),
@@ -98,13 +127,13 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
   const loadedPages = Math.max(1, Math.ceil(orders.length / TABLE_PAGE_SIZE))
   const totalPages = hasNextPage ? Math.max(loadedPages + 1, page) : loadedPages
   const visibleOrders = orders.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE)
-  const hasActiveFilters = Boolean(keyword || sideFilter || statusFilter)
+  const hasActiveFilters = Boolean(keyword || statusFilter)
   const requiredItems = page * TABLE_PAGE_SIZE
   const isPageLoading = isFetchingNextPage && orders.length < (page - 1) * TABLE_PAGE_SIZE + 1
 
   useEffect(() => {
     setPage(1)
-  }, [deferredKeyword, sideFilter, statusFilter, mode, pnl, settlement])
+  }, [deferredKeyword, statusFilter, mode, pnl, settlement])
 
   useEffect(() => {
     setPage((currentPage) => Math.min(currentPage, totalPages))
@@ -127,7 +156,7 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
         <table>
           <tbody>
             <tr>
-              <td colSpan={9} className="empty-state">暂无订单记录</td>
+              <td colSpan={10} className="empty-state">暂无订单记录</td>
             </tr>
           </tbody>
         </table>
@@ -146,16 +175,9 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
         hasActiveFilters={hasActiveFilters}
         onReset={() => {
           setKeyword('')
-          setSideFilter('')
           setStatusFilter('')
         }}
         filters={[
-          {
-            value: sideFilter,
-            onChange: setSideFilter,
-            options: buildTableOptions(orders.map((order) => order.side), '全部方向'),
-            ariaLabel: '订单方向筛选',
-          },
           {
             value: statusFilter,
             onChange: setStatusFilter,
@@ -170,10 +192,10 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
           <thead>
             <tr>
               <th>订单ID</th>
-              <th>钱包</th>
+              <th>跟单地址</th>
               <th>市场</th>
+              <th>预计结算</th>
               <th>Outcome</th>
-              <th>方向</th>
               <th>标签 / 收益</th>
               <th>成本</th>
               <th>手续费</th>
@@ -189,45 +211,63 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
                 </td>
               </tr>
             ) : (
-              visibleOrders.map((order) => (
-                <tr key={order.id}>
-                  <td>{truncateText(order.id, 14)}</td>
-                  <td title={order.executionAddress}>{compactAddress(order.executionAddress)}</td>
-                  <td title={order.question}>{truncateText(order.question, 34)}</td>
-                  <td>{order.outcome}</td>
-                  <td>
-                    <span className={`badge ${order.side === 'BUY' ? 'accent' : 'warn'}`}>{order.side}</span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'grid', gap: '6px' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {order.earlyExit ? <span className="badge accent">提前卖出</span> : null}
-                        {order.exitReason ? (
-                          <span className={`badge ${order.exitReason === 'STOP_LOSS_AUTO_EXIT' ? 'danger' : 'warn'}`}>
-                            {getExitReasonLabel(order.exitReason)}
-                          </span>
-                        ) : null}
-                        {!order.earlyExit && order.orderType ? <span className="badge">{order.orderType}</span> : null}
-                      </div>
-                      {shouldShowRealizedPnl(order) ? (
-                        <span className={getPnlBadgeClass(order.realizedPnlUsdc)}>
-                          收益 {formatMoney(order.realizedPnlUsdc)}
-                        </span>
+              visibleOrders.map((order) => {
+                const marketLabel = order.question || order.marketId || '-'
+                const marketUrl = buildPolymarketMarketUrl(order)
+                const followAddress = order.walletAddress || order.executionAddress || '-'
+
+                return (
+                  <tr key={order.id}>
+                    <td>{truncateText(order.id, 14)}</td>
+                    <td title={followAddress}>{compactAddress(followAddress)}</td>
+                    <td className="market-cell" title={marketLabel}>
+                      {marketUrl ? (
+                        <a
+                          className="market-link"
+                          href={marketUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`在 Polymarket 打开：${marketLabel}`}
+                        >
+                          {truncateText(marketLabel, 34)}
+                        </a>
                       ) : (
-                        <span className="badge">-</span>
+                        truncateText(marketLabel, 34)
                       )}
-                    </div>
-                  </td>
-                  <td>{formatAmount(order.costBasisUsdc ?? order.notionalUsdc)}</td>
-                  <td title={formatFeeBreakdown(order)}>
-                    {order.feeUsdc ? formatMoney(order.feeUsdc) : '-'}
-                  </td>
-                  <td>
-                    <span className="badge">{order.status}</span>
-                  </td>
-                  <td>{order.placedAt || '-'}</td>
-                </tr>
-              ))
+                    </td>
+                    <td title={formatMarketEnd(order)}>{formatMarketEnd(order)}</td>
+                    <td>{order.outcome}</td>
+                    <td>
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {order.earlyExit ? <span className="badge accent">提前卖出</span> : null}
+                          {order.exitReason ? (
+                            <span className={`badge ${order.exitReason === 'STOP_LOSS_AUTO_EXIT' ? 'danger' : 'warn'}`}>
+                              {getExitReasonLabel(order.exitReason)}
+                            </span>
+                          ) : null}
+                          {!order.earlyExit && order.orderType ? <span className="badge">{order.orderType}</span> : null}
+                        </div>
+                        {shouldShowRealizedPnl(order) ? (
+                          <span className={getPnlBadgeClass(order.realizedPnlUsdc)}>
+                            收益 {formatMoney(order.realizedPnlUsdc)}
+                          </span>
+                        ) : (
+                          <span className="badge">-</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>{formatAmount(order.costBasisUsdc ?? order.notionalUsdc)}</td>
+                    <td title={formatFeeBreakdown(order)}>
+                      {order.feeUsdc ? formatMoney(order.feeUsdc) : '-'}
+                    </td>
+                    <td>
+                      <span className="badge">{order.status}</span>
+                    </td>
+                    <td>{formatIsoSecond(order.placedAt)}</td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>

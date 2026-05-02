@@ -308,13 +308,75 @@ function parseFlowMessage(message: string) {
     const match = part.match(/^\[([^\]]+)]\s*(.*)$/)
     const label = match?.[1]
     const body = match?.[2] ?? part
-    const fields = Array.from(body.matchAll(/([A-Za-z][A-Za-z0-9_]*)=([^,\s|.]+(?:\.[0-9]+)?)/g)).map((field) => ({
-      key: field[1],
-      value: field[2],
-    }))
-    const text = body.replace(/([A-Za-z][A-Za-z0-9_]*)=([^,\s|.]+(?:\.[0-9]+)?),?\s*/g, '').replace(/^,\s*/, '').trim()
-    return { label, fields, text }
+    return { label, ...parseKeyValueBody(body) }
   })
+}
+
+function parseKeyValueBody(body: string) {
+  const fields: Array<{ key: string; value: string }> = []
+  const textParts: string[] = []
+  let cursor = 0
+  let textStart = 0
+
+  while (cursor < body.length) {
+    const keyStart = findNextKeyStart(body, cursor)
+    if (keyStart < 0) break
+    const equalsIndex = body.indexOf('=', keyStart)
+    if (equalsIndex < 0) break
+
+    const pendingText = body.slice(textStart, keyStart).trim()
+    if (pendingText) textParts.push(pendingText)
+
+    const key = body.slice(keyStart, equalsIndex)
+    const parsed = parseFieldValue(body, equalsIndex + 1)
+    fields.push({ key, value: parsed.value })
+    cursor = parsed.next
+    textStart = parsed.next
+  }
+
+  const tail = body.slice(textStart).trim()
+  if (tail) textParts.push(tail)
+  return { fields, text: textParts.join(' ').trim() }
+}
+
+function findNextKeyStart(value: string, from: number) {
+  const keyPattern = /(?:^|\s)([A-Za-z][A-Za-z0-9_]*)=/g
+  keyPattern.lastIndex = from
+  const match = keyPattern.exec(value)
+  if (!match || match.index < 0) return -1
+  return match.index + match[0].indexOf(match[1])
+}
+
+function parseFieldValue(value: string, from: number) {
+  if (value[from] === '"') {
+    let cursor = from + 1
+    let parsed = ''
+    let escaping = false
+    while (cursor < value.length) {
+      const ch = value[cursor]
+      if (escaping) {
+        parsed += ch
+        escaping = false
+      } else if (ch === '\\') {
+        escaping = true
+      } else if (ch === '"') {
+        return { value: parsed, next: cursor + 1 }
+      } else {
+        parsed += ch
+      }
+      cursor += 1
+    }
+    return { value: parsed, next: cursor }
+  }
+
+  let cursor = from
+  while (cursor < value.length) {
+    if (/\s/.test(value[cursor]) && /^[A-Za-z][A-Za-z0-9_]*=/.test(value.slice(cursor + 1))) {
+      break
+    }
+    cursor += 1
+  }
+  return { value: value.slice(from, cursor).trim(), next: cursor }
 }
 
 function RawLogStream({ logs, isLoading, isError, error }: { logs: StrategyLogEntry[]; isLoading: boolean; isError: boolean; error: unknown }) {

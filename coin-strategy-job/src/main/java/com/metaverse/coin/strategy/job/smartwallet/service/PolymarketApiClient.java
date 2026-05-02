@@ -780,6 +780,7 @@ public class PolymarketApiClient {
                 .marketId(text(market, "id", "marketId", "market_id"))
                 .questionId(text(market, "questionID", "questionId", "question_id"))
                 .question(text(market, "question", "title"))
+                .slug(resolveEventSlug(market))
                 .category(text(market, "category", "groupItemTitle"))
                 .minimumTickSize(num(market, "minimum_tick_size", "orderPriceMinTickSize", "tick_size"))
                 .negRisk(bool(market, "negRisk", "neg_risk"))
@@ -796,6 +797,25 @@ public class PolymarketApiClient {
                 .outcomeTokenIds(outcomeTokenMap)
                 .tokenIdToIndexSet(indexSetMap)
                 .build();
+    }
+
+    /**
+     * 从 Gamma API 市场 JSON 中提取事件级别的 slug（用于构建 Polymarket 前端 URL）。
+     * 优先取 events[0].slug，回退到 events[0].ticker，最终回退到市场自身的 slug。
+     */
+    private String resolveEventSlug(JsonNode market) {
+        JsonNode eventsNode = market.get("events");
+        if (eventsNode != null && eventsNode.isArray() && eventsNode.size() > 0) {
+            JsonNode firstEvent = eventsNode.get(0);
+            if (firstEvent != null && !firstEvent.isNull()) {
+                String eventSlug = text(firstEvent, "slug", "ticker");
+                if (StringUtils.hasText(eventSlug)) {
+                    return eventSlug.trim();
+                }
+            }
+        }
+        // 回退：无 events 嵌套时（如 /public-search 扁平化结果），取市场自身 slug
+        return text(market, "slug", "market_slug", "marketSlug");
     }
 
     private ActivePosition parseActivePosition(String walletAddress, JsonNode node) {
@@ -1405,6 +1425,7 @@ public class PolymarketApiClient {
         private String marketId;
         private String questionId;
         private String question;
+        private String slug;
         private String category;
         private BigDecimal minimumTickSize;
         private boolean negRisk;
