@@ -159,3 +159,105 @@
 * 单交易所持久化表：`single_exchange_funding_rate_history`、`single_exchange_arbitrage_position`
 
 实施进度详见：[单交易所套利实施进度](./FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE_SHARE.md)
+
+## 7. 模拟订单执行教程
+
+### 7.1 模拟模式说明
+
+当前实现支持通过 `arbitrage.spot-futures.order-execution-mode` 控制下单模式：
+
+* `BINANCE_LIVE`：保持真实 Binance 下单行为。
+* `BINANCE_TEST`：使用真实 Binance production API 的 `/order/test` 接口校验签名、权限、交易对、数量和订单参数，但不会把订单发送到撮合引擎；系统会在本地构造 `FILLED` 模拟成交回执，并继续走正常持仓、订单、风控快照和资金费结算落库链路。
+
+模拟模式只模拟开仓和平仓订单本身，行情、资金费率、账户余额、保证金率、深度和风控检查仍读取真实 Binance API。
+
+### 7.2 配置方式
+
+在 `application.yml` 配置：
+
+```yaml
+arbitrage:
+  spot-futures:
+    order-execution-mode: "BINANCE_TEST"
+    symbol: "BTCUSDT"
+    trade-usdt-amount: 100
+    leverage: 3
+```
+
+如果通过环境变量覆盖，可使用：
+
+```powershell
+$env:ARBITRAGE_SPOT_FUTURES_ORDER_EXECUTION_MODE="BINANCE_TEST"
+```
+
+### 7.3 启动服务
+
+在项目根目录执行：
+
+```powershell
+mvn -pl coin-strategy-job -am spring-boot:run -Dspring-boot.run.profiles=test
+```
+
+服务默认监听：
+
+```text
+http://localhost:8081/strategy/api
+```
+
+### 7.4 手动执行一次策略
+
+使用 `run-once` 复用主策略链路执行一次判断、风控、模拟下单和落库：
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/run-once"
+```
+
+返回结果中应能看到：
+
+* `orderExecutionMode` 为 `BINANCE_TEST`
+* `running` 在单次执行后保持或恢复为原状态
+* `symbol`、`tradeUsdtAmount`、`leverage` 为当前配置值
+
+### 7.5 持续运行与停止
+
+启动每分钟循环：
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/start"
+```
+
+查看运行状态：
+
+```powershell
+Invoke-RestMethod "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/status"
+```
+
+停止循环：
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/stop"
+```
+
+### 7.6 数据库观察
+
+执行后可查看以下表确认数据是否正常落库：
+
+```sql
+SELECT * FROM single_exchange_arbitrage_position ORDER BY id DESC LIMIT 5;
+SELECT * FROM single_exchange_arbitrage_order ORDER BY id DESC LIMIT 10;
+SELECT * FROM single_exchange_arbitrage_risk_snapshot ORDER BY id DESC LIMIT 10;
+SELECT * FROM single_exchange_arbitrage_funding_settlement ORDER BY id DESC LIMIT 10;
+```
+
+重点检查：
+
+* `single_exchange_arbitrage_order.raw_response` 应包含 `BINANCE_TEST simulated fill after /order/test validation`。
+* 订单状态应按模拟成交写入 `FILLED`，失败时会写入 `FAILED` 和 `error_message`。
+* Binance 真实账户不会新增真实现货成交或合约持仓。
+
+### 7.7 注意事项
+
+* `BINANCE_TEST` 仍需要 Binance API key/secret 可用，因为 `/order/test` 会校验签名和账户权限。
+* 模拟模式覆盖开仓和平仓，避免没有真实仓位时触发真实平仓。
+* 旧的 `POST /binance/strategy/arbitrage/execute` 是轻量执行入口，不建议作为观察完整策略落库闭环的主要入口；优先使用 `/runtime/run-once` 或 `/runtime/start`。
+* 切回实盘前必须确认 `arbitrage.spot-futures.order-execution-mode` 已显式设置为 `BINANCE_LIVE`，并重新检查资金、杠杆、风控阈值和网络代理配置。

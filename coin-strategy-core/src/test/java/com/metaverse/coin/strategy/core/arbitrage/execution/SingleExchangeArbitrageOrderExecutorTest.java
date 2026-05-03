@@ -81,8 +81,8 @@ class SingleExchangeArbitrageOrderExecutorTest {
     }
 
     @Test
-    void liveModeKeepsRealOrderPath() {
-        when(properties.getOrderExecutionMode()).thenReturn("LIVE");
+    void binanceLiveModeKeepsRealOrderPath() {
+        when(properties.getOrderExecutionMode()).thenReturn("BINANCE_LIVE");
         when(binanceApiService.placeSpotOrder("BTCUSDT", "BUY", "MARKET", null, "0.001", null))
                 .thenReturn(BinanceOrder.builder()
                         .symbol("BTCUSDT")

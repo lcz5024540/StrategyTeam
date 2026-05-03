@@ -7,12 +7,12 @@
 server:
   port: 8081
   address: 127.0.0.1
-
+#
 spring:
   datasource:
-    url: "jdbc:mysql://127.0.0.1:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    username: "${DB_USERNAME:root}"
-    password: "${DB_PASSWORD:}"
+    url: "jdbc:mysql://43.139.186.27:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "devuser"
+    password: "${DB_PASSWORD_TEST:Lroot1234}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
 
 smart-wallet:

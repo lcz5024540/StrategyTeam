@@ -36,7 +36,7 @@ public class SingleExchangeSpotFuturesProperties {
     private BigDecimal rebalanceTargetMarginRatio = new BigDecimal("3.0");
     private String rebalanceAsset = "USDT";
     private Boolean emergencyCloseLiquidityOverrideEnabled = true;
-    private String orderExecutionMode = "LIVE";
+    private String orderExecutionMode = "BINANCE_LIVE";
 
     public SingleExchangeSpotFuturesProperties() {
     }

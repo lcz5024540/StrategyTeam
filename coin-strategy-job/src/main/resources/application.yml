@@ -41,6 +41,8 @@ arbitrage:
   spot-futures:
     # [TUNE] 单交易所期现套利策略的主交易对。
     symbol: "BTCUSDT"
+    #暂时用模拟单：BINANCE_TEST，后续用真实单：BINANCE_LIVE
+    order-execution-mode: "BINANCE_TEST"
     # [TUNE] 单次开仓使用的现货侧预算金额（USDT），杠杆应用前的基准资金。
     trade-usdt-amount: 100
     # [TUNE] 对冲用合约空单的杠杆倍数。建议保持在 1x-3x 区间；
