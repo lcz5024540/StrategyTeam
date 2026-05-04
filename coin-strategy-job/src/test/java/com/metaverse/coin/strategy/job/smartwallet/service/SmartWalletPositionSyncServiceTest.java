@@ -59,6 +59,8 @@ class SmartWalletPositionSyncServiceTest {
     private MarketSnapshotCollectorService marketSnapshotCollectorService;
     @Mock
     private MarketConcentrationService marketConcentrationService;
+    @Mock
+    private PolymarketMarketDataCacheService marketDataCacheService;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -86,7 +88,8 @@ class SmartWalletPositionSyncServiceTest {
                 consensusSignalService,
                 marketSnapshotCollectorService,
                 marketConcentrationService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                marketDataCacheService
         );
     }
 

@@ -439,3 +439,43 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_manual_allowlist` (
     KEY `idx_sw_manual_allowlist_status_expiry` (`status`, `expires_at`),
     KEY `idx_sw_manual_allowlist_updated` (`updated_at`)
  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 手工地址白名单';
+
+
+CREATE TABLE IF NOT EXISTS `smart_wallet_trade_order` (
+                                                          `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '生命周期主单ID',
+                                                          `position_id` BIGINT UNSIGNED NOT NULL COMMENT '关联 smart_wallet_position.id',
+                                                          `market_info_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联 smart_wallet_market_info.id',
+                                                          `execution_address` VARCHAR(128) NOT NULL COMMENT '执行地址',
+    `wallet_address` VARCHAR(128) DEFAULT NULL COMMENT '触发钱包地址',
+    `source_follow_task_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '首个跟单任务ID',
+    `entry_quantity` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `entry_avg_price` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `entry_cost_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `entry_fee_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `opened_at` TIMESTAMP NULL,
+    `exit_quantity` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `exit_avg_price` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `exit_proceeds_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `exit_realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `exit_fee_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `last_exit_at` TIMESTAMP NULL,
+    `remaining_quantity` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `remaining_cost_basis_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `last_mark_price` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `unrealized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `settlement_price` DECIMAL(20,8) DEFAULT NULL,
+    `settlement_proceeds_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `settlement_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `settled_at` TIMESTAMP NULL,
+    `total_realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `total_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `roi_rate` DECIMAL(20,8) NOT NULL DEFAULT 0,
+    `status` VARCHAR(32) NOT NULL DEFAULT 'OPEN',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_trade_order_position` (`position_id`),
+    KEY `idx_trade_order_market` (`market_info_id`, `status`),
+    KEY `idx_trade_order_execution` (`execution_address`, `status`, `opened_at`),
+    KEY `idx_trade_order_status` (`status`, `updated_at`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket生命周期主单表';

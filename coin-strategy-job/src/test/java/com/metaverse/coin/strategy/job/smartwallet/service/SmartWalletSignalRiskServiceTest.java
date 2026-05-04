@@ -68,6 +68,10 @@ class SmartWalletSignalRiskServiceTest {
     private WalletArchetypeClassifierService walletArchetypeClassifierService;
     @Mock
     private SmartWalletManualAllowlistService manualAllowlistService;
+    @Mock
+    private EntryTimingRiskService entryTimingRiskService;
+    @Mock
+    private SignalScoreModelService signalScoreModelService;
 
     private SmartWalletProperties properties;
     private SmartWalletSignalRiskService service;
@@ -97,7 +101,9 @@ class SmartWalletSignalRiskServiceTest {
                 polymarketApiClient,
                 walletArchetypeClassifierService,
                 walletBehaviorProfileService,
-                manualAllowlistService
+                manualAllowlistService,
+                entryTimingRiskService,
+                signalScoreModelService
         );
     }
 

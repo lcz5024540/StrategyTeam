@@ -7,17 +7,21 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
+import com.metaverse.coin.strategy.job.smartwallet.model.EntryTimingDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
+import com.metaverse.coin.strategy.job.smartwallet.model.SignalScoreModelResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyCheckResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyRouteResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.job.strategy.application.StrategyFlowLogFormatter;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService.ConcentrationSnapshot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,6 +66,8 @@ public class SmartWalletSignalRiskService {
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final EntryTimingRiskService entryTimingRiskService;
+    private final SignalScoreModelService signalScoreModelService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -175,7 +181,11 @@ public class SmartWalletSignalRiskService {
         if (triggerSize.compareTo(safe(risk.getMinTriggerSizeUsdc())) < 0) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G3_TRIGGER_SIZE_TOO_SMALL";
-            reasons.add("Trigger size is below minimum threshold.");
+            reasons.add("[TRIGGER_SIZE_TOO_SMALL] triggerNotionalUsdc=" + triggerSize
+                    + ", sizeShares=" + safe(event.getSizeShares())
+                    + ", price=" + safe(event.getPrice())
+                    + ", minTriggerSizeUsdc=" + safe(risk.getMinTriggerSizeUsdc())
+                    + ". Polymarket raw size is shares; risk gate uses normalized USDC notional.");
         }
 
         BigDecimal price = safe(event.getPrice());
@@ -267,6 +277,28 @@ public class SmartWalletSignalRiskService {
                     reasons.add("Market end time is too far away for the current capital-turnover policy.");
                 }
             }
+        } else if (accepted) {
+            // marketEndAt 为空时，强制 forceRefresh 再次确认市场是否仍然活跃
+            SmartWalletMarketStateService.MarketStateSnapshot freshState = marketStateService.refreshMarket(
+                    event.getMarketId(),
+                    event.getQuestion(),
+                    StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of(),
+                    true // forceRefresh
+            );
+            if (!freshState.isActive()) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G6_MARKET_NOT_ACTIVE_AFTER_FORCE_REFRESH";
+                reasons.add("[MARKET_END_AT_MISSING_FORCE_REFRESH] marketEndAt is null; forced refresh shows market is no longer active: " + freshState.blockingReasonMessage());
+            }
+            Long freshEndAt = freshState.marketEndAt();
+            if (freshEndAt != null && freshEndAt > 0 && freshEndAt <= System.currentTimeMillis()) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED_AFTER_FORCE_REFRESH";
+                reasons.add("[MARKET_END_AT_MISSING_FORCE_REFRESH] marketEndAt was null; forced refresh reveals market is already expired.");
+                endAt = freshEndAt;
+            } else if (freshEndAt != null && freshEndAt > 0) {
+                endAt = freshEndAt;
+            }
         }
         if (accepted) gateStage = 6; // 通过市场状态
 
@@ -317,7 +349,55 @@ public class SmartWalletSignalRiskService {
             if (firstRejectGate == null) firstRejectGate = "G7_OPPOSITE_PENDING_TASK";
             reasons.add("A pending follow task already exists for the same market with a different outcome.");
         }
+        if (risk.isBlockMarketOutcomeOrderLimit() && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
+            int maxOrders = defaultInt(risk.getMaxOrdersPerMarketOutcome(), 3);
+            int entryOrderCount = countEntryOrdersOnMarketOutcome(event.getMarketId(), event.getOutcome());
+            int pendingTaskCount = countPendingFollowTasksOnMarketOutcome(event.getMarketId(), event.getOutcome(), currentFollowTaskId);
+            int totalOrderSlots = entryOrderCount + pendingTaskCount;
+            if (totalOrderSlots >= maxOrders) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G7_MARKET_OUTCOME_ORDER_LIMIT";
+                reasons.add("[MARKET_OUTCOME_ORDER_LIMIT_BLOCK] marketId=" + event.getMarketId()
+                        + ", outcome=" + event.getOutcome()
+                        + ", entryOrders=" + entryOrderCount
+                        + ", pendingTasks=" + pendingTaskCount
+                        + ", maxOrdersPerMarketOutcome=" + maxOrders + ".");
+                log.info("{}", flow("S5_RISK_EVALUATED", "同市场同预测订单上限", "拒绝", event,
+                        "entryLane", entryLane,
+                        "entryOrderCount", entryOrderCount,
+                        "pendingTaskCount", pendingTaskCount,
+                        "maxOrdersPerMarketOutcome", maxOrders,
+                        "firstRejectGate", "G7_MARKET_OUTCOME_ORDER_LIMIT",
+                        "blockerCategories", "ORDER_LIMIT",
+                        "reasonSummary", "同一 marketId + outcome 的入场订单/待执行任务数量已达到上限"));
+            }
+        }
         if (accepted) gateStage = 7; // 通过方向/重复检查
+
+        EntryTimingDecision entryTimingDecision = entryTimingRiskService.evaluate(event, risk, marketType);
+        if (entryTimingDecision != null && entryTimingDecision.getReasons() != null) {
+            reasons.addAll(entryTimingDecision.getReasons());
+        }
+        if (entryTimingDecision != null && !entryTimingDecision.isAccepted()
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
+            accepted = false;
+            if (firstRejectGate == null) {
+                firstRejectGate = "G7_ENTRY_TIMING";
+            }
+        }
+        if (entryTimingDecision != null && risk.isEnableEntryTimingGate()) {
+            log.info("{}", flow("S5_RISK_EVALUATED", "入场时机风控",
+                    entryTimingDecision.isAccepted() ? "通过" : "拒绝", event,
+                    "entryLane", entryLane,
+                    "marketType", marketType,
+                    "currentEntryPrice", entryTimingDecision.getCurrentEntryPrice(),
+                    "driftRate", entryTimingDecision.getDriftRate(),
+                    "allowedDriftRate", entryTimingDecision.getAllowedDriftRate(),
+                    "spreadPct", entryTimingDecision.getSpreadPct(),
+                    "firstRejectGate", entryTimingDecision.isAccepted() ? null : "G7_ENTRY_TIMING",
+                    "blockerCategories", entryTimingDecision.isAccepted() ? null : "ENTRY_TIMING",
+                    "reasonSummary", summarizeReasons(entryTimingDecision.getReasons())));
+        }
 
         ConsensusSignalView consensus = consensusSignalService.buildConsensusForEvent(event, risk);
 
@@ -565,6 +645,17 @@ public class SmartWalletSignalRiskService {
             reasons.add("[MANUAL_ALLOWLIST_STAKE_MULTIPLIER] Applied manual allowlist stake multiplier="
                     + stakeMultiplierApplied.setScale(4, RoundingMode.HALF_UP) + ".");
         }
+        BigDecimal triggerStakeCapRatio = safe(risk.getMaxStakeToTriggerNotionalRatio());
+        if (triggerStakeCapRatio.compareTo(BigDecimal.ZERO) > 0 && triggerSize.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal triggerStakeCap = triggerSize.multiply(triggerStakeCapRatio).setScale(2, RoundingMode.HALF_UP);
+            if (recommendedStake.compareTo(triggerStakeCap) > 0) {
+                reasons.add("[TRIGGER_NOTIONAL_STAKE_CAP] recommendedStake=" + recommendedStake
+                        + " capped to " + triggerStakeCap
+                        + " by triggerNotionalUsdc=" + triggerSize
+                        + ", maxStakeToTriggerNotionalRatio=" + triggerStakeCapRatio + ".");
+                recommendedStake = triggerStakeCap;
+            }
+        }
         if ((paperCanaryGateSoftened || consensusEntityCountFailed || consensusScoreFailed)
                 && isPaperCanaryStakeFloorEligible(paperCanaryAdmissionCandidate, risk, recommendedStake, profitabilityEstimate)) {
             BigDecimal canaryStake = safe(risk.getPaperCanaryStakeUsdc()).max(minOrderUsdc);
@@ -627,6 +718,47 @@ public class SmartWalletSignalRiskService {
             reasons.add("Slippage spike probability is above threshold.");
         }
         if (accepted) gateStage = 11; // 通过模型门控
+
+        SignalScoreModelResult signalScore = signalScoreModelService.score(
+                profile,
+                event,
+                consensus,
+                profitabilityEstimate,
+                entryTimingDecision,
+                recommendedStake
+        );
+        if (signalScore != null && signalScore.getReasons() != null) {
+            reasons.addAll(signalScore.getReasons());
+        }
+        if (accepted
+                && risk.isEnableSignalScoreGate()
+                && signalScore != null
+                && safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) < 0
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
+            accepted = false;
+            if (firstRejectGate == null) {
+                firstRejectGate = "G11_SIGNAL_SCORE_TOO_LOW(score=" + safe(signalScore.getSignalScore()) + ")";
+            }
+            reasons.add("[SIGNAL_SCORE_BLOCK] signalScore=" + safe(signalScore.getSignalScore())
+                    + " is below minLiveSignalScore=" + safe(risk.getMinLiveSignalScore()) + ".");
+        }
+        if (signalScore != null) {
+            boolean scoreAccepted = !risk.isEnableSignalScoreGate()
+                    || safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) >= 0
+                    || "DYNAMIC_FOLLOW_EXIT".equals(entryLane);
+            log.info("{}", flow("S5_RISK_EVALUATED", "信号评分模型",
+                    scoreAccepted ? "通过" : "拒绝", event,
+                    "entryLane", entryLane,
+                    "stakeUsdc", recommendedStake,
+                    "signalScore", signalScore.getSignalScore(),
+                    "profitProbability", signalScore.getProfitProbability(),
+                    "liquidityFactor", signalScore.getLiquidityFactor(),
+                    "leaderReliabilityFactor", signalScore.getLeaderReliabilityFactor(),
+                    "riskPenalty", signalScore.getRiskPenalty(),
+                    "firstRejectGate", scoreAccepted ? null : "G11_SIGNAL_SCORE_TOO_LOW",
+                    "blockerCategories", scoreAccepted ? null : "SIGNAL_SCORE",
+                    "reasonSummary", summarizeReasons(signalScore.getReasons())));
+        }
 
         List<SignalStrategyCheckResult> strategyChecks = buildEntryStrategyChecks(
                 profile,
@@ -788,6 +920,10 @@ public class SmartWalletSignalRiskService {
                 .calibratedFollowProbability(profitabilityEstimate.getCalibratedFollowProbability())
                 .slippageSpikeProbability(profitabilityEstimate.getSlippageSpikeProbability())
                 .estimateSampleSize(profitabilityEstimate.getEstimateSampleSize())
+                .signalScore(signalScore == null ? null : signalScore.getSignalScore())
+                .signalScoreLiquidityFactor(signalScore == null ? null : signalScore.getLiquidityFactor())
+                .signalScoreRiskPenalty(signalScore == null ? null : signalScore.getRiskPenalty())
+                .signalScoreLeaderReliabilityFactor(signalScore == null ? null : signalScore.getLeaderReliabilityFactor())
                 .consensusWallets(consensus.getDistinctWallets())        // 原始钱包数（历史兼容）
                 .consensusEntities(consensus.getDedupedEntityCount())    // 实体去重后数量（真实强度）
                 .consensusScore(consensus.getConsensusScore())
@@ -882,6 +1018,46 @@ public class SmartWalletSignalRiskService {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private String flow(String stage,
+                        String action,
+                        String result,
+                        SmartWalletTradeEventEntity event,
+                        Object... extra) {
+        List<Object> fields = new ArrayList<>();
+        fields.add("flowStage");
+        fields.add(stage);
+        fields.add("action");
+        fields.add(action);
+        fields.add("result");
+        fields.add(result);
+        fields.add("eventId");
+        fields.add(event == null ? null : event.getId());
+        fields.add("wallet");
+        fields.add(event == null ? null : event.getWalletAddress());
+        fields.add("marketId");
+        fields.add(event == null ? null : event.getMarketId());
+        fields.add("outcome");
+        fields.add(event == null ? null : event.getOutcome());
+        fields.add("side");
+        fields.add(event == null ? null : event.getSide());
+        if (extra != null) {
+            for (Object item : extra) {
+                fields.add(item);
+            }
+        }
+        return StrategyFlowLogFormatter.flow(fields.toArray());
+    }
+
+    private String summarizeReasons(List<String> reasons) {
+        if (reasons == null || reasons.isEmpty()) {
+            return null;
+        }
+        return reasons.stream()
+                .filter(StringUtils::hasText)
+                .limit(4)
+                .collect(Collectors.joining(" | "));
     }
 
     private BigDecimal safe(BigDecimal value) {
@@ -1528,6 +1704,45 @@ public class SmartWalletSignalRiskService {
             }
         }
         return false;
+    }
+
+    private int countEntryOrdersOnMarketOutcome(String marketId, String outcome) {
+        List<Long> marketInfoIds = marketOutcomeMarketInfoIds(marketId, outcome);
+        if (marketInfoIds.isEmpty()) {
+            return 0;
+        }
+        Long count = orderMapper.selectCount(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                .in(SmartWalletOrderEntity::getMarketInfoId, marketInfoIds)
+                .notIn(SmartWalletOrderEntity::getStatus, List.of("FAILED", "CANCELLED", "CANCELED", "REJECTED"))
+                .ne(SmartWalletOrderEntity::getOrderType, "EXIT"));
+        return count == null ? 0 : count.intValue();
+    }
+
+    private int countPendingFollowTasksOnMarketOutcome(String marketId, String outcome, Long currentFollowTaskId) {
+        List<Long> marketInfoIds = marketOutcomeMarketInfoIds(marketId, outcome);
+        if (marketInfoIds.isEmpty()) {
+            return 0;
+        }
+        LambdaQueryWrapper<SmartWalletFollowTaskEntity> query = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .in(SmartWalletFollowTaskEntity::getMarketInfoId, marketInfoIds)
+                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "EXECUTING"));
+        if (currentFollowTaskId != null) {
+            query.ne(SmartWalletFollowTaskEntity::getId, currentFollowTaskId);
+        }
+        Long count = followTaskMapper.selectCount(query);
+        return count == null ? 0 : count.intValue();
+    }
+
+    private List<Long> marketOutcomeMarketInfoIds(String marketId, String outcome) {
+        if (!StringUtils.hasText(marketId) || !StringUtils.hasText(outcome)) {
+            return List.of();
+        }
+        return marketInfoService.listByMarketId(marketId).stream()
+                .filter(info -> info != null && outcome.equalsIgnoreCase(info.getOutcome()))
+                .map(SmartWalletMarketInfoEntity::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     private int defaultInt(Integer value, int fallback) {

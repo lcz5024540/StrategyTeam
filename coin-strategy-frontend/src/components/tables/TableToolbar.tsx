@@ -14,6 +14,7 @@ interface TableToolbarProps {
   filters?: TableToolbarFilter[]
   filteredCount: number
   totalCount: number
+  countLabel?: string
   hasActiveFilters?: boolean
   onReset?: () => void
 }
@@ -25,6 +26,7 @@ export function TableToolbar({
   filters = [],
   filteredCount,
   totalCount,
+  countLabel = '筛选后',
   hasActiveFilters = false,
   onReset,
 }: TableToolbarProps) {
@@ -60,7 +62,7 @@ export function TableToolbar({
         ) : null}
       </div>
       <div className="table-toolbar-meta">
-        筛选后 {filteredCount} 条 / 共 {totalCount} 条
+        {countLabel} {filteredCount} 条 / 共 {totalCount} 条
       </div>
     </div>
   )

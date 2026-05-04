@@ -7,10 +7,14 @@ import { TableToolbar } from './TableToolbar'
 import { TablePagination } from './TablePagination'
 
 const ORDER_CURSOR_PAGE_SIZE = 50
+type MarketLifecycleFilter = 'ALL' | 'ACTIVE' | 'ENDED'
 
 const EXIT_REASON_LABELS: Record<string, string> = {
   TAKE_PROFIT_AUTO_EXIT: '自动止盈',
   STOP_LOSS_AUTO_EXIT: '自动止损',
+  CAPITAL_RECYCLE_AUTO_EXIT: '资金回收',
+  TREND_STOP_LOSS_AUTO_EXIT: '趋势止损',
+  TIME_WINDOW_AUTO_EXIT: '时间窗口退出',
 }
 
 function getExitReasonLabel(exitReason?: string): string {
@@ -20,11 +24,55 @@ function getExitReasonLabel(exitReason?: string): string {
   return EXIT_REASON_LABELS[exitReason] || exitReason
 }
 
+function getOperationTypeLabel(order: {
+  side?: string | null
+  orderType?: string | null
+  earlyExit?: boolean
+  exitReason?: string | null
+}): string {
+  const side = (order.side || '').toUpperCase()
+  const orderType = (order.orderType || '').toUpperCase()
+  if (side === 'BUY') {
+    if (orderType === 'EXIT') return '买入回补'
+    return '买入开仓'
+  }
+  if (side === 'SELL') {
+    if (order.earlyExit || order.exitReason || orderType === 'EXIT') return '卖出退出'
+    return '卖出'
+  }
+  return orderType || side || '-'
+}
+
+function getOperationBadgeClass(order: {
+  side?: string | null
+  orderType?: string | null
+  earlyExit?: boolean
+  exitReason?: string | null
+}): string {
+  const side = (order.side || '').toUpperCase()
+  if (side === 'BUY') return 'badge accent'
+  if (side === 'SELL') return 'badge warn'
+  return 'badge'
+}
+
 function getPnlBadgeClass(value?: number): string {
   const pnl = Number(value || 0)
   if (pnl > 0) return 'badge accent'
   if (pnl < 0) return 'badge danger'
   return 'badge'
+}
+
+function getExitReasonBadgeClass(exitReason: string, realizedPnlUsdc?: number): string {
+  if (exitReason === 'STOP_LOSS_AUTO_EXIT' || exitReason === 'TREND_STOP_LOSS_AUTO_EXIT') {
+    return 'danger'
+  }
+  if (exitReason === 'CAPITAL_RECYCLE_AUTO_EXIT') {
+    const pnl = Number(realizedPnlUsdc || 0)
+    if (pnl > 0) return 'accent'
+    if (pnl < 0) return 'danger'
+    return 'info'
+  }
+  return 'warn'
 }
 
 function shouldShowRealizedPnl(order: {
@@ -56,11 +104,43 @@ function formatFeeBreakdown(order: {
   return parts.join(' / ')
 }
 
-function buildPolymarketMarketUrl(order: {
-  marketSlug?: string | null
+function isActiveOrderMarket(order: {
+  activeMarket?: boolean | null
+  marketLifecycle?: string | null
+  closed?: boolean | null
+  acceptingOrders?: boolean | null
+  marketEndAt?: number | null
+}): boolean {
+  if (order.activeMarket != null) {
+    return Boolean(order.activeMarket)
+  }
+  const lifecycle = (order.marketLifecycle || '').toUpperCase()
+  if (lifecycle && lifecycle !== 'ACTIVE') {
+    return false
+  }
+  if (order.closed || order.acceptingOrders === false) {
+    return false
+  }
+  return !order.marketEndAt || order.marketEndAt <= 0 || order.marketEndAt > Date.now()
+}
+
+function getLifecycleLabel(order: {
+  activeMarket?: boolean | null
+  marketLifecycle?: string | null
 }): string {
-  const slug = (order.marketSlug || '').trim()
-  return slug ? `https://polymarket.com/event/${slug}` : ''
+  if (isActiveOrderMarket(order)) {
+    return '活跃市场'
+  }
+  const lifecycle = (order.marketLifecycle || '').toUpperCase()
+  if (lifecycle === 'RESOLVED') {
+    return '已结算市场'
+  }
+  return '已结束市场'
+}
+
+function getCategoryLabel(value?: string | null): string {
+  if (!value) return 'OTHER'
+  return value.replace(/_/g, ' ')
 }
 
 function formatIsoSecond(value?: string | number | null): string {
@@ -102,6 +182,7 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
   const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [marketLifecycleFilter, setMarketLifecycleFilter] = useState<MarketLifecycleFilter>('ALL')
   const deferredKeyword = useDeferredValue(keyword.trim())
 
   const {
@@ -124,16 +205,24 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
 
   const orders = data?.pages.flatMap((ordersPage) => ordersPage.items) ?? []
 
-  const loadedPages = Math.max(1, Math.ceil(orders.length / TABLE_PAGE_SIZE))
+  const activeCount = orders.filter(isActiveOrderMarket).length
+  const endedCount = orders.length - activeCount
+  const filteredOrders = orders.filter((order) => {
+    if (marketLifecycleFilter === 'ACTIVE') return isActiveOrderMarket(order)
+    if (marketLifecycleFilter === 'ENDED') return !isActiveOrderMarket(order)
+    return true
+  })
+
+  const loadedPages = Math.max(1, Math.ceil(filteredOrders.length / TABLE_PAGE_SIZE))
   const totalPages = hasNextPage ? Math.max(loadedPages + 1, page) : loadedPages
-  const visibleOrders = orders.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE)
-  const hasActiveFilters = Boolean(keyword || statusFilter)
+  const visibleOrders = filteredOrders.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE)
+  const hasActiveFilters = Boolean(keyword || statusFilter || marketLifecycleFilter !== 'ALL')
   const requiredItems = page * TABLE_PAGE_SIZE
   const isPageLoading = isFetchingNextPage && orders.length < (page - 1) * TABLE_PAGE_SIZE + 1
 
   useEffect(() => {
     setPage(1)
-  }, [deferredKeyword, statusFilter, mode, pnl, settlement])
+  }, [deferredKeyword, statusFilter, marketLifecycleFilter, mode, pnl, settlement])
 
   useEffect(() => {
     setPage((currentPage) => Math.min(currentPage, totalPages))
@@ -156,7 +245,7 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
         <table>
           <tbody>
             <tr>
-              <td colSpan={10} className="empty-state">暂无订单记录</td>
+              <td colSpan={11} className="empty-state">暂无订单记录</td>
             </tr>
           </tbody>
         </table>
@@ -170,12 +259,14 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
         keyword={keyword}
         onKeywordChange={setKeyword}
         keywordPlaceholder="搜索订单 / 市场 / 钱包"
-        filteredCount={orders.length}
+        filteredCount={filteredOrders.length}
         totalCount={orders.length}
+        countLabel="已加载"
         hasActiveFilters={hasActiveFilters}
         onReset={() => {
           setKeyword('')
           setStatusFilter('')
+          setMarketLifecycleFilter('ALL')
         }}
         filters={[
           {
@@ -187,11 +278,36 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
         ]}
       />
 
+      <div className="orders-market-segmented segmented-control" aria-label="市场生命周期筛选">
+        <button
+          type="button"
+          className={marketLifecycleFilter === 'ALL' ? 'active' : ''}
+          onClick={() => setMarketLifecycleFilter('ALL')}
+        >
+          全部 {orders.length}
+        </button>
+        <button
+          type="button"
+          className={marketLifecycleFilter === 'ACTIVE' ? 'active' : ''}
+          onClick={() => setMarketLifecycleFilter('ACTIVE')}
+        >
+          活跃市场 {activeCount}
+        </button>
+        <button
+          type="button"
+          className={marketLifecycleFilter === 'ENDED' ? 'active' : ''}
+          onClick={() => setMarketLifecycleFilter('ENDED')}
+        >
+          已结束市场 {endedCount}
+        </button>
+      </div>
+
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
               <th>订单ID</th>
+              <th>操作类型</th>
               <th>跟单地址</th>
               <th>市场</th>
               <th>预计结算</th>
@@ -206,34 +322,52 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
           <tbody>
             {visibleOrders.length === 0 ? (
               <tr>
-                <td colSpan={10} className="empty-state">
+                <td colSpan={11} className="empty-state">
                   {isPageLoading ? '订单加载中...' : '当前筛选条件下暂无订单记录'}
                 </td>
               </tr>
             ) : (
               visibleOrders.map((order) => {
                 const marketLabel = order.question || order.marketId || '-'
-                const marketUrl = buildPolymarketMarketUrl(order)
+                const activeMarket = isActiveOrderMarket(order)
+                const marketUrl = order.externalMarketUrl || order.marketUrl || order.internalMarketUrl || ''
+                const externalMarketLink = marketUrl.startsWith('http')
                 const followAddress = order.walletAddress || order.executionAddress || '-'
 
                 return (
                   <tr key={order.id}>
                     <td>{truncateText(order.id, 14)}</td>
+                    <td>
+                      <div style={{ display: 'grid', gap: '6px' }}>
+                        <span className={getOperationBadgeClass(order)}>{getOperationTypeLabel(order)}</span>
+                        <span className="table-subtext">{order.side || '-'}{order.orderType ? ` / ${order.orderType}` : ''}</span>
+                      </div>
+                    </td>
                     <td title={followAddress}>{compactAddress(followAddress)}</td>
                     <td className="market-cell" title={marketLabel}>
                       {marketUrl ? (
                         <a
                           className="market-link"
                           href={marketUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={`在 Polymarket 打开：${marketLabel}`}
+                          target={externalMarketLink ? '_blank' : undefined}
+                          rel={externalMarketLink ? 'noreferrer' : undefined}
+                          title={`${externalMarketLink ? '在 Polymarket 打开' : '查看内部市场详情'}：${marketLabel}`}
                         >
                           {truncateText(marketLabel, 34)}
                         </a>
                       ) : (
-                        truncateText(marketLabel, 34)
+                        <span className="market-cell-title">{truncateText(marketLabel, 34)}</span>
                       )}
+                      <div className="market-cell-sub">
+                        <span className={activeMarket ? 'badge accent' : 'badge'}>
+                          {activeMarket ? '活跃规则' : getLifecycleLabel(order)}
+                        </span>
+                        {order.normalizedCategory && !activeMarket ? (
+                          <span className="badge">{getCategoryLabel(order.normalizedCategory)}</span>
+                        ) : null}
+                        {activeMarket && order.acceptingOrders === false ? <span className="badge warn">暂停接单</span> : null}
+                        {!order.externalMarketUrl && !order.marketSlug ? <span className="badge warn">内部详情</span> : null}
+                      </div>
                     </td>
                     <td title={formatMarketEnd(order)}>{formatMarketEnd(order)}</td>
                     <td>{order.outcome}</td>
@@ -242,7 +376,7 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {order.earlyExit ? <span className="badge accent">提前卖出</span> : null}
                           {order.exitReason ? (
-                            <span className={`badge ${order.exitReason === 'STOP_LOSS_AUTO_EXIT' ? 'danger' : 'warn'}`}>
+                            <span className={`badge ${getExitReasonBadgeClass(order.exitReason, order.realizedPnlUsdc)}`}>
                               {getExitReasonLabel(order.exitReason)}
                             </span>
                           ) : null}
@@ -257,7 +391,10 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
                         )}
                       </div>
                     </td>
-                    <td>{formatAmount(order.costBasisUsdc ?? order.notionalUsdc)}</td>
+                    <td>
+                      <div>{formatAmount(order.costBasisUsdc ?? order.notionalUsdc)}</div>
+                      {order.roiAnomalyReason ? <span className="badge warn" title={order.roiAnomalyReason}>单位异常</span> : null}
+                    </td>
                     <td title={formatFeeBreakdown(order)}>
                       {order.feeUsdc ? formatMoney(order.feeUsdc) : '-'}
                     </td>
@@ -276,7 +413,7 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
       <TablePagination
         page={page}
         pageSize={TABLE_PAGE_SIZE}
-        totalItems={orders.length}
+        totalItems={filteredOrders.length}
         onPageChange={setPage}
         hasMore={Boolean(hasNextPage)}
       />

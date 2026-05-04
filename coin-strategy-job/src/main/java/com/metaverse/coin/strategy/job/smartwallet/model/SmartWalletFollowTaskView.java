@@ -37,6 +37,10 @@ public class SmartWalletFollowTaskView {
     private BigDecimal calibratedFollowProbability;
     private BigDecimal slippageSpikeProbability;
     private Integer estimateSampleSize;
+    private BigDecimal signalScore;
+    private BigDecimal signalScoreLiquidityFactor;
+    private BigDecimal signalScoreRiskPenalty;
+    private BigDecimal signalScoreLeaderReliabilityFactor;
     private Boolean taskExecutable;
     private Boolean overrideApplied;
     private Boolean manualAllowlistApplied;

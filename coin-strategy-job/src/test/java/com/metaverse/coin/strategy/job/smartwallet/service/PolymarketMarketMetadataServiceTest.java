@@ -102,6 +102,43 @@ class PolymarketMarketMetadataServiceTest {
     }
 
     @Test
+    void shouldRepairIncompletePersistedMetadataOnBestEffortLookup() {
+        when(marketInfoService.listByMarketId("0xincomplete")).thenReturn(List.of(
+                new SmartWalletMarketInfoEntity()
+                        .setId(10L)
+                        .setMarketId("0xincomplete")
+                        .setQuestion("Team A vs. Team B: O/U 2.5")
+                        .setOutcome("OVER")
+                        .setAcceptingOrders(true)
+                        .setClosed(false)
+                        .setMarketLifecycle("ACTIVE")
+                        .setLastMetadataSyncAt(new Date())
+        ));
+        when(polymarketApiClient.fetchMarketMetadata("0xincomplete")).thenReturn(
+                PolymarketApiClient.MarketMetadata.builder()
+                        .conditionId("0xincomplete")
+                        .marketId("market-1")
+                        .question("Team A vs. Team B: O/U 2.5")
+                        .slug("soc-team-a-team-b-2026-05-04-total-2pt5")
+                        .closed(false)
+                        .acceptingOrders(true)
+                        .outcomes(List.of("OVER", "UNDER"))
+                        .outcomeTokenIds(Map.of("OVER", "token-over", "UNDER", "token-under"))
+                        .endAt(System.currentTimeMillis() + 3_600_000L)
+                        .build()
+        );
+
+        PolymarketApiClient.MarketMetadata metadata = service.getBestEffortByConditionId(
+                "0xincomplete",
+                false,
+                "Team A vs. Team B: O/U 2.5",
+                List.of("OVER"));
+
+        assertEquals("soc-team-a-team-b-2026-05-04-total-2pt5", metadata.getSlug());
+        assertEquals("token-over", metadata.getOutcomeTokenIds().get("OVER"));
+    }
+
+    @Test
     void shouldUpgradeToResolvedFromExactSearchFallbackWhenPrimaryIsStale() {
         PolymarketApiClient.MarketMetadata primary = PolymarketApiClient.MarketMetadata.builder()
                 .conditionId("0xmarket")

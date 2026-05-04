@@ -95,7 +95,7 @@ class SmartWalletSettlementSyncServiceTest {
         ArgumentCaptor<SmartWalletSettlementRetryEntity> retryCaptor = ArgumentCaptor.forClass(SmartWalletSettlementRetryEntity.class);
         verify(settlementRetryMapper).updateById(retryCaptor.capture());
         assertEquals("PENDING", retryCaptor.getValue().getStatus());
-        assertEquals(0, retryCaptor.getValue().getFailureCount());
+        assertEquals(1, retryCaptor.getValue().getFailureCount());
         assertEquals("ORACLE_PENDING", retryCaptor.getValue().getRetryType());
         verify(settlementRetryMapper, never()).insert(any());
     }

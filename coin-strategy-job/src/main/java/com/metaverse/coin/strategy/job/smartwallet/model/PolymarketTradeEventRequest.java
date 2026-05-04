@@ -15,6 +15,7 @@ public class PolymarketTradeEventRequest {
     private String outcome;
     private String side = "BUY";
     private BigDecimal price = BigDecimal.ZERO;
+    private BigDecimal sizeShares = BigDecimal.ZERO;
     private BigDecimal sizeUsdc = BigDecimal.ZERO;
     private Date openedAt;
 }

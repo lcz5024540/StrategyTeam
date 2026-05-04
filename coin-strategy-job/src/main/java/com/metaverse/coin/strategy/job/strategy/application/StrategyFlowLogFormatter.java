@@ -39,6 +39,7 @@ public final class StrategyFlowLogFormatter {
             case "S6_TASK_CREATED" -> "S6 任务创建 / Task Created";
             case "S7_TASK_CLAIMED" -> "S7 任务抢占 / Task Claimed";
             case "S8_ORDER_EXECUTED" -> "S8 订单执行 / Order Executed";
+            case "S9_POSITION_EXIT" -> "S9 持仓退出 / Position Exit";
             default -> String.valueOf(raw);
         };
     }

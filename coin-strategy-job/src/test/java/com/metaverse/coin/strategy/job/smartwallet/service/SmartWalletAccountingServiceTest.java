@@ -17,6 +17,7 @@ import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketLinkView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPerformanceView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPnlTimelinePoint;
@@ -83,6 +84,10 @@ class SmartWalletAccountingServiceTest {
     private SmartWalletMarketInfoService marketInfoService;
     @Mock
     private SmartWalletMarketStateService marketStateService;
+    @Mock
+    private SmartWalletMarketLinkService marketLinkService;
+    @Mock
+    private ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
 
     private SmartWalletAccountingService service;
 
@@ -110,7 +115,9 @@ class SmartWalletAccountingServiceTest {
                 properties,
                 followTaskServiceProvider,
                 marketInfoService,
-                marketStateService
+                marketStateService,
+                marketLinkService,
+                tradeOrderServiceProvider
         );
     }
 
@@ -426,6 +433,108 @@ class SmartWalletAccountingServiceTest {
         assertEquals(1, orders.size());
         assertEquals("SETTLED_WIN", orders.get(0).getStatus());
         assertEquals(new BigDecimal("19.13720537"), orders.get(0).getRealizedPnlUsdc());
+    }
+
+    @Test
+    void shouldExposeMarketDisplayMetadataOnOrderView() {
+        long futureEndAt = System.currentTimeMillis() + 3_600_000L;
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(168L)
+                .setWalletAddress("wallet")
+                .setExecutionMode("PAPER")
+                .setExecutionAddress("paper-book")
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-display")
+                        .setMarketSlug("mlb-sf-phi-2026-04-30-over-under-8-5")
+                        .setQuestion("San Francisco Giants vs. Philadelphia Phillies: O/U 8.5")
+                        .setOutcome("UNDER")
+                        .setTokenId("token-under")
+                        .setMarketEndAt(futureEndAt)
+                        .setMarketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .setClosed(false)
+                        .setAcceptingOrders(true)
+                        .setNormalizedCategory(SmartWalletMarketStateService.CATEGORY_SPORTS)
+                        .setSourceCategory("Sports"))
+                .setSide("BUY")
+                .setOrderType("GTC")
+                .setStatus("FILLED")
+                .setPrice(new BigDecimal("0.45000000"))
+                .setSize(new BigDecimal("10.00000000"))
+                .setNotionalUsdc(new BigDecimal("4.50000000"))
+                .setPlacedAt(new Date());
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(marketLinkService.fromStoredSlug(
+                "market-display",
+                "San Francisco Giants vs. Philadelphia Phillies: O/U 8.5",
+                "UNDER",
+                "mlb-sf-phi-2026-04-30-over-under-8-5"))
+                .thenReturn(SmartWalletMarketLinkView.builder()
+                        .marketUrl("https://polymarket.com/sports/mlb/mlb-sf-phi-2026-04-30")
+                        .externalMarketUrl("https://polymarket.com/sports/mlb/mlb-sf-phi-2026-04-30")
+                        .internalMarketUrl("/dashboard/polymarket/markets/market-display")
+                        .linkStatus(SmartWalletMarketLinkService.STATUS_EXTERNAL_READY)
+                        .build());
+
+        List<SmartWalletOrderView> orders = service.listOrders(10, "PAPER");
+
+        assertEquals(1, orders.size());
+        SmartWalletOrderView view = orders.get(0);
+        assertEquals(SmartWalletMarketStateService.LIFECYCLE_ACTIVE, view.getMarketLifecycle());
+        assertTrue(view.getActiveMarket());
+        assertEquals(false, view.getClosed());
+        assertEquals(true, view.getAcceptingOrders());
+        assertEquals(SmartWalletMarketStateService.CATEGORY_SPORTS, view.getNormalizedCategory());
+        assertEquals("Sports", view.getSourceCategory());
+        assertEquals("https://polymarket.com/sports/mlb/mlb-sf-phi-2026-04-30", view.getMarketUrl());
+    }
+
+    @Test
+    void shouldFilterOrderPagePnlByDisplayPnl() {
+        Date filledAt = new Date();
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(169L)
+                .setPositionId(126L)
+                .setWalletAddress("wallet")
+                .setExecutionMode("PAPER")
+                .setExecutionAddress("paper-book")
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-display-pnl")
+                        .setOutcome("YES"))
+                .setSide("BUY")
+                .setOrderType("GTC")
+                .setStatus("SETTLED_WIN")
+                .setPrice(new BigDecimal("0.50000000"))
+                .setSize(new BigDecimal("10.00000000"))
+                .setNotionalUsdc(new BigDecimal("5.00000000"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setPlacedAt(filledAt)
+                .setFilledAt(filledAt);
+        SmartWalletFillEntity fill = new SmartWalletFillEntity()
+                .setId(502L)
+                .setOrderId(169L)
+                .setPositionId(126L)
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-display-pnl")
+                        .setOutcome("YES"))
+                .setSide("BUY")
+                .setNotionalUsdc(new BigDecimal("5.00000000"))
+                .setFilledAt(filledAt);
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(126L)
+                .setExecutionAddress("paper-book")
+                .setMarketInfo(new SmartWalletMarketInfoEntity()
+                        .setMarketId("market-display-pnl")
+                        .setOutcome("YES"))
+                .setStatus("CLAIMED")
+                .setRealizedPnlUsdc(new BigDecimal("5.00000000"));
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(fillMapper.selectList(any())).thenReturn(List.of(fill));
+        when(positionMapper.selectById(126L)).thenReturn(position);
+
+        var page = service.listOrdersCursor(10, null, "PAPER", "PROFIT", "ALL", null, null, null);
+
+        assertEquals(1, page.items().size());
+        assertEquals(new BigDecimal("5.00000000"), page.items().get(0).getRealizedPnlUsdc());
     }
 
     @Test
@@ -942,7 +1051,7 @@ class SmartWalletAccountingServiceTest {
     }
 
     @Test
-    void shouldClassifyClosedUnresolvedExpiredMarketAsDataSourceStale() {
+    void shouldClassifyClosedOracleResolvedButUnmappedMarketAsResolvedOutcomeUnmapped() {
         long past = System.currentTimeMillis() - 60_000L;
         SmartWalletPositionEntity position = new SmartWalletPositionEntity()
                 .setId(13L)
@@ -982,7 +1091,61 @@ class SmartWalletAccountingServiceTest {
 
         SettlementSyncSummary summary = service.syncSettlements(10, 10, false);
 
-        assertEquals("DATA_SOURCE_STALE", summary.getRetryCandidates().get(0).getRetryType());
+        assertEquals("RESOLVED_OUTCOME_UNMAPPED", summary.getRetryCandidates().get(0).getRetryType());
+    }
+
+    @Test
+    void shouldNotSettleManualCheckMarketOrWriteRealizedPnlLedger() {
+        long past = System.currentTimeMillis() - 60_000L;
+        SmartWalletPositionEntity position = new SmartWalletPositionEntity()
+                .setId(15L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-manual")
+                .setQuestion("Will ambiguous market require review?")
+                .setOutcome("YES")
+                .setMarketEndAt(past)
+                .setQuantity(new BigDecimal("10"))
+                .setCostBasisUsdc(new BigDecimal("4.50"))
+                .setOriginalCostBasisUsdc(new BigDecimal("4.50"))
+                .setRealizedPnlUsdc(BigDecimal.ZERO)
+                .setUnrealizedPnlUsdc(BigDecimal.ZERO)
+                .setStatus("OPEN")
+                .setLastFilledAt(new Date(past));
+        SmartWalletOrderEntity order = new SmartWalletOrderEntity()
+                .setId(105L)
+                .setExecutionAddress("paper-book")
+                .setMarketId("market-manual")
+                .setOutcome("YES")
+                .setStatus("FILLED");
+        PolymarketApiClient.MarketMetadata metadata = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("market-manual")
+                .marketId("market-manual")
+                .question(position.getQuestion())
+                .endAt(past)
+                .closed(true)
+                .acceptingOrders(false)
+                .umaResolutionStatus("resolved")
+                .resolutionStatus(MarketResolutionResolver.STATUS_NEED_MANUAL_CHECK)
+                .manualCheckReason("non_binary_final_price")
+                .outcomes(List.of("YES", "NO"))
+                .outcomePrices(List.of("0.5", "0.5"))
+                .build();
+
+        when(positionMapper.selectList(any())).thenReturn(List.of(position));
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(marketInfoService.findIdsByMarketId("market-manual")).thenReturn(List.of(99L));
+        when(marketMetadataService.getBestEffortByConditionId(eq("market-manual"), anyBoolean(), eq(position.getQuestion()), anyList()))
+                .thenReturn(metadata);
+
+        SettlementSyncSummary summary = service.syncSettlements(10, 10, false);
+
+        assertEquals(0, summary.getResolvedPositions());
+        assertEquals("NEED_MANUAL_CHECK", summary.getRetryCandidates().get(0).getRetryType());
+        ArgumentCaptor<SmartWalletPositionEntity> positionCaptor = ArgumentCaptor.forClass(SmartWalletPositionEntity.class);
+        verify(positionMapper, atLeastOnce()).updateById(positionCaptor.capture());
+        assertTrue(positionCaptor.getAllValues().stream()
+                .anyMatch(updated -> "NEED_MANUAL_CHECK".equals(updated.getStatus())));
+        verify(cashLedgerMapper, never()).insert(any());
     }
 
     @Test

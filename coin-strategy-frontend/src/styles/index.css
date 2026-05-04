@@ -2002,6 +2002,10 @@ body::before {
 }
 
 .market-cell-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   margin-top: 4px;
   font-size: 11px;
   color: var(--muted);
@@ -3248,12 +3252,28 @@ tbody tr:hover td {
   text-decoration: underline;
 }
 
+.market-fallback-link {
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.market-fallback-link:hover {
+  color: var(--accent);
+}
+
 .table-secondary {
   margin-top: 4px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;
   font-family: var(--font-mono);
+}
+
+.orders-market-segmented {
+  margin: 0 0 10px;
+  width: fit-content;
 }
 
 .factor-panel {

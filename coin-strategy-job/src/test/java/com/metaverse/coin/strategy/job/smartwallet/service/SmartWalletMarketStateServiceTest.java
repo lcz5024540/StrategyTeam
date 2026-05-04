@@ -161,6 +161,86 @@ class SmartWalletMarketStateServiceTest {
     }
 
     @Test
+    void shouldRefreshFreshActiveSnapshotWhenSlugMissing() {
+        long futureEndAt = System.currentTimeMillis() + 3_600_000L;
+        SmartWalletMarketInfoEntity row = new SmartWalletMarketInfoEntity()
+                .setId(6L)
+                .setMarketId("market-active-missing-slug")
+                .setQuestion("Will active missing slug refresh?")
+                .setOutcome("YES")
+                .setTokenId("token-yes")
+                .setMarketEndAt(futureEndAt)
+                .setMarketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                .setAcceptingOrders(true)
+                .setClosed(false)
+                .setLastMetadataSyncAt(new java.util.Date(System.currentTimeMillis() - 10_000L));
+        when(marketInfoService.listByMarketId("market-active-missing-slug")).thenReturn(List.of(row));
+        when(marketMetadataService.getBestEffortByConditionId(
+                eq("market-active-missing-slug"),
+                eq(false),
+                eq("Will active missing slug refresh?"),
+                eq(List.of("YES"))))
+                .thenReturn(PolymarketApiClient.MarketMetadata.builder()
+                        .conditionId("market-active-missing-slug")
+                        .slug("active-market-slug")
+                        .question("Will active missing slug refresh?")
+                        .outcomes(List.of("YES", "NO"))
+                        .outcomeTokenIds(Map.of("YES", "token-yes", "NO", "token-no"))
+                        .tokenIdToIndexSet(Map.of("token-yes", 1, "token-no", 2))
+                        .acceptingOrders(true)
+                        .closed(false)
+                        .endAt(futureEndAt)
+                        .build());
+        when(marketInfoService.getOrCreate("market-active-missing-slug", "YES",
+                "Will active missing slug refresh?", "token-yes", 1, futureEndAt))
+                .thenReturn(row);
+        when(marketInfoService.getOrCreate("market-active-missing-slug", "NO",
+                "Will active missing slug refresh?", "token-no", 2, futureEndAt))
+                .thenReturn(new SmartWalletMarketInfoEntity()
+                        .setId(7L)
+                        .setMarketId("market-active-missing-slug")
+                        .setQuestion("Will active missing slug refresh?")
+                        .setOutcome("NO")
+                        .setTokenId("token-no"));
+
+        SmartWalletMarketStateService.MarketStateSnapshot snapshot = service.refreshMarket(
+                "market-active-missing-slug",
+                "Will active missing slug refresh?",
+                List.of("YES")
+        );
+
+        assertEquals("active-market-slug", snapshot.marketSlug());
+        verify(marketMetadataService).getBestEffortByConditionId(
+                eq("market-active-missing-slug"),
+                eq(false),
+                eq("Will active missing slug refresh?"),
+                eq(List.of("YES")));
+    }
+
+    @Test
+    void shouldNotRefreshFreshClosedSnapshotWhenSlugMissing() {
+        SmartWalletMarketInfoEntity row = new SmartWalletMarketInfoEntity()
+                .setId(8L)
+                .setMarketId("market-closed-missing-slug")
+                .setQuestion("Will closed missing slug stay cached?")
+                .setOutcome("YES")
+                .setMarketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                .setAcceptingOrders(false)
+                .setClosed(false)
+                .setLastMetadataSyncAt(new java.util.Date(System.currentTimeMillis() - 10_000L));
+        when(marketInfoService.listByMarketId("market-closed-missing-slug")).thenReturn(List.of(row));
+
+        SmartWalletMarketStateService.MarketStateSnapshot snapshot = service.refreshMarket(
+                "market-closed-missing-slug",
+                "Will closed missing slug stay cached?",
+                List.of("YES")
+        );
+
+        assertEquals(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED, snapshot.marketLifecycle());
+        verify(marketMetadataService, never()).getBestEffortByConditionId(any(), anyBoolean(), any(), anyList());
+    }
+
+    @Test
     void shouldTreatPersistedExpiredActiveSnapshotAsClosedUnresolved() {
         SmartWalletMarketInfoEntity row = new SmartWalletMarketInfoEntity()
                 .setId(5L)

@@ -119,7 +119,7 @@ class PolymarketApiClientTest {
     }
 
     @Test
-    void shouldNotInferResolvedOutcomeOnlyFromClosedMarketPrices() throws Exception {
+    void shouldInferResolvedOutcomeFromTerminalFinalPrices() throws Exception {
         PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
         JsonNode market = new ObjectMapper().readTree("""
                 {
@@ -129,6 +129,7 @@ class PolymarketApiClientTest {
                   "closed": true,
                   "acceptingOrders": false,
                   "outcomes": ["Yes", "No"],
+                  "clobTokenIds": ["yes-token", "no-token"],
                   "outcomePrices": ["1.0", "0.0"]
                 }
                 """);
@@ -139,8 +140,91 @@ class PolymarketApiClientTest {
 
         assertTrue(metadata.isClosed());
         assertFalse(metadata.isAcceptingOrders());
-        assertNull(metadata.getResolvedOutcome());
-        assertFalse(metadata.isResolved());
+        assertEquals("YES", metadata.getResolvedOutcome());
+        assertEquals("yes-token", metadata.getWinningTokenId());
+        assertEquals("FINAL_PRICE_INFERENCE", metadata.getResolutionSource());
+        assertTrue(metadata.isResolved());
+    }
+
+    @Test
+    void shouldParseTokenWinnerAsResolvedOutcome() throws Exception {
+        PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
+        JsonNode market = new ObjectMapper().readTree("""
+                {
+                  "conditionId": "condition-token-winner",
+                  "id": "market-token-winner",
+                  "question": "Did home win?",
+                  "closed": false,
+                  "acceptingOrders": false,
+                  "outcomes": ["Yes", "No"],
+                  "tokens": [
+                    {"outcome": "Yes", "token_id": "yes-token", "winner": true},
+                    {"outcome": "No", "token_id": "no-token", "winner": false}
+                  ]
+                }
+                """);
+
+        Method method = PolymarketApiClient.class.getDeclaredMethod("parseMarketMetadata", JsonNode.class);
+        method.setAccessible(true);
+        PolymarketApiClient.MarketMetadata metadata = (PolymarketApiClient.MarketMetadata) method.invoke(client, market);
+
+        assertEquals("YES", metadata.getResolvedOutcome());
+        assertEquals("yes-token", metadata.getWinningTokenId());
+        assertEquals("TOKEN_WINNER", metadata.getResolutionSource());
+        assertTrue(metadata.isResolved());
+    }
+
+    @Test
+    void shouldParseStringifiedTokensAsResolvedOutcome() throws Exception {
+        PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
+        JsonNode market = new ObjectMapper().readTree("""
+                {
+                  "conditionId": "condition-stringified-token-winner",
+                  "id": "market-stringified-token-winner",
+                  "question": "Did home win?",
+                  "closed": false,
+                  "acceptingOrders": false,
+                  "outcomes": "[\\"Yes\\",\\"No\\"]",
+                  "outcomePrices": "[\\"0\\",\\"1\\"]",
+                  "tokens": "[{\\"outcome\\":\\"Yes\\",\\"token_id\\":\\"yes-token\\",\\"winner\\":false},{\\"outcome\\":\\"No\\",\\"token_id\\":\\"no-token\\",\\"winner\\":true}]"
+                }
+                """);
+
+        Method method = PolymarketApiClient.class.getDeclaredMethod("parseMarketMetadata", JsonNode.class);
+        method.setAccessible(true);
+        PolymarketApiClient.MarketMetadata metadata = (PolymarketApiClient.MarketMetadata) method.invoke(client, market);
+
+        assertEquals("NO", metadata.getResolvedOutcome());
+        assertEquals("no-token", metadata.getWinningTokenId());
+        assertEquals("TOKEN_WINNER", metadata.getResolutionSource());
+        assertEquals(MarketResolutionResolver.STATUS_RESOLVED, metadata.getResolutionStatus());
+        assertTrue(metadata.isResolved());
+    }
+
+    @Test
+    void shouldMapTopLevelWinningTokenIdToResolvedOutcome() throws Exception {
+        PolymarketApiClient client = new PolymarketApiClient(new SmartWalletProperties(), new ObjectMapper());
+        JsonNode market = new ObjectMapper().readTree("""
+                {
+                  "conditionId": "condition-winning-token",
+                  "id": "market-winning-token",
+                  "question": "Did away win?",
+                  "closed": false,
+                  "acceptingOrders": false,
+                  "outcomes": ["Yes", "No"],
+                  "clobTokenIds": ["yes-token", "no-token"],
+                  "winningTokenId": "no-token"
+                }
+                """);
+
+        Method method = PolymarketApiClient.class.getDeclaredMethod("parseMarketMetadata", JsonNode.class);
+        method.setAccessible(true);
+        PolymarketApiClient.MarketMetadata metadata = (PolymarketApiClient.MarketMetadata) method.invoke(client, market);
+
+        assertEquals("NO", metadata.getResolvedOutcome());
+        assertEquals("no-token", metadata.getWinningTokenId());
+        assertEquals("WINNING_TOKEN_ID", metadata.getResolutionSource());
+        assertTrue(metadata.isResolved());
     }
 
     @Test

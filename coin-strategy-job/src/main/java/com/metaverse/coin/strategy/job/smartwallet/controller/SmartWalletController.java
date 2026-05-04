@@ -40,6 +40,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonito
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketLinkView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
@@ -66,6 +67,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportV
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReportAttributionItem;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletTradeView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletTradeOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRunView;
@@ -106,6 +109,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowServ
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketLinkService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketRepairService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletManualAllowlistService;
@@ -114,6 +118,7 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetS
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletTradeOrderService;
 import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
@@ -178,6 +183,8 @@ public class SmartWalletController {
     private final SmartWalletClaimService claimService;
     private final SmartWalletLiveValidationService liveValidationService;
     private final SmartWalletMarketRepairService smartWalletMarketRepairService;
+    private final SmartWalletMarketLinkService marketLinkService;
+    private final SmartWalletTradeOrderService tradeOrderService;
     private final SmartWalletSettlementSyncService settlementSyncService;
     private final SmartWalletDataResetService dataResetService;
     private final SmartWalletRecoveryService recoveryService;
@@ -1084,6 +1091,41 @@ public class SmartWalletController {
         return accountingService.listOrdersCursor(limit, lastId, mode, pnl, settlement, side, status, q);
     }
 
+    @Operation(summary = "交易列表（仓位聚合）",
+            description = "以 position 为一笔交易，聚合 entry/exit orders，适合前端默认展示。")
+    @GetMapping("/trades/page")
+    public CursorPageView<SmartWalletTradeView> tradesCursor(
+            @RequestParam(defaultValue = "50") Integer limit,
+            @RequestParam(required = false) Long lastId,
+            @RequestParam(required = false) String mode,
+            @RequestParam(required = false) String pnl,
+            @RequestParam(required = false) String settlement,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q) {
+        return accountingService.listTradesCursor(limit, lastId, mode, pnl, settlement, status, q);
+    }
+
+    @Operation(summary = "订单记录列表",
+            description = "一行表示一笔完整 Polymarket 交易生命周期；BUY/SELL 执行订单只作为明细。")
+    @GetMapping("/trade-orders/page")
+    public CursorPageView<SmartWalletTradeOrderView> tradeOrdersCursor(
+            @RequestParam(defaultValue = "50") Integer limit,
+            @RequestParam(required = false) Long lastId,
+            @RequestParam(required = false) String mode,
+            @RequestParam(required = false) String pnl,
+            @RequestParam(required = false) String settlement,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String q) {
+        return tradeOrderService.listTradeOrdersCursor(limit, lastId, mode, pnl, settlement, status, q);
+    }
+
+    @Operation(summary = "重建订单记录", description = "从 position/order/fill/ledger 幂等重建 Polymarket 订单记录主表。")
+    @PostMapping("/trade-orders/backfill")
+    public Map<String, Object> backfillTradeOrders(@RequestParam(defaultValue = "10000") Integer limit) {
+        int rebuilt = tradeOrderService.rebuildAll(limit == null ? 10000 : limit);
+        return Map.of("rebuilt", rebuilt);
+    }
+
     @Operation(summary = "导出订单 CSV", description = "导出 PAPER 或 LIVE 的订单记录，包含总手续费、交易手续费、链上手续费和 POL。")
     @GetMapping(value = "/orders/export", produces = "text/csv")
     public ResponseEntity<String> exportOrders(@RequestParam(defaultValue = "5000") Integer limit,
@@ -1500,6 +1542,14 @@ public class SmartWalletController {
     @GetMapping("/clob/markets/{conditionId}")
     public Object clobMarketMetadata(@PathVariable String conditionId) {
         return clobExecutionService.marketMetadata(conditionId);
+    }
+
+    @Operation(summary = "解析 Polymarket 市场链接", description = "按 conditionId 精确解析外部 Polymarket URL；解析失败时返回内部详情页 URL。")
+    @GetMapping("/polymarket/markets/{conditionId}/link")
+    public SmartWalletMarketLinkView polymarketMarketLink(@PathVariable String conditionId,
+                                                          @RequestParam(required = false) String question,
+                                                          @RequestParam(required = false) String outcome) {
+        return marketLinkService.resolve(conditionId, question, outcome);
     }
 
     @Operation(summary = "查看实时价格参考", description = "按 conditionId/outcome 查看当前 token 的 best bid/ask、midpoint 与回退价格参考。")

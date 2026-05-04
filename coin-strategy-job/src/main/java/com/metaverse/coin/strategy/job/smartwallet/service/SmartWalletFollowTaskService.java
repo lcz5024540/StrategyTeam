@@ -80,13 +80,14 @@ public class SmartWalletFollowTaskService {
     private final Map<String, CachedRiskDecision> riskDecisionCache = new ConcurrentHashMap<>();
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
-        log.info("{} action=记录Polymarket钱包交易事件 result=开始 wallet={} marketId={} question={} outcome={} side={} externalTradeId={} price={} sizeUsdc={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+        log.info("{} action=记录Polymarket钱包交易事件 result=开始 wallet={} marketId={} question={} outcome={} side={} externalTradeId={} price={} sizeShares={} sizeUsdc={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
                 LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getQuestion(), event.getOutcome(),
-                event.getSide(), event.getExternalTradeId(), event.getPrice(), event.getSizeUsdc(),
+                event.getSide(), event.getExternalTradeId(), event.getPrice(), event.getSizeShares(), event.getSizeUsdc(),
                 openedAtBjt(event), openedAtMillis(event), polymarketSearchUrl(event));
         log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "开始", event, null,
                 "question", event.getQuestion(),
                 "price", event.getPrice(),
+                "sizeShares", event.getSizeShares(),
                 "stakeUsdc", event.getSizeUsdc(),
                 "openedAtBjt", openedAtBjt(event),
                 "openedAtMs", openedAtMillis(event),
@@ -104,6 +105,9 @@ public class SmartWalletFollowTaskService {
                     polymarketSearchUrl(existing));
             log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "跳过重复事件", existing, null,
                     "question", existing.getQuestion(),
+                    "price", existing.getPrice(),
+                    "sizeShares", existing.getSizeShares(),
+                    "stakeUsdc", existing.getSizeUsdc(),
                     "openedAtBjt", openedAtBjt(existing),
                     "openedAtMs", openedAtMillis(existing),
                     "polymarketSearchUrl", polymarketSearchUrl(existing),
@@ -121,6 +125,7 @@ public class SmartWalletFollowTaskService {
         log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "已入库", event, null,
                 "question", event.getQuestion(),
                 "price", event.getPrice(),
+                "sizeShares", event.getSizeShares(),
                 "stakeUsdc", event.getSizeUsdc(),
                 "openedAtBjt", openedAtBjt(event),
                 "openedAtMs", openedAtMillis(event),
@@ -1319,6 +1324,10 @@ public class SmartWalletFollowTaskService {
                 .calibratedFollowProbability(decision == null ? null : decision.getCalibratedFollowProbability())
                 .slippageSpikeProbability(decision == null ? null : decision.getSlippageSpikeProbability())
                 .estimateSampleSize(decision == null ? null : decision.getEstimateSampleSize())
+                .signalScore(decision == null ? null : decision.getSignalScore())
+                .signalScoreLiquidityFactor(decision == null ? null : decision.getSignalScoreLiquidityFactor())
+                .signalScoreRiskPenalty(decision == null ? null : decision.getSignalScoreRiskPenalty())
+                .signalScoreLeaderReliabilityFactor(decision == null ? null : decision.getSignalScoreLeaderReliabilityFactor())
                 .taskExecutable(decision == null ? null : decision.isAccepted())
                 .overrideApplied(decision == null ? null : decision.isOverrideApplied())
                 .manualAllowlistApplied(decision == null ? null : decision.isManualAllowlistApplied())

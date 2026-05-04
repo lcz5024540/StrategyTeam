@@ -799,9 +799,26 @@ public class PolymarketWalletDiscoveryService {
         request.setOutcome(trade.getOutcome());
         request.setSide(trade.getSide());
         request.setPrice(safe(trade.getPrice()));
-        request.setSizeUsdc(safe(trade.getSize()));
+        request.setSizeShares(safe(trade.getSizeShares()));
+        request.setSizeUsdc(resolveTradeNotionalUsdc(trade));
         request.setOpenedAt(trade.getTradedAt() == null ? new Date() : new Date(trade.getTradedAt()));
         return request;
+    }
+
+    private BigDecimal resolveTradeNotionalUsdc(PolymarketApiClient.UserTrade trade) {
+        if (trade == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal explicitNotional = safe(trade.getSizeUsdc());
+        if (explicitNotional.compareTo(BigDecimal.ZERO) > 0) {
+            return explicitNotional;
+        }
+        BigDecimal price = safe(trade.getPrice());
+        BigDecimal shares = safe(trade.getSizeShares());
+        if (price.compareTo(BigDecimal.ZERO) > 0 && shares.compareTo(BigDecimal.ZERO) > 0) {
+            return shares.multiply(price).setScale(8, RoundingMode.HALF_UP);
+        }
+        return safe(trade.getSize());
     }
 
     private boolean isQualified(PolymarketWalletMetricsRequest metrics) {

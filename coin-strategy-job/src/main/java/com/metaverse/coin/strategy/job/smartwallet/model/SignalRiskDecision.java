@@ -26,6 +26,10 @@ public class SignalRiskDecision {
     private BigDecimal calibratedFollowProbability;
     private BigDecimal slippageSpikeProbability;
     private Integer estimateSampleSize;
+    private BigDecimal signalScore;
+    private BigDecimal signalScoreLiquidityFactor;
+    private BigDecimal signalScoreRiskPenalty;
+    private BigDecimal signalScoreLeaderReliabilityFactor;
     /** 原始参与钱包数（历史兼容，勿直接用于风控决策） */
     private Integer consensusWallets;
     /** 实体去重后的参与实体数（真实共识强度，风控门控使用此字段） */

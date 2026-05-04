@@ -271,13 +271,17 @@ smart-wallet:
     # early so gains are locked in and capital can be recycled immediately.
     enable-auto-take-profit: true
     # [TUNE] Trigger automatic take-profit once unrealized ROI >= this threshold.
-    auto-take-profit-threshold-rate: 0.60
+    auto-take-profit-threshold-rate: 0.35
     fast-event-max-hours: 24
     long-horizon-stake-multiplier: 0.50
     # [TUNE] Main freshness gate. Keep LIVE/PAPER consistent and tolerate test sync latency.
     max-signal-age-seconds: 3600
     # [TUNE] Ignore tiny smart-wallet prints.
     min-trigger-size-usdc: 5
+    # [RISK] Block repeated entry orders on the same market/outcome.
+    # Counts existing non-exit orders plus PENDING/EXECUTING follow tasks.
+    block-market-outcome-order-limit: true
+    max-orders-per-market-outcome: 3
     # [TUNE] Follow only inside this market price band.
     min-follow-price: 0.02
     max-follow-price: 0.98
@@ -442,6 +446,25 @@ smart-wallet:
     exit-scoring-baseline-consensus: 0.72
     exit-scoring-min-threshold: 0.03
     exit-scoring-max-threshold: 0.50
+    # ── 资金回收退出 ──────────────────────────────────────────────────
+    # [TUNE] 长时间持有且 ROI 在死区的仓位主动退出，释放资金供后续信号使用
+    capital-recycle:
+      enabled: true
+      # 持仓超过该小时数才进入候选
+      holding-period-hours: 8
+      # 死区：ROI 在此范围内才考虑回收（低于下界走止损，高于上界走止盈）
+      dead-zone-low-rate: -0.05
+      dead-zone-high-rate: 0.08
+      # 评分阈值（0~100），超过才退出
+      recycle-threshold: 60
+      # 每轮最多回收仓位数
+      max-recycle-per-round: 3
+      # 至少保留仓位数
+      min-retain-positions: 3
+      # 每日回收金额上限
+      daily-recycle-budget-usdc: 100
+      # 同一仓位评估冷却时间（分钟）
+      cooldown-minutes: 30
   model-calibration:
     # [TUNE] Platt-style calibration params for baseline follow-probability output.
     follow-probability-scale: 1.15

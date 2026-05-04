@@ -140,14 +140,35 @@ public class SmartWalletProperties {
         private boolean enableAutoStopLoss = false;
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
         private boolean enableAutoTakeProfit = false;
-        private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.20");
+        private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.35");
+        private boolean enableAutoTimeWindowExit = false;
+        /** Market-end 前多少小时开始强制退出，避免持仓进入 expiry/oracle 阶段 */
+        private Integer autoTimeWindowExitHoursBeforeEnd = 2;
+        /** 时间窗口退出允许的最低 ROI；默认 -100% 表示只要能成交就退出 */
+        private BigDecimal autoTimeWindowExitMinRoiRate = new BigDecimal("-1.00");
         private Integer fastEventMaxHours = 24;
         private Integer longHorizonMinHours = 48;
         private BigDecimal longHorizonStakeMultiplier = new BigDecimal("0.50");
         private Integer maxSignalAgeSeconds = 3600;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
+        /** 跟单金额相对源钱包本次真实触发名义本金的最大倍数；<=0 表示不限制 */
+        private BigDecimal maxStakeToTriggerNotionalRatio = BigDecimal.ONE;
         private BigDecimal minFollowPrice = new BigDecimal("0.02");
         private BigDecimal maxFollowPrice = new BigDecimal("0.98");
+        private boolean enableEntryTimingGate = false;
+        private BigDecimal maxEntryPriceDriftRate = new BigDecimal("0.05");
+        private BigDecimal fastEventMaxEntryPriceDriftRate = new BigDecimal("0.015");
+        private BigDecimal standardMaxEntryPriceDriftRate = new BigDecimal("0.03");
+        private BigDecimal longHorizonMaxEntryPriceDriftRate = new BigDecimal("0.04");
+        private BigDecimal maxEntrySpreadPct = new BigDecimal("0.04");
+        private BigDecimal entryLocalTopRangePosition = new BigDecimal("0.85");
+        private BigDecimal entryLocalTopMove5mRate = new BigDecimal("0.06");
+        private Integer entryTimingSnapshotMaxAgeSeconds = 180;
+        private boolean enableSignalScoreGate = false;
+        private BigDecimal minLiveSignalScore = new BigDecimal("72");
+        private BigDecimal minStandardSignalScore = new BigDecimal("82");
+        private BigDecimal signalScoreTargetReturnRate = new BigDecimal("0.03");
+        private BigDecimal signalScoreMinLiquidityFactor = new BigDecimal("0.10");
         private boolean enableProfitabilityGate = false;
         private Integer profitabilityMinSampleSize = 3;
         private BigDecimal minEstimatedNetProfitabilityUsdc = BigDecimal.ZERO;
@@ -159,6 +180,9 @@ public class SmartWalletProperties {
         private Integer maxOpenPositions = 10;
         private BigDecimal maxTotalOpenCostUsdc = new BigDecimal("500");
         private Integer maxHoursToMarketEnd = 72;
+        /** 同一 marketId + outcome 最多允许生成的入场订单数，防止同一预测方向被反复加仓刷单 */
+        private boolean blockMarketOutcomeOrderLimit = true;
+        private Integer maxOrdersPerMarketOutcome = 3;
         private boolean blockDuplicateOpenPosition = true;
         private boolean blockDuplicatePendingTask = true;
         private boolean blockOppositeOpenPositionSameMarket = true;
@@ -377,6 +401,10 @@ public class SmartWalletProperties {
         /** 评分退出：最大止损阈值上限（防止评分后阈值过大导致止损失效） */
         private BigDecimal exitScoringMaxThreshold = new BigDecimal("0.50");
 
+        // ── 资金回收退出 ──────────────────────────────────────────────────
+        /** 资金回收退出配置 */
+        private CapitalRecycle capitalRecycle = new CapitalRecycle();
+
         /**
          * Backward-compatible accessors for existing YAML keys:
          *   smart-wallet.signal-risk.enable-ev-gate
@@ -420,6 +448,28 @@ public class SmartWalletProperties {
         private int remainingHours;
         /** 止损触发阈值（正数，0.25 = -25% ROI 触发） */
         private BigDecimal thresholdRate;
+    }
+
+    @Data
+    public static class CapitalRecycle {
+        /** 是否启用资金回收退出 */
+        private boolean enabled = false;
+        /** 持仓超过该小时数才进入候选（默认 8 小时） */
+        private int holdingPeriodHours = 8;
+        /** 死区下界（ROI 低于此值不回收，留给止损处理） */
+        private BigDecimal deadZoneLowRate = new BigDecimal("-0.05");
+        /** 死区上界（ROI 高于此值不回收，留给止盈处理） */
+        private BigDecimal deadZoneHighRate = new BigDecimal("0.08");
+        /** 资金回收评分阈值（0~100，超过才退出） */
+        private int recycleThreshold = 60;
+        /** 每个扫描周期最多回收仓位数 */
+        private int maxRecyclePerRound = 3;
+        /** 至少保留的仓位数（不会把所有仓位都回收） */
+        private int minRetainPositions = 3;
+        /** 每日回收金额上限（USDC），null 或 0 = 不限 */
+        private BigDecimal dailyRecycleBudgetUsdc = new BigDecimal("100");
+        /** 同一仓位评估后的冷却分钟数 */
+        private Integer cooldownMinutes = 30;
     }
 
     @Data

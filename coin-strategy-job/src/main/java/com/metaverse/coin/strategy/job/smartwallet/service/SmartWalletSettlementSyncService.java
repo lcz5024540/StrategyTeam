@@ -166,9 +166,20 @@ public class SmartWalletSettlementSyncService {
             settlementRetryMapper.updateById(retry);
         }
 
+        boolean effectiveRefreshCache = refreshCache || dueRetries.stream().anyMatch(this::requiresExternalMetadataRefresh);
         List<String> marketIds = dueRetries.stream().map(SmartWalletSettlementRetryEntity::getMarketId).toList();
-        SettlementSyncSummary summary = runRetryLocked(marketIds, refreshCache, batchLimit);
+        SettlementSyncSummary summary = runRetryLocked(marketIds, effectiveRefreshCache, batchLimit);
         return summary;
+    }
+
+    private boolean requiresExternalMetadataRefresh(SmartWalletSettlementRetryEntity retry) {
+        if (retry == null || !StringUtils.hasText(retry.getRetryType())) {
+            return false;
+        }
+        String retryType = retry.getRetryType().trim().toUpperCase(java.util.Locale.ROOT);
+        return "DATA_SOURCE_STALE".equals(retryType)
+                || "RESOLVED_OUTCOME_UNMAPPED".equals(retryType)
+                || "RESOLVED_BUT_CLOSED_FLAG_STALE".equals(retryType);
     }
 
     public SettlementSyncSummary confirmLocalMarkets(List<String> marketIds, boolean refreshCache) {

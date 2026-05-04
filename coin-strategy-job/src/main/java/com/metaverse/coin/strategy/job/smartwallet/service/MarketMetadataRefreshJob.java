@@ -8,8 +8,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -18,6 +20,7 @@ public class MarketMetadataRefreshJob {
 
     private final SmartWalletProperties properties;
     private final SmartWalletMarketMonitoringService marketMonitoringService;
+    private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
     private final PolymarketApiClient polymarketApiClient;
 
@@ -44,7 +47,12 @@ public class MarketMetadataRefreshJob {
         long closedMaxStaleMs = config.getClosedMarketMaxStaleMs() == null ? 21600000L : Math.max(config.getClosedMarketMaxStaleMs(), activeMaxStaleMs);
         long startedAt = System.currentTimeMillis();
 
-        List<String> candidates = marketMonitoringService.listCandidateMarketIds(maxCandidateMarkets, candidateLookbackDays);
+        List<String> incompleteActiveMarketIds = marketInfoService.listIncompleteActiveMarketIds(maxCandidateMarkets);
+        Set<String> incompleteActiveMarketIdSet = normalizeMarketIds(incompleteActiveMarketIds);
+        List<String> candidates = mergeCandidates(
+                incompleteActiveMarketIds,
+                marketMonitoringService.listCandidateMarketIds(maxCandidateMarkets, candidateLookbackDays),
+                maxCandidateMarkets);
         if (candidates.isEmpty()) {
             return;
         }
@@ -52,13 +60,15 @@ public class MarketMetadataRefreshJob {
         Map<String, SmartWalletMarketStateService.MarketStateSnapshot> persistedStates =
                 marketStateService.loadPersistedMarkets(candidates);
         int staleOrMissing = (int) candidates.stream()
-                .filter(marketId -> isRefreshDue(persistedStates.get(marketId), activeMaxStaleMs, closedMaxStaleMs))
+                .filter(marketId -> isRefreshDue(marketId, persistedStates.get(marketId), incompleteActiveMarketIdSet, activeMaxStaleMs, closedMaxStaleMs))
                 .count();
 
         List<String> refreshTargets = candidates.stream()
                 .sorted(Comparator
-                        .comparing((String marketId) -> isRefreshDue(persistedStates.get(marketId), activeMaxStaleMs, closedMaxStaleMs))
+                        .comparing((String marketId) -> incompleteActiveMarketIdSet.contains(marketId))
                         .reversed()
+                        .thenComparing((String marketId) -> isRefreshDue(marketId, persistedStates.get(marketId), incompleteActiveMarketIdSet, activeMaxStaleMs, closedMaxStaleMs),
+                                Comparator.reverseOrder())
                         .thenComparing(marketId -> lastSyncAt(persistedStates.get(marketId)),
                                 Comparator.nullsFirst(Comparator.naturalOrder())))
                 .limit(batchSize)
@@ -82,9 +92,47 @@ public class MarketMetadataRefreshJob {
         }
     }
 
-    private boolean isRefreshDue(SmartWalletMarketStateService.MarketStateSnapshot snapshot,
+    private Set<String> normalizeMarketIds(List<String> marketIds) {
+        if (marketIds == null || marketIds.isEmpty()) {
+            return Set.of();
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        addCandidates(normalized, marketIds, marketIds.size());
+        return normalized;
+    }
+
+    private List<String> mergeCandidates(List<String> incompleteActiveMarketIds,
+                                         List<String> monitoredMarketIds,
+                                         int maxCandidateMarkets) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        addCandidates(merged, incompleteActiveMarketIds, maxCandidateMarkets);
+        addCandidates(merged, monitoredMarketIds, maxCandidateMarkets);
+        return merged.stream().toList();
+    }
+
+    private void addCandidates(LinkedHashSet<String> merged, List<String> marketIds, int maxCandidateMarkets) {
+        if (marketIds == null || marketIds.isEmpty()) {
+            return;
+        }
+        for (String marketId : marketIds) {
+            if (marketId == null || marketId.isBlank()) {
+                continue;
+            }
+            merged.add(marketId.trim());
+            if (merged.size() >= maxCandidateMarkets) {
+                return;
+            }
+        }
+    }
+
+    private boolean isRefreshDue(String marketId,
+                                 SmartWalletMarketStateService.MarketStateSnapshot snapshot,
+                                 Set<String> forcedRefreshMarketIds,
                                  long activeMaxStaleMs,
                                  long closedMaxStaleMs) {
+        if (forcedRefreshMarketIds.contains(marketId)) {
+            return true;
+        }
         if (snapshot == null || snapshot.lastMetadataSyncAt() == null) {
             return true;
         }

@@ -8,6 +8,7 @@ import { FundingArbPage } from '../pages/FundingArbPage'
 import { MarketsPage } from '../pages/MarketsPage'
 import { StrategyFactorsPage } from '../pages/StrategyFactorsPage'
 import { PolymarketSignalsPage } from '../pages/PolymarketSignalsPage'
+import { PolymarketMarketDetailPage } from '../pages/PolymarketMarketDetailPage'
 import { MultiStrategyMonitorPage } from '../pages/MultiStrategyMonitorPage'
 import { StrategyConfigPage } from '../pages/StrategyConfigPage'
 import { StrategyLogsPage } from '../pages/StrategyLogsPage'
@@ -45,6 +46,10 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard/orders',
         element: <PolymarketOrdersPage />,
+      },
+      {
+        path: 'dashboard/polymarket/markets/:conditionId',
+        element: <PolymarketMarketDetailPage />,
       },
       {
         path: 'dashboard/monitoring',
