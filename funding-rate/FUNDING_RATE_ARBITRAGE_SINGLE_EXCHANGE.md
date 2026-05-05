@@ -455,3 +455,84 @@ coin-strategy-job/src/test/java/com/metaverse/coin/strategy/job/funding/service/
 * `BINANCE_LIVE` 会真实下单和平仓，启用前必须确认 API 权限、账户资金、杠杆、代理和风控阈值。
 * 手动入口支持多 symbol，但每个 symbol 都会独立创建仓位；后台跟踪按数据库中的活跃仓位逐个 symbol 管理。
 * 不要手工修改活跃仓位状态，除非已经确认交易所真实订单与数据库状态一致。
+
+## 9. Binance 查询 WebSocket 化与 HTTP 写接口边界
+
+FundingArb 的高频查询已经接入 `BinanceQueryDataProvider` 读门面。业务侧不再直接依赖 Binance REST 查询价格、资金费、深度、订单状态和合约账户状态；默认优先读取本地 websocket 缓存，缓存缺失或过期时才使用 HTTP fallback。
+
+### 9.1 数据来源
+
+公开行情 websocket：
+
+```text
+Spot:
+  <symbol>@bookTicker
+  <symbol>@depth20@100ms
+
+USDS-M Futures:
+  <symbol>@bookTicker
+  <symbol>@depth20@100ms
+  <symbol>@markPrice@1s
+```
+
+账户与订单 websocket：
+
+```text
+Spot user data stream:
+  executionReport
+
+USDS-M Futures user data stream:
+  ORDER_TRADE_UPDATE
+  ACCOUNT_UPDATE
+```
+
+这些流用于维护 spot/futures price ticker、futures premium index、depth20 盘口、spot/futures order cache、futures account cache 和 position risk cache。listenKey 的创建、续期、关闭仍需要 HTTP，这是 Binance user data stream 的维护接口，不属于交易写接口。
+
+### 9.2 HTTP 仍保留的场景
+
+写接口继续使用 HTTP：
+
+```text
+spot/futures place order
+spot/futures cancel order
+change leverage
+change margin type
+universal transfer
+```
+
+查询接口只有在以下情况使用 HTTP：应用启动后的首次查询、websocket 断线或事件缺口、缓存超过 `binance.websocket.cache-ttl-ms`、REST-only 元数据查询，以及 websocket 开关关闭。
+
+### 9.3 配置项
+
+```yaml
+binance:
+  websocket:
+    enabled: true
+    public-market-enabled: true
+    user-data-enabled: true
+    cache-ttl-ms: 5000
+    http-fallback-enabled: true
+    reconnect-delay-ms: 5000
+    listen-key-keepalive-ms: 1800000
+    spot-stream-url: "wss://stream.binance.com:9443"
+    futures-stream-url: "wss://fstream.binance.com"
+    symbols: ""
+```
+
+`symbols` 为空时，系统会在策略使用某个 symbol 时动态订阅；也会用 `arbitrage.spot-futures.symbol` 做启动订阅。多 symbol 手动开仓时，每个 symbol 的查询都会触发对应 websocket 订阅。
+
+### 9.4 FundingArb 调用链变化
+
+* `SingleExchangeArbitrageOrderExecutor.createSpotFuturesPlan`：spot/futures price 优先 websocket cache，`exchangeInfo` 继续 HTTP 低频读取。
+* `SingleExchangeDepthMonitor`：spot/futures depth 优先 websocket cache。
+* `FundingArbLifecycleService`：premium index、order refresh 优先 websocket/user data cache。
+* `SingleExchangeRiskService`：futures account/margin ratio 优先 websocket account cache，缺失时 HTTP reconcile。
+
+正常跟踪轮询不会每轮都打 Binance REST 行情接口；只有缓存不可用时才回补，能够显著降低限频压力。
+
+### 9.5 排障建议
+
+* 如果日志持续出现 `websocket cache miss/stale`，优先检查 websocket endpoint、代理和 `cache-ttl-ms` 是否过小。
+* 如果订单状态没有及时刷新，检查 spot/futures listenKey 是否创建成功，以及 `user-data-enabled` 是否为 true。
+* 如果启动后第一次查询仍打 HTTP，这是预期行为；第一次 HTTP 回补会同步 warm cache。
+* 如果希望严格禁止查询 HTTP fallback，可将 `http-fallback-enabled=false`。此时缓存缺失会直接抛出错误，不建议 live 交易初期使用。

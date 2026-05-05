@@ -10,8 +10,10 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePri
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceSymbol;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
@@ -54,6 +56,8 @@ public class SingleExchangeArbitrageOrderExecutor {
     private static final int DEFAULT_LEVERAGE = 3;
     private final BinanceApiService binanceApiService;
     private final SingleExchangeSpotFuturesProperties properties;
+    @Autowired(required = false)
+    private BinanceQueryDataProvider queryDataProvider;
 
     /**
      * Execute Dual-Side Order (Long Spot + Short Futures)
@@ -587,7 +591,7 @@ public class SingleExchangeArbitrageOrderExecutor {
     }
 
     private BigDecimal getSpotPrice(String symbol) {
-        BinancePriceTicker ticker = binanceApiService.getTickerPrice(symbol);
+        BinancePriceTicker ticker = getQueryDataProvider().getSpotPrice(symbol);
         if (ticker == null || ticker.getPrice() == null) {
             throw new IllegalArgumentException("Spot price not available for " + symbol);
         }
@@ -595,11 +599,18 @@ public class SingleExchangeArbitrageOrderExecutor {
     }
 
     private BigDecimal getFuturesPrice(String symbol) {
-        BinancePriceTicker ticker = binanceApiService.getFuturesTickerPrice(symbol);
+        BinancePriceTicker ticker = getQueryDataProvider().getFuturesPrice(symbol);
         if (ticker == null || ticker.getPrice() == null) {
             throw new IllegalArgumentException("Futures price not available for " + symbol);
         }
         return ticker.getPrice();
+    }
+
+    private BinanceQueryDataProvider getQueryDataProvider() {
+        if (queryDataProvider != null) {
+            return queryDataProvider;
+        }
+        return new com.metaverse.coin.strategy.core.arbitrage.market.HttpBinanceQueryDataProvider(binanceApiService);
     }
 
     private BigDecimal getQuantityStep(List<Map<String, Object>> filters, Integer fallbackPrecision) {

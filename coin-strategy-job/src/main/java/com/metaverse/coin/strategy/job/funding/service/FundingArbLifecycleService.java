@@ -1,7 +1,6 @@
 package com.metaverse.coin.strategy.job.funding.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
@@ -15,6 +14,7 @@ import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFutur
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeLiquidityAssessment;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import lombok.RequiredArgsConstructor;
@@ -51,13 +51,13 @@ public class FundingArbLifecycleService {
     private static final String FUNDING_DIRECTION_RECEIVED = "RECEIVED";
     private static final String FUNDING_DIRECTION_PAID = "PAID";
 
-    private final BinanceApiService binanceApiService;
     private final SingleExchangeArbitrageOrderExecutor orderExecutor;
     private final SingleExchangeRiskService riskService;
     private final SingleExchangeArbitragePositionMapper positionMapper;
     private final SingleExchangeArbitrageOrderMapper orderMapper;
     private final SingleExchangeArbitrageFundingSettlementMapper fundingSettlementMapper;
     private final SingleExchangeSpotFuturesProperties properties;
+    private final BinanceQueryDataProvider queryDataProvider;
 
     public SingleExchangeArbitragePosition createOpeningPosition(SingleExchangeSpotFuturesOrderPlan plan,
                                                                  BinanceFuturesPremiumIndex premiumIndex,
@@ -110,7 +110,7 @@ public class FundingArbLifecycleService {
         refreshTrackedOrders(position);
 
         String symbol = position.getSymbol();
-        BinanceFuturesPremiumIndex premiumIndex = binanceApiService.getFuturesFundingRate(symbol);
+        BinanceFuturesPremiumIndex premiumIndex = queryDataProvider.getPremiumIndex(symbol);
         if (premiumIndex == null || premiumIndex.getLastFundingRate() == null) {
             log.warn("FundingArb tracking skipped for {} because funding data is unavailable", symbol);
             return;
@@ -365,7 +365,7 @@ public class FundingArbLifecycleService {
     }
 
     private void refreshSpotOrder(SingleExchangeArbitrageOrder order) {
-        BinanceOrder latest = binanceApiService.getSpotOrder(order.getSymbol(), parseLong(order.getExchangeOrderId()), order.getClientOrderId());
+        BinanceOrder latest = queryDataProvider.getSpotOrder(order.getSymbol(), parseLong(order.getExchangeOrderId()), order.getClientOrderId());
         order.setStatus(latest.getStatus())
                 .setExecutedQty(latest.getExecutedQty())
                 .setRequestedPrice(latest.getPrice())
@@ -377,8 +377,11 @@ public class FundingArbLifecycleService {
     }
 
     private void refreshFuturesOrder(SingleExchangeArbitrageOrder order) {
-        BinanceFuturesOrder latest = binanceApiService.getFuturesService()
-                .getOrder(order.getSymbol(), parseLong(order.getExchangeOrderId()), order.getClientOrderId());
+        BinanceFuturesOrder latest = queryDataProvider.getFuturesOrder(
+                order.getSymbol(),
+                parseLong(order.getExchangeOrderId()),
+                order.getClientOrderId()
+        );
         order.setStatus(latest.getStatus())
                 .setExecutedQty(latest.getExecutedQty())
                 .setRequestedPrice(latest.getPrice())

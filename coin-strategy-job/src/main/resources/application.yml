@@ -36,6 +36,26 @@ binance:
     proxy-host: "127.0.0.1"
     proxy-port: 7897
     proxy-type: HTTP
+  websocket:
+    # [FIXED-ONCE] Prefer Binance websocket cache for query/read paths; write APIs stay on HTTP.
+    enabled: true
+    # [FIXED-ONCE] Public market streams provide mark price, funding, ticker and depth snapshots.
+    public-market-enabled: true
+    # [FIXED-ONCE] User data streams provide order/account event updates, with HTTP reconcile fallback.
+    user-data-enabled: true
+    # [TUNE] Maximum age for websocket cache entries before HTTP fallback is used.
+    cache-ttl-ms: 5000
+    # [FIXED-ONCE] Keep enabled so startup, disconnects and REST-only reads can reconcile safely.
+    http-fallback-enabled: true
+    # [TUNE] Delay before reconnecting a failed Binance websocket connection.
+    reconnect-delay-ms: 5000
+    # [FIXED-ONCE] Binance listenKey keepalive cadence. Binance currently requires keepalive within 60 minutes.
+    listen-key-keepalive-ms: 1800000
+    # [FIXED-ONCE] Public websocket endpoints.
+    spot-stream-url: "wss://stream.binance.com:9443"
+    futures-stream-url: "wss://fstream.binance.com"
+    # [TUNE] Optional comma-separated bootstrap symbols. Empty means derive from active strategy usage.
+    symbols: ""
 
 arbitrage:
   spot-futures:

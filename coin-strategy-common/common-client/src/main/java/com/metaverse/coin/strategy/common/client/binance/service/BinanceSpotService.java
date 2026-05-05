@@ -7,6 +7,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.*;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.HttpUrl;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 import java.util.Calendar;
 import java.util.LinkedHashMap;
@@ -15,11 +21,21 @@ import java.util.List;
 @Slf4j
 public class BinanceSpotService {
     private final SpotClient spotClient;
+    private final String apiKey;
+    private final String baseUrl;
+    private final OkHttpClient httpClient;
     private static final long DEFAULT_RECV_WINDOW = 60000L;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public BinanceSpotService(SpotClient spotClient) {
+        this(spotClient, null, null, null);
+    }
+
+    public BinanceSpotService(SpotClient spotClient, String apiKey, String baseUrl, OkHttpClient httpClient) {
         this.spotClient = spotClient;
+        this.apiKey = apiKey;
+        this.baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://api.binance.com" : baseUrl;
+        this.httpClient = httpClient == null ? new OkHttpClient() : httpClient;
         this.objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
@@ -56,6 +72,44 @@ public class BinanceSpotService {
         } catch (JsonProcessingException e) {
             log.error("Failed to parse Binance account info", e);
             throw new RuntimeException("Failed to parse Binance account info", e);
+        }
+    }
+
+    public String startUserDataStream() {
+        return executeUserDataStreamRequest("POST", null);
+    }
+
+    public void keepAliveUserDataStream(String listenKey) {
+        executeUserDataStreamRequest("PUT", listenKey);
+    }
+
+    public void closeUserDataStream(String listenKey) {
+        executeUserDataStreamRequest("DELETE", listenKey);
+    }
+
+    private String executeUserDataStreamRequest(String method, String listenKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("Binance API key is required for Spot user data stream");
+        }
+        HttpUrl.Builder urlBuilder = HttpUrl.parse(baseUrl + "/api/v3/userDataStream").newBuilder();
+        if (listenKey != null && !listenKey.isBlank()) {
+            urlBuilder.addQueryParameter("listenKey", listenKey);
+        }
+        RequestBody emptyBody = RequestBody.create((MediaType) null, new byte[0]);
+        Request request = new Request.Builder()
+                .url(urlBuilder.build())
+                .header("X-MBX-APIKEY", apiKey)
+                .method(method, "POST".equals(method) || "PUT".equals(method) ? emptyBody : null)
+                .build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            String body = response.body() == null ? "" : response.body().string();
+            if (!response.isSuccessful()) {
+                throw new IllegalStateException("Binance Spot user data stream request failed: status="
+                        + response.code() + ", body=" + body);
+            }
+            return body;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to execute Binance Spot user data stream request", e);
         }
     }
 

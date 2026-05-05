@@ -1,6 +1,5 @@
 package com.metaverse.coin.strategy.job.funding.service;
 
-import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
@@ -12,6 +11,7 @@ import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFutur
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeLiquidityAssessment;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,8 +34,6 @@ import static org.mockito.Mockito.*;
 class FundingArbLifecycleServiceTest {
 
     @Mock
-    private BinanceApiService binanceApiService;
-    @Mock
     private SingleExchangeArbitrageOrderExecutor orderExecutor;
     @Mock
     private SingleExchangeRiskService riskService;
@@ -45,19 +43,21 @@ class FundingArbLifecycleServiceTest {
     private SingleExchangeArbitrageOrderMapper orderMapper;
     @Mock
     private SingleExchangeArbitrageFundingSettlementMapper fundingSettlementMapper;
+    @Mock
+    private BinanceQueryDataProvider queryDataProvider;
 
     private FundingArbLifecycleService service;
 
     @BeforeEach
     void setUp() {
         service = new FundingArbLifecycleService(
-                binanceApiService,
                 orderExecutor,
                 riskService,
                 positionMapper,
                 orderMapper,
                 fundingSettlementMapper,
-                new SingleExchangeSpotFuturesProperties()
+                new SingleExchangeSpotFuturesProperties(),
+                queryDataProvider
         );
     }
 
@@ -109,7 +109,7 @@ class FundingArbLifecycleServiceTest {
                 .setEntryNextFundingTime(System.currentTimeMillis() - 1_000L);
         BinanceFuturesPremiumIndex premiumIndex = premiumIndex("0.0006", System.currentTimeMillis() + 28_800_000L);
         when(orderMapper.selectList(any())).thenReturn(List.of());
-        when(binanceApiService.getFuturesFundingRate("BTCUSDT")).thenReturn(premiumIndex);
+        when(queryDataProvider.getPremiumIndex("BTCUSDT")).thenReturn(premiumIndex);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), eq(3)))
                 .thenReturn(plan("0.0004"));
         when(fundingSettlementMapper.selectCount(any())).thenReturn(0L);
@@ -131,7 +131,7 @@ class FundingArbLifecycleServiceTest {
                 .setEntryNextFundingTime(System.currentTimeMillis() + 3_600_000L);
         BinanceFuturesPremiumIndex premiumIndex = premiumIndex("0.00001", System.currentTimeMillis() + 28_800_000L);
         when(orderMapper.selectList(any())).thenReturn(List.of());
-        when(binanceApiService.getFuturesFundingRate("BTCUSDT")).thenReturn(premiumIndex);
+        when(queryDataProvider.getPremiumIndex("BTCUSDT")).thenReturn(premiumIndex);
         when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), eq(3)))
                 .thenReturn(plan("0.0004"));
         when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_CLOSE)))

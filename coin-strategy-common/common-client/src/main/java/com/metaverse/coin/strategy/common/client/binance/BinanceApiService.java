@@ -71,7 +71,7 @@ public class BinanceApiService {
         this.futuresClient = futuresClient;
         this.coinFuturesClient = coinFuturesClient;
 
-        this.spotService = new BinanceSpotService(spotClient);
+        this.spotService = new BinanceSpotService(spotClient, apiKey, spotBaseUrl, null);
         this.futuresService = new BinanceFuturesService(futuresClient, futuresBaseUrl, apiKey, secretKey);
         this.coinFuturesService = new BinanceCoinFuturesService(coinFuturesClient, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com", apiKey, secretKey);
         this.walletService = new BinanceWalletService(spotClient, apiKey, secretKey, spotBaseUrl);
@@ -214,6 +214,18 @@ public class BinanceApiService {
     
     public List<BinanceTradeHistory> getSpotMyTrades(String symbol, Long orderId, Integer limit, Long fromId, Long startTime, Long endTime) {
         return spotService.getMyTrades(symbol, orderId, limit, fromId, startTime, endTime);
+    }
+
+    public String startSpotUserDataStream() {
+        return spotService.startUserDataStream();
+    }
+
+    public void keepAliveSpotUserDataStream(String listenKey) {
+        spotService.keepAliveUserDataStream(listenKey);
+    }
+
+    public void closeSpotUserDataStream(String listenKey) {
+        spotService.closeUserDataStream(listenKey);
     }
 
     public BinanceOrder newOrder(String symbol, String side, String type, String timeInForce, String quantity, String price) {

@@ -2,8 +2,10 @@ package com.metaverse.coin.strategy.core.arbitrage.monitor;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
@@ -24,6 +26,8 @@ import java.util.stream.Collectors;
 public class SingleExchangeFundingRateMonitor {
 
     private final BinanceApiService binanceApiService;
+    @Autowired(required = false)
+    private BinanceQueryDataProvider queryDataProvider;
 
     /**
      * Get real-time funding rates for all symbols.
@@ -31,7 +35,7 @@ public class SingleExchangeFundingRateMonitor {
      */
     public Map<String, BigDecimal> getBinanceFundingRates() {
         try {
-            List<BinanceFuturesPremiumIndex> premiumIndices = binanceApiService.getFuturesFundingRates();
+            List<BinanceFuturesPremiumIndex> premiumIndices = getQueryDataProvider().getPremiumIndices();
             if (premiumIndices == null) {
                 return new HashMap<>();
             }
@@ -53,10 +57,17 @@ public class SingleExchangeFundingRateMonitor {
      */
     public BinanceFuturesPremiumIndex getBinanceFundingRate(String symbol) {
         try {
-            return binanceApiService.getFuturesFundingRate(symbol);
+            return getQueryDataProvider().getPremiumIndex(symbol);
         } catch (Exception e) {
             log.error("Failed to fetch Binance funding rate for {}", symbol, e);
             return null;
         }
+    }
+
+    private BinanceQueryDataProvider getQueryDataProvider() {
+        if (queryDataProvider != null) {
+            return queryDataProvider;
+        }
+        return new com.metaverse.coin.strategy.core.arbitrage.market.HttpBinanceQueryDataProvider(binanceApiService);
     }
 }
