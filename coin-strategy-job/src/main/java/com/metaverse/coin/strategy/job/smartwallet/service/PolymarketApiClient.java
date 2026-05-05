@@ -603,6 +603,61 @@ public class PolymarketApiClient {
         return null;
     }
 
+    public List<MarketMetadata> fetchEventMarketsBySlug(String eventSlug) {
+        if (!StringUtils.hasText(eventSlug)) {
+            return List.of();
+        }
+        String normalizedSlug = eventSlug.trim();
+        JsonNode body = null;
+        RuntimeException directFailure = null;
+        try {
+            body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(),
+                    "/events/slug/" + URLEncoder.encode(normalizedSlug, StandardCharsets.UTF_8),
+                    Map.of()));
+        } catch (RuntimeException ex) {
+            directFailure = ex;
+        }
+        if (body == null) {
+            try {
+                body = getJson(buildUri(properties.getPolymarket().getGammaApiBaseUrl(),
+                        "/events",
+                        Map.of("slug", normalizedSlug, "closed", "true", "limit", "1")));
+            } catch (RuntimeException fallbackEx) {
+                if (directFailure != null) {
+                    log.warn("Polymarket event slug lookup failed slug={} direct={} fallback={}",
+                            normalizedSlug, rootMessage(directFailure), rootMessage(fallbackEx));
+                }
+                throw fallbackEx;
+            }
+        }
+        JsonNode eventNode = body;
+        if (body != null && body.isArray()) {
+            eventNode = body.isEmpty() ? null : body.get(0);
+        } else if (body != null && !body.isNull()) {
+            JsonNode array = extractArray(body);
+            if (array != null && array.isArray() && !array.isEmpty()) {
+                eventNode = array.get(0);
+            }
+        }
+        if (eventNode == null || eventNode.isNull()) {
+            return List.of();
+        }
+        String resolvedEventSlug = text(eventNode, "slug", "ticker");
+        JsonNode markets = eventNode.get("markets");
+        if (markets == null || !markets.isArray()) {
+            return List.of();
+        }
+        List<MarketMetadata> results = new ArrayList<>();
+        for (JsonNode market : iterableArray(markets)) {
+            MarketMetadata metadata = parseMarketMetadata(market,
+                    StringUtils.hasText(resolvedEventSlug) ? resolvedEventSlug : normalizedSlug);
+            if (metadata != null) {
+                results.add(metadata);
+            }
+        }
+        return results;
+    }
+
     public List<MarketMetadata> searchMarkets(String query, int limitPerType, boolean keepClosedMarkets) {
         if (!StringUtils.hasText(query)) {
             return List.of();

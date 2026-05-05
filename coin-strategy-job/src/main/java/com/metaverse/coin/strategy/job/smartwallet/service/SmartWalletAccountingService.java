@@ -2330,6 +2330,12 @@ public class SmartWalletAccountingService {
         if (metadata == null) {
             return new SettlementTerminalCheck(false, "metadata_null");
         }
+        if (!StringUtils.hasText(metadata.getSlug())
+                && (metadata.getOutcomeTokenIds() == null || metadata.getOutcomeTokenIds().isEmpty())
+                && metadata.isClosed()
+                && !metadata.isResolved()) {
+            return new SettlementTerminalCheck(false, "manual_review_required_missing_slug_and_token");
+        }
         if (metadata.isAcceptingOrders()) {
             return new SettlementTerminalCheck(false, "market_still_accepting_orders");
         }
@@ -3631,8 +3637,20 @@ public class SmartWalletAccountingService {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
         PositionSnapshot snapshot = replayPositionFromFills(fills);
-        PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(position.getMarketId(), false, position.getQuestion());
-        BigDecimal price = settlementPrice(position, metadata);
+        PolymarketApiClient.MarketMetadata metadata = safeMarketMetadata(position);
+        if (metadata == null) {
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
+        BigDecimal price;
+        try {
+            price = settlementPrice(position, metadata);
+        } catch (RuntimeException ex) {
+            log.debug("Skip recomputing settlement proceeds for positionId={} marketId={} because settlement price is unavailable: {}",
+                    position == null ? null : position.getId(),
+                    position == null ? null : position.getMarketId(),
+                    ex.getMessage());
+            return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
+        }
         return safe(snapshot.quantity()).multiply(price).setScale(8, RoundingMode.HALF_UP);
     }
 
@@ -4150,6 +4168,13 @@ public class SmartWalletAccountingService {
         String marketLifecycle = resolveOrderMarketLifecycle(order, marketEndAt);
         boolean activeMarket = isActiveOrderMarket(marketLifecycle, order, marketEndAt);
         SmartWalletMarketLinkView marketLink = resolveOrderMarketLink(order);
+        SmartWalletTradeEventEntity sourceEvent = resolveOrderSourceEvent(order);
+        String abnormalMarketReason = AbnormalMarketReviewService.abnormalMarketReason(
+                order.getTokenId(),
+                order.getMarketSlug(),
+                marketLifecycle,
+                order.getClosed(),
+                order.getAcceptingOrders());
         if (StringUtils.hasText(orderUnitMismatch)) {
             log.warn("[ORDER_UNIT_MISMATCH] orderId={} marketId={} outcome={} price={} size={} notionalUsdc={} reason={}",
                     order.getId(), order.getMarketId(), order.getOutcome(), order.getPrice(), order.getSize(),
@@ -4162,6 +4187,8 @@ public class SmartWalletAccountingService {
                 .executionMode(order.getExecutionMode())
                 .executionAddress(order.getExecutionAddress())
                 .externalOrderId(order.getExternalOrderId())
+                .sourceEventId(sourceEvent == null ? null : sourceEvent.getId())
+                .externalTradeId(sourceEvent == null ? null : sourceEvent.getExternalTradeId())
                 .marketId(order.getMarketId())
                 .marketSlug(order.getMarketSlug())
                 .marketUrl(marketLink == null ? null : marketLink.getMarketUrl())
@@ -4177,6 +4204,9 @@ public class SmartWalletAccountingService {
                 .activeMarket(activeMarket)
                 .closed(Boolean.TRUE.equals(order.getClosed()))
                 .acceptingOrders(order.getAcceptingOrders() == null || order.getAcceptingOrders())
+                .metadataMissing(StringUtils.hasText(abnormalMarketReason))
+                .manualReviewRequired("MANUAL_REVIEW_REQUIRED".equals(abnormalMarketReason))
+                .abnormalMarketReason(abnormalMarketReason)
                 .normalizedCategory(order.getNormalizedCategory())
                 .sourceCategory(order.getSourceCategory())
                 .side(order.getSide())
@@ -4208,6 +4238,17 @@ public class SmartWalletAccountingService {
                 .placedAt(order.getPlacedAt())
                 .filledAt(order.getFilledAt())
                 .build();
+    }
+
+    private SmartWalletTradeEventEntity resolveOrderSourceEvent(SmartWalletOrderEntity order) {
+        if (order == null || order.getFollowTaskId() == null) {
+            return null;
+        }
+        SmartWalletFollowTaskEntity task = followTaskMapper.selectById(order.getFollowTaskId());
+        if (task == null || task.getSourceEventId() == null) {
+            return null;
+        }
+        return tradeEventMapper.selectById(task.getSourceEventId());
     }
 
     private SmartWalletMarketLinkView resolveOrderMarketLink(SmartWalletOrderEntity order) {

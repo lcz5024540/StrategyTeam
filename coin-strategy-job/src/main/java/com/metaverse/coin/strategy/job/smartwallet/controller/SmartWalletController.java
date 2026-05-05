@@ -13,6 +13,8 @@ import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigAppli
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.smartwallet.model.AbnormalMarketManualReviewRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.AbnormalMarketManualReviewResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettlementReviewView;
@@ -29,6 +31,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRe
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketProductOverview;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.OrderDiagnosticReportView;
+import com.metaverse.coin.strategy.job.smartwallet.model.PositionMarketDiagnosticView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PrematureSettlementRepairSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
@@ -98,6 +102,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
+import com.metaverse.coin.strategy.job.smartwallet.service.AbnormalMarketReviewService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
@@ -207,6 +212,7 @@ public class SmartWalletController {
     private final SmartWalletReplayBacktestService smartWalletReplayBacktestService;
     private final SmartWalletMarketMonitoringService smartWalletMarketMonitoringService;
     private final SmartWalletManualAllowlistService smartWalletManualAllowlistService;
+    private final AbnormalMarketReviewService abnormalMarketReviewService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -1091,6 +1097,22 @@ public class SmartWalletController {
         return accountingService.listOrdersCursor(limit, lastId, mode, pnl, settlement, side, status, q);
     }
 
+    @Operation(summary = "订单异常诊断", description = "按订单 ID 批量诊断当前表/归档表命中情况，并输出跟单钱包、source event、市场元数据和可选相似交易事件。")
+    @GetMapping("/orders/diagnostics")
+    public OrderDiagnosticReportView orderDiagnostics(@RequestParam List<Long> ids,
+                                                      @RequestParam(required = false) String question,
+                                                      @RequestParam(required = false) String outcome,
+                                                      @RequestParam(required = false) BigDecimal price) {
+        return abnormalMarketReviewService.diagnoseOrders(ids, question, outcome, price);
+    }
+
+    @Operation(summary = "持仓市场异常诊断", description = "按 positionId 批量诊断市场元数据、source trade 与可选 Polymarket 事件 URL 精确匹配结果。eventUrls 参数格式：positionId=https://polymarket.com/sports/...")
+    @GetMapping("/positions/market-diagnostics")
+    public List<PositionMarketDiagnosticView> positionMarketDiagnostics(@RequestParam List<Long> ids,
+                                                                        @RequestParam(required = false) List<String> eventUrls) {
+        return abnormalMarketReviewService.diagnosePositions(ids, eventUrls);
+    }
+
     @Operation(summary = "交易列表（仓位聚合）",
             description = "以 position 为一笔交易，聚合 entry/exit orders，适合前端默认展示。")
     @GetMapping("/trades/page")
@@ -1550,6 +1572,12 @@ public class SmartWalletController {
                                                           @RequestParam(required = false) String question,
                                                           @RequestParam(required = false) String outcome) {
         return marketLinkService.resolve(conditionId, question, outcome);
+    }
+
+    @Operation(summary = "异常市场人工核验", description = "显式确认权威 conditionId、标记元数据无效，或保持等待 oracle。不会按相似市场自动修复。")
+    @PostMapping("/markets/manual-review")
+    public AbnormalMarketManualReviewResult manualReviewMarket(@RequestBody AbnormalMarketManualReviewRequest request) {
+        return abnormalMarketReviewService.review(request);
     }
 
     @Operation(summary = "查看实时价格参考", description = "按 conditionId/outcome 查看当前 token 的 best bid/ask、midpoint 与回退价格参考。")

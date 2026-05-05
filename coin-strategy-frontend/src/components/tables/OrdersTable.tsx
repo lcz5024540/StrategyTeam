@@ -104,6 +104,12 @@ function formatFeeBreakdown(order: {
   return parts.join(' / ')
 }
 
+function copyText(value?: string | null) {
+  const text = value || ''
+  if (!text || !navigator?.clipboard) return
+  void navigator.clipboard.writeText(text)
+}
+
 function isActiveOrderMarket(order: {
   activeMarket?: boolean | null
   marketLifecycle?: string | null
@@ -333,6 +339,8 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
                 const marketUrl = order.externalMarketUrl || order.marketUrl || order.internalMarketUrl || ''
                 const externalMarketLink = marketUrl.startsWith('http')
                 const followAddress = order.walletAddress || order.executionAddress || '-'
+                const metadataMissing = Boolean(order.metadataMissing || order.abnormalMarketReason)
+                const manualReviewRequired = Boolean(order.manualReviewRequired || order.abnormalMarketReason === 'MANUAL_REVIEW_REQUIRED')
 
                 return (
                   <tr key={order.id}>
@@ -367,7 +375,23 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
                         ) : null}
                         {activeMarket && order.acceptingOrders === false ? <span className="badge warn">暂停接单</span> : null}
                         {!order.externalMarketUrl && !order.marketSlug ? <span className="badge warn">内部详情</span> : null}
+                        {metadataMissing ? <span className="badge danger">元数据异常</span> : null}
+                        {!order.externalMarketUrl ? <span className="badge warn">无 Polymarket 外链</span> : null}
+                        {manualReviewRequired ? <span className="badge danger">待人工核验</span> : null}
                       </div>
+                      {metadataMissing ? (
+                        <div className="market-cell-sub">
+                          <button type="button" className="btn btn-secondary table-reset-btn" onClick={() => copyText(followAddress)}>
+                            复制地址
+                          </button>
+                          <button type="button" className="btn btn-secondary table-reset-btn" onClick={() => copyText(order.externalTradeId || order.externalOrderId)}>
+                            复制交易
+                          </button>
+                          <button type="button" className="btn btn-secondary table-reset-btn" onClick={() => copyText(order.marketId)}>
+                            复制市场
+                          </button>
+                        </div>
+                      ) : null}
                     </td>
                     <td title={formatMarketEnd(order)}>{formatMarketEnd(order)}</td>
                     <td>{order.outcome}</td>

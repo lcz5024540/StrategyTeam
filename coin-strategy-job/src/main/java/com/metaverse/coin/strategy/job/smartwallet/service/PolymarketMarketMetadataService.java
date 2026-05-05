@@ -192,6 +192,20 @@ public class PolymarketMarketMetadataService {
         return withSource(candidates.get(0), "MANUAL_SEARCH_FINAL_PRICE");
     }
 
+    public PolymarketApiClient.MarketMetadata findEventMarketBySlugAndConditionId(String eventSlug,
+                                                                                  String conditionId) {
+        if (!StringUtils.hasText(eventSlug) || !StringUtils.hasText(conditionId)) {
+            return null;
+        }
+        String normalizedConditionId = conditionId.trim();
+        return polymarketApiClient.fetchEventMarketsBySlug(eventSlug.trim()).stream()
+                .filter(metadata -> metadata != null && StringUtils.hasText(metadata.getConditionId()))
+                .filter(metadata -> normalizedConditionId.equalsIgnoreCase(metadata.getConditionId().trim()))
+                .findFirst()
+                .map(metadata -> withSource(metadata, "GAMMA_EVENT_SLUG_EXACT"))
+                .orElse(null);
+    }
+
     private boolean hotPathExternalRefreshEnabled() {
         SmartWalletProperties.MarketMonitoring.MetadataRefresh refresh =
                 properties.getMarketMonitoring().getMetadataRefresh();

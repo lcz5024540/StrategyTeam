@@ -15,6 +15,8 @@ public class SmartWalletOrderView {
     private String executionMode;
     private String executionAddress;
     private String externalOrderId;
+    private Long sourceEventId;
+    private String externalTradeId;
     private String marketId;
     private String marketSlug;
     private String marketUrl;
@@ -30,6 +32,9 @@ public class SmartWalletOrderView {
     private Boolean activeMarket;
     private Boolean closed;
     private Boolean acceptingOrders;
+    private Boolean metadataMissing;
+    private Boolean manualReviewRequired;
+    private String abnormalMarketReason;
     private String normalizedCategory;
     private String sourceCategory;
     private String side;

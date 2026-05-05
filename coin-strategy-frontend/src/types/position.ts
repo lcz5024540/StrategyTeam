@@ -28,6 +28,9 @@ export interface Order {
   id: string
   walletAddress?: string
   executionAddress: string
+  externalOrderId?: string | null
+  sourceEventId?: number | null
+  externalTradeId?: string | null
   marketId: string
   marketSlug?: string
   marketUrl?: string | null
@@ -43,6 +46,9 @@ export interface Order {
   activeMarket?: boolean | null
   closed?: boolean | null
   acceptingOrders?: boolean | null
+  metadataMissing?: boolean | null
+  manualReviewRequired?: boolean | null
+  abnormalMarketReason?: string | null
   normalizedCategory?: string | null
   sourceCategory?: string | null
   side: string
