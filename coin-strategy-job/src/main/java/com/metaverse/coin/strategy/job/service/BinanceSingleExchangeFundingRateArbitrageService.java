@@ -6,6 +6,8 @@ import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitr
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
+import com.metaverse.coin.strategy.job.funding.service.FundingArbLifecycleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -33,6 +35,7 @@ public class BinanceSingleExchangeFundingRateArbitrageService {
     private final BinanceApiService binanceApiService;
     private final SingleExchangeArbitrageOrderExecutor orderExecutor;
     private final SingleExchangeRiskService riskService;
+    private final FundingArbLifecycleService lifecycleService;
 
     public String executeArbitrage(String symbol, BigDecimal usdtAmount, BigDecimal minFundingRate) {
         return executeArbitrage(parseSymbols(symbol), usdtAmount, minFundingRate, 3);
@@ -97,7 +100,14 @@ public class BinanceSingleExchangeFundingRateArbitrageService {
                 }
 
                 prepareFuturesSettings(symbol, normalizedLeverage, resultLog);
+                SingleExchangeArbitragePosition position = lifecycleService.createOpeningPosition(
+                        plan,
+                        premiumIndex,
+                        usdtAmount,
+                        normalizedLeverage
+                );
                 SingleExchangeArbitrageExecutionResult executionResult = orderExecutor.openArbitragePosition(plan);
+                lifecycleService.persistOpenResult(position, plan, premiumIndex, executionResult);
                 executionSummary.put(symbol, executionResult.isSuccess() ? "Opened" : "Failed");
                 logAndAppend(resultLog, "Execution Result: " + executionResult.getMessage());
                 if (executionResult.isSuccess()) {

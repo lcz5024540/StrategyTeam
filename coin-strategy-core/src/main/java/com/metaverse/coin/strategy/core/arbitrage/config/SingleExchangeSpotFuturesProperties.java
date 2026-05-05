@@ -37,6 +37,9 @@ public class SingleExchangeSpotFuturesProperties {
     private String rebalanceAsset = "USDT";
     private Boolean emergencyCloseLiquidityOverrideEnabled = true;
     private String orderExecutionMode = "BINANCE_LIVE";
+    private Boolean trackingEnabled = true;
+    private Long trackingFixedDelayMs = 60000L;
+    private Integer trackingPositionLimit = 50;
 
     public SingleExchangeSpotFuturesProperties() {
     }
@@ -71,6 +74,9 @@ public class SingleExchangeSpotFuturesProperties {
                 "arbitrage.spot-futures.emergency-close-liquidity-override-enabled",
                 emergencyCloseLiquidityOverrideEnabled);
         orderExecutionMode = environment.getProperty("arbitrage.spot-futures.order-execution-mode", orderExecutionMode);
+        trackingEnabled = getBoolean(environment, "arbitrage.spot-futures.tracking-enabled", trackingEnabled);
+        trackingFixedDelayMs = getLong(environment, "arbitrage.spot-futures.tracking-fixed-delay-ms", trackingFixedDelayMs);
+        trackingPositionLimit = getInteger(environment, "arbitrage.spot-futures.tracking-position-limit", trackingPositionLimit);
     }
 
     private BigDecimal getBigDecimal(Environment environment, String key, BigDecimal defaultValue) {

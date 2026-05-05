@@ -87,6 +87,12 @@ arbitrage:
     emergency-close-liquidity-override-enabled: true
     # [TUNE] 是否启用“现货账户 -> U 本位合约账户”的自动再平衡划转。
     rebalance-enabled: true
+    # [FIXED-ONCE] Enable persisted FundingArb position/order tracking and automatic close checks.
+    tracking-enabled: true
+    # [FIXED-ONCE] Background cadence for persisted FundingArb tracking.
+    tracking-fixed-delay-ms: 60000
+    # [TUNE] Maximum active persisted positions scanned per tracking round.
+    tracking-position-limit: 50
     # [TUNE] 当合约保证金率低于该值时，触发自动补充合约保证金。
     rebalance-threshold-margin-ratio: 1.5
     # [TUNE] 自动划转后的目标保证金率；系统会按该目标反推所需划转金额。

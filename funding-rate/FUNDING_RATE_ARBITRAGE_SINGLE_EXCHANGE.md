@@ -259,5 +259,199 @@ SELECT * FROM single_exchange_arbitrage_funding_settlement ORDER BY id DESC LIMI
 
 * `BINANCE_TEST` 仍需要 Binance API key/secret 可用，因为 `/order/test` 会校验签名和账户权限。
 * 模拟模式覆盖开仓和平仓，避免没有真实仓位时触发真实平仓。
-* 旧的 `POST /binance/strategy/arbitrage/execute` 是轻量执行入口，不建议作为观察完整策略落库闭环的主要入口；优先使用 `/runtime/run-once` 或 `/runtime/start`。
+* `POST /binance/strategy/arbitrage/execute` 已接入策略落库闭环；适合从前端 FundingArb 页面手动批量开仓，并由后台跟踪任务继续管理订单、资金费结算与自动平仓。
 * 切回实盘前必须确认 `arbitrage.spot-futures.order-execution-mode` 已显式设置为 `BINANCE_LIVE`，并重新检查资金、杠杆、风控阈值和网络代理配置。
+
+## 8. FundingArb 落库与自动跟踪闭环教程
+
+### 8.1 闭环目标
+
+本节对应前端 `FundingArbPage.tsx` 的手动执行入口。用户在页面提交 symbol、amount、minRate、leverage 后，后端不再只返回执行日志，而是完成以下闭环：
+
+1. 开仓前生成 `SingleExchangeSpotFuturesOrderPlan`，并通过资金费率、基差和风控检查。
+2. 下单前创建 `single_exchange_arbitrage_position`，状态为 `OPENING`。
+3. 现货买入和合约做空执行后，写入 `single_exchange_arbitrage_order`。
+4. 双侧成功时仓位更新为 `OPENED`；失败时保留订单记录并标记 `FAILED`。
+5. 后台定时任务持续扫描 `OPENING / OPENED / CLOSING` 仓位，刷新订单、记录资金费结算，并在退出条件触发时自动平仓。
+6. 平仓成功后写入 `CLOSE` 阶段订单，并将仓位标记为 `CLOSED`。
+
+### 8.2 核心代码入口
+
+本闭环主要由以下类协作完成：
+
+* `BinanceSingleExchangeFundingRateArbitrageService`：前端手动执行入口的应用服务，负责批量 symbol 评估和触发开仓。
+* `FundingArbLifecycleService`：统一处理 position、order、funding settlement 的落库和状态流转。
+* `FundingArbTrackingJob`：后台定时扫描活跃仓位，执行订单刷新、资金费结算和自动平仓判断。
+* `SingleExchangeArbitrageOrderExecutor`：负责现货/合约双侧开仓、平仓和失败回滚。
+* `SingleExchangeSpotFuturesProperties`：读取 `arbitrage.spot-futures.*` 配置。
+
+### 8.3 配置项
+
+在 `coin-strategy-job/src/main/resources/application.yml` 中配置：
+
+```yaml
+arbitrage:
+  spot-futures:
+    order-execution-mode: "BINANCE_TEST"
+    tracking-enabled: true
+    tracking-fixed-delay-ms: 60000
+    tracking-position-limit: 50
+    close-threshold: 0.0001
+    max-basis-deterioration-rate: 0.0015
+    emergency-close-margin-ratio: 1.80
+```
+
+配置含义：
+
+* `tracking-enabled`：是否启用 FundingArb 持久化仓位跟踪任务。
+* `tracking-fixed-delay-ms`：每轮跟踪任务结束后等待多久再执行下一轮，默认 60 秒。
+* `tracking-position-limit`：单轮最多扫描多少个活跃仓位，默认 50。
+* `close-threshold`：资金费率跌破该值时触发平仓。
+* `max-basis-deterioration-rate`：当前基差相对开仓基差走阔超过该值时触发平仓。
+* `emergency-close-margin-ratio`：保证金率低于该值时触发紧急平仓。
+
+### 8.4 前端手动开仓
+
+前端 FundingArb 页面调用的接口保持不变：
+
+```text
+POST /strategy/api/binance/strategy/arbitrage/execute
+```
+
+PowerShell 示例：
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8081/strategy/api/binance/strategy/arbitrage/execute?symbols=BTCUSDT,ETHUSDT&amount=50&minRate=0.0005&leverage=3"
+```
+
+返回值仍是执行日志，日志中的 `Summary` 会显示每个 symbol 的结果，例如：
+
+```text
+=== Summary ===
+BTCUSDT -> Opened
+ETHUSDT -> Skipped: funding rate below threshold
+```
+
+只要某个 symbol 返回 `Opened`，对应仓位和订单应已落库，后台任务随后会自动接管跟踪。
+
+### 8.5 数据库检查
+
+开仓成功后检查仓位：
+
+```sql
+SELECT id, position_code, symbol, status, leverage, quantity,
+       entry_funding_rate, entry_basis_rate, entry_next_funding_time,
+       spot_buy_order_id, futures_sell_order_id, updated_at
+FROM single_exchange_arbitrage_position
+WHERE strategy_type = 'SINGLE_EXCHANGE_SPOT_FUTURES_ARBITRAGE_V1'
+ORDER BY id DESC
+LIMIT 10;
+```
+
+检查订单：
+
+```sql
+SELECT id, position_id, position_code, symbol, market_type, trade_phase,
+       hedge_side, side, status, exchange_order_id, client_order_id,
+       executed_qty, avg_price, quote_qty, error_message, placed_at, updated_at
+FROM single_exchange_arbitrage_order
+ORDER BY id DESC
+LIMIT 20;
+```
+
+检查资金费结算：
+
+```sql
+SELECT id, position_id, position_code, symbol, funding_time,
+       funding_rate, mark_price, position_qty, notional_value,
+       settlement_amount, direction, created_at
+FROM single_exchange_arbitrage_funding_settlement
+ORDER BY id DESC
+LIMIT 20;
+```
+
+预期状态：
+
+* 开仓执行中：`position.status = OPENING`。
+* 双侧开仓成功：`position.status = OPENED`，订单表有 `trade_phase = OPEN` 的 `SPOT` 和 `FUTURES` 记录。
+* 开仓失败：`position.status = FAILED`，订单表保留失败腿的 `error_message`。
+* 自动平仓执行中：`position.status = CLOSING`。
+* 自动平仓成功：`position.status = CLOSED`，订单表新增 `trade_phase = CLOSE` 的双侧记录。
+* 资金费结算：每个仓位同一个 `funding_time` 只插入一条 settlement，避免重复记账。
+
+### 8.6 后台跟踪任务行为
+
+`FundingArbTrackingJob` 每轮会加载 `SINGLE_EXCHANGE_SPOT_FUTURES_ARBITRAGE_V1` 下的活跃仓位：
+
+```text
+OPENING, OPENED, CLOSING
+```
+
+处理规则：
+
+* `OPENING`：刷新订单后，如果开仓双侧都已成交，则恢复为 `OPENED`。
+* `OPENED`：刷新订单、检查 funding settlement、判断是否触发平仓。
+* `CLOSING`：刷新订单后，如果平仓双侧都已成交，则恢复为 `CLOSED`；否则继续等待下一轮。
+
+自动平仓触发条件沿用当前单交易所策略规则：
+
+* 当前资金费率小于等于 0。
+* 当前资金费率低于 `close-threshold`。
+* 当前基差相对开仓基差走阔超过 `max-basis-deterioration-rate`。
+* 合约保证金率低于 `emergency-close-margin-ratio`。
+
+平仓前仍会做流动性评估，但该评估只用于日志和风险提示，不阻塞退出。
+
+### 8.7 前端面板验证
+
+FundingArb 页面已经读取 `FUNDING_ARB` 的以下接口：
+
+```text
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/summary
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/positions
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/orders
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/timeline
+```
+
+落库闭环完成后，页面应能看到：
+
+* 指标区展示 FundingArb 已实现 PnL、当前持仓、订单数量和胜率。
+* 持仓列表展示 `OPENING / OPENED / CLOSING` 仓位。
+* 订单明细展示开仓和平仓双侧订单。
+* 收益时间线展示资金费结算和已平仓收益。
+
+### 8.8 验证命令
+
+代码编译验证：
+
+```powershell
+mvn -pl coin-strategy-job -am -DskipTests compile
+```
+
+如果本地 `target/classes/application.yml` 被 IDE 或运行中的服务锁定，可临时跳过资源复制，只验证 Java 编译：
+
+```powershell
+mvn -pl coin-strategy-job -am -DskipTests "-Dmaven.resources.skip=true" compile
+```
+
+新增测试类：
+
+```text
+coin-strategy-job/src/test/java/com/metaverse/coin/strategy/job/funding/service/FundingArbLifecycleServiceTest.java
+```
+
+该测试覆盖：
+
+* 开仓成功后 position 标记 `OPENED` 并写入订单。
+* 开仓失败后 position 标记 `FAILED`，订单错误信息保留。
+* funding time 推进后 settlement 只记录一次。
+* funding 低于平仓阈值后自动平仓并标记 `CLOSED`。
+
+### 8.9 注意事项
+
+* `BINANCE_TEST` 会模拟订单成交，但行情、资金费率、账户余额、保证金率和深度仍读取真实 Binance API。
+* `BINANCE_LIVE` 会真实下单和平仓，启用前必须确认 API 权限、账户资金、杠杆、代理和风控阈值。
+* 手动入口支持多 symbol，但每个 symbol 都会独立创建仓位；后台跟踪按数据库中的活跃仓位逐个 symbol 管理。
+* 不要手工修改活跃仓位状态，除非已经确认交易所真实订单与数据库状态一致。
