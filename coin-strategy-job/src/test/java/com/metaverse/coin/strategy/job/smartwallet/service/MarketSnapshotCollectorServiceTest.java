@@ -34,6 +34,8 @@ class MarketSnapshotCollectorServiceTest {
     private PolymarketMarketDataStreamService marketDataStreamService;
     @Mock
     private PolymarketMarketMetadataService marketMetadataService;
+    @Mock
+    private PolymarketMarketDataCacheService marketDataCacheService;
 
     private MarketSnapshotCollectorService service;
 
@@ -44,7 +46,8 @@ class MarketSnapshotCollectorServiceTest {
                 tradeEventMapper,
                 polymarketApiClient,
                 marketDataStreamService,
-                marketMetadataService
+                marketMetadataService,
+                marketDataCacheService
         );
         when(marketSnapshotMapper.selectOne(any())).thenReturn(null);
     }

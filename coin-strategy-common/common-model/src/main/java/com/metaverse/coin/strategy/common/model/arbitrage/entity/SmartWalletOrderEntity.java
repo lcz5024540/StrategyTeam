@@ -57,6 +57,7 @@ public class SmartWalletOrderEntity {
 
     // ── 便捷代理方法：业务代码通过这些方法读取市场信息，无需手动 join ──
     public String getMarketId()    { return marketInfo == null ? null : marketInfo.getMarketId(); }
+    public String getMarketSlug()  { return marketInfo == null ? null : marketInfo.getMarketSlug(); }
     public String getQuestion()    { return marketInfo == null ? null : marketInfo.getQuestion(); }
     public String getOutcome()     { return marketInfo == null ? null : marketInfo.getOutcome(); }
     public String getTokenId()     { return marketInfo == null ? null : marketInfo.getTokenId(); }
@@ -68,4 +69,22 @@ public class SmartWalletOrderEntity {
     public Boolean getClosed() { return marketInfo == null ? null : marketInfo.getClosed(); }
     public Boolean getAcceptingOrders() { return marketInfo == null ? null : marketInfo.getAcceptingOrders(); }
     public String getResolvedOutcome() { return marketInfo == null ? null : marketInfo.getResolvedOutcome(); }
+
+    private SmartWalletMarketInfoEntity ensureMarketInfo() {
+        if (marketInfo == null) marketInfo = new SmartWalletMarketInfoEntity();
+        return marketInfo;
+    }
+    public SmartWalletOrderEntity setMarketId(String v)           { ensureMarketInfo().setMarketId(v); return this; }
+    public SmartWalletOrderEntity setMarketSlug(String v)        { ensureMarketInfo().setMarketSlug(v); return this; }
+    public SmartWalletOrderEntity setQuestion(String v)           { ensureMarketInfo().setQuestion(v); return this; }
+    public SmartWalletOrderEntity setOutcome(String v)            { ensureMarketInfo().setOutcome(v); return this; }
+    public SmartWalletOrderEntity setTokenId(String v)            { ensureMarketInfo().setTokenId(v); return this; }
+    public SmartWalletOrderEntity setIndexSet(Integer v)          { ensureMarketInfo().setIndexSet(v); return this; }
+    public SmartWalletOrderEntity setMarketEndAt(Long v)          { ensureMarketInfo().setMarketEndAt(v); return this; }
+    public SmartWalletOrderEntity setSourceCategory(String v)     { ensureMarketInfo().setSourceCategory(v); return this; }
+    public SmartWalletOrderEntity setNormalizedCategory(String v) { ensureMarketInfo().setNormalizedCategory(v); return this; }
+    public SmartWalletOrderEntity setMarketLifecycle(String v)    { ensureMarketInfo().setMarketLifecycle(v); return this; }
+    public SmartWalletOrderEntity setClosed(Boolean v)            { ensureMarketInfo().setClosed(v); return this; }
+    public SmartWalletOrderEntity setAcceptingOrders(Boolean v)   { ensureMarketInfo().setAcceptingOrders(v); return this; }
+    public SmartWalletOrderEntity setResolvedOutcome(String v)    { ensureMarketInfo().setResolvedOutcome(v); return this; }
 }

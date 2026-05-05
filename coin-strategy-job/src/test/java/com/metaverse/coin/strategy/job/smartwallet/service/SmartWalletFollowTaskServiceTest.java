@@ -37,6 +37,8 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -73,6 +75,8 @@ class SmartWalletFollowTaskServiceTest {
     private SmartWalletMarketInfoService marketInfoService;
     @Mock
     private SmartWalletMarketStateService marketStateService;
+    @Mock
+    private SmartWalletManualAllowlistService manualAllowlistService;
 
     @InjectMocks
     private SmartWalletFollowTaskService service;
@@ -80,9 +84,9 @@ class SmartWalletFollowTaskServiceTest {
     @BeforeEach
     void setUp() {
         AtomicReference<SmartWalletMarketInfoEntity> marketInfoRef = new AtomicReference<>();
-        when(marketInfoService.populate(any(SmartWalletFollowTaskEntity.class)))
+        lenient().when(marketInfoService.populate(any(SmartWalletFollowTaskEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        when(marketInfoService.getOrCreate(any(), any(), any(), any(), any(), any()))
+        lenient().when(marketInfoService.getOrCreate(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     SmartWalletMarketInfoEntity marketInfo = new SmartWalletMarketInfoEntity()
                         .setId(9001L)
@@ -93,7 +97,7 @@ class SmartWalletFollowTaskServiceTest {
                     marketInfoRef.set(marketInfo);
                     return marketInfo;
                 });
-        when(marketInfoService.getById(anyLong()))
+        lenient().when(marketInfoService.getById(anyLong()))
                 .thenAnswer(invocation -> {
                     SmartWalletMarketInfoEntity marketInfo = marketInfoRef.get();
                     if (marketInfo != null && marketInfo.getId().equals(invocation.getArgument(0))) {
@@ -101,7 +105,7 @@ class SmartWalletFollowTaskServiceTest {
                     }
                     return new SmartWalletMarketInfoEntity().setId(invocation.getArgument(0));
                 });
-        when(marketStateService.refreshMarket(any(), any(), any()))
+        lenient().when(marketStateService.refreshMarket(any(), any(), any()))
                 .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -109,6 +113,7 @@ class SmartWalletFollowTaskServiceTest {
                         .marketEndAt(System.currentTimeMillis() + 3_600_000L)
                         .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
                         .build());
+        lenient().when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
     }
 
     @Test
@@ -119,8 +124,6 @@ class SmartWalletFollowTaskServiceTest {
         SmartWalletProfileEntity profile = profile();
 
         when(followTaskMapper.selectList(any())).thenReturn(List.of(lowerEvHigherStake, higherEvLowerStake));
-        when(followTaskMapper.selectById(1L)).thenReturn(lowerEvHigherStake);
-        when(followTaskMapper.selectById(2L)).thenReturn(higherEvLowerStake);
         when(tradeEventMapper.selectById(anyLong())).thenReturn(event);
         when(profileMapper.selectOne(any())).thenReturn(profile);
         when(signalRiskService.evaluate(eq(profile), eq(event), isNull(), eq(1L))).thenReturn(acceptedDecision("1.50", "20.00", 12));
@@ -131,6 +134,29 @@ class SmartWalletFollowTaskServiceTest {
         List<SmartWalletFollowTaskView> result = service.listExecutableTasks(10);
 
         assertEquals(List.of(2L, 1L), result.stream().map(SmartWalletFollowTaskView::getId).toList());
+    }
+
+    @Test
+    void shouldReuseCachedRiskDecisionForExecutableTasks() {
+        SmartWalletFollowTaskEntity task = followTask(1L, new BigDecimal("20.00"))
+                .setUpdatedAt(new Date(123456789L));
+        SmartWalletTradeEventEntity event = tradeEvent();
+        SmartWalletProfileEntity profile = profile();
+
+        when(followTaskMapper.selectList(any())).thenReturn(List.of(task));
+        when(tradeEventMapper.selectById(anyLong())).thenReturn(event);
+        when(profileMapper.selectOne(any())).thenReturn(profile);
+        when(signalRiskService.evaluate(eq(profile), eq(event), isNull(), eq(1L)))
+                .thenReturn(acceptedDecision("1.50", "20.00", 12));
+        when(consensusSignalService.listRecentConsensusSignals()).thenReturn(List.of());
+        when(timeFormatter.formatEpochMillisToBjt(any())).thenReturn("-");
+
+        List<SmartWalletFollowTaskView> first = service.listExecutableTasks(10, 1);
+        List<SmartWalletFollowTaskView> second = service.listExecutableTasks(10, 1);
+
+        assertEquals(1, first.size());
+        assertEquals(1, second.size());
+        verify(signalRiskService, times(1)).evaluate(eq(profile), eq(event), isNull(), eq(1L));
     }
 
     @Test
@@ -176,7 +202,7 @@ class SmartWalletFollowTaskServiceTest {
                 .setErrorMessage("Entity resolution is pending. Follow task generation is deferred for this signal.");
 
         when(properties.getIntelligence()).thenReturn(intelligence);
-        when(properties.getFollowDelaySeconds()).thenReturn(3);
+        lenient().when(properties.getFollowDelaySeconds()).thenReturn(3);
         when(followCandidateMapper.selectList(any())).thenReturn(List.of(candidate));
         when(tradeEventMapper.selectById(101L)).thenReturn(event);
         when(followTaskMapper.selectById(501L)).thenReturn(task);
@@ -224,7 +250,7 @@ class SmartWalletFollowTaskServiceTest {
         AtomicLong candidateIdSeq = new AtomicLong(701L);
         AtomicLong taskIdSeq = new AtomicLong(801L);
 
-        when(properties.getFollowDelaySeconds()).thenReturn(3);
+        lenient().when(properties.getFollowDelaySeconds()).thenReturn(3);
         when(properties.isAutoExecutionEnabled()).thenReturn(false);
         when(tradeEventMapper.selectList(any())).thenReturn(List.of(event));
         when(tradeEventMapper.selectById(201L)).thenAnswer(invocation -> event);
@@ -287,7 +313,7 @@ class SmartWalletFollowTaskServiceTest {
         AtomicReference<WalletFollowCandidateEntity> candidateRef = new AtomicReference<>();
         AtomicReference<SmartWalletFollowTaskEntity> taskRef = new AtomicReference<>();
 
-        when(properties.getFollowDelaySeconds()).thenReturn(3);
+        lenient().when(properties.getFollowDelaySeconds()).thenReturn(3);
         when(properties.isAutoExecutionEnabled()).thenReturn(false);
         when(tradeEventMapper.selectOne(any())).thenReturn(null);
         doAnswer(invocation -> {

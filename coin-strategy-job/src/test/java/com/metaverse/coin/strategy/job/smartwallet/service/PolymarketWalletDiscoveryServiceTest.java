@@ -5,7 +5,6 @@ import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSummary;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -91,7 +90,14 @@ class PolymarketWalletDiscoveryServiceTest {
                 ))
                 .build());
         when(polymarketApiClient.fetchUserTrades(any(), any())).thenReturn(Collections.emptyList());
-        when(selectionService.refreshQualifiedWallets()).thenReturn(SmartWalletSelectionSummary.builder().qualifiedCount(1).build());
+        SmartWalletProfileEntity existingHot = new SmartWalletProfileEntity()
+                .setWalletAddress("0xexisting")
+                .setQualified(Boolean.TRUE)
+                .setWatchEnabled(Boolean.TRUE)
+                .setMonitorTier("HOT");
+        when(profileStoreService.listQualified()).thenReturn(List.of(existingHot));
+        when(profileStoreService.listExecutableWatchlist()).thenReturn(List.of(existingHot));
+        when(profileStoreService.listAll()).thenReturn(List.of(existingHot));
 
         PolymarketWalletDiscoveryService service = new PolymarketWalletDiscoveryService(
                 polymarketApiClient,
@@ -117,6 +123,7 @@ class PolymarketWalletDiscoveryServiceTest {
                 .orElseThrow();
         assertEquals(Integer.valueOf(2), first.getLeaderboardHitCount30d());
         assertEquals("OVERALL|ALL|VOLUME|10", first.getLastDiscoveryQuery());
+        verify(selectionService, org.mockito.Mockito.never()).refreshQualifiedWallets();
     }
 
     @Test

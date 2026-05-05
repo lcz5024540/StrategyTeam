@@ -6,6 +6,7 @@ public record StrategyMetricsView(
         Integer totalOrders,
         Integer filledOrders,
         Integer openPositions,
+        Integer pendingPositions,
         Integer closedPositions,
         Integer winningPositions,
         Integer losingPositions,
@@ -31,6 +32,11 @@ public record StrategyMetricsView(
         Integer takeProfitOrderCount,
         BigDecimal takeProfitRealizedPnlUsdc,
         Integer stopLossOrderCount,
-        BigDecimal stopLossRealizedPnlUsdc
+        BigDecimal stopLossRealizedPnlUsdc,
+        BigDecimal tvlUsdc,
+        BigDecimal todayPnlUsdc,
+        BigDecimal capitalUsdc,
+        BigDecimal volatility,
+        BigDecimal sharpe
 ) {
 }

@@ -366,7 +366,8 @@ class SmartWalletControllerTest {
 
     @Test
     void shouldExposeWalletOrderStatsEndpoint() throws Exception {
-        when(walletOrderStatsService.summarize("0xabc", "30d")).thenReturn(
+        when(smartWalletOrderAnalysisService.listFreshOrRefresh("0xabc", false)).thenReturn(List.of());
+        when(walletOrderStatsService.summarize("0xabc", List.of(), "30d")).thenReturn(
                 WalletOrderStatsView.builder()
                         .walletAddress("0xabc")
                         .window("30D")

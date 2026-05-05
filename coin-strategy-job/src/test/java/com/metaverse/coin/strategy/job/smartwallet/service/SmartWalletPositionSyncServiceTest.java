@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
@@ -58,6 +59,8 @@ class SmartWalletPositionSyncServiceTest {
     private MarketSnapshotCollectorService marketSnapshotCollectorService;
     @Mock
     private MarketConcentrationService marketConcentrationService;
+    @Mock
+    private PolymarketMarketDataCacheService marketDataCacheService;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -85,7 +88,8 @@ class SmartWalletPositionSyncServiceTest {
                 consensusSignalService,
                 marketSnapshotCollectorService,
                 marketConcentrationService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                marketDataCacheService
         );
     }
 
@@ -163,8 +167,7 @@ class SmartWalletPositionSyncServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(11L)
                 .setExecutionAddress("paper-book")
-                .setMarketId("market-1")
-                .setOutcome("YES")
+                .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-1").setOutcome("YES"))
                 .setAverageEntryPrice(new BigDecimal("0.60"))
                 .setLastMarkPrice(new BigDecimal("0.40"))
                 .setQuantity(new BigDecimal("5.00"))
@@ -187,8 +190,7 @@ class SmartWalletPositionSyncServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(44L)
                 .setExecutionAddress("paper-book")
-                .setMarketId("market-stop")
-                .setOutcome("YES")
+                .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-stop").setOutcome("YES"))
                 .setAverageEntryPrice(new BigDecimal("0.68"))
                 .setLastMarkPrice(new BigDecimal("0.04"))
                 .setQuantity(new BigDecimal("220.58823529"))
@@ -215,8 +217,7 @@ class SmartWalletPositionSyncServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(21L)
                 .setExecutionAddress("paper-book")
-                .setMarketId("market-2")
-                .setOutcome("YES")
+                .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-2").setOutcome("YES"))
                 .setAverageEntryPrice(new BigDecimal("0.50"))
                 .setLastMarkPrice(new BigDecimal("0.62"))
                 .setQuantity(new BigDecimal("10.00"))
@@ -240,8 +241,7 @@ class SmartWalletPositionSyncServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(29L)
                 .setExecutionAddress("paper-book")
-                .setMarketId("market-tp")
-                .setOutcome("YES")
+                .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-tp").setOutcome("YES"))
                 .setAverageEntryPrice(new BigDecimal("0.84"))
                 .setLastMarkPrice(new BigDecimal("0.99"))
                 .setQuantity(new BigDecimal("10.00"))
@@ -272,8 +272,7 @@ class SmartWalletPositionSyncServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(55L)
                 .setExecutionAddress("paper-book")
-                .setMarketId("market-wallet-tp")
-                .setOutcome("YES")
+                .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-wallet-tp").setOutcome("YES"))
                 .setAverageEntryPrice(new BigDecimal("0.50"))
                 .setLastMarkPrice(new BigDecimal("0.66"))
                 .setQuantity(new BigDecimal("10.00"))
@@ -304,8 +303,7 @@ class SmartWalletPositionSyncServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(56L)
                 .setExecutionAddress("paper-book")
-                .setMarketId("market-wallet-sl")
-                .setOutcome("YES")
+                .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-wallet-sl").setOutcome("YES"))
                 .setAverageEntryPrice(new BigDecimal("0.68"))
                 .setLastMarkPrice(new BigDecimal("0.50"))
                 .setQuantity(new BigDecimal("220.58823529"))
@@ -337,8 +335,7 @@ class SmartWalletPositionSyncServiceTest {
                 .thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                         .setId(31L)
                         .setExecutionAddress("0xlive")
-                        .setMarketId("market-live")
-                        .setOutcome("YES")
+                        .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-live").setOutcome("YES"))
                         .setLastMarkPrice(new BigDecimal("0.62"))
                         .setQuantity(new BigDecimal("10.00"))
                         .setCostBasisUsdc(new BigDecimal("5.00"))
@@ -367,8 +364,7 @@ class SmartWalletPositionSyncServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
                 .setId(22L)
                 .setExecutionAddress("paper-book")
-                .setMarketId("market-3")
-                .setOutcome("NO")
+                .setMarketInfo(new SmartWalletMarketInfoEntity().setMarketId("market-3").setOutcome("NO"))
                 .setAverageEntryPrice(new BigDecimal("0.50"))
                 .setLastMarkPrice(new BigDecimal("0.58"))
                 .setQuantity(new BigDecimal("10.00"))

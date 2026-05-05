@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { StrategyCode, PositionMode } from '@/utils/constants'
-import { DEFAULT_STRATEGY_CODE, normalizeStrategyCode } from '@/utils/constants'
+import { DEFAULT_STRATEGY_CODE, normalizeRunnableStrategyCode } from '@/utils/constants'
 
 interface StrategyState {
   selectedStrategy: StrategyCode
@@ -20,7 +20,7 @@ export const useStrategyStore = create<StrategyState>()(
       positionMode: 'PAPER',
       selectedDays: 30,
 
-      setSelectedStrategy: (code) => set({ selectedStrategy: normalizeStrategyCode(code) }),
+      setSelectedStrategy: (code) => set({ selectedStrategy: normalizeRunnableStrategyCode(code) }),
       setPositionMode: (mode) => set({ positionMode: mode }),
       setSelectedDays: (days) => set({ selectedDays: days }),
     }),
@@ -31,7 +31,7 @@ export const useStrategyStore = create<StrategyState>()(
         return {
           ...current,
           ...persistedState,
-          selectedStrategy: normalizeStrategyCode(persistedState?.selectedStrategy),
+          selectedStrategy: normalizeRunnableStrategyCode(persistedState?.selectedStrategy),
         }
       },
     }

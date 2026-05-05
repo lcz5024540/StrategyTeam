@@ -87,11 +87,14 @@ public class TimeAwareStopLossService implements ExitSignalProvider {
         }
         int windowSize = risk.getTrendStopLossConsecutivePeriods() <= 0
                 ? 3 : risk.getTrendStopLossConsecutivePeriods();
+        int minSamples = risk.getMinPriceHistorySamples() == null || risk.getMinPriceHistorySamples() <= 0
+                ? windowSize : risk.getMinPriceHistorySamples();
+        int cap = Math.max(windowSize, minSamples) + 1;
 
         Deque<BigDecimal> history = priceHistory.computeIfAbsent(positionId, id -> new ArrayDeque<>());
         history.addLast(markPrice);
-        // Keep only last windowSize+1 entries
-        while (history.size() > windowSize + 1) {
+        // Keep enough entries to satisfy both windowSize and minPriceHistorySamples
+        while (history.size() > cap) {
             history.pollFirst();
         }
     }
@@ -115,7 +118,9 @@ public class TimeAwareStopLossService implements ExitSignalProvider {
 
         int periods = risk.getTrendStopLossConsecutivePeriods() <= 0
                 ? 3 : risk.getTrendStopLossConsecutivePeriods();
-        if (history.size() < periods) {
+        int minSamples = risk.getMinPriceHistorySamples() == null || risk.getMinPriceHistorySamples() <= 0
+                ? periods : risk.getMinPriceHistorySamples();
+        if (history.size() < Math.max(periods, minSamples)) {
             return false;
         }
 

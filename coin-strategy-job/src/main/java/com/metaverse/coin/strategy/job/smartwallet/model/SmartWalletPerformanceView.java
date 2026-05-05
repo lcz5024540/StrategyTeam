@@ -12,6 +12,7 @@ public class SmartWalletPerformanceView {
     private Integer filledOrders;
     private Integer closedPositions;
     private Integer openPositions;
+    private Integer pendingPositions;
     private Integer winningPositions;
     private Integer losingPositions;
     private BigDecimal winRate;

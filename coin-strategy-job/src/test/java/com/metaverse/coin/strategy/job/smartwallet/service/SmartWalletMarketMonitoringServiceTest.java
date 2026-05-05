@@ -150,9 +150,9 @@ class SmartWalletMarketMonitoringServiceTest {
         OffsetPageView<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView> page =
                 service.tablePage(1, 10, 14, null, "POLITICS", null, null, null);
 
-        assertEquals(1, page.getItems().size());
-        assertEquals("market-politics", page.getItems().get(0).getMarketId());
-        assertTrue(page.getItems().get(0).getNormalizedCategory().contains("POLITICS"));
+        assertEquals(1, page.items().size());
+        assertEquals("market-politics", page.items().get(0).getMarketId());
+        assertTrue(page.items().get(0).getNormalizedCategory().contains("POLITICS"));
         verify(marketStateService).loadPersistedMarkets(any());
         verify(marketStateService, never()).refreshMarkets(any(), anyBoolean());
     }

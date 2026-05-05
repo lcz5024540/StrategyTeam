@@ -104,6 +104,42 @@ public class SmartWalletMarketInfoService {
     }
 
     /**
+     * 查找仍可交易/活跃但关键展示字段不完整的市场。
+     * <p>
+     * 这些市场可能没有开放仓位，但仍被 open/FILLED 订单引用；若不纳入后台刷新，
+     * 订单页只能退化到搜索链接，无法打开精确 Polymarket 市场页。
+     */
+    public List<String> listIncompleteActiveMarketIds(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 500));
+        List<SmartWalletMarketInfoEntity> rows = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                .isNotNull(SmartWalletMarketInfoEntity::getMarketId)
+                .ne(SmartWalletMarketInfoEntity::getMarketId, "")
+                .and(active -> active
+                        .isNull(SmartWalletMarketInfoEntity::getMarketLifecycle)
+                        .or().eq(SmartWalletMarketInfoEntity::getMarketLifecycle, SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .or().eq(SmartWalletMarketInfoEntity::getClosed, false)
+                        .or().eq(SmartWalletMarketInfoEntity::getAcceptingOrders, true))
+                .and(incomplete -> incomplete
+                        .isNull(SmartWalletMarketInfoEntity::getMarketSlug)
+                        .or().eq(SmartWalletMarketInfoEntity::getMarketSlug, "")
+                        .or().isNull(SmartWalletMarketInfoEntity::getTokenId)
+                        .or().eq(SmartWalletMarketInfoEntity::getTokenId, "")
+                        .or().isNull(SmartWalletMarketInfoEntity::getMarketEndAt)
+                        .or().le(SmartWalletMarketInfoEntity::getMarketEndAt, 0L))
+                .orderByAsc(SmartWalletMarketInfoEntity::getLastMetadataSyncAt)
+                .orderByAsc(SmartWalletMarketInfoEntity::getUpdatedAt)
+                .orderByAsc(SmartWalletMarketInfoEntity::getId)
+                .last("limit " + safeLimit));
+        rows.forEach(row -> cacheById.put(row.getId(), row));
+        return rows.stream()
+                .map(SmartWalletMarketInfoEntity::getMarketId)
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    /**
      * 按 marketId + outcome 查询，不存在则自动创建一行。
      * 用于写入场景（创建 order / fill / position / follow_task 时需要关联 market_info_id）。
      */

@@ -377,6 +377,8 @@ public class SmartWalletReplayBacktestService {
         target.setSingleWalletOverrideMinTriggerSizeUsdc(source.getSingleWalletOverrideMinTriggerSizeUsdc());
         target.setSingleWalletOverrideMinRecommendedStakeUsdc(source.getSingleWalletOverrideMinRecommendedStakeUsdc());
         target.setEnableConcentrationGate(source.isEnableConcentrationGate());
+        target.setExtremeConcentrationMode(source.getExtremeConcentrationMode());
+        target.setExtremeConcentrationDownsizeRate(source.getExtremeConcentrationDownsizeRate());
         target.setConcentrationHighRiskMode(source.getConcentrationHighRiskMode());
         target.setConcentrationHighRiskDownsizeRate(source.getConcentrationHighRiskDownsizeRate());
         target.setMaxTop1ConcentrationPct(source.getMaxTop1ConcentrationPct());
@@ -386,6 +388,7 @@ public class SmartWalletReplayBacktestService {
         target.setWhaleSignalDownsizeRate(source.getWhaleSignalDownsizeRate());
         target.setConcentrationCacheTtlMs(source.getConcentrationCacheTtlMs());
         target.setConcentrationTopN(source.getConcentrationTopN());
+        target.setConcentrationMinObservedHoldersForGate(source.getConcentrationMinObservedHoldersForGate());
         target.setConcentrationStakeSafeTop3Pct(source.getConcentrationStakeSafeTop3Pct());
         target.setConcentrationStakePenaltyMaxRate(source.getConcentrationStakePenaltyMaxRate());
         target.setKellyStakeEnabled(source.isKellyStakeEnabled());

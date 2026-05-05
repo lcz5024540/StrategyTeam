@@ -23,7 +23,7 @@ APP_GROUP="${SMART_WALLET_APP_GROUP:-}"
 SERVICE_NAME="${SMART_WALLET_SERVICE_NAME:-smart-wallet-backend}"
 START_MODE="${SMART_WALLET_START_MODE:-auto}"
 BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-8081}"
-LOG_DIR="${LOG_DIR:-/home/ubuntu/logs}"
+LOG_DIR="${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
 
 resolve_default_env_file() {
   local system_env="/etc/coinstrategy/smart-wallet.env"
@@ -93,7 +93,7 @@ load_env() {
   fi
 
   BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-${SERVER_PORT:-$BACKEND_PORT}}"
-  LOG_DIR="${LOG_DIR:-/home/ubuntu/logs}"
+  LOG_DIR="${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
 }
 
 ensure_sudo_ready() {

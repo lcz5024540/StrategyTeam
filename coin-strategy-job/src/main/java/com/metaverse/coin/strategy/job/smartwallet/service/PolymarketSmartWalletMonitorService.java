@@ -7,9 +7,14 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventReq
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
 
@@ -24,6 +29,17 @@ public class PolymarketSmartWalletMonitorService {
     private final SmartWalletProperties properties;
     private final SmartWalletProfileStoreService profileStoreService;
     private final SmartWalletFollowTaskService followTaskService;
+    private final SmartWalletTimeFormatter timeFormatter;
+    private final JdbcTemplate jdbcTemplate;
+
+    @PostConstruct
+    public void ensureTradeEventSchema() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE `smart_wallet_trade_event` ADD COLUMN `size_shares` DECIMAL(20,8) DEFAULT NULL AFTER `price`");
+        } catch (Exception ignored) {
+            // Column already exists on most runs; ignore duplicate-column errors.
+        }
+    }
 
     public SmartWalletProfileEntity ingestWalletMetrics(PolymarketWalletMetricsRequest request) {
         log.info("{} action=导入Polymarket钱包指标 result=开始 wallet={} chain={} winRate={} pnlUsdc={} totalTrades={}",
@@ -38,9 +54,13 @@ public class PolymarketSmartWalletMonitorService {
     }
 
     public SmartWalletTradeEventEntity ingestTradeEvent(PolymarketTradeEventRequest request) {
-        log.info("{} action=导入Polymarket钱包交易 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
-                LOG_PREFIX, request.getWalletAddress(), request.getMarketId(), request.getOutcome(), request.getSide(),
-                request.getExternalTradeId(), request.getPrice(), request.getSizeUsdc());
+        BigDecimal normalizedPrice = safe(request.getPrice());
+        BigDecimal normalizedShares = resolveShares(request, normalizedPrice);
+        BigDecimal normalizedNotionalUsdc = resolveNotionalUsdc(request, normalizedPrice, normalizedShares);
+        log.info("{} action=导入Polymarket钱包交易 result=开始 wallet={} marketId={} question={} outcome={} side={} externalTradeId={} price={} sizeShares={} sizeUsdc={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                LOG_PREFIX, request.getWalletAddress(), request.getMarketId(), request.getQuestion(), request.getOutcome(),
+                request.getSide(), request.getExternalTradeId(), normalizedPrice, normalizedShares, normalizedNotionalUsdc,
+                openedAtBjt(request.getOpenedAt()), openedAtMillis(request.getOpenedAt()), polymarketSearchUrl(request.getQuestion()));
         SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
                 .setWalletAddress(request.getWalletAddress())
                 .setChain(request.getChain())
@@ -50,14 +70,33 @@ public class PolymarketSmartWalletMonitorService {
                 .setQuestion(request.getQuestion())
                 .setOutcome(normalizeUpper(request.getOutcome(), "YES"))
                 .setSide(normalizeUpper(request.getSide(), "BUY"))
-                .setPrice(safe(request.getPrice()))
-                .setSizeUsdc(safe(request.getSizeUsdc()))
+                .setPrice(normalizedPrice)
+                .setSizeShares(normalizedShares)
+                .setSizeUsdc(normalizedNotionalUsdc)
                 .setOpenedAt(request.getOpenedAt() == null ? new Date() : request.getOpenedAt());
         SmartWalletTradeEventEntity saved = followTaskService.recordTradeEvent(event);
-        log.info("{} action=导入Polymarket钱包交易 result=完成 eventId={} wallet={} marketId={} outcome={} side={} processed={}",
-                LOG_PREFIX, saved.getId(), saved.getWalletAddress(), saved.getMarketId(), saved.getOutcome(),
-                saved.getSide(), saved.getProcessed());
+        log.info("{} action=导入Polymarket钱包交易 result=完成 eventId={} wallet={} marketId={} question={} outcome={} side={} price={} sizeShares={} sizeUsdc={} processed={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                LOG_PREFIX, saved.getId(), saved.getWalletAddress(), saved.getMarketId(), saved.getQuestion(),
+                saved.getOutcome(), saved.getSide(), saved.getPrice(), saved.getSizeShares(), saved.getSizeUsdc(),
+                saved.getProcessed(), openedAtBjt(saved.getOpenedAt()),
+                openedAtMillis(saved.getOpenedAt()), polymarketSearchUrl(saved.getQuestion()));
         return saved;
+    }
+
+    private String openedAtBjt(Date openedAt) {
+        Long millis = openedAtMillis(openedAt);
+        return millis == null ? null : timeFormatter.formatEpochMillisToBjt(millis);
+    }
+
+    private Long openedAtMillis(Date openedAt) {
+        return openedAt == null ? null : openedAt.getTime();
+    }
+
+    private String polymarketSearchUrl(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+        return "https://polymarket.com/search?query=" + URLEncoder.encode(question.trim(), StandardCharsets.UTF_8);
     }
 
     public List<SmartWalletProfileEntity> listProfiles() {
@@ -130,6 +169,29 @@ public class PolymarketSmartWalletMonitorService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private BigDecimal resolveShares(PolymarketTradeEventRequest request, BigDecimal price) {
+        BigDecimal shares = safe(request.getSizeShares());
+        if (shares.compareTo(BigDecimal.ZERO) > 0) {
+            return shares;
+        }
+        BigDecimal notionalUsdc = safe(request.getSizeUsdc());
+        if (notionalUsdc.compareTo(BigDecimal.ZERO) > 0 && price.compareTo(BigDecimal.ZERO) > 0) {
+            return notionalUsdc.divide(price, 8, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal resolveNotionalUsdc(PolymarketTradeEventRequest request, BigDecimal price, BigDecimal shares) {
+        BigDecimal notionalUsdc = safe(request.getSizeUsdc());
+        if (notionalUsdc.compareTo(BigDecimal.ZERO) > 0) {
+            return notionalUsdc;
+        }
+        if (shares.compareTo(BigDecimal.ZERO) > 0 && price.compareTo(BigDecimal.ZERO) > 0) {
+            return shares.multiply(price).setScale(8, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
     }
 
     private Integer nonNegative(Integer value) {

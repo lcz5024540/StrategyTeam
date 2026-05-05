@@ -68,6 +68,10 @@ class SmartWalletSignalRiskServiceTest {
     private WalletArchetypeClassifierService walletArchetypeClassifierService;
     @Mock
     private SmartWalletManualAllowlistService manualAllowlistService;
+    @Mock
+    private EntryTimingRiskService entryTimingRiskService;
+    @Mock
+    private SignalScoreModelService signalScoreModelService;
 
     private SmartWalletProperties properties;
     private SmartWalletSignalRiskService service;
@@ -97,7 +101,9 @@ class SmartWalletSignalRiskServiceTest {
                 polymarketApiClient,
                 walletArchetypeClassifierService,
                 walletBehaviorProfileService,
-                manualAllowlistService
+                manualAllowlistService,
+                entryTimingRiskService,
+                signalScoreModelService
         );
     }
 
@@ -542,6 +548,57 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
+    void shouldNotEnforceConcentrationGateWhenObservedHolderSampleIsTooSmall() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setEnableConcentrationGate(true);
+        properties.getSignalRisk().setConcentrationMinObservedHoldersForGate(12);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xlowcoverage")
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80)
+                .setRecentTradeCount7d(8)
+                .setRecentWinRate7d(new BigDecimal("0.70"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2)
+                .dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.85"))
+                .build();
+
+        prepareCommonMocks(consensus);
+        when(walletBehaviorProfileService.getProfile("0xlowcoverage")).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xlowcoverage")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.80"))
+                .qualityScore(new BigDecimal("0.78"))
+                .stabilityScore(new BigDecimal("0.60"))
+                .build());
+        when(concentrationService.analyze(any(), any())).thenReturn(new MarketConcentrationService.ConcentrationSnapshot(
+                "market-1",
+                "YES",
+                5,
+                new BigDecimal("0.80"),
+                new BigDecimal("0.95"),
+                new BigDecimal("1.00"),
+                7200,
+                true,
+                true,
+                java.util.List.of("0xwhale"),
+                System.currentTimeMillis()
+        ));
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted());
+        assertEquals(new BigDecimal("2.40"), decision.getRecommendedStakeUsdc());
+        assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[CONCENTRATION_LOW_COVERAGE]")));
+        assertFalse(decision.getReasons().stream().anyMatch(item -> item.contains("[EXTREME_CONCENTRATION_DOWNSIZE]")));
+    }
+
+    @Test
     void shouldRejectClosedMarketLifecycle() {
         SmartWalletProfileEntity profile = baseProfile()
                 .setWalletAddress("0xclosed")
@@ -777,10 +834,9 @@ class SmartWalletSignalRiskServiceTest {
     }
 
     @Test
-    void shouldRejectHfScalperSignalWhenOlderThan45Seconds() {
-        // HF_SCALPER wallets must enforce a 45s max signal age.
-        // Bug: case "HF" in resolveEffectiveSignalAgeMs never matches "HF_SCALPER",
-        // so the default baseMs (3600s) is used and a 75s old signal is incorrectly accepted.
+    void shouldUseConfiguredSignalAgeForHfScalperSignals() {
+        // HF_FOLLOW now uses the configured freshness window so sync/polling latency does not
+        // turn otherwise valid copy signals stale after tens of seconds.
         properties.getSignalRisk().setEnableConsensusGate(false);
         properties.getSignalRisk().setEnableSingleWalletOverride(false);
         properties.getSignalRisk().setKellyStakeEnabled(false);
@@ -792,7 +848,7 @@ class SmartWalletSignalRiskServiceTest {
                 .setWalletScore(new BigDecimal("0.80"))
                 .setWinRate(new BigDecimal("0.70"))
                 .setTotalTrades(80);
-        // 75s old: older than the 45s HF limit, but younger than the 3600s default
+        // 75s old: older than the former 45s HF cap, but younger than the configured 3600s window.
         SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
                 .setMarketId("market-1")
                 .setOutcome("YES")
@@ -809,12 +865,10 @@ class SmartWalletSignalRiskServiceTest {
 
         SignalRiskDecision decision = service.evaluate(profile, event);
 
-        // With bug ("HF" never matches "HF_SCALPER"): effectiveMax=3600s, 75s < 3600s → accepted
-        // After fix ("HF_SCALPER" matches): effectiveMax=45s, 75s > 45s → rejected as stale
-        assertFalse(decision.isAccepted(),
-                "HF_SCALPER signal older than 45s must be rejected as stale. Reasons: " + decision.getReasons());
-        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("stale")),
-                "Rejection reason must mention staleness. Reasons: " + decision.getReasons());
+        assertTrue(decision.isAccepted(),
+                "HF_SCALPER signal should follow configured maxSignalAgeSeconds. Reasons: " + decision.getReasons());
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("stale")),
+                "75s HF signal should not be stale with maxSignalAgeSeconds=3600. Reasons: " + decision.getReasons());
     }
 
     @Test
@@ -845,10 +899,13 @@ class SmartWalletSignalRiskServiceTest {
 
         long standardBinaryEnd = System.currentTimeMillis() + 30 * 3_600_000L;
         prepareHfScalperMocks(consensus, standardBinaryEnd);
+        // Our capital = 100; set budget = capital so applyDynamicCapitalScale is neutral (scale=1.0)
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
+        properties.getSignalRisk().setMaxTotalOpenCostUsdc(new BigDecimal("100"));
 
         SignalRiskDecision decision = service.evaluate(profile, event);
 
-        // stake = 100 * 0.80 * 0.03 = 2.40; HF >30s → 2.40 * 0.25 = 0.60
+        // stake = availableCapital(100) * bankrollRate(0.03) * walletScore(0.80) = 2.40; HF >30s → 2.40 * 0.25 = 0.60
         // With bug: no HF reduction → stake remains 2.40
         assertTrue(decision.isAccepted(),
                 "Signal is 35s old (< 45s HF max): must be accepted. Reasons: " + decision.getReasons());
@@ -859,12 +916,197 @@ class SmartWalletSignalRiskServiceTest {
                 "Must log ARCHETYPE_STAKE reason. Reasons: " + decision.getReasons());
     }
 
+    @Test
+    void shouldAcceptLongHorizonSpeculatorSignalUpTo30Minutes() {
+        // LONG_HORIZON_SPECULATOR wallets trade slowly-resolving markets (sports, politics).
+        // Their signals may be posted minutes after the trade, so the effective max signal age
+        // must be at least 1_800_000 ms (30 min) regardless of the configured baseMs.
+        // Specifically: a 20-minute-old signal with baseMs=300s (5 min) must be accepted.
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setMaxSignalAgeSeconds(300); // 5 min base; LONG_HORIZON floor = 30 min
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xlhs")
+                .setWalletScore(new BigDecimal("0.68"))
+                .setWinRate(new BigDecimal("0.60"))
+                .setTotalTrades(20);
+        // 20 min old: older than the 5 min default but within the 30 min LONG_HORIZON floor
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.60"))
+                .setSizeUsdc(new BigDecimal("50"))
+                .setOpenedAt(new Date(System.currentTimeMillis() - 20 * 60_000L));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.75")).build();
+
+        long longEndAt = System.currentTimeMillis() + 72 * 3_600_000L;  // 3 days out
+        when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
+        when(positionMapper.selectCount(any())).thenReturn(0L);
+        when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
+        when(followTaskMapper.selectCount(any())).thenReturn(0L);
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("500"));
+        when(walletArchetypeClassifierService.classify(any(), any())).thenReturn(WalletArchetypeView.builder()
+                .walletAddress("0xlhs")
+                .archetype("LONG_HORIZON_SPECULATOR")
+                .followLane("VALUE_FOLLOW")
+                .followFitScore(new BigDecimal("0.65"))
+                .confidence(new BigDecimal("0.70"))
+                .labelSampleSize(8)
+                .build());
+        when(walletBehaviorProfileService.getProfile(any())).thenReturn(WalletBehaviorProfileView.builder()
+                .walletAddress("0xlhs")
+                .recommendedExitLane("FOLLOW_ARCHETYPE")
+                .replicabilityScore(new BigDecimal("0.70"))
+                .earlyExitRate(new BigDecimal("0.10"))
+                .settlementCompletionRate(new BigDecimal("0.90"))
+                .build());
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(longEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+        when(leaderboardStateService.adjustWalletScore(
+                any(SmartWalletProfileEntity.class),
+                any(SmartWalletTradeEventEntity.class))).thenAnswer(inv -> {
+            SmartWalletProfileEntity p = inv.getArgument(0);
+            return p.getWalletScore();
+        });
+        when(consensusSignalService.buildConsensusForEvent(any())).thenReturn(consensus);
+        when(consensusSignalService.buildConsensusForEvent(any(), any())).thenReturn(consensus);
+        when(executionWalletContextLoader.load()).thenReturn(
+                ExecutionWalletContextLoader.ExecutionWalletContext.builder()
+                        .minOrderUsdc(new BigDecimal("0.10"))
+                        .build());
+        when(tradeProfitabilityScoringService.estimate(any(), any(), any(), any()))
+                .thenReturn(TradeProfitabilityScoringService.ProfitabilityEstimate.builder()
+                        .estimatedNetProfitabilityUsdc(new BigDecimal("1.50"))
+                        .estimatedFeeUsdc(BigDecimal.ZERO)
+                        .estimatedSlippageUsdc(BigDecimal.ZERO)
+                        .followProbability(new BigDecimal("0.65"))
+                        .calibratedFollowProbability(new BigDecimal("0.68"))
+                        .slippageSpikeProbability(BigDecimal.ZERO)
+                        .estimateSampleSize(8)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // effectiveMaxMs = max(300_000, 1_800_000) = 1_800_000 ms (30 min)
+        // signal is 20 min old (1_200_000 ms) < 1_800_000 ms → must be accepted
+        assertTrue(decision.isAccepted(),
+                "LONG_HORIZON_SPECULATOR: 20-min signal must be accepted with 30-min floor. "
+                        + "Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldBaseStakeOnAvailableCapitalNotSignalSize() {
+        // Bug: preliminaryStake = triggerSize * walletScore * bankrollUtilizationRate
+        //      = 1000 * 0.80 * 0.03 = 24.00  (anchored to signal wallet trade size — over-leveraged)
+        // Fix: preliminaryStake = availableCapital * bankrollUtilizationRate * walletScore
+        //      = 100 * 0.03 * 0.80 = 2.40   (anchored to our own capital — correct)
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        // Set budget = capital so applyDynamicCapitalScale is a no-op (scale = capital/budget = 1.0)
+        properties.getSignalRisk().setMaxTotalOpenCostUsdc(new BigDecimal("100"));
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletAddress("0xhf")
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        // Smart wallet traded 1000 USDC; our account has only 100 USDC — stake must track OUR capital
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.48"))
+                .setSizeUsdc(new BigDecimal("1000"))
+                .setOpenedAt(new Date());
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        long standardBinaryEnd = System.currentTimeMillis() + 30 * 3_600_000L;
+        prepareHfScalperMocks(consensus, standardBinaryEnd);
+        // Override: our account has only 100 USDC, not the 500 set by prepareHfScalperMocks
+        when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // Fixed: 100 * 0.03 * 0.80 = 2.40 (capital-anchored)
+        // Buggy: 1000 * 0.80 * 0.03 = 24.00 (signal-size-anchored, 24x over-leveraged)
+        // (applyDynamicCapitalScale is neutral: scale = availableCapital/maxTotalOpenCost = 100/100 = 1.0)
+        assertTrue(decision.isAccepted(),
+                "Signal should be accepted. Reasons: " + decision.getReasons());
+        assertEquals(new BigDecimal("2.40"), decision.getRecommendedStakeUsdc(),
+                "Stake must be anchored to availableCapital (100*0.03*0.80=2.40), not triggerSize. Reasons: "
+                        + decision.getReasons());
+    }
+
+    @Test
+    void shouldUseLongHorizonMinHoursConfigInsteadOfHalfMaxHoursToMarketEnd() {
+        // Bug: LONG_HORIZON threshold = maxHoursToMarketEnd / 2 (coupled).
+        // Fix: use independent longHorizonMinHours config (default 48h).
+        //
+        // Test case: a 40h-remaining market.
+        // With maxHoursToMarketEnd=72 and the bug: threshold = 72/2 = 36h → 40h > 36h → LONG_HORIZON (wrong)
+        // With longHorizonMinHours=48 (fix): 40h < 48h → STANDARD_BINARY (correct — 40h is not "long horizon")
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        // Set longHorizonMinHours to 48h (independent of maxHoursToMarketEnd=72)
+        properties.getSignalRisk().setLongHorizonMinHours(48);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        // 40h remaining: should be STANDARD_BINARY (not LONG_HORIZON) with longHorizonMinHours=48
+        long fortyHoursFromNow = System.currentTimeMillis() + 40 * 3_600_000L;
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(fortyHoursFromNow)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // With the bug (threshold = 72/2 = 36h): 40h > 36h → LONG_HORIZON → stake multiplied by 0.50
+        // With the fix (threshold = longHorizonMinHours = 48h): 40h < 48h → STANDARD_BINARY → no multiplier
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("STANDARD_BINARY")),
+                "A 40h market with longHorizonMinHours=48 must be classified as STANDARD_BINARY, not LONG_HORIZON. Reasons: "
+                        + decision.getReasons());
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LONG_HORIZON")),
+                "A 40h market must NOT be classified as LONG_HORIZON when longHorizonMinHours=48. Reasons: "
+                        + decision.getReasons());
+    }
+
     private void prepareCommonMocks(ConsensusSignalView consensus) {
         when(manualAllowlistService.findActive(any())).thenReturn(java.util.Optional.empty());
         when(positionMapper.selectCount(any())).thenReturn(0L);
         when(positionMapper.selectList(any())).thenReturn(java.util.List.of());
         when(followTaskMapper.selectCount(any())).thenReturn(0L);
         when(accountingService.availableCapitalUsdc()).thenReturn(new BigDecimal("100"));
+        // Set budget = available capital so applyDynamicCapitalScale is neutral (scale = capital/budget = 1.0).
+        // Tests that need capital-scaling behavior must override this explicitly.
+        properties.getSignalRisk().setMaxTotalOpenCostUsdc(new BigDecimal("100"));
         // 30h: beyond FAST_EVENT window (<24h) and below LONG_HORIZON threshold (>maxHoursToMarketEnd/2 = 36h)
         long farFutureEndAt = System.currentTimeMillis() + 30 * 3_600_000L;
         when(marketMetadataService.getByConditionId(any())).thenReturn(PolymarketApiClient.MarketMetadata.builder()
@@ -910,6 +1152,267 @@ class SmartWalletSignalRiskServiceTest {
                         .slippageSpikeProbability(new BigDecimal("0.10"))
                         .estimateSampleSize(10)
                         .build());
+    }
+
+    @Test
+    void shouldNotCountThemeCorrelationWhenOverlapIsOnlyStopWords() {
+        // Bug: "Will bitcoin reach 2024 high?" and "Will ethereum reach 2024 high?"
+        // overlap on {"will","2024","high","reach"} — 4 tokens ≥ threshold(2) → false positive penalty
+        // Fix: stop-words {"will","2024","2025","what","that","this","with","from","when","have","been","more"}
+        // filtered out → only unique topic tokens remain, overlap = {} < 2 → no penalty
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        // Signal event: a bitcoin question
+        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
+                .setMarketId("market-1")
+                .setOutcome("YES")
+                .setSide("BUY")
+                .setPrice(new BigDecimal("0.48"))
+                .setSizeUsdc(new BigDecimal("100"))
+                .setQuestion("Will bitcoin reach 2024 high?")
+                .setOpenedAt(new Date());
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+
+        // Existing open position: an ethereum question sharing only stop-words with the bitcoin question.
+        // Must set marketInfo so that position.getQuestion() returns the text (derived field).
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity marketInfo =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity()
+                        .setQuestion("Will ethereum reach 2024 high?");
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity existingPosition =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity()
+                        .setMarketInfo(marketInfo);
+        when(positionMapper.selectList(any())).thenReturn(java.util.List.of(existingPosition));
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // With bug: "will","2024","high","reach" all pass the ≥4 char filter → 4 shared tokens ≥ 2 → THEME_CORRELATION penalty
+        // With fix: stop-words {"will","2024","high","reach"} filtered → only {"bitcoin"} vs {"ethereum"} → overlap=0 < 2 → no penalty
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("[THEME_CORRELATION]")),
+                "Only stop-word overlap must NOT trigger theme correlation. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldRejectObviouslyFarFutureMarketEndAtWhenConfiguredThresholdLower() {
+        // Bug: OBVIOUSLY_FUTURE_MARKET_END_MS is hardcoded to 365 days.
+        // Operators cannot tighten the data-quality guard without redeployment.
+        // Fix: read obviouslyFutureMarketEndDays from config.
+        //
+        // Market ends 31 days from now:
+        //   hardcoded 365d: 31d < 365d → not rejected → accepted
+        //   config 30d:     31d > 30d  → rejected as obviously future
+        properties.getSignalRisk().setObviouslyFutureMarketEndDays(30);  // tighten to 30 days
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8)
+                .setRecentWinRate7d(new BigDecimal("0.75"));
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(3).dedupedEntityCount(3).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        // Override market end to 31 days from now (beyond configured 30d threshold)
+        long endAt31Days = System.currentTimeMillis() + 31L * 24L * 3_600_000L;
+        when(marketMetadataService.getByConditionId(any())).thenReturn(
+                PolymarketApiClient.MarketMetadata.builder()
+                        .conditionId("market-1").marketId("market-1").endAt(endAt31Days).build());
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(endAt31Days)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(),
+                "Market 31 days out must be rejected when obviouslyFutureMarketEndDays=30. Reasons: "
+                        + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("MARKET_END_AT_DATA_QUALITY")),
+                "Must contain [MARKET_END_AT_DATA_QUALITY] reason. Got: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldClassifyLongDatedSportsFutureAsLongHorizonNotFastEvent() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setMaxHoursToMarketEnd(2000);
+        properties.getSignalRisk().setLongHorizonMinHours(48);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setQuestion("Will the Boston Celtics win the 2026 NBA Finals?")
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        long sixtyDaysFromNow = System.currentTimeMillis() + 60L * 24L * 3_600_000L;
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(sixtyDaysFromNow)
+                        .normalizedCategory("sports")
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(), "Long-dated sports futures should not hit the FAST_EVENT entry block. Reasons: "
+                + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("marketType=LONG_HORIZON")),
+                "Long-dated sports futures must be classified as LONG_HORIZON before sports keyword matching. Reasons: "
+                        + decision.getReasons());
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("FAST_EVENT_ENTRY_BLOCK")),
+                "Long-dated sports futures must not be blocked as FAST_EVENT. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldDeferMinOrderCheckUntilFinalKellyStakeWhenKellyEnabled() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(true);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.01"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        when(kellyStakeCalculator.compute(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new BigDecimal("5.00"));
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(),
+                "A valid final Kelly stake should not be blocked by a preliminary stake below min-order. Reasons: "
+                        + decision.getReasons());
+        assertEquals(new BigDecimal("5.00"), decision.getRecommendedStakeUsdc());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("PRELIMINARY_STAKE_BELOW_MIN")),
+                "The preliminary stake warning should remain visible for diagnosis. Reasons: " + decision.getReasons());
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.equals("Recommended stake is below execution wallet minimum order.")),
+                "The preliminary min-order condition must not be a hard rejection when Kelly is enabled. Reasons: "
+                        + decision.getReasons());
+    }
+
+    @Test
+    void shouldAllowConfiguredExtremePriceBandEdges() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.02"))
+                .setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(),
+                "Price at the configured lower bound 0.02 should be allowed. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldRaiseAcceptedPositiveStakeToMinOrderFloor() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.01"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("100"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(),
+                "An otherwise accepted positive stake below min order should be floored, not rejected. Reasons: "
+                        + decision.getReasons());
+        assertEquals(new BigDecimal("1.00"), decision.getRecommendedStakeUsdc());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("MIN_ORDER_STAKE_FLOOR")),
+                "Decision should explain the min-order floor. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldAllowObserveOnlyHotWalletThroughPaperCanaryOnly() {
+        properties.getSignalRisk().setEnabledEntryStrategies(java.util.List.of("SINGLE_WALLET_PAPER_CANARY"));
+        properties.getSignalRisk().setEnableConsensusGate(true);
+        properties.getSignalRisk().setMinDistinctEntities(2);
+        properties.getSignalRisk().setMinConsensusScore(new BigDecimal("0.90"));
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setMaxSignalAgeSeconds(60);
+        properties.getSignalRisk().setPaperCanaryMaxSignalAgeSeconds(10800);
+        properties.getSignalRisk().setPaperCanaryMinWalletScore(new BigDecimal("0.70"));
+        properties.getSignalRisk().setPaperCanaryMinTriggerSizeUsdc(new BigDecimal("100"));
+        properties.getSignalRisk().setPaperCanaryMinFollowProbability(new BigDecimal("0.70"));
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.75"))
+                .setWinRate(new BigDecimal("0.65"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setSizeUsdc(new BigDecimal("300"))
+                .setOpenedAt(new Date(System.currentTimeMillis() - 2 * 3600_000L));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.20")).build();
+
+        prepareCommonMocks(consensus);
+        when(walletArchetypeClassifierService.classify(any(), any())).thenReturn(WalletArchetypeView.builder()
+                .walletAddress("0xabc")
+                .archetype("SWING")
+                .followLane("OBSERVE_ONLY")
+                .followFitScore(new BigDecimal("0.70"))
+                .confidence(new BigDecimal("0.80"))
+                .labelSampleSize(10)
+                .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertTrue(decision.isAccepted(), "Paper canary should admit this controlled trial signal. Reasons: "
+                + decision.getReasons());
+        assertEquals("SINGLE_WALLET_PAPER_CANARY", decision.getEntryLane());
+        assertTrue(decision.getMatchedStrategies().contains("SINGLE_WALLET_PAPER_CANARY"));
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("PAPER_CANARY_ARCHETYPE_SOFTENED")));
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("PAPER_CANARY_STALE_SOFTENED")));
     }
 
     private SmartWalletProfileEntity baseProfile() {

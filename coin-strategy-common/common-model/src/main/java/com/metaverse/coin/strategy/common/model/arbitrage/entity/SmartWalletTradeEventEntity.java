@@ -26,6 +26,7 @@ public class SmartWalletTradeEventEntity {
     private String outcome;
     private String side;
     private BigDecimal price;
+    private BigDecimal sizeShares;
     private BigDecimal sizeUsdc;
     private Date openedAt;
     private Boolean processed;

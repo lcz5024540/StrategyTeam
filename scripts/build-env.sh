@@ -137,7 +137,7 @@ APP_HOME="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 # 环境配置
 export SPRING_PROFILES_ACTIVE="${ENV}"
 export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet.env}"
-export LOG_DIR="\${LOG_DIR:-/home/ubuntu/logs}"
+export LOG_DIR="\${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
 
 # 委托给通用管理脚本
 exec "\$SCRIPT_DIR/start-smart-wallet-backend.sh" "\${1:-start}"

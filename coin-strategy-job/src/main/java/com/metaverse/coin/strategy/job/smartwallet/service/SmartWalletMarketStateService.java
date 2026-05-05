@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -18,6 +19,7 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SmartWalletMarketStateService {
 
     public static final String LIFECYCLE_ACTIVE = "ACTIVE";
@@ -77,6 +79,7 @@ public class SmartWalletMarketStateService {
         List<SmartWalletMarketInfoEntity> rowsToPersist = ensureRows(normalizedMarketId, metadata, existingRows, effectiveQuestion);
         MarketStateSnapshot snapshot = buildSnapshot(normalizedMarketId, metadata, rowsToPersist, effectiveQuestion);
         persistSnapshot(rowsToPersist, snapshot);
+        logIncompleteActiveMarketRefresh(normalizedMarketId, snapshot, rowsToPersist, effectiveQuestion);
         return snapshot;
     }
 
@@ -110,6 +113,7 @@ public class SmartWalletMarketStateService {
             List<SmartWalletMarketInfoEntity> rowsToPersist = ensureRows(marketId, metadata, existingRows, effectiveQuestion);
             MarketStateSnapshot snapshot = buildSnapshot(marketId, metadata, rowsToPersist, effectiveQuestion);
             persistSnapshot(rowsToPersist, snapshot);
+            logIncompleteActiveMarketRefresh(marketId, snapshot, rowsToPersist, effectiveQuestion);
             result.put(marketId, snapshot);
         }
         return result;
@@ -166,6 +170,7 @@ public class SmartWalletMarketStateService {
             List<SmartWalletMarketInfoEntity> rowsToPersist = ensureRows(marketId, metadata, existingRows, effectiveQuestion);
             MarketStateSnapshot snapshot = buildSnapshot(marketId, metadata, rowsToPersist, effectiveQuestion);
             persistSnapshot(rowsToPersist, snapshot);
+            logIncompleteActiveMarketRefresh(marketId, snapshot, rowsToPersist, effectiveQuestion);
             result.put(marketId, snapshot);
         }
         return result;
@@ -187,7 +192,11 @@ public class SmartWalletMarketStateService {
         if (lastSyncAt == null || System.currentTimeMillis() - lastSyncAt.getTime() > DEFAULT_METADATA_STALE_MS) {
             return null;
         }
-        return snapshotFromRows(rows);
+        MarketStateSnapshot snapshot = snapshotFromRows(rows);
+        if (isActiveIncomplete(snapshot) || (snapshot != null && snapshot.isActive() && rowsMissingToken(rows))) {
+            return null;
+        }
+        return snapshot;
     }
 
     private MarketStateSnapshot snapshotFromRows(List<SmartWalletMarketInfoEntity> rows) {
@@ -207,6 +216,7 @@ public class SmartWalletMarketStateService {
         return MarketStateSnapshot.builder()
                 .marketId(primary.getMarketId())
                 .question(firstNonBlank(primary.getQuestion(), primary.getMarketId()))
+                .marketSlug(primary.getMarketSlug())
                 .marketEndAt(primary.getMarketEndAt())
                 .sourceCategory(primary.getSourceCategory())
                 .normalizedCategory(firstNonBlank(primary.getNormalizedCategory(), CATEGORY_OTHER))
@@ -216,6 +226,55 @@ public class SmartWalletMarketStateService {
                 .resolvedOutcome(resolvedOutcome)
                 .lastMetadataSyncAt(lastSyncAt)
                 .build();
+    }
+
+    private boolean isActiveIncomplete(MarketStateSnapshot snapshot) {
+        return snapshot != null && snapshot.isActive() && !missingMarketInfoFields(snapshot).isEmpty();
+    }
+
+    private boolean rowsMissingToken(List<SmartWalletMarketInfoEntity> rows) {
+        return rows != null && rows.stream()
+                .filter(row -> row != null && StringUtils.hasText(row.getOutcome()))
+                .anyMatch(row -> !StringUtils.hasText(row.getTokenId()));
+    }
+
+    private List<String> missingMarketInfoFields(MarketStateSnapshot snapshot) {
+        if (snapshot == null) {
+            return List.of("snapshot");
+        }
+        List<String> missing = new ArrayList<>();
+        if (!StringUtils.hasText(snapshot.marketSlug())) {
+            missing.add("marketSlug");
+        }
+        if (snapshot.marketEndAt() == null || snapshot.marketEndAt() <= 0) {
+            missing.add("marketEndAt");
+        }
+        return missing;
+    }
+
+    private void logIncompleteActiveMarketRefresh(String marketId,
+                                                  MarketStateSnapshot snapshot,
+                                                  List<SmartWalletMarketInfoEntity> rows,
+                                                  String questionHint) {
+        if (snapshot == null || !snapshot.isActive()) {
+            return;
+        }
+        List<String> missing = missingMarketInfoFields(snapshot);
+        boolean tokenMissing = rows == null || rowsMissingToken(rows);
+        if (tokenMissing) {
+            missing = new ArrayList<>(missing);
+            missing.add("tokenId");
+        }
+        if (missing.isEmpty()) {
+            return;
+        }
+        log.warn("[ACTIVE_MARKET_METADATA_INCOMPLETE] marketId={} question={} outcome={} active={} refreshResult={} missingFields={}",
+                marketId,
+                firstNonBlank(snapshot.question(), questionHint),
+                firstOutcome(rows),
+                snapshot.isActive(),
+                snapshot.lastMetadataSyncAt() == null ? "NO_REFRESH" : "REFRESHED_INCOMPLETE",
+                missing);
     }
 
     private String resolvePersistedLifecycle(SmartWalletMarketInfoEntity primary,
@@ -268,6 +327,7 @@ public class SmartWalletMarketStateService {
         return MarketStateSnapshot.builder()
                 .marketId(marketId)
                 .question(firstNonBlank(metadata == null ? null : metadata.getQuestion(), firstQuestion(existingRows), questionFallback, marketId))
+                .marketSlug(firstNonBlank(metadata == null ? null : metadata.getSlug(), firstMarketSlug(existingRows)))
                 .marketEndAt(marketEndAt)
                 .sourceCategory(sourceCategory)
                 .normalizedCategory(resolveNormalizedCategory(sourceCategory, firstNonBlank(
@@ -310,7 +370,9 @@ public class SmartWalletMarketStateService {
                     indexSet,
                     metadata == null ? null : metadata.getEndAt()
             );
-            rowsByOutcome.put(normalizeValue(outcome), row);
+            if (row != null) {
+                rowsByOutcome.put(normalizeValue(outcome), row);
+            }
         }
         return new ArrayList<>(rowsByOutcome.values());
     }
@@ -320,9 +382,16 @@ public class SmartWalletMarketStateService {
             return;
         }
         for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
             boolean changed = false;
             if (StringUtils.hasText(snapshot.question()) && !snapshot.question().equals(row.getQuestion())) {
                 row.setQuestion(snapshot.question());
+                changed = true;
+            }
+            if (StringUtils.hasText(snapshot.marketSlug()) && !snapshot.marketSlug().equals(row.getMarketSlug())) {
+                row.setMarketSlug(snapshot.marketSlug());
                 changed = true;
             }
             if (!java.util.Objects.equals(snapshot.marketEndAt(), row.getMarketEndAt())) {
@@ -432,8 +501,38 @@ public class SmartWalletMarketStateService {
             return null;
         }
         for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
             if (StringUtils.hasText(row.getQuestion())) {
                 return row.getQuestion().trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstMarketSlug(List<SmartWalletMarketInfoEntity> rows) {
+        if (rows == null) {
+            return null;
+        }
+        for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (StringUtils.hasText(row.getMarketSlug())) {
+                return row.getMarketSlug().trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstOutcome(List<SmartWalletMarketInfoEntity> rows) {
+        if (rows == null) {
+            return null;
+        }
+        for (SmartWalletMarketInfoEntity row : rows) {
+            if (row != null && StringUtils.hasText(row.getOutcome())) {
+                return row.getOutcome().trim();
             }
         }
         return null;
@@ -457,6 +556,9 @@ public class SmartWalletMarketStateService {
             return null;
         }
         for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
             if (StringUtils.hasText(row.getSourceCategory())) {
                 return row.getSourceCategory().trim();
             }
@@ -469,6 +571,9 @@ public class SmartWalletMarketStateService {
             return null;
         }
         for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
             if (row.getMarketEndAt() != null && row.getMarketEndAt() > 0) {
                 return row.getMarketEndAt();
             }
@@ -487,6 +592,9 @@ public class SmartWalletMarketStateService {
         }
         if (rows != null) {
             for (SmartWalletMarketInfoEntity row : rows) {
+                if (row == null) {
+                    continue;
+                }
                 if (StringUtils.hasText(row.getOutcome())) {
                     normalized.add(row.getOutcome().trim().toUpperCase(Locale.ROOT));
                 }
@@ -580,6 +688,7 @@ public class SmartWalletMarketStateService {
     public record MarketStateSnapshot(
             String marketId,
             String question,
+            String marketSlug,
             Long marketEndAt,
             String sourceCategory,
             String normalizedCategory,

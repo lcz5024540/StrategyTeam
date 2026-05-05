@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
@@ -52,6 +53,8 @@ public class PolymarketWalletDiscoveryService {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final WalletOrderAggregationService walletOrderAggregationService;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
+    private final AtomicBoolean firstDiscoveryRun = new AtomicBoolean(true);
+    private final AtomicBoolean firstLeaderboardRefreshRun = new AtomicBoolean(true);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
     public PolymarketDiscoverySummary analyzeTopWallets() {
@@ -130,7 +133,9 @@ public class PolymarketWalletDiscoveryService {
             }
         }
 
-        SmartWalletSelectionSummary selection = selectionService.refreshQualifiedWallets();
+        SmartWalletSelectionSummary selection = syncTradesAfterRefresh
+                ? selectionService.refreshQualifiedWallets()
+                : currentSelectionSummary();
         if (syncTradesAfterRefresh) {
             try {
                 importedTradeEvents = syncWatchlistTrades();
@@ -143,6 +148,9 @@ public class PolymarketWalletDiscoveryService {
         notes.add("Candidates come from Polymarket official leaderboard and are re-ranked by local wallet score.");
         notes.add("Wallet metrics are calculated from official closed positions and recent trade data.");
         notes.add("Leaderboard candidate pool is unioned across " + resolveLeaderboardQueries().size() + " query slices.");
+        if (!syncTradesAfterRefresh) {
+            notes.add("Incremental leaderboard refresh updates only wallets seen in this cycle; existing HOT wallets are not globally re-qualified here.");
+        }
         PolymarketDiscoverySummary summary = PolymarketDiscoverySummary.builder()
                 .candidateWallets(candidates.size())
                 .analyzedWallets(analyzedWallets)
@@ -156,6 +164,21 @@ public class PolymarketWalletDiscoveryService {
                 LOG_PREFIX, summary.getCandidateWallets(), summary.getAnalyzedWallets(), summary.getImportedProfiles(),
                 summary.getImportedTradeEvents(), summary.getQualifiedCount(), summary.getWatchlistCount());
         return summary;
+    }
+
+    private SmartWalletSelectionSummary currentSelectionSummary() {
+        int qualifiedCount = safeSize(profileStoreService.listQualified());
+        int executableCount = safeSize(profileStoreService.listExecutableWatchlist());
+        return SmartWalletSelectionSummary.builder()
+                .qualifiedCount(qualifiedCount)
+                .executableCount(executableCount)
+                .rejectedCount(Math.max(0, safeSize(profileStoreService.listAll()) - qualifiedCount))
+                .notes(List.of("Incremental refresh preserved existing wallet admission state."))
+                .build();
+    }
+
+    private int safeSize(List<?> values) {
+        return values == null ? 0 : values.size();
     }
 
     public boolean analyzeWalletAndAdmitWatchlist(String walletAddress) {
@@ -301,6 +324,9 @@ public class PolymarketWalletDiscoveryService {
             log.debug("{} action=定时发现Polymarket聪明钱包 result=跳过 reason=发现开关未开启", LOG_PREFIX);
             return;
         }
+        if (shouldSkipInitialAddressPull(firstDiscoveryRun, "定时发现Polymarket聪明钱包")) {
+            return;
+        }
         try {
             log.info("{} action=定时发现Polymarket聪明钱包 result=开始", LOG_PREFIX);
             PolymarketDiscoverySummary summary = analyzeTopWallets();
@@ -315,6 +341,9 @@ public class PolymarketWalletDiscoveryService {
     public void scheduledRefreshLeaderboardWatchlist() {
         if (!monitorService.isDiscoveryEnabled()) {
             log.debug("{} action=定时刷新Polymarket观察名单 result=跳过 reason=发现开关未开启", LOG_PREFIX);
+            return;
+        }
+        if (shouldSkipInitialAddressPull(firstLeaderboardRefreshRun, "定时刷新Polymarket观察名单")) {
             return;
         }
         try {
@@ -357,6 +386,19 @@ public class PolymarketWalletDiscoveryService {
         } catch (Exception e) {
             log.warn("{} action=定时刷新Polymarket WARM钱包指标 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
         }
+    }
+
+    private boolean shouldSkipInitialAddressPull(AtomicBoolean firstRun, String action) {
+        if (!firstRun.compareAndSet(true, false)) {
+            return false;
+        }
+        long existingProfiles = profileStoreService.countPolymarketProfiles();
+        if (existingProfiles <= 0) {
+            return false;
+        }
+        log.info("{} action={} result=跳过 reason=启动首轮且数据库已有地址 existingProfiles={} nextRun=等待fixedDelay",
+                LOG_PREFIX, action, existingProfiles);
+        return true;
     }
 
     private List<SmartWalletProfileEntity> selectHotWatchlistTradeBatch() {
@@ -757,9 +799,26 @@ public class PolymarketWalletDiscoveryService {
         request.setOutcome(trade.getOutcome());
         request.setSide(trade.getSide());
         request.setPrice(safe(trade.getPrice()));
-        request.setSizeUsdc(safe(trade.getSize()));
+        request.setSizeShares(safe(trade.getSizeShares()));
+        request.setSizeUsdc(resolveTradeNotionalUsdc(trade));
         request.setOpenedAt(trade.getTradedAt() == null ? new Date() : new Date(trade.getTradedAt()));
         return request;
+    }
+
+    private BigDecimal resolveTradeNotionalUsdc(PolymarketApiClient.UserTrade trade) {
+        if (trade == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal explicitNotional = safe(trade.getSizeUsdc());
+        if (explicitNotional.compareTo(BigDecimal.ZERO) > 0) {
+            return explicitNotional;
+        }
+        BigDecimal price = safe(trade.getPrice());
+        BigDecimal shares = safe(trade.getSizeShares());
+        if (price.compareTo(BigDecimal.ZERO) > 0 && shares.compareTo(BigDecimal.ZERO) > 0) {
+            return shares.multiply(price).setScale(8, RoundingMode.HALF_UP);
+        }
+        return safe(trade.getSize());
     }
 
     private boolean isQualified(PolymarketWalletMetricsRequest metrics) {

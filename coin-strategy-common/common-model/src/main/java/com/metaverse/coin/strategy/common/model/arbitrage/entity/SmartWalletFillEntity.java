@@ -52,4 +52,21 @@ public class SmartWalletFillEntity {
     public Boolean getClosed() { return marketInfo == null ? null : marketInfo.getClosed(); }
     public Boolean getAcceptingOrders() { return marketInfo == null ? null : marketInfo.getAcceptingOrders(); }
     public String getResolvedOutcome() { return marketInfo == null ? null : marketInfo.getResolvedOutcome(); }
+
+    private SmartWalletMarketInfoEntity ensureMarketInfo() {
+        if (marketInfo == null) marketInfo = new SmartWalletMarketInfoEntity();
+        return marketInfo;
+    }
+    public SmartWalletFillEntity setMarketId(String v)           { ensureMarketInfo().setMarketId(v); return this; }
+    public SmartWalletFillEntity setQuestion(String v)           { ensureMarketInfo().setQuestion(v); return this; }
+    public SmartWalletFillEntity setOutcome(String v)            { ensureMarketInfo().setOutcome(v); return this; }
+    public SmartWalletFillEntity setTokenId(String v)            { ensureMarketInfo().setTokenId(v); return this; }
+    public SmartWalletFillEntity setIndexSet(Integer v)          { ensureMarketInfo().setIndexSet(v); return this; }
+    public SmartWalletFillEntity setMarketEndAt(Long v)          { ensureMarketInfo().setMarketEndAt(v); return this; }
+    public SmartWalletFillEntity setSourceCategory(String v)     { ensureMarketInfo().setSourceCategory(v); return this; }
+    public SmartWalletFillEntity setNormalizedCategory(String v) { ensureMarketInfo().setNormalizedCategory(v); return this; }
+    public SmartWalletFillEntity setMarketLifecycle(String v)    { ensureMarketInfo().setMarketLifecycle(v); return this; }
+    public SmartWalletFillEntity setClosed(Boolean v)            { ensureMarketInfo().setClosed(v); return this; }
+    public SmartWalletFillEntity setAcceptingOrders(Boolean v)   { ensureMarketInfo().setAcceptingOrders(v); return this; }
+    public SmartWalletFillEntity setResolvedOutcome(String v)    { ensureMarketInfo().setResolvedOutcome(v); return this; }
 }

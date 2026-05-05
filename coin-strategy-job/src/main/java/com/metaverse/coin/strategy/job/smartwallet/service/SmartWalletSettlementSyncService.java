@@ -74,7 +74,7 @@ public class SmartWalletSettlementSyncService {
                     `skipped_future_markets` INT NOT NULL DEFAULT 0,
                     `failed_markets` INT NOT NULL DEFAULT 0,
                     `notes` TEXT DEFAULT NULL,
-                    `error_message` VARCHAR(512) DEFAULT NULL,
+                    `error_message` VARCHAR(2048) DEFAULT NULL,
                     `started_at` TIMESTAMP NOT NULL,
                     `finished_at` TIMESTAMP NULL,
                     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -91,7 +91,7 @@ public class SmartWalletSettlementSyncService {
                     `retry_type` VARCHAR(32) DEFAULT NULL,
                     `latest_run_id` BIGINT UNSIGNED DEFAULT NULL,
                     `failure_count` INT NOT NULL DEFAULT 1,
-                    `last_error_message` VARCHAR(512) DEFAULT NULL,
+                    `last_error_message` TEXT DEFAULT NULL,
                     `last_failed_at` TIMESTAMP NOT NULL,
                     `next_retry_at` TIMESTAMP NOT NULL,
                     `status` VARCHAR(16) NOT NULL DEFAULT 'PENDING',
@@ -166,9 +166,20 @@ public class SmartWalletSettlementSyncService {
             settlementRetryMapper.updateById(retry);
         }
 
+        boolean effectiveRefreshCache = refreshCache || dueRetries.stream().anyMatch(this::requiresExternalMetadataRefresh);
         List<String> marketIds = dueRetries.stream().map(SmartWalletSettlementRetryEntity::getMarketId).toList();
-        SettlementSyncSummary summary = runRetryLocked(marketIds, refreshCache, batchLimit);
+        SettlementSyncSummary summary = runRetryLocked(marketIds, effectiveRefreshCache, batchLimit);
         return summary;
+    }
+
+    private boolean requiresExternalMetadataRefresh(SmartWalletSettlementRetryEntity retry) {
+        if (retry == null || !StringUtils.hasText(retry.getRetryType())) {
+            return false;
+        }
+        String retryType = retry.getRetryType().trim().toUpperCase(java.util.Locale.ROOT);
+        return "DATA_SOURCE_STALE".equals(retryType)
+                || "RESOLVED_OUTCOME_UNMAPPED".equals(retryType)
+                || "RESOLVED_BUT_CLOSED_FLAG_STALE".equals(retryType);
     }
 
     public SettlementSyncSummary confirmLocalMarkets(List<String> marketIds, boolean refreshCache) {
