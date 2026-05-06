@@ -16,13 +16,20 @@ public class BinanceWebSocketProperties {
 
     private boolean enabled = true;
     private boolean publicMarketEnabled = true;
-    private boolean userDataEnabled = true;
     private long cacheTtlMs = 5000L;
     private boolean httpFallbackEnabled = true;
     private long reconnectDelayMs = 5000L;
-    private long listenKeyKeepaliveMs = 1_800_000L;
-    private String spotStreamUrl = "wss://stream.binance.com:9443";
+    private String spotStreamUrl = "wss://stream.binance.com";
     private String futuresStreamUrl = "wss://fstream.binance.com";
+    private String proxyHost;
+    private int proxyPort;
+    private String proxyType = "HTTP";
+    private String proxyUsername;
+    private String proxyPassword;
+    private long connectTimeoutMs = 15_000L;
+    private long readTimeoutMs = 0L;
+    private long writeTimeoutMs = 15_000L;
+    private long pingIntervalMs = 0L;
     private Set<String> symbols = new LinkedHashSet<>();
 
     public BinanceWebSocketProperties() {
@@ -32,13 +39,25 @@ public class BinanceWebSocketProperties {
     public BinanceWebSocketProperties(Environment environment) {
         enabled = getBoolean(environment, "binance.websocket.enabled", enabled);
         publicMarketEnabled = getBoolean(environment, "binance.websocket.public-market-enabled", publicMarketEnabled);
-        userDataEnabled = getBoolean(environment, "binance.websocket.user-data-enabled", userDataEnabled);
         cacheTtlMs = getLong(environment, "binance.websocket.cache-ttl-ms", cacheTtlMs);
         httpFallbackEnabled = getBoolean(environment, "binance.websocket.http-fallback-enabled", httpFallbackEnabled);
         reconnectDelayMs = getLong(environment, "binance.websocket.reconnect-delay-ms", reconnectDelayMs);
-        listenKeyKeepaliveMs = getLong(environment, "binance.websocket.listen-key-keepalive-ms", listenKeyKeepaliveMs);
         spotStreamUrl = environment.getProperty("binance.websocket.spot-stream-url", spotStreamUrl);
         futuresStreamUrl = environment.getProperty("binance.websocket.futures-stream-url", futuresStreamUrl);
+        proxyHost = environment.getProperty("binance.websocket.proxy-host",
+                environment.getProperty("binance.api.proxy-host", ""));
+        proxyPort = getInteger(environment, "binance.websocket.proxy-port",
+                getInteger(environment, "binance.api.proxy-port", 0));
+        proxyType = environment.getProperty("binance.websocket.proxy-type",
+                environment.getProperty("binance.api.proxy-type", proxyType));
+        proxyUsername = environment.getProperty("binance.websocket.proxy-username",
+                environment.getProperty("binance.api.proxy-username", ""));
+        proxyPassword = environment.getProperty("binance.websocket.proxy-password",
+                environment.getProperty("binance.api.proxy-password", ""));
+        connectTimeoutMs = getLong(environment, "binance.websocket.connect-timeout-ms", connectTimeoutMs);
+        readTimeoutMs = getLong(environment, "binance.websocket.read-timeout-ms", readTimeoutMs);
+        writeTimeoutMs = getLong(environment, "binance.websocket.write-timeout-ms", writeTimeoutMs);
+        pingIntervalMs = getLong(environment, "binance.websocket.ping-interval-ms", pingIntervalMs);
         symbols = parseSymbols(environment.getProperty("binance.websocket.symbols", ""));
     }
 
@@ -61,5 +80,10 @@ public class BinanceWebSocketProperties {
     private boolean getBoolean(Environment environment, String key, boolean defaultValue) {
         String value = environment.getProperty(key);
         return value == null ? defaultValue : Boolean.parseBoolean(value);
+    }
+
+    private int getInteger(Environment environment, String key, int defaultValue) {
+        String value = environment.getProperty(key);
+        return value == null || value.isBlank() ? defaultValue : Integer.parseInt(value);
     }
 }

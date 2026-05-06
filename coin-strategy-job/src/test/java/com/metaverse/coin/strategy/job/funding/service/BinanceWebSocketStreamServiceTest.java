@@ -14,7 +14,9 @@ import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class BinanceWebSocketStreamServiceTest {
 
@@ -63,11 +65,44 @@ class BinanceWebSocketStreamServiceTest {
         assertEquals(new BigDecimal("50100"), futuresOrder.getAvgPrice());
     }
 
+    @Test
+    void parsesSpotWebSocketApiUserDataEventWrapper() {
+        BinanceWebSocketStreamService service = service();
+
+        service.handleUserMessage("""
+                {"subscriptionId":0,"event":{"e":"executionReport","E":1000,"s":"BTCUSDT","c":"spot-client","S":"BUY","o":"MARKET","f":"GTC","q":"0.01","p":"0","X":"FILLED","i":101,"z":"0.01","Z":"500","O":900}}
+                """, false);
+
+        BinanceOrder spotOrder = service.getCachedSpotOrder("BTCUSDT", 101L, "spot-client");
+
+        assertNotNull(spotOrder);
+        assertEquals("FILLED", spotOrder.getStatus());
+    }
+
+    @Test
+    void buildsWebSocketApiUserDataRequests() throws Exception {
+        BinanceWebSocketStreamService service = service();
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        String spotSubscribe = service.buildSpotUserDataSubscribeRequest();
+        String futuresStart = service.buildFuturesUserDataApiRequest("userDataStream.start");
+
+        assertEquals("userDataStream.subscribe.signature", objectMapper.readTree(spotSubscribe).path("method").asText());
+        assertEquals("test-api-key", objectMapper.readTree(spotSubscribe).path("params").path("apiKey").asText());
+        assertTrue(objectMapper.readTree(spotSubscribe).path("params").hasNonNull("timestamp"));
+        assertTrue(objectMapper.readTree(spotSubscribe).path("params").hasNonNull("signature"));
+        assertEquals("userDataStream.start", objectMapper.readTree(futuresStart).path("method").asText());
+        assertEquals("test-api-key", objectMapper.readTree(futuresStart).path("params").path("apiKey").asText());
+    }
+
     private BinanceWebSocketStreamService service() {
+        BinanceApiService binanceApiService = mock(BinanceApiService.class);
+        when(binanceApiService.getApiKey()).thenReturn("test-api-key");
+        when(binanceApiService.signHmacSha256Hex(org.mockito.ArgumentMatchers.anyString())).thenReturn("test-signature");
         return new BinanceWebSocketStreamService(
                 new BinanceWebSocketProperties(),
                 new SingleExchangeSpotFuturesProperties(),
-                mock(BinanceApiService.class),
+                binanceApiService,
                 new ObjectMapper()
         );
     }

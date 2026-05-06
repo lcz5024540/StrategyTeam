@@ -16,6 +16,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.Credentials;
+import okhttp3.Authenticator;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.WebSocket;
@@ -29,8 +31,13 @@ import org.springframework.util.StringUtils;
 import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,11 +54,15 @@ import java.util.concurrent.atomic.AtomicLong;
 @ConditionalOnBean(BinanceApiService.class)
 public class BinanceWebSocketStreamService implements DisposableBean {
 
+    private static final String SPOT_WEBSOCKET_API_URL = "wss://ws-api.binance.com:443/ws-api/v3";
+    private static final String FUTURES_WEBSOCKET_API_URL = "wss://ws-fapi.binance.com/ws-fapi/v1";
+    private static final String FUTURES_USER_DATA_PING_DELAY_MS = "1800000";
+
     private final BinanceWebSocketProperties properties;
     private final SingleExchangeSpotFuturesProperties spotFuturesProperties;
     private final BinanceApiService binanceApiService;
     private final ObjectMapper objectMapper;
-    private final OkHttpClient okHttpClient = new OkHttpClient();
+    private volatile OkHttpClient okHttpClient;
     private final ScheduledExecutorService reconnectExecutor = Executors.newSingleThreadScheduledExecutor();
 
     private final Map<String, Snapshot<BinancePriceTicker>> spotPrices = new ConcurrentHashMap<>();
@@ -66,13 +77,15 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
     private final Map<String, WebSocket> spotMarketSockets = new ConcurrentHashMap<>();
     private final Map<String, WebSocket> futuresMarketSockets = new ConcurrentHashMap<>();
-    private volatile WebSocket spotUserSocket;
+    private volatile WebSocket spotUserApiSocket;
+    private volatile WebSocket futuresUserApiSocket;
     private volatile WebSocket futuresUserSocket;
-    private volatile String spotListenKey;
+    private volatile Long spotUserSubscriptionId;
     private volatile String futuresListenKey;
 
     private final AtomicLong publicMessagesReceived = new AtomicLong();
     private final AtomicLong userMessagesReceived = new AtomicLong();
+    private final AtomicLong webSocketApiRequestId = new AtomicLong();
     private volatile Date lastPublicEventAt;
     private volatile Date lastUserEventAt;
 
@@ -81,14 +94,13 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         if (!properties.isEnabled()) {
             return;
         }
+        okHttpClient = buildOkHttpClient();
         Set<String> configuredSymbols = properties.getSymbols();
         configuredSymbols.forEach(this::subscribeSymbol);
         if (configuredSymbols.isEmpty() && StringUtils.hasText(spotFuturesProperties.getSymbol())) {
             subscribeSymbol(spotFuturesProperties.getSymbol());
         }
-        if (properties.isUserDataEnabled()) {
-            connectUserStreams();
-        }
+        connectUserStreams();
     }
 
     public void subscribeSymbol(String symbol) {
@@ -229,6 +241,9 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     public void handleUserMessage(String payload, boolean futures) {
         try {
             JsonNode root = objectMapper.readTree(payload);
+            if (root.has("event")) {
+                root = root.get("event");
+            }
             String eventType = text(root, "e");
             if (futures && "ORDER_TRADE_UPDATE".equals(eventType)) {
                 ingestFuturesOrder(root.get("o"));
@@ -244,20 +259,17 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         }
     }
 
-    @Scheduled(fixedDelayString = "${binance.websocket.listen-key-keepalive-ms:1800000}")
+    @Scheduled(fixedDelayString = FUTURES_USER_DATA_PING_DELAY_MS)
     public void keepAliveUserStreams() {
-        if (!properties.isEnabled() || !properties.isUserDataEnabled()) {
+        if (!properties.isEnabled()) {
             return;
         }
         try {
-            if (StringUtils.hasText(spotListenKey)) {
-                binanceApiService.keepAliveSpotUserDataStream(spotListenKey);
-            }
-            if (StringUtils.hasText(futuresListenKey)) {
-                binanceApiService.getFuturesService().keepAliveUserDataStream(futuresListenKey);
+            if (StringUtils.hasText(futuresListenKey) && futuresUserApiSocket != null) {
+                futuresUserApiSocket.send(buildFuturesUserDataApiRequest("userDataStream.ping"));
             }
         } catch (Exception e) {
-            log.warn("Failed to keep Binance listenKey alive: {}", e.getMessage());
+            log.warn("Failed to ping Binance Futures user data stream through WebSocket API: {}", e.getMessage());
         }
     }
 
@@ -265,7 +277,6 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         return BinanceWebSocketStats.builder()
                 .enabled(properties.isEnabled())
                 .publicMarketEnabled(properties.isPublicMarketEnabled())
-                .userDataEnabled(properties.isUserDataEnabled())
                 .subscribedSymbols(spotMarketSockets.size())
                 .cachedPremiumIndices(premiumIndices.size())
                 .cachedSpotDepth(spotDepth.size())
@@ -294,31 +305,160 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     }
 
     private void connectUserStreams() {
+        connectSpotUserDataApi();
+        connectFuturesUserDataApi();
+    }
+
+    private void connectSpotUserDataApi() {
         try {
-            String spotResponse = binanceApiService.startSpotUserDataStream();
-            spotListenKey = objectMapper.readTree(spotResponse).path("listenKey").asText(null);
-            if (StringUtils.hasText(spotListenKey)) {
-                spotUserSocket = newWebSocket(properties.getSpotStreamUrl() + "/ws/" + spotListenKey,
-                        new UserListener(false, this::connectUserStreams));
-            }
+            spotUserApiSocket = newWebSocket(SPOT_WEBSOCKET_API_URL, new SpotUserApiListener());
         } catch (Exception e) {
-            log.warn("Failed to connect Binance Spot user data stream: {}", e.getMessage());
+            log.warn("Failed to connect Binance Spot WebSocket API user data stream: {}", e.getMessage());
         }
+    }
+
+    private void connectFuturesUserDataApi() {
         try {
-            String futuresResponse = binanceApiService.getFuturesService().startUserDataStream();
-            futuresListenKey = objectMapper.readTree(futuresResponse).path("listenKey").asText(null);
-            if (StringUtils.hasText(futuresListenKey)) {
-                futuresUserSocket = newWebSocket(properties.getFuturesStreamUrl() + "/ws/" + futuresListenKey,
-                        new UserListener(true, this::connectUserStreams));
-            }
+            futuresUserApiSocket = newWebSocket(FUTURES_WEBSOCKET_API_URL, new FuturesUserApiListener());
         } catch (Exception e) {
-            log.warn("Failed to connect Binance Futures user data stream: {}", e.getMessage());
+            log.warn("Failed to connect Binance Futures WebSocket API user data stream: {}", e.getMessage());
+        }
+    }
+
+    private void connectFuturesPrivateUserStream() {
+        if (!StringUtils.hasText(futuresListenKey)) {
+            return;
+        }
+        futuresUserSocket = newWebSocket(properties.getFuturesStreamUrl() + "/private/ws/" + futuresListenKey,
+                new UserListener(true, this::connectFuturesUserDataApi));
+    }
+
+    String buildSpotUserDataSubscribeRequest() {
+        String apiKey = binanceApiService.getApiKey();
+        if (!StringUtils.hasText(apiKey)) {
+            throw new IllegalStateException("Binance API key and secret key are required for Spot WebSocket API user data stream");
+        }
+        long timestamp = System.currentTimeMillis();
+        String payload = "apiKey=" + apiKey + "&timestamp=" + timestamp;
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("apiKey", apiKey);
+        params.put("timestamp", timestamp);
+        params.put("signature", binanceApiService.signHmacSha256Hex(payload));
+        return buildWebSocketApiRequest(nextWebSocketApiRequestId("sus"),
+                "userDataStream.subscribe.signature", params);
+    }
+
+    String buildSpotUserDataUnsubscribeRequest() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (spotUserSubscriptionId != null) {
+            params.put("subscriptionId", spotUserSubscriptionId);
+        }
+        return buildWebSocketApiRequest(nextWebSocketApiRequestId("suu"),
+                "userDataStream.unsubscribe", params);
+    }
+
+    String buildFuturesUserDataApiRequest(String method) {
+        String apiKey = binanceApiService.getApiKey();
+        if (!StringUtils.hasText(apiKey)) {
+            throw new IllegalStateException("Binance API key is required for Futures WebSocket API user data stream");
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("apiKey", apiKey);
+        return buildWebSocketApiRequest(nextWebSocketApiRequestId("fus"),
+                method, params);
+    }
+
+    private String nextWebSocketApiRequestId(String prefix) {
+        return prefix + Long.toString(webSocketApiRequestId.incrementAndGet(), 36);
+    }
+
+    private String buildWebSocketApiRequest(String id, String method, Map<String, Object> params) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("id", id);
+        request.put("method", method);
+        request.put("params", params);
+        try {
+            return objectMapper.writeValueAsString(request);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to build Binance WebSocket API request", e);
         }
     }
 
     private WebSocket newWebSocket(String url, WebSocketListener listener) {
         Request request = new Request.Builder().url(url).build();
-        return okHttpClient.newWebSocket(request, listener);
+        return getOkHttpClient().newWebSocket(request, listener);
+    }
+
+    private OkHttpClient getOkHttpClient() {
+        if (okHttpClient == null) {
+            okHttpClient = buildOkHttpClient();
+        }
+        return okHttpClient;
+    }
+
+    private OkHttpClient buildOkHttpClient() {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .connectTimeout(properties.getConnectTimeoutMs(), TimeUnit.MILLISECONDS)
+                .readTimeout(properties.getReadTimeoutMs(), TimeUnit.MILLISECONDS)
+                .writeTimeout(properties.getWriteTimeoutMs(), TimeUnit.MILLISECONDS)
+                // Binance sends server ping frames; OkHttp automatically replies with pong.
+                // Keep client-initiated ping disabled by default to avoid proxy-induced false disconnects.
+                .pingInterval(properties.getPingIntervalMs(), TimeUnit.MILLISECONDS)
+                .retryOnConnectionFailure(true);
+        ProxySettings proxySettings = normalizeProxySettings();
+        if (proxySettings != null) {
+            builder.proxy(new Proxy(proxySettings.type(), new InetSocketAddress(proxySettings.host(), proxySettings.port())));
+            Authenticator authenticator = buildProxyAuthenticator();
+            if (authenticator != null) {
+                builder.proxyAuthenticator(authenticator);
+            }
+            log.info("Configured Binance websocket client to use {} proxy {}:{}",
+                    proxySettings.type(), proxySettings.host(), proxySettings.port());
+        }
+        return builder.build();
+    }
+
+    private ProxySettings normalizeProxySettings() {
+        String proxyHost = properties.getProxyHost();
+        if (!StringUtils.hasText(proxyHost)) {
+            return null;
+        }
+        String trimmedProxyHost = proxyHost.trim();
+        if (!trimmedProxyHost.contains("://")) {
+            if (properties.getProxyPort() <= 0) {
+                throw new IllegalArgumentException("Binance websocket proxy-port must be greater than 0 when proxy-host does not include a port");
+            }
+            return new ProxySettings(trimmedProxyHost, properties.getProxyPort(), resolveProxyType(properties.getProxyType()));
+        }
+        try {
+            URI proxyUri = new URI(trimmedProxyHost);
+            String host = proxyUri.getHost();
+            int port = proxyUri.getPort() > 0 ? proxyUri.getPort() : properties.getProxyPort();
+            if (!StringUtils.hasText(host) || port <= 0) {
+                throw new IllegalArgumentException("Invalid Binance websocket proxy: " + proxyHost);
+            }
+            String scheme = StringUtils.hasText(proxyUri.getScheme()) ? proxyUri.getScheme() : properties.getProxyType();
+            return new ProxySettings(host, port, resolveProxyType(scheme));
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("Invalid Binance websocket proxy: " + proxyHost, e);
+        }
+    }
+
+    private Proxy.Type resolveProxyType(String proxyType) {
+        if ("SOCKS".equalsIgnoreCase(proxyType) || "SOCKS5".equalsIgnoreCase(proxyType)) {
+            return Proxy.Type.SOCKS;
+        }
+        return Proxy.Type.HTTP;
+    }
+
+    private Authenticator buildProxyAuthenticator() {
+        if (!StringUtils.hasText(properties.getProxyUsername())) {
+            return null;
+        }
+        String password = properties.getProxyPassword() == null ? "" : properties.getProxyPassword();
+        return (route, response) -> response.request().newBuilder()
+                .header("Proxy-Authorization", Credentials.basic(properties.getProxyUsername(), password))
+                .build();
     }
 
     private void reconnectSpot(String symbol) {
@@ -551,8 +691,21 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     public void destroy() {
         spotMarketSockets.values().forEach(socket -> socket.close(1000, "shutdown"));
         futuresMarketSockets.values().forEach(socket -> socket.close(1000, "shutdown"));
-        if (spotUserSocket != null) {
-            spotUserSocket.close(1000, "shutdown");
+        if (spotUserApiSocket != null) {
+            try {
+                spotUserApiSocket.send(buildSpotUserDataUnsubscribeRequest());
+            } catch (Exception e) {
+                log.debug("Failed to unsubscribe Binance Spot WebSocket API user data stream: {}", e.getMessage());
+            }
+            spotUserApiSocket.close(1000, "shutdown");
+        }
+        if (futuresUserApiSocket != null) {
+            try {
+                futuresUserApiSocket.send(buildFuturesUserDataApiRequest("userDataStream.stop"));
+            } catch (Exception e) {
+                log.debug("Failed to stop Binance Futures user data stream through WebSocket API: {}", e.getMessage());
+            }
+            futuresUserApiSocket.close(1000, "shutdown");
         }
         if (futuresUserSocket != null) {
             futuresUserSocket.close(1000, "shutdown");
@@ -576,7 +729,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
         @Override
         public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
-            log.warn("Binance public WS disconnected: {}", t.getMessage());
+            log.warn("Binance public WS disconnected: {}, response={}", t.getMessage(), describeResponse(response));
             reconnect.run();
         }
     }
@@ -597,9 +750,103 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
         @Override
         public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
-            log.warn("Binance user WS disconnected: {}", t.getMessage());
+            log.warn("Binance user WS disconnected: {}, response={}", t.getMessage(), describeResponse(response));
+            if (futures) {
+                futuresUserSocket = null;
+            }
             reconnectExecutor.schedule(reconnect, properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
         }
+    }
+
+    private class SpotUserApiListener extends WebSocketListener {
+        @Override
+        public void onOpen(WebSocket webSocket, okhttp3.Response response) {
+            webSocket.send(buildSpotUserDataSubscribeRequest());
+        }
+
+        @Override
+        public void onMessage(WebSocket webSocket, String text) {
+            try {
+                JsonNode root = objectMapper.readTree(text);
+                if (root.has("event")) {
+                    handleUserMessage(text, false);
+                    return;
+                }
+                int status = root.path("status").asInt(0);
+                if (status == 200) {
+                    JsonNode subscriptionId = root.path("result").path("subscriptionId");
+                    if (!subscriptionId.isMissingNode() && !subscriptionId.isNull()) {
+                        spotUserSubscriptionId = subscriptionId.asLong();
+                        log.info("Subscribed Binance Spot WebSocket API user data stream: subscriptionId={}", spotUserSubscriptionId);
+                    }
+                    return;
+                }
+                if (root.has("error")) {
+                    log.warn("Binance Spot WebSocket API user data stream request failed: {}", root.get("error"));
+                }
+            } catch (Exception e) {
+                log.debug("Failed to handle Binance Spot WebSocket API message: {}", e.getMessage());
+            }
+        }
+
+        @Override
+        public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
+            log.warn("Binance Spot WebSocket API user data stream disconnected: {}, response={}",
+                    t.getMessage(), describeResponse(response));
+            spotUserApiSocket = null;
+            reconnectExecutor.schedule(BinanceWebSocketStreamService.this::connectSpotUserDataApi,
+                    properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private class FuturesUserApiListener extends WebSocketListener {
+        @Override
+        public void onOpen(WebSocket webSocket, okhttp3.Response response) {
+            webSocket.send(buildFuturesUserDataApiRequest("userDataStream.start"));
+        }
+
+        @Override
+        public void onMessage(WebSocket webSocket, String text) {
+            try {
+                JsonNode root = objectMapper.readTree(text);
+                int status = root.path("status").asInt(0);
+                if (status == 200) {
+                    String listenKey = root.path("result").path("listenKey").asText(null);
+                    if (StringUtils.hasText(listenKey)) {
+                        boolean firstStart = !listenKey.equals(futuresListenKey);
+                        futuresListenKey = listenKey;
+                        if (firstStart || futuresUserSocket == null) {
+                            connectFuturesPrivateUserStream();
+                        }
+                    }
+                    return;
+                }
+                if (root.has("error")) {
+                    log.warn("Binance Futures WebSocket API user data stream request failed: {}", root.get("error"));
+                }
+            } catch (Exception e) {
+                log.debug("Failed to handle Binance Futures WebSocket API message: {}", e.getMessage());
+            }
+        }
+
+        @Override
+        public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
+            log.warn("Binance Futures WebSocket API user data stream disconnected: {}, response={}",
+                    t.getMessage(), describeResponse(response));
+            futuresUserApiSocket = null;
+            reconnectExecutor.schedule(BinanceWebSocketStreamService.this::connectFuturesUserDataApi,
+                    properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private String describeResponse(okhttp3.Response response) {
+        if (response == null) {
+            return "none";
+        }
+        return "code=" + response.code() + ", message=" + response.message();
+    }
+
+    private record ProxySettings(String host, int port, Proxy.Type type) {
     }
 
     @Data
@@ -613,7 +860,6 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     public static class BinanceWebSocketStats {
         private boolean enabled;
         private boolean publicMarketEnabled;
-        private boolean userDataEnabled;
         private int subscribedSymbols;
         private int cachedPremiumIndices;
         private int cachedSpotDepth;

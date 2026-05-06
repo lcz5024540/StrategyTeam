@@ -479,14 +479,19 @@ USDS-M Futures:
 
 ```text
 Spot user data stream:
+  wss://ws-api.binance.com:443/ws-api/v3
+  userDataStream.subscribe.signature
   executionReport
 
 USDS-M Futures user data stream:
+  wss://ws-fapi.binance.com/ws-fapi/v1
+  userDataStream.start / userDataStream.ping / userDataStream.stop
+  wss://fstream.binance.com/private/ws/<listenKey>
   ORDER_TRADE_UPDATE
   ACCOUNT_UPDATE
 ```
 
-这些流用于维护 spot/futures price ticker、futures premium index、depth20 盘口、spot/futures order cache、futures account cache 和 position risk cache。listenKey 的创建、续期、关闭仍需要 HTTP，这是 Binance user data stream 的维护接口，不属于交易写接口。
+这些流用于维护 spot/futures price ticker、futures premium index、depth20 盘口、spot/futures order cache、futures account cache 和 position risk cache。Spot 不再使用 legacy listenKey，也不会再调用 `POST /api/v3/userDataStream`。USDS-M Futures 仍有 listenKey 概念，但创建、续期、关闭已经改为 WebSocket API `userDataStream.start/ping/stop`，不再调用 HTTP `/fapi/v1/listenKey`。
 
 ### 9.2 HTTP 仍保留的场景
 
@@ -514,8 +519,10 @@ binance:
     http-fallback-enabled: true
     reconnect-delay-ms: 5000
     listen-key-keepalive-ms: 1800000
-    spot-stream-url: "wss://stream.binance.com:9443"
+    spot-stream-url: "wss://stream.binance.com"
     futures-stream-url: "wss://fstream.binance.com"
+    spot-websocket-api-url: "wss://ws-api.binance.com:443/ws-api/v3"
+    futures-websocket-api-url: "wss://ws-fapi.binance.com/ws-fapi/v1"
     symbols: ""
 ```
 
@@ -533,6 +540,6 @@ binance:
 ### 9.5 排障建议
 
 * 如果日志持续出现 `websocket cache miss/stale`，优先检查 websocket endpoint、代理和 `cache-ttl-ms` 是否过小。
-* 如果订单状态没有及时刷新，检查 spot/futures listenKey 是否创建成功，以及 `user-data-enabled` 是否为 true。
+* 如果订单状态没有及时刷新，检查 Spot/Futures WebSocket API 连接是否订阅成功，以及 `user-data-enabled` 是否为 true；Spot legacy listenKey 已不可用，Futures listenKey 通过 WebSocket API 维护。
 * 如果启动后第一次查询仍打 HTTP，这是预期行为；第一次 HTTP 回补会同步 warm cache。
 * 如果希望严格禁止查询 HTTP fallback，可将 `http-fallback-enabled=false`。此时缓存缺失会直接抛出错误，不建议 live 交易初期使用。
