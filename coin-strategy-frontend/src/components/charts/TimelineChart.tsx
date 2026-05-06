@@ -171,5 +171,5 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
     ],
   }
 
-  return <ReactECharts option={option} style={{ height: 360, width: '100%' }} />
+  return <ReactECharts option={option} className="timeline-chart" style={{ width: '100%' }} />
 }

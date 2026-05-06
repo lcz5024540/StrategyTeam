@@ -597,10 +597,14 @@ public class StrategyProductQueryService {
         }
 
         BigDecimal cumulative = BigDecimal.ZERO;
+        BigDecimal cumulativeLoss = BigDecimal.ZERO;
         List<StrategyTimelinePointView> timeline = new ArrayList<>();
         for (Map.Entry<LocalDate, BigDecimal> entry : dailyNetPnl.entrySet()) {
-            cumulative = cumulative.add(safe(entry.getValue()));
-            timeline.add(new StrategyTimelinePointView(entry.getKey().toString(), safe(entry.getValue()), cumulative));
+            BigDecimal netPnl = safe(entry.getValue());
+            BigDecimal lossPnl = netPnl.compareTo(BigDecimal.ZERO) < 0 ? netPnl : BigDecimal.ZERO;
+            cumulative = cumulative.add(netPnl);
+            cumulativeLoss = cumulativeLoss.add(lossPnl);
+            timeline.add(new StrategyTimelinePointView(entry.getKey().toString(), netPnl, cumulative, lossPnl, cumulativeLoss));
         }
         return timeline;
     }
@@ -865,7 +869,7 @@ public class StrategyProductQueryService {
 
     private StrategyTimelinePointView toTimeline(SmartWalletPnlTimelinePoint row) {
         return new StrategyTimelinePointView(row.getBucketAt() == null ? null : row.getBucketAt().toString(),
-                row.getNetPnlUsdc(), row.getCumulativeNetPnlUsdc());
+                row.getNetPnlUsdc(), row.getCumulativeNetPnlUsdc(), row.getLossPnlUsdc(), row.getCumulativeLossPnlUsdc());
     }
 
     private StrategyConflictRowView toConflict(SmartWalletConflictMarketView row) {

@@ -183,6 +183,8 @@ export interface StrategyTimelinePoint {
   bucketAt: string
   netPnlUsdc: number
   cumulativeNetPnlUsdc: number
+  lossPnlUsdc?: number
+  cumulativeLossPnlUsdc?: number
 }
 
 export interface StrategyFactor {

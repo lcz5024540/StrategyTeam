@@ -17,18 +17,26 @@ import type { TimelinePoint } from '@/types/attribution'
 import type { StrategyDashboardMetrics, StrategyOrderRow, StrategyPositionRow, StrategyRegistryItem, StrategyTimelinePoint } from '@/types/strategy'
 
 function toChartTimeline(points: StrategyTimelinePoint[]): TimelinePoint[] {
-  return points.map((point) => ({
-    bucketAt: point.bucketAt,
-    profitPnlUsdc: Math.max(Number(point.netPnlUsdc || 0), 0),
-    lossPnlUsdc: Math.min(Number(point.netPnlUsdc || 0), 0),
-    realizedPnlUsdc: Number(point.netPnlUsdc || 0),
-    feeUsdc: 0,
-    netPnlUsdc: Number(point.netPnlUsdc || 0),
-    cumulativeLossPnlUsdc: 0,
-    cumulativeRealizedPnlUsdc: Number(point.cumulativeNetPnlUsdc || 0),
-    cumulativeFeeUsdc: 0,
-    cumulativeNetPnlUsdc: Number(point.cumulativeNetPnlUsdc || 0),
-  }))
+  let fallbackCumulativeLoss = 0
+  return points.map((point) => {
+    const netPnl = Number(point.netPnlUsdc || 0)
+    const lossPnl = point.lossPnlUsdc === undefined ? Math.min(netPnl, 0) : Number(point.lossPnlUsdc || 0)
+    fallbackCumulativeLoss += lossPnl
+    return {
+      bucketAt: point.bucketAt,
+      profitPnlUsdc: Math.max(netPnl, 0),
+      lossPnlUsdc: lossPnl,
+      realizedPnlUsdc: netPnl,
+      feeUsdc: 0,
+      netPnlUsdc: netPnl,
+      cumulativeLossPnlUsdc: point.cumulativeLossPnlUsdc === undefined
+        ? fallbackCumulativeLoss
+        : Number(point.cumulativeLossPnlUsdc || 0),
+      cumulativeRealizedPnlUsdc: Number(point.cumulativeNetPnlUsdc || 0),
+      cumulativeFeeUsdc: 0,
+      cumulativeNetPnlUsdc: Number(point.cumulativeNetPnlUsdc || 0),
+    }
+  })
 }
 
 function signedCompactMoney(value: number | null | undefined) {
