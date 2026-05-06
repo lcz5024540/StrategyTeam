@@ -436,6 +436,20 @@ public class PolymarketApiClient {
         return metadata;
     }
 
+    public MarketMetadata fetchClobMarketMetadata(String conditionId) {
+        if (!StringUtils.hasText(conditionId)) {
+            throw new IllegalArgumentException("conditionId is required");
+        }
+        JsonNode body = getJson(buildUri(properties.getExecutionWallet().getApiBaseUrl(),
+                "/markets/" + URLEncoder.encode(conditionId.trim(), StandardCharsets.UTF_8),
+                Map.of()));
+        MarketMetadata metadata = parseMarketMetadata(body);
+        if (metadata == null || !StringUtils.hasText(metadata.getConditionId())) {
+            throw new IllegalStateException("Polymarket CLOB market metadata not found for conditionId=" + conditionId);
+        }
+        return metadata;
+    }
+
     public Map<String, MarketMetadata> fetchMarketMetadataBatch(Collection<String> conditionIds) {
         return fetchMarketMetadataBatch(conditionIds, configuredGammaChunkSize());
     }

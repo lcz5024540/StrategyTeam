@@ -2992,6 +2992,7 @@ public class SmartWalletAccountingService {
             return;
         }
         Date now = new Date();
+        Date settlementAt = settlementAt(metadata, now);
         String effectiveOutcome = resolveEffectiveOutcome(position.getTokenId(), position.getOutcome(), metadata);
         BigDecimal resolutionPrice = settlementPrice(position, metadata);
         BigDecimal settlementProceeds = safe(position.getQuantity()).multiply(resolutionPrice).setScale(8, RoundingMode.HALF_UP);
@@ -3021,12 +3022,13 @@ public class SmartWalletAccountingService {
                     .setReferenceId(position.getId())
                     .setMarketId(position.getMarketId())
                     .setQuestion(position.getQuestion())
-                    .setOccurredAt(now)
+                    .setOccurredAt(settlementAt)
                     .setCreatedAt(new Date()));
         }
 
         final BigDecimal finalResolutionPrice = resolutionPrice;
         final BigDecimal finalRealizedDelta = realizedDelta;
+        final Date finalSettlementAt = settlementAt;
         position = updatePositionWithRetry(position.getId(), p -> {
             p.setRealizedPnlUsdc(safe(p.getRealizedPnlUsdc()).add(finalRealizedDelta))
                     .setUnrealizedPnlUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
@@ -3037,11 +3039,18 @@ public class SmartWalletAccountingService {
                     .setAverageEntryPrice(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
                     .setNetSide("FLAT")
                     .setStatus("RESOLVED_UNCLAIMED")
-                    .setClosedAt(now)
-                    .setLastFilledAt(now);
+                    .setClosedAt(finalSettlementAt)
+                    .setLastFilledAt(finalSettlementAt);
         }, "resolvePosition", 3);
-        rebuildDailyReport(position.getExecutionAddress(), toLocalDate(now));
+        rebuildDailyReport(position.getExecutionAddress(), toLocalDate(settlementAt));
         syncTradeOrder(position);
+    }
+
+    private Date settlementAt(PolymarketApiClient.MarketMetadata metadata, Date fallback) {
+        if (metadata != null && metadata.getEndAt() != null && metadata.getEndAt() > 0) {
+            return new Date(metadata.getEndAt());
+        }
+        return fallback == null ? new Date() : fallback;
     }
 
     private BigDecimal settlementPrice(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {

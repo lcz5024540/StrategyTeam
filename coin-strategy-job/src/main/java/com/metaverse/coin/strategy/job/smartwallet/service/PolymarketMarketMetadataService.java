@@ -65,8 +65,12 @@ public class PolymarketMarketMetadataService {
         PolymarketApiClient.MarketMetadata primary = null;
         PolymarketApiClient.MarketMetadata exactFallback = null;
         PolymarketApiClient.MarketMetadata activeEventFallback = null;
+        PolymarketApiClient.MarketMetadata clobFallback = null;
         try {
             primary = withSource(polymarketApiClient.fetchMarketMetadata(normalized), "GAMMA_MARKETS");
+            if (shouldProbeClobFallback(primary)) {
+                clobFallback = findClobMarketByConditionId(normalized);
+            }
             if (!StringUtils.hasText(primary == null ? null : primary.getSlug())) {
                 activeEventFallback = findActiveEventByConditionId(normalized);
             }
@@ -77,18 +81,21 @@ public class PolymarketMarketMetadataService {
                     firstNonNull(local, persisted),
                     cached,
                     primary,
-                    mergeMetadataOrNull(normalized, activeEventFallback, exactFallback));
+                    mergeMetadataOrNull(normalized, clobFallback,
+                            mergeMetadataOrNull(normalized, activeEventFallback, exactFallback)));
             cache.put(normalized, merged);
             return merged;
         } catch (RuntimeException ex) {
+            clobFallback = findClobMarketByConditionId(normalized);
             activeEventFallback = findActiveEventByConditionId(normalized);
             exactFallback = findExactByQuestionHint(normalized, questionHint);
-            if (activeEventFallback != null || exactFallback != null || cached != null || local != null || persisted != null) {
+            if (clobFallback != null || activeEventFallback != null || exactFallback != null || cached != null || local != null || persisted != null) {
                 PolymarketApiClient.MarketMetadata merged = mergeMetadata(normalized,
                         firstNonNull(local, persisted),
                         cached,
                         primary,
-                        mergeMetadataOrNull(normalized, activeEventFallback, exactFallback));
+                        mergeMetadataOrNull(normalized, clobFallback,
+                                mergeMetadataOrNull(normalized, activeEventFallback, exactFallback)));
                 cache.put(normalized, merged);
                 return merged;
             }
@@ -137,7 +144,10 @@ public class PolymarketMarketMetadataService {
         Map<String, PolymarketApiClient.MarketMetadata> result = new LinkedHashMap<>();
         for (String conditionId : normalizedIds) {
             PolymarketApiClient.MarketMetadata primary = fetched.get(conditionId);
-            if (primary == null) {
+            PolymarketApiClient.MarketMetadata clobFallback = shouldProbeClobFallback(primary)
+                    ? findClobMarketByConditionId(conditionId)
+                    : null;
+            if (primary == null && clobFallback == null) {
                 continue;
             }
             // 批量接口 /markets?condition_ids= 通常不返回 slug/events，
@@ -157,7 +167,8 @@ public class PolymarketMarketMetadataService {
                     localMetadata.get(conditionId),
                     cache.get(conditionId),
                     withSource(primary, "GAMMA_MARKETS_BATCH"),
-                    mergeMetadataOrNull(conditionId, activeEventFallback, searchFallback)
+                    mergeMetadataOrNull(conditionId, clobFallback,
+                            mergeMetadataOrNull(conditionId, activeEventFallback, searchFallback))
             );
             cache.put(conditionId, merged);
             result.put(conditionId, merged);
@@ -556,6 +567,23 @@ public class PolymarketMarketMetadataService {
         }
     }
 
+    private PolymarketApiClient.MarketMetadata findClobMarketByConditionId(String conditionId) {
+        if (!StringUtils.hasText(conditionId)) {
+            return null;
+        }
+        try {
+            PolymarketApiClient.MarketMetadata metadata =
+                    withSource(polymarketApiClient.fetchClobMarketMetadata(conditionId.trim()), "CLOB_MARKET");
+            if (metadata != null && StringUtils.hasText(metadata.getConditionId())
+                    && metadata.getConditionId().trim().equalsIgnoreCase(conditionId.trim())) {
+                return metadata;
+            }
+        } catch (RuntimeException ex) {
+            log.debug("CLOB market metadata lookup failed for conditionId={}: {}", conditionId, ex.getMessage());
+        }
+        return null;
+    }
+
     private PolymarketApiClient.MarketMetadata mergeMetadataOrNull(String conditionId,
                                                                    PolymarketApiClient.MarketMetadata primary,
                                                                    PolymarketApiClient.MarketMetadata fallback) {
@@ -587,6 +615,16 @@ public class PolymarketMarketMetadataService {
         }
         Long effectiveEndAt = primary.getEndAt();
         return effectiveEndAt != null && effectiveEndAt > 0 && effectiveEndAt <= System.currentTimeMillis();
+    }
+
+    private boolean shouldProbeClobFallback(PolymarketApiClient.MarketMetadata primary) {
+        if (primary == null) {
+            return true;
+        }
+        if (primary.isResolved()) {
+            return false;
+        }
+        return primary.isClosed() || !primary.isAcceptingOrders();
     }
 
     private boolean shouldRepairIncompleteMetadata(PolymarketApiClient.MarketMetadata metadata,
