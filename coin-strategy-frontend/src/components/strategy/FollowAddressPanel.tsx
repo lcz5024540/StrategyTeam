@@ -547,17 +547,14 @@ export function FollowAddressPanel() {
   }
 
   const { data: monitoredPage, isLoading: monitoredLoading } = useQuery({
-    queryKey: ['copyAddressScreener', 'candidates'],
-    queryFn: () => profilesApi.getScreener({ scope: 'candidates', limit: 60 }),
-  })
-
-  const { data: executablePage, isLoading: executableLoading } = useQuery({
-    queryKey: ['copyAddressScreener', 'executable'],
-    queryFn: () => profilesApi.getScreener({ scope: 'executable', limit: 24 }),
+    queryKey: ['copyAddressScreener', 'all'],
+    queryFn: () => profilesApi.getScreener({ scope: 'all', limit: 200 }),
   })
 
   const monitoredAddresses = monitoredPage?.items || []
-  const executableAddresses = executablePage?.items || []
+  const executableAddresses = monitoredAddresses
+    .filter((row) => row.monitorTier !== 'COLD' && (row.screenerTier === 'EXECUTABLE_A' || row.screenerTier === 'EXECUTABLE_B'))
+    .slice(0, 24)
 
   const { data: diagnosis, isLoading: diagnosisLoading } = useQuery({
     queryKey: ['copyAddressDiagnosis', selectedWalletAddress],
@@ -656,8 +653,7 @@ export function FollowAddressPanel() {
   const watchGroupMeta = WATCH_GROUP_OPTIONS.find((option) => option.value === watchGroup) ?? WATCH_GROUP_OPTIONS[0]
 
   const selectedRow =
-    monitoredAddresses.find((item) => item.walletAddress === selectedWalletAddress) ||
-    executableAddresses.find((item) => item.walletAddress === selectedWalletAddress)
+    monitoredAddresses.find((item) => item.walletAddress === selectedWalletAddress)
 
   const focusSummary = buildFocusSummary(selectedRow, diagnosis, windowStats)
   const trendPositiveCount = recentTradeTrend.filter((item) => item.value > 0).length
@@ -1270,7 +1266,7 @@ export function FollowAddressPanel() {
           <h2>跟单地址</h2>
         </div>
 
-        {executableLoading ? (
+        {monitoredLoading ? (
           <div className="loading">正在跟单地址加载中...</div>
         ) : executableAddresses.length === 0 ? (
           <div className="empty-state">当前没有开放中的跟单地址</div>

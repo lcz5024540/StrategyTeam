@@ -73,6 +73,23 @@ public class SmartWalletProfileEntity {
     private String monitorReason;
     private Date lastEventSyncAt;
     private Date lastMetricsRefreshAt;
+
+    /** closed-positions 增量同步：已落库的最大 closed_at(ms)，业务高水位 */
+    @TableField("closed_sync_max_closed_at")
+    private Long closedSyncMaxClosedAt;
+
+    /** closed-positions 增量同步：已落库总数（一致性校验用） */
+    @TableField("closed_sync_total_count")
+    private Integer closedSyncTotalCount;
+
+    /** closed-positions 增量同步数据质量：TRUTH / PARTIAL / UNTRUSTED / STUCK */
+    @TableField("closed_sync_data_quality")
+    private String closedSyncDataQuality;
+
+    /** closed-positions 上次完整全量复扫时间 */
+    @TableField("closed_sync_last_full_at")
+    private Date closedSyncLastFullAt;
+
     private Date createdAt;
     private Date updatedAt;
 }

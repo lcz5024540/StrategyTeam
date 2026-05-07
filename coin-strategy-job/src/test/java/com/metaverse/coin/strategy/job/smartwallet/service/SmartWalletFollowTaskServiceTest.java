@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletLeaderTradeOutcomeMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.WalletFollowCandidateMapper;
@@ -51,6 +52,8 @@ class SmartWalletFollowTaskServiceTest {
     private SmartWalletTradeEventMapper tradeEventMapper;
     @Mock
     private SmartWalletFollowTaskMapper followTaskMapper;
+    @Mock
+    private SmartWalletLeaderTradeOutcomeMapper leaderOutcomeMapper;
     @Mock
     private SmartWalletProfileMapper profileMapper;
     @Mock
@@ -251,7 +254,7 @@ class SmartWalletFollowTaskServiceTest {
         AtomicLong taskIdSeq = new AtomicLong(801L);
 
         lenient().when(properties.getFollowDelaySeconds()).thenReturn(3);
-        when(properties.isAutoExecutionEnabled()).thenReturn(false);
+        lenient().when(properties.isAutoExecutionEnabled()).thenReturn(false);
         when(tradeEventMapper.selectList(any())).thenReturn(List.of(event));
         when(tradeEventMapper.selectById(201L)).thenAnswer(invocation -> event);
         when(profileStoreService.listWatchEnabled()).thenReturn(List.of(profile));
@@ -314,7 +317,7 @@ class SmartWalletFollowTaskServiceTest {
         AtomicReference<SmartWalletFollowTaskEntity> taskRef = new AtomicReference<>();
 
         lenient().when(properties.getFollowDelaySeconds()).thenReturn(3);
-        when(properties.isAutoExecutionEnabled()).thenReturn(false);
+        lenient().when(properties.isAutoExecutionEnabled()).thenReturn(false);
         when(tradeEventMapper.selectOne(any())).thenReturn(null);
         doAnswer(invocation -> {
             SmartWalletTradeEventEntity inserted = invocation.getArgument(0);
@@ -367,6 +370,61 @@ class SmartWalletFollowTaskServiceTest {
         assertTrue(taskRef.get().getErrorMessage().contains("[MARKET_CLOSED]")
                 || taskRef.get().getErrorMessage().contains("[MARKET_NOT_ACCEPTING_ORDERS]"));
         assertEquals(Boolean.TRUE, event.getProcessed());
+    }
+
+    @Test
+    void shouldRouteSoftRejectedBuySignalToPaperShadowWithPrimaryReason() {
+        SmartWalletTradeEventEntity event = tradeEvent()
+                .setId(null)
+                .setSource("POLYMARKET")
+                .setExternalTradeId("trade-soft-rejected")
+                .setProcessed(Boolean.FALSE);
+        SmartWalletProfileEntity profile = profile();
+        AtomicReference<SmartWalletFollowTaskEntity> taskRef = new AtomicReference<>();
+
+        lenient().when(properties.getFollowDelaySeconds()).thenReturn(3);
+        lenient().when(properties.isAutoExecutionEnabled()).thenReturn(false);
+        when(tradeEventMapper.selectOne(any())).thenReturn(null);
+        doAnswer(invocation -> {
+            SmartWalletTradeEventEntity inserted = invocation.getArgument(0);
+            inserted.setId(1002L);
+            return 1;
+        }).when(tradeEventMapper).insert(any());
+        when(profileStoreService.listWatchEnabled()).thenReturn(List.of(profile));
+        when(entityResolutionService.resolveEntity("0xabc")).thenReturn(EntityResolutionResult.selfEntity("0xabc"));
+        when(consensusSignalService.buildConsensusForEvent(any(SmartWalletTradeEventEntity.class))).thenReturn(ConsensusSignalView.builder()
+                .dedupedEntityCount(1)
+                .build());
+        doAnswer(invocation -> {
+            WalletFollowCandidateEntity inserted = invocation.getArgument(0);
+            inserted.setId(502L);
+            return 1;
+        }).when(followCandidateMapper).insert(any());
+        doAnswer(invocation -> {
+            SmartWalletFollowTaskEntity inserted = invocation.getArgument(0);
+            inserted.setId(602L);
+            taskRef.set(inserted);
+            return 1;
+        }).when(followTaskMapper).insert(any());
+        when(signalRiskService.evaluate(eq(profile), any(SmartWalletTradeEventEntity.class))).thenReturn(blockedDecision(
+                "0.10",
+                "1.00",
+                List.of(
+                        "Trigger price is outside follow range.",
+                        "[ARCHETYPE] archetype=HF_SCALPER, lane=HF_FOLLOW.",
+                        "Open position count has reached the portfolio limit."
+                ),
+                5
+        ));
+
+        service.recordTradeEvent(event);
+
+        assertNotNull(taskRef.get());
+        assertEquals(SmartWalletFollowTaskService.STATUS_PAPER_SHADOW, taskRef.get().getStatus());
+        assertEquals("PAPER_SHADOW", taskRef.get().getExecutionMode());
+        assertEquals("PRICE", taskRef.get().getPrimarySkipReason());
+        assertEquals("PRICE,PROFILE_BEHAVIOR,CAPACITY", taskRef.get().getSkipReasonTags());
+        assertTrue(taskRef.get().getWouldHaveSkippedReason().contains("Trigger price is outside follow range."));
     }
 
     private SmartWalletFollowTaskEntity followTask(Long id, BigDecimal stake) {

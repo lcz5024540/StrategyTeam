@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_follow_task` (
     `execution_mode` VARCHAR(16) NOT NULL DEFAULT 'PAPER' COMMENT 'PAPER/LIVE',
     `external_order_id` VARCHAR(128) DEFAULT NULL COMMENT '跟单订单ID',
     `error_message` TEXT DEFAULT NULL COMMENT '错误信息',
+    `primary_skip_reason` VARCHAR(64) DEFAULT NULL COMMENT '主拒绝原因：NON_TRADABLE/PRICE/PROFILE_BEHAVIOR/CAPACITY/STALE/SIZE/OTHER',
+    `skip_reason_tags` VARCHAR(512) DEFAULT NULL COMMENT '全部拒绝原因标签，逗号分隔',
+    `would_have_skipped_reason` TEXT DEFAULT NULL COMMENT 'PAPER_SHADOW 观测记录对应的原始软门控拒绝原因',
     `scheduled_at` TIMESTAMP NOT NULL COMMENT '计划执行时间',
     `executed_at` TIMESTAMP NULL COMMENT '实际执行时间',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -99,7 +102,8 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_follow_task` (
     UNIQUE KEY `uk_follow_source_event` (`source_event_id`),
     INDEX `idx_follow_status_time` (`status`, `scheduled_at`),
     INDEX `idx_follow_task_market_info` (`market_info_id`),
-    INDEX `idx_follow_entity` (`entity_id`)
+    INDEX `idx_follow_entity` (`entity_id`),
+    INDEX `idx_follow_shadow_reason` (`status`, `primary_skip_reason`, `wallet_address`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket跟单任务表';
 
 -- 4. Polymarket 跟单订单表

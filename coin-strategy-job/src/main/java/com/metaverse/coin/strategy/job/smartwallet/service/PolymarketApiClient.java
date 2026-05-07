@@ -121,12 +121,34 @@ public class PolymarketApiClient {
     }
 
     public List<ClosedPosition> fetchClosedPositions(String walletAddress, Integer limit, int offset) {
+        return fetchClosedPositions(walletAddress, limit, offset, null, null);
+    }
+
+    /**
+     * 支持按时间排序的 closed-positions 抓取（增量同步主入口）。
+     * 当 sortBy=TIMESTAMP & sortDirection=ASC 时，�订单总是追加在序列尾部，
+     * 增量场景可基于 closed_at 高水位 + offset 跳过已抓数据。
+     *
+     * @param sortBy        例如 "TIMESTAMP"，传 null 则不附加 sortBy 参数
+     * @param sortDirection 例如 "ASC" / "DESC"，传 null 则不附加 sortDirection 参数
+     */
+    public List<ClosedPosition> fetchClosedPositions(String walletAddress,
+                                                    Integer limit,
+                                                    int offset,
+                                                    String sortBy,
+                                                    String sortDirection) {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("user", walletAddress);
         params.put("limit", String.valueOf(limit == null
                 ? properties.getPolymarket().getClosedPositionLimit()
                 : Math.max(1, limit)));
         params.put("offset", String.valueOf(Math.max(0, offset)));
+        if (StringUtils.hasText(sortBy)) {
+            params.put("sortBy", sortBy.trim());
+        }
+        if (StringUtils.hasText(sortDirection)) {
+            params.put("sortDirection", sortDirection.trim());
+        }
 
         JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
                 "/closed-positions", params));

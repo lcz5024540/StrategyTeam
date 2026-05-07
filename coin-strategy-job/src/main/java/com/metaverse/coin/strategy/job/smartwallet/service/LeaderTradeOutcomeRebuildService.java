@@ -149,7 +149,7 @@ public class LeaderTradeOutcomeRebuildService {
         BigDecimal avgBuyPrice = accumulator.buyShares.compareTo(BigDecimal.ZERO) <= 0
                 ? BigDecimal.ZERO
                 : accumulator.buyCostUsdc.divide(accumulator.buyShares, 8, RoundingMode.HALF_UP);
-        ResolutionState resolution = resolveState(metadata, normalizedOutcome, netShares);
+        ResolutionState resolution = resolveState(metadata, normalizedOutcome, netShares, accumulator);
         BigDecimal settlementValue = resolution.settlementPrice == null
                 ? BigDecimal.ZERO
                 : netShares.multiply(resolution.settlementPrice);
@@ -340,7 +340,8 @@ public class LeaderTradeOutcomeRebuildService {
             if ("FOLLOWED".equalsIgnoreCase(task.getStatus())) {
                 bucket.followed = true;
                 bucket.followedTasks++;
-            } else if ("SKIPPED".equalsIgnoreCase(task.getStatus())) {
+            } else if ("SKIPPED".equalsIgnoreCase(task.getStatus())
+                    || SmartWalletFollowTaskService.STATUS_PAPER_SHADOW.equalsIgnoreCase(task.getStatus())) {
                 bucket.skipped = true;
             }
         }
@@ -358,7 +359,11 @@ public class LeaderTradeOutcomeRebuildService {
 
     private ResolutionState resolveState(PolymarketApiClient.MarketMetadata metadata,
                                          String outcome,
-                                         BigDecimal netShares) {
+                                         BigDecimal netShares,
+                                         TradeAccumulator accumulator) {
+        if (isFullyRealized(accumulator, netShares)) {
+            return new ResolutionState("CLOSED", metadata == null ? null : normalizeOutcome(metadata.getResolvedOutcome()), null);
+        }
         if (metadata == null) {
             return new ResolutionState(STATUS_UNRESOLVED, null, null);
         }
@@ -372,6 +377,13 @@ public class LeaderTradeOutcomeRebuildService {
         }
         return new ResolutionState(netShares.compareTo(BigDecimal.ZERO) > 0 ? STATUS_OPEN : STATUS_UNRESOLVED,
                 normalizeOutcome(metadata.getResolvedOutcome()), null);
+    }
+
+    private boolean isFullyRealized(TradeAccumulator accumulator, BigDecimal netShares) {
+        return accumulator != null
+                && accumulator.buyShares.compareTo(BigDecimal.ZERO) > 0
+                && accumulator.sellShares.compareTo(BigDecimal.ZERO) > 0
+                && netShares.compareTo(BigDecimal.ZERO) <= 0;
     }
 
     private String outcomeStatus(String resolutionStatus, BigDecimal pnl) {

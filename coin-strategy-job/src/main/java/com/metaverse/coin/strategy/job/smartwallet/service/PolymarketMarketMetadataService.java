@@ -153,11 +153,13 @@ public class PolymarketMarketMetadataService {
             // 批量接口 /markets?condition_ids= 通常不返回 slug/events，
             // 当 slug 缺失且有 question 时，通过 /public-search 补全事件级 slug
             PolymarketApiClient.MarketMetadata searchFallback = null;
-            boolean slugMissing = !StringUtils.hasText(primary.getSlug())
-                    && !StringUtils.hasText(cache.containsKey(conditionId) && cache.get(conditionId) != null
-                            ? cache.get(conditionId).getSlug() : null);
-            if (slugMissing && StringUtils.hasText(primary.getQuestion())) {
-                searchFallback = findExactByQuestionHint(conditionId, primary.getQuestion());
+            PolymarketApiClient.MarketMetadata slugSource = primary != null ? primary : clobFallback;
+            PolymarketApiClient.MarketMetadata cachedMetadata = cache.get(conditionId);
+            boolean slugMissing = (slugSource == null || !StringUtils.hasText(slugSource.getSlug()))
+                    && (cachedMetadata == null || !StringUtils.hasText(cachedMetadata.getSlug()));
+            String questionHint = slugSource != null ? slugSource.getQuestion() : null;
+            if (slugMissing && StringUtils.hasText(questionHint)) {
+                searchFallback = findExactByQuestionHint(conditionId, questionHint);
             }
             PolymarketApiClient.MarketMetadata activeEventFallback = slugMissing
                     ? findActiveEventByConditionId(conditionId)

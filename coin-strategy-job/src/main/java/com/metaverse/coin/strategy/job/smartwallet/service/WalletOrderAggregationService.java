@@ -1,5 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderAnalysisMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderAnalysisEntity;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -22,8 +26,14 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class WalletOrderAggregationService {
 
+    private static final String SOURCE_POLYMARKET =
+            ClosedPositionIncrementalSyncService.SOURCE;
+
     private final PolymarketApiClient polymarketApiClient;
     private final PolymarketMarketMetadataService marketMetadataService;
+    private final ClosedPositionIncrementalSyncService closedPositionIncrementalSyncService;
+    private final SmartWalletOrderAnalysisMapper smartWalletOrderAnalysisMapper;
+    private final SmartWalletProperties smartWalletProperties;
 
     public WalletSnapshot snapshot(String walletAddress) {
         if (!StringUtils.hasText(walletAddress)) {
@@ -73,12 +83,71 @@ public class WalletOrderAggregationService {
     }
 
     private List<PolymarketApiClient.ClosedPosition> fetchClosedPositions(String walletAddress) {
+        SmartWalletProperties.PolymarketMonitor.ClosedPositionSync cfg =
+                smartWalletProperties.getPolymarket().getClosedPositionSync();
+        if (cfg != null && cfg.isEnabled()) {
+            try {
+                return fetchClosedPositionsViaDbSync(walletAddress);
+            } catch (Exception ex) {
+                log.warn("[WalletOrderAggregation] DB-driven closed sync failed wallet={} msg={}, fallback to API",
+                        walletAddress, ex.getMessage());
+                // fallthrough: 回退直连 API，保证可用性
+            }
+        }
         try {
             return polymarketApiClient.fetchAllClosedPositions(walletAddress);
         } catch (Exception ex) {
             log.debug("Failed to fetch full closed positions for wallet={}: {}", walletAddress, ex.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * DB 驱动路径：先增量同步 /closed-positions 到 smart_wallet_order_analysis，
+     * 再从 DB 反查全部记录，映射回 PolymarketApiClient.ClosedPosition 供下游 buildClosedOrders 消费。
+     *
+     * 仅消费新服务写入 DB 的字段（market_id/outcome/opened_at/closed_at/invested_usdc/realized_pnl_usdc/
+     * average_entry_price/question）。下游 buildClosedOrders 重新计算 roi/exit_style/hold_minutes。
+     */
+    private List<PolymarketApiClient.ClosedPosition> fetchClosedPositionsViaDbSync(String walletAddress) {
+      try {
+            ClosedPositionIncrementalSyncService.SyncResult result =
+                    closedPositionIncrementalSyncService.syncIncremental(walletAddress);
+            log.debug("[WalletOrderAggregation] incremental sync done wallet={} visited={} inserted={} quality={}",
+                    walletAddress, result.visited(), result.inserted(), result.dataQuality());
+        } catch (Exception ex) {
+            log.warn("[WalletOrderAggregation] incremental sync error wallet={}: {}",
+                    walletAddress, ex.getMessage());
+            // 同步失败不阻塞：继续读 DB 中已有数据
+        }
+        List<SmartWalletOrderAnalysisEntity> rows = smartWalletOrderAnalysisMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletOrderAnalysisEntity>()
+                        .eq(SmartWalletOrderAnalysisEntity::getWalletAddress, walletAddress)
+                        .eq(SmartWalletOrderAnalysisEntity::getSource, SOURCE_POLYMARKET)
+                        .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt));
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        List<PolymarketApiClient.ClosedPosition> result = new ArrayList<>(rows.size());
+        for (SmartWalletOrderAnalysisEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
+            PolymarketApiClient.ClosedPosition position = PolymarketApiClient.ClosedPosition.builder()
+                    .marketId(row.getMarketId())
+                    .question(row.getQuestion())
+                    .outcome(row.getOutcome())
+                    .openedAt(row.getOpenedAt() == null ? null : row.getOpenedAt().getTime())
+                    .closedAt(row.getClosedAt() == null ? null : row.getClosedAt().getTime())
+                    .sizeBought(row.getInvestedUsdc())
+                    // realized = realized_pnl + cash_pnl（DB 中 realizedPnlUsdc 已是合计值，避免下游再次加 cashPnl）
+                    .realizedPnl(row.getRealizedPnlUsdc())
+                    .cashPnl(BigDecimal.ZERO)
+                    .avgPrice(row.getAverageEntryPrice())
+                    .build();
+            result.add(position);
+        }
+        return result;
     }
 
     private List<PolymarketApiClient.ActivePosition> fetchActivePositions(String walletAddress) {

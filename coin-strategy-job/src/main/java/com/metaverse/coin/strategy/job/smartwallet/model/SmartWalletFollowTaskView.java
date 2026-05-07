@@ -28,6 +28,9 @@ public class SmartWalletFollowTaskView {
     private String executionMode;
     private String externalOrderId;
     private String errorMessage;
+    private String primarySkipReason;
+    private List<String> skipReasonTags;
+    private String wouldHaveSkippedReason;
     private Integer consensusWallets;
     private BigDecimal consensusScore;
     private BigDecimal estimatedFeeUsdc;

@@ -59,6 +59,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTruth
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowCoverageReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
@@ -106,6 +107,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.AbnormalMarketReviewService;
+import com.metaverse.coin.strategy.job.smartwallet.service.ClosedPositionIncrementalSyncService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
@@ -255,6 +257,13 @@ public class SmartWalletController {
     @GetMapping("/leader-outcomes/follow-coverage")
     public List<LeaderTradeOutcomeCoverageView> leaderOutcomeCoverage(@RequestParam(required = false) String walletAddress) {
         return leaderTradeOutcomeRebuildService.coverage(walletAddress);
+    }
+
+    @Operation(summary = "跟单覆盖率与 Shadow 观察报表", description = "按 wallet 输出 FOLLOWED/SKIPPED/PAPER_SHADOW 覆盖率、primary skip reason 分布和 truth outcome 对照。")
+    @GetMapping("/follow-tasks/coverage-report")
+    public List<SmartWalletFollowCoverageReportView> followCoverageReport(@RequestParam(required = false) String walletAddress,
+                                                                          @RequestParam(defaultValue = "5000") Integer limit) {
+        return followTaskService.followCoverageReports(walletAddress, limit);
     }
 
     @Operation(summary = "地址画像质量审计", description = "列出 truth 样本、低置信/未结算数量，以及旧口径遗漏我方 closed loss 的数量。")
@@ -849,6 +858,16 @@ public class SmartWalletController {
     @PostMapping("/polymarket/sync-events")
     public Map<String, Object> syncWatchlistEvents() {
         return Map.of("imported", predictionMarketDataApplicationService.syncWatchlistEvents());
+    }
+
+    @Operation(summary = "回灌本地 Polymarket closed-position 存量数据",
+            description = "读取 /tmp/poly_api/<wallet>_closed_<offset>.json 和 redeemable positions，写入 smart_wallet_order_analysis。")
+    @PostMapping("/polymarket/closed-positions/backfill-local")
+    public ClosedPositionIncrementalSyncService.LocalBackfillResult backfillLocalClosedPositions(
+            @RequestParam(defaultValue = "/tmp/poly_api") String directory,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(defaultValue = "false") boolean dryRun) {
+        return predictionMarketDataApplicationService.backfillLocalClosedPositions(directory, limit, dryRun);
     }
 
     @Operation(summary = "跟单任务列表", description = "查看生成的跟单任务，可选带实时风控评估结果。")

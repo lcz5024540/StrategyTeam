@@ -56,10 +56,12 @@ public class SignalHealthSummaryView {
     private Map<String, Long> tasksByStatus;
     /** 窗口内成功开仓任务数（status=FOLLOWED） */
     private long followedTaskCount;
-    /** 窗口内被跳过任务数（status=SKIPPED） */
+    /** 窗口内被硬跳过任务数（status=SKIPPED） */
     private long skippedTaskCount;
+    /** 窗口内被软门控转入 shadow 观察的任务数（status=PAPER_SHADOW） */
+    private long shadowTaskCount;
 
-    // ── 拒绝原因分析（从 SKIPPED 任务的 errorMessage 聚合，按次数降序） ───
+    // ── 拒绝原因分析（从 SKIPPED/PAPER_SHADOW 任务的 errorMessage 聚合，按次数降序） ───
     /**
      * 拒绝原因分类 → 出现次数（一个任务可有多个拒绝原因）
      * 常见分类：

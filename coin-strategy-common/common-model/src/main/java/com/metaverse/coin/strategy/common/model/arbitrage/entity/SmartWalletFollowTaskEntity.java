@@ -37,6 +37,9 @@ public class SmartWalletFollowTaskEntity {
     private String executionMode;
     private String externalOrderId;
     private String errorMessage;
+    private String primarySkipReason;
+    private String skipReasonTags;
+    private String wouldHaveSkippedReason;
     private Date scheduledAt;
     private Date executedAt;
     private Date createdAt;

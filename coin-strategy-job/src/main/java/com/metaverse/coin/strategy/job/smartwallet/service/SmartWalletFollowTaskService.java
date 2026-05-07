@@ -2,11 +2,13 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletLeaderTradeOutcomeMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.WalletFollowCandidateMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletLeaderTradeOutcomeEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
@@ -18,6 +20,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowCoverageReasonView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowCoverageReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletBlockerStatView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
@@ -50,6 +54,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -57,12 +62,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SmartWalletFollowTaskService {
 
     private static final String LOG_PREFIX = "[POLY_FOLLOW]";
+    public static final String STATUS_PENDING = "PENDING";
+    public static final String STATUS_FOLLOWED = "FOLLOWED";
+    public static final String STATUS_SKIPPED = "SKIPPED";
+    public static final String STATUS_PAPER_SHADOW = "PAPER_SHADOW";
     private static final long RISK_DECISION_CACHE_TTL_MS = 60_000L;
     private static final long EXECUTABLE_WARN_THRESHOLD_MS = 3_000L;
 
     private final SmartWalletProperties properties;
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final SmartWalletFollowTaskMapper followTaskMapper;
+    private final SmartWalletLeaderTradeOutcomeMapper leaderOutcomeMapper;
     private final SmartWalletProfileMapper profileMapper;
     private final SmartWalletProfileStoreService profileStoreService;
     private final PolymarketExecutionGateway executionGateway;
@@ -308,6 +318,102 @@ public class SmartWalletFollowTaskService {
                 left.getTaskCount() == null ? 0 : left.getTaskCount()
         ));
         return result;
+    }
+
+    public List<SmartWalletFollowCoverageReportView> followCoverageReports(String walletAddress, Integer limit) {
+        int rowLimit = limit == null || limit <= 0 ? 5000 : Math.min(limit, 50000);
+        LambdaQueryWrapper<SmartWalletFollowTaskEntity> taskQuery = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
+                .last("limit " + rowLimit);
+        if (StringUtils.hasText(walletAddress)) {
+            taskQuery.eq(SmartWalletFollowTaskEntity::getWalletAddress, walletAddress.trim());
+        }
+        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(taskQuery);
+        marketInfoService.populateFollowTasks(tasks);
+        Map<String, List<SmartWalletFollowTaskEntity>> byWallet = tasks.stream()
+                .filter(task -> StringUtils.hasText(task.getWalletAddress()))
+                .collect(Collectors.groupingBy(SmartWalletFollowTaskEntity::getWalletAddress, LinkedHashMap::new, Collectors.toList()));
+        List<SmartWalletFollowCoverageReportView> reports = new ArrayList<>();
+        byWallet.forEach((wallet, walletTasks) -> reports.add(buildCoverageReport(wallet, walletTasks)));
+        reports.sort((left, right) -> Long.compare(right.getTotalEvents(), left.getTotalEvents()));
+        return reports;
+    }
+
+    private SmartWalletFollowCoverageReportView buildCoverageReport(String wallet, List<SmartWalletFollowTaskEntity> tasks) {
+        Map<String, SmartWalletLeaderTradeOutcomeEntity> truthByKey = leaderOutcomeMapper.selectList(
+                        new LambdaQueryWrapper<SmartWalletLeaderTradeOutcomeEntity>()
+                                .eq(SmartWalletLeaderTradeOutcomeEntity::getWalletAddress, wallet))
+                .stream()
+                .filter(this::trustedClosedOutcome)
+                .collect(Collectors.toMap(
+                        row -> outcomeKey(row.getMarketId(), row.getOutcome()),
+                        row -> row,
+                        (left, right) -> left.getUpdatedAt() != null
+                                && (right.getUpdatedAt() == null || left.getUpdatedAt().after(right.getUpdatedAt())) ? left : right,
+                        LinkedHashMap::new));
+        CoverageAccumulator followedTruth = new CoverageAccumulator();
+        CoverageAccumulator shadowTruth = new CoverageAccumulator();
+        Map<String, ReasonAccumulator> reasonBuckets = new LinkedHashMap<>();
+        long followed = 0;
+        long skipped = 0;
+        long shadow = 0;
+        long tradableBuy = 0;
+        for (SmartWalletFollowTaskEntity task : tasks) {
+            String status = task.getStatus() == null ? "" : task.getStatus().toUpperCase(Locale.ROOT);
+            if (STATUS_FOLLOWED.equals(status)) {
+                followed++;
+            } else if (STATUS_SKIPPED.equals(status)) {
+                skipped++;
+            } else if (STATUS_PAPER_SHADOW.equals(status)) {
+                shadow++;
+            }
+            boolean buy = "BUY".equalsIgnoreCase(task.getSide());
+            String primary = StringUtils.hasText(task.getPrimarySkipReason()) ? task.getPrimarySkipReason() : inferPrimarySkipReason(task);
+            if (buy && !"NON_TRADABLE".equals(primary)) {
+                tradableBuy++;
+            }
+            if (STATUS_SKIPPED.equals(status) || STATUS_PAPER_SHADOW.equals(status)) {
+                ReasonAccumulator bucket = reasonBuckets.computeIfAbsent(primary, key -> new ReasonAccumulator());
+                bucket.count++;
+                bucket.stake = bucket.stake.add(safe(task.getRecommendedStakeUsdc()));
+            }
+            SmartWalletLeaderTradeOutcomeEntity truth = truthByKey.get(outcomeKey(task.getMarketId(), task.getOutcome()));
+            if (truth != null) {
+                if (STATUS_FOLLOWED.equals(status)) {
+                    followedTruth.add(truth);
+                } else if (STATUS_PAPER_SHADOW.equals(status)) {
+                    shadowTruth.add(truth);
+                }
+            }
+        }
+        long total = tasks.size();
+        long denominator = tradableBuy > 0 ? tradableBuy : total;
+        long rejectedTotal = Math.max(1, skipped + shadow);
+        List<SmartWalletFollowCoverageReasonView> reasonViews = reasonBuckets.entrySet().stream()
+                .map(entry -> SmartWalletFollowCoverageReasonView.builder()
+                        .reason(entry.getKey())
+                        .count(entry.getValue().count)
+                        .ratio(ratio(entry.getValue().count, rejectedTotal))
+                        .recommendedStakeUsdc(entry.getValue().stake.setScale(4, RoundingMode.HALF_UP))
+                        .build())
+                .sorted((left, right) -> Long.compare(right.getCount(), left.getCount()))
+                .toList();
+        return SmartWalletFollowCoverageReportView.builder()
+                .walletAddress(wallet)
+                .totalEvents(total)
+                .followedEvents(followed)
+                .skippedEvents(skipped)
+                .shadowEvents(shadow)
+                .tradableBuyEvents(tradableBuy)
+                .followCoverageRate(ratio(followed, Math.max(1, total)))
+                .shadowCoverageRate(ratio(followed + shadow, Math.max(1, denominator)))
+                .followedPnlUsdc(followedTruth.pnl.setScale(4, RoundingMode.HALF_UP))
+                .followedWinRate(followedTruth.winRate())
+                .shadowTruthPnlUsdc(shadowTruth.pnl.setScale(4, RoundingMode.HALF_UP))
+                .shadowTruthWinRate(shadowTruth.winRate())
+                .recommendation(coverageRecommendation(followedTruth, shadowTruth))
+                .skippedPrimaryReasons(reasonViews)
+                .build();
     }
 
     @Scheduled(fixedDelayString = "${smart-wallet.poll-fixed-delay-ms:5000}")
@@ -750,6 +856,11 @@ public class SmartWalletFollowTaskService {
         BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
+        SkipReasonSnapshot skipReason = buildSkipReasonSnapshot(event, decision);
+        String taskStatus = decision.isAccepted() ? STATUS_PENDING : resolveRejectedTaskStatus(skipReason);
+        String executionMode = decision.isAccepted()
+                ? resolveTaskExecutionMode(event.getWalletAddress(), decision)
+                : STATUS_PAPER_SHADOW.equals(taskStatus) ? "PAPER_SHADOW" : resolveTaskExecutionMode(event.getWalletAddress(), decision);
         // ---- Step 3: Create Follow Task（附带实体维度字段）----
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
@@ -762,9 +873,12 @@ public class SmartWalletFollowTaskService {
                 .setTriggerPrice(event.getPrice())
                 .setTriggerSizeUsdc(event.getSizeUsdc())
                 .setRecommendedStakeUsdc(recommendedStake)
-                .setStatus(decision.isAccepted() ? "PENDING" : "SKIPPED")
-                .setExecutionMode(resolveTaskExecutionMode(event.getWalletAddress(), decision))
+                .setStatus(taskStatus)
+                .setExecutionMode(executionMode)
                 .setErrorMessage(String.join(" | ", decision.getReasons()))
+                .setPrimarySkipReason(decision.isAccepted() ? null : skipReason.primaryReason())
+                .setSkipReasonTags(decision.isAccepted() ? null : String.join(",", skipReason.tags()))
+                .setWouldHaveSkippedReason(STATUS_PAPER_SHADOW.equals(taskStatus) ? String.join(" | ", decision.getReasons()) : null)
                 .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
@@ -904,12 +1018,20 @@ public class SmartWalletFollowTaskService {
         BigDecimal recommendedStake = decision.getRecommendedStakeUsdc() == null
                 ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
                 : decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP);
+        SkipReasonSnapshot skipReason = buildSkipReasonSnapshot(event, decision);
+        String taskStatus = decision.isAccepted() ? STATUS_PENDING : resolveRejectedTaskStatus(skipReason);
+        String executionMode = decision.isAccepted()
+                ? resolveTaskExecutionMode(event.getWalletAddress(), decision)
+                : STATUS_PAPER_SHADOW.equals(taskStatus) ? "PAPER_SHADOW" : resolveTaskExecutionMode(event.getWalletAddress(), decision);
         task.setEntityId(candidate.getEntityId())
                 .setFollowCandidateId(candidate.getId())
                 .setRecommendedStakeUsdc(recommendedStake)
-                .setStatus(decision.isAccepted() ? "PENDING" : "SKIPPED")
-                .setExecutionMode(resolveTaskExecutionMode(event.getWalletAddress()))
+                .setStatus(taskStatus)
+                .setExecutionMode(executionMode)
                 .setErrorMessage(String.join(" | ", decision.getReasons()))
+                .setPrimarySkipReason(decision.isAccepted() ? null : skipReason.primaryReason())
+                .setSkipReasonTags(decision.isAccepted() ? null : String.join(",", skipReason.tags()))
+                .setWouldHaveSkippedReason(STATUS_PAPER_SHADOW.equals(taskStatus) ? String.join(" | ", decision.getReasons()) : null)
                 .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
                 .setUpdatedAt(new Date());
         followTaskMapper.updateById(task);
@@ -1035,6 +1157,8 @@ public class SmartWalletFollowTaskService {
                 .setStatus("SKIPPED")
                 .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
                 .setErrorMessage(candidate.getRejectionReason())
+                .setPrimarySkipReason("OTHER")
+                .setSkipReasonTags("OTHER")
                 .setScheduledAt(new Date())
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
@@ -1065,6 +1189,8 @@ public class SmartWalletFollowTaskService {
                 .setStatus("SKIPPED")
                 .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
                 .setErrorMessage(marketState.blockingReasonMessage())
+                .setPrimarySkipReason("NON_TRADABLE")
+                .setSkipReasonTags("NON_TRADABLE")
                 .setScheduledAt(new Date())
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
@@ -1124,6 +1250,78 @@ public class SmartWalletFollowTaskService {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
+    private boolean trustedClosedOutcome(SmartWalletLeaderTradeOutcomeEntity row) {
+        if (row == null || row.getSourceConfidence() == null
+                || row.getSourceConfidence().compareTo(new BigDecimal("0.5500")) < 0) {
+            return false;
+        }
+        String status = row.getOutcomeStatus() == null ? "" : row.getOutcomeStatus().toUpperCase(Locale.ROOT);
+        return List.of("CLOSED_WIN", "CLOSED_LOSS", "CLOSED_BREAKEVEN").contains(status);
+    }
+
+    private String outcomeKey(String marketId, String outcome) {
+        return (marketId == null ? "" : marketId.trim().toLowerCase(Locale.ROOT))
+                + "|"
+                + (outcome == null ? "" : outcome.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private BigDecimal ratio(long numerator, long denominator) {
+        if (denominator <= 0) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(numerator)
+                .divide(BigDecimal.valueOf(denominator), 4, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal safe(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String inferPrimarySkipReason(SmartWalletFollowTaskEntity task) {
+        if (task == null) {
+            return "OTHER";
+        }
+        Set<String> tags = new LinkedHashSet<>();
+        if (!"BUY".equalsIgnoreCase(task.getSide())) {
+            tags.add("NON_TRADABLE");
+        }
+        String source = StringUtils.hasText(task.getSkipReasonTags())
+                ? task.getSkipReasonTags()
+                : task.getErrorMessage();
+        if (StringUtils.hasText(source)) {
+            for (String segment : source.split("\\s*[,|]\\s*")) {
+                String tag = classifyShadowTag(segment);
+                if (StringUtils.hasText(tag)) {
+                    tags.add(tag);
+                }
+            }
+        }
+        if (tags.isEmpty()) {
+            tags.add("OTHER");
+        }
+        return primarySkipReason(tags);
+    }
+
+    private String coverageRecommendation(CoverageAccumulator followed, CoverageAccumulator shadow) {
+        if (followed.pnl.compareTo(new BigDecimal("-50.00")) < 0 && shadow.count < 10) {
+            return "OBSERVE_ONLY";
+        }
+        if (shadow.count < 10) {
+            return "EXPAND_PAPER_SHADOW_100_PERCENT";
+        }
+        BigDecimal followedWinRate = followed.winRate();
+        BigDecimal shadowWinRate = shadow.winRate();
+        if (shadow.pnl.compareTo(BigDecimal.ZERO) > 0
+                && shadowWinRate.compareTo(followedWinRate.add(new BigDecimal("0.05"))) > 0) {
+            return "EXPAND_SMALL_CANARY";
+        }
+        if (shadow.pnl.compareTo(BigDecimal.ZERO) < 0
+                && shadowWinRate.compareTo(followedWinRate) <= 0) {
+            return "KEEP_FILTER_FIRST";
+        }
+        return "EXPAND_PAPER_SHADOW_100_PERCENT";
+    }
+
     private SmartWalletExecutionResult executeTask(SmartWalletFollowTaskEntity task) {
         try {
             marketInfoService.populate(task);
@@ -1140,8 +1338,15 @@ public class SmartWalletFollowTaskService {
             }
             SignalRiskDecision decision = evaluateTask(task.getId());
             if (!decision.isAccepted()) {
-                task.setStatus("SKIPPED");
+                SmartWalletTradeEventEntity event = getSourceEvent(task);
+                SkipReasonSnapshot skipReason = buildSkipReasonSnapshot(event, decision);
+                String rejectedStatus = resolveRejectedTaskStatus(skipReason);
+                task.setStatus(rejectedStatus);
+                task.setExecutionMode(STATUS_PAPER_SHADOW.equals(rejectedStatus) ? "PAPER_SHADOW" : task.getExecutionMode());
                 task.setErrorMessage(String.join(" | ", decision.getReasons()));
+                task.setPrimarySkipReason(skipReason.primaryReason());
+                task.setSkipReasonTags(String.join(",", skipReason.tags()));
+                task.setWouldHaveSkippedReason(STATUS_PAPER_SHADOW.equals(rejectedStatus) ? task.getErrorMessage() : null);
                 task.setUpdatedAt(new Date());
                 followTaskMapper.updateById(task);
                 log.info("{} action=执行前复核风控 result=拒绝并跳过 followTaskId={} wallet={} marketId={} outcome={} stakeUsdc={} reasons={} {}",
@@ -1155,7 +1360,7 @@ public class SmartWalletFollowTaskService {
                         .marketId(task.getMarketId())
                         .outcome(task.getOutcome())
                         .side(task.getSide())
-                        .status("SKIPPED")
+                        .status(rejectedStatus)
                         .price(task.getTriggerPrice())
                         .notionalUsdc(task.getRecommendedStakeUsdc())
                         .feeUsdc(BigDecimal.ZERO)
@@ -1311,6 +1516,9 @@ public class SmartWalletFollowTaskService {
                 .executionMode(task.getExecutionMode())
                 .externalOrderId(task.getExternalOrderId())
                 .errorMessage(task.getErrorMessage())
+                .primarySkipReason(task.getPrimarySkipReason())
+                .skipReasonTags(parseCsv(task.getSkipReasonTags()))
+                .wouldHaveSkippedReason(task.getWouldHaveSkippedReason())
                 .consensusWallets(decision == null
                         ? (consensus == null ? null : consensus.getDistinctWallets())
                         : decision.getConsensusWallets())
@@ -1439,18 +1647,24 @@ public class SmartWalletFollowTaskService {
         Map<String, Long> tasksByStatus = new TreeMap<>();
         long skippedCount = 0;
         long followedCount = 0;
+        long shadowCount = 0;
         for (SmartWalletFollowTaskEntity task : windowTasks) {
             String status = task.getStatus() == null ? "UNKNOWN" : task.getStatus().toUpperCase(Locale.ROOT);
             tasksByStatus.merge(status, 1L, Long::sum);
             if ("SKIPPED".equals(status)) skippedCount++;
             if ("FOLLOWED".equals(status)) followedCount++;
+            if (STATUS_PAPER_SHADOW.equals(status)) shadowCount++;
         }
 
-        // ── 4. 拒绝原因分析（仅读 errorMessage，不重新评估）
+        // ── 4. 拒绝/Shadow 原因分析（仅读 errorMessage，不重新评估）
         Map<String, Long> rejectionCategories = new TreeMap<>();
         for (SmartWalletFollowTaskEntity task : windowTasks) {
-            if (!"SKIPPED".equalsIgnoreCase(task.getStatus())) {
+            if (!"SKIPPED".equalsIgnoreCase(task.getStatus())
+                    && !STATUS_PAPER_SHADOW.equalsIgnoreCase(task.getStatus())) {
                 continue;
+            }
+            if (StringUtils.hasText(task.getPrimarySkipReason())) {
+                rejectionCategories.merge(task.getPrimarySkipReason(), 1L, Long::sum);
             }
             String msg = task.getErrorMessage();
             if (msg == null || msg.isBlank()) {
@@ -1510,6 +1724,7 @@ public class SmartWalletFollowTaskService {
                 .tasksByStatus(tasksByStatus)
                 .followedTaskCount(followedCount)
                 .skippedTaskCount(skippedCount)
+                .shadowTaskCount(shadowCount)
                 .topRejectionCategories(rejectionCategories)
                 .consensusSignalCount(consensusSignals.size())
                 .consensusWindowSeconds(consensusWindowSec)
@@ -1587,6 +1802,101 @@ public class SmartWalletFollowTaskService {
             }
         }
         return new ArrayList<>(categories);
+    }
+
+    private SkipReasonSnapshot buildSkipReasonSnapshot(SmartWalletTradeEventEntity event, SignalRiskDecision decision) {
+        Set<String> tags = new LinkedHashSet<>();
+        if (event == null
+                || !"BUY".equalsIgnoreCase(event.getSide())
+                || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            tags.add("NON_TRADABLE");
+        }
+        if (decision != null && decision.getReasons() != null) {
+            for (String reason : decision.getReasons()) {
+                String tag = classifyShadowTag(reason);
+                if (StringUtils.hasText(tag)) {
+                    tags.add(tag);
+                }
+            }
+        }
+        if (tags.isEmpty()) {
+            tags.add("OTHER");
+        }
+        String primary = primarySkipReason(tags);
+        return new SkipReasonSnapshot(primary, new ArrayList<>(tags));
+    }
+
+    private String resolveRejectedTaskStatus(SkipReasonSnapshot skipReason) {
+        if (skipReason == null || "NON_TRADABLE".equals(skipReason.primaryReason())) {
+            return STATUS_SKIPPED;
+        }
+        return STATUS_PAPER_SHADOW;
+    }
+
+    private String primarySkipReason(Set<String> tags) {
+        List<String> priority = List.of("NON_TRADABLE", "PRICE", "PROFILE_BEHAVIOR", "CAPACITY", "STALE", "SIZE", "OTHER");
+        for (String candidate : priority) {
+            if (tags.contains(candidate)) {
+                return candidate;
+            }
+        }
+        return "OTHER";
+    }
+
+    private String classifyShadowTag(String reason) {
+        if (!StringUtils.hasText(reason)) {
+            return null;
+        }
+        String text = reason.toLowerCase(Locale.ROOT);
+        if (text.contains("[market_not_accepting_orders]")
+                || text.contains("[market_closed]")
+                || text.contains("[market_resolved]")
+                || text.contains("market is no longer accepting orders")
+                || text.contains("market is already closed")
+                || text.contains("market is already resolved")
+                || text.contains("sell signals are disabled")
+                || text.contains("source trade event is missing")) {
+            return "NON_TRADABLE";
+        }
+        if (text.contains("trigger price")) {
+            return "PRICE";
+        }
+        if (text.contains("[archetype]")
+                || text.contains("[behavior]")
+                || text.contains("[archetype_block]")
+                || text.contains("[behavior_block]")
+                || text.contains("observe-only")
+                || text.contains("replicability")
+                || text.contains("wallet is not qualified")) {
+            return "PROFILE_BEHAVIOR";
+        }
+        if (text.contains("open position count")
+                || text.contains("portfolio limit")
+                || text.contains("total open position cost")
+                || text.contains("portfolio budget")
+                || text.contains("capital is depleted")
+                || text.contains("bankroll penetration")
+                || text.contains("minimum order")) {
+            return "CAPACITY";
+        }
+        if (text.contains("signal is stale") || text.contains("[paper_canary_stale")) {
+            return "STALE";
+        }
+        if (text.contains("trigger size") || text.contains("[trigger_size_too_small]")) {
+            return "SIZE";
+        }
+        return "OTHER";
+    }
+
+    private List<String> parseCsv(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return java.util.Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .toList();
     }
 
     private String flow(String stage,
@@ -1851,6 +2161,40 @@ public class SmartWalletFollowTaskService {
         private int taskCount;
         private int executableCount;
         private int blockedCount;
+    }
+
+    private static class ReasonAccumulator {
+        private long count;
+        private BigDecimal stake = BigDecimal.ZERO;
+    }
+
+    private static class CoverageAccumulator {
+        private long count;
+        private long wins;
+        private BigDecimal pnl = BigDecimal.ZERO;
+
+        private void add(SmartWalletLeaderTradeOutcomeEntity outcome) {
+            if (outcome == null) {
+                return;
+            }
+            count++;
+            if (Boolean.TRUE.equals(outcome.getIsWin())) {
+                wins++;
+            }
+            if (outcome.getEstimatedRealizedPnlUsdc() != null) {
+                pnl = pnl.add(outcome.getEstimatedRealizedPnlUsdc());
+            }
+        }
+
+        private BigDecimal winRate() {
+            if (count <= 0) {
+                return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+            }
+            return BigDecimal.valueOf(wins).divide(BigDecimal.valueOf(count), 4, RoundingMode.HALF_UP);
+        }
+    }
+
+    private record SkipReasonSnapshot(String primaryReason, List<String> tags) {
     }
 
     private ConsensusSignalView findConsensus(SmartWalletFollowTaskEntity task) {

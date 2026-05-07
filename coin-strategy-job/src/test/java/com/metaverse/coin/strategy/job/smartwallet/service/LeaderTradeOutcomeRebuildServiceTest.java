@@ -113,6 +113,24 @@ class LeaderTradeOutcomeRebuildServiceTest {
     }
 
     @Test
+    void shouldCloseFullySoldOutcomeWithoutMarketResolution() {
+        when(marketMetadataService.getBestEffortByConditionId(eq("market-1"), eq(false), any(), any()))
+                .thenReturn(openMetadata("market-1"));
+
+        List<SmartWalletLeaderTradeOutcomeEntity> rows = service.rebuildWallet("0xabc", List.of(
+                trade("market-1", "YES", "BUY", "0.40", "100", 1_000L),
+                trade("market-1", "YES", "SELL", "0.35", "100", 2_000L)
+        ));
+
+        assertEquals(1, rows.size());
+        SmartWalletLeaderTradeOutcomeEntity row = rows.get(0);
+        assertEquals(new BigDecimal("0E-8"), row.getNetShares());
+        assertEquals(new BigDecimal("-5.00000000"), row.getEstimatedRealizedPnlUsdc());
+        assertEquals(LeaderTradeOutcomeRebuildService.STATUS_CLOSED_LOSS, row.getOutcomeStatus());
+        assertEquals(Boolean.FALSE, row.getIsWin());
+    }
+
+    @Test
     void shouldKeepUnresolvedMarketsOutOfClosedWinRate() {
         when(marketMetadataService.getBestEffortByConditionId(eq("market-2"), eq(false), any(), any()))
                 .thenReturn(openMetadata("market-2"));

@@ -95,6 +95,41 @@ public class SmartWalletProperties {
          */
         private Integer coldWalletInactivityDays = 60;
 
+        /** closed-positions 增量同步配置。基于 sortBy=TIMESTAMP&sortDirection=DESC + 哨兵停止。 */
+        private ClosedPositionSync closedPositionSync = new ClosedPositionSync();
+
+        @Data
+        public static class ClosedPositionSync {
+            /** 总开关：true 启用 DB 驱动增量同步；false 回退原 API 直拉路径（紧急回滚）。 */
+            private boolean enabled = true;
+            /** 每页条数，Polymarket 服务端硬截为 50。 */
+            private Integer pageSize = 50;
+            /** 首次全量的最大翻页数（覆盖 ~100000 条硬上限 / 50）。 */
+            private Integer maxFullPages = 2200;
+            /** 增量翻页的最大页数兜底（一般遇哨兵就会提前终止）。 */
+            private Integer maxIncrementalPages = 20;
+            /** 连续 N 页无任何新数据则认为增量结束（哨兵命中兜底）。 */
+            private Integer incrementalIdlePageThreshold = 2;
+            /** 线程池核心线程数（2 核服务器给 1，升级 4 核后调 2）。 */
+            private Integer threadPoolCoreSize = 1;
+            /** 线程池最大线程数（2 核服务器给 2，升级 4 核后调 4）。 */
+            private Integer threadPoolMaxSize = 2;
+            /** 线程池队列容量。 */
+            private Integer threadPoolQueueCapacity = 200;
+            /** HTTP 全局并发限制（信号量），避免触发 429。 */
+            private Integer httpConcurrencyLimit = 4;
+            /** 单地址全量/增量熔断超时（ms），超时标记 PARTIAL 等下次。 */
+            private Long singleWalletTimeoutMs = 600_000L;
+            /** 增量调度间隔（ms）。 */
+            private Long incrementalFixedDelayMs = 300_000L;
+            /** 全量复扫调度间隔（ms），HOT 周 1 次、默认 24h。 */
+            private Long fullResyncFixedDelayMs = 86_400_000L;
+            /** 全量复扫成功后的最小再次间隔（ms），避免重复全量。 */
+            private Long fullResyncMinIntervalMs = 86_400_000L;
+            /** 单次调度批量大小（IncrementalJob/FullResyncJob 共用的钱包数上限）。 */
+            private Integer dispatchBatchSize = 100;
+        }
+
         @Data
         public static class LeaderboardQuery {
             private String category = "OVERALL";

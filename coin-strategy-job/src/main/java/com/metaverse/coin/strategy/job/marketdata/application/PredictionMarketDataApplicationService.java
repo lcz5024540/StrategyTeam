@@ -4,6 +4,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMark
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
+import com.metaverse.coin.strategy.job.smartwallet.service.ClosedPositionIncrementalSyncService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketWalletDiscoveryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.TradeEffectLabelService;
@@ -20,15 +21,18 @@ public class PredictionMarketDataApplicationService {
     private final MarketSnapshotCollectorService marketSnapshotCollectorService;
     private final TradeEffectLabelService tradeEffectLabelService;
     private final WalletFeatureDailyService walletFeatureDailyService;
+    private final ClosedPositionIncrementalSyncService closedPositionIncrementalSyncService;
 
     public PredictionMarketDataApplicationService(PolymarketWalletDiscoveryService polymarketWalletDiscoveryService,
                                                   MarketSnapshotCollectorService marketSnapshotCollectorService,
                                                   TradeEffectLabelService tradeEffectLabelService,
-                                                  WalletFeatureDailyService walletFeatureDailyService) {
+                                                  WalletFeatureDailyService walletFeatureDailyService,
+                                                  ClosedPositionIncrementalSyncService closedPositionIncrementalSyncService) {
         this.polymarketWalletDiscoveryService = polymarketWalletDiscoveryService;
         this.marketSnapshotCollectorService = marketSnapshotCollectorService;
         this.tradeEffectLabelService = tradeEffectLabelService;
         this.walletFeatureDailyService = walletFeatureDailyService;
+        this.closedPositionIncrementalSyncService = closedPositionIncrementalSyncService;
     }
 
     public PolymarketDiscoverySummary analyzeSourceWallets() {
@@ -37,6 +41,12 @@ public class PredictionMarketDataApplicationService {
 
     public int syncWatchlistEvents() {
         return polymarketWalletDiscoveryService.syncWatchlistTrades();
+    }
+
+    public ClosedPositionIncrementalSyncService.LocalBackfillResult backfillLocalClosedPositions(String directory,
+                                                                                                 Integer limit,
+                                                                                                 boolean dryRun) {
+        return closedPositionIncrementalSyncService.backfillLocalDirectory(directory, limit, dryRun);
     }
 
     public SmartWalletMarketSnapshotEntity collectMarketSnapshot(String conditionId, String outcome) {
