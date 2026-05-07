@@ -458,11 +458,17 @@ coin-strategy-job/src/test/java/com/metaverse/coin/strategy/job/funding/service/
 
 ## 9. Binance 查询 WebSocket 化与 HTTP 写接口边界
 
-FundingArb 的高频查询已经接入 `BinanceQueryDataProvider` 读门面。业务侧不再直接依赖 Binance REST 查询价格、资金费、深度、订单状态和合约账户状态；默认优先读取本地 websocket 缓存，缓存缺失或过期时才使用 HTTP fallback。
+FundingArb 的高频查询已经接入 `BinanceQueryDataProvider` 读门面。业务侧不再直接依赖 Binance REST 查询价格、资金费、深度、订单状态和合约账户状态；默认优先读取本地 WebSocket 缓存，缓存缺失、过期或 WebSocket 不可用时才使用 HTTP fallback。
+
+该边界的核心原则是：
+
+* 高频读路径优先 WebSocket，本地缓存命中后不打 Binance REST。
+* 交易写路径继续使用 HTTP，避免把下单、撤单、杠杆和划转语义混入行情连接。
+* WebSocket 连接和出站 JSON 消息统一经过单实例内存限频，避免触发 Binance WebSocket 断连或 IP 封禁风险。
 
 ### 9.1 数据来源
 
-公开行情 websocket：
+公开行情 WebSocket：
 
 ```text
 Spot:
@@ -475,7 +481,15 @@ USDS-M Futures:
   <symbol>@markPrice@1s
 ```
 
-账户与订单 websocket：
+公开行情连接不再按 symbol 单独建连接，而是由 `BinanceWebSocketStreamService` 维护聚合 combined stream 连接：
+
+* Spot 每个 symbol 占用 2 个 stream：`bookTicker`、`depth20@100ms`。
+* USDS-M Futures 每个 symbol 占用 3 个 stream：`bookTicker`、`depth20@100ms`、`markPrice@1s`。
+* 单连接最多 `binance.websocket.max-streams-per-connection` 个 stream，默认 1024。
+* 默认容量下，Spot 单连接最多约 512 个 symbol；Futures 单连接最多约 341 个 symbol。
+* `symbols` 为空时，系统启动会使用 `arbitrage.spot-futures.symbol` 做初始订阅；后续策略查询新 symbol 时动态加入已有未满连接，连接已打开则通过 `SUBSCRIBE` 消息补订阅，连接未打开则排队到 open 后发送。
+
+账户与订单 WebSocket：
 
 ```text
 Spot user data stream:
@@ -493,6 +507,13 @@ USDS-M Futures user data stream:
 
 这些流用于维护 spot/futures price ticker、futures premium index、depth20 盘口、spot/futures order cache、futures account cache 和 position risk cache。Spot 不再使用 legacy listenKey，也不会再调用 `POST /api/v3/userDataStream`。USDS-M Futures 仍有 listenKey 概念，但创建、续期、关闭已经改为 WebSocket API `userDataStream.start/ping/stop`，不再调用 HTTP `/fapi/v1/listenKey`。
 
+Spot/Futures WebSocket API 地址当前由代码常量固定：
+
+```text
+Spot:    wss://ws-api.binance.com:443/ws-api/v3
+Futures: wss://ws-fapi.binance.com/ws-fapi/v1
+```
+
 ### 9.2 HTTP 仍保留的场景
 
 写接口继续使用 HTTP：
@@ -505,30 +526,76 @@ change margin type
 universal transfer
 ```
 
-查询接口只有在以下情况使用 HTTP：应用启动后的首次查询、websocket 断线或事件缺口、缓存超过 `binance.websocket.cache-ttl-ms`、REST-only 元数据查询，以及 websocket 开关关闭。
+查询接口只有在以下情况使用 HTTP：
 
-### 9.3 配置项
+* 应用启动后的首次查询，WebSocket 缓存还未 warm up。
+* WebSocket 断线、事件缺口或订阅尚未完成。
+* 缓存超过 `binance.websocket.cache-ttl-ms`。
+* REST-only 元数据查询，例如 `exchangeInfo`。
+* `binance.websocket.enabled=false`。
+* `binance.websocket.http-fallback-enabled=true` 且缓存 miss/stale。
+
+如果将 `http-fallback-enabled=false`，缓存缺失会直接抛出错误。这适合压测或强约束演练，不建议 live 交易初期启用。
+
+### 9.3 WebSocket 限频处理
+
+当前实现针对 Binance WebSocket 限制做了单实例内存限频管理：
+
+```text
+Binance 限制:
+  单连接每秒最多 5 条消息
+  单连接最多 1024 个 streams
+  每 IP 每 5 分钟最多 300 次连接请求
+
+系统处理:
+  应用层 JSON 出站消息默认限制为 4 条/秒/连接
+  所有 newWebSocket 连接请求默认限制为 300 次/5 分钟
+  Public stream 按 max-streams-per-connection 自动分片
+```
+
+说明：
+
+* Binance 的 5 条/秒消息限制包含 PING、PONG 和 JSON 消息。OkHttp 会自动响应服务端 PING 产生 PONG，业务层无法精确排队自动 PONG，因此应用层 JSON 限速默认使用 4 条/秒，为 PONG 预留余量。
+* Spot/Futures user data WebSocket API 的 `subscribe/start/ping/stop/unsubscribe` 都走统一 `rateLimitedSend(...)`。
+* Public 动态 `SUBSCRIBE` 也走统一发送限速。
+* 所有连接创建都走连接请求限速器；断线重连先等待 `reconnect-delay-ms`，再进入连接限速队列，避免重连风暴。
+* 当前限频只保证当前 JVM 实例。如果多实例共用同一出口 IP，需要后续升级为 Redis 或数据库级分布式限频。
+
+### 9.4 配置项
 
 ```yaml
 binance:
   websocket:
     enabled: true
     public-market-enabled: true
-    user-data-enabled: true
     cache-ttl-ms: 5000
     http-fallback-enabled: true
     reconnect-delay-ms: 5000
-    listen-key-keepalive-ms: 1800000
+    outbound-message-limit-per-second: 4
+    connection-request-limit: 300
+    connection-request-window-ms: 300000
+    max-streams-per-connection: 1024
+    public-subscribe-batch-size: 0
     spot-stream-url: "wss://stream.binance.com"
     futures-stream-url: "wss://fstream.binance.com"
-    spot-websocket-api-url: "wss://ws-api.binance.com:443/ws-api/v3"
-    futures-websocket-api-url: "wss://ws-fapi.binance.com/ws-fapi/v1"
     symbols: ""
 ```
 
-`symbols` 为空时，系统会在策略使用某个 symbol 时动态订阅；也会用 `arbitrage.spot-futures.symbol` 做启动订阅。多 symbol 手动开仓时，每个 symbol 的查询都会触发对应 websocket 订阅。
+配置含义：
 
-### 9.4 FundingArb 调用链变化
+* `enabled`：Binance WebSocket 查询缓存总开关。关闭后读路径直接走 HTTP fallback。
+* `public-market-enabled`：公共行情流开关。关闭后不会订阅 price/depth/mark price。
+* `cache-ttl-ms`：缓存有效期。超过该时间后，读门面认为缓存 stale。
+* `http-fallback-enabled`：缓存不可用时是否允许 HTTP 回补。
+* `reconnect-delay-ms`：连接失败后的重连延迟。
+* `outbound-message-limit-per-second`：单连接应用层 JSON 出站限速，默认 4 条/秒。
+* `connection-request-limit` / `connection-request-window-ms`：连接请求窗口限速，默认 300 次/5 分钟。
+* `max-streams-per-connection`：单个 Public WebSocket 连接允许的最大 stream 数，默认 1024。
+* `public-subscribe-batch-size`：动态订阅批次大小。0 表示按连接剩余 stream 容量自动拆分。
+* `spot-stream-url` / `futures-stream-url`：公共行情和 Futures private listenKey stream 的基础端点。
+* `symbols`：可选启动订阅 symbol 列表，多个 symbol 使用英文逗号分隔；为空时由策略主 symbol 和运行期查询动态订阅。
+
+### 9.5 FundingArb 调用链变化
 
 * `SingleExchangeArbitrageOrderExecutor.createSpotFuturesPlan`：spot/futures price 优先 websocket cache，`exchangeInfo` 继续 HTTP 低频读取。
 * `SingleExchangeDepthMonitor`：spot/futures depth 优先 websocket cache。
@@ -537,9 +604,11 @@ binance:
 
 正常跟踪轮询不会每轮都打 Binance REST 行情接口；只有缓存不可用时才回补，能够显著降低限频压力。
 
-### 9.5 排障建议
+### 9.6 排障建议
 
 * 如果日志持续出现 `websocket cache miss/stale`，优先检查 websocket endpoint、代理和 `cache-ttl-ms` 是否过小。
-* 如果订单状态没有及时刷新，检查 Spot/Futures WebSocket API 连接是否订阅成功，以及 `user-data-enabled` 是否为 true；Spot legacy listenKey 已不可用，Futures listenKey 通过 WebSocket API 维护。
+* 如果订单状态没有及时刷新，检查 Spot/Futures WebSocket API 连接是否订阅成功；Spot legacy listenKey 已不可用，Futures listenKey 通过 WebSocket API 维护。
 * 如果启动后第一次查询仍打 HTTP，这是预期行为；第一次 HTTP 回补会同步 warm cache。
 * 如果希望严格禁止查询 HTTP fallback，可将 `http-fallback-enabled=false`。此时缓存缺失会直接抛出错误，不建议 live 交易初期使用。
+* 如果订阅大量 symbol 后连接数增加，检查每个 symbol 对应的 stream 数是否已经达到 `max-streams-per-connection` 分片阈值。
+* 如果 WebSocket API 请求响应变慢，检查 `outbound-message-limit-per-second` 是否过低，以及是否存在大量动态订阅或 user data keepalive 排队。
