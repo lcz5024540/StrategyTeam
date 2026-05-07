@@ -578,6 +578,9 @@ smart-wallet:
     retry-backoff-minutes: 15
     max-retry-failures: 8
   market-monitoring:
+    # [TUNE] Market monitoring candidate window for active PENDING/EXECUTING tasks.
+    # This only keeps markets visible/refreshed; execution freshness still uses signal-risk.max-signal-age-seconds.
+    active-task-max-age-seconds: 10800
     metadata-refresh:
       enabled: true
       refresh-fixed-delay-ms: 300000

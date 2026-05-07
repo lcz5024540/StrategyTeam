@@ -58,6 +58,9 @@ smart-wallet:
     single-wallet-override-min-quality-score: 0.30
     single-wallet-override-min-trigger-size-usdc: 1
     single-wallet-override-min-recommended-stake-usdc: 1
+  market-monitoring:
+    # Keep monitoring candidates longer than the execution freshness window to absorb scan/sync latency.
+    active-task-max-age-seconds: 10800
 
   polymarket:
     # Test-only discovery override: stop pulling VOLUME leaders because the current

@@ -30,16 +30,19 @@ public class ClosedPositionSyncDispatcher {
 
     private final SmartWalletProfileMapper smartWalletProfileMapper;
     private final ClosedPositionIncrementalSyncService incrementalSyncService;
+    private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final SmartWalletProperties smartWalletProperties;
     private final ThreadPoolTaskExecutor closedSyncExecutor;
 
     public ClosedPositionSyncDispatcher(
             SmartWalletProfileMapper smartWalletProfileMapper,
             ClosedPositionIncrementalSyncService incrementalSyncService,
+            WalletBehaviorProfileService walletBehaviorProfileService,
             SmartWalletProperties smartWalletProperties,
             @Qualifier(SmartWalletClosedSyncAsyncConfig.EXECUTOR_BEAN_NAME) ThreadPoolTaskExecutor closedSyncExecutor) {
         this.smartWalletProfileMapper = smartWalletProfileMapper;
         this.incrementalSyncService = incrementalSyncService;
+        this.walletBehaviorProfileService = walletBehaviorProfileService;
         this.smartWalletProperties = smartWalletProperties;
         this.closedSyncExecutor = closedSyncExecutor;
     }
@@ -126,6 +129,9 @@ public class ClosedPositionSyncDispatcher {
                         ok.incrementAndGet();
                         inserted.addAndGet(r.inserted());
                         visited.addAndGet(r.visited());
+                        if (r.inserted() > 0) {
+                            refreshBehaviorProfile(wallet, mode, r.inserted());
+                        }
                     } catch (Exception ex) {
                         failed.incrementAndGet();
                         log.warn("[ClosedPositionSyncDispatcher] {} sync failed wallet={}: {}",
@@ -143,6 +149,28 @@ public class ClosedPositionSyncDispatcher {
                 mode, wallets.size(), ok.get(), failed.get(), visited.get(), inserted.get(), elapsedMs);
         return new DispatchResult(wallets.size(), ok.get(), failed.get(),
                 visited.get(), inserted.get(), elapsedMs);
+    }
+
+    private void refreshBehaviorProfile(String wallet, String mode, int inserted) {
+        try {
+            SmartWalletProfileEntity profile = smartWalletProfileMapper.selectOne(
+                    new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                            .eq(SmartWalletProfileEntity::getWalletAddress, wallet)
+                            .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                            .last("limit 1"));
+            if (profile == null) {
+                log.debug("[ClosedPositionSyncDispatcher] {} behavior refresh skipped wallet={} reason=profile-not-found",
+                        mode, wallet);
+                return;
+            }
+            walletBehaviorProfileService.evictProfileCache(wallet);
+            walletBehaviorProfileService.buildProfile(profile);
+            log.info("[ClosedPositionSyncDispatcher] {} behavior refreshed wallet={} insertedClosedPositions={}",
+                    mode, wallet, inserted);
+        } catch (Exception ex) {
+            log.warn("[ClosedPositionSyncDispatcher] {} behavior refresh failed wallet={} insertedClosedPositions={} reason={}",
+                    mode, wallet, inserted, ex.getMessage());
+        }
     }
 
     private boolean isEnabled() {

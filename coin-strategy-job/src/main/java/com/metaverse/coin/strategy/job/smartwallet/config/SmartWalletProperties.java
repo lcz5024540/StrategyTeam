@@ -593,6 +593,11 @@ public class SmartWalletProperties {
 
     @Data
     public static class MarketMonitoring {
+        /**
+         * 市场监控接收 PENDING/EXECUTING 跟单任务的最大年龄。仅用于监控候选市场保留窗口，
+         * 不影响实际跟单执行的新鲜度风控。
+         */
+        private Integer activeTaskMaxAgeSeconds = 10800;
         private MetadataRefresh metadataRefresh = new MetadataRefresh();
         private ConcentrationSnapshot concentrationSnapshot = new ConcentrationSnapshot();
 
