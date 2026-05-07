@@ -8,11 +8,20 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceOrd
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
+import okhttp3.Request;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
+import okio.ByteString;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -95,15 +104,141 @@ class BinanceWebSocketStreamServiceTest {
         assertEquals("test-api-key", objectMapper.readTree(futuresStart).path("params").path("apiKey").asText());
     }
 
+    @Test
+    void aggregatesPublicStreamsAndSplitsByStreamLimit() throws Exception {
+        BinanceWebSocketProperties properties = new BinanceWebSocketProperties();
+        properties.setMaxStreamsPerConnection(4);
+        properties.setOutboundMessageLimitPerSecond(1000);
+        TestableService service = service(properties);
+
+        service.subscribeSymbol("BTCUSDT");
+        service.subscribeSymbol("ETHUSDT");
+        service.subscribeSymbol("BNBUSDT");
+
+        BinanceWebSocketStreamService.BinanceWebSocketStats stats = service.getStats();
+        assertEquals(2, stats.getSpotPublicConnections());
+        assertEquals(3, stats.getFuturesPublicConnections());
+        assertEquals(3, stats.getSpotSubscribedSymbols());
+        assertEquals(3, stats.getFuturesSubscribedSymbols());
+        assertEquals(5, service.captures.size());
+        assertTrue(service.captures.get(0).url.contains("btcusdt@bookTicker"));
+
+        Capture firstSpotConnection = service.captures.get(0);
+        firstSpotConnection.listener.onOpen(firstSpotConnection.socket, null);
+        assertTrue(firstSpotConnection.socket.awaitSend());
+        assertTrue(firstSpotConnection.socket.sentMessages.stream()
+                .anyMatch(message -> message.contains("\"method\":\"SUBSCRIBE\"")
+                        && message.contains("ethusdt@bookTicker")
+                        && message.contains("ethusdt@depth20@100ms")));
+    }
+
+    @Test
+    void userDataWebSocketApiSendsThroughLimiterOnOpen() throws Exception {
+        BinanceWebSocketProperties properties = new BinanceWebSocketProperties();
+        properties.setPublicMarketEnabled(false);
+        properties.setOutboundMessageLimitPerSecond(1000);
+        TestableService service = service(properties);
+
+        service.start();
+
+        assertEquals(2, service.captures.size());
+        Capture spotApi = service.captures.get(0);
+        Capture futuresApi = service.captures.get(1);
+        spotApi.listener.onOpen(spotApi.socket, null);
+        futuresApi.listener.onOpen(futuresApi.socket, null);
+
+        assertTrue(spotApi.socket.awaitSend());
+        assertTrue(futuresApi.socket.awaitSend());
+        assertTrue(spotApi.socket.sentMessages.get(0).contains("userDataStream.subscribe.signature"));
+        assertTrue(futuresApi.socket.sentMessages.get(0).contains("userDataStream.start"));
+    }
+
     private BinanceWebSocketStreamService service() {
+        BinanceWebSocketProperties properties = new BinanceWebSocketProperties();
+        properties.setEnabled(false);
+        return service(properties);
+    }
+
+    private TestableService service(BinanceWebSocketProperties properties) {
         BinanceApiService binanceApiService = mock(BinanceApiService.class);
         when(binanceApiService.getApiKey()).thenReturn("test-api-key");
         when(binanceApiService.signHmacSha256Hex(org.mockito.ArgumentMatchers.anyString())).thenReturn("test-signature");
-        return new BinanceWebSocketStreamService(
-                new BinanceWebSocketProperties(),
+        return new TestableService(
+                properties,
                 new SingleExchangeSpotFuturesProperties(),
                 binanceApiService,
                 new ObjectMapper()
         );
+    }
+
+    private static class TestableService extends BinanceWebSocketStreamService {
+        private final List<Capture> captures = new ArrayList<>();
+
+        private TestableService(BinanceWebSocketProperties properties,
+                                SingleExchangeSpotFuturesProperties spotFuturesProperties,
+                                BinanceApiService binanceApiService,
+                                ObjectMapper objectMapper) {
+            super(properties, spotFuturesProperties, binanceApiService, objectMapper);
+        }
+
+        @Override
+        WebSocket newWebSocket(String url, WebSocketListener listener) {
+            FakeWebSocket socket = new FakeWebSocket(url);
+            captures.add(new Capture(url, listener, socket));
+            return socket;
+        }
+    }
+
+    private record Capture(String url, WebSocketListener listener, FakeWebSocket socket) {
+    }
+
+    private static class FakeWebSocket implements WebSocket {
+        private final Request request;
+        private final List<String> sentMessages = new CopyOnWriteArrayList<>();
+
+        private FakeWebSocket(String url) {
+            this.request = new Request.Builder().url(url).build();
+        }
+
+        private boolean awaitSend() throws InterruptedException {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (System.nanoTime() < deadline) {
+                if (!sentMessages.isEmpty()) {
+                    return true;
+                }
+                TimeUnit.MILLISECONDS.sleep(10);
+            }
+            return false;
+        }
+
+        @Override
+        public Request request() {
+            return request;
+        }
+
+        @Override
+        public long queueSize() {
+            return 0;
+        }
+
+        @Override
+        public boolean send(String text) {
+            sentMessages.add(text);
+            return true;
+        }
+
+        @Override
+        public boolean send(ByteString bytes) {
+            return true;
+        }
+
+        @Override
+        public boolean close(int code, String reason) {
+            return true;
+        }
+
+        @Override
+        public void cancel() {
+        }
     }
 }

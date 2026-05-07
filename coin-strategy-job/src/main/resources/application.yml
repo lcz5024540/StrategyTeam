@@ -47,6 +47,15 @@ binance:
     http-fallback-enabled: true
     # [TUNE] Delay before reconnecting a failed Binance websocket connection.
     reconnect-delay-ms: 5000
+    # [FIXED-ONCE] Keep application JSON sends below Binance 5 msg/s to leave room for automatic PONG frames.
+    outbound-message-limit-per-second: 4
+    # [FIXED-ONCE] Binance allows at most 300 websocket connection requests per IP per 5 minutes.
+    connection-request-limit: 300
+    connection-request-window-ms: 300000
+    # [FIXED-ONCE] Binance allows at most 1024 streams on one websocket connection.
+    max-streams-per-connection: 1024
+    # [TUNE] 0 means subscribe batches are split by remaining stream capacity automatically.
+    public-subscribe-batch-size: 0
     # [FIXED-ONCE] Public websocket endpoints.
     spot-stream-url: "wss://stream.binance.com"
     futures-stream-url: "wss://fstream.binance.com"

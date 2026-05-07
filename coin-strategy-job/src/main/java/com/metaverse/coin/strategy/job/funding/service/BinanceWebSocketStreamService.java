@@ -14,7 +14,6 @@ import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import lombok.Builder;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Credentials;
 import okhttp3.Authenticator;
@@ -22,6 +21,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
+import okio.ByteString;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -36,12 +36,14 @@ import java.net.Proxy;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -50,7 +52,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 @ConditionalOnBean(BinanceApiService.class)
 public class BinanceWebSocketStreamService implements DisposableBean {
 
@@ -64,6 +65,8 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     private final ObjectMapper objectMapper;
     private volatile OkHttpClient okHttpClient;
     private final ScheduledExecutorService reconnectExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final BinanceWebSocketRateLimiter connectionLimiter;
+    private final Map<WebSocket, BinanceWebSocketRateLimiter> outboundLimiters = new ConcurrentHashMap<>();
 
     private final Map<String, Snapshot<BinancePriceTicker>> spotPrices = new ConcurrentHashMap<>();
     private final Map<String, Snapshot<BinancePriceTicker>> futuresPrices = new ConcurrentHashMap<>();
@@ -75,8 +78,10 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     private final Map<String, Snapshot<List<BinanceFuturesPositionRisk>>> positionRisks = new ConcurrentHashMap<>();
     private volatile Snapshot<BinanceFuturesAccount> futuresAccount;
 
-    private final Map<String, WebSocket> spotMarketSockets = new ConcurrentHashMap<>();
-    private final Map<String, WebSocket> futuresMarketSockets = new ConcurrentHashMap<>();
+    private final List<PublicStreamConnection> spotMarketConnections = new ArrayList<>();
+    private final List<PublicStreamConnection> futuresMarketConnections = new ArrayList<>();
+    private final Set<String> spotMarketSymbols = ConcurrentHashMap.newKeySet();
+    private final Set<String> futuresMarketSymbols = ConcurrentHashMap.newKeySet();
     private volatile WebSocket spotUserApiSocket;
     private volatile WebSocket futuresUserApiSocket;
     private volatile WebSocket futuresUserSocket;
@@ -88,6 +93,18 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     private final AtomicLong webSocketApiRequestId = new AtomicLong();
     private volatile Date lastPublicEventAt;
     private volatile Date lastUserEventAt;
+
+    public BinanceWebSocketStreamService(BinanceWebSocketProperties properties,
+                                         SingleExchangeSpotFuturesProperties spotFuturesProperties,
+                                         BinanceApiService binanceApiService,
+                                         ObjectMapper objectMapper) {
+        this.properties = properties;
+        this.spotFuturesProperties = spotFuturesProperties;
+        this.binanceApiService = binanceApiService;
+        this.objectMapper = objectMapper;
+        this.connectionLimiter = new BinanceWebSocketRateLimiter("binance-ws-connect-limiter",
+                properties.getConnectionRequestLimit(), properties.getConnectionRequestWindowMs());
+    }
 
     @PostConstruct
     public void start() {
@@ -108,8 +125,8 @@ public class BinanceWebSocketStreamService implements DisposableBean {
             return;
         }
         String normalized = symbol.trim().toUpperCase(Locale.ROOT);
-        spotMarketSockets.computeIfAbsent(normalized, this::connectSpotMarketStream);
-        futuresMarketSockets.computeIfAbsent(normalized, this::connectFuturesMarketStream);
+        subscribePublicSymbol(normalized, false);
+        subscribePublicSymbol(normalized, true);
     }
 
     public BinancePriceTicker getCachedSpotPrice(String symbol) {
@@ -266,7 +283,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         }
         try {
             if (StringUtils.hasText(futuresListenKey) && futuresUserApiSocket != null) {
-                futuresUserApiSocket.send(buildFuturesUserDataApiRequest("userDataStream.ping"));
+                rateLimitedSend(futuresUserApiSocket, buildFuturesUserDataApiRequest("userDataStream.ping"));
             }
         } catch (Exception e) {
             log.warn("Failed to ping Binance Futures user data stream through WebSocket API: {}", e.getMessage());
@@ -277,7 +294,15 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         return BinanceWebSocketStats.builder()
                 .enabled(properties.isEnabled())
                 .publicMarketEnabled(properties.isPublicMarketEnabled())
-                .subscribedSymbols(spotMarketSockets.size())
+                .subscribedSymbols(Math.max(spotMarketSymbols.size(), futuresMarketSymbols.size()))
+                .spotPublicConnections(spotMarketConnections.size())
+                .futuresPublicConnections(futuresMarketConnections.size())
+                .spotSubscribedSymbols(spotMarketSymbols.size())
+                .futuresSubscribedSymbols(futuresMarketSymbols.size())
+                .outboundMessageQueuedTasks(outboundQueuedTasks())
+                .connectionRequestQueuedTasks(connectionLimiter.getQueuedTasks())
+                .outboundMessageDelayedTasks(outboundDelayedTasks())
+                .connectionRequestDelayedTasks(connectionLimiter.getDelayedTasks())
                 .cachedPremiumIndices(premiumIndices.size())
                 .cachedSpotDepth(spotDepth.size())
                 .cachedFuturesDepth(futuresDepth.size())
@@ -290,18 +315,68 @@ public class BinanceWebSocketStreamService implements DisposableBean {
                 .build();
     }
 
-    private WebSocket connectSpotMarketStream(String symbol) {
-        String lower = symbol.toLowerCase(Locale.ROOT);
-        String url = properties.getSpotStreamUrl() + "/stream?streams="
-                + lower + "@bookTicker/" + lower + "@depth20@100ms";
-        return newWebSocket(url, new PublicListener(false, () -> reconnectSpot(symbol)));
+    private void subscribePublicSymbol(String symbol, boolean futures) {
+        Set<String> symbolSet = futures ? futuresMarketSymbols : spotMarketSymbols;
+        if (!symbolSet.add(symbol)) {
+            return;
+        }
+        PublicSubscriptionTarget target = findOrCreatePublicConnection(symbol, futures);
+        PublicStreamConnection connection = target.connection();
+        List<String> streams = publicStreams(symbol, futures);
+        if (connection.isOpen()) {
+            rateLimitedSend(connection.getSocket(), buildSubscribeRequest(streams));
+        } else if (!target.newConnection()) {
+            connection.queueSubscribe(streams);
+        }
     }
 
-    private WebSocket connectFuturesMarketStream(String symbol) {
+    private PublicSubscriptionTarget findOrCreatePublicConnection(String symbol, boolean futures) {
+        List<PublicStreamConnection> connections = futures ? futuresMarketConnections : spotMarketConnections;
+        synchronized (connections) {
+            for (PublicStreamConnection connection : connections) {
+                if (connection.canAddSymbol()) {
+                    connection.addSymbol(symbol);
+                    return new PublicSubscriptionTarget(connection, false);
+                }
+            }
+            PublicStreamConnection connection = new PublicStreamConnection(futures, publicStreamsPerSymbol(futures));
+            connection.addSymbol(symbol);
+            connections.add(connection);
+            connectPublicConnection(connection);
+            return new PublicSubscriptionTarget(connection, true);
+        }
+    }
+
+    private void connectPublicConnection(PublicStreamConnection connection) {
+        connection.markConnecting();
+        String url = publicStreamUrl(connection.isFutures(), connection.streams());
+        WebSocket socket = newWebSocket(url, new PublicListener(connection));
+        connection.setSocket(socket);
+    }
+
+    private String publicStreamUrl(boolean futures, Collection<String> streams) {
+        String baseUrl = futures ? properties.getFuturesStreamUrl() : properties.getSpotStreamUrl();
+        return baseUrl + "/stream?streams=" + String.join("/", streams);
+    }
+
+    private List<String> publicStreams(String symbol, boolean futures) {
         String lower = symbol.toLowerCase(Locale.ROOT);
-        String url = properties.getFuturesStreamUrl() + "/stream?streams="
-                + lower + "@bookTicker/" + lower + "@depth20@100ms/" + lower + "@markPrice@1s";
-        return newWebSocket(url, new PublicListener(true, () -> reconnectFutures(symbol)));
+        List<String> streams = new ArrayList<>();
+        streams.add(lower + "@bookTicker");
+        streams.add(lower + "@depth20@100ms");
+        if (futures) {
+            streams.add(lower + "@markPrice@1s");
+        }
+        return streams;
+    }
+
+    private int publicStreamsPerSymbol(boolean futures) {
+        return futures ? 3 : 2;
+    }
+
+    private int maxSymbolsPerPublicConnection(boolean futures) {
+        int streamsPerSymbol = publicStreamsPerSymbol(futures);
+        return Math.max(1, properties.getMaxStreamsPerConnection() / streamsPerSymbol);
     }
 
     private void connectUserStreams() {
@@ -384,9 +459,54 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         }
     }
 
-    private WebSocket newWebSocket(String url, WebSocketListener listener) {
-        Request request = new Request.Builder().url(url).build();
-        return getOkHttpClient().newWebSocket(request, listener);
+    private String buildSubscribeRequest(List<String> streams) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("method", "SUBSCRIBE");
+        request.put("params", streams);
+        request.put("id", nextWebSocketApiRequestId("pub"));
+        try {
+            return objectMapper.writeValueAsString(request);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to build Binance public WebSocket subscribe request", e);
+        }
+    }
+
+    WebSocket newWebSocket(String url, WebSocketListener listener) {
+        DeferredWebSocket deferredWebSocket = new DeferredWebSocket(url);
+        outboundLimiters.put(deferredWebSocket, deferredWebSocket.getOutboundLimiter());
+        connectionLimiter.execute(() -> {
+            Request request = new Request.Builder().url(url).build();
+            WebSocket realSocket = getOkHttpClient().newWebSocket(request, new DelegatingWebSocketListener(deferredWebSocket, listener));
+            deferredWebSocket.setDelegate(realSocket);
+            outboundLimiters.put(realSocket, deferredWebSocket.getOutboundLimiter());
+        });
+        return deferredWebSocket;
+    }
+
+    private void rateLimitedSend(WebSocket webSocket, String payload) {
+        if (webSocket == null || payload == null) {
+            return;
+        }
+        if (webSocket instanceof DeferredWebSocket deferredWebSocket) {
+            deferredWebSocket.send(payload);
+            return;
+        }
+        BinanceWebSocketRateLimiter limiter = outboundLimiters.computeIfAbsent(webSocket, socket ->
+                new BinanceWebSocketRateLimiter("binance-ws-send-limiter",
+                        properties.getOutboundMessageLimitPerSecond(), 1000L));
+        limiter.execute(() -> webSocket.send(payload));
+    }
+
+    private int outboundQueuedTasks() {
+        return outboundLimiters.values().stream()
+                .mapToInt(BinanceWebSocketRateLimiter::getQueuedTasks)
+                .sum();
+    }
+
+    private long outboundDelayedTasks() {
+        return outboundLimiters.values().stream()
+                .mapToLong(BinanceWebSocketRateLimiter::getDelayedTasks)
+                .sum();
     }
 
     private OkHttpClient getOkHttpClient() {
@@ -461,14 +581,10 @@ public class BinanceWebSocketStreamService implements DisposableBean {
                 .build();
     }
 
-    private void reconnectSpot(String symbol) {
-        spotMarketSockets.remove(symbol);
-        reconnectExecutor.schedule(() -> subscribeSymbol(symbol), properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
-    }
-
-    private void reconnectFutures(String symbol) {
-        futuresMarketSockets.remove(symbol);
-        reconnectExecutor.schedule(() -> subscribeSymbol(symbol), properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
+    private void reconnectPublic(PublicStreamConnection connection) {
+        connection.markDisconnected();
+        reconnectExecutor.schedule(() -> connectPublicConnection(connection),
+                properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
     }
 
     private void ingestMarkPrice(JsonNode data) {
@@ -689,11 +805,11 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
     @Override
     public void destroy() {
-        spotMarketSockets.values().forEach(socket -> socket.close(1000, "shutdown"));
-        futuresMarketSockets.values().forEach(socket -> socket.close(1000, "shutdown"));
+        spotMarketConnections.forEach(connection -> connection.getSocket().close(1000, "shutdown"));
+        futuresMarketConnections.forEach(connection -> connection.getSocket().close(1000, "shutdown"));
         if (spotUserApiSocket != null) {
             try {
-                spotUserApiSocket.send(buildSpotUserDataUnsubscribeRequest());
+                rateLimitedSend(spotUserApiSocket, buildSpotUserDataUnsubscribeRequest());
             } catch (Exception e) {
                 log.debug("Failed to unsubscribe Binance Spot WebSocket API user data stream: {}", e.getMessage());
             }
@@ -701,7 +817,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         }
         if (futuresUserApiSocket != null) {
             try {
-                futuresUserApiSocket.send(buildFuturesUserDataApiRequest("userDataStream.stop"));
+                rateLimitedSend(futuresUserApiSocket, buildFuturesUserDataApiRequest("userDataStream.stop"));
             } catch (Exception e) {
                 log.debug("Failed to stop Binance Futures user data stream through WebSocket API: {}", e.getMessage());
             }
@@ -711,26 +827,35 @@ public class BinanceWebSocketStreamService implements DisposableBean {
             futuresUserSocket.close(1000, "shutdown");
         }
         reconnectExecutor.shutdownNow();
+        connectionLimiter.shutdownNow();
+        outboundLimiters.values().forEach(BinanceWebSocketRateLimiter::shutdownNow);
     }
 
     private class PublicListener extends WebSocketListener {
-        private final boolean futures;
-        private final Runnable reconnect;
+        private final PublicStreamConnection connection;
 
-        private PublicListener(boolean futures, Runnable reconnect) {
-            this.futures = futures;
-            this.reconnect = reconnect;
+        private PublicListener(PublicStreamConnection connection) {
+            this.connection = connection;
+        }
+
+        @Override
+        public void onOpen(WebSocket webSocket, okhttp3.Response response) {
+            connection.markOpen();
+            connection.drainPendingSubscribeBatches().forEach(streams ->
+                    rateLimitedSend(webSocket, buildSubscribeRequest(streams)));
         }
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            handlePublicMessage(text, futures);
+            log.info("Binance Public WebSocket Receive {}",text);
+            handlePublicMessage(text, connection.isFutures());
         }
 
         @Override
         public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
             log.warn("Binance public WS disconnected: {}, response={}", t.getMessage(), describeResponse(response));
-            reconnect.run();
+            outboundLimiters.remove(webSocket);
+            reconnectPublic(connection);
         }
     }
 
@@ -745,12 +870,14 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
+            log.info("Binance User WebSocket Receive {}",text);
             handleUserMessage(text, futures);
         }
 
         @Override
         public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
             log.warn("Binance user WS disconnected: {}, response={}", t.getMessage(), describeResponse(response));
+            outboundLimiters.remove(webSocket);
             if (futures) {
                 futuresUserSocket = null;
             }
@@ -761,11 +888,12 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     private class SpotUserApiListener extends WebSocketListener {
         @Override
         public void onOpen(WebSocket webSocket, okhttp3.Response response) {
-            webSocket.send(buildSpotUserDataSubscribeRequest());
+            rateLimitedSend(webSocket, buildSpotUserDataSubscribeRequest());
         }
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
+            log.info("Binance Spot WebSocket Receive {}",text);
             try {
                 JsonNode root = objectMapper.readTree(text);
                 if (root.has("event")) {
@@ -793,6 +921,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
             log.warn("Binance Spot WebSocket API user data stream disconnected: {}, response={}",
                     t.getMessage(), describeResponse(response));
+            outboundLimiters.remove(webSocket);
             spotUserApiSocket = null;
             reconnectExecutor.schedule(BinanceWebSocketStreamService.this::connectSpotUserDataApi,
                     properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
@@ -802,11 +931,12 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     private class FuturesUserApiListener extends WebSocketListener {
         @Override
         public void onOpen(WebSocket webSocket, okhttp3.Response response) {
-            webSocket.send(buildFuturesUserDataApiRequest("userDataStream.start"));
+            rateLimitedSend(webSocket, buildFuturesUserDataApiRequest("userDataStream.start"));
         }
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
+            log.info("Binance Futures WebSocket Receive {}",text);
             try {
                 JsonNode root = objectMapper.readTree(text);
                 int status = root.path("status").asInt(0);
@@ -833,6 +963,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
             log.warn("Binance Futures WebSocket API user data stream disconnected: {}, response={}",
                     t.getMessage(), describeResponse(response));
+            outboundLimiters.remove(webSocket);
             futuresUserApiSocket = null;
             reconnectExecutor.schedule(BinanceWebSocketStreamService.this::connectFuturesUserDataApi,
                     properties.getReconnectDelayMs(), TimeUnit.MILLISECONDS);
@@ -849,6 +980,194 @@ public class BinanceWebSocketStreamService implements DisposableBean {
     private record ProxySettings(String host, int port, Proxy.Type type) {
     }
 
+    private record PublicSubscriptionTarget(PublicStreamConnection connection, boolean newConnection) {
+    }
+
+    private class PublicStreamConnection {
+        private final boolean futures;
+        private final int streamsPerSymbol;
+        private final Set<String> symbols = ConcurrentHashMap.newKeySet();
+        private final List<List<String>> pendingSubscribeBatches = new ArrayList<>();
+        private volatile WebSocket socket;
+        private volatile boolean open;
+
+        private PublicStreamConnection(boolean futures, int streamsPerSymbol) {
+            this.futures = futures;
+            this.streamsPerSymbol = streamsPerSymbol;
+        }
+
+        private boolean isFutures() {
+            return futures;
+        }
+
+        private boolean isOpen() {
+            return open;
+        }
+
+        private WebSocket getSocket() {
+            return socket;
+        }
+
+        private void setSocket(WebSocket socket) {
+            this.socket = socket;
+        }
+
+        private boolean canAddSymbol() {
+            return symbols.size() < maxSymbolsPerPublicConnection(futures);
+        }
+
+        private void addSymbol(String symbol) {
+            symbols.add(symbol);
+        }
+
+        private Collection<String> streams() {
+            List<String> streams = new ArrayList<>();
+            symbols.stream().sorted().forEach(symbol -> streams.addAll(publicStreams(symbol, futures)));
+            return streams;
+        }
+
+        private synchronized void queueSubscribe(List<String> streams) {
+            int maxBatchStreams = properties.getPublicSubscribeBatchSize() > 0
+                    ? properties.getPublicSubscribeBatchSize()
+                    : Math.max(streamsPerSymbol, properties.getMaxStreamsPerConnection());
+            for (int i = 0; i < streams.size(); i += maxBatchStreams) {
+                pendingSubscribeBatches.add(new ArrayList<>(streams.subList(i, Math.min(streams.size(), i + maxBatchStreams))));
+            }
+        }
+
+        private synchronized List<List<String>> drainPendingSubscribeBatches() {
+            List<List<String>> batches = new ArrayList<>(pendingSubscribeBatches);
+            pendingSubscribeBatches.clear();
+            return batches;
+        }
+
+        private void markConnecting() {
+            open = false;
+        }
+
+        private void markOpen() {
+            open = true;
+        }
+
+        private void markDisconnected() {
+            open = false;
+        }
+    }
+
+    private class DeferredWebSocket implements WebSocket {
+        private final String url;
+        private final Request request;
+        private final BinanceWebSocketRateLimiter outboundLimiter;
+        private final CompletableFuture<WebSocket> delegateFuture = new CompletableFuture<>();
+        private volatile WebSocket delegate;
+
+        private DeferredWebSocket(String url) {
+            this.url = url;
+            this.request = new Request.Builder().url(url).build();
+            this.outboundLimiter = new BinanceWebSocketRateLimiter("binance-ws-send-limiter",
+                    properties.getOutboundMessageLimitPerSecond(), 1000L);
+        }
+
+        private BinanceWebSocketRateLimiter getOutboundLimiter() {
+            return outboundLimiter;
+        }
+
+        private void setDelegate(WebSocket delegate) {
+            this.delegate = delegate;
+            delegateFuture.complete(delegate);
+        }
+
+        @Override
+        public Request request() {
+            WebSocket current = delegate;
+            return current == null ? request : current.request();
+        }
+
+        @Override
+        public long queueSize() {
+            WebSocket current = delegate;
+            return current == null ? 0L : current.queueSize();
+        }
+
+        @Override
+        public boolean send(String text) {
+            delegateFuture.thenAccept(socket -> outboundLimiter.execute(() -> socket.send(text)));
+            return true;
+        }
+
+        @Override
+        public boolean send(ByteString bytes) {
+            delegateFuture.thenAccept(socket -> outboundLimiter.execute(() -> socket.send(bytes)));
+            return true;
+        }
+
+        @Override
+        public boolean close(int code, String reason) {
+            WebSocket current = delegate;
+            if (current != null) {
+                return current.close(code, reason);
+            }
+            delegateFuture.thenAccept(socket -> socket.close(code, reason));
+            return true;
+        }
+
+        @Override
+        public void cancel() {
+            WebSocket current = delegate;
+            if (current != null) {
+                current.cancel();
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "DeferredWebSocket{" + url + '}';
+        }
+    }
+
+    private class DelegatingWebSocketListener extends WebSocketListener {
+        private final DeferredWebSocket deferredWebSocket;
+        private final WebSocketListener delegate;
+
+        private DelegatingWebSocketListener(DeferredWebSocket deferredWebSocket, WebSocketListener delegate) {
+            this.deferredWebSocket = deferredWebSocket;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void onOpen(WebSocket webSocket, okhttp3.Response response) {
+            deferredWebSocket.setDelegate(webSocket);
+            delegate.onOpen(webSocket, response);
+        }
+
+        @Override
+        public void onMessage(WebSocket webSocket, String text) {
+            delegate.onMessage(webSocket, text);
+        }
+
+        @Override
+        public void onMessage(WebSocket webSocket, ByteString bytes) {
+            delegate.onMessage(webSocket, bytes);
+        }
+
+        @Override
+        public void onClosing(WebSocket webSocket, int code, String reason) {
+            delegate.onClosing(webSocket, code, reason);
+        }
+
+        @Override
+        public void onClosed(WebSocket webSocket, int code, String reason) {
+            outboundLimiters.remove(webSocket);
+            delegate.onClosed(webSocket, code, reason);
+        }
+
+        @Override
+        public void onFailure(WebSocket webSocket, Throwable t, okhttp3.Response response) {
+            outboundLimiters.remove(webSocket);
+            delegate.onFailure(webSocket, t, response);
+        }
+    }
+
     @Data
     private static class Snapshot<T> {
         private final T value;
@@ -861,6 +1180,14 @@ public class BinanceWebSocketStreamService implements DisposableBean {
         private boolean enabled;
         private boolean publicMarketEnabled;
         private int subscribedSymbols;
+        private int spotPublicConnections;
+        private int futuresPublicConnections;
+        private int spotSubscribedSymbols;
+        private int futuresSubscribedSymbols;
+        private int outboundMessageQueuedTasks;
+        private int connectionRequestQueuedTasks;
+        private long outboundMessageDelayedTasks;
+        private long connectionRequestDelayedTasks;
         private int cachedPremiumIndices;
         private int cachedSpotDepth;
         private int cachedFuturesDepth;

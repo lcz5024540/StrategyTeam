@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.funding.service;
 
-import lombok.Getter;
+import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
@@ -10,7 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Getter
+@Data
 @Component
 public class BinanceWebSocketProperties {
 
@@ -30,6 +30,11 @@ public class BinanceWebSocketProperties {
     private long readTimeoutMs = 0L;
     private long writeTimeoutMs = 15_000L;
     private long pingIntervalMs = 0L;
+    private int outboundMessageLimitPerSecond = 4;
+    private int connectionRequestLimit = 300;
+    private long connectionRequestWindowMs = 300_000L;
+    private int maxStreamsPerConnection = 1024;
+    private int publicSubscribeBatchSize = 0;
     private Set<String> symbols = new LinkedHashSet<>();
 
     public BinanceWebSocketProperties() {
@@ -58,6 +63,11 @@ public class BinanceWebSocketProperties {
         readTimeoutMs = getLong(environment, "binance.websocket.read-timeout-ms", readTimeoutMs);
         writeTimeoutMs = getLong(environment, "binance.websocket.write-timeout-ms", writeTimeoutMs);
         pingIntervalMs = getLong(environment, "binance.websocket.ping-interval-ms", pingIntervalMs);
+        outboundMessageLimitPerSecond = getInteger(environment, "binance.websocket.outbound-message-limit-per-second", outboundMessageLimitPerSecond);
+        connectionRequestLimit = getInteger(environment, "binance.websocket.connection-request-limit", connectionRequestLimit);
+        connectionRequestWindowMs = getLong(environment, "binance.websocket.connection-request-window-ms", connectionRequestWindowMs);
+        maxStreamsPerConnection = getInteger(environment, "binance.websocket.max-streams-per-connection", maxStreamsPerConnection);
+        publicSubscribeBatchSize = getInteger(environment, "binance.websocket.public-subscribe-batch-size", publicSubscribeBatchSize);
         symbols = parseSymbols(environment.getProperty("binance.websocket.symbols", ""));
     }
 
