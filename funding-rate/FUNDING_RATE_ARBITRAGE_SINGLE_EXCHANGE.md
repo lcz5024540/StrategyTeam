@@ -159,3 +159,456 @@
 * 单交易所持久化表：`single_exchange_funding_rate_history`、`single_exchange_arbitrage_position`
 
 实施进度详见：[单交易所套利实施进度](./FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE_SHARE.md)
+
+## 7. 模拟订单执行教程
+
+### 7.1 模拟模式说明
+
+当前实现支持通过 `arbitrage.spot-futures.order-execution-mode` 控制下单模式：
+
+* `BINANCE_LIVE`：保持真实 Binance 下单行为。
+* `BINANCE_TEST`：使用真实 Binance production API 的 `/order/test` 接口校验签名、权限、交易对、数量和订单参数，但不会把订单发送到撮合引擎；系统会在本地构造 `FILLED` 模拟成交回执，并继续走正常持仓、订单、风控快照和资金费结算落库链路。
+
+模拟模式只模拟开仓和平仓订单本身，行情、资金费率、账户余额、保证金率、深度和风控检查仍读取真实 Binance API。
+
+### 7.2 配置方式
+
+在 `application.yml` 配置：
+
+```yaml
+arbitrage:
+  spot-futures:
+    order-execution-mode: "BINANCE_TEST"
+    symbol: "BTCUSDT"
+    trade-usdt-amount: 100
+    leverage: 3
+```
+
+如果通过环境变量覆盖，可使用：
+
+```powershell
+$env:ARBITRAGE_SPOT_FUTURES_ORDER_EXECUTION_MODE="BINANCE_TEST"
+```
+
+### 7.3 启动服务
+
+在项目根目录执行：
+
+```powershell
+mvn -pl coin-strategy-job -am spring-boot:run -Dspring-boot.run.profiles=test
+```
+
+服务默认监听：
+
+```text
+http://localhost:8081/strategy/api
+```
+
+### 7.4 手动执行一次策略
+
+使用 `run-once` 复用主策略链路执行一次判断、风控、模拟下单和落库：
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/run-once"
+```
+
+返回结果中应能看到：
+
+* `orderExecutionMode` 为 `BINANCE_TEST`
+* `running` 在单次执行后保持或恢复为原状态
+* `symbol`、`tradeUsdtAmount`、`leverage` 为当前配置值
+
+### 7.5 持续运行与停止
+
+启动每分钟循环：
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/start"
+```
+
+查看运行状态：
+
+```powershell
+Invoke-RestMethod "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/status"
+```
+
+停止循环：
+
+```powershell
+Invoke-RestMethod -Method Post "http://localhost:8081/strategy/api/binance/strategy/arbitrage/runtime/stop"
+```
+
+### 7.6 数据库观察
+
+执行后可查看以下表确认数据是否正常落库：
+
+```sql
+SELECT * FROM single_exchange_arbitrage_position ORDER BY id DESC LIMIT 5;
+SELECT * FROM single_exchange_arbitrage_order ORDER BY id DESC LIMIT 10;
+SELECT * FROM single_exchange_arbitrage_risk_snapshot ORDER BY id DESC LIMIT 10;
+SELECT * FROM single_exchange_arbitrage_funding_settlement ORDER BY id DESC LIMIT 10;
+```
+
+重点检查：
+
+* `single_exchange_arbitrage_order.raw_response` 应包含 `BINANCE_TEST simulated fill after /order/test validation`。
+* 订单状态应按模拟成交写入 `FILLED`，失败时会写入 `FAILED` 和 `error_message`。
+* Binance 真实账户不会新增真实现货成交或合约持仓。
+
+### 7.7 注意事项
+
+* `BINANCE_TEST` 仍需要 Binance API key/secret 可用，因为 `/order/test` 会校验签名和账户权限。
+* 模拟模式覆盖开仓和平仓，避免没有真实仓位时触发真实平仓。
+* `POST /binance/strategy/arbitrage/execute` 已接入策略落库闭环；适合从前端 FundingArb 页面手动批量开仓，并由后台跟踪任务继续管理订单、资金费结算与自动平仓。
+* 切回实盘前必须确认 `arbitrage.spot-futures.order-execution-mode` 已显式设置为 `BINANCE_LIVE`，并重新检查资金、杠杆、风控阈值和网络代理配置。
+
+## 8. FundingArb 落库与自动跟踪闭环教程
+
+### 8.1 闭环目标
+
+本节对应前端 `FundingArbPage.tsx` 的手动执行入口。用户在页面提交 symbol、amount、minRate、leverage 后，后端不再只返回执行日志，而是完成以下闭环：
+
+1. 开仓前生成 `SingleExchangeSpotFuturesOrderPlan`，并通过资金费率、基差和风控检查。
+2. 下单前创建 `single_exchange_arbitrage_position`，状态为 `OPENING`。
+3. 现货买入和合约做空执行后，写入 `single_exchange_arbitrage_order`。
+4. 双侧成功时仓位更新为 `OPENED`；失败时保留订单记录并标记 `FAILED`。
+5. 后台定时任务持续扫描 `OPENING / OPENED / CLOSING` 仓位，刷新订单、记录资金费结算，并在退出条件触发时自动平仓。
+6. 平仓成功后写入 `CLOSE` 阶段订单，并将仓位标记为 `CLOSED`。
+
+### 8.2 核心代码入口
+
+本闭环主要由以下类协作完成：
+
+* `BinanceSingleExchangeFundingRateArbitrageService`：前端手动执行入口的应用服务，负责批量 symbol 评估和触发开仓。
+* `FundingArbLifecycleService`：统一处理 position、order、funding settlement 的落库和状态流转。
+* `FundingArbTrackingJob`：后台定时扫描活跃仓位，执行订单刷新、资金费结算和自动平仓判断。
+* `SingleExchangeArbitrageOrderExecutor`：负责现货/合约双侧开仓、平仓和失败回滚。
+* `SingleExchangeSpotFuturesProperties`：读取 `arbitrage.spot-futures.*` 配置。
+
+### 8.3 配置项
+
+在 `coin-strategy-job/src/main/resources/application.yml` 中配置：
+
+```yaml
+arbitrage:
+  spot-futures:
+    order-execution-mode: "BINANCE_TEST"
+    tracking-enabled: true
+    tracking-fixed-delay-ms: 60000
+    tracking-position-limit: 50
+    close-threshold: 0.0001
+    max-basis-deterioration-rate: 0.0015
+    emergency-close-margin-ratio: 1.80
+```
+
+配置含义：
+
+* `tracking-enabled`：是否启用 FundingArb 持久化仓位跟踪任务。
+* `tracking-fixed-delay-ms`：每轮跟踪任务结束后等待多久再执行下一轮，默认 60 秒。
+* `tracking-position-limit`：单轮最多扫描多少个活跃仓位，默认 50。
+* `close-threshold`：资金费率跌破该值时触发平仓。
+* `max-basis-deterioration-rate`：当前基差相对开仓基差走阔超过该值时触发平仓。
+* `emergency-close-margin-ratio`：保证金率低于该值时触发紧急平仓。
+
+### 8.4 前端手动开仓
+
+前端 FundingArb 页面调用的接口保持不变：
+
+```text
+POST /strategy/api/binance/strategy/arbitrage/execute
+```
+
+PowerShell 示例：
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8081/strategy/api/binance/strategy/arbitrage/execute?symbols=BTCUSDT,ETHUSDT&amount=50&minRate=0.0005&leverage=3"
+```
+
+返回值仍是执行日志，日志中的 `Summary` 会显示每个 symbol 的结果，例如：
+
+```text
+=== Summary ===
+BTCUSDT -> Opened
+ETHUSDT -> Skipped: funding rate below threshold
+```
+
+只要某个 symbol 返回 `Opened`，对应仓位和订单应已落库，后台任务随后会自动接管跟踪。
+
+### 8.5 数据库检查
+
+开仓成功后检查仓位：
+
+```sql
+SELECT id, position_code, symbol, status, leverage, quantity,
+       entry_funding_rate, entry_basis_rate, entry_next_funding_time,
+       spot_buy_order_id, futures_sell_order_id, updated_at
+FROM single_exchange_arbitrage_position
+WHERE strategy_type = 'SINGLE_EXCHANGE_SPOT_FUTURES_ARBITRAGE_V1'
+ORDER BY id DESC
+LIMIT 10;
+```
+
+检查订单：
+
+```sql
+SELECT id, position_id, position_code, symbol, market_type, trade_phase,
+       hedge_side, side, status, exchange_order_id, client_order_id,
+       executed_qty, avg_price, quote_qty, error_message, placed_at, updated_at
+FROM single_exchange_arbitrage_order
+ORDER BY id DESC
+LIMIT 20;
+```
+
+检查资金费结算：
+
+```sql
+SELECT id, position_id, position_code, symbol, funding_time,
+       funding_rate, mark_price, position_qty, notional_value,
+       settlement_amount, direction, created_at
+FROM single_exchange_arbitrage_funding_settlement
+ORDER BY id DESC
+LIMIT 20;
+```
+
+预期状态：
+
+* 开仓执行中：`position.status = OPENING`。
+* 双侧开仓成功：`position.status = OPENED`，订单表有 `trade_phase = OPEN` 的 `SPOT` 和 `FUTURES` 记录。
+* 开仓失败：`position.status = FAILED`，订单表保留失败腿的 `error_message`。
+* 自动平仓执行中：`position.status = CLOSING`。
+* 自动平仓成功：`position.status = CLOSED`，订单表新增 `trade_phase = CLOSE` 的双侧记录。
+* 资金费结算：每个仓位同一个 `funding_time` 只插入一条 settlement，避免重复记账。
+
+### 8.6 后台跟踪任务行为
+
+`FundingArbTrackingJob` 每轮会加载 `SINGLE_EXCHANGE_SPOT_FUTURES_ARBITRAGE_V1` 下的活跃仓位：
+
+```text
+OPENING, OPENED, CLOSING
+```
+
+处理规则：
+
+* `OPENING`：刷新订单后，如果开仓双侧都已成交，则恢复为 `OPENED`。
+* `OPENED`：刷新订单、检查 funding settlement、判断是否触发平仓。
+* `CLOSING`：刷新订单后，如果平仓双侧都已成交，则恢复为 `CLOSED`；否则继续等待下一轮。
+
+自动平仓触发条件沿用当前单交易所策略规则：
+
+* 当前资金费率小于等于 0。
+* 当前资金费率低于 `close-threshold`。
+* 当前基差相对开仓基差走阔超过 `max-basis-deterioration-rate`。
+* 合约保证金率低于 `emergency-close-margin-ratio`。
+
+平仓前仍会做流动性评估，但该评估只用于日志和风险提示，不阻塞退出。
+
+### 8.7 前端面板验证
+
+FundingArb 页面已经读取 `FUNDING_ARB` 的以下接口：
+
+```text
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/summary
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/positions
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/orders
+GET /strategy/api/strategy-platform/strategy/FUNDING_ARB/timeline
+```
+
+落库闭环完成后，页面应能看到：
+
+* 指标区展示 FundingArb 已实现 PnL、当前持仓、订单数量和胜率。
+* 持仓列表展示 `OPENING / OPENED / CLOSING` 仓位。
+* 订单明细展示开仓和平仓双侧订单。
+* 收益时间线展示资金费结算和已平仓收益。
+
+### 8.8 验证命令
+
+代码编译验证：
+
+```powershell
+mvn -pl coin-strategy-job -am -DskipTests compile
+```
+
+如果本地 `target/classes/application.yml` 被 IDE 或运行中的服务锁定，可临时跳过资源复制，只验证 Java 编译：
+
+```powershell
+mvn -pl coin-strategy-job -am -DskipTests "-Dmaven.resources.skip=true" compile
+```
+
+新增测试类：
+
+```text
+coin-strategy-job/src/test/java/com/metaverse/coin/strategy/job/funding/service/FundingArbLifecycleServiceTest.java
+```
+
+该测试覆盖：
+
+* 开仓成功后 position 标记 `OPENED` 并写入订单。
+* 开仓失败后 position 标记 `FAILED`，订单错误信息保留。
+* funding time 推进后 settlement 只记录一次。
+* funding 低于平仓阈值后自动平仓并标记 `CLOSED`。
+
+### 8.9 注意事项
+
+* `BINANCE_TEST` 会模拟订单成交，但行情、资金费率、账户余额、保证金率和深度仍读取真实 Binance API。
+* `BINANCE_LIVE` 会真实下单和平仓，启用前必须确认 API 权限、账户资金、杠杆、代理和风控阈值。
+* 手动入口支持多 symbol，但每个 symbol 都会独立创建仓位；后台跟踪按数据库中的活跃仓位逐个 symbol 管理。
+* 不要手工修改活跃仓位状态，除非已经确认交易所真实订单与数据库状态一致。
+
+## 9. Binance 查询 WebSocket 化与 HTTP 写接口边界
+
+FundingArb 的高频查询已经接入 `BinanceQueryDataProvider` 读门面。业务侧不再直接依赖 Binance REST 查询价格、资金费、深度、订单状态和合约账户状态；默认优先读取本地 WebSocket 缓存，缓存缺失、过期或 WebSocket 不可用时才使用 HTTP fallback。
+
+该边界的核心原则是：
+
+* 高频读路径优先 WebSocket，本地缓存命中后不打 Binance REST。
+* 交易写路径继续使用 HTTP，避免把下单、撤单、杠杆和划转语义混入行情连接。
+* WebSocket 连接和出站 JSON 消息统一经过单实例内存限频，避免触发 Binance WebSocket 断连或 IP 封禁风险。
+
+### 9.1 数据来源
+
+公开行情 WebSocket：
+
+```text
+Spot:
+  <symbol>@bookTicker
+  <symbol>@depth20@100ms
+
+USDS-M Futures:
+  <symbol>@bookTicker
+  <symbol>@depth20@100ms
+  <symbol>@markPrice@1s
+```
+
+公开行情连接不再按 symbol 单独建连接，而是由 `BinanceWebSocketStreamService` 维护聚合 combined stream 连接：
+
+* Spot 每个 symbol 占用 2 个 stream：`bookTicker`、`depth20@100ms`。
+* USDS-M Futures 每个 symbol 占用 3 个 stream：`bookTicker`、`depth20@100ms`、`markPrice@1s`。
+* 单连接最多 `binance.websocket.max-streams-per-connection` 个 stream，默认 1024。
+* 默认容量下，Spot 单连接最多约 512 个 symbol；Futures 单连接最多约 341 个 symbol。
+* `symbols` 为空时，系统启动会使用 `arbitrage.spot-futures.symbol` 做初始订阅；后续策略查询新 symbol 时动态加入已有未满连接，连接已打开则通过 `SUBSCRIBE` 消息补订阅，连接未打开则排队到 open 后发送。
+
+账户与订单 WebSocket：
+
+```text
+Spot user data stream:
+  wss://ws-api.binance.com:443/ws-api/v3
+  userDataStream.subscribe.signature
+  executionReport
+
+USDS-M Futures user data stream:
+  wss://ws-fapi.binance.com/ws-fapi/v1
+  userDataStream.start / userDataStream.ping / userDataStream.stop
+  wss://fstream.binance.com/private/ws/<listenKey>
+  ORDER_TRADE_UPDATE
+  ACCOUNT_UPDATE
+```
+
+这些流用于维护 spot/futures price ticker、futures premium index、depth20 盘口、spot/futures order cache、futures account cache 和 position risk cache。Spot 不再使用 legacy listenKey，也不会再调用 `POST /api/v3/userDataStream`。USDS-M Futures 仍有 listenKey 概念，但创建、续期、关闭已经改为 WebSocket API `userDataStream.start/ping/stop`，不再调用 HTTP `/fapi/v1/listenKey`。
+
+Spot/Futures WebSocket API 地址当前由代码常量固定：
+
+```text
+Spot:    wss://ws-api.binance.com:443/ws-api/v3
+Futures: wss://ws-fapi.binance.com/ws-fapi/v1
+```
+
+### 9.2 HTTP 仍保留的场景
+
+写接口继续使用 HTTP：
+
+```text
+spot/futures place order
+spot/futures cancel order
+change leverage
+change margin type
+universal transfer
+```
+
+查询接口只有在以下情况使用 HTTP：
+
+* 应用启动后的首次查询，WebSocket 缓存还未 warm up。
+* WebSocket 断线、事件缺口或订阅尚未完成。
+* 缓存超过 `binance.websocket.cache-ttl-ms`。
+* REST-only 元数据查询，例如 `exchangeInfo`。
+* `binance.websocket.enabled=false`。
+* `binance.websocket.http-fallback-enabled=true` 且缓存 miss/stale。
+
+如果将 `http-fallback-enabled=false`，缓存缺失会直接抛出错误。这适合压测或强约束演练，不建议 live 交易初期启用。
+
+### 9.3 WebSocket 限频处理
+
+当前实现针对 Binance WebSocket 限制做了单实例内存限频管理：
+
+```text
+Binance 限制:
+  单连接每秒最多 5 条消息
+  单连接最多 1024 个 streams
+  每 IP 每 5 分钟最多 300 次连接请求
+
+系统处理:
+  应用层 JSON 出站消息默认限制为 4 条/秒/连接
+  所有 newWebSocket 连接请求默认限制为 300 次/5 分钟
+  Public stream 按 max-streams-per-connection 自动分片
+```
+
+说明：
+
+* Binance 的 5 条/秒消息限制包含 PING、PONG 和 JSON 消息。OkHttp 会自动响应服务端 PING 产生 PONG，业务层无法精确排队自动 PONG，因此应用层 JSON 限速默认使用 4 条/秒，为 PONG 预留余量。
+* Spot/Futures user data WebSocket API 的 `subscribe/start/ping/stop/unsubscribe` 都走统一 `rateLimitedSend(...)`。
+* Public 动态 `SUBSCRIBE` 也走统一发送限速。
+* 所有连接创建都走连接请求限速器；断线重连先等待 `reconnect-delay-ms`，再进入连接限速队列，避免重连风暴。
+* 当前限频只保证当前 JVM 实例。如果多实例共用同一出口 IP，需要后续升级为 Redis 或数据库级分布式限频。
+
+### 9.4 配置项
+
+```yaml
+binance:
+  websocket:
+    enabled: true
+    public-market-enabled: true
+    cache-ttl-ms: 5000
+    http-fallback-enabled: true
+    reconnect-delay-ms: 5000
+    outbound-message-limit-per-second: 4
+    connection-request-limit: 300
+    connection-request-window-ms: 300000
+    max-streams-per-connection: 1024
+    public-subscribe-batch-size: 0
+    spot-stream-url: "wss://stream.binance.com"
+    futures-stream-url: "wss://fstream.binance.com"
+    symbols: ""
+```
+
+配置含义：
+
+* `enabled`：Binance WebSocket 查询缓存总开关。关闭后读路径直接走 HTTP fallback。
+* `public-market-enabled`：公共行情流开关。关闭后不会订阅 price/depth/mark price。
+* `cache-ttl-ms`：缓存有效期。超过该时间后，读门面认为缓存 stale。
+* `http-fallback-enabled`：缓存不可用时是否允许 HTTP 回补。
+* `reconnect-delay-ms`：连接失败后的重连延迟。
+* `outbound-message-limit-per-second`：单连接应用层 JSON 出站限速，默认 4 条/秒。
+* `connection-request-limit` / `connection-request-window-ms`：连接请求窗口限速，默认 300 次/5 分钟。
+* `max-streams-per-connection`：单个 Public WebSocket 连接允许的最大 stream 数，默认 1024。
+* `public-subscribe-batch-size`：动态订阅批次大小。0 表示按连接剩余 stream 容量自动拆分。
+* `spot-stream-url` / `futures-stream-url`：公共行情和 Futures private listenKey stream 的基础端点。
+* `symbols`：可选启动订阅 symbol 列表，多个 symbol 使用英文逗号分隔；为空时由策略主 symbol 和运行期查询动态订阅。
+
+### 9.5 FundingArb 调用链变化
+
+* `SingleExchangeArbitrageOrderExecutor.createSpotFuturesPlan`：spot/futures price 优先 websocket cache，`exchangeInfo` 继续 HTTP 低频读取。
+* `SingleExchangeDepthMonitor`：spot/futures depth 优先 websocket cache。
+* `FundingArbLifecycleService`：premium index、order refresh 优先 websocket/user data cache。
+* `SingleExchangeRiskService`：futures account/margin ratio 优先 websocket account cache，缺失时 HTTP reconcile。
+
+正常跟踪轮询不会每轮都打 Binance REST 行情接口；只有缓存不可用时才回补，能够显著降低限频压力。
+
+### 9.6 排障建议
+
+* 如果日志持续出现 `websocket cache miss/stale`，优先检查 websocket endpoint、代理和 `cache-ttl-ms` 是否过小。
+* 如果订单状态没有及时刷新，检查 Spot/Futures WebSocket API 连接是否订阅成功；Spot legacy listenKey 已不可用，Futures listenKey 通过 WebSocket API 维护。
+* 如果启动后第一次查询仍打 HTTP，这是预期行为；第一次 HTTP 回补会同步 warm cache。
+* 如果希望严格禁止查询 HTTP fallback，可将 `http-fallback-enabled=false`。此时缓存缺失会直接抛出错误，不建议 live 交易初期使用。
+* 如果订阅大量 symbol 后连接数增加，检查每个 symbol 对应的 stream 数是否已经达到 `max-streams-per-connection` 分片阈值。
+* 如果 WebSocket API 请求响应变慢，检查 `outbound-message-limit-per-second` 是否过低，以及是否存在大量动态订阅或 user data keepalive 排队。

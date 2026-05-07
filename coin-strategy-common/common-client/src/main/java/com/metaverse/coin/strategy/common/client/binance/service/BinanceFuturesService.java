@@ -12,18 +12,13 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePri
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTrade;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.*;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
-import java.io.IOException;
 import java.util.stream.Collectors;
 
 /**
@@ -50,11 +45,19 @@ public class BinanceFuturesService {
     }
 
     public BinanceFuturesService(UMFuturesClientImpl futuresClient, String baseUrl, String apiKey, String secretKey) {
+        this(futuresClient, baseUrl, apiKey, secretKey, null);
+    }
+
+    public BinanceFuturesService(UMFuturesClientImpl futuresClient,
+                                 String baseUrl,
+                                 String apiKey,
+                                 String secretKey,
+                                 OkHttpClient httpClient) {
         this.futuresClient = futuresClient;
         this.baseUrl = baseUrl != null ? baseUrl : "https://fapi.binance.com";
         this.apiKey = apiKey;
         this.secretKey = secretKey;
-        this.httpClient = new OkHttpClient();
+        this.httpClient = httpClient == null ? new OkHttpClient() : httpClient;
         this.objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
@@ -462,7 +465,7 @@ public class BinanceFuturesService {
      * <br>
      * GET /fapi/v1/time
      * <br>
-     * 获取服务器时间
+     * 鑾峰彇鏈嶅姟鍣ㄦ椂闂?
      */
     public Long checkServerTime() {
         String json = futuresClient.market().time();
@@ -1155,51 +1158,6 @@ public class BinanceFuturesService {
         LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
         return parse(executeRequest("/fapi/v1/multiAssetsMargin", parameters, "GET", true), BinanceFuturesMultiAssetsMode.class);
-    }
-
-    // =========================== User Data Stream ===========================
-
-    /**
-     * Start User Data Stream (USER_STREAM)
-     * <br>
-     * POST /fapi/v1/listenKey
-     * <br>
-     * 创建 ListenKey
-     */
-    public String startUserDataStream() {
-        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
-        parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
-        return executeRequest("/fapi/v1/listenKey", parameters, "POST", true);
-    }
-
-    /**
-     * Keepalive User Data Stream (USER_STREAM)
-     * <br>
-     * PUT /fapi/v1/listenKey
-     * <br>
-     * 延长 ListenKey 有效期
-     */
-    public void keepAliveUserDataStream(String listenKey) {
-        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
-        // parameters.put("listenKey", listenKey); // Usually required, but sometimes implied by header? No, usually param.
-        // Check docs: "listenKey" is required.
-        parameters.put("listenKey", listenKey);
-        parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
-        executeRequest("/fapi/v1/listenKey", parameters, "PUT", true);
-    }
-
-    /**
-     * Close User Data Stream (USER_STREAM)
-     * <br>
-     * DELETE /fapi/v1/listenKey
-     * <br>
-     * 关闭 ListenKey
-     */
-    public void closeUserDataStream(String listenKey) {
-        LinkedHashMap<String, Object> parameters = new LinkedHashMap<>();
-        parameters.put("listenKey", listenKey);
-        parameters.put("recvWindow", DEFAULT_RECV_WINDOW);
-        executeRequest("/fapi/v1/listenKey", parameters, "DELETE", true);
     }
 
     // =========================== Helper Methods (Hedge Mode) ===========================

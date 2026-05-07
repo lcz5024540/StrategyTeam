@@ -9,8 +9,11 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceExc
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinancePriceTicker;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceSymbol;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder;
+import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -45,10 +49,15 @@ public class SingleExchangeArbitrageOrderExecutor {
     private static final String HEDGE_SIDE_FUTURES = "FUTURES";
     private static final String ORDER_TYPE_MARKET = "MARKET";
     private static final String POSITION_SIDE_SHORT = "SHORT";
+    private static final String STATUS_FILLED = "FILLED";
     private static final String STATUS_FAILED = "FAILED";
+    private static final String ORDER_EXECUTION_MODE_BINANCE_TEST = "BINANCE_TEST";
     private static final int INTERNAL_SCALE = 8;
     private static final int DEFAULT_LEVERAGE = 3;
     private final BinanceApiService binanceApiService;
+    private final SingleExchangeSpotFuturesProperties properties;
+    @Autowired(required = false)
+    private BinanceQueryDataProvider queryDataProvider;
 
     /**
      * Execute Dual-Side Order (Long Spot + Short Futures)
@@ -218,7 +227,12 @@ public class SingleExchangeArbitrageOrderExecutor {
 
     private OrderAttempt<BinanceOrder> placeSpotOrder(String symbol, String side, BigDecimal quantity, String errorLogPrefix) {
         try {
-            return OrderAttempt.success(binanceApiService.placeSpotOrder(symbol, side, ORDER_TYPE_MARKET, null, quantity.toPlainString(), null));
+            if (isBinanceTestMode()) {
+                binanceApiService.testSpotOrder(symbol, side, ORDER_TYPE_MARKET, null, quantity.toPlainString(), null);
+                return OrderAttempt.success(buildSimulatedSpotOrder(symbol, side, quantity));
+            }
+            return OrderAttempt.success(binanceApiService.placeSpotOrder(symbol, side, ORDER_TYPE_MARKET, null,
+                    quantity.toPlainString(), null));
         } catch (Exception e) {
             log.error(errorLogPrefix, e);
             return OrderAttempt.failure(e.getMessage());
@@ -227,6 +241,11 @@ public class SingleExchangeArbitrageOrderExecutor {
 
     private OrderAttempt<BinanceFuturesOrder> openFuturesShort(String symbol, BigDecimal quantity, String errorLogPrefix) {
         try {
+            if (isBinanceTestMode()) {
+                binanceApiService.testFuturesOrder(symbol, "SELL", POSITION_SIDE_SHORT, ORDER_TYPE_MARKET,
+                        null, quantity.toPlainString(), null, null);
+                return OrderAttempt.success(buildSimulatedFuturesOrder(symbol, "SELL", POSITION_SIDE_SHORT, quantity));
+            }
             return OrderAttempt.success(binanceApiService.openShort(symbol, ORDER_TYPE_MARKET, quantity.toPlainString(), null, null));
         } catch (Exception e) {
             log.error(errorLogPrefix, e);
@@ -309,11 +328,93 @@ public class SingleExchangeArbitrageOrderExecutor {
 
     private OrderAttempt<BinanceFuturesOrder> closeFuturesShort(String symbol, BigDecimal quantity, String errorLogPrefix) {
         try {
+            if (isBinanceTestMode()) {
+                binanceApiService.testFuturesOrder(symbol, "BUY", POSITION_SIDE_SHORT, ORDER_TYPE_MARKET,
+                        null, quantity.toPlainString(), null, null);
+                return OrderAttempt.success(buildSimulatedFuturesOrder(symbol, "BUY", POSITION_SIDE_SHORT, quantity));
+            }
             return OrderAttempt.success(binanceApiService.closeShort(symbol, ORDER_TYPE_MARKET, quantity.toPlainString(), null));
         } catch (Exception e) {
             log.error(errorLogPrefix, e);
             return OrderAttempt.failure(e.getMessage());
         }
+    }
+
+    private boolean isBinanceTestMode() {
+        return properties != null
+                && ORDER_EXECUTION_MODE_BINANCE_TEST.equalsIgnoreCase(properties.getOrderExecutionMode());
+    }
+
+    private BinanceOrder buildSimulatedSpotOrder(String symbol, String side, BigDecimal quantity) {
+        long now = System.currentTimeMillis();
+        BigDecimal price = safeSpotPrice(symbol);
+        BigDecimal quoteQty = price.multiply(quantity).setScale(INTERNAL_SCALE, RoundingMode.HALF_UP);
+        BinanceOrder.Fill fill = new BinanceOrder.Fill(price, quantity, BigDecimal.ZERO, "USDT", now);
+        return BinanceOrder.builder()
+                .symbol(symbol)
+                .orderId(generateSimulatedOrderId())
+                .clientOrderId(generateSimulatedClientOrderId())
+                .price(BigDecimal.ZERO)
+                .origQty(quantity)
+                .executedQty(quantity)
+                .cummulativeQuoteQty(quoteQty)
+                .status(STATUS_FILLED)
+                .type(ORDER_TYPE_MARKET)
+                .side(side)
+                .time(now)
+                .updateTime(now)
+                .transactTime(now)
+                .fills(List.of(fill))
+                .build();
+    }
+
+    private BinanceFuturesOrder buildSimulatedFuturesOrder(String symbol, String side, String positionSide, BigDecimal quantity) {
+        long now = System.currentTimeMillis();
+        BigDecimal price = safeFuturesPrice(symbol);
+        return BinanceFuturesOrder.builder()
+                .symbol(symbol)
+                .orderId(generateSimulatedOrderId())
+                .clientOrderId(generateSimulatedClientOrderId())
+                .price(BigDecimal.ZERO)
+                .origQty(quantity)
+                .executedQty(quantity)
+                .cumQty(quantity)
+                .cumQuote(price.multiply(quantity).setScale(INTERNAL_SCALE, RoundingMode.HALF_UP))
+                .avgPrice(price)
+                .side(side)
+                .positionSide(positionSide)
+                .status(STATUS_FILLED)
+                .type(ORDER_TYPE_MARKET)
+                .origType(ORDER_TYPE_MARKET)
+                .reduceOnly(false)
+                .updateTime(now)
+                .build();
+    }
+
+    private BigDecimal safeSpotPrice(String symbol) {
+        try {
+            return getSpotPrice(symbol);
+        } catch (Exception e) {
+            log.warn("Failed to fetch spot price for simulated order {}, fallback to 0", symbol, e);
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private BigDecimal safeFuturesPrice(String symbol) {
+        try {
+            return getFuturesPrice(symbol);
+        } catch (Exception e) {
+            log.warn("Failed to fetch futures price for simulated order {}, fallback to 0", symbol, e);
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private Long generateSimulatedOrderId() {
+        return Math.abs(UUID.randomUUID().getMostSignificantBits());
+    }
+
+    private String generateSimulatedClientOrderId() {
+        return "BINANCE_TEST_" + UUID.randomUUID().toString().replace("-", "");
     }
 
     private BigDecimal requireQuantity(SingleExchangeSpotFuturesOrderPlan plan) {
@@ -349,7 +450,7 @@ public class SingleExchangeArbitrageOrderExecutor {
                 .setPlacedAt(extractSpotPlacedAt(order))
                 .setFilledAt(extractSpotFilledAt(order))
                 .setErrorMessage(attempt.getErrorMessage())
-                .setRawResponse(order != null ? String.valueOf(order) : null);
+                .setRawResponse(order != null ? decorateRawResponse(order) : null);
     }
 
     private SingleExchangeArbitrageOrder buildFuturesOrderRecord(SingleExchangeSpotFuturesOrderPlan plan,
@@ -379,7 +480,12 @@ public class SingleExchangeArbitrageOrderExecutor {
                 .setPlacedAt(extractFuturesPlacedAt(order))
                 .setFilledAt(extractFuturesFilledAt(order))
                 .setErrorMessage(attempt.getErrorMessage())
-                .setRawResponse(order != null ? String.valueOf(order) : null);
+                .setRawResponse(order != null ? decorateRawResponse(order) : null);
+    }
+
+    private String decorateRawResponse(Object order) {
+        String raw = String.valueOf(order);
+        return isBinanceTestMode() ? "BINANCE_TEST simulated fill after /order/test validation: " + raw : raw;
     }
 
     private BigDecimal extractSpotAvgPrice(BinanceOrder order) {
@@ -485,7 +591,7 @@ public class SingleExchangeArbitrageOrderExecutor {
     }
 
     private BigDecimal getSpotPrice(String symbol) {
-        BinancePriceTicker ticker = binanceApiService.getTickerPrice(symbol);
+        BinancePriceTicker ticker = getQueryDataProvider().getSpotPrice(symbol);
         if (ticker == null || ticker.getPrice() == null) {
             throw new IllegalArgumentException("Spot price not available for " + symbol);
         }
@@ -493,11 +599,18 @@ public class SingleExchangeArbitrageOrderExecutor {
     }
 
     private BigDecimal getFuturesPrice(String symbol) {
-        BinancePriceTicker ticker = binanceApiService.getFuturesTickerPrice(symbol);
+        BinancePriceTicker ticker = getQueryDataProvider().getFuturesPrice(symbol);
         if (ticker == null || ticker.getPrice() == null) {
             throw new IllegalArgumentException("Futures price not available for " + symbol);
         }
         return ticker.getPrice();
+    }
+
+    private BinanceQueryDataProvider getQueryDataProvider() {
+        if (queryDataProvider != null) {
+            return queryDataProvider;
+        }
+        return new com.metaverse.coin.strategy.core.arbitrage.market.HttpBinanceQueryDataProvider(binanceApiService);
     }
 
     private BigDecimal getQuantityStep(List<Map<String, Object>> filters, Integer fallbackPrecision) {

@@ -4,8 +4,10 @@ import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrderBook;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceOrderBook;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +23,8 @@ public class SingleExchangeDepthMonitor {
 
     private final BinanceApiService binanceApiService;
     private final SingleExchangeSpotFuturesProperties properties;
+    @Autowired(required = false)
+    private BinanceQueryDataProvider queryDataProvider;
 
     public SingleExchangeDepthSnapshot getDepthSnapshot(String symbol) {
         int retryCount = properties.getLiquidityRetryCount() == null || properties.getLiquidityRetryCount() <= 0
@@ -32,8 +36,8 @@ public class SingleExchangeDepthMonitor {
 
         for (int attempt = 1; attempt <= retryCount; attempt++) {
             try {
-                BinanceOrderBook spotOrderBook = binanceApiService.getMarketDataService().getOrderBook(symbol, DEPTH_LIMIT);
-                BinanceFuturesOrderBook futuresOrderBook = binanceApiService.getFuturesService().getOrderBook(symbol, DEPTH_LIMIT);
+                BinanceOrderBook spotOrderBook = getQueryDataProvider().getSpotOrderBook(symbol, DEPTH_LIMIT);
+                BinanceFuturesOrderBook futuresOrderBook = getQueryDataProvider().getFuturesOrderBook(symbol, DEPTH_LIMIT);
                 if (isValid(spotOrderBook) && isValid(futuresOrderBook)) {
                     return SingleExchangeDepthSnapshot.builder()
                             .fallbackUsed(false)
@@ -78,5 +82,12 @@ public class SingleExchangeDepthMonitor {
         return levels != null
                 && !levels.isEmpty()
                 && levels.stream().anyMatch(level -> level != null && level.size() >= 2);
+    }
+
+    private BinanceQueryDataProvider getQueryDataProvider() {
+        if (queryDataProvider != null) {
+            return queryDataProvider;
+        }
+        return new com.metaverse.coin.strategy.core.arbitrage.market.HttpBinanceQueryDataProvider(binanceApiService);
     }
 }

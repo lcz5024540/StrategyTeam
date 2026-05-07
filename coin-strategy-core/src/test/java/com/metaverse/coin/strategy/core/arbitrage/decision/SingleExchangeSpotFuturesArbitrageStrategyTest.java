@@ -223,6 +223,37 @@ public class SingleExchangeSpotFuturesArbitrageStrategyTest {
     }
 
     @Test
+    public void testRunOnceUsesMainStrategyLoopAndRestoresStoppedState() {
+        BinanceFuturesPremiumIndex index = buildFundingIndex(
+                "0.0006",
+                System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(20)
+        );
+        SingleExchangeSpotFuturesOrderPlan plan = buildPlan("0.0004");
+
+        doAnswer(invocation -> {
+            SingleExchangeArbitragePosition position = invocation.getArgument(0);
+            position.setId(11L);
+            return 1;
+        }).when(positionMapper).insert(any(SingleExchangeArbitragePosition.class));
+        when(positionMapper.updateById(any(SingleExchangeArbitragePosition.class))).thenReturn(1);
+        when(fundingRateMonitor.getBinanceFundingRate("BTCUSDT")).thenReturn(index);
+        when(orderExecutor.createSpotFuturesPlan(eq("BTCUSDT"), any(BigDecimal.class), any())).thenReturn(plan);
+        when(riskService.evaluateLiquidityRisk(any(SingleExchangeSpotFuturesOrderPlan.class), eq(SingleExchangeRiskService.PHASE_OPEN)))
+                .thenReturn(buildLiquidityAssessment(true, false, SingleExchangeRiskService.PHASE_OPEN, null, "0.0004"));
+        when(riskService.evaluateTradeRisk(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildTradeRiskAssessment(true, null));
+        when(orderExecutor.openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class)))
+                .thenReturn(buildExecutionResult("BTCUSDT", "0.001", "1", "2"));
+
+        String result = strategy.runOnce();
+
+        assertEquals("Single exchange spot-futures arbitrage run-once completed.", result);
+        assertFalse(strategy.isRunning());
+        verify(orderExecutor).openArbitragePosition(any(SingleExchangeSpotFuturesOrderPlan.class));
+        verify(orderMapper, atLeastOnce()).insert(any(SingleExchangeArbitrageOrder.class));
+    }
+
+    @Test
     public void testSkipOpenNearSettlementWindow() throws Exception {
         BinanceFuturesPremiumIndex index = buildFundingIndex(
                 "0.0008",
