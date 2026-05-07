@@ -162,6 +162,8 @@ smart-wallet:
     closed-position-limit: 50
     # [TUNE] Recent trades fetched per watchlist wallet.
     recent-trade-limit: 30
+    # [TUNE] Historical user trades retained for profile/order reconstruction.
+    user-trade-history-lookback-days: 90
     # [TUNE] Recent trades fetched during discovery for session-profile enrichment.
     discovery-profile-trade-limit: 30
     # [TUNE] Lookback window used by discovery session coverage diagnostics.

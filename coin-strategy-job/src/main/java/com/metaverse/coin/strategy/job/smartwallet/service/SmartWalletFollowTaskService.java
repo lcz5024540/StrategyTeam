@@ -122,6 +122,7 @@ public class SmartWalletFollowTaskService {
                     "openedAtMs", openedAtMillis(existing),
                     "polymarketSearchUrl", polymarketSearchUrl(existing),
                     "reasonSummary", "externalTradeId already recorded"));
+            profileStoreService.recordObservedTradeActivity(existing.getWalletAddress(), existing.getOpenedAt());
             return existing;
         }
 

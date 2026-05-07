@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -158,6 +159,62 @@ class PolymarketWalletDiscoveryServiceTest {
     }
 
     @Test
+    void shouldImportHotWalletRecentTradesChronologicallyAfterTimestampDescFetch() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        long checkpointMillis = System.currentTimeMillis() - 60_000L;
+        SmartWalletProfileEntity wallet = new SmartWalletProfileEntity()
+                .setWalletAddress("0xhot")
+                .setChain("polygon")
+                .setMonitorTier("HOT")
+                .setQualified(Boolean.TRUE)
+                .setWatchEnabled(Boolean.TRUE)
+                .setLastEventSyncAt(new java.util.Date(checkpointMillis));
+
+        when(profileStoreService.listExecutableWatchlist()).thenReturn(List.of(wallet));
+        when(polymarketApiClient.fetchUserTrades("0xhot")).thenReturn(List.of(
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("trade-2")
+                        .walletAddress("0xhot")
+                        .marketId("market-2")
+                        .question("Q2")
+                        .outcome("YES")
+                        .side("BUY")
+                        .price(new BigDecimal("0.51"))
+                        .size(new BigDecimal("8"))
+                        .tradedAt(checkpointMillis + 2_000L)
+                        .build(),
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("trade-1")
+                        .walletAddress("0xhot")
+                        .marketId("market-1")
+                        .question("Q1")
+                        .outcome("YES")
+                        .side("BUY")
+                        .price(new BigDecimal("0.49"))
+                        .size(new BigDecimal("6"))
+                        .tradedAt(checkpointMillis + 1_000L)
+                        .build()
+        ));
+        when(marketMetadataService.resolveCanonicalConditionId(any(), any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        PolymarketWalletDiscoveryService service = newService(properties);
+
+        long beforeSync = System.currentTimeMillis();
+        int imported = service.syncWatchlistTrades();
+
+        assertEquals(2, imported);
+        ArgumentCaptor<PolymarketTradeEventRequest> eventCaptor = ArgumentCaptor.forClass(PolymarketTradeEventRequest.class);
+        verify(monitorService, org.mockito.Mockito.times(2)).ingestTradeEvent(eventCaptor.capture());
+        assertEquals(List.of("trade-1", "trade-2"),
+                eventCaptor.getAllValues().stream().map(PolymarketTradeEventRequest::getExternalTradeId).toList());
+        ArgumentCaptor<java.util.Date> checkpointCaptor = ArgumentCaptor.forClass(java.util.Date.class);
+        verify(profileStoreService).recordHotEventSync(eq(wallet), checkpointCaptor.capture());
+        assertTrue(checkpointCaptor.getValue().getTime() >= checkpointMillis + 2_000L);
+        assertTrue(checkpointCaptor.getValue().getTime() >= beforeSync);
+    }
+
+    @Test
     void shouldRefreshWarmWalletMetricsWithoutCreatingFollowTasks() {
         SmartWalletProperties properties = new SmartWalletProperties();
         SmartWalletProfileEntity warmWallet = new SmartWalletProfileEntity()
@@ -293,6 +350,7 @@ class PolymarketWalletDiscoveryServiceTest {
 
         PolymarketWalletDiscoveryService service = newService(properties);
 
+        long beforeSync = System.currentTimeMillis();
         int refreshed = service.refreshWarmWalletMetricsBatch();
 
         assertEquals(1, refreshed);
@@ -301,7 +359,10 @@ class PolymarketWalletDiscoveryServiceTest {
         assertEquals(List.of("trade-1", "trade-2"),
                 captor.getAllValues().stream().map(PolymarketTradeEventRequest::getExternalTradeId).toList());
         verify(profileStoreService).recordWarmMetricsRefresh(eq(promotedWallet), any());
-        verify(profileStoreService).recordHotEventSync(eq(promotedWallet), any());
+        ArgumentCaptor<java.util.Date> checkpointCaptor = ArgumentCaptor.forClass(java.util.Date.class);
+        verify(profileStoreService).recordHotEventSync(eq(promotedWallet), checkpointCaptor.capture());
+        assertTrue(checkpointCaptor.getValue().getTime() >= checkpointMillis + 2_000L);
+        assertTrue(checkpointCaptor.getValue().getTime() >= beforeSync);
     }
 
     private PolymarketWalletDiscoveryService newService(SmartWalletProperties properties) {

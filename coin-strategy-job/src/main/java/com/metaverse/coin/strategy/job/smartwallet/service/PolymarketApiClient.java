@@ -43,6 +43,7 @@ public class PolymarketApiClient {
 
     private static final int DEFAULT_FULL_HISTORY_PAGE_SIZE = 200;
     private static final int MAX_FULL_HISTORY_PAGES = 20;
+    private static final int DEFAULT_USER_TRADE_HISTORY_LOOKBACK_DAYS = 90;
     public static final int MAX_USER_TRADE_HISTORY_OFFSET = 3_000;
     private static final String METADATA_ENDPOINT_COOLDOWN_KEY = "metadata-endpoint:markets-condition-ids";
 
@@ -324,6 +325,8 @@ public class PolymarketApiClient {
         params.put("limit", String.valueOf(limit == null ? properties.getPolymarket().getRecentTradeLimit() : limit));
         params.put("offset", String.valueOf(safeOffset));
         params.put("takerOnly", "true");
+        params.put("sortBy", "TIMESTAMP");
+        params.put("sortDirection", "DESC");
 
         JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
                 "/trades", params));
@@ -352,6 +355,7 @@ public class PolymarketApiClient {
                     .tradedAt(epochMillis(node, "timestamp", "createdAt", "time"))
                     .build());
         }
+        result.sort(Comparator.comparing(UserTrade::getTradedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         return result;
     }
 
@@ -364,6 +368,7 @@ public class PolymarketApiClient {
             return List.of();
         }
         int safePageSize = Math.max(1, Math.min(pageSize, 500));
+        long cutoffMillis = userTradeHistoryCutoffMillis();
         Map<String, UserTrade> deduped = new LinkedHashMap<>();
         for (int page = 0; page < MAX_FULL_HISTORY_PAGES; page++) {
             int offset = page * safePageSize;
@@ -378,15 +383,33 @@ public class PolymarketApiClient {
                 if (trade == null) {
                     continue;
                 }
+                Long tradedAt = trade.getTradedAt();
+                if (tradedAt != null && tradedAt < cutoffMillis) {
+                    continue;
+                }
                 deduped.put(userTradeKey(trade), trade);
             }
-            if (chunk.size() < safePageSize) {
+            if (chunk.size() < safePageSize || reachedUserTradeHistoryCutoff(chunk, cutoffMillis)) {
                 break;
             }
         }
         List<UserTrade> result = new ArrayList<>(deduped.values());
         result.sort(Comparator.comparing(UserTrade::getTradedAt, Comparator.nullsLast(Comparator.naturalOrder())));
         return result;
+    }
+
+    private long userTradeHistoryCutoffMillis() {
+        Integer configuredDays = properties.getPolymarket().getUserTradeHistoryLookbackDays();
+        int lookbackDays = configuredDays == null || configuredDays <= 0
+                ? DEFAULT_USER_TRADE_HISTORY_LOOKBACK_DAYS
+                : configuredDays;
+        return System.currentTimeMillis() - TimeUnit.DAYS.toMillis(lookbackDays);
+    }
+
+    private boolean reachedUserTradeHistoryCutoff(List<UserTrade> chunk, long cutoffMillis) {
+        return chunk.stream()
+                .filter(ug -> ug != null && ug.getTradedAt() != null)
+                .anyMatch(ug -> ug.getTradedAt() < cutoffMillis);
     }
 
     public OrderBook fetchOrderBook(String tokenId) {

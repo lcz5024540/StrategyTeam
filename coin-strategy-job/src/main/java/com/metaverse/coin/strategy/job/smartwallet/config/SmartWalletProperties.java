@@ -65,6 +65,7 @@ public class SmartWalletProperties {
         private Integer analyzeTopN = 30;
         private Integer closedPositionLimit = 50;
         private Integer recentTradeLimit = 30;
+        private Integer userTradeHistoryLookbackDays = 90;
         private Integer discoveryProfileTradeLimit = 30;
         private Integer sessionCoverageLookbackDays = 30;
         private Long discoveryFixedDelayMs = 3600000L;

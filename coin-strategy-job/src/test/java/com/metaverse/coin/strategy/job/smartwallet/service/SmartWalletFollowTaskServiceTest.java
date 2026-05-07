@@ -306,6 +306,30 @@ class SmartWalletFollowTaskServiceTest {
     }
 
     @Test
+    void shouldRefreshObservedActivityWhenTradeEventAlreadyExists() {
+        Date openedAt = new Date(1700000020000L);
+        SmartWalletTradeEventEntity incoming = tradeEvent()
+                .setId(null)
+                .setSource("POLYMARKET")
+                .setExternalTradeId("trade-existing")
+                .setOpenedAt(new Date(1700000030000L));
+        SmartWalletTradeEventEntity existing = tradeEvent()
+                .setId(301L)
+                .setSource("POLYMARKET")
+                .setExternalTradeId("trade-existing")
+                .setOpenedAt(openedAt);
+
+        when(tradeEventMapper.selectOne(any())).thenReturn(existing);
+
+        SmartWalletTradeEventEntity recorded = service.recordTradeEvent(incoming);
+
+        assertEquals(existing, recorded);
+        verify(profileStoreService).recordObservedTradeActivity(existing.getWalletAddress(), openedAt);
+        verify(tradeEventMapper, org.mockito.Mockito.never()).insert(any());
+        verify(followTaskMapper, org.mockito.Mockito.never()).insert(any());
+    }
+
+    @Test
     void shouldCreateSkippedTaskWhenMarketLifecycleIsClosed() {
         SmartWalletTradeEventEntity event = tradeEvent()
                 .setId(null)
