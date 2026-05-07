@@ -116,6 +116,14 @@ class SmartWalletOrderAnalysisServiceTest {
     }
 
     @Test
+    void shouldDowngradeLegacyClosedPositionsConfidenceInView() {
+        SmartWalletOrderAnalysisEntity row = rowWithUpdatedAt("market-legacy", new Date())
+                .setSourceConfidence(new BigDecimal("1.0000"));
+
+        assertEquals(new BigDecimal("0.5000"), service.toView(row).sourceConfidence());
+    }
+
+    @Test
     void shouldRefreshStalePersistedRows() {
         SmartWalletOrderAnalysisEntity stale = rowWithUpdatedAt("market-stale",
                 new Date(System.currentTimeMillis() - SmartWalletOrderAnalysisService.ORDER_ANALYSIS_STALE_MS - 1_000L));

@@ -373,8 +373,8 @@ smart-wallet:
     paper-canary-max-signal-age-seconds: 10800
     scale-up-max-market-outcome-cost-usdc: 30
     # ── 持仓集中度门控（防控盘）────────────────────────────────────────
-    # [FEATURE] 集中度门控总开关。先以 DOWNSIZE 方式灰度，而不是直接 BLOCK。
-    enable-concentration-gate: true
+    # [DISABLED] 当前优先扩大市场覆盖率，集中度/控盘逻辑只保留配置，后续需要时再重新启用。
+    enable-concentration-gate: false
     extreme-concentration-mode: DOWNSIZE
     extreme-concentration-downsize-rate: 0.50
     concentration-high-risk-mode: DOWNSIZE

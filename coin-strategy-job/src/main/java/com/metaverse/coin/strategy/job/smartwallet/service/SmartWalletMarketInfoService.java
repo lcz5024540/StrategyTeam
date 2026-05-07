@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFoll
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeOrderEntity;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -259,6 +260,14 @@ public class SmartWalletMarketInfoService {
         return entity;
     }
 
+    /** 填充单个 TradeOrder */
+    public SmartWalletTradeOrderEntity populate(SmartWalletTradeOrderEntity entity) {
+        if (entity != null && entity.getMarketInfoId() != null && entity.getMarketInfo() == null) {
+            entity.setMarketInfo(getById(entity.getMarketInfoId()));
+        }
+        return entity;
+    }
+
     /** 批量填充 Order 列表 */
     public List<SmartWalletOrderEntity> populateOrders(List<SmartWalletOrderEntity> entities) {
         if (entities == null || entities.isEmpty()) return entities;
@@ -291,6 +300,15 @@ public class SmartWalletMarketInfoService {
         if (entities == null || entities.isEmpty()) return entities;
         Map<Long, SmartWalletMarketInfoEntity> infoMap = batchGetByIds(
                 entities.stream().map(SmartWalletFollowTaskEntity::getMarketInfoId).filter(id -> id != null).toList());
+        entities.forEach(e -> { if (e.getMarketInfoId() != null) e.setMarketInfo(infoMap.get(e.getMarketInfoId())); });
+        return entities;
+    }
+
+    /** 批量填充 TradeOrder 列表 */
+    public List<SmartWalletTradeOrderEntity> populateTradeOrders(List<SmartWalletTradeOrderEntity> entities) {
+        if (entities == null || entities.isEmpty()) return entities;
+        Map<Long, SmartWalletMarketInfoEntity> infoMap = batchGetByIds(
+                entities.stream().map(SmartWalletTradeOrderEntity::getMarketInfoId).filter(id -> id != null).toList());
         entities.forEach(e -> { if (e.getMarketInfoId() != null) e.setMarketInfo(infoMap.get(e.getMarketInfoId())); });
         return entities;
     }

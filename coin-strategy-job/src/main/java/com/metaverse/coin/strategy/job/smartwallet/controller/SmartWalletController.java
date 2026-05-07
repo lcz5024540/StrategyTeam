@@ -21,6 +21,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.HistoricalPaperSettleme
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationRunSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.LiveValidationStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.LocalSettlementConfirmRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.LeaderTradeOutcomeCoverageView;
+import com.metaverse.coin.strategy.job.smartwallet.model.LeaderTradeOutcomeSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
@@ -53,6 +55,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCa
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTruthAuditView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
@@ -126,12 +129,14 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionS
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletTradeOrderService;
 import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
+import com.metaverse.coin.strategy.job.smartwallet.service.LeaderTradeOutcomeRebuildService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSettlementSyncService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletArchetypeClassifierService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletBehaviorProfileService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletOrderAnalysisService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletProfileStoreService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletProfileTruthRefreshService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletReplayBacktestService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletOrderStatsService;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletProfileAnalysisService;
@@ -213,6 +218,8 @@ public class SmartWalletController {
     private final SmartWalletMarketMonitoringService smartWalletMarketMonitoringService;
     private final SmartWalletManualAllowlistService smartWalletManualAllowlistService;
     private final AbnormalMarketReviewService abnormalMarketReviewService;
+    private final LeaderTradeOutcomeRebuildService leaderTradeOutcomeRebuildService;
+    private final SmartWalletProfileTruthRefreshService smartWalletProfileTruthRefreshService;
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -235,6 +242,25 @@ public class SmartWalletController {
     @GetMapping("/overview")
     public PolymarketProductOverview overview() {
         return productOverviewService.overview();
+    }
+
+    @Operation(summary = "leader 真实闭环胜率汇总", description = "读取 smart_wallet_leader_trade_outcome，按 ALL/90D/30D/7D 输出真实闭环胜率、PnL 与建议。")
+    @GetMapping("/leader-outcomes/summary")
+    public List<LeaderTradeOutcomeSummaryView> leaderOutcomeSummary(@RequestParam(required = false) String walletAddress,
+                                                                    @RequestParam(defaultValue = "ALL") String window) {
+        return leaderTradeOutcomeRebuildService.summarize(walletAddress, window);
+    }
+
+    @Operation(summary = "leader 跟单覆盖率评估", description = "比较 leader 真实闭环、我方 FOLLOWED 子集和 SKIPPED/未跟子集，用于评估是否应扩大 100% paper 跟进。")
+    @GetMapping("/leader-outcomes/follow-coverage")
+    public List<LeaderTradeOutcomeCoverageView> leaderOutcomeCoverage(@RequestParam(required = false) String walletAddress) {
+        return leaderTradeOutcomeRebuildService.coverage(walletAddress);
+    }
+
+    @Operation(summary = "地址画像质量审计", description = "列出 truth 样本、低置信/未结算数量，以及旧口径遗漏我方 closed loss 的数量。")
+    @GetMapping("/profiles/truth-audit")
+    public List<SmartWalletProfileTruthAuditView> profileTruthAudit(@RequestParam(required = false) String walletAddress) {
+        return smartWalletProfileTruthRefreshService.audit(walletAddress);
     }
 
     @Operation(summary = "重置 smart-wallet 数据", description = "清空 smart-wallet 运行数据与可选风险特征数据，用于从头重新计算。需要 confirm=true 才会执行。")

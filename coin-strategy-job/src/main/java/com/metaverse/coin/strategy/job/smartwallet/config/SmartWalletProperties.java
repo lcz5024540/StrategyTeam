@@ -81,6 +81,7 @@ public class SmartWalletProperties {
         private Long walletTradeErrorCooldownMs = 300000L;
         private Long warmMetricsRefreshFixedDelayMs = 600000L;
         private Integer warmMetricsRefreshBatchSize = 10;
+        private Integer leaderTruthRefreshBatchSize = 50;
         private Long warmWalletRefreshMinIntervalMs = 1800000L;
         private boolean hotRetentionEnabled = true;
         private Integer hotRetentionHours = 24;

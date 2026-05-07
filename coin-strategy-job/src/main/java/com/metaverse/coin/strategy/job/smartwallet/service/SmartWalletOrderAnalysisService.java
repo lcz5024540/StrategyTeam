@@ -147,7 +147,7 @@ public class SmartWalletOrderAnalysisService {
                 .exitStyle(row.getExitStyle())
                 .exitLeadMinutes(scale(row.getExitLeadMinutes(), 2))
                 .isWin(Boolean.TRUE.equals(row.getIsWin()))
-                .sourceConfidence(scale(row.getSourceConfidence(), 4))
+                .sourceConfidence(scale(legacySourceConfidence(row.getSourceConfidence()), 4))
                 .pendingSettlement(false)
                 .earlySettlement(earlySettlement)
                 .build();
@@ -205,5 +205,10 @@ public class SmartWalletOrderAnalysisService {
 
     private BigDecimal scale(BigDecimal value, int scale) {
         return value == null ? null : value.setScale(scale, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal legacySourceConfidence(BigDecimal value) {
+        BigDecimal confidence = value == null ? BigDecimal.ZERO : value;
+        return confidence.min(new BigDecimal("0.5000"));
     }
 }

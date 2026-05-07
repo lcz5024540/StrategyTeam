@@ -451,10 +451,10 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_manual_allowlist` (
 
 
 CREATE TABLE IF NOT EXISTS `smart_wallet_trade_order` (
-                                                          `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '生命周期主单ID',
-                                                          `position_id` BIGINT UNSIGNED NOT NULL COMMENT '关联 smart_wallet_position.id',
-                                                          `market_info_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联 smart_wallet_market_info.id',
-                                                          `execution_address` VARCHAR(128) NOT NULL COMMENT '执行地址',
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '生命周期主单ID',
+    `position_id` BIGINT UNSIGNED NOT NULL COMMENT '关联 smart_wallet_position.id',
+    `market_info_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联 smart_wallet_market_info.id',
+    `execution_address` VARCHAR(128) NOT NULL COMMENT '执行地址',
     `wallet_address` VARCHAR(128) DEFAULT NULL COMMENT '触发钱包地址',
     `source_follow_task_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '首个跟单任务ID',
     `entry_quantity` DECIMAL(20,8) NOT NULL DEFAULT 0,
@@ -488,3 +488,39 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_trade_order` (
     KEY `idx_trade_order_execution` (`execution_address`, `status`, `opened_at`),
     KEY `idx_trade_order_status` (`status`, `updated_at`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket生命周期主单表';
+
+CREATE TABLE IF NOT EXISTS `smart_wallet_leader_trade_outcome` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT 'leader 钱包地址',
+    `market_id` VARCHAR(128) NOT NULL COMMENT 'Polymarket conditionId',
+    `market_info_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联 smart_wallet_market_info.id',
+    `question` VARCHAR(512) DEFAULT NULL COMMENT '市场问题',
+    `outcome` VARCHAR(128) NOT NULL COMMENT '标准化 outcome',
+    `token_id` VARCHAR(128) DEFAULT NULL COMMENT 'outcome token id',
+    `first_trade_at` TIMESTAMP NULL COMMENT '该 outcome 首笔成交时间',
+    `last_trade_at` TIMESTAMP NULL COMMENT '该 outcome 最近成交时间',
+    `buy_count` INT NOT NULL DEFAULT 0 COMMENT 'BUY 成交数',
+    `sell_count` INT NOT NULL DEFAULT 0 COMMENT 'SELL 成交数',
+    `buy_shares` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '累计买入份额',
+    `sell_shares` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '累计卖出份额',
+    `net_shares` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '剩余净份额',
+    `avg_buy_price` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '买入均价',
+    `buy_cost_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '买入成本',
+    `sell_proceeds_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '卖出回收',
+    `resolved_outcome` VARCHAR(128) DEFAULT NULL COMMENT '市场最终胜出 outcome',
+    `settlement_price` DECIMAL(20,8) DEFAULT NULL COMMENT '结算价格',
+    `estimated_settlement_value_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '估算结算价值',
+    `estimated_realized_pnl_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '估算总盈亏',
+    `estimated_roi_rate` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '估算 ROI',
+    `is_win` TINYINT(1) DEFAULT NULL COMMENT '闭环后是否盈利',
+    `outcome_status` VARCHAR(32) NOT NULL COMMENT 'CLOSED_WIN/CLOSED_LOSS/CLOSED_BREAKEVEN/OPEN/UNRESOLVED/LOW_CONFIDENCE',
+    `source_confidence` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '数据可信度',
+    `data_source` VARCHAR(64) NOT NULL DEFAULT 'POLYMARKET_USER_TRADES' COMMENT '数据来源',
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_sw_leader_outcome_wallet_market_outcome` (`wallet_address`, `market_id`, `outcome`),
+    KEY `idx_sw_leader_outcome_wallet_status` (`wallet_address`, `outcome_status`, `first_trade_at`),
+    KEY `idx_sw_leader_outcome_market` (`market_id`, `outcome`),
+    KEY `idx_sw_leader_outcome_market_info` (`market_info_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='leader 钱包真实成交闭环 outcome 复盘表';

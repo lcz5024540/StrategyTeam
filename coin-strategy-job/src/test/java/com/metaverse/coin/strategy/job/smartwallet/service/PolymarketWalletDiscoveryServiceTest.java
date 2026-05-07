@@ -18,6 +18,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +41,10 @@ class PolymarketWalletDiscoveryServiceTest {
     private PolymarketMarketMetadataService marketMetadataService;
     @Mock
     private WalletOrderAggregationService walletOrderAggregationService;
+    @Mock
+    private LeaderTradeOutcomeRebuildService leaderTradeOutcomeRebuildService;
+    @Mock
+    private SmartWalletProfileTruthRefreshService profileTruthRefreshService;
 
     @Test
     void shouldDeduplicateAcrossLeaderboardQueriesAndTrackHitCount() {
@@ -67,7 +72,7 @@ class PolymarketWalletDiscoveryServiceTest {
                         PolymarketApiClient.LeaderboardEntry.builder().walletAddress("0xaaa").alias("A2").build()
                 )
         );
-        when(walletOrderAggregationService.snapshot("0xaaa")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
+        lenient().when(walletOrderAggregationService.snapshot("0xaaa")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
                 .walletAddress("0xaaa")
                 .closedOrders(List.of(
                         WalletOrderAggregationService.ClosedOrderSnapshot.builder()
@@ -78,7 +83,7 @@ class PolymarketWalletDiscoveryServiceTest {
                                 .build()
                 ))
                 .build());
-        when(walletOrderAggregationService.snapshot("0xbbb")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
+        lenient().when(walletOrderAggregationService.snapshot("0xbbb")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
                 .walletAddress("0xbbb")
                 .closedOrders(List.of(
                         WalletOrderAggregationService.ClosedOrderSnapshot.builder()
@@ -98,19 +103,10 @@ class PolymarketWalletDiscoveryServiceTest {
         when(profileStoreService.listQualified()).thenReturn(List.of(existingHot));
         when(profileStoreService.listExecutableWatchlist()).thenReturn(List.of(existingHot));
         when(profileStoreService.listAll()).thenReturn(List.of(existingHot));
+        when(profileTruthRefreshService.buildTruthMetrics(any(), any(), any()))
+                .thenAnswer(invocation -> truthMetrics(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
 
-        PolymarketWalletDiscoveryService service = new PolymarketWalletDiscoveryService(
-                polymarketApiClient,
-                monitorService,
-                selectionService,
-                profileStoreService,
-                properties,
-                new SmartWalletScoringService(),
-                leaderboardStateService,
-                walletArchetypeClassifierService,
-                marketMetadataService,
-                walletOrderAggregationService
-        );
+        PolymarketWalletDiscoveryService service = newService(properties);
 
         PolymarketDiscoverySummary summary = service.refreshLeaderboardWatchlist();
 
@@ -152,18 +148,7 @@ class PolymarketWalletDiscoveryServiceTest {
                 List.of("OVER")
         )).thenReturn("0xcondition");
 
-        PolymarketWalletDiscoveryService service = new PolymarketWalletDiscoveryService(
-                polymarketApiClient,
-                monitorService,
-                selectionService,
-                profileStoreService,
-                properties,
-                new SmartWalletScoringService(),
-                leaderboardStateService,
-                walletArchetypeClassifierService,
-                marketMetadataService,
-                walletOrderAggregationService
-        );
+        PolymarketWalletDiscoveryService service = newService(properties);
 
         service.syncWatchlistTrades();
 
@@ -182,7 +167,7 @@ class PolymarketWalletDiscoveryServiceTest {
                 .setChain("polygon")
                 .setMonitorTier("WARM");
         when(profileStoreService.listWarmWatchlist()).thenReturn(List.of(warmWallet));
-        when(walletOrderAggregationService.snapshot("0xwarm")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
+        lenient().when(walletOrderAggregationService.snapshot("0xwarm")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
                 .walletAddress("0xwarm")
                 .closedOrders(List.of(
                         WalletOrderAggregationService.ClosedOrderSnapshot.builder()
@@ -201,19 +186,10 @@ class PolymarketWalletDiscoveryServiceTest {
                 .setAlias("warm-wallet")
                 .setChain("polygon")
                 .setMonitorTier("WARM"));
+        when(profileTruthRefreshService.buildTruthMetrics(any(), any(), any()))
+                .thenAnswer(invocation -> truthMetrics(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
 
-        PolymarketWalletDiscoveryService service = new PolymarketWalletDiscoveryService(
-                polymarketApiClient,
-                monitorService,
-                selectionService,
-                profileStoreService,
-                properties,
-                new SmartWalletScoringService(),
-                leaderboardStateService,
-                walletArchetypeClassifierService,
-                marketMetadataService,
-                walletOrderAggregationService
-        );
+        PolymarketWalletDiscoveryService service = newService(properties);
 
         int refreshed = service.refreshWarmWalletMetricsBatch();
 
@@ -248,7 +224,7 @@ class PolymarketWalletDiscoveryServiceTest {
                 .setLastEventSyncAt(new java.util.Date(checkpointMillis));
 
         when(profileStoreService.listWarmWatchlist()).thenReturn(List.of(warmWallet));
-        when(walletOrderAggregationService.snapshot("0xhot")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
+        lenient().when(walletOrderAggregationService.snapshot("0xhot")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
                 .walletAddress("0xhot")
                 .closedOrders(List.of(
                         WalletOrderAggregationService.ClosedOrderSnapshot.builder()
@@ -262,6 +238,8 @@ class PolymarketWalletDiscoveryServiceTest {
         when(polymarketApiClient.fetchUserTrades("0xhot", properties.getPolymarket().getDiscoveryProfileTradeLimit()))
                 .thenReturn(List.of());
         when(monitorService.ingestWalletMetrics(any())).thenReturn(promotedWallet);
+        when(profileTruthRefreshService.buildTruthMetrics(any(), any(), any()))
+                .thenAnswer(invocation -> truthMetrics(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
         when(polymarketApiClient.fetchUserTrades("0xhot", 2, 0)).thenReturn(List.of(
                 PolymarketApiClient.UserTrade.builder()
                         .tradeId("trade-2")
@@ -313,18 +291,7 @@ class PolymarketWalletDiscoveryServiceTest {
         when(marketMetadataService.resolveCanonicalConditionId(any(), any(), any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        PolymarketWalletDiscoveryService service = new PolymarketWalletDiscoveryService(
-                polymarketApiClient,
-                monitorService,
-                selectionService,
-                profileStoreService,
-                properties,
-                new SmartWalletScoringService(),
-                leaderboardStateService,
-                walletArchetypeClassifierService,
-                marketMetadataService,
-                walletOrderAggregationService
-        );
+        PolymarketWalletDiscoveryService service = newService(properties);
 
         int refreshed = service.refreshWarmWalletMetricsBatch();
 
@@ -335,5 +302,42 @@ class PolymarketWalletDiscoveryServiceTest {
                 captor.getAllValues().stream().map(PolymarketTradeEventRequest::getExternalTradeId).toList());
         verify(profileStoreService).recordWarmMetricsRefresh(eq(promotedWallet), any());
         verify(profileStoreService).recordHotEventSync(eq(promotedWallet), any());
+    }
+
+    private PolymarketWalletDiscoveryService newService(SmartWalletProperties properties) {
+        return new PolymarketWalletDiscoveryService(
+                polymarketApiClient,
+                monitorService,
+                selectionService,
+                profileStoreService,
+                properties,
+                new SmartWalletScoringService(),
+                leaderboardStateService,
+                walletArchetypeClassifierService,
+                marketMetadataService,
+                walletOrderAggregationService,
+                leaderTradeOutcomeRebuildService,
+                profileTruthRefreshService
+        );
+    }
+
+    private PolymarketWalletMetricsRequest truthMetrics(String walletAddress,
+                                                        String alias,
+                                                        SmartWalletProfileTruthRefreshService.DiscoveryMetadata metadata) {
+        PolymarketWalletMetricsRequest request = new PolymarketWalletMetricsRequest();
+        request.setWalletAddress(walletAddress);
+        request.setAlias(alias);
+        request.setWinRate(new BigDecimal("0.6000"));
+        request.setRealizedPnlUsdc(new BigDecimal("12.0000"));
+        request.setTotalTrades(3);
+        request.setAverageSizeUsdc(new BigDecimal("10.0000"));
+        request.setAverageRoiRate(new BigDecimal("0.1000"));
+        request.setMaxDrawdownRate(BigDecimal.ZERO);
+        if (metadata != null) {
+            request.setLastDiscoveredAt(metadata.lastDiscoveredAt());
+            request.setLastDiscoveryQuery(metadata.lastDiscoveryQuery());
+            request.setLeaderboardHitCount30d(metadata.leaderboardHitCount30d());
+        }
+        return request;
     }
 }
