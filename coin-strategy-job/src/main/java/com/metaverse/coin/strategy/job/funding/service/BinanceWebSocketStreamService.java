@@ -847,7 +847,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            log.info("Binance Public WebSocket Receive {}",text);
+            log.debug("Binance Public WebSocket Receive {}",text);
             handlePublicMessage(text, connection.isFutures());
         }
 
@@ -870,7 +870,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            log.info("Binance User WebSocket Receive {}",text);
+            log.debug("Binance User WebSocket Receive {}",text);
             handleUserMessage(text, futures);
         }
 
@@ -893,7 +893,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            log.info("Binance Spot WebSocket Receive {}",text);
+            log.debug("Binance Spot WebSocket Receive {}",text);
             try {
                 JsonNode root = objectMapper.readTree(text);
                 if (root.has("event")) {
@@ -936,7 +936,7 @@ public class BinanceWebSocketStreamService implements DisposableBean {
 
         @Override
         public void onMessage(WebSocket webSocket, String text) {
-            log.info("Binance Futures WebSocket Receive {}",text);
+            log.debug("Binance Futures WebSocket Receive {}",text);
             try {
                 JsonNode root = objectMapper.readTree(text);
                 int status = root.path("status").asInt(0);
