@@ -170,8 +170,38 @@ public class WalletProfileAnalysisService {
     }
 
     private WalletScreenerView buildScreenerViewFromSnapshot(SmartWalletProfileEntity profile) {
-        WalletBehaviorProfileView behavior = walletBehaviorProfileService.getPersistedProfile(profile == null ? null : profile.getWalletAddress());
-        return buildScreenerView(profile, behavior, latestFeature(profile == null ? null : profile.getWalletAddress()));
+        String walletAddress = profile == null ? null : profile.getWalletAddress();
+        WalletBehaviorProfileView behavior = walletBehaviorProfileService.getPersistedProfile(walletAddress);
+        // 方案三/方案五修复：快照缺失或 24h 失效时，回退到实时计算，避免 qualityScore=0 导致误杀。
+        if (profile != null && shouldRebuildBehavior(behavior)) {
+            try {
+                WalletBehaviorProfileView rebuilt = walletBehaviorProfileService.buildProfile(profile);
+                if (rebuilt != null && rebuilt.qualityScore() != null) {
+                    log.info("[WalletProfileAnalysis] behavior snapshot missing/stale, rebuilt realtime wallet={} computedAt={}",
+                            walletAddress, rebuilt.computedAt());
+                    behavior = rebuilt;
+                } else {
+                    log.warn("[WalletProfileAnalysis] behavior snapshot missing/stale and realtime rebuild produced no qualityScore wallet={}", walletAddress);
+                }
+            } catch (Exception ex) {
+                log.warn("[WalletProfileAnalysis] realtime behavior rebuild failed wallet={} err={}", walletAddress, ex.getMessage());
+            }
+        }
+        return buildScreenerView(profile, behavior, latestFeature(walletAddress));
+    }
+
+    private boolean shouldRebuildBehavior(WalletBehaviorProfileView behavior) {
+        if (behavior == null) {
+            return true;
+        }
+        if (behavior.qualityScore() == null) {
+            return true;
+        }
+        Date computedAt = behavior.computedAt();
+        if (computedAt == null) {
+            return true;
+        }
+        return System.currentTimeMillis() - computedAt.getTime() > BEHAVIOR_PROFILE_STALE_MS;
     }
 
     private WalletScreenerView buildScreenerView(SmartWalletProfileEntity profile,
@@ -245,17 +275,59 @@ public class WalletProfileAnalysisService {
                 .last("limit 1"));
     }
 
+    private static final BigDecimal DRAWDOWN_BLOCK_THRESHOLD = new BigDecimal("0.70");
+    private static final BigDecimal DRAWDOWN_SOFT_THRESHOLD = new BigDecimal("0.55");
+    private static final BigDecimal QUALITY_BLOCK_THRESHOLD = new BigDecimal("0.20");
+    private static final BigDecimal QUALITY_SOFT_THRESHOLD = new BigDecimal("0.25");
+    private static final BigDecimal FRESHNESS_HARD_FLOOR = BigDecimal.ZERO;
+    private static final int BLOCKLIST_MIN_SAMPLE_SIZE = 20;
+
     private String determineTier(SmartWalletProfileEntity profile,
                                  WalletBehaviorProfileView behavior,
                                  BigDecimal freshnessScore,
                                  boolean highQuality) {
-        BigDecimal qualityScore = safe(behavior == null ? null : behavior.qualityScore());
+        BigDecimal drawdown = safe(profile == null ? null : profile.getMaxDrawdownRate());
+        BigDecimal qualityScoreRaw = behavior == null ? null : behavior.qualityScore();
+        BigDecimal qualityScore = safe(qualityScoreRaw);
         BigDecimal replicabilityScore = safe(behavior == null ? null : behavior.replicabilityScore());
-        if (safe(profile == null ? null : profile.getMaxDrawdownRate()).compareTo(new BigDecimal("0.45")) > 0
-                || freshnessScore.compareTo(new BigDecimal("0.20")) <= 0
-                || qualityScore.compareTo(new BigDecimal("0.30")) < 0) {
+        int sampleSize = defaultInt(behavior == null ? null : behavior.closedPositionSampleSize());
+        boolean qualityMissing = behavior == null || qualityScoreRaw == null;
+        boolean sampleSufficient = sampleSize >= BLOCKLIST_MIN_SAMPLE_SIZE;
+
+        // 方案五：行为快照不可用时不参与 BLOCKLIST 判定，回退到 OBSERVE。
+        if (qualityMissing) {
+            logBlocklistTrace(profile, behavior, freshnessScore, drawdown, qualityScoreRaw,
+                    sampleSize, "OBSERVE", "QUALITY_MISSING");
+            return "OBSERVE";
+        }
+
+        // 方案二：软门槛复合判定（drawdown 严重 AND quality<0.25）OR（freshness=0 AND drawdown>0.55）。
+        boolean drawdownSevere = sampleSufficient
+                && drawdown.compareTo(DRAWDOWN_BLOCK_THRESHOLD) > 0;
+        boolean qualityHit = sampleSufficient
+                && qualityScore.compareTo(QUALITY_BLOCK_THRESHOLD) < 0;
+        boolean freshnessHit = freshnessScore.compareTo(FRESHNESS_HARD_FLOOR) <= 0;
+
+        boolean blockBySevereCombo = drawdownSevere && qualityScore.compareTo(QUALITY_SOFT_THRESHOLD) < 0;
+        boolean blockByDormantRisk = freshnessHit && drawdown.compareTo(DRAWDOWN_SOFT_THRESHOLD) > 0;
+
+        if (blockBySevereCombo || blockByDormantRisk) {
+            String reason = blockBySevereCombo ? "DRAWDOWN_SEVERE_AND_QUALITY_LOW" : "DORMANT_AND_DRAWDOWN_HIGH";
+            logBlocklistTrace(profile, behavior, freshnessScore, drawdown, qualityScoreRaw,
+                    sampleSize, "BLOCKLIST", reason);
             return "BLOCKLIST";
         }
+
+        // 方案三：单维劣势但样本不足 → 落 OBSERVE 而不是 BLOCKLIST。
+        if (drawdownSevere || qualityHit || freshnessHit) {
+            String reason = drawdownSevere ? "DRAWDOWN_HIGH"
+                    : qualityHit ? "QUALITY_LOW"
+                    : "FRESHNESS_DORMANT";
+            logBlocklistTrace(profile, behavior, freshnessScore, drawdown, qualityScoreRaw,
+                    sampleSize, "OBSERVE", "SOFT_" + reason);
+            return "OBSERVE";
+        }
+
         if (highQuality
                 && qualityScore.compareTo(new BigDecimal("0.72")) >= 0
                 && replicabilityScore.compareTo(new BigDecimal("0.60")) >= 0
@@ -268,6 +340,30 @@ public class WalletProfileAnalysisService {
             return "EXECUTABLE_B";
         }
         return "OBSERVE";
+    }
+
+    private void logBlocklistTrace(SmartWalletProfileEntity profile,
+                                   WalletBehaviorProfileView behavior,
+                                   BigDecimal freshnessScore,
+                                   BigDecimal drawdown,
+                                   BigDecimal qualityScoreRaw,
+                                   int sampleSize,
+                                   String tier,
+                                   String reason) {
+        if (!"BLOCKLIST".equals(tier) && !log.isDebugEnabled()) {
+            return;
+        }
+        Date computedAt = behavior == null ? null : behavior.computedAt();
+        boolean stale = computedAt == null
+                || System.currentTimeMillis() - computedAt.getTime() > BEHAVIOR_PROFILE_STALE_MS;
+        String wallet = profile == null ? null : profile.getWalletAddress();
+        if ("BLOCKLIST".equals(tier)) {
+            log.warn("[WalletProfileAnalysis][BlocklistStat] tier={} reason={} wallet={} drawdown={} freshness={} qualityScore={} sampleSize={} behaviorStale={} computedAt={}",
+                    tier, reason, wallet, drawdown, freshnessScore, qualityScoreRaw, sampleSize, stale, computedAt);
+        } else {
+            log.debug("[WalletProfileAnalysis][BlocklistStat] tier={} reason={} wallet={} drawdown={} freshness={} qualityScore={} sampleSize={} behaviorStale={} computedAt={}",
+                    tier, reason, wallet, drawdown, freshnessScore, qualityScoreRaw, sampleSize, stale, computedAt);
+        }
     }
 
     private Comparator<WalletScreenerView> screenerComparator(String sortBy, String sortDirection) {

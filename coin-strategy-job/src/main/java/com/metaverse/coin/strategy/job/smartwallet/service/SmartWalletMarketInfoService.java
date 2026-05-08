@@ -61,10 +61,31 @@ public class SmartWalletMarketInfoService {
         if (!StringUtils.hasText(marketId)) {
             return List.of();
         }
-        List<SmartWalletMarketInfoEntity> rows = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
-                .eq(SmartWalletMarketInfoEntity::getMarketId, marketId.trim())
-                .orderByDesc(SmartWalletMarketInfoEntity::getUpdatedAt)
-                .orderByDesc(SmartWalletMarketInfoEntity::getId));
+        final int pageSize = 1000;
+        List<SmartWalletMarketInfoEntity> rows = new java.util.ArrayList<>();
+        long lastId = 0L;
+        while (true) {
+            List<SmartWalletMarketInfoEntity> chunk = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                    .eq(SmartWalletMarketInfoEntity::getMarketId, marketId.trim())
+                    .gt(SmartWalletMarketInfoEntity::getId, lastId)
+                    .orderByAsc(SmartWalletMarketInfoEntity::getId)
+                    .last("limit " + pageSize));
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            rows.addAll(chunk);
+            for (SmartWalletMarketInfoEntity row : chunk) {
+                if (row != null && row.getId() != null && row.getId() > lastId) {
+                    lastId = row.getId();
+                }
+            }
+            if (chunk.size() < pageSize) {
+                break;
+            }
+        }
+        rows.sort(Comparator
+                .comparing(SmartWalletMarketInfoEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(SmartWalletMarketInfoEntity::getId, Comparator.nullsLast(Comparator.reverseOrder())));
         rows.forEach(row -> cacheById.put(row.getId(), row));
         return rows;
     }
@@ -81,10 +102,31 @@ public class SmartWalletMarketInfoService {
         if (normalizedIds.isEmpty()) {
             return Map.of();
         }
-        List<SmartWalletMarketInfoEntity> rows = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
-                .in(SmartWalletMarketInfoEntity::getMarketId, normalizedIds)
-                .orderByDesc(SmartWalletMarketInfoEntity::getUpdatedAt)
-                .orderByDesc(SmartWalletMarketInfoEntity::getId));
+        final int pageSize = 1000;
+        List<SmartWalletMarketInfoEntity> rows = new java.util.ArrayList<>();
+        long lastId = 0L;
+        while (true) {
+            List<SmartWalletMarketInfoEntity> chunk = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                    .in(SmartWalletMarketInfoEntity::getMarketId, normalizedIds)
+                    .gt(SmartWalletMarketInfoEntity::getId, lastId)
+                    .orderByAsc(SmartWalletMarketInfoEntity::getId)
+                    .last("limit " + pageSize));
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            rows.addAll(chunk);
+            for (SmartWalletMarketInfoEntity row : chunk) {
+                if (row != null && row.getId() != null && row.getId() > lastId) {
+                    lastId = row.getId();
+                }
+            }
+            if (chunk.size() < pageSize) {
+                break;
+            }
+        }
+        rows.sort(Comparator
+                .comparing(SmartWalletMarketInfoEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(SmartWalletMarketInfoEntity::getId, Comparator.nullsLast(Comparator.reverseOrder())));
         Map<String, List<SmartWalletMarketInfoEntity>> result = new LinkedHashMap<>();
         for (SmartWalletMarketInfoEntity row : rows) {
             cacheById.put(row.getId(), row);

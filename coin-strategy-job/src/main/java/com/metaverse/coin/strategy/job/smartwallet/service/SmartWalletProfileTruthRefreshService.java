@@ -150,9 +150,30 @@ public class SmartWalletProfileTruthRefreshService {
             SmartWalletProfileEntity profile = loadProfile(walletAddress);
             profiles = profile == null ? List.of() : List.of(profile);
         } else {
-            profiles = profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
-                    .eq(SmartWalletProfileEntity::getSource, "POLYMARKET")
-                    .orderByDesc(SmartWalletProfileEntity::getWalletScore));
+            profiles = new ArrayList<>();
+            final int pageSize = 1000;
+            long lastId = 0L;
+            while (true) {
+                List<SmartWalletProfileEntity> chunk = profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                        .eq(SmartWalletProfileEntity::getSource, "POLYMARKET")
+                        .gt(SmartWalletProfileEntity::getId, lastId)
+                        .orderByAsc(SmartWalletProfileEntity::getId)
+                        .last("limit " + pageSize));
+                if (chunk == null || chunk.isEmpty()) {
+                    break;
+                }
+                profiles.addAll(chunk);
+                for (SmartWalletProfileEntity row : chunk) {
+                    if (row != null && row.getId() != null && row.getId() > lastId) {
+                        lastId = row.getId();
+                    }
+                }
+                if (chunk.size() < pageSize) {
+                    break;
+                }
+            }
+            profiles.sort(Comparator.comparing(SmartWalletProfileEntity::getWalletScore,
+                    Comparator.nullsLast(Comparator.reverseOrder())));
         }
         return profiles.stream()
                 .filter(java.util.Objects::nonNull)

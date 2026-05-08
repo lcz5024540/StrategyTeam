@@ -401,12 +401,26 @@ public class SmartWalletAccountingService {
         if (orderId == null) {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
-        List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
-                .eq(SmartWalletFillEntity::getOrderId, orderId));
         BigDecimal total = BigDecimal.ZERO;
-        if (fills != null) {
+        final int pageSize = 1000;
+        long lastId = 0L;
+        while (true) {
+            List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                    .eq(SmartWalletFillEntity::getOrderId, orderId)
+                    .gt(SmartWalletFillEntity::getId, lastId)
+                    .orderByAsc(SmartWalletFillEntity::getId)
+                    .last("limit " + pageSize));
+            if (fills == null || fills.isEmpty()) {
+                break;
+            }
             for (SmartWalletFillEntity fill : fills) {
                 total = total.add(safe(fill.getSize()));
+                if (fill.getId() != null && fill.getId() > lastId) {
+                    lastId = fill.getId();
+                }
+            }
+            if (fills.size() < pageSize) {
+                break;
             }
         }
         return total.setScale(8, RoundingMode.HALF_UP);

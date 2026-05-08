@@ -323,13 +323,7 @@ public class SmartWalletFollowTaskService {
 
     public List<SmartWalletFollowCoverageReportView> followCoverageReports(String walletAddress, Integer limit) {
         int rowLimit = limit == null || limit <= 0 ? 5000 : Math.min(limit, 50000);
-        LambdaQueryWrapper<SmartWalletFollowTaskEntity> taskQuery = new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + rowLimit);
-        if (StringUtils.hasText(walletAddress)) {
-            taskQuery.eq(SmartWalletFollowTaskEntity::getWalletAddress, walletAddress.trim());
-        }
-        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(taskQuery);
+        List<SmartWalletFollowTaskEntity> tasks = loadFollowTasksByWallet(walletAddress, rowLimit);
         marketInfoService.populateFollowTasks(tasks);
         Map<String, List<SmartWalletFollowTaskEntity>> byWallet = tasks.stream()
                 .filter(task -> StringUtils.hasText(task.getWalletAddress()))
@@ -338,6 +332,43 @@ public class SmartWalletFollowTaskService {
         byWallet.forEach((wallet, walletTasks) -> reports.add(buildCoverageReport(wallet, walletTasks)));
         reports.sort((left, right) -> Long.compare(right.getTotalEvents(), left.getTotalEvents()));
         return reports;
+    }
+    
+    private List<SmartWalletFollowTaskEntity> loadFollowTasksByWallet(String walletAddress, int limit) {
+        final int pageSize = 1000;
+        List<SmartWalletFollowTaskEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletFollowTaskEntity> wrapper = new LambdaQueryWrapper<>();
+            
+            if (StringUtils.hasText(walletAddress)) {
+                wrapper.eq(SmartWalletFollowTaskEntity::getWalletAddress, walletAddress.trim());
+            }
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletFollowTaskEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletFollowTaskEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletFollowTaskEntity> chunk = followTaskMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= limit) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .limit(limit)
+                  .collect(Collectors.toList());
     }
 
     private SmartWalletFollowCoverageReportView buildCoverageReport(String wallet, List<SmartWalletFollowTaskEntity> tasks) {

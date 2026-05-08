@@ -40,6 +40,7 @@ public record WalletBehaviorProfileView(
         BigDecimal stabilityScore,
         BigDecimal qualityScore,
         BigDecimal replicabilityScore,
+        BigDecimal scoreConfidence,
         BigDecimal behaviorComposite,
         String recommendedExitLane,
         String summary,

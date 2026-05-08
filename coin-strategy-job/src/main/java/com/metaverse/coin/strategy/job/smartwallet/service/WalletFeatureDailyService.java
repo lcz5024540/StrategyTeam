@@ -46,16 +46,8 @@ public class WalletFeatureDailyService {
         Date start7d = toDate(targetDate.minusDays(6).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli());
         Date endExclusive = toDate(targetDate.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli());
 
-        List<SmartWalletTradeEventEntity> events30d = tradeEventMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getWalletAddress, walletAddress.trim())
-                .ge(SmartWalletTradeEventEntity::getOpenedAt, start30d)
-                .lt(SmartWalletTradeEventEntity::getOpenedAt, endExclusive)
-                .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt));
-        List<SmartWalletTradeEffectLabelEntity> labels30d = tradeEffectLabelMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEffectLabelEntity>()
-                .eq(SmartWalletTradeEffectLabelEntity::getWalletAddress, walletAddress.trim())
-                .ge(SmartWalletTradeEffectLabelEntity::getEventAt, start30d)
-                .lt(SmartWalletTradeEffectLabelEntity::getEventAt, endExclusive)
-                .orderByDesc(SmartWalletTradeEffectLabelEntity::getEventAt));
+        List<SmartWalletTradeEventEntity> events30d = loadEvents30d(walletAddress.trim(), start30d, endExclusive);
+        List<SmartWalletTradeEffectLabelEntity> labels30d = loadLabels30d(walletAddress.trim(), start30d, endExclusive);
         SmartWalletProfileEntity profile = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
                 .eq(SmartWalletProfileEntity::getWalletAddress, walletAddress.trim())
                 .last("limit 1"));
@@ -239,5 +231,80 @@ public class WalletFeatureDailyService {
 
     private Date toDate(long epochMillis) {
         return new Date(epochMillis);
+    }
+
+    /**
+     * 基于主键 id 游标分页，每批最多 1000 条，避免单次把 30d 全量事件加载到内存。
+     */
+    private List<SmartWalletTradeEventEntity> loadEvents30d(String walletAddress, Date start, Date endExclusive) {
+        final int pageSize = 1000;
+        List<SmartWalletTradeEventEntity> all = new java.util.ArrayList<>();
+        long lastId = 0L;
+        while (true) {
+            List<SmartWalletTradeEventEntity> chunk = tradeEventMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                    .eq(SmartWalletTradeEventEntity::getWalletAddress, walletAddress)
+                    .ge(SmartWalletTradeEventEntity::getOpenedAt, start)
+                    .lt(SmartWalletTradeEventEntity::getOpenedAt, endExclusive)
+                    .gt(SmartWalletTradeEventEntity::getId, lastId)
+                    .orderByAsc(SmartWalletTradeEventEntity::getId)
+                    .last("limit " + pageSize));
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            all.addAll(chunk);
+            for (SmartWalletTradeEventEntity row : chunk) {
+                if (row != null && row.getId() != null && row.getId() > lastId) {
+                    lastId = row.getId();
+                }
+            }
+            if (chunk.size() < pageSize) {
+                break;
+            }
+        }
+        all.sort((a, b) -> {
+            Date da = a == null ? null : a.getOpenedAt();
+            Date db = b == null ? null : b.getOpenedAt();
+            if (da == null && db == null) return 0;
+            if (da == null) return 1;
+            if (db == null) return -1;
+            return db.compareTo(da);
+        });
+        return all;
+    }
+
+    private List<SmartWalletTradeEffectLabelEntity> loadLabels30d(String walletAddress, Date start, Date endExclusive) {
+        final int pageSize = 1000;
+        List<SmartWalletTradeEffectLabelEntity> all = new java.util.ArrayList<>();
+        long lastId = 0L;
+        while (true) {
+            List<SmartWalletTradeEffectLabelEntity> chunk = tradeEffectLabelMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEffectLabelEntity>()
+                    .eq(SmartWalletTradeEffectLabelEntity::getWalletAddress, walletAddress)
+                    .ge(SmartWalletTradeEffectLabelEntity::getEventAt, start)
+                    .lt(SmartWalletTradeEffectLabelEntity::getEventAt, endExclusive)
+                    .gt(SmartWalletTradeEffectLabelEntity::getId, lastId)
+                    .orderByAsc(SmartWalletTradeEffectLabelEntity::getId)
+                    .last("limit " + pageSize));
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            all.addAll(chunk);
+            for (SmartWalletTradeEffectLabelEntity row : chunk) {
+                if (row != null && row.getId() != null && row.getId() > lastId) {
+                    lastId = row.getId();
+                }
+            }
+            if (chunk.size() < pageSize) {
+                break;
+            }
+        }
+        all.sort((a, b) -> {
+            Date da = a == null ? null : a.getEventAt();
+            Date db = b == null ? null : b.getEventAt();
+            if (da == null && db == null) return 0;
+            if (da == null) return 1;
+            if (db == null) return -1;
+            return db.compareTo(da);
+        });
+        return all;
     }
 }

@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -164,21 +165,10 @@ public class SmartWalletMarketMonitoringService {
         Date since = Date.from(now.minus(safeLookbackDays, ChronoUnit.DAYS));
         Date activeTaskSince = Date.from(now.minus(resolveActiveTaskMaxAgeSeconds(), ChronoUnit.SECONDS));
 
-        List<SmartWalletTradeEventEntity> recentEvents = tradeEventMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getSource, SOURCE)
-                .ge(SmartWalletTradeEventEntity::getOpenedAt, since)
-                .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
-                .last("limit " + Math.max(safeFetchHint * 10, 2500)));
-        List<SmartWalletFollowTaskEntity> recentTasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .in(SmartWalletFollowTaskEntity::getStatus, ACTIVE_TASK_STATUSES)
-                .ge(SmartWalletFollowTaskEntity::getCreatedAt, activeTaskSince)
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + Math.max(safeFetchHint * 8, 1800)));
+        List<SmartWalletTradeEventEntity> recentEvents = loadTradeEvents(since, safeFetchHint);
+        List<SmartWalletFollowTaskEntity> recentTasks = loadFollowTasks(activeTaskSince, safeFetchHint);
         List<SmartWalletFollowTaskEntity> activeTasks = filterActiveRecentTasks(recentTasks, activeTaskSince);
-        List<SmartWalletPositionEntity> activePositions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
-                .orderByDesc(SmartWalletPositionEntity::getUpdatedAt)
-                .last("limit " + Math.max(safeFetchHint * 6, 1200)));
+        List<SmartWalletPositionEntity> activePositions = loadPositions(safeFetchHint);
 
         Map<Long, SmartWalletMarketInfoEntity> marketInfoById = loadMarketInfo(activeTasks, activePositions);
         Map<String, SmartWalletMarketInfoEntity> primaryInfoByMarketId = marketInfoService.batchGetPrimaryByMarketIds(
@@ -701,6 +691,113 @@ public class SmartWalletMarketMonitoringService {
                 : StringUtils.hasText(middle) ? middle : right;
     }
 
+    private List<SmartWalletTradeEventEntity> loadTradeEvents(Date since, int fetchHint) {
+        final int pageSize = 1000;
+        List<SmartWalletTradeEventEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletTradeEventEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(SmartWalletTradeEventEntity::getSource, SOURCE)
+                   .ge(SmartWalletTradeEventEntity::getOpenedAt, since);
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletTradeEventEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletTradeEventEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletTradeEventEntity> chunk = tradeEventMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= Math.max(fetchHint * 10, 2500)) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletTradeEventEntity::getOpenedAt).reversed())
+                  .limit(Math.max(fetchHint * 10, 2500))
+                  .collect(Collectors.toList());
+    }
+    
+    private List<SmartWalletFollowTaskEntity> loadFollowTasks(Date since, int fetchHint) {
+        final int pageSize = 1000;
+        List<SmartWalletFollowTaskEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletFollowTaskEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.in(SmartWalletFollowTaskEntity::getStatus, ACTIVE_TASK_STATUSES)
+                   .ge(SmartWalletFollowTaskEntity::getCreatedAt, since);
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletFollowTaskEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletFollowTaskEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletFollowTaskEntity> chunk = followTaskMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= Math.max(fetchHint * 8, 1800)) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletFollowTaskEntity::getCreatedAt).reversed())
+                  .limit(Math.max(fetchHint * 8, 1800))
+                  .collect(Collectors.toList());
+    }
+    
+    private List<SmartWalletPositionEntity> loadPositions(int fetchHint) {
+        final int pageSize = 1000;
+        List<SmartWalletPositionEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletPositionEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"));
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletPositionEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletPositionEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletPositionEntity> chunk = positionMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= Math.max(fetchHint * 6, 1200)) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletPositionEntity::getUpdatedAt).reversed())
+                  .limit(Math.max(fetchHint * 6, 1200))
+                  .collect(Collectors.toList());
+    }
+    
     private boolean isDateStale(Date value, Long maxStaleMs, boolean treatMissingAsStale) {
         if (value == null) {
             return treatMissingAsStale;

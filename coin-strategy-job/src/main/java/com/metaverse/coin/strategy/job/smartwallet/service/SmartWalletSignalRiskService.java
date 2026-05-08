@@ -1522,22 +1522,37 @@ public class SmartWalletSignalRiskService {
         if (event == null || !StringUtils.hasText(event.getQuestion())) {
             return 0;
         }
-        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
-        marketInfoService.populatePositions(positions);
         Set<String> currentTokens = themeTokens(event.getQuestion());
         if (currentTokens.isEmpty()) {
             return 0;
         }
         int count = 0;
-        for (SmartWalletPositionEntity position : positions) {
-            if (!StringUtils.hasText(position.getQuestion())) {
-                continue;
+        long lastId = 0L;
+        final int pageSize = 1000;
+        while (true) {
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                    .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
+                    .gt(SmartWalletPositionEntity::getId, lastId)
+                    .orderByAsc(SmartWalletPositionEntity::getId)
+                    .last("limit " + pageSize));
+            if (positions == null || positions.isEmpty()) {
+                break;
             }
-            Set<String> overlap = themeTokens(position.getQuestion());
-            overlap.retainAll(currentTokens);
-            if (overlap.size() >= 2) {
-                count++;
+            marketInfoService.populatePositions(positions);
+            for (SmartWalletPositionEntity position : positions) {
+                if (StringUtils.hasText(position.getQuestion())) {
+                    Set<String> overlap = themeTokens(position.getQuestion());
+                    overlap.retainAll(currentTokens);
+                    if (overlap.size() >= 2) {
+                        count++;
+                    }
+                }
+                if (position.getId() != null && position.getId() > lastId) {
+                    lastId = position.getId();
+               }
+            }
+            if (positions.size() < pageSize) {
+                break;
             }
         }
         return count;

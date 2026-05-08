@@ -766,14 +766,18 @@ public class SmartWalletProperties {
     /**
      * 钱包跟随适合度评分 (followFitScore) 各维度权重。
      * 各权重之和建议为 1.0，超出范围时分数会被 clamp 到 [0,1]。
+     *
+     * 注意：alpha30s/alpha5m 在 Polymarket 预测市场场景下噪声大、对中低频地址区分度低，
+     * 已弃用（默认 0），其权重已重分配到 leaderQuality / followableRate / alphaRule / winRate30d。
+     * 字段保留以便配置回滚。
      */
     @Data
     public static class FollowFitWeights {
-        private BigDecimal leaderQuality   = new BigDecimal("0.15");
-        private BigDecimal followableRate  = new BigDecimal("0.30");
-        private BigDecimal alpha30s        = new BigDecimal("0.15");
-        private BigDecimal alpha5m         = new BigDecimal("0.15");
-        private BigDecimal alphaRule       = new BigDecimal("0.20");
-        private BigDecimal winRate30d      = new BigDecimal("0.05");
+        private BigDecimal leaderQuality   = new BigDecimal("0.25");
+        private BigDecimal followableRate  = new BigDecimal("0.35");
+        private BigDecimal alpha30s        = BigDecimal.ZERO;
+        private BigDecimal alpha5m         = BigDecimal.ZERO;
+        private BigDecimal alphaRule       = new BigDecimal("0.25");
+        private BigDecimal winRate30d      = new BigDecimal("0.15");
     }
 }

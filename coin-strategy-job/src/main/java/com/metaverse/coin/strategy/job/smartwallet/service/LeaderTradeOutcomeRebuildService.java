@@ -110,6 +110,12 @@ public class LeaderTradeOutcomeRebuildService {
         return built;
     }
 
+/**
+ * 按钱包地址汇总指定窗口的交易结果，按预估盈亏降序排序
+ * @param walletAddress 钱包地址
+ * @param window 时间窗口标识
+ * @return 汇总视图列表
+ */
     public List<LeaderTradeOutcomeSummaryView> summarize(String walletAddress, String window) {
         List<SmartWalletLeaderTradeOutcomeEntity> rows = listOutcomes(walletAddress, cutoffMillis(window));
         Map<String, List<SmartWalletLeaderTradeOutcomeEntity>> byWallet = rows.stream()
@@ -237,15 +243,54 @@ public class LeaderTradeOutcomeRebuildService {
     }
 
     private List<SmartWalletLeaderTradeOutcomeEntity> listOutcomes(String walletAddress, Long cutoffMillis) {
-        LambdaQueryWrapper<SmartWalletLeaderTradeOutcomeEntity> wrapper = new LambdaQueryWrapper<>();
-        if (StringUtils.hasText(walletAddress)) {
-            wrapper.eq(SmartWalletLeaderTradeOutcomeEntity::getWalletAddress, walletAddress.trim());
+        final int pageSize = 1000;
+        List<SmartWalletLeaderTradeOutcomeEntity> all = new ArrayList<>();
+        Date lastTs = null;
+        Long lastId = null;
+        boolean enteredNullPartition = false;
+        while (true) {
+            LambdaQueryWrapper<SmartWalletLeaderTradeOutcomeEntity> wrapper = new LambdaQueryWrapper<>();
+            if (StringUtils.hasText(walletAddress)) {
+                wrapper.eq(SmartWalletLeaderTradeOutcomeEntity::getWalletAddress, walletAddress.trim());
+            }
+            if (cutoffMillis != null) {
+                wrapper.ge(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt, new Date(cutoffMillis));
+            }
+            if (lastId != null) {
+                final Date cursorTs = lastTs;
+                final Long cursorId = lastId;
+                if (enteredNullPartition) {
+                    // 已进入 firstTradeAt IS NULL 分区，仅按 id 继续推进
+                    wrapper.isNull(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt)
+                            .lt(SmartWalletLeaderTradeOutcomeEntity::getId, cursorId);
+                } else {
+                    // 复合游标: (firstTradeAt < cursorTs) OR (firstTradeAt = cursorTs AND id < cursorId) OR firstTradeAt IS NULL
+                    wrapper.and(w -> w
+                            .lt(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt, cursorTs)
+                            .or(sub -> sub.eq(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt, cursorTs)
+                                    .lt(SmartWalletLeaderTradeOutcomeEntity::getId, cursorId))
+                            .or(sub -> sub.isNull(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt)));
+                }
+            }
+            wrapper.orderByDesc(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt)
+                    .orderByDesc(SmartWalletLeaderTradeOutcomeEntity::getId)
+                    .last("limit " + pageSize);
+            List<SmartWalletLeaderTradeOutcomeEntity> chunk = leaderOutcomeMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            all.addAll(chunk);
+            SmartWalletLeaderTradeOutcomeEntity tail = chunk.get(chunk.size() - 1);
+            lastTs = tail == null ? null : tail.getFirstTradeAt();
+            lastId = tail == null ? null : tail.getId();
+            if (lastTs == null) {
+                enteredNullPartition = true;
+            }
+            if (chunk.size() < pageSize) {
+                break;
+            }
         }
-        if (cutoffMillis != null) {
-            wrapper.ge(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt, new Date(cutoffMillis));
-        }
-        wrapper.orderByDesc(SmartWalletLeaderTradeOutcomeEntity::getFirstTradeAt);
-        return leaderOutcomeMapper.selectList(wrapper);
+        return all;
     }
 
     private LeaderTradeOutcomeSummaryView toSummary(String walletAddress,

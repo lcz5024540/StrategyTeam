@@ -89,12 +89,7 @@ public class SmartWalletReplayBacktestService {
         int safeWindowDays = windowDays == null ? 30 : Math.max(windowDays, 1);
         int safeLimit = maxEventsPerWindow == null ? 2000 : Math.max(1, Math.min(maxEventsPerWindow, 10000));
         Date since = Date.from(Instant.now().minus(safeWindowDays, ChronoUnit.DAYS));
-        List<SmartWalletTradeEventEntity> events = tradeEventMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getSource, SOURCE)
-                .ge(SmartWalletTradeEventEntity::getOpenedAt, since)
-                .orderByAsc(SmartWalletTradeEventEntity::getOpenedAt)
-                .orderByAsc(SmartWalletTradeEventEntity::getId)
-                .last("limit " + safeLimit));
+        List<SmartWalletTradeEventEntity> events = loadTradeEvents(since, safeLimit);
         Map<Long, SmartWalletTradeEffectLabelEntity> labelsByEventId = loadLabels(events);
         Map<String, SmartWalletProfileEntity> profilesByWallet = loadProfiles(events);
         Map<String, WalletBehaviorProfileView> behaviorsByWallet = loadBehaviorProfiles(events);
@@ -242,6 +237,43 @@ public class SmartWalletReplayBacktestService {
         }
     }
 
+    private List<SmartWalletTradeEventEntity> loadTradeEvents(Date since, int limit) {
+        final int pageSize = 1000;
+        List<SmartWalletTradeEventEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletTradeEventEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(SmartWalletTradeEventEntity::getSource, SOURCE)
+                   .ge(SmartWalletTradeEventEntity::getOpenedAt, since);
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletTradeEventEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletTradeEventEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletTradeEventEntity> chunk = tradeEventMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= limit) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletTradeEventEntity::getOpenedAt)
+                                   .thenComparing(SmartWalletTradeEventEntity::getId))
+                  .limit(limit)
+                  .collect(Collectors.toList());
+    }
+    
     private Map<Long, SmartWalletTradeEffectLabelEntity> loadLabels(List<SmartWalletTradeEventEntity> events) {
         List<Long> eventIds = events.stream()
                 .map(SmartWalletTradeEventEntity::getId)
