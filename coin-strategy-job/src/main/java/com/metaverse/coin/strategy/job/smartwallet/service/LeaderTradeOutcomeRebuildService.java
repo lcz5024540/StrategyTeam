@@ -17,6 +17,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.LeaderTradeOutcomeSumma
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -53,6 +54,7 @@ public class LeaderTradeOutcomeRebuildService {
     private final PolymarketApiClient polymarketApiClient;
     private final PolymarketMarketMetadataService marketMetadataService;
 
+    @Transactional
     public LeaderTradeOutcomeRebuildResult rebuild(String walletAddress, Integer limit) {
         List<String> wallets = resolveWallets(walletAddress, limit);
         int fetchedTrades = 0;

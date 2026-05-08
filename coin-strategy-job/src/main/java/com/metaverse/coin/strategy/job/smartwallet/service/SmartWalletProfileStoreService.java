@@ -5,17 +5,20 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileStaleDiagnosticView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import lombok.RequiredArgsConstructor;
@@ -62,6 +65,7 @@ public class SmartWalletProfileStoreService {
     private final SmartWalletPositionMapper positionMapper;
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
 
     public SmartWalletProfileEntity upsertMetrics(PolymarketWalletMetricsRequest request) {
         SmartWalletProfileEntity entity = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
@@ -145,9 +149,111 @@ public class SmartWalletProfileStoreService {
     }
 
     public List<SmartWalletProfileEntity> listExecutableWatchlist() {
-        return listAll().stream()
-                .filter(this::isHotMonitorTier)
-                .toList();
+        List<SmartWalletProfileEntity> allProfiles = listAll();
+        LinkedHashMap<String, SmartWalletProfileEntity> merged = new LinkedHashMap<>();
+        for (SmartWalletProfileEntity profile : allProfiles) {
+            if (isHotMonitorTier(profile)) {
+                merged.put(normalizeWallet(profile.getWalletAddress()), profile);
+            }
+        }
+        mergeManualAllowlistRuntimeProfiles(merged, allProfiles);
+        return new ArrayList<>(merged.values());
+    }
+
+    private void mergeManualAllowlistRuntimeProfiles(LinkedHashMap<String, SmartWalletProfileEntity> merged,
+                                                     List<SmartWalletProfileEntity> allProfiles) {
+        if (merged == null) {
+            return;
+        }
+        LinkedHashMap<String, SmartWalletProfileEntity> profilesByWallet = new LinkedHashMap<>();
+        if (allProfiles != null) {
+            for (SmartWalletProfileEntity profile : allProfiles) {
+                if (profile != null && StringUtils.hasText(profile.getWalletAddress())) {
+                    profilesByWallet.put(normalizeWallet(profile.getWalletAddress()), profile);
+                }
+            }
+        }
+        for (SmartWalletManualAllowlistEntity allowlist : manualAllowlistService.listActiveEntities()) {
+            if (!manualAllowlistService.isActive(allowlist) || !StringUtils.hasText(allowlist.getWalletAddress())) {
+                continue;
+            }
+            String normalizedWallet = normalizeWallet(allowlist.getWalletAddress());
+            SmartWalletProfileEntity existing = profilesByWallet.get(normalizedWallet);
+            if (existing != null && Boolean.FALSE.equals(existing.getManualWatchEnabled())) {
+                merged.remove(normalizedWallet);
+                continue;
+            }
+            merged.put(normalizedWallet, toManualAllowlistRuntimeProfile(existing, allowlist));
+        }
+    }
+
+    private SmartWalletProfileEntity toManualAllowlistRuntimeProfile(SmartWalletProfileEntity existing,
+                                                                    SmartWalletManualAllowlistEntity allowlist) {
+        SmartWalletProfileEntity runtime = existing == null ? new SmartWalletProfileEntity() : copyProfile(existing);
+        Date now = new Date();
+        runtime.setWalletAddress(allowlist.getWalletAddress())
+                .setSource(SOURCE)
+                .setChain(firstText(runtime.getChain(), "polygon"))
+                .setAlias(firstText(runtime.getAlias(), "manual-allowlist"))
+                .setQualified(existing == null ? Boolean.FALSE : existing.getQualified())
+                .setWatchEnabled(Boolean.TRUE)
+                .setMonitorTier(MONITOR_TIER_HOT)
+                .setMonitorReason(existing == null
+                        ? "MANUAL_ALLOWLIST_DEFAULT_FOLLOW_PROFILE_MISSING"
+                        : "MANUAL_ALLOWLIST_DEFAULT_FOLLOW")
+                .setUpdatedAt(existing == null ? now : existing.getUpdatedAt())
+                .setCreatedAt(existing == null ? now : existing.getCreatedAt());
+        return runtime;
+    }
+
+    private SmartWalletProfileEntity copyProfile(SmartWalletProfileEntity source) {
+        return new SmartWalletProfileEntity()
+                .setId(source.getId())
+                .setWalletAddress(source.getWalletAddress())
+                .setChain(source.getChain())
+                .setAlias(source.getAlias())
+                .setSource(source.getSource())
+                .setWinRate(source.getWinRate())
+                .setRealizedPnlUsdc(source.getRealizedPnlUsdc())
+                .setTotalTrades(source.getTotalTrades())
+                .setAverageSizeUsdc(source.getAverageSizeUsdc())
+                .setAverageRoiRate(source.getAverageRoiRate())
+                .setMaxDrawdownRate(source.getMaxDrawdownRate())
+                .setWalletScore(source.getWalletScore())
+                .setQualified(source.getQualified())
+                .setWatchEnabled(source.getWatchEnabled())
+                .setLastTradeAt(source.getLastTradeAt())
+                .setLastEvaluatedAt(source.getLastEvaluatedAt())
+                .setLastDiscoveredAt(source.getLastDiscoveredAt())
+                .setLastDiscoveryQuery(source.getLastDiscoveryQuery())
+                .setLeaderboardHitCount30d(source.getLeaderboardHitCount30d())
+                .setDominantSession(source.getDominantSession())
+                .setAsiaTradeRatio30d(source.getAsiaTradeRatio30d())
+                .setEuTradeRatio30d(source.getEuTradeRatio30d())
+                .setUsTradeRatio30d(source.getUsTradeRatio30d())
+                .setActiveHourHistogramJson(source.getActiveHourHistogramJson())
+                .setRecentWinRate7d(source.getRecentWinRate7d())
+                .setRecentWinRate30d(source.getRecentWinRate30d())
+                .setRecentTradeCount7d(source.getRecentTradeCount7d())
+                .setRecentTradeCount30d(source.getRecentTradeCount30d())
+                .setObserveCooldownUntil(source.getObserveCooldownUntil())
+                .setObserveCooldownReason(source.getObserveCooldownReason())
+                .setHotRetentionUntil(source.getHotRetentionUntil())
+                .setHotRetentionReason(source.getHotRetentionReason())
+                .setManualWatchEnabled(source.getManualWatchEnabled())
+                .setManualRecommendedExitLane(source.getManualRecommendedExitLane())
+                .setManualOverrideNote(source.getManualOverrideNote())
+                .setManualOverrideUpdatedAt(source.getManualOverrideUpdatedAt())
+                .setMonitorTier(source.getMonitorTier())
+                .setMonitorReason(source.getMonitorReason())
+                .setLastEventSyncAt(source.getLastEventSyncAt())
+                .setLastMetricsRefreshAt(source.getLastMetricsRefreshAt())
+                .setClosedSyncMaxClosedAt(source.getClosedSyncMaxClosedAt())
+                .setClosedSyncTotalCount(source.getClosedSyncTotalCount())
+                .setClosedSyncDataQuality(source.getClosedSyncDataQuality())
+                .setClosedSyncLastFullAt(source.getClosedSyncLastFullAt())
+                .setCreatedAt(source.getCreatedAt())
+                .setUpdatedAt(source.getUpdatedAt());
     }
 
     public List<SmartWalletProfileEntity> listWarmWatchlist() {
@@ -377,6 +483,184 @@ public class SmartWalletProfileStoreService {
                 .updatedWalletAddresses(updatedWallets)
                 .missingWalletAddresses(missingWallets)
                 .build();
+    }
+
+    public List<SmartWalletProfileStaleDiagnosticView> listProfileTierDiagnostics(Integer limit) {
+        int safeLimit = limit == null ? 200 : Math.max(1, Math.min(limit, 1000));
+        return listAll().stream()
+                .limit(safeLimit)
+                .map(this::toStaleDiagnosticView)
+                .toList();
+    }
+
+    public List<SmartWalletProfileTierDiagnosticsSummaryView> summarizeProfileTierDiagnostics() {
+        LinkedHashMap<String, List<SmartWalletProfileStaleDiagnosticView>> byTier = new LinkedHashMap<>();
+        for (SmartWalletProfileStaleDiagnosticView row : listAll().stream()
+                .map(this::toStaleDiagnosticView)
+                .toList()) {
+            byTier.computeIfAbsent(firstText(row.monitorTier(), "UNKNOWN"), ignored -> new ArrayList<>()).add(row);
+        }
+        return byTier.entrySet().stream()
+                .map(entry -> summarizeTier(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    private SmartWalletProfileTierDiagnosticsSummaryView summarizeTier(String tier,
+                                                                       List<SmartWalletProfileStaleDiagnosticView> rows) {
+        Date earliestRefresh = null;
+        Date latestRefresh = null;
+        int missingRefresh = 0;
+        int staleMetrics = 0;
+        int staleEvents = 0;
+        LinkedHashMap<String, Integer> blockCounts = new LinkedHashMap<>();
+        for (SmartWalletProfileStaleDiagnosticView row : rows) {
+            if (row.lastMetricsRefreshAt() == null) {
+                missingRefresh++;
+            } else {
+                earliestRefresh = earliest(earliestRefresh, row.lastMetricsRefreshAt());
+                latestRefresh = latest(latestRefresh, row.lastMetricsRefreshAt());
+            }
+            if (Boolean.TRUE.equals(row.metricsStale())) {
+                staleMetrics++;
+            }
+            if (Boolean.TRUE.equals(row.eventSyncStale())) {
+                staleEvents++;
+            }
+            blockCounts.merge(firstText(row.firstHotBlockReason(), "NONE"), 1, Integer::sum);
+        }
+        return SmartWalletProfileTierDiagnosticsSummaryView.builder()
+                .monitorTier(tier)
+                .walletCount(rows.size())
+                .metricsMissingCount(missingRefresh)
+                .metricsStaleCount(staleMetrics)
+                .eventSyncStaleCount(staleEvents)
+                .earliestMetricsRefreshAt(earliestRefresh)
+                .latestMetricsRefreshAt(latestRefresh)
+                .hotBlockReasonCounts(blockCounts)
+                .build();
+    }
+
+    private SmartWalletProfileStaleDiagnosticView toStaleDiagnosticView(SmartWalletProfileEntity profile) {
+        boolean allowlistActive = manualAllowlistService.isActive(profile == null ? null : profile.getWalletAddress());
+        boolean metricsStale = isMetricsStale(profile);
+        boolean eventSyncStale = isEventSyncStale(profile);
+        return SmartWalletProfileStaleDiagnosticView.builder()
+                .walletAddress(profile.getWalletAddress())
+                .alias(profile.getAlias())
+                .qualified(profile.getQualified())
+                .watchEnabled(profile.getWatchEnabled())
+                .manualWatchEnabled(profile.getManualWatchEnabled())
+                .manualAllowlistActive(allowlistActive)
+                .monitorTier(profile.getMonitorTier())
+                .monitorReason(profile.getMonitorReason())
+                .winRate(profile.getWinRate())
+                .walletScore(profile.getWalletScore())
+                .totalTrades(profile.getTotalTrades())
+                .realizedPnlUsdc(profile.getRealizedPnlUsdc())
+                .maxDrawdownRate(profile.getMaxDrawdownRate())
+                .lastMetricsRefreshAt(profile.getLastMetricsRefreshAt())
+                .lastEventSyncAt(profile.getLastEventSyncAt())
+                .lastTradeAt(profile.getLastTradeAt())
+                .lastDiscoveredAt(profile.getLastDiscoveredAt())
+                .metricsStale(metricsStale)
+                .eventSyncStale(eventSyncStale)
+                .tierDecisionReason(profile.getMonitorReason())
+                .firstHotBlockReason(firstHotBlockReason(profile, metricsStale, allowlistActive))
+                .build();
+    }
+
+    private String firstHotBlockReason(SmartWalletProfileEntity wallet, boolean metricsStale, boolean allowlistActive) {
+        if (wallet == null) {
+            return "MISSING_WALLET";
+        }
+        if (Boolean.FALSE.equals(wallet.getManualWatchEnabled())) {
+            return "MANUAL_WATCH_DISABLED";
+        }
+        if (allowlistActive) {
+            return "MANUAL_ALLOWLIST_DEFAULT_FOLLOW";
+        }
+        if (metricsStale) {
+            return "METRICS_STALE";
+        }
+        Date now = new Date();
+        if (isForceColdByInactivity(wallet, now)) {
+            return "STALE_LAST_TRADE_GT_60D";
+        }
+        if (isWarmByInactivity(wallet, now)) {
+            return "STALE_LAST_TRADE_GT_30D";
+        }
+        if (isObserveCooldownActive(wallet)) {
+            return "OBSERVE_COOLDOWN";
+        }
+        String qualificationBlock = firstQualificationBlockReason(wallet);
+        if (qualificationBlock != null) {
+            return qualificationBlock;
+        }
+        ExecutableEvaluation executable = evaluateExecutableCandidate(wallet, walletBehaviorProfileService.getProfile(wallet.getWalletAddress()));
+        if (!executable.allowed()) {
+            return executable.reason();
+        }
+        if (Boolean.TRUE.equals(wallet.getWatchEnabled()) && isHotMonitorTier(wallet)) {
+            return null;
+        }
+        return "NOT_WATCH_ENABLED";
+    }
+
+    private String firstQualificationBlockReason(SmartWalletProfileEntity wallet) {
+        if (safe(wallet.getWinRate()).compareTo(safe(properties.getMinWinRate())) < 0) {
+            return "WIN_RATE_BELOW_THRESHOLD";
+        }
+        if (safe(wallet.getWalletScore()).compareTo(safe(properties.getMinWalletScore())) < 0) {
+            return "SCORE_BELOW_THRESHOLD";
+        }
+        if ((wallet.getTotalTrades() == null ? 0 : wallet.getTotalTrades()) < defaultInt(properties.getMinTotalTrades())) {
+            return "TOTAL_TRADES_BELOW_THRESHOLD";
+        }
+        if (safe(wallet.getRealizedPnlUsdc()).compareTo(safe(properties.getMinRealizedPnlUsdc())) < 0) {
+            return "PNL_BELOW_THRESHOLD";
+        }
+        if (safe(wallet.getMaxDrawdownRate()).compareTo(safe(properties.getMaxDrawdownRate())) > 0) {
+            return "DRAWDOWN_ABOVE_THRESHOLD";
+        }
+        return null;
+    }
+
+    private boolean isMetricsStale(SmartWalletProfileEntity wallet) {
+        if (wallet == null || wallet.getLastMetricsRefreshAt() == null) {
+            return true;
+        }
+        long staleAfterMs = Math.max(warmWalletRefreshMinIntervalMs() * 2, TimeUnit.HOURS.toMillis(1));
+        return System.currentTimeMillis() - wallet.getLastMetricsRefreshAt().getTime() > staleAfterMs;
+    }
+
+    private boolean isEventSyncStale(SmartWalletProfileEntity wallet) {
+        if (wallet == null || wallet.getLastEventSyncAt() == null) {
+            return true;
+        }
+        long minInterval = properties.getPolymarket().getWalletTradeSyncMinIntervalMs() == null
+                ? 30_000L
+                : Math.max(properties.getPolymarket().getWalletTradeSyncMinIntervalMs(), 1L);
+        long staleAfterMs = Math.max(minInterval * 10, TimeUnit.MINUTES.toMillis(10));
+        return System.currentTimeMillis() - wallet.getLastEventSyncAt().getTime() > staleAfterMs;
+    }
+
+    private long warmWalletRefreshMinIntervalMs() {
+        Long value = properties.getPolymarket().getWarmWalletRefreshMinIntervalMs();
+        return value == null ? TimeUnit.MINUTES.toMillis(30) : Math.max(value, 1L);
+    }
+
+    private Date earliest(Date current, Date candidate) {
+        if (current == null) {
+            return candidate;
+        }
+        return candidate == null || current.before(candidate) ? current : candidate;
+    }
+
+    private Date latest(Date current, Date candidate) {
+        if (current == null) {
+            return candidate;
+        }
+        return candidate == null || current.after(candidate) ? current : candidate;
     }
 
     // -------------------------------------------------------------------------
@@ -986,6 +1270,10 @@ public class SmartWalletProfileStoreService {
 
     private String firstText(String primary, String fallback) {
         return StringUtils.hasText(primary) ? primary : fallback;
+    }
+
+    private String normalizeWallet(String walletAddress) {
+        return walletAddress == null ? "" : walletAddress.trim().toLowerCase(Locale.ROOT);
     }
 
     private int defaultInt(Integer value) {

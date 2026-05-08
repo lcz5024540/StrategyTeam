@@ -42,6 +42,7 @@ public class PolymarketWalletDiscoveryService {
     private static final String LOG_PREFIX = "[POLY_FOLLOW]";
     private static final String MONITOR_TIER_HOT = "HOT";
     private static final String MONITOR_TIER_WARM = "WARM";
+    private static final String MONITOR_TIER_COLD = "COLD";
     private final PolymarketApiClient polymarketApiClient;
     private final PolymarketSmartWalletMonitorService monitorService;
     private final SmartWalletSelectionService selectionService;
@@ -54,6 +55,7 @@ public class PolymarketWalletDiscoveryService {
     private final WalletOrderAggregationService walletOrderAggregationService;
     private final LeaderTradeOutcomeRebuildService leaderTradeOutcomeRebuildService;
     private final SmartWalletProfileTruthRefreshService profileTruthRefreshService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
     private final AtomicBoolean firstDiscoveryRun = new AtomicBoolean(true);
     private final AtomicBoolean firstLeaderboardRefreshRun = new AtomicBoolean(true);
@@ -282,7 +284,7 @@ public class PolymarketWalletDiscoveryService {
             if (wallet == null || !StringUtils.hasText(wallet.getWalletAddress())) {
                 continue;
             }
-            if (!isWarmWallet(wallet)) {
+            if (!isMetricsRefreshCandidate(wallet)) {
                 continue;
             }
             if (enforceDueWindow && !isWarmMetricsRefreshDue(wallet, now)) {
@@ -434,9 +436,16 @@ public class PolymarketWalletDiscoveryService {
 
     private List<SmartWalletProfileEntity> selectWarmMetricsRefreshBatch() {
         long now = System.currentTimeMillis();
-        return profileStoreService.listWarmWatchlist().stream()
+        LinkedHashMap<String, SmartWalletProfileEntity> candidates = new LinkedHashMap<>();
+        profileStoreService.listWarmWatchlist().stream()
                 .filter(item -> item != null && StringUtils.hasText(item.getWalletAddress()))
                 .filter(item -> isWarmMetricsRefreshDue(item, now))
+                .forEach(item -> candidates.put(normalizeWalletKey(item.getWalletAddress()), item));
+        profileStoreService.listColdProfiles().stream()
+                .filter(item -> item != null && StringUtils.hasText(item.getWalletAddress()))
+                .filter(item -> isColdMetricsRefreshCandidate(item, now))
+                .forEach(item -> candidates.putIfAbsent(normalizeWalletKey(item.getWalletAddress()), item));
+        return candidates.values().stream()
                 .sorted(Comparator
                         .comparing(SmartWalletProfileEntity::getLastMetricsRefreshAt, Comparator.nullsFirst(Comparator.naturalOrder()))
                         .thenComparing(SmartWalletProfileEntity::getWalletScore, Comparator.nullsLast(Comparator.reverseOrder())))
@@ -576,6 +585,31 @@ public class PolymarketWalletDiscoveryService {
         return now - lastMetricsRefreshAt.getTime() >= warmWalletRefreshMinIntervalMs();
     }
 
+    private boolean isMetricsRefreshCandidate(SmartWalletProfileEntity wallet) {
+        return isWarmWallet(wallet) || isColdWallet(wallet);
+    }
+
+    private boolean isColdMetricsRefreshCandidate(SmartWalletProfileEntity wallet, long now) {
+        if (!isColdWallet(wallet) || !isWarmMetricsRefreshDue(wallet, now)) {
+            return false;
+        }
+        if (manualAllowlistService.isActive(wallet.getWalletAddress())) {
+            return true;
+        }
+        if (wallet.getManualWatchEnabled() != null) {
+            return true;
+        }
+        if (wallet.getLastDiscoveredAt() != null
+                && wallet.getLastDiscoveredAt().getTime() >= now - java.util.concurrent.TimeUnit.DAYS.toMillis(30)) {
+            return true;
+        }
+        BigDecimal minWalletScore = properties.getMinWalletScore() == null ? BigDecimal.ZERO : properties.getMinWalletScore();
+        BigDecimal warmThreshold = minWalletScore.subtract(new BigDecimal("0.10")).max(BigDecimal.ZERO);
+        return wallet.getLastMetricsRefreshAt() == null
+                && wallet.getWalletScore() != null
+                && wallet.getWalletScore().compareTo(warmThreshold) >= 0;
+    }
+
     private boolean needsWarmPromotionBackfill(SmartWalletProfileEntity wallet) {
         if (!isHotWallet(wallet) || wallet == null || wallet.getLastMetricsRefreshAt() == null) {
             return false;
@@ -589,6 +623,10 @@ public class PolymarketWalletDiscoveryService {
 
     private boolean isWarmWallet(SmartWalletProfileEntity wallet) {
         return wallet != null && MONITOR_TIER_WARM.equalsIgnoreCase(wallet.getMonitorTier());
+    }
+
+    private boolean isColdWallet(SmartWalletProfileEntity wallet) {
+        return wallet != null && MONITOR_TIER_COLD.equalsIgnoreCase(wallet.getMonitorTier());
     }
 
     private Date resolveHotSyncCheckpoint(long checkpointMillis, long fallbackNow) {

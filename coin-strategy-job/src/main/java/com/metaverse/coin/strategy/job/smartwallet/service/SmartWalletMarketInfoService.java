@@ -51,10 +51,12 @@ public class SmartWalletMarketInfoService {
 
     public SmartWalletMarketInfoEntity getByMarketIdAndOutcome(String marketId, String outcome) {
         if (!StringUtils.hasText(marketId) || !StringUtils.hasText(outcome)) return null;
-        return marketInfoMapper.selectOne(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+        List<SmartWalletMarketInfoEntity> list = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
                 .eq(SmartWalletMarketInfoEntity::getMarketId, marketId)
                 .eq(SmartWalletMarketInfoEntity::getOutcome, outcome)
+                .orderByDesc(SmartWalletMarketInfoEntity::getUpdatedAt)
                 .last("limit 1"));
+        return list == null || list.isEmpty() ? null : list.get(0);
     }
 
     public List<SmartWalletMarketInfoEntity> listByMarketId(String marketId) {

@@ -243,6 +243,7 @@ public class SmartWalletProfileTruthRefreshService {
                         .ge(SmartWalletLeaderTradeOutcomeEntity::getSourceConfidence, TRUSTED_CONFIDENCE)
                         .orderByAsc(SmartWalletLeaderTradeOutcomeEntity::getLastTradeAt))
                 .stream()
+                .filter(row -> row != null)
                 .filter(row -> row.getEstimatedRealizedPnlUsdc() != null)
                 .toList();
     }

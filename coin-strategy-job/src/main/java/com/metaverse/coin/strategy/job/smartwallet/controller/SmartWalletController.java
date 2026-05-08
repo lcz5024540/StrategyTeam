@@ -55,6 +55,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCa
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileStaleDiagnosticView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTruthAuditView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
@@ -513,6 +515,19 @@ public class SmartWalletController {
     @GetMapping("/watchlist/candidates")
     public List<SmartWalletProfileEntity> candidateWatchlist() {
         return polymarketMonitorService.listQualifiedCandidates();
+    }
+
+    @Operation(summary = "观察名单分层诊断", description = "输出 HOT/WARM/COLD 判定、数据新鲜度和第一个 HOT 阻断原因。")
+    @GetMapping("/watchlist/tier-diagnostics")
+    public List<SmartWalletProfileStaleDiagnosticView> watchlistTierDiagnostics(
+            @RequestParam(defaultValue = "200") Integer limit) {
+        return smartWalletProfileStoreService.listProfileTierDiagnostics(limit);
+    }
+
+    @Operation(summary = "观察名单分层诊断摘要", description = "按 HOT/WARM/COLD 汇总数据过期和 HOT 阻断原因分布。")
+    @GetMapping("/watchlist/tier-diagnostics/summary")
+    public List<SmartWalletProfileTierDiagnosticsSummaryView> watchlistTierDiagnosticsSummary() {
+        return smartWalletProfileStoreService.summarizeProfileTierDiagnostics();
     }
 
     @Operation(summary = "可执行观察名单", description = "查看当前仍允许进入执行链路的 smart wallet 地址。")

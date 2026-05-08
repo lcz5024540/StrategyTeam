@@ -124,7 +124,8 @@ public class WalletOrderAggregationService {
                 new LambdaQueryWrapper<SmartWalletOrderAnalysisEntity>()
                         .eq(SmartWalletOrderAnalysisEntity::getWalletAddress, walletAddress)
                         .eq(SmartWalletOrderAnalysisEntity::getSource, SOURCE_POLYMARKET)
-                        .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt));
+                        .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt)
+                        .last("limit 5000"));
         if (rows == null || rows.isEmpty()) {
             return List.of();
         }

@@ -111,7 +111,7 @@ public class SmartWalletSignalRiskService {
                     + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
         } else if (manualAllowlistApplied) {
             reasons.add("[MANUAL_ALLOWLIST_PASS] Wallet matched active manual allowlist. Address-profile admission checks are bypassed only.");
-            if (profile == null) {
+            if (profile == null || profile.getId() == null) {
                 accepted = false;
                 if (firstRejectGate == null) firstRejectGate = "G1_ALLOWLIST_PROFILE_MISSING";
                 reasons.add("[MANUAL_ALLOWLIST_PROFILE_MISSING] Wallet has no profile yet. PAPER observation is allowed, but executable follow is blocked until profile metrics exist.");

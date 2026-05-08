@@ -153,6 +153,9 @@ public class SmartWalletOrderAnalysisService {
                 .build();
     }
 
+    /** 单钱包最多加载的历史记录数，防止超大钱包撑爆堆内存 */
+    private static final int MAX_PERSISTED_ROWS = 5000;
+
     private List<SmartWalletOrderAnalysisEntity> listPersisted(String walletAddress) {
         if (!StringUtils.hasText(walletAddress)) {
             return List.of();
@@ -160,7 +163,8 @@ public class SmartWalletOrderAnalysisService {
         return orderAnalysisMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderAnalysisEntity>()
                 .eq(SmartWalletOrderAnalysisEntity::getWalletAddress, walletAddress.trim())
                 .eq(SmartWalletOrderAnalysisEntity::getSource, SOURCE)
-                .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt));
+                .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt)
+                .last("limit " + MAX_PERSISTED_ROWS));
     }
 
     private SmartWalletOrderAnalysisEntity buildEntity(WalletOrderAggregationService.ClosedOrderSnapshot order) {
