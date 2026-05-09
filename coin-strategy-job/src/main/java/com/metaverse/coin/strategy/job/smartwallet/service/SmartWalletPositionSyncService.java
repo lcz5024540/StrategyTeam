@@ -86,7 +86,17 @@ public class SmartWalletPositionSyncService {
             log.debug("Current USDC balance for {}: {}", context.getAddress(), balance);
 
             List<JsonNode> positions = polymarketApiClient.fetchPositions(context.getAddress(), null);
-            log.debug("Current positions count for {}: {}", context.getAddress(), positions.size());
+            int positionCount = positions.size();
+            log.debug("Current positions count for {}: {}", context.getAddress(), positionCount);
+
+            // 安全阀：如果 API 返回的仓位数超出预期上限，截断并告警防止下游 OOM
+            final int maxPositions = 5000;
+            if (positionCount > maxPositions) {
+                log.warn("fetchPositions returned {} positions for {}, truncating to {} to prevent OOM",
+                        positionCount, context.getAddress(), maxPositions);
+                positions = positions.subList(0, maxPositions);
+            }
+
             clearCooldown();
             consecutiveRpcFailures.set(0);
 

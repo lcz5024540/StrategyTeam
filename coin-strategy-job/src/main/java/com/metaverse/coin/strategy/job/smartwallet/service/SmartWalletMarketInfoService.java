@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -33,8 +34,17 @@ public class SmartWalletMarketInfoService {
 
     private final SmartWalletMarketInfoMapper marketInfoMapper;
 
-    /** 进程内缓存，按 id 索引 */
-    private final Map<Long, SmartWalletMarketInfoEntity> cacheById = new ConcurrentHashMap<>();
+    /** LRU 缓存上限，超出后自动淘汰最久未访问的条目 */
+    private static final int CACHE_MAX_SIZE = 10_000;
+
+    /** 进程内 LRU 缓存，按 id 索引，带容量上限防止内存泄漏 */
+    private final Map<Long, SmartWalletMarketInfoEntity> cacheById = Collections.synchronizedMap(
+            new LinkedHashMap<Long, SmartWalletMarketInfoEntity>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Long, SmartWalletMarketInfoEntity> eldest) {
+                    return size() > CACHE_MAX_SIZE;
+                }
+            });
 
     public SmartWalletMarketInfoService(SmartWalletMarketInfoMapper marketInfoMapper) {
         this.marketInfoMapper = marketInfoMapper;
@@ -59,6 +69,9 @@ public class SmartWalletMarketInfoService {
         return list == null || list.isEmpty() ? null : list.get(0);
     }
 
+    /** 单次 listByMarketId / batchListByMarketIds 最大加载行数，防止历史数据堆积导致 OOM */
+    private static final int MAX_LIST_ROWS = 5_000;
+
     public List<SmartWalletMarketInfoEntity> listByMarketId(String marketId) {
         if (!StringUtils.hasText(marketId)) {
             return List.of();
@@ -81,7 +94,10 @@ public class SmartWalletMarketInfoService {
                     lastId = row.getId();
                 }
             }
-            if (chunk.size() < pageSize) {
+            if (chunk.size() < pageSize || rows.size() >= MAX_LIST_ROWS) {
+                if (rows.size() >= MAX_LIST_ROWS) {
+                    log.warn("listByMarketId hit hard limit {} for marketId={}", MAX_LIST_ROWS, marketId);
+                }
                 break;
             }
         }
@@ -122,7 +138,10 @@ public class SmartWalletMarketInfoService {
                     lastId = row.getId();
                 }
             }
-            if (chunk.size() < pageSize) {
+            if (chunk.size() < pageSize || rows.size() >= MAX_LIST_ROWS) {
+                if (rows.size() >= MAX_LIST_ROWS) {
+                    log.warn("batchListByMarketIds hit hard limit {} for {} marketIds", MAX_LIST_ROWS, normalizedIds.size());
+                }
                 break;
             }
         }

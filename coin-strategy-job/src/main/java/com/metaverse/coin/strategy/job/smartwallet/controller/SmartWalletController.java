@@ -161,8 +161,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -400,18 +404,17 @@ public class SmartWalletController {
 
     @Operation(summary = "导出人工覆盖 CSV", description = "导出当前所有人工覆盖项，方便运营排查和复盘。")
     @GetMapping(value = "/profiles/overrides/export", produces = "text/csv")
-    public ResponseEntity<String> exportProfileOverrides(@RequestParam(defaultValue = "500") Integer limit) {
+    public ResponseEntity<StreamingResponseBody> exportProfileOverrides(@RequestParam(defaultValue = "500") Integer limit) {
         List<SmartWalletProfileOverrideView> rows = smartWalletProfileStoreService.listManualOverrides(limit);
-        String csv = csv(
+        return csvResponse(
                 List.of("walletAddress", "alias", "qualified", "watchEnabled", "manualWatchEnabled",
                         "manualRecommendedExitLane", "manualOverrideNote", "manualOverrideUpdatedAt"),
                 rows.stream().map(row -> java.util.Arrays.asList(
                         row.walletAddress(), row.alias(), row.qualified(), row.watchEnabled(),
                         row.manualWatchEnabled(), row.manualRecommendedExitLane(),
                         row.manualOverrideNote(), row.manualOverrideUpdatedAt()
-                )).toList()
-        );
-        return csvResponse(csv, "smart_wallet_profile_overrides", "manual");
+                )).toList(),
+                "smart_wallet_profile_overrides", "manual");
     }
 
     @Operation(summary = "更新地址人工覆盖", description = "可人工强制某地址仅观察/恢复可执行，或手工指定 recommendedExitLane。")
@@ -551,10 +554,10 @@ public class SmartWalletController {
 
     @Operation(summary = "导出观察名单地址分型 CSV", description = "导出增强版地址分型结果，包含退出风格、提前退出率和可复制分数。")
     @GetMapping(value = "/watchlist/archetypes/export", produces = "text/csv")
-    public ResponseEntity<String> exportWatchlistArchetypes(@RequestParam(defaultValue = "200") Integer limit,
+    public ResponseEntity<StreamingResponseBody> exportWatchlistArchetypes(@RequestParam(defaultValue = "200") Integer limit,
                                                             @RequestParam(defaultValue = "candidates") String scope) {
         List<WalletArchetypeView> rows = buildWatchlistArchetypes(limit, scope);
-        String csv = csv(
+        return csvResponse(
                 List.of("walletAddress", "archetype", "followLane", "recommendedExitLane",
                         "highFrequencyTradingAddress", "trades7d", "trades30d", "orderWinRate",
                         "averageOrderRoiRate", "medianOrderRoiRate", "settlementCompletionRate",
@@ -568,9 +571,8 @@ public class SmartWalletController {
                         row.earlyExitRate(), row.profitEarlyExitRate(), row.lossEarlyExitRate(),
                         row.winSourceType(), row.settlementWinRate(), row.earlySettlementRate(), row.stabilityScore(),
                         row.qualityScore(), row.replicabilityScore(), row.followFitScore(), row.confidence(), row.summary()
-                )).toList()
-        );
-        return csvResponse(csv, "smart_wallet_watchlist_archetypes", scope);
+                )).toList(),
+                "smart_wallet_watchlist_archetypes", scope);
     }
 
     @Operation(summary = "观察名单地址行为画像", description = "分析监控地址的高频特征、订单胜率、收益率、提前退出比例，以及推荐的跟单退出节奏。")
@@ -1210,10 +1212,10 @@ public class SmartWalletController {
 
     @Operation(summary = "导出订单 CSV", description = "导出 PAPER 或 LIVE 的订单记录，包含总手续费、交易手续费、链上手续费和 POL。")
     @GetMapping(value = "/orders/export", produces = "text/csv")
-    public ResponseEntity<String> exportOrders(@RequestParam(defaultValue = "5000") Integer limit,
+    public ResponseEntity<StreamingResponseBody> exportOrders(@RequestParam(defaultValue = "5000") Integer limit,
                                                @RequestParam(required = false) String mode) {
         List<SmartWalletOrderView> rows = accountingService.listOrders(limit, mode);
-        String csv = csv(
+        return csvResponse(
                 List.of("id", "executionAddress", "marketId", "question", "outcome", "side", "orderType", "status",
                         "notionalUsdc", "costBasisUsdc", "feeUsdc", "tradingFeeUsdc", "gasFeeUsdc", "feePol",
                         "realizedPnlUsdc", "exitReason", "placedAt", "filledAt"),
@@ -1222,9 +1224,8 @@ public class SmartWalletController {
                         row.getSide(), row.getOrderType(), row.getStatus(), row.getNotionalUsdc(), row.getCostBasisUsdc(),
                         row.getFeeUsdc(), row.getTradingFeeUsdc(), row.getGasFeeUsdc(), row.getFeePol(),
                         row.getRealizedPnlUsdc(), row.getExitReason(), row.getPlacedAt(), row.getFilledAt()
-                )).toList()
-        );
-        return csvResponse(csv, "smart_wallet_orders", mode);
+                )).toList(),
+                "smart_wallet_orders", mode);
     }
 
     @Operation(summary = "成交列表", description = "查看 PAPER 或 LIVE 的成交明细。")
@@ -1236,10 +1237,10 @@ public class SmartWalletController {
 
     @Operation(summary = "导出成交 CSV", description = "导出 PAPER 或 LIVE 的成交明细，包含总手续费、交易手续费、链上手续费和 POL。")
     @GetMapping(value = "/fills/export", produces = "text/csv")
-    public ResponseEntity<String> exportFills(@RequestParam(defaultValue = "5000") Integer limit,
+    public ResponseEntity<StreamingResponseBody> exportFills(@RequestParam(defaultValue = "5000") Integer limit,
                                               @RequestParam(required = false) String mode) {
         List<SmartWalletFillView> rows = accountingService.listFills(limit, mode);
-        String csv = csv(
+        return csvResponse(
                 List.of("id", "orderId", "executionAddress", "marketId", "question", "outcome", "side", "price", "size",
                         "notionalUsdc", "feeUsdc", "tradingFeeUsdc", "gasFeeUsdc", "feePol", "realizedPnlUsdc", "filledAt"),
                 rows.stream().map(row -> java.util.Arrays.asList(
@@ -1247,9 +1248,8 @@ public class SmartWalletController {
                         row.getOutcome(), row.getSide(), row.getPrice(), row.getSize(), row.getNotionalUsdc(),
                         row.getFeeUsdc(), row.getTradingFeeUsdc(), row.getGasFeeUsdc(), row.getFeePol(),
                         row.getRealizedPnlUsdc(), row.getFilledAt()
-                )).toList()
-        );
-        return csvResponse(csv, "smart_wallet_fills", mode);
+                )).toList(),
+                "smart_wallet_fills", mode);
     }
 
     @Operation(summary = "容量摘要", description = "查看当前组合剩余仓位槽位、资金预算和基础风控限制。")
@@ -1266,9 +1266,9 @@ public class SmartWalletController {
 
     @Operation(summary = "导出当前持仓 CSV", description = "导出当前活跃持仓，包含干净 cost basis 与累计 POL gas。")
     @GetMapping(value = "/positions/live/export", produces = "text/csv")
-    public ResponseEntity<String> exportLivePositions(@RequestParam(required = false) String mode) {
+    public ResponseEntity<StreamingResponseBody> exportLivePositions(@RequestParam(required = false) String mode) {
         List<SmartWalletPositionView> rows = accountingService.listActivePositions(mode);
-        String csv = csv(
+        return csvResponse(
                 List.of("id", "executionAddress", "marketId", "question", "outcome", "status", "quantity",
                         "averageEntryPrice", "costBasisUsdc", "originalCostBasisUsdc", "feePolTotal",
                         "realizedPnlUsdc", "unrealizedPnlUsdc", "pendingSettlementNetPnlUsdc",
@@ -1279,9 +1279,8 @@ public class SmartWalletController {
                         row.getOriginalCostBasisUsdc(), row.getFeePolTotal(), row.getRealizedPnlUsdc(),
                         row.getUnrealizedPnlUsdc(), row.getPendingSettlementNetPnlUsdc(), row.getClaimableProceedsUsdc(),
                         row.getMarketEndAtBjt(), row.getOpenedAt(), row.getLastFilledAt(), row.getClosedAt()
-                )).toList()
-        );
-        return csvResponse(csv, "smart_wallet_live_positions", mode);
+                )).toList(),
+                "smart_wallet_live_positions", mode);
     }
 
     @Operation(summary = "待结算处理持仓", description = "查看已到结算窗口或待领取的仓位，时间已带北京时间字段。")
@@ -1293,10 +1292,10 @@ public class SmartWalletController {
 
     @Operation(summary = "导出待结算持仓 CSV", description = "导出待结算或待领取持仓，包含干净 cost basis 与累计 POL gas。")
     @GetMapping(value = "/positions/next-settlements/export", produces = "text/csv")
-    public ResponseEntity<String> exportNextSettlements(@RequestParam(defaultValue = "5000") Integer limit,
+    public ResponseEntity<StreamingResponseBody> exportNextSettlements(@RequestParam(defaultValue = "5000") Integer limit,
                                                         @RequestParam(required = false) String mode) {
         List<SmartWalletPositionView> rows = accountingService.listNextSettlements(limit, mode);
-        String csv = csv(
+        return csvResponse(
                 List.of("id", "executionAddress", "marketId", "question", "outcome", "status", "quantity",
                         "costBasisUsdc", "feePolTotal", "pendingSettlementNetPnlUsdc", "claimableProceedsUsdc",
                         "marketEndAtBjt", "openedAt", "lastFilledAt", "closedAt"),
@@ -1305,9 +1304,8 @@ public class SmartWalletController {
                         row.getStatus(), row.getQuantity(), row.getCostBasisUsdc(), row.getFeePolTotal(),
                         row.getPendingSettlementNetPnlUsdc(), row.getClaimableProceedsUsdc(),
                         row.getMarketEndAtBjt(), row.getOpenedAt(), row.getLastFilledAt(), row.getClosedAt()
-                )).toList()
-        );
-        return csvResponse(csv, "smart_wallet_next_settlements", mode);
+                )).toList(),
+                "smart_wallet_next_settlements", mode);
     }
 
     @Operation(summary = "历史持仓", description = "查看历史持仓，可选只返回 closed/resolved 记录。")
@@ -1319,10 +1317,10 @@ public class SmartWalletController {
 
     @Operation(summary = "导出历史持仓 CSV", description = "导出历史持仓，可选只导出 closed/resolved 记录。")
     @GetMapping(value = "/positions/history/export", produces = "text/csv")
-    public ResponseEntity<String> exportPositionHistory(@RequestParam(defaultValue = "false") boolean closedOnly,
+    public ResponseEntity<StreamingResponseBody> exportPositionHistory(@RequestParam(defaultValue = "false") boolean closedOnly,
                                                         @RequestParam(required = false) String mode) {
         List<SmartWalletPositionView> rows = accountingService.listPositions(closedOnly, mode);
-        String csv = csv(
+        return csvResponse(
                 List.of("id", "executionAddress", "marketId", "question", "outcome", "status", "quantity",
                         "averageEntryPrice", "costBasisUsdc", "originalCostBasisUsdc", "feePolTotal",
                         "realizedPnlUsdc", "unrealizedPnlUsdc", "pendingSettlementNetPnlUsdc",
@@ -1333,9 +1331,8 @@ public class SmartWalletController {
                         row.getOriginalCostBasisUsdc(), row.getFeePolTotal(), row.getRealizedPnlUsdc(),
                         row.getUnrealizedPnlUsdc(), row.getPendingSettlementNetPnlUsdc(), row.getClaimableProceedsUsdc(),
                         row.getMarketEndAtBjt(), row.getOpenedAt(), row.getLastFilledAt(), row.getClosedAt()
-                )).toList()
-        );
-        return csvResponse(csv, closedOnly ? "smart_wallet_closed_positions" : "smart_wallet_position_history", mode);
+                )).toList(),
+                closedOnly ? "smart_wallet_closed_positions" : "smart_wallet_position_history", mode);
     }
 
     @Operation(summary = "资金流水", description = "查看开单、结算、已实现盈亏等资金明细流水。")
@@ -1809,28 +1806,31 @@ public class SmartWalletController {
         return "Concentration cache invalidated for market=" + conditionId;
     }
 
-    private ResponseEntity<String> csvResponse(String csv, String prefix, String mode) {
+    private ResponseEntity<StreamingResponseBody> csvResponse(List<String> headers,
+                                                               List<? extends List<?>> rows,
+                                                               String prefix, String mode) {
         String suffix = mode == null || mode.isBlank() ? "all" : mode.trim().toLowerCase();
         String filename = prefix + "_" + suffix + "_" + LocalDateTime.now().format(EXPORT_TS) + ".csv";
+        StreamingResponseBody body = outputStream -> {
+            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
+            writer.write('\uFEFF');
+            writer.write(String.join(",", headers));
+            writer.newLine();
+            for (List<?> row : rows) {
+                for (int i = 0; i < row.size(); i++) {
+                    if (i > 0) {
+                        writer.write(',');
+                    }
+                    writer.write(csvCell(row.get(i)));
+                }
+                writer.newLine();
+            }
+            writer.flush();
+        };
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(new MediaType("text", "csv"))
-                .body(csv);
-    }
-
-    private String csv(List<String> headers, List<? extends List<?>> rows) {
-        StringBuilder sb = new StringBuilder("\uFEFF");
-        sb.append(String.join(",", headers)).append('\n');
-        for (List<?> row : rows) {
-            for (int i = 0; i < row.size(); i++) {
-                if (i > 0) {
-                    sb.append(',');
-                }
-                sb.append(csvCell(row.get(i)));
-            }
-            sb.append('\n');
-        }
-        return sb.toString();
+                .body(body);
     }
 
     private String csvCell(Object value) {

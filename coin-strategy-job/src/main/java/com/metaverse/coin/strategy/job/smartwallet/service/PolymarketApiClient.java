@@ -1299,8 +1299,26 @@ public class PolymarketApiClient {
         return compact.substring(0, 157) + "...";
     }
 
+    /** 单次 HTTP 响应体最大允许大小 (50 MB)，超限直接抛异常避免 OOM */
+    private static final int MAX_RESPONSE_BODY_BYTES = 50 * 1024 * 1024;
+
     private byte[] readAll(InputStream inputStream) throws IOException {
-        return inputStream == null ? new byte[0] : inputStream.readAllBytes();
+        if (inputStream == null) {
+            return new byte[0];
+        }
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream(8192);
+        byte[] chunk = new byte[8192];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = inputStream.read(chunk)) != -1) {
+            totalRead += bytesRead;
+            if (totalRead > MAX_RESPONSE_BODY_BYTES) {
+                throw new IOException("Response body exceeded max allowed size of "
+                        + MAX_RESPONSE_BODY_BYTES + " bytes, aborting read to prevent OOM");
+            }
+            buffer.write(chunk, 0, bytesRead);
+        }
+        return buffer.toByteArray();
     }
 
     private void sleepQuietly(long millis) {

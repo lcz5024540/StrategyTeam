@@ -63,9 +63,12 @@ public class SmartWalletFollowService {
         List<SmartWalletSignal> accepted = new ArrayList<>();
         List<SmartWalletSignal> rejected = new ArrayList<>();
 
+        // 提前拉取一次机会列表并缓存，避免每个钱包重复全量查询
+        List<PredictionMarketOpportunity> opportunities = opportunityService.list();
+
         for (SmartWalletProfile wallet : listWalletsForScan()) {
             BigDecimal walletScore = leaderboardStateService.adjustWalletScore(wallet.getAddress(), scoringService.score(wallet));
-            for (PredictionMarketOpportunity market : opportunityService.list()) {
+            for (PredictionMarketOpportunity market : opportunities) {
                 SmartWalletSignal signal = buildSignal(wallet, market, walletScore, normalizedBankroll);
                 if (signal.isExecutable()) {
                     accepted.add(signal);
