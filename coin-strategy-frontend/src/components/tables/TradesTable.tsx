@@ -108,8 +108,10 @@ export function TradesTable({ mode, pnl = 'ALL', settlement = 'ALL' }: TradesTab
   }, [deferredKeyword, statusFilter, mode, pnl, settlement])
 
   useEffect(() => {
-    setPage((currentPage) => Math.min(currentPage, totalPages))
-  }, [totalPages])
+    if (!hasNextPage) {
+      setPage((currentPage) => Math.min(currentPage, totalPages))
+    }
+  }, [totalPages, hasNextPage])
 
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage || trades.length >= requiredItems) return

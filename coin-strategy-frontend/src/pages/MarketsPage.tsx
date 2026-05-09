@@ -251,6 +251,14 @@ function queryErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
+function buildMonitorMarketUrl(item: SmartWalletMarketMonitorItem): string {
+  const slug = (item.marketSlug || '').trim()
+  if (slug) {
+    return `https://polymarket.com/event/${slug}`
+  }
+  return item.marketId ? `/dashboard/polymarket/markets/${encodeURIComponent(item.marketId.trim())}` : ''
+}
+
 export function MarketsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const lookbackDays = LOOKBACK_OPTIONS.includes(Number(searchParams.get('lookbackDays')))
@@ -267,7 +275,6 @@ export function MarketsPage() {
   const keyword = searchParams.get('keyword')?.trim() || ''
   const category = searchParams.get('category')?.trim() || ''
   const concentrationBand = searchParams.get('concentrationBand')?.trim() || ''
-  const positionDirection = searchParams.get('positionDirection')?.trim() || ''
   const hasPositionParam = searchParams.get('hasPosition')?.trim() || ''
   const hasPosition =
     hasPositionParam === 'true'
@@ -324,7 +331,6 @@ export function MarketsPage() {
       category,
       concentrationBand,
       hasPosition,
-      positionDirection,
     ],
     queryFn: () =>
       reportsApi.getMarketMonitoringTablePage({
@@ -335,7 +341,6 @@ export function MarketsPage() {
         category: category || undefined,
         concentrationBand: concentrationBand || undefined,
         hasPosition,
-        positionDirection: positionDirection || undefined,
       }),
     enabled: canLoadTable,
   })
@@ -513,16 +518,6 @@ export function MarketsPage() {
               <option value="false">仅无持仓</option>
             </select>
             <select
-              value={positionDirection}
-              onChange={(event) => updateParams({ positionDirection: event.target.value }, { resetPage: true })}
-            >
-              <option value="">全部持仓方向</option>
-              <option value="YES">YES</option>
-              <option value="NO">NO</option>
-              <option value="MULTI">YES / NO</option>
-              <option value="NONE">无持仓方向</option>
-            </select>
-            <select
               value={String(pageSize)}
               onChange={(event) => updateParams({ pageSize: Number(event.target.value) }, { resetPage: true })}
             >
@@ -566,7 +561,7 @@ export function MarketsPage() {
                     <th>信号</th>
                     <th>地址</th>
                     <th>持仓</th>
-                    <th>持仓方向</th>
+                    <th>市场比例</th>
                     <th>最新信号</th>
                     <th>结束时间</th>
                   </tr>
@@ -578,8 +573,23 @@ export function MarketsPage() {
                     </tr>
                   ) : marketTablePage.items.map((item) => (
                     <tr key={item.marketId}>
-                      <td>
-                        <div className="market-cell-title">{truncateText(item.question || item.marketId, 48)}</div>
+                      <td className="market-cell">
+                        {(() => {
+                          const marketUrl = buildMonitorMarketUrl(item)
+                          const marketLabel = truncateText(item.question || item.marketId, 48)
+                          return marketUrl ? (
+                            <a
+                              className="market-link"
+                              href={marketUrl}
+                              target={marketUrl.startsWith('http') ? '_blank' : undefined}
+                              rel={marketUrl.startsWith('http') ? 'noreferrer' : undefined}
+                            >
+                              {marketLabel}
+                            </a>
+                          ) : (
+                            <div className="market-cell-title">{marketLabel}</div>
+                          )
+                        })()}
                         <div className="market-cell-sub mono">{item.marketId}</div>
                         <div className="market-cell-sub">
                           生命周期: {item.marketLifecycle || item.marketState}
@@ -618,7 +628,7 @@ export function MarketsPage() {
                       <td>{formatNumber(item.signalCount, 0)}</td>
                       <td>{formatNumber(item.uniqueWalletCount, 0)}</td>
                       <td>{formatNumber(item.openPositionCount, 0)}</td>
-                      <td>{item.positionDirection || '-'}</td>
+                      <td className="mono">{item.outcomePrices || '-'}</td>
                       <td>{item.lastSignalAtBjt || '-'}</td>
                       <td>{item.marketEndAtBjt || '-'}</td>
                     </tr>

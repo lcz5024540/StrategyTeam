@@ -129,6 +129,8 @@ export interface SmartWalletProfileOverrideRequest {
 export interface SmartWalletMarketMonitorItem {
   marketId: string
   question: string | null
+  marketSlug: string | null
+  outcomePrices: string | null
   marketEndAt: number | null
   marketEndAtBjt: string | null
   marketState: string

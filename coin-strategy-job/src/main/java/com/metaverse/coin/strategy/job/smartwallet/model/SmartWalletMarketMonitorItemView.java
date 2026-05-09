@@ -13,6 +13,8 @@ import java.util.List;
 public class SmartWalletMarketMonitorItemView {
     private String marketId;
     private String question;
+    private String marketSlug;
+    private String outcomePrices;
     private Long marketEndAt;
     private String marketEndAtBjt;
     private String marketState;
