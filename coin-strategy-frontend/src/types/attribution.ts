@@ -78,3 +78,24 @@ export interface TimelinePoint {
   cumulativeFeeUsdc: number
   cumulativeNetPnlUsdc: number
 }
+
+export interface OrderPnlCategoryRow {
+  key: string
+  label: string
+  walletAddress?: string
+  category?: string
+  profitOrderCount: number
+  lossOrderCount: number
+  totalOrderCount: number
+}
+
+export interface OrderPnlCategoryWindow {
+  window: '30d' | '7d' | 'all' | string
+  label: string
+  marketCategories: OrderPnlCategoryRow[]
+  walletCategories: OrderPnlCategoryRow[]
+}
+
+export interface OrderPnlCategoryAttribution {
+  windows: OrderPnlCategoryWindow[]
+}

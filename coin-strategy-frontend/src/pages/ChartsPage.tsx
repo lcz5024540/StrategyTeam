@@ -6,7 +6,7 @@ import { TimelineChart } from '@/components/charts/TimelineChart'
 import { DailyPnlBars } from '@/components/charts/DailyPnlBars'
 import { WinRateTrend } from '@/components/charts/WinRateTrend'
 import { OutcomeTrendChart } from '@/components/charts/OutcomeTrendChart'
-import { AttributionBars } from '@/components/charts/AttributionBars'
+import { OrderPnlCategoryAttributionChart } from '@/components/charts/OrderPnlCategoryAttributionChart'
 import { OrdersTable } from '@/components/tables/OrdersTable'
 import { FollowAddressDailyTable } from '@/components/tables/FollowAddressDailyTable'
 import { TABLE_FETCH_LIMIT } from '@/utils/table'
@@ -54,14 +54,9 @@ export function ChartsPage() {
     queryFn: () => reportsApi.getPnlTimeline(Math.max(days, 1), bucketHours, mode),
   })
 
-  const { data: walletAttribution = [] } = useQuery({
-    queryKey: ['walletAttribution', mode],
-    queryFn: () => reportsApi.getWalletAttribution(10, mode),
-  })
-
-  const { data: marketAttribution = [] } = useQuery({
-    queryKey: ['marketAttribution', mode],
-    queryFn: () => reportsApi.getMarketAttribution(10, mode),
+  const { data: orderPnlCategoryAttribution } = useQuery({
+    queryKey: ['orderPnlCategoryAttribution', mode],
+    queryFn: () => reportsApi.getOrderPnlCategoryAttribution(12, mode),
   })
 
   const { data: followAddressDailyReports = [] } = useQuery({
@@ -82,8 +77,9 @@ export function ChartsPage() {
     mode === 'LIVE' &&
     pnlTimeline.length === 0 &&
     dailyReports.length === 0 &&
-    walletAttribution.length === 0 &&
-    marketAttribution.length === 0 &&
+    (orderPnlCategoryAttribution?.windows || []).every((window) =>
+      (window.marketCategories || []).length === 0 && (window.walletCategories || []).length === 0
+    ) &&
     conflicts.length === 0
 
   return (
@@ -162,21 +158,12 @@ export function ChartsPage() {
         <OutcomeTrendChart data={dailyReports} />
       </section>
 
-      {/* 归因分析 */}
-      <div className="split-grid">
-        <section className="panel">
-          <div className="section-head">
-            <h2>钱包归因</h2>
-          </div>
-          <AttributionBars data={walletAttribution} type="wallet" />
-        </section>
-        <section className="panel">
-          <div className="section-head">
-            <h2>市场归因</h2>
-          </div>
-          <AttributionBars data={marketAttribution} type="market" />
-        </section>
-      </div>
+      <section className="panel">
+        <div className="section-head">
+          <h2>市场类型盈亏订单归因</h2>
+        </div>
+        <OrderPnlCategoryAttributionChart data={orderPnlCategoryAttribution} />
+      </section>
 
       <section className="panel">
         <div className="section-head">

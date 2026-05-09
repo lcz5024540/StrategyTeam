@@ -41,6 +41,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportu
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderPnlCategoryAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistRequest;
@@ -1201,6 +1202,15 @@ public class SmartWalletController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String q) {
         return tradeOrderService.listTradeOrdersCursor(limit, lastId, mode, pnl, settlement, status, q);
+    }
+
+    @Operation(summary = "市场类型盈亏订单归因",
+            description = "按 30d/7d/all 汇总当前盈利与亏损订单数，并分别输出市场类别维度和钱包地址主要市场类别维度。")
+    @GetMapping("/trade-orders/pnl-category-attribution")
+    public SmartWalletOrderPnlCategoryAttributionView orderPnlCategoryAttribution(
+            @RequestParam(required = false) String mode,
+            @RequestParam(defaultValue = "12") Integer limit) {
+        return tradeOrderService.orderPnlCategoryAttribution(mode, limit);
     }
 
     @Operation(summary = "重建订单记录", description = "从 position/order/fill/ledger 幂等重建 Polymarket 订单记录主表。")
