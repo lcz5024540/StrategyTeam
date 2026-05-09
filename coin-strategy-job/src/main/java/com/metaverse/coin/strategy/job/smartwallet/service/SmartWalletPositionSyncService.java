@@ -23,10 +23,9 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -49,6 +48,7 @@ public class SmartWalletPositionSyncService {
     private final MarketConcentrationService marketConcentrationService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final PolymarketMarketDataCacheService marketDataCacheService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
     private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
@@ -245,11 +245,62 @@ public class SmartWalletPositionSyncService {
                 || message.contains("ssl");
     }
 
+    /**
+     * 过滤掉来自白名单钱包的仓位，这些仓位不参与自动退出流程。
+     * 通过批量查询仓位的入场订单，获取信号源钱包地址，检查是否在白名单中。
+     */
+    private List<SmartWalletPositionEntity> filterOutAllowlistPositions(List<SmartWalletPositionEntity> positions) {
+        if (positions == null || positions.isEmpty()) {
+            return positions;
+        }
+        Set<Long> positionIds = positions.stream()
+                .map(SmartWalletPositionEntity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (positionIds.isEmpty()) {
+            return positions;
+        }
+        // 批量查询所有仓位的入场订单(BUY侧)
+        List<SmartWalletOrderEntity> entryOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                        .in(SmartWalletOrderEntity::getPositionId, positionIds)
+                        .eq(SmartWalletOrderEntity::getSide, "BUY"));
+        // 收集每个仓位的信号源钱包地址
+        Map<Long, String> positionWallets = new HashMap<>();
+        for (SmartWalletOrderEntity order : entryOrders) {
+            if (order.getPositionId() != null && order.getWalletAddress() != null) {
+                positionWallets.putIfAbsent(order.getPositionId(), order.getWalletAddress());
+            }
+        }
+        // 检查哪些仓位的信号源钱包在白名单中
+        Set<Long> allowlistPositionIds = new HashSet<>();
+        Set<String> checkedWallets = new HashSet<>();
+        Map<String, Boolean> walletAllowlistCache = new HashMap<>();
+        for (Map.Entry<Long, String> entry : positionWallets.entrySet()) {
+            String wallet = entry.getValue().toLowerCase();
+            if (!checkedWallets.contains(wallet)) {
+                walletAllowlistCache.put(wallet, manualAllowlistService.findActive(entry.getValue()).isPresent());
+                checkedWallets.add(wallet);
+            }
+            if (Boolean.TRUE.equals(walletAllowlistCache.get(wallet))) {
+                allowlistPositionIds.add(entry.getKey());
+            }
+        }
+        if (allowlistPositionIds.isEmpty()) {
+            return positions;
+        }
+        log.info("[ALLOWLIST_EXIT_SKIP] 跳过白名单仓位自动退出 positionIds={}", allowlistPositionIds);
+        return positions.stream()
+                .filter(p -> !allowlistPositionIds.contains(p.getId()))
+                .collect(Collectors.toList());
+    }
+
     private void scanPaperPositionsForExit(BigDecimal threshold, AutoExitMode mode) {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         // Populate positions with market info to enable delegate getters
         marketInfoService.populatePositions(openPositions);
 
@@ -310,6 +361,7 @@ public class SmartWalletPositionSyncService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
         for (SmartWalletPositionEntity position : openPositions) {
@@ -400,6 +452,7 @@ public class SmartWalletPositionSyncService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
         for (SmartWalletPositionEntity position : openPositions) {
@@ -472,6 +525,7 @@ public class SmartWalletPositionSyncService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         // Populate positions with market info to enable delegate getters
         marketInfoService.populatePositions(openPositions);
         for (SmartWalletPositionEntity position : openPositions) {
@@ -542,6 +596,7 @@ public class SmartWalletPositionSyncService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
         for (SmartWalletPositionEntity position : openPositions) {
             if (hasPendingLiveExitOrder(position.getId())) {
@@ -622,6 +677,7 @@ public class SmartWalletPositionSyncService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
         for (SmartWalletPositionEntity position : openPositions) {
@@ -687,6 +743,7 @@ public class SmartWalletPositionSyncService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
         for (SmartWalletPositionEntity position : openPositions) {
             if (hasPendingLiveExitOrder(position.getId())) {

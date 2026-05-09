@@ -1,7 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
@@ -19,6 +21,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * 资金回收退出服务 — Capital Recycling Exit Service
@@ -36,12 +39,14 @@ public class CapitalRecycleExitService {
 
     private final SmartWalletProperties properties;
     private final SmartWalletPositionMapper positionMapper;
+    private final SmartWalletOrderMapper orderMapper;
     private final SmartWalletAccountingService accountingService;
     private final SmartWalletMarketInfoService marketInfoService;
     private final PolymarketClobExecutionService clobExecutionService;
     private final ExecutionWalletContextLoader walletContextLoader;
     private final ExitSignalProvider exitSignalProvider;
     private final PolymarketMarketDataCacheService marketDataCacheService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
 
     /** 每个仓位的冷却截止时间，防止短时间内反复评估同一仓位 */
     private final ConcurrentHashMap<Long, Instant> cooldownMap = new ConcurrentHashMap<>();
@@ -61,6 +66,48 @@ public class CapitalRecycleExitService {
         scanLivePositionsForRecycle(config);
     }
 
+    // ─── Allowlist Position Filter ──────────────────────────────────────────────
+
+    private List<SmartWalletPositionEntity> filterOutAllowlistPositions(List<SmartWalletPositionEntity> positions) {
+        if (positions == null || positions.isEmpty()) {
+            return positions;
+        }
+        Set<Long> positionIds = positions.stream()
+                .map(SmartWalletPositionEntity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (positionIds.isEmpty()) {
+            return positions;
+        }
+        List<SmartWalletOrderEntity> entryOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                        .in(SmartWalletOrderEntity::getPositionId, positionIds)
+                        .eq(SmartWalletOrderEntity::getSide, "BUY"));
+        Map<Long, String> positionWallets = new HashMap<>();
+        for (SmartWalletOrderEntity order : entryOrders) {
+            if (order.getPositionId() != null && order.getWalletAddress() != null) {
+                positionWallets.putIfAbsent(order.getPositionId(), order.getWalletAddress());
+            }
+        }
+        Set<Long> allowlistPositionIds = new HashSet<>();
+        Map<String, Boolean> walletCache = new HashMap<>();
+        for (Map.Entry<Long, String> entry : positionWallets.entrySet()) {
+            String wallet = entry.getValue().toLowerCase();
+            String originalAddress = entry.getValue();
+            walletCache.computeIfAbsent(wallet, w -> manualAllowlistService.findActive(originalAddress).isPresent());
+            if (Boolean.TRUE.equals(walletCache.get(wallet))) {
+                allowlistPositionIds.add(entry.getKey());
+            }
+        }
+        if (allowlistPositionIds.isEmpty()) {
+            return positions;
+        }
+        log.info("[ALLOWLIST_EXIT_SKIP] 跳过白名单仓位资金回收 positionIds={}", allowlistPositionIds);
+        return positions.stream()
+                .filter(p -> !allowlistPositionIds.contains(p.getId()))
+                .collect(Collectors.toList());
+    }
+
     // ─── Paper Position Scan ─────────────────────────────────────────────────────
 
     private void scanPaperPositionsForRecycle(SmartWalletProperties.CapitalRecycle config) {
@@ -68,6 +115,7 @@ public class CapitalRecycleExitService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
         List<RecycleCandidate> candidates = scoreCandidates(openPositions, config);
@@ -141,6 +189,7 @@ public class CapitalRecycleExitService {
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
                         .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
         List<RecycleCandidate> candidates = scoreCandidates(openPositions, config);

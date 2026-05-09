@@ -769,15 +769,19 @@ public class SmartWalletFollowTaskService {
             if (!"PENDING".equalsIgnoreCase(task.getStatus())) {
                 throw new IllegalStateException("Only PENDING follow tasks can be sent to LIVE execution.");
             }
-            SignalRiskDecision decision = evaluateTask(taskId);
-            if (!decision.isAccepted()) {
-                throw new IllegalStateException("Follow task is not executable: " + String.join(" | ", decision.getReasons()));
+            boolean isAllowlistDirect = task.getErrorMessage() != null
+                    && task.getErrorMessage().startsWith("[MANUAL_ALLOWLIST_DIRECT]");
+            if (!isAllowlistDirect) {
+                SignalRiskDecision decision = evaluateTask(taskId);
+                if (!decision.isAccepted()) {
+                    throw new IllegalStateException("Follow task is not executable: " + String.join(" | ", decision.getReasons()));
+                }
+                enforceManualAllowlistLiveLimits(task, decision);
+                if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
+                    task.setRecommendedStakeUsdc(decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP));
+                }
             }
-            enforceManualAllowlistLiveLimits(task, decision);
             task.setExecutionMode("LIVE");
-            if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
-                task.setRecommendedStakeUsdc(decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP));
-            }
             task.setErrorMessage(null);
             task.setUpdatedAt(new Date());
             followTaskMapper.updateById(task);
@@ -856,6 +860,49 @@ public class SmartWalletFollowTaskService {
         log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "通过", event, null,
                 "candidateId", candidate.getId(),
                 "reasonSummary", "市场可交易，继续风控评估"));
+
+        // ---- Allowlist Direct Path: 白名单钱包跳过风控评估，直接创建 PENDING 任务 ----
+        if (allowlist != null) {
+            BigDecimal recommendedStake = event.getSizeUsdc() == null
+                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                    : event.getSizeUsdc().setScale(2, RoundingMode.HALF_UP);
+            String executionMode = resolveTaskExecutionMode(event.getWalletAddress());
+            SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
+                    .setWalletAddress(event.getWalletAddress())
+                    .setEntityId(candidate.getEntityId())
+                    .setFollowCandidateId(candidate.getId())
+                    .setSourceEventId(event.getId())
+                    .setMarketInfoId(marketInfo.getId())
+                    .setMarketInfo(marketInfo)
+                    .setSide(event.getSide())
+                    .setTriggerPrice(event.getPrice())
+                    .setTriggerSizeUsdc(event.getSizeUsdc())
+                    .setRecommendedStakeUsdc(recommendedStake)
+                    .setStatus(STATUS_PENDING)
+                    .setExecutionMode(executionMode)
+                    .setErrorMessage("[MANUAL_ALLOWLIST_DIRECT] 白名单直通，跳过风控评估")
+                    .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
+                    .setCreatedAt(new Date())
+                    .setUpdatedAt(new Date());
+            followTaskMapper.insert(task);
+            log.info("{} action=创建白名单直通跟单任务 result=PENDING followTaskId={} eventId={} candidateId={} wallet={} entityId={} marketId={} outcome={} side={} mode={} stakeUsdc={} {} {}",
+                    LOG_PREFIX, task.getId(), event.getId(), candidate.getId(), task.getWalletAddress(),
+                    task.getEntityId(), task.getMarketId(), task.getOutcome(), task.getSide(), task.getExecutionMode(),
+                    task.getRecommendedStakeUsdc(), eventTrace(event), taskTrace(task));
+            log.info("{}", flow("S6_TASK_CREATED", "创建白名单直通跟单任务", task.getStatus(), event, task,
+                    "candidateId", candidate.getId(),
+                    "mode", task.getExecutionMode(),
+                    "stakeUsdc", task.getRecommendedStakeUsdc(),
+                    "entryLane", "MANUAL_ALLOWLIST_DIRECT",
+                    "reasonSummary", "白名单直通，跳过风控评估"));
+            candidate.setFollowTaskId(task.getId())
+                    .setUpdatedAt(new Date());
+            followCandidateMapper.updateById(candidate);
+            markSourceEventProcessed(event);
+            log.info("{} action=标记源交易事件已处理 result=完成 eventId={} followTaskId={} processed=true",
+                    LOG_PREFIX, event.getId(), task.getId());
+            return;
+        }
 
         if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
             createSkippedTaskForPendingCandidate(event, candidate, marketInfo);
@@ -1368,7 +1415,24 @@ public class SmartWalletFollowTaskService {
                         + (task == null ? null : task.getId())
                         + ", marketInfoId=" + (task == null ? null : task.getMarketInfoId()));
             }
-            SignalRiskDecision decision = evaluateTask(task.getId());
+            // ---- 白名单直通任务跳过执行前二次风控复核 ----
+            boolean isAllowlistDirect = task.getErrorMessage() != null
+                    && task.getErrorMessage().startsWith("[MANUAL_ALLOWLIST_DIRECT]");
+            SignalRiskDecision decision;
+            if (isAllowlistDirect) {
+                log.info("{} action=执行前复核风控 result=跳过(白名单直通) followTaskId={} wallet={} marketId={} outcome={} {}",
+                        LOG_PREFIX, task.getId(), task.getWalletAddress(), task.getMarketId(), task.getOutcome(),
+                        taskTrace(task));
+                decision = SignalRiskDecision.builder()
+                        .accepted(true)
+                        .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
+                        .reasons(List.of("[MANUAL_ALLOWLIST_DIRECT] 白名单直通，跳过风控评估"))
+                        .entryLane("MANUAL_ALLOWLIST_DIRECT")
+                        .matchedStrategies(List.of("MANUAL_ALLOWLIST_DIRECT"))
+                        .build();
+            } else {
+                decision = evaluateTask(task.getId());
+            }
             if (!decision.isAccepted()) {
                 SmartWalletTradeEventEntity event = getSourceEvent(task);
                 SkipReasonSnapshot skipReason = buildSkipReasonSnapshot(event, decision);
