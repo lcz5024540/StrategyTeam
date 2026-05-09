@@ -202,6 +202,9 @@ smart-wallet:
     warm-metrics-refresh-batch-size: 10
     # [TUNE] Minimum spacing between two WARM-tier profile refreshes for the same wallet.
     warm-wallet-refresh-min-interval-ms: 1800000
+    closed-position-sync:
+      # [TUNE] WARM closed-position incremental sync cadence. 10 minutes keeps profile truth fresher without touching live /trades polling.
+      warm-incremental-fixed-delay-ms: 600000
     # [TUNE] Keep existing HOT wallets during small score/win-rate drift instead of dropping them immediately.
     hot-retention-enabled: true
     hot-retention-hours: 72

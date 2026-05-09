@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
@@ -49,6 +50,8 @@ class SmartWalletProfileStoreServiceTest {
     private WalletArchetypeClassifierService walletArchetypeClassifierService;
     @Mock
     private WalletBehaviorProfileService walletBehaviorProfileService;
+    @Mock
+    private SmartWalletManualAllowlistService manualAllowlistService;
 
     @Test
     void shouldApplyLeaderboardBiasFallbackWithoutOverwritingWinRate() {
@@ -73,7 +76,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.refreshInternalWinRate();
@@ -83,6 +87,73 @@ class SmartWalletProfileStoreServiceTest {
         assertEquals(new BigDecimal("1.0"), captor.getValue().getWinRate());
         assertTrue(captor.getValue().getWalletScore().compareTo(BigDecimal.ONE) < 0);
         assertTrue(captor.getValue().getHotRetentionReason().contains("LEADERBOARD_BIAS_FALLBACK"));
+    }
+
+    @Test
+    void shouldIncludeActiveManualAllowlistAddressWithoutProfileInExecutableWatchlist() {
+        SmartWalletManualAllowlistEntity allowlist = new SmartWalletManualAllowlistEntity()
+                .setWalletAddress("0xmanual")
+                .setSource("POLYMARKET")
+                .setStatus("ACTIVE");
+        when(profileMapper.selectList(any())).thenReturn(List.of());
+        when(manualAllowlistService.listActiveEntities()).thenReturn(List.of(allowlist));
+        when(manualAllowlistService.isActive(allowlist)).thenReturn(true);
+
+        SmartWalletProfileStoreService service = newStoreService(new SmartWalletProperties());
+
+        List<SmartWalletProfileEntity> watchlist = service.listExecutableWatchlist();
+
+        assertEquals(1, watchlist.size());
+        SmartWalletProfileEntity runtime = watchlist.get(0);
+        assertEquals("0xmanual", runtime.getWalletAddress());
+        assertEquals("POLYMARKET", runtime.getSource());
+        assertEquals(Boolean.TRUE, runtime.getWatchEnabled());
+        assertEquals("HOT", runtime.getMonitorTier());
+    }
+
+    @Test
+    void shouldLetActiveManualAllowlistOverrideManualWatchDisabledProfile() {
+        SmartWalletProfileEntity existing = new SmartWalletProfileEntity()
+                .setId(10L)
+                .setWalletAddress("0xmanual")
+                .setSource("POLYMARKET")
+                .setChain("polygon")
+                .setManualWatchEnabled(Boolean.FALSE)
+                .setWatchEnabled(Boolean.FALSE)
+                .setMonitorTier("COLD");
+        SmartWalletManualAllowlistEntity allowlist = new SmartWalletManualAllowlistEntity()
+                .setWalletAddress("0xmanual")
+                .setSource("POLYMARKET")
+                .setStatus("ACTIVE");
+        when(profileMapper.selectList(any())).thenReturn(List.of(existing));
+        when(manualAllowlistService.listActiveEntities()).thenReturn(List.of(allowlist));
+        when(manualAllowlistService.isActive(allowlist)).thenReturn(true);
+
+        SmartWalletProfileStoreService service = newStoreService(new SmartWalletProperties());
+
+        List<SmartWalletProfileEntity> watchlist = service.listExecutableWatchlist();
+
+        assertEquals(1, watchlist.size());
+        SmartWalletProfileEntity runtime = watchlist.get(0);
+        assertEquals("0xmanual", runtime.getWalletAddress());
+        assertEquals(Boolean.TRUE, runtime.getWatchEnabled());
+        assertEquals("HOT", runtime.getMonitorTier());
+        assertEquals("MANUAL_ALLOWLIST_DEFAULT_FOLLOW", runtime.getMonitorReason());
+    }
+
+    @Test
+    void shouldNotIncludeInactiveManualAllowlistAddressInExecutableWatchlist() {
+        SmartWalletManualAllowlistEntity allowlist = new SmartWalletManualAllowlistEntity()
+                .setWalletAddress("0xmanual")
+                .setSource("POLYMARKET")
+                .setStatus("DISABLED");
+        when(profileMapper.selectList(any())).thenReturn(List.of());
+        when(manualAllowlistService.listActiveEntities()).thenReturn(List.of(allowlist));
+        when(manualAllowlistService.isActive(allowlist)).thenReturn(false);
+
+        SmartWalletProfileStoreService service = newStoreService(new SmartWalletProperties());
+
+        assertTrue(service.listExecutableWatchlist().isEmpty());
     }
 
     @Test
@@ -123,7 +194,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.refreshInternalWinRate();
@@ -170,7 +242,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -219,7 +292,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
         SmartWalletProfileOverrideRequest request = new SmartWalletProfileOverrideRequest();
         request.setManualWatchEnabled(Boolean.FALSE);
@@ -254,7 +328,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         List<SmartWalletProfileOverrideView> rows = service.listManualOverrides(20);
@@ -290,7 +365,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         SmartWalletProfileOverrideSummaryView summary = service.summarizeManualOverrides();
@@ -339,7 +415,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
         SmartWalletProfileBatchOverrideRequest request = new SmartWalletProfileBatchOverrideRequest();
         request.setWalletAddresses(List.of("0xmanual", "0xmissing", "0xmanual"));
@@ -387,7 +464,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -431,7 +509,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -474,7 +553,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -515,7 +595,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -557,7 +638,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -599,7 +681,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -640,7 +723,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -684,7 +768,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -724,7 +809,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -766,7 +852,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyActivityDecay();
@@ -810,7 +897,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.applyQualificationState(wallet);
@@ -864,7 +952,8 @@ class SmartWalletProfileStoreServiceTest {
                 orderMapper,
                 positionMapper,
                 walletArchetypeClassifierService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                manualAllowlistService
         );
 
         service.recordObservedTradeActivity("0xrecover-cold", newTradeAt);
@@ -874,5 +963,19 @@ class SmartWalletProfileStoreServiceTest {
         assertEquals(Boolean.TRUE, wallet.getWatchEnabled());
         assertEquals("HOT", wallet.getMonitorTier());
         verify(profileMapper).updateById(wallet);
+    }
+
+    private SmartWalletProfileStoreService newStoreService(SmartWalletProperties properties) {
+        return new SmartWalletProfileStoreService(
+                properties,
+                profileMapper,
+                new SmartWalletScoringService(),
+                followTaskMapper,
+                orderMapper,
+                positionMapper,
+                walletArchetypeClassifierService,
+                walletBehaviorProfileService,
+                manualAllowlistService
+        );
     }
 }
