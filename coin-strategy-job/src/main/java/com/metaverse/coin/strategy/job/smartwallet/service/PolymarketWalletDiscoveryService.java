@@ -61,6 +61,78 @@ public class PolymarketWalletDiscoveryService {
     private final AtomicBoolean firstLeaderboardRefreshRun = new AtomicBoolean(true);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
 
+    // ──────────────────────────────────────────────────────────────────
+    // 白名单交易回填 —— 拉取历史交易并以直通模式创建跟单任务
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * 为单个白名单地址回填近期交易事件，直通创建 PENDING 跟单任务（跳过全部准入/风控）。
+     *
+     * @return 成功导入的交易事件数
+     */
+    public int backfillTradesForAllowlistWallet(String walletAddress) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return 0;
+        }
+        String normalized = walletAddress.trim().toLowerCase(java.util.Locale.ROOT);
+        log.info("{} action=白名单交易回填 result=开始 wallet={}", LOG_PREFIX, normalized);
+        List<PolymarketApiClient.UserTrade> trades;
+        try {
+            trades = polymarketApiClient.fetchUserTrades(normalized);
+        } catch (Exception e) {
+            log.warn("{} action=白名单交易回填 result=拉取交易失败 wallet={} reason={}", LOG_PREFIX, normalized, e.getMessage());
+            return 0;
+        }
+        if (trades == null || trades.isEmpty()) {
+            log.info("{} action=白名单交易回填 result=无交易记录 wallet={}", LOG_PREFIX, normalized);
+            return 0;
+        }
+
+        // 构造 profile 桩：toTradeEventRequest 只使用 walletAddress 和 chain
+        SmartWalletProfileEntity profile = new SmartWalletProfileEntity();
+        profile.setWalletAddress(normalized);
+        profile.setChain("POLYGON");
+        profile.setSource("POLYMARKET");
+
+        int imported = 0;
+        for (PolymarketApiClient.UserTrade trade : trades) {
+            if (trade == null || !StringUtils.hasText(trade.getTradeId())) {
+                continue;
+            }
+            try {
+                monitorService.ingestTradeEventForAllowlistDirect(toTradeEventRequest(trade, profile));
+                imported++;
+            } catch (Exception e) {
+                log.warn("{} action=白名单交易回填 result=导入单条失败 wallet={} tradeId={} reason={}",
+                        LOG_PREFIX, normalized, trade.getTradeId(), e.getMessage());
+            }
+        }
+        log.info("{} action=白名单交易回填 result=完成 wallet={} fetched={} imported={}", LOG_PREFIX, normalized, trades.size(), imported);
+        return imported;
+    }
+
+    /**
+     * 为所有活跃白名单地址批量回填交易事件。
+     *
+     * @return 各地址 → 导入交易数
+     */
+    public Map<String, Integer> backfillTradesForAllActiveAllowlistWallets() {
+        List<com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity> activeEntries
+                = manualAllowlistService.listActiveEntities();
+        if (activeEntries == null || activeEntries.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> results = new LinkedHashMap<>();
+        for (var entry : activeEntries) {
+            if (entry == null || !StringUtils.hasText(entry.getWalletAddress())) {
+                continue;
+            }
+            int count = backfillTradesForAllowlistWallet(entry.getWalletAddress());
+            results.put(entry.getWalletAddress(), count);
+        }
+        return results;
+    }
+
     public PolymarketDiscoverySummary analyzeTopWallets() {
         return analyzeTopWallets(null, true);
     }

@@ -940,6 +940,104 @@ public class SmartWalletFollowTaskService {
                 LOG_PREFIX, event.getId(), task.getId());
     }
 
+    // ──────────────────────────────────────────────────────────────────
+    // 白名单直通跟单 —— 跳过所有准入/风控/市场状态判定
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * 为白名单地址的交易事件直接创建 PENDING 跟单任务，
+     * 不经过 watchlist 准入、市场状态检查、intelligence enrich 和风控评估。
+     * <p>
+     * 调用方需自行确认该地址属于活跃白名单。
+     */
+    public SmartWalletTradeEventEntity recordTradeEventForAllowlistDirect(SmartWalletTradeEventEntity event) {
+        log.info("{} action=白名单直通导入交易事件 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={}",
+                LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
+                event.getSide(), event.getExternalTradeId());
+
+        // 1. 去重
+        SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                .eq(SmartWalletTradeEventEntity::getSource, event.getSource())
+                .eq(SmartWalletTradeEventEntity::getExternalTradeId, event.getExternalTradeId())
+                .last("limit 1"));
+        if (existing != null) {
+            log.info("{} action=白名单直通导入交易事件 result=跳过重复 eventId={} wallet={} externalTradeId={}",
+                    LOG_PREFIX, existing.getId(), existing.getWalletAddress(), existing.getExternalTradeId());
+            // 即便重复，也确保有跟单任务
+            createFollowTaskForAllowlistDirectIfAbsent(existing);
+            return existing;
+        }
+
+        // 2. 入库
+        event.setProcessed(Boolean.FALSE);
+        event.setCreatedAt(new Date());
+        event.setUpdatedAt(new Date());
+        tradeEventMapper.insert(event);
+        log.info("{} action=白名单直通导入交易事件 result=已入库 eventId={} wallet={} marketId={}",
+                LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId());
+
+        profileStoreService.recordObservedTradeActivity(event.getWalletAddress(), event.getOpenedAt());
+        ensureMarketInfoForEvent(event);
+
+        // 3. 直接创建跟单任务
+        createFollowTaskForAllowlistDirectIfAbsent(event);
+        return event;
+    }
+
+    /**
+     * 为白名单地址创建跟单任务 —— 无条件 PENDING，跳过全部 gate。
+     */
+    private void createFollowTaskForAllowlistDirectIfAbsent(SmartWalletTradeEventEntity event) {
+        // 防重：同一 sourceEventId 已有任务则跳过
+        SmartWalletFollowTaskEntity existingTask = followTaskMapper.selectOne(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .eq(SmartWalletFollowTaskEntity::getSourceEventId, event.getId())
+                .last("limit 1"));
+        if (existingTask != null) {
+            log.info("{} action=白名单直通创建跟单任务 result=已存在 followTaskId={} eventId={} status={}",
+                    LOG_PREFIX, existingTask.getId(), event.getId(), existingTask.getStatus());
+            return;
+        }
+
+        SmartWalletMarketInfoEntity marketInfo = ensureMarketInfoForEvent(event);
+
+        // 确定执行模式：白名单配置的 mode
+        SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(event.getWalletAddress()).orElse(null);
+        String executionMode;
+        BigDecimal stakeMultiplier;
+        if (allowlist != null) {
+            executionMode = manualAllowlistService.allowsLive(allowlist) && properties.isAutoExecutionEnabled()
+                    ? "LIVE" : "PAPER";
+            stakeMultiplier = manualAllowlistService.stakeMultiplier(allowlist);
+        } else {
+            executionMode = "PAPER";
+            stakeMultiplier = new BigDecimal("0.50");
+        }
+
+        BigDecimal triggerUsdc = event.getSizeUsdc() == null ? BigDecimal.ZERO : event.getSizeUsdc();
+        BigDecimal recommendedStake = triggerUsdc.multiply(stakeMultiplier).setScale(2, RoundingMode.HALF_UP);
+
+        SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
+                .setWalletAddress(event.getWalletAddress())
+                .setSourceEventId(event.getId())
+                .setMarketInfoId(marketInfo == null ? null : marketInfo.getId())
+                .setMarketInfo(marketInfo)
+                .setSide(event.getSide())
+                .setTriggerPrice(event.getPrice())
+                .setTriggerSizeUsdc(triggerUsdc)
+                .setRecommendedStakeUsdc(recommendedStake)
+                .setStatus(STATUS_PENDING)
+                .setExecutionMode(executionMode)
+                .setErrorMessage("白名单直通跟单，跳过全部准入/风控判定")
+                .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
+                .setCreatedAt(new Date())
+                .setUpdatedAt(new Date());
+        followTaskMapper.insert(task);
+        markSourceEventProcessed(event);
+        log.info("{} action=白名单直通创建跟单任务 result=已创建 followTaskId={} eventId={} wallet={} marketId={} mode={} stakeUsdc={}",
+                LOG_PREFIX, task.getId(), event.getId(), event.getWalletAddress(),
+                event.getMarketId(), executionMode, recommendedStake);
+    }
+
     /**
      * Intelligence Enrich：解析钱包地址对应的实体，生成并持久化 WalletFollowCandidate
      */
