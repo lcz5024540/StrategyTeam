@@ -80,6 +80,29 @@ class StrategyRuntimeConfigServiceTest {
         assertEquals("12.5", captor.getValue().getConfigValue());
     }
 
+    @Test
+    void shouldApplyWalletProfileAndIntelligenceRuntimeConfigUpdate() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        StrategyRuntimeConfigMapper mapper = mock(StrategyRuntimeConfigMapper.class);
+        when(mapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        StrategyRuntimeConfigService service = new StrategyRuntimeConfigService(properties, mapper, new ObjectMapper());
+        service.init();
+
+        UpdateStrategyRuntimeConfigRequest request = new UpdateStrategyRuntimeConfigRequest();
+        UpdateStrategyRuntimeConfigRequest.Item minWinRate = new UpdateStrategyRuntimeConfigRequest.Item();
+        minWinRate.setKey("smart-wallet.min-win-rate");
+        minWinRate.setValue("0.66");
+        UpdateStrategyRuntimeConfigRequest.Item behaviorSimilarity = new UpdateStrategyRuntimeConfigRequest.Item();
+        behaviorSimilarity.setKey("smart-wallet.intelligence.behavior-similarity-threshold");
+        behaviorSimilarity.setValue("0.8");
+        request.setItems(List.of(minWinRate, behaviorSimilarity));
+
+        service.update(StrategyRuntimeConfigService.POLYMARKET_COPY, request);
+
+        assertEquals(new BigDecimal("0.66"), properties.getMinWinRate());
+        assertEquals(0.8d, properties.getIntelligence().getBehaviorSimilarityThreshold());
+    }
+
     private StrategyRuntimeConfigEntity entity(String key, String value, String type, String group) {
         return new StrategyRuntimeConfigEntity()
                 .setId(1L)
