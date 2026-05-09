@@ -1004,6 +1004,168 @@
   line-height: 1.6;
 }
 
+.runtime-config-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.runtime-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.runtime-config-note,
+.runtime-message {
+  margin-top: 12px;
+  border: 1px solid oklch(0.30 0.08 75);
+  border-radius: 7px;
+  background: oklch(0.17 0.05 75);
+  color: oklch(0.75 0.14 75);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.runtime-message {
+  border-color: oklch(0.42 0.10 155);
+  background: oklch(0.17 0.04 155);
+  color: oklch(0.78 0.12 155);
+}
+
+.runtime-group-count,
+.runtime-source {
+  border: 1px solid oklch(0.28 0.01 240);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: oklch(0.62 0.01 240);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.runtime-source.db {
+  border-color: oklch(0.45 0.12 155);
+  color: oklch(0.78 0.14 155);
+}
+
+.runtime-source.runtime {
+  border-color: oklch(0.45 0.10 260);
+  color: oklch(0.74 0.12 260);
+}
+
+.runtime-group-description {
+  margin: -4px 0 16px;
+  color: oklch(0.52 0.01 240);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.runtime-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.runtime-field {
+  display: grid;
+  gap: 8px;
+  border: 1px solid oklch(0.22 0.01 240);
+  border-radius: 8px;
+  background: oklch(0.13 0.006 240);
+  padding: 12px;
+}
+
+.runtime-field.dirty {
+  border-color: oklch(0.46 0.12 75);
+  box-shadow: 0 0 0 1px oklch(0.46 0.12 75 / 0.18);
+}
+
+.runtime-field-head,
+.runtime-field-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-field-head span {
+  color: oklch(0.82 0.005 240);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.runtime-field input,
+.runtime-field textarea {
+  width: 100%;
+  border: 1px solid oklch(0.25 0.01 240);
+  border-radius: 7px;
+  background: oklch(0.10 0.006 240);
+  color: oklch(0.84 0.005 240);
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.runtime-field input:focus,
+.runtime-field textarea:focus {
+  border-color: oklch(0.62 0.14 155);
+  outline: none;
+}
+
+.runtime-field input:disabled,
+.runtime-field textarea:disabled {
+  opacity: 0.62;
+}
+
+.runtime-field-meta code {
+  overflow: hidden;
+  color: oklch(0.46 0.01 240);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-field-meta button {
+  border: 0;
+  background: transparent;
+  color: oklch(0.62 0.08 240);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.runtime-field-meta button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.runtime-field small {
+  color: oklch(0.52 0.01 240);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.runtime-switch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.runtime-switch input {
+  width: 16px;
+  height: 16px;
+  accent-color: oklch(0.62 0.14 155);
+}
+
+.runtime-switch span {
+  color: oklch(0.74 0.01 240);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .ms-log-toolbar {
   display: flex;
   align-items: center;

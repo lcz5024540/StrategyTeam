@@ -1,38 +1,80 @@
 export interface FollowProbabilityConfig {
   intercept: number
-  walletScoreCoef: number
-  consensusScoreCoef: number
-  priceDeviationCoef: number
-  volumeRatioCoef: number
-  timeDecayCoef: number
-  marketLiquidityCoef: number
-  [key: string]: number
+  walletScoreWeight: number
+  consensusScoreWeight: number
+  positiveRateWeight: number
+  triggerSizeWeight: number
+  distinctWalletWeight: number
+  imbalanceWeight: number
+  spreadPenaltyWeight: number
+  volatilityPenaltyWeight: number
+  triggerSizeCapUsdc: number
+  distinctWalletCap: number
+  spreadPenaltyScaleBps: number
+  volatilityPenaltyScale: number
 }
 
 export interface SlippageConfig {
-  baseCost: number
-  spreadCost: number
-  impactCost: number
-  [key: string]: number
+  spreadCostWeight: number
+  impactCostWeight: number
+  volatilityCostWeight: number
 }
 
 export interface SlippageSpikeConfig {
-  lowLiquidityThreshold: number
-  highVolatilityThreshold: number
-  spreadThreshold: number
-  [key: string]: number
+  intercept: number
+  spreadRiskWeight: number
+  volatilityRiskWeight: number
+  sizeDepthRiskWeight: number
+  historicalSpikeWeight: number
+  spreadRiskScaleBps: number
+  volatilityRiskScale: number
+  spikeThresholdBps: number
 }
 
 export interface CalibrationConfig {
-  enabled: boolean
-  plattA: number
-  plattB: number
-  [key: string]: number | boolean
+  followProbabilityScale: number
+  followProbabilityBias: number
+  slippageSpikeScale: number
+  slippageSpikeBias: number
 }
 
 export interface BaselineModelConfig {
+  grossEdgePriorWeight: number
   followProbability: FollowProbabilityConfig
   slippage: SlippageConfig
   slippageSpike: SlippageSpikeConfig
   calibration: CalibrationConfig
+}
+
+export type RuntimeConfigValueType = 'BOOLEAN' | 'INTEGER' | 'DECIMAL' | 'STRING' | 'STRING_LIST' | 'JSON'
+
+export interface RuntimeConfigItem {
+  strategyCode: string
+  key: string
+  value: string
+  defaultValue: string
+  valueType: RuntimeConfigValueType
+  groupName: string
+  label: string
+  description: string
+  editable: boolean
+  source: 'YAML' | 'DB' | 'RUNTIME' | string
+  updatedAt?: string | null
+}
+
+export interface RuntimeConfigGroup {
+  name: string
+  label: string
+  description: string
+}
+
+export interface RuntimeConfigCatalog {
+  strategyCode: string
+  groups: RuntimeConfigGroup[]
+  items: RuntimeConfigItem[]
+}
+
+export interface UpdateRuntimeConfigRequest {
+  updatedBy?: string
+  items: Array<{ key: string; value: string }>
 }

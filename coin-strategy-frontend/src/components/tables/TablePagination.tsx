@@ -25,7 +25,11 @@ export function TablePagination({
   }, [page])
 
   const goToPage = (nextPage: number) => {
-    onPageChange(clampTablePage(nextPage, totalPages))
+    if (hasMore) {
+      onPageChange(Math.max(1, nextPage))
+    } else {
+      onPageChange(clampTablePage(nextPage, totalPages))
+    }
   }
 
   const submitJump = () => {
@@ -62,7 +66,7 @@ export function TablePagination({
           <input
             type="number"
             min={1}
-            max={totalPages}
+            max={hasMore ? undefined : totalPages}
             value={jumpPage}
             onChange={(event) => setJumpPage(event.target.value)}
             onKeyDown={(event) => {

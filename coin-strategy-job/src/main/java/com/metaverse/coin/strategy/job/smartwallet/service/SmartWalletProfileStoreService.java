@@ -179,10 +179,6 @@ public class SmartWalletProfileStoreService {
             }
             String normalizedWallet = normalizeWallet(allowlist.getWalletAddress());
             SmartWalletProfileEntity existing = profilesByWallet.get(normalizedWallet);
-            if (existing != null && Boolean.FALSE.equals(existing.getManualWatchEnabled())) {
-                merged.remove(normalizedWallet);
-                continue;
-            }
             merged.put(normalizedWallet, toManualAllowlistRuntimeProfile(existing, allowlist));
         }
     }

@@ -53,6 +53,7 @@ public class SmartWalletMarketMonitoringService {
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
     private final MarketConcentrationSnapshotService concentrationSnapshotService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
 
     public SmartWalletMarketMonitoringSummaryView summary(Integer limit, Integer lookbackDays, Integer trendDays) {
         int safeLimit = limit == null ? 40 : Math.max(10, Math.min(limit, 120));
@@ -98,7 +99,7 @@ public class SmartWalletMarketMonitoringService {
         int safeLookbackDays = lookbackDays == null ? 14 : Math.max(3, Math.min(lookbackDays, 90));
         int safePageSize = pageSize == null ? 10 : Math.max(5, Math.min(pageSize, 100));
         int safePage = page == null ? 1 : Math.max(page, 1);
-        MarketDataset dataset = buildDataset(Math.max(safePageSize * safePage, 80), safeLookbackDays);
+        MarketDataset dataset = buildDataset(500, safeLookbackDays);
 
         List<SmartWalletMarketMonitorItemView> filteredRows = dataset.rows().stream()
                 .filter(row -> matchesKeyword(row, keyword))
@@ -113,8 +114,35 @@ public class SmartWalletMarketMonitoringService {
         int resolvedPage = Math.min(safePage, totalPages);
         int start = Math.min((resolvedPage - 1) * safePageSize, totalItems);
         int end = Math.min(start + safePageSize, totalItems);
-        List<SmartWalletMarketMonitorItemView> pageItems = filteredRows.subList(start, end);
+        List<SmartWalletMarketMonitorItemView> pageItems = new ArrayList<>(filteredRows.subList(start, end));
+        // Populate outcome prices for page items
+        enrichOutcomePrices(pageItems);
         return OffsetPageView.of(pageItems, resolvedPage, safePageSize, totalItems);
+    }
+
+    private void enrichOutcomePrices(List<SmartWalletMarketMonitorItemView> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        for (SmartWalletMarketMonitorItemView item : items) {
+            try {
+                var yesSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
+                        item.getMarketId(), "YES", new Date());
+                var noSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
+                        item.getMarketId(), "NO", new Date());
+                BigDecimal yesPrice = yesSnapshot != null && yesSnapshot.getMidPrice() != null
+                        ? yesSnapshot.getMidPrice() : null;
+                BigDecimal noPrice = noSnapshot != null && noSnapshot.getMidPrice() != null
+                        ? noSnapshot.getMidPrice() : null;
+                if (yesPrice != null || noPrice != null) {
+                    String yes = yesPrice != null ? yesPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
+                    String no = noPrice != null ? noPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
+                    item.setOutcomePrices(yes + " / " + no);
+                }
+            } catch (Exception ex) {
+                // silently skip price enrichment for individual items
+            }
+        }
     }
 
     public List<String> listCandidateMarketIds(Integer limit, Integer lookbackDays) {
@@ -364,6 +392,7 @@ public class SmartWalletMarketMonitoringService {
         return SmartWalletMarketMonitorItemView.builder()
                 .marketId(accumulator.marketId)
                 .question(firstNonBlank(snapshot.question(), accumulator.question))
+                .marketSlug(snapshot.marketSlug())
                 .marketEndAt(displayMarketEndAt)
                 .marketEndAtBjt(formatEpoch(displayMarketEndAt))
                 .marketState("ACTIVE")
@@ -402,10 +431,7 @@ public class SmartWalletMarketMonitoringService {
 
     private boolean shouldDisplayActiveMarket(SmartWalletMarketStateService.MarketStateSnapshot snapshot,
                                               Long marketEndAt) {
-        if (snapshot == null || !snapshot.isActive()) {
-            return false;
-        }
-        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+        return snapshot != null && snapshot.isActive();
     }
 
     private boolean shouldTrackCandidateMarket(MarketAccumulator accumulator,
@@ -427,11 +453,7 @@ public class SmartWalletMarketMonitoringService {
         if (accumulator == null) {
             return false;
         }
-        if (!isActiveLifecycle(accumulator.marketLifecycle)) {
-            return false;
-        }
-        Long marketEndAt = accumulator.marketEndAt;
-        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+        return isActiveLifecycle(accumulator.marketLifecycle);
     }
 
     private boolean shouldTrackKnownMarket(SmartWalletMarketInfoEntity marketInfo) {

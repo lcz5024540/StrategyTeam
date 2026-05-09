@@ -16,6 +16,7 @@ public class SmartWalletProperties {
     private boolean enabled = true;
     private boolean autoExecutionEnabled = false;
     private boolean scanEnabled = true;
+    private boolean runtimeConfigApiEnabled = false;
     private boolean requireTagMatch = true;
     private BigDecimal minWinRate = new BigDecimal("0.62");
     private BigDecimal minWalletScore = new BigDecimal("0.70");

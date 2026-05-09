@@ -11,6 +11,7 @@ import com.metaverse.coin.strategy.job.follow.application.FollowTaskApplicationS
 import com.metaverse.coin.strategy.job.marketdata.application.PredictionMarketDataApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
+import com.metaverse.coin.strategy.job.risk.application.StrategyRuntimeConfigService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.AbnormalMarketManualReviewRequest;
@@ -41,6 +42,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportu
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderPnlCategoryAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistRequest;
@@ -55,6 +57,10 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCa
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.ResetStrategyRuntimeConfigRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigCatalogView;
+import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigView;
+import com.metaverse.coin.strategy.job.smartwallet.model.UpdateStrategyRuntimeConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileStaleDiagnosticView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTruthAuditView;
@@ -161,6 +167,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.BufferedWriter;
@@ -213,6 +221,7 @@ public class SmartWalletController {
     private final SettlementApplicationService settlementApplicationService;
     private final RiskPolicyApplicationService riskPolicyApplicationService;
     private final BaselineModelConfigApplicationService baselineModelConfigApplicationService;
+    private final StrategyRuntimeConfigService strategyRuntimeConfigService;
     private final StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
     private final MarketConcentrationService marketConcentrationService;
     private final FollowTradeAttributionService followTradeAttributionService;
@@ -1058,7 +1067,44 @@ public class SmartWalletController {
     @Operation(summary = "更新 Baseline 模型配置", description = "热更新当前进程中的 baseline 模型和校准参数，不修改 application.yml。")
     @PostMapping("/config/baseline-model")
     public BaselineModelConfigView updateBaselineModelConfig(@RequestBody(required = false) UpdateBaselineModelConfigRequest request) {
+        assertRuntimeConfigApiEnabled();
         return baselineModelConfigApplicationService.update(request);
+    }
+
+    @Operation(summary = "运行时配置目录", description = "查看 Polymarket copy 策略允许页面编辑的配置白名单和分组。")
+    @GetMapping("/config/runtime/catalog")
+    public StrategyRuntimeConfigCatalogView runtimeConfigCatalog(@RequestParam(defaultValue = StrategyRuntimeConfigService.POLYMARKET_COPY) String strategyCode) {
+        assertRuntimeConfigApiEnabled();
+        return strategyRuntimeConfigService.catalog(strategyCode);
+    }
+
+    @Operation(summary = "运行时配置", description = "查看当前 Polymarket copy 策略的可编辑运行时配置。")
+    @GetMapping("/config/runtime")
+    public List<StrategyRuntimeConfigView> runtimeConfig(@RequestParam(defaultValue = StrategyRuntimeConfigService.POLYMARKET_COPY) String strategyCode) {
+        assertRuntimeConfigApiEnabled();
+        return strategyRuntimeConfigService.current(strategyCode);
+    }
+
+    @Operation(summary = "更新运行时配置", description = "保存 Polymarket copy 策略运行时配置到数据库，并立即同步当前进程。")
+    @PostMapping("/config/runtime")
+    public List<StrategyRuntimeConfigView> updateRuntimeConfig(@RequestParam(defaultValue = StrategyRuntimeConfigService.POLYMARKET_COPY) String strategyCode,
+                                                              @RequestBody(required = false) UpdateStrategyRuntimeConfigRequest request) {
+        assertRuntimeConfigApiEnabled();
+        return strategyRuntimeConfigService.update(strategyCode, request);
+    }
+
+    @Operation(summary = "重置运行时配置", description = "删除数据库覆盖值并恢复当前进程内 YAML 默认配置。")
+    @PostMapping("/config/runtime/reset")
+    public List<StrategyRuntimeConfigView> resetRuntimeConfig(@RequestParam(defaultValue = StrategyRuntimeConfigService.POLYMARKET_COPY) String strategyCode,
+                                                             @RequestBody(required = false) ResetStrategyRuntimeConfigRequest request) {
+        assertRuntimeConfigApiEnabled();
+        return strategyRuntimeConfigService.reset(strategyCode, request);
+    }
+
+    private void assertRuntimeConfigApiEnabled() {
+        if (!properties.isRuntimeConfigApiEnabled()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Runtime config API is disabled until an authenticated admin module is available.");
+        }
     }
 
     @Operation(summary = "风控模拟", description = "使用临时参数模拟风控筛选结果，不修改线上配置。")
@@ -1201,6 +1247,15 @@ public class SmartWalletController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String q) {
         return tradeOrderService.listTradeOrdersCursor(limit, lastId, mode, pnl, settlement, status, q);
+    }
+
+    @Operation(summary = "市场类型盈亏订单归因",
+            description = "按 30d/7d/all 汇总当前盈利与亏损订单数，并分别输出市场类别维度和钱包地址主要市场类别维度。")
+    @GetMapping("/trade-orders/pnl-category-attribution")
+    public SmartWalletOrderPnlCategoryAttributionView orderPnlCategoryAttribution(
+            @RequestParam(required = false) String mode,
+            @RequestParam(defaultValue = "12") Integer limit) {
+        return tradeOrderService.orderPnlCategoryAttribution(mode, limit);
     }
 
     @Operation(summary = "重建订单记录", description = "从 position/order/fill/ledger 幂等重建 Polymarket 订单记录主表。")

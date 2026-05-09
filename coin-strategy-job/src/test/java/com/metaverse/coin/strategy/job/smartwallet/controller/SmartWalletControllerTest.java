@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.job.follow.application.FollowTaskApplicationS
 import com.metaverse.coin.strategy.job.marketdata.application.PredictionMarketDataApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
+import com.metaverse.coin.strategy.job.risk.application.StrategyRuntimeConfigService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
@@ -17,6 +18,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCa
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigCatalogView;
+import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
@@ -69,6 +72,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -128,6 +132,8 @@ class SmartWalletControllerTest {
     @Mock
     private BaselineModelConfigApplicationService baselineModelConfigApplicationService;
     @Mock
+    private StrategyRuntimeConfigService strategyRuntimeConfigService;
+    @Mock
     private StrategyAnalyticsApplicationService strategyAnalyticsApplicationService;
     @Mock
     private MarketConcentrationService marketConcentrationService;
@@ -177,6 +183,57 @@ class SmartWalletControllerTest {
                 .andExpect(status().isOk());
 
         verify(baselineModelConfigApplicationService).current();
+    }
+
+    @Test
+    void shouldExposeRuntimeConfigCatalogEndpoint() throws Exception {
+        when(properties.isRuntimeConfigApiEnabled()).thenReturn(true);
+        when(strategyRuntimeConfigService.catalog("POLYMARKET_COPY"))
+                .thenReturn(StrategyRuntimeConfigCatalogView.builder()
+                        .strategyCode("POLYMARKET_COPY")
+                        .groups(List.of())
+                        .items(List.of())
+                        .build());
+
+        mockMvc.perform(get("/strategy/api/smart-wallet/config/runtime/catalog")
+                        .contextPath("/strategy/api"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.strategyCode").value("POLYMARKET_COPY"));
+
+        verify(strategyRuntimeConfigService).catalog("POLYMARKET_COPY");
+    }
+
+    @Test
+    void shouldUpdateRuntimeConfigEndpoint() throws Exception {
+        when(properties.isRuntimeConfigApiEnabled()).thenReturn(true);
+        when(strategyRuntimeConfigService.update(eq("POLYMARKET_COPY"), any()))
+                .thenReturn(List.of(StrategyRuntimeConfigView.builder()
+                        .strategyCode("POLYMARKET_COPY")
+                        .key("smart-wallet.signal-risk.min-trigger-size-usdc")
+                        .value("12.5")
+                        .build()));
+
+        mockMvc.perform(post("/strategy/api/smart-wallet/config/runtime")
+                        .contextPath("/strategy/api")
+                        .contentType("application/json")
+                        .content("""
+                                {"items":[{"key":"smart-wallet.signal-risk.min-trigger-size-usdc","value":"12.5"}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].value").value("12.5"));
+
+        verify(strategyRuntimeConfigService).update(eq("POLYMARKET_COPY"), any());
+    }
+
+    @Test
+    void shouldBlockRuntimeConfigEndpointWhenAdminModuleIsMissing() throws Exception {
+        mockMvc.perform(post("/strategy/api/smart-wallet/config/runtime")
+                        .contextPath("/strategy/api")
+                        .contentType("application/json")
+                        .content("""
+                                {"items":[{"key":"smart-wallet.signal-risk.min-trigger-size-usdc","value":"12.5"}]}
+                                """))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -637,9 +694,13 @@ class SmartWalletControllerTest {
                         .build()
         ));
 
-        mockMvc.perform(get("/strategy/api/smart-wallet/profiles/overrides/export")
+        var result = mockMvc.perform(get("/strategy/api/smart-wallet/profiles/overrides/export")
                         .contextPath("/strategy/api")
                         .param("limit", "20"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(result))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("walletAddress")))
                 .andExpect(content().string(containsString("HOLD_TO_SETTLEMENT")))

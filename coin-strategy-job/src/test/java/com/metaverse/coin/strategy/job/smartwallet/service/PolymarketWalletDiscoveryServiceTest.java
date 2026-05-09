@@ -46,6 +46,8 @@ class PolymarketWalletDiscoveryServiceTest {
     private LeaderTradeOutcomeRebuildService leaderTradeOutcomeRebuildService;
     @Mock
     private SmartWalletProfileTruthRefreshService profileTruthRefreshService;
+    @Mock
+    private SmartWalletManualAllowlistService manualAllowlistService;
 
     @Test
     void shouldDeduplicateAcrossLeaderboardQueriesAndTrackHitCount() {
@@ -215,6 +217,61 @@ class PolymarketWalletDiscoveryServiceTest {
     }
 
     @Test
+    void shouldSyncManualAllowlistRuntimeHotProfileTrades() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        SmartWalletProfileEntity manualRuntimeProfile = new SmartWalletProfileEntity()
+                .setWalletAddress("0xmanual")
+                .setChain("polygon")
+                .setMonitorTier("HOT")
+                .setWatchEnabled(Boolean.TRUE);
+        when(profileStoreService.listExecutableWatchlist()).thenReturn(List.of(manualRuntimeProfile));
+        when(polymarketApiClient.fetchUserTrades("0xmanual")).thenReturn(List.of(
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("manual-trade-1")
+                        .walletAddress("0xmanual")
+                        .marketId("market-manual")
+                        .question("Manual allowlist trade?")
+                        .outcome("YES")
+                        .side("BUY")
+                        .price(new BigDecimal("0.57"))
+                        .sizeShares(new BigDecimal("12"))
+                        .tradedAt(System.currentTimeMillis())
+                        .build()
+        ));
+        when(marketMetadataService.resolveCanonicalConditionId(any(), any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        PolymarketWalletDiscoveryService service = newService(properties);
+
+        int imported = service.syncWatchlistTradesBatch();
+
+        assertEquals(1, imported);
+        ArgumentCaptor<PolymarketTradeEventRequest> captor = ArgumentCaptor.forClass(PolymarketTradeEventRequest.class);
+        verify(monitorService).ingestTradeEvent(captor.capture());
+        assertEquals("0xmanual", captor.getValue().getWalletAddress());
+        assertEquals("manual-trade-1", captor.getValue().getExternalTradeId());
+        verify(profileStoreService).recordHotEventSync(eq(manualRuntimeProfile), any());
+    }
+
+    @Test
+    void shouldSkipManualAllowlistRuntimeProfileUntilWalletSyncIsDue() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        properties.getPolymarket().setWalletTradeSyncMinIntervalMs(60_000L);
+        SmartWalletProfileEntity manualRuntimeProfile = new SmartWalletProfileEntity()
+                .setWalletAddress("0xmanual")
+                .setChain("polygon")
+                .setMonitorTier("HOT")
+                .setWatchEnabled(Boolean.TRUE)
+                .setLastEventSyncAt(new java.util.Date(System.currentTimeMillis()));
+        when(profileStoreService.listExecutableWatchlist()).thenReturn(List.of(manualRuntimeProfile));
+
+        PolymarketWalletDiscoveryService service = newService(properties);
+
+        assertEquals(0, service.syncWatchlistTradesBatch());
+        verify(monitorService, org.mockito.Mockito.never()).ingestTradeEvent(any());
+    }
+
+    @Test
     void shouldRefreshWarmWalletMetricsWithoutCreatingFollowTasks() {
         SmartWalletProperties properties = new SmartWalletProperties();
         SmartWalletProfileEntity warmWallet = new SmartWalletProfileEntity()
@@ -378,7 +435,8 @@ class PolymarketWalletDiscoveryServiceTest {
                 marketMetadataService,
                 walletOrderAggregationService,
                 leaderTradeOutcomeRebuildService,
-                profileTruthRefreshService
+                profileTruthRefreshService,
+                manualAllowlistService
         );
     }
 

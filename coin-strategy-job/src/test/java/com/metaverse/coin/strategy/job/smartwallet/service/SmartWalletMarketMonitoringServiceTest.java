@@ -47,6 +47,8 @@ class SmartWalletMarketMonitoringServiceTest {
     private SmartWalletMarketStateService marketStateService;
     @Mock
     private MarketConcentrationSnapshotService concentrationSnapshotService;
+    @Mock
+    private MarketSnapshotCollectorService marketSnapshotCollectorService;
 
     private SmartWalletMarketMonitoringService service;
     private SmartWalletProperties properties;
@@ -61,7 +63,8 @@ class SmartWalletMarketMonitoringServiceTest {
                 properties,
                 marketInfoService,
                 marketStateService,
-                concentrationSnapshotService
+                concentrationSnapshotService,
+                marketSnapshotCollectorService
         );
         when(followTaskMapper.selectList(any())).thenReturn(List.of());
         when(positionMapper.selectList(any())).thenReturn(List.of());

@@ -231,8 +231,10 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
   }, [deferredKeyword, statusFilter, marketLifecycleFilter, mode, pnl, settlement])
 
   useEffect(() => {
-    setPage((currentPage) => Math.min(currentPage, totalPages))
-  }, [totalPages])
+    if (!hasNextPage) {
+      setPage((currentPage) => Math.min(currentPage, totalPages))
+    }
+  }, [totalPages, hasNextPage])
 
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage || orders.length >= requiredItems) {
