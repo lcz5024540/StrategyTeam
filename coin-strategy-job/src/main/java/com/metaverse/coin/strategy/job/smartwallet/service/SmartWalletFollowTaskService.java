@@ -87,6 +87,7 @@ public class SmartWalletFollowTaskService {
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final SmartWalletManualBlocklistService manualBlocklistService;
     private final Map<String, CachedRiskDecision> riskDecisionCache = new ConcurrentHashMap<>();
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
@@ -211,8 +212,9 @@ public class SmartWalletFollowTaskService {
                 .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
                 .last("limit " + normalizeLimit(taskScanLimit == null ? (limit == null ? 100 : Math.max(limit * 4, 50)) : taskScanLimit, 100)));
         List<SmartWalletFollowTaskView> result = new ArrayList<>();
+        ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
-            SignalRiskDecision decision = evaluateTask(task.getId(), overrideRisk);
+            SignalRiskDecision decision = evaluateTaskCached(task, overrideRisk, stats);
             if (!decision.isAccepted() || !decision.isOverrideApplied()) {
                 continue;
             }
@@ -229,8 +231,9 @@ public class SmartWalletFollowTaskService {
                 .last("limit " + normalizeLimit(limit == null ? 100 : Math.max(limit * 4, 50), 200)));
         List<SmartWalletFollowTaskView> result = new ArrayList<>();
         Map<String, Integer> liveAcceptedByWallet = new LinkedHashMap<>();
+        ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
-            SignalRiskDecision decision = evaluateTask(task.getId());
+            SignalRiskDecision decision = evaluateTaskCached(task, null, stats);
             if (!decision.isManualAllowlistApplied()) {
                 continue;
             }
@@ -268,8 +271,9 @@ public class SmartWalletFollowTaskService {
                 .last("limit " + normalizeLimit(taskScanLimit == null ? (limit == null ? 100 : Math.max(limit * 4, 50)) : taskScanLimit, 100)));
         List<SmartWalletFollowTaskView> candidates = new ArrayList<>();
         int blockerThreshold = maxBlockers == null || maxBlockers < 0 ? 3 : maxBlockers;
+        ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
-            SignalRiskDecision decision = evaluateTask(task.getId(), overrideRisk);
+            SignalRiskDecision decision = evaluateTaskCached(task, overrideRisk, stats);
             if (!includeExecutable && decision.isAccepted()) {
                 continue;
             }
@@ -291,8 +295,9 @@ public class SmartWalletFollowTaskService {
                 .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
                 .last("limit " + normalizeLimit(taskLimit, 200)));
         Map<String, MutableBlockerStat> grouped = new LinkedHashMap<>();
+        ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
-            SignalRiskDecision decision = evaluateTask(task.getId());
+            SignalRiskDecision decision = evaluateTaskCached(task, null, stats);
             List<String> categories = classifyBlockerCategories(decision);
             if (categories.isEmpty()) {
                 categories = List.of(decision != null && decision.isAccepted() ? "EXECUTABLE" : "OTHER");
@@ -644,10 +649,13 @@ public class SmartWalletFollowTaskService {
         if (!properties.isAutoExecutionEnabled()) {
             return "PAPER";
         }
+        if (!properties.isAllowlistLiveEnabled()) {
+            return "PAPER";
+        }
         return manualAllowlistService.findActive(walletAddress)
                 .map(allowlist -> manualAllowlistService.allowsLive(allowlist)
                         && getWalletProfileByAddress(walletAddress) != null ? "LIVE" : "PAPER")
-                .orElse("LIVE");
+                .orElse("PAPER");
     }
 
     private void enforceManualAllowlistLiveLimits(SmartWalletFollowTaskEntity task, SignalRiskDecision decision) {
@@ -793,28 +801,6 @@ public class SmartWalletFollowTaskService {
         log.info("{} action=根据交易事件生成跟单任务 result=开始 eventId={} wallet={} marketId={} outcome={} side={} {}",
                 LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide(),
                 eventTrace(event));
-        SmartWalletProfileEntity profile = profileStoreService.listWatchEnabled().stream()
-                .filter(item -> item.getWalletAddress().equalsIgnoreCase(event.getWalletAddress()))
-                .findFirst()
-                .orElse(null);
-        SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(event.getWalletAddress()).orElse(null);
-        if (profile == null && allowlist != null) {
-            profile = getWalletProfileByAddress(event.getWalletAddress());
-        }
-        if (profile == null && allowlist == null) {
-            log.info("{} action=根据交易事件生成跟单任务 result=跳过 reason=钱包未在可执行观察名单 eventId={} wallet={} marketId={} outcome={} {}",
-                    LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
-                    eventTrace(event));
-            log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "拒绝", event, null,
-                    "firstRejectGate", "G1_WATCHLIST_UNQUALIFIED",
-                    "blockerCategories", "WATCHLIST",
-                    "reasonSummary", "钱包未在可执行观察名单"));
-            return;
-        }
-        log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "通过", event, null,
-                "entryLane", profile == null ? "MANUAL_ALLOWLIST" : profile.getMonitorTier(),
-                "reasonSummary", "钱包已进入候选任务生成链路"));
-
         SmartWalletFollowTaskEntity existingTask = followTaskMapper.selectOne(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
                 .eq(SmartWalletFollowTaskEntity::getSourceEventId, event.getId())
                 .last("limit 1"));
@@ -828,6 +814,43 @@ public class SmartWalletFollowTaskService {
                     "reasonSummary", "sourceEventId 已存在跟单任务"));
             return;
         }
+        if (manualBlocklistService.isBlocked(event.getWalletAddress())) {
+            createBlocklistedSkippedTask(event, manualBlocklistService.activeReason(event.getWalletAddress()));
+            markSourceEventProcessed(event);
+            return;
+        }
+        SmartWalletProfileEntity profile = profileStoreService.listWatchEnabled().stream()
+                .filter(item -> item.getWalletAddress().equalsIgnoreCase(event.getWalletAddress()))
+                .findFirst()
+                .orElse(null);
+        SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(event.getWalletAddress()).orElse(null);
+        if (profile == null && allowlist != null) {
+            profile = getWalletProfileByAddress(event.getWalletAddress());
+        }
+        if (profile == null && allowlist == null) {
+            log.info("{} action=根据交易事件生成跟单任务 result=跳过 reason=钱包未在可执行观察名单 eventId={} wallet={} marketId={} outcome={} {}",
+                    LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
+                    eventTrace(event));
+            log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "拒绝", event, null,
+                    "decisionDomain", "ADDRESS",
+                    "addressDecision", "REJECTED",
+                    "firstRejectGate", "G1_WATCHLIST_UNQUALIFIED",
+                    "blockerCategories", "WATCHLIST",
+                    "reasonSummary", "钱包未在可执行观察名单"));
+            return;
+        }
+        log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "通过", event, null,
+                "decisionDomain", "ADDRESS",
+                "addressDecision", "ACCEPTED",
+                "entryLane", profile == null ? "MANUAL_ALLOWLIST" : profile.getMonitorTier(),
+                "profileQualified", profile == null ? null : profile.getQualified(),
+                "watchEnabled", profile == null ? null : profile.getWatchEnabled(),
+                "monitorTier", profile == null ? null : profile.getMonitorTier(),
+                "walletScore", profile == null ? null : profile.getWalletScore(),
+                "winRate", profile == null ? null : profile.getWinRate(),
+                "totalTrades", profile == null ? null : profile.getTotalTrades(),
+                "allowlistStatus", allowlist == null ? null : allowlist.getStatus(),
+                "reasonSummary", "钱包已进入候选任务生成链路"));
 
         // ---- Step 1: Intelligence Enrich ----
         // 将钱包地址解析为实体 ID + 聚类置信度，写入 wallet_follow_candidate 作为中间记录
@@ -863,9 +886,11 @@ public class SmartWalletFollowTaskService {
 
         // ---- Allowlist Direct Path: 白名单钱包跳过风控评估，直接创建 PENDING 任务 ----
         if (allowlist != null) {
-            BigDecimal recommendedStake = event.getSizeUsdc() == null
-                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
-                    : event.getSizeUsdc().setScale(2, RoundingMode.HALF_UP);
+            BigDecimal stakeMultiplier = manualAllowlistService.stakeMultiplier(allowlist);
+            BigDecimal triggerUsdc = event.getSizeUsdc() == null ? BigDecimal.ZERO : event.getSizeUsdc();
+            BigDecimal recommendedStake = triggerUsdc.multiply(stakeMultiplier)
+                    .min(properties.getMaxStakeUsdc())
+                    .setScale(2, RoundingMode.HALF_UP);
             String executionMode = resolveTaskExecutionMode(event.getWalletAddress());
             SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                     .setWalletAddress(event.getWalletAddress())
@@ -987,102 +1012,34 @@ public class SmartWalletFollowTaskService {
                 LOG_PREFIX, event.getId(), task.getId());
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // 白名单直通跟单 —— 跳过所有准入/风控/市场状态判定
-    // ──────────────────────────────────────────────────────────────────
-
-    /**
-     * 为白名单地址的交易事件直接创建 PENDING 跟单任务，
-     * 不经过 watchlist 准入、市场状态检查、intelligence enrich 和风控评估。
-     * <p>
-     * 调用方需自行确认该地址属于活跃白名单。
-     */
-    public SmartWalletTradeEventEntity recordTradeEventForAllowlistDirect(SmartWalletTradeEventEntity event) {
-        log.info("{} action=白名单直通导入交易事件 result=开始 wallet={} marketId={} outcome={} side={} externalTradeId={}",
-                LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
-                event.getSide(), event.getExternalTradeId());
-
-        // 1. 去重
-        SmartWalletTradeEventEntity existing = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getSource, event.getSource())
-                .eq(SmartWalletTradeEventEntity::getExternalTradeId, event.getExternalTradeId())
-                .last("limit 1"));
-        if (existing != null) {
-            log.info("{} action=白名单直通导入交易事件 result=跳过重复 eventId={} wallet={} externalTradeId={}",
-                    LOG_PREFIX, existing.getId(), existing.getWalletAddress(), existing.getExternalTradeId());
-            // 即便重复，也确保有跟单任务
-            createFollowTaskForAllowlistDirectIfAbsent(existing);
-            return existing;
-        }
-
-        // 2. 入库
-        event.setProcessed(Boolean.FALSE);
-        event.setCreatedAt(new Date());
-        event.setUpdatedAt(new Date());
-        tradeEventMapper.insert(event);
-        log.info("{} action=白名单直通导入交易事件 result=已入库 eventId={} wallet={} marketId={}",
-                LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId());
-
-        profileStoreService.recordObservedTradeActivity(event.getWalletAddress(), event.getOpenedAt());
-        ensureMarketInfoForEvent(event);
-
-        // 3. 直接创建跟单任务
-        createFollowTaskForAllowlistDirectIfAbsent(event);
-        return event;
-    }
-
-    /**
-     * 为白名单地址创建跟单任务 —— 无条件 PENDING，跳过全部 gate。
-     */
-    private void createFollowTaskForAllowlistDirectIfAbsent(SmartWalletTradeEventEntity event) {
-        // 防重：同一 sourceEventId 已有任务则跳过
-        SmartWalletFollowTaskEntity existingTask = followTaskMapper.selectOne(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .eq(SmartWalletFollowTaskEntity::getSourceEventId, event.getId())
-                .last("limit 1"));
-        if (existingTask != null) {
-            log.info("{} action=白名单直通创建跟单任务 result=已存在 followTaskId={} eventId={} status={}",
-                    LOG_PREFIX, existingTask.getId(), event.getId(), existingTask.getStatus());
-            return;
-        }
-
-        SmartWalletMarketInfoEntity marketInfo = ensureMarketInfoForEvent(event);
-
-        // 确定执行模式：白名单配置的 mode
-        SmartWalletManualAllowlistEntity allowlist = manualAllowlistService.findActive(event.getWalletAddress()).orElse(null);
-        String executionMode;
-        BigDecimal stakeMultiplier;
-        if (allowlist != null) {
-            executionMode = manualAllowlistService.allowsLive(allowlist) && properties.isAutoExecutionEnabled()
-                    ? "LIVE" : "PAPER";
-            stakeMultiplier = manualAllowlistService.stakeMultiplier(allowlist);
-        } else {
-            executionMode = "PAPER";
-            stakeMultiplier = new BigDecimal("0.50");
-        }
-
-        BigDecimal triggerUsdc = event.getSizeUsdc() == null ? BigDecimal.ZERO : event.getSizeUsdc();
-        BigDecimal recommendedStake = triggerUsdc.multiply(stakeMultiplier).setScale(2, RoundingMode.HALF_UP);
-
+    private void createBlocklistedSkippedTask(SmartWalletTradeEventEntity event, String reason) {
+        String effectiveReason = StringUtils.hasText(reason)
+                ? reason
+                : SmartWalletManualBlocklistService.REASON_MANUAL_BLOCKLIST;
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
                 .setSourceEventId(event.getId())
-                .setMarketInfoId(marketInfo == null ? null : marketInfo.getId())
-                .setMarketInfo(marketInfo)
                 .setSide(event.getSide())
                 .setTriggerPrice(event.getPrice())
-                .setTriggerSizeUsdc(triggerUsdc)
-                .setRecommendedStakeUsdc(recommendedStake)
-                .setStatus(STATUS_PENDING)
-                .setExecutionMode(executionMode)
-                .setErrorMessage("白名单直通跟单，跳过全部准入/风控判定")
-                .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
+                .setTriggerSizeUsdc(event.getSizeUsdc())
+                .setRecommendedStakeUsdc(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .setStatus(STATUS_SKIPPED)
+                .setExecutionMode("BLOCKLIST")
+                .setErrorMessage("[" + effectiveReason + "] Wallet is blocked by smart-wallet blocklist.")
+                .setPrimarySkipReason(effectiveReason)
+                .setSkipReasonTags(effectiveReason)
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
         followTaskMapper.insert(task);
-        markSourceEventProcessed(event);
-        log.info("{} action=白名单直通创建跟单任务 result=已创建 followTaskId={} eventId={} wallet={} marketId={} mode={} stakeUsdc={}",
-                LOG_PREFIX, task.getId(), event.getId(), event.getWalletAddress(),
-                event.getMarketId(), executionMode, recommendedStake);
+        log.info("{} action=创建阻断名单拦截任务 result=SKIPPED followTaskId={} eventId={} wallet={} marketId={} outcome={} reason={} {} {}",
+                LOG_PREFIX, task.getId(), event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
+                effectiveReason, eventTrace(event), taskTrace(task));
+        log.info("{}", flow("S2_PROFILE_ADMISSION", "钱包准入检查", "拒绝", event, task,
+                "decisionDomain", "ADDRESS",
+                "addressDecision", "REJECTED",
+                "firstRejectGate", "G1_MANUAL_BLOCKLIST",
+                "blockerCategories", effectiveReason,
+                "reasonSummary", effectiveReason));
     }
 
     /**
@@ -1155,6 +1112,20 @@ public class SmartWalletFollowTaskService {
             log.info("{} action=重评延迟智能候选 result=仍需等待 eventId={} candidateId={} followTaskId={} oldStatus={} newStatus={} reason={}",
                     LOG_PREFIX, event.getId(), candidate.getId(), task == null ? null : task.getId(), previousStatus,
                     candidate.getEnrichmentStatus(), candidate.getRejectionReason());
+            return true;
+        }
+
+        if (manualBlocklistService.isBlocked(event.getWalletAddress())) {
+            if (task != null) {
+                String reason = manualBlocklistService.activeReason(event.getWalletAddress());
+                task.setStatus(STATUS_SKIPPED);
+                task.setExecutionMode("BLOCKLIST");
+                task.setErrorMessage("[" + reason + "] Wallet is blocked by smart-wallet blocklist.");
+                task.setPrimarySkipReason(reason);
+                task.setSkipReasonTags(reason);
+                task.setUpdatedAt(new Date());
+                followTaskMapper.updateById(task);
+            }
             return true;
         }
 
@@ -1564,6 +1535,8 @@ public class SmartWalletFollowTaskService {
             if ("DYNAMIC_FOLLOW_EXIT".equalsIgnoreCase(decision.getEntryLane())) {
                 task.setStatus("SKIPPED");
                 task.setErrorMessage("[DYNAMIC_FOLLOW_EXIT] Signal was classified as an exit/rebalance lane and is not submitted as a new entry order.");
+                task.setPrimarySkipReason("NON_TRADABLE");
+                task.setSkipReasonTags("NON_TRADABLE");
                 task.setUpdatedAt(new Date());
                 followTaskMapper.updateById(task);
                 return SmartWalletExecutionResult.builder()
@@ -1970,6 +1943,8 @@ public class SmartWalletFollowTaskService {
                 update.setId(task.getId());
                 update.setStatus("SKIPPED");
                 update.setErrorMessage("[AUTO_EXPIRED] Task exceeded maximum age (" + (expiryMs / 1000) + "s). createdAt=" + task.getCreatedAt());
+                update.setPrimarySkipReason("STALE");
+                update.setSkipReasonTags("STALE");
                 update.setUpdatedAt(new Date());
                 followTaskMapper.updateById(update);
                 expired++;
@@ -2029,7 +2004,10 @@ public class SmartWalletFollowTaskService {
     }
 
     private String primarySkipReason(Set<String> tags) {
-        List<String> priority = List.of("NON_TRADABLE", "PRICE", "PROFILE_BEHAVIOR", "CAPACITY", "STALE", "SIZE", "OTHER");
+        List<String> priority = List.of(
+                SmartWalletManualBlocklistService.REASON_MANUAL_BLOCKLIST,
+                SmartWalletManualBlocklistService.REASON_INACTIVE_GT_35D_BLOCKLIST,
+                "NON_TRADABLE", "PRICE", "PROFILE_BEHAVIOR", "CAPACITY", "STALE", "SIZE", "OTHER");
         for (String candidate : priority) {
             if (tags.contains(candidate)) {
                 return candidate;
@@ -2043,6 +2021,13 @@ public class SmartWalletFollowTaskService {
             return null;
         }
         String text = reason.toLowerCase(Locale.ROOT);
+        if (text.contains("[" + SmartWalletManualBlocklistService.REASON_INACTIVE_GT_35D_BLOCKLIST.toLowerCase(Locale.ROOT) + "]")) {
+            return SmartWalletManualBlocklistService.REASON_INACTIVE_GT_35D_BLOCKLIST;
+        }
+        if (text.contains("[" + SmartWalletManualBlocklistService.REASON_MANUAL_BLOCKLIST.toLowerCase(Locale.ROOT) + "]")
+                || text.contains("smart-wallet blocklist")) {
+            return SmartWalletManualBlocklistService.REASON_MANUAL_BLOCKLIST;
+        }
         if (text.contains("[market_not_accepting_orders]")
                 || text.contains("[market_closed]")
                 || text.contains("[market_resolved]")

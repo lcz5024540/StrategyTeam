@@ -62,8 +62,12 @@ public class CapitalRecycleExitService {
         if (config == null || !config.isEnabled()) {
             return;
         }
-        scanPaperPositionsForRecycle(config);
-        scanLivePositionsForRecycle(config);
+        if (config.isPaperEnabled()) {
+            scanPaperPositionsForRecycle(config);
+        }
+        if (config.isLiveEnabled()) {
+            scanLivePositionsForRecycle(config);
+        }
     }
 
     // ─── Allowlist Position Filter ──────────────────────────────────────────────

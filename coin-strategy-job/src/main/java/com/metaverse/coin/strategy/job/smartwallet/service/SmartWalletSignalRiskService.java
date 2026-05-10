@@ -66,6 +66,7 @@ public class SmartWalletSignalRiskService {
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final SmartWalletManualBlocklistService manualBlocklistService;
     private final EntryTimingRiskService entryTimingRiskService;
     private final SignalScoreModelService signalScoreModelService;
 
@@ -93,10 +94,20 @@ public class SmartWalletSignalRiskService {
                 .findActive(event == null ? null : event.getWalletAddress())
                 .orElse(null);
         boolean manualAllowlistApplied = manualAllowlist != null;
+        String signalWalletAddress = event != null && StringUtils.hasText(event.getWalletAddress())
+                ? event.getWalletAddress()
+                : profile == null ? null : profile.getWalletAddress();
+        boolean manualBlocklistApplied = manualBlocklistService.isBlocked(signalWalletAddress);
         boolean manualWatchDisabled = profile != null && Boolean.FALSE.equals(profile.getManualWatchEnabled());
         boolean addressAdmissionRejected = false;
         // ── Gate 1: 钱包准入（手动禁用 / 观察冷却 / 白名单 / 资质） ──
-        if (manualWatchDisabled) {
+        if (manualBlocklistApplied) {
+            accepted = false;
+            manualAllowlistApplied = false;
+            addressAdmissionRejected = true;
+            if (firstRejectGate == null) firstRejectGate = "G1_MANUAL_BLOCKLIST";
+            reasons.add("[" + manualBlocklistService.activeReason(signalWalletAddress) + "] Wallet is blocked by smart-wallet blocklist.");
+        } else if (manualWatchDisabled) {
             accepted = false;
             manualAllowlistApplied = false;
             addressAdmissionRejected = true;

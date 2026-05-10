@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { walletApi } from '@/api'
 import { compactAddress, formatAmount, formatMoney, truncateText } from '@/utils/format'
 import { buildTableOptions, TABLE_PAGE_SIZE } from '@/utils/table'
@@ -127,7 +128,7 @@ function isActiveOrderMarket(order: {
   if (order.closed || order.acceptingOrders === false) {
     return false
   }
-  return !order.marketEndAt || order.marketEndAt <= 0 || order.marketEndAt > Date.now()
+  return true
 }
 
 function getLifecycleLabel(order: {
@@ -171,6 +172,16 @@ function formatMarketEnd(order: {
     return formatIsoSecond(order.marketEndAt)
   }
   return '-'
+}
+
+function buildInternalMarketUrl(order: {
+  marketId?: string | null
+  internalMarketUrl?: string | null
+}): string {
+  if (order.internalMarketUrl) {
+    return order.internalMarketUrl
+  }
+  return order.marketId ? `/dashboard/polymarket/markets/${encodeURIComponent(order.marketId.trim())}` : ''
 }
 
 interface OrdersTableProps {
@@ -338,8 +349,7 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
               visibleOrders.map((order) => {
                 const marketLabel = order.question || order.marketId || '-'
                 const activeMarket = isActiveOrderMarket(order)
-                const marketUrl = order.externalMarketUrl || order.marketUrl || order.internalMarketUrl || ''
-                const externalMarketLink = marketUrl.startsWith('http')
+                const marketUrl = buildInternalMarketUrl(order)
                 const followAddress = order.walletAddress || order.executionAddress || '-'
                 const metadataMissing = Boolean(order.metadataMissing || order.abnormalMarketReason)
                 const manualReviewRequired = Boolean(order.manualReviewRequired || order.abnormalMarketReason === 'MANUAL_REVIEW_REQUIRED')
@@ -356,15 +366,13 @@ export function OrdersTable({ mode, pnl = 'ALL', settlement = 'ALL' }: OrdersTab
                     <td title={followAddress}>{compactAddress(followAddress)}</td>
                     <td className="market-cell" title={marketLabel}>
                       {marketUrl ? (
-                        <a
+                        <Link
                           className="market-link"
-                          href={marketUrl}
-                          target={externalMarketLink ? '_blank' : undefined}
-                          rel={externalMarketLink ? 'noreferrer' : undefined}
-                          title={`${externalMarketLink ? '在 Polymarket 打开' : '查看内部市场详情'}：${marketLabel}`}
+                          to={marketUrl}
+                          title={`查看内部市场详情：${marketLabel}`}
                         >
                           {truncateText(marketLabel, 34)}
-                        </a>
+                        </Link>
                       ) : (
                         <span className="market-cell-title">{truncateText(marketLabel, 34)}</span>
                       )}

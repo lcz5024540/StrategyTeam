@@ -400,6 +400,32 @@ public class SmartWalletMarketInfoService {
     }
 
     /**
+     * 分页加载全部 market_info 记录（用于批量重新分类等操作）。
+     */
+    public List<SmartWalletMarketInfoEntity> listAll(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 50_000));
+        List<SmartWalletMarketInfoEntity> result = new java.util.ArrayList<>();
+        long lastId = 0L;
+        int pageSize = 1000;
+        while (result.size() < safeLimit) {
+            int batchSize = Math.min(pageSize, safeLimit - result.size());
+            List<SmartWalletMarketInfoEntity> chunk = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                    .gt(SmartWalletMarketInfoEntity::getId, lastId)
+                    .orderByAsc(SmartWalletMarketInfoEntity::getId)
+                    .last("limit " + batchSize));
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            result.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            if (chunk.size() < batchSize) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    /**
      * 清除进程内缓存（测试或手动刷新时使用）。
      */
     public void clearCache() {

@@ -66,6 +66,12 @@ public class SmartWalletProfileStoreService {
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final SmartWalletManualBlocklistService manualBlocklistService;
+
+    // ---- listAll() 短时缓存：避免同一请求链路中多次全表扫描 ----
+    private static final long LIST_ALL_CACHE_TTL_MS = 15_000L;
+    private volatile List<SmartWalletProfileEntity> cachedListAll;
+    private volatile long cachedListAllExpiresAt;
 
     public SmartWalletProfileEntity upsertMetrics(PolymarketWalletMetricsRequest request) {
         SmartWalletProfileEntity entity = profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
@@ -132,16 +138,34 @@ public class SmartWalletProfileStoreService {
     }
 
     public List<SmartWalletProfileEntity> listAll() {
-        return applyMonitorTierState(profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+        long now = System.currentTimeMillis();
+        List<SmartWalletProfileEntity> cached = this.cachedListAll;
+        if (cached != null && now < cachedListAllExpiresAt) {
+            return cached;
+        }
+        List<SmartWalletProfileEntity> fresh = applyMonitorTierState(profileMapper.selectList(new LambdaQueryWrapper<SmartWalletProfileEntity>()
                 .eq(SmartWalletProfileEntity::getSource, SOURCE)
                 .orderByDesc(SmartWalletProfileEntity::getWalletScore)
                 .orderByDesc(SmartWalletProfileEntity::getRealizedPnlUsdc)));
+        this.cachedListAll = fresh;
+        this.cachedListAllExpiresAt = now + LIST_ALL_CACHE_TTL_MS;
+        return fresh;
     }
 
     public long countPolymarketProfiles() {
         Long count = profileMapper.selectCount(new LambdaQueryWrapper<SmartWalletProfileEntity>()
                 .eq(SmartWalletProfileEntity::getSource, SOURCE));
         return count == null ? 0L : count;
+    }
+
+    public SmartWalletProfileEntity findByWalletAddress(String walletAddress) {
+        if (!StringUtils.hasText(walletAddress)) {
+            return null;
+        }
+        return profileMapper.selectOne(new LambdaQueryWrapper<SmartWalletProfileEntity>()
+                .eq(SmartWalletProfileEntity::getWalletAddress, normalizeWallet(walletAddress))
+                .eq(SmartWalletProfileEntity::getSource, SOURCE)
+                .last("limit 1"));
     }
 
     public List<SmartWalletProfileEntity> listWatchEnabled() {
@@ -178,6 +202,9 @@ public class SmartWalletProfileStoreService {
                 continue;
             }
             String normalizedWallet = normalizeWallet(allowlist.getWalletAddress());
+            if (manualBlocklistService.isBlocked(normalizedWallet)) {
+                continue;
+            }
             SmartWalletProfileEntity existing = profilesByWallet.get(normalizedWallet);
             merged.put(normalizedWallet, toManualAllowlistRuntimeProfile(existing, allowlist));
         }
@@ -830,6 +857,14 @@ public class SmartWalletProfileStoreService {
             return;
         }
         Date now = new Date();
+        if (manualBlocklistService.isBlocked(wallet.getWalletAddress())
+                || manualBlocklistService.blockForInactivityIfNeeded(wallet)) {
+            wallet.setQualified(Boolean.FALSE);
+            wallet.setWatchEnabled(Boolean.FALSE);
+            wallet.setMonitorTier(MONITOR_TIER_COLD);
+            wallet.setMonitorReason(manualBlocklistService.activeReason(wallet.getWalletAddress()));
+            return;
+        }
         boolean wasHot = isHotMonitorTier(wallet) || Boolean.TRUE.equals(wallet.getWatchEnabled());
         QualificationEvaluation qualification = evaluateQualification(wallet);
         boolean qualified = qualification.qualified();
@@ -1119,6 +1154,11 @@ public class SmartWalletProfileStoreService {
             return;
         }
         Date effectiveNow = now == null ? new Date() : now;
+        if (manualBlocklistService.isBlocked(wallet.getWalletAddress())) {
+            wallet.setMonitorTier(MONITOR_TIER_COLD);
+            wallet.setMonitorReason(manualBlocklistService.activeReason(wallet.getWalletAddress()));
+            return;
+        }
         if (isForceColdByInactivity(wallet, effectiveNow)) {
             wallet.setMonitorTier(MONITOR_TIER_COLD);
             wallet.setMonitorReason("STALE_LAST_TRADE_GT_" + resolveColdWalletInactivityDays() + "D");

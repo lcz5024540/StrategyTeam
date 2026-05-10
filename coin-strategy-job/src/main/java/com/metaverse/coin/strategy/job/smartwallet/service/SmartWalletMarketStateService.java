@@ -297,10 +297,6 @@ public class SmartWalletMarketStateService {
         if (!acceptingOrders) {
             return LIFECYCLE_CLOSED_UNRESOLVED;
         }
-        Long marketEndAt = primary.getMarketEndAt();
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
-            return LIFECYCLE_CLOSED_UNRESOLVED;
-        }
         return persistedLifecycle;
     }
 
@@ -324,17 +320,26 @@ public class SmartWalletMarketStateService {
             acceptingOrders = existingRows.get(0).getAcceptingOrders() == null || existingRows.get(0).getAcceptingOrders();
         }
         String lifecycle = resolveLifecycle(resolvedOutcome, closed, acceptingOrders, marketEndAt);
+        String question = firstNonBlank(metadata == null ? null : metadata.getQuestion(), firstQuestion(existingRows), questionFallback, marketId);
+        String slug = firstNonBlank(metadata == null ? null : metadata.getSlug(), firstMarketSlug(existingRows));
+        // Include slug in classification — slugs often contain useful keywords (e.g., "will-xrp-hit-3")
+        String classificationText = question + (StringUtils.hasText(slug) ? " " + slug.replace('-', ' ') : "");
+        String newCategory = resolveNormalizedCategory(sourceCategory, classificationText);
+        // When API fails (metadata == null) and new classification falls back to OTHER,
+        // preserve the existing non-OTHER category — don't downgrade on API 404.
+        String existingCategory = firstNormalizedCategory(existingRows);
+        if (CATEGORY_OTHER.equals(newCategory)
+                && StringUtils.hasText(existingCategory)
+                && !CATEGORY_OTHER.equals(existingCategory)) {
+            newCategory = existingCategory;
+        }
         return MarketStateSnapshot.builder()
                 .marketId(marketId)
-                .question(firstNonBlank(metadata == null ? null : metadata.getQuestion(), firstQuestion(existingRows), questionFallback, marketId))
+                .question(question)
                 .marketSlug(firstNonBlank(metadata == null ? null : metadata.getSlug(), firstMarketSlug(existingRows)))
                 .marketEndAt(marketEndAt)
                 .sourceCategory(sourceCategory)
-                .normalizedCategory(resolveNormalizedCategory(sourceCategory, firstNonBlank(
-                        metadata == null ? null : metadata.getQuestion(),
-                        firstQuestion(existingRows),
-                        questionFallback
-                )))
+                .normalizedCategory(newCategory)
                 .marketLifecycle(lifecycle)
                 .closed(closed)
                 .acceptingOrders(acceptingOrders)
@@ -429,6 +434,28 @@ public class SmartWalletMarketStateService {
         }
     }
 
+    /**
+     * Re-run the categorization logic on all existing market_info rows and update
+     * any that are currently OTHER (or any that differ from the new classification).
+     * Returns the number of rows whose category was updated.
+     */
+    public int recategorizeAll() {
+        List<SmartWalletMarketInfoEntity> allRows = marketInfoService.listAll(20_000);
+        int updated = 0;
+        for (SmartWalletMarketInfoEntity row : allRows) {
+            String slug = row.getMarketSlug();
+            String classificationText = (row.getQuestion() == null ? "" : row.getQuestion())
+                    + (StringUtils.hasText(slug) ? " " + slug.replace('-', ' ') : "");
+            String newCategory = resolveNormalizedCategory(row.getSourceCategory(), classificationText);
+            if (!newCategory.equals(row.getNormalizedCategory())) {
+                row.setNormalizedCategory(newCategory);
+                marketInfoService.update(row);
+                updated++;
+            }
+        }
+        return updated;
+    }
+
     private String resolveLifecycle(String resolvedOutcome,
                                     boolean closed,
                                     boolean acceptingOrders,
@@ -442,39 +469,158 @@ public class SmartWalletMarketStateService {
         if (!acceptingOrders) {
             return LIFECYCLE_CLOSED_UNRESOLVED;
         }
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
-            return LIFECYCLE_CLOSED_UNRESOLVED;
-        }
         return LIFECYCLE_ACTIVE;
     }
 
     private String resolveNormalizedCategory(String sourceCategory, String question) {
+        // Step 1: Direct mapping from Polymarket sourceCategory (most reliable signal)
+        String directMapping = mapSourceCategoryDirect(sourceCategory);
+        if (directMapping != null) {
+            return directMapping;
+        }
+
+        // Step 2: Keyword-based classification from combined text
         String combined = normalizeForMatching(sourceCategory + " " + question);
-        if (containsAny(combined, "politic", "election", "president", "senate", "congress", "parliament", "governor", "mayor", "prime minister", "referendum", "vote")) {
-            return CATEGORY_POLITICS;
-        }
-        if (containsAny(combined, "weather", "rain", "snow", "temperature", "hurricane", "storm", "sunny", "wind", "climate")) {
-            return CATEGORY_WEATHER;
-        }
-        if (containsAny(combined, "sports", "nba", "nfl", "mlb", "nhl", "soccer", "football", "baseball", "basketball", "tennis", "golf", "ufc", "fifa", "champions league", "match")) {
-            return CATEGORY_SPORTS;
-        }
-        if (containsAny(combined, "crypto", "bitcoin", "ethereum", "solana", "token", "blockchain", "defi", "nft", "btc", "eth")) {
+
+        if (containsAny(combined,
+                // Crypto tokens & projects (comprehensive)
+                "crypto", "cryptocurrency", "bitcoin", "ethereum", "solana",
+                "btc", "eth", "sol", "xrp", "ripple", "doge", "dogecoin",
+                "cardano", "bnb", "binance", "avax", "avalanche",
+                "matic", "polygon", "chainlink", "polkadot",
+                "sui", "aptos", "arb", "arbitrum", "optimism",
+                "cosmos", "uniswap", "aave",
+                "ltc", "litecoin", "bch", "filecoin", "hbar", "hedera",
+                "xlm", "stellar", "algorand", "icp", "vechain",
+                "fantom", "sandbox", "axie",
+                "shib", "pepe", "floki", "bonk", "meme coin",
+                "toncoin", "trx", "tron", "eos",
+                "sei", "injective", "jupiter", "render", "rndr",
+                "kaspa", "celestia", "stacks",
+                "pendle", "pyth", "jto", "worldcoin",
+                "blockchain", "defi", "nft", "stablecoin",
+                "usdt", "usdc", "coinbase", "kraken",
+                "mining", "halving", "altcoin", "memecoin",
+                // Price-related patterns strongly indicating crypto
+                "above $", "below $", "reach $", "hit $", "break $",
+                "$100k", "$50k", "$10k", "$1k")) {
             return CATEGORY_CRYPTO;
         }
-        if (containsAny(combined, "macro", "cpi", "inflation", "gdp", "fed", "fomc", "recession", "unemployment", "interest rate", "treasury", "oil", "gold")) {
+        if (containsAny(combined,
+                "politic", "election", "president", "senate", "congress",
+                "parliament", "governor", "mayor", "prime minister",
+                "referendum", "vote", "democrat", "republican", "gop",
+                "trump", "biden", "party", "ballot", "primary",
+                "cabinet", "legislation", "bill pass", "veto",
+                "supreme court", "executive order", "impeach")) {
+            return CATEGORY_POLITICS;
+        }
+        if (containsAny(combined,
+                "sports", "nba", "nfl", "mlb", "nhl", "mls",
+                "soccer", "football", "baseball", "basketball", "tennis",
+                "golf", "ufc", "mma", "boxing", "fifa", "f1", "formula 1",
+                "champions league", "premier league", "la liga", "serie a",
+                "bundesliga", "world cup", "super bowl", "playoffs",
+                "game ", "match", "vs.", "vs ", " v ",
+                // Common NBA/NFL/MLB teams & terms
+                "lakers", "celtics", "warriors", "76ers", "sixers",
+                "bucks", "nets", "knicks", "bulls", "heat", "nuggets",
+                "chiefs", "eagles", "cowboys", "49ers", "ravens",
+                "yankees", "dodgers", "braves", "astros", "mets",
+                "mvp", "championship", "finals", "series",
+                "o/u", "over/under", "spread", "point",
+                // Soccer
+                "real madrid", "barcelona", "manchester", "liverpool",
+                "arsenal", "chelsea", "bayern", "psg", "juventus")) {
+            return CATEGORY_SPORTS;
+        }
+        if (containsAny(combined,
+                "weather", "rain", "snow", "temperature", "hurricane",
+                "storm", "sunny", "wind", "climate", "tornado",
+                "flood", "drought", "heatwave", "wildfire")) {
+            return CATEGORY_WEATHER;
+        }
+        if (containsAny(combined,
+                "macro", "cpi", "inflation", "gdp", "fed", "fomc",
+                "recession", "unemployment", "interest rate", "treasury",
+                "oil", "gold", "silver", "commodity", "forex",
+                "bond", "yield", "tariff", "trade war", "sanctions",
+                "central bank", "ecb", "boj", "rate cut", "rate hike",
+                "jobs report", "nonfarm", "ppi", "pce")) {
             return CATEGORY_MACRO;
         }
-        if (containsAny(combined, "business", "company", "earnings", "ipo", "merger", "acquisition", "ceo", "revenue", "stock", "tesla", "apple", "nvidia", "amazon")) {
+        if (containsAny(combined,
+                "business", "company", "earnings", "ipo", "merger",
+                "acquisition", "ceo", "revenue", "stock", "shares",
+                "tesla", "apple", "nvidia", "amazon", "google", "meta",
+                "microsoft", "openai", "spacex", "tiktok",
+                "market cap", "quarterly", "profit", "layoff",
+                "ipo", "spac", "sec", "antitrust", "valuation")) {
             return CATEGORY_BUSINESS;
         }
-        if (containsAny(combined, "entertainment", "movie", "film", "oscar", "grammy", "music", "tv", "television", "celebrity", "box office")) {
+        if (containsAny(combined,
+                "entertainment", "movie", "film", "oscar", "grammy",
+                "emmy", "music", "tv", "television", "celebrity",
+                "box office", "streaming", "netflix", "disney",
+                "album", "concert", "award", "billboard",
+                "kardashian", "taylor swift", "drake")) {
             return CATEGORY_ENTERTAINMENT;
         }
-        if (containsAny(combined, "news", "current event", "breaking", "world", "war", "conflict", "headline")) {
+        if (containsAny(combined,
+                "news", "current event", "breaking", "world",
+                "war", "conflict", "headline", "crisis",
+                "earthquake", "eruption", "terrorist", "peace",
+                "ceasefire", "treaty", "refugee", "nato", "un ")) {
             return CATEGORY_CURRENT_EVENTS;
         }
         return CATEGORY_OTHER;
+    }
+
+    /**
+     * Directly map Polymarket's sourceCategory to our normalized category.
+     * Polymarket uses tags like "crypto", "sports", "politics", "pop-culture", etc.
+     */
+    private String mapSourceCategoryDirect(String sourceCategory) {
+        if (!StringUtils.hasText(sourceCategory)) {
+            return null;
+        }
+        String lower = sourceCategory.trim().toLowerCase(Locale.ROOT);
+        // Polymarket category values: crypto, sports, politics, pop-culture, science, business, etc.
+        if (lower.contains("crypto") || lower.contains("coin") || lower.contains("defi")
+                || lower.contains("blockchain") || lower.contains("web3")) {
+            return CATEGORY_CRYPTO;
+        }
+        if (lower.contains("politic") || lower.contains("election") || lower.contains("government")) {
+            return CATEGORY_POLITICS;
+        }
+        if (lower.contains("sport") || lower.contains("nba") || lower.contains("nfl")
+                || lower.contains("mlb") || lower.contains("soccer") || lower.contains("football")
+                || lower.contains("basketball") || lower.contains("baseball") || lower.contains("tennis")
+                || lower.contains("mma") || lower.contains("boxing") || lower.contains("f1")) {
+            return CATEGORY_SPORTS;
+        }
+        if (lower.contains("entertainment") || lower.contains("pop-culture") || lower.contains("pop culture")
+                || lower.contains("music") || lower.contains("movie") || lower.contains("celebrity")
+                || lower.contains("tv")) {
+            return CATEGORY_ENTERTAINMENT;
+        }
+        if (lower.contains("business") || lower.contains("finance") || lower.contains("stock")
+                || lower.contains("tech")) {
+            return CATEGORY_BUSINESS;
+        }
+        if (lower.contains("econ") || lower.contains("macro") || lower.contains("fed")
+                || lower.contains("inflation") || lower.contains("commodit")) {
+            return CATEGORY_MACRO;
+        }
+        if (lower.contains("weather") || lower.contains("climate")) {
+            return CATEGORY_WEATHER;
+        }
+        if (lower.contains("world") || lower.contains("news") || lower.contains("conflict")
+                || lower.contains("geopolit") || lower.contains("war")) {
+            return CATEGORY_CURRENT_EVENTS;
+        }
+        // Not recognized — fall through to keyword matching
+        return null;
     }
 
     private boolean containsAny(String haystack, String... needles) {
@@ -561,6 +707,21 @@ public class SmartWalletMarketStateService {
             }
             if (StringUtils.hasText(row.getSourceCategory())) {
                 return row.getSourceCategory().trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstNormalizedCategory(List<SmartWalletMarketInfoEntity> rows) {
+        if (rows == null) {
+            return null;
+        }
+        for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (StringUtils.hasText(row.getNormalizedCategory())) {
+                return row.getNormalizedCategory().trim();
             }
         }
         return null;

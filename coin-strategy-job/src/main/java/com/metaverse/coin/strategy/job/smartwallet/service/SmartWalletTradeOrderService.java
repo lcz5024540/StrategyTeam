@@ -153,6 +153,18 @@ public class SmartWalletTradeOrderService {
         return count;
     }
 
+    /**
+     * Detect trade orders stuck in OPEN while their positions are already terminal
+     * (CLOSED / RESOLVED_UNCLAIMED / CLAIMED), and rebuild them.
+     */
+    public int repairStaleTradeOrders() {
+        List<Long> stalePositionIds = tradeOrderMapper.findStaleOpenPositionIds();
+        if (stalePositionIds.isEmpty()) {
+            return 0;
+        }
+        return rebuildByPositionIds(stalePositionIds);
+    }
+
     public int rebuildAll(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 10_000));
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
@@ -379,7 +391,10 @@ public class SmartWalletTradeOrderService {
         BigDecimal totalPnl = totalRealized.add(unrealized).setScale(8, RoundingMode.HALF_UP);
         BigDecimal settlementProceeds = sumLedger(ledgers, "SETTLEMENT_PROCEEDS");
         BigDecimal settlementPnl = totalRealized.subtract(exitRealized).setScale(8, RoundingMode.HALF_UP);
-        boolean settled = isSettled(position.getStatus());
+        // Position is settled if status is RESOLVED_UNCLAIMED/CLAIMED,
+        // or if CLOSED with no exit fills (closed through market resolution, not user selling)
+        boolean settled = isSettled(position.getStatus())
+                || ("CLOSED".equalsIgnoreCase(position.getStatus()) && exitFills.isEmpty());
         BigDecimal settlementPrice = settled && safe(position.getLastMarkPrice()).compareTo(BigDecimal.ZERO) >= 0
                 ? safe(position.getLastMarkPrice())
                 : null;
@@ -425,9 +440,10 @@ public class SmartWalletTradeOrderService {
     private SmartWalletTradeOrderView toView(SmartWalletTradeOrderEntity entity) {
         SmartWalletMarketInfoEntity marketInfo = entity.getMarketInfoId() == null ? null : marketInfoMapper.selectById(entity.getMarketInfoId());
         entity.setMarketInfo(marketInfo);
-        SmartWalletMarketLinkView link = StringUtils.hasText(entity.getMarketSlug())
-                ? marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug())
-                : marketLinkService.resolve(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        SmartWalletMarketLinkView link = marketLinkService.resolve(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        if (link == null && StringUtils.hasText(entity.getMarketSlug())) {
+            link = marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug());
+        }
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
                 .eq(SmartWalletOrderEntity::getPositionId, entity.getPositionId())
                 .orderByAsc(SmartWalletOrderEntity::getPlacedAt)
@@ -503,7 +519,14 @@ public class SmartWalletTradeOrderService {
         if ("OPEN".equals(status) && safe(exitQuantity).compareTo(BigDecimal.ZERO) > 0) {
             return "PARTIALLY_EXITED";
         }
+        if ("RESOLVED_UNCLAIMED".equals(status) || "CLAIMED".equals(status)) {
+            return "SETTLED";
+        }
         if ("CLOSED".equals(status)) {
+            // No exit fills → closed through market resolution (settlement), not user selling
+            if (safe(exitQuantity).compareTo(BigDecimal.ZERO) <= 0) {
+                return "SETTLED";
+            }
             return "EXITED";
         }
         return status;
@@ -539,8 +562,7 @@ public class SmartWalletTradeOrderService {
         if (!"ACTIVE".equalsIgnoreCase(entity.getMarketLifecycle())) return false;
         if (Boolean.TRUE.equals(entity.getClosed())) return false;
         if (entity.getAcceptingOrders() != null && !entity.getAcceptingOrders()) return false;
-        Long endAt = entity.getMarketEndAt();
-        return endAt == null || endAt <= 0 || endAt > System.currentTimeMillis();
+        return true;
     }
 
     private boolean contains(String value, String needle) {
@@ -549,7 +571,8 @@ public class SmartWalletTradeOrderService {
 
     private boolean isSettled(String status) {
         String normalized = normalize(status);
-        return "RESOLVED_UNCLAIMED".equals(normalized) || "CLAIMED".equals(normalized);
+        return "RESOLVED_UNCLAIMED".equals(normalized) || "CLAIMED".equals(normalized)
+                || "SETTLED".equals(normalized);
     }
 
     private BigDecimal sumLedger(List<SmartWalletCashLedgerEntity> ledgers, String entryType) {

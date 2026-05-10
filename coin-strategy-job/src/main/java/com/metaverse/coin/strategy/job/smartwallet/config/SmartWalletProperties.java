@@ -15,6 +15,11 @@ public class SmartWalletProperties {
 
     private boolean enabled = true;
     private boolean autoExecutionEnabled = false;
+    /**
+     * 白名单钱包是否允许 LIVE 执行。默认 false（仅 PAPER）。
+     * 开启后，仍需白名单条目 allowedExecutionModes 包含 LIVE 且 autoExecutionEnabled=true 才真正走 LIVE。
+     */
+    private boolean allowlistLiveEnabled = false;
     private boolean scanEnabled = true;
     private boolean runtimeConfigApiEnabled = false;
     private boolean requireTagMatch = true;
@@ -492,6 +497,10 @@ public class SmartWalletProperties {
     public static class CapitalRecycle {
         /** 是否启用资金回收退出 */
         private boolean enabled = false;
+        /** PAPER 环境是否允许资金回收自动退出。默认关闭，仅保留持仓监控。 */
+        private boolean paperEnabled = false;
+        /** LIVE 环境是否允许资金回收自动退出。 */
+        private boolean liveEnabled = true;
         /** 持仓超过该小时数才进入候选（默认 8 小时） */
         private int holdingPeriodHours = 8;
         /** 死区下界（ROI 低于此值不回收，留给止损处理） */

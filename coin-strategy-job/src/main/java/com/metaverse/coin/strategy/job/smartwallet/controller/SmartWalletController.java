@@ -48,6 +48,9 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonito
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualBlocklistRequest;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualBlocklistSummaryView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualBlocklistView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketLinkView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairSummary;
@@ -116,6 +119,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileVi
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.AbnormalMarketReviewService;
 import com.metaverse.coin.strategy.job.smartwallet.service.ClosedPositionIncrementalSyncService;
+import com.metaverse.coin.strategy.job.smartwallet.service.ClosedPositionSyncDispatcher;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketProductOverviewService;
@@ -127,10 +131,12 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowServ
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletClaimService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletLiveValidationService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketStateService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketLinkService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketRepairService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletManualBlocklistService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
@@ -208,6 +214,8 @@ public class SmartWalletController {
     private final SmartWalletFollowTaskService followTaskService;
     private final SmartWalletClaimService claimService;
     private final SmartWalletLiveValidationService liveValidationService;
+    private final SmartWalletMarketStateService marketStateService;
+    private final ClosedPositionSyncDispatcher closedPositionSyncDispatcher;
     private final SmartWalletMarketRepairService smartWalletMarketRepairService;
     private final SmartWalletMarketLinkService marketLinkService;
     private final SmartWalletTradeOrderService tradeOrderService;
@@ -234,23 +242,21 @@ public class SmartWalletController {
     private final SmartWalletReplayBacktestService smartWalletReplayBacktestService;
     private final SmartWalletMarketMonitoringService smartWalletMarketMonitoringService;
     private final SmartWalletManualAllowlistService smartWalletManualAllowlistService;
+    private final SmartWalletManualBlocklistService smartWalletManualBlocklistService;
     private final AbnormalMarketReviewService abnormalMarketReviewService;
     private final LeaderTradeOutcomeRebuildService leaderTradeOutcomeRebuildService;
     private final SmartWalletProfileTruthRefreshService smartWalletProfileTruthRefreshService;
 
+    /** 异步回填任务状态存储（进程内，重启丢失） */
+    private final java.util.concurrent.ConcurrentHashMap<String, Map<String, Object>> metricsRebuildJobs = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
     public Map<String, Object> health() {
-        int candidateWatchlist = polymarketMonitorService.listQualifiedCandidates().size();
-        int executableWatchlist = polymarketMonitorService.listExecutableWatchlist().size();
+        long profileCount = smartWalletProfileStoreService.countPolymarketProfiles();
         return Map.of(
                 "service", "smart-wallet",
-                "profiles", polymarketMonitorService.listProfiles().size(),
-                "candidateWatchlist", candidateWatchlist,
-                "executableWatchlist", executableWatchlist,
-                "watchlist", executableWatchlist,
-                "wallets", followService.listWalletsForScan().size(),
-                "markets", opportunityService.list().size(),
+                "profiles", profileCount,
                 "status", "UP"
         );
     }
@@ -476,6 +482,43 @@ public class SmartWalletController {
         return Map.of("updated", smartWalletManualAllowlistService.cleanupExpired());
     }
 
+    @Operation(summary = "手工地址阻断名单列表", description = "查看当前永久阻断的钱包地址。命中后不会参与 discovery、观察、信号或跟单。")
+    @GetMapping("/blocklist")
+    public List<SmartWalletManualBlocklistView> manualBlocklist(@RequestParam(defaultValue = "100") Integer limit) {
+        return smartWalletManualBlocklistService.list(limit);
+    }
+
+    @Operation(summary = "新增或更新手工地址阻断名单", description = "创建或更新 blocklist 项。默认 ACTIVE、永久阻断。")
+    @PostMapping("/blocklist")
+    public SmartWalletManualBlocklistView upsertManualBlocklist(@RequestBody SmartWalletManualBlocklistRequest request) {
+        return smartWalletManualBlocklistService.upsert(request);
+    }
+
+    @Operation(summary = "批量新增或更新手工地址阻断名单", description = "批量创建或更新 blocklist 项。默认 ACTIVE、永久阻断。")
+    @PostMapping("/blocklist/batch")
+    public List<SmartWalletManualBlocklistView> upsertManualBlocklistBatch(@RequestBody SmartWalletManualBlocklistRequest request) {
+        return smartWalletManualBlocklistService.upsertBatch(request);
+    }
+
+    @Operation(summary = "按地址更新手工地址阻断名单", description = "按路径地址创建或更新 blocklist 项。")
+    @PostMapping("/blocklist/{walletAddress}")
+    public SmartWalletManualBlocklistView upsertManualBlocklistByWallet(@PathVariable String walletAddress,
+                                                                        @RequestBody(required = false) SmartWalletManualBlocklistRequest request) {
+        return smartWalletManualBlocklistService.upsert(walletAddress, request);
+    }
+
+    @Operation(summary = "禁用手工地址阻断名单", description = "将指定地址 blocklist 项置为 DISABLED。")
+    @PostMapping("/blocklist/{walletAddress}/disable")
+    public SmartWalletManualBlocklistView disableManualBlocklist(@PathVariable String walletAddress) {
+        return smartWalletManualBlocklistService.disable(walletAddress);
+    }
+
+    @Operation(summary = "手工地址阻断名单摘要", description = "聚合 blocklist 总数、活跃数和禁用数。")
+    @GetMapping("/blocklist/summary")
+    public SmartWalletManualBlocklistSummaryView manualBlocklistSummary() {
+        return smartWalletManualBlocklistService.summary();
+    }
+
     @Operation(summary = "人工覆盖筛选候选", description = "按 scope、recommendedExitLane、watchEnabled、manualWatchEnabled、updatedWithinHours 等条件筛出一批可执行运营动作的地址。")
     @GetMapping("/profiles/overrides/candidates")
     public List<SmartWalletProfileOpsCandidateView> profileOverrideCandidates(
@@ -496,7 +539,7 @@ public class SmartWalletController {
                 : System.currentTimeMillis() - java.util.concurrent.TimeUnit.HOURS.toMillis(Math.max(updatedWithinHours, 0));
 
         return resolveWatchlistScope(scope).stream()
-                .map(profile -> toOpsCandidateView(profile, walletBehaviorProfileService.buildProfile(profile)))
+                .map(profile -> toOpsCandidateView(profile, walletBehaviorProfileService.getProfile(profile.getWalletAddress())))
                 .filter(candidate -> matchesOverrideCandidateFilters(
                         candidate,
                         recommendedExitLane,
@@ -584,11 +627,18 @@ public class SmartWalletController {
                 "smart_wallet_watchlist_archetypes", scope);
     }
 
-    @Operation(summary = "观察名单地址行为画像", description = "分析监控地址的高频特征、订单胜率、收益率、提前退出比例，以及推荐的跟单退出节奏。")
+    @Operation(summary = "观察名单地址行为画像", description = "读取已缓存或预计算的监控地址行为画像。如需强制重算，请使用 POST /watchlist/behavior-profiles/refresh。")
     @GetMapping("/watchlist/behavior-profiles")
     public List<WalletBehaviorProfileView> watchlistBehaviorProfiles(@RequestParam(defaultValue = "30") Integer limit,
                                                                      @RequestParam(defaultValue = "candidates") String scope) {
-        return walletBehaviorProfileService.buildProfiles(resolveWatchlistScope(scope), limit);
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        return resolveWatchlistScope(scope).stream()
+                .limit(safeLimit)
+                .map(profile -> walletBehaviorProfileService.getProfile(profile.getWalletAddress()))
+                .filter(java.util.Objects::nonNull)
+                .sorted(java.util.Comparator.comparing(WalletBehaviorProfileView::replicabilityScore,
+                        java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())))
+                .toList();
     }
 
     @Operation(summary = "刷新并落库地址行为画像", description = "按 scope 批量重算监控地址行为画像，并 upsert 到 smart_wallet_behavior_profile 表。")
@@ -603,32 +653,52 @@ public class SmartWalletController {
         );
     }
 
-    @Operation(summary = "批量回填地址画像口径", description = "按 scope 批量重算 order-analysis、order-stats 依赖与 behavior profile。")
+    @Operation(summary = "批量回填地址画像口径（异步）", description = "按 scope 批量重算 order-analysis、order-stats 依赖与 behavior profile。立即返回 jobId，后台线程处理。")
     @PostMapping("/profiles/metrics/rebuild")
     public Map<String, Object> rebuildProfileMetrics(@RequestParam(defaultValue = "candidates") String scope,
                                                      @RequestParam(defaultValue = "30") Integer limit) {
         List<SmartWalletProfileEntity> profiles = resolveWatchlistScope(scope).stream()
                 .limit(Math.max(1, Math.min(limit, 500)))
                 .toList();
-        int rebuiltOrders = 0;
-        int rebuiltProfiles = 0;
-        for (SmartWalletProfileEntity profile : profiles) {
-            if (profile == null || !StringUtils.hasText(profile.getWalletAddress())) {
-                continue;
+        String jobId = "rebuild-" + System.currentTimeMillis();
+        metricsRebuildJobs.put(jobId, Map.of("status", "RUNNING", "scope", scope, "walletCount", profiles.size(),
+                "rebuiltOrders", 0, "rebuiltProfiles", 0, "startedAt", System.currentTimeMillis()));
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            int rebuiltOrders = 0;
+            int rebuiltProfiles = 0;
+            try {
+                for (SmartWalletProfileEntity profile : profiles) {
+                    if (profile == null || !StringUtils.hasText(profile.getWalletAddress())) {
+                        continue;
+                    }
+                    smartWalletOrderAnalysisService.analyzeAndPersist(profile.getWalletAddress());
+                    walletOrderStatsService.summarize(profile.getWalletAddress(), "all");
+                    walletBehaviorProfileService.buildProfile(profile);
+                    rebuiltOrders++;
+                    rebuiltProfiles++;
+                }
+                metricsRebuildJobs.put(jobId, Map.of("status", "COMPLETED", "scope", scope,
+                        "walletCount", profiles.size(), "rebuiltOrders", rebuiltOrders,
+                        "rebuiltProfiles", rebuiltProfiles, "completedAt", System.currentTimeMillis()));
+            } catch (Exception e) {
+                log.error("[metrics-rebuild] jobId={} failed: {}", jobId, e.getMessage(), e);
+                metricsRebuildJobs.put(jobId, Map.of("status", "FAILED", "scope", scope,
+                        "walletCount", profiles.size(), "rebuiltOrders", rebuiltOrders,
+                        "rebuiltProfiles", rebuiltProfiles, "error", e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
             }
-            smartWalletOrderAnalysisService.analyzeAndPersist(profile.getWalletAddress());
-            walletOrderStatsService.summarize(profile.getWalletAddress(), "all");
-            walletBehaviorProfileService.buildProfile(profile);
-            rebuiltOrders++;
-            rebuiltProfiles++;
+        });
+        return Map.of("jobId", jobId, "status", "ACCEPTED", "scope", scope,
+                "walletCount", profiles.size());
+    }
+
+    @Operation(summary = "查询画像回填任务状态", description = "根据 jobId 查询异步回填任务的执行进度。")
+    @GetMapping("/profiles/metrics/rebuild/{jobId}")
+    public Map<String, Object> rebuildProfileMetricsStatus(@PathVariable String jobId) {
+        Map<String, Object> job = metricsRebuildJobs.get(jobId);
+        if (job == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId);
         }
-        return Map.of(
-                "scope", scope,
-                "limit", limit,
-                "walletCount", profiles.size(),
-                "orderAnalysisRebuilt", rebuiltOrders,
-                "behaviorProfilesRebuilt", rebuiltProfiles
-        );
+        return job;
     }
 
     private List<SmartWalletProfileEntity> resolveWatchlistScope(String scope) {
@@ -649,7 +719,7 @@ public class SmartWalletController {
                 .limit(Math.max(1, Math.min(limit, 200)))
                 .map(profile -> enrichArchetypeView(
                         walletArchetypeClassifierService.classify(profile.getWalletAddress(), profile),
-                        walletBehaviorProfileService.buildProfile(profile)
+                        walletBehaviorProfileService.getProfile(profile.getWalletAddress())
                 ))
                 .toList();
     }
@@ -896,10 +966,10 @@ public class SmartWalletController {
         return predictionMarketDataApplicationService.backfillLocalClosedPositions(directory, limit, dryRun);
     }
 
-    @Operation(summary = "跟单任务列表", description = "查看生成的跟单任务，可选带实时风控评估结果。")
+    @Operation(summary = "跟单任务列表", description = "查看生成的跟单任务。includeRiskEvaluation=true 会触发逐条风控评估，请仅在需要时开启。")
     @GetMapping("/follow-tasks")
-    public List<SmartWalletFollowTaskView> followTasks(@RequestParam(defaultValue = "100") Integer limit,
-                                                       @RequestParam(defaultValue = "true") boolean includeRiskEvaluation) {
+    public List<SmartWalletFollowTaskView> followTasks(@RequestParam(defaultValue = "50") Integer limit,
+                                                       @RequestParam(defaultValue = "false") boolean includeRiskEvaluation) {
         return followTaskApplicationService.listTasks(limit, includeRiskEvaluation);
     }
 
@@ -1265,6 +1335,105 @@ public class SmartWalletController {
         return Map.of("rebuilt", rebuilt);
     }
 
+    @Operation(summary = "修复滞留订单", description = "检测并修复状态仍为 OPEN 但其 position 已进入终态的订单记录。")
+    @PostMapping("/trade-orders/repair-stale")
+    public Map<String, Object> repairStaleTradeOrders() {
+        int repaired = tradeOrderService.repairStaleTradeOrders();
+        return Map.of("repaired", repaired);
+    }
+
+    @Operation(summary = "重新分类市场", description = "使用最新的分类规则重新分析所有市场类别，修复被错误分为 OTHER 的市场。")
+    @PostMapping("/markets/recategorize")
+    public Map<String, Object> recategorizeMarkets() {
+        int updated = marketStateService.recategorizeAll();
+        return Map.of("updated", updated);
+    }
+
+    @Operation(summary = "全量修复跟单地址交易数据（异步）",
+            description = "按 HOT → WARM → COLD 顺序，逐地址增量拉取 closed-positions 并刷新 active positions。"
+                    + "单线程顺序处理，避免内存溢出。立即返回 jobId，后台执行。")
+    @PostMapping("/profiles/sync-all-positions")
+    public Map<String, Object> syncAllPositions(
+            @RequestParam(defaultValue = "50") Integer batchSize) {
+        int safeBatch = Math.max(5, Math.min(batchSize, 200));
+        String jobId = "sync-all-positions-" + System.currentTimeMillis();
+        metricsRebuildJobs.put(jobId, Map.of(
+                "status", "RUNNING",
+                "currentTier", "HOT",
+                "hotResult", Map.of(),
+                "warmResult", Map.of(),
+                "coldResult", Map.of(),
+                "startedAt", System.currentTimeMillis()));
+        final int batch = safeBatch;
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            Map<String, Object> hotResult = Map.of();
+            Map<String, Object> warmResult = Map.of();
+            Map<String, Object> coldResult = Map.of();
+            try {
+                // Phase 1: HOT addresses — most active, most likely to have missed recent trades
+                metricsRebuildJobs.put(jobId, Map.of(
+                        "status", "RUNNING", "currentTier", "HOT",
+                        "hotResult", Map.of(), "warmResult", Map.of(), "coldResult", Map.of(),
+                        "startedAt", System.currentTimeMillis()));
+                hotResult = dispatchTierSync("HOT", batch);
+
+                // Phase 2: WARM addresses
+                metricsRebuildJobs.put(jobId, Map.of(
+                        "status", "RUNNING", "currentTier", "WARM",
+                        "hotResult", hotResult, "warmResult", Map.of(), "coldResult", Map.of(),
+                        "startedAt", System.currentTimeMillis()));
+                warmResult = dispatchTierSync("WARM", batch);
+
+                // Phase 3: COLD addresses
+                metricsRebuildJobs.put(jobId, Map.of(
+                        "status", "RUNNING", "currentTier", "COLD",
+                        "hotResult", hotResult, "warmResult", warmResult, "coldResult", Map.of(),
+                        "startedAt", System.currentTimeMillis()));
+                coldResult = dispatchTierSync("COLD", batch);
+
+                metricsRebuildJobs.put(jobId, Map.of(
+                        "status", "COMPLETED",
+                        "hotResult", hotResult,
+                        "warmResult", warmResult,
+                        "coldResult", coldResult,
+                        "completedAt", System.currentTimeMillis()));
+            } catch (Exception e) {
+                log.error("[sync-all-positions] jobId={} failed at current phase: {}", jobId, e.getMessage(), e);
+                metricsRebuildJobs.put(jobId, Map.of(
+                        "status", "FAILED",
+                        "hotResult", hotResult,
+                        "warmResult", warmResult,
+                        "coldResult", coldResult,
+                        "error", e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
+            }
+        });
+        return Map.of("jobId", jobId, "status", "ACCEPTED", "batchSize", safeBatch);
+    }
+
+    @Operation(summary = "查询全量修复任务状态")
+    @GetMapping("/profiles/sync-all-positions/{jobId}")
+    public Map<String, Object> syncAllPositionsStatus(@PathVariable String jobId) {
+        Map<String, Object> job = metricsRebuildJobs.get(jobId);
+        if (job == null) {
+            return Map.of("status", "NOT_FOUND", "jobId", jobId);
+        }
+        return job;
+    }
+
+    private Map<String, Object> dispatchTierSync(String tier, int batchSize) {
+        long tierStart = System.currentTimeMillis();
+        ClosedPositionSyncDispatcher.DispatchResult result =
+                closedPositionSyncDispatcher.dispatchIncremental(java.util.List.of(tier), batchSize);
+        long elapsedMs = System.currentTimeMillis() - tierStart;
+        return Map.of(
+                "tier", tier,
+                "total", result.total(),
+                "ok", result.ok(),
+                "failed", result.failed(),
+                "inserted", result.inserted(),
+                "elapsedMs", elapsedMs);
+    }
+
     @Operation(summary = "导出订单 CSV", description = "导出 PAPER 或 LIVE 的订单记录，包含总手续费、交易手续费、链上手续费和 POL。")
     @GetMapping(value = "/orders/export", produces = "text/csv")
     public ResponseEntity<StreamingResponseBody> exportOrders(@RequestParam(defaultValue = "5000") Integer limit,
@@ -1363,11 +1532,21 @@ public class SmartWalletController {
                 "smart_wallet_next_settlements", mode);
     }
 
-    @Operation(summary = "历史持仓", description = "查看历史持仓，可选只返回 closed/resolved 记录。")
+    @Operation(summary = "历史持仓（分页）", description = "查看历史持仓，可选只返回 closed/resolved 记录。强制分页，默认 page=1, size=50。")
     @GetMapping("/positions/history")
-    public List<SmartWalletPositionView> positionHistory(@RequestParam(defaultValue = "false") boolean closedOnly,
-                                                         @RequestParam(required = false) String mode) {
-        return accountingService.listPositions(closedOnly, mode);
+    public OffsetPageView<SmartWalletPositionView> positionHistory(
+            @RequestParam(defaultValue = "false") boolean closedOnly,
+            @RequestParam(required = false) String mode,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        int safeSize = Math.max(1, Math.min(size, 200));
+        int safePage = Math.max(1, page);
+        List<SmartWalletPositionView> all = accountingService.listPositions(closedOnly, mode);
+        int totalItems = all.size();
+        int fromIndex = Math.min((safePage - 1) * safeSize, totalItems);
+        int toIndex = Math.min(fromIndex + safeSize, totalItems);
+        List<SmartWalletPositionView> pageItems = all.subList(fromIndex, toIndex);
+        return OffsetPageView.of(pageItems, safePage, safeSize, totalItems);
     }
 
     @Operation(summary = "导出历史持仓 CSV", description = "导出历史持仓，可选只导出 closed/resolved 记录。")
@@ -1398,8 +1577,8 @@ public class SmartWalletController {
 
     @Operation(summary = "盈亏汇总", description = "查看总订单、胜率、已实现与未实现盈亏等总览。")
     @GetMapping("/pnl/summary")
-    public SmartWalletPnlSummaryView pnlSummary() {
-        return strategyAnalyticsApplicationService.pnlSummary();
+    public SmartWalletPnlSummaryView pnlSummary(@RequestParam(required = false) String mode) {
+        return accountingService.summary(mode);
     }
 
     @Operation(summary = "绩效报表", description = "查看胜率、盈亏比、回撤、冲突市场等综合绩效指标。")

@@ -453,6 +453,20 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_manual_allowlist` (
     KEY `idx_sw_manual_allowlist_updated` (`updated_at`)
  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 手工地址白名单';
 
+CREATE TABLE IF NOT EXISTS `smart_wallet_manual_blocklist` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '阻断钱包地址，小写归一化',
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/DISABLED',
+    `reason` VARCHAR(255) DEFAULT NULL COMMENT '阻断原因',
+    `created_by` VARCHAR(64) DEFAULT NULL COMMENT '创建人',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_sw_manual_blocklist_wallet_source` (`wallet_address`, `source`),
+    KEY `idx_sw_manual_blocklist_status` (`status`),
+    KEY `idx_sw_manual_blocklist_updated` (`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 手工地址阻断名单';
+
 
 CREATE TABLE IF NOT EXISTS `smart_wallet_trade_order` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '生命周期主单ID',

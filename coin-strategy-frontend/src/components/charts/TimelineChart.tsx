@@ -159,7 +159,7 @@ export function TimelineChart({ data, bucketHours = 24 }: TimelineChartProps) {
         symbolSize: 6,
       },
       {
-        name: '累计亏损额',
+        name: '累计毛亏损',
         type: 'line',
         smooth: true,
         data: cumulativeLoss,

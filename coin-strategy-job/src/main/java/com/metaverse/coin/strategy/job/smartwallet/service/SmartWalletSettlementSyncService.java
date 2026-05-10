@@ -19,6 +19,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncStatusVie
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -50,6 +51,7 @@ public class SmartWalletSettlementSyncService {
     private final SmartWalletSettlementRetryMapper settlementRetryMapper;
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicInteger invocationCount = new AtomicInteger(0);
 
@@ -127,6 +129,18 @@ public class SmartWalletSettlementSyncService {
                     summary.getResolvedPositions(),
                     summary.getOraclePendingMarkets(),
                     summary.getFailedMarkets());
+        }
+        // Repair any trade orders stuck in OPEN while their positions have settled
+        try {
+            SmartWalletTradeOrderService tradeOrderService = tradeOrderServiceProvider.getIfAvailable();
+            if (tradeOrderService != null) {
+                int repaired = tradeOrderService.repairStaleTradeOrders();
+                if (repaired > 0) {
+                    log.info("Repaired {} stale trade orders after settlement sync", repaired);
+                }
+            }
+        } catch (RuntimeException ex) {
+            log.warn("Failed to repair stale trade orders: {}", ex.getMessage());
         }
     }
 

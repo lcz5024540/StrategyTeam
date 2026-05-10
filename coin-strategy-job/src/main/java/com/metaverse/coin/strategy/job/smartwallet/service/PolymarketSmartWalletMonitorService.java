@@ -83,32 +83,6 @@ public class PolymarketSmartWalletMonitorService {
         return saved;
     }
 
-    /**
-     * 白名单直通模式 —— 导入交易事件并直接创建 PENDING 跟单任务，跳过全部准入/风控判定。
-     */
-    public SmartWalletTradeEventEntity ingestTradeEventForAllowlistDirect(PolymarketTradeEventRequest request) {
-        BigDecimal normalizedPrice = safe(request.getPrice());
-        BigDecimal normalizedShares = resolveShares(request, normalizedPrice);
-        BigDecimal normalizedNotionalUsdc = resolveNotionalUsdc(request, normalizedPrice, normalizedShares);
-        log.info("{} action=白名单直通导入交易 wallet={} marketId={} outcome={} side={} externalTradeId={} price={} sizeUsdc={}",
-                LOG_PREFIX, request.getWalletAddress(), request.getMarketId(), request.getOutcome(),
-                request.getSide(), request.getExternalTradeId(), normalizedPrice, normalizedNotionalUsdc);
-        SmartWalletTradeEventEntity event = new SmartWalletTradeEventEntity()
-                .setWalletAddress(request.getWalletAddress())
-                .setChain(request.getChain())
-                .setSource(SOURCE)
-                .setExternalTradeId(request.getExternalTradeId())
-                .setMarketId(request.getMarketId())
-                .setQuestion(request.getQuestion())
-                .setOutcome(normalizeUpper(request.getOutcome(), "YES"))
-                .setSide(normalizeUpper(request.getSide(), "BUY"))
-                .setPrice(normalizedPrice)
-                .setSizeShares(normalizedShares)
-                .setSizeUsdc(normalizedNotionalUsdc)
-                .setOpenedAt(request.getOpenedAt() == null ? new Date() : request.getOpenedAt());
-        return followTaskService.recordTradeEventForAllowlistDirect(event);
-    }
-
     private String openedAtBjt(Date openedAt) {
         Long millis = openedAtMillis(openedAt);
         return millis == null ? null : timeFormatter.formatEpochMillisToBjt(millis);

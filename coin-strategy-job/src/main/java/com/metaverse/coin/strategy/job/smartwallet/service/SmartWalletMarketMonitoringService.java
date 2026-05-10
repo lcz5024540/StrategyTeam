@@ -45,6 +45,7 @@ public class SmartWalletMarketMonitoringService {
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter BJT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
             .withZone(SHANGHAI);
+    private static final long DATASET_CACHE_TTL_MS = 60_000L;
 
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final SmartWalletFollowTaskMapper followTaskMapper;
@@ -54,6 +55,10 @@ public class SmartWalletMarketMonitoringService {
     private final SmartWalletMarketStateService marketStateService;
     private final MarketConcentrationSnapshotService concentrationSnapshotService;
     private final MarketSnapshotCollectorService marketSnapshotCollectorService;
+
+    private volatile MarketDataset cachedTableDataset;
+    private volatile int cachedTableDatasetLookbackDays;
+    private volatile long cachedTableDatasetExpiresAt;
 
     public SmartWalletMarketMonitoringSummaryView summary(Integer limit, Integer lookbackDays, Integer trendDays) {
         int safeLimit = limit == null ? 40 : Math.max(10, Math.min(limit, 120));
@@ -99,7 +104,7 @@ public class SmartWalletMarketMonitoringService {
         int safeLookbackDays = lookbackDays == null ? 14 : Math.max(3, Math.min(lookbackDays, 90));
         int safePageSize = pageSize == null ? 10 : Math.max(5, Math.min(pageSize, 100));
         int safePage = page == null ? 1 : Math.max(page, 1);
-        MarketDataset dataset = buildDataset(500, safeLookbackDays);
+        MarketDataset dataset = getOrBuildTableDataset(safeLookbackDays);
 
         List<SmartWalletMarketMonitorItemView> filteredRows = dataset.rows().stream()
                 .filter(row -> matchesKeyword(row, keyword))
@@ -120,27 +125,52 @@ public class SmartWalletMarketMonitoringService {
         return OffsetPageView.of(pageItems, resolvedPage, safePageSize, totalItems);
     }
 
+    private MarketDataset getOrBuildTableDataset(int lookbackDays) {
+        long now = System.currentTimeMillis();
+        MarketDataset cached = this.cachedTableDataset;
+        if (cached != null && now < cachedTableDatasetExpiresAt && lookbackDays == cachedTableDatasetLookbackDays) {
+            return cached;
+        }
+        MarketDataset fresh = buildDataset(500, lookbackDays);
+        this.cachedTableDataset = fresh;
+        this.cachedTableDatasetLookbackDays = lookbackDays;
+        this.cachedTableDatasetExpiresAt = now + DATASET_CACHE_TTL_MS;
+        return fresh;
+    }
+
     private void enrichOutcomePrices(List<SmartWalletMarketMonitorItemView> items) {
         if (items == null || items.isEmpty()) {
             return;
         }
-        for (SmartWalletMarketMonitorItemView item : items) {
+        // 批量获取所有需要的 marketId 的快照，避免 N+1 查询
+        List<String> marketIds = items.stream()
+                .map(SmartWalletMarketMonitorItemView::getMarketId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        Map<String, BigDecimal> yesPriceByMarket = new LinkedHashMap<>();
+        Map<String, BigDecimal> noPriceByMarket = new LinkedHashMap<>();
+        Date now = new Date();
+        for (String marketId : marketIds) {
             try {
-                var yesSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
-                        item.getMarketId(), "YES", new Date());
-                var noSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
-                        item.getMarketId(), "NO", new Date());
-                BigDecimal yesPrice = yesSnapshot != null && yesSnapshot.getMidPrice() != null
-                        ? yesSnapshot.getMidPrice() : null;
-                BigDecimal noPrice = noSnapshot != null && noSnapshot.getMidPrice() != null
-                        ? noSnapshot.getMidPrice() : null;
-                if (yesPrice != null || noPrice != null) {
-                    String yes = yesPrice != null ? yesPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
-                    String no = noPrice != null ? noPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
-                    item.setOutcomePrices(yes + " / " + no);
+                var yesSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(marketId, "YES", now);
+                var noSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(marketId, "NO", now);
+                if (yesSnapshot != null && yesSnapshot.getMidPrice() != null) {
+                    yesPriceByMarket.put(marketId, yesSnapshot.getMidPrice());
                 }
-            } catch (Exception ex) {
-                // silently skip price enrichment for individual items
+                if (noSnapshot != null && noSnapshot.getMidPrice() != null) {
+                    noPriceByMarket.put(marketId, noSnapshot.getMidPrice());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        for (SmartWalletMarketMonitorItemView item : items) {
+            BigDecimal yesPrice = yesPriceByMarket.get(item.getMarketId());
+            BigDecimal noPrice = noPriceByMarket.get(item.getMarketId());
+            if (yesPrice != null || noPrice != null) {
+                String yes = yesPrice != null ? yesPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
+                String no = noPrice != null ? noPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
+                item.setOutcomePrices(yes + " / " + no);
             }
         }
     }
@@ -439,10 +469,6 @@ public class SmartWalletMarketMonitoringService {
         if (accumulator == null) {
             return false;
         }
-        Long marketEndAt = firstNonNull(snapshot == null ? null : snapshot.marketEndAt(), accumulator.marketEndAt);
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
-            return false;
-        }
         if (snapshot != null) {
             return snapshot.isActive();
         }
@@ -472,8 +498,7 @@ public class SmartWalletMarketMonitoringService {
         if (!isActiveLifecycle(marketInfo.getMarketLifecycle())) {
             return false;
         }
-        Long marketEndAt = marketInfo.getMarketEndAt();
-        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+        return true;
     }
 
     private boolean isActiveLifecycle(String lifecycle) {

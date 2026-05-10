@@ -1,6 +1,8 @@
 import { apiClient } from './client'
 import type {
   CursorPageView,
+  SmartWalletManualAllowlistView,
+  SmartWalletManualBlocklistView,
   SmartWalletProfileOverrideRequest,
   WalletDiagnosisView,
   WalletOrderAnalysisView,
@@ -39,6 +41,12 @@ interface OrderStatsParams {
 export const profilesApi = {
   getScreener: (params: ScreenerParams = {}): Promise<CursorPageView<WalletScreenerView>> =>
     apiClient.get('/strategy/api/smart-wallet/profiles/screener', { params }),
+
+  getAllowlist: (limit = 100): Promise<SmartWalletManualAllowlistView[]> =>
+    apiClient.get('/strategy/api/smart-wallet/allowlist', { params: { limit } }),
+
+  getBlocklist: (limit = 200): Promise<SmartWalletManualBlocklistView[]> =>
+    apiClient.get('/strategy/api/smart-wallet/blocklist', { params: { limit } }),
 
   getDiagnosis: (walletAddress: string, refreshOrderAnalysis = false): Promise<WalletDiagnosisView> =>
     apiClient.get(`/strategy/api/smart-wallet/profiles/${walletAddress}/diagnosis`, {
