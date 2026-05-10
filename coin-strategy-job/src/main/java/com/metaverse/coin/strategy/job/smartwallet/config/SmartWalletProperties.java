@@ -195,7 +195,11 @@ public class SmartWalletProperties {
         private Integer maxSignalAgeSeconds = 3600;
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         /** 跟单金额相对源钱包本次真实触发名义本金的最大倍数；<=0 表示不限制 */
-        private BigDecimal maxStakeToTriggerNotionalRatio = BigDecimal.ONE;
+        private BigDecimal maxStakeToTriggerNotionalRatio = new BigDecimal("0.10");
+        /** 单笔跟单金额占当前可用资金的最大比例，避免用小资金账户照搬大户仓位。<=0 表示不限制 */
+        private BigDecimal maxSingleOrderCapitalRatio = new BigDecimal("0.01");
+        /** 是否要求 leader 在同一 market/outcome 上仍持有盈利仓位后才允许跟单 */
+        private boolean requireLeaderProfitableActivePosition = true;
         private BigDecimal minFollowPrice = new BigDecimal("0.02");
         private BigDecimal maxFollowPrice = new BigDecimal("0.98");
         private boolean enableEntryTimingGate = false;

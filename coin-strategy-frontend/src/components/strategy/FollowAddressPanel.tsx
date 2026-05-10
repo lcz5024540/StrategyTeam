@@ -105,6 +105,14 @@ function buildPolymarketProfileUrl(row: Pick<WalletScreenerView, 'walletAddress'
   return row.walletAddress ? `https://polymarket.com/profile/${row.walletAddress.trim()}` : ''
 }
 
+function buildPolymarketProfileUrlFromAddress(walletAddress: string | null | undefined, alias?: string | null) {
+  const normalizedAlias = alias?.trim()
+  if (normalizedAlias && /^@[A-Za-z0-9_.-]+$/.test(normalizedAlias)) {
+    return `https://polymarket.com/${normalizedAlias}`
+  }
+  return walletAddress ? `https://polymarket.com/profile/${walletAddress.trim()}` : ''
+}
+
 function getArchetypeMeta(value: string | null | undefined): CodeMeta {
   const code = normalizeCode(value)
   if (code === 'HF' || code === 'HF_SCALPER') {
@@ -728,53 +736,68 @@ export function FollowAddressPanel() {
     archetypeFilter !== 'ALL' ? getArchetypeMeta(archetypeFilter).label : null,
   ].filter((item): item is string => Boolean(item))
 
-  const renderAllowlistCard = (entry: SmartWalletManualAllowlistView) => {
+  const renderAllowlistRow = (entry: SmartWalletManualAllowlistView) => {
     const row = monitoredByWallet.get(normalizeWalletAddress(entry.walletAddress))
     const archetypeMeta = getArchetypeMeta(row?.archetype)
     const followLaneMeta = getFollowLaneMeta(row?.followLane)
-    return (
-      <button
-        key={entry.walletAddress}
-        type="button"
-        className="address-card"
-        onClick={() => openWalletDetail(entry.walletAddress)}
-      >
-        <div className="address-card-top">
-          <strong>{row?.alias || compactAddress(entry.walletAddress, 8, 6)}</strong>
-          <span className="badge accent">{entry.allowedExecutionModes || 'PAPER'}</span>
-        </div>
-        <div className="address-card-meta">
-          <span title={archetypeMeta.description}>{archetypeMeta.code}</span>
-          <span title={followLaneMeta.description}>{followLaneMeta.code}</span>
-        </div>
-        <div className="address-card-metrics">
-          <span>质量 {formatPercent(row?.qualityScore)}</span>
-          <span>仓位 {entry.stakeMultiplier == null ? '-' : formatPercent(entry.stakeMultiplier)}</span>
-        </div>
-        <div className="address-card-metrics">
-          <span>7D {formatEvidencePercent(row?.recentWinRate7d, row?.dataQuality, archetypeMeta.code)}</span>
-          <span>30D {formatEvidencePercent(row?.recentWinRate30d, row?.dataQuality, archetypeMeta.code)}</span>
-        </div>
-        <div className="address-card-metrics">
-          <span>{entry.status}</span>
-          <span>{entry.expiresAt ? new Date(entry.expiresAt).toLocaleDateString('zh-CN') : '不过期'}</span>
-        </div>
-        <div className="address-card-summary">{truncateText(entry.reason || row?.summary, 120) || compactAddress(entry.walletAddress, 10, 6)}</div>
-      </button>
-    )
-  }
-
-  const renderBlocklistRow = (entry: SmartWalletManualBlocklistView) => {
-    const row = monitoredByWallet.get(normalizeWalletAddress(entry.walletAddress))
+    const polymarketProfileUrl = buildPolymarketProfileUrlFromAddress(entry.walletAddress, row?.alias)
     return (
       <tr key={entry.walletAddress} onClick={() => openWalletDetail(entry.walletAddress)} style={{ cursor: 'pointer' }}>
         <td>
           <div className="address-primary-cell">
             <strong>{row?.alias || compactAddress(entry.walletAddress, 8, 6)}</strong>
             <span>{compactAddress(entry.walletAddress, 10, 6)}</span>
+            {polymarketProfileUrl ? (
+              <a className="address-polymarket-link" href={polymarketProfileUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                Polymarket
+              </a>
+            ) : null}
           </div>
         </td>
-        <td><span className="badge danger">{entry.status}</span></td>
+        <td><span className="badge accent">{entry.allowedExecutionModes || 'PAPER'}</span></td>
+        <td>{entry.stakeMultiplier == null ? '-' : formatPercent(entry.stakeMultiplier)}</td>
+        <td>
+          <div className="address-code-stack">
+            <span title={archetypeMeta.description}>{archetypeMeta.code}</span>
+            <span title={followLaneMeta.description}>{followLaneMeta.code}</span>
+          </div>
+        </td>
+        <td>{formatPercent(row?.qualityScore)}</td>
+        <td>{formatEvidencePercent(row?.recentWinRate30d, row?.dataQuality, archetypeMeta.code)}</td>
+        <td>{entry.expiresAt ? new Date(entry.expiresAt).toLocaleDateString('zh-CN') : '不过期'}</td>
+        <td>{truncateText(entry.reason || row?.summary, 80) || '-'}</td>
+        <td>
+          <button
+            type="button"
+            className="btn btn-primary address-action-btn"
+            onClick={(event) => {
+              event.stopPropagation()
+              openWalletDetail(entry.walletAddress)
+            }}
+          >
+            查看详情
+          </button>
+        </td>
+      </tr>
+    )
+  }
+
+  const renderBlocklistRow = (entry: SmartWalletManualBlocklistView) => {
+    const row = monitoredByWallet.get(normalizeWalletAddress(entry.walletAddress))
+    const polymarketProfileUrl = buildPolymarketProfileUrlFromAddress(entry.walletAddress, row?.alias)
+    return (
+      <tr key={entry.walletAddress} onClick={() => openWalletDetail(entry.walletAddress)} style={{ cursor: 'pointer' }}>
+        <td>
+          <div className="address-primary-cell">
+            <strong>{row?.alias || compactAddress(entry.walletAddress, 8, 6)}</strong>
+            <span>{compactAddress(entry.walletAddress, 10, 6)}</span>
+            {polymarketProfileUrl ? (
+              <a className="address-polymarket-link" href={polymarketProfileUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                Polymarket
+              </a>
+            ) : null}
+          </div>
+        </td>
         <td>{entry.reason || 'MANUAL_BLOCKLIST'}</td>
         <td>{row?.lastTradeAt ? new Date(row.lastTradeAt).toLocaleDateString('zh-CN') : '-'}</td>
         <td>{formatPercent(row?.recentWinRate30d)}</td>
@@ -1226,8 +1249,25 @@ export function FollowAddressPanel() {
         ) : filteredAllowlistEntries.length === 0 ? (
           <div className="empty-state">当前筛选条件下没有白名单地址</div>
         ) : (
-          <div className="address-card-strip">
-            {filteredAllowlistEntries.map(renderAllowlistCard)}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>地址</th>
+                  <th>模式</th>
+                  <th>仓位比例</th>
+                  <th>画像</th>
+                  <th>质量</th>
+                  <th>30D胜率</th>
+                  <th>有效期</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAllowlistEntries.map(renderAllowlistRow)}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -1455,7 +1495,6 @@ export function FollowAddressPanel() {
               <thead>
                 <tr>
                   <th>地址</th>
-                  <th>状态</th>
                   <th>阻断原因</th>
                   <th>最近活跃</th>
                   <th>30D胜率</th>

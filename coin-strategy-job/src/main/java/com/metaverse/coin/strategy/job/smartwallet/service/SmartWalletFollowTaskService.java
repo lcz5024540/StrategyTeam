@@ -86,6 +86,7 @@ public class SmartWalletFollowTaskService {
     private final WalletFollowCandidateMapper followCandidateMapper;
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
+    private final PolymarketMarketDataCacheService marketDataCacheService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
     private final SmartWalletManualBlocklistService manualBlocklistService;
     private final Map<String, CachedRiskDecision> riskDecisionCache = new ConcurrentHashMap<>();
@@ -777,17 +778,13 @@ public class SmartWalletFollowTaskService {
             if (!"PENDING".equalsIgnoreCase(task.getStatus())) {
                 throw new IllegalStateException("Only PENDING follow tasks can be sent to LIVE execution.");
             }
-            boolean isAllowlistDirect = task.getErrorMessage() != null
-                    && task.getErrorMessage().startsWith("[MANUAL_ALLOWLIST_DIRECT]");
-            if (!isAllowlistDirect) {
-                SignalRiskDecision decision = evaluateTask(taskId);
-                if (!decision.isAccepted()) {
-                    throw new IllegalStateException("Follow task is not executable: " + String.join(" | ", decision.getReasons()));
-                }
-                enforceManualAllowlistLiveLimits(task, decision);
-                if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
-                    task.setRecommendedStakeUsdc(decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP));
-                }
+            SignalRiskDecision decision = evaluateTask(taskId);
+            if (!decision.isAccepted()) {
+                throw new IllegalStateException("Follow task is not executable: " + String.join(" | ", decision.getReasons()));
+            }
+            enforceManualAllowlistLiveLimits(task, decision);
+            if (decision.getRecommendedStakeUsdc() != null && decision.getRecommendedStakeUsdc().compareTo(BigDecimal.ZERO) > 0) {
+                task.setRecommendedStakeUsdc(decision.getRecommendedStakeUsdc().setScale(2, RoundingMode.HALF_UP));
             }
             task.setExecutionMode("LIVE");
             task.setErrorMessage(null);
@@ -883,51 +880,6 @@ public class SmartWalletFollowTaskService {
         log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "通过", event, null,
                 "candidateId", candidate.getId(),
                 "reasonSummary", "市场可交易，继续风控评估"));
-
-        // ---- Allowlist Direct Path: 白名单钱包跳过风控评估，直接创建 PENDING 任务 ----
-        if (allowlist != null) {
-            BigDecimal stakeMultiplier = manualAllowlistService.stakeMultiplier(allowlist);
-            BigDecimal triggerUsdc = event.getSizeUsdc() == null ? BigDecimal.ZERO : event.getSizeUsdc();
-            BigDecimal recommendedStake = triggerUsdc.multiply(stakeMultiplier)
-                    .min(properties.getMaxStakeUsdc())
-                    .setScale(2, RoundingMode.HALF_UP);
-            String executionMode = resolveTaskExecutionMode(event.getWalletAddress());
-            SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
-                    .setWalletAddress(event.getWalletAddress())
-                    .setEntityId(candidate.getEntityId())
-                    .setFollowCandidateId(candidate.getId())
-                    .setSourceEventId(event.getId())
-                    .setMarketInfoId(marketInfo.getId())
-                    .setMarketInfo(marketInfo)
-                    .setSide(event.getSide())
-                    .setTriggerPrice(event.getPrice())
-                    .setTriggerSizeUsdc(event.getSizeUsdc())
-                    .setRecommendedStakeUsdc(recommendedStake)
-                    .setStatus(STATUS_PENDING)
-                    .setExecutionMode(executionMode)
-                    .setErrorMessage("[MANUAL_ALLOWLIST_DIRECT] 白名单直通，跳过风控评估")
-                    .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
-                    .setCreatedAt(new Date())
-                    .setUpdatedAt(new Date());
-            followTaskMapper.insert(task);
-            log.info("{} action=创建白名单直通跟单任务 result=PENDING followTaskId={} eventId={} candidateId={} wallet={} entityId={} marketId={} outcome={} side={} mode={} stakeUsdc={} {} {}",
-                    LOG_PREFIX, task.getId(), event.getId(), candidate.getId(), task.getWalletAddress(),
-                    task.getEntityId(), task.getMarketId(), task.getOutcome(), task.getSide(), task.getExecutionMode(),
-                    task.getRecommendedStakeUsdc(), eventTrace(event), taskTrace(task));
-            log.info("{}", flow("S6_TASK_CREATED", "创建白名单直通跟单任务", task.getStatus(), event, task,
-                    "candidateId", candidate.getId(),
-                    "mode", task.getExecutionMode(),
-                    "stakeUsdc", task.getRecommendedStakeUsdc(),
-                    "entryLane", "MANUAL_ALLOWLIST_DIRECT",
-                    "reasonSummary", "白名单直通，跳过风控评估"));
-            candidate.setFollowTaskId(task.getId())
-                    .setUpdatedAt(new Date());
-            followCandidateMapper.updateById(candidate);
-            markSourceEventProcessed(event);
-            log.info("{} action=标记源交易事件已处理 result=完成 eventId={} followTaskId={} processed=true",
-                    LOG_PREFIX, event.getId(), task.getId());
-            return;
-        }
 
         if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
             createSkippedTaskForPendingCandidate(event, candidate, marketInfo);
@@ -1421,6 +1373,101 @@ public class SmartWalletFollowTaskService {
                 .divide(BigDecimal.valueOf(denominator), 4, RoundingMode.HALF_UP);
     }
 
+    private PriceReference resolveFreshEntryPrice(SmartWalletFollowTaskEntity task) {
+        BigDecimal fallback = safe(task == null ? null : task.getTriggerPrice());
+        if (task == null || !StringUtils.hasText(task.getMarketId()) || !StringUtils.hasText(task.getOutcome())) {
+            return new PriceReference(fallback, "TASK_FALLBACK");
+        }
+        try {
+            PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getBestEffortByConditionId(
+                    task.getMarketId(),
+                    true,
+                    task.getQuestion(),
+                    List.of(task.getOutcome())
+            );
+            String tokenId = firstNonBlank(
+                    task.getMarketInfo() == null ? null : task.getMarketInfo().getTokenId(),
+                    resolveTokenId(metadata, task.getOutcome())
+            );
+            if (!StringUtils.hasText(tokenId)) {
+                return new PriceReference(fallback, fallback.compareTo(BigDecimal.ZERO) > 0 ? "TASK_FALLBACK_TOKEN_MISSING" : "UNAVAILABLE");
+            }
+            marketDataCacheService.invalidateOrderBook(tokenId);
+            PolymarketApiClient.OrderBook orderBook = marketDataCacheService.getOrderBook(tokenId);
+            BigDecimal bestAsk = topPrice(orderBook == null ? null : orderBook.getAsks(), false);
+            BigDecimal midpoint = safe(orderBook == null ? null : orderBook.getMidpoint());
+            BigDecimal price = firstPositive(bestAsk, midpoint, fallback);
+            String source = bestAsk.compareTo(BigDecimal.ZERO) > 0
+                    ? "REST_BEST_ASK"
+                    : midpoint.compareTo(BigDecimal.ZERO) > 0 ? "REST_MIDPOINT" : "TASK_FALLBACK";
+            return new PriceReference(price, source);
+        } catch (Exception ex) {
+            log.warn("{} action=执行前刷新入场价格 result=失败 followTaskId={} marketId={} outcome={} fallbackPrice={} error={}",
+                    LOG_PREFIX, task.getId(), task.getMarketId(), task.getOutcome(), fallback, ex.getMessage());
+            return new PriceReference(fallback, fallback.compareTo(BigDecimal.ZERO) > 0 ? "TASK_FALLBACK_BOOK_ERROR" : "BOOK_ERROR");
+        }
+    }
+
+    private String resolveTokenId(PolymarketApiClient.MarketMetadata metadata, String outcome) {
+        if (metadata == null || metadata.getOutcomeTokenIds() == null || metadata.getOutcomeTokenIds().isEmpty()) {
+            return null;
+        }
+        if (!StringUtils.hasText(outcome)) {
+            return null;
+        }
+        String exact = metadata.getOutcomeTokenIds().get(outcome);
+        if (StringUtils.hasText(exact)) {
+            return exact.trim();
+        }
+        String normalized = outcome.trim().toLowerCase(Locale.ROOT);
+        for (Map.Entry<String, String> entry : metadata.getOutcomeTokenIds().entrySet()) {
+            if (entry.getKey() != null
+                    && entry.getKey().trim().toLowerCase(Locale.ROOT).equals(normalized)
+                    && StringUtils.hasText(entry.getValue())) {
+                return entry.getValue().trim();
+            }
+        }
+        return null;
+    }
+
+    private BigDecimal topPrice(List<PolymarketApiClient.OrderBookLevel> levels, boolean highest) {
+        if (levels == null || levels.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal selected = BigDecimal.ZERO;
+        for (PolymarketApiClient.OrderBookLevel level : levels) {
+            BigDecimal price = safe(level == null ? null : level.getPrice());
+            if (price.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            if (selected.compareTo(BigDecimal.ZERO) <= 0
+                    || (highest && price.compareTo(selected) > 0)
+                    || (!highest && price.compareTo(selected) < 0)) {
+                selected = price;
+            }
+        }
+        return selected;
+    }
+
+    private BigDecimal firstPositive(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            BigDecimal safeValue = safe(value);
+            if (safeValue.compareTo(BigDecimal.ZERO) > 0) {
+                return safeValue;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
@@ -1484,24 +1531,7 @@ public class SmartWalletFollowTaskService {
                         + (task == null ? null : task.getId())
                         + ", marketInfoId=" + (task == null ? null : task.getMarketInfoId()));
             }
-            // ---- 白名单直通任务跳过执行前二次风控复核 ----
-            boolean isAllowlistDirect = task.getErrorMessage() != null
-                    && task.getErrorMessage().startsWith("[MANUAL_ALLOWLIST_DIRECT]");
-            SignalRiskDecision decision;
-            if (isAllowlistDirect) {
-                log.info("{} action=执行前复核风控 result=跳过(白名单直通) followTaskId={} wallet={} marketId={} outcome={} {}",
-                        LOG_PREFIX, task.getId(), task.getWalletAddress(), task.getMarketId(), task.getOutcome(),
-                        taskTrace(task));
-                decision = SignalRiskDecision.builder()
-                        .accepted(true)
-                        .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
-                        .reasons(List.of("[MANUAL_ALLOWLIST_DIRECT] 白名单直通，跳过风控评估"))
-                        .entryLane("MANUAL_ALLOWLIST_DIRECT")
-                        .matchedStrategies(List.of("MANUAL_ALLOWLIST_DIRECT"))
-                        .build();
-            } else {
-                decision = evaluateTask(task.getId());
-            }
+            SignalRiskDecision decision = evaluateTask(task.getId());
             if (!decision.isAccepted()) {
                 SmartWalletTradeEventEntity event = getSourceEvent(task);
                 SkipReasonSnapshot skipReason = buildSkipReasonSnapshot(event, decision);
@@ -1565,21 +1595,44 @@ public class SmartWalletFollowTaskService {
             if (effectiveStake != null && effectiveStake.compareTo(BigDecimal.ZERO) > 0) {
                 task.setRecommendedStakeUsdc(effectiveStake.setScale(2, RoundingMode.HALF_UP));
             }
+            PriceReference entryPrice = resolveFreshEntryPrice(task);
+            if (entryPrice.price().compareTo(BigDecimal.ZERO) <= 0) {
+                task.setStatus("SKIPPED");
+                task.setErrorMessage("[CURRENT_PRICE_UNAVAILABLE] Unable to resolve current executable entry price before follow.");
+                task.setPrimarySkipReason("NON_TRADABLE");
+                task.setSkipReasonTags("NON_TRADABLE,CURRENT_PRICE_UNAVAILABLE");
+                task.setUpdatedAt(new Date());
+                followTaskMapper.updateById(task);
+                return SmartWalletExecutionResult.builder()
+                        .signalId(String.valueOf(task.getId()))
+                        .mode("LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER)
+                        .success(false)
+                        .message(task.getErrorMessage())
+                        .marketId(task.getMarketId())
+                        .outcome(task.getOutcome())
+                        .side(task.getSide())
+                        .status("SKIPPED")
+                        .price(task.getTriggerPrice())
+                        .notionalUsdc(task.getRecommendedStakeUsdc())
+                        .feeUsdc(BigDecimal.ZERO)
+                        .tradingFeeUsdc(BigDecimal.ZERO)
+                        .build();
+            }
             SmartWalletSignal signal = SmartWalletSignal.builder()
                     .signalId(String.valueOf(task.getId()))
                     .market(PredictionMarketOpportunity.builder()
                             .marketId(task.getMarketId())
                             .question(task.getQuestion())
                             .outcome(task.getOutcome())
-                            .price(task.getTriggerPrice())
+                            .price(entryPrice.price())
                             .build())
                     .followOutcome(task.getOutcome())
                     .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
                     .build();
             ExecutionMode mode = "LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER;
-            log.info("{} action=提交跟单执行网关 result=开始 followTaskId={} mode={} marketId={} outcome={} price={} stakeUsdc={} {}",
-                    LOG_PREFIX, task.getId(), mode, task.getMarketId(), task.getOutcome(), task.getTriggerPrice(),
-                    task.getRecommendedStakeUsdc(), taskTrace(task));
+            log.info("{} action=提交跟单执行网关 result=开始 followTaskId={} mode={} marketId={} outcome={} currentPrice={} priceSource={} triggerPrice={} stakeUsdc={} {}",
+                    LOG_PREFIX, task.getId(), mode, task.getMarketId(), task.getOutcome(), entryPrice.price(), entryPrice.source(),
+                    task.getTriggerPrice(), task.getRecommendedStakeUsdc(), taskTrace(task));
             SmartWalletExecutionResult result = executionGateway.execute(signal, mode);
             log.info("{} action=提交跟单执行网关 result={} followTaskId={} mode={} marketId={} outcome={} externalOrderId={} orderStatus={} message={} {}",
                     LOG_PREFIX, result.isSuccess() ? "成功" : "失败", task.getId(), mode, task.getMarketId(),
@@ -2476,5 +2529,8 @@ public class SmartWalletFollowTaskService {
     }
 
     private record CachedRiskDecision(SignalRiskDecision decision, long expiresAtMs) {
+    }
+
+    private record PriceReference(BigDecimal price, String source) {
     }
 }

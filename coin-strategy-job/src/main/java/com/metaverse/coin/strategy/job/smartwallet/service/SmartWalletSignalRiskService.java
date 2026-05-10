@@ -383,6 +383,16 @@ public class SmartWalletSignalRiskService {
                         "reasonSummary", "同一 marketId + outcome 的入场订单/待执行任务数量已达到上限"));
             }
         }
+        if (risk.isRequireLeaderProfitableActivePosition()
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
+                && "BUY".equalsIgnoreCase(event.getSide())) {
+            LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
+            reasons.add(leaderPositionCheck.reason());
+            if (!leaderPositionCheck.accepted()) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G7_LEADER_POSITION_NOT_PROFITABLE";
+            }
+        }
         if (accepted) gateStage = 7; // 通过方向/重复检查
 
         EntryTimingDecision entryTimingDecision = entryTimingRiskService.evaluate(event, risk, marketType);
@@ -464,6 +474,32 @@ public class SmartWalletSignalRiskService {
         preliminaryStake = applyArchetypeStakeAdjustments(preliminaryStake, archetype, event, reasons);
         preliminaryStake = applyBehaviorStakeAdjustments(preliminaryStake, behaviorProfile, reasons);
         preliminaryStake = applyDynamicCapitalScale(preliminaryStake, capitalContext);
+        BigDecimal capitalRatioCap = risk.getMaxSingleOrderCapitalRatio() == null
+                ? BigDecimal.ZERO
+                : safe(risk.getMaxSingleOrderCapitalRatio());
+        if (capitalRatioCap.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal capitalScaledCap = availableCapital.max(BigDecimal.ZERO)
+                    .multiply(capitalRatioCap)
+                    .setScale(2, RoundingMode.HALF_UP);
+            if (capitalScaledCap.compareTo(BigDecimal.ZERO) > 0 && preliminaryStake.compareTo(capitalScaledCap) > 0) {
+                reasons.add("[CAPITAL_RATIO_STAKE_CAP] Stake capped from " + preliminaryStake
+                        + " to " + capitalScaledCap
+                        + " by maxSingleOrderCapitalRatio=" + capitalRatioCap + ".");
+                preliminaryStake = capitalScaledCap;
+            }
+        }
+        BigDecimal triggerRatioCap = risk.getMaxStakeToTriggerNotionalRatio() == null
+                ? BigDecimal.ZERO
+                : safe(risk.getMaxStakeToTriggerNotionalRatio());
+        if (triggerRatioCap.compareTo(BigDecimal.ZERO) > 0 && triggerSize.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal triggerScaledCap = triggerSize.multiply(triggerRatioCap).setScale(2, RoundingMode.HALF_UP);
+            if (triggerScaledCap.compareTo(BigDecimal.ZERO) > 0 && preliminaryStake.compareTo(triggerScaledCap) > 0) {
+                reasons.add("[TRIGGER_RATIO_STAKE_CAP] Stake capped from " + preliminaryStake
+                        + " to " + triggerScaledCap
+                        + " by maxStakeToTriggerNotionalRatio=" + triggerRatioCap + ".");
+                preliminaryStake = triggerScaledCap;
+            }
+        }
         if ("LONG_HORIZON".equals(marketType)) {
             BigDecimal multiplier = risk.getLongHorizonStakeMultiplier() == null
                     ? new BigDecimal("0.50")
@@ -1921,6 +1957,42 @@ public class SmartWalletSignalRiskService {
         return count != null && count > 0;
     }
 
+    private LeaderPositionCheck checkLeaderProfitableActivePosition(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getWalletAddress())
+                || !StringUtils.hasText(event.getMarketId()) || !StringUtils.hasText(event.getOutcome())) {
+            return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Missing leader wallet/market/outcome for profitability validation.");
+        }
+        try {
+            List<PolymarketApiClient.ActivePosition> positions = polymarketApiClient.fetchActivePositions(event.getWalletAddress());
+            PolymarketApiClient.ActivePosition matched = positions.stream()
+                    .filter(position -> sameText(position.getMarketId(), event.getMarketId()))
+                    .filter(position -> sameText(position.getOutcome(), event.getOutcome()))
+                    .findFirst()
+                    .orElse(null);
+            if (matched == null) {
+                return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Leader has no active position for the same market/outcome.");
+            }
+            BigDecimal pnl = safe(matched.getUnrealizedPnlUsdc());
+            if (pnl.compareTo(BigDecimal.ZERO) <= 0) {
+                return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Leader active position is not profitable. unrealizedPnlUsdc="
+                        + pnl.setScale(2, RoundingMode.HALF_UP) + ".");
+            }
+            return new LeaderPositionCheck(true, "[LEADER_POSITION_PROFITABLE] Leader active position is profitable. unrealizedPnlUsdc="
+                    + pnl.setScale(2, RoundingMode.HALF_UP) + ".");
+        } catch (Exception ex) {
+            log.warn("{} action=leader持仓盈利校验 result=失败 wallet={} marketId={} outcome={} error={}",
+                    LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getOutcome(), ex.getMessage());
+            return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Unable to validate leader active position profitability: "
+                    + ex.getMessage());
+        }
+    }
+
+    private boolean sameText(String left, String right) {
+        return StringUtils.hasText(left)
+                && StringUtils.hasText(right)
+                && left.trim().equalsIgnoreCase(right.trim());
+    }
+
     private BigDecimal scaleUpMarketOutcomeBudget(SmartWalletProperties.SignalRisk risk,
                                                   ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
         BigDecimal configured = risk.getScaleUpMaxMarketOutcomeCostUsdc() == null
@@ -1935,6 +2007,9 @@ public class SmartWalletSignalRiskService {
     }
 
     private record MarketRoutingContext(String marketType, String entryLane, String exitIntent) {
+    }
+
+    private record LeaderPositionCheck(boolean accepted, String reason) {
     }
 
     private record ExistingPositionStats(List<Long> positionIds,
