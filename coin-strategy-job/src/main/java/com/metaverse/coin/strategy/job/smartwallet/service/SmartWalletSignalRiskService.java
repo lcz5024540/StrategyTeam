@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
@@ -69,6 +70,8 @@ public class SmartWalletSignalRiskService {
     private final SmartWalletManualBlocklistService manualBlocklistService;
     private final EntryTimingRiskService entryTimingRiskService;
     private final SignalScoreModelService signalScoreModelService;
+    private final PolymarketFeeScheduleService feeScheduleService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -521,6 +524,58 @@ public class SmartWalletSignalRiskService {
                     + "; final min-order enforcement is deferred until final stake is computed.");
         }
         if (accepted) gateStage = 8; // 通过初步仓位检查
+
+        // ── Gate 8b: Taker Fee 预扣减 ──────────────────────────────────────────
+        SmartWalletProperties.FeeSchedule feeSchedule = properties.getFeeSchedule();
+        if (feeSchedule != null && feeSchedule.isEnablePreTradeFeeDeduction()) {
+            BigDecimal takerFeeRate = feeScheduleService.getTakerFeeRate(
+                    event.getMarketId(), resolveMarketCategory(event));
+            if (takerFeeRate.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal preFeStake = preliminaryStake;
+                preliminaryStake = feeScheduleService.adjustStakeForFee(
+                        preliminaryStake, event.getMarketId(), resolveMarketCategory(event));
+                BigDecimal estimatedFee = preFeStake.subtract(preliminaryStake);
+                reasons.add("[FEE_ADJUSTED] Stake adjusted from " + preFeStake
+                        + " to " + preliminaryStake
+                        + " after taker fee " + takerFeeRate.setScale(4, RoundingMode.HALF_UP)
+                        + " (estimated fee=" + estimatedFee.setScale(4, RoundingMode.HALF_UP) + " USDC).");
+            }
+        }
+
+        // ── Gate 8c: Orderbook 深度感知仓位调整 ──────────────────────────────────
+        if (risk.isEnableDepthAwareSizing() && accepted) {
+            BigDecimal depthUsdc = resolveAskDepth(event, risk);
+            if (depthUsdc != null && depthUsdc.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal minDepth = safe(risk.getMinAcceptableDepthUsdc());
+                if (depthUsdc.compareTo(minDepth) < 0) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G8c_DEPTH_INSUFFICIENT";
+                    reasons.add("[DEPTH_INSUFFICIENT] Orderbook ask depth=" + depthUsdc.setScale(2, RoundingMode.HALF_UP)
+                            + " USDC is below minimum acceptable depth=" + minDepth.setScale(2, RoundingMode.HALF_UP)
+                            + " USDC. Refusing entry to avoid sweeping thin book.");
+                } else {
+                    BigDecimal maxConsumption = safe(risk.getDepthConsumptionMaxRate());
+                    BigDecimal depthCap = depthUsdc.multiply(maxConsumption).setScale(2, RoundingMode.HALF_UP);
+                    if (preliminaryStake.compareTo(depthCap) > 0) {
+                        reasons.add("[DEPTH_DOWNSIZE] Stake reduced from " + preliminaryStake
+                                + " to " + depthCap
+                                + " (depth=" + depthUsdc.setScale(2, RoundingMode.HALF_UP)
+                                + " × maxConsumption=" + maxConsumption + ").");
+                        preliminaryStake = depthCap;
+                        if (preliminaryStake.compareTo(minOrderUsdc) < 0) {
+                            accepted = false;
+                            if (firstRejectGate == null) firstRejectGate = "G8c_DEPTH_DOWNSIZE_BELOW_MIN";
+                            reasons.add("[DEPTH_DOWNSIZE_BELOW_MIN] After depth-aware downsizing, stake="
+                                    + preliminaryStake + " is below minOrder=" + minOrderUsdc + ".");
+                        }
+                    } else {
+                        reasons.add("[DEPTH_OK] Orderbook depth=" + depthUsdc.setScale(2, RoundingMode.HALF_UP)
+                                + " USDC is sufficient for stake=" + preliminaryStake + ".");
+                    }
+                }
+            }
+            // depthUsdc == null → 快照不可用，不阻断（fail-open），留给 slippage gate 兜底
+        }
 
         // ── Gate 9: 集中度门控（防控盘）──────────────────────────────────────────
         // 在共识门控之后、风险分数估算之前运行，避免对最终被拒绝的信号做不必要的 API 调用
@@ -1109,6 +1164,67 @@ public class SmartWalletSignalRiskService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * 从 MarketInfo 或 event metadata 中解析 market 品类，用于 fee rate 查询。
+     * 当前简化实现：返回 null（走 defaultTakerFeeRate）。
+     * 后续可扩展为从 marketInfoService 读取 category/tags 字段。
+     */
+    private String resolveMarketCategory(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            return null;
+        }
+        try {
+            SmartWalletMarketInfoEntity info = marketInfoService.getByMarketIdAndOutcome(
+                    event.getMarketId(), event.getOutcome());
+            if (info != null) {
+                String cat = StringUtils.hasText(info.getNormalizedCategory())
+                        ? info.getNormalizedCategory()
+                        : info.getSourceCategory();
+                if (StringUtils.hasText(cat)) {
+                    return cat.toLowerCase(Locale.ROOT);
+                }
+            }
+        } catch (Exception ignored) {
+            // fail-open: 品类解析失败不影响下单
+        }
+        return null;
+    }
+
+    /**
+     * 从最近的 market snapshot 中读取对应深度（ask 侧）。
+     *
+     * @return ask depth USDC 金额，null 表示快照不可用
+     */
+    private BigDecimal resolveAskDepth(SmartWalletTradeEventEntity event,
+                                       SmartWalletProperties.SignalRisk risk) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            return null;
+        }
+        try {
+            SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService
+                    .findLatestSnapshotAtOrBefore(event.getMarketId(), event.getOutcome(), new Date());
+            if (snapshot == null) {
+                return null;
+            }
+            // 快照超过 5 分钟视为过期，不使用
+            if (snapshot.getSnapshotAt() != null
+                    && System.currentTimeMillis() - snapshot.getSnapshotAt().getTime() > 300_000L) {
+                return null;
+            }
+            String range = risk.getDepthCheckRange() == null ? "3c" : risk.getDepthCheckRange().toLowerCase();
+            return switch (range) {
+                case "1c" -> snapshot.getAskDepth1c();
+                case "5c" -> snapshot.getAskDepth5c();
+                default -> snapshot.getAskDepth3c(); // 3c
+            };
+        } catch (Exception e) {
+            log.debug("Failed to resolve ask depth for marketId={}: {}", event.getMarketId(), e.getMessage());
+            return null;
+        }
     }
 
     private boolean isExecutableProfile(SmartWalletProfileEntity profile) {

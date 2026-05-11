@@ -93,9 +93,19 @@ public class SmartWalletTradeOrderService {
                   UNIQUE KEY `uk_trade_order_position` (`position_id`),
                   KEY `idx_trade_order_market` (`market_info_id`, `status`),
                   KEY `idx_trade_order_execution` (`execution_address`, `status`, `opened_at`),
+                  KEY `idx_trade_order_exec_id` (`execution_address`, `id` DESC),
                   KEY `idx_trade_order_status` (`status`, `updated_at`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """);
+        // 存量表可能缺少 idx_trade_order_exec_id，补建
+        try {
+            jdbcTemplate.execute("""
+                    ALTER TABLE `smart_wallet_trade_order`
+                    ADD INDEX IF NOT EXISTS `idx_trade_order_exec_id` (`execution_address`, `id` DESC)
+                    """);
+        } catch (Exception ignored) {
+            // 索引已存在或不支持 IF NOT EXISTS，忽略
+        }
     }
 
     public SmartWalletTradeOrderEntity upsertFromPosition(Long positionId) {
@@ -335,8 +345,20 @@ public class SmartWalletTradeOrderService {
         } else if ("LIVE".equalsIgnoreCase(mode)) {
             wrapper.ne(SmartWalletTradeOrderEntity::getExecutionAddress, "paper-book");
         }
-        List<SmartWalletTradeOrderView> filtered = tradeOrderMapper.selectList(wrapper).stream()
-                .map(this::toView)
+        List<SmartWalletTradeOrderEntity> entities = tradeOrderMapper.selectList(wrapper);
+        // Batch-load market info to avoid N+1
+        populateMarketInfo(entities);
+        // Batch-load orders and fills for all position IDs
+        Set<Long> positionIds = entities.stream()
+                .map(SmartWalletTradeOrderEntity::getPositionId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, List<SmartWalletOrderEntity>> ordersByPosition = batchLoadOrders(positionIds);
+        Map<Long, List<SmartWalletFillEntity>> fillsByPosition = batchLoadFills(positionIds);
+        List<SmartWalletTradeOrderView> filtered = entities.stream()
+                .map(entity -> toViewBatch(entity,
+                        ordersByPosition.getOrDefault(entity.getPositionId(), List.of()),
+                        fillsByPosition.getOrDefault(entity.getPositionId(), List.of())))
                 .filter(view -> matchesPnl(view, pnl))
                 .filter(view -> matchesSettlement(view, settlement))
                 .filter(view -> matchesQuery(view, q))
@@ -346,6 +368,90 @@ public class SmartWalletTradeOrderService {
         List<SmartWalletTradeOrderView> items = hasMore ? filtered.subList(0, safeLimit) : filtered;
         String nextCursor = hasMore && !items.isEmpty() ? String.valueOf(items.get(items.size() - 1).getId()) : null;
         return CursorPageView.of(items, nextCursor);
+    }
+
+    private Map<Long, List<SmartWalletOrderEntity>> batchLoadOrders(Set<Long> positionIds) {
+        if (positionIds == null || positionIds.isEmpty()) {
+            return Map.of();
+        }
+        return orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                        .in(SmartWalletOrderEntity::getPositionId, positionIds)
+                        .orderByAsc(SmartWalletOrderEntity::getPlacedAt)
+                        .orderByAsc(SmartWalletOrderEntity::getId))
+                .stream()
+                .collect(Collectors.groupingBy(SmartWalletOrderEntity::getPositionId));
+    }
+
+    private Map<Long, List<SmartWalletFillEntity>> batchLoadFills(Set<Long> positionIds) {
+        if (positionIds == null || positionIds.isEmpty()) {
+            return Map.of();
+        }
+        return fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                        .in(SmartWalletFillEntity::getPositionId, positionIds)
+                        .orderByAsc(SmartWalletFillEntity::getFilledAt)
+                        .orderByAsc(SmartWalletFillEntity::getId))
+                .stream()
+                .collect(Collectors.groupingBy(SmartWalletFillEntity::getPositionId));
+    }
+
+    private SmartWalletTradeOrderView toViewBatch(SmartWalletTradeOrderEntity entity,
+                                                  List<SmartWalletOrderEntity> orders,
+                                                  List<SmartWalletFillEntity> fills) {
+        SmartWalletMarketLinkView link = marketLinkService.resolve(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        if (link == null && StringUtils.hasText(entity.getMarketSlug())) {
+            link = marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug());
+        }
+        return SmartWalletTradeOrderView.builder()
+                .id(entity.getId())
+                .positionId(entity.getPositionId())
+                .marketInfoId(entity.getMarketInfoId())
+                .executionAddress(entity.getExecutionAddress())
+                .walletAddress(entity.getWalletAddress())
+                .sourceFollowTaskId(entity.getSourceFollowTaskId())
+                .marketId(entity.getMarketId())
+                .marketSlug(entity.getMarketSlug())
+                .marketUrl(link == null ? null : link.getMarketUrl())
+                .externalMarketUrl(link == null ? null : link.getExternalMarketUrl())
+                .internalMarketUrl(link == null ? null : link.getInternalMarketUrl())
+                .marketLinkStatus(link == null ? null : link.getLinkStatus())
+                .tokenId(entity.getTokenId())
+                .question(entity.getQuestion())
+                .outcome(entity.getOutcome())
+                .marketEndAt(entity.getMarketEndAt())
+                .marketEndAtBjt(timeFormatter.formatEpochMillisToBjt(entity.getMarketEndAt()))
+                .marketLifecycle(entity.getMarketLifecycle())
+                .activeMarket(isActiveMarket(entity))
+                .closed(Boolean.TRUE.equals(entity.getClosed()))
+                .acceptingOrders(entity.getAcceptingOrders() == null || entity.getAcceptingOrders())
+                .normalizedCategory(entity.getNormalizedCategory())
+                .sourceCategory(entity.getSourceCategory())
+                .entryQuantity(entity.getEntryQuantity())
+                .entryAvgPrice(entity.getEntryAvgPrice())
+                .entryCostUsdc(entity.getEntryCostUsdc())
+                .entryFeeUsdc(entity.getEntryFeeUsdc())
+                .openedAt(entity.getOpenedAt())
+                .exitQuantity(entity.getExitQuantity())
+                .exitAvgPrice(entity.getExitAvgPrice())
+                .exitProceedsUsdc(entity.getExitProceedsUsdc())
+                .exitRealizedPnlUsdc(entity.getExitRealizedPnlUsdc())
+                .exitFeeUsdc(entity.getExitFeeUsdc())
+                .lastExitAt(entity.getLastExitAt())
+                .remainingQuantity(entity.getRemainingQuantity())
+                .remainingCostBasisUsdc(entity.getRemainingCostBasisUsdc())
+                .lastMarkPrice(entity.getLastMarkPrice())
+                .unrealizedPnlUsdc(entity.getUnrealizedPnlUsdc())
+                .settlementPrice(entity.getSettlementPrice())
+                .settlementProceedsUsdc(entity.getSettlementProceedsUsdc())
+                .settlementPnlUsdc(entity.getSettlementPnlUsdc())
+                .settledAt(entity.getSettledAt())
+                .totalRealizedPnlUsdc(entity.getTotalRealizedPnlUsdc())
+                .totalPnlUsdc(entity.getTotalPnlUsdc())
+                .roiRate(entity.getRoiRate())
+                .status(entity.getStatus())
+                .entryOrderIds(orders.stream().filter(order -> !isExitOrder(order)).map(SmartWalletOrderEntity::getId).toList())
+                .exitOrderIds(orders.stream().filter(this::isExitOrder).map(SmartWalletOrderEntity::getId).toList())
+                .fillIds(fills.stream().map(SmartWalletFillEntity::getId).toList())
+                .build();
     }
 
     private SmartWalletTradeOrderEntity buildEntity(SmartWalletPositionEntity position,

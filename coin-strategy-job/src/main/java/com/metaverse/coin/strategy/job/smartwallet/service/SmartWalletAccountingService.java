@@ -116,6 +116,7 @@ public class SmartWalletAccountingService {
     private final SmartWalletMarketStateService marketStateService;
     private final SmartWalletMarketLinkService marketLinkService;
     private final ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
+    private final PolymarketFeeScheduleService feeScheduleService;
 
     // ---- PnL Summary / Performance 缓存（避免每次全表扫描）----
     private static final long PNL_CACHE_TTL_MS = 60_000L;
@@ -175,6 +176,16 @@ public class SmartWalletAccountingService {
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
         orderMapper.insert(order);
+
+        // 回写真实手续费率到 FeeScheduleService，供后续同 market 查询时使用
+        if (isFilledImmediately && tradingFeeUsdc.compareTo(BigDecimal.ZERO) > 0
+                && notional.compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                feeScheduleService.recordObservedFeeRate(task.getMarketId(), tradingFeeUsdc, notional);
+            } catch (Exception ignored) {
+                // 非关键路径，不影响主流程
+            }
+        }
 
         if (!isFilledImmediately) {
             if (!result.isSuccess()) {

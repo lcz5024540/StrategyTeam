@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_follow_task` (
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY `uk_follow_source_event` (`source_event_id`),
     INDEX `idx_follow_status_time` (`status`, `scheduled_at`),
+    INDEX `idx_follow_status_created` (`status`, `created_at` DESC),
     INDEX `idx_follow_task_market_info` (`market_info_id`),
     INDEX `idx_follow_entity` (`entity_id`),
     INDEX `idx_follow_shadow_reason` (`status`, `primary_skip_reason`, `wallet_address`)

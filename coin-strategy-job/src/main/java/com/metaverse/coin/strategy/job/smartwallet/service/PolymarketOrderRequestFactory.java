@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import lombok.Builder;
@@ -11,6 +12,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -25,6 +27,7 @@ public class PolymarketOrderRequestFactory {
 
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletMarketInfoService marketInfoService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
 
     public PreparedPolymarketOrder prepare(SmartWalletSignal signal,
                                            ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
@@ -155,11 +158,31 @@ public class PolymarketOrderRequestFactory {
                 .setScale(2, RoundingMode.HALF_UP);
 
         BigDecimal rawPrice = requestedPrice == null ? BigDecimal.ZERO : requestedPrice;
-        BigDecimal slippage = rawPrice.multiply(wallet.getPriceSlippageRate());
-        BigDecimal limitPrice = rawPrice.add(slippage).min(BigDecimal.ONE).setScale(4, RoundingMode.HALF_UP);
         BigDecimal minimumTickSize = tickSize == null || tickSize.compareTo(BigDecimal.ZERO) <= 0
                 ? new BigDecimal("0.01")
                 : tickSize;
+
+        // ── Fix-B3: 决定订单策略（TAKER / MAKER / ADAPTIVE） ──────────
+        String effectiveStrategy = resolveOrderStrategy(wallet, conditionId, outcome);
+
+        BigDecimal limitPrice;
+        if ("MAKER".equals(effectiveStrategy)) {
+            // Maker 模式：limitPrice = rawPrice + 1 tick（稍高于当前 bestBid / 信号价）
+            // 不加 slippage，挂单在 best bid 附近等撮合，fee = 0
+            limitPrice = rawPrice.add(minimumTickSize)
+                    .min(BigDecimal.ONE)
+                    .setScale(4, RoundingMode.HALF_UP);
+            log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} (rawPrice + 1tick)",
+                    LOG_PREFIX, signalId, limitPrice);
+        } else {
+            // Taker 模式（默认）：limitPrice = rawPrice + slippage
+            BigDecimal effectiveSlippageRate = resolveSlippageRate(wallet, conditionId, outcome);
+            BigDecimal slippage = rawPrice.multiply(effectiveSlippageRate);
+            limitPrice = rawPrice.add(slippage).min(BigDecimal.ONE).setScale(4, RoundingMode.HALF_UP);
+            log.info("{} action=OrderStrategy signalId={} strategy=TAKER slippageRate={} limitPrice={}",
+                    LOG_PREFIX, signalId, effectiveSlippageRate, limitPrice);
+        }
+
         BigDecimal normalizedLimitPrice = snapToTick(limitPrice, minimumTickSize);
         BigDecimal size = normalizedLimitPrice.compareTo(BigDecimal.ZERO) <= 0
                 ? BigDecimal.ZERO
@@ -179,11 +202,104 @@ public class PolymarketOrderRequestFactory {
                 .negRisk(negRisk)
                 .executionAddress(wallet.getAddress())
                 .funderAddress(wallet.getFunderAddress())
+                .orderStrategy(effectiveStrategy)
                 .build();
-        log.info("{} action=构造Polymarket本地下单草稿 result=完成 signalId={} marketId={} outcome={} side={} requestedStakeUsdc={} cappedStakeUsdc={} rawPrice={} limitPrice={} size={} tokenId={}",
-                LOG_PREFIX, signalId, conditionId, outcome, prepared.getSide(), requestedStakeUsdc, cappedStake,
-                rawPrice, prepared.getLimitPrice(), prepared.getSize(), prepared.getTokenId());
+        log.info("{} action=构造Polymarket本地下单草稿 result=完成 signalId={} marketId={} outcome={} side={} strategy={} requestedStakeUsdc={} cappedStakeUsdc={} rawPrice={} limitPrice={} size={} tokenId={}",
+                LOG_PREFIX, signalId, conditionId, outcome, prepared.getSide(), effectiveStrategy,
+                requestedStakeUsdc, cappedStake, rawPrice, prepared.getLimitPrice(), prepared.getSize(),
+                prepared.getTokenId());
         return prepared;
+    }
+
+    // ── Fix-C: 动态滑点计算 ──────────────────────────────────────────────
+
+    /**
+     * 根据 orderbook 深度动态计算滑点率。
+     * <p>规则：
+     * <ul>
+     *   <li>askDepth3c >= highLiquidityThreshold → 使用紧滑点（默认 1%）</li>
+     *   <li>askDepth3c >= lowLiquidityThreshold → 使用中等滑点（默认 2%）</li>
+     *   <li>askDepth3c < lowLiquidityThreshold → 使用宽滑点（默认 3%）</li>
+     * </ul>
+     * 未启用动态滑点或快照不可用时，回退到固定 priceSlippageRate。
+     */
+    private BigDecimal resolveSlippageRate(ExecutionWalletContextLoader.ExecutionWalletContext wallet,
+                                           String conditionId, String outcome) {
+        if (!wallet.isEnableDynamicSlippage()) {
+            return wallet.getPriceSlippageRate();
+        }
+        BigDecimal depth = fetchAskDepth3c(conditionId, outcome);
+        if (depth == null) {
+            // 快照不可用，fall back to 固定值
+            return wallet.getPriceSlippageRate();
+        }
+        if (depth.compareTo(wallet.getHighLiquidityThresholdUsdc()) >= 0) {
+            return wallet.getHighLiquiditySlippageRate();
+        }
+        if (depth.compareTo(wallet.getLowLiquidityThresholdUsdc()) >= 0) {
+            return wallet.getMediumLiquiditySlippageRate();
+        }
+        return wallet.getLowLiquiditySlippageRate();
+    }
+
+    // ── Fix-B3: 订单策略路由 ─────────────────────────────────────────────
+
+    /**
+     * 根据配置和市场流动性决定使用 TAKER 还是 MAKER 策略。
+     * <p>ADAPTIVE 模式下同时检查 askDepth3c 和 spreadBps：
+     * 只有深度充足且价差窄的市场才使用 MAKER（挂单不立即成交的风险较小）。</p>
+     */
+    private String resolveOrderStrategy(ExecutionWalletContextLoader.ExecutionWalletContext wallet,
+                                         String conditionId, String outcome) {
+        String strategy = wallet.getOrderStrategy();
+        if (!"ADAPTIVE".equals(strategy)) {
+            // 固定 TAKER 或固定 MAKER
+            return "MAKER".equals(strategy) ? "MAKER" : "TAKER";
+        }
+        // ADAPTIVE 模式：根据市场流动性决定
+        try {
+            SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService
+                    .findLatestSnapshotAtOrBefore(conditionId, outcome, new Date());
+            if (snapshot == null || snapshot.getSnapshotAt() == null
+                    || System.currentTimeMillis() - snapshot.getSnapshotAt().getTime() > 300_000L) {
+                // 无有效快照，保守走 taker
+                return "TAKER";
+            }
+            BigDecimal askDepth = snapshot.getAskDepth3c();
+            BigDecimal spreadBps = snapshot.getSpreadBps();
+            boolean depthOk = askDepth != null
+                    && askDepth.compareTo(wallet.getMakerStrategyMinDepthUsdc()) >= 0;
+            boolean spreadOk = spreadBps != null
+                    && spreadBps.compareTo(wallet.getMakerStrategyMaxSpreadBps()) <= 0;
+            if (depthOk && spreadOk) {
+                log.debug("{} ADAPTIVE → MAKER: askDepth3c={}, spreadBps={}", LOG_PREFIX, askDepth, spreadBps);
+                return "MAKER";
+            }
+            log.debug("{} ADAPTIVE → TAKER: askDepth3c={}, spreadBps={} (thresholds: depth>={}, spread<={})",
+                    LOG_PREFIX, askDepth, spreadBps,
+                    wallet.getMakerStrategyMinDepthUsdc(), wallet.getMakerStrategyMaxSpreadBps());
+            return "TAKER";
+        } catch (Exception e) {
+            log.debug("{} ADAPTIVE → TAKER (snapshot lookup failed): {}", LOG_PREFIX, e.getMessage());
+            return "TAKER";
+        }
+    }
+
+    /**
+     * 从最近 5 分钟的 snapshot 获取 askDepth3c。
+     */
+    private BigDecimal fetchAskDepth3c(String conditionId, String outcome) {
+        try {
+            SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService
+                    .findLatestSnapshotAtOrBefore(conditionId, outcome, new Date());
+            if (snapshot == null || snapshot.getSnapshotAt() == null
+                    || System.currentTimeMillis() - snapshot.getSnapshotAt().getTime() > 300_000L) {
+                return null;
+            }
+            return snapshot.getAskDepth3c();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String resolveTokenId(PolymarketApiClient.MarketMetadata metadata, String outcome) {
@@ -246,5 +362,7 @@ public class PolymarketOrderRequestFactory {
         private boolean negRisk;
         private String executionAddress;
         private String funderAddress;
+        /** 实际使用的订单策略：TAKER / MAKER */
+        private String orderStrategy;
     }
 }

@@ -174,10 +174,7 @@ public class SmartWalletFollowTaskService {
         long startedAt = System.currentTimeMillis();
         int resultLimit = normalizeLimit(limit, 50);
         int effectiveScanLimit = normalizeExecutableScanLimit(scanLimit, resultLimit);
-        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + effectiveScanLimit));
+        List<SmartWalletFollowTaskEntity> tasks = loadPendingAndSkippedTasks(effectiveScanLimit);
         List<SmartWalletFollowTaskView> result = new ArrayList<>();
         ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
@@ -208,10 +205,8 @@ public class SmartWalletFollowTaskService {
                                                                          SmartWalletProperties.SignalRisk overrideRisk,
                                                                          Integer taskScanLimit,
                                                                          String appliedPreset) {
-        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + normalizeLimit(taskScanLimit == null ? (limit == null ? 100 : Math.max(limit * 4, 50)) : taskScanLimit, 100)));
+        List<SmartWalletFollowTaskEntity> tasks = loadPendingAndSkippedTasks(
+                normalizeLimit(taskScanLimit == null ? (limit == null ? 100 : Math.max(limit * 4, 50)) : taskScanLimit, 100));
         List<SmartWalletFollowTaskView> result = new ArrayList<>();
         ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
@@ -226,10 +221,8 @@ public class SmartWalletFollowTaskService {
     }
 
     public List<SmartWalletFollowTaskView> listManualAllowlistTasks(Integer limit, Boolean includeBlocked) {
-        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + normalizeLimit(limit == null ? 100 : Math.max(limit * 4, 50), 200)));
+        List<SmartWalletFollowTaskEntity> tasks = loadPendingAndSkippedTasks(
+                normalizeLimit(limit == null ? 100 : Math.max(limit * 4, 50), 200));
         List<SmartWalletFollowTaskView> result = new ArrayList<>();
         Map<String, Integer> liveAcceptedByWallet = new LinkedHashMap<>();
         ExecutableRiskStats stats = new ExecutableRiskStats();
@@ -266,10 +259,8 @@ public class SmartWalletFollowTaskService {
                                                                 boolean includeExecutable,
                                                                 SmartWalletProperties.SignalRisk overrideRisk,
                                                                 Integer taskScanLimit) {
-        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + normalizeLimit(taskScanLimit == null ? (limit == null ? 100 : Math.max(limit * 4, 50)) : taskScanLimit, 100)));
+        List<SmartWalletFollowTaskEntity> tasks = loadPendingAndSkippedTasks(
+                normalizeLimit(taskScanLimit == null ? (limit == null ? 100 : Math.max(limit * 4, 50)) : taskScanLimit, 100));
         List<SmartWalletFollowTaskView> candidates = new ArrayList<>();
         int blockerThreshold = maxBlockers == null || maxBlockers < 0 ? 3 : maxBlockers;
         ExecutableRiskStats stats = new ExecutableRiskStats();
@@ -291,10 +282,7 @@ public class SmartWalletFollowTaskService {
     }
 
     public List<SmartWalletBlockerStatView> blockerStats(Integer taskLimit) {
-        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + normalizeLimit(taskLimit, 200)));
+        List<SmartWalletFollowTaskEntity> tasks = loadPendingAndSkippedTasks(normalizeLimit(taskLimit, 200));
         Map<String, MutableBlockerStat> grouped = new LinkedHashMap<>();
         ExecutableRiskStats stats = new ExecutableRiskStats();
         for (SmartWalletFollowTaskEntity task : tasks) {
@@ -736,10 +724,7 @@ public class SmartWalletFollowTaskService {
         int blockerThreshold = applied.getMaxBlockers() == null || applied.getMaxBlockers() < 0 ? 3 : applied.getMaxBlockers();
         boolean includeExecutable = Boolean.TRUE.equals(applied.getIncludeExecutable());
 
-        List<SmartWalletFollowTaskEntity> tasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .in(SmartWalletFollowTaskEntity::getStatus, List.of("PENDING", "SKIPPED"))
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + scanLimit));
+        List<SmartWalletFollowTaskEntity> tasks = loadPendingAndSkippedTasks(scanLimit);
 
         List<SmartWalletFollowTaskView> executable = new ArrayList<>();
         List<SmartWalletFollowTaskView> opportunities = new ArrayList<>();
@@ -2436,6 +2421,33 @@ public class SmartWalletFollowTaskService {
                 .filter(item -> item.getSide() != null && item.getSide().equalsIgnoreCase(task.getSide()))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * 查询 PENDING + SKIPPED 状态的任务，拆成两次单值查询合并。
+     * 单值 WHERE status = ? ORDER BY created_at DESC 可完美走 idx_follow_status_created 索引，
+     * 而 IN ('PENDING','SKIPPED') 会导致 45k+ 行全表扫描 + filesort。
+     */
+    private List<SmartWalletFollowTaskEntity> loadPendingAndSkippedTasks(int limit) {
+        List<SmartWalletFollowTaskEntity> pending = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .eq(SmartWalletFollowTaskEntity::getStatus, STATUS_PENDING)
+                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
+                .last("limit " + limit));
+        List<SmartWalletFollowTaskEntity> skipped = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                .eq(SmartWalletFollowTaskEntity::getStatus, STATUS_SKIPPED)
+                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
+                .last("limit " + limit));
+        List<SmartWalletFollowTaskEntity> merged = new ArrayList<>(pending.size() + skipped.size());
+        merged.addAll(pending);
+        merged.addAll(skipped);
+        merged.sort((a, b) -> {
+            Date ca = a.getCreatedAt(), cb = b.getCreatedAt();
+            if (ca == null && cb == null) return 0;
+            if (ca == null) return 1;
+            if (cb == null) return -1;
+            return cb.compareTo(ca); // DESC
+        });
+        return merged.size() <= limit ? merged : merged.subList(0, limit);
     }
 
     private int normalizeLimit(Integer limit, int defaultLimit) {

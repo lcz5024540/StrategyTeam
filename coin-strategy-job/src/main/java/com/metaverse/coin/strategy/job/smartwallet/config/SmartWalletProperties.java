@@ -55,6 +55,7 @@ public class SmartWalletProperties {
     private List<MarketSeed> markets = new ArrayList<>();
     private Intelligence intelligence = new Intelligence();
     private FollowFitWeights followFitWeights = new FollowFitWeights();
+    private FeeSchedule feeSchedule = new FeeSchedule();
 
     @Data
     public static class PolymarketMonitor {
@@ -175,6 +176,33 @@ public class SmartWalletProperties {
         private Integer pythonTimeoutSeconds = 45;
         private Integer signatureType = 0;
         private String orderType = "GTC";
+
+        // ── Fix-C: 动态滑点配置 ──────────────────────────────────────────
+        /** 是否启用基于 orderbook 深度的动态滑点（覆盖固定 priceSlippageRate） */
+        private boolean enableDynamicSlippage = false;
+        /** 高流动性（askDepth3c >= highLiquidityThreshold）时使用的滑点 */
+        private BigDecimal highLiquiditySlippageRate = new BigDecimal("0.01");
+        /** 中等流动性时使用的滑点（即默认 priceSlippageRate，2%） */
+        private BigDecimal mediumLiquiditySlippageRate = new BigDecimal("0.02");
+        /** 低流动性（askDepth3c < lowLiquidityThreshold）时使用的滑点 */
+        private BigDecimal lowLiquiditySlippageRate = new BigDecimal("0.03");
+        /** 高流动性判定阈值（askDepth USDC） */
+        private BigDecimal highLiquidityThresholdUsdc = new BigDecimal("5000");
+        /** 低流动性判定阈值（askDepth USDC），低于此值使用更宽滑点 */
+        private BigDecimal lowLiquidityThresholdUsdc = new BigDecimal("1000");
+
+        // ── Fix-B3: Maker 挂单策略配置 ──────────────────────────────────
+        /**
+         * 订单策略：
+         * TAKER  — 默认，limitPrice = rawPrice + slippage，倾向立即成交（支付 taker fee）
+         * MAKER  — limitPrice = bestBid + 1 tick，挂单等撮合（fee=0 甚至 rebate）
+         * ADAPTIVE — 根据市场流动性自动选择：高流动性用 MAKER，低流动性用 TAKER
+         */
+        private String orderStrategy = "TAKER";
+        /** ADAPTIVE 模式下，askDepth3c 超过此值的市场使用 MAKER 策略 */
+        private BigDecimal makerStrategyMinDepthUsdc = new BigDecimal("5000");
+        /** ADAPTIVE 模式下，spreadBps 低于此值的市场才使用 MAKER 策略 */
+        private BigDecimal makerStrategyMaxSpreadBps = new BigDecimal("200");
     }
 
     @Data
@@ -393,6 +421,16 @@ public class SmartWalletProperties {
         private BigDecimal stakeStabilityHighScore = new BigDecimal("0.75");
         /** 行为稳定度较高时的加仓倍率 */
         private BigDecimal stakeStabilityHighMultiplier = new BigDecimal("1.05");
+        // ── 深度感知仓位调整 ────────────────────────────────────────────
+        /** 是否启用 orderbook 深度感知仓位调整（超出深度部分自动缩减仓位） */
+        private boolean enableDepthAwareSizing = true;
+        /** 允许吃掉的 ask 深度比例上限（±3c 范围内），超出部分自动缩减仓位 */
+        private BigDecimal depthConsumptionMaxRate = new BigDecimal("0.50");
+        /** 深度检查使用的价格区间：1c / 3c / 5c */
+        private String depthCheckRange = "3c";
+        /** 最低可接受深度（USDC），低于此值直接拒绝入场 */
+        private BigDecimal minAcceptableDepthUsdc = new BigDecimal("100");
+
         /** 预计滑点 / 仓位超过该比例后开始缩仓 */
         private BigDecimal stakeSlippagePenaltyStartRate = new BigDecimal("0.04");
         /** 滑点/主题相关性等高级缩仓后的最低保留比例 */
@@ -793,5 +831,32 @@ public class SmartWalletProperties {
         private BigDecimal alpha5m         = BigDecimal.ZERO;
         private BigDecimal alphaRule       = new BigDecimal("0.25");
         private BigDecimal winRate30d      = new BigDecimal("0.15");
+    }
+
+    // ── Taker Fee 动态费率配置 ──────────────────────────────────────────
+    @Data
+    public static class FeeSchedule {
+        /**
+         * 品类 → taker fee rate 映射。
+         * key = 品类 slug（小写，如 "politics", "sports", "crypto"），
+         * value = fee rate（如 0.018 表示 1.8%）。
+         *
+         * <p>Polymarket 自 2025-03 起的典型费率：
+         * politics=0.02, sports=0.015, crypto=0.01, pop-culture=0.01, other=0.02</p>
+         */
+        private Map<String, BigDecimal> categoryFeeRates = new LinkedHashMap<>();
+
+        /**
+         * 全局默认 taker fee rate（当品类未映射或 conditionId 无观测缓存时使用）。
+         * 默认 0.02 = 2%，偏保守，确保不低估手续费对 PNL 的侵蚀。
+         */
+        private BigDecimal defaultTakerFeeRate = new BigDecimal("0.02");
+
+        /**
+         * 是否在仓位计算（SignalRiskService）中预先扣减 taker fee。
+         * true = stake 按 rawStake / (1 + feeRate) 缩减；
+         * false = 保持旧逻辑（事后核算 fee，不影响下单金额）。
+         */
+        private boolean enablePreTradeFeeDeduction = true;
     }
 }
