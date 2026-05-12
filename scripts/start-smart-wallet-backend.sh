@@ -19,8 +19,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
-SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
-BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet.env"
+SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet-job.env"
+LEGACY_SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
+BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet-job.env"
+LEGACY_BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet.env"
 DEFAULT_APP_JAR="$APP_HOME/backend/app.jar"
 DEFAULT_RUNTIME_DIR="$APP_HOME/runtime"
 
@@ -30,8 +32,18 @@ resolve_default_env_file() {
     return 0
   fi
 
+  if [ -f "$LEGACY_SYSTEM_ENV_FILE" ]; then
+    echo "$LEGACY_SYSTEM_ENV_FILE"
+    return 0
+  fi
+
   if [ -f "$BUNDLED_ENV_FILE" ]; then
     echo "$BUNDLED_ENV_FILE"
+    return 0
+  fi
+
+  if [ -f "$LEGACY_BUNDLED_ENV_FILE" ]; then
+    echo "$LEGACY_BUNDLED_ENV_FILE"
     return 0
   fi
 

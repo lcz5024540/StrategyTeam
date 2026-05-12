@@ -1,11 +1,9 @@
-package com.metaverse.coin.strategy.job.strategy.controller;
+package com.metaverse.coin.strategy.web.controller.strategy;
 
-import com.metaverse.coin.strategy.job.strategy.application.StrategyLogQueryService;
-import com.metaverse.coin.strategy.job.strategy.application.StrategyFlowLogReader;
-import com.metaverse.coin.strategy.job.strategy.model.StrategyLogEntryView;
-import com.metaverse.coin.strategy.job.strategy.model.StrategyLogFlowView;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import com.metaverse.coin.strategy.web.model.StrategyLogEntryView;
+import com.metaverse.coin.strategy.web.model.StrategyLogFlowView;
+import com.metaverse.coin.strategy.web.service.log.StrategyFlowLogReader;
+import com.metaverse.coin.strategy.web.service.log.StrategyLogQueryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,7 +15,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/strategy-platform/logs")
-@Tag(name = "Strategy Logs", description = "平台级策略运行日志查询接口")
 public class StrategyLogController {
 
     private final StrategyLogQueryService strategyLogQueryService;
@@ -29,7 +26,6 @@ public class StrategyLogController {
         this.strategyFlowLogReader = strategyFlowLogReader;
     }
 
-    @Operation(summary = "策略运行日志")
     @GetMapping
     public List<StrategyLogEntryView> logs(@RequestParam(defaultValue = "app") String source,
                                            @RequestParam(defaultValue = "ALL") String level,
@@ -43,7 +39,6 @@ public class StrategyLogController {
         }
     }
 
-    @Operation(summary = "策略运行流程日志")
     @GetMapping("/flows")
     public List<StrategyLogFlowView> flows(@RequestParam(defaultValue = "app") String source,
                                            @RequestParam(defaultValue = "POLYMARKET_COPY") String strategy,

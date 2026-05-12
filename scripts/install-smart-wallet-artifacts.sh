@@ -8,12 +8,14 @@ APP_USER="${SMART_WALLET_APP_USER:-${SUDO_USER:-ubuntu}}"
 APP_GROUP="${SMART_WALLET_APP_GROUP:-$APP_USER}"
 
 SRC_BACKEND_JAR="${SMART_WALLET_SOURCE_JAR:-$SOURCE_DIR/backend/app.jar}"
+SRC_WEB_JAR="${SMART_WALLET_SOURCE_WEB_JAR:-$SOURCE_DIR/web/app.jar}"
 SRC_FRONTEND_DIST="${SMART_WALLET_SOURCE_FRONTEND_DIST:-$SOURCE_DIR/frontend/dist}"
 SRC_BIN_DIR="${SMART_WALLET_SOURCE_BIN_DIR:-$SOURCE_DIR/bin}"
 SRC_DEPLOY_LINUX_BIN_DIR="${SMART_WALLET_SOURCE_DEPLOY_LINUX_BIN_DIR:-$SOURCE_DIR/deploy/linux/bin}"
 SRC_RUNTIME_DIR="${SMART_WALLET_SOURCE_RUNTIME_DIR:-$SOURCE_DIR/runtime}"
 
 DST_BACKEND_DIR="$APP_HOME/backend"
+DST_WEB_DIR="$APP_HOME/web"
 DST_FRONTEND_DIR="$APP_HOME/frontend"
 DST_BIN_DIR="$APP_HOME/bin"
 DST_RUNTIME_DIR="$APP_HOME/runtime"
@@ -23,14 +25,20 @@ if [ ! -f "$SRC_BACKEND_JAR" ]; then
   exit 1
 fi
 
+if [ ! -f "$SRC_WEB_JAR" ]; then
+  echo "[install-smart-wallet-artifacts] web jar not found: $SRC_WEB_JAR" >&2
+  exit 1
+fi
+
 if [ ! -d "$SRC_FRONTEND_DIST" ]; then
   echo "[install-smart-wallet-artifacts] frontend dist not found: $SRC_FRONTEND_DIST" >&2
   exit 1
 fi
 
-mkdir -p "$DST_BACKEND_DIR" "$DST_FRONTEND_DIR" "$DST_BIN_DIR" "$DST_RUNTIME_DIR" "$APP_HOME/logs"
+mkdir -p "$DST_BACKEND_DIR" "$DST_WEB_DIR" "$DST_FRONTEND_DIR" "$DST_BIN_DIR" "$DST_RUNTIME_DIR" "$APP_HOME/logs"
 
 install -m 755 "$SRC_BACKEND_JAR" "$DST_BACKEND_DIR/app.jar"
+install -m 755 "$SRC_WEB_JAR" "$DST_WEB_DIR/app.jar"
 rm -rf "$DST_FRONTEND_DIR/dist"
 cp -R "$SRC_FRONTEND_DIST" "$DST_FRONTEND_DIR/"
 
@@ -56,6 +64,7 @@ if id -u "$APP_USER" >/dev/null 2>&1; then
 fi
 
 echo "[install-smart-wallet-artifacts] backend installed: $DST_BACKEND_DIR/app.jar"
+echo "[install-smart-wallet-artifacts] web installed:     $DST_WEB_DIR/app.jar"
 echo "[install-smart-wallet-artifacts] frontend installed: $DST_FRONTEND_DIR/dist"
 echo "[install-smart-wallet-artifacts] bin installed:     $DST_BIN_DIR"
 echo "[install-smart-wallet-artifacts] runtime installed: $DST_RUNTIME_DIR"

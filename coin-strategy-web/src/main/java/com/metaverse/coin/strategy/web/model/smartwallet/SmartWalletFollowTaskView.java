@@ -1,0 +1,55 @@
+package com.metaverse.coin.strategy.web.model.smartwallet;
+
+import java.math.BigDecimal;
+import java.util.Date;
+import java.util.List;
+
+public record SmartWalletFollowTaskView(
+        Long id,
+        String walletAddress,
+        String marketId,
+        String question,
+        String outcome,
+        Long marketEndAt,
+        String marketEndAtBjt,
+        String side,
+        BigDecimal triggerPrice,
+        BigDecimal triggerSizeUsdc,
+        BigDecimal recommendedStakeUsdc,
+        String marketType,
+        String entryLane,
+        String exitIntent,
+        String status,
+        String executionMode,
+        String externalOrderId,
+        String errorMessage,
+        String primarySkipReason,
+        List<String> skipReasonTags,
+        String wouldHaveSkippedReason,
+        Integer consensusWallets,
+        BigDecimal consensusScore,
+        BigDecimal estimatedFeeUsdc,
+        BigDecimal estimatedSlippageUsdc,
+        BigDecimal estimatedNetProfitabilityUsdc,
+        BigDecimal followProbability,
+        BigDecimal calibratedFollowProbability,
+        BigDecimal slippageSpikeProbability,
+        Integer estimateSampleSize,
+        BigDecimal signalScore,
+        BigDecimal signalScoreLiquidityFactor,
+        BigDecimal signalScoreRiskPenalty,
+        BigDecimal signalScoreLeaderReliabilityFactor,
+        Boolean taskExecutable,
+        Boolean overrideApplied,
+        Boolean manualAllowlistApplied,
+        String manualAllowlistReason,
+        BigDecimal stakeMultiplierApplied,
+        String appliedPreset,
+        Integer blockerCount,
+        String primaryBlockerCategory,
+        List<String> blockerCategories,
+        List<String> riskReasons,
+        Date scheduledAt,
+        Date executedAt
+) {
+}

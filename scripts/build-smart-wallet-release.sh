@@ -8,12 +8,17 @@ VITE_API_BASE_URL_VALUE="${VITE_API_BASE_URL:-}"
 
 mkdir -p "$RELEASE_DIR"
 
-echo "[build-smart-wallet-release] building backend jar locally..."
-(cd "$ROOT_DIR" && mvn -pl coin-strategy-job -am package -DskipTests)
+echo "[build-smart-wallet-release] building job/web jars locally..."
+(cd "$ROOT_DIR" && mvn -pl coin-strategy-job,coin-strategy-web -am package -DskipTests)
 
-APP_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
-if [ -z "$APP_JAR" ]; then
-  echo "[build-smart-wallet-release] packaged backend jar not found." >&2
+JOB_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+WEB_JAR="$(find "$ROOT_DIR/coin-strategy-web/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+if [ -z "$JOB_JAR" ]; then
+  echo "[build-smart-wallet-release] packaged job jar not found." >&2
+  exit 1
+fi
+if [ -z "$WEB_JAR" ]; then
+  echo "[build-smart-wallet-release] packaged web jar not found." >&2
   exit 1
 fi
 
@@ -30,10 +35,11 @@ if [ ! -d "$FRONTEND_DIR/dist" ]; then
   exit 1
 fi
 
-rm -rf "$RELEASE_DIR/backend" "$RELEASE_DIR/frontend" "$RELEASE_DIR/bin" "$RELEASE_DIR/runtime" "$RELEASE_DIR/deploy"
-mkdir -p "$RELEASE_DIR/backend" "$RELEASE_DIR/frontend" "$RELEASE_DIR/bin" "$RELEASE_DIR/runtime" "$RELEASE_DIR/deploy"
+rm -rf "$RELEASE_DIR/backend" "$RELEASE_DIR/web" "$RELEASE_DIR/frontend" "$RELEASE_DIR/bin" "$RELEASE_DIR/runtime" "$RELEASE_DIR/deploy"
+mkdir -p "$RELEASE_DIR/backend" "$RELEASE_DIR/web" "$RELEASE_DIR/frontend" "$RELEASE_DIR/bin" "$RELEASE_DIR/runtime" "$RELEASE_DIR/deploy"
 
-cp "$APP_JAR" "$RELEASE_DIR/backend/app.jar"
+cp "$JOB_JAR" "$RELEASE_DIR/backend/app.jar"
+cp "$WEB_JAR" "$RELEASE_DIR/web/app.jar"
 cp -R "$FRONTEND_DIR/dist" "$RELEASE_DIR/frontend/"
 cp "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
 cp "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
@@ -43,12 +49,13 @@ cp -R "$ROOT_DIR/deploy/linux" "$RELEASE_DIR/deploy/"
 
 (
   cd "$RELEASE_DIR"
-  tar -czf smart-wallet-release.tar.gz backend frontend bin runtime deploy
+  tar -czf smart-wallet-release.tar.gz backend web frontend bin runtime deploy
 )
 
 echo "[build-smart-wallet-release] upload bundle ready: $RELEASE_DIR"
 echo "[build-smart-wallet-release] upload these to server:"
 echo "  - $RELEASE_DIR/backend/app.jar"
+echo "  - $RELEASE_DIR/web/app.jar"
 echo "  - $RELEASE_DIR/frontend/dist"
 echo "  - $RELEASE_DIR/bin/"
 echo "  - $RELEASE_DIR/deploy/linux/"
