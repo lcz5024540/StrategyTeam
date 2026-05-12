@@ -960,7 +960,7 @@ public class SmartWalletFollowTaskService {
                 .setPrimarySkipReason(decision.isAccepted() ? null : skipReason.primaryReason())
                 .setSkipReasonTags(decision.isAccepted() ? null : String.join(",", skipReason.tags()))
                 .setWouldHaveSkippedReason(STATUS_PAPER_SHADOW.equals(taskStatus) ? String.join(" | ", decision.getReasons()) : null)
-                .setScheduledAt(new Date(System.currentTimeMillis() + properties.getFollowDelaySeconds() * 1000L))
+                .setScheduledAt(new Date(System.currentTimeMillis() + resolveFollowDelayMs(fragmentCount)))
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
         followTaskMapper.insert(task);
@@ -1886,6 +1886,26 @@ public class SmartWalletFollowTaskService {
     private boolean isIntentAggregationEnabled() {
         SmartWalletProperties.IntentAggregationConfig config = properties.getIntentAggregation();
         return config != null && config.isEnabled();
+    }
+
+    /**
+     * 计算跟单任务的执行延迟（毫秒）。
+     * 当意图聚合检测到碎片化（fragmentCount > 1）时，使用较长的延迟
+     * （executionDelaySeconds，默认 30s），让后续碎片有时间到达并合并，
+     * 避免每笔碎片各产生一个 1U 跟单。
+     * 否则使用默认的 followDelaySeconds（默认 3s）快速执行。
+     */
+    private long resolveFollowDelayMs(int fragmentCount) {
+        if (fragmentCount > 1 && isIntentAggregationEnabled()) {
+            SmartWalletProperties.IntentAggregationConfig config = properties.getIntentAggregation();
+            int delaySeconds = config.getExecutionDelaySeconds();
+            if (delaySeconds > 0) {
+                log.info("{} action=延长跟单执行延迟 fragmentCount={} delaySeconds={}",
+                        LOG_PREFIX, fragmentCount, delaySeconds);
+                return delaySeconds * 1000L;
+            }
+        }
+        return properties.getFollowDelaySeconds() * 1000L;
     }
 
     private void markSourceEventProcessed(SmartWalletTradeEventEntity event) {

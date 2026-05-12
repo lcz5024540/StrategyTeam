@@ -3,8 +3,9 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -20,7 +21,6 @@ import java.util.Map;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class PolymarketClobExecutionService {
 
     private static final String LOG_PREFIX = "[POLY_FOLLOW]";
@@ -32,7 +32,35 @@ public class PolymarketClobExecutionService {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final PolymarketOrderRequestFactory orderRequestFactory;
     private final SmartWalletFollowTaskMapper followTaskMapper;
+    /**
+     * Lazy-injected to break the circular dependency:
+     *   SmartWalletFollowTaskService -> FollowPositionAdjustmentService
+     *     -> PolymarketClobExecutionService -> SmartWalletFollowTaskService
+     * This service only calls back into {@code followTaskService} from a couple of
+     * admin/manual entry points ({@link #dryRunFollowTask} / {@link #executeFollowTask}),
+     * so a {@code @Lazy} proxy here is safe and has no runtime impact.
+     */
     private final SmartWalletFollowTaskService followTaskService;
+
+    @Autowired
+    public PolymarketClobExecutionService(
+            ExecutionWalletContextLoader walletContextLoader,
+            PolymarketClobClientRouter clobClientRouter,
+            PolymarketApiClient polymarketApiClient,
+            PolymarketMarketDataStreamService marketDataStreamService,
+            PolymarketMarketMetadataService marketMetadataService,
+            PolymarketOrderRequestFactory orderRequestFactory,
+            SmartWalletFollowTaskMapper followTaskMapper,
+            @Lazy SmartWalletFollowTaskService followTaskService) {
+        this.walletContextLoader = walletContextLoader;
+        this.clobClientRouter = clobClientRouter;
+        this.polymarketApiClient = polymarketApiClient;
+        this.marketDataStreamService = marketDataStreamService;
+        this.marketMetadataService = marketMetadataService;
+        this.orderRequestFactory = orderRequestFactory;
+        this.followTaskMapper = followTaskMapper;
+        this.followTaskService = followTaskService;
+    }
 
     public Map<String, Object> deriveApiCreds() {
         log.info("{} action=派生Polymarket CLOB API凭证 result=开始", LOG_PREFIX);

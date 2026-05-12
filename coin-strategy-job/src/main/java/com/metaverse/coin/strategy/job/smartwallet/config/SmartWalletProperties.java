@@ -910,5 +910,13 @@ public class SmartWalletProperties {
 
         /** 聚合后最小触发金额 (USDC)。聚合总金额低于此值不生成 follow task */
         private BigDecimal minAggregatedTriggerUsdc = new BigDecimal("5");
+
+        /**
+         * 意图聚合激活时的执行延迟（秒）。
+         * 当检测到同一 wallet+market+outcome+side 在聚合窗口内有多笔事件时，
+         * 延长 followTask 的 scheduledAt，给后续碎片更多时间到达并合并。
+         * 默认 30 秒（覆盖 1 个完整 event-sync 周期 30s）。
+         */
+        private int executionDelaySeconds = 30;
     }
 }

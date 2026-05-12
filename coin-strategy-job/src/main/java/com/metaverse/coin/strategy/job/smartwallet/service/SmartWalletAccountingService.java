@@ -117,6 +117,7 @@ public class SmartWalletAccountingService {
     private final SmartWalletMarketLinkService marketLinkService;
     private final ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
     private final PolymarketFeeScheduleService feeScheduleService;
+    private final PolymarketMarketDataCacheService marketDataCacheService;
 
     // ---- PnL Summary / Performance 缓存（避免每次全表扫描）----
     private static final long PNL_CACHE_TTL_MS = 60_000L;
@@ -3185,12 +3186,25 @@ public class SmartWalletAccountingService {
         if (!marketState.isActive()) {
             return;
         }
-        SmartWalletTradeEventEntity latestEvent = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getMarketId, position.getMarketId())
-                .eq(SmartWalletTradeEventEntity::getOutcome, position.getOutcome())
-                .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
-                .last("limit 1"));
-        BigDecimal markPrice = latestEvent == null ? safe(position.getLastMarkPrice()) : safe(latestEvent.getPrice());
+
+        // ── 优先使用 orderbook 实时价格，避免被 trade_event 中异常的 leader 交易价格污染 ──
+        BigDecimal markPrice = resolveRealtimeMarkPrice(position);
+
+        // ── fallback: trade_event 最新价格 ──
+        if (markPrice == null || markPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            SmartWalletTradeEventEntity latestEvent = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                    .eq(SmartWalletTradeEventEntity::getMarketId, position.getMarketId())
+                    .eq(SmartWalletTradeEventEntity::getOutcome, position.getOutcome())
+                    .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
+                    .last("limit 1"));
+            markPrice = latestEvent != null ? safe(latestEvent.getPrice()) : safe(position.getLastMarkPrice());
+        }
+
+        // ── 最终 fallback: 使用仓位已有的 lastMarkPrice ──
+        if (markPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            markPrice = safe(position.getLastMarkPrice());
+        }
+
         BigDecimal unrealized = markPrice.multiply(safe(position.getQuantity()))
                 .subtract(safe(position.getCostBasisUsdc()))
                 .setScale(8, RoundingMode.HALF_UP);
@@ -3200,6 +3214,38 @@ public class SmartWalletAccountingService {
         if (position.getId() != null) {
             updatePositionChecked(position, "markToMarket");
         }
+    }
+
+    /**
+     * 从 orderbook 获取实时标记价格。
+     * 优先级: bestBid > midpoint > null（交给 caller fallback）
+     */
+    private BigDecimal resolveRealtimeMarkPrice(SmartWalletPositionEntity position) {
+        String tokenId = position.getTokenId();
+        if (!StringUtils.hasText(tokenId)) {
+            return null;
+        }
+        try {
+            PolymarketApiClient.OrderBook orderBook = marketDataCacheService.getOrderBook(tokenId);
+            if (orderBook == null) {
+                return null;
+            }
+            // 优先使用 best bid（卖出方向的最优可成交价，对持仓标记最保守）
+            if (orderBook.getBids() != null && !orderBook.getBids().isEmpty()) {
+                BigDecimal bestBid = orderBook.getBids().get(0).getPrice();
+                if (bestBid != null && bestBid.compareTo(BigDecimal.ZERO) > 0) {
+                    return bestBid;
+                }
+            }
+            // fallback: midpoint
+            BigDecimal midpoint = orderBook.getMidpoint();
+            if (midpoint != null && midpoint.compareTo(BigDecimal.ZERO) > 0) {
+                return midpoint;
+            }
+        } catch (Exception ex) {
+            log.debug("resolveRealtimeMarkPrice failed for tokenId={}: {}", tokenId, ex.getMessage());
+        }
+        return null;
     }
 
     private void refreshPositionMarketStates(List<SmartWalletPositionEntity> positions) {

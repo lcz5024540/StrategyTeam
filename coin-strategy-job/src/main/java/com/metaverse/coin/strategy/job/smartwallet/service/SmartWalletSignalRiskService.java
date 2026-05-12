@@ -205,7 +205,7 @@ public class SmartWalletSignalRiskService {
         BigDecimal allowlistMinTriggerSizeUsdc = new BigDecimal("1");
         boolean allowlistPriceClampApplied = false;
 
-        BigDecimal triggerSize = safe(event.getSizeUsdc());
+        BigDecimal triggerSize = resolveAccumulatedTriggerSize(event);
         if (triggerSize.compareTo(safe(risk.getMinTriggerSizeUsdc())) < 0) {
             if (manualAllowlistApplied && triggerSize.compareTo(allowlistMinTriggerSizeUsdc) >= 0) {
                 reasons.add("[MANUAL_ALLOWLIST_TRIGGER_SIZE_BYPASS] triggerNotionalUsdc=" + triggerSize
@@ -1336,6 +1336,75 @@ public class SmartWalletSignalRiskService {
                 .filter(StringUtils::hasText)
                 .limit(4)
                 .collect(Collectors.joining(" | "));
+    }
+
+    /**
+     * 解析累计 triggerSize：在意图聚合时间窗口内，将同一 wallet+market+outcome+side 的
+     * 所有 trade event 的 sizeUsdc 加总，作为"领单地址在本轮的累计开仓规模"。
+     *
+     * 目的：避免 triggerStakeCapRatio 按单笔碎片金额 cap，导致每笔跟单仅 1U。
+     * 当累计值 > 单笔值时，使用累计值可使 cap 更合理。
+     *
+     * @param event 当前触发事件
+     * @return max(累计sizeUsdc, 单笔sizeUsdc)
+     */
+    private BigDecimal resolveAccumulatedTriggerSize(SmartWalletTradeEventEntity event) {
+        BigDecimal singleSize = safe(event.getSizeUsdc());
+
+        // 仅在意图聚合启用时累计
+        SmartWalletProperties.IntentAggregationConfig config = properties.getIntentAggregation();
+        if (config == null || !config.isEnabled() || config.getWindowMinutes() <= 0) {
+            return singleSize;
+        }
+
+        String walletAddress = event.getWalletAddress();
+        String marketId = event.getMarketId();
+        String outcome = event.getOutcome();
+        String side = event.getSide();
+        if (!StringUtils.hasText(walletAddress) || !StringUtils.hasText(marketId)
+                || !StringUtils.hasText(outcome) || !StringUtils.hasText(side)) {
+            return singleSize;
+        }
+
+        try {
+            long windowMs = config.getWindowMinutes() * 60_000L;
+            Date eventTime = event.getCreatedAt() != null ? event.getCreatedAt() : new Date();
+            Date windowStart = new Date(eventTime.getTime() - windowMs);
+
+            // 查询窗口内同维度的所有 trade event
+            List<SmartWalletTradeEventEntity> windowEvents = tradeEventMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                            .eq(SmartWalletTradeEventEntity::getWalletAddress, walletAddress)
+                            .eq(SmartWalletTradeEventEntity::getMarketId, marketId)
+                            .eq(SmartWalletTradeEventEntity::getOutcome, outcome)
+                            .eq(SmartWalletTradeEventEntity::getSide, side)
+                            .ge(SmartWalletTradeEventEntity::getCreatedAt, windowStart)
+                            .le(SmartWalletTradeEventEntity::getCreatedAt, eventTime)
+            );
+
+            if (windowEvents == null || windowEvents.isEmpty()) {
+                return singleSize;
+            }
+
+            BigDecimal accumulated = windowEvents.stream()
+                    .map(e -> safe(e.getSizeUsdc()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            if (accumulated.compareTo(singleSize) > 0) {
+                log.info("{} action=累计triggerSize result=使用累计值 wallet={} market={} outcome={} side={} " +
+                                "singleSize={} accumulated={} windowEvents={}",
+                        LOG_PREFIX, walletAddress, marketId, outcome, side,
+                        singleSize.setScale(2, RoundingMode.HALF_UP),
+                        accumulated.setScale(2, RoundingMode.HALF_UP),
+                        windowEvents.size());
+            }
+
+            return accumulated.max(singleSize);
+        } catch (Exception ex) {
+            log.warn("{} resolveAccumulatedTriggerSize failed, fallback to single event size: {}",
+                    LOG_PREFIX, ex.getMessage());
+            return singleSize;
+        }
     }
 
     private BigDecimal safe(BigDecimal value) {
