@@ -33,7 +33,7 @@ public class StrategyExitResult {
     public static class ExitDetail {
         private String marketId;
         private String outcome;
-        private String exitReason; // STOP_LOSS / TAKE_PROFIT / TIME_WINDOW / SETTLEMENT / MANUAL
+        private String exitReason; // STOP_LOSS / TAKE_PROFIT / SETTLEMENT / MANUAL
         private String orderId;    // 退出订单 ID（如果是 LIVE 模式）
     }
 }

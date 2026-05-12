@@ -215,11 +215,6 @@ public class SmartWalletProperties {
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
         private boolean enableAutoTakeProfit = false;
         private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.35");
-        private boolean enableAutoTimeWindowExit = false;
-        /** Market-end 前多少小时开始强制退出，避免持仓进入 expiry/oracle 阶段 */
-        private Integer autoTimeWindowExitHoursBeforeEnd = 2;
-        /** 时间窗口退出允许的最低 ROI；默认 -100% 表示只要能成交就退出 */
-        private BigDecimal autoTimeWindowExitMinRoiRate = new BigDecimal("-1.00");
         private Integer fastEventMaxHours = 24;
         private Integer longHorizonMinHours = 48;
         private BigDecimal longHorizonStakeMultiplier = new BigDecimal("0.50");
