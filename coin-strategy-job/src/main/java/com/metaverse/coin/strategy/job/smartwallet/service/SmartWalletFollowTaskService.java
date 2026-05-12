@@ -89,6 +89,8 @@ public class SmartWalletFollowTaskService {
     private final PolymarketMarketDataCacheService marketDataCacheService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
     private final SmartWalletManualBlocklistService manualBlocklistService;
+    private final FollowPositionAdjustmentService followPositionAdjustmentService;
+    private final FollowIntentAggregationService followIntentAggregationService;
     private final Map<String, CachedRiskDecision> riskDecisionCache = new ConcurrentHashMap<>();
 
     public SmartWalletTradeEventEntity recordTradeEvent(SmartWalletTradeEventEntity event) {
@@ -796,6 +798,26 @@ public class SmartWalletFollowTaskService {
                     "reasonSummary", "sourceEventId 已存在跟单任务"));
             return;
         }
+
+        // ── P0-2: 意图聚合 —— 同 wallet+market+outcome+side 在时间窗口内的碎片事件合并 ──
+        if (isIntentAggregationEnabled()) {
+            FollowIntentAggregationService.IntentAggregationResult aggResult =
+                    followIntentAggregationService.aggregate(event);
+            if (aggResult.isAggregated()) {
+                log.info("{} action=意图聚合合并 result=MERGED eventId={} intentKey={} mergedTaskId={} aggregatedUsdc={} fragments={}",
+                        LOG_PREFIX, event.getId(), aggResult.getIntentKey(), aggResult.getMergedIntoTaskId(),
+                        aggResult.getAggregatedSizeUsdc(), aggResult.getFragmentCount());
+                log.info("{}", flow("S6_TASK_CREATED", "创建跟单任务", "意图聚合合并", event, null,
+                        "intentKey", aggResult.getIntentKey(),
+                        "mergedTaskId", aggResult.getMergedIntoTaskId(),
+                        "aggregatedUsdc", aggResult.getAggregatedSizeUsdc(),
+                        "fragments", aggResult.getFragmentCount(),
+                        "reasonSummary", "碎片事件已合并到已有意图任务"));
+                markSourceEventProcessed(event);
+                return;
+            }
+        }
+
         if (manualBlocklistService.isBlocked(event.getWalletAddress())) {
             createBlocklistedSkippedTask(event, manualBlocklistService.activeReason(event.getWalletAddress()));
             markSourceEventProcessed(event);
@@ -902,6 +924,22 @@ public class SmartWalletFollowTaskService {
         String executionMode = decision.isAccepted()
                 ? resolveTaskExecutionMode(event.getWalletAddress(), decision)
                 : STATUS_PAPER_SHADOW.equals(taskStatus) ? "PAPER_SHADOW" : resolveTaskExecutionMode(event.getWalletAddress(), decision);
+        // ── P0-2: 如果意图聚合已启用，填充 intentKey 和可能的聚合金额 ──
+        String intentKey = null;
+        int fragmentCount = 1;
+        BigDecimal aggregatedStakeUsdc = recommendedStake;
+        if (isIntentAggregationEnabled()) {
+            FollowIntentAggregationService.IntentAggregationResult aggResult =
+                    followIntentAggregationService.aggregate(event);
+            intentKey = aggResult.getIntentKey();
+            fragmentCount = aggResult.getFragmentCount();
+            if (aggResult.getAggregatedSizeUsdc() != null
+                    && aggResult.getAggregatedSizeUsdc().compareTo(recommendedStake) > 0) {
+                // 聚合金额比风控推荐更大时，使用聚合金额（受后续 exposure clip 约束）
+                aggregatedStakeUsdc = aggResult.getAggregatedSizeUsdc().setScale(2, RoundingMode.HALF_UP);
+            }
+        }
+
         // ---- Step 3: Create Follow Task（附带实体维度字段）----
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
@@ -913,7 +951,9 @@ public class SmartWalletFollowTaskService {
                 .setSide(event.getSide())
                 .setTriggerPrice(event.getPrice())
                 .setTriggerSizeUsdc(event.getSizeUsdc())
-                .setRecommendedStakeUsdc(recommendedStake)
+                .setRecommendedStakeUsdc(decision.isAccepted() ? aggregatedStakeUsdc : recommendedStake)
+                .setIntentKey(intentKey)
+                .setFragmentCount(fragmentCount)
                 .setStatus(taskStatus)
                 .setExecutionMode(executionMode)
                 .setErrorMessage(String.join(" | ", decision.getReasons()))
@@ -1548,23 +1588,59 @@ public class SmartWalletFollowTaskService {
                         .build();
             }
             if ("DYNAMIC_FOLLOW_EXIT".equalsIgnoreCase(decision.getEntryLane())) {
-                task.setStatus("SKIPPED");
-                task.setErrorMessage("[DYNAMIC_FOLLOW_EXIT] Signal was classified as an exit/rebalance lane and is not submitted as a new entry order.");
-                task.setPrimarySkipReason("NON_TRADABLE");
-                task.setSkipReasonTags("NON_TRADABLE");
+                // ── P0-1: 不再 SKIP，转调 FollowPositionAdjustmentService 执行减仓/平仓 ──
+                ExecutionMode exitMode = "LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER;
+                SmartWalletTradeEventEntity exitEvent = getSourceEvent(task);
+                String exitIntent = decision.getExitIntent(); // SOURCE_SELL / OPPOSITE_BUY
+                log.info("{} action=DYNAMIC_FOLLOW_EXIT转入仓位调整 followTaskId={} exitIntent={} mode={} marketId={} outcome={}",
+                        LOG_PREFIX, task.getId(), exitIntent, exitMode, task.getMarketId(), task.getOutcome());
+
+                FollowPositionAdjustmentService.AdjustmentResult adjustResult =
+                        followPositionAdjustmentService.adjust(task, exitEvent, exitIntent, exitMode);
+
+                if (adjustResult.getAction() == FollowPositionAdjustmentService.AdjustmentAction.NO_POSITION_SKIP) {
+                    // follower 无持仓，安全跳过
+                    task.setStatus("SKIPPED");
+                    task.setErrorMessage("[DYNAMIC_FOLLOW_EXIT:NO_POSITION] " + adjustResult.getMessage());
+                    task.setPrimarySkipReason("NO_POSITION");
+                    task.setSkipReasonTags("NO_POSITION,DYNAMIC_FOLLOW_EXIT");
+                    task.setUpdatedAt(new Date());
+                    followTaskMapper.updateById(task);
+                    return SmartWalletExecutionResult.builder()
+                            .signalId(String.valueOf(task.getId()))
+                            .mode(exitMode)
+                            .success(false)
+                            .message(task.getErrorMessage())
+                            .marketId(task.getMarketId())
+                            .outcome(task.getOutcome())
+                            .side(task.getSide())
+                            .status("SKIPPED")
+                            .price(task.getTriggerPrice())
+                            .notionalUsdc(task.getRecommendedStakeUsdc())
+                            .feeUsdc(BigDecimal.ZERO)
+                            .tradingFeeUsdc(BigDecimal.ZERO)
+                            .build();
+                }
+
+                // 有仓位且已执行调整
+                String exitStatus = adjustResult.isSuccess() ? "FOLLOWED" : "FAILED";
+                task.setStatus(exitStatus);
+                task.setErrorMessage("[DYNAMIC_FOLLOW_EXIT:" + adjustResult.getAction() + "] " + adjustResult.getMessage());
                 task.setUpdatedAt(new Date());
                 followTaskMapper.updateById(task);
+
                 return SmartWalletExecutionResult.builder()
                         .signalId(String.valueOf(task.getId()))
-                        .mode("LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER)
-                        .success(false)
+                        .mode(exitMode)
+                        .success(adjustResult.isSuccess())
                         .message(task.getErrorMessage())
                         .marketId(task.getMarketId())
                         .outcome(task.getOutcome())
                         .side(task.getSide())
-                        .status("SKIPPED")
+                        .orderType("EXIT")
+                        .status(exitStatus)
                         .price(task.getTriggerPrice())
-                        .notionalUsdc(task.getRecommendedStakeUsdc())
+                        .notionalUsdc(adjustResult.getExitedNotionalUsdc())
                         .feeUsdc(BigDecimal.ZERO)
                         .tradingFeeUsdc(BigDecimal.ZERO)
                         .build();
@@ -1805,6 +1881,11 @@ public class SmartWalletFollowTaskService {
                 event.getQuestion(),
                 StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
         );
+    }
+
+    private boolean isIntentAggregationEnabled() {
+        SmartWalletProperties.IntentAggregationConfig config = properties.getIntentAggregation();
+        return config != null && config.isEnabled();
     }
 
     private void markSourceEventProcessed(SmartWalletTradeEventEntity event) {

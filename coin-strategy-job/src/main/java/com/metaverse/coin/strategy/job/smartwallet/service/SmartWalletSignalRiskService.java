@@ -74,6 +74,7 @@ public class SmartWalletSignalRiskService {
     private final MarketSnapshotCollectorService marketSnapshotCollectorService;
     private final AllowlistSignalAggregationService allowlistAggregationService;
     private final FollowExposureLimitService followExposureLimitService;
+    private final FollowIntentAggregationService followIntentAggregationService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -391,9 +392,27 @@ public class SmartWalletSignalRiskService {
         if (risk.isBlockDuplicatePendingTask()
                 && hasPendingFollowTask(event.getMarketId(), event.getOutcome(), currentFollowTaskId)
                 && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
-            accepted = false;
-            if (firstRejectGate == null) firstRejectGate = "G7_DUPLICATE_PENDING_TASK";
-            reasons.add("A pending follow task already exists for the same market and outcome.");
+            // P0-2: 如果意图聚合已启用且在同一聚合窗口内，不拦截（走聚合合并路径）
+            boolean withinIntentWindow = false;
+            try {
+                SmartWalletProperties.IntentAggregationConfig aggConfig = properties.getIntentAggregation();
+                if (aggConfig != null && aggConfig.isEnabled()) {
+                    Date eventTime = event.getOpenedAt() != null ? event.getOpenedAt() : new Date();
+                    withinIntentWindow = followIntentAggregationService.isWithinActiveIntentWindow(
+                            event.getMarketId(), event.getOutcome(), event.getSide(),
+                            event.getWalletAddress(), eventTime);
+                }
+            } catch (Exception e) {
+                log.debug("{} action=意图聚合窗口判定异常 eventId={} error={}", LOG_PREFIX, event.getId(), e.getMessage());
+            }
+
+            if (!withinIntentWindow) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G7_DUPLICATE_PENDING_TASK";
+                reasons.add("A pending follow task already exists for the same market and outcome.");
+            } else {
+                reasons.add("[INTENT_AGGREGATION_BYPASS] Duplicate pending task exists but within intent aggregation window — allowing merge.");
+            }
         }
 
         if (risk.isBlockOppositePendingTaskSameMarket()
@@ -897,6 +916,7 @@ public class SmartWalletSignalRiskService {
             }
         }
         // ── Gate 10c: 暴露上限检查 (单市场/单地址/总TVL) ──
+        FollowExposureLimitService.ExposureCheckResult lastExposureResult = null;
         if (accepted) {
             SmartWalletProperties.ExposureLimitConfig exposureConfig = properties.getExposureLimit();
             if (exposureConfig != null && exposureConfig.isEnabled()) {
@@ -904,6 +924,7 @@ public class SmartWalletSignalRiskService {
                         followExposureLimitService.check(
                                 event.getMarketId(), event.getOutcome(), event.getWalletAddress(),
                                 recommendedStake, availableCapital);
+                lastExposureResult = exposureResult;
                 if (!exposureResult.isAllowed()) {
                     accepted = false;
                     if (firstRejectGate == null) firstRejectGate = "G10c_EXPOSURE_LIMIT(" + exposureResult.getReason() + ")";
@@ -1196,6 +1217,9 @@ public class SmartWalletSignalRiskService {
                 .strategyChecks(strategyChecks)
                 .scaleUpSignal(isScaleUpSignal)
                 .scaleUpAddOnStake(isScaleUpSignal ? scaleUpAddOnStake : null)
+                .grossMarketExposure(lastExposureResult != null ? lastExposureResult.getGrossMarketExposure() : null)
+                .netDirectionalExposure(lastExposureResult != null ? lastExposureResult.getNetDirectionalExposure() : null)
+                .reducesNetExposure(lastExposureResult != null && lastExposureResult.isReducesNetExposure())
                 .reasons(reasons)
                 .build();
         // ── 门控阶段追踪汇总日志 ──

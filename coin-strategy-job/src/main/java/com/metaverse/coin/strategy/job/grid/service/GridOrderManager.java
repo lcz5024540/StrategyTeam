@@ -5,6 +5,9 @@ import com.metaverse.coin.strategy.common.dao.mapper.GridOrderMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.GridOrderEntity;
 import com.metaverse.coin.strategy.job.grid.config.GridTradingProperties;
 import com.metaverse.coin.strategy.job.grid.model.GridLevel;
+import com.metaverse.coin.strategy.job.smartwallet.service.ExecutionWalletContextLoader;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobClientRouter;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketOrderRequestFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,6 +41,8 @@ public class GridOrderManager {
 
     private final GridTradingProperties properties;
     private final GridOrderMapper orderMapper;
+    private final ExecutionWalletContextLoader walletContextLoader;
+    private final PolymarketClobClientRouter clobClientRouter;
 
     /**
      * 为一个市场初始化所有网格挂单。
@@ -83,11 +88,41 @@ public class GridOrderManager {
 
             orderMapper.insert(order);
 
-            // TODO: LIVE 模式 → 通过 PolymarketClobClientRouter 下真实 maker 挂单
             if ("LIVE".equals(executionMode)) {
-                log.info("{} [LIVE] 挂单: market={} level={} side={} price={} qty={}",
-                        LOG_PREFIX, instanceConfig.getMarketId(), level.getLevelIndex(),
-                        level.getSide(), level.getPrice(), level.getQuantity());
+                // LIVE 模式：通过 PolymarketClobClientRouter 下真实 CLOB V2 maker 挂单
+                try {
+                    ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
+                    PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared =
+                            PolymarketOrderRequestFactory.PreparedPolymarketOrder.builder()
+                                    .signalId("grid-init-" + order.getId())
+                                    .marketId(instanceConfig.getMarketId())
+                                    .question(marketTitle)
+                                    .outcome("YES")
+                                    .side(level.getSide())
+                                    .stakeUsdc(level.getAmountUsdc())
+                                    .limitPrice(level.getPrice())
+                                    .size(level.getQuantity())
+                                    .tokenId(yesTokenId)
+                                    .tickSize(properties.getGlobal().getMinimumTickSize())
+                                    .negRisk(false)
+                                    .executionAddress(wallet.getAddress())
+                                    .funderAddress(wallet.getFunderAddress())
+                                    .orderStrategy("MAKER")
+                                    .build();
+                    Map<String, Object> result = clobClientRouter.placeOrder(wallet, prepared);
+                    String orderId = result.get("orderID") != null ? result.get("orderID").toString() : null;
+                    order.setExternalOrderId(orderId);
+                    order.setStatus("LIVE");
+                    orderMapper.updateById(order);
+                    log.info("{} [LIVE] 挂单成功: market={} level={} side={} price={} orderId={}",
+                            LOG_PREFIX, instanceConfig.getMarketId(), level.getLevelIndex(),
+                            level.getSide(), level.getPrice(), orderId);
+                } catch (Exception e) {
+                    log.error("{} [LIVE] 挂单失败: market={} level={} error={}",
+                            LOG_PREFIX, instanceConfig.getMarketId(), level.getLevelIndex(), e.getMessage(), e);
+                    order.setStatus("FAILED");
+                    orderMapper.updateById(order);
+                }
             } else {
                 order.setStatus("LIVE"); // Paper 模式直接标记为 LIVE
                 orderMapper.updateById(order);
@@ -190,6 +225,7 @@ public class GridOrderManager {
 
         BigDecimal quantity = filledOrder.getQuantity();
 
+        String executionMode = filledOrder.getExecutionMode();
         GridOrderEntity counterOrder = new GridOrderEntity()
                 .setStrategyId(STRATEGY_ID)
                 .setWalletId(properties.getWalletId())
@@ -202,8 +238,8 @@ public class GridOrderManager {
                 .setPrice(counterPrice)
                 .setQuantity(quantity)
                 .setAmountUsdc(counterPrice.multiply(quantity).setScale(2, RoundingMode.HALF_UP))
-                .setStatus("LIVE") // Paper 直接 LIVE
-                .setExecutionMode(filledOrder.getExecutionMode())
+                .setStatus("PENDING")
+                .setExecutionMode(executionMode)
                 .setFilledQuantity(BigDecimal.ZERO)
                 .setRealizedProfitUsdc(BigDecimal.ZERO)
                 .setCounterOrderId(filledOrder.getId())
@@ -211,6 +247,46 @@ public class GridOrderManager {
                 .setUpdatedAt(new Date());
 
         orderMapper.insert(counterOrder);
+
+        // LIVE 模式：通过 CLOB V2 下真实对侧挂单
+        if ("LIVE".equals(executionMode)) {
+            try {
+                ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
+                PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared =
+                        PolymarketOrderRequestFactory.PreparedPolymarketOrder.builder()
+                                .signalId("grid-counter-" + counterOrder.getId())
+                                .marketId(filledOrder.getMarketId())
+                                .question(filledOrder.getMarketTitle())
+                                .outcome(filledOrder.getOutcome())
+                                .side(counterSide)
+                                .stakeUsdc(counterOrder.getAmountUsdc())
+                                .limitPrice(counterPrice)
+                                .size(quantity)
+                                .tokenId(filledOrder.getTokenId())
+                                .tickSize(properties.getGlobal().getMinimumTickSize())
+                                .negRisk(false)
+                                .executionAddress(wallet.getAddress())
+                                .funderAddress(wallet.getFunderAddress())
+                                .orderStrategy("MAKER")
+                                .build();
+                Map<String, Object> result = clobClientRouter.placeOrder(wallet, prepared);
+                String orderId = result.get("orderID") != null ? result.get("orderID").toString() : null;
+                counterOrder.setExternalOrderId(orderId);
+                counterOrder.setStatus("LIVE");
+                orderMapper.updateById(counterOrder);
+                log.info("{} [LIVE] 对侧补单成功: market={} side={} price={} orderId={}",
+                        LOG_PREFIX, filledOrder.getMarketId(), counterSide, counterPrice, orderId);
+            } catch (Exception e) {
+                log.error("{} [LIVE] 对侧补单失败: market={} side={} error={}",
+                        LOG_PREFIX, filledOrder.getMarketId(), counterSide, e.getMessage(), e);
+                counterOrder.setStatus("FAILED");
+                orderMapper.updateById(counterOrder);
+            }
+        } else {
+            // Paper 模式直接标记 LIVE
+            counterOrder.setStatus("LIVE");
+            orderMapper.updateById(counterOrder);
+        }
 
         log.info("{} 对侧补单: market={} side={} price={} qty={}",
                 LOG_PREFIX, filledOrder.getMarketId(), counterSide, counterPrice, quantity);
@@ -227,10 +303,23 @@ public class GridOrderManager {
                         .eq(GridOrderEntity::getStrategyId, STRATEGY_ID));
 
         for (GridOrderEntity order : liveOrders) {
+            // LIVE 模式：通过 CLOB API 撤销真实挂单
+            if ("LIVE".equals(order.getExecutionMode())
+                    && order.getExternalOrderId() != null
+                    && !order.getExternalOrderId().isBlank()) {
+                try {
+                    ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
+                    clobClientRouter.cancelOrder(wallet, order.getExternalOrderId());
+                    log.info("{} [LIVE] 撤单成功: market={} orderId={}",
+                            LOG_PREFIX, marketId, order.getExternalOrderId());
+                } catch (Exception e) {
+                    log.error("{} [LIVE] 撤单失败: market={} orderId={} error={}",
+                            LOG_PREFIX, marketId, order.getExternalOrderId(), e.getMessage(), e);
+                }
+            }
             order.setStatus("CANCELLED");
             order.setUpdatedAt(new Date());
             orderMapper.updateById(order);
-            // TODO: LIVE 模式需要通过 CLOB API 撤单
         }
 
         log.info("{} 撤销所有挂单: market={} cancelled={}", LOG_PREFIX, marketId, liveOrders.size());

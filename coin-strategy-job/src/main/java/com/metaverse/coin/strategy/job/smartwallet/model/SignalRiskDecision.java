@@ -58,4 +58,12 @@ public class SignalRiskDecision {
     private List<SignalStrategyCheckResult> strategyChecks = new ArrayList<>();
     @Builder.Default
     private List<String> reasons = new ArrayList<>();
+
+    // ── P0-3: gross/net 双口径暴露信息 ──
+    /** 市场毛暴露 (所有 outcome 总成本) */
+    private BigDecimal grossMarketExposure;
+    /** 市场净方向性暴露 (|YES_cost - NO_cost|) */
+    private BigDecimal netDirectionalExposure;
+    /** 该笔新订单是否降低净暴露 */
+    private boolean reducesNetExposure;
 }

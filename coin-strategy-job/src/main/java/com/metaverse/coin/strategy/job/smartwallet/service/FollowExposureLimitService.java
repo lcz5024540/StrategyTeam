@@ -1,7 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeOrderMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeOrderEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
 import lombok.Builder;
@@ -45,6 +47,8 @@ import java.util.List;
 public class FollowExposureLimitService {
 
     private final SmartWalletTradeOrderMapper tradeOrderMapper;
+    private final SmartWalletPositionMapper positionMapper;
+    private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletProperties properties;
 
     /**
@@ -125,8 +129,23 @@ public class FollowExposureLimitService {
                     .build();
         }
 
+        // ── P0-3: 计算净方向性暴露 ──
+        NetExposureSnapshot netSnapshot = computeNetMarketExposure(marketId, outcome);
+
         // ── 综合：取三层最小可用额度 ──
         BigDecimal effectiveBudget = marketRemaining.min(walletRemaining).min(totalRemaining);
+
+        // P0-3: 如果新订单方向是降低净暴露（反向减仓），给予更宽松的额度
+        boolean reducesNetExposure = netSnapshot.isNewOrderReducesNet(outcome);
+        if (reducesNetExposure && effectiveBudget.compareTo(BigDecimal.ZERO) <= 0) {
+            // 反向腿允许使用 gross cap 的 50% 作为额外额度
+            BigDecimal relaxedBudget = maxPerMarket.multiply(new BigDecimal("0.50")).setScale(2, RoundingMode.HALF_UP);
+            if (relaxedBudget.compareTo(BigDecimal.ZERO) > 0) {
+                effectiveBudget = relaxedBudget;
+                reasons.add("[NET_EXPOSURE_RELAXATION] Opposite-side order reduces net exposure. " +
+                        "Relaxed budget=" + relaxedBudget + " netExposure=" + netSnapshot.getNetDirectional());
+            }
+        }
 
         // 如果 proposedStake > effectiveBudget，裁剪到 budget
         BigDecimal finalStake = proposedStake.min(effectiveBudget).setScale(2, RoundingMode.HALF_UP);
@@ -150,6 +169,9 @@ public class FollowExposureLimitService {
                 .marketExposure(marketExposure)
                 .walletExposure(walletExposure)
                 .totalExposure(totalExposure)
+                .grossMarketExposure(marketExposure)
+                .netDirectionalExposure(netSnapshot.getNetDirectional())
+                .reducesNetExposure(reducesNetExposure)
                 .build();
     }
 
@@ -204,6 +226,79 @@ public class FollowExposureLimitService {
     }
 
     // ════════════════════════════════════════════════════════════════════
+    // P0-3: Net directional exposure
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * 计算某市场下的净方向性暴露。
+     *
+     * 通过 position 表按 outcome 分组汇总 costBasis，
+     * netDirectional = |YES_cost - NO_cost|
+     *
+     * 如果同时持有 YES 和 NO，净暴露远低于毛暴露，说明存在对冲。
+     */
+    private NetExposureSnapshot computeNetMarketExposure(String marketId, String currentOutcome) {
+        // 查找该 marketId 下所有 outcome 的 market_info_id
+        List<SmartWalletPositionEntity> allPositions = positionMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
+                        .apply("market_info_id IN (SELECT id FROM smart_wallet_market_info WHERE market_id = {0})", marketId));
+
+        BigDecimal sameOutcomeCost = BigDecimal.ZERO;
+        BigDecimal oppositeOutcomeCost = BigDecimal.ZERO;
+        BigDecimal grossCost = BigDecimal.ZERO;
+
+        for (SmartWalletPositionEntity pos : allPositions) {
+            marketInfoService.populate(pos);
+            BigDecimal cost = pos.getCostBasisUsdc() != null ? pos.getCostBasisUsdc() : BigDecimal.ZERO;
+            grossCost = grossCost.add(cost);
+
+            String posOutcome = pos.getOutcome();
+            if (posOutcome != null && posOutcome.equalsIgnoreCase(currentOutcome)) {
+                sameOutcomeCost = sameOutcomeCost.add(cost);
+            } else {
+                oppositeOutcomeCost = oppositeOutcomeCost.add(cost);
+            }
+        }
+
+        BigDecimal netDirectional = sameOutcomeCost.subtract(oppositeOutcomeCost).abs();
+
+        return NetExposureSnapshot.builder()
+                .grossExposure(grossCost)
+                .sameOutcomeCost(sameOutcomeCost)
+                .oppositeOutcomeCost(oppositeOutcomeCost)
+                .netDirectional(netDirectional)
+                .currentOutcome(currentOutcome)
+                .build();
+    }
+
+    @Data
+    @Builder
+    public static class NetExposureSnapshot {
+        private BigDecimal grossExposure;
+        private BigDecimal sameOutcomeCost;
+        private BigDecimal oppositeOutcomeCost;
+        private BigDecimal netDirectional;
+        private String currentOutcome;
+
+        /**
+         * 判断新订单是否降低净暴露：
+         * 如果当前 outcome 的持仓 < 对手 outcome 的持仓，
+         * 说明新买入 currentOutcome 会减少净暴露（趋向对冲）。
+         */
+        public boolean isNewOrderReducesNet(String orderOutcome) {
+            if (orderOutcome == null || currentOutcome == null) return false;
+            if (orderOutcome.equalsIgnoreCase(currentOutcome)) {
+                // 买入同方向：只有当对手方更大时才是降低净暴露
+                return oppositeOutcomeCost.compareTo(sameOutcomeCost) > 0;
+            } else {
+                // 买入反方向：只有当同方向更大时才是降低净暴露
+                return sameOutcomeCost.compareTo(oppositeOutcomeCost) > 0;
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
     // Config
     // ════════════════════════════════════════════════════════════════════
 
@@ -230,11 +325,19 @@ public class FollowExposureLimitService {
         /** 拒绝/裁剪原因 */
         private String reason;
         private List<String> reasons;
-        /** 该市场当前总暴露 */
+        /** 该市场当前总暴露（毛口径，与 grossMarketExposure 相同，保留向后兼容） */
         private BigDecimal marketExposure;
         /** 该地址当前总暴露 */
         private BigDecimal walletExposure;
         /** 全部持仓当前总暴露 */
         private BigDecimal totalExposure;
+
+        // ── P0-3: gross/net 双口径 ──
+        /** 市场毛暴露（所有 outcome 成本之和） */
+        private BigDecimal grossMarketExposure;
+        /** 市场净方向性暴露（|YES_cost - NO_cost|） */
+        private BigDecimal netDirectionalExposure;
+        /** 该笔新订单是否降低净暴露（反向对冲） */
+        private boolean reducesNetExposure;
     }
 }

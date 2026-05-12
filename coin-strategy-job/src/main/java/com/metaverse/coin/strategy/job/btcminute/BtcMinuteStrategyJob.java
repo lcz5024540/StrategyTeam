@@ -16,6 +16,9 @@ import com.metaverse.coin.strategy.job.engine.model.StrategyCycleResult;
 import com.metaverse.coin.strategy.job.engine.model.StrategyExitResult;
 import com.metaverse.coin.strategy.job.engine.model.StrategyHealthSnapshot;
 import com.metaverse.coin.strategy.job.engine.model.TradingSignal;
+import com.metaverse.coin.strategy.job.smartwallet.service.ExecutionWalletContextLoader;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobClientRouter;
+import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketOrderRequestFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -58,6 +61,9 @@ public class BtcMinuteStrategyJob implements PolymarketStrategy {
     private final BtcFairProbabilityService fairProbabilityService;
     private final BtcMinuteRiskService riskService;
     private final BtcMinutePositionMapper positionMapper;
+    private final ExecutionWalletContextLoader walletContextLoader;
+    private final PolymarketClobClientRouter clobClientRouter;
+    private final PolymarketOrderRequestFactory orderRequestFactory;
 
     // ── PolymarketStrategy 接口实现 ──────────────────────────────────
 
@@ -314,7 +320,7 @@ public class BtcMinuteStrategyJob implements PolymarketStrategy {
         }
 
         if (mode == StrategyMode.PAPER || mode == StrategyMode.LIVE) {
-            // Paper 模式：记录虚拟仓位
+            // 记录仓位
             BtcMinutePositionEntity position = new BtcMinutePositionEntity()
                     .setStrategyId(STRATEGY_ID)
                     .setWalletId(properties.getWalletId())
@@ -350,7 +356,37 @@ public class BtcMinuteStrategyJob implements PolymarketStrategy {
                     LOG_PREFIX, mode, signal.getMarketId(), signal.getOutcome(),
                     signal.getSuggestedStakeUsdc(), signal.getEdge());
 
-            // TODO: LIVE 模式需要通过 PolymarketClobClientRouter 下真实订单
+            // LIVE 模式：通过 PolymarketClobClientRouter 下真实 CLOB V2 订单
+            if (mode == StrategyMode.LIVE) {
+                try {
+                    ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
+                    PolymarketOrderRequestFactory.PreparedPolymarketOrder prepared = orderRequestFactory.prepareLocalDraft(
+                            "btc-minute-" + position.getId(),
+                            signal.getMarketId(),
+                            signal.getMarketTitle(),
+                            signal.getOutcome(),
+                            signal.getSuggestedStakeUsdc(),
+                            signal.getMarketPrice(),
+                            null, // tokenId — will be resolved by factory via market metadata
+                            new BigDecimal("0.01"), // default tick size
+                            false, // negRisk — BTC short-term markets are standard
+                            wallet
+                    );
+                    Map<String, Object> result = clobClientRouter.placeOrder(wallet, prepared);
+                    String orderId = result.get("orderID") != null ? result.get("orderID").toString() : null;
+                    position.setExternalOrderId(orderId);
+                    positionMapper.updateById(position);
+                    log.info("{} [LIVE] CLOB订单已提交: market={} outcome={} orderId={}",
+                            LOG_PREFIX, signal.getMarketId(), signal.getOutcome(), orderId);
+                } catch (Exception e) {
+                    log.error("{} [LIVE] CLOB订单提交失败: market={} outcome={} error={}",
+                            LOG_PREFIX, signal.getMarketId(), signal.getOutcome(), e.getMessage(), e);
+                    position.setStatus("FAILED");
+                    position.setSignalReason(position.getSignalReason() + " | LIVE_ERROR: " + e.getMessage());
+                    positionMapper.updateById(position);
+                }
+            }
+
             return true;
         }
 

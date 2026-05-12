@@ -58,6 +58,7 @@ public class SmartWalletProperties {
     private FeeSchedule feeSchedule = new FeeSchedule();
     private AllowlistAggregationConfig allowlistAggregation = new AllowlistAggregationConfig();
     private ExposureLimitConfig exposureLimit = new ExposureLimitConfig();
+    private IntentAggregationConfig intentAggregation = new IntentAggregationConfig();
 
     @Data
     public static class PolymarketMonitor {
@@ -900,5 +901,19 @@ public class SmartWalletProperties {
 
         /** 总 TVL 利用率上限。所有跟单持仓总成本 / 总 TVL 不超过此比例 */
         private BigDecimal maxTvlUtilizationPct = new BigDecimal("0.80");
+    }
+
+    // ── 意图聚合配置 ──
+
+    @Data
+    public static class IntentAggregationConfig {
+        /** 是否启用意图聚合 */
+        private boolean enabled = true;
+
+        /** 聚合时间窗口（分钟）。同 wallet+market+outcome+side 在此窗口内的事件归属同一意图 */
+        private int windowMinutes = 5;
+
+        /** 聚合后最小触发金额 (USDC)。聚合总金额低于此值不生成 follow task */
+        private BigDecimal minAggregatedTriggerUsdc = new BigDecimal("5");
     }
 }

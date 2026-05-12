@@ -40,6 +40,10 @@ public class SmartWalletFollowTaskEntity {
     private String primarySkipReason;
     private String skipReasonTags;
     private String wouldHaveSkippedReason;
+    /** P0-2: 意图聚合标识。同 wallet+market+outcome+side 在时间窗口内的事件共享同一 intentKey */
+    private String intentKey;
+    /** P0-2: 该意图下聚合的碎片事件数量 */
+    private Integer fragmentCount;
     private Date scheduledAt;
     private Date executedAt;
     private Date createdAt;
