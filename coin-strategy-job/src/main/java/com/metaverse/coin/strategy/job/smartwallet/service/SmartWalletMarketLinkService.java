@@ -83,6 +83,32 @@ public class SmartWalletMarketLinkService {
         return view;
     }
 
+    /**
+     * Cache-only resolve: returns a cached link if available, otherwise builds
+     * a minimal internal-only link without any HTTP calls.  This is safe to call
+     * in hot-path loops (e.g. page queries) where latency matters.
+     */
+    public SmartWalletMarketLinkView resolveCacheOnly(String conditionId, String question, String outcome) {
+        String normalizedConditionId = StringUtils.hasText(conditionId) ? conditionId.trim() : null;
+        if (StringUtils.hasText(normalizedConditionId)) {
+            CachedLink cached = cache.get(normalizedConditionId.toLowerCase(Locale.ROOT));
+            if (cached != null && cached.expiresAtMs() > System.currentTimeMillis()) {
+                return cached.view();
+            }
+        }
+        // Cache miss — return a lightweight internal-only link (no HTTP).
+        String internalUrl = buildInternalMarketUrl(normalizedConditionId);
+        return SmartWalletMarketLinkView.builder()
+                .conditionId(normalizedConditionId)
+                .question(question)
+                .outcome(outcome)
+                .marketUrl(internalUrl)
+                .internalMarketUrl(internalUrl)
+                .linkStatus(STATUS_INTERNAL_FALLBACK)
+                .metadataSource("CACHE_MISS")
+                .build();
+    }
+
     public SmartWalletMarketLinkView fromStoredSlug(String conditionId,
                                                     String question,
                                                     String outcome,

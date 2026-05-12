@@ -72,6 +72,8 @@ public class SmartWalletSignalRiskService {
     private final SignalScoreModelService signalScoreModelService;
     private final PolymarketFeeScheduleService feeScheduleService;
     private final MarketSnapshotCollectorService marketSnapshotCollectorService;
+    private final AllowlistSignalAggregationService allowlistAggregationService;
+    private final FollowExposureLimitService followExposureLimitService;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
         return evaluate(profile, event, null, null);
@@ -116,14 +118,18 @@ public class SmartWalletSignalRiskService {
             addressAdmissionRejected = true;
             if (firstRejectGate == null) firstRejectGate = "G1_MANUAL_WATCH_DISABLED";
             reasons.add("[MANUAL_WATCH_DISABLED] Wallet is manually forced to observe-only; manual allowlist cannot override it.");
-        } else if (isObserveCooldownActive(profile)) {
+        } else if (isObserveCooldownActive(profile) && !manualAllowlistApplied) {
             accepted = false;
-            manualAllowlistApplied = false;
             addressAdmissionRejected = true;
             if (firstRejectGate == null) firstRejectGate = "G1_OBSERVE_COOLDOWN";
             reasons.add("[OBSERVE_COOLDOWN_BLOCK] Wallet is currently in recent-degradation observe cooldown until "
                     + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
         } else if (manualAllowlistApplied) {
+            if (isObserveCooldownActive(profile)) {
+                reasons.add("[MANUAL_ALLOWLIST_COOLDOWN_BYPASS] Wallet is in observe cooldown until "
+                        + profile.getObserveCooldownUntil()
+                        + " but manual allowlist bypasses cooldown gate. Reason: " + profile.getObserveCooldownReason());
+            }
             reasons.add("[MANUAL_ALLOWLIST_PASS] Wallet matched active manual allowlist. Address-profile admission checks are bypassed only.");
             if (profile == null || profile.getId() == null) {
                 accepted = false;
@@ -191,22 +197,55 @@ public class SmartWalletSignalRiskService {
             }
         }
         // ── Gate 3: 触发金额 / 价格带 ──
+        // 白名单地址：放宽价格/金额限制，使用更宽松的硬边界 [0.02, 0.98]，
+        // 如果原价超出常规范围则 clamp 到边界，并按比例缩放 stake。
+        BigDecimal allowlistMinPrice = new BigDecimal("0.02");
+        BigDecimal allowlistMaxPrice = new BigDecimal("0.98");
+        BigDecimal allowlistMinTriggerSizeUsdc = new BigDecimal("1");
+        boolean allowlistPriceClampApplied = false;
+
         BigDecimal triggerSize = safe(event.getSizeUsdc());
         if (triggerSize.compareTo(safe(risk.getMinTriggerSizeUsdc())) < 0) {
-            accepted = false;
-            if (firstRejectGate == null) firstRejectGate = "G3_TRIGGER_SIZE_TOO_SMALL";
-            reasons.add("[TRIGGER_SIZE_TOO_SMALL] triggerNotionalUsdc=" + triggerSize
-                    + ", sizeShares=" + safe(event.getSizeShares())
-                    + ", price=" + safe(event.getPrice())
-                    + ", minTriggerSizeUsdc=" + safe(risk.getMinTriggerSizeUsdc())
-                    + ". Polymarket raw size is shares; risk gate uses normalized USDC notional.");
+            if (manualAllowlistApplied && triggerSize.compareTo(allowlistMinTriggerSizeUsdc) >= 0) {
+                reasons.add("[MANUAL_ALLOWLIST_TRIGGER_SIZE_BYPASS] triggerNotionalUsdc=" + triggerSize
+                        + " is below normal min=" + safe(risk.getMinTriggerSizeUsdc())
+                        + " but above allowlist floor=" + allowlistMinTriggerSizeUsdc + "; gate bypassed.");
+            } else {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G3_TRIGGER_SIZE_TOO_SMALL";
+                reasons.add("[TRIGGER_SIZE_TOO_SMALL] triggerNotionalUsdc=" + triggerSize
+                        + ", sizeShares=" + safe(event.getSizeShares())
+                        + ", price=" + safe(event.getPrice())
+                        + ", minTriggerSizeUsdc=" + (manualAllowlistApplied ? allowlistMinTriggerSizeUsdc : safe(risk.getMinTriggerSizeUsdc()))
+                        + ". Polymarket raw size is shares; risk gate uses normalized USDC notional.");
+            }
         }
 
         BigDecimal price = safe(event.getPrice());
-        if (price.compareTo(safe(risk.getMinFollowPrice())) < 0 || price.compareTo(safe(risk.getMaxFollowPrice())) > 0) {
+        BigDecimal effectiveMinPrice = manualAllowlistApplied ? allowlistMinPrice : safe(risk.getMinFollowPrice());
+        BigDecimal effectiveMaxPrice = manualAllowlistApplied ? allowlistMaxPrice : safe(risk.getMaxFollowPrice());
+        if (price.compareTo(effectiveMinPrice) < 0 || price.compareTo(effectiveMaxPrice) > 0) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G3_PRICE_OUT_OF_RANGE";
-            reasons.add("Trigger price is outside follow range.");
+            reasons.add("Trigger price " + price + " is outside follow range [" + effectiveMinPrice + ", " + effectiveMaxPrice + "].");
+        } else if (manualAllowlistApplied
+                && (price.compareTo(safe(risk.getMinFollowPrice())) < 0 || price.compareTo(safe(risk.getMaxFollowPrice())) > 0)) {
+            // 白名单地址在常规范围外但在宽松范围内 → clamp stake 比例
+            BigDecimal normalMin = safe(risk.getMinFollowPrice());
+            BigDecimal normalMax = safe(risk.getMaxFollowPrice());
+            BigDecimal midPoint = normalMin.add(normalMax).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+            BigDecimal distFromMid = price.subtract(midPoint).abs();
+            BigDecimal maxDist = effectiveMaxPrice.subtract(effectiveMinPrice).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+            BigDecimal normalMaxDist = normalMax.subtract(normalMin).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+            // 超出常规范围的距离比，用于缩放 stake（越远衰减越多，最低 30%）
+            BigDecimal overflowRatio = maxDist.compareTo(BigDecimal.ZERO) > 0
+                    ? BigDecimal.ONE.subtract(distFromMid.subtract(normalMaxDist).divide(maxDist, 4, RoundingMode.HALF_UP)).max(new BigDecimal("0.30"))
+                    : BigDecimal.ONE;
+            allowlistPriceClampApplied = true;
+            reasons.add("[MANUAL_ALLOWLIST_PRICE_CLAMP] Price " + price
+                    + " is outside normal range [" + normalMin + ", " + normalMax + "]"
+                    + " but within allowlist range [" + effectiveMinPrice + ", " + effectiveMaxPrice + "]."
+                    + " Stake will be scaled by " + overflowRatio.setScale(4, RoundingMode.HALF_UP) + ".");
         }
         if (accepted) gateStage = 3; // 通过触发金额/价格带
 
@@ -334,7 +373,8 @@ public class SmartWalletSignalRiskService {
                 && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G7_FAST_EVENT_BLOCKED";
-            reasons.add("[FAST_EVENT_ENTRY_BLOCK] Fast-event markets are blocked for new entry; only dynamic follow-exit signals are allowed.");
+            reasons.add("[FAST_EVENT_ENTRY_BLOCK] Fast-event markets are blocked for new entry; only dynamic follow-exit signals are allowed."
+                    + (manualAllowlistApplied ? " [MANUAL_ALLOWLIST_FAST_EVENT_NOTE] Allowlist wallet also blocked — API rate-limit constraints prevent fast-event tracking." : ""));
         }
 
         boolean hasDuplicatePosition = risk.isBlockDuplicateOpenPosition()
@@ -389,11 +429,31 @@ public class SmartWalletSignalRiskService {
         if (risk.isRequireLeaderProfitableActivePosition()
                 && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
                 && "BUY".equalsIgnoreCase(event.getSide())) {
-            LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
-            reasons.add(leaderPositionCheck.reason());
-            if (!leaderPositionCheck.accepted()) {
-                accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G7_LEADER_POSITION_NOT_PROFITABLE";
+            if (manualAllowlistApplied) {
+                // Allowlist wallets: only check PnL on existing positions that have had time to accumulate profit data.
+                // New BUY entries (leader just opened or has no matched position) skip the PnL gate.
+                LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
+                boolean isNewEntry = leaderPositionCheck.reason() != null
+                        && leaderPositionCheck.reason().contains("no active position");
+                if (isNewEntry) {
+                    reasons.add("[MANUAL_ALLOWLIST_LEADER_PNL_BYPASS] Leader has no active position for this market/outcome — "
+                            + "treated as new entry, PnL gate skipped for allowlist wallet.");
+                } else if (!leaderPositionCheck.accepted()) {
+                    // Existing position with non-positive PnL — still allow but log a warning
+                    reasons.add("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] " + leaderPositionCheck.reason()
+                            + " — allowlist wallet bypasses rejection but leader position is not profitable.");
+                    log.warn("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] wallet={} marketId={} outcome={} leaderPnlCheck={}",
+                            event.getWalletAddress(), event.getMarketId(), event.getOutcome(), leaderPositionCheck.reason());
+                } else {
+                    reasons.add(leaderPositionCheck.reason());
+                }
+            } else {
+                LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
+                reasons.add(leaderPositionCheck.reason());
+                if (!leaderPositionCheck.accepted()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G7_LEADER_POSITION_NOT_PROFITABLE";
+                }
             }
         }
         if (accepted) gateStage = 7; // 通过方向/重复检查
@@ -721,6 +781,12 @@ public class SmartWalletSignalRiskService {
                 if (firstRejectGate == null) firstRejectGate = "G10_KELLY_NEGATIVE_EV(p=" + safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) + ",price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ")";
                 recommendedStake = BigDecimal.ZERO;
                 reasons.add("Kelly stake: negative EV, signal rejected.");
+                log.warn("[KELLY_NEGATIVE_EV] wallet={} marketId={} outcome={} price={} calibratedP={} side={} triggerSizeUsdc={} allowlisted={}",
+                        event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
+                        safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP),
+                        safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP),
+                        event.getSide(), safe(event.getSizeUsdc()).setScale(2, RoundingMode.HALF_UP),
+                        manualAllowlistApplied);
             } else {
                 recommendedStake = kellyStake;
                 reasons.add("Kelly stake=" + kellyStake + " (p=" +
@@ -746,8 +812,27 @@ public class SmartWalletSignalRiskService {
             recommendedStake = recommendedStake.multiply(stakeMultiplierApplied).setScale(2, RoundingMode.HALF_UP);
             reasons.add("[MANUAL_ALLOWLIST_STAKE_MULTIPLIER] Applied manual allowlist stake multiplier="
                     + stakeMultiplierApplied.setScale(4, RoundingMode.HALF_UP) + ".");
+            if (allowlistPriceClampApplied) {
+                BigDecimal normalMin = safe(risk.getMinFollowPrice());
+                BigDecimal normalMax = safe(risk.getMaxFollowPrice());
+                BigDecimal midPoint = normalMin.add(normalMax).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+                BigDecimal distFromMid = price.subtract(midPoint).abs();
+                BigDecimal maxDist = effectiveMaxPrice.subtract(effectiveMinPrice).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+                BigDecimal normalMaxDist = normalMax.subtract(normalMin).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+                BigDecimal overflowRatio = maxDist.compareTo(BigDecimal.ZERO) > 0
+                        ? BigDecimal.ONE.subtract(distFromMid.subtract(normalMaxDist).divide(maxDist, 4, RoundingMode.HALF_UP)).max(new BigDecimal("0.30"))
+                        : BigDecimal.ONE;
+                recommendedStake = recommendedStake.multiply(overflowRatio).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[MANUAL_ALLOWLIST_PRICE_CLAMP_STAKE] Stake scaled by " + overflowRatio.setScale(4, RoundingMode.HALF_UP)
+                        + " due to price " + price + " outside normal range.");
+            }
         }
         BigDecimal triggerStakeCapRatio = safe(risk.getMaxStakeToTriggerNotionalRatio());
+        if (manualAllowlistApplied) {
+            triggerStakeCapRatio = BigDecimal.ONE; // Allowlist wallets use 1.0 ratio
+            reasons.add("[MANUAL_ALLOWLIST_TRIGGER_RATIO_OVERRIDE] maxStakeToTriggerNotionalRatio overridden from "
+                    + safe(risk.getMaxStakeToTriggerNotionalRatio()) + " to 1.0 for allowlist wallet.");
+        }
         if (triggerStakeCapRatio.compareTo(BigDecimal.ZERO) > 0 && triggerSize.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal triggerStakeCap = triggerSize.multiply(triggerStakeCapRatio).setScale(2, RoundingMode.HALF_UP);
             if (recommendedStake.compareTo(triggerStakeCap) > 0) {
@@ -770,6 +855,32 @@ public class SmartWalletSignalRiskService {
                         + recommendedStake + ".");
             }
         }
+        // ── Gate 10a: 白名单小额高频聚合 + 固定最低保底 ──
+        // 当白名单地址等比缩放后 stake < minOrder 时，尝试聚合或固定保底
+        if (accepted && manualAllowlistApplied && recommendedStake.compareTo(minOrderUsdc) < 0) {
+            SmartWalletProperties.AllowlistAggregationConfig aggConfig = properties.getAllowlistAggregation();
+            if (aggConfig != null && aggConfig.isEnabled()) {
+                AllowlistSignalAggregationService.AggregationResult aggResult =
+                        allowlistAggregationService.aggregate(
+                                event.getMarketId(), event.getOutcome(), event.getWalletAddress(),
+                                recommendedStake, triggerSize, price);
+                if (aggResult.getAction() == AllowlistSignalAggregationService.AggregationAction.EXECUTE_NOW) {
+                    recommendedStake = aggResult.getExecuteStake()
+                            .min(properties.getMaxStakeUsdc())
+                            .min(availableCapital.max(BigDecimal.ZERO))
+                            .setScale(2, RoundingMode.HALF_UP);
+                    reasons.add("[ALLOWLIST_AGGREGATION_EXECUTE] " + aggResult.getReason()
+                            + " executeStake=" + recommendedStake + ".");
+                } else if (aggResult.getAction() == AllowlistSignalAggregationService.AggregationAction.BUFFERED) {
+                    // 信号已缓冲，暂不下单，但不算拒绝（信号被"暂存"而非丢弃）
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G10a_ALLOWLIST_SIGNAL_BUFFERED";
+                    reasons.add("[ALLOWLIST_SIGNAL_BUFFERED] " + aggResult.getReason()
+                            + ". Signal accumulated, will execute when threshold reached.");
+                }
+            }
+        }
+        // ── Gate 10b: 常规最低下单额检查 ──
         if (accepted && recommendedStake.compareTo(minOrderUsdc) < 0) {
             BigDecimal flooredStake = minOrderUsdc
                     .min(properties.getMaxStakeUsdc())
@@ -781,11 +892,41 @@ public class SmartWalletSignalRiskService {
                         + recommendedStake + ".");
             } else {
                 accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G10_FINAL_STAKE_BELOW_MIN(stake=" + recommendedStake + ")";
+                if (firstRejectGate == null) firstRejectGate = "G10b_FINAL_STAKE_BELOW_MIN(stake=" + recommendedStake + ")";
                 reasons.add("Recommended stake is below execution wallet minimum order after capital scaling.");
             }
         }
-        if (accepted) gateStage = 10; // 通过 Kelly / 仓位计算
+        // ── Gate 10c: 暴露上限检查 (单市场/单地址/总TVL) ──
+        if (accepted) {
+            SmartWalletProperties.ExposureLimitConfig exposureConfig = properties.getExposureLimit();
+            if (exposureConfig != null && exposureConfig.isEnabled()) {
+                FollowExposureLimitService.ExposureCheckResult exposureResult =
+                        followExposureLimitService.check(
+                                event.getMarketId(), event.getOutcome(), event.getWalletAddress(),
+                                recommendedStake, availableCapital);
+                if (!exposureResult.isAllowed()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G10c_EXPOSURE_LIMIT(" + exposureResult.getReason() + ")";
+                    reasons.add("[EXPOSURE_LIMIT_BLOCK] " + exposureResult.getReason()
+                            + " marketExposure=" + safe(exposureResult.getMarketExposure()).setScale(2, RoundingMode.HALF_UP)
+                            + " walletExposure=" + safe(exposureResult.getWalletExposure()).setScale(2, RoundingMode.HALF_UP)
+                            + " totalExposure=" + safe(exposureResult.getTotalExposure()).setScale(2, RoundingMode.HALF_UP));
+                } else if (exposureResult.isClipped()) {
+                    BigDecimal clippedStake = exposureResult.getClippedStake();
+                    if (clippedStake.compareTo(minOrderUsdc) >= 0) {
+                        recommendedStake = clippedStake;
+                        reasons.add("[EXPOSURE_CLIPPED] Stake reduced from " + recommendedStake
+                                + " to " + clippedStake + " by exposure limits.");
+                    } else {
+                        accepted = false;
+                        if (firstRejectGate == null) firstRejectGate = "G10c_EXPOSURE_CLIP_BELOW_MIN(stake=" + clippedStake + ")";
+                        reasons.add("[EXPOSURE_CLIP_BELOW_MIN] Clipped stake=" + clippedStake
+                                + " is below minOrder=" + minOrderUsdc + ".");
+                    }
+                }
+            }
+        }
+        if (accepted) gateStage = 10; // 通过 Kelly / 仓位计算 + 聚合 + 暴露上限
 
         if (profitabilityEstimate.getEstimateSampleSize() != null && profitabilityEstimate.getEstimateSampleSize() > 0) {
             reasons.add("Local risk estimate sample size=" + profitabilityEstimate.getEstimateSampleSize() + ".");
@@ -836,7 +977,8 @@ public class SmartWalletSignalRiskService {
                 && risk.isEnableSignalScoreGate()
                 && signalScore != null
                 && safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) < 0
-                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
+                && !manualAllowlistApplied) {
             accepted = false;
             if (firstRejectGate == null) {
                 firstRejectGate = "G11_SIGNAL_SCORE_TOO_LOW(score=" + safe(signalScore.getSignalScore()) + ")";
@@ -844,10 +986,20 @@ public class SmartWalletSignalRiskService {
             reasons.add("[SIGNAL_SCORE_BLOCK] signalScore=" + safe(signalScore.getSignalScore())
                     + " is below minLiveSignalScore=" + safe(risk.getMinLiveSignalScore()) + ".");
         }
+        if (manualAllowlistApplied
+                && risk.isEnableSignalScoreGate()
+                && signalScore != null
+                && safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) < 0
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
+            reasons.add("[MANUAL_ALLOWLIST_SIGNAL_SCORE_BYPASS] signalScore=" + safe(signalScore.getSignalScore())
+                    + " is below minLiveSignalScore=" + safe(risk.getMinLiveSignalScore())
+                    + " but allowlist wallet bypasses signal score gate.");
+        }
         if (signalScore != null) {
             boolean scoreAccepted = !risk.isEnableSignalScoreGate()
                     || safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) >= 0
-                    || "DYNAMIC_FOLLOW_EXIT".equals(entryLane);
+                    || "DYNAMIC_FOLLOW_EXIT".equals(entryLane)
+                    || manualAllowlistApplied;
             log.info("{}", flow("S5_RISK_EVALUATED", "信号评分模型",
                     scoreAccepted ? "通过" : "拒绝", event,
                     "entryLane", entryLane,

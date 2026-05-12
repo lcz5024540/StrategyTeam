@@ -4335,7 +4335,9 @@ public class SmartWalletAccountingService {
                     order.getOutcome(),
                     order.getMarketSlug());
         }
-        return marketLinkService.resolve(order.getMarketId(), order.getQuestion(), order.getOutcome());
+        // Cache-only: avoid HTTP calls in page-query hot path.
+        // resolve() triggers remote API calls and causes request timeouts.
+        return marketLinkService.resolveCacheOnly(order.getMarketId(), order.getQuestion(), order.getOutcome());
     }
 
     private String resolveOrderMarketLifecycle(SmartWalletOrderEntity order, Long marketEndAt) {

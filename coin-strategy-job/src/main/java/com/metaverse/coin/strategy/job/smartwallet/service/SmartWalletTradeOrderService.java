@@ -397,9 +397,15 @@ public class SmartWalletTradeOrderService {
     private SmartWalletTradeOrderView toViewBatch(SmartWalletTradeOrderEntity entity,
                                                   List<SmartWalletOrderEntity> orders,
                                                   List<SmartWalletFillEntity> fills) {
-        SmartWalletMarketLinkView link = marketLinkService.resolve(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
-        if (link == null && StringUtils.hasText(entity.getMarketSlug())) {
+        // Fast path: build URLs from stored slug — zero HTTP calls.
+        // resolve() triggers per-entity API calls and caused >30s page timeouts.
+        SmartWalletMarketLinkView link;
+        if (StringUtils.hasText(entity.getMarketSlug())) {
             link = marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug());
+        } else if (StringUtils.hasText(entity.getMarketId())) {
+            link = marketLinkService.resolveCacheOnly(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        } else {
+            link = null;
         }
         return SmartWalletTradeOrderView.builder()
                 .id(entity.getId())
@@ -546,9 +552,14 @@ public class SmartWalletTradeOrderService {
     private SmartWalletTradeOrderView toView(SmartWalletTradeOrderEntity entity) {
         SmartWalletMarketInfoEntity marketInfo = entity.getMarketInfoId() == null ? null : marketInfoMapper.selectById(entity.getMarketInfoId());
         entity.setMarketInfo(marketInfo);
-        SmartWalletMarketLinkView link = marketLinkService.resolve(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
-        if (link == null && StringUtils.hasText(entity.getMarketSlug())) {
+        // Same fast-path as toViewBatch: avoid per-entity HTTP calls.
+        SmartWalletMarketLinkView link;
+        if (StringUtils.hasText(entity.getMarketSlug())) {
             link = marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug());
+        } else if (StringUtils.hasText(entity.getMarketId())) {
+            link = marketLinkService.resolveCacheOnly(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        } else {
+            link = null;
         }
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
                 .eq(SmartWalletOrderEntity::getPositionId, entity.getPositionId())

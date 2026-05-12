@@ -56,6 +56,8 @@ public class SmartWalletProperties {
     private Intelligence intelligence = new Intelligence();
     private FollowFitWeights followFitWeights = new FollowFitWeights();
     private FeeSchedule feeSchedule = new FeeSchedule();
+    private AllowlistAggregationConfig allowlistAggregation = new AllowlistAggregationConfig();
+    private ExposureLimitConfig exposureLimit = new ExposureLimitConfig();
 
     @Data
     public static class PolymarketMonitor {
@@ -858,5 +860,45 @@ public class SmartWalletProperties {
          * false = 保持旧逻辑（事后核算 fee，不影响下单金额）。
          */
         private boolean enablePreTradeFeeDeduction = true;
+    }
+
+    // ── 白名单小额高频跟单聚合配置 ──
+
+    @Data
+    public static class AllowlistAggregationConfig {
+        /** 是否启用聚合缓冲器 */
+        private boolean enabled = true;
+
+        /** 是否使用固定最低下单保底模式（推荐开启） */
+        private boolean useFixedMinStake = true;
+
+        /**
+         * 固定最低下单金额（当 useFixedMinStake=true 时生效）。
+         * 当等比缩放后低于 minOrderUsdc 时，直接用此值下单。
+         */
+        private BigDecimal fixedMinStakeUsdc = new BigDecimal("5");
+
+        /** 聚合窗口时长（毫秒）。超时未达到阈值则放弃累积。默认 30 分钟 */
+        private long aggregationWindowMs = 1_800_000L;
+
+        /** 单次聚合下单最大金额上限。防止窗口内累积过多 */
+        private BigDecimal maxAggregatedStakeUsdc = new BigDecimal("50");
+    }
+
+    // ── 跟单暴露上限配置 ──
+
+    @Data
+    public static class ExposureLimitConfig {
+        /** 是否启用暴露上限检查 */
+        private boolean enabled = true;
+
+        /** 单市场持仓上限 (USDC)。防止在一个市场上投入过多资金 */
+        private BigDecimal maxPerMarketUsdc = new BigDecimal("200");
+
+        /** 单跟单地址持仓上限 (USDC)。防止对单一白名单地址过度依赖 */
+        private BigDecimal maxPerFollowWalletUsdc = new BigDecimal("300");
+
+        /** 总 TVL 利用率上限。所有跟单持仓总成本 / 总 TVL 不超过此比例 */
+        private BigDecimal maxTvlUtilizationPct = new BigDecimal("0.80");
     }
 }
