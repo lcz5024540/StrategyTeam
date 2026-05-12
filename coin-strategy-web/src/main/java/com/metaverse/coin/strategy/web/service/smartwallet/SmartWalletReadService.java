@@ -29,6 +29,7 @@ import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletFillView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletMarketLinkView;
 import com.metaverse.coin.strategy.web.model.smartwallet.PolymarketProductOverviewView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletBlockerStatView;
+import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletCashLedgerView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletOrderPnlCategoryAttributionView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletOrderView;
@@ -2227,5 +2228,74 @@ public class SmartWalletReadService {
                     latestClosedAt
             );
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // Cash Ledger
+    // ════════════════════════════════════════════════════════════════
+
+    public List<SmartWalletCashLedgerView> cashLedger(int limit) {
+        List<SmartWalletCashLedgerEntity> items = cashLedgerMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
+                        .orderByDesc(SmartWalletCashLedgerEntity::getOccurredAt)
+                        .last("limit " + Math.max(limit, 1)));
+        List<SmartWalletCashLedgerView> result = new ArrayList<>();
+        for (SmartWalletCashLedgerEntity item : items) {
+            result.add(new SmartWalletCashLedgerView(item.getId(), item.getExecutionAddress(), item.getAsset(),
+                    item.getEntryType(), item.getDirection(), item.getAmount(), item.getBalanceAfter(),
+                    item.getReferenceType(), item.getReferenceId(), item.getMarketId(), item.getQuestion(),
+                    null, item.getOccurredAt()));
+        }
+        return result;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // Position History (paged)
+    // ════════════════════════════════════════════════════════════════
+
+    public com.metaverse.coin.strategy.web.model.OffsetPageView<SmartWalletPositionView> positionHistory(
+            boolean closedOnly, String mode, int page, int size) {
+        int safeSize = Math.max(1, Math.min(size, 200));
+        int safePage = Math.max(1, page);
+
+        List<String> statuses = closedOnly
+                ? List.of("CLOSED", "RESOLVED_UNCLAIMED", "CLAIMED")
+                : null;
+        LambdaQueryWrapper<SmartWalletPositionEntity> wrapper = new LambdaQueryWrapper<>();
+        if (statuses != null) {
+            wrapper.in(SmartWalletPositionEntity::getStatus, statuses);
+        }
+        wrapper.orderByDesc(SmartWalletPositionEntity::getId);
+        List<SmartWalletPositionEntity> allEntities = positionMapper.selectList(wrapper);
+
+        // Filter by mode and map to view
+        List<SmartWalletPositionView> all = allEntities.stream()
+                .filter(p -> matchesDashboardMode(p.getExecutionAddress(), mode))
+                .map(this::toPositionView)
+                .toList();
+
+        int totalItems = all.size();
+        int fromIndex = Math.min((safePage - 1) * safeSize, totalItems);
+        int toIndex = Math.min(fromIndex + safeSize, totalItems);
+        List<SmartWalletPositionView> pageItems = all.subList(fromIndex, toIndex);
+        return com.metaverse.coin.strategy.web.model.OffsetPageView.of(pageItems, safePage, safeSize, totalItems);
+    }
+
+    /**
+     * Export all positions without pagination cap (for CSV export).
+     */
+    public List<SmartWalletPositionView> allPositions(boolean closedOnly, String mode) {
+        List<String> statuses = closedOnly
+                ? List.of("CLOSED", "RESOLVED_UNCLAIMED", "CLAIMED")
+                : null;
+        LambdaQueryWrapper<SmartWalletPositionEntity> wrapper = new LambdaQueryWrapper<>();
+        if (statuses != null) {
+            wrapper.in(SmartWalletPositionEntity::getStatus, statuses);
+        }
+        wrapper.orderByDesc(SmartWalletPositionEntity::getId);
+        return positionMapper.selectList(wrapper).stream()
+                .filter(p -> matchesDashboardMode(p.getExecutionAddress(), mode))
+                .map(this::toPositionView)
+                .toList();
     }
 }
