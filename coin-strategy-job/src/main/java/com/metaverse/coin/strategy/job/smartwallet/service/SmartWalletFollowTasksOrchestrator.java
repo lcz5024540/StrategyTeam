@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.job.execution.application.ExecutionApplicationService;
 import com.metaverse.coin.strategy.job.follow.application.FollowTaskApplicationService;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletBlockerStatView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;

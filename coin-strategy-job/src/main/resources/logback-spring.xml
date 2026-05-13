@@ -16,10 +16,10 @@
         </encoder>
     </appender>
 
-    <!-- 文件输出 — 按天滚动, 当前生产文件名: binance-java-connector.log -->
+    <!-- 文件输出 — 按天滚动, 当前生产文件名: job-current.log -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <!-- 当前活跃日志文件 -->
-        <file>${LOG_DIR}/binance-java-connector.log</file>
+        <file>${LOG_DIR}/job-current.log</file>
         <append>true</append>
         <encoder>
             <pattern>${LOG_PATTERN}</pattern>
@@ -27,7 +27,7 @@
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <!-- 按天滚动: 每天 00:00 自动归档 -->
-            <fileNamePattern>${LOG_DIR}/binance-java-connector-%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>${LOG_DIR}/job-%d{yyyy-MM-dd}.log</fileNamePattern>
             <!-- 保留最近 30 天的日志 -->
             <maxHistory>30</maxHistory>
             <!-- 所有归档日志总大小上限 -->

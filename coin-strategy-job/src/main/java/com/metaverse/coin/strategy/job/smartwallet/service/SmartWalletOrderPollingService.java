@@ -3,7 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;

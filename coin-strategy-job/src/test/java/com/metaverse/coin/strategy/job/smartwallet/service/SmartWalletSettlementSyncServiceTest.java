@@ -5,7 +5,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRetryMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRunMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSettlementRetryEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryCandidate;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import org.junit.jupiter.api.BeforeEach;

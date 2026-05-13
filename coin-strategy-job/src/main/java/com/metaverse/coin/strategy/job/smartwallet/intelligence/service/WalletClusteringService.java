@@ -3,7 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.intelligence.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.WalletEntityMapMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletEntityMapEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;

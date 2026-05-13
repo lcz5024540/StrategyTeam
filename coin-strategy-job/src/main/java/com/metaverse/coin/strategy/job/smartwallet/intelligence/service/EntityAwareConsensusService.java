@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.intelligence.service;
 
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityDedupedConsensus;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityResolutionResult;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

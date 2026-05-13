@@ -1,7 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

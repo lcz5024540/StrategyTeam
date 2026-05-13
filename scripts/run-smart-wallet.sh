@@ -83,12 +83,13 @@ fi
 mkdir -p "$LOG_DIR"
 
 echo "[run-smart-wallet] starting backend on $APP_URL (后台运行) ..."
+: > "$LOG_DIR/job-startup.log"   # 每次重启截断启动日志
 nohup java \
   -Dserver.port="$BACKEND_PORT" \
   -Dspring.profiles.active=local \
   -Dlog.dir="$LOG_DIR" \
   -jar "$APP_JAR" \
-  > "$LOG_DIR/job-startup.log" 2>&1 &
+  >/dev/null 2>>"$LOG_DIR/job-startup.log" &
 APP_PID=$!
 echo "$APP_PID" > "$ROOT_DIR/backend.pid"
 FRONTEND_PID=""

@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import lombok.RequiredArgsConstructor;

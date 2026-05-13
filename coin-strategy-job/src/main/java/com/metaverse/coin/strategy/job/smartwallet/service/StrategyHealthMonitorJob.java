@@ -3,7 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

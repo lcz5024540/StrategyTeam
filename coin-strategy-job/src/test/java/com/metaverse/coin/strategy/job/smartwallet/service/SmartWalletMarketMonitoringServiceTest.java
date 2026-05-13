@@ -1,4 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.MarketConcentrationSnapshotService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
@@ -7,9 +11,9 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFoll
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
-import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.OffsetPageView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -80,7 +84,7 @@ class SmartWalletMarketMonitoringServiceTest {
                 event("market-closed", "Will closed market disappear?")
         ));
         when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
-                "market-active", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-active", MarketStateSnapshot.builder()
                         .marketId("market-active")
                         .question("Will active market stay visible?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -88,7 +92,7 @@ class SmartWalletMarketMonitoringServiceTest {
                         .normalizedCategory(SmartWalletMarketStateService.CATEGORY_POLITICS)
                         .marketEndAt(System.currentTimeMillis() + 3_600_000L)
                         .build(),
-                "market-closed", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-closed", MarketStateSnapshot.builder()
                         .marketId("market-closed")
                         .question("Will closed market disappear?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
@@ -100,7 +104,7 @@ class SmartWalletMarketMonitoringServiceTest {
         when(concentrationSnapshotService.batchGetLatestSnapshots(any(), isNull())).thenReturn(Map.of(
                 "market-active",
                 new MarketConcentrationSnapshotService.SnapshotView(
-                        new MarketConcentrationService.ConcentrationSnapshot(
+                        new ConcentrationSnapshot(
                                 "market-active",
                                 "YES",
                                 25,
@@ -134,7 +138,7 @@ class SmartWalletMarketMonitoringServiceTest {
                 event("market-weather", "Will it rain tomorrow?")
         ));
         when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
-                "market-politics", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-politics", MarketStateSnapshot.builder()
                         .marketId("market-politics")
                         .question("Will election result change?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -143,7 +147,7 @@ class SmartWalletMarketMonitoringServiceTest {
                         .sourceCategory("Politics")
                         .marketEndAt(System.currentTimeMillis() + 3_600_000L)
                         .build(),
-                "market-weather", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-weather", MarketStateSnapshot.builder()
                         .marketId("market-weather")
                         .question("Will it rain tomorrow?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -172,7 +176,7 @@ class SmartWalletMarketMonitoringServiceTest {
                 event("market-stale", "Will stale data still render?")
         ));
         when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
-                "market-stale", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-stale", MarketStateSnapshot.builder()
                         .marketId("market-stale")
                         .question("Will stale data still render?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -185,7 +189,7 @@ class SmartWalletMarketMonitoringServiceTest {
         when(concentrationSnapshotService.batchGetLatestSnapshots(any(), isNull())).thenReturn(Map.of(
                 "market-stale",
                 new MarketConcentrationSnapshotService.SnapshotView(
-                        new MarketConcentrationService.ConcentrationSnapshot(
+                        new ConcentrationSnapshot(
                                 "market-stale",
                                 "ALL",
                                 12,
@@ -219,7 +223,7 @@ class SmartWalletMarketMonitoringServiceTest {
                 event("market-expired", "Will expired active market disappear?")
         ));
         when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
-                "market-expired", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-expired", MarketStateSnapshot.builder()
                         .marketId("market-expired")
                         .question("Will expired active market disappear?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -245,7 +249,7 @@ class SmartWalletMarketMonitoringServiceTest {
                 event("market-expired", "Will expired market be dropped from candidates?")
         ));
         when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
-                "market-live", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-live", MarketStateSnapshot.builder()
                         .marketId("market-live")
                         .question("Will live market stay monitored?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -253,7 +257,7 @@ class SmartWalletMarketMonitoringServiceTest {
                         .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
                         .marketEndAt(System.currentTimeMillis() + 3_600_000L)
                         .build(),
-                "market-expired", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                "market-expired", MarketStateSnapshot.builder()
                         .marketId("market-expired")
                         .question("Will expired market be dropped from candidates?")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
@@ -445,8 +449,8 @@ class SmartWalletMarketMonitoringServiceTest {
                 .setMarketEndAt(marketEndAt);
     }
 
-    private SmartWalletMarketStateService.MarketStateSnapshot activeSnapshot(String marketId) {
-        return SmartWalletMarketStateService.MarketStateSnapshot.builder()
+    private MarketStateSnapshot activeSnapshot(String marketId) {
+        return MarketStateSnapshot.builder()
                 .marketId(marketId)
                 .question("Question for " + marketId)
                 .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)

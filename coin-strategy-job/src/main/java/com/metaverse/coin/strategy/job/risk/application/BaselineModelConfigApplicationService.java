@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.risk.application;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import org.springframework.stereotype.Service;

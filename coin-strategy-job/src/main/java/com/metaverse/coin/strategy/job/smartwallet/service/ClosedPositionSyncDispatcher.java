@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletClosedSyncAsyncConfig;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;

@@ -7,13 +7,13 @@ import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePosi
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageFundingSettlement;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
+import com.metaverse.coin.strategy.common.service.smartwallet.report.SmartWalletReportDtos.ConflictMarketRow;
+import com.metaverse.coin.strategy.common.service.smartwallet.report.SmartWalletReportDtos.TimelinePoint;
 import com.metaverse.coin.strategy.web.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletCapacitySummaryView;
-import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletConflictMarketView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletOrderView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletPerformanceView;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletPnlSummaryView;
-import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletPnlTimelinePoint;
 import com.metaverse.coin.strategy.web.model.smartwallet.SmartWalletPositionView;
 import com.metaverse.coin.strategy.web.service.smartwallet.SmartWalletReadService;
 import com.metaverse.coin.strategy.web.service.smartwallet.SmartWalletReportReadService;
@@ -271,8 +271,8 @@ public class StrategyProductQueryService {
         List<SmartWalletPositionView> positions = smartWalletReadService.livePositions(mode);
         List<SmartWalletPositionView> nextSettlements = smartWalletReadService.nextSettlements(8, mode);
         List<SmartWalletOrderView> orders = smartWalletReadService.orders(30, mode);
-        List<SmartWalletPnlTimelinePoint> timeline = smartWalletReadService.pnlTimeline(30, null, mode);
-        List<SmartWalletConflictMarketView> conflicts = smartWalletReadService.conflictingMarkets(10, false, mode);
+        List<TimelinePoint> timeline = smartWalletReadService.pnlTimeline(30, null, mode);
+        List<ConflictMarketRow> conflicts = smartWalletReadService.conflictingMarkets(10, false, mode);
         StrategySummaryView summary = buildPolymarketSummary(mode, performance);
         StrategyMetricsView metrics = buildPolymarketMetrics(performance, pnlSummary, capacity);
 
@@ -871,14 +871,14 @@ public class StrategyProductQueryService {
         );
     }
 
-    private StrategyTimelinePointView toTimeline(SmartWalletPnlTimelinePoint row) {
-        return new StrategyTimelinePointView(row.getBucketAt() == null ? null : row.getBucketAt().toString(),
-                row.getNetPnlUsdc(), row.getCumulativeNetPnlUsdc(), row.getLossPnlUsdc(), row.getCumulativeLossPnlUsdc());
+    private StrategyTimelinePointView toTimeline(TimelinePoint row) {
+        return new StrategyTimelinePointView(row.bucketAt() == null ? null : row.bucketAt().toString(),
+                row.netPnlUsdc(), row.cumulativeNetPnlUsdc(), row.lossPnlUsdc(), row.cumulativeLossPnlUsdc());
     }
 
-    private StrategyConflictRowView toConflict(SmartWalletConflictMarketView row) {
-        return new StrategyConflictRowView(row.getMarketId(), row.getQuestion(), row.getOutcomes(), row.getOpenPositionCount(),
-                row.getNetPnlUsdc(), row.getMarketEndAtBjt());
+    private StrategyConflictRowView toConflict(ConflictMarketRow row) {
+        return new StrategyConflictRowView(row.marketId(), row.question(), row.outcomes(), row.openPositionCount(),
+                row.netPnlUsdc(), row.marketEndAtBjt());
     }
 
     private String buildFundingArbDescription(String mode) {
@@ -892,7 +892,7 @@ public class StrategyProductQueryService {
         SmartWalletPerformanceView performance = smartWalletReportReadService.performance(mode);
         SmartWalletCapacitySummaryView capacity = smartWalletReportReadService.capacitySummary(mode);
         List<SmartWalletOrderView> orders = smartWalletReadService.orders(100, mode);
-        List<SmartWalletConflictMarketView> conflicts = smartWalletReadService.conflictingMarkets(20, false, mode);
+        List<ConflictMarketRow> conflicts = smartWalletReadService.conflictingMarkets(20, false, mode);
         BigDecimal avgFollowProbability = average(orders, SmartWalletOrderView::getCalibratedFollowProbability);
         BigDecimal avgSlippage = average(orders, SmartWalletOrderView::getEstimatedSlippageUsdc);
         int sampleSize = performance.getTotalOrders() == null ? orders.size() : performance.getTotalOrders();

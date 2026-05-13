@@ -1,4 +1,5 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletClaimRetryMapper;
@@ -6,7 +7,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletClaimRunMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletClaimRunEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -1,4 +1,5 @@
 package com.metaverse.coin.strategy.job.smartwallet.model;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfile;
 
 import lombok.Builder;
 import lombok.Data;

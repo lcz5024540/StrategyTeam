@@ -11,4 +11,8 @@ public record CursorPageView<T>(
     public static <T> CursorPageView<T> of(List<T> items, String nextCursor) {
         return new CursorPageView<>(items, nextCursor, items.size(), nextCursor != null);
     }
+
+    public static <T> CursorPageView<T> empty() {
+        return new CursorPageView<>(List.of(), null, 0, false);
+    }
 }

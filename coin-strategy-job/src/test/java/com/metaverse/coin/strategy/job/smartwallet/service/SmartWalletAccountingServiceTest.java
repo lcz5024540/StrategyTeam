@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletCashLedgerMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletDailyReportMapper;
@@ -13,7 +15,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFill
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView;
@@ -335,7 +337,7 @@ class SmartWalletAccountingServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(position));
         when(marketStateService.refreshMarkets(any(), eq(false))).thenReturn(Map.of(
                 "market-closed",
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-closed")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(false)
@@ -367,7 +369,7 @@ class SmartWalletAccountingServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(position));
         when(marketStateService.refreshMarkets(any(), eq(false))).thenReturn(Map.of(
                 "market-settlement",
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-settlement")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(false)

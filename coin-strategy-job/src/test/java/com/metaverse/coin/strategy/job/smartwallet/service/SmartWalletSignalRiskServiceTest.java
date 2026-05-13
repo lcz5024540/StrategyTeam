@@ -1,4 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
@@ -6,11 +10,11 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -526,7 +530,7 @@ class SmartWalletSignalRiskServiceTest {
                 .qualityScore(new BigDecimal("0.78"))
                 .stabilityScore(new BigDecimal("0.60"))
                 .build());
-        when(concentrationService.analyze(any(), any())).thenReturn(new MarketConcentrationService.ConcentrationSnapshot(
+        when(concentrationService.analyze(any(), any())).thenReturn(new ConcentrationSnapshot(
                 "market-1",
                 "YES",
                 20,
@@ -576,7 +580,7 @@ class SmartWalletSignalRiskServiceTest {
                 .qualityScore(new BigDecimal("0.78"))
                 .stabilityScore(new BigDecimal("0.60"))
                 .build());
-        when(concentrationService.analyze(any(), any())).thenReturn(new MarketConcentrationService.ConcentrationSnapshot(
+        when(concentrationService.analyze(any(), any())).thenReturn(new ConcentrationSnapshot(
                 "market-1",
                 "YES",
                 5,
@@ -614,7 +618,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(true)
@@ -643,7 +647,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_RESOLVED)
                         .acceptingOrders(false)
@@ -673,7 +677,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(false)
@@ -702,7 +706,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(true)
@@ -802,7 +806,7 @@ class SmartWalletSignalRiskServiceTest {
                 .settlementCompletionRate(new BigDecimal("0.80"))
                 .build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -966,7 +970,7 @@ class SmartWalletSignalRiskServiceTest {
                 .settlementCompletionRate(new BigDecimal("0.90"))
                 .build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1078,7 +1082,7 @@ class SmartWalletSignalRiskServiceTest {
         long fortyHoursFromNow = System.currentTimeMillis() + 40 * 3_600_000L;
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1115,7 +1119,7 @@ class SmartWalletSignalRiskServiceTest {
                 .endAt(farFutureEndAt)
                 .build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1229,7 +1233,7 @@ class SmartWalletSignalRiskServiceTest {
                 PolymarketApiClient.MarketMetadata.builder()
                         .conditionId("market-1").marketId("market-1").endAt(endAt31Days).build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1268,7 +1272,7 @@ class SmartWalletSignalRiskServiceTest {
         prepareCommonMocks(consensus);
         long sixtyDaysFromNow = System.currentTimeMillis() + 60L * 24L * 3_600_000L;
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)

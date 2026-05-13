@@ -11,8 +11,10 @@ mkdir -p "$RELEASE_DIR"
 echo "[build-smart-wallet-release] building job/web jars locally..."
 (cd "$ROOT_DIR" && mvn -pl coin-strategy-job,coin-strategy-web -am package -DskipTests)
 
-JOB_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
-WEB_JAR="$(find "$ROOT_DIR/coin-strategy-web/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+JOB_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' \
+  ! -name 'original-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
+WEB_JAR="$(find "$ROOT_DIR/coin-strategy-web/target" -maxdepth 1 -type f -name '*.jar' \
+  ! -name 'original-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
 if [ -z "$JOB_JAR" ]; then
   echo "[build-smart-wallet-release] packaged job jar not found." >&2
   exit 1
@@ -21,6 +23,14 @@ if [ -z "$WEB_JAR" ]; then
   echo "[build-smart-wallet-release] packaged web jar not found." >&2
   exit 1
 fi
+# 校验是 Spring Boot fat jar (含 Main-Class)
+for jar in "$JOB_JAR" "$WEB_JAR"; do
+  if ! unzip -p "$jar" META-INF/MANIFEST.MF 2>/dev/null | grep -q '^Main-Class:'; then
+    echo "[build-smart-wallet-release] $jar 不是可执行 fat jar (缺 Main-Class)" >&2
+    echo "  请确认对应模块的 spring-boot-maven-plugin 声明了 repackage execution" >&2
+    exit 1
+  fi
+done
 
 echo "[build-smart-wallet-release] building frontend dist locally..."
 if [ -f "$FRONTEND_DIR/package-lock.json" ]; then

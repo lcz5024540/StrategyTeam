@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +60,7 @@ class SmartWalletMarketStateServiceTest {
                         .endAt(System.currentTimeMillis() + 3_600_000L)
                         .build());
 
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = service.refreshMarket(
+        MarketStateSnapshot snapshot = service.refreshMarket(
                 "market-weather",
                 "Will it rain in Shanghai tomorrow?",
                 List.of("YES"),
@@ -94,7 +96,7 @@ class SmartWalletMarketStateServiceTest {
                         .endAt(System.currentTimeMillis() - 60_000L)
                         .build());
 
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = service.refreshMarket(
+        MarketStateSnapshot snapshot = service.refreshMarket(
                 "market-resolved",
                 "Will resolved lifecycle win priority?",
                 List.of("YES"),
@@ -126,7 +128,7 @@ class SmartWalletMarketStateServiceTest {
                         .endAt(System.currentTimeMillis() + 3_600_000L)
                         .build());
 
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = service.refreshMarket(
+        MarketStateSnapshot snapshot = service.refreshMarket(
                 "market-closed",
                 "Will closed unresolved be detected?",
                 List.of("YES"),
@@ -151,7 +153,7 @@ class SmartWalletMarketStateServiceTest {
         when(marketInfoService.batchListByMarketIds(List.of("market-db-only")))
                 .thenReturn(Map.of("market-db-only", List.of(row)));
 
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> snapshots =
+        Map<String, MarketStateSnapshot> snapshots =
                 service.loadPersistedMarkets(List.of("market-db-only"));
 
         assertEquals(1, snapshots.size());
@@ -203,7 +205,7 @@ class SmartWalletMarketStateServiceTest {
                         .setOutcome("NO")
                         .setTokenId("token-no"));
 
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = service.refreshMarket(
+        MarketStateSnapshot snapshot = service.refreshMarket(
                 "market-active-missing-slug",
                 "Will active missing slug refresh?",
                 List.of("YES")
@@ -230,7 +232,7 @@ class SmartWalletMarketStateServiceTest {
                 .setLastMetadataSyncAt(new java.util.Date(System.currentTimeMillis() - 10_000L));
         when(marketInfoService.listByMarketId("market-closed-missing-slug")).thenReturn(List.of(row));
 
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = service.refreshMarket(
+        MarketStateSnapshot snapshot = service.refreshMarket(
                 "market-closed-missing-slug",
                 "Will closed missing slug stay cached?",
                 List.of("YES")
@@ -256,7 +258,7 @@ class SmartWalletMarketStateServiceTest {
         when(marketInfoService.batchListByMarketIds(List.of("market-expired")))
                 .thenReturn(Map.of("market-expired", List.of(row)));
 
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> snapshots =
+        Map<String, MarketStateSnapshot> snapshots =
                 service.loadPersistedMarkets(List.of("market-expired"));
 
         assertEquals(1, snapshots.size());

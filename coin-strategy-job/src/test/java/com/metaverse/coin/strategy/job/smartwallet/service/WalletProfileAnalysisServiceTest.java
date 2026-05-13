@@ -4,7 +4,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletWalletFeatureDailyMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import org.junit.jupiter.api.BeforeEach;

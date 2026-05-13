@@ -6,7 +6,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketProductOverview;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
 import lombok.RequiredArgsConstructor;

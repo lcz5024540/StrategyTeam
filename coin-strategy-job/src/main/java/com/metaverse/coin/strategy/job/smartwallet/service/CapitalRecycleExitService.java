@@ -1,11 +1,13 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitResultView;

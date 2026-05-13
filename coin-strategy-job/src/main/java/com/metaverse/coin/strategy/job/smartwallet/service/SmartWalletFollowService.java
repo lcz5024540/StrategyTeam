@@ -1,13 +1,15 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfile;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import org.springframework.stereotype.Service;

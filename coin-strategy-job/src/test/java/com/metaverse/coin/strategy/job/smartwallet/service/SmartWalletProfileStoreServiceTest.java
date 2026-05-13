@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
@@ -8,15 +10,15 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFoll
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;

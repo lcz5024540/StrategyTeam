@@ -28,9 +28,9 @@ public class StrategyLogQueryService {
     private static final int DEFAULT_MAX_SCAN_LINES = 5_000;
     private static final long DEFAULT_MAX_READ_BYTES = 2L * 1024L * 1024L;
     private static final Map<String, List<String>> SOURCE_FILES = Map.of(
-            "app", List.of("binance-java-connector.log", "job-current.log", "job-startup.log"),
-            "error", List.of("job-error-current.log"),
-            "startup", List.of("job-startup.log")
+            "app", List.of("web-current.log", "web-startup.log"),
+            "error", List.of("web-error-current.log"),
+            "startup", List.of("web-startup.log")
     );
     private static final Pattern LOG_LINE = Pattern.compile(
             "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+" +

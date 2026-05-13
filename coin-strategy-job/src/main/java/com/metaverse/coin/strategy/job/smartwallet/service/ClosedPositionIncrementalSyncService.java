@@ -5,7 +5,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderAnalysisMap
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderAnalysisEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;

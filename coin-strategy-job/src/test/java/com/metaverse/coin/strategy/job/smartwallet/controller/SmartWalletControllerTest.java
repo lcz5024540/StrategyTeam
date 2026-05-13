@@ -10,8 +10,8 @@ import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigAppli
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.StrategyRuntimeConfigService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
-import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOpsCandidateView;
@@ -20,11 +20,11 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverr
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderAnalysisView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderStatsView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletDiagnosisView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletOrderAnalysisView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletOrderStatsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.smartwallet.service.WalletArchetypeClassifierService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
@@ -292,7 +292,7 @@ class SmartWalletControllerTest {
     @Test
     void shouldForwardMarketMonitoringCategoryFilter() throws Exception {
         when(smartWalletMarketMonitoringService.tablePage(2, 20, 14, "election", "POLITICS", "HIGH", true, "YES"))
-                .thenReturn(com.metaverse.coin.strategy.job.strategy.model.OffsetPageView.of(List.of(), 2, 20, 0));
+                .thenReturn(com.metaverse.coin.strategy.common.service.smartwallet.model.OffsetPageView.of(List.of(), 2, 20, 0));
 
         mockMvc.perform(get("/strategy/api/smart-wallet/reports/market-monitoring/page")
                         .contextPath("/strategy/api")

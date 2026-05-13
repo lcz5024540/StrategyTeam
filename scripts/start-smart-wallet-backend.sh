@@ -133,9 +133,11 @@ do_start() {
   echo "[backend] PID 文件:   $PID_FILE"
   echo "[backend] ============================================"
 
-  # 后台启动: stdout/stderr 重定向到启动日志 (应用日志由 logback 管理)
+  # 后台启动: stdout 丢弃, stderr 写到独立小文件 (应用日志由 logback 滚动管理)
+  # 历史 STARTUP_LOG 改名为 job-startup.log, 现在只承接 JVM 启动报错 / 未捕获的 stderr
   STARTUP_LOG="$LOG_DIR/job-startup.log"
-  nohup "${JAVA_CMD[@]}" > "$STARTUP_LOG" 2>&1 &
+  : > "$STARTUP_LOG"   # 每次重启截断, 避免无限增长
+  nohup "${JAVA_CMD[@]}" >/dev/null 2>>"$STARTUP_LOG" &
   local pid=$!
   echo "$pid" > "$PID_FILE"
 

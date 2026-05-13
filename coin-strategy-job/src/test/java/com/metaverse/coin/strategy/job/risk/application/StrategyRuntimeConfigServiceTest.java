@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.StrategyRuntimeConfigMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.StrategyRuntimeConfigEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateStrategyRuntimeConfigRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

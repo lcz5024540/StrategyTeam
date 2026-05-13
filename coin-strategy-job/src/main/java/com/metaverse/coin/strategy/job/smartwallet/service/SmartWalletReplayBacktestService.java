@@ -1,4 +1,5 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
@@ -7,7 +8,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
@@ -15,7 +16,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcen
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationWindowSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayStrategyMetrics;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayWindowResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

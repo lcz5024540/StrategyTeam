@@ -4,7 +4,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -1,4 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
@@ -13,17 +18,17 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrde
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.EntryTimingDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalScoreModelResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyCheckResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyRouteResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.strategy.application.StrategyFlowLogFormatter;
-import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -301,7 +306,7 @@ public class SmartWalletSignalRiskService {
         if (accepted) gateStage = 5; // 通过信号新鲜度
 
         // ── Gate 6: 市场状态 / 时间窗口 ──
-        SmartWalletMarketStateService.MarketStateSnapshot marketState = marketStateService.refreshMarket(
+        MarketStateSnapshot marketState = marketStateService.refreshMarket(
                 event.getMarketId(),
                 event.getQuestion(),
                 StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
@@ -333,7 +338,7 @@ public class SmartWalletSignalRiskService {
             }
         } else if (accepted) {
             // marketEndAt 为空时，强制 forceRefresh 再次确认市场是否仍然活跃
-            SmartWalletMarketStateService.MarketStateSnapshot freshState = marketStateService.refreshMarket(
+            MarketStateSnapshot freshState = marketStateService.refreshMarket(
                     event.getMarketId(),
                     event.getQuestion(),
                     StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of(),
@@ -1236,7 +1241,7 @@ public class SmartWalletSignalRiskService {
     }
 
     private MarketRoutingContext classifyMarket(SmartWalletTradeEventEntity event,
-                                                SmartWalletMarketStateService.MarketStateSnapshot marketState,
+                                                MarketStateSnapshot marketState,
                                                 Long marketEndAt,
                                                 SmartWalletProperties.SignalRisk risk,
                                                 boolean hasOppositeOpenPosition) {
@@ -1248,7 +1253,7 @@ public class SmartWalletSignalRiskService {
     }
 
     private String resolveMarketType(SmartWalletTradeEventEntity event,
-                                     SmartWalletMarketStateService.MarketStateSnapshot marketState,
+                                     MarketStateSnapshot marketState,
                                      Long marketEndAt,
                                      SmartWalletProperties.SignalRisk risk) {
         long fastHours = defaultInt(risk.getFastEventMaxHours(), 24);

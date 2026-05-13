@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletCashLedgerMapper;
@@ -110,7 +112,7 @@ public class SmartWalletAccountingService {
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletTimeFormatter timeFormatter;
-    private final com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties properties;
+    private final com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties properties;
     private final ObjectProvider<SmartWalletFollowTaskService> followTaskServiceProvider;
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
@@ -3179,9 +3181,9 @@ public class SmartWalletAccountingService {
         if (position == null || !StringUtils.hasText(position.getMarketId()) || !StringUtils.hasText(position.getOutcome())) {
             return;
         }
-        SmartWalletMarketStateService.MarketStateSnapshot marketState = resolvePositionMarketState(position);
+        MarketStateSnapshot marketState = resolvePositionMarketState(position);
         if (marketState == null) {
-            marketState = SmartWalletMarketStateService.MarketStateSnapshot.unknown(position.getMarketId());
+            marketState = MarketStateSnapshot.unknown(position.getMarketId());
         }
         if (!marketState.isActive()) {
             return;
@@ -3252,7 +3254,7 @@ public class SmartWalletAccountingService {
         if (positions == null || positions.isEmpty()) {
             return;
         }
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> statesByMarketId = marketStateService.refreshMarkets(
+        Map<String, MarketStateSnapshot> statesByMarketId = marketStateService.refreshMarkets(
                 positions.stream()
                         .map(SmartWalletPositionEntity::getMarketId)
                         .filter(StringUtils::hasText)
@@ -3263,7 +3265,7 @@ public class SmartWalletAccountingService {
             statesByMarketId = Map.of();
         }
         for (SmartWalletPositionEntity position : positions) {
-            SmartWalletMarketStateService.MarketStateSnapshot snapshot =
+            MarketStateSnapshot snapshot =
                     statesByMarketId.get(position == null ? null : position.getMarketId());
             if (snapshot == null) {
                 continue;
@@ -3278,13 +3280,13 @@ public class SmartWalletAccountingService {
         }
     }
 
-    private SmartWalletMarketStateService.MarketStateSnapshot resolvePositionMarketState(SmartWalletPositionEntity position) {
+    private MarketStateSnapshot resolvePositionMarketState(SmartWalletPositionEntity position) {
         marketInfoService.populate(position);
         if (position == null || !StringUtils.hasText(position.getMarketId())) {
-            return SmartWalletMarketStateService.MarketStateSnapshot.unknown(null);
+            return MarketStateSnapshot.unknown(null);
         }
         if (StringUtils.hasText(position.getMarketLifecycle())) {
-            return SmartWalletMarketStateService.MarketStateSnapshot.builder()
+            return MarketStateSnapshot.builder()
                     .marketId(position.getMarketId())
                     .question(position.getQuestion())
                     .marketEndAt(position.getMarketEndAt())
@@ -3296,20 +3298,20 @@ public class SmartWalletAccountingService {
                     .resolvedOutcome(position.getResolvedOutcome())
                     .build();
         }
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = marketStateService.refreshMarket(
+        MarketStateSnapshot snapshot = marketStateService.refreshMarket(
                 position.getMarketId(),
                 position.getQuestion(),
                 StringUtils.hasText(position.getOutcome()) ? List.of(position.getOutcome()) : List.of()
         );
         if (snapshot == null) {
-            snapshot = SmartWalletMarketStateService.MarketStateSnapshot.unknown(position.getMarketId());
+            snapshot = MarketStateSnapshot.unknown(position.getMarketId());
         }
         applySnapshotToPosition(position, snapshot);
         return snapshot;
     }
 
     private void applySnapshotToPosition(SmartWalletPositionEntity position,
-                                         SmartWalletMarketStateService.MarketStateSnapshot snapshot) {
+                                         MarketStateSnapshot snapshot) {
         if (position == null || position.getMarketInfo() == null || snapshot == null) {
             return;
         }

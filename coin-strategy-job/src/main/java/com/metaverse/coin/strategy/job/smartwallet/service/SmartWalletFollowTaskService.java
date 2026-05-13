@@ -1,4 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
@@ -13,7 +17,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManu
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletFollowCandidateEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityResolutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.service.WalletEntityResolutionService;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
@@ -870,7 +874,7 @@ public class SmartWalletFollowTaskService {
                 "reasonSummary", candidate.getRejectionReason()));
 
         SmartWalletMarketInfoEntity marketInfo = ensureMarketInfoForEvent(event);
-        SmartWalletMarketStateService.MarketStateSnapshot marketState = refreshMarketState(event);
+        MarketStateSnapshot marketState = refreshMarketState(event);
         if (!marketState.isActive()) {
             createLifecycleSkippedTask(event, candidate, marketInfo, marketState);
             markSourceEventProcessed(event);
@@ -1122,7 +1126,7 @@ public class SmartWalletFollowTaskService {
         }
 
         ensureMarketInfoForEvent(event);
-        SmartWalletMarketStateService.MarketStateSnapshot marketState = refreshMarketState(event);
+        MarketStateSnapshot marketState = refreshMarketState(event);
         if (!marketState.isActive()) {
             task.setEntityId(candidate.getEntityId())
                     .setFollowCandidateId(candidate.getId())
@@ -1299,7 +1303,7 @@ public class SmartWalletFollowTaskService {
     private void createLifecycleSkippedTask(SmartWalletTradeEventEntity event,
                                             WalletFollowCandidateEntity candidate,
                                             SmartWalletMarketInfoEntity marketInfo,
-                                            SmartWalletMarketStateService.MarketStateSnapshot marketState) {
+                                            MarketStateSnapshot marketState) {
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
                 .setEntityId(candidate == null ? null : candidate.getEntityId())
@@ -1872,9 +1876,9 @@ public class SmartWalletFollowTaskService {
         return marketInfoService.getById(marketInfo.getId());
     }
 
-    private SmartWalletMarketStateService.MarketStateSnapshot refreshMarketState(SmartWalletTradeEventEntity event) {
+    private MarketStateSnapshot refreshMarketState(SmartWalletTradeEventEntity event) {
         if (event == null || !StringUtils.hasText(event.getMarketId())) {
-            return SmartWalletMarketStateService.MarketStateSnapshot.unknown(null);
+            return MarketStateSnapshot.unknown(null);
         }
         return marketStateService.refreshMarket(
                 event.getMarketId(),

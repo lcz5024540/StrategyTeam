@@ -165,8 +165,10 @@ do_start() {
   echo "[web] PID 文件:   $PID_FILE"
   echo "[web] ============================================"
 
+  # 后台启动: stdout 丢弃, stderr 写到独立小文件 (应用日志由 logback 滚动管理)
   STARTUP_LOG="$LOG_DIR/web-startup.log"
-  nohup "${JAVA_CMD[@]}" > "$STARTUP_LOG" 2>&1 &
+  : > "$STARTUP_LOG"   # 每次重启截断, 避免无限增长
+  nohup "${JAVA_CMD[@]}" >/dev/null 2>>"$STARTUP_LOG" &
   local pid=$!
   echo "$pid" > "$PID_FILE"
 

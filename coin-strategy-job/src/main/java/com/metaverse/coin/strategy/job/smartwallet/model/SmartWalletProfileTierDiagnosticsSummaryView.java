@@ -1,19 +1,4 @@
+// 已下沉到 com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView
+// pull 后 git rm
 package com.metaverse.coin.strategy.job.smartwallet.model;
 
-import lombok.Builder;
-
-import java.util.Date;
-import java.util.Map;
-
-@Builder
-public record SmartWalletProfileTierDiagnosticsSummaryView(
-        String monitorTier,
-        Integer walletCount,
-        Integer metricsMissingCount,
-        Integer metricsStaleCount,
-        Integer eventSyncStaleCount,
-        Date earliestMetricsRefreshAt,
-        Date latestMetricsRefreshAt,
-        Map<String, Integer> hotBlockReasonCounts
-) {
-}

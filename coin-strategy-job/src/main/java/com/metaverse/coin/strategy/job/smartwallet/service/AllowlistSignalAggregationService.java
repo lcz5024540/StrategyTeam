@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;

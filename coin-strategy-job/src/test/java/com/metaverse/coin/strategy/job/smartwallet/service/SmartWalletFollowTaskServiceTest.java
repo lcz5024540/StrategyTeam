@@ -1,4 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletLeaderTradeOutcomeMapper;
@@ -10,7 +13,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMark
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.WalletFollowCandidateEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityResolutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.service.WalletEntityResolutionService;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
@@ -109,7 +112,7 @@ class SmartWalletFollowTaskServiceTest {
                     return new SmartWalletMarketInfoEntity().setId(invocation.getArgument(0));
                 });
         lenient().when(marketStateService.refreshMarket(any(), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -377,7 +380,7 @@ class SmartWalletFollowTaskServiceTest {
                 .setQuestion("Will this market resolve yes?")
                 .setOutcome("YES"));
         when(marketStateService.refreshMarket(eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(false)

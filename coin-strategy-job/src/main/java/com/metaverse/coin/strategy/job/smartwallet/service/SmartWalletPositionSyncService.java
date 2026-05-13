@@ -1,4 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
@@ -9,7 +12,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
@@ -882,7 +885,7 @@ public class SmartWalletPositionSyncService {
             return ConcentrationPressure.none();
         }
         SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
-        MarketConcentrationService.ConcentrationSnapshot snap =
+        ConcentrationSnapshot snap =
                 marketConcentrationService.analyze(position.getMarketId(), position.getOutcome());
         if (snap == null || !snap.isDataAvailable()) {
             return ConcentrationPressure.none();

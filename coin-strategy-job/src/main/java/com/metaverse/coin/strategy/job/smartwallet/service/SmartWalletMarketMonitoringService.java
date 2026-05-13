@@ -1,4 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.MarketConcentrationSnapshotService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
@@ -8,11 +12,11 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFoll
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorTrendPointView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
-import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitorItemView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitorTrendPointView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.OffsetPageView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -179,7 +183,7 @@ public class SmartWalletMarketMonitoringService {
         int safeLimit = limit == null ? 60 : Math.max(10, Math.min(limit, 160));
         int safeLookbackDays = lookbackDays == null ? 30 : Math.max(3, Math.min(lookbackDays, 90));
         MonitoringBaseData dataset = buildBaseData(safeLimit, safeLookbackDays);
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> stateByMarketId = marketStateService.loadPersistedMarkets(
+        Map<String, MarketStateSnapshot> stateByMarketId = marketStateService.loadPersistedMarkets(
                 dataset.accumulators().stream().map(MarketAccumulator::marketId).toList()
         );
         return dataset.accumulators().stream()
@@ -193,7 +197,7 @@ public class SmartWalletMarketMonitoringService {
 
     private MarketDataset buildDataset(int fetchHint, int lookbackDays) {
         MonitoringBaseData baseData = buildBaseData(fetchHint, lookbackDays);
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> stateByMarketId =
+        Map<String, MarketStateSnapshot> stateByMarketId =
                 marketStateService.loadPersistedMarkets(
                         baseData.accumulators().stream().map(MarketAccumulator::marketId).toList());
         Map<String, MarketConcentrationSnapshotService.SnapshotView> concentrationSnapshots =
@@ -400,16 +404,16 @@ public class SmartWalletMarketMonitoringService {
     }
 
     private SmartWalletMarketMonitorItemView toItemView(MarketAccumulator accumulator,
-                                                        SmartWalletMarketStateService.MarketStateSnapshot stateSnapshot,
+                                                        MarketStateSnapshot stateSnapshot,
                                                         MarketConcentrationSnapshotService.SnapshotView concentrationView) {
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = stateSnapshot == null
-                ? SmartWalletMarketStateService.MarketStateSnapshot.unknown(accumulator.marketId)
+        MarketStateSnapshot snapshot = stateSnapshot == null
+                ? MarketStateSnapshot.unknown(accumulator.marketId)
                 : stateSnapshot;
         Long displayMarketEndAt = firstNonNull(snapshot.marketEndAt(), accumulator.marketEndAt);
         if (!shouldDisplayActiveMarket(snapshot, displayMarketEndAt)) {
             return null;
         }
-        MarketConcentrationService.ConcentrationSnapshot concentration =
+        ConcentrationSnapshot concentration =
                 concentrationView == null ? null : concentrationView.snapshot();
         boolean concentrationAvailable = concentration != null && concentration.isDataAvailable();
         boolean activeMarket = snapshot.isActive();
@@ -459,13 +463,13 @@ public class SmartWalletMarketMonitoringService {
                 .build();
     }
 
-    private boolean shouldDisplayActiveMarket(SmartWalletMarketStateService.MarketStateSnapshot snapshot,
+    private boolean shouldDisplayActiveMarket(MarketStateSnapshot snapshot,
                                               Long marketEndAt) {
         return snapshot != null && snapshot.isActive();
     }
 
     private boolean shouldTrackCandidateMarket(MarketAccumulator accumulator,
-                                               SmartWalletMarketStateService.MarketStateSnapshot snapshot) {
+                                               MarketStateSnapshot snapshot) {
         if (accumulator == null) {
             return false;
         }

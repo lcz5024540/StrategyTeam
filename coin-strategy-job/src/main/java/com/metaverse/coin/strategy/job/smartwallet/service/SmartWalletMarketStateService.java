@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import lombok.Builder;
@@ -845,49 +847,4 @@ public class SmartWalletMarketStateService {
         return null;
     }
 
-    @Builder
-    public record MarketStateSnapshot(
-            String marketId,
-            String question,
-            String marketSlug,
-            Long marketEndAt,
-            String sourceCategory,
-            String normalizedCategory,
-            String marketLifecycle,
-            boolean closed,
-            boolean acceptingOrders,
-            String resolvedOutcome,
-            Date lastMetadataSyncAt
-    ) {
-        public static MarketStateSnapshot unknown(String marketId) {
-            return MarketStateSnapshot.builder()
-                    .marketId(marketId)
-                    .normalizedCategory(CATEGORY_OTHER)
-                    .marketLifecycle(LIFECYCLE_ACTIVE)
-                    .acceptingOrders(true)
-                    .build();
-        }
-
-        public boolean isActive() {
-            return LIFECYCLE_ACTIVE.equalsIgnoreCase(marketLifecycle);
-        }
-
-        public String blockingReasonCode() {
-            if (LIFECYCLE_RESOLVED.equalsIgnoreCase(marketLifecycle)) {
-                return "MARKET_RESOLVED";
-            }
-            if (!acceptingOrders) {
-                return "MARKET_NOT_ACCEPTING_ORDERS";
-            }
-            return "MARKET_CLOSED";
-        }
-
-        public String blockingReasonMessage() {
-            return switch (blockingReasonCode()) {
-                case "MARKET_RESOLVED" -> "[MARKET_RESOLVED] Market is already resolved.";
-                case "MARKET_NOT_ACCEPTING_ORDERS" -> "[MARKET_NOT_ACCEPTING_ORDERS] Market is no longer accepting orders.";
-                default -> "[MARKET_CLOSED] Market is already closed.";
-            };
-        }
-    }
 }

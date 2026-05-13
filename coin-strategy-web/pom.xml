@@ -15,6 +15,17 @@
     <dependencies>
         <dependency>
             <groupId>com.metaverse</groupId>
+            <artifactId>common-service</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
             <artifactId>common-dao</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -63,6 +74,13 @@
                 <version>3.13.0</version>
                 <configuration>
                     <release>17</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
             <plugin>
@@ -95,6 +113,16 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>3.1.7</version>
+                <!-- 本项目 parent 不是 spring-boot-starter-parent, 必须显式绑定 repackage,
+                     否则 mvn package 只生成普通 classes jar (无 Main-Class), java -jar 直接报
+                     "no main manifest attribute". -->
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

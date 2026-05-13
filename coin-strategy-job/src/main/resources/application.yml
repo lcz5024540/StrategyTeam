@@ -1,6 +1,10 @@
 server:
   # [FIXED-ONCE] Local service port. Usually set once per machine.
   port: 8081
+  # Priority 5 网络层硬化默认 loopback only；profile 可显式覆盖。
+  # 单机部署强烈建议保持 127.0.0.1；多机部署再通过 JOB_SERVER_ADDRESS=0.0.0.0
+  # 同时配置防火墙白名单仅放行 web 主机 IP。
+  address: ${JOB_SERVER_ADDRESS:127.0.0.1}
   servlet:
     context-path: /strategy/api
 

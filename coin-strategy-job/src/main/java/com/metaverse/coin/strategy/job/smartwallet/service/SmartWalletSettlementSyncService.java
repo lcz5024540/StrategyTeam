@@ -9,7 +9,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletSettlementRunMap
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSettlementRetryEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletSettlementRunEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryCandidate;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryReportView;

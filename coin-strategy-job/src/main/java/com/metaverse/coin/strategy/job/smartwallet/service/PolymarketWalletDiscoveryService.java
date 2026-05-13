@@ -1,9 +1,12 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
-import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageBucketView;
-import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.DiscoverySessionCoverageBucketView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;

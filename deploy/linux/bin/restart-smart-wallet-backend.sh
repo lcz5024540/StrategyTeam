@@ -305,6 +305,13 @@ tail_logs() {
 }
 
 main() {
+  local skip_tail=0
+  for arg in "$@"; do
+    case "$arg" in
+      --no-tail) skip_tail=1 ;;
+    esac
+  done
+
   load_env
   validate_port
   validate_start_mode
@@ -322,6 +329,12 @@ main() {
   kill_port_processes
   start_backend
   sleep 2
+
+  if [ "$skip_tail" = "1" ] || [ "${SMART_WALLET_NO_TAIL:-0}" = "1" ]; then
+    echo "[linux-restart] backend restart finished (skip tail)"
+    return 0
+  fi
+
   tail_logs
 }
 

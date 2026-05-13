@@ -43,18 +43,35 @@ echo "[1/3] 编译后端 JAR (job + web, profile=$ENV) ..."
 (cd "$ROOT_DIR" && mvn -pl coin-strategy-job,coin-strategy-web -am package -DskipTests -Dspring.profiles.active="$ENV")
 
 # Job JAR
-JOB_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+# 排除:
+#   original-*.jar   Spring Boot 2.x repackage 前的原始 jar
+#   *-sources.jar    maven-source-plugin 生成的源码包
+#   *-javadoc.jar    maven-javadoc-plugin 生成的文档包
+JOB_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' \
+  ! -name 'original-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
 if [ -z "$JOB_JAR" ]; then
   echo "[ERROR] 未找到 Job JAR 包 (coin-strategy-job/target/*.jar)" >&2
+  exit 1
+fi
+# 校验是 Spring Boot fat jar (含 Main-Class), 而不是普通 classes jar
+if ! unzip -p "$JOB_JAR" META-INF/MANIFEST.MF 2>/dev/null | grep -q '^Main-Class:'; then
+  echo "[ERROR] Job JAR 不是可执行 fat jar (缺 Main-Class): $JOB_JAR" >&2
+  echo "        请检查 coin-strategy-job/pom.xml 的 spring-boot-maven-plugin 是否声明了 repackage execution" >&2
   exit 1
 fi
 cp "$JOB_JAR" "$RELEASE_DIR/backend/app.jar"
 echo "[OK] Job JAR -> $RELEASE_DIR/backend/app.jar"
 
 # Web JAR
-WEB_JAR="$(find "$ROOT_DIR/coin-strategy-web/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+WEB_JAR="$(find "$ROOT_DIR/coin-strategy-web/target" -maxdepth 1 -type f -name '*.jar' \
+  ! -name 'original-*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' | head -n 1)"
 if [ -z "$WEB_JAR" ]; then
   echo "[ERROR] 未找到 Web JAR 包 (coin-strategy-web/target/*.jar)" >&2
+  exit 1
+fi
+if ! unzip -p "$WEB_JAR" META-INF/MANIFEST.MF 2>/dev/null | grep -q '^Main-Class:'; then
+  echo "[ERROR] Web JAR 不是可执行 fat jar (缺 Main-Class): $WEB_JAR" >&2
+  echo "        请检查 coin-strategy-web/pom.xml 的 spring-boot-maven-plugin 是否声明了 repackage execution" >&2
   exit 1
 fi
 cp "$WEB_JAR" "$RELEASE_DIR/web/app.jar"
@@ -136,6 +153,12 @@ fi
 if [ -f "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-web.sh" ]; then
   cp "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-web.sh" "$RELEASE_DIR/bin/"
   chmod +x "$RELEASE_DIR/bin/restart-smart-wallet-web.sh"
+fi
+
+# 一键重启 web + job (同机部署场景)
+if [ -f "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-all.sh" ]; then
+  cp "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-all.sh" "$RELEASE_DIR/bin/"
+  chmod +x "$RELEASE_DIR/bin/restart-smart-wallet-all.sh"
 fi
 
 # 生成环境快捷脚本 — Job 后端

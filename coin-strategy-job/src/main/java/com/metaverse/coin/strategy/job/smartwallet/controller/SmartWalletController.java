@@ -1,4 +1,5 @@
 package com.metaverse.coin.strategy.job.smartwallet.controller;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
@@ -11,7 +12,7 @@ import com.metaverse.coin.strategy.job.risk.application.BaselineModelConfigAppli
 import com.metaverse.coin.strategy.job.risk.application.RiskPolicyApplicationService;
 import com.metaverse.coin.strategy.job.risk.application.StrategyRuntimeConfigService;
 import com.metaverse.coin.strategy.job.settlement.application.SettlementApplicationService;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.AbnormalMarketManualReviewRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.AbnormalMarketManualReviewResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
@@ -24,7 +25,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.LeaderTradeOutcomeCover
 import com.metaverse.coin.strategy.job.smartwallet.model.LeaderTradeOutcomeSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
-import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMockWsEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRequest;
@@ -40,14 +41,14 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskPresetCatalog
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderPnlCategoryAttributionView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistSummaryView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualAllowlistView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualBlocklistRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualBlocklistSummaryView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletManualBlocklistView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitorItemView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletManualAllowlistRequest;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletManualAllowlistSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletManualAllowlistView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletManualBlocklistRequest;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletManualBlocklistSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletManualBlocklistView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketLinkView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketIdRepairSummary;
@@ -61,11 +62,11 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ResetStrategyRuntimeCon
 import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateStrategyRuntimeConfigRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileStaleDiagnosticView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfileStaleDiagnosticView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTruthAuditView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
-import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.OffsetPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
@@ -88,7 +89,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncStatusVie
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRunView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryReportView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfile;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRunView;
@@ -98,12 +99,12 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletDiagnosisView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderAnalysisView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderStatsView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletDiagnosisView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletOrderAnalysisView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletOrderStatsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.AbnormalMarketReviewService;
 import com.metaverse.coin.strategy.job.smartwallet.service.ClosedPositionSyncDispatcher;
@@ -122,8 +123,8 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketStat
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketLinkService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketRepairService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletMarketMonitoringService;
-import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletManualAllowlistService;
-import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketSnapshotCollectorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletDataResetService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoveryService;
@@ -1439,7 +1440,7 @@ public class SmartWalletController {
             description = "返回指定市场的 CR_1/CR_3/CR_5 和 HHI 集中度指标，以及前5持仓者地址。" +
                     "用于判断是否存在控盘风险。结果缓存 60s。outcome 参数可选，不传则分析双向合并数据。")
     @GetMapping("/concentration/{conditionId}")
-    public MarketConcentrationService.ConcentrationSnapshot marketConcentration(
+    public ConcentrationSnapshot marketConcentration(
             @PathVariable String conditionId,
             @RequestParam(required = false) String outcome) {
         return marketConcentrationService.analyze(conditionId, outcome);

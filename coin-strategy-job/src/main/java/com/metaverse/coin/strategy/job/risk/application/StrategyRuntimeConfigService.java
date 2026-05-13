@@ -6,7 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.StrategyRuntimeConfigMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.StrategyRuntimeConfigEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ResetStrategyRuntimeConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigCatalogView;
 import com.metaverse.coin.strategy.job.smartwallet.model.StrategyRuntimeConfigView;

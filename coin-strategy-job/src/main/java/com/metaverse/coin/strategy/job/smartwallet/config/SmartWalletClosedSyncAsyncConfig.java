@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.config;
 
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

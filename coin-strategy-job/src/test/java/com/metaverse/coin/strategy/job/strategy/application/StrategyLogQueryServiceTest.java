@@ -21,7 +21,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void parsesLogbackLinesNewestFirst() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-28 10:00:00.001 INFO  [main] com.metaverse.coin.strategy.job.CoinStrategyJobApplication - started
                 2026-04-28 10:00:01.002 WARN  [worker] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService - Polymarket delayed
                 """);
@@ -36,7 +36,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void filtersByLevelStrategyAndSearch() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-28 10:00:00.001 INFO  [main] com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageRebalanceService - Funding rate check ok
                 2026-04-28 10:00:01.002 WARN  [worker] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowService - Polymarket delayed
                 2026-04-28 10:00:02.003 ERROR [worker] com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService - CLOB order failed
@@ -65,7 +65,7 @@ class StrategyLogQueryServiceTest {
     @Test
     void flowReaderDeduplicatesSameFlowEventAcrossResolvedSourceFiles() throws IOException {
         String duplicatedLine = "2026-04-29 09:09:46.348[1777424986348] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S1_EVENT_CAPTURED action=记录Polymarket钱包交易事件 result=已入库 eventId=53558 followTaskId=- wallet=0xabc marketId=m1 outcome=UP reasonSummary=交易事件已入库\n";
-        write("binance-java-connector.log", duplicatedLine);
+        write("job-startup.log", duplicatedLine);
         write("job-current.log", duplicatedLine);
 
         FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
@@ -78,7 +78,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void flowReaderCombinesStructuredAndLegacyFlowLogs() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-29 09:09:46.348[1777424986348] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S1_EVENT_CAPTURED action=记录Polymarket钱包交易事件 result=已入库 eventId=53558 followTaskId=- wallet=0xabc marketId=m1 outcome=UP reasonSummary=交易事件已入库
                 2026-04-29 09:09:47.348[1777424987348] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletSignalRiskService - [POLY_FOLLOW] action=完成跟单风控评估 result=拒绝 followTaskId=29927 wallet=0xdef marketId=m2 outcome=DOWN firstRejectGate=G1_WATCHLIST_UNQUALIFIED
                 """);
@@ -108,7 +108,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void mergesStackTraceLinesIntoPreviousEntry() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-28 10:00:02.003 ERROR [worker] com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService - CLOB order failed
                 java.lang.IllegalStateException: boom
                 \tat com.metaverse.coin.strategy.Job.run(Job.java:10)
@@ -123,7 +123,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void parsesServerPipeLogFormat() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-29 01:15:35.684[1777396535684] | ERROR | main       | o.s.boot.SpringApplication           - Application run failed
                 2026-04-29 01:15:36.001[1777396536001] | WARN  | worker     | com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S4_MARKET_CHECK action="检查Polymarket市场状态" result="拒绝" wallet=0xabc marketId=m1 outcome=YES firstRejectGate=MARKET_RESOLVED blockerCategories=MARKET reasonSummary="market resolved"
                 """);
@@ -148,7 +148,7 @@ class StrategyLogQueryServiceTest {
             content.append("2026-04-29 09:38:").append(String.format("%02d", i % 60))
                     .append(".000[1777426700000] | INFO  | scheduling-1 | c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=扫描待执行跟单任务 result=查到批次 pendingCount=0 limit=20\n");
         }
-        write("binance-java-connector.log", content.toString());
+        write("job-startup.log", content.toString());
 
         FileStrategyFlowLogReader reader = new FileStrategyFlowLogReader(service());
         List<StrategyLogFlowView> flows = reader.queryFlows("app", "POLYMARKET_COPY", null, null, null, null, null, 20);
@@ -160,7 +160,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void flowReaderIgnoresLegacyOperationalLogsThatAreNotSignalStages() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-05-01 01:03:32.816 INFO  [worker] c.m.c.s.j.s.s.PolymarketSmartWalletMonitorService - [POLY_FOLLOW] action=导入Polymarket钱包指标 result=开始 wallet=0xabc chain=polygon winRate=1.0000 pnlUsdc=100 totalTrades=50
                 2026-05-01 01:03:33.249 INFO  [worker] c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - [POLY_FOLLOW] action=分析Polymarket候选钱包 result=完成 wallet=0xabc totalTrades=50 winRate=1.0000 pnlUsdc=100
                 2026-05-01 01:03:34.000 INFO  [worker] c.m.c.s.j.s.s.PolymarketWalletDiscoveryService - [POLY_FOLLOW] action=导入HOT钱包交易 result=完成 wallet=0xabc tradeId=t1 marketId=m1 outcome=YES side=BUY tradedAt=1777568614000
@@ -175,7 +175,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void flowReaderMapsOnlyWhitelistedLegacyStageActions() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-05-01 01:04:00.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=记录Polymarket钱包交易事件 result=已入库 eventId=101 wallet=0xabc marketId=m1 outcome=YES
                 2026-05-01 01:04:01.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=钱包准入检查 result=通过 eventId=101 wallet=0xabc marketId=m1 outcome=YES
                 2026-05-01 01:04:02.000 INFO  [worker] c.m.c.s.j.s.s.SmartWalletFollowTaskService - [POLY_FOLLOW] action=智能增强候选信号 result=READY eventId=101 wallet=0xabc marketId=m1 outcome=YES
@@ -208,12 +208,12 @@ class StrategyLogQueryServiceTest {
     @Test
     void rejectsUnsupportedSources() {
         assertThrows(IllegalArgumentException.class, () ->
-                service().query("../binance-java-connector.log", "ALL", "ALL", null, 20));
+                service().query("../job-startup.log", "ALL", "ALL", null, 20));
     }
 
     @Test
     void redactsSensitiveValues() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-28 10:00:00.001 INFO  [main] com.metaverse.coin.strategy.job.config.SecretDecryptor - apiKey=abc123 privateKey=ENC(secret) Authorization Bearer abc.def token:xyz
                 """);
 
@@ -227,7 +227,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void parsesPolymarketFlowFieldsFromRawLogs() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-28 10:00:00.001 INFO  [worker] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S5_RISK_EVALUATED action="评估跟单风控" result="拒绝" eventId=101 followTaskId=202 wallet=0xabc marketId=m1 outcome=YES mode=PAPER stakeUsdc=1.00 entryLane=SINGLE_WALLET_PAPER_CANARY matchedStrategies=SINGLE_WALLET_PAPER_CANARY gateHighWaterMark=11 firstRejectGate=G12_ENTRY_STRATEGY_REJECTED blockerCategories=CONSENSUS_SCORE reasonSummary="Consensus score below threshold"
                 """);
 
@@ -243,7 +243,7 @@ class StrategyLogQueryServiceTest {
 
     @Test
     void groupsPolymarketFlowTimelineByEventId() throws IOException {
-        write("binance-java-connector.log", """
+        write("job-startup.log", """
                 2026-04-28 10:00:00.001 INFO  [worker] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S1_EVENT_CAPTURED action="记录Polymarket钱包交易事件" result=已入库 eventId=101 wallet=0xabc marketId=m1 outcome=YES reasonSummary="captured"
                 2026-04-28 10:00:01.001 INFO  [worker] com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletFollowTaskService - [POLY_FLOW] flowStage=S6_TASK_CREATED action="创建跟单任务" result=PENDING eventId=101 followTaskId=202 wallet=0xabc marketId=m1 outcome=YES mode=PAPER stakeUsdc=1.00 reasonSummary="created"
                 """);

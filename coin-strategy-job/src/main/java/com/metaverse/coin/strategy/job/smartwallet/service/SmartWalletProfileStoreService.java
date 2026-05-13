@@ -1,4 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
@@ -10,17 +13,17 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrde
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileStaleDiagnosticView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfileStaleDiagnosticView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileBatchOverrideResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideSummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileOverrideView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfileTierDiagnosticsSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
