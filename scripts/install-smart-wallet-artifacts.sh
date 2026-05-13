@@ -46,8 +46,16 @@ if [ -f "$SRC_BIN_DIR/start-smart-wallet-backend.sh" ]; then
   install -m 755 "$SRC_BIN_DIR/start-smart-wallet-backend.sh" "$DST_BIN_DIR/start-smart-wallet-backend.sh"
 fi
 
+if [ -f "$SRC_BIN_DIR/start-smart-wallet-web.sh" ]; then
+  install -m 755 "$SRC_BIN_DIR/start-smart-wallet-web.sh" "$DST_BIN_DIR/start-smart-wallet-web.sh"
+fi
+
 if [ -f "$SRC_DEPLOY_LINUX_BIN_DIR/restart-smart-wallet-backend.sh" ]; then
   install -m 755 "$SRC_DEPLOY_LINUX_BIN_DIR/restart-smart-wallet-backend.sh" "$DST_BIN_DIR/restart-smart-wallet-backend.sh"
+fi
+
+if [ -f "$SRC_DEPLOY_LINUX_BIN_DIR/restart-smart-wallet-web.sh" ]; then
+  install -m 755 "$SRC_DEPLOY_LINUX_BIN_DIR/restart-smart-wallet-web.sh" "$DST_BIN_DIR/restart-smart-wallet-web.sh"
 fi
 
 if [ -d "$SRC_RUNTIME_DIR" ]; then

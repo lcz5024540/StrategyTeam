@@ -83,9 +83,27 @@ if [ -n "$START_SCRIPT_SOURCE" ]; then
   chown "$APP_USER:$APP_GROUP" "$APP_HOME/bin/start-smart-wallet-backend.sh"
 fi
 
+WEB_START_SCRIPT_SOURCE=""
+if [ -f "$ROOT_DIR/bin/start-smart-wallet-web.sh" ]; then
+  WEB_START_SCRIPT_SOURCE="$ROOT_DIR/bin/start-smart-wallet-web.sh"
+elif [ -f "$ROOT_DIR/scripts/start-smart-wallet-web.sh" ]; then
+  WEB_START_SCRIPT_SOURCE="$ROOT_DIR/scripts/start-smart-wallet-web.sh"
+fi
+
+if [ -n "$WEB_START_SCRIPT_SOURCE" ]; then
+  install -m 755 "$WEB_START_SCRIPT_SOURCE" "$APP_HOME/bin/start-smart-wallet-web.sh"
+  chown "$APP_USER:$APP_GROUP" "$APP_HOME/bin/start-smart-wallet-web.sh"
+fi
+
 if [ -f "$RESTART_HELPER_SOURCE" ]; then
   install -m 755 "$RESTART_HELPER_SOURCE" "$APP_HOME/bin/restart-smart-wallet-backend.sh"
   chown "$APP_USER:$APP_GROUP" "$APP_HOME/bin/restart-smart-wallet-backend.sh"
+fi
+
+WEB_RESTART_HELPER_SOURCE="$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-web.sh"
+if [ -f "$WEB_RESTART_HELPER_SOURCE" ]; then
+  install -m 755 "$WEB_RESTART_HELPER_SOURCE" "$APP_HOME/bin/restart-smart-wallet-web.sh"
+  chown "$APP_USER:$APP_GROUP" "$APP_HOME/bin/restart-smart-wallet-web.sh"
 fi
 
 sed \

@@ -7,9 +7,10 @@
 #   ./scripts/build-env.sh prod     # 生产环境
 #
 # 产物:
-#   dist/<ENV>/backend/app.jar      — 后端可执行 JAR
-#   dist/<ENV>/frontend/dist/       — 前端静态资源
-#   dist/<ENV>/smart-wallet-<ENV>.tar.gz — 完整部署包
+#   dist/<ENV>/backend/app.jar               — Job 后端可执行 JAR (策略/任务/内部数据)
+#   dist/<ENV>/web/app.jar                   — Web 服务可执行 JAR (前端对接 API 入口)
+#   dist/<ENV>/frontend/dist/                — 前端静态资源
+#   dist/<ENV>/smart-wallet-<ENV>.tar.gz     — 完整部署包 (backend+web+frontend+bin+runtime+deploy)
 # ============================================================
 set -euo pipefail
 
@@ -32,28 +33,38 @@ echo "============================================================"
 
 # ── 清理旧产物 ────────────────────────────────────────────────
 rm -rf "$RELEASE_DIR"
-mkdir -p "$RELEASE_DIR/backend" "$RELEASE_DIR/frontend" "$RELEASE_DIR/bin" "$RELEASE_DIR/runtime" "$RELEASE_DIR/deploy"
+mkdir -p "$RELEASE_DIR/backend" "$RELEASE_DIR/web" "$RELEASE_DIR/frontend" "$RELEASE_DIR/bin" "$RELEASE_DIR/runtime" "$RELEASE_DIR/deploy"
 
 # ============================================================
-# 1. 后端 — Maven 编译 + 指定 Spring Profile
+# 1. 后端 — Maven 编译 (job + web 一并打包)
 # ============================================================
 echo ""
-echo "[1/2] 编译后端 JAR (profile=$ENV) ..."
-(cd "$ROOT_DIR" && mvn -pl coin-strategy-job -am package -DskipTests -Dspring.profiles.active="$ENV")
+echo "[1/3] 编译后端 JAR (job + web, profile=$ENV) ..."
+(cd "$ROOT_DIR" && mvn -pl coin-strategy-job,coin-strategy-web -am package -DskipTests -Dspring.profiles.active="$ENV")
 
-APP_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
-if [ -z "$APP_JAR" ]; then
-  echo "[ERROR] 未找到后端 JAR 包" >&2
+# Job JAR
+JOB_JAR="$(find "$ROOT_DIR/coin-strategy-job/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+if [ -z "$JOB_JAR" ]; then
+  echo "[ERROR] 未找到 Job JAR 包 (coin-strategy-job/target/*.jar)" >&2
   exit 1
 fi
-cp "$APP_JAR" "$RELEASE_DIR/backend/app.jar"
-echo "[OK] 后端 JAR -> $RELEASE_DIR/backend/app.jar"
+cp "$JOB_JAR" "$RELEASE_DIR/backend/app.jar"
+echo "[OK] Job JAR -> $RELEASE_DIR/backend/app.jar"
+
+# Web JAR
+WEB_JAR="$(find "$ROOT_DIR/coin-strategy-web/target" -maxdepth 1 -type f -name '*.jar' ! -name 'original-*.jar' | head -n 1)"
+if [ -z "$WEB_JAR" ]; then
+  echo "[ERROR] 未找到 Web JAR 包 (coin-strategy-web/target/*.jar)" >&2
+  exit 1
+fi
+cp "$WEB_JAR" "$RELEASE_DIR/web/app.jar"
+echo "[OK] Web JAR -> $RELEASE_DIR/web/app.jar"
 
 # ============================================================
 # 2. 前端 — Vite 编译 + 环境文件
 # ============================================================
 echo ""
-echo "[2/2] 编译前端 dist (mode=$ENV) ..."
+echo "[2/3] 编译前端 dist (mode=$ENV) ..."
 
 # 安装依赖
 if [ -f "$FRONTEND_DIR/package-lock.json" ]; then
@@ -85,9 +96,9 @@ echo "[OK] 前端 dist -> $RELEASE_DIR/frontend/dist"
 # 3. 复制部署辅助文件
 # ============================================================
 echo ""
-echo "复制部署辅助文件..."
+echo "[3/3] 复制部署辅助文件..."
 
-# 启动脚本 (start-smart-wallet-backend.sh 在步骤 4 中复制)
+# 安装/服务注册脚本
 if [ -f "$ROOT_DIR/scripts/install-smart-wallet-artifacts.sh" ]; then
   cp "$ROOT_DIR/scripts/install-smart-wallet-artifacts.sh" "$RELEASE_DIR/bin/"
 fi
@@ -111,17 +122,27 @@ fi
 # 4. 生成环境专属快捷脚本 (调用通用管理脚本)
 # ============================================================
 
-# 复制通用管理脚本
+# 复制通用管理脚本 — Job
 cp "$ROOT_DIR/scripts/start-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
 cp "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-backend.sh" "$RELEASE_DIR/bin/"
 chmod +x "$RELEASE_DIR/bin/start-smart-wallet-backend.sh"
 chmod +x "$RELEASE_DIR/bin/restart-smart-wallet-backend.sh"
 
-# 生成环境快捷脚本
+# 复制通用管理脚本 — Web (若 scripts/ 下存在则一并打入)
+if [ -f "$ROOT_DIR/scripts/start-smart-wallet-web.sh" ]; then
+  cp "$ROOT_DIR/scripts/start-smart-wallet-web.sh" "$RELEASE_DIR/bin/"
+  chmod +x "$RELEASE_DIR/bin/start-smart-wallet-web.sh"
+fi
+if [ -f "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-web.sh" ]; then
+  cp "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-web.sh" "$RELEASE_DIR/bin/"
+  chmod +x "$RELEASE_DIR/bin/restart-smart-wallet-web.sh"
+fi
+
+# 生成环境快捷脚本 — Job 后端
 cat > "$RELEASE_DIR/bin/start-backend-${ENV}.sh" << SCRIPT_EOF
 #!/usr/bin/env bash
 # ============================================================
-# 快捷脚本 — ${ENV} 环境后端服务管理
+# 快捷脚本 — ${ENV} 环境 Job 后端服务管理
 # 用法:
 #   ./start-backend-${ENV}.sh          — 后台启动
 #   ./start-backend-${ENV}.sh stop     — 停止
@@ -136,7 +157,7 @@ APP_HOME="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 
 # 环境配置
 export SPRING_PROFILES_ACTIVE="${ENV}"
-export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet.env}"
+export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-job.env}"
 export LOG_DIR="\${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
 
 # 委托给通用管理脚本
@@ -145,6 +166,36 @@ SCRIPT_EOF
 
 chmod +x "$RELEASE_DIR/bin/start-backend-${ENV}.sh"
 
+# 生成环境快捷脚本 — Web 服务
+cat > "$RELEASE_DIR/bin/start-web-${ENV}.sh" << SCRIPT_EOF
+#!/usr/bin/env bash
+# ============================================================
+# 快捷脚本 — ${ENV} 环境 Web 服务管理
+# 用法:
+#   ./start-web-${ENV}.sh          — 后台启动
+#   ./start-web-${ENV}.sh stop     — 停止
+#   ./start-web-${ENV}.sh restart  — 重启
+#   ./start-web-${ENV}.sh status   — 查看状态
+#   ./start-web-${ENV}.sh log      — 实时查看日志
+# ============================================================
+set -euo pipefail
+
+SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+APP_HOME="\$(cd "\$SCRIPT_DIR/.." && pwd)"
+
+# 环境配置
+export SPRING_PROFILES_ACTIVE="${ENV}"
+export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-web.env}"
+# Web 服务依赖 Job 环境中的部分共享配置（如数据库/密钥），通过 SHARED 文件追加加载
+export SMART_WALLET_SHARED_ENV_FILE="\${SMART_WALLET_SHARED_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-job.env}"
+export LOG_DIR="\${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
+
+# 委托给通用管理脚本
+exec "\$SCRIPT_DIR/start-smart-wallet-web.sh" "\${1:-start}"
+SCRIPT_EOF
+
+chmod +x "$RELEASE_DIR/bin/start-web-${ENV}.sh"
+
 # ============================================================
 # 5. 打包发布包
 # ============================================================
@@ -152,28 +203,34 @@ echo ""
 echo "打包发布包..."
 (
   cd "$RELEASE_DIR"
-  tar -czf "smart-wallet-${ENV}.tar.gz" backend frontend bin runtime deploy
+  tar -czf "smart-wallet-${ENV}.tar.gz" backend web frontend bin runtime deploy
 )
 
 echo ""
 echo "============================================================"
 echo " 构建完成!"
-echo " 发布包: $RELEASE_DIR/smart-wallet-${ENV}.tar.gz"
-echo " 后端 JAR: $RELEASE_DIR/backend/app.jar"
-echo " 前端 dist: $RELEASE_DIR/frontend/dist/"
-echo " 启动脚本: $RELEASE_DIR/bin/start-backend-${ENV}.sh"
+echo " 发布包:        $RELEASE_DIR/smart-wallet-${ENV}.tar.gz"
+echo " Job JAR:       $RELEASE_DIR/backend/app.jar"
+echo " Web JAR:       $RELEASE_DIR/web/app.jar"
+echo " 前端 dist:     $RELEASE_DIR/frontend/dist/"
+echo " Job 启动脚本:  $RELEASE_DIR/bin/start-backend-${ENV}.sh"
+echo " Web 启动脚本:  $RELEASE_DIR/bin/start-web-${ENV}.sh"
 echo "============================================================"
 echo ""
 echo "部署说明:"
 if [ "$ENV" = "test" ]; then
   echo "  1. 将 smart-wallet-${ENV}.tar.gz 上传至测试服务器 49.51.250.174"
-  echo "  2. 解压后执行 bin/start-backend-${ENV}.sh 启动后端"
+  echo "  2. 解压后依次执行:"
+  echo "       bin/start-backend-${ENV}.sh    # 启动 Job 服务 (端口 8081)"
+  echo "       bin/start-web-${ENV}.sh        # 启动 Web 服务 (端口 8080, 对接前端)"
   echo "  3. 将 frontend/dist 配置到 nginx 作为静态资源根目录"
-  echo "  4. 使用 deploy/linux/nginx/ 下的 nginx 配置模板"
+  echo "  4. 使用 deploy/linux/nginx/ 下的 nginx 配置模板 (反代至 Web 8080)"
 elif [ "$ENV" = "prod" ]; then
-  echo "  1. 将 backend/ + bin/ + runtime/ 上传至后端服务器"
+  echo "  1. 将 backend/ + web/ + bin/ + runtime/ 上传至后端服务器"
   echo "  2. 将 frontend/ + deploy/ 上传至前端服务器"
-  echo "  3. 在后端服务器执行 bin/start-backend-${ENV}.sh"
+  echo "  3. 在后端服务器分别执行:"
+  echo "       bin/start-backend-${ENV}.sh    # Job 服务 (8081)"
+  echo "       bin/start-web-${ENV}.sh        # Web 服务 (8080)"
   echo "  4. 在前端服务器配置 nginx (参考 deploy/linux/nginx/)"
-  echo "  5. nginx 中 proxy_pass 指向后端服务器 IP:8081"
+  echo "  5. nginx 中 proxy_pass 指向 Web 服务器 IP:8080"
 fi
