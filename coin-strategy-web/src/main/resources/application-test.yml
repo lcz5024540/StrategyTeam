@@ -1,13 +1,13 @@
 # ============================================================
 # coin-strategy-web — TEST 测试环境
-# 说明: 测试环境 web 和 job 在同一台服务器上，直接走 127.0.0.1
+# 部署机: 43.139.186.27 (web + 前端 + MySQL 同机)
+# DB:     127.0.0.1:3306 (本机), user=devuser
+# 说明:   web 不再调用 job (新架构下 web/job 互不依赖 HTTP，共享同一个 DB)
 # ============================================================
-dashboard:
-  job-base-url: http://127.0.0.1:8081
-
 spring:
   datasource:
+    # DB 与 web 同机，走 loopback；DB_HOST 仅在跨机部署时由 env 覆盖
     url: "jdbc:mysql://${DB_HOST:127.0.0.1}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    username: "${DB_USERNAME:root}"
+    username: "${DB_USERNAME:devuser}"
     password: "${DB_PASSWORD:}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"

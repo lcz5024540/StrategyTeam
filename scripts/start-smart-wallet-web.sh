@@ -22,58 +22,64 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet-web.env"
-SYSTEM_SHARED_ENV_FILE="/etc/coinstrategy/smart-wallet-job.env"
-LEGACY_SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
-BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet-web.env"
-BUNDLED_SHARED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet-job.env"
-LEGACY_BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet.env"
+# ── env 文件查找顺序 ─────────────────────────────────────────────────────
+# 新架构: deploy/linux/env/{shared,test,prod}/
+#   - shared/secrets.env       公共密钥 (test/prod 共用)
+#   - <profile>/smart-wallet-web.env  env-specific (host/user/port/JVM)
+# 新架构下 web 不再依赖 job env，SHARED 文件改成 shared/secrets.env。
+SPRING_PROFILE_GUESS="${SPRING_PROFILES_ACTIVE:-test}"
+
+SYSTEM_ENV_FILE="/etc/coinstrategy/${SPRING_PROFILE_GUESS}/smart-wallet-web.env"
+SYSTEM_SHARED_ENV_FILE="/etc/coinstrategy/shared/secrets.env"
+LEGACY_SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet-web.env"
+LEGACY_SYSTEM_SHARED_ENV_FILE="/etc/coinstrategy/smart-wallet-job.env"
+LEGACY_LEGACY_SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
+
+BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/${SPRING_PROFILE_GUESS}/smart-wallet-web.env"
+BUNDLED_SHARED_ENV_FILE="$APP_HOME/deploy/linux/env/shared/secrets.env"
+LEGACY_BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet-web.env"
+LEGACY_BUNDLED_SHARED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet-job.env"
+LEGACY_LEGACY_BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet.env"
 
 DEFAULT_APP_JAR="$APP_HOME/web/app.jar"
 DEFAULT_RUNTIME_DIR="$APP_HOME/runtime"
 
 resolve_default_env_file() {
-  if [ -f "$SYSTEM_ENV_FILE" ]; then
-    echo "$SYSTEM_ENV_FILE"
-    return 0
-  fi
-
-  if [ -f "$BUNDLED_ENV_FILE" ]; then
-    echo "$BUNDLED_ENV_FILE"
-    return 0
-  fi
-
-  if [ -f "$LEGACY_SYSTEM_ENV_FILE" ]; then
-    echo "$LEGACY_SYSTEM_ENV_FILE"
-    return 0
-  fi
-
-  if [ -f "$LEGACY_BUNDLED_ENV_FILE" ]; then
-    echo "$LEGACY_BUNDLED_ENV_FILE"
-    return 0
-  fi
-
+  for candidate in \
+    "$SYSTEM_ENV_FILE" \
+    "$BUNDLED_ENV_FILE" \
+    "$LEGACY_SYSTEM_ENV_FILE" \
+    "$LEGACY_BUNDLED_ENV_FILE" \
+    "$LEGACY_LEGACY_SYSTEM_ENV_FILE" \
+    "$LEGACY_LEGACY_BUNDLED_ENV_FILE"
+  do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
   echo "$SYSTEM_ENV_FILE"
 }
 
 resolve_default_shared_env_file() {
-  if [ -f "$SYSTEM_SHARED_ENV_FILE" ]; then
-    echo "$SYSTEM_SHARED_ENV_FILE"
-    return 0
-  fi
-
-  if [ -f "$BUNDLED_SHARED_ENV_FILE" ]; then
-    echo "$BUNDLED_SHARED_ENV_FILE"
-    return 0
-  fi
-
+  for candidate in \
+    "$SYSTEM_SHARED_ENV_FILE" \
+    "$BUNDLED_SHARED_ENV_FILE" \
+    "$LEGACY_SYSTEM_SHARED_ENV_FILE" \
+    "$LEGACY_BUNDLED_SHARED_ENV_FILE"
+  do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
   echo ""
 }
 
 # ── 配置 ──────────────────────────────────────────────────────
 ENV_FILE="${SMART_WALLET_ENV_FILE:-$(resolve_default_env_file)}"
 SHARED_ENV_FILE="${SMART_WALLET_SHARED_ENV_FILE:-$(resolve_default_shared_env_file)}"
-SPRING_PROFILE="${SPRING_PROFILES_ACTIVE:-prod}"
+SPRING_PROFILE="${SPRING_PROFILES_ACTIVE:-test}"
 WEB_PORT="${SMART_WALLET_WEB_PORT:-}"
 APP_JAR="${SMART_WALLET_WEB_APP_JAR:-$DEFAULT_APP_JAR}"
 JAVA_OPTS_VALUE="${JAVA_OPTS:--Xms256m -Xmx512m -XX:+UseG1GC}"

@@ -2,10 +2,10 @@
 # Generate ENC(...) values locally without starting the backend service.
 #
 # Examples:
-#   APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private.pem bash scripts/encrypt-secret.sh 'plain-password'
-#   APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private.pem bash scripts/encrypt-secret.sh
-#   printf '%s' 'plain-password' | APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private.pem bash scripts/encrypt-secret.sh --stdin
-#   APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private.pem bash scripts/encrypt-secret.sh --decrypt 'ENC(...)'
+#   APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private-local.pem bash scripts/encrypt-secret.sh 'plain-password'
+#   APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private-local.pem bash scripts/encrypt-secret.sh
+#   printf '%s' 'plain-password' | APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private-local.pem bash scripts/encrypt-secret.sh --stdin
+#   APP_RSA_PRIVATE_KEY_PATH=/path/to/app-private-local.pem bash scripts/encrypt-secret.sh --decrypt 'ENC(...)'
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

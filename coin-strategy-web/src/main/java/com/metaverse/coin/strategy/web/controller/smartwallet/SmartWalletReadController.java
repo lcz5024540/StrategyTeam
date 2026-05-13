@@ -460,101 +460,11 @@ public class SmartWalletReadController {
         return smartWalletReadService.positionHistory(closedOnly, mode, page, size);
     }
 
-    @GetMapping(value = "/orders/export", produces = "text/csv")
-    public ResponseEntity<byte[]> exportOrders(@RequestParam(defaultValue = "5000") Integer limit,
-                                               @RequestParam(required = false) String mode) {
-        return csvResponse(
-                List.of("id", "walletAddress", "marketId", "question", "outcome", "side", "orderType", "status",
-                        "notionalUsdc", "costBasisUsdc", "feeUsdc", "tradingFeeUsdc", "gasFeeUsdc",
-                        "realizedPnlUsdc", "exitReason", "placedAt", "filledAt"),
-                smartWalletReadService.orders(limit, mode).stream().map(row -> List.of(
-                        row.id(), row.walletAddress(), row.marketId(), row.question(), row.outcome(), row.side(),
-                        row.orderType(), row.status(), row.notionalUsdc(), row.costBasisUsdc(), row.feeUsdc(),
-                        row.tradingFeeUsdc(), row.gasFeeUsdc(), row.realizedPnlUsdc(), row.exitReason(),
-                        row.placedAt(), row.filledAt()
-                )).toList(),
-                "smart_wallet_orders",
-                mode
-        );
-    }
-
-    @GetMapping(value = "/fills/export", produces = "text/csv")
-    public ResponseEntity<byte[]> exportFills(@RequestParam(defaultValue = "5000") Integer limit,
-                                              @RequestParam(required = false) String mode) {
-        return csvResponse(
-                List.of("id", "orderId", "executionAddress", "marketId", "question", "outcome", "side",
-                        "price", "size", "notionalUsdc", "feeUsdc", "tradingFeeUsdc", "feePol",
-                        "gasFeeUsdc", "realizedPnlUsdc", "filledAt"),
-                smartWalletReadService.fills(limit, mode).stream().map(row -> List.of(
-                        row.id(), row.orderId(), row.executionAddress(), row.marketId(), row.question(), row.outcome(),
-                        row.side(), row.price(), row.size(), row.notionalUsdc(), row.feeUsdc(),
-                        row.tradingFeeUsdc(), row.feePol(), row.gasFeeUsdc(), row.realizedPnlUsdc(), row.filledAt()
-                )).toList(),
-                "smart_wallet_fills",
-                mode
-        );
-    }
-
-    @GetMapping(value = "/positions/live/export", produces = "text/csv")
-    public ResponseEntity<byte[]> exportLivePositions(@RequestParam(required = false) String mode) {
-        return csvResponse(
-                List.of("id", "executionAddress", "marketId", "question", "outcome", "status", "quantity",
-                        "averageEntryPrice", "costBasisUsdc", "originalCostBasisUsdc", "feePolTotal",
-                        "realizedPnlUsdc", "unrealizedPnlUsdc", "pendingSettlementNetPnlUsdc",
-                        "claimableProceedsUsdc", "marketEndAtBjt", "openedAt", "lastFilledAt", "closedAt"),
-                smartWalletReadService.livePositions(mode).stream().map(row -> List.of(
-                        row.id(), row.executionAddress(), row.marketId(), row.question(), row.outcome(), row.status(),
-                        row.quantity(), row.averageEntryPrice(), row.costBasisUsdc(), row.originalCostBasisUsdc(),
-                        row.feePolTotal(), row.realizedPnlUsdc(), row.unrealizedPnlUsdc(),
-                        row.pendingSettlementNetPnlUsdc(), row.claimableProceedsUsdc(),
-                        row.marketEndAtBjt(), row.openedAt(), row.lastFilledAt(), row.closedAt()
-                )).toList(),
-                "smart_wallet_live_positions",
-                mode
-        );
-    }
-
-    @GetMapping(value = "/positions/next-settlements/export", produces = "text/csv")
-    public ResponseEntity<byte[]> exportNextSettlements(@RequestParam(defaultValue = "5000") Integer limit,
-                                                        @RequestParam(required = false) String mode) {
-        return csvResponse(
-                List.of("id", "executionAddress", "marketId", "question", "outcome", "status", "quantity",
-                        "averageEntryPrice", "costBasisUsdc", "originalCostBasisUsdc", "feePolTotal",
-                        "realizedPnlUsdc", "unrealizedPnlUsdc", "pendingSettlementNetPnlUsdc",
-                        "claimableProceedsUsdc", "marketEndAtBjt", "openedAt", "lastFilledAt", "closedAt"),
-                smartWalletReadService.nextSettlements(limit, mode).stream().map(row -> List.of(
-                        row.id(), row.executionAddress(), row.marketId(), row.question(), row.outcome(), row.status(),
-                        row.quantity(), row.averageEntryPrice(), row.costBasisUsdc(), row.originalCostBasisUsdc(),
-                        row.feePolTotal(), row.realizedPnlUsdc(), row.unrealizedPnlUsdc(),
-                        row.pendingSettlementNetPnlUsdc(), row.claimableProceedsUsdc(),
-                        row.marketEndAtBjt(), row.openedAt(), row.lastFilledAt(), row.closedAt()
-                )).toList(),
-                "smart_wallet_next_settlements",
-                mode
-        );
-    }
-
-    @GetMapping(value = "/positions/history/export", produces = "text/csv")
-    public ResponseEntity<byte[]> exportPositionHistory(@RequestParam(defaultValue = "false") boolean closedOnly,
-                                                        @RequestParam(required = false) String mode,
-                                                        @RequestParam(defaultValue = "1000") Integer size) {
-        List<SmartWalletPositionView> rows = smartWalletReadService.allPositions(closedOnly, mode);
-        return csvResponse(
-                List.of("id", "executionAddress", "marketId", "question", "outcome", "status", "quantity",
-                        "averageEntryPrice", "costBasisUsdc", "originalCostBasisUsdc", "feePolTotal",
-                        "realizedPnlUsdc", "unrealizedPnlUsdc", "pendingSettlementNetPnlUsdc",
-                        "claimableProceedsUsdc", "marketEndAtBjt", "openedAt", "lastFilledAt", "closedAt"),
-                rows.stream().limit(Math.max(size == null ? 1000 : size, 1)).map(row -> List.of(
-                        row.id(), row.executionAddress(), row.marketId(), row.question(), row.outcome(), row.status(),
-                        row.quantity(), row.averageEntryPrice(), row.costBasisUsdc(), row.originalCostBasisUsdc(),
-                        row.feePolTotal(), row.realizedPnlUsdc(), row.unrealizedPnlUsdc(),
-                        row.pendingSettlementNetPnlUsdc(), row.claimableProceedsUsdc(),
-                        row.marketEndAtBjt(), row.openedAt(), row.lastFilledAt(), row.closedAt()
-                )).toList(),
-                "smart_wallet_position_history",
-                mode
-        );
-    }
+    // ── 已迁移到 SmartWalletExportController (使用 StreamingResponseBody, 更适合大文件) ──
+    // 原本同名的 exportOrders / exportFills / exportLivePositions / exportNextSettlements / exportPositionHistory
+    // 在两个 controller 注册同一路径会导致 Spring "Ambiguous mapping" 启动失败.
+    // 已统一保留 SmartWalletExportController 版本, 此处移除. 详见:
+    //   coin-strategy-web/.../controller/smartwallet/SmartWalletExportController.java
 
     @GetMapping(value = "/reports/follow-addresses/daily/export", produces = "text/csv")
     public ResponseEntity<byte[]> exportFollowAddressDaily(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate reportDate,

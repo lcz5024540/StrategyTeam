@@ -3,14 +3,21 @@
 # 多环境编译脚本 — 统一入口
 # 用法:
 #   ./scripts/build-env.sh local    # 本地环境
-#   ./scripts/build-env.sh test     # 测试环境 (49.51.250.174)
-#   ./scripts/build-env.sh prod     # 生产环境
+#   ./scripts/build-env.sh test     # 测试环境
+#   ./scripts/build-env.sh prod     # 生产环境 (暂未上线)
 #
-# 产物:
-#   dist/<ENV>/backend/app.jar               — Job 后端可执行 JAR (策略/任务/内部数据)
-#   dist/<ENV>/web/app.jar                   — Web 服务可执行 JAR (前端对接 API 入口)
-#   dist/<ENV>/frontend/dist/                — 前端静态资源
-#   dist/<ENV>/smart-wallet-<ENV>.tar.gz     — 完整部署包 (backend+web+frontend+bin+runtime+deploy)
+# 目标拓扑 (test):
+#   web + 前端 → 43.139.186.27  (本机 DB 127.0.0.1, devuser)
+#   job        → 49.51.250.174  (远程 DB 43.139.186.27, devuser)
+#   web 与 job 互不调用，各自独立连同一个 DB
+#
+# 产物 (按部署机拆成两个 tar，便于分发到不同服务器):
+#   dist/<ENV>/backend/app.jar             — Job 后端可执行 JAR (策略/任务)
+#   dist/<ENV>/web/app.jar                 — Web 服务可执行 JAR (前端 API 入口)
+#   dist/<ENV>/frontend/dist/              — 前端静态资源
+#   dist/<ENV>/smart-wallet-<ENV>-web.tar.gz   — web + 前端 + nginx + env (推 43.139.186.27)
+#   dist/<ENV>/smart-wallet-<ENV>-job.tar.gz   — backend + runtime + env       (推 49.51.250.174)
+#   dist/<ENV>/smart-wallet-<ENV>.tar.gz       — 整包 (兼容旧单机部署流程)
 # ============================================================
 set -euo pipefail
 
@@ -131,6 +138,7 @@ for py_file in polymarket_clob_client.py polymarket_http.py; do
 done
 
 # 部署配置 (nginx / systemd / env)
+# 注意: env 目录按机器拆分 (shared/test/prod)，全量复制后由部署脚本按机器挑选
 if [ -d "$ROOT_DIR/deploy/linux" ]; then
   cp -R "$ROOT_DIR/deploy/linux" "$RELEASE_DIR/deploy/"
 fi
@@ -220,10 +228,47 @@ SCRIPT_EOF
 chmod +x "$RELEASE_DIR/bin/start-web-${ENV}.sh"
 
 # ============================================================
-# 5. 打包发布包
+# 5. 打包发布包 — 按机器拆成 web / job 两份，并保留整包做 fallback
 # ============================================================
 echo ""
 echo "打包发布包..."
+
+if [ "$ENV" != "local" ]; then
+  # web 包: 推到 43.139.186.27 (web + 前端 同机)
+  (
+    cd "$RELEASE_DIR"
+    tar -czf "smart-wallet-${ENV}-web.tar.gz" \
+      web frontend \
+      bin/start-smart-wallet-web.sh \
+      bin/start-web-${ENV}.sh \
+      bin/restart-smart-wallet-web.sh \
+      bin/install-smart-wallet-artifacts.sh \
+      bin/install-smart-wallet-linux-service.sh \
+      deploy/linux/env/shared \
+      deploy/linux/env/${ENV} \
+      deploy/linux/nginx \
+      deploy/linux/systemd/smart-wallet-web.service.template \
+      2>/dev/null || tar -czf "smart-wallet-${ENV}-web.tar.gz" web frontend bin deploy
+  )
+
+  # job 包: 推到 49.51.250.174 (仅 job)
+  (
+    cd "$RELEASE_DIR"
+    tar -czf "smart-wallet-${ENV}-job.tar.gz" \
+      backend runtime \
+      bin/start-smart-wallet-backend.sh \
+      bin/start-backend-${ENV}.sh \
+      bin/restart-smart-wallet-backend.sh \
+      bin/install-smart-wallet-artifacts.sh \
+      bin/install-smart-wallet-linux-service.sh \
+      deploy/linux/env/shared \
+      deploy/linux/env/${ENV} \
+      deploy/linux/systemd/smart-wallet-backend.service.template \
+      2>/dev/null || tar -czf "smart-wallet-${ENV}-job.tar.gz" backend runtime bin deploy
+  )
+fi
+
+# 整包 (兼容旧的单机部署 / local)
 (
   cd "$RELEASE_DIR"
   tar -czf "smart-wallet-${ENV}.tar.gz" backend web frontend bin runtime deploy
@@ -232,28 +277,38 @@ echo "打包发布包..."
 echo ""
 echo "============================================================"
 echo " 构建完成!"
-echo " 发布包:        $RELEASE_DIR/smart-wallet-${ENV}.tar.gz"
 echo " Job JAR:       $RELEASE_DIR/backend/app.jar"
 echo " Web JAR:       $RELEASE_DIR/web/app.jar"
 echo " 前端 dist:     $RELEASE_DIR/frontend/dist/"
 echo " Job 启动脚本:  $RELEASE_DIR/bin/start-backend-${ENV}.sh"
 echo " Web 启动脚本:  $RELEASE_DIR/bin/start-web-${ENV}.sh"
+if [ "$ENV" != "local" ]; then
+  echo " Web 部署包:    $RELEASE_DIR/smart-wallet-${ENV}-web.tar.gz   → 推 43.139.186.27"
+  echo " Job 部署包:    $RELEASE_DIR/smart-wallet-${ENV}-job.tar.gz   → 推 49.51.250.174"
+fi
+echo " 整包 (兼容):   $RELEASE_DIR/smart-wallet-${ENV}.tar.gz"
 echo "============================================================"
 echo ""
 echo "部署说明:"
 if [ "$ENV" = "test" ]; then
-  echo "  1. 将 smart-wallet-${ENV}.tar.gz 上传至测试服务器 49.51.250.174"
-  echo "  2. 解压后依次执行:"
-  echo "       bin/start-backend-${ENV}.sh    # 启动 Job 服务 (端口 8081)"
-  echo "       bin/start-web-${ENV}.sh        # 启动 Web 服务 (端口 8080, 对接前端)"
-  echo "  3. 将 frontend/dist 配置到 nginx 作为静态资源根目录"
-  echo "  4. 使用 deploy/linux/nginx/ 下的 nginx 配置模板 (反代至 Web 8080)"
+  echo "  ── web/前端 (43.139.186.27) ──"
+  echo "    1. scp smart-wallet-${ENV}-web.tar.gz 到 43.139.186.27"
+  echo "    2. 解压到 /opt/coinstrategy/smart-wallet/"
+  echo "    3. bin/start-web-${ENV}.sh        # Web 服务 (8080, 直查本机 DB devuser)"
+  echo "    4. cp deploy/linux/nginx/smart-wallet-test.conf 到 /etc/nginx/conf.d/"
+  echo "    5. nginx -t && systemctl reload nginx (server_name = 43.139.186.27)"
+  echo ""
+  echo "  ── job (49.51.250.174) ──"
+  echo "    1. scp smart-wallet-${ENV}-job.tar.gz 到 49.51.250.174"
+  echo "    2. 解压到 /opt/coinstrategy/smart-wallet/"
+  echo "    3. bin/start-backend-${ENV}.sh    # Job 服务 (8081, loopback only, 远程连 43.139.186.27 DB)"
+  echo ""
+  echo "  ── DB / 防火墙 (43.139.186.27) ──"
+  echo "    1. MySQL bind-address = 0.0.0.0 (或显式监听内网网卡)"
+  echo "    2. GRANT ... ON coin_strategy.* TO 'devuser'@'49.51.250.174'  -- job 跨机访问"
+  echo "    3. GRANT ... ON coin_strategy.* TO 'devuser'@'127.0.0.1'      -- web 本机访问"
+  echo "    4. ufw allow from 49.51.250.174 to any port 3306 proto tcp"
 elif [ "$ENV" = "prod" ]; then
-  echo "  1. 将 backend/ + web/ + bin/ + runtime/ 上传至后端服务器"
-  echo "  2. 将 frontend/ + deploy/ 上传至前端服务器"
-  echo "  3. 在后端服务器分别执行:"
-  echo "       bin/start-backend-${ENV}.sh    # Job 服务 (8081)"
-  echo "       bin/start-web-${ENV}.sh        # Web 服务 (8080)"
-  echo "  4. 在前端服务器配置 nginx (参考 deploy/linux/nginx/)"
-  echo "  5. nginx 中 proxy_pass 指向 Web 服务器 IP:8080"
+  echo "  Prod 暂未上线。恢复 prod 时需要先在 deploy/linux/env/prod/ 下补 web/job env 文件，"
+  echo "  并确认与 test 之间的端口/机器分配。"
 fi

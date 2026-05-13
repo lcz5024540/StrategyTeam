@@ -19,40 +19,61 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
-SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet-job.env"
-LEGACY_SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
-BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet-job.env"
-LEGACY_BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet.env"
+
+# ── env 文件查找顺序 ─────────────────────────────────────────────────────
+# 新架构按 env 拆分: deploy/linux/env/{shared,test,prod}/
+# 启动顺序: shared/secrets.env (先, 公共密钥)  →  <profile>/smart-wallet-job.env (后, 覆盖 host/user)
+# 旧路径保留为最后兜底，兼容已有线上部署。
+SPRING_PROFILE_GUESS="${SPRING_PROFILES_ACTIVE:-test}"
+
+SYSTEM_SHARED_ENV_FILE="/etc/coinstrategy/shared/secrets.env"
+SYSTEM_ENV_FILE="/etc/coinstrategy/${SPRING_PROFILE_GUESS}/smart-wallet-job.env"
+LEGACY_SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet-job.env"
+LEGACY_LEGACY_SYSTEM_ENV_FILE="/etc/coinstrategy/smart-wallet.env"
+
+BUNDLED_SHARED_ENV_FILE="$APP_HOME/deploy/linux/env/shared/secrets.env"
+BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/${SPRING_PROFILE_GUESS}/smart-wallet-job.env"
+LEGACY_BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet-job.env"
+LEGACY_LEGACY_BUNDLED_ENV_FILE="$APP_HOME/deploy/linux/env/smart-wallet.env"
+
 DEFAULT_APP_JAR="$APP_HOME/backend/app.jar"
 DEFAULT_RUNTIME_DIR="$APP_HOME/runtime"
 
 resolve_default_env_file() {
-  if [ -f "$SYSTEM_ENV_FILE" ]; then
-    echo "$SYSTEM_ENV_FILE"
-    return 0
-  fi
-
-  if [ -f "$LEGACY_SYSTEM_ENV_FILE" ]; then
-    echo "$LEGACY_SYSTEM_ENV_FILE"
-    return 0
-  fi
-
-  if [ -f "$BUNDLED_ENV_FILE" ]; then
-    echo "$BUNDLED_ENV_FILE"
-    return 0
-  fi
-
-  if [ -f "$LEGACY_BUNDLED_ENV_FILE" ]; then
-    echo "$LEGACY_BUNDLED_ENV_FILE"
-    return 0
-  fi
-
+  for candidate in \
+    "$SYSTEM_ENV_FILE" \
+    "$BUNDLED_ENV_FILE" \
+    "$LEGACY_SYSTEM_ENV_FILE" \
+    "$LEGACY_BUNDLED_ENV_FILE" \
+    "$LEGACY_LEGACY_SYSTEM_ENV_FILE" \
+    "$LEGACY_LEGACY_BUNDLED_ENV_FILE"
+  do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
   echo "$SYSTEM_ENV_FILE"
+}
+
+resolve_default_shared_env_file() {
+  for candidate in \
+    "$SYSTEM_SHARED_ENV_FILE" \
+    "$BUNDLED_SHARED_ENV_FILE"
+  do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo ""
 }
 
 # ── 配置 ──────────────────────────────────────────────────────
 ENV_FILE="${SMART_WALLET_ENV_FILE:-$(resolve_default_env_file)}"
-SPRING_PROFILE="${SPRING_PROFILES_ACTIVE:-prod}"
+SHARED_ENV_FILE="${SMART_WALLET_SHARED_ENV_FILE:-$(resolve_default_shared_env_file)}"
+# 默认 profile 改为 test (prod 暂未上线)
+SPRING_PROFILE="${SPRING_PROFILES_ACTIVE:-test}"
 BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-}"
 APP_JAR="${SMART_WALLET_APP_JAR:-$DEFAULT_APP_JAR}"
 JAVA_OPTS_VALUE="${JAVA_OPTS:--Xms512m -Xmx1024m -XX:+UseG1GC}"
@@ -63,12 +84,20 @@ PID_FILE="$APP_HOME/backend/app.pid"
 
 # ── 加载环境文件 ──────────────────────────────────────────────
 load_env() {
+  # 1) 先 source shared/secrets.env (跨环境共享的密钥)
+  if [ -n "$SHARED_ENV_FILE" ] && [ -f "$SHARED_ENV_FILE" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$SHARED_ENV_FILE"
+    set +a
+  fi
+
+  # 2) 再 source env-specific (覆盖 host / user / port / JVM)
   if [ -f "$ENV_FILE" ]; then
     set -a
     # shellcheck disable=SC1090
     source "$ENV_FILE"
     set +a
-    # 重新读取可能被 env 文件覆盖的变量
     SPRING_PROFILE="${SPRING_PROFILES_ACTIVE:-$SPRING_PROFILE}"
     LOG_DIR="${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
   fi
@@ -124,9 +153,11 @@ do_start() {
 
   # 启动信息
   echo "[backend] ============================================"
-  echo "[backend] 启动 CoinStrategy 后端服务"
+  echo "[backend] 启动 CoinStrategy 后端 (job) 服务"
   echo "[backend] 环境:       $SPRING_PROFILE"
   echo "[backend] JAR:        $APP_JAR"
+  echo "[backend] 共享 env:   ${SHARED_ENV_FILE:-<未配置>}"
+  echo "[backend] Job env:    $ENV_FILE"
   echo "[backend] 日志目录:   $LOG_DIR"
   echo "[backend] 日志文件:   $LOG_DIR/job-current.log (按天滚动为 job-yyyy-MM-dd.log)"
   echo "[backend] 端口:       ${BACKEND_PORT:-<配置文件默认 8081>}"

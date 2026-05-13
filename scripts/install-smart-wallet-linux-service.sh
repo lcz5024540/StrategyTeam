@@ -9,13 +9,18 @@ JOB_SERVICE_NAME="${SMART_WALLET_JOB_SERVICE_NAME:-smart-wallet-backend}"
 WEB_SERVICE_NAME="${SMART_WALLET_WEB_SERVICE_NAME:-smart-wallet-web}"
 BACKEND_PORT="${SMART_WALLET_BACKEND_PORT:-8081}"
 WEB_PORT="${SMART_WALLET_WEB_PORT:-8080}"
-SERVICE_ENV="${SMART_WALLET_SERVICE_ENV:-prod}"
-SERVER_NAME="${SMART_WALLET_SERVER_NAME:-49.51.250.174}"
+# 默认 profile 从 prod 改为 test (prod 暂未上线)
+SERVICE_ENV="${SMART_WALLET_SERVICE_ENV:-test}"
+# 默认 server_name = 43.139.186.27 (web/前端 宿主)
+# 在 job 机器 49.51.250.174 上跑本脚本时，需要传 SMART_WALLET_INSTALL_NGINX=false (job 机不装 nginx)
+SERVER_NAME="${SMART_WALLET_SERVER_NAME:-43.139.186.27}"
 INSTALL_NGINX="${SMART_WALLET_INSTALL_NGINX:-true}"
 FRONTEND_DIST_DIR="${SMART_WALLET_FRONTEND_DIST_DIR:-$APP_HOME/frontend/dist}"
 ENV_DIR="${SMART_WALLET_ENV_DIR:-/etc/coinstrategy}"
-JOB_ENV_FILE="${SMART_WALLET_JOB_ENV_FILE:-$ENV_DIR/smart-wallet-job.env}"
-WEB_ENV_FILE="${SMART_WALLET_WEB_ENV_FILE:-$ENV_DIR/smart-wallet-web.env}"
+# env 文件默认指向新版按 profile 拆分的路径；若不存在则脚本会回退到旧路径
+JOB_ENV_FILE="${SMART_WALLET_JOB_ENV_FILE:-$ENV_DIR/$SERVICE_ENV/smart-wallet-job.env}"
+WEB_ENV_FILE="${SMART_WALLET_WEB_ENV_FILE:-$ENV_DIR/$SERVICE_ENV/smart-wallet-web.env}"
+SHARED_ENV_FILE="${SMART_WALLET_SHARED_ENV_FILE:-$ENV_DIR/shared/secrets.env}"
 JOB_SYSTEMD_FILE="/etc/systemd/system/${JOB_SERVICE_NAME}.service"
 WEB_SYSTEMD_FILE="/etc/systemd/system/${WEB_SERVICE_NAME}.service"
 NGINX_CONF="${SMART_WALLET_NGINX_CONF:-/etc/nginx/conf.d/smart-wallet.conf}"
