@@ -21,12 +21,6 @@ springdoc:
   # datasource 配置已移至各环境 profile 文件:
   # application-local.yml / application-test.yml / application-prod.yml
 
-sunwk:
-  api:
-    base-url: "https://api.sunwk.com"
-    api-key: "${SUNWK_API_KEY:}"
-    secret-key: "${SUNWK_SECRET_KEY:}"
-
 binance:
   api:
     api-key: "${BINANCE_API_KEY:}"

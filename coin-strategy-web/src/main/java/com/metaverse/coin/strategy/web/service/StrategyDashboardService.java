@@ -1,6 +1,5 @@
 package com.metaverse.coin.strategy.web.service;
 
-import com.metaverse.coin.strategy.web.client.StrategyPlatformQueryClient;
 import com.metaverse.coin.strategy.web.model.StrategyConflictRowView;
 import com.metaverse.coin.strategy.web.model.StrategyDashboardOverviewView;
 import com.metaverse.coin.strategy.web.model.StrategyDetailView;
@@ -10,6 +9,7 @@ import com.metaverse.coin.strategy.web.model.StrategyPositionRowView;
 import com.metaverse.coin.strategy.web.model.StrategySummaryDetailView;
 import com.metaverse.coin.strategy.web.model.StrategyTimelinePointView;
 import com.metaverse.coin.strategy.web.service.facade.StrategyReadFacade;
+import com.metaverse.coin.strategy.web.service.strategy.StrategyProductQueryService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -17,59 +17,59 @@ import java.util.List;
 @Service
 public class StrategyDashboardService implements StrategyReadFacade {
 
-    private final StrategyPlatformQueryClient strategyPlatformQueryClient;
+    private final StrategyProductQueryService strategyProductQueryService;
 
-    public StrategyDashboardService(StrategyPlatformQueryClient strategyPlatformQueryClient) {
-        this.strategyPlatformQueryClient = strategyPlatformQueryClient;
+    public StrategyDashboardService(StrategyProductQueryService strategyProductQueryService) {
+        this.strategyProductQueryService = strategyProductQueryService;
     }
 
     @Override
     public StrategyDashboardOverviewView overview(String mode) {
-        return strategyPlatformQueryClient.getOverview(mode);
+        return strategyProductQueryService.overview(mode);
     }
 
     @Override
     public StrategyDetailView detail(String strategyCode, String mode) {
-        return strategyPlatformQueryClient.getStrategyDetail(strategyCode, mode);
+        return strategyProductQueryService.detail(strategyCode, mode);
     }
 
     @Override
     public StrategySummaryDetailView summary(String strategyCode, String mode) {
-        return strategyPlatformQueryClient.getStrategySummary(strategyCode, mode);
+        return strategyProductQueryService.summaryDetail(strategyCode, mode);
     }
 
     @Override
     public List<StrategyPositionRowView> positions(String strategyCode, String mode) {
-        return strategyPlatformQueryClient.getStrategyPositions(strategyCode, mode);
+        return strategyProductQueryService.positions(strategyCode, mode);
     }
 
     @Override
     public List<StrategyPositionRowView> nextSettlements(String strategyCode, Integer limit, String mode) {
-        return strategyPlatformQueryClient.getStrategyNextSettlements(strategyCode, limit, mode);
+        return strategyProductQueryService.nextSettlements(strategyCode, limit == null ? 8 : limit, mode);
     }
 
     @Override
     public List<StrategyOrderRowView> orders(String strategyCode, Integer limit, String mode) {
-        return strategyPlatformQueryClient.getStrategyOrders(strategyCode, limit, mode);
+        return strategyProductQueryService.recentOrders(strategyCode, limit == null ? 30 : limit, mode);
     }
 
     @Override
     public List<StrategyTimelinePointView> timeline(String strategyCode, Integer days, String mode) {
-        return strategyPlatformQueryClient.getStrategyTimeline(strategyCode, days, mode);
+        return strategyProductQueryService.timeline(strategyCode, days == null ? 30 : days, mode);
     }
 
     @Override
     public List<StrategyConflictRowView> conflicts(String strategyCode, Integer limit, String mode) {
-        return strategyPlatformQueryClient.getStrategyConflicts(strategyCode, limit, mode);
+        return strategyProductQueryService.conflicts(strategyCode, limit == null ? 10 : limit, mode);
     }
 
     @Override
     public List<StrategyFactorView> factors(String strategyCode, String mode, String window) {
-        return strategyPlatformQueryClient.getStrategyFactors(strategyCode, mode, window);
+        return strategyProductQueryService.factors(strategyCode, mode, window);
     }
 
     @Override
     public StrategyFactorView factor(String strategyCode, String factorCode, String mode, String window) {
-        return strategyPlatformQueryClient.getStrategyFactor(strategyCode, factorCode, mode, window);
+        return strategyProductQueryService.factor(strategyCode, factorCode, mode, window);
     }
 }

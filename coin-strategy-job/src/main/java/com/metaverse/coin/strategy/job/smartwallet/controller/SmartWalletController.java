@@ -1,8 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.controller;
 
-import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
 import com.metaverse.coin.strategy.job.analytics.application.StrategyAnalyticsApplicationService;
@@ -29,7 +27,6 @@ import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView
 import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMarketDataDiagnosticsView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketMockWsEventRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketOrderDryRunRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketProductOverview;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
@@ -70,12 +67,10 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfileTruth
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFillView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowCoverageReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCashLedgerView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletBlockerStatView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimResultView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletConflictMarketView;
@@ -93,20 +88,13 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncStatusVie
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRunView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementRetryReportView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRetryView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimRunView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimStatusView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletClaimSummary;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationSummaryResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationRequest;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertWalletRequest;
@@ -118,7 +106,6 @@ import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketSmartWalletMonitorService;
 import com.metaverse.coin.strategy.job.smartwallet.service.AbnormalMarketReviewService;
-import com.metaverse.coin.strategy.job.smartwallet.service.ClosedPositionIncrementalSyncService;
 import com.metaverse.coin.strategy.job.smartwallet.service.ClosedPositionSyncDispatcher;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketConsensusSignalService;
 import com.metaverse.coin.strategy.job.smartwallet.service.PolymarketClobExecutionService;
@@ -143,7 +130,6 @@ import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRecoverySe
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletRegistryService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletSelectionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.SmartWalletTradeOrderService;
-import com.metaverse.coin.strategy.job.smartwallet.model.FollowTradeAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.service.FollowTradeAttributionService;
 import com.metaverse.coin.strategy.job.smartwallet.service.LeaderTradeOutcomeRebuildService;
 import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService;
@@ -248,7 +234,9 @@ public class SmartWalletController {
     private final SmartWalletProfileTruthRefreshService smartWalletProfileTruthRefreshService;
 
     /** 异步回填任务状态存储（进程内，重启丢失） */
-    private final java.util.concurrent.ConcurrentHashMap<String, Map<String, Object>> metricsRebuildJobs = new java.util.concurrent.ConcurrentHashMap<>();
+    // [MIGRATED] 原 metricsRebuildJobs in-memory map 已废弃；
+    // sync-all-positions / metrics/rebuild 状态改由 strategy_manual_trigger 表持久化，
+    // 由 web 端读取。
 
     @Operation(summary = "健康检查", description = "查看 smart-wallet 服务是否启动，以及当前画像、观察名单、钱包与市场数量。")
     @GetMapping("/health")
@@ -280,12 +268,8 @@ public class SmartWalletController {
         return leaderTradeOutcomeRebuildService.coverage(walletAddress);
     }
 
-    @Operation(summary = "跟单覆盖率与 Shadow 观察报表", description = "按 wallet 输出 FOLLOWED/SKIPPED/PAPER_SHADOW 覆盖率、primary skip reason 分布和 truth outcome 对照。")
-    @GetMapping("/follow-tasks/coverage-report")
-    public List<SmartWalletFollowCoverageReportView> followCoverageReport(@RequestParam(required = false) String walletAddress,
-                                                                          @RequestParam(defaultValue = "5000") Integer limit) {
-        return followTaskService.followCoverageReports(walletAddress, limit);
-    }
+    // [MIGRATED] GET /follow-tasks/coverage-report → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_COVERAGE_REPORT)
 
     @Operation(summary = "地址画像质量审计", description = "列出 truth 样本、低置信/未结算数量，以及旧口径遗漏我方 closed loss 的数量。")
     @GetMapping("/profiles/truth-audit")
@@ -293,40 +277,9 @@ public class SmartWalletController {
         return smartWalletProfileTruthRefreshService.audit(walletAddress);
     }
 
-    @Operation(summary = "重置 smart-wallet 数据", description = "清空 smart-wallet 运行数据与可选风险特征数据，用于从头重新计算。需要 confirm=true 才会执行。")
-    @PostMapping("/admin/reset-data")
-    public Map<String, Object> resetData(@RequestParam(defaultValue = "false") boolean confirm,
-                                         @RequestParam(defaultValue = "true") boolean includeProfiles,
-                                         @RequestParam(defaultValue = "true") boolean includeRiskArtifacts,
-                                         @RequestParam(defaultValue = "true") boolean includeRuntimeSeeds,
-                                         @RequestParam(defaultValue = "true") boolean includeMetadataCache) {
-        if (!confirm) {
-            return Map.of(
-                    "executed", false,
-                    "message", "Pass confirm=true to execute the smart-wallet data reset.",
-                    "includeProfiles", includeProfiles,
-                    "includeRiskArtifacts", includeRiskArtifacts,
-                    "includeRuntimeSeeds", includeRuntimeSeeds,
-                    "includeMetadataCache", includeMetadataCache
-            );
-        }
-        Map<String, Object> result = dataResetService.reset(
-                includeProfiles,
-                includeRiskArtifacts,
-                includeRuntimeSeeds,
-                includeMetadataCache
-        );
-        return Map.of(
-                "executed", true,
-                "result", result
-        );
-    }
-
-    @Operation(summary = "恢复 smart-wallet 状态", description = "在网络/RPC/缓存异常后，触发一次全链路重梳理，尽量避免通过重启服务恢复。")
-    @PostMapping("/admin/recover-state")
-    public Map<String, Object> recoverState(@RequestParam(required = false) String reason) {
-        return recoveryService.recoverState(reason);
-    }
+    // [MIGRATED] POST /admin/reset-data 和 POST /admin/recover-state 已下沉到 coin-strategy-web 的
+    // SmartWalletAdminController，通过 strategy_manual_trigger 命令队列异步派发到
+    // SmartWalletDataResetService / SmartWalletRecoveryService。job 端只保留 service，不再暴露 HTTP。
 
     @Operation(summary = "钱包画像列表", description = "查看已入库的 smart wallet Polymarket 画像信息。")
     @GetMapping("/profiles")
@@ -432,18 +385,9 @@ public class SmartWalletController {
                 "smart_wallet_profile_overrides", "manual");
     }
 
-    @Operation(summary = "更新地址人工覆盖", description = "可人工强制某地址仅观察/恢复可执行，或手工指定 recommendedExitLane。")
-    @PostMapping("/profiles/{walletAddress}/override")
-    public SmartWalletProfileEntity updateProfileOverride(@PathVariable String walletAddress,
-                                                          @RequestBody SmartWalletProfileOverrideRequest request) {
-        return smartWalletProfileStoreService.updateManualOverride(walletAddress, request);
-    }
-
-    @Operation(summary = "批量更新地址人工覆盖", description = "按钱包地址列表批量设置 observe only、恢复执行、指定或清除 recommendedExitLane。")
-    @PostMapping("/profiles/overrides/batch")
-    public SmartWalletProfileBatchOverrideResultView batchUpdateProfileOverrides(@RequestBody SmartWalletProfileBatchOverrideRequest request) {
-        return smartWalletProfileStoreService.batchUpdateManualOverrides(request);
-    }
+    // [MIGRATED] POST /profiles/{walletAddress}/override 和 POST /profiles/overrides/batch
+    // 已下沉到 coin-strategy-web 的 SmartWalletProfileWriteController，通过 strategy_manual_trigger
+    // 命令队列异步派发到 SmartWalletProfileStoreService。job 端只保留 service，不再暴露 HTTP。
 
     @Operation(summary = "手工地址白名单列表", description = "查看当前用于绕过地址画像准入的手工 allowlist。交易级和执行级风控仍会生效。")
     @GetMapping("/allowlist")
@@ -653,53 +597,10 @@ public class SmartWalletController {
         );
     }
 
-    @Operation(summary = "批量回填地址画像口径（异步）", description = "按 scope 批量重算 order-analysis、order-stats 依赖与 behavior profile。立即返回 jobId，后台线程处理。")
-    @PostMapping("/profiles/metrics/rebuild")
-    public Map<String, Object> rebuildProfileMetrics(@RequestParam(defaultValue = "candidates") String scope,
-                                                     @RequestParam(defaultValue = "30") Integer limit) {
-        List<SmartWalletProfileEntity> profiles = resolveWatchlistScope(scope).stream()
-                .limit(Math.max(1, Math.min(limit, 500)))
-                .toList();
-        String jobId = "rebuild-" + System.currentTimeMillis();
-        metricsRebuildJobs.put(jobId, Map.of("status", "RUNNING", "scope", scope, "walletCount", profiles.size(),
-                "rebuiltOrders", 0, "rebuiltProfiles", 0, "startedAt", System.currentTimeMillis()));
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
-            int rebuiltOrders = 0;
-            int rebuiltProfiles = 0;
-            try {
-                for (SmartWalletProfileEntity profile : profiles) {
-                    if (profile == null || !StringUtils.hasText(profile.getWalletAddress())) {
-                        continue;
-                    }
-                    smartWalletOrderAnalysisService.analyzeAndPersist(profile.getWalletAddress());
-                    walletOrderStatsService.summarize(profile.getWalletAddress(), "all");
-                    walletBehaviorProfileService.buildProfile(profile);
-                    rebuiltOrders++;
-                    rebuiltProfiles++;
-                }
-                metricsRebuildJobs.put(jobId, Map.of("status", "COMPLETED", "scope", scope,
-                        "walletCount", profiles.size(), "rebuiltOrders", rebuiltOrders,
-                        "rebuiltProfiles", rebuiltProfiles, "completedAt", System.currentTimeMillis()));
-            } catch (Exception e) {
-                log.error("[metrics-rebuild] jobId={} failed: {}", jobId, e.getMessage(), e);
-                metricsRebuildJobs.put(jobId, Map.of("status", "FAILED", "scope", scope,
-                        "walletCount", profiles.size(), "rebuiltOrders", rebuiltOrders,
-                        "rebuiltProfiles", rebuiltProfiles, "error", e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
-            }
-        });
-        return Map.of("jobId", jobId, "status", "ACCEPTED", "scope", scope,
-                "walletCount", profiles.size());
-    }
-
-    @Operation(summary = "查询画像回填任务状态", description = "根据 jobId 查询异步回填任务的执行进度。")
-    @GetMapping("/profiles/metrics/rebuild/{jobId}")
-    public Map<String, Object> rebuildProfileMetricsStatus(@PathVariable String jobId) {
-        Map<String, Object> job = metricsRebuildJobs.get(jobId);
-        if (job == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Job not found: " + jobId);
-        }
-        return job;
-    }
+    // [MIGRATED] POST /profiles/metrics/rebuild + GET /profiles/metrics/rebuild/{id}
+    // 已迁到 coin-strategy-web 的 SmartWalletProfileWriteController；
+    // 执行逻辑封装为 SmartWalletProfileAsyncOpsService.rebuildProfileMetrics(...)，
+    // 通过 strategy_manual_trigger 命令队列驱动，状态/结果存 DB（不再用 in-memory map）。
 
     private List<SmartWalletProfileEntity> resolveWatchlistScope(String scope) {
         if ("all".equalsIgnoreCase(scope)) {
@@ -906,12 +807,8 @@ public class SmartWalletController {
         return Map.of("accepted", true);
     }
 
-    @Operation(summary = "手动采集市场快照", description = "基于当前缓存或 REST 降级，对指定市场/outcome 执行一次 snapshot 采集。")
-    @PostMapping("/polymarket/market-data/collect-snapshot")
-    public SmartWalletMarketSnapshotEntity collectDiagnosticMarketSnapshot(@RequestParam String marketId,
-                                                                           @RequestParam(defaultValue = "YES") String outcome) {
-        return marketSnapshotCollectorService.collectSnapshot(marketId, outcome);
-    }
+    // [MIGRATED] POST /polymarket/market-data/collect-snapshot → coin-strategy-web SmartWalletPolymarketWriteController
+    //            (action: SMART_WALLET_POLYMARKET_MARKET_DATA_COLLECT_SNAPSHOT)
 
     @Operation(summary = "导入钱包指标", description = "手动写入某个 Polymarket 钱包的胜率、PnL、样本数等指标。")
     @PostMapping("/polymarket/metrics")
@@ -925,181 +822,34 @@ public class SmartWalletController {
         return polymarketMonitorService.ingestTradeEvent(request);
     }
 
-    @Operation(summary = "刷新观察名单", description = "根据当前阈值重新筛选符合要求的聪明钱包并更新 watchlist。")
-    @PostMapping("/polymarket/select")
-    public SmartWalletSelectionSummary refreshSelection() {
-        return selectionService.refreshQualifiedWallets();
-    }
+    // [MIGRATED] POST /polymarket/select → coin-strategy-web SmartWalletPolymarketWriteController
+    //            (action: SMART_WALLET_POLYMARKET_SELECT)
+    // [MIGRATED] POST /polymarket/analyze → coin-strategy-web SmartWalletPolymarketWriteController
+    //            (action: SMART_WALLET_POLYMARKET_ANALYZE)
+    // [MIGRATED] POST /polymarket/watchlist/admit → coin-strategy-web SmartWalletPolymarketWriteController
+    //            (action: SMART_WALLET_POLYMARKET_WATCHLIST_ADMIT)
+    // [MIGRATED] POST /polymarket/sync-events → coin-strategy-web SmartWalletPolymarketWriteController
+    //            (action: SMART_WALLET_POLYMARKET_SYNC_EVENTS)
+    // [MIGRATED] POST /polymarket/closed-positions/backfill-local → coin-strategy-web SmartWalletPolymarketWriteController
+    //            (action: SMART_WALLET_POLYMARKET_CLOSED_POSITIONS_BACKFILL_LOCAL)
 
-    @Operation(summary = "分析聪明钱包", description = "从 Polymarket 拉取排行榜、画像与交易记录，分析并入库 smart wallet。")
-    @PostMapping("/polymarket/analyze")
-    public PolymarketDiscoverySummary analyzeTopWallets() {
-        return predictionMarketDataApplicationService.analyzeSourceWallets();
-    }
+    // [MIGRATED] GET /follow-tasks → coin-strategy-web SmartWalletReadController.followTasks (web-native impl)
+    // [MIGRATED] GET /follow-tasks/executable → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_EXECUTABLE)
+    // [MIGRATED] GET /follow-tasks/manual-allowlist → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_MANUAL_ALLOWLIST)
+    // [MIGRATED] POST /follow-tasks/intelligence/reevaluate-deferred → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_INTELLIGENCE_REEVALUATE_DEFERRED)
+    // [MIGRATED] POST /follow-tasks/intelligence/replay-recent → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_INTELLIGENCE_REPLAY_RECENT)
 
-    @Operation(summary = "准入单个钱包到观察名单", description = "传入单个钱包地址，按钱包画像风控逻辑进行分析；满足条件则落库并加入 watchlist，否则跳过落库并返回失败。")
-    @PostMapping("/polymarket/watchlist/admit")
-    public Map<String, Object> admitWalletToWatchlist(@RequestParam String walletAddress) {
-        boolean admitted = polymarketWalletDiscoveryService.analyzeWalletAndAdmitWatchlist(walletAddress);
-        return Map.of(
-                "walletAddress", walletAddress,
-                "admitted", admitted,
-                "message", admitted
-                        ? "Wallet admitted to watchlist and persisted successfully."
-                        : "Wallet did not pass admission checks, skipped persistence."
-        );
-    }
-
-    @Operation(summary = "同步观察名单事件", description = "同步 watchlist 钱包的最新 Polymarket 开单事件。")
-    @PostMapping("/polymarket/sync-events")
-    public Map<String, Object> syncWatchlistEvents() {
-        return Map.of("imported", predictionMarketDataApplicationService.syncWatchlistEvents());
-    }
-
-    @Operation(summary = "回灌本地 Polymarket closed-position 存量数据",
-            description = "读取 /tmp/poly_api/<wallet>_closed_<offset>.json 和 redeemable positions，写入 smart_wallet_order_analysis。")
-    @PostMapping("/polymarket/closed-positions/backfill-local")
-    public ClosedPositionIncrementalSyncService.LocalBackfillResult backfillLocalClosedPositions(
-            @RequestParam(defaultValue = "/tmp/poly_api") String directory,
-            @RequestParam(required = false) Integer limit,
-            @RequestParam(defaultValue = "false") boolean dryRun) {
-        return predictionMarketDataApplicationService.backfillLocalClosedPositions(directory, limit, dryRun);
-    }
-
-    @Operation(summary = "跟单任务列表", description = "查看生成的跟单任务。includeRiskEvaluation=true 会触发逐条风控评估，请仅在需要时开启。")
-    @GetMapping("/follow-tasks")
-    public List<SmartWalletFollowTaskView> followTasks(@RequestParam(defaultValue = "50") Integer limit,
-                                                       @RequestParam(defaultValue = "false") boolean includeRiskEvaluation) {
-        return followTaskApplicationService.listTasks(limit, includeRiskEvaluation);
-    }
-
-    @Operation(summary = "可执行任务列表", description = "查看当前通过风控、可直接执行的跟单任务。")
-    @GetMapping("/follow-tasks/executable")
-    public List<SmartWalletFollowTaskView> executableFollowTasks(@RequestParam(defaultValue = "50") Integer limit,
-                                                                 @RequestParam(required = false) Integer scanLimit) {
-        try {
-            return followTaskApplicationService.listExecutableTasks(limit, scanLimit);
-        } catch (Exception e) {
-            log.error("Failed to load executable follow tasks limit={} scanLimit={}", limit, scanLimit, e);
-            throw e;
-        }
-    }
-
-    @Operation(summary = "手工白名单跟单任务", description = "查看命中 manual allowlist 的可执行或候选任务。默认只返回可执行任务。")
-    @GetMapping("/follow-tasks/manual-allowlist")
-    public List<SmartWalletFollowTaskView> manualAllowlistFollowTasks(@RequestParam(defaultValue = "50") Integer limit,
-                                                                      @RequestParam(defaultValue = "false") Boolean includeBlocked) {
-        return followTaskService.listManualAllowlistTasks(limit, includeBlocked);
-    }
-
-    @Operation(summary = "重评延迟候选", description = "手动重评 enrichment_status=PENDING/LOW_CONFIDENCE_LINK 的候选，并尝试恢复此前被 intelligence 暂时拦截的跟单任务。")
-    @PostMapping("/follow-tasks/intelligence/reevaluate-deferred")
-    public Map<String, Object> reevaluateDeferredCandidates(@RequestParam(defaultValue = "50") Integer limit) {
-        return Map.of(
-                "limit", limit,
-                "updated", followTaskService.reevaluateDeferredCandidates(limit)
-        );
-    }
-
-    @Operation(summary = "回放最近智能候选", description = "回放最近的 trade event，对历史上漏掉 candidate/task 的事件补建 intelligence 记录和跟单任务。")
-    @PostMapping("/follow-tasks/intelligence/replay-recent")
-    public Map<String, Object> replayRecentIntelligenceCandidates(@RequestParam(defaultValue = "100") Integer limit,
-                                                                  @RequestParam(defaultValue = "false") boolean includeProcessed) {
-        SmartWalletFollowTaskService.IntelligenceReplaySummary summary =
-                followTaskService.replayRecentIntelligenceCandidates(limit, includeProcessed);
-        return Map.of(
-                "limit", limit,
-                "includeProcessed", includeProcessed,
-                "scanned", summary.getScanned(),
-                "changed", summary.getChanged(),
-                "skipped", summary.getSkipped()
-        );
-    }
-
-    @Operation(summary = "单强钱包候选", description = "基于单钱包 override 策略查看候选任务，适合 followable 预设。")
-    @GetMapping("/follow-tasks/single-wallet-override")
-    public List<SmartWalletFollowTaskView> singleWalletOverrideFollowTasks(@RequestParam(defaultValue = "20") Integer limit,
-                                                                           @RequestParam(required = false) String preset,
-                                                                           @RequestParam(required = false) Integer taskLimit,
-                                                                           @RequestParam(required = false) String policyTag,
-                                                                           @RequestParam(required = false) Integer maxSignalAgeSeconds,
-                                                                           @RequestParam(required = false) Integer minDistinctWallets,
-                                                                           @RequestParam(required = false) Integer minDistinctEntities,
-                                                                           @RequestParam(required = false) BigDecimal minConsensusScore,
-                                                                           @RequestParam(required = false) Boolean qualityWeightedConsensusEnabled,
-                                                                           @RequestParam(required = false) Boolean enableSingleWalletOverrideCanary,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideCanaryRate,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinWalletScore,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinWinRate,
-                                                                           @RequestParam(required = false) Integer singleWalletOverrideMinTrades,
-                                                                           @RequestParam(required = false) Integer singleWalletOverrideMinRecentTrades7d,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinRecentWinRate7d,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinReplicabilityScore,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinQualityScore,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinTriggerSizeUsdc,
-                                                                           @RequestParam(required = false) BigDecimal singleWalletOverrideMinRecommendedStakeUsdc) {
-        SmartWalletRiskSimulationRequest request = new SmartWalletRiskSimulationRequest();
-        request.setTaskLimit(taskLimit);
-        request.setPolicyTag(policyTag);
-        request.setMaxSignalAgeSeconds(maxSignalAgeSeconds);
-        request.setMinDistinctWallets(minDistinctWallets);
-        request.setMinDistinctEntities(minDistinctEntities);
-        request.setMinConsensusScore(minConsensusScore);
-        request.setQualityWeightedConsensusEnabled(qualityWeightedConsensusEnabled);
-        request.setEnableSingleWalletOverrideCanary(enableSingleWalletOverrideCanary);
-        request.setSingleWalletOverrideCanaryRate(singleWalletOverrideCanaryRate);
-        request.setSingleWalletOverrideMinWalletScore(singleWalletOverrideMinWalletScore);
-        request.setSingleWalletOverrideMinWinRate(singleWalletOverrideMinWinRate);
-        request.setSingleWalletOverrideMinTrades(singleWalletOverrideMinTrades);
-        request.setSingleWalletOverrideMinRecentTrades7d(singleWalletOverrideMinRecentTrades7d);
-        request.setSingleWalletOverrideMinRecentWinRate7d(singleWalletOverrideMinRecentWinRate7d);
-        request.setSingleWalletOverrideMinReplicabilityScore(singleWalletOverrideMinReplicabilityScore);
-        request.setSingleWalletOverrideMinQualityScore(singleWalletOverrideMinQualityScore);
-        request.setSingleWalletOverrideMinTriggerSizeUsdc(singleWalletOverrideMinTriggerSizeUsdc);
-        request.setSingleWalletOverrideMinRecommendedStakeUsdc(singleWalletOverrideMinRecommendedStakeUsdc);
-        applySingleWalletOverridePreset(request, preset);
-        return followTaskService.listSingleWalletOverrideTasks(limit, followTaskService.buildSimulationRisk(request), taskLimit, preset);
-    }
-
-    @Operation(summary = "机会看板", description = "查看最接近可执行但仍被少量风控项拦住的任务。")
-    @GetMapping("/follow-tasks/opportunities")
-    public List<SmartWalletFollowTaskView> opportunityFollowTasks(@RequestParam(defaultValue = "20") Integer limit,
-                                                                  @RequestParam(defaultValue = "3") Integer maxBlockers,
-                                                                  @RequestParam(defaultValue = "false") boolean includeExecutable) {
-        try {
-            return followTaskService.listOpportunityTasks(limit, maxBlockers, includeExecutable);
-        } catch (Exception e) {
-            log.error("Failed to load opportunity follow tasks limit={} maxBlockers={} includeExecutable={}",
-                    limit, maxBlockers, includeExecutable, e);
-            throw e;
-        }
-    }
-
-    @Operation(summary = "阻塞项统计", description = "按 blockerCategory 聚合最近任务，观察当前主要风控瓶颈。")
-    @GetMapping("/follow-tasks/blocker-stats")
-    public List<SmartWalletBlockerStatView> followTaskBlockerStats(@RequestParam(defaultValue = "200") Integer taskLimit) {
-        try {
-            return followTaskApplicationService.blockerStats(taskLimit);
-        } catch (Exception e) {
-            log.error("Failed to load follow-task blocker stats taskLimit={}", taskLimit, e);
-            throw e;
-        }
-    }
-
-    @Operation(summary = "跟单 PnL 归因分析",
-               description = "按维度聚合已平仓跟单的盈亏、胜率、持仓时长、退出类型分布。" +
-                       "groupBy: EXIT_REASON（按退出原因）| WALLET_SCORE（按钱包评分段）| MARKET_TIMING（按入场时市场剩余时间）")
-    @GetMapping("/follow-trades/attribution")
-    public List<FollowTradeAttributionView> followTradeAttribution(
-            @RequestParam(defaultValue = "EXIT_REASON") String groupBy,
-            @RequestParam(defaultValue = "500") Integer limit) {
-        try {
-            return followTradeAttributionService.buildAttribution(groupBy, limit);
-        } catch (Exception e) {
-            log.error("Failed to build follow-trade attribution groupBy={} limit={}", groupBy, limit, e);
-            throw e;
-        }
-    }
+    // [MIGRATED] GET /follow-tasks/single-wallet-override → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_SINGLE_WALLET_OVERRIDE)
+    // [MIGRATED] GET /follow-tasks/opportunities → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_OPPORTUNITIES)
+    // [MIGRATED] GET /follow-tasks/blocker-stats → coin-strategy-web SmartWalletReadController.blockerStats (web-native impl)
+    // [MIGRATED] GET /follow-trades/attribution → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TRADES_ATTRIBUTION)
 
     @Operation(summary = "冲突市场报表", description = "查看同一市场持有多个 outcome 的冲突持仓与对应收益情况。")
     @GetMapping("/reports/conflicting-markets")
@@ -1177,29 +927,14 @@ public class SmartWalletController {
         }
     }
 
-    @Operation(summary = "风控模拟", description = "使用临时参数模拟风控筛选结果，不修改线上配置。")
-    @PostMapping("/follow-tasks/simulate-risk")
-    public SmartWalletRiskSimulationResult simulateRisk(@RequestBody(required = false) SmartWalletRiskSimulationRequest request) {
-        return followTaskApplicationService.simulateRisk(request);
-    }
-
-    @Operation(summary = "策略回放回测", description = "基于历史 smart_wallet_trade_event 回放 baseline 与新策略，在 30d/60d/90d 窗口输出接受率、收益、回撤、override 与拦截分布。")
-    @PostMapping("/follow-tasks/replay-backtest")
-    public SmartWalletReplayBacktestResult replayBacktest(@RequestBody(required = false) SmartWalletReplayBacktestRequest request) {
-        return smartWalletReplayBacktestService.replay(request);
-    }
-
-    @Operation(summary = "集中度影响回放摘要", description = "基于 replay-backtest 结果提取 concentration-only 视图，重点展示 concentration / extreme concentration 的拦截、降仓与代理收益影响。")
-    @PostMapping("/follow-tasks/replay-backtest/concentration-summary")
-    public SmartWalletReplayConcentrationSummaryResult replayConcentrationSummary(@RequestBody(required = false) SmartWalletReplayBacktestRequest request) {
-        return smartWalletReplayBacktestService.replayConcentrationSummary(request);
-    }
-
-    @Operation(summary = "处理跟单任务", description = "手动触发一轮待执行 follow task 处理。")
-    @PostMapping("/follow-tasks/process")
-    public Map<String, Object> processFollowTasks() {
-        return Map.of("processed", followTaskApplicationService.processPendingTasksNow());
-    }
+    // [MIGRATED] POST /follow-tasks/simulate-risk → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_SIMULATE_RISK)
+    // [MIGRATED] POST /follow-tasks/replay-backtest → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_REPLAY_BACKTEST)
+    // [MIGRATED] POST /follow-tasks/replay-backtest/concentration-summary → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_REPLAY_BACKTEST_CONCENTRATION)
+    // [MIGRATED] POST /follow-tasks/process → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_PROCESS, long task — enqueue + GET status)
 
     @Operation(summary = "Live 验证状态", description = "查看 LIVE 小额验证辅助流程的启停、熔断与最近一轮执行情况。")
     @GetMapping("/live-validation/status")
@@ -1328,98 +1063,19 @@ public class SmartWalletController {
         return tradeOrderService.orderPnlCategoryAttribution(mode, limit);
     }
 
-    @Operation(summary = "重建订单记录", description = "从 position/order/fill/ledger 幂等重建 Polymarket 订单记录主表。")
-    @PostMapping("/trade-orders/backfill")
-    public Map<String, Object> backfillTradeOrders(@RequestParam(defaultValue = "10000") Integer limit) {
-        int rebuilt = tradeOrderService.rebuildAll(limit == null ? 10000 : limit);
-        return Map.of("rebuilt", rebuilt);
-    }
+    // [MIGRATED] POST /trade-orders/backfill 与 POST /trade-orders/repair-stale 已下沉到
+    //            coin-strategy-web 的 SmartWalletTradeOrdersWriteController，通过 strategy_manual_trigger
+    //            命令队列同步派发到 SmartWalletTradeOrderService。job 端只保留 service，不再暴露 HTTP。
+    // [MIGRATED] POST /markets/recategorize 已下沉到 coin-strategy-web 的
+    //            SmartWalletTradeOrdersWriteController，通过 strategy_manual_trigger 命令队列同步派发到
+    //            SmartWalletMarketStateService。job 端只保留 service，不再暴露 HTTP。
 
-    @Operation(summary = "修复滞留订单", description = "检测并修复状态仍为 OPEN 但其 position 已进入终态的订单记录。")
-    @PostMapping("/trade-orders/repair-stale")
-    public Map<String, Object> repairStaleTradeOrders() {
-        int repaired = tradeOrderService.repairStaleTradeOrders();
-        return Map.of("repaired", repaired);
-    }
+    // [MIGRATED] POST /profiles/sync-all-positions + GET /profiles/sync-all-positions/{id}
+    // 已迁到 coin-strategy-web 的 SmartWalletProfileWriteController；
+    // 执行逻辑封装为 SmartWalletProfileAsyncOpsService.syncAllPositions(...)，
+    // 通过 strategy_manual_trigger 命令队列驱动，状态/结果存 DB。
 
-    @Operation(summary = "重新分类市场", description = "使用最新的分类规则重新分析所有市场类别，修复被错误分为 OTHER 的市场。")
-    @PostMapping("/markets/recategorize")
-    public Map<String, Object> recategorizeMarkets() {
-        int updated = marketStateService.recategorizeAll();
-        return Map.of("updated", updated);
-    }
-
-    @Operation(summary = "全量修复跟单地址交易数据（异步）",
-            description = "按 HOT → WARM → COLD 顺序，逐地址增量拉取 closed-positions 并刷新 active positions。"
-                    + "单线程顺序处理，避免内存溢出。立即返回 jobId，后台执行。")
-    @PostMapping("/profiles/sync-all-positions")
-    public Map<String, Object> syncAllPositions(
-            @RequestParam(defaultValue = "50") Integer batchSize) {
-        int safeBatch = Math.max(5, Math.min(batchSize, 200));
-        String jobId = "sync-all-positions-" + System.currentTimeMillis();
-        metricsRebuildJobs.put(jobId, Map.of(
-                "status", "RUNNING",
-                "currentTier", "HOT",
-                "hotResult", Map.of(),
-                "warmResult", Map.of(),
-                "coldResult", Map.of(),
-                "startedAt", System.currentTimeMillis()));
-        final int batch = safeBatch;
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
-            Map<String, Object> hotResult = Map.of();
-            Map<String, Object> warmResult = Map.of();
-            Map<String, Object> coldResult = Map.of();
-            try {
-                // Phase 1: HOT addresses — most active, most likely to have missed recent trades
-                metricsRebuildJobs.put(jobId, Map.of(
-                        "status", "RUNNING", "currentTier", "HOT",
-                        "hotResult", Map.of(), "warmResult", Map.of(), "coldResult", Map.of(),
-                        "startedAt", System.currentTimeMillis()));
-                hotResult = dispatchTierSync("HOT", batch);
-
-                // Phase 2: WARM addresses
-                metricsRebuildJobs.put(jobId, Map.of(
-                        "status", "RUNNING", "currentTier", "WARM",
-                        "hotResult", hotResult, "warmResult", Map.of(), "coldResult", Map.of(),
-                        "startedAt", System.currentTimeMillis()));
-                warmResult = dispatchTierSync("WARM", batch);
-
-                // Phase 3: COLD addresses
-                metricsRebuildJobs.put(jobId, Map.of(
-                        "status", "RUNNING", "currentTier", "COLD",
-                        "hotResult", hotResult, "warmResult", warmResult, "coldResult", Map.of(),
-                        "startedAt", System.currentTimeMillis()));
-                coldResult = dispatchTierSync("COLD", batch);
-
-                metricsRebuildJobs.put(jobId, Map.of(
-                        "status", "COMPLETED",
-                        "hotResult", hotResult,
-                        "warmResult", warmResult,
-                        "coldResult", coldResult,
-                        "completedAt", System.currentTimeMillis()));
-            } catch (Exception e) {
-                log.error("[sync-all-positions] jobId={} failed at current phase: {}", jobId, e.getMessage(), e);
-                metricsRebuildJobs.put(jobId, Map.of(
-                        "status", "FAILED",
-                        "hotResult", hotResult,
-                        "warmResult", warmResult,
-                        "coldResult", coldResult,
-                        "error", e.getMessage() != null ? e.getMessage() : e.getClass().getName()));
-            }
-        });
-        return Map.of("jobId", jobId, "status", "ACCEPTED", "batchSize", safeBatch);
-    }
-
-    @Operation(summary = "查询全量修复任务状态")
-    @GetMapping("/profiles/sync-all-positions/{jobId}")
-    public Map<String, Object> syncAllPositionsStatus(@PathVariable String jobId) {
-        Map<String, Object> job = metricsRebuildJobs.get(jobId);
-        if (job == null) {
-            return Map.of("status", "NOT_FOUND", "jobId", jobId);
-        }
-        return job;
-    }
-
+    @SuppressWarnings("unused") // 兼容旧引用；新代码请用 SmartWalletProfileAsyncOpsService。
     private Map<String, Object> dispatchTierSync(String tier, int batchSize) {
         long tierStart = System.currentTimeMillis();
         ClosedPositionSyncDispatcher.DispatchResult result =
@@ -1608,164 +1264,19 @@ public class SmartWalletController {
         return Map.of("rebuilt", accountingService.rebuildRecentReports(days));
     }
 
-    @Operation(summary = "回填账本", description = "从 follow_task 回填 order、fill、position 等账本数据。")
-    @PostMapping("/accounting/backfill")
-    public Map<String, Object> backfillAccounting(@RequestParam(defaultValue = "2000") Integer limit) {
-        return Map.of("imported", accountingService.backfillFromFollowTasks(limit));
-    }
-
-    @Operation(summary = "回填结算时间", description = "批量回填缺失的 marketEndAt，覆盖 position、order 与 followTask。")
-    @PostMapping("/accounting/backfill-market-end-at")
-    public Map<String, Object> backfillMarketEndAt(@RequestParam(defaultValue = "500") Integer limit,
-                                                   @RequestParam(defaultValue = "false") boolean refreshCache) {
-        return accountingService.backfillMissingMarketEndAt(limit, refreshCache);
-    }
-
-    @Operation(summary = "回填 token 与仓位关联", description = "批量回填缺失的 tokenId，以及能从现有成交/持仓确定的 order.positionId / fill.positionId。")
-    @PostMapping("/accounting/backfill-token-links")
-    public Map<String, Object> backfillTokenLinks(@RequestParam(defaultValue = "500") Integer limit,
-                                                  @RequestParam(defaultValue = "false") boolean refreshCache) {
-        return accountingService.backfillMissingTokenAndPositionLinks(limit, refreshCache);
-    }
-
-    @Operation(summary = "修复提前结算", description = "扫描并修复被错误提前推进为 RESOLVED 的 PAPER 持仓。")
-    @PostMapping("/accounting/repair-premature-settlements")
-    public PrematureSettlementRepairSummary repairPrematureSettlements(@RequestParam(defaultValue = "500") Integer limit,
-                                                                       @RequestParam(defaultValue = "true") boolean refreshCache) {
-        return accountingService.repairPrematureResolvedPaperPositions(limit, refreshCache);
-    }
-
-    @Operation(summary = "按 ID 修复提前结算", description = "按 positionId 或 repair item 列表精准修复提前结算的持仓。")
-    @PostMapping("/accounting/repair-premature-settlements/by-ids")
-    public PrematureSettlementRepairSummary repairPrematureSettlementsByIds(@RequestBody PrematureSettlementRepairRequest request) {
-        if (request == null) {
-            return accountingService.repairPrematureResolvedPaperPositionsByIds(List.of());
-        }
-        if (request.getPositionIds() != null && !request.getPositionIds().isEmpty()) {
-            return accountingService.repairPrematureResolvedPaperPositionsByIds(request.getPositionIds());
-        }
-        return accountingService.repairPrematureResolvedPaperPositionsByItems(request.getItems());
-    }
-
-    @Operation(summary = "按 position 修复 marketId", description = "按 positionId 精准修复 legacy marketId/conditionId 混用，并可选择在修复后立即重跑 settlement sync。")
-    @PostMapping("/accounting/repair-market-ids/by-positions")
-    public Map<String, Object> repairMarketIdsByPositions(@RequestBody SmartWalletMarketIdRepairRequest request,
-                                                          @RequestParam(defaultValue = "true") boolean syncAfterRepair,
-                                                          @RequestParam(defaultValue = "true") boolean refreshCache) {
-        SmartWalletMarketIdRepairSummary repairSummary = smartWalletMarketRepairService.repairPositionMarketIds(request);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("repair", repairSummary);
-        if (syncAfterRepair && repairSummary.getRepairedMarketIds() != null && !repairSummary.getRepairedMarketIds().isEmpty()) {
-            result.put("settlementSync", accountingService.syncSettlementsForMarkets(repairSummary.getRepairedMarketIds(), refreshCache));
-        }
-        return result;
-    }
-
-    @Operation(summary = "手动同步结算", description = "手动触发一轮 settlement sync，检查市场是否已经真正结算。")
-    @PostMapping("/settlement/sync")
-    public SettlementSyncSummary syncSettlements(@RequestParam(defaultValue = "500") Integer positionLimit,
-                                                 @RequestParam(defaultValue = "100") Integer marketLimit,
-                                                 @RequestParam(defaultValue = "false") boolean refreshCache) {
-        return settlementApplicationService.runNow(positionLimit, marketLimit, refreshCache);
-    }
-
-    @Operation(summary = "复核历史模拟结算", description = "重扫 paper-book 历史未结算仓位，并自动收口旧的未领取模拟仓位。")
-    @PostMapping("/settlement/review-paper-history")
-    public HistoricalPaperSettlementReviewView reviewHistoricalPaperSettlements(@RequestParam(defaultValue = "1000") Integer limit,
-                                                                                @RequestParam(defaultValue = "true") boolean refreshCache) {
-        return accountingService.reviewHistoricalPaperSettlements(limit, refreshCache);
-    }
-
-    @Operation(summary = "结算状态", description = "查看 settlement sync 的最近状态和运行情况。")
-    @GetMapping("/settlement/status")
-    public SettlementSyncStatusView settlementStatus() {
-        return settlementApplicationService.status();
-    }
-
-    @Operation(summary = "结算运行历史", description = "查看 settlement sync 的历史运行记录。")
-    @GetMapping("/settlement/runs")
-    public List<SettlementRunView> settlementRuns(@RequestParam(defaultValue = "20") Integer limit) {
-        return settlementApplicationService.listRuns(limit);
-    }
-
-    @Operation(summary = "结算重试队列", description = "查看结算失败市场的重试队列。")
-    @GetMapping("/settlement/retries")
-    public List<SettlementRetryView> settlementRetries(@RequestParam(required = false) String status,
-                                                       @RequestParam(defaultValue = "20") Integer limit) {
-        return settlementApplicationService.listRetries(status, limit);
-    }
-
-    @Operation(summary = "结算重试报表", description = "查看结算重试成功、失败、待重试的统计结果。")
-    @GetMapping("/settlement/retries/report")
-    public SettlementRetryReportView settlementRetryReport() {
-        return settlementApplicationService.retryReport();
-    }
-
-    @Operation(summary = "处理结算重试", description = "手动处理一轮结算失败市场的重试任务。")
-    @PostMapping("/settlement/retries/process")
-    public SettlementSyncSummary processSettlementRetries(@RequestParam(required = false) Integer limit,
-                                                          @RequestParam(defaultValue = "false") boolean refreshCache) {
-        return settlementSyncService.processRetriesNow(limit, refreshCache);
-    }
-
-    @Operation(summary = "人工确认 LOCAL 结算信号", description = "针对 resolutionSource=LOCAL 的挂起市场，重新到 Polymarket 侧拉取数据；若问题精确匹配且已闭市 outcomePrices 呈现终局 1/0 形态，则按该信号推进结算。marketIds 为空时默认处理当前 LOCAL retry 队列。")
-    @PostMapping("/settlement/manual-confirm-local")
-    public SettlementSyncSummary confirmLocalSettlements(@RequestBody(required = false) LocalSettlementConfirmRequest request,
-                                                         @RequestParam(defaultValue = "true") boolean refreshCache) {
-        List<String> marketIds = request == null ? List.of() : request.getMarketIds();
-        return settlementApplicationService.confirmLocalMarkets(marketIds, refreshCache);
-    }
-
-    @Operation(summary = "Claim 状态", description = "查看 claim 自动处理的启停、最近一轮执行与运行状态。")
-    @GetMapping("/claim/status")
-    public SmartWalletClaimStatusView claimStatus() {
-        return claimService.status();
-    }
-
-    @Operation(summary = "Claim 运行历史", description = "查看 claim 自动处理的历史运行记录。")
-    @GetMapping("/claim/runs")
-    public List<SmartWalletClaimRunView> claimRuns(@RequestParam(defaultValue = "20") Integer limit) {
-        return claimService.listRuns(limit);
-    }
-
-    @Operation(summary = "Claim 重试队列", description = "查看 live claim 失败、待确认或待重试的队列。")
-    @GetMapping("/claim/retries")
-    public List<SmartWalletClaimRetryView> claimRetries(@RequestParam(required = false) String status,
-                                                        @RequestParam(defaultValue = "20") Integer limit) {
-        return claimService.listRetries(status, limit);
-    }
-
-    @Operation(summary = "Claim 重试报表", description = "查看 claim retry 的待处理、待确认、已解决与放弃统计。")
-    @GetMapping("/claim/retries/report")
-    public SmartWalletClaimRetryReportView claimRetryReport() {
-        return claimService.retryReport();
-    }
-
-    @Operation(summary = "处理 Claim", description = "扫描并处理一批 RESOLVED_UNCLAIMED 仓位。paper 会自动模拟领取；live 按 claim gateway 模式推进。")
-    @PostMapping("/claim/process")
-    public SmartWalletClaimSummary processClaims(@RequestParam(required = false) Integer limit) {
-        return claimService.processNow(limit);
-    }
-
-    @Operation(summary = "处理 Claim 重试", description = "处理一轮到期的 live claim retry。")
-    @PostMapping("/claim/retries/process")
-    public SmartWalletClaimSummary processClaimRetries(@RequestParam(required = false) Integer limit) {
-        return claimService.processRetriesNow(limit);
-    }
-
-    @Operation(summary = "确认领取结算收益", description = "将 RESOLVED_UNCLAIMED 仓位推进到 CLAIMED。LIVE 仓位需要先完成链上领取，再传 confirmExternalClaim=true。")
-    @PostMapping("/positions/{positionId}/claim")
-    public SmartWalletClaimResultView claimPosition(@PathVariable Long positionId,
-                                                    @RequestParam(defaultValue = "false") boolean confirmExternalClaim) {
-        return claimService.claimPosition(positionId, confirmExternalClaim);
-    }
-
-    @Operation(summary = "提前卖出持仓", description = "对 PAPER 持仓生成一笔显式 SELL 平仓成交，按卖出价实现盈亏。若不调用该接口，则持仓继续走 expiry -> oracle -> resolve -> claim 流程。")
-    @PostMapping("/positions/{positionId}/exit")
-    public SmartWalletPositionExitResultView exitPosition(@PathVariable Long positionId,
-                                                          @RequestBody(required = false) SmartWalletPositionExitRequest request) {
-        return accountingService.exitPosition(positionId, request);
-    }
+    // [MIGRATED] /accounting/* (6 POST), /settlement/* (4 GET + 4 POST), /claim/* (4 GET + 4 POST,
+    // 其中 2 个 GET 为 status/runs，另外两个为 retries/report；4 POST 为 process / retries/process /
+    // sync / review-paper-history / retries/process / manual-confirm-local) 以及
+    // POST /positions/{positionId}/claim、POST /positions/{positionId}/exit 已下沉到 coin-strategy-web：
+    //   - SmartWalletAccountingController（6 个 accounting POST）
+    //   - SmartWalletSettlementController（4 个 settlement POST，GET 已在 SmartWalletReadController）
+    //   - SmartWalletClaimController（2 个 claim POST，GET 已在 SmartWalletReadController）
+    //   - SmartWalletPositionWriteController（claim / exit 单笔 POST）
+    // 写操作通过 strategy_manual_trigger 命令队列异步派发到 job 端的：
+    //   SmartWalletAccountingService / SmartWalletMarketRepairService /
+    //   SettlementApplicationService / SmartWalletSettlementSyncService /
+    //   SmartWalletClaimService。
+    // job 端只保留 service，不再暴露 HTTP。
 
     @Operation(summary = "钱包归因报表", description = "按执行钱包 executionAddress 查看收益归因报表。")
     @GetMapping("/reports/wallets")
@@ -1839,17 +1350,10 @@ public class SmartWalletController {
         return clobExecutionService.dryRunOrder(request);
     }
 
-    @Operation(summary = "按任务预演", description = "按 followTaskId 预演真实下单参数，不会真实提交订单。")
-    @PostMapping("/follow-tasks/{followTaskId}/dry-run")
-    public Map<String, Object> followTaskDryRun(@PathVariable Long followTaskId) {
-        return clobExecutionService.dryRunFollowTask(followTaskId);
-    }
-
-    @Operation(summary = "按任务真实下单", description = "按 followTaskId 触发真实 LIVE 下单，仅在运行环境允许交易时使用。")
-    @PostMapping("/follow-tasks/{followTaskId}/execute-live")
-    public SmartWalletExecutionResult executeFollowTaskLive(@PathVariable Long followTaskId) {
-        return executionApplicationService.executeFollowTask(followTaskId);
-    }
+    // [MIGRATED] POST /follow-tasks/{followTaskId}/dry-run → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_DRY_RUN)
+    // [MIGRATED] POST /follow-tasks/{followTaskId}/execute-live → coin-strategy-web SmartWalletFollowTasksController
+    //            (action: SMART_WALLET_FOLLOW_TASKS_EXECUTE_LIVE)
 
     @Operation(summary = "查看市场元数据", description = "按 conditionId 查看 Polymarket 市场元数据、tokenId 与价格相关信息。")
     @GetMapping("/clob/markets/{conditionId}")
@@ -1881,31 +1385,15 @@ public class SmartWalletController {
         return clobExecutionService.marketPriceReference(conditionId, outcome, tokenId, fallbackPrice, question);
     }
 
-    @Operation(summary = "采集市场快照", description = "按 conditionId/outcome 主动抓取一次订单簿与最近成交，生成市场微观结构快照。")
-    @PostMapping("/clob/markets/{conditionId}/snapshot")
-    public SmartWalletMarketSnapshotEntity collectMarketSnapshot(@PathVariable String conditionId,
-                                                                 @RequestParam(defaultValue = "YES") String outcome) {
-        return predictionMarketDataApplicationService.collectMarketSnapshot(conditionId, outcome);
-    }
+    // [MIGRATED] POST /clob/markets/{conditionId}/snapshot 与 POST /clob/markets/snapshots/backfill
+    //            已下沉到 coin-strategy-web 的 SmartWalletClobWriteController，通过 strategy_manual_trigger
+    //            命令队列同步派发到 PredictionMarketDataApplicationService。
+    //            (actions: SMART_WALLET_CLOB_MARKET_SNAPSHOT / SMART_WALLET_CLOB_MARKETS_SNAPSHOTS_BACKFILL)
 
-    @Operation(summary = "批量采集市场快照", description = "按最近活跃 trade event 批量抓取市场快照，用于后续 effect label 回填。")
-    @PostMapping("/clob/markets/snapshots/backfill")
-    public List<SmartWalletMarketSnapshotEntity> collectRecentMarketSnapshots(@RequestParam(defaultValue = "20") Integer limit) {
-        return predictionMarketDataApplicationService.collectRecentMarketSnapshots(limit);
-    }
-
-    @Operation(summary = "回填交易效果标签", description = "按 sourceEventId 从事件前后快照回填交易效果标签，生成 future mid 和基础纸面PnL。")
-    @PostMapping("/trade-events/{sourceEventId}/effect-label")
-    public SmartWalletTradeEffectLabelEntity buildTradeEffectLabel(@PathVariable Long sourceEventId) {
-        return predictionMarketDataApplicationService.buildTradeEffectLabel(sourceEventId);
-    }
-
-    @Operation(summary = "批量回填交易效果标签", description = "按最近 trade event 批量回填 effect label，可选择只处理缺失标签的事件。")
-    @PostMapping("/trade-events/effect-labels/backfill")
-    public List<SmartWalletTradeEffectLabelEntity> buildRecentTradeEffectLabels(@RequestParam(defaultValue = "50") Integer limit,
-                                                                                @RequestParam(defaultValue = "true") boolean missingOnly) {
-        return predictionMarketDataApplicationService.buildRecentTradeEffectLabels(limit, missingOnly);
-    }
+    // [MIGRATED] POST /trade-events/{sourceEventId}/effect-label 与
+    //            POST /trade-events/effect-labels/backfill 已下沉到 coin-strategy-web 的
+    //            SmartWalletTradeEventsWriteController，通过 strategy_manual_trigger 命令队列
+    //            同步派发到 PredictionMarketDataApplicationService。job 端只保留 service，不再暴露 HTTP。
 
     @Operation(summary = "钱包日特征列表", description = "查看最近生成的 wallet_feature_daily 结果，用于 leader admission 和因果分析前置特征。")
     @GetMapping("/wallet-features/daily")
@@ -1913,23 +1401,10 @@ public class SmartWalletController {
         return predictionMarketDataApplicationService.listWalletFeatureDaily(limit);
     }
 
-    @Operation(summary = "回填单个钱包日特征", description = "按钱包地址和日期重建单个 wallet_feature_daily 特征快照。")
-    @PostMapping("/wallet-features/daily")
-    public SmartWalletWalletFeatureDailyEntity buildWalletFeatureDaily(@RequestParam String walletAddress,
-                                                                       @RequestParam(required = false) String featureDate) {
-        return predictionMarketDataApplicationService.buildWalletFeatureDaily(
-                walletAddress,
-                featureDate == null || featureDate.isBlank() ? null : LocalDate.parse(featureDate)
-        );
-    }
-
-    @Operation(summary = "批量回填钱包日特征", description = "按最近高分钱包批量重建 wallet_feature_daily，可只补缺失数据。")
-    @PostMapping("/wallet-features/daily/backfill")
-    public List<SmartWalletWalletFeatureDailyEntity> buildRecentWalletFeatureDaily(@RequestParam(defaultValue = "30") Integer walletLimit,
-                                                                                   @RequestParam(defaultValue = "1") Integer days,
-                                                                                   @RequestParam(defaultValue = "true") boolean missingOnly) {
-        return predictionMarketDataApplicationService.buildRecentWalletFeatureDaily(walletLimit, days, missingOnly);
-    }
+    // [MIGRATED] POST /wallet-features/daily 与 POST /wallet-features/daily/backfill 已下沉到
+    //            coin-strategy-web 的 SmartWalletWalletFeaturesWriteController，通过 strategy_manual_trigger
+    //            命令队列同步派发到 PredictionMarketDataApplicationService。
+    //            (actions: SMART_WALLET_WALLET_FEATURES_DAILY / SMART_WALLET_WALLET_FEATURES_DAILY_BACKFILL)
 
     @Operation(summary = "查询订单", description = "按 orderId 查询 CLOB 订单详情。")
     @GetMapping("/clob/orders/{orderId}")
@@ -1943,69 +1418,8 @@ public class SmartWalletController {
         return clobExecutionService.cancelOrder(orderId);
     }
 
-    private void applySingleWalletOverridePreset(SmartWalletRiskSimulationRequest request, String preset) {
-        if (preset == null || preset.isBlank()) {
-            return;
-        }
-        SmartWalletProperties.SignalRisk presetRisk = properties.getSignalRiskPresets().get(preset);
-        if (presetRisk == null) {
-            return;
-        }
-        if (request.getMaxSignalAgeSeconds() == null) {
-            request.setMaxSignalAgeSeconds(presetRisk.getMaxSignalAgeSeconds());
-        }
-        if (request.getPolicyTag() == null) {
-            request.setPolicyTag(presetRisk.getPolicyTag());
-        }
-        if (request.getMinDistinctWallets() == null) {
-            request.setMinDistinctWallets(presetRisk.getMinDistinctWallets());
-        }
-        if (request.getMinDistinctEntities() == null) {
-            request.setMinDistinctEntities(presetRisk.getMinDistinctEntities());
-        }
-        if (request.getMinConsensusScore() == null) {
-            request.setMinConsensusScore(presetRisk.getMinConsensusScore());
-        }
-        if (request.getQualityWeightedConsensusEnabled() == null) {
-            request.setQualityWeightedConsensusEnabled(presetRisk.isQualityWeightedConsensusEnabled());
-        }
-        if (request.getEnableSingleWalletOverrideCanary() == null) {
-            request.setEnableSingleWalletOverrideCanary(presetRisk.isEnableSingleWalletOverrideCanary());
-        }
-        if (request.getSingleWalletOverrideCanaryRate() == null) {
-            request.setSingleWalletOverrideCanaryRate(presetRisk.getSingleWalletOverrideCanaryRate());
-        }
-        if (request.getSingleWalletOverrideMinWalletScore() == null) {
-            request.setSingleWalletOverrideMinWalletScore(presetRisk.getSingleWalletOverrideMinWalletScore());
-        }
-        if (request.getSingleWalletOverrideMinWinRate() == null) {
-            request.setSingleWalletOverrideMinWinRate(presetRisk.getSingleWalletOverrideMinWinRate());
-        }
-        if (request.getSingleWalletOverrideMinTrades() == null) {
-            request.setSingleWalletOverrideMinTrades(presetRisk.getSingleWalletOverrideMinTrades());
-        }
-        if (request.getSingleWalletOverrideMinRecentTrades7d() == null) {
-            request.setSingleWalletOverrideMinRecentTrades7d(presetRisk.getSingleWalletOverrideMinRecentTrades7d());
-        }
-        if (request.getSingleWalletOverrideMinRecentWinRate7d() == null) {
-            request.setSingleWalletOverrideMinRecentWinRate7d(presetRisk.getSingleWalletOverrideMinRecentWinRate7d());
-        }
-        if (request.getSingleWalletOverrideMinReplicabilityScore() == null) {
-            request.setSingleWalletOverrideMinReplicabilityScore(presetRisk.getSingleWalletOverrideMinReplicabilityScore());
-        }
-        if (request.getSingleWalletOverrideMinQualityScore() == null) {
-            request.setSingleWalletOverrideMinQualityScore(presetRisk.getSingleWalletOverrideMinQualityScore());
-        }
-        if (request.getSingleWalletOverrideMinTriggerSizeUsdc() == null) {
-            request.setSingleWalletOverrideMinTriggerSizeUsdc(presetRisk.getSingleWalletOverrideMinTriggerSizeUsdc());
-        }
-        if (request.getSingleWalletOverrideMinRecommendedStakeUsdc() == null) {
-            request.setSingleWalletOverrideMinRecommendedStakeUsdc(presetRisk.getSingleWalletOverrideMinRecommendedStakeUsdc());
-        }
-        if (request.getTaskLimit() == null) {
-            request.setTaskLimit(120);
-        }
-    }
+    // [MIGRATED] applySingleWalletOverridePreset → coin-strategy-job SmartWalletFollowTasksOrchestrator
+    //            (used by SMART_WALLET_FOLLOW_TASKS_SINGLE_WALLET_OVERRIDE command branch)
 
     // ──────────────────────────────────────────────────────────────────────────
     // 持仓集中度查询（防控盘分析）

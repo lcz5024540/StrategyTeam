@@ -15,4 +15,10 @@ public record SmartWalletPnlTimelinePoint(
         BigDecimal cumulativeFeeUsdc,
         BigDecimal cumulativeNetPnlUsdc
 ) {
+
+    public Date getBucketAt() { return bucketAt; }
+    public BigDecimal getNetPnlUsdc() { return netPnlUsdc; }
+    public BigDecimal getCumulativeNetPnlUsdc() { return cumulativeNetPnlUsdc; }
+    public BigDecimal getLossPnlUsdc() { return lossPnlUsdc; }
+    public BigDecimal getCumulativeLossPnlUsdc() { return cumulativeLossPnlUsdc; }
 }

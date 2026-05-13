@@ -1,36 +1,23 @@
 package com.metaverse.coin.strategy.job.engine.control;
 
-import com.metaverse.coin.strategy.job.engine.PolymarketStrategy;
-import com.metaverse.coin.strategy.job.engine.StrategyMode;
-import com.metaverse.coin.strategy.job.engine.StrategyRegistry;
-import com.metaverse.coin.strategy.job.engine.model.StrategyCycleResult;
-import com.metaverse.coin.strategy.job.engine.monitor.AlertType;
-import com.metaverse.coin.strategy.job.engine.monitor.StrategyAlertService;
-import com.metaverse.coin.strategy.job.engine.control.model.ControlAction;
-import com.metaverse.coin.strategy.job.engine.control.model.ControlResult;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.dao.mapper.StrategyEngineFlagMapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.StrategyEngineFlagEntity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 策略控制服务。
+ * 策略控制服务（job 端·精简版）。
  *
- * <p>提供策略的运行时控制能力：</p>
- * <ul>
- *   <li>启用/禁用策略</li>
- *   <li>切换运行模式（SHADOW / PAPER / LIVE）</li>
- *   <li>手动触发 runCycle</li>
- *   <li>紧急熔断 KILL_SWITCH（全量停止所有策略）</li>
- * </ul>
+ * <p>HTTP 接口已下沉到 web (see {@code StrategyEngineControlService})。
+ * 本服务仅保留供 job 端其它组件（策略 runCycle 前的 kill-switch 检查）使用的查询方法。</p>
  *
- * <p>注意：当前实现通过内存状态控制。策略的 enabled/mode 本身由各策略的
- * ConfigurationProperties 管理，此服务提供的是运行时覆盖层。
- * KILL_SWITCH 是全局原子开关，一旦激活，所有策略的 runCycle 应检查此标志。</p>
+ * <p>kill-switch 状态从 DB strategy_engine_flag 读取，使用短期内存缓存（2.5s）
+ * 避免每个 cycle 都查 DB。</p>
  */
 @Service
 @Slf4j
@@ -39,206 +26,79 @@ public class StrategyControlService {
 
     private static final String LOG_PREFIX = "[STRATEGY_CONTROL]";
 
-    private final StrategyRegistry strategyRegistry;
-    private final StrategyAlertService alertService;
+    /** kill_switch 标志位 key（与 web 端 StrategyEngineControlService 保持一致） */
+    private static final String FLAG_KILL_SWITCH = "kill_switch";
+    private static final String VALUE_ACTIVE = "ACTIVE";
 
-    /** 全局熔断开关 */
-    private final AtomicBoolean killSwitchActive = new AtomicBoolean(false);
+    /** 缓存 TTL（毫秒）— 既减轻 DB，又保证 activate/deactivate 在 2.5s 内可见。 */
+    private static final long CACHE_TTL_MS = 2_500L;
 
-    /** 熔断激活时间 */
-    private volatile Instant killSwitchActivatedAt = null;
+    private final StrategyEngineFlagMapper flagMapper;
 
-    /** 熔断原因 */
-    private volatile String killSwitchReason = null;
+    /** 内存缓存：[lastFetchEpochMs, flagSnapshot] */
+    private final AtomicReference<KillSwitchCache> cacheRef = new AtomicReference<>();
 
-    // ── 熔断控制 ──────────────────────────────────────────────────────
+    // ── 熔断状态查询（供策略 runCycle 检查） ─────────────────────────
 
-    /**
-     * 激活紧急熔断。
-     * 所有策略应在 runCycle 前检查 {@link #isKillSwitchActive()}。
-     *
-     * @param reason 熔断原因
-     * @return 控制结果
-     */
-    public ControlResult activateKillSwitch(String reason) {
-        killSwitchActive.set(true);
-        killSwitchActivatedAt = Instant.now();
-        killSwitchReason = reason;
-
-        log.error("{} ⚠⚠⚠ 紧急熔断已激活: {} ⚠⚠⚠", LOG_PREFIX, reason);
-
-        // 记录熔断告警
-        alertService.fireAlert("ALL", AlertType.KILL_SWITCH,
-                "紧急熔断已激活", reason);
-
-        return ControlResult.builder()
-                .success(true)
-                .action(ControlAction.KILL_SWITCH_ACTIVATE)
-                .message("紧急熔断已激活: " + reason)
-                .timestamp(Instant.now())
-                .build();
-    }
-
-    /**
-     * 解除紧急熔断。
-     *
-     * @return 控制结果
-     */
-    public ControlResult deactivateKillSwitch() {
-        killSwitchActive.set(false);
-        String previousReason = killSwitchReason;
-        killSwitchReason = null;
-        killSwitchActivatedAt = null;
-
-        log.info("{} 紧急熔断已解除（之前原因: {}）", LOG_PREFIX, previousReason);
-
-        // 自动恢复熔断告警
-        alertService.autoResolveByStrategy("ALL", AlertType.KILL_SWITCH);
-
-        return ControlResult.builder()
-                .success(true)
-                .action(ControlAction.KILL_SWITCH_DEACTIVATE)
-                .message("紧急熔断已解除")
-                .timestamp(Instant.now())
-                .build();
-    }
-
-    /**
-     * 查询熔断是否激活。
-     * 策略的 runCycle 方法应在开头调用此方法检查。
-     */
     public boolean isKillSwitchActive() {
-        return killSwitchActive.get();
+        KillSwitchCache snapshot = currentSnapshot();
+        return snapshot != null && snapshot.active;
     }
 
     public Instant getKillSwitchActivatedAt() {
-        return killSwitchActivatedAt;
+        KillSwitchCache snapshot = currentSnapshot();
+        return snapshot != null ? snapshot.activatedAt : null;
     }
 
     public String getKillSwitchReason() {
-        return killSwitchReason;
+        KillSwitchCache snapshot = currentSnapshot();
+        return snapshot != null ? snapshot.reason : null;
     }
 
-    // ── 手动触发 ──────────────────────────────────────────────────────
+    // ── 内部 ──────────────────────────────────────────────────────────
 
-    /**
-     * 手动触发指定策略的 runCycle。
-     *
-     * @param strategyId 策略 ID
-     * @return 控制结果
-     */
-    public ControlResult manualRunCycle(String strategyId) {
-        if (isKillSwitchActive()) {
-            return ControlResult.builder()
-                    .success(false)
-                    .action(ControlAction.MANUAL_RUN_CYCLE)
-                    .strategyId(strategyId)
-                    .message("熔断开关已激活，拒绝执行: " + killSwitchReason)
-                    .timestamp(Instant.now())
-                    .build();
+    private KillSwitchCache currentSnapshot() {
+        long now = System.currentTimeMillis();
+        KillSwitchCache cached = cacheRef.get();
+        if (cached != null && now - cached.fetchedAtMs < CACHE_TTL_MS) {
+            return cached;
         }
+        KillSwitchCache fresh = loadFromDb(now);
+        cacheRef.set(fresh);
+        return fresh;
+    }
 
-        PolymarketStrategy strategy = strategyRegistry.getStrategy(strategyId);
-        if (strategy == null) {
-            return ControlResult.builder()
-                    .success(false)
-                    .action(ControlAction.MANUAL_RUN_CYCLE)
-                    .strategyId(strategyId)
-                    .message("策略不存在: " + strategyId)
-                    .timestamp(Instant.now())
-                    .build();
-        }
-
-        if (!strategy.isEnabled() || !strategy.getMode().isActive()) {
-            return ControlResult.builder()
-                    .success(false)
-                    .action(ControlAction.MANUAL_RUN_CYCLE)
-                    .strategyId(strategyId)
-                    .message(String.format("策略未启用或模式为OFF: enabled=%s mode=%s",
-                            strategy.isEnabled(), strategy.getMode()))
-                    .timestamp(Instant.now())
-                    .build();
-        }
-
+    private KillSwitchCache loadFromDb(long now) {
         try {
-            log.info("{} 手动触发 runCycle: strategy={}", LOG_PREFIX, strategyId);
-            StrategyCycleResult cycleResult = strategy.runCycle();
-
-            return ControlResult.builder()
-                    .success(true)
-                    .action(ControlAction.MANUAL_RUN_CYCLE)
-                    .strategyId(strategyId)
-                    .message(String.format("runCycle 完成: signals=%d orders=%d errors=%d",
-                            cycleResult.getSignalsFound(), cycleResult.getOrdersPlaced(), cycleResult.getErrors()))
-                    .timestamp(Instant.now())
-                    .build();
+            StrategyEngineFlagEntity flag = flagMapper.selectOne(
+                    new LambdaQueryWrapper<StrategyEngineFlagEntity>()
+                            .eq(StrategyEngineFlagEntity::getFlagKey, FLAG_KILL_SWITCH)
+                            .last("LIMIT 1"));
+            if (flag == null) {
+                return new KillSwitchCache(false, null, null, now);
+            }
+            boolean active = VALUE_ACTIVE.equalsIgnoreCase(flag.getFlagValue());
+            Instant activatedAt = (active && flag.getActivatedAt() != null)
+                    ? flag.getActivatedAt().toInstant() : null;
+            String reason = active ? flag.getReason() : null;
+            return new KillSwitchCache(active, activatedAt, reason, now);
         } catch (Exception e) {
-            log.error("{} 手动触发 runCycle 异常: strategy={} error={}", LOG_PREFIX, strategyId, e.getMessage(), e);
-            return ControlResult.builder()
-                    .success(false)
-                    .action(ControlAction.MANUAL_RUN_CYCLE)
-                    .strategyId(strategyId)
-                    .message("runCycle 异常: " + e.getMessage())
-                    .timestamp(Instant.now())
-                    .build();
+            log.error("{} 加载 kill-switch 状态失败，按未激活处理: {}", LOG_PREFIX, e.getMessage(), e);
+            return new KillSwitchCache(false, null, null, now);
         }
     }
 
-    /**
-     * 手动触发指定策略的 runExitScan。
-     */
-    public ControlResult manualRunExitScan(String strategyId) {
-        PolymarketStrategy strategy = strategyRegistry.getStrategy(strategyId);
-        if (strategy == null) {
-            return ControlResult.builder()
-                    .success(false)
-                    .action(ControlAction.MANUAL_EXIT_SCAN)
-                    .strategyId(strategyId)
-                    .message("策略不存在: " + strategyId)
-                    .timestamp(Instant.now())
-                    .build();
+    private static final class KillSwitchCache {
+        final boolean active;
+        final Instant activatedAt;
+        final String reason;
+        final long fetchedAtMs;
+
+        KillSwitchCache(boolean active, Instant activatedAt, String reason, long fetchedAtMs) {
+            this.active = active;
+            this.activatedAt = activatedAt;
+            this.reason = reason;
+            this.fetchedAtMs = fetchedAtMs;
         }
-
-        try {
-            log.info("{} 手动触发 runExitScan: strategy={}", LOG_PREFIX, strategyId);
-            strategy.runExitScan();
-
-            return ControlResult.builder()
-                    .success(true)
-                    .action(ControlAction.MANUAL_EXIT_SCAN)
-                    .strategyId(strategyId)
-                    .message("runExitScan 完成")
-                    .timestamp(Instant.now())
-                    .build();
-        } catch (Exception e) {
-            log.error("{} 手动触发 runExitScan 异常: strategy={}", LOG_PREFIX, strategyId, e);
-            return ControlResult.builder()
-                    .success(false)
-                    .action(ControlAction.MANUAL_EXIT_SCAN)
-                    .strategyId(strategyId)
-                    .message("runExitScan 异常: " + e.getMessage())
-                    .timestamp(Instant.now())
-                    .build();
-        }
-    }
-
-    // ── 批量操作 ──────────────────────────────────────────────────────
-
-    /**
-     * 列出所有策略的控制状态。
-     */
-    public List<ControlResult> listStrategyStatus() {
-        List<ControlResult> results = new ArrayList<>();
-        for (PolymarketStrategy strategy : strategyRegistry.listAll()) {
-            results.add(ControlResult.builder()
-                    .success(true)
-                    .action(ControlAction.STATUS_QUERY)
-                    .strategyId(strategy.getStrategyId())
-                    .message(String.format("enabled=%s mode=%s killSwitch=%s",
-                            strategy.isEnabled(), strategy.getMode(), isKillSwitchActive()))
-                    .timestamp(Instant.now())
-                    .build());
-        }
-        return results;
     }
 }

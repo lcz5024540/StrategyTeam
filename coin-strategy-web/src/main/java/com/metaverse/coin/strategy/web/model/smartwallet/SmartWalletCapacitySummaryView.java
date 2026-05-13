@@ -8,4 +8,10 @@ public record SmartWalletCapacitySummaryView(
     BigDecimal remainingCapitalBudgetUsdc, BigDecimal availableCapitalUsdc,
     BigDecimal lockedClaimProceedsUsdc,
     Integer maxHoursToMarketEnd,
-    Boolean duplicateOpenPositionBlocked, Boolean duplicatePendingTaskBlocked) {}
+    Boolean duplicateOpenPositionBlocked, Boolean duplicatePendingTaskBlocked) {
+
+    public BigDecimal getAvailableCapitalUsdc() { return availableCapitalUsdc; }
+    public BigDecimal getLockedClaimProceedsUsdc() { return lockedClaimProceedsUsdc; }
+    public Integer getRemainingPositionSlots() { return remainingPositionSlots; }
+    public BigDecimal getRemainingCapitalBudgetUsdc() { return remainingCapitalBudgetUsdc; }
+}

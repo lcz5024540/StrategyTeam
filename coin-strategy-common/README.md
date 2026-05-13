@@ -21,7 +21,7 @@
 ### 2. [common-client](common-client)
 - **定位**: 第三方服务客户端集成。
 - **用途**: 封装与外部交易所或数据源的交互逻辑。
-  - **Exchanges**: Binance, OKX, Gate.io, Sunwk 等交易所的 API 封装。
+  - **Exchanges**: Binance, OKX, Gate.io 等交易所的 API 封装。
   - **Features**: 包含签名认证、HTTP 请求封装 (Retrofit/OkHttp)、接口定义等。
 
 ### 3. [common-model](common-model)

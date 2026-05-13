@@ -17,4 +17,30 @@ public record SmartWalletPerformanceView(
     BigDecimal conflictNetPnlUsdc,
     Integer earlyExitOrderCount, BigDecimal earlyExitRealizedPnlUsdc,
     Integer takeProfitOrderCount, BigDecimal takeProfitRealizedPnlUsdc,
-    Integer stopLossOrderCount, BigDecimal stopLossRealizedPnlUsdc) {}
+    Integer stopLossOrderCount, BigDecimal stopLossRealizedPnlUsdc) {
+
+    public Integer getTotalOrders() { return totalOrders; }
+    public Integer getFilledOrders() { return filledOrders; }
+    public Integer getClosedPositions() { return closedPositions; }
+    public Integer getOpenPositions() { return openPositions; }
+    public Integer getPendingPositions() { return pendingPositions; }
+    public Integer getWinningPositions() { return winningPositions; }
+    public Integer getLosingPositions() { return losingPositions; }
+    public BigDecimal getWinRate() { return winRate; }
+    public BigDecimal getRealizedPnlUsdc() { return realizedPnlUsdc; }
+    public BigDecimal getUnrealizedPnlUsdc() { return unrealizedPnlUsdc; }
+    public BigDecimal getPendingSettlementPnlUsdc() { return pendingSettlementPnlUsdc; }
+    public BigDecimal getCompositePnlUsdc() { return compositePnlUsdc; }
+    public BigDecimal getNetPnlUsdc() { return netPnlUsdc; }
+    public BigDecimal getProfitFactor() { return profitFactor; }
+    public BigDecimal getMaxDrawdownUsdc() { return maxDrawdownUsdc; }
+    public Integer getConflictingMarkets() { return conflictingMarkets; }
+    public Integer getOpenConflictingMarkets() { return openConflictingMarkets; }
+    public BigDecimal getConflictNetPnlUsdc() { return conflictNetPnlUsdc; }
+    public Integer getEarlyExitOrderCount() { return earlyExitOrderCount; }
+    public BigDecimal getEarlyExitRealizedPnlUsdc() { return earlyExitRealizedPnlUsdc; }
+    public Integer getTakeProfitOrderCount() { return takeProfitOrderCount; }
+    public BigDecimal getTakeProfitRealizedPnlUsdc() { return takeProfitRealizedPnlUsdc; }
+    public Integer getStopLossOrderCount() { return stopLossOrderCount; }
+    public BigDecimal getStopLossRealizedPnlUsdc() { return stopLossRealizedPnlUsdc; }
+}

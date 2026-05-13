@@ -18,4 +18,11 @@ public record SmartWalletConflictMarketView(
         String marketEndAtBjt,
         Date latestClosedAt
 ) {
+
+    public String getMarketId() { return marketId; }
+    public String getQuestion() { return question; }
+    public List<String> getOutcomes() { return outcomes; }
+    public Integer getOpenPositionCount() { return openPositionCount; }
+    public BigDecimal getNetPnlUsdc() { return netPnlUsdc; }
+    public String getMarketEndAtBjt() { return marketEndAtBjt; }
 }

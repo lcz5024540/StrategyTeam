@@ -61,4 +61,29 @@ public record SmartWalletOrderView(
         Date placedAt,
         Date filledAt
 ) {
+
+    public Long getId() { return id; }
+    public Long getFollowTaskId() { return followTaskId; }
+    public String getExecutionMode() { return executionMode; }
+    public String getQuestion() { return question; }
+    public String getMarketSlug() { return marketSlug; }
+    public String getOutcome() { return outcome; }
+    public String getSide() { return side; }
+    public String getOrderType() { return orderType; }
+    public Boolean getEarlyExit() { return earlyExit; }
+    public String getExitReason() { return exitReason; }
+    public String getStatus() { return status; }
+    public BigDecimal getPrice() { return price; }
+    public BigDecimal getSize() { return size; }
+    public BigDecimal getNotionalUsdc() { return notionalUsdc; }
+    public BigDecimal getCostBasisUsdc() { return costBasisUsdc; }
+    public BigDecimal getRealizedPnlUsdc() { return realizedPnlUsdc; }
+    public BigDecimal getEstimatedFeeUsdc() { return estimatedFeeUsdc; }
+    public BigDecimal getEstimatedSlippageUsdc() { return estimatedSlippageUsdc; }
+    public BigDecimal getFollowProbability() { return followProbability; }
+    public BigDecimal getCalibratedFollowProbability() { return calibratedFollowProbability; }
+    public BigDecimal getSlippageSpikeProbability() { return slippageSpikeProbability; }
+    public Integer getEstimateSampleSize() { return estimateSampleSize; }
+    public String getMarketEndAtBjt() { return marketEndAtBjt; }
+    public Date getPlacedAt() { return placedAt; }
 }

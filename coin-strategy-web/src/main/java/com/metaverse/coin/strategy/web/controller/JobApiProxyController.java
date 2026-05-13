@@ -19,9 +19,7 @@ public class JobApiProxyController {
     }
 
     @RequestMapping({
-            "/strategy-engine/**",
             "/binance/**",
-            "/sunwk/**",
             "/api/weather/**"
     })
     public ResponseEntity<byte[]> proxy(HttpServletRequest request,

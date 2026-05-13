@@ -5,6 +5,8 @@ import java.math.BigDecimal;
 public record StrategyTimelinePointView(
         String bucketAt,
         BigDecimal netPnlUsdc,
-        BigDecimal cumulativeNetPnlUsdc
+        BigDecimal cumulativeNetPnlUsdc,
+        BigDecimal lossPnlUsdc,
+        BigDecimal cumulativeLossPnlUsdc
 ) {
 }

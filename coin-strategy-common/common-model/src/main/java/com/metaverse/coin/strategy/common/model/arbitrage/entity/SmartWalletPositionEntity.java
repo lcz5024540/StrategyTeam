@@ -30,6 +30,7 @@ public class SmartWalletPositionEntity {
     private BigDecimal feePolTotal;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
+    private BigDecimal claimableProceedsUsdc;
     private BigDecimal lastMarkPrice;
     private Date openedAt;
     private Date lastFilledAt;
