@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.common.model.arbitrage.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -40,7 +41,13 @@ public class SmartWalletProfileDiagnosisSnapshotEntity {
     private BigDecimal latencyAlphaRate;
     private BigDecimal swingAlphaRate;
     private BigDecimal earlySettlementRate;
+    /**
+     * MyBatis-Plus 默认驼峰转下划线把数字视为小写字母, 会产出 dedup_order_count7d (数字前没下划线),
+     * 而表 DDL 写的是 dedup_order_count_7d. 这里用 @TableField 显式锁住列名, 跟 DDL 对齐.
+     */
+    @TableField("dedup_order_count_7d")
     private Integer dedupOrderCount7d;
+    @TableField("dedup_order_count_30d")
     private Integer dedupOrderCount30d;
     private BigDecimal medianHoldMinutes;
     private String dataQuality;
