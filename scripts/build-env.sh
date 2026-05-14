@@ -170,10 +170,14 @@ if [ -f "$ROOT_DIR/deploy/linux/bin/restart-smart-wallet-all.sh" ]; then
 fi
 
 # 生成环境快捷脚本 — Job 后端
+# 部署机:  49.51.250.174 (job + MySQL 同机)
+# DB:      49.51.250.174:3306 (本机访问) as root
 cat > "$RELEASE_DIR/bin/start-backend-${ENV}.sh" << SCRIPT_EOF
 #!/usr/bin/env bash
 # ============================================================
 # 快捷脚本 — ${ENV} 环境 Job 后端服务管理
+# 部署机:   49.51.250.174 (job + MySQL 同机)
+# DB:       49.51.250.174:3306 as root (DB_HOST 在 env/${ENV}/smart-wallet-job.env)
 # 用法:
 #   ./start-backend-${ENV}.sh          — 后台启动
 #   ./start-backend-${ENV}.sh stop     — 停止
@@ -186,9 +190,12 @@ set -euo pipefail
 SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 APP_HOME="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 
-# 环境配置
+# 环境配置 — 指向新版按机器/共享拆分的 env 文件
+#   共享密钥 (DB_PASSWORD/RSA/Polymarket): shared/secrets.env
+#   Job 专属 (DB_HOST=49.51.250.174 / 端口 / JVM): ${ENV}/smart-wallet-job.env
 export SPRING_PROFILES_ACTIVE="${ENV}"
-export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-job.env}"
+export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/${ENV}/smart-wallet-job.env}"
+export SMART_WALLET_SHARED_ENV_FILE="\${SMART_WALLET_SHARED_ENV_FILE:-\$APP_HOME/deploy/linux/env/shared/secrets.env}"
 export LOG_DIR="\${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
 
 # 委托给通用管理脚本
@@ -198,10 +205,15 @@ SCRIPT_EOF
 chmod +x "$RELEASE_DIR/bin/start-backend-${ENV}.sh"
 
 # 生成环境快捷脚本 — Web 服务
+# 部署机:  43.139.186.27 (web + 前端 同机, nginx 反代 8080)
+# DB:      跨机连 49.51.250.174:3306 as root
 cat > "$RELEASE_DIR/bin/start-web-${ENV}.sh" << SCRIPT_EOF
 #!/usr/bin/env bash
 # ============================================================
 # 快捷脚本 — ${ENV} 环境 Web 服务管理
+# 部署机:   43.139.186.27 (web + 前端)
+# DB:       跨机连 49.51.250.174:3306 as root
+#           (DB_HOST 在 env/${ENV}/smart-wallet-web.env, 密码在 env/shared/secrets.env)
 # 用法:
 #   ./start-web-${ENV}.sh          — 后台启动
 #   ./start-web-${ENV}.sh stop     — 停止
@@ -214,11 +226,13 @@ set -euo pipefail
 SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 APP_HOME="\$(cd "\$SCRIPT_DIR/.." && pwd)"
 
-# 环境配置
+# 环境配置 — 指向新版按机器/共享拆分的 env 文件
+#   共享密钥 (DB_PASSWORD/RSA/Polymarket): shared/secrets.env
+#   Web 专属 (DB_HOST=49.51.250.174 / 端口 / JVM): ${ENV}/smart-wallet-web.env
+# 新架构下 web 不再调用 job, 不需要再 source job env, 也不依赖 job HTTP。
 export SPRING_PROFILES_ACTIVE="${ENV}"
-export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-web.env}"
-# Web 服务依赖 Job 环境中的部分共享配置（如数据库/密钥），通过 SHARED 文件追加加载
-export SMART_WALLET_SHARED_ENV_FILE="\${SMART_WALLET_SHARED_ENV_FILE:-\$APP_HOME/deploy/linux/env/smart-wallet-job.env}"
+export SMART_WALLET_ENV_FILE="\${SMART_WALLET_ENV_FILE:-\$APP_HOME/deploy/linux/env/${ENV}/smart-wallet-web.env}"
+export SMART_WALLET_SHARED_ENV_FILE="\${SMART_WALLET_SHARED_ENV_FILE:-\$APP_HOME/deploy/linux/env/shared/secrets.env}"
 export LOG_DIR="\${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}"
 
 # 委托给通用管理脚本
@@ -277,37 +291,40 @@ fi
 echo ""
 echo "============================================================"
 echo " 构建完成!"
+echo " 拓扑回顾 (test):"
+echo "   43.139.186.27  →  部署 Web + Nginx + 前端 (跨机连 DB)"
+echo "   49.51.250.174  →  部署 Job + MySQL (DB 宿主, web/job 都连这台 3306, user=root)"
 echo " Job JAR:       $RELEASE_DIR/backend/app.jar"
 echo " Web JAR:       $RELEASE_DIR/web/app.jar"
 echo " 前端 dist:     $RELEASE_DIR/frontend/dist/"
 echo " Job 启动脚本:  $RELEASE_DIR/bin/start-backend-${ENV}.sh"
 echo " Web 启动脚本:  $RELEASE_DIR/bin/start-web-${ENV}.sh"
 if [ "$ENV" != "local" ]; then
-  echo " Web 部署包:    $RELEASE_DIR/smart-wallet-${ENV}-web.tar.gz   → 推 43.139.186.27"
-  echo " Job 部署包:    $RELEASE_DIR/smart-wallet-${ENV}-job.tar.gz   → 推 49.51.250.174"
+  echo " Web 部署包:    $RELEASE_DIR/smart-wallet-${ENV}-web.tar.gz   → scp 到 43.139.186.27 (web/前端宿主)"
+  echo " Job 部署包:    $RELEASE_DIR/smart-wallet-${ENV}-job.tar.gz   → scp 到 49.51.250.174 (job + DB 宿主)"
 fi
 echo " 整包 (兼容):   $RELEASE_DIR/smart-wallet-${ENV}.tar.gz"
 echo "============================================================"
 echo ""
 echo "部署说明:"
 if [ "$ENV" = "test" ]; then
-  echo "  ── web/前端 (43.139.186.27) ──"
+  echo "  ── web/前端宿主 = 43.139.186.27 (DB 在另一台) ──"
   echo "    1. scp smart-wallet-${ENV}-web.tar.gz 到 43.139.186.27"
   echo "    2. 解压到 /opt/coinstrategy/smart-wallet/"
-  echo "    3. bin/start-web-${ENV}.sh        # Web 服务 (8080, 跨机连 49.51.250.174 的 MySQL as root)"
+  echo "    3. bin/start-web-${ENV}.sh        # Web 服务 (8080, JDBC → 49.51.250.174:3306 as root)"
   echo "    4. cp deploy/linux/nginx/smart-wallet-test.conf 到 /etc/nginx/conf.d/"
   echo "    5. nginx -t && systemctl reload nginx (server_name = 43.139.186.27)"
   echo ""
-  echo "  ── job (49.51.250.174) ──"
+  echo "  ── job + DB 宿主 = 49.51.250.174 ──"
   echo "    1. scp smart-wallet-${ENV}-job.tar.gz 到 49.51.250.174"
   echo "    2. 解压到 /opt/coinstrategy/smart-wallet/"
-  echo "    3. bin/start-backend-${ENV}.sh    # Job 服务 (8081, loopback only, 本机连 MySQL)"
+  echo "    3. bin/start-backend-${ENV}.sh    # Job 服务 (8081, loopback only, JDBC → 49.51.250.174:3306 as root)"
   echo ""
-  echo "  ── DB / 防火墙 (49.51.250.174 — DB 与 job 同机) ──"
+  echo "  ── MySQL / 防火墙 (在 49.51.250.174 上) ──"
   echo "    1. MySQL bind-address = 0.0.0.0 (或显式监听内网网卡)"
-  echo "    2. GRANT ... ON coin_strategy.* TO 'root'@'127.0.0.1'        -- job 本机访问"
-  echo "    3. GRANT ... ON coin_strategy.* TO 'root'@'43.139.186.27'    -- web 跨机访问"
-  echo "    4. ufw allow from 43.139.186.27 to any port 3306 proto tcp"
+  echo "    2. GRANT ... ON coin_strategy.* TO 'root'@'127.0.0.1'        -- 给同机 job"
+  echo "    3. GRANT ... ON coin_strategy.* TO 'root'@'43.139.186.27'    -- 给跨机 web"
+  echo "    4. ufw allow from 43.139.186.27 to any port 3306 proto tcp   -- 放行 web 进站"
 elif [ "$ENV" = "prod" ]; then
   echo "  Prod 暂未上线。恢复 prod 时需要先在 deploy/linux/env/prod/ 下补 web/job env 文件，"
   echo "  并确认与 test 之间的端口/机器分配。"
