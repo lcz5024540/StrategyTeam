@@ -10,16 +10,18 @@
 #
 # 默认约定:
 #   profile     = local
-#   DB          = jdbc:mysql://49.51.250.174:3306/coin_strategy   (本地直接连远程 DB)
-#   DB user     = root  (从 shared/secrets.env 取, 与 test/prod 一致)
-#   DB password = 取自 deploy/linux/env/shared/secrets.env (ENC 密文, 一字不改)
+#   DB          = jdbc:mysql://43.139.186.27:3306/coin_strategy   (本地直连远程 dev DB)
+#   DB user     = devuser  (local 专属账号, 跟 test 的 root 隔离)
+#   DB password = 取自 deploy/linux/env/shared/secrets.env (ENC 密文, 跟 test 同一份)
 #   RSA 私钥    = scripts/keys/app-private-local.pem (用于解密 ENC)
 #   web port    = 8080
 #   API root    = http://127.0.0.1:8080/strategy/api/
 #
 # 注意:
-#   - 远程 MySQL (49.51.250.174:3306) 必须允许你本地 IP 访问;
-#     若失败请检查: bind-address / GRANT ... @'你的IP' / 防火墙
+#   - 远程 MySQL (43.139.186.27:3306) 必须允许你本地 IP 访问;
+#     若失败请检查: bind-address / GRANT ... TO 'devuser'@'你的IP' / 防火墙
+#   - devuser 在 43.139.186.27 上需要预先 GRANT 好对 coin_strategy.* 的权限,
+#     明文密码跟 test 的 root 一样 (即 shared/secrets.env 里 ENC 解密后的值)
 # ============================================================
 set -euo pipefail
 
@@ -59,10 +61,11 @@ fi
 # ── 4. 本地特定覆盖 ─────────────────────────────────────────────────────────
 # RSA 私钥永远用本地路径 (shared/secrets.env 里默认是服务器路径 /opt/coinstrategy/app-private-local.pem)
 export APP_RSA_PRIVATE_KEY_PATH="${APP_RSA_PRIVATE_KEY_PATH_LOCAL:-$LOCAL_RSA_KEY}"
-# DB 默认直连远程 49.51.250.174; DB_USERNAME / DB_PASSWORD 沿用 shared/secrets.env 提供的值
-export DB_HOST="${DB_HOST:-49.51.250.174}"
-# DB_USERNAME 若 shared/secrets.env 没设, 兜底 root; caller 传入会覆盖
-[ -z "${DB_USERNAME:-}" ] && export DB_USERNAME="root"
+# local 默认连远程 dev DB 43.139.186.27 (跟 test 隔离, 用 devuser 账号; 密码沿用 shared/secrets.env 的 ENC)
+export DB_HOST="${DB_HOST:-43.139.186.27}"
+# DB_USERNAME 在 local 强制覆盖为 devuser (即便 shared/secrets.env / caller 没指定);
+# 注意: shared/secrets.env 不再导出 DB_USERNAME, 所以这里直接覆盖即可
+export DB_USERNAME="${DB_USERNAME:-devuser}"
 
 # ── 3. 预检 RSA 私钥 ────────────────────────────────────────────────────────
 if [[ "${DB_PASSWORD:-}" == ENC* ]]; then

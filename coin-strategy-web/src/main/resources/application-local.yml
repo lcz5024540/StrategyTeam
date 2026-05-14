@@ -1,9 +1,12 @@
 # ============================================================
 # coin-strategy-web — LOCAL 本地开发环境
+# 默认 DB:  43.139.186.27:3306/coin_strategy as devuser
+# 密码:     与 test 环境一致 — 来自 deploy/linux/env/shared/secrets.env 的 DB_PASSWORD (ENC 密文)
+# 覆盖方式: DB_HOST=xxx DB_USERNAME=xxx DB_PASSWORD=xxx ./scripts/run-web-local.sh
 # ============================================================
 spring:
   datasource:
-    url: "jdbc:mysql://${DB_HOST:127.0.0.1}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    username: "${DB_USERNAME:root}"
+    url: "jdbc:mysql://${DB_HOST:43.139.186.27}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "${DB_USERNAME:devuser}"
     password: "${DB_PASSWORD:}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"

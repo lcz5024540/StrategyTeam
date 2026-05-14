@@ -11,9 +11,9 @@
 #
 # 默认约定 (与 run-web-local.sh 完全平行, 仅端口/模块/日志文件名不同):
 #   profile     = local
-#   DB          = jdbc:mysql://49.51.250.174:3306/coin_strategy  (远程 DB, 与 web local 一致)
-#   DB user     = root  (从 shared/secrets.env 取)
-#   DB password = 取自 deploy/linux/env/shared/secrets.env (ENC 密文, 一字不改)
+#   DB          = jdbc:mysql://43.139.186.27:3306/coin_strategy  (远程 dev DB, 与 web local 一致)
+#   DB user     = devuser  (local 专属账号, 跟 test 的 root 隔离)
+#   DB password = 取自 deploy/linux/env/shared/secrets.env (ENC 密文, 跟 test 同一份)
 #   RSA 私钥    = scripts/keys/app-private.pem (用于解密 ENC)
 #   job port    = 8081  (默认仅监听 0.0.0.0 — 跟 Spring 默认一致, 部署到服务器才走 loopback)
 #   API root    = http://127.0.0.1:8081/strategy/api/
@@ -56,9 +56,10 @@ fi
 # ── 4. 本地特定覆盖 (与 run-web-local.sh 一致) ────────────────────────────
 # RSA 私钥永远用本地路径 (shared/secrets.env 里默认是服务器路径 /opt/coinstrategy/app-private.pem)
 export APP_RSA_PRIVATE_KEY_PATH="${APP_RSA_PRIVATE_KEY_PATH_LOCAL:-$LOCAL_RSA_KEY}"
-# DB 默认直连远程 49.51.250.174 (跟 run-web-local.sh 完全一致, 共用同一份 DB)
-export DB_HOST="${DB_HOST:-49.51.250.174}"
-[ -z "${DB_USERNAME:-}" ] && export DB_USERNAME="root"
+# local 默认连远程 dev DB 43.139.186.27 (跟 run-web-local.sh 完全一致, 共用同一份 DB)
+export DB_HOST="${DB_HOST:-43.139.186.27}"
+# DB_USERNAME 在 local 强制覆盖为 devuser (跟 test 的 root 隔离)
+export DB_USERNAME="${DB_USERNAME:-devuser}"
 # Polymarket / Binance / RSA 等其他密钥统一从 shared/secrets.env 取, 脚本不再额外注入
 
 # ── 5. 预检 RSA 私钥 ────────────────────────────────────────────────────────
