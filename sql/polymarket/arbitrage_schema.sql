@@ -184,6 +184,8 @@ CREATE TABLE IF NOT EXISTS `smart_wallet_position` (
     `fee_pol_total` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '累计手续费POL',
     `realized_pnl_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '已实现收益',
     `unrealized_pnl_usdc` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '未实现收益',
+    -- NOTE: entity 上还有一个 claimableProceedsUsdc 字段, 但它标了 @TableField(exist=false),
+    --       仅作 view 传递使用, 不落库. 业务实时算, 见 SmartWalletAccountingService.lockedClaimProceedsForPosition().
     `last_mark_price` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '最新估值价格',
     `opened_at` TIMESTAMP NULL COMMENT '首次开仓时间',
     `last_filled_at` TIMESTAMP NULL COMMENT '最近成交时间',
@@ -683,3 +685,172 @@ CREATE TABLE IF NOT EXISTS strategy_health_snapshot (
     INDEX idx_snapshot_strategy_time (strategy_id, snapshot_time),
     INDEX idx_snapshot_time (snapshot_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='策略健康快照表';
+
+CREATE TABLE IF NOT EXISTS `smart_wallet_leader_trade_outcome` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT 'leader 钱包地址',
+    `market_id` VARCHAR(128) NOT NULL COMMENT 'Polymarket conditionId',
+    `market_info_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '关联 smart_wallet_market_info.id',
+    `question` VARCHAR(512) DEFAULT NULL COMMENT '市场问题',
+    `outcome` VARCHAR(128) NOT NULL COMMENT '标准化 outcome',
+    `token_id` VARCHAR(128) DEFAULT NULL COMMENT 'outcome token id',
+    `first_trade_at` TIMESTAMP NULL COMMENT '该 outcome 首笔成交时间',
+    `last_trade_at` TIMESTAMP NULL COMMENT '该 outcome 最近成交时间',
+    `buy_count` INT NOT NULL DEFAULT 0 COMMENT 'BUY 成交数',
+    `sell_count` INT NOT NULL DEFAULT 0 COMMENT 'SELL 成交数',
+    `buy_shares` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '累计买入份额',
+    `sell_shares` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '累计卖出份额',
+    `net_shares` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '剩余净份额',
+    `avg_buy_price` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '买入均价',
+    `buy_cost_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '买入成本',
+    `sell_proceeds_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '卖出回收',
+    `resolved_outcome` VARCHAR(128) DEFAULT NULL COMMENT '市场最终胜出 outcome',
+    `settlement_price` DECIMAL(20,8) DEFAULT NULL COMMENT '结算价格',
+    `estimated_settlement_value_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '估算结算价值',
+    `estimated_realized_pnl_usdc` DECIMAL(28,8) NOT NULL DEFAULT 0 COMMENT '估算总盈亏',
+    `estimated_roi_rate` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '估算 ROI',
+    `is_win` TINYINT(1) DEFAULT NULL COMMENT '闭环后是否盈利',
+    `outcome_status` VARCHAR(32) NOT NULL COMMENT 'CLOSED_WIN/CLOSED_LOSS/CLOSED_BREAKEVEN/OPEN/UNRESOLVED/LOW_CONFIDENCE',
+    `source_confidence` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '数据可信度',
+    `data_source` VARCHAR(64) NOT NULL DEFAULT 'POLYMARKET_USER_TRADES' COMMENT '数据来源',
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_sw_leader_outcome_wallet_market_outcome` (`wallet_address`, `market_id`, `outcome`),
+    KEY `idx_sw_leader_outcome_wallet_status` (`wallet_address`, `outcome_status`, `first_trade_at`),
+    KEY `idx_sw_leader_outcome_market` (`market_id`, `outcome`),
+    KEY `idx_sw_leader_outcome_market_info` (`market_info_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='leader 钱包真实成交闭环 outcome 复盘表';
+
+
+-- 用途：
+-- 1. 显式创建 smart_wallet_behavior_profile 表
+-- 2. 与当前代码中的 SmartWalletBehaviorProfileEntity 保持一致
+
+CREATE TABLE IF NOT EXISTS `smart_wallet_behavior_profile` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '监控钱包地址',
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+    `alias` VARCHAR(255) DEFAULT NULL COMMENT '钱包别名',
+    `archetype` VARCHAR(64) DEFAULT NULL COMMENT '交易风格分型',
+    `follow_lane` VARCHAR(64) DEFAULT NULL COMMENT '建议跟随 lane',
+    `high_frequency_trading_address` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否高频交易地址',
+    `trades_7d` INT NOT NULL DEFAULT 0 COMMENT '近7天交易数',
+    `trades_30d` INT NOT NULL DEFAULT 0 COMMENT '近30天交易数',
+    `median_inter_trade_minutes` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '交易间隔中位数(分钟)',
+    `closed_position_sample_size` INT NOT NULL DEFAULT 0 COMMENT '已关闭仓位样本数',
+    `order_win_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '订单胜率',
+    `average_order_roi_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '平均订单收益率',
+    `median_order_roi_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中位订单收益率',
+    `total_realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '总实现收益USDC',
+    `settlement_completion_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '持有到结算比例',
+    `early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前退出比例',
+    `profit_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '盈利单提前退出比例',
+    `loss_early_exit_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '亏损单提前退出比例',
+    `early_settlement_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '提前结算占比',
+    `win_source_type` VARCHAR(64) DEFAULT NULL COMMENT '胜率来源类型',
+    `latency_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '短周期 alpha 比例',
+    `swing_alpha_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '中周期 alpha 比例',
+    `settlement_win_rate` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '等待结算胜率',
+    `median_hold_minutes` DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持仓时长中位数(分钟)',
+    `stability_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '稳定性分数',
+    `quality_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '地址质量分数',
+    `replicability_score` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '可复制分数',
+    `recommended_exit_lane` VARCHAR(64) DEFAULT NULL COMMENT '推荐退出 lane',
+    `summary` VARCHAR(1024) DEFAULT NULL COMMENT '画像摘要',
+    `computed_at` DATETIME NOT NULL COMMENT '画像计算时间',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_sw_behavior_wallet_source` (`wallet_address`, `source`),
+    KEY `idx_sw_behavior_lane` (`recommended_exit_lane`, `updated_at`),
+    KEY `idx_sw_behavior_quality` (`quality_score`, `replicability_score`, `updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 行为画像快照';
+
+
+-- Phase 4.4: 单地址订单窗口统计快照表
+-- 由 job 端 ProfileOrderStatsSnapshotJob 定期写入；web 端读
+CREATE TABLE IF NOT EXISTS `smart_wallet_order_stats_snapshot` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `wallet_address` VARCHAR(64) NOT NULL,
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET',
+    `window` VARCHAR(16) NOT NULL,
+    `generated_at` DATETIME NULL,
+    `closed_order_count` INT NULL,
+    `win_count` INT NULL,
+    `loss_count` INT NULL,
+    `draw_count` INT NULL,
+    `closed_win_rate` DECIMAL(10, 4) NULL,
+    `closed_realized_pnl_usdc` DECIMAL(20, 4) NULL,
+    `active_unrealized_pnl_usdc` DECIMAL(20, 4) NULL,
+    `net_pnl_usdc` DECIMAL(20, 4) NULL,
+    `average_roi_rate` DECIMAL(10, 4) NULL,
+    `active_position_count` INT NULL,
+    `pending_settlement_count` INT NULL,
+    `early_settlement_rate` DECIMAL(10, 4) NULL,
+    `settlement_win_rate` DECIMAL(10, 4) NULL,
+    `created_at` DATETIME NULL,
+    `updated_at` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_wallet_source_window` (`wallet_address`, `source`, `window`),
+    KEY `idx_generated_at` (`generated_at` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单地址订单窗口统计快照（Phase 4.4）';
+
+-- Phase 4.4: 单地址综合诊断快照表
+-- 由 job 端 ProfileDiagnosisSnapshotJob 定期写入；web 端读
+CREATE TABLE IF NOT EXISTS `smart_wallet_profile_diagnosis_snapshot` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `wallet_address` VARCHAR(64) NOT NULL,
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET',
+    `alias` VARCHAR(128) NULL,
+    `archetype` VARCHAR(64) NULL,
+    `follow_lane` VARCHAR(64) NULL,
+    `archetype_reason` VARCHAR(512) NULL,
+    `archetype_confidence` DECIMAL(10, 4) NULL,
+    `screener_tier` VARCHAR(32) NULL,
+    `high_quality_address` BOOLEAN NULL,
+    `high_frequency_trading_address` BOOLEAN NULL,
+    `win_source_type` VARCHAR(32) NULL,
+    `quality_score` DECIMAL(10, 4) NULL,
+    `replicability_score` DECIMAL(10, 4) NULL,
+    `stability_score` DECIMAL(10, 4) NULL,
+    `settlement_win_rate` DECIMAL(10, 4) NULL,
+    `latency_alpha_rate` DECIMAL(10, 4) NULL,
+    `swing_alpha_rate` DECIMAL(10, 4) NULL,
+    `early_settlement_rate` DECIMAL(10, 4) NULL,
+    `dedup_order_count_7d` INT NULL,
+    `dedup_order_count_30d` INT NULL,
+    `median_hold_minutes` DECIMAL(20, 4) NULL,
+    `data_quality` VARCHAR(32) NULL,
+    `recommended_exit_lane` VARCHAR(64) NULL,
+    `summary` TEXT NULL,
+    `strengths_json` TEXT NULL,
+    `risks_json` TEXT NULL,
+    `generated_at` DATETIME NULL,
+    `created_at` DATETIME NULL,
+    `updated_at` DATETIME NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_wallet_source` (`wallet_address`, `source`),
+    KEY `idx_generated_at` (`generated_at` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='单地址综合诊断快照（Phase 4.4）';
+
+CREATE TABLE IF NOT EXISTS `strategy_runtime_config` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `strategy_code` VARCHAR(64) NOT NULL COMMENT '策略代码，例如 POLYMARKET_COPY',
+  `config_key` VARCHAR(160) NOT NULL COMMENT '配置键，例如 smart-wallet.signal-risk.min-trigger-size-usdc',
+  `config_value` TEXT NOT NULL COMMENT '配置值，按 value_type 解析',
+  `value_type` VARCHAR(32) NOT NULL COMMENT 'BOOLEAN / INTEGER / DECIMAL / STRING / STRING_LIST / JSON',
+  `group_name` VARCHAR(64) NOT NULL COMMENT '页面分组',
+  `editable` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否允许页面编辑',
+  `description` VARCHAR(512) DEFAULT NULL COMMENT '配置说明',
+  `updated_by` VARCHAR(64) DEFAULT NULL COMMENT '最后更新人',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_strategy_runtime_config_key` (`strategy_code`, `config_key`),
+  KEY `idx_strategy_runtime_config_group` (`strategy_code`, `group_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='策略运行时可编辑配置';
+
+
+
+
