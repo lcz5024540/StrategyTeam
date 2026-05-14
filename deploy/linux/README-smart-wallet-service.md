@@ -12,8 +12,8 @@
 
 | 机器 | 部署服务 | DB 主机 (该机视角) | DB 用户 | 端口 |
 |------|----------|---------|---------|------|
-| `43.139.186.27` | web + 前端 + MySQL | `127.0.0.1` | `devuser` | nginx 80（对外）、web 8080（loopback） |
-| `49.51.250.174` | job | `43.139.186.27`（远程） | `devuser` | 8081（**loopback only**） |
+| `43.139.186.27` | web + 前端 | `49.51.250.174`（远程） | `root` | nginx 80（对外）、web 8080（loopback） |
+| `49.51.250.174` | job + MySQL | `127.0.0.1` 或 `49.51.250.174`（本机） | `root` | 8081（**loopback only**）、MySQL 3306 |
 
 外部流量入口：`http://43.139.186.27/` → nginx → `127.0.0.1:8080` (web) → 直查 MySQL。
 
@@ -55,7 +55,9 @@ job 完全不对外，前端永远不会触达 job。
 
 仅 web 机器（43.139.186.27）额外需要：
 - `nginx`
-- `MySQL`（如果 DB 和 web 部署在同一台）
+
+仅 job 机器（49.51.250.174）额外需要：
+- `MySQL`（DB 部署在 job 机器, web 跨机访问）
 
 `Maven` / `Node.js` / `npm` 仅在本地或 CI 构建机需要。
 
@@ -65,8 +67,8 @@ job 完全不对外，前端永远不会触达 job。
 - `application-test.yml`（job + web 各一份）放默认配置
 - env 文件按机器拆分：
   - `deploy/linux/env/shared/secrets.env` — 跨环境共享：RSA 私钥路径、`DB_PASSWORD` 密文、Polymarket 密钥
-  - `deploy/linux/env/test/smart-wallet-web.env` — web 机器专属：`DB_HOST=127.0.0.1`、`DB_USERNAME=devuser`、JVM
-  - `deploy/linux/env/test/smart-wallet-job.env` — job 机器专属：`DB_HOST=43.139.186.27`、`DB_USERNAME=devuser`、JVM
+  - `deploy/linux/env/test/smart-wallet-web.env` — web 机器专属：`DB_HOST=49.51.250.174`、`DB_USERNAME=root`、JVM
+  - `deploy/linux/env/test/smart-wallet-job.env` — job 机器专属：`DB_HOST=49.51.250.174`、`DB_USERNAME=root`、JVM
 - 启动脚本会先 source `shared/secrets.env`，再 source 机器专属 env。
 
 服务器上 **不应改源码里的 `application-test.yml`**，全部通过 env 文件覆盖。
@@ -79,19 +81,19 @@ job 完全不对外，前端永远不会触达 job。
 2. **job 仅监听 `127.0.0.1:8081`** — 任何外部 IP（含 web 机器）都打不到 job
 3. **web 与 job 之间没有 HTTP 调用**（新架构核心变化）
 4. **外网只开放 `43.139.186.27:80`**（nginx）和必要的 SSH
-5. **MySQL `3306` 仅放行**：`127.0.0.1`（web 本机）和 `49.51.250.174`（job 跨机访问）
+5. **MySQL `3306` 仅放行**：`127.0.0.1`（job 本机, DB 跟 job 同机）和 `43.139.186.27`（web 跨机访问）
 6. systemd 服务用 `ubuntu` 用户运行；加固项：`NoNewPrivileges`、`ProtectSystem`、`PrivateTmp`
 
-## 6. MySQL 授权（在 43.139.186.27 上执行）
+## 6. MySQL 授权（在 49.51.250.174 上执行）
 
 ```sql
--- web 本机访问
-CREATE USER IF NOT EXISTS 'devuser'@'127.0.0.1' IDENTIFIED BY '<明文密码>';
-GRANT ALL ON coin_strategy.* TO 'devuser'@'127.0.0.1';
+-- job 本机访问 (DB 跟 job 同机)
+CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '<明文密码>';
+GRANT ALL ON coin_strategy.* TO 'root'@'127.0.0.1';
 
--- job 跨机访问
-CREATE USER IF NOT EXISTS 'devuser'@'49.51.250.174' IDENTIFIED BY '<明文密码>';
-GRANT ALL ON coin_strategy.* TO 'devuser'@'49.51.250.174';
+-- web 跨机访问 (web 在 43.139.186.27)
+CREATE USER IF NOT EXISTS 'root'@'43.139.186.27' IDENTIFIED BY '<明文密码>';
+GRANT ALL ON coin_strategy.* TO 'root'@'43.139.186.27';
 
 FLUSH PRIVILEGES;
 ```
@@ -104,17 +106,17 @@ bind-address = 0.0.0.0
 ## 7. 防火墙
 
 ```bash
-# 43.139.186.27 (web/前端/DB 宿主)
+# 43.139.186.27 (web/前端 宿主)
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
-sudo ufw allow from 49.51.250.174 to any port 3306 proto tcp
-sudo ufw deny 3306/tcp
 sudo ufw deny 8080/tcp
 sudo ufw enable
 
-# 49.51.250.174 (job 宿主)
+# 49.51.250.174 (job + DB 宿主)
 sudo ufw allow 22/tcp
-sudo ufw deny 8081/tcp
+sudo ufw allow from 43.139.186.27 to any port 3306 proto tcp  # web 跨机访问 MySQL
+sudo ufw deny 3306/tcp                                         # 其他来源拒绝
+sudo ufw deny 8081/tcp                                         # job 仅 loopback, 防火墙再加一道
 sudo ufw enable
 ```
 
@@ -172,8 +174,8 @@ curl --max-time 3 http://49.51.250.174:8081/strategy/api/smart-wallet/health
 # 在 job 机器本地访问 job（应通）
 ssh ubuntu@49.51.250.174 'curl http://127.0.0.1:8081/strategy/api/smart-wallet/health'
 
-# 在 job 机器上验证它能连到远程 DB
-ssh ubuntu@49.51.250.174 'mysql -h 43.139.186.27 -u devuser -p coin_strategy -e "SELECT 1"'
+# 在 web 机器上验证它能连到远程 DB
+ssh ubuntu@43.139.186.27 'mysql -h 49.51.250.174 -u root -p coin_strategy -e "SELECT 1"'
 
 # 前端首页
 open http://43.139.186.27/

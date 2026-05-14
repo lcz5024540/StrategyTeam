@@ -7,7 +7,7 @@
 #   DB_PASSWORD=明文 ./scripts/run-job-local.sh           # 临时用明文密码 (覆盖 ENC)
 #   SMART_WALLET_BACKEND_PORT=8181 ./scripts/run-job-local.sh   # 换端口
 #   SKIP_BUILD=1 ./scripts/run-job-local.sh               # 跳过 mvn build, 复用已有 jar
-#   DB_HOST=43.139.186.27 ./scripts/run-job-local.sh      # 换 DB 主机
+#   DB_HOST=127.0.0.1 ./scripts/run-job-local.sh          # 临时换连本机 DB
 #
 # 默认约定 (与 run-web-local.sh 完全平行, 仅端口/模块/日志文件名不同):
 #   profile     = local

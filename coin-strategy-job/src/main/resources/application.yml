@@ -13,6 +13,11 @@ spring:
     # 默认激活 local 环境；部署时通过 --spring.profiles.active=test/prod 覆盖
     active: ${SPRING_PROFILES_ACTIVE:local}
 
+# 强制使用本模块自己的 logback-spring.xml, 防止第三方依赖 jar 里的 logback.xml 抢占
+# (历史上 binance / 某 client 库自带的 logback.xml 会让我们的 FILE appender 完全失效, 表现为"服务正常但没日志")
+logging:
+  config: classpath:logback-spring.xml
+
 springdoc:
   # [FIXED-ONCE] Swagger UI entry path for local API inspection.
   swagger-ui:

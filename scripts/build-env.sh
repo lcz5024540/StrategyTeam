@@ -7,9 +7,9 @@
 #   ./scripts/build-env.sh prod     # 生产环境 (暂未上线)
 #
 # 目标拓扑 (test):
-#   web + 前端 → 43.139.186.27  (本机 DB 127.0.0.1, devuser)
-#   job        → 49.51.250.174  (远程 DB 43.139.186.27, devuser)
-#   web 与 job 互不调用，各自独立连同一个 DB
+#   web + 前端 → 43.139.186.27  (远程连 49.51.250.174 的 MySQL, root)
+#   job + DB   → 49.51.250.174  (job 本机访问 MySQL 127.0.0.1, root)
+#   web 与 job 互不调用，各自独立连同一个 DB (49.51.250.174 上的 MySQL)
 #
 # 产物 (按部署机拆成两个 tar，便于分发到不同服务器):
 #   dist/<ENV>/backend/app.jar             — Job 后端可执行 JAR (策略/任务)
@@ -294,20 +294,20 @@ if [ "$ENV" = "test" ]; then
   echo "  ── web/前端 (43.139.186.27) ──"
   echo "    1. scp smart-wallet-${ENV}-web.tar.gz 到 43.139.186.27"
   echo "    2. 解压到 /opt/coinstrategy/smart-wallet/"
-  echo "    3. bin/start-web-${ENV}.sh        # Web 服务 (8080, 直查本机 DB devuser)"
+  echo "    3. bin/start-web-${ENV}.sh        # Web 服务 (8080, 跨机连 49.51.250.174 的 MySQL as root)"
   echo "    4. cp deploy/linux/nginx/smart-wallet-test.conf 到 /etc/nginx/conf.d/"
   echo "    5. nginx -t && systemctl reload nginx (server_name = 43.139.186.27)"
   echo ""
   echo "  ── job (49.51.250.174) ──"
   echo "    1. scp smart-wallet-${ENV}-job.tar.gz 到 49.51.250.174"
   echo "    2. 解压到 /opt/coinstrategy/smart-wallet/"
-  echo "    3. bin/start-backend-${ENV}.sh    # Job 服务 (8081, loopback only, 远程连 43.139.186.27 DB)"
+  echo "    3. bin/start-backend-${ENV}.sh    # Job 服务 (8081, loopback only, 本机连 MySQL)"
   echo ""
-  echo "  ── DB / 防火墙 (43.139.186.27) ──"
+  echo "  ── DB / 防火墙 (49.51.250.174 — DB 与 job 同机) ──"
   echo "    1. MySQL bind-address = 0.0.0.0 (或显式监听内网网卡)"
-  echo "    2. GRANT ... ON coin_strategy.* TO 'devuser'@'49.51.250.174'  -- job 跨机访问"
-  echo "    3. GRANT ... ON coin_strategy.* TO 'devuser'@'127.0.0.1'      -- web 本机访问"
-  echo "    4. ufw allow from 49.51.250.174 to any port 3306 proto tcp"
+  echo "    2. GRANT ... ON coin_strategy.* TO 'root'@'127.0.0.1'        -- job 本机访问"
+  echo "    3. GRANT ... ON coin_strategy.* TO 'root'@'43.139.186.27'    -- web 跨机访问"
+  echo "    4. ufw allow from 43.139.186.27 to any port 3306 proto tcp"
 elif [ "$ENV" = "prod" ]; then
   echo "  Prod 暂未上线。恢复 prod 时需要先在 deploy/linux/env/prod/ 下补 web/job env 文件，"
   echo "  并确认与 test 之间的端口/机器分配。"

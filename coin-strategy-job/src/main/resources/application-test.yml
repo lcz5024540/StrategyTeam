@@ -1,9 +1,9 @@
 # ============================================================
 # coin-strategy-job — TEST 测试环境
 # 启动方式: --spring.profiles.active=test
-# 部署机:   49.51.250.174 (仅 job，与 web 跨机)
-# DB:       43.139.186.27:3306 (远程), user=devuser
-# 网络:     job 仅监听 127.0.0.1，不对外开放；外部完全不可达
+# 部署机:   49.51.250.174 (仅 job + MySQL)
+# DB:       49.51.250.174:3306 (本机, 跟 web test 统一指向同一个 DB) as root
+# 网络:     job 仅监听 127.0.0.1, 不对外开放; 外部完全不可达
 # ============================================================
 server:
   port: 8081
@@ -11,9 +11,10 @@ server:
 
 spring:
   datasource:
-    # job 部署在 49.51.250.174，DB 在 43.139.186.27，必须走远程
-    url: "jdbc:mysql://${DB_HOST:43.139.186.27}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    username: "${DB_USERNAME:devuser}"
+    # 统一连远程 DB 49.51.250.174 (跟 web test 完全一致)
+    # job 跟 DB 同机, 走 49.51.250.174 / 127.0.0.1 都通; 默认用公网 IP 跟 web 配置保持一致
+    url: "jdbc:mysql://${DB_HOST:49.51.250.174}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "${DB_USERNAME:root}"
     password: "${DB_PASSWORD:}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
 
