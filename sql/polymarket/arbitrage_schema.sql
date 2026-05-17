@@ -852,5 +852,400 @@ CREATE TABLE IF NOT EXISTS `strategy_runtime_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='策略运行时可编辑配置';
 
 
+-- =================================================================
+-- 闭环可观测性 + 风控升级 + W2-T2 灰度自动化 (2026-05-12 起累积合并)
+-- 收口来源:
+--   * polymarket_risk_upgrade_migration.sql              → 4 表
+--   * smart_wallet_signal_shadow_migration.sql           → 1 表
+--   * pm_resolution_audit_migration.sql                  → 1 表
+--   * pm_market_liquidity_percentile_daily_migration.sql → 1 表
+--   * live_replay_diff_history_migration.sql             → 1 表
+--   * smart_wallet_order_analysis_migration.sql          → 1 表 (ALTER 部分入批次 diff)
+--   * leader_rolling_aggregation_daily_migration.sql     → 1 表 (第十八批)
+--   * weather_arbitrage_migration.sql                    → 6 表 (ALTER 部分入批次 diff)
+-- =================================================================
+
+-- W2 风控升级: 市场微观结构快照
+CREATE TABLE IF NOT EXISTS `smart_wallet_market_snapshot` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `market_id` VARCHAR(128) NOT NULL COMMENT '条件市场ID',
+    `outcome` VARCHAR(128) NOT NULL COMMENT 'Outcome 标签',
+    `snapshot_at` TIMESTAMP NOT NULL COMMENT '快照时间',
+    `mid_price` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '中间价',
+    `best_bid` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '最优买价',
+    `best_ask` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '最优卖价',
+    `spread_bps` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '买卖价差(bps)',
+    `bid_depth_1c` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '买一侧1c内深度',
+    `ask_depth_1c` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '卖一侧1c内深度',
+    `bid_depth_3c` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '买一侧3c内深度',
+    `ask_depth_3c` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '卖一侧3c内深度',
+    `bid_depth_5c` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '买一侧5c内深度',
+    `ask_depth_5c` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '卖一侧5c内深度',
+    `order_imbalance` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '盘口不平衡度',
+    `last_trade_price` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '最近成交价',
+    `last_trade_size` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '最近成交额/份额',
+    `trade_count_30s` INT NOT NULL DEFAULT 0 COMMENT '过去30秒成交笔数',
+    `buy_volume_30s` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '过去30秒买成交量',
+    `sell_volume_30s` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '过去30秒卖成交量',
+    `realized_vol_30s` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '过去30秒实现波动率',
+    `time_to_end_seconds` BIGINT DEFAULT NULL COMMENT '距离市场结束剩余秒数',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    UNIQUE KEY `uk_snapshot_market_outcome_time` (`market_id`, `outcome`, `snapshot_at`),
+    INDEX `idx_snapshot_time` (`snapshot_at`),
+    INDEX `idx_snapshot_market_time` (`market_id`, `snapshot_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket市场微观结构快照表';
+
+-- W2 风控升级: leader 交易效果标签
+CREATE TABLE IF NOT EXISTS `smart_wallet_trade_effect_label` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `source_event_id` BIGINT UNSIGNED NOT NULL COMMENT '来源 trade event ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '触发钱包地址',
+    `market_id` VARCHAR(128) NOT NULL COMMENT '条件市场ID',
+    `outcome` VARCHAR(128) NOT NULL COMMENT 'Outcome 标签',
+    `side` VARCHAR(16) NOT NULL COMMENT 'BUY/SELL',
+    `event_at` TIMESTAMP NOT NULL COMMENT '事件时间',
+    `mid_t0` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '事件时点中间价',
+    `mid_t_10s` DECIMAL(20, 8) DEFAULT NULL COMMENT '10秒后中间价',
+    `mid_t_30s` DECIMAL(20, 8) DEFAULT NULL COMMENT '30秒后中间价',
+    `mid_t_60s` DECIMAL(20, 8) DEFAULT NULL COMMENT '60秒后中间价',
+    `mid_t_5m` DECIMAL(20, 8) DEFAULT NULL COMMENT '5分钟后中间价',
+    `mid_t_15m` DECIMAL(20, 8) DEFAULT NULL COMMENT '15分钟后中间价',
+    `last_trade_t_10s` DECIMAL(20, 8) DEFAULT NULL COMMENT '10秒后最近成交价',
+    `last_trade_t_30s` DECIMAL(20, 8) DEFAULT NULL COMMENT '30秒后最近成交价',
+    `last_trade_t_5m` DECIMAL(20, 8) DEFAULT NULL COMMENT '5分钟后最近成交价',
+    `paper_stake_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT '纸面跟单名义本金',
+    `estimated_fee_rate` DECIMAL(10, 8) DEFAULT NULL COMMENT '预估单边手续费率',
+    `estimated_slippage_rate` DECIMAL(10, 8) DEFAULT NULL COMMENT '预估单边滑点率',
+    `estimated_fee_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT '双边预估手续费',
+    `estimated_slippage_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT '双边预估滑点成本',
+    `realized_slippage_bps` DECIMAL(20, 8) DEFAULT NULL COMMENT '事件价相对t0 mid的真实单边滑点(bps)',
+    `realized_slippage_usdc` DECIMAL(20, 8) DEFAULT NULL COMMENT '事件价相对t0 mid的真实单边滑点成本',
+    `paper_entry_price` DECIMAL(20, 8) DEFAULT NULL COMMENT '纸面跟单入场价',
+    `paper_exit_price_30s` DECIMAL(20, 8) DEFAULT NULL COMMENT '30秒退出价',
+    `paper_exit_price_5m` DECIMAL(20, 8) DEFAULT NULL COMMENT '5分钟退出价',
+    `paper_exit_price_rule` DECIMAL(20, 8) DEFAULT NULL COMMENT '按规则退出价',
+    `paper_pnl_30s` DECIMAL(20, 8) DEFAULT NULL COMMENT '30秒毛PnL',
+    `paper_pnl_5m` DECIMAL(20, 8) DEFAULT NULL COMMENT '5分钟毛PnL',
+    `paper_pnl_rule` DECIMAL(20, 8) DEFAULT NULL COMMENT '规则退出毛PnL',
+    `net_pnl_30s` DECIMAL(20, 8) DEFAULT NULL COMMENT '30秒净PnL',
+    `net_pnl_5m` DECIMAL(20, 8) DEFAULT NULL COMMENT '5分钟净PnL',
+    `net_pnl_rule` DECIMAL(20, 8) DEFAULT NULL COMMENT '规则退出净PnL',
+    `is_positive_ev_30s` TINYINT(1) DEFAULT NULL COMMENT '30秒是否正EV',
+    `is_positive_ev_5m` TINYINT(1) DEFAULT NULL COMMENT '5分钟是否正EV',
+    `is_positive_ev_rule` TINYINT(1) DEFAULT NULL COMMENT '规则退出是否正EV',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_effect_source_event` (`source_event_id`),
+    INDEX `idx_effect_market_time` (`market_id`, `event_at`),
+    INDEX `idx_effect_wallet_time` (`wallet_address`, `event_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket leader交易效果标签表';
+
+-- W2 风控升级: 钱包日特征
+CREATE TABLE IF NOT EXISTS `smart_wallet_wallet_feature_daily` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '钱包地址',
+    `feature_date` DATE NOT NULL COMMENT '特征日期',
+    `trades_7d` INT NOT NULL DEFAULT 0 COMMENT '近7日交易数',
+    `trades_30d` INT NOT NULL DEFAULT 0 COMMENT '近30日交易数',
+    `markets_30d` INT NOT NULL DEFAULT 0 COMMENT '近30日参与市场数',
+    `pnl_30d` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '近30日PnL',
+    `win_rate_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日胜率',
+    `avg_size_30d` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '近30日平均交易额',
+    `drawdown_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日最大回撤',
+    `concentration_market_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日市场集中度',
+    `low_liquidity_ratio_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日低流动性市场占比',
+    `late_market_ratio_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日临近结算交易占比',
+    `followable_rate_30d` DECIMAL(10, 4) NOT NULL DEFAULT 0 COMMENT '近30日可跟单信号占比',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_wallet_feature_date` (`wallet_address`, `feature_date`),
+    INDEX `idx_wallet_feature_date` (`feature_date`),
+    INDEX `idx_wallet_feature_wallet` (`wallet_address`, `feature_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket钱包日特征表';
+
+-- W2 风控升级: treatment / control 配对样本
+CREATE TABLE IF NOT EXISTS `smart_wallet_treatment_control_sample` (
+    `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `source_event_id` BIGINT UNSIGNED NOT NULL COMMENT 'treatment来源 trade event ID',
+    `control_market_id` VARCHAR(128) NOT NULL COMMENT '对照市场ID',
+    `control_outcome` VARCHAR(128) DEFAULT NULL COMMENT '对照Outcome',
+    `control_snapshot_at` TIMESTAMP NOT NULL COMMENT '对照快照时间',
+    `match_distance` DECIMAL(20, 8) NOT NULL DEFAULT 0 COMMENT '匹配距离/相似度损失',
+    `covariates_json` JSON DEFAULT NULL COMMENT '匹配时使用的协变量',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    INDEX `idx_tc_source_event` (`source_event_id`),
+    INDEX `idx_tc_control_market_time` (`control_market_id`, `control_snapshot_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Polymarket treatment-control配对样本表';
+
+-- 单笔订单闭环分析 (smart_wallet_order_analysis_migration 内, profile 表的 9 个 ALTER 已入批次 diff)
+CREATE TABLE IF NOT EXISTS `smart_wallet_order_analysis` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `wallet_address` VARCHAR(128) NOT NULL COMMENT '地址',
+    `source` VARCHAR(32) NOT NULL DEFAULT 'POLYMARKET' COMMENT '来源',
+    `market_id` VARCHAR(128) NOT NULL COMMENT '市场ID',
+    `question` VARCHAR(512) DEFAULT NULL COMMENT '问题',
+    `outcome` VARCHAR(128) DEFAULT NULL COMMENT '结果标签',
+    `opened_at` DATETIME DEFAULT NULL COMMENT '建仓时间',
+    `closed_at` DATETIME DEFAULT NULL COMMENT '平仓时间',
+    `market_end_at` BIGINT DEFAULT NULL COMMENT '市场预计结算时间戳(毫秒)',
+    `average_entry_price` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '平均建仓价格',
+    `invested_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '投入本金USDC',
+    `realized_pnl_usdc` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '已实现收益USDC',
+    `roi_rate` DECIMAL(20,8) NOT NULL DEFAULT 0 COMMENT '单笔收益率',
+    `hold_minutes` DECIMAL(12,2) DEFAULT NULL COMMENT '持有时长(分钟)',
+    `exit_style` VARCHAR(64) DEFAULT NULL COMMENT '退出类型',
+    `exit_lead_minutes` DECIMAL(12,2) DEFAULT NULL COMMENT '相对结算提前退出分钟数',
+    `is_win` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否盈利',
+    `source_confidence` DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '分析可信度',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_sw_order_analysis_wallet_market_outcome_closed` (`wallet_address`,`market_id`,`outcome`,`closed_at`),
+    KEY `idx_sw_order_analysis_wallet_closed` (`wallet_address`,`source`,`closed_at`),
+    KEY `idx_sw_order_analysis_exit` (`exit_style`,`closed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='smart wallet 单笔闭环分析';
+
+-- W1-T4 被拒/降级信号影子记账
+CREATE TABLE IF NOT EXISTS `smart_wallet_signal_shadow` (
+    `id`                           BIGINT       NOT NULL AUTO_INCREMENT,
+    `trace_id`                     VARCHAR(32)  DEFAULT NULL COMMENT '跟单链路 trace_id, 关联 trade_event',
+    `follow_task_id`               BIGINT       DEFAULT NULL COMMENT '关联 follow_task; 硬拒绝可能为 NULL',
+    `source_event_id`              BIGINT       NOT NULL     COMMENT '关联 smart_wallet_trade_event.id',
+    `market_info_id`               BIGINT       DEFAULT NULL COMMENT '关联 smart_wallet_market_info.id',
+    `wallet_address`               VARCHAR(64)  DEFAULT NULL,
+    `decision_status`              VARCHAR(32)  NOT NULL     COMMENT 'REJECTED / PAPER_SHADOW / DOWNGRADED',
+    `reject_layer`                 VARCHAR(64)  DEFAULT NULL COMMENT '命中的风控门 (与 firstRejectGate 一致)',
+    `reject_reasons`               TEXT         DEFAULT NULL COMMENT '拒绝原因列表, | 分隔',
+    `signal_score`                 DECIMAL(10,4) DEFAULT NULL,
+    `follow_probability`           DECIMAL(10,4) DEFAULT NULL,
+    `side`                         VARCHAR(8)   DEFAULT NULL COMMENT 'BUY/SELL',
+    `shadow_entry_price`           DECIMAL(18,6) DEFAULT NULL,
+    `shadow_entry_size`            DECIMAL(18,6) DEFAULT NULL,
+    `shadow_entry_cost_usdc`       DECIMAL(18,6) DEFAULT NULL,
+    `shadow_entry_slippage_bps`    INT           DEFAULT NULL,
+    `entry_estimator_source`       VARCHAR(16)  DEFAULT NULL COMMENT '第十四批: VWAP / PROXY',
+    `shadow_exit_price`            DECIMAL(18,6) DEFAULT NULL,
+    `shadow_exit_proceeds_usdc`    DECIMAL(18,6) DEFAULT NULL,
+    `shadow_pnl_usdc`              DECIMAL(18,6) DEFAULT NULL,
+    `shadow_settled_at`            DATETIME     DEFAULT NULL,
+    `status`                       VARCHAR(32)  NOT NULL DEFAULT 'PENDING_SETTLEMENT'
+                                                          COMMENT 'PENDING_SETTLEMENT / SETTLED / EXPIRED / NO_DEPTH / DRY_FALLBACK',
+    `created_at`                   DATETIME     DEFAULT NULL,
+    `updated_at`                   DATETIME     DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_trace_id` (`trace_id`),
+    KEY `idx_source_event` (`source_event_id`),
+    KEY `idx_follow_task` (`follow_task_id`),
+    KEY `idx_status_settled` (`status`, `shadow_settled_at`),
+    KEY `idx_market_info` (`market_info_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='W1-T4 被拒/降级信号的影子记账与回填';
+
+-- W1-T2.2 每次结算解析的审计快照
+CREATE TABLE IF NOT EXISTS `pm_resolution_audit` (
+    `id`                          BIGINT       NOT NULL AUTO_INCREMENT,
+    `market_id`                   VARCHAR(128) NOT NULL COMMENT 'Polymarket conditionId / marketId',
+    `observed_at`                 DATETIME     NOT NULL COMMENT '解析时刻 (服务器本地)',
+    `resolution_status`           VARCHAR(32)  NOT NULL COMMENT 'RESOLVED / WAIT_FINAL_PRICE / NEED_MANUAL_CHECK / UNRESOLVED',
+    `resolution_source`           VARCHAR(64)  DEFAULT NULL COMMENT 'TOKEN_WINNER / WINNING_TOKEN_ID / EXPLICIT_WINNER / FINAL_PRICE_INFERENCE',
+    `winning_outcome`             VARCHAR(128) DEFAULT NULL,
+    `winning_token_id`            VARCHAR(128) DEFAULT NULL,
+    `manual_check_reason`         VARCHAR(255) DEFAULT NULL,
+    `closed`                      TINYINT(1)   NOT NULL DEFAULT 0,
+    `accepting_orders_present`    TINYINT(1)   NOT NULL DEFAULT 0,
+    `accepting_orders`            TINYINT(1)   NOT NULL DEFAULT 0,
+    `uma_resolution_status`       VARCHAR(64)  DEFAULT NULL,
+    `uma_resolved`                TINYINT(1)   NOT NULL DEFAULT 0,
+    `outcomes_json`               TEXT         DEFAULT NULL,
+    `outcome_prices_json`         TEXT         DEFAULT NULL,
+    `outcome_token_ids_json`      TEXT         DEFAULT NULL,
+    `created_at`                  DATETIME     NOT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_market_observed` (`market_id`, `observed_at`),
+    KEY `idx_observed_at` (`observed_at`),
+    KEY `idx_resolution_status` (`resolution_status`, `observed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='W1-T2.2 每次结算解析的审计快照';
+
+-- W2-T1.2 市场流动性 + 价差分位 日级快照
+CREATE TABLE IF NOT EXISTS `pm_market_liquidity_percentile_daily` (
+    `id`                  BIGINT       NOT NULL AUTO_INCREMENT,
+    `category`            VARCHAR(64)  NOT NULL  COMMENT 'market normalizedCategory (POLITICS / CRYPTO / SPORTS / WEATHER / OTHER ...)',
+    `as_of_date`          DATE         NOT NULL  COMMENT '快照日期 (Asia/Shanghai)',
+    `sample_count`        INT          NOT NULL  COMMENT '该品类当日纳入聚合的市场数',
+    `liquidity_p10`       DECIMAL(20,2) DEFAULT NULL  COMMENT 'P10 流动性 USDC',
+    `liquidity_p30`       DECIMAL(20,2) DEFAULT NULL  COMMENT 'P30 流动性 USDC (W2-T1 门控阈值)',
+    `liquidity_p50`       DECIMAL(20,2) DEFAULT NULL,
+    `liquidity_p70`       DECIMAL(20,2) DEFAULT NULL  COMMENT 'W2-T1.4 价差门预留: 流动性 P70',
+    `liquidity_mean`      DECIMAL(20,2) DEFAULT NULL,
+    `liquidity_max`       DECIMAL(20,2) DEFAULT NULL,
+    `spread_bps_p70`      DECIMAL(10,2) DEFAULT NULL  COMMENT 'W2-T1.4: 该品类价差 P70 bps (后续 sprint 写入)',
+    `computed_at`         DATETIME     NOT NULL,
+    `created_at`          DATETIME     NOT NULL,
+    `updated_at`          DATETIME     NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_category_date` (`category`, `as_of_date`),
+    KEY `idx_as_of_date` (`as_of_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='W2-T1.2 市场流动性 + 价差分位 日级快照';
+
+-- W1-T1 + 下一轮#7 Live↔Replay diff 日级历史
+CREATE TABLE IF NOT EXISTS `live_replay_diff_history` (
+    `id`                          BIGINT       NOT NULL AUTO_INCREMENT,
+    `as_of_date`                  DATE         NOT NULL,
+    `window_start`                DATETIME     DEFAULT NULL,
+    `window_end`                  DATETIME     DEFAULT NULL,
+    `replay_scanned_events`       INT          NOT NULL DEFAULT 0,
+    `replay_accepted_events`      INT          NOT NULL DEFAULT 0,
+    `replay_realized_pnl_usdc`    DECIMAL(20,4) DEFAULT NULL,
+    `replay_policy_tag`           VARCHAR(64)  DEFAULT NULL,
+    `live_task_total`             INT          NOT NULL DEFAULT 0,
+    `live_task_non_skipped`       INT          NOT NULL DEFAULT 0,
+    `live_task_skipped`           INT          NOT NULL DEFAULT 0,
+    `live_realized_pnl_usdc`      DECIMAL(20,4) DEFAULT NULL,
+    `signal_accepted_diff`        INT          NOT NULL DEFAULT 0,
+    `signal_miss_pct`             DECIMAL(10,4) DEFAULT NULL,
+    `pnl_diff_usdc`               DECIMAL(20,4) DEFAULT NULL,
+    `pnl_diff_bps`                DECIMAL(20,4) DEFAULT NULL,
+    `pnl_diff_threshold_bps`      INT          DEFAULT NULL,
+    `signal_miss_threshold_pct`   DECIMAL(10,4) DEFAULT NULL,
+    `pnl_diff_exceeded`           TINYINT(1)   NOT NULL DEFAULT 0,
+    `signal_miss_exceeded`        TINYINT(1)   NOT NULL DEFAULT 0,
+    `created_at`                  DATETIME     NOT NULL,
+    `updated_at`                  DATETIME     NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_as_of_date` (`as_of_date`),
+    KEY `idx_exceeded` (`pnl_diff_exceeded`, `signal_miss_exceeded`, `as_of_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='W1-T1 + 下一轮#7 Live↔Replay diff 日级历史';
+
+-- 第十八批 W2-T2 灰度自动化: leader 滑动窗口胜率日级聚合
+CREATE TABLE IF NOT EXISTS `leader_rolling_aggregation_daily` (
+    `id`                       BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `as_of_date`               DATE         NOT NULL COMMENT '快照日期 (Asia/Shanghai)',
+    `lookback_days`            INT          NOT NULL COMMENT '聚合 lookback 窗口天数',
+    `window_size`              INT          NOT NULL COMMENT 'leader rolling 窗口大小 (笔)',
+    `min_samples`              INT          NOT NULL COMMENT '触发 ACTIVE / COOLING 判定的最小样本数',
+    `min_win_rate`             DECIMAL(10, 4) NOT NULL COMMENT 'COOLING 阈值 (winRate < this → COOLING)',
+    `active_leaders`           INT          NOT NULL COMMENT '窗口内有 ENTRY 订单的 leader 数 (含 cold)',
+    `evaluated_count`          INT          NOT NULL COMMENT '真正参与 ACTIVE/COOLING 判定的 leader 数',
+    `active_count`             INT          NOT NULL COMMENT 'ACTIVE 状态 leader 数',
+    `cooling_count`            INT          NOT NULL COMMENT 'COOLING 状态 leader 数',
+    `cold_count`               INT          NOT NULL COMMENT 'COLD (样本不足) leader 数',
+    `cooling_ratio`            DECIMAL(10, 4) DEFAULT NULL COMMENT 'coolingCount / evaluatedCount, 关键灰度指标',
+    `overall_win_rate`         DECIMAL(10, 4) DEFAULT NULL COMMENT '所有评估 leader 的全局加权 win rate',
+    `health_status`            VARCHAR(32)  NOT NULL DEFAULT 'OK' COMMENT 'OK / WARN_HIGH_COOLING / WARN_LOW_WIN_RATE / WARN_BOTH',
+    `top_cooling_leaders_json` TEXT         DEFAULT NULL COMMENT 'top-N 低胜率 leader 简短 JSON (供运维快速 review)',
+    `computed_at`              DATETIME     NOT NULL COMMENT '快照计算时间',
+    `created_at`               DATETIME     NOT NULL COMMENT '行创建时间',
+    `updated_at`               DATETIME     NOT NULL COMMENT '行最后更新时间',
+    UNIQUE KEY `uk_as_of_date_lookback` (`as_of_date`, `lookback_days`),
+    KEY `idx_as_of_date` (`as_of_date`),
+    KEY `idx_health_status` (`health_status`, `as_of_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='W2-T2 leader 滑动窗口胜率灰度日级历史 (LeaderRollingMonitorJob 写入)';
+
+
+-- =================================================================
+-- 天气套利策略 6 表 (weather_arbitrage_migration 收口, smart_wallet_position
+-- 的 source 列 ALTER 已合入批次 diff 文件)
+-- =================================================================
+
+CREATE TABLE IF NOT EXISTS `weather_arbitrage_signal_log` (
+    `id`           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `market_id`    VARCHAR(128) NOT NULL COMMENT 'Polymarket conditionId',
+    `city`         VARCHAR(64)  NOT NULL,
+    `market_price` DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `fair_value`   DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `edge`         DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `confidence`   DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `forecast_age_minutes` INT NOT NULL DEFAULT 0,
+    `lead_hours`   INT NOT NULL DEFAULT 0,
+    `calibration_version` VARCHAR(64) NOT NULL DEFAULT '',
+    `mode`         VARCHAR(16) NOT NULL DEFAULT 'OFF' COMMENT 'OFF / SHADOW / PAPER / LIVE',
+    `result_label` VARCHAR(16) NOT NULL DEFAULT '' COMMENT 'YES / NO / UNKNOWN',
+    `action`       VARCHAR(16)  NOT NULL COMMENT 'PASS / BUY_YES / BUY_NO',
+    `reason`       VARCHAR(512) NOT NULL DEFAULT '',
+    `scanned_at`   DATETIME     NOT NULL,
+    `created_at`   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_signal_log_city_scanned` (`city`, `scanned_at`),
+    INDEX `idx_signal_log_market`       (`market_id`, `scanned_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='天气套利信号扫描日志';
+
+CREATE TABLE IF NOT EXISTS `weather_forecast_snapshot` (
+    `id`              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `city`            VARCHAR(64) NOT NULL,
+    `forecast_date`   DATE NOT NULL COMMENT '预报发布日期',
+    `target_date`     DATE NOT NULL COMMENT '目标结算日期',
+    `temp_max_f`      DECIMAL(10, 4) NOT NULL DEFAULT 0,
+    `temp_min_f`      DECIMAL(10, 4) NOT NULL DEFAULT 0,
+    `temp_avg_f`      DECIMAL(10, 4) NOT NULL DEFAULT 0,
+    `provider`        VARCHAR(64) NOT NULL DEFAULT '',
+    `lead_hours`      INT NOT NULL DEFAULT 0,
+    `data_source_count` INT NOT NULL DEFAULT 1,
+    `fetched_at`      DATETIME NOT NULL,
+    `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_weather_forecast_city_target` (`city`, `target_date`, `fetched_at`),
+    INDEX `idx_weather_forecast_provider` (`provider`, `target_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='天气预报快照';
+
+CREATE TABLE IF NOT EXISTS `weather_observation` (
+    `id`              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `city`            VARCHAR(64) NOT NULL,
+    `target_date`     DATE NOT NULL COMMENT '实际观测日期',
+    `actual_max_f`    DECIMAL(10, 4) NOT NULL DEFAULT 0,
+    `actual_min_f`    DECIMAL(10, 4) NOT NULL DEFAULT 0,
+    `source`          VARCHAR(64) NOT NULL DEFAULT '',
+    `resolved_at`     DATETIME NOT NULL,
+    `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_weather_observation_city_date` (`city`, `target_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='天气实际观测结果';
+
+CREATE TABLE IF NOT EXISTS `weather_calibration_profile` (
+    `id`              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `city`            VARCHAR(64) NOT NULL,
+    `month`           INT NOT NULL,
+    `lead_hour_bucket` INT NOT NULL,
+    `sigma_max_f`     DECIMAL(10, 4) NOT NULL DEFAULT 0,
+    `sigma_min_f`     DECIMAL(10, 4) NOT NULL DEFAULT 0,
+    `sample_size`     INT NOT NULL DEFAULT 0,
+    `version`         VARCHAR(64) NOT NULL DEFAULT '',
+    `updated_at`      DATETIME NOT NULL,
+    `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_weather_calibration_profile` (`city`, `month`, `lead_hour_bucket`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='天气模型校准画像';
+
+CREATE TABLE IF NOT EXISTS `weather_market_parse_log` (
+    `id`              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `market_id`       VARCHAR(128) NOT NULL,
+    `question`        VARCHAR(512) NOT NULL DEFAULT '',
+    `parse_status`    VARCHAR(32) NOT NULL DEFAULT 'PASS' COMMENT 'PARSED / REJECTED / LOW_CONFIDENCE',
+    `reason`          VARCHAR(512) NOT NULL DEFAULT '',
+    `confidence`      DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_weather_parse_market` (`market_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='天气市场解析日志';
+
+CREATE TABLE IF NOT EXISTS `weather_paper_position` (
+    `id`              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `market_id`       VARCHAR(128) NOT NULL,
+    `token_id`        VARCHAR(128) NOT NULL DEFAULT '',
+    `city`            VARCHAR(64) NOT NULL,
+    `question`        VARCHAR(512) NOT NULL DEFAULT '',
+    `side`            VARCHAR(16) NOT NULL DEFAULT '',
+    `entry_price`     DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `quantity`        DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `stake_usdc`      DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `fair_value`      DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `confidence`      DECIMAL(20, 8) NOT NULL DEFAULT 0,
+    `market_end_at`   DATETIME NOT NULL,
+    `status`          VARCHAR(32) NOT NULL DEFAULT 'OPEN',
+    `opened_at`       DATETIME NOT NULL,
+    `closed_at`       DATETIME NULL,
+    `exit_reason`     VARCHAR(128) NOT NULL DEFAULT '',
+    `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_weather_paper_status` (`status`, `opened_at`),
+    INDEX `idx_weather_paper_market` (`market_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='天气策略纸面持仓';
+
+
 
 

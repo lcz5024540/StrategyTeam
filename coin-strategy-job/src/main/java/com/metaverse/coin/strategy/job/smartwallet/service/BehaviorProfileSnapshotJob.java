@@ -37,6 +37,8 @@ public class BehaviorProfileSnapshotJob {
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final SmartWalletProfileStoreReadService profileStoreReadService;
     private final SmartWalletBehaviorProfileMapper behaviorProfileMapper;
+    /** 方案 B (W2-T6 优化): snapshot 时一并计算 Drift centroid 并写入 entity.behavior_vector_json. */
+    private final LeaderBehaviorDriftService leaderBehaviorDriftService;
 
     /**
      * 默认 10 分钟一次，可通过 {@code smart-wallet.behavior-profile-snapshot-delay-ms} 覆盖。
@@ -133,6 +135,17 @@ public class BehaviorProfileSnapshotJob {
                 .setSummary(view.summary())
                 .setComputedAt(view.computedAt() == null ? now : view.computedAt())
                 .setUpdatedAt(now);
+        // 方案 B (W2-T6 优化): 一并计算并写入 Drift centroid; 失败保留旧值, 不阻塞 profile 写表.
+        try {
+            String centroidJson = leaderBehaviorDriftService.computeProfileVectorJson(walletAddress, null);
+            if (centroidJson != null) {
+                entity.setBehaviorVectorJson(centroidJson);
+                entity.setBehaviorVectorComputedAt(now);
+            }
+        } catch (Exception ex) {
+            log.debug("[BehaviorProfileSnapshotJob] centroid compute failed wallet={} reason={}",
+                    walletAddress, ex.getMessage());
+        }
         if (existing == null) {
             behaviorProfileMapper.insert(entity);
         } else {

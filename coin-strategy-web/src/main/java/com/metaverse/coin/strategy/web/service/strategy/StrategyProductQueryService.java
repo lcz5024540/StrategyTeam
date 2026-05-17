@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.StrategyRuntimeConfigMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageFundingSettlement;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.StrategyRuntimeConfigEntity;
 import com.metaverse.coin.strategy.common.service.smartwallet.report.SmartWalletReportDtos.ConflictMarketRow;
 import com.metaverse.coin.strategy.common.service.smartwallet.report.SmartWalletReportDtos.TimelinePoint;
 import com.metaverse.coin.strategy.web.config.SingleExchangeSpotFuturesProperties;
@@ -75,19 +77,22 @@ public class StrategyProductQueryService {
     private final SingleExchangeArbitrageOrderMapper singleExchangeArbitrageOrderMapper;
     private final SingleExchangeArbitrageFundingSettlementMapper singleExchangeArbitrageFundingSettlementMapper;
     private final SingleExchangeSpotFuturesProperties singleExchangeSpotFuturesProperties;
+    private final StrategyRuntimeConfigMapper strategyRuntimeConfigMapper;
 
     public StrategyProductQueryService(SmartWalletReadService smartWalletReadService,
                                        SmartWalletReportReadService smartWalletReportReadService,
                                        SingleExchangeArbitragePositionMapper singleExchangeArbitragePositionMapper,
                                        SingleExchangeArbitrageOrderMapper singleExchangeArbitrageOrderMapper,
                                        SingleExchangeArbitrageFundingSettlementMapper singleExchangeArbitrageFundingSettlementMapper,
-                                       SingleExchangeSpotFuturesProperties singleExchangeSpotFuturesProperties) {
+                                       SingleExchangeSpotFuturesProperties singleExchangeSpotFuturesProperties,
+                                       StrategyRuntimeConfigMapper strategyRuntimeConfigMapper) {
         this.smartWalletReadService = smartWalletReadService;
         this.smartWalletReportReadService = smartWalletReportReadService;
         this.singleExchangeArbitragePositionMapper = singleExchangeArbitragePositionMapper;
         this.singleExchangeArbitrageOrderMapper = singleExchangeArbitrageOrderMapper;
         this.singleExchangeArbitrageFundingSettlementMapper = singleExchangeArbitrageFundingSettlementMapper;
         this.singleExchangeSpotFuturesProperties = singleExchangeSpotFuturesProperties;
+        this.strategyRuntimeConfigMapper = strategyRuntimeConfigMapper;
     }
 
     public StrategyDashboardOverviewView overview() {
@@ -481,7 +486,14 @@ public class StrategyProductQueryService {
     private StrategyMetricsView buildPolymarketMetrics(SmartWalletPerformanceView performance,
                                                        SmartWalletPnlSummaryView pnlSummary,
                                                        SmartWalletCapacitySummaryView capacity) {
-        BigDecimal tvlUsdc = safe(capacity.getAvailableCapitalUsdc()).add(safe(capacity.getLockedClaimProceedsUsdc()));
+        // 初始资金（TVL baseline）：从 strategy_runtime_config 读取
+        // smart-wallet.signal-risk.max-total-open-cost-usdc（线上 POLYMARKET_COPY = 500）。
+        // 资金（capitalUsdc 副标签）= 初始资金 + 累计盈亏（含已实现/浮动/待结算），随盈亏漂动。
+        // 不再依赖 capacitySummary.availableCapitalUsdc——后者用 @Value 默认值 5000 算的，
+        // 与线上实际预算 500 不一致，会算出 ~4.7K 的错误"资金"。
+        BigDecimal initialCapital = loadInitialCapitalUsdc(POLYMARKET_CODE, capacity.openCostLimitUsdc());
+        BigDecimal netPnl = safe(performance.getNetPnlUsdc());
+        BigDecimal currentCapital = initialCapital.add(netPnl);
         return new StrategyMetricsView(
                 performance.getTotalOrders(), performance.getFilledOrders(), performance.getOpenPositions(),
                 performance.getPendingPositions(),
@@ -493,13 +505,13 @@ public class StrategyProductQueryService {
                 safe(performance.getProfitFactor()), safe(performance.getMaxDrawdownUsdc()), performance.getConflictingMarkets(),
                 performance.getOpenConflictingMarkets(), safe(performance.getConflictNetPnlUsdc()),
                 capacity.getRemainingPositionSlots(), safe(capacity.getRemainingCapitalBudgetUsdc()),
-                safe(capacity.getAvailableCapitalUsdc()), safe(capacity.getLockedClaimProceedsUsdc()),
+                currentCapital, safe(capacity.getLockedClaimProceedsUsdc()),
                 performance.getEarlyExitOrderCount(), safe(performance.getEarlyExitRealizedPnlUsdc()),
                 performance.getTakeProfitOrderCount(), safe(performance.getTakeProfitRealizedPnlUsdc()),
                 performance.getStopLossOrderCount(), safe(performance.getStopLossRealizedPnlUsdc()),
-                tvlUsdc,
+                initialCapital,     // tvlUsdc：固定 baseline = 500
                 null,
-                tvlUsdc,
+                currentCapital,     // capitalUsdc（副标签 资金）= 初始资金 + 累计盈亏
                 null,
                 null
         );
@@ -1254,6 +1266,28 @@ public class StrategyProductQueryService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * 读取策略的初始资金（max-total-open-cost-usdc）。
+     * 数据源优先级：strategy_runtime_config 表（线上 POLYMARKET_COPY = 500） → @Value 默认。
+     */
+    private BigDecimal loadInitialCapitalUsdc(String strategyCode, BigDecimal fallback) {
+        try {
+            StrategyRuntimeConfigEntity row = strategyRuntimeConfigMapper.selectOne(
+                    new LambdaQueryWrapper<StrategyRuntimeConfigEntity>()
+                            .eq(StrategyRuntimeConfigEntity::getStrategyCode, strategyCode)
+                            .eq(StrategyRuntimeConfigEntity::getConfigKey,
+                                    "smart-wallet.signal-risk.max-total-open-cost-usdc")
+                            .last("limit 1"));
+            if (row != null && row.getConfigValue() != null && !row.getConfigValue().isBlank()) {
+                return new BigDecimal(row.getConfigValue().trim());
+            }
+        } catch (RuntimeException ex) {
+            log.warn("Failed to read strategy_runtime_config max-total-open-cost-usdc for {}, fallback={}",
+                    strategyCode, fallback, ex);
+        }
+        return safe(fallback);
     }
 
     private boolean isFundingArbOpenPosition(SingleExchangeArbitragePosition position) {

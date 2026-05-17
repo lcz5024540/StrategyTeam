@@ -37,7 +37,9 @@ import java.util.stream.Collectors;
 @Service
 public class SmartWalletProfileReadService {
 
-    private static final String SOURCE = "POLYMARKET_COPY";
+    // 注意：数据库 source 字段值为 "POLYMARKET"。历史代码错写为 "POLYMARKET_COPY" 导致
+    // /allowlist、/blocklist、/profiles、/profiles/screener 等接口全部返回空（白名单地址监控页面为空）。
+    private static final String SOURCE = "POLYMARKET";
     private static final String STATUS_ACTIVE = "ACTIVE";
     private static final String STATUS_DISABLED = "DISABLED";
     private static final long BEHAVIOR_PROFILE_STALE_MS = 24L * 3600_000L;

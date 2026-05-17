@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
@@ -29,6 +30,7 @@ public class PolymarketOrderRequestFactory {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletMarketInfoService marketInfoService;
     private final MarketSnapshotCollectorService marketSnapshotCollectorService;
+    private final SmartWalletProperties smartWalletProperties;
 
     public PreparedPolymarketOrder prepare(SmartWalletSignal signal,
                                            ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
@@ -59,7 +61,8 @@ public class PolymarketOrderRequestFactory {
                 tokenId,
                 minimumTickSize,
                 metadata.isNegRisk(),
-                wallet
+                wallet,
+                signal.getPriceImpactExecutionMode() // W2-T4.3: 价格冲击门导出的下游路由提示
         );
         log.info("{} action=准备Polymarket跟单买入订单 result=完成 signalId={} marketId={} outcome={} tokenId={} limitPrice={} size={} stakeUsdc={} tickSize={} negRisk={}",
                 LOG_PREFIX, signal.getSignalId(), prepared.getMarketId(), prepared.getOutcome(), prepared.getTokenId(),
@@ -71,11 +74,24 @@ public class PolymarketOrderRequestFactory {
     public PreparedPolymarketOrder prepareExit(SmartWalletPositionEntity position,
                                                BigDecimal requestedPrice,
                                                ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
+        return prepareExit(position, requestedPrice, wallet, null);
+    }
+
+    /**
+     * F-P0-1: 部分退出 overload —— 允许调用方按 ratio 指定退出数量。
+     *
+     * @param overrideQuantity 若非空且 > 0，使用该数量替代 position.getQuantity()；
+     *                         否则按全仓退出（兼容旧行为）。
+     */
+    public PreparedPolymarketOrder prepareExit(SmartWalletPositionEntity position,
+                                               BigDecimal requestedPrice,
+                                               ExecutionWalletContextLoader.ExecutionWalletContext wallet,
+                                               BigDecimal overrideQuantity) {
         if (position == null) {
             throw new IllegalArgumentException("position must be provided for exit order preparation.");
         }
-        log.info("{} action=准备Polymarket退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={}",
-                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice);
+        log.info("{} action=准备Polymarket退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={} overrideQuantity={}",
+                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice, overrideQuantity);
         // Populate position with market info to enable delegate getters
         marketInfoService.populate(position);
         if (!StringUtils.hasText(position.getMarketId())) {
@@ -84,9 +100,16 @@ public class PolymarketOrderRequestFactory {
         if (!StringUtils.hasText(position.getOutcome())) {
             throw new IllegalStateException("Position is missing outcome.");
         }
-        BigDecimal quantity = position.getQuantity();
-        if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal totalQuantity = position.getQuantity();
+        if (totalQuantity == null || totalQuantity.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalStateException("Position has no remaining quantity to exit.");
+        }
+        BigDecimal quantity;
+        if (overrideQuantity != null && overrideQuantity.compareTo(BigDecimal.ZERO) > 0) {
+            // 不允许超过仓位剩余量
+            quantity = overrideQuantity.min(totalQuantity);
+        } else {
+            quantity = totalQuantity;
         }
 
         String outcome = position.getOutcome().trim().toUpperCase(Locale.ROOT);
@@ -112,8 +135,12 @@ public class PolymarketOrderRequestFactory {
         BigDecimal normalizedSize = quantity.setScale(6, RoundingMode.DOWN);
         BigDecimal exitNotional = normalizedSize.multiply(normalizedLimitPrice).setScale(8, RoundingMode.HALF_UP);
 
+        boolean partial = quantity.compareTo(totalQuantity) < 0;
+        String signalId = partial
+                ? "position-exit-partial-" + position.getId()
+                : "position-exit-" + position.getId();
         PreparedPolymarketOrder prepared = PreparedPolymarketOrder.builder()
-                .signalId("position-exit-" + position.getId())
+                .signalId(signalId)
                 .marketId(position.getMarketId())
                 .question(position.getQuestion())
                 .outcome(outcome)
@@ -127,10 +154,10 @@ public class PolymarketOrderRequestFactory {
                 .executionAddress(wallet.getAddress())
                 .funderAddress(wallet.getFunderAddress())
                 .build();
-        log.info("{} action=准备Polymarket退出订单 result=完成 positionId={} marketId={} outcome={} tokenId={} limitPrice={} size={} notionalUsdc={} tickSize={} negRisk={}",
+        log.info("{} action=准备Polymarket退出订单 result=完成 positionId={} marketId={} outcome={} tokenId={} limitPrice={} size={} notionalUsdc={} tickSize={} negRisk={} partial={} totalQuantity={}",
                 LOG_PREFIX, position.getId(), prepared.getMarketId(), prepared.getOutcome(), prepared.getTokenId(),
                 prepared.getLimitPrice(), prepared.getSize(), prepared.getStakeUsdc(), prepared.getTickSize(),
-                prepared.isNegRisk());
+                prepared.isNegRisk(), partial, totalQuantity);
         return prepared;
     }
 
@@ -144,8 +171,31 @@ public class PolymarketOrderRequestFactory {
                                                      BigDecimal tickSize,
                                                     boolean negRisk,
                                                     ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
-        log.info("{} action=构造Polymarket本地下单草稿 result=开始 signalId={} marketId={} outcome={} requestedStakeUsdc={} requestedPrice={} tokenId={} tickSize={}",
-                LOG_PREFIX, signalId, conditionId, outcome, requestedStakeUsdc, requestedPrice, tokenId, tickSize);
+        // 兼容 overload: 历史调用方（BtcMinuteStrategyJob、PolymarketClobExecutionService.prepareExit 等）
+        // 不知晓价格冲击门，所以走 null 路径（沿用钱包默认 orderStrategy）。
+        return prepareLocalDraft(signalId, conditionId, question, outcome, requestedStakeUsdc, requestedPrice,
+                tokenId, tickSize, negRisk, wallet, null);
+    }
+
+    /**
+     * W2-T4.3 扩展 overload：接受价格冲击门导出的 {@code priceImpactExecutionMode} 提示
+     * （{@code MAKER_FIRST} / {@code MAKER_ONLY} / {@code NORMAL} / {@code null}），
+     * 强制将下单 strategy 切到 MAKER 路径，并在订单上打 reasonTag 供下游订单工厂消费。
+     */
+    public PreparedPolymarketOrder prepareLocalDraft(String signalId,
+                                                     String conditionId,
+                                                     String question,
+                                                     String outcome,
+                                                     BigDecimal requestedStakeUsdc,
+                                                     BigDecimal requestedPrice,
+                                                     String tokenId,
+                                                     BigDecimal tickSize,
+                                                     boolean negRisk,
+                                                     ExecutionWalletContextLoader.ExecutionWalletContext wallet,
+                                                     String priceImpactExecutionMode) {
+        log.info("{} action=构造Polymarket本地下单草稿 result=开始 signalId={} marketId={} outcome={} requestedStakeUsdc={} requestedPrice={} tokenId={} tickSize={} priceImpactMode={}",
+                LOG_PREFIX, signalId, conditionId, outcome, requestedStakeUsdc, requestedPrice, tokenId, tickSize,
+                priceImpactExecutionMode);
         if ("YES".equalsIgnoreCase(outcome) && !wallet.isAllowYes()) {
             throw new IllegalStateException("Execution wallet is configured to block YES orders.");
         }
@@ -163,18 +213,28 @@ public class PolymarketOrderRequestFactory {
                 ? new BigDecimal("0.01")
                 : tickSize;
 
-        // ── Fix-B3: 决定订单策略（TAKER / MAKER / ADAPTIVE） ──────────
-        String effectiveStrategy = resolveOrderStrategy(wallet, conditionId, outcome);
+        // ── W2-T4.3 路由覆写：价格冲击门为 MAKER_FIRST / MAKER_ONLY 时强制使用 MAKER ──
+        // 否则回到 wallet.orderStrategy 配置 (TAKER / MAKER / ADAPTIVE)
+        String effectiveStrategy;
+        boolean priceImpactOverride = false;
+        if ("MAKER_FIRST".equalsIgnoreCase(priceImpactExecutionMode)
+                || "MAKER_ONLY".equalsIgnoreCase(priceImpactExecutionMode)) {
+            effectiveStrategy = "MAKER";
+            priceImpactOverride = true;
+            log.info("{} action=OrderStrategy signalId={} strategy=MAKER overrideReason=PRICE_IMPACT_{} (wallet.orderStrategy={} 被忽略)",
+                    LOG_PREFIX, signalId, priceImpactExecutionMode.toUpperCase(Locale.ROOT), wallet.getOrderStrategy());
+        } else {
+            // Fix-B3: 决定订单策略（TAKER / MAKER / ADAPTIVE）
+            effectiveStrategy = resolveOrderStrategy(wallet, conditionId, outcome);
+        }
 
         BigDecimal limitPrice;
         if ("MAKER".equals(effectiveStrategy)) {
-            // Maker 模式：limitPrice = rawPrice + 1 tick（稍高于当前 bestBid / 信号价）
-            // 不加 slippage，挂单在 best bid 附近等撮合，fee = 0
-            limitPrice = rawPrice.add(minimumTickSize)
-                    .min(BigDecimal.ONE)
-                    .setScale(4, RoundingMode.HALF_UP);
-            log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} (rawPrice + 1tick)",
-                    LOG_PREFIX, signalId, limitPrice);
+            // F-P1-15: MAKER 模式取 min(rawPrice + tickBuffer × tick, bestBid + offset × tick)
+            //   - tickBuffer 防止 rawPrice 严重滞后于盘口时挂单成 stale；
+            //   - bestBid + offset 避免追高把单子推进 taker 区（仍是 maker，不付 taker fee）。
+            // 当 bestBid 不可用 / snapshot stale 时退回旧逻辑 rawPrice + 1 tick。
+            limitPrice = resolveMakerLimitPrice(signalId, rawPrice, minimumTickSize, conditionId, outcome);
         } else {
             // Taker 模式（默认）：limitPrice = rawPrice + slippage
             BigDecimal effectiveSlippageRate = resolveSlippageRate(wallet, conditionId, outcome);
@@ -204,9 +264,13 @@ public class PolymarketOrderRequestFactory {
                 .executionAddress(wallet.getAddress())
                 .funderAddress(wallet.getFunderAddress())
                 .orderStrategy(effectiveStrategy)
+                // W2-T4.3: 透传价格冲击门导出的下游路由提示, 用于运维/审计 + 后续 MAKER_ONLY 超时撤单
+                .priceImpactExecutionMode(priceImpactExecutionMode)
+                .priceImpactOverride(priceImpactOverride)
                 .build();
-        log.info("{} action=构造Polymarket本地下单草稿 result=完成 signalId={} marketId={} outcome={} side={} strategy={} requestedStakeUsdc={} cappedStakeUsdc={} rawPrice={} limitPrice={} size={} tokenId={}",
+        log.info("{} action=构造Polymarket本地下单草稿 result=完成 signalId={} marketId={} outcome={} side={} strategy={} priceImpactMode={} priceImpactOverride={} requestedStakeUsdc={} cappedStakeUsdc={} rawPrice={} limitPrice={} size={} tokenId={}",
                 LOG_PREFIX, signalId, conditionId, outcome, prepared.getSide(), effectiveStrategy,
+                prepared.getPriceImpactExecutionMode(), prepared.isPriceImpactOverride(),
                 requestedStakeUsdc, cappedStake, rawPrice, prepared.getLimitPrice(), prepared.getSize(),
                 prepared.getTokenId());
         return prepared;
@@ -283,6 +347,79 @@ public class PolymarketOrderRequestFactory {
         } catch (Exception e) {
             log.debug("{} ADAPTIVE → TAKER (snapshot lookup failed): {}", LOG_PREFIX, e.getMessage());
             return "TAKER";
+        }
+    }
+
+    /**
+     * F-P1-15: MAKER 限价计算 —— 在 rawPrice 与 bestBid 之间取 maker-safe 限价。
+     *
+     * <p>规则（按 ExecutionWallet 配置 enableMakerBestBidPricing）：
+     * <ul>
+     *   <li>读取最近 makerBestBidSnapshotMaxAgeMs 以内的 snapshot；</li>
+     *   <li>有效 bestBid：limitPrice = min(rawPrice + tickBuffer × tick, bestBid + offset × tick)；</li>
+     *   <li>无 bestBid / snapshot stale / 开关关闭：回退 rawPrice + 1 tick（旧行为）。</li>
+     * </ul>
+     * 返回值已按 [0, 1] 截断 + 4 位小数四舍五入，调用方仍需走 snapToTick 对齐到 tickSize。
+     */
+    private BigDecimal resolveMakerLimitPrice(String signalId,
+                                              BigDecimal rawPrice,
+                                              BigDecimal tickSize,
+                                              String conditionId,
+                                              String outcome) {
+        SmartWalletProperties.ExecutionWallet ew =
+                smartWalletProperties == null ? null : smartWalletProperties.getExecutionWallet();
+        int tickBuffer = ew == null ? 1 : Math.max(1, ew.getMakerTickBufferTicks());
+        int offset = ew == null ? 1 : Math.max(0, ew.getMakerBestBidOffsetTicks());
+        boolean enableBestBid = ew == null || ew.isEnableMakerBestBidPricing();
+
+        BigDecimal cappedRaw = rawPrice
+                .add(tickSize.multiply(new BigDecimal(tickBuffer)))
+                .min(BigDecimal.ONE)
+                .max(tickSize);
+        if (!enableBestBid) {
+            BigDecimal fallback = cappedRaw.setScale(4, RoundingMode.HALF_UP);
+            log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} (best-bid pricing disabled, rawPrice + {}tick)",
+                    LOG_PREFIX, signalId, fallback, tickBuffer);
+            return fallback;
+        }
+        BigDecimal bestBid = fetchBestBid(conditionId, outcome,
+                ew == null ? 30_000L : ew.getMakerBestBidSnapshotMaxAgeMs());
+        if (bestBid == null || bestBid.compareTo(BigDecimal.ZERO) <= 0) {
+            BigDecimal fallback = rawPrice
+                    .add(tickSize)
+                    .min(BigDecimal.ONE)
+                    .setScale(4, RoundingMode.HALF_UP);
+            log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} (bestBid 不可用，fallback rawPrice + 1tick)",
+                    LOG_PREFIX, signalId, fallback);
+            return fallback;
+        }
+        BigDecimal bestBidCap = bestBid
+                .add(tickSize.multiply(new BigDecimal(offset)))
+                .min(BigDecimal.ONE)
+                .max(tickSize);
+        BigDecimal chosen = cappedRaw.min(bestBidCap).setScale(4, RoundingMode.HALF_UP);
+        log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} (rawPrice={} + {}tick → {}, bestBid={} + {}tick → {}, picked=min)",
+                LOG_PREFIX, signalId, chosen, rawPrice, tickBuffer, cappedRaw, bestBid, offset, bestBidCap);
+        return chosen;
+    }
+
+    /**
+     * F-P1-15: 抓取最近 N 毫秒内的 bestBid（指定 outcome 的 YES/NO token）。
+     * <p>独立于 {@link #fetchAskDepth3c} 的 5 分钟窗口，因为 MAKER 限价对盘口时效更敏感。
+     */
+    private BigDecimal fetchBestBid(String conditionId, String outcome, long maxAgeMs) {
+        try {
+            SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService
+                    .findLatestSnapshotAtOrBefore(conditionId, outcome, new Date());
+            if (snapshot == null || snapshot.getSnapshotAt() == null) {
+                return null;
+            }
+            if (System.currentTimeMillis() - snapshot.getSnapshotAt().getTime() > maxAgeMs) {
+                return null;
+            }
+            return snapshot.getBestBid();
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -365,5 +502,16 @@ public class PolymarketOrderRequestFactory {
         private String funderAddress;
         /** 实际使用的订单策略：TAKER / MAKER */
         private String orderStrategy;
+        /**
+         * W2-T4.3: 价格冲击门导出的下游路由提示。
+         * 取值：{@code MAKER_FIRST} / {@code MAKER_ONLY} / {@code NORMAL} / {@code null}。
+         * 配合 {@link #priceImpactOverride} 区分 "门控判定 NORMAL" 与 "无门控数据"。
+         */
+        private String priceImpactExecutionMode;
+        /**
+         * W2-T4.3: 当 {@code true} 表示本订单的 orderStrategy 是被价格冲击门强制覆写为 MAKER 的，
+         * 而非来源于钱包默认 {@code orderStrategy} 配置。供下游订单工厂区分 "MAKER_ONLY 超时撤单" 等场景。
+         */
+        private boolean priceImpactOverride;
     }
 }

@@ -28,6 +28,7 @@ public class SmartWalletReportReadService {
     private final SmartWalletPositionMapper positionMapper;
     private final SmartWalletCashLedgerMapper cashLedgerMapper;
     private final SmartWalletMarketInfoMapper marketInfoMapper;
+    private final SmartWalletTradeOrderMapper tradeOrderMapper;
 
     @Value("${smart-wallet.signal-risk.max-open-positions:30}")
     private Integer maxOpenPositions;
@@ -46,12 +47,14 @@ public class SmartWalletReportReadService {
                                          SmartWalletFillMapper fillMapper,
                                          SmartWalletPositionMapper positionMapper,
                                          SmartWalletCashLedgerMapper cashLedgerMapper,
-                                         SmartWalletMarketInfoMapper marketInfoMapper) {
+                                         SmartWalletMarketInfoMapper marketInfoMapper,
+                                         SmartWalletTradeOrderMapper tradeOrderMapper) {
         this.orderMapper = orderMapper;
         this.fillMapper = fillMapper;
         this.positionMapper = positionMapper;
         this.cashLedgerMapper = cashLedgerMapper;
         this.marketInfoMapper = marketInfoMapper;
+        this.tradeOrderMapper = tradeOrderMapper;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -94,38 +97,62 @@ public class SmartWalletReportReadService {
     // ════════════════════════════════════════════════════════════════
     public SmartWalletPerformanceView performance(String mode) {
         String normalizedMode = normalizeMode(mode);
-        int totalOrders = orderMapper.countByMode(normalizedMode);
-        int filledOrders = fillMapper.countByMode(normalizedMode);
         BigDecimal volume = safe(fillMapper.sumVolumeByMode(normalizedMode));
         BigDecimal fee = totalFee(normalizedMode);
-        BigDecimal realized = safe(cashLedgerMapper.sumSignedAmountByMode("REALIZED_PNL", normalizedMode, null, null));
 
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<>());
+        List<SmartWalletTradeOrderEntity> tradeOrders = tradeOrderMapper.selectList(new LambdaQueryWrapper<>());
+        Date now = new Date();
 
-        int openPos = 0, pendingPos = 0, closedPos = 0, winPos = 0, losePos = 0;
-        BigDecimal unrealized = BigDecimal.ZERO, pendingSettlement = BigDecimal.ZERO;
-        BigDecimal totalWins = BigDecimal.ZERO, totalLosses = BigDecimal.ZERO;
+        // 总览页面所有"订单 / 盈利订单 / 亏损订单 / 收益"统一以 smart_wallet_trade_order 为口径，
+        // 让首页统计与"订单记录页(/trade-orders/page)"按 pnl 过滤出的条数严格一致。
+        int totalOrders = 0, filledOrders = 0;
+        int openPos = 0, pendingPos = 0, closedPos = 0;
+        int winPos = 0, losePos = 0;                       // 按 total_pnl 符号统计：覆盖所有状态
+        BigDecimal unrealized = BigDecimal.ZERO;
+        BigDecimal pendingSettlement = BigDecimal.ZERO;
+        BigDecimal realizedAsOfNow = BigDecimal.ZERO;
+        BigDecimal totalWins = BigDecimal.ZERO;
+        BigDecimal totalLosses = BigDecimal.ZERO;
 
-        // Conflict tracking
+        for (SmartWalletTradeOrderEntity order : tradeOrders) {
+            if (!matchesMode(order.getExecutionAddress(), mode)) continue;
+
+            totalOrders++;
+            if (safe(order.getEntryQuantity()).compareTo(BigDecimal.ZERO) > 0) {
+                filledOrders++;
+            }
+
+            BigDecimal pnl = safe(order.getTotalPnlUsdc());
+
+            // 盈利/亏损订单数 == 订单记录页按 pnl 过滤的条数（任何状态都计入）
+            if (pnl.compareTo(BigDecimal.ZERO) > 0) {
+                winPos++;
+                totalWins = totalWins.add(pnl);
+            } else if (pnl.compareTo(BigDecimal.ZERO) < 0) {
+                losePos++;
+                totalLosses = totalLosses.add(pnl.abs());
+            }
+
+            if (isOpenTradeOrder(order)) {
+                openPos++;
+                unrealized = unrealized.add(pnl);
+            } else if (isFutureCompletedTradeOrder(order, now)) {
+                // 已平/已结算但 settled_at / last_exit_at 还在未来：算待结算
+                pendingPos++;
+                pendingSettlement = pendingSettlement.add(pnl);
+            } else {
+                closedPos++;
+                realizedAsOfNow = realizedAsOfNow.add(pnl);
+            }
+        }
+
+        // Conflict tracking 仍然依赖 position 表的 outcome 信息。
         Map<String, List<SmartWalletPositionEntity>> byMarket = new LinkedHashMap<>();
         for (SmartWalletPositionEntity p : positions) {
             if (!matchesMode(p.getExecutionAddress(), mode)) continue;
             byMarket.computeIfAbsent(p.getMarketId(), k -> new ArrayList<>()).add(p);
-            BigDecimal pRealized = realizedPnl(p);
-            if (isPendingSettlement(p)) {
-                pendingPos++;
-                pendingSettlement = pendingSettlement.add(pendingNetPnl(p));
-                if (pRealized.compareTo(BigDecimal.ZERO) > 0) { winPos++; totalWins = totalWins.add(pRealized); }
-                if (pRealized.compareTo(BigDecimal.ZERO) < 0) { losePos++; totalLosses = totalLosses.add(pRealized.abs()); }
-            } else if (isActive(p)) {
-                unrealized = unrealized.add(safe(p.getUnrealizedPnlUsdc()));
-                openPos++;
-            } else if (isClosed(p)) {
-                closedPos++;
-                if (pRealized.compareTo(BigDecimal.ZERO) > 0) { winPos++; totalWins = totalWins.add(pRealized); }
-                if (pRealized.compareTo(BigDecimal.ZERO) < 0) { losePos++; totalLosses = totalLosses.add(pRealized.abs()); }
-            }
         }
         // Conflict summary
         int conflictMarkets = 0, conflictPositions = 0, openConflictMarkets = 0, openConflictPositions = 0;
@@ -165,11 +192,11 @@ public class SmartWalletReportReadService {
         BigDecimal avgLoss = losePos == 0 ? BigDecimal.ZERO : totalLosses.divide(BigDecimal.valueOf(losePos), 8, RoundingMode.HALF_UP);
         BigDecimal profitFactor = totalLosses.compareTo(BigDecimal.ZERO) == 0 ? totalWins
                 : totalWins.divide(totalLosses, 8, RoundingMode.HALF_UP);
-        BigDecimal settledNet = realized.subtract(fee);
-        BigDecimal composite = settledNet.add(unrealized).add(pendingSettlement);
+        // 总收益 == 所有 trade_order 的 total_pnl_usdc 之和（= realized + unrealized + pending settlement）。
+        BigDecimal composite = realizedAsOfNow.add(unrealized).add(pendingSettlement);
 
         return new SmartWalletPerformanceView(totalOrders, filledOrders, closedPos, openPos, pendingPos,
-                winPos, losePos, winRate, volume, fee, realized, unrealized, pendingSettlement, composite, composite,
+                winPos, losePos, winRate, volume, fee, realizedAsOfNow, unrealized, pendingSettlement, composite, composite,
                 avgWin, avgLoss, profitFactor, BigDecimal.ZERO, // maxDrawdown simplified
                 conflictMarkets, conflictPositions, openConflictMarkets, openConflictPositions, conflictPnl,
                 earlyExitCount, earlyExitPnl, takeProfitCount, takeProfitPnl, stopLossCount, stopLossPnl);
@@ -300,6 +327,18 @@ public class SmartWalletReportReadService {
         return p != null && PENDING_SETTLEMENT_STATUSES.contains(p.getStatus());
     }
 
+    private boolean isOpenTradeOrder(SmartWalletTradeOrderEntity order) {
+        return order != null && "OPEN".equalsIgnoreCase(order.getStatus());
+    }
+
+    private boolean isFutureCompletedTradeOrder(SmartWalletTradeOrderEntity order, Date now) {
+        if (order == null || isOpenTradeOrder(order) || now == null) {
+            return false;
+        }
+        Date outcomeAt = order.getSettledAt() != null ? order.getSettledAt() : order.getLastExitAt();
+        return outcomeAt != null && outcomeAt.after(now);
+    }
+
     private BigDecimal realizedPnl(SmartWalletPositionEntity p) {
         return safe(p.getRealizedPnlUsdc());
     }
@@ -319,9 +358,11 @@ public class SmartWalletReportReadService {
     }
 
     private BigDecimal totalFee(String normalizedMode) {
-        BigDecimal tradingFee = safe(cashLedgerMapper.sumAmountByMode("TRADING_FEE", normalizedMode, null, null));
-        BigDecimal gasFee = safe(cashLedgerMapper.sumAmountByMode("GAS_FEE", normalizedMode, null, null));
-        return tradingFee.add(gasFee);
+        // 数据库 entry_type 的实际取值为 "FEE" / "NETWORK_FEE"，历史代码错写 "TRADING_FEE"/"GAS_FEE"
+        // 导致总览页面"已实现"和净收益总把手续费当作 0，统计不准。
+        BigDecimal tradingFee = safe(cashLedgerMapper.sumAmountByMode("FEE", normalizedMode, null, null));
+        BigDecimal networkFee = safe(cashLedgerMapper.sumAmountByMode("NETWORK_FEE", normalizedMode, null, null));
+        return tradingFee.add(networkFee);
     }
 
     private BigDecimal safe(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }

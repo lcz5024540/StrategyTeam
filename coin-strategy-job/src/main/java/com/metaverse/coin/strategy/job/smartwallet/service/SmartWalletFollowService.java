@@ -39,6 +39,7 @@ public class SmartWalletFollowService {
     private final PolymarketExecutionGateway executionGateway;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final MarketLiquidityPercentileService marketLiquidityPercentileService;
 
     public SmartWalletFollowService(SmartWalletProperties properties,
                                     SmartWalletRegistryService walletRegistryService,
@@ -48,7 +49,8 @@ public class SmartWalletFollowService {
                                     SmartWalletLeaderboardStateService leaderboardStateService,
                                     PolymarketExecutionGateway executionGateway,
                                     ExecutionWalletContextLoader executionWalletContextLoader,
-                                    SmartWalletManualAllowlistService manualAllowlistService) {
+                                    SmartWalletManualAllowlistService manualAllowlistService,
+                                    MarketLiquidityPercentileService marketLiquidityPercentileService) {
         this.properties = properties;
         this.walletRegistryService = walletRegistryService;
         this.profileStoreService = profileStoreService;
@@ -58,6 +60,7 @@ public class SmartWalletFollowService {
         this.executionGateway = executionGateway;
         this.executionWalletContextLoader = executionWalletContextLoader;
         this.manualAllowlistService = manualAllowlistService;
+        this.marketLiquidityPercentileService = marketLiquidityPercentileService;
     }
 
     public SmartWalletScanResponse scan(BigDecimal bankrollUsdc) {
@@ -171,11 +174,23 @@ public class SmartWalletFollowService {
             reasons.add("Wallet quality score is strong");
         }
 
-        if (marketLiquidity.compareTo(properties.getMinMarketLiquidity()) < 0) {
+        // W2-T1: 优先使用按品类的 P30 滚动阈值; 服务关闭或样本不足时回退到硬阈值。
+        BigDecimal liquidityThreshold = properties.getMinMarketLiquidity();
+        BigDecimal rollingP30 = marketLiquidityPercentileService == null
+                ? null
+                : marketLiquidityPercentileService.p30ForCategory(market.getCategory());
+        if (rollingP30 != null) {
+            liquidityThreshold = rollingP30;
+        }
+        if (marketLiquidity.compareTo(liquidityThreshold) < 0) {
             executable = false;
-            reasons.add("Market liquidity below threshold");
+            reasons.add(rollingP30 != null
+                    ? "Market liquidity below rolling P30 threshold for category"
+                    : "Market liquidity below threshold");
         } else {
-            reasons.add("Market liquidity is sufficient");
+            reasons.add(rollingP30 != null
+                    ? "Market liquidity is sufficient (rolling P30 by category)"
+                    : "Market liquidity is sufficient");
         }
 
         List<String> walletTags = normalize(wallet.getTags());

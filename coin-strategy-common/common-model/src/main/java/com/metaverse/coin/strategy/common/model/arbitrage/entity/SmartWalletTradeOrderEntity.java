@@ -24,6 +24,12 @@ public class SmartWalletTradeOrderEntity {
     private String walletAddress;
     private Long sourceFollowTaskId;
 
+    /**
+     * 跟单链路 trace_id, 继承自 source_follow_task_id 对应 follow_task.trace_id.
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md (W1-T3).
+     */
+    private String traceId;
+
     private BigDecimal entryQuantity;
     private BigDecimal entryAvgPrice;
     private BigDecimal entryCostUsdc;

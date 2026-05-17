@@ -45,8 +45,9 @@ public class EntryTimingRiskService {
         }
 
         Date now = new Date();
-        SmartWalletMarketSnapshotEntity latest = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
-                event.getMarketId(), event.getOutcome(), now);
+        // F-P1-7: hot-path 走 findFreshSnapshot, 开关 enable-ws-hot-path-snapshot=true 时优先 WS in-memory
+        SmartWalletMarketSnapshotEntity latest = marketSnapshotCollectorService.findFreshSnapshot(
+                event.getMarketId(), event.getOutcome());
         if (isStale(latest, risk, now)) {
             try {
                 latest = marketSnapshotCollectorService.collectSnapshot(event.getMarketId(), event.getOutcome());

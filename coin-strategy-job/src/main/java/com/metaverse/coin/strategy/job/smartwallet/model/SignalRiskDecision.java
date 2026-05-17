@@ -66,4 +66,43 @@ public class SignalRiskDecision {
     private BigDecimal netDirectionalExposure;
     /** 该笔新订单是否降低净暴露 */
     private boolean reducesNetExposure;
+
+    // ── W2-T2: Leader 滑动窗口胜率门状态信息 ──
+    /** Leader 滑动窗口状态: ACTIVE / COOLING / SUSPENDED / null（门控未启用） */
+    private String leaderRollingStatus;
+    /** 该 Leader 滑动窗口实际跟单胜率（跟单后胜率，与 profile.winRate 不同） */
+    private BigDecimal leaderRollingWinRate;
+    /** 该 Leader 滑动窗口样本数 */
+    private Integer leaderRollingSampleCount;
+    /** 该 Leader 滑动窗口累计跟单 PnL（USDC） */
+    private BigDecimal leaderRollingTotalPnlUsdc;
+
+    // ── W2-T6: Leader 行为漂移门状态信息 ──
+    /** Leader 行为漂移门状态: ACTIVE / DRIFTED / DRIFTED_SEVERE / null（门控未启用） */
+    private String leaderDriftStatus;
+    /** 当前 trade event 与 leader 历史画像 centroid 的 cosine 距离（0~2，越接近 0 越相似） */
+    private BigDecimal leaderDriftCosineDistance;
+    /** 用于构建画像 centroid 的历史样本数 */
+    private Integer leaderDriftSampleCount;
+
+    // ── W2-T4.3: 价格冲击三段式门控派生的下游路由提示 ──
+    /**
+     * 由 G11 价格冲击门导出, 供 {@code PolymarketOrderRequestFactory} 决定下单策略。
+     * 取值集合：
+     * <ul>
+     *   <li>{@code NORMAL} / {@code null} ── 维持钱包默认 orderStrategy（TAKER / MAKER / ADAPTIVE）。</li>
+     *   <li>{@code MAKER_FIRST} ── 中等滑点（100bps ≤ bps &lt; severeBps），降级 0.5x 仓位 + 优先挂 maker 单。</li>
+     *   <li>{@code MAKER_ONLY} ── 重段滑点（severeBps ≤ bps &lt; rejectBps），降级 0.25x 仓位 + 强制 maker、
+     *       到时撤单。</li>
+     * </ul>
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md W2-T4。
+     */
+    private String priceImpactExecutionMode;
+
+    /**
+     * 第十四批 #1: 价格冲击 bps 的算法 source — "VWAP(OK)" / "VWAP(DRY_FALLBACK)" / "PROXY" / null.
+     * 由 SignalRiskService 在 priceImpact 三段式段设置, FollowTaskService 透传到 Shadow recorder,
+     * 落 smart_wallet_signal_shadow.entry_estimator_source 列, 供 ShadowVsLive 周报按 source 分桶.
+     */
+    private String priceImpactBpsSource;
 }

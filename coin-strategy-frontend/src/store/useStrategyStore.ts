@@ -32,6 +32,7 @@ export const useStrategyStore = create<StrategyState>()(
           ...current,
           ...persistedState,
           selectedStrategy: normalizeRunnableStrategyCode(persistedState?.selectedStrategy),
+          positionMode: current.positionMode,
         }
       },
     }

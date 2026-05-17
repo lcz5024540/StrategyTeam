@@ -378,13 +378,16 @@ public class SmartWalletReadService {
         applyTradeOrderModeFilter(wrapper, mode);
         List<SmartWalletTradeOrderEntity> entities = tradeOrderMapper.selectList(wrapper);
         populateMarketInfoForTradeOrders(entities);
+        Date now = new Date();
         Set<Long> positionIds = entities.stream()
+                .filter(entity -> !isFutureCompletedTradeOrder(entity, now))
                 .map(SmartWalletTradeOrderEntity::getPositionId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         Map<Long, List<SmartWalletOrderEntity>> ordersByPosition = batchLoadOrders(positionIds);
         Map<Long, List<SmartWalletFillEntity>> fillsByPosition = batchLoadFills(positionIds);
         List<SmartWalletTradeOrderView> filtered = entities.stream()
+                .filter(entity -> !isFutureCompletedTradeOrder(entity, now))
                 .map(entity -> toTradeOrderView(entity,
                         ordersByPosition.getOrDefault(entity.getPositionId(), List.of()),
                         fillsByPosition.getOrDefault(entity.getPositionId(), List.of())))
@@ -537,6 +540,7 @@ public class SmartWalletReadService {
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
         populateMarketInfoForOrders(orders);
         populateMarketInfoForPositions(positions);
+        Date now = new Date();
         Map<String, AttributionAccumulator> grouped = new LinkedHashMap<>();
         for (SmartWalletOrderEntity order : orders) {
             if (!matchesDashboardMode(order.getExecutionAddress(), mode)) {
@@ -544,9 +548,12 @@ public class SmartWalletReadService {
             }
             String key = order.getExecutionAddress();
             AttributionAccumulator acc = grouped.computeIfAbsent(key, ignored -> new AttributionAccumulator(key, key));
-            acc.addOrder(safe(order.getNotionalUsdc()));
+            acc.addOrder(order);
         }
         for (SmartWalletCashLedgerEntity entry : ledgerEntries) {
+            if (isFutureLedgerEntry(entry, now)) {
+                continue;
+            }
             if (!matchesDashboardMode(entry.getExecutionAddress(), mode)) {
                 continue;
             }
@@ -555,6 +562,9 @@ public class SmartWalletReadService {
             acc.addLedger(entry);
         }
         for (SmartWalletPositionEntity position : positions) {
+            if (isFuturePositionOutcome(position, now)) {
+                continue;
+            }
             if (!matchesDashboardMode(position.getExecutionAddress(), mode)) {
                 continue;
             }
@@ -576,6 +586,7 @@ public class SmartWalletReadService {
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
         populateMarketInfoForOrders(orders);
         populateMarketInfoForPositions(positions);
+        Date now = new Date();
         Map<String, AttributionAccumulator> grouped = new LinkedHashMap<>();
         for (SmartWalletOrderEntity order : orders) {
             if (!matchesDashboardMode(order.getExecutionAddress(), mode)) {
@@ -584,9 +595,12 @@ public class SmartWalletReadService {
             String key = order.getMarketId();
             AttributionAccumulator acc = grouped.computeIfAbsent(key,
                     ignored -> new AttributionAccumulator(key, firstText(order.getQuestion(), key)));
-            acc.addOrder(safe(order.getNotionalUsdc()));
+            acc.addOrder(order);
         }
         for (SmartWalletCashLedgerEntity entry : ledgerEntries) {
+            if (isFutureLedgerEntry(entry, now)) {
+                continue;
+            }
             if (!matchesDashboardMode(entry.getExecutionAddress(), mode)) {
                 continue;
             }
@@ -596,6 +610,9 @@ public class SmartWalletReadService {
             acc.addLedger(entry);
         }
         for (SmartWalletPositionEntity position : positions) {
+            if (isFuturePositionOutcome(position, now)) {
+                continue;
+            }
             if (!matchesDashboardMode(position.getExecutionAddress(), mode)) {
                 continue;
             }
@@ -620,6 +637,7 @@ public class SmartWalletReadService {
         }
         List<SmartWalletDailyReportEntity> filtered = reports.stream()
                 .filter(report -> matchesDashboardMode(report.getExecutionAddress(), mode))
+                .filter(report -> !isFutureReportDate(report.getReportDate()))
                 .limit(safeLimit)
                 .toList();
         Map<LocalDate, DailyOutcomeBreakdown> outcomeBreakdowns = loadDailyOutcomeBreakdowns(filtered, mode);
@@ -631,9 +649,12 @@ public class SmartWalletReadService {
     public List<TimelinePoint> pnlTimeline(Integer days, Integer bucketHours, String mode) {
         int safeDays = Math.max(1, Math.min(days == null ? 30 : days, 180));
         int safeBucketHours = normalizeTimelineBucketHours(bucketHours);
+        // Polymarket 总览页面（bucketHours >= 24）按 trade_order 结算时间逐日聚合，
+        // 完全绕过 cash_ledger，避免与"总收益"口径不一致。
         if (safeBucketHours >= 24) {
             return dailyReportTimeline(safeDays, mode);
         }
+        // Sub-day buckets 仍走 cash_ledger 路径（细颗粒度场景仅供调试，未在总览页面使用）。
         ZoneId zoneId = ZoneId.systemDefault();
         LocalDateTime now = LocalDateTime.now(zoneId);
         LocalDateTime requestedStartBucket = floorToTimelineBucket(now.minusDays(safeDays), safeBucketHours);
@@ -654,7 +675,13 @@ public class SmartWalletReadService {
                 continue;
             }
             BigDecimal delta = ledgerPnlDelta(entry);
-            if (delta.compareTo(BigDecimal.ZERO) == 0) {
+            // FEE / NETWORK_FEE 在 ledgerPnlDelta 中返回 0，但累加器仍会把它累入手续费总额，
+            // 因此 delta==0 时只有 entry_type 既非 REALIZED_PNL 又非 FEE/NETWORK_FEE 时才跳过，
+            // 避免累积净收益曲线漏算手续费导致与"总收益"对不上。
+            boolean isFeeEntry = entry.getEntryType() != null
+                    && ("FEE".equalsIgnoreCase(entry.getEntryType())
+                    || "NETWORK_FEE".equalsIgnoreCase(entry.getEntryType()));
+            if (delta.compareTo(BigDecimal.ZERO) == 0 && !isFeeEntry) {
                 continue;
             }
             LocalDateTime bucketAt = floorToTimelineBucket(LocalDateTime.ofInstant(entry.getOccurredAt().toInstant(), zoneId), safeBucketHours);
@@ -1225,6 +1252,8 @@ public class SmartWalletReadService {
                 ? breakdown
                 : DailyOutcomeBreakdown.fromStoredReport(report);
         ConflictSummary conflictSummary = calculateDailyConflictSummary(report);
+        BigDecimal realized = safe(report.getRealizedPnlUsdc());
+        BigDecimal unrealized = safe(report.getUnrealizedPnlUsdc());
         return new DailyReportRow(
                 report.getId(),
                 report.getReportDate(),
@@ -1232,12 +1261,12 @@ public class SmartWalletReadService {
                 report.getTotalOrders(),
                 report.getFilledOrders(),
                 report.getTotalVolumeUsdc(),
-                report.getFeeUsdc(),
+                BigDecimal.ZERO,
                 effective.profitPnlUsdc,
                 effective.lossPnlUsdc,
-                report.getRealizedPnlUsdc(),
-                report.getUnrealizedPnlUsdc(),
-                report.getNetPnlUsdc(),
+                realized,
+                unrealized,
+                realized.add(unrealized),
                 effective.winningPositions,
                 effective.losingPositions,
                 effective.winRate(),
@@ -1405,6 +1434,35 @@ public class SmartWalletReadService {
         return true;
     }
 
+    private boolean isFutureCompletedTradeOrder(SmartWalletTradeOrderEntity order, Date now) {
+        if (order == null || now == null || "OPEN".equalsIgnoreCase(order.getStatus())) {
+            return false;
+        }
+        Date outcomeAt = order.getSettledAt() != null ? order.getSettledAt() : order.getLastExitAt();
+        return outcomeAt != null && outcomeAt.after(now);
+    }
+
+    private boolean isOpenTradeOrder(SmartWalletTradeOrderEntity order) {
+        return order != null && "OPEN".equalsIgnoreCase(order.getStatus());
+    }
+
+    private boolean isFutureLedgerEntry(SmartWalletCashLedgerEntity entry, Date now) {
+        return entry != null && now != null && entry.getOccurredAt() != null && entry.getOccurredAt().after(now);
+    }
+
+    private boolean isFuturePositionOutcome(SmartWalletPositionEntity position, Date now) {
+        if (position == null || now == null || isActivePositionStatus(position.getStatus())) {
+            return false;
+        }
+        Date outcomeAt = position.getClosedAt();
+        return outcomeAt != null && outcomeAt.after(now);
+    }
+
+    private boolean isFutureReportDate(Date reportDate) {
+        LocalDate date = toLocalDate(reportDate);
+        return date != null && date.isAfter(LocalDate.now(ZoneId.systemDefault()));
+    }
+
     private boolean matchesTradeOrderPnl(SmartWalletTradeOrderView view, String pnl) {
         String normalized = normalize(pnl);
         BigDecimal value = safe(view == null ? null : view.totalPnlUsdc());
@@ -1499,37 +1557,67 @@ public class SmartWalletReadService {
 
     private List<TimelinePoint> dailyReportTimeline(int days, String mode) {
         int safeDays = Math.max(days, 1);
-        List<SmartWalletDailyReportEntity> reports = dailyReportMapper.selectList(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
-                .orderByAsc(SmartWalletDailyReportEntity::getReportDate));
-        if (reports == null) {
-            reports = List.of();
+        ZoneId zoneId = ZoneId.systemDefault();
+        LocalDate today = LocalDate.now(zoneId);
+        LocalDate startDate = today.minusDays(safeDays - 1L);
+        Map<LocalDate, TradeOrderTimelineBucket> buckets = new LinkedHashMap<>();
+        for (LocalDate cursor = startDate; !cursor.isAfter(today); cursor = cursor.plusDays(1)) {
+            buckets.put(cursor, new TradeOrderTimelineBucket());
         }
-        List<SmartWalletDailyReportEntity> filtered = reports.stream()
-                .filter(report -> matchesDashboardMode(report.getExecutionAddress(), mode))
-                .toList();
-        int fromIndex = Math.max(filtered.size() - safeDays, 0);
-        List<SmartWalletDailyReportEntity> selected = filtered.subList(fromIndex, filtered.size());
-        Map<LocalDate, DailyOutcomeBreakdown> breakdowns = loadDailyOutcomeBreakdowns(selected, mode);
+        List<SmartWalletTradeOrderEntity> tradeOrders = tradeOrderMapper.selectList(new LambdaQueryWrapper<>());
+        if (tradeOrders == null) {
+            tradeOrders = List.of();
+        }
+        Date now = new Date();
+        TradeOrderTimelineBucket baseline = new TradeOrderTimelineBucket();
+        BigDecimal openUnrealized = BigDecimal.ZERO;
+        for (SmartWalletTradeOrderEntity order : tradeOrders) {
+            if (order == null || !matchesDashboardMode(order.getExecutionAddress(), mode)) {
+                continue;
+            }
+            BigDecimal pnl = safe(order.getTotalPnlUsdc());
+            if (isOpenTradeOrder(order)) {
+                openUnrealized = openUnrealized.add(pnl);
+                continue;
+            }
+            Date outcomeAt = tradeOrderOutcomeAt(order);
+            if (outcomeAt == null || outcomeAt.after(now)) {
+                continue;
+            }
+            LocalDate outcomeDate = toLocalDate(outcomeAt);
+            if (outcomeDate == null || outcomeDate.isAfter(today)) {
+                continue;
+            }
+            if (outcomeDate.isBefore(startDate)) {
+                baseline.addRealized(pnl);
+                continue;
+            }
+            TradeOrderTimelineBucket bucket = buckets.get(outcomeDate);
+            if (bucket != null) {
+                bucket.addRealized(pnl);
+            }
+        }
+        TradeOrderTimelineBucket todayBucket = buckets.get(today);
+        if (todayBucket != null) {
+            todayBucket.addUnrealized(openUnrealized);
+        }
         List<TimelinePoint> points = new ArrayList<>();
-        BigDecimal cumulativeLoss = BigDecimal.ZERO;
-        BigDecimal cumulativeRealized = BigDecimal.ZERO;
+        BigDecimal cumulativeLoss = baseline.lossPnl;
+        BigDecimal cumulativeRealized = baseline.realizedPnl;
         BigDecimal cumulativeFee = BigDecimal.ZERO;
-        BigDecimal cumulativeNet = BigDecimal.ZERO;
-        for (SmartWalletDailyReportEntity report : selected) {
-            DailyOutcomeBreakdown effective = breakdowns.getOrDefault(toLocalDate(report.getReportDate()), DailyOutcomeBreakdown.fromStoredReport(report));
-            BigDecimal realized = safe(report.getRealizedPnlUsdc());
-            BigDecimal fee = safe(report.getFeeUsdc());
-            BigDecimal net = safe(report.getNetPnlUsdc());
-            cumulativeLoss = cumulativeLoss.add(effective.lossPnlUsdc);
-            cumulativeRealized = cumulativeRealized.add(realized);
-            cumulativeFee = cumulativeFee.add(fee);
+        BigDecimal cumulativeNet = baseline.realizedPnl;
+        for (Map.Entry<LocalDate, TradeOrderTimelineBucket> entry : buckets.entrySet()) {
+            TradeOrderTimelineBucket bucket = entry.getValue();
+            BigDecimal net = bucket.netPnl();
+            cumulativeLoss = cumulativeLoss.add(bucket.lossPnl);
+            cumulativeRealized = cumulativeRealized.add(bucket.realizedPnl);
             cumulativeNet = cumulativeNet.add(net);
             points.add(new TimelinePoint(
-                    report.getReportDate(),
-                    effective.profitPnlUsdc,
-                    effective.lossPnlUsdc,
-                    realized,
-                    fee,
+                    Date.from(entry.getKey().atStartOfDay(zoneId).toInstant()),
+                    bucket.profitPnl,
+                    bucket.lossPnl,
+                    bucket.realizedPnl,
+                    BigDecimal.ZERO,
                     net,
                     cumulativeLoss,
                     cumulativeRealized,
@@ -1538,6 +1626,13 @@ public class SmartWalletReadService {
             ));
         }
         return points;
+    }
+
+    private Date tradeOrderOutcomeAt(SmartWalletTradeOrderEntity order) {
+        if (order == null) {
+            return null;
+        }
+        return order.getSettledAt() != null ? order.getSettledAt() : order.getLastExitAt();
     }
 
     private Map<LocalDate, DailyOutcomeBreakdown> loadDailyOutcomeBreakdowns(List<SmartWalletDailyReportEntity> reports, String mode) {
@@ -1616,9 +1711,6 @@ public class SmartWalletReadService {
     private BigDecimal ledgerPnlDelta(SmartWalletCashLedgerEntity entry) {
         if (entry == null || !StringUtils.hasText(entry.getEntryType())) {
             return BigDecimal.ZERO;
-        }
-        if ("FEE".equalsIgnoreCase(entry.getEntryType()) || "NETWORK_FEE".equalsIgnoreCase(entry.getEntryType())) {
-            return safe(entry.getAmount()).negate();
         }
         if ("REALIZED_PNL".equalsIgnoreCase(entry.getEntryType())) {
             return "OUT".equalsIgnoreCase(entry.getDirection()) ? safe(entry.getAmount()).negate() : safe(entry.getAmount());
@@ -2060,6 +2152,14 @@ public class SmartWalletReadService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
+    private BigDecimal orderFee(SmartWalletOrderEntity order) {
+        if (order == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal splitFee = safe(order.getTradingFeeUsdc()).add(safe(order.getGasFeeUsdc()));
+        return splitFee.compareTo(BigDecimal.ZERO) > 0 ? splitFee : safe(order.getFeeUsdc());
+    }
+
     private static class MutableBlockerStat {
         private int taskCount;
         private int executableCount;
@@ -2174,6 +2274,31 @@ public class SmartWalletReadService {
         }
     }
 
+    private static class TradeOrderTimelineBucket {
+        private BigDecimal profitPnl = BigDecimal.ZERO;
+        private BigDecimal lossPnl = BigDecimal.ZERO;
+        private BigDecimal realizedPnl = BigDecimal.ZERO;
+        private BigDecimal unrealizedPnl = BigDecimal.ZERO;
+
+        private void addRealized(BigDecimal pnl) {
+            BigDecimal safePnl = pnl == null ? BigDecimal.ZERO : pnl;
+            realizedPnl = realizedPnl.add(safePnl);
+            if (safePnl.compareTo(BigDecimal.ZERO) > 0) {
+                profitPnl = profitPnl.add(safePnl);
+            } else if (safePnl.compareTo(BigDecimal.ZERO) < 0) {
+                lossPnl = lossPnl.add(safePnl);
+            }
+        }
+
+        private void addUnrealized(BigDecimal pnl) {
+            unrealizedPnl = unrealizedPnl.add(pnl == null ? BigDecimal.ZERO : pnl);
+        }
+
+        private BigDecimal netPnl() {
+            return realizedPnl.add(unrealizedPnl);
+        }
+    }
+
     private record TimelineLedgerEntry(SmartWalletCashLedgerEntity entity, LocalDateTime bucketAt, BigDecimal delta) {
     }
 
@@ -2213,9 +2338,13 @@ public class SmartWalletReadService {
             this.label = label;
         }
 
-        private void addOrder(BigDecimal notional) {
+        private void addOrder(SmartWalletOrderEntity order) {
+            if (order == null) {
+                return;
+            }
             orderCount++;
-            tradedVolumeUsdc = tradedVolumeUsdc.add(safe(notional));
+            tradedVolumeUsdc = tradedVolumeUsdc.add(safe(order.getNotionalUsdc()));
+            feeUsdc = feeUsdc.add(orderFee(order));
         }
 
         private void addLedger(SmartWalletCashLedgerEntity entry) {
@@ -2224,8 +2353,6 @@ public class SmartWalletReadService {
             }
             if ("REALIZED_PNL".equalsIgnoreCase(entry.getEntryType())) {
                 realizedPnlUsdc = realizedPnlUsdc.add(ledgerPnlDelta(entry));
-            } else if ("FEE".equalsIgnoreCase(entry.getEntryType()) || "NETWORK_FEE".equalsIgnoreCase(entry.getEntryType())) {
-                feeUsdc = feeUsdc.add(safe(entry.getAmount()));
             }
         }
 

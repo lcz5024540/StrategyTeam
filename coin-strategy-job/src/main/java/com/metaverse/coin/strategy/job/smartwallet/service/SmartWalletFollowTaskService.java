@@ -32,9 +32,12 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulati
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletRiskSimulationResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
+import com.metaverse.coin.strategy.common.service.trace.TraceContext;
+import com.metaverse.coin.strategy.common.service.trace.TraceIds;
 import com.metaverse.coin.strategy.job.strategy.application.StrategyFlowLogFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -70,6 +73,13 @@ public class SmartWalletFollowTaskService {
     public static final String STATUS_FOLLOWED = "FOLLOWED";
     public static final String STATUS_SKIPPED = "SKIPPED";
     public static final String STATUS_PAPER_SHADOW = "PAPER_SHADOW";
+
+    /**
+     * W1-T4: 被拒/降级信号的影子记账, 通过 setter 注入以避免破坏现有测试构造器.
+     * 当 SignalShadowRecorder bean 不存在时为 null, 业务路径优雅降级 (no-op).
+     */
+    @Autowired(required = false)
+    private SignalShadowRecorder signalShadowRecorder;
     private static final long RISK_DECISION_CACHE_TTL_MS = 60_000L;
     private static final long EXECUTABLE_WARN_THRESHOLD_MS = 3_000L;
 
@@ -138,21 +148,32 @@ public class SmartWalletFollowTaskService {
         event.setCreatedAt(new Date());
         event.setUpdatedAt(new Date());
         tradeEventMapper.insert(event);
-        log.info("{} action=记录Polymarket钱包交易事件 result=已入库 eventId={} wallet={} marketId={} question={} outcome={} side={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
-                LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getQuestion(),
-                event.getOutcome(), event.getSide(), openedAtBjt(event), openedAtMillis(event), polymarketSearchUrl(event));
-        log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "已入库", event, null,
-                "question", event.getQuestion(),
-                "price", event.getPrice(),
-                "sizeShares", event.getSizeShares(),
-                "stakeUsdc", event.getSizeUsdc(),
-                "openedAtBjt", openedAtBjt(event),
-                "openedAtMs", openedAtMillis(event),
-                "polymarketSearchUrl", polymarketSearchUrl(event),
-                "reasonSummary", "交易事件已入库，准备进入候选增强和风控链路"));
-        profileStoreService.recordObservedTradeActivity(event.getWalletAddress(), event.getOpenedAt());
-        ensureMarketInfoForEvent(event);
-        createFollowTaskIfQualified(event);
+        // W1-T3: 入库拿到自增 id 后, 派生 trace_id 并回填. 同一 trade_event 全链路共享.
+        String traceId = TraceIds.fromTradeEventId(event.getId());
+        event.setTraceId(traceId);
+        SmartWalletTradeEventEntity traceUpdate = new SmartWalletTradeEventEntity();
+        traceUpdate.setId(event.getId());
+        traceUpdate.setTraceId(traceId);
+        traceUpdate.setUpdatedAt(new Date());
+        tradeEventMapper.updateById(traceUpdate);
+        try (TraceContext.Scope ignored = TraceContext.scope(traceId)) {
+            log.info("{} action=记录Polymarket钱包交易事件 result=已入库 eventId={} traceId={} wallet={} marketId={} question={} outcome={} side={} openedAtBjt={} openedAtMs={} polymarketSearchUrl={}",
+                    LOG_PREFIX, event.getId(), traceId, event.getWalletAddress(), event.getMarketId(), event.getQuestion(),
+                    event.getOutcome(), event.getSide(), openedAtBjt(event), openedAtMillis(event), polymarketSearchUrl(event));
+            log.info("{}", flow("S1_EVENT_CAPTURED", "记录Polymarket钱包交易事件", "已入库", event, null,
+                    "traceId", traceId,
+                    "question", event.getQuestion(),
+                    "price", event.getPrice(),
+                    "sizeShares", event.getSizeShares(),
+                    "stakeUsdc", event.getSizeUsdc(),
+                    "openedAtBjt", openedAtBjt(event),
+                    "openedAtMs", openedAtMillis(event),
+                    "polymarketSearchUrl", polymarketSearchUrl(event),
+                    "reasonSummary", "交易事件已入库，准备进入候选增强和风控链路"));
+            profileStoreService.recordObservedTradeActivity(event.getWalletAddress(), event.getOpenedAt());
+            ensureMarketInfoForEvent(event);
+            createFollowTaskIfQualified(event);
+        }
         return event;
     }
 
@@ -950,6 +971,7 @@ public class SmartWalletFollowTaskService {
                 .setEntityId(candidate.getEntityId())
                 .setFollowCandidateId(candidate.getId())
                 .setSourceEventId(event.getId())
+                .setTraceId(event.getTraceId())
                 .setMarketInfoId(marketInfo.getId())
                 .setMarketInfo(marketInfo)
                 .setSide(event.getSide())
@@ -983,6 +1005,10 @@ public class SmartWalletFollowTaskService {
                 "blockerCategories", String.join(",", blockerCategories),
                 "reasonSummary", task.getErrorMessage()));
 
+        // W1-T4: 拒绝或软门控 (PAPER_SHADOW) 时立即录影子记账, 等结算 job 回填出场 PnL.
+        // 仅当存在 SignalRejectionShadowRecorder bean 且决策被拒/降级时执行 (signalShadowRecorder 通过 @Autowired(required=false) 注入).
+        recordSignalShadowIfRejected(event, decision, task, marketInfo);
+
         // 回填 candidate 的 follow_task_id
         candidate.setFollowTaskId(task.getId())
                 .setUpdatedAt(new Date());
@@ -1000,6 +1026,7 @@ public class SmartWalletFollowTaskService {
         SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
                 .setWalletAddress(event.getWalletAddress())
                 .setSourceEventId(event.getId())
+                .setTraceId(event.getTraceId())
                 .setSide(event.getSide())
                 .setTriggerPrice(event.getPrice())
                 .setTriggerSizeUsdc(event.getSizeUsdc())
@@ -1277,6 +1304,7 @@ public class SmartWalletFollowTaskService {
                 .setEntityId(candidate.getEntityId())
                 .setFollowCandidateId(candidate.getId())
                 .setSourceEventId(event.getId())
+                .setTraceId(event.getTraceId())
                 .setMarketInfoId(marketInfo.getId())
                 .setMarketInfo(marketInfo)
                 .setSide(event.getSide())
@@ -1309,6 +1337,7 @@ public class SmartWalletFollowTaskService {
                 .setEntityId(candidate == null ? null : candidate.getEntityId())
                 .setFollowCandidateId(candidate == null ? null : candidate.getId())
                 .setSourceEventId(event.getId())
+                .setTraceId(event.getTraceId())
                 .setMarketInfoId(marketInfo == null ? null : marketInfo.getId())
                 .setMarketInfo(marketInfo)
                 .setSide(event.getSide())
@@ -1683,6 +1712,55 @@ public class SmartWalletFollowTaskService {
                         .tradingFeeUsdc(BigDecimal.ZERO)
                         .build();
             }
+
+            // ── F-P0-5: 执行前价格漂移二次检查 ─────────────────────────────────
+            // 从创建到执行之间（follow-delay + queueing）盘口可能已大幅移动，
+            // 若 |currentPrice - triggerPrice| / triggerPrice 超过 preExecutePriceDriftBps，
+            // 直接 SKIP（primarySkipReason=PRE_EXECUTE_PRICE_DRIFT_EXCEEDED），
+            // 避免按旧 price 下单造成成交价偏差。
+            SmartWalletProperties.SignalRisk preDriftRiskCfg = properties == null ? null : properties.getSignalRisk();
+            boolean enableDriftCheck = preDriftRiskCfg == null || preDriftRiskCfg.isEnablePreExecutePriceDriftCheck();
+            if (enableDriftCheck
+                    && task.getTriggerPrice() != null
+                    && task.getTriggerPrice().compareTo(BigDecimal.ZERO) > 0
+                    && entryPrice.price().compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal trigger = task.getTriggerPrice();
+                BigDecimal current = entryPrice.price();
+                BigDecimal driftAbs = current.subtract(trigger).abs();
+                BigDecimal driftBps = driftAbs.multiply(new BigDecimal("10000"))
+                        .divide(trigger, 2, RoundingMode.HALF_UP);
+                int threshold = preDriftRiskCfg == null ? 80 : preDriftRiskCfg.getPreExecutePriceDriftBps();
+                if (threshold > 0 && driftBps.compareTo(new BigDecimal(threshold)) > 0) {
+                    String reason = "[PRE_EXECUTE_PRICE_DRIFT_EXCEEDED] triggerPrice=" + trigger
+                            + " currentPrice=" + current + " driftBps=" + driftBps
+                            + " threshold=" + threshold + " priceSource=" + entryPrice.source();
+                    task.setStatus("SKIPPED");
+                    task.setErrorMessage(reason);
+                    task.setPrimarySkipReason("PRE_EXECUTE_PRICE_DRIFT_EXCEEDED");
+                    task.setSkipReasonTags("PRE_EXECUTE_PRICE_DRIFT_EXCEEDED,driftBps=" + driftBps
+                            + ",threshold=" + threshold);
+                    task.setUpdatedAt(new Date());
+                    followTaskMapper.updateById(task);
+                    log.warn("{} action=执行前价格漂移检查 result=SKIP followTaskId={} marketId={} outcome={} {}",
+                            LOG_PREFIX, task.getId(), task.getMarketId(), task.getOutcome(), reason);
+                    return SmartWalletExecutionResult.builder()
+                            .signalId(String.valueOf(task.getId()))
+                            .mode("LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER)
+                            .success(false)
+                            .message(reason)
+                            .marketId(task.getMarketId())
+                            .outcome(task.getOutcome())
+                            .side(task.getSide())
+                            .status("SKIPPED")
+                            .price(task.getTriggerPrice())
+                            .notionalUsdc(task.getRecommendedStakeUsdc())
+                            .feeUsdc(BigDecimal.ZERO)
+                            .tradingFeeUsdc(BigDecimal.ZERO)
+                            .build();
+                }
+                log.info("{} action=执行前价格漂移检查 result=PASS followTaskId={} triggerPrice={} currentPrice={} driftBps={} threshold={}",
+                        LOG_PREFIX, task.getId(), trigger, current, driftBps, threshold);
+            }
             SmartWalletSignal signal = SmartWalletSignal.builder()
                     .signalId(String.valueOf(task.getId()))
                     .market(PredictionMarketOpportunity.builder()
@@ -1693,6 +1771,8 @@ public class SmartWalletFollowTaskService {
                             .build())
                     .followOutcome(task.getOutcome())
                     .recommendedStakeUsdc(task.getRecommendedStakeUsdc())
+                    // W2-T4.3: 透传价格冲击门的下游路由提示, PolymarketOrderRequestFactory 据此切换 orderStrategy
+                    .priceImpactExecutionMode(decision == null ? null : decision.getPriceImpactExecutionMode())
                     .build();
             ExecutionMode mode = "LIVE".equalsIgnoreCase(task.getExecutionMode()) ? ExecutionMode.LIVE : ExecutionMode.PAPER;
             log.info("{} action=提交跟单执行网关 result=开始 followTaskId={} mode={} marketId={} outcome={} currentPrice={} priceSource={} triggerPrice={} stakeUsdc={} {}",
@@ -2184,12 +2264,8 @@ public class SmartWalletFollowTaskService {
         if (text.contains("trigger price")) {
             return "PRICE";
         }
-        if (text.contains("[archetype]")
-                || text.contains("[behavior]")
-                || text.contains("[archetype_block]")
+        if (text.contains("[archetype_block]")
                 || text.contains("[behavior_block]")
-                || text.contains("observe-only")
-                || text.contains("replicability")
                 || text.contains("wallet is not qualified")) {
             return "PROFILE_BEHAVIOR";
         }
@@ -2649,5 +2725,56 @@ public class SmartWalletFollowTaskService {
     }
 
     private record PriceReference(BigDecimal price, String source) {
+    }
+
+    /**
+     * W1-T4: 当 decision 为 REJECTED / PAPER_SHADOW / DOWNGRADED 时录影子记账.
+     * recorder 缺失或异常都不阻塞主链路 (内部已 catch).
+     *
+     * decision_status 解析规则:
+     *   - task.status == FOLLOWED                         → 不录 (真实跟单)
+     *   - task.status == PAPER_SHADOW                     → PAPER_SHADOW
+     *   - task.status == SKIPPED 且 decision.scaleUpSignal → 不录 (单纯的加仓不模拟)
+     *   - 其它 SKIPPED                                    → REJECTED
+     *
+     * 仓位用于影子模拟的 stake 优先使用 task.recommendedStakeUsdc; 若为 0 / null
+     * (拒绝路径常见), 退化为 trigger_size_usdc 作为"若放行原样跟单"的近似.
+     */
+    private void recordSignalShadowIfRejected(SmartWalletTradeEventEntity event,
+                                              SignalRiskDecision decision,
+                                              SmartWalletFollowTaskEntity task,
+                                              SmartWalletMarketInfoEntity marketInfo) {
+        if (signalShadowRecorder == null || event == null || decision == null || task == null) {
+            return;
+        }
+        String taskStatus = task.getStatus();
+        if (STATUS_FOLLOWED.equals(taskStatus) || STATUS_PENDING.equals(taskStatus)) {
+            return; // 真实跟单不需要影子
+        }
+        String decisionStatus;
+        if (STATUS_PAPER_SHADOW.equals(taskStatus)) {
+            decisionStatus = "PAPER_SHADOW";
+        } else if (STATUS_SKIPPED.equals(taskStatus)) {
+            decisionStatus = "REJECTED";
+        } else {
+            decisionStatus = "DOWNGRADED";
+        }
+
+        BigDecimal stake = task.getRecommendedStakeUsdc();
+        if (stake == null || stake.signum() <= 0) {
+            stake = event.getSizeUsdc();
+        }
+        if (stake == null || stake.signum() <= 0) {
+            return; // 没有可模拟的本金, 跳过
+        }
+
+        Long marketInfoId = marketInfo == null ? task.getMarketInfoId() : marketInfo.getId();
+        try {
+            signalShadowRecorder.record(event, decision, decisionStatus,
+                    task.getId(), marketInfoId, event.getSide(), stake);
+        } catch (RuntimeException ex) {
+            log.warn("{} action=记录影子信号 result=失败 followTaskId={} eventId={} reason={}",
+                    LOG_PREFIX, task.getId(), event.getId(), ex.toString());
+        }
     }
 }

@@ -3,8 +3,10 @@ import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalle
 import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
@@ -49,6 +51,13 @@ public class CapitalRecycleExitService {
     private final ExitSignalProvider exitSignalProvider;
     private final PolymarketMarketDataCacheService marketDataCacheService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+
+    /**
+     * F-P1-17: 机会成本评分维度（占满分 20）所依赖的 PENDING 任务查询。
+     * 通过 setter 注入避免破坏现有测试构造器；bean 缺失时降级为返回 0（与旧"简化实现"等价）。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SmartWalletFollowTaskMapper followTaskMapper;
 
     /** 每个仓位的冷却截止时间，防止短时间内反复评估同一仓位 */
     private final ConcurrentHashMap<Long, Instant> cooldownMap = new ConcurrentHashMap<>();
@@ -313,10 +322,16 @@ public class CapitalRecycleExitService {
                     : 0.0;
             double costScore = Math.min(costRatio * 2.5, 1.0) * 25.0; // 占 40%+ 时满分
 
-            // ③ 市场流动性分 (0~15) — 简化实现：基于仓位价值变化幅度
-            // 价格几乎没动说明流动性差或市场不活跃
-            double absRoi = Math.abs(roiRate.doubleValue());
-            double liquidityScore = absRoi < 0.02 ? 15.0 : (absRoi < 0.04 ? 10.0 : 5.0);
+            // ③ 市场流动性分 (0~15) — F-P1-16: 真实 bid-side 深度评分
+            // 旧实现用 |ROI| 反向衡量，会把"长期未动但盘口极薄"误判为流动性好；
+            // 现在直接读 orderbook bid 侧 3c 范围内累计 size, 与本仓位 quantity 比较:
+            //   absorbRatio = bid_depth_3c / position_quantity
+            //   ratio ≥ 1.5 → 15 (盘口能从容吸纳, 退出滑点低)
+            //   1.0 ≤ ratio < 1.5 → 12
+            //   0.5 ≤ ratio < 1.0 → 8 (部分滑点)
+            //   ratio < 0.5 → 4 (退出代价高, 不鼓励回收)
+            //   orderbook 不可用 → 退回旧 |ROI| 启发式 (保持向后兼容)
+            double liquidityScore = computeLiquidityScore(position, quantity, roiRate);
 
             // ④ 机会成本分 (0~20)
             double opportunityScore = maxPositions > 0
@@ -356,11 +371,45 @@ public class CapitalRecycleExitService {
         return Duration.between(openedAt.toInstant(), Instant.now()).toHours();
     }
 
+    /**
+     * F-P1-17: 真实查询排队信号数（PENDING 状态的跟单任务），用于机会成本评分。
+     *
+     * <p>评分公式（详见 {@link #scoreCandidates}）：
+     * {@code opportunityScore = min(pendingSignals / maxPositions, 1.0) × 20}
+     * <ul>
+     *   <li>队列越长 → 当前未释放仓位的机会成本越高 → 评分越高 → 越倾向回收；</li>
+     *   <li>队列为空 → opportunityScore = 0，回收完全靠 holding / cost / liquidity 三维度。</li>
+     * </ul>
+     *
+     * <p>查询窗口：仅统计 24h 内创建的 PENDING 任务，避免历史僵尸数据虚增队列长度
+     * （上游 {@code SmartWalletFollowTaskService} 已有兜底超时清理，但 24h 窗口给一层
+     * 防御性兜底；窗口可通过 {@code signal-risk.pending-signal-lookback-hours} 配置）。
+     *
+     * <p>失败语义：mapper bean 缺失 / 查询异常时返回 0（与旧"简化实现"等价），
+     * 不影响主路径的其他评分维度。
+     */
     private int countPendingSignals() {
-        // 简化实现：返回 0，机会成本评分暂不启用。
-        // 后续可接入 SmartWalletFollowTaskMapper 查询 PENDING/EXECUTING 任务数
-        // 以获得更精确的排队信号计数。
-        return 0;
+        if (followTaskMapper == null) {
+            return 0;
+        }
+        try {
+            int lookbackHours = 24;
+            if (properties != null && properties.getSignalRisk() != null) {
+                Integer configured = properties.getSignalRisk().getPendingSignalLookbackHours();
+                if (configured != null && configured > 0) {
+                    lookbackHours = configured;
+                }
+            }
+            Date cutoff = Date.from(Instant.now().minus(Duration.ofHours(lookbackHours)));
+            Long count = followTaskMapper.selectCount(
+                    new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                            .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING")
+                            .ge(SmartWalletFollowTaskEntity::getCreatedAt, cutoff));
+            return count == null ? 0 : count.intValue();
+        } catch (RuntimeException ex) {
+            log.debug("countPendingSignals fallback to 0 (mapper failed): {}", ex.getMessage());
+            return 0;
+        }
     }
 
     private boolean isInCooldown(Long positionId) {
@@ -452,6 +501,76 @@ public class CapitalRecycleExitService {
         }
         // bids 按价格降序排列，第一个即 best bid
         return orderBook.getBids().get(0).getPrice();
+    }
+
+    /**
+     * F-P1-16: 真实 bid-side 流动性深度评分.
+     *
+     * <p>逻辑:
+     * <ol>
+     *   <li>拉 token 的实时 orderbook (走 `marketDataCacheService`, 已有缓存兜底);</li>
+     *   <li>累计 best bid 下 3 美分以内所有档位的 size → bidDepth3c;</li>
+     *   <li>absorbRatio = bidDepth3c / positionQuantity:
+     *     <ul>
+     *       <li>≥ 1.5 → 15 分: 盘口能从容吸纳本仓位, 退出滑点极低;</li>
+     *       <li>≥ 1.0 → 12 分: 单次性吃完, 边际滑点;</li>
+     *       <li>≥ 0.5 → 8 分: 部分滑点风险;</li>
+     *       <li>&lt; 0.5 → 4 分: 退出代价高, 不鼓励回收.</li>
+     *     </ul>
+     *   </li>
+     *   <li>orderbook 不可用 / 异常时退回旧 |ROI| 启发式 (保持向后兼容).</li>
+     * </ol>
+     *
+     * <p>注意: 这里取 bid 侧而非 ask 侧, 因为资金回收是 SELL 操作, 流动性由对手方 bid depth 决定.
+     */
+    private double computeLiquidityScore(SmartWalletPositionEntity position, BigDecimal quantity, BigDecimal roiRate) {
+        BigDecimal bidDepth3c = fetchBidDepthWithinCents(position, new BigDecimal("0.03"));
+        if (bidDepth3c == null || quantity == null || quantity.signum() <= 0) {
+            // Fallback to legacy heuristic (绝对 ROI 越小评分越高)
+            double absRoi = Math.abs(roiRate.doubleValue());
+            return absRoi < 0.02 ? 15.0 : (absRoi < 0.04 ? 10.0 : 5.0);
+        }
+        double absorbRatio = bidDepth3c.divide(quantity, 6, RoundingMode.HALF_UP).doubleValue();
+        if (absorbRatio >= 1.5) return 15.0;
+        if (absorbRatio >= 1.0) return 12.0;
+        if (absorbRatio >= 0.5) return 8.0;
+        return 4.0;
+    }
+
+    /**
+     * F-P1-16 helper: 累计 best bid 下 maxOffset 美分以内所有 bid 档位的 size.
+     * 返回 null 表示 orderbook 不可用 (调用方走 fallback).
+     */
+    private BigDecimal fetchBidDepthWithinCents(SmartWalletPositionEntity position, BigDecimal maxOffset) {
+        String tokenId = position.getTokenId();
+        if (tokenId == null || tokenId.isBlank()) {
+            return null;
+        }
+        try {
+            PolymarketApiClient.OrderBook orderBook = marketDataCacheService.getOrderBook(tokenId);
+            if (orderBook == null || orderBook.getBids() == null || orderBook.getBids().isEmpty()) {
+                return null;
+            }
+            BigDecimal bestBid = orderBook.getBids().get(0).getPrice();
+            if (bestBid == null || bestBid.signum() <= 0) {
+                return null;
+            }
+            BigDecimal cutoff = bestBid.subtract(maxOffset);
+            BigDecimal cumulative = BigDecimal.ZERO;
+            for (PolymarketApiClient.OrderBookLevel level : orderBook.getBids()) {
+                if (level == null || level.getPrice() == null || level.getSize() == null) {
+                    continue;
+                }
+                if (level.getPrice().compareTo(cutoff) < 0) {
+                    break; // bids 按价格降序, 一旦低于 cutoff 后续都不在窗口内
+                }
+                cumulative = cumulative.add(level.getSize());
+            }
+            return cumulative;
+        } catch (Exception ex) {
+            log.debug("[F-P1-16] fetchBidDepthWithinCents failed tokenId={}: {}", tokenId, ex.getMessage());
+            return null;
+        }
     }
 
     private static BigDecimal safe(BigDecimal value) {

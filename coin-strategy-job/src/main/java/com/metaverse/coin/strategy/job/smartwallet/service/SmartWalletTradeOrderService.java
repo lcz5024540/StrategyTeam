@@ -524,6 +524,8 @@ public class SmartWalletTradeOrderService {
                 .setExecutionAddress(position.getExecutionAddress())
                 .setWalletAddress(firstOrder == null ? null : firstOrder.getWalletAddress())
                 .setSourceFollowTaskId(firstOrder == null ? null : firstOrder.getFollowTaskId())
+                // W1-T3: 聚合订单 trace_id 取首笔 CLOB 单的 trace_id
+                .setTraceId(firstOrder == null ? null : firstOrder.getTraceId())
                 .setEntryQuantity(entryQuantity)
                 .setEntryAvgPrice(weightedAverage(entryCost, entryQuantity))
                 .setEntryCostUsdc(entryCost)

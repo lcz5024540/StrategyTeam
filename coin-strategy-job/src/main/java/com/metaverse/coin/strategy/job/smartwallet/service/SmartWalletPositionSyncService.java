@@ -52,6 +52,10 @@ public class SmartWalletPositionSyncService {
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final PolymarketMarketDataCacheService marketDataCacheService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    // F-P1-5: 退出阈值扣除双边 taker fee
+    private final PolymarketFeeScheduleService feeScheduleService;
+    // F-P1-6: 分批出场 (auto exit 时按 partial-exit-ratios 拆 SELL 单)
+    private final StagedExitPlanner stagedExitPlanner;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
     private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
@@ -369,6 +373,8 @@ public class SmartWalletPositionSyncService {
 
             // Resolve dynamic threshold (falls back to fixed threshold when feature is disabled)
             BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
+            // F-P1-5: 在 wallet / scoring 调整前先扣费率（保证 fee 计入"基准阈值"）
+            threshold = applyFeeAdjustment(threshold, position, mode);
             threshold = adjustThresholdByWalletBehavior(position, threshold, mode);
             threshold = adjustThresholdByExitScoringContext(position, threshold, mode);
 
@@ -395,12 +401,22 @@ public class SmartWalletPositionSyncService {
                     : resolvePaperThresholdExitPrice(position, threshold, mode, decision.markPrice());
 
             try {
+                // F-P1-6: PAPER 模式也分批，逐档调用 accountingService.exitPosition
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, exitPrice);
+                BigDecimal exitQty = stagedPlan.isFullExit()
+                        ? position.getQuantity()
+                        : position.getQuantity().multiply(stagedPlan.getRatioOfRemaining()).setScale(8, RoundingMode.HALF_UP);
                 SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
                 exitRequest.setPrice(exitPrice);
-                exitRequest.setQuantity(position.getQuantity());
-                exitRequest.setReason(exitReason);
+                exitRequest.setQuantity(exitQty);
+                exitRequest.setReason(stagedPlan.isFullExit()
+                        ? exitReason
+                        : exitReason + ";STAGED_LEG=" + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
-                exitSignalProvider.clearPositionHistory(position.getId());
+                if (stagedPlan.isFullExit()) {
+                    // 分批中途保留 trend 历史，全平时清空（与 LIVE 路径一致）
+                    exitSignalProvider.clearPositionHistory(position.getId());
+                }
 
                 log.info("{} triggered positionId={} marketId={} outcome={} mark={} exitPrice={} threshold={}% actual={}% pnl={} trendTriggered={} currentStatus={}",
                         mode.logLabel(),
@@ -460,10 +476,18 @@ public class SmartWalletPositionSyncService {
             }
             try {
                 BigDecimal paperExitPrice = resolvePaperThresholdExitPrice(position, threshold, AutoExitMode.TAKE_PROFIT, decision.markPrice());
+                // F-P1-6: PAPER take-profit 也支持分批
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, paperExitPrice);
+                BigDecimal exitQty = stagedPlan.isFullExit()
+                        ? position.getQuantity()
+                        : position.getQuantity().multiply(stagedPlan.getRatioOfRemaining()).setScale(8, RoundingMode.HALF_UP);
                 SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
                 exitRequest.setPrice(paperExitPrice);
-                exitRequest.setQuantity(position.getQuantity());
-                exitRequest.setReason(AutoExitMode.TAKE_PROFIT.reason());
+                exitRequest.setQuantity(exitQty);
+                exitRequest.setReason(stagedPlan.isFullExit()
+                        ? AutoExitMode.TAKE_PROFIT.reason()
+                        : AutoExitMode.TAKE_PROFIT.reason()
+                                + ";STAGED_LEG=" + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
 
                 log.info("{} triggered positionId={} marketId={} outcome={} entry={} mark={} exitPrice={} threshold={}% actual={}% pnl={} currentStatus={}",
@@ -535,11 +559,19 @@ public class SmartWalletPositionSyncService {
                 continue;
             }
             try {
-                SmartWalletExecutionResult result = clobExecutionService.executeLiveExit(
-                        position,
-                        decision.markPrice(),
-                        AutoExitMode.TAKE_PROFIT.reason()
-                );
+                // F-P1-6: 分批出场 — enable-staged-exit=true 时按 partial-exit-ratios 拆 SELL 单
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, decision.markPrice());
+                SmartWalletExecutionResult result = stagedPlan.isFullExit()
+                        ? clobExecutionService.executeLiveExit(
+                                position,
+                                decision.markPrice(),
+                                AutoExitMode.TAKE_PROFIT.reason())
+                        : clobExecutionService.executeLivePartialExit(
+                                position,
+                                stagedPlan.getRatioOfRemaining(),
+                                decision.markPrice(),
+                                AutoExitMode.TAKE_PROFIT.reason()
+                                        + ";STAGED_LEG=" + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 accountingService.recordLiveExitExecution(position, result, AutoExitMode.TAKE_PROFIT.reason());
                 log.info("LIVE take-profit submitted positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% status={} orderId={}",
                         position.getId(),
@@ -603,6 +635,8 @@ public class SmartWalletPositionSyncService {
                     position.getAverageEntryPrice()
             );
             BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
+            // F-P1-5: 阈值加上双边 taker fee
+            threshold = applyFeeAdjustment(threshold, position, AutoExitMode.STOP_LOSS);
             threshold = adjustThresholdByWalletBehavior(position, threshold, AutoExitMode.STOP_LOSS);
             threshold = adjustThresholdByExitScoringContext(position, threshold, AutoExitMode.STOP_LOSS);
             ExitDecision decision = buildExitDecision(position, threshold, AutoExitMode.STOP_LOSS);
@@ -621,13 +655,22 @@ public class SmartWalletPositionSyncService {
                     ? safe(position.getLastMarkPrice())
                     : decision.markPrice();
             try {
-                SmartWalletExecutionResult result = clobExecutionService.executeLiveExit(
-                        position,
-                        exitPrice,
-                        exitReason
-                );
+                // F-P1-6: 分批出场 — enable-staged-exit=true 时按 partial-exit-ratios 拆 SELL 单
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, exitPrice);
+                SmartWalletExecutionResult result = stagedPlan.isFullExit()
+                        ? clobExecutionService.executeLiveExit(
+                                position,
+                                exitPrice,
+                                exitReason)
+                        : clobExecutionService.executeLivePartialExit(
+                                position,
+                                stagedPlan.getRatioOfRemaining(),
+                                exitPrice,
+                                exitReason + ";STAGED_LEG="
+                                        + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 accountingService.recordLiveExitExecution(position, result, exitReason);
-                if (result != null && result.isSuccess()) {
+                if (result != null && result.isSuccess() && stagedPlan.isFullExit()) {
+                    // 只在最后一档（全平）时清掉 trend stop-loss 价格历史，分批中途保留
                     exitSignalProvider.clearPositionHistory(position.getId());
                 }
                 log.info("LIVE stop-loss submitted positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% trendTriggered={} status={} orderId={}",
@@ -670,6 +713,8 @@ public class SmartWalletPositionSyncService {
         BigDecimal configured = risk.getAutoTakeProfitThresholdRate() == null
                 ? new BigDecimal("0.20")
                 : risk.getAutoTakeProfitThresholdRate();
+        // F-P1-5: 阈值加上双边 taker fee，确保净盈利达到 configured 阈值才出场
+        configured = applyFeeAdjustment(configured, position, AutoExitMode.TAKE_PROFIT);
         BigDecimal unitCost = resolveUnitCostBasis(position);
         if (unitCost.compareTo(BigDecimal.ZERO) <= 0 || unitCost.compareTo(BigDecimal.ONE) >= 0) {
             return configured;
@@ -690,6 +735,62 @@ public class SmartWalletPositionSyncService {
             return configured;
         }
         return configured.min(reachableThreshold);
+    }
+
+    /**
+     * F-P1-5：把 taker fee（双边）加到 stop-loss / take-profit 配置阈值上，
+     * 这样实际触发出场时，扣完手续费后的净 ROI 才符合 configured 阈值。
+     *
+     * <p>公式：{@code effectiveThreshold = configured + feeMultiplier × observedTakerFeeRate}，
+     *   其中 {@code feeMultiplier=2} 默认（进出两次 taker fee）。受
+     *   {@code signal-risk.enable-exit-threshold-fee-adjustment}（默认 true）控制；
+     *   单次扣除上限为 {@code signal-risk.exit-threshold-fee-adjustment-cap}（默认 0.08）。</p>
+     *
+     * <p>该方法 fee-rate 来源是 {@link PolymarketFeeScheduleService}（运行时缓存 → 品类映射 → 默认 2%），
+     *   按品类动态生效。</p>
+     */
+    private BigDecimal applyFeeAdjustment(BigDecimal configured,
+                                          SmartWalletPositionEntity position,
+                                          AutoExitMode mode) {
+        if (configured == null) {
+            return null;
+        }
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        if (risk == null || !risk.isEnableExitThresholdFeeAdjustment()) {
+            return configured;
+        }
+        if (feeScheduleService == null || position == null) {
+            return configured;
+        }
+        String marketId = position.getMarketId();
+        String category = null;
+        if (position.getMarketInfo() != null) {
+            category = position.getMarketInfo().getCategory();
+        }
+        BigDecimal feeRate;
+        try {
+            feeRate = feeScheduleService.getTakerFeeRate(marketId, category);
+        } catch (Exception ex) {
+            log.debug("F-P1-5 fee rate lookup failed for positionId={} marketId={}: {}",
+                    position.getId(), marketId, ex.getMessage());
+            return configured;
+        }
+        if (feeRate == null || feeRate.compareTo(BigDecimal.ZERO) <= 0) {
+            return configured;
+        }
+        BigDecimal multiplier = risk.getExitThresholdFeeMultiplier() == null
+                ? new BigDecimal("2") : risk.getExitThresholdFeeMultiplier();
+        BigDecimal adjustment = feeRate.multiply(multiplier).setScale(6, RoundingMode.HALF_UP);
+        BigDecimal cap = risk.getExitThresholdFeeAdjustmentCap();
+        if (cap != null && cap.compareTo(BigDecimal.ZERO) > 0 && adjustment.compareTo(cap) > 0) {
+            adjustment = cap;
+        }
+        BigDecimal adjusted = configured.add(adjustment).setScale(4, RoundingMode.HALF_UP);
+        if (log.isDebugEnabled()) {
+            log.debug("F-P1-5 fee-adjusted threshold positionId={} marketId={} category={} mode={} configured={} feeRate={} adjustment={} adjusted={}",
+                    position.getId(), marketId, category, mode.logLabel(), configured, feeRate, adjustment, adjusted);
+        }
+        return adjusted;
     }
 
     private BigDecimal adjustThresholdByWalletBehavior(SmartWalletPositionEntity position,

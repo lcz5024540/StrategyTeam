@@ -1,7 +1,7 @@
 # Polymarket 跟单策略全流程分析
 
-> 日期：2026-05-12
-> 版本：v2.1（在 v2.0 基础上补全：退出跟单 / 意图聚合 / 应用层与运维入口 / 费率反馈 / 调度任务全量）
+> 日期：2026-05-17
+> 版本：v2.2（在 v2.1 基础上补全：W1 闭环可观测性 / W2 风控增强 Gate 群 / Tier A·B·C 通用化基础设施 / 新增辅助服务 / 审计告警通道 / Web BFF 端点 / MAKER 路由与价格冲击三段式 / 真值刷新与回测回放）
 > 替代原 v1.0 回溯分析文档
 
 ---
@@ -581,6 +581,318 @@ flowchart TD
 
 ---
 
+### 3.8 W1 闭环可观测性（trace_id / Shadow / Live-Replay diff / Settlement audit）🆕
+
+跟单系统过去存在三个"黑盒"——被风控拒绝的信号若放行会赚还是亏？回测和实盘的差异在哪？UMA Oracle 解析失败的市场卡在哪一步？W1 系列把这些链路全部闭环成可查、可对比、可告警的产物。所有数据通过同一 `trace_id` 串联。
+
+```mermaid
+flowchart LR
+    subgraph 根["W1-T3 trace 根"]
+        TI["TraceIds\n生成 tev_%012d (16 字符)"]
+        TC["TraceContext\nMDC try-with-resources"]
+        TQ["TraceQueryService\nGET /trace/{traceId}"]
+    end
+    subgraph 拒单影子["W1-T4 被拒信号影子记账"]
+        SSR["SignalShadowRecorder\n拒绝 / 降级路径同步落表"]
+        SFS["ShadowFillSimulationService\nVWAP 逐档算入场"]
+        SSBJ["ShadowSettlementBackfillJob ⏱ 10min\n找 RESOLVED 市场回填出场 PnL"]
+        SVLW["ShadowVsLiveWeeklyReportService\ncron 周一 06:00 出周报"]
+    end
+    subgraph Replay["W1-T1 Live ↔ Replay diff"]
+        LRD["LiveReplayDiffJob ⏱ 日 02:00\n→ LiveReplayDiffReportService"]
+        LRH["live_replay_diff_history\n(按 as_of_date upsert)"]
+    end
+    subgraph 结算审计["W1-T2 结算源对齐 + 三方 diff"]
+        SSA["SettlementSourceAuditJob ⏱ 每小时\n→ SettlementSourceAuditService"]
+        RAP["ResolutionAuditPersistenceService\n→ pm_resolution_audit"]
+        RTD["ResolutionTriDiffJob ⏱ 4h\n比 我方 / Gamma / UMA"]
+        RLR["ResolutionLiveRefreshService\nGamma API 重解析 top 冲突"]
+    end
+    SPF["SlippagePostFactReportJob ⏱ 周一 07:00\n实盘 vs 估算滑点 P95 告警"]
+
+    TI --> TC --> TQ
+    TI -.trace_id 透传.-> SSR
+    TI -.trace_id 透传.-> LRD
+    TI -.trace_id 透传.-> RAP
+    SSR --> SFS --> SSBJ --> SVLW
+    LRD --> LRH
+    SSA --> RAP --> RTD --> RLR
+    SPF --> 告警["SmartWalletAuditAlertSink\nstrategy_alert 表 + 飞书/邮件预留"]
+    SVLW --> 告警
+    LRD --> 告警
+    SSA --> 告警
+    RTD --> 告警
+```
+
+**W1-T3 全链路 trace_id：**
+- `TraceIds` / `TraceContext` 现已下沉到 `common-service`，供天气 / BTC 5min 复用（Tier A 通用化，详见 §3.10）
+- 五张关键表都带 `trace_id` 列：`smart_wallet_trade_event` / `smart_wallet_follow_task` / `smart_wallet_order` / `smart_wallet_trade_order` / `smart_wallet_position`（position 用 `origin_trace_id` 语义：首次开仓的 trace）
+- logback pattern `[trace=%X{traceId:-}]` 让所有日志自动带 trace_id
+- `TraceQueryService` 提供 `GET /smart-wallet/trace/{traceId}` 反查全链路时间线（事件 → 任务 → 订单 → 成交 → 仓位 → 结算）
+
+**W1-T4 影子记账（`SignalShadowRecorder` + `ShadowFillSimulationService`）：**
+- 在 `SmartWalletFollowTaskService.createFollowTaskIfQualified` 的拒绝 / 降级路径（REJECTED / PAPER_SHADOW / DOWNGRADED）同步调用 `SignalShadowRecorder.record(event, decision, ...)`
+- `ShadowFillSimulationService.simulate(side, stake, snapshot)` 基于 `market_snapshot` 订单簿做 VWAP 逐档算入场价；失败时落表状态 `NO_DEPTH` / `DRY_FALLBACK`，便于事后分析门控误伤
+- 表 `smart_wallet_signal_shadow` 携带 `decision_status / reject_layer / entry_estimator_source / shadow_entry_slippage_bps / shadow_pnl_usdc / status` 等字段
+- `ShadowSettlementBackfillJob` ⏱ `fixedDelay 600000ms (10min)`：找 RESOLVED 市场 → 算 exit_price / pnl → 更新 status=SETTLED
+- `ShadowVsLiveWeeklyReportService` `cron 0 0 6 * * MON`：按 `reject_layer + entry_estimator_source` 分桶对比 shadow vs live PnL，生成 `estimatorSourceBreakdown`（VWAP-rejected vs PROXY-rejected）
+- 失败永远只 warn，不阻塞主链路
+
+**W1-T1 Live ↔ Replay diff（`LiveReplayDiffReportService` + `LiveReplayDiffJob`）：**
+- `cron 0 0 2 * * *` Asia/Shanghai：跑 T-1 日 replay backtest（由 `SmartWalletReplayBacktestService.replayLiveWindow(date)` 提供 candidate 政策回放），与 `smart_wallet_follow_task` + `position` 实盘窗口对比
+- 输出 `signal_accepted_diff / pnl_diff_usdc / pnl_diff_bps`，超阈值（默认 `pnl-diff-bps=100`、`signal-miss-pct=0.05`）→ `SmartWalletAuditAlertSink.publish(AUDIT_LIVE_REPLAY_DIFF)`
+- 历史落 `live_replay_diff_history` 表（按 `as_of_date` upsert）
+
+**W1-T2 结算源对齐 + 三方 diff：**
+- `SettlementSourceAuditJob` `cron 0 0 * * * *`（每小时）扫描 `smart_wallet_market_info + position + claim_retry`，计算 lifecycle 分布 / parseFailure / resolutionDelayed / pendingSettlementOverdue / claimFailureMax
+- `MarketResolutionResolver.resolveWithAudit` 每次解析快照通过 `ResolutionAuditPersistenceService` 写入 `pm_resolution_audit`
+- `ResolutionTriDiffJob` `cron 0 15 */4 * * *`（每 4h）比对 我方 / Gamma / UMA 三方判定，输出 4 类不一致（`OURS_VS_UMA` / `OURS_VS_GAMMA` / `UMA_VS_GAMMA` / `HISTORY_CONFLICT`），异常超阈值 → `AUDIT_RESOLUTION_TRIDIFF` 告警
+- `ResolutionLiveRefreshService` 开启时（`audit.resolution-tridiff-live-refresh-enabled=true`）对 top 冲突调 Gamma API 重新解析并落新 audit 记录
+
+**W2-T4.5 滑点事后统计（`SlippagePostFactReportJob` + `SlippagePostFactReportService`）：**
+- `cron 0 0 7 * * MON`（周一 07:00）周度跑实盘 vs 估算滑点对比
+- P95 超阈值 → `AUDIT_SLIPPAGE_POSTFACT` 告警
+
+**关键 SQL 验证：**
+
+```sql
+-- trace_id 覆盖率
+SELECT COUNT(*) total, COUNT(trace_id) with_trace
+  FROM smart_wallet_follow_task
+ WHERE created_at >= NOW() - INTERVAL 1 DAY;
+
+-- shadow 命中率
+SELECT decision_status, status, COUNT(*) cnt
+  FROM smart_wallet_signal_shadow
+ WHERE created_at >= NOW() - INTERVAL 7 DAY
+ GROUP BY decision_status, status;
+
+-- VWAP vs PROXY 估算源对比（第十四批新增维度）
+SELECT entry_estimator_source, COUNT(*) cnt,
+       AVG(ABS(shadow_entry_slippage_bps)) avg_abs_bps,
+       SUM(shadow_pnl_usdc) total_pnl
+  FROM smart_wallet_signal_shadow
+ WHERE status='SETTLED' AND shadow_settled_at >= NOW() - INTERVAL 30 DAY
+ GROUP BY entry_estimator_source;
+```
+
+**不充分之处：**
+- Shadow 模拟的 VWAP 依赖 `market_snapshot` 的深度，45s 采集间隔下深度可能与 leader 真实成交时刻有偏差
+- Live ↔ Replay diff 仅按"日"粒度对比，单日内的策略行为差异不可见
+- `ResolutionTriDiffService` 的"历史冲突"分类不会自动闭环，需要人工通过 `/audit/resolution/needs-review` 入口处理
+- 周报类（shadow weekly / slippage post-fact）只在周一发，灰度切换后最迟需要 7 天才能看到首份对比
+
+---
+
+### 3.9 W2 风控增强 Gate 群（T1 ~ T6 + MAKER 路由）🆕
+
+§3.3 的 13 Gate 流水线在 W2 阶段被进一步细化——多个原本只是"hard threshold"的 Gate 被拆出可独立灰度的子段，并补入新维度（leader 滑动胜率、行为漂移、距结算时间、价格冲击三段式、流动性 / 价差分位）。所有新子段通过 `enable-*` 配置独立灰度，默认 OFF，逐项放行。
+
+```
+G1   Manual blocklist                                  ← 旧
+G2   Wallet archetype                                  ← 旧 (OBSERVE_ONLY → 拒绝)
+G2a  Wallet score / 流动性 / 价差            🆕         ← 基础硬阈值
+G2b  Leader 滑动窗口胜率 (W2-T2)            🆕         ← LeaderRollingPerformanceService
+G2c  Leader 行为漂移 (W2-T6)                🆕         ← LeaderBehaviorDriftService
+G3-G5 仓位 / 暴露 / 集中度                  ← 旧
+G6   Market lifecycle + maxHoursToMarketEnd
+G7-G9 EV / profitability / consensus (W2-T3) 🆕        ← EntityAwareConsensusService BOOST_ONLY
+G10  Stake (Kelly + 共识倍率)
+G11  价格冲击三段式 (W2-T4)                  🆕         ← VWAP / PROXY → MAKER_FIRST / MAKER_ONLY / REJECT
+G11  价差 P70 (W2-T1.4)                       🆕         ← pm_market_liquidity_percentile_daily
+G11  距结算时间 (W2-T5)                      🆕         ← 三档：< 30min 拒绝 / [30,120) 降级 / ≥ 120 全仓
+G11  流动性 P30 滚动门 (W2-T1)               🆕         ← MarketLiquidityPercentileService
+G11  其它 slippage 兜底                       ← 旧
+```
+
+**各新子段详解：**
+
+| 子段 | 服务 / 数据源 | 行为 | 配置开关 |
+|------|----------|------|---------|
+| W2-T1 流动性 P30 滚动 | `MarketLiquidityPercentileService` + `pm_market_liquidity_percentile_daily` | category 滚动 P30 已计算时门槛 = P30，否则 fallback `minMarketLiquidity` 硬阈值 | `enable-liquidity-rolling-percentile` (prod=true) |
+| W2-T1.4 价差 P70 | 同表 `spread_bps_p70` | 三档：`≤ P70` 全仓 / `(P70, P70 × downgradeFactor]` ×0.5 / `> P70 × rejectFactor` 拒绝 | `enable-spread-p70-gate` (prod=true) |
+| W2-T2 Leader 滑动窗口胜率 | `LeaderRollingPerformanceService` + `smart_wallet_order(BUY+ENTRY) ⨝ position(已关闭)` 最近 N 笔 | 三态 ACTIVE / COOLING（仓位 ×0.05）/ SUSPENDED | `enable-leader-rolling-gate` (默认 OFF，等待 W1-T4 数据验证) |
+| W2-T3 共识强度 BOOST_ONLY | `EntityAwareConsensusService` 多实体共识 | 2 实体 ×1.20 / 3+ 实体 ×1.50 加分；HARD_GATE 模式可切换为门控 | `consensus-gate-mode=BOOST_ONLY` |
+| W2-T4 价格冲击三段式 | `MarketPriceImpactEstimator`（VWAP）/ `profitabilityEstimate.estimatedSlippageUsdc/stake`（PROXY） | `< 100 bps` 全仓 NORMAL / `[100,300) bps` ×0.5 + MAKER_FIRST / `[300,500) bps` ×0.25 + MAKER_ONLY (10s 超时撤单) / `≥ 500 bps` 拒绝 | `enable-price-impact-gate` (默认 true) + `enable-vwap-slippage-estimator` (prod=true) |
+| W2-T5 距结算时间 | `event_end_at - now()` | 三档：`< 30 min` 拒绝 / `[30, 120) min` 仓位 ×0.5 / `≥ 120 min` 全仓；不影响已有仓位退出；豁免名单 `time-to-expiry-exempt-market-types`（天气 / BTC 5min） | `enable-time-to-expiry-gate` (默认 true) |
+| W2-T6 Leader 行为漂移 | `LeaderBehaviorDriftService` + `smart_wallet_behavior_profile.behavior_vector_json`（方案 B 首选，fallback 实时聚合） | 7 维特征 = `[log10(size+1)/6, sideBuy, cat_POLITICS, cat_CRYPTO, cat_SPORTS, cat_WEATHER, cat_OTHER]`；cosine 距离三态：ACTIVE / DRIFTED（×0.25）/ DRIFTED_SEVERE（拒绝） | `enable-leader-drift-gate` (prod=true) |
+
+**W2-T4 价格冲击三段式 + MAKER 路由细节（`SmartWalletSignalRiskService` 内联）：**
+
+```text
+priceImpactExecutionMode:
+  NORMAL       — TAKER 全仓，限价 = rawPrice + slippage
+  MAKER_FIRST  — 优先 MAKER 挂单，未成交允许后续重试 TAKER
+  MAKER_ONLY   — 仅挂 MAKER，10s 超时强制 cancel；由 MakerOnlyOrderTimeoutTracker 兜底
+  REJECTED     — 直接拒绝
+```
+
+- VWAP estimator（`MarketPriceImpactEstimator`）：基于最近一笔 `market_snapshot` 跑逐档 VWAP，返回 `PriceImpactEstimate.ok` + bps；估算失败回退 PROXY，标记 `priceImpactBpsSource=PROXY` 落入 shadow 表
+- MAKER_ONLY 超时撤单（`MakerOnlyOrderTimeoutTracker`）：`@Scheduled fixedDelay 2000ms` 扫描内存 cache，调用 `PolymarketClobClientRouter.cancelOrder` 释放挂单占用的资金给下一笔；重启即清空（重启后由 `SmartWalletOrderPollingService` 兜底）
+- 估算源回写 `SmartWalletSignalShadowEntity.entryEstimatorSource`，使 `ShadowVsLiveWeeklyReportService` 能按 `VWAP(OK) / VWAP(DRY_FALLBACK) / PROXY` 分桶对比胜率
+
+**Leader 维度的额外控制：**
+
+- **`LeaderRollingPerformanceService`**：滑动窗口取最近 N 笔已关闭 ENTRY+BUY 配对（order ⨝ position），按 ROI 命中率打三态。`LeaderRollingMonitorJob` `cron 0 30 9 * * *` 每日聚合一次，结果落 `pm_leader_rolling_aggregation`，触发 `WARN_HIGH_COOLING / WARN_LOW_WIN_RATE / AUDIT_LEADER_ROLLING_HEALTH` 告警
+- **`LeaderBehaviorDriftService`**：单 leader 行为向量与历史 centroid 的 cosine 距离判定；`LeaderDriftAggregationJob` `cron 0 0 8 * * *` 每日把所有 leader 的 drift 状态打到 `pm_leader_drift_aggregation`，并 push `AUDIT_LEADER_DRIFT`
+- **`LeaderBehaviorDriftService.stakeMultiplier(state)`** — DRIFTED → ×0.25，DRIFTED_SEVERE → 拒绝；ACTIVE → ×1.0
+
+**不充分之处：**
+- W2-T4 的 MAKER_ONLY 10s 超时是经验值，未按品类（高波动 vs 长期市场）分桶
+- W2-T6 行为向量目前 7 维硬编码，新增 category 需要全量重算 centroid
+- W2-T1 / W2-T1.4 都依赖 daily snapshot，刚开市 / 罕见 category 在第一天没有分位数据时会回退到 fallback 硬阈值
+- W2-T2 默认仍关闭（OFF），等待 W1-T4 shadow PnL 验证
+
+---
+
+### 3.10 跨策略通用化基础设施（Tier A / B / C）🆕
+
+W2 系列在沉淀的同时识别出三段可复用基础设施，已下沉到 `common-service` 模块，跟单 / 天气 / BTC 5min 等多策略共用。
+
+| Tier | 组件 | 位置 | 复用语义 |
+|------|------|------|---------|
+| Tier A | `TraceIds` / `TraceContext` | `common-service.trace` | 任意策略 generate / parse / MDC 注入 trace_id |
+| Tier A | `StrategyAuditAlertSink` 接口 + `StrategyAlertService` 默认实现 | `common-service.alert` | 任意策略 publish 审计告警；跟单专用强类型重载是 `SmartWalletAuditAlertSink extends StrategyAuditAlertSink` |
+| Tier B | `BehaviorVectorizer<E>` 接口 | `common-service.behavior` | 单事件 → N 维向量；各策略实现自己的 vectorizer（跟单 7 维、天气城市 one-hot、BTC 价差档位） |
+| Tier B | `CentroidDriftDetector` 静态工具 | 同上 | `cosineDistance(centroid, current)` + `classify(distance, threshold, severeThreshold)` 三态 |
+| Tier B | `SignalRiskGate` / `SignalRiskPipeline` 契约 | `common-service.risk` | 复用 Gate 责任链结构 |
+| Tier C | （路线图）跨策略 daily snapshot 流水线 / 跨策略 Replay backtest | 规划中 | 把 `MarketLiquidityPercentileSnapshotJob` / `LiveReplayDiffJob` 改造为接口驱动 |
+
+**Tier A 的关键约束：**
+- `TraceIds.generate(eventId)` 必须确定性（同一 trade_event 永远派生同一 trace_id），便于跨表 JOIN
+- `StrategyAuditAlertSink.publish(...)` 实现必须 swallow exception，不能阻塞 Job 主流程
+- `STRATEGY_ID` 隔离不同策略空间，跟单专用 `STRATEGY_ID="SMART_WALLET_AUDIT"`
+
+**Tier B 的关键约束：**
+- `BehaviorVectorizer.dimension()` 必须恒定——一旦实现，维度跨版本不能变化，否则历史 centroid 失效
+- `BehaviorVectorizer.vectorize(event)` 必须确定性
+- `CentroidDriftDetector.classify` 对 NaN/Infinity 按 ACTIVE 处理（放行 + 上层 cold-start 兜底）
+
+**不充分之处：**
+- Tier C 还在路线图，跨策略 snapshot Job 当前仍是跟单专属
+- `BehaviorVectorizer` 7 维硬编码限制 leader 行为可解释性扩展
+- `StrategyAuditAlertSink` 默认实现仅写 `strategy_alert` 表 + 日志，飞书 / 邮件投递通道仍为预留注入点
+
+---
+
+### 3.11 新增辅助服务一览 🆕
+
+下表覆盖 v2.1 → v2.2 之间新增 / 重构的辅助服务，便于全局检索（按职责分组）。已在 §3.6 / §3.7 / §3.8 / §3.9 详述的组件不再重复展开。
+
+**入场 / 退出辅助：**
+
+| 服务 | 关键方法 / 调度 | 职责 |
+|------|---------------|------|
+| `TimeAwareStopLossService` (implements `ExitSignalProvider`) | `resolveStopLossThreshold(position)` / `isTrendStopLossTriggered(...)` | 距结算越近止损阈值越紧；连续下行 N 期触发 trend stop-loss（in-memory price history）|
+| `MakerOnlyOrderTimeoutTracker` | `@Scheduled fixedDelay 2s` | MAKER_ONLY / MAKER_FIRST 单超时撤单（W2-T4）|
+| `FollowExposureLimitService` | `evaluate(...)` 三层 cap | 单市场 / 单白名单 / 全局 TVL 上限——避免白名单地址连续高频开仓打满账户 |
+| `AllowlistSignalAggregationService` | `peekBuffer / accumulate / purgeExpired` | 白名单地址同窗口同方向的信号聚合（与意图聚合 §3.2 互补，专门给白名单用）|
+| `AbnormalMarketReviewService` | `diagnoseOrders / diagnosePositions / review` | 异常市场人工 review 流程入口 |
+
+**Leader 行为 / 评分：**
+
+| 服务 | 关键方法 / 调度 | 职责 |
+|------|---------------|------|
+| `WalletArchetypeClassifierService` | `classify(profile, recentEvents)` | Wallet archetype 分类（如 FAST_EXIT / SCALPER / OBSERVE_ONLY），G2 引用 |
+| `WalletBehaviorProfileService` | `BehaviorProfileSnapshotJob` ⏱ 10min | 维护 `smart_wallet_behavior_profile.behavior_vector_json`（方案 B 给 W2-T6 复用）|
+| `LeaderBehaviorDriftService` | `evaluate(leader, event) / stakeMultiplier(state) / computeProfileVectorJson(...)` | W2-T6 漂移判定，详见 §3.9 |
+| `LeaderRollingPerformanceService` | `LeaderRollingMonitorJob` `cron 0 30 9 * * *` | W2-T2 leader 滑动胜率 |
+| `LeaderDriftAggregationService` | `LeaderDriftAggregationJob` `cron 0 0 8 * * *` | 全 leader drift 状态日聚合 |
+| `SignalScoreModelService` | `score(profile, event, consensus, profitability, entryTiming, ...) → SignalScoreModelResult` | 综合 leader 画像 / 共识 / 盈利性 / 入场时机的统一信号评分 |
+| `EntityAwareConsensusService` | 共识聚合（包内服务）| W2-T3 实体感知共识，2/3+ 实体加分倍率 |
+
+**钱包真值 / 回测 / 归因：**
+
+| 服务 | 关键方法 / 调度 | 职责 |
+|------|---------------|------|
+| `SmartWalletProfileTruthRefreshService` | `refreshProfile(addr) / refreshProfiles(limit) / audit(addr)` | 全量重算钱包真值（胜率 / 平均 ROI / 持仓时长等），与 `SmartWalletLeaderTruthMaintenanceJob` 协同 |
+| `SmartWalletReplayBacktestService` | `replay(req) / replayLiveWindow(date) / replayConcentrationSummary(req)` | 历史 candidate 政策回放，被 `LiveReplayDiffJob` 使用 |
+| `FollowTradeAttributionService` | `buildAttribution(groupBy, limit)` | 按 leader / market / category / outcome 维度做跟单收益归因 |
+| `LeaderTradeOutcomeRebuildService` | 手动入口 | 重建 `smart_wallet_leader_trade_outcome` 真值表 |
+
+**市场数据：**
+
+| 服务 | 关键方法 / 调度 | 职责 |
+|------|---------------|------|
+| `PolymarketMarketDataStreamService` 🆕 | `getSnapshot(tokenId) / handleMessage(payload) / getStats()` | WebSocket 实时市场数据流（首次补齐 §3.1 的"无 WebSocket"缺口；缓存最新 snapshot 供 hot path 取用）|
+| `MarketPriceImpactEstimator` | `estimate(event, stakeUsdc) → PriceImpactEstimate` | W2-T4 VWAP 估算器，详见 §3.9 |
+| `ShadowFillSimulationService` | `simulate(side, stake, snapshot)` | VWAP 逐档算入场，被 SignalShadowRecorder 与 PriceImpactEstimator 共用 |
+| `MarketLiquidityPercentileService` | 内存聚合（1h 缓存）+ `pm_market_liquidity_percentile_daily` 持久化 | W2-T1 / W2-T1.4 流动性 & 价差分位 |
+| `MarketConcentrationSnapshotService` | `MarketConcentrationSnapshotRefreshJob` ⏱ 3min | 集中度快照刷新，给 G9 提速 |
+
+**审计 / 报表：**
+
+| 服务 | 关键方法 / 调度 | 职责 |
+|------|---------------|------|
+| `SignalShadowRecorder` | `record(event, decision, ...)` | W1-T4 入口（§3.8）|
+| `ShadowSettlementBackfillService` | `ShadowSettlementBackfillJob` ⏱ 10min | shadow 出场回填 |
+| `ShadowVsLiveWeeklyReportService` | `cron 0 0 6 * * MON` | 周报，按 reject_layer × estimator_source 分桶 |
+| `LiveReplayDiffReportService` | `LiveReplayDiffJob` `cron 0 0 2 * * *` | Live ↔ Replay 一致性日报 |
+| `SettlementSourceAuditService` | `SettlementSourceAuditJob` `cron 0 0 * * * *` | 结算源对齐审计 |
+| `ResolutionAuditPersistenceService` / `ResolutionTriDiffService` / `ResolutionLiveRefreshService` | `ResolutionTriDiffJob` `cron 0 15 */4 * * *` | 我方 / Gamma / UMA 三方 diff |
+| `SlippagePostFactReportService` | `SlippagePostFactReportJob` `cron 0 0 7 * * MON` | 滑点事后周报，P95 告警 |
+| `SmartWalletAuditAlertSink` | `publish(alertType, title, message, metricValue, threshold)` | 7 种 `AUDIT_*` AlertType 统一收口（§3.12）|
+| `TraceQueryService` | `GET /smart-wallet/trace/{traceId}` | 全链路反查 |
+
+**画像快照 Job：**
+
+| Job | cron / fixedDelay | 职责 |
+|-----|------|------|
+| `BehaviorProfileSnapshotJob` | fixedDelay 10min | 写 `behavior_vector_json` |
+| `ProfileOrderStatsSnapshotJob` | 定时 | 钱包订单统计快照 |
+| `ProfileDiagnosisSnapshotJob` | 定时 | 钱包诊断快照（与 `SmartWalletProfileDiagnosisReadService` 配套）|
+
+**不充分之处：**
+- `PolymarketMarketDataStreamService` 已具备 WebSocket 入口，但风控 / 信号路径默认仍走 polling；切换需要点对点替换 `MarketSnapshotCollectorService` 的调用点
+- `SignalScoreModelService` 输出当前未作为 G11 模型门控的独立维度入参，仅做观测
+- `FollowTradeAttributionService` 仅有读 API，没有归因数据落表
+
+---
+
+### 3.12 审计告警通道与 Web BFF 端点 🆕
+
+**审计告警统一通道（`SmartWalletAuditAlertSink`）：**
+
+将 5+ 个审计 Job 的 WARN 日志收口到 `strategy_alert` 表，同时为飞书 / 邮件投递预留唯一注入点。
+
+| AlertType | 来源 Job / Service | 触发条件 |
+|-----------|-------------------|---------|
+| `AUDIT_LIVE_REPLAY_DIFF` | `LiveReplayDiffReportService` | T-1 日 replay vs live PnL 差异 / 信号数差异超阈值 |
+| `AUDIT_SHADOW_VS_LIVE` | `ShadowVsLiveWeeklyReportService` | shadow PnL vs live PnL 周差异超阈值 |
+| `AUDIT_SETTLEMENT_SOURCE` | `SettlementSourceAuditService` | resolutionDelayed / pendingSettlementOverdue / claimFailureMax 异常 |
+| `AUDIT_SLIPPAGE_POSTFACT` | `SlippagePostFactReportService` | 实盘 vs 估算滑点 P95 超阈值 |
+| `AUDIT_LEADER_DRIFT` | `LeaderBehaviorDriftService` / `LeaderDriftAggregationJob` | leader 行为漂移 SEVERE 或漂移率超阈值 |
+| `AUDIT_RESOLUTION_TRIDIFF` | `ResolutionTriDiffJob` | 三方 diff 不一致数超阈值 |
+| `AUDIT_LEADER_ROLLING_HEALTH` | `LeaderRollingMonitorJob` | cooling 比例 > 0.40 或 overall_win_rate < 0.48 |
+
+**实现保证：**
+- 全局开关 `audit.alert-sink-enabled=true` 一键关停
+- 同 `strategyId + alertType` 已存在未恢复告警时去重（复用 `StrategyAlertService` 默认行为）
+- `publish(...)` 必须 swallow exception，失败仅 warn 不阻塞主流程
+
+**Web BFF 端点（20+ 个，前缀 `/smart-wallet`）：**
+
+| 主题 | 端点 |
+|------|------|
+| 任务 / 风控 | `GET /follow-tasks`、`POST /follow-tasks/{id}/dry-run`、`POST /follow-tasks/{id}/execute`、`POST /risk/simulate`、`GET /risk/blocker-stats` |
+| trace 反查 | `GET /trace/{traceId}` 🆕、`GET /traces/by-leader/{wallet}` 🆕 |
+| Shadow 记账 | `GET /shadow/records`、`GET /shadow/records/{id}` 🆕 |
+| 告警 | `GET /audit/alerts` 🆕 |
+| 结算审计 | `GET /audit/settlement-source` 🆕、`GET /audit/resolution/{marketId}` 🆕、`GET /audit/resolution/needs-review` 🆕、`GET /audit/resolution/uma-inconsistent` 🆕、`GET /audit/resolution-tridiff?lookbackHours=24` 🆕 |
+| 滑点 / Live diff | `GET /audit/slippage-postfact` 🆕、`GET /audit/live-replay-diff/latest` 🆕、`GET /audit/live-replay-diff/history?limitDays=30` 🆕 |
+| Leader 诊断 | `GET /leader-rolling/{wallet}` 🆕、`GET /leader-drift/{wallet}` 🆕、`GET /audit/leader-drift-aggregation` 🆕 |
+| 流动性 / 价差分位 | `GET /market-liquidity/percentile`、`GET /market-liquidity/percentile/{category}` 🆕 |
+| 运维 | `POST /admin/data-reset`、`POST /admin/recover`、`GET /admin/recover/status`、`POST /clob/dry-run`（详见 §3.7）|
+
+入口：`coin-strategy-web/.../controller/smartwallet/SmartWalletAuditController.java` + `SmartWalletAdminController.java` + `SmartWalletReadController.java`
+
+**不充分之处：**
+- `strategy_alert` 表的去重粒度是 `strategyId + alertType`，同一 alertType 内不同 leader/market 的告警仍会被合并
+- 飞书 / 邮件实际投递通道未实现，需要替换 sink bean
+- 没有审计告警的"自动恢复"机制，告警状态翻回 OK 仍需人工或定时清理
+
+---
+
 ## 四、数据流与状态机
 
 ### 4.1 FollowTask 状态机
@@ -718,6 +1030,55 @@ flowchart TB
     Recovery --> EntityResolution
 ```
 
+**W1 闭环可观测性扩展依赖图 🆕**
+
+```mermaid
+flowchart TB
+    SR2["SmartWalletSignalRiskService\n13 Gate 风控"]
+    FTS2["SmartWalletFollowTaskService"]
+    EG2["LoggingPolymarketExecutionGateway\nLIVE/PAPER 路由"]
+    ShadowRec["SignalShadowRecorder 🆕"]
+    ShadowSim["ShadowFillSimulationService 🆕"]
+    PriceImp["MarketPriceImpactEstimator 🆕\nVWAP 估算器"]
+    MakerTrk["MakerOnlyOrderTimeoutTracker 🆕\n@Scheduled 2s"]
+    ShadowBackfill["ShadowSettlementBackfillJob 🆕\n⏱ 10min"]
+    ShadowWeekly["ShadowVsLiveWeeklyReportService 🆕\ncron MON 06:00"]
+    LiveDiff["LiveReplayDiffReportService 🆕\n+ LiveReplayDiffJob"]
+    ReplayBT["SmartWalletReplayBacktestService 🆕"]
+    SettleAudit["SettlementSourceAuditService 🆕\n@Scheduled hourly"]
+    ResAudit["ResolutionAuditPersistenceService 🆕"]
+    ResTri["ResolutionTriDiffService 🆕\n+ ResolutionTriDiffJob"]
+    ResLive["ResolutionLiveRefreshService 🆕"]
+    Slippage["SlippagePostFactReportService 🆕\ncron MON 07:00"]
+    LeaderDrift["LeaderBehaviorDriftService 🆕"]
+    LeaderRoll["LeaderRollingPerformanceService 🆕"]
+    AlertSink["SmartWalletAuditAlertSink 🆕\n→ strategy_alert + 飞书预留"]
+    TraceQ["TraceQueryService 🆕\nGET /trace/{traceId}"]
+
+    SR2 --> PriceImp
+    SR2 --> LeaderDrift
+    SR2 --> LeaderRoll
+    SR2 --> ShadowRec
+    FTS2 --> ShadowRec
+    FTS2 --> SR2
+    EG2 --> MakerTrk
+    PriceImp --> ShadowSim
+    ShadowRec --> ShadowSim
+    ShadowBackfill --> ShadowWeekly
+    LiveDiff --> ReplayBT
+    SettleAudit --> ResAudit
+    ResTri --> ResAudit
+    ResTri --> ResLive
+    LeaderDrift --> AlertSink
+    LeaderRoll --> AlertSink
+    ShadowWeekly --> AlertSink
+    LiveDiff --> AlertSink
+    SettleAudit --> AlertSink
+    ResTri --> AlertSink
+    Slippage --> AlertSink
+    TraceQ -.读 5 表 trace_id.-> FTS2
+```
+
 **循环依赖修复**：`FollowPositionAdjustmentService → PolymarketClobExecutionService → SmartWalletFollowTaskService → FollowPositionAdjustmentService` 是 P0 阶段引入的三角循环。当前破环方式：`PolymarketClobExecutionService` 上对 `SmartWalletFollowTaskService` 用 `@Lazy` 注入，把启动期的构造图变成 Lazy 代理，运行期首次调用 `executeFollowTask` / `dryRunFollowTask` 时再解析真实 bean。
 
 ---
@@ -738,12 +1099,29 @@ flowchart TB
 | 16 | 长期不活跃钱包仍占用观察名单与风控算力 | `SmartWalletManualBlocklistService.blockForInactivityIfNeeded`（35 天自动入黑） | ✅ P2 🆕 |
 | 17 | 跟单代码全部塞在 `smartwallet.service`，应用层缺独立 facade | `follow.application.FollowTaskApplicationService`（§3.7） | ✅ P2 🆕 |
 | 18 | 缺乏运维侧的"一键擦库 + 一键恢复"能力 | `SmartWalletDataResetService` + `SmartWalletRecoveryService`（§3.7） | ✅ P2 🆕 |
+| 24 | 被拒信号没有"若放行会赚还是亏"的对比数据 | `SignalShadowRecorder` + `ShadowFillSimulationService` + `ShadowSettlementBackfillJob` + `ShadowVsLiveWeeklyReportService`（§3.8）| ✅ W1-T4 🆕 |
+| 25 | 回测和实盘 PnL 差异无人值守 | `LiveReplayDiffReportService` + `LiveReplayDiffJob` + `live_replay_diff_history` 表 + `AUDIT_LIVE_REPLAY_DIFF` 告警（§3.8）| ✅ W1-T1 🆕 |
+| 26 | UMA Oracle 争议 / Polymarket 解析延迟黑盒 | `SettlementSourceAuditService` + `ResolutionAuditPersistenceService` + `ResolutionTriDiffService` + `ResolutionLiveRefreshService`（§3.8）| ✅ W1-T2 🆕 |
+| 27 | 跟单链路无法跨表反查（leader → 任务 → 订单 → 仓位 → 结算）| `TraceIds` / `TraceContext` + 5 表 `trace_id` 列 + `TraceQueryService` + logback `[trace=%X{traceId:-}]`（§3.8）| ✅ W1-T3 🆕 |
+| 28 | 入场价格冲击采用代理估算，不准 | `MarketPriceImpactEstimator` VWAP 逐档估算 + 三段式 + MAKER 路由（§3.9）| ✅ W2-T4 🆕 |
+| 29 | MAKER_ONLY 单挂着不成交占用资金 | `MakerOnlyOrderTimeoutTracker` 10s 超时撤单（§3.9）| ✅ W2-T4 🆕 |
+| 30 | 距结算时间近时仍开新仓 | W2-T5 三档：< 30min 拒绝 / [30,120) 降级 / ≥ 120 全仓（§3.9）| ✅ W2-T5 🆕 |
+| 31 | Leader 行为可能阶段性漂移而风控无感 | `LeaderBehaviorDriftService` + `behavior_vector_json` 方案 B + `LeaderDriftAggregationJob` + `AUDIT_LEADER_DRIFT`（§3.9）| ✅ W2-T6 🆕 |
+| 32 | 流动性 / 价差只看硬阈值，未按品类滚动分位 | `MarketLiquidityPercentileService` + `pm_market_liquidity_percentile_daily` + W2-T1 P30 + W2-T1.4 P70 三档（§3.9）| ✅ W2-T1 / W2-T1.4 🆕 |
+| 33 | Leader 滑动窗口胜率无法实时降级 | `LeaderRollingPerformanceService` + Gate 2b（默认仍 OFF，待 shadow 数据验证）+ `LeaderRollingMonitorJob` + `AUDIT_LEADER_ROLLING_HEALTH`（§3.9）| ✅ W2-T2 🆕（灰度中）|
+| 34 | 共识强度只能 HARD_GATE 拒绝，错失加分场景 | `EntityAwareConsensusService` + `consensus-gate-mode=BOOST_ONLY` 2/3+ 实体倍率（§3.9）| ✅ W2-T3 🆕 |
+| 35 | 审计 WARN 日志散落各 Job，无统一告警面板 | `SmartWalletAuditAlertSink` 收口 7 种 `AUDIT_*` AlertType（§3.12）| ✅ W1-T1.5 / T4.5 🆕 |
+| 36 | 跨策略 trace / 告警 / 行为漂移代码无法复用 | Tier A (`TraceIds` / `StrategyAuditAlertSink`) + Tier B (`BehaviorVectorizer` / `CentroidDriftDetector` / `SignalRiskGate`) 下沉 `common-service`（§3.10）| ✅ Tier A/B 🆕 |
+| 37 | 距结算时间越近止损越激进的需求 | `TimeAwareStopLossService`（implements `ExitSignalProvider`，trend stop-loss + 紧缩阈值）（§3.11）| ✅ P1 🆕 |
+| 38 | 白名单地址高频开仓打满账户 TVL | `FollowExposureLimitService` 三层 cap（单市场 / 单白名单 / 全局）（§3.11）| ✅ P1 🆕 |
+| 39 | 白名单同地址 / 同方向信号被切成多条任务 | `AllowlistSignalAggregationService` 窗口聚合（与意图聚合互补，§3.2 / §3.11）| ✅ P1 🆕 |
+| 40 | 无 WebSocket 实时市场数据 | `PolymarketMarketDataStreamService` 落地 WebSocket 入口 + 内存 snapshot 缓存（§3.11，default polling 仍为主路径）| ✅ P2 🆕（hot path 待切换）|
 
 ### 仍待改进
 
 | # | 层级 | 问题描述 | 建议优先级 |
 |---|------|---------|-----------|
-| 5 | 数据采集 | 无 WebSocket 实时事件推送，信号延迟 30s+ | P2 |
+| 5 | 数据采集 | WebSocket 入口已落地（`PolymarketMarketDataStreamService`），但 hot path 默认仍走 30s polling，需点对点切换；交易事件流（trade-event channel）尚未接入 | P1 🆕（部分进行） |
 | 6 | 信号生成 | Iceberging 检测能力弱（分拆下单到新地址，意图聚合只覆盖同地址）| P2 |
 | 7 | 风控 | 止盈/止损阈值未扣除双边 taker fee | P1 |
 | 8 | 执行 | MAKER 模式未参考实时 best bid 定价 | P2 |
@@ -756,6 +1134,19 @@ flowchart TB
 | 21 | 退出跟单 | 同事件触发多条 follower 仓位调整是顺序循环，仓位多时延迟累积 | P2 🆕 |
 | 22 | 意图聚合 | 累加金额没有上限保护，极端连续加仓后单任务 `recommendedStakeUsdc` 可能爆掉 `maxOrderUsdc`，依赖 G8/G10 兜底 | P2 🆕 |
 | 23 | 循环依赖 | `FollowPositionAdjustmentService ↔ PolymarketClobExecutionService ↔ SmartWalletFollowTaskService` 三角靠 `@Lazy` 破环，长期应做结构拆分（把 `dryRunFollowTask`/`executeFollowTask` 从执行服务移出） | P2 🆕 |
+| 41 | W1 闭环 | Shadow VWAP 依赖 45s `market_snapshot`，可能与 leader 真实成交时刻有偏差 | P2 🆕 |
+| 42 | W1 闭环 | Live ↔ Replay diff 仅按日粒度，单日内行为差异不可见 | P2 🆕 |
+| 43 | W1 闭环 | `ResolutionTriDiffService` 的"历史冲突"分类不自动闭环，需人工 review | P2 🆕 |
+| 44 | W2 风控 | W2-T2 leader 滑动胜率门默认 OFF，等待 shadow 数据验证；prod 灰度尚未启动 | P1 🆕 |
+| 45 | W2 风控 | W2-T4 MAKER_ONLY 10s 超时为经验值，未按品类（高波动 vs 长期市场）分桶 | P2 🆕 |
+| 46 | W2 风控 | W2-T6 行为向量 7 维硬编码，新增 category 需要全量重算 centroid 与历史 profile | P2 🆕 |
+| 47 | W2 风控 | W2-T1 / W2-T1.4 在 daily snapshot 缺失时回退硬阈值，刚开市 / 罕见 category 第一天无分位数据 | P2 🆕 |
+| 48 | Tier 通用化 | Tier C 跨策略 daily snapshot / Replay backtest 抽象仍在路线图，跟单专属 | P2 🆕 |
+| 49 | 告警通道 | `strategy_alert` 表去重粒度仅 `strategyId + alertType`，同 alertType 下多 leader/market 告警被合并；飞书 / 邮件实际投递通道未实现 | P2 🆕 |
+| 50 | 信号评分 | `SignalScoreModelService` 输出未作为 G11 模型门控独立维度入参，目前仅做观测 | P2 🆕 |
+| 51 | 归因 | `FollowTradeAttributionService` 仅有读 API，归因数据未落表 | P2 🆕 |
+| 52 | 实时数据 | `PolymarketMarketDataStreamService` 已落地 WebSocket，但风控 / 信号 hot path 默认仍走 polling，切换需点对点替换 `MarketSnapshotCollectorService` 调用点 | P1 🆕 |
+| 53 | 仓位管理 | `TimeAwareStopLossService` 价格历史 in-memory，重启即丢失（advisory 信号，已被主门兜底） | P3 🆕 |
 
 ---
 
@@ -809,6 +1200,62 @@ flowchart TB
 | 意图聚合 🆕 | `intent-aggregation.window-minutes` | 5 | 同地址 + 市场 + outcome + side 聚合窗口 |
 | 白名单 🆕 | `manual-allowlist` 实体字段 | — | `allowedExecutionModes` (PAPER/LIVE/BOTH)、`stakeMultiplier` (默认 0.50，上限 1.0)、`maxLiveOrdersPerDay` (默认 5)、`maxLiveOrdersPerRun` (默认 2)、`expiresAt` (默认 +30 天) |
 | 黑名单 🆕 | 自动入黑规则 | — | 35 天无可信关闭样本（`sourceConfidence >= 0.55`）→ 自动写入 `INACTIVE_GT_35D_BLOCKLIST` |
+| W2-T1 流动性 🆕 | `signal-risk.enable-liquidity-rolling-percentile` | false (prod=true) | 启用 P30 滚动门 |
+| W2-T1.4 价差 🆕 | `signal-risk.enable-spread-p70-gate` | false (prod=true) | 启用 P70 价差门 |
+| W2-T1.4 价差 🆕 | `signal-risk.spread-p70-downgrade-factor` / `spread-p70-reject-factor` | 1.5 / 2.0 | P70 倍率档位 |
+| W2-T1.4 价差 🆕 | `signal-risk.spread-p70-downgrade-multiplier` | 0.5 | 中档降级仓位倍率 |
+| W2-T2 滑动胜率 🆕 | `signal-risk.enable-leader-rolling-gate` | false | 启用 leader 滑动窗口胜率门 |
+| W2-T2 滑动胜率 🆕 | `signal-risk.leader-rolling-window-size` | — | N 笔滑动窗口大小 |
+| W2-T3 共识 🆕 | `signal-risk.consensus-gate-mode` | BOOST_ONLY | `BOOST_ONLY` / `HARD_GATE` |
+| W2-T3 共识 🆕 | `signal-risk.consensus-boost-multipliers` | 2:1.20, 3+:1.50 | 实体数 → 倍率 |
+| W2-T4 价格冲击 🆕 | `signal-risk.enable-price-impact-gate` | true | 启用三段式 |
+| W2-T4 价格冲击 🆕 | `signal-risk.enable-vwap-slippage-estimator` | false (prod=true / test=true) | bps source: VWAP vs PROXY |
+| W2-T4 价格冲击 🆕 | `signal-risk.price-impact-downgrade-bps` / `severe-bps` / `reject-bps` | 100 / 300 / 500 | 三档分界 |
+| W2-T4 价格冲击 🆕 | `signal-risk.maker-only-timeout-tracker-enabled` | false (prod=true / test=true) | MAKER_ONLY 撤单 |
+| W2-T4 价格冲击 🆕 | `signal-risk.maker-only-scan-interval-ms` | 2000 | 撤单扫描间隔 |
+| W2-T4 价格冲击 🆕 | `signal-risk.maker-only-timeout-seconds` | 10 | 单子超时秒数 |
+| W2-T5 距结算 🆕 | `signal-risk.enable-time-to-expiry-gate` | true | 启用距结算门 |
+| W2-T5 距结算 🆕 | `signal-risk.time-to-expiry-reject-minutes` / `downgrade-minutes` | 30 / 120 | 三档边界 |
+| W2-T5 距结算 🆕 | `signal-risk.time-to-expiry-downgrade-multiplier` | 0.5 | 中档仓位倍率 |
+| W2-T5 距结算 🆕 | `signal-risk.time-to-expiry-exempt-market-types` | — | 豁免品类（天气 / BTC 5min）|
+| W2-T6 行为漂移 🆕 | `signal-risk.enable-leader-drift-gate` | false (prod=true / test=true) | 启用行为漂移门 |
+| W2-T6 行为漂移 🆕 | `signal-risk.leader-drift-threshold` / `severe-threshold` | 0.40 / 0.60 | cosine 距离阈值 |
+| W2-T6 行为漂移 🆕 | `signal-risk.leader-drift-stake-multiplier` | 0.25 | DRIFTED 仓位倍率 |
+| W2-T6 行为漂移 🆕 | `signal-risk.leader-drift-min-samples` | — | cold-start 最小样本数 |
+| W1-T1 LiveDiff 🆕 | `audit.live-replay-diff-enabled` | true | LiveReplayDiff 总开关 |
+| W1-T1 LiveDiff 🆕 | `audit.live-replay-diff-cron` | `0 0 2 * * *` | 日 02:00 Asia/Shanghai |
+| W1-T1 LiveDiff 🆕 | `audit.live-replay-pnl-diff-bps` | 100 | PnL 差异 bps 阈值 |
+| W1-T1 LiveDiff 🆕 | `audit.live-replay-signal-miss-pct` | 0.05 | 信号缺失比例阈值 |
+| W1-T2 SettlementAudit 🆕 | `audit.settlement-source-audit-enabled` | true | 结算源审计开关 |
+| W1-T2 SettlementAudit 🆕 | `audit.settlement-source-audit-cron` | `0 0 * * * *` | 每小时整点 |
+| W1-T2 SettlementAudit 🆕 | `audit.resolution-tridiff-enabled` | true | 三方 diff Job 开关 |
+| W1-T2 SettlementAudit 🆕 | `audit.resolution-tridiff-cron` | `0 15 */4 * * *` | 4h |
+| W1-T2 SettlementAudit 🆕 | `audit.resolution-tridiff-live-refresh-enabled` | false (test=true) | Gamma API 重解析 |
+| W1-T4 Shadow 🆕 | `audit.shadow-backfill-enabled` | true | shadow 结算回填总开关 |
+| W1-T4 Shadow 🆕 | `audit.shadow-backfill-fixed-delay-ms` | 600000 (10min) | 回填间隔 |
+| W1-T4 Shadow 🆕 | `audit.shadow-weekly-report-enabled` | true | 周报开关 |
+| W1-T4 Shadow 🆕 | `audit.shadow-weekly-report-cron` | `0 0 6 * * MON` | 周一 06:00 |
+| W2-T4.5 滑点 🆕 | `audit.slippage-post-fact-enabled` | true | 滑点事后统计 |
+| W2-T4.5 滑点 🆕 | `audit.slippage-post-fact-cron` | `0 0 7 * * MON` | 周一 07:00 |
+| W2-T1.2 流动性 snapshot 🆕 | `audit.liquidity-percentile-snapshot-enabled` | true | daily 表持久化 |
+| W2-T1.2 流动性 snapshot 🆕 | `audit.liquidity-percentile-snapshot-cron` | `0 30 2 * * *` | 日 02:30 |
+| W2-T6 LeaderDrift 聚合 🆕 | `audit.leader-drift-aggregation-enabled` | true | 全 leader drift 聚合 |
+| W2-T6 LeaderDrift 聚合 🆕 | `audit.leader-drift-aggregation-cron` | `0 0 8 * * *` | 日 08:00 |
+| W2-T6 LeaderDrift 聚合 🆕 | `audit.leader-drift-alert-enabled` | true | LeaderDrift 告警 publish |
+| W2-T2 LeaderRolling 监控 🆕 | `audit.leader-rolling-aggregation-enabled` | true | 滑动胜率监控自动化 |
+| W2-T2 LeaderRolling 监控 🆕 | `audit.leader-rolling-aggregation-cron` | `0 30 9 * * *` | 日 09:30 |
+| W2-T2 LeaderRolling 监控 🆕 | `audit.leader-rolling-aggregation-warn-cooling-ratio` | 0.40 | health 触发 WARN_HIGH_COOLING |
+| W2-T2 LeaderRolling 监控 🆕 | `audit.leader-rolling-aggregation-warn-min-overall-win-rate` | 0.48 | health 触发 WARN_LOW_WIN_RATE |
+| 告警通道 🆕 | `audit.alert-sink-enabled` | true | 全局审计告警 sink |
+| Live Validation 🆕 | `smart-wallet.live-validation.enabled` | false | PAPER → LIVE 验证 lane |
+| Live Validation 🆕 | `smart-wallet.live-validation.fixed-delay-ms` | 45000 | 验证扫描间隔 |
+| Live Validation 🆕 | `smart-wallet.live-validation.preset` | — | 验证 preset（保守 / 激进） |
+| 暴露上限 🆕 | `signal-risk.exposure-limit.max-per-market-usdc` | — | 单市场 cap |
+| 暴露上限 🆕 | `signal-risk.exposure-limit.max-per-allowlist-usdc` | — | 单白名单 cap |
+| 暴露上限 🆕 | `signal-risk.exposure-limit.max-global-usdc` | — | 全局 cap |
+| 白名单聚合 🆕 | `signal-risk.allowlist-aggregation.window-ms` | — | 白名单同方向信号聚合窗口 |
+| 行为画像 🆕 | `behavior-profile.snapshot-fixed-delay-ms` | 600000 (10min) | `BehaviorProfileSnapshotJob` 写 `behavior_vector_json` |
+| Trace 🆕 | logback pattern | `[trace=%X{traceId:-}]` | 所有日志自动带 trace_id |
 
 ---
 
@@ -850,5 +1297,16 @@ flowchart TB
 | 6h | 钱包画像活跃度衰减 🆕 | `SmartWalletProfileStoreService.applyActivityDecay` |
 | 6h | 实体特征快照刷新 🆕 | `EntityFeatureSnapshotService.refreshAllEntitySnapshots` |
 | 24h | 关闭仓位全量重同步 🆕 | `ClosedPositionFullResyncJob.runFullResync` |
+| 2s 🆕 | MAKER_ONLY 超时撤单 (W2-T4) | `MakerOnlyOrderTimeoutTracker.scan`（开关 `signal-risk.maker-only-timeout-tracker-enabled`） |
+| 10min 🆕 | W1-T4 Shadow 结算回填 | `ShadowSettlementBackfillJob.scheduledBackfill`（开关 `audit.shadow-backfill-enabled`，`fixedDelay 600000`） |
+| 10min 🆕 | 行为向量画像快照（方案 B 给 W2-T6 复用） | `BehaviorProfileSnapshotJob.snapshot` |
+| 日 02:00 🆕 | W1-T1 Live ↔ Replay 一致性日报 | `LiveReplayDiffJob.runDaily` → `LiveReplayDiffReportService.runDailyDiff`（`cron 0 0 2 * * *` Asia/Shanghai） |
+| 日 02:30 🆕 | W2-T1 流动性 P30 / 价差 P70 daily snapshot | `MarketLiquidityPercentileSnapshotJob.snapshot`（`cron 0 30 2 * * *` Asia/Shanghai，写 `pm_market_liquidity_percentile_daily`） |
+| 日 08:00 🆕 | W2-T6 LeaderDrift 全 leader 聚合 | `LeaderDriftAggregationJob.runDaily`（`cron 0 0 8 * * *` Asia/Shanghai） |
+| 日 09:30 🆕 | W2-T2 LeaderRolling 健康监控 | `LeaderRollingMonitorJob.runDaily`（`cron 0 30 9 * * *` Asia/Shanghai） |
+| 每小时 🆕 | W1-T2 结算源对齐审计 | `SettlementSourceAuditJob.scheduledRun`（`cron 0 0 * * * *`） |
+| 4h 🆕 | W1-T2 我方 / Gamma / UMA 三方 diff | `ResolutionTriDiffJob.scheduledRun`（`cron 0 15 */4 * * *` Asia/Shanghai） |
+| 周一 06:00 🆕 | W1-T4 Shadow vs Live 周报 | `ShadowVsLiveWeeklyReportService.scheduledRun`（`cron 0 0 6 * * MON`） |
+| 周一 07:00 🆕 | W2-T4.5 滑点事后统计 | `SlippagePostFactReportJob.scheduledRun`（`cron 0 0 7 * * MON`） |
 
-> 注：意图聚合（`FollowIntentAggregationService`）与退出跟单（`FollowPositionAdjustmentService`）本身不是 `@Scheduled`，而是被 `recordTradeEvent` / `executeTask` 同步驱动。
+> 注：意图聚合（`FollowIntentAggregationService`）与退出跟单（`FollowPositionAdjustmentService`）本身不是 `@Scheduled`，而是被 `recordTradeEvent` / `executeTask` 同步驱动。`SignalShadowRecorder` / `MarketPriceImpactEstimator` / `LeaderBehaviorDriftService` / `LeaderRollingPerformanceService` / `AllowlistSignalAggregationService` / `FollowExposureLimitService` / `TimeAwareStopLossService` / `SignalScoreModelService` 均为同步内联组件，本表只列出 `@Scheduled` 任务。`PolymarketMarketDataStreamService` 通过 WebSocket 推流被动接收事件，亦不在此表。

@@ -20,6 +20,14 @@ public class SmartWalletOrderEntity {
     private Long id;
 
     private Long followTaskId;
+
+    /**
+     * 跟单链路 trace_id, 继承自 follow_task.trace_id.
+     * 拆单 / 重发 场景下同一 trace_id 可能对应多行.
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md (W1-T3).
+     */
+    private String traceId;
+
     private Long positionId;
     /** 关联公共市场信息表 smart_wallet_market_info.id */
     private Long marketInfoId;

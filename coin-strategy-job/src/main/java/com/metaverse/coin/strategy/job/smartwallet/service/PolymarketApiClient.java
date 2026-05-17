@@ -923,6 +923,8 @@ public class PolymarketApiClient {
         }
         String winningTokenId = text(market, "winningTokenId", "winning_token_id", "winnerTokenId", "winner_token_id");
         String umaResolutionStatus = text(market, "umaResolutionStatus", "uma_resolution_status");
+        // F-P1-12: 解析 UMA 争议标记 (Gamma 在 disputed / uma_disputed / 部分老 schema 用 inDispute)
+        boolean umaDisputed = bool(market, "disputed", "umaDisputed", "uma_disputed", "inDispute");
         JsonNode tokensNode = parseArrayNode(market.get("tokens"));
         List<MarketResolutionResolver.TokenInfo> tokenWinners = new ArrayList<>();
         if (tokensNode != null && tokensNode.isArray()) {
@@ -945,6 +947,7 @@ public class PolymarketApiClient {
                         .acceptingOrders(acceptingOrders)
                         .acceptingOrdersPresent(acceptingOrdersPresent)
                         .umaResolutionStatus(umaResolutionStatus)
+                        .umaDisputed(umaDisputed)
                         .explicitWinningTokenId(winningTokenId)
                         .explicitWinnerOutcome(normalizeOutcomeLabel(text(market, "winner", "winningOutcome", "resolutionOutcome")))
                         .outcomes(outcomes)
@@ -975,6 +978,7 @@ public class PolymarketApiClient {
                 .closed(closed)
                 .acceptingOrders(acceptingOrders)
                 .umaResolutionStatus(umaResolutionStatus)
+                .umaDisputed(umaDisputed)
                 .resolvedOutcome(resolution.getWinningOutcome())
                 .winningTokenId(resolution.getWinningTokenId())
                 .endAt(epochMillis(market, "endDateISO", "endDate", "gameStartTime", "eventStartDate"))
@@ -1745,6 +1749,8 @@ public class PolymarketApiClient {
         private boolean closed;
         private boolean acceptingOrders;
         private String umaResolutionStatus;
+        /** F-P1-12: UMA Oracle 是否争议中。由 Gamma metadata 的 disputed / uma_disputed 字段解析。 */
+        private boolean umaDisputed;
         private String resolvedOutcome;
         private String winningTokenId;
         private Long endAt;

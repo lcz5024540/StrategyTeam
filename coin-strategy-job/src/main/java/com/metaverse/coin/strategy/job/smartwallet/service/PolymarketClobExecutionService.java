@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -32,6 +33,7 @@ public class PolymarketClobExecutionService {
     private final PolymarketMarketMetadataService marketMetadataService;
     private final PolymarketOrderRequestFactory orderRequestFactory;
     private final SmartWalletFollowTaskMapper followTaskMapper;
+    private final SmartWalletProperties smartWalletProperties;
     /**
      * Lazy-injected to break the circular dependency:
      *   SmartWalletFollowTaskService -> FollowPositionAdjustmentService
@@ -51,6 +53,7 @@ public class PolymarketClobExecutionService {
             PolymarketMarketMetadataService marketMetadataService,
             PolymarketOrderRequestFactory orderRequestFactory,
             SmartWalletFollowTaskMapper followTaskMapper,
+            SmartWalletProperties smartWalletProperties,
             @Lazy SmartWalletFollowTaskService followTaskService) {
         this.walletContextLoader = walletContextLoader;
         this.clobClientRouter = clobClientRouter;
@@ -59,6 +62,7 @@ public class PolymarketClobExecutionService {
         this.marketMetadataService = marketMetadataService;
         this.orderRequestFactory = orderRequestFactory;
         this.followTaskMapper = followTaskMapper;
+        this.smartWalletProperties = smartWalletProperties;
         this.followTaskService = followTaskService;
     }
 
@@ -247,14 +251,82 @@ public class PolymarketClobExecutionService {
     public SmartWalletExecutionResult executeLiveExit(SmartWalletPositionEntity position,
                                                       BigDecimal requestedPrice,
                                                       String exitReason) {
+        return executeLiveExitInternal(position, requestedPrice, exitReason, null);
+    }
+
+    /**
+     * F-P0-1: LIVE 模式按 ratio 部分退出。
+     *
+     * <p>按指定比例从仓位中拆出 SELL 限价单（exitQuantity = position.quantity × ratio）。
+     * ratio ≥ 1 时退化为 {@link #executeLiveExit}；ratio ≤ 0 抛 IllegalArgumentException。
+     *
+     * <p>受 {@code smart-wallet.execution-wallet.enable-live-partial-exit} 控制：默认 true，
+     * 出问题时可切 false 紧急回滚到全平。
+     *
+     * @param position    要部分退出的仓位（必须 OPEN/PARTIALLY_CLOSED 且 quantity > 0）
+     * @param ratio       退出比例，(0, 1] —— 1 即全平
+     * @param requestedPrice 期望退出价格（最终会按 best bid 做 fallback / slippage 处理）
+     * @param exitReason  上游退出原因（用于日志）
+     * @return 执行结果（success / status / size / notional）
+     */
+    public SmartWalletExecutionResult executeLivePartialExit(SmartWalletPositionEntity position,
+                                                             BigDecimal ratio,
+                                                             BigDecimal requestedPrice,
+                                                             String exitReason) {
+        if (position == null) {
+            throw new IllegalArgumentException("position must be provided for live partial exit.");
+        }
+        if (ratio == null || ratio.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("ratio must be > 0 for live partial exit.");
+        }
+
+        // 紧急回滚开关 / ratio ≥ 1 时直接走全平
+        SmartWalletProperties.ExecutionWallet execCfg = smartWalletProperties == null ? null : smartWalletProperties.getExecutionWallet();
+        boolean enabled = execCfg == null || execCfg.isEnableLivePartialExit();
+        if (!enabled || ratio.compareTo(BigDecimal.ONE) >= 0) {
+            if (!enabled) {
+                log.warn("{} action=LIVE部分退出 result=回退全平 reason=enableLivePartialExit=false positionId={} ratio={}",
+                        LOG_PREFIX, position.getId(), ratio);
+            }
+            return executeLiveExitInternal(position, requestedPrice, exitReason, null);
+        }
+
+        BigDecimal totalQty = position.getQuantity();
+        if (totalQty == null || totalQty.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("Position has no remaining quantity for partial exit. positionId=" + position.getId());
+        }
+        BigDecimal exitQty = totalQty.multiply(ratio).setScale(6, RoundingMode.DOWN);
+        BigDecimal minSize = (execCfg != null && execCfg.getLivePartialExitMinSize() != null)
+                ? execCfg.getLivePartialExitMinSize()
+                : new BigDecimal("1");
+        if (exitQty.compareTo(minSize) < 0) {
+            // 切片太小不下单，回退全平避免留下"无人管的尾巴"
+            log.warn("{} action=LIVE部分退出 result=切片过小回退全平 positionId={} totalQty={} ratio={} exitQty={} minSize={}",
+                    LOG_PREFIX, position.getId(), totalQty, ratio, exitQty, minSize);
+            return executeLiveExitInternal(position, requestedPrice, exitReason + ";PARTIAL_TOO_SMALL", null);
+        }
+
+        log.info("{} action=提交LIVE部分退出订单 result=开始 positionId={} totalQty={} ratio={} exitQty={} exitReason={}",
+                LOG_PREFIX, position.getId(), totalQty, ratio, exitQty, exitReason);
+        return executeLiveExitInternal(position, requestedPrice, exitReason + ";ratio=" + ratio, exitQty);
+    }
+
+    /**
+     * 共享的 LIVE 退出实现：overrideQuantity 非空时按指定数量下单（部分退出），
+     * 否则按 position.getQuantity() 全平。
+     */
+    private SmartWalletExecutionResult executeLiveExitInternal(SmartWalletPositionEntity position,
+                                                                BigDecimal requestedPrice,
+                                                                String exitReason,
+                                                                BigDecimal overrideQuantity) {
         if (position == null) {
             throw new IllegalArgumentException("position must be provided for live exit.");
         }
-        log.info("{} action=提交LIVE退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={} exitReason={}",
-                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice, exitReason);
+        log.info("{} action=提交LIVE退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={} overrideQuantity={} exitReason={}",
+                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice, overrideQuantity, exitReason);
         ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
         ExitPriceReference priceReference = resolveLiveExitPriceReference(position, requestedPrice);
-        PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepareExit(position, priceReference.price(), wallet);
+        PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepareExit(position, priceReference.price(), wallet, overrideQuantity);
         log.info("{} action=准备LIVE退出下单参数 result=完成 positionId={} marketId={} outcome={} tokenId={} side={} limitPrice={} size={} notionalUsdc={} pricingSource={}",
                 LOG_PREFIX, position.getId(), order.getMarketId(), order.getOutcome(), order.getTokenId(), order.getSide(),
                 order.getLimitPrice(), order.getSize(), order.getStakeUsdc(), priceReference.source());
@@ -295,7 +367,7 @@ public class PolymarketClobExecutionService {
                 .indexSet(position.getIndexSet())
                 .outcome(order.getOutcome())
                 .side(order.getSide())
-                .orderType("EXIT")
+                .orderType(overrideQuantity != null ? "PARTIAL_EXIT" : "EXIT")
                 .status(normalizedStatus)
                 .price(order.getLimitPrice())
                 .size(order.getSize())
@@ -418,6 +490,9 @@ public class PolymarketClobExecutionService {
         LinkedHashMap<String, Object> response = new LinkedHashMap<>();
         response.put("success", true);
         response.put("dryRun", true);
+        // F-P0-6 第二轮：显式打 ExecutionMode.DRY_RUN 标签，便于上游消费方（如 shadow / replay）
+        // 与真实 LIVE / PAPER 执行结果区分。
+        response.put("mode", com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode.DRY_RUN.name());
         response.put("walletReady", wallet.isLiveReady());
         response.put("simulationOnly", !StringUtils.hasText(prepared.getTokenId()));
         response.put("metadataNotFoundIsNormalInSimulation", !StringUtils.hasText(prepared.getTokenId()));

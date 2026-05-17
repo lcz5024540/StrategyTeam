@@ -10,6 +10,8 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
+import com.metaverse.coin.strategy.common.service.accounting.CapacitySnapshot;
+import com.metaverse.coin.strategy.common.service.accounting.PositionAccountingPort;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletCashLedgerEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletDailyReportEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFillEntity;
@@ -155,6 +157,7 @@ public class SmartWalletAccountingService {
         SmartWalletMarketInfoEntity mi = marketInfoService.getOrCreate(task.getMarketId(), task.getOutcome(), task.getQuestion(), result.getTokenId(), result.getIndexSet(), marketEndAt);
         SmartWalletOrderEntity order = new SmartWalletOrderEntity()
                 .setFollowTaskId(task.getId())
+                .setTraceId(task.getTraceId())  // W1-T3: 跟单链路 trace_id 从 follow_task 继承
                 .setWalletAddress(task.getWalletAddress())
                 .setExecutionMode(task.getExecutionMode())
                 .setExecutionAddress(executionAddress)
@@ -194,7 +197,11 @@ public class SmartWalletAccountingService {
             if (!result.isSuccess()) {
                 rebuildDailyReport(executionAddress, toLocalDate(now));
             }
-            return; // 暂不生成成交记录
+            // F-P0-6: 订单已经写入 smart_wallet_order（上面 orderMapper.insert(order)），
+            // 此处只是暂缓写 smart_wallet_fill —— 真正的 fill 由 SmartWalletOrderPollingService
+            // 在 LIVE 订单匹配时通过 processOrderFill(...) 回灌；
+            // PAPER/失败路径会触发 rebuildDailyReport，账本完整度不依赖此 return。
+            return;
         }
 
         executeFillAndAccounting(order, size, price, tradingFeeUsdc, gasFeeUsdc, marketEndAt, now);
@@ -262,6 +269,7 @@ public class SmartWalletAccountingService {
                 resolveStoredPositionMarketEndAt(position));
         SmartWalletOrderEntity order = new SmartWalletOrderEntity()
                 .setFollowTaskId(latestFill == null ? null : latestFill.getFollowTaskId())
+                .setTraceId(position.getOriginTraceId())  // W1-T3: 出场单与开仓共享 origin_trace_id
                 .setPositionId(position.getId())
                 .setWalletAddress(latestFill == null ? null : latestFill.getWalletAddress())
                 .setExecutionMode("LIVE")
@@ -352,6 +360,7 @@ public class SmartWalletAccountingService {
         }
         SmartWalletOrderEntity order = new SmartWalletOrderEntity()
                 .setFollowTaskId(latestFill == null ? null : latestFill.getFollowTaskId())
+                .setTraceId(position.getOriginTraceId())  // W1-T3: 纸交易出场亦继承 origin_trace_id
                 .setPositionId(position.getId())
                 .setWalletAddress(latestFill == null ? null : latestFill.getWalletAddress())
                 .setExecutionMode(isPaperExecutionAddress(position.getExecutionAddress()) ? "PAPER" : "LIVE")
@@ -1036,6 +1045,43 @@ public class SmartWalletAccountingService {
                 .maxHoursToMarketEnd(properties.getSignalRisk().getMaxHoursToMarketEnd())
                 .duplicateOpenPositionBlocked(properties.getSignalRisk().isBlockDuplicateOpenPosition())
                 .duplicatePendingTaskBlocked(properties.getSignalRisk().isBlockDuplicatePendingTask())
+                .build();
+    }
+
+    /**
+     * 第十九批 (2026-05-16): Tier B {@link PositionAccountingPort} 适配器.
+     *
+     * <p>把跟单专属的 {@link SmartWalletCapacitySummaryView} 投影到跨策略通用的
+     * {@link CapacitySnapshot} 三档 (available / locked / inFlight) + 仓位计数. 跟单
+     * 现有 hot path / web view 完全保留, 不动. 天气 / BTC 5min 策略可直接读端口.</p>
+     *
+     * <p><b>语义映射</b>:
+     * <ul>
+     *   <li>{@code available} = capacitySummary.availableCapitalUsdc (可立即开仓)</li>
+     *   <li>{@code locked}    = openCost (持仓占用) + lockedClaimProceeds (待 claim)</li>
+     *   <li>{@code inFlight}  = openCost (已成交未结算; 跟单不区分 maker pending → 用 openCost 兜底)</li>
+     *   <li>{@code openPositionCount / Limit} 透传</li>
+     * </ul></p>
+     *
+     * <p>对开单效率 / 资金使用率 / 是否会开单 / 盈亏点 / 胜率: ⚪ 全部无影响 — 纯只读快照,
+     * 不参与 SignalRisk 决策, 不修改资金状态. 删除本方法跟单系统行为完全等价.</p>
+     */
+    public CapacitySnapshot toCapacitySnapshot() {
+        return toCapacitySnapshot(null);
+    }
+
+    public CapacitySnapshot toCapacitySnapshot(String mode) {
+        SmartWalletCapacitySummaryView view = capacitySummary(mode);
+        BigDecimal available = view.getAvailableCapitalUsdc() == null ? BigDecimal.ZERO : view.getAvailableCapitalUsdc();
+        BigDecimal openCost = view.getTotalOpenCostUsdc() == null ? BigDecimal.ZERO : view.getTotalOpenCostUsdc();
+        BigDecimal lockedClaim = view.getLockedClaimProceedsUsdc() == null ? BigDecimal.ZERO : view.getLockedClaimProceedsUsdc();
+        BigDecimal locked = openCost.add(lockedClaim);
+        return CapacitySnapshot.builder()
+                .availableCapitalUsdc(available)
+                .lockedCapitalUsdc(locked)
+                .inFlightCapitalUsdc(openCost)
+                .openPositionCount(view.getOpenPositionCount() == null ? 0 : view.getOpenPositionCount())
+                .openPositionLimit(view.getOpenPositionLimit())
                 .build();
     }
 
@@ -2846,6 +2892,15 @@ public class SmartWalletAccountingService {
     }
 
     private SmartWalletPositionEntity newPositionRound(SmartWalletFillEntity fill, Long marketEndAt) {
+        // W1-T3: 取首次开仓所在 follow_task 的 trace_id 作为仓位 origin_trace_id.
+        // 后续合并/平仓不再覆盖, 保留全链路根。fill.followTaskId 缺失时 originTraceId 留空.
+        String originTraceId = null;
+        if (fill != null && fill.getFollowTaskId() != null) {
+            SmartWalletFollowTaskEntity parentTask = followTaskMapper.selectById(fill.getFollowTaskId());
+            if (parentTask != null) {
+                originTraceId = parentTask.getTraceId();
+            }
+        }
         return new SmartWalletPositionEntity()
                 .setExecutionAddress(fill.getExecutionAddress())
                 .setMarketInfoId(fill.getMarketInfoId())
@@ -2861,6 +2916,7 @@ public class SmartWalletAccountingService {
                 .setLastMarkPrice(fill.getPrice())
                 .setOpenedAt(fill.getFilledAt())
                 .setStatus("OPEN")
+                .setOriginTraceId(originTraceId)
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
     }

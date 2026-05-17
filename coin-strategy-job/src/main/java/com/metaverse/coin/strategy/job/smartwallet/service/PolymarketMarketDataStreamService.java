@@ -16,6 +16,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
@@ -30,6 +31,12 @@ public class PolymarketMarketDataStreamService {
     private final AtomicLong bookEventsReceived = new AtomicLong();
     private final AtomicLong priceEventsReceived = new AtomicLong();
     private volatile Date lastEventAt;
+    // F-P1-7 第十轮：真实 WS 客户端连接状态。由 PolymarketWebSocketClient 在 onOpen/onClosed/onFailure
+    // 回调里调 markConnected(true/false)，getStats().connected 透出真实 live 状态（之前硬编码 false）。
+    private final AtomicBoolean connected = new AtomicBoolean(false);
+    private volatile Date connectedAt;
+    private volatile Date disconnectedAt;
+    private final AtomicLong reconnectAttempts = new AtomicLong();
 
     public MarketDataSnapshot getSnapshot(String tokenId) {
         if (!StringUtils.hasText(tokenId)) {
@@ -56,14 +63,46 @@ public class PolymarketMarketDataStreamService {
     public MarketDataStreamStats getStats() {
         return MarketDataStreamStats.builder()
                 .enabled(properties.getExecutionWallet().isWsEnabled())
-                .connected(false)
+                .connected(connected.get())
                 .subscribedTokenCount(snapshotCache.size())
                 .cachedTokenCount(snapshotCache.size())
                 .messagesReceived(messagesReceived.get())
                 .bookEventsReceived(bookEventsReceived.get())
                 .priceEventsReceived(priceEventsReceived.get())
                 .lastEventAt(lastEventAt)
+                .connectedAt(connectedAt)
+                .disconnectedAt(disconnectedAt)
+                .reconnectAttempts(reconnectAttempts.get())
                 .build();
+    }
+
+    /**
+     * F-P1-7 第十轮：WS 客户端连接状态回调入口。
+     * <p>由 {@code PolymarketWebSocketClient} 在 onOpen / onClosed / onFailure 时调用，
+     * 不直接依赖 dataStream 内部字段，保证 dataStream 在测试 / 无 WS 客户端的环境下行为不变。
+     *
+     * @param isConnected true=已连接（标记 connectedAt），false=已断开（标记 disconnectedAt）
+     */
+    public void markConnected(boolean isConnected) {
+        boolean prev = connected.getAndSet(isConnected);
+        Date now = new Date();
+        if (isConnected) {
+            connectedAt = now;
+        } else {
+            disconnectedAt = now;
+        }
+        if (prev != isConnected) {
+            log.info("[POLY_WS_DATA] action=连接状态变更 from={} to={}", prev, isConnected);
+        }
+    }
+
+    /** F-P1-7 第十轮：reconnect attempts 计数透出。 */
+    public void incrementReconnectAttempts() {
+        reconnectAttempts.incrementAndGet();
+    }
+
+    public boolean isConnected() {
+        return connected.get();
     }
 
     public void ingestMockEvent(String payload) {
@@ -229,5 +268,9 @@ public class PolymarketMarketDataStreamService {
         private long bookEventsReceived;
         private long priceEventsReceived;
         private Date lastEventAt;
+        // F-P1-7 第十轮：连接生命周期可观测性字段（向后兼容；旧调用方不读这些字段也能编译）
+        private Date connectedAt;
+        private Date disconnectedAt;
+        private long reconnectAttempts;
     }
 }

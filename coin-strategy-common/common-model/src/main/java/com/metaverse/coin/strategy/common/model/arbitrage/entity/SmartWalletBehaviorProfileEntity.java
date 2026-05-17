@@ -49,6 +49,19 @@ public class SmartWalletBehaviorProfileEntity {
     private BigDecimal replicabilityScore;
     private String recommendedExitLane;
     private String summary;
+
+    /**
+     * 方案 B (W2-T6 优化): LeaderBehaviorDrift 共享的特征向量 centroid JSON.
+     * 格式: {"centroid":[0.13,1.0,0.4,0.3,0.0,0.0,0.3], "sampleCount":42}
+     * 由 BehaviorProfileSnapshotJob 写入, LeaderBehaviorDriftService 优先读取.
+     * NULL 表示旧数据 / 未启用方案 B, drift service 自动 fallback 现有 trade_event 聚合算法.
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md 第十五节.
+     */
+    private String behaviorVectorJson;
+
+    /** 方案 B: vector centroid 最近一次计算时间; 陈旧时 fallback 现有算法. */
+    private Date behaviorVectorComputedAt;
+
     private Date computedAt;
     private Date createdAt;
     private Date updatedAt;

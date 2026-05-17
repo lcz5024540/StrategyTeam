@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionRes
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -23,6 +24,18 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
     private final PolymarketClobClientRouter clobClientRouter;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletProperties properties;
+    /**
+     * 第十二批: MAKER_ONLY 超时撤单 tracker, 可选注入. enable 开关在 tracker 内自查;
+     * sink 缺失或异常都不阻塞 gateway 主流程.
+     */
+    @Autowired(required = false)
+    private MakerOnlyOrderTimeoutTracker makerOnlyOrderTimeoutTracker;
+    /**
+     * F-P1-3: GTC 全局超时撤单 tracker, 可选注入. enable 开关在 tracker 内自查;
+     * tracker 缺失或异常都不阻塞 gateway 主流程 (与 MakerOnly 同模式).
+     */
+    @Autowired(required = false)
+    private GtcOrderTimeoutTracker gtcOrderTimeoutTracker;
 
     @Override
     public SmartWalletExecutionResult execute(SmartWalletSignal signal, ExecutionMode mode) {
@@ -37,10 +50,12 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     LOG_PREFIX, signal.getSignalId(), wallet.getAddress(), wallet.getFunderAddress(), wallet.getOrderType(),
                     wallet.getMinOrderUsdc(), wallet.getMaxOrderUsdc());
             PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepare(signal, wallet);
-            log.info("{} action=准备LIVE CLOB下单参数 result=完成 signalId={} marketId={} outcome={} tokenId={} side={} limitPrice={} size={} stakeUsdc={} tickSize={} negRisk={}",
+            // W2-T4.3: 日志包含 priceImpactMode / orderStrategy / override 三元组, 方便运维基于 trace_id 反查路由原因
+            log.info("{} action=准备LIVE CLOB下单参数 result=完成 signalId={} marketId={} outcome={} tokenId={} side={} limitPrice={} size={} stakeUsdc={} tickSize={} negRisk={} orderStrategy={} priceImpactMode={} priceImpactOverride={}",
                     LOG_PREFIX, signal.getSignalId(), order.getMarketId(), order.getOutcome(), order.getTokenId(),
                     order.getSide(), order.getLimitPrice(), order.getSize(), order.getStakeUsdc(), order.getTickSize(),
-                    order.isNegRisk());
+                    order.isNegRisk(), order.getOrderStrategy(), order.getPriceImpactExecutionMode(),
+                    order.isPriceImpactOverride());
             Map<String, Object> response = clobClientRouter.placeOrder(wallet, order);
             @SuppressWarnings("unchecked")
             Map<String, Object> orderResponse = response.get("response") instanceof Map<?, ?>
@@ -62,6 +77,36 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     LOG_PREFIX, success ? "成功" : "失败", signal.getSignalId(), order.getMarketId(), order.getOutcome(),
                     order.getTokenId(), orderId, rawStatus, normalizedStatus, liveNotional, liveFee,
                     stringify(firstNonNull(response.get("message"), rawStatus)));
+            // 第十二批 W2-T4: 成功 LIVE 下单且为 MAKER_ONLY 时注册超时撤单
+            if (success && orderId != null && makerOnlyOrderTimeoutTracker != null) {
+                try {
+                    makerOnlyOrderTimeoutTracker.register(orderId, wallet.getAddress(),
+                            order.getPriceImpactExecutionMode());
+                } catch (RuntimeException trackerErr) {
+                    log.warn("{} makerOnly tracker register failed orderId={} mode={} err={}",
+                            LOG_PREFIX, orderId, order.getPriceImpactExecutionMode(),
+                            trackerErr.toString());
+                }
+            }
+            // F-P1-3: 所有成功 LIVE GTC 单加全局超时兜底（MAKER_ONLY 已有专用 tracker，此处仍注册保持
+            // "未成交 60s 取消" 的兜底语义；MakerOnly tracker 先撤掉时 GtcOrderTimeoutTracker 的 scan
+            // 调 cancelOrder 收到 404 / already-cancelled 也会被吞并标 CANCELLED，副作用可忽略）。
+            if (success && orderId != null && gtcOrderTimeoutTracker != null
+                    && "GTC".equalsIgnoreCase(wallet.getOrderType())) {
+                try {
+                    gtcOrderTimeoutTracker.register(
+                            null, // smart_wallet_order.id 由 OrderPersistenceService 后续落库，此处尚不可得
+                            orderId,
+                            wallet.getAddress(),
+                            order.getOrderStrategy(),
+                            order.getMarketId(),
+                            order.getOutcome(),
+                            null);
+                } catch (RuntimeException trackerErr) {
+                    log.warn("{} gtc tracker register failed externalOrderId={} strategy={} err={}",
+                            LOG_PREFIX, orderId, order.getOrderStrategy(), trackerErr.toString());
+                }
+            }
             return SmartWalletExecutionResult.builder()
                     .signalId(signal.getSignalId())
                     .mode(mode)

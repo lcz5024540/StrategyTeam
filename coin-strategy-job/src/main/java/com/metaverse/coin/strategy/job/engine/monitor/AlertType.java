@@ -30,7 +30,30 @@ public enum AlertType {
     MODE_CHANGED(AlertLevel.INFO, "策略模式变更"),
 
     /** 策略启停 */
-    STRATEGY_TOGGLED(AlertLevel.INFO, "策略启停操作");
+    STRATEGY_TOGGLED(AlertLevel.INFO, "策略启停操作"),
+
+    // ── W1-T1.5 / W1-T4.5 智能钱包审计告警（统一告警通道接入） ──
+
+    /** W1-T1: Live↔Replay 一致性差异超阈值 */
+    AUDIT_LIVE_REPLAY_DIFF(AlertLevel.WARN, "Live↔Replay 一致性差异超阈值"),
+
+    /** W1-T4: 影子记账 vs 实盘 PnL 差异超阈值 */
+    AUDIT_SHADOW_VS_LIVE(AlertLevel.WARN, "影子记账 vs 实盘 PnL 差异超阈值"),
+
+    /** W1-T2: 结算源对齐审计异常（解析失败 / 结算延迟 / claim 失败累积） */
+    AUDIT_SETTLEMENT_SOURCE(AlertLevel.WARN, "结算源对齐审计异常"),
+
+    /** W2-T4.5: 滑点事后统计 P95 超阈值 */
+    AUDIT_SLIPPAGE_POSTFACT(AlertLevel.WARN, "滑点事后统计 P95 超阈值"),
+
+    /** W2-T6: Leader 行为漂移触发 (DRIFTED / DRIFTED_SEVERE) */
+    AUDIT_LEADER_DRIFT(AlertLevel.WARN, "Leader 行为漂移触发"),
+
+    /** W1-T2.2 + 第十一批 (2026-05-16): Polymarket Gamma / 我方 / UMA Oracle 三方 resolution diff */
+    AUDIT_RESOLUTION_TRIDIFF(AlertLevel.WARN, "结算三方 diff 不一致"),
+
+    /** W2-T2 灰度自动化 (第十八批): leader 滑动窗口胜率灰度健康检查异常 (coolingRatio 过高 / overallWinRate 过低). */
+    AUDIT_LEADER_ROLLING_HEALTH(AlertLevel.WARN, "Leader 滑动窗口胜率灰度健康异常");
 
     private final AlertLevel defaultLevel;
     private final String description;

@@ -102,6 +102,31 @@ public class FollowIntentAggregationService {
             BigDecimal newAggregatedStake = previousStake.add(additionalUsdc).setScale(2, RoundingMode.HALF_UP);
             int previousFragCount = parseFragmentCount(existingIntentTask);
 
+            // ── F-P0-4: 单次意图聚合金额 cap ──
+            // 防止 leader 在窗口内连续加仓 → 单任务 stake 爆 maxOrderUsdc。
+            // 超过 initialStake × maxStakeMultiplier 时停止合并，转开新意图（新 follow task）。
+            BigDecimal initialStake = resolveInitialIntentStake(existingIntentTask);
+            BigDecimal multiplier = getMaxStakeMultiplier();
+            BigDecimal stakeCap = (initialStake.compareTo(BigDecimal.ZERO) > 0 && multiplier.compareTo(BigDecimal.ZERO) > 0)
+                    ? initialStake.multiply(multiplier).setScale(2, RoundingMode.HALF_UP)
+                    : null;
+            if (stakeCap != null && newAggregatedStake.compareTo(stakeCap) > 0) {
+                log.warn("{} action=意图聚合 result=CAP_EXCEEDED_NEW_INTENT eventId={} followTaskId={} " +
+                                "previousStake={} additionalUsdc={} attemptedAggregate={} cap={} initialStake={} multiplier={} " +
+                                "→ 拆为新意图，避免单任务爆 maxOrderUsdc",
+                        LOG_PREFIX, event.getId(), existingIntentTask.getId(),
+                        previousStake, additionalUsdc, newAggregatedStake, stakeCap, initialStake, multiplier);
+                String newIntentKey = buildIntentKey(event, eventTimeMs);
+                return IntentAggregationResult.builder()
+                        .aggregated(false)
+                        .intentKey(newIntentKey)
+                        .aggregatedSizeUsdc(additionalUsdc)
+                        .fragmentCount(1)
+                        .isNewIntent(true)
+                        .reason("AGGREGATION_STAKE_CAP_EXCEEDED")
+                        .build();
+            }
+
             // 更新 follow task 的 stake 和 fragment count
             existingIntentTask.setRecommendedStakeUsdc(newAggregatedStake);
             existingIntentTask.setTriggerSizeUsdc(newAggregatedStake);
@@ -320,6 +345,36 @@ public class FollowIntentAggregationService {
             return config.getWindowMinutes() * 60_000L;
         }
         return 5 * 60_000L; // 默认 5 分钟
+    }
+
+    /**
+     * F-P0-4: 解析意图首笔 stake（用于计算 stakeCap）。
+     * 优先取 {@code triggerSizeUsdc}（创建任务时记录的首笔 size），
+     * 若不可用则退回到 {@code recommendedStakeUsdc / fragmentCount} 估算。
+     */
+    private BigDecimal resolveInitialIntentStake(SmartWalletFollowTaskEntity task) {
+        BigDecimal trigger = safe(task.getTriggerSizeUsdc());
+        int fragCount = Math.max(1, parseFragmentCount(task));
+        BigDecimal recommended = safe(task.getRecommendedStakeUsdc());
+        // 若 triggerSizeUsdc 已被聚合覆盖（同 newAggregatedStake），fragCount > 1 时按平均反推首笔
+        if (fragCount > 1 && recommended.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal estimated = recommended.divide(new BigDecimal(fragCount), 2, RoundingMode.HALF_UP);
+            // 取最小值（更保守的 cap）
+            if (estimated.compareTo(BigDecimal.ZERO) > 0
+                    && (trigger.compareTo(BigDecimal.ZERO) <= 0 || estimated.compareTo(trigger) < 0)) {
+                return estimated;
+            }
+        }
+        return trigger;
+    }
+
+    private BigDecimal getMaxStakeMultiplier() {
+        SmartWalletProperties.IntentAggregationConfig config = properties.getIntentAggregation();
+        if (config != null && config.getMaxStakeMultiplier() != null
+                && config.getMaxStakeMultiplier().compareTo(BigDecimal.ZERO) > 0) {
+            return config.getMaxStakeMultiplier();
+        }
+        return new BigDecimal("3.0");
     }
 
     private BigDecimal safe(BigDecimal v) {

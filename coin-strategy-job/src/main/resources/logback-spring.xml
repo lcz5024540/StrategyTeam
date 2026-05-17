@@ -7,7 +7,9 @@
          3. 默认值 /opt/coinstrategy/smart-wallet/logs
     ============================================================ -->
     <property name="LOG_DIR" value="${log.dir:-${LOG_DIR:-/opt/coinstrategy/smart-wallet/logs}}"/>
-    <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"/>
+    <!-- W1-T3: 加入 MDC traceId, 跟单全链路日志可被 grep "trace=tev_xxx" 串起来.
+         当 MDC 中没有 traceId 时, %X{traceId:-} 输出空字符串, 不影响非链路日志. -->
+    <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [trace=%X{traceId:-}] %logger{36} - %msg%n"/>
 
     <!-- 控制台输出 (本地开发 / 前台启动时使用) -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">

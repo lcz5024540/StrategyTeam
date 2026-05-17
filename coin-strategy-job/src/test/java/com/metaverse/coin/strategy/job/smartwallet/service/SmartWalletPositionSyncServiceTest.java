@@ -62,6 +62,10 @@ class SmartWalletPositionSyncServiceTest {
     private MarketConcentrationService marketConcentrationService;
     @Mock
     private PolymarketMarketDataCacheService marketDataCacheService;
+    @Mock
+    private com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService manualAllowlistService;
+    @Mock
+    private PolymarketFeeScheduleService feeScheduleService;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -90,7 +94,9 @@ class SmartWalletPositionSyncServiceTest {
                 marketSnapshotCollectorService,
                 marketConcentrationService,
                 walletBehaviorProfileService,
-                marketDataCacheService
+                marketDataCacheService,
+                manualAllowlistService,
+                feeScheduleService
         );
     }
 

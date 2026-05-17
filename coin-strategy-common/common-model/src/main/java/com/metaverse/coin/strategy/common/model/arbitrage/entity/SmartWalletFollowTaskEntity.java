@@ -27,6 +27,14 @@ public class SmartWalletFollowTaskEntity {
     private Long followCandidateId;
 
     private Long sourceEventId;
+
+    /**
+     * 跟单链路 trace_id, 继承自 source_event_id 对应 trade_event.trace_id.
+     * 写入时机: SmartWalletFollowTaskService 创建任务时, 用 sourceEventId 反查并设置.
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md (W1-T3).
+     */
+    private String traceId;
+
     /** 关联公共市场信息表 smart_wallet_market_info.id */
     private Long marketInfoId;
     private String side;

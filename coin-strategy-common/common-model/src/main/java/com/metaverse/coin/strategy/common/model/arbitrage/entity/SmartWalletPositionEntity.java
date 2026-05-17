@@ -47,6 +47,14 @@ public class SmartWalletPositionEntity {
     private Date closedAt;
     private String status;
     private String source;  // FOLLOW_TRADE / WEATHER
+
+    /**
+     * 仓位首次开仓时的 trace_id (此后即使 trade_order 合并也不覆盖).
+     * 用于按 trace_id 反查"这笔 leader 行为最终成了哪个仓位".
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md (W1-T3).
+     */
+    private String originTraceId;
+
     private Date createdAt;
     private Date updatedAt;
 
