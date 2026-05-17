@@ -4978,8 +4978,35 @@ public class SmartWalletAccountingService {
     }
 
     private int backfillTaskMarketEndAt(int limit, boolean refreshCache) {
-        log.debug("backfillTaskMarketEndAt is deprecated after market_info migration. Skipping.");
-        return 0;
+        // 2026-05-17 ray@cowork: 原来 market_info migration 后 3 个 backfill 都被改成 no-op,
+        // 但没人补 market_info 表本身 → 导致 76% 行 market_end_at=NULL, G6 占 56% 拒绝.
+        // 这里改回真活: 扫 lifecycle=ACTIVE 且 endAt 缺失/已过期的行, 强制重拉 Polymarket Gamma 后更新 endAt.
+        List<SmartWalletMarketInfoEntity> stale = marketInfoService.listActiveWithStaleEndAt(limit);
+        if (stale.isEmpty()) {
+            return 0;
+        }
+        int updated = 0;
+        long nowMs = System.currentTimeMillis();
+        for (SmartWalletMarketInfoEntity info : stale) {
+            try {
+                PolymarketApiClient.MarketMetadata metadata = marketMetadataService
+                        .getByConditionId(info.getMarketId(), refreshCache, info.getQuestion());
+                if (metadata == null) {
+                    continue;
+                }
+                Long endAt = metadata.getEndAt();
+                if (endAt != null && endAt > 0 && !endAt.equals(info.getMarketEndAt())) {
+                    info.setMarketEndAt(endAt);
+                    info.setUpdatedAt(new Date(nowMs));
+                    marketInfoService.update(info);
+                    updated++;
+                }
+            } catch (RuntimeException ex) {
+                log.debug("backfillTaskMarketEndAt skip marketId={} reason={}", info.getMarketId(), ex.getMessage());
+            }
+        }
+        log.info("backfillTaskMarketEndAt scanned={} updated={}", stale.size(), updated);
+        return updated;
     }
 
     private String resolveOutcomeTokenId(String marketId,

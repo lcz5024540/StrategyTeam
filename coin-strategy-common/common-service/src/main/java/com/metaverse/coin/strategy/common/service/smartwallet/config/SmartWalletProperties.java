@@ -60,6 +60,8 @@ public class SmartWalletProperties {
     private AllowlistAggregationConfig allowlistAggregation = new AllowlistAggregationConfig();
     private ExposureLimitConfig exposureLimit = new ExposureLimitConfig();
     private IntentAggregationConfig intentAggregation = new IntentAggregationConfig();
+    /** 2026-05-17 ray@cowork: 周期性刷新 smart_wallet_market_info.market_end_at 的 Job 配置 */
+    private MarketInfoRefresh marketInfoRefresh = new MarketInfoRefresh();
 
     @Data
     public static class PolymarketMonitor {
@@ -1644,5 +1646,20 @@ public class SmartWalletProperties {
          * 默认 3.0（即同一意图最多放大到首笔 size 的 3 倍）。
          */
         private BigDecimal maxStakeMultiplier = new BigDecimal("3.0");
+    }
+
+    /**
+     * 2026-05-17 ray@cowork: MarketInfoEndAtRefreshJob 用的配置。
+     * <p>
+     * market_info migration 之后, 旧 backfill 全 noop, 没有人在补 endAt → 76% 行 NULL。
+     * 本 Job 周期性扫 lifecycle=ACTIVE 但 endAt 缺失/过期的行, 强制从 Polymarket Gamma 重拉。
+     */
+    @Data
+    public static class MarketInfoRefresh {
+        /** 总开关; 默认开启 */
+        private boolean enabled = true;
+
+        /** 单批最大扫描行数; 默认 200, 避免单轮跑爆 Polymarket API */
+        private int batchSize = 200;
     }
 }

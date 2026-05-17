@@ -2003,8 +2003,24 @@ public class SmartWalletFollowTaskService {
 
     private Long resolveMarketEndAt(String marketId, String questionHint) {
         try {
+            // 2026-05-17 ray@cowork: 修复 endAt 缓存命中后永远不重拉的问题。
+            // 第一次 refresh=false 读 cache；若 cache 中 endAt 缺失或非法 → 强制 refresh=true 重拉 Polymarket Gamma。
             PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(marketId, false, questionHint);
-            return metadata == null ? null : metadata.getEndAt();
+            Long endAt = metadata == null ? null : metadata.getEndAt();
+            if (endAt == null || endAt <= 0) {
+                try {
+                    PolymarketApiClient.MarketMetadata refreshed = marketMetadataService.getByConditionId(marketId, true, questionHint);
+                    if (refreshed != null && refreshed.getEndAt() != null && refreshed.getEndAt() > 0) {
+                        endAt = refreshed.getEndAt();
+                        log.debug("{} action=解析跟单市场结束时间 result=强制刷新成功 marketId={} endAt={}",
+                                LOG_PREFIX, marketId, endAt);
+                    }
+                } catch (Exception refreshEx) {
+                    log.debug("{} action=解析跟单市场结束时间 result=强制刷新失败 marketId={} reason={}",
+                            LOG_PREFIX, marketId, refreshEx.getMessage());
+                }
+            }
+            return endAt;
         } catch (Exception e) {
             log.debug("{} action=解析跟单市场结束时间 result=失败 marketId={} reason={}",
                     LOG_PREFIX, marketId, e.getMessage());

@@ -59,6 +59,24 @@ public class SmartWalletMarketInfoService {
         return cacheById.computeIfAbsent(id, marketInfoMapper::selectById);
     }
 
+    /**
+     * 2026-05-17 ray@cowork: 查找 lifecycle=ACTIVE 但 market_end_at 缺失或已过期的脏数据行。
+     * 用于 backfill / 周期性刷新 job 找出需要重拉 Polymarket Gamma 的市场。
+     *
+     * @param limit 单批最大返回行数（>0）
+     * @return 满足条件的 entity 列表，按 updated_at 升序（最久未刷新优先）
+     */
+    public List<SmartWalletMarketInfoEntity> listActiveWithStaleEndAt(int limit) {
+        long nowMs = System.currentTimeMillis();
+        int safeLimit = Math.max(1, limit);
+        return marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
+                .eq(SmartWalletMarketInfoEntity::getMarketLifecycle, "ACTIVE")
+                .and(w -> w.isNull(SmartWalletMarketInfoEntity::getMarketEndAt)
+                        .or().le(SmartWalletMarketInfoEntity::getMarketEndAt, nowMs))
+                .orderByAsc(SmartWalletMarketInfoEntity::getUpdatedAt)
+                .last("limit " + safeLimit));
+    }
+
     public SmartWalletMarketInfoEntity getByMarketIdAndOutcome(String marketId, String outcome) {
         if (!StringUtils.hasText(marketId) || !StringUtils.hasText(outcome)) return null;
         List<SmartWalletMarketInfoEntity> list = marketInfoMapper.selectList(new LambdaQueryWrapper<SmartWalletMarketInfoEntity>()
@@ -227,7 +245,11 @@ public class SmartWalletMarketInfoService {
                 existing.setIndexSet(indexSet);
                 updated = true;
             }
-            if (marketEndAt != null && (existing.getMarketEndAt() == null || existing.getMarketEndAt() <= 0)) {
+            // 2026-05-17 ray@cowork: 修复 market_end_at=NULL 比例过高的问题。
+            // 原逻辑只在 existing.endAt 是 NULL/0 时才写入 → 永远无法被后续刷新覆盖。
+            // 改为：只要 incoming 是合法非零值且与 existing 不同，就覆盖（让 Polymarket 最新值生效）。
+            if (marketEndAt != null && marketEndAt > 0
+                    && !marketEndAt.equals(existing.getMarketEndAt())) {
                 existing.setMarketEndAt(marketEndAt);
                 updated = true;
             }

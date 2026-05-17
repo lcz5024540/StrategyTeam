@@ -765,7 +765,11 @@ public class SmartWalletPositionSyncService {
         String marketId = position.getMarketId();
         String category = null;
         if (position.getMarketInfo() != null) {
-            category = position.getMarketInfo().getCategory();
+            // 2026-05-17 ray@cowork: entity 上没有 getCategory()，用 normalized_category 优先，回退 source_category
+            category = position.getMarketInfo().getNormalizedCategory();
+            if (!org.springframework.util.StringUtils.hasText(category)) {
+                category = position.getMarketInfo().getSourceCategory();
+            }
         }
         BigDecimal feeRate;
         try {

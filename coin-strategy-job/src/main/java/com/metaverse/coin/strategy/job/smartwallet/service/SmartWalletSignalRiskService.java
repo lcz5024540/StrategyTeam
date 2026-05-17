@@ -422,9 +422,17 @@ public class SmartWalletSignalRiskService {
         if (endAt != null && endAt > 0) {
             long remainingMs = endAt - System.currentTimeMillis();
             if (remainingMs <= 0) {
-                accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED";
-                reasons.add("Market is already at or past expected end time.");
+                // 2026-05-18 ray@cowork: 修复 G6_MARKET_EXPIRED 误判 (占 56% 拒绝率)。
+                // Polymarket 长尾市场 endAt 经常陈旧, 但 lifecycle=ACTIVE+accepting_orders=true 仍可正常交易。
+                // 只有 marketState 同时确认非活跃或不接单时, 才视为真过期。
+                if (!marketState.isActive() || !marketState.acceptingOrders()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED";
+                    reasons.add("Market is already at or past expected end time.");
+                } else {
+                    reasons.add("[MARKET_END_AT_STALE_BUT_ACTIVE] endAt=" + endAt
+                            + " in past but lifecycle=ACTIVE & acceptingOrders=true; accepting follow.");
+                }
             } else {
                 long maxHours = defaultInt(risk.getMaxHoursToMarketEnd(), Integer.MAX_VALUE);
                 long obviousFutureMs = (long) risk.getObviouslyFutureMarketEndDays() * 24L * 3600_000L;
@@ -453,9 +461,15 @@ public class SmartWalletSignalRiskService {
             }
             Long freshEndAt = freshState.marketEndAt();
             if (freshEndAt != null && freshEndAt > 0 && freshEndAt <= System.currentTimeMillis()) {
-                accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED_AFTER_FORCE_REFRESH";
-                reasons.add("[MARKET_END_AT_MISSING_FORCE_REFRESH] marketEndAt was null; forced refresh reveals market is already expired.");
+                // 2026-05-18 ray@cowork: 同上短路修复, force refresh 后 endAt 过期也要看 lifecycle/acceptingOrders。
+                if (!freshState.isActive() || !freshState.acceptingOrders()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED_AFTER_FORCE_REFRESH";
+                    reasons.add("[MARKET_END_AT_MISSING_FORCE_REFRESH] marketEndAt was null; forced refresh reveals market is already expired.");
+                } else {
+                    reasons.add("[MARKET_END_AT_STALE_BUT_ACTIVE_AFTER_FORCE_REFRESH] endAt=" + freshEndAt
+                            + " past but market still lifecycle=ACTIVE & acceptingOrders=true; accepting follow.");
+                }
                 endAt = freshEndAt;
             } else if (freshEndAt != null && freshEndAt > 0) {
                 endAt = freshEndAt;

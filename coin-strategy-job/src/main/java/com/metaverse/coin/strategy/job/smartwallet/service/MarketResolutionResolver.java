@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import lombok.Builder;
 import lombok.Data;
+import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -12,6 +13,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+// 2026-05-17 ray@cowork: 加上 @Component 让 ResolutionLiveRefreshService 能正确注入此 bean。
+// 原代码缺这个注解, 但 ResolutionLiveRefreshService 用 @RequiredArgsConstructor 要求它做依赖 → Spring 启动失败。
+@Component
 public class MarketResolutionResolver {
 
     public static final String STATUS_RESOLVED = "RESOLVED";
