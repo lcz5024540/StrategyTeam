@@ -96,3 +96,30 @@ smart-wallet:
         time-period: "ALL"
         order-by: "PNL"
         limit: 100
+      # 2026-05-19 ray@cowork: 偏向"本周活跃高 PnL" leader 入库, 给 WeeklyTopLeaderAutoAllowlistJob 喂料
+      - category: "OVERALL"
+        time-period: "WEEK"
+        order-by: "PNL"
+        limit: 100
+
+  # 2026-05-19 ray@cowork: 每日 06:00 自动从 profile 表挑"本周活跃 + 高 PnL + 高胜率" leader
+  # 入 manual_allowlist (PAPER, 30d 过期). 详见 WeeklyTopLeaderAutoAllowlistJob.
+  auto-allowlist:
+    enabled: true
+    cron: "0 0 6 * * *"
+    zone: "Asia/Shanghai"
+    top-n: 10
+    min-lifetime-trades: 30
+    min-recent-7d-trades: 1
+    active-within-days: 7
+    min-pnl-usdc: 10000
+    min-win-rate: 0.55
+    max-drawdown: 0.30
+    stake-multiplier: 0.50
+    default-mode: "PAPER"
+    expiration-days: 30
+    max-live-orders-per-day: 5
+    max-live-orders-per-run: 2
+    overwrite-existing: false
+    reason-prefix: "AUTO_WEEKLY_TOP_LEADER"
+    created-by: "WeeklyTopLeaderAutoAllowlistJob"

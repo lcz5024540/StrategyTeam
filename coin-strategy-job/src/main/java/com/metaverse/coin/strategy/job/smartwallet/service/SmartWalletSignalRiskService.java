@@ -708,12 +708,17 @@ public class SmartWalletSignalRiskService {
                 preliminaryStake = triggerScaledCap;
             }
         }
+        // 2026-05-19 ray@cowork: LONG_HORIZON stake multiplier 之前在两处独立应用 (本块 + Kelly 块末),
+        // 当 Kelly 返回 null 或 negativeEV+allowlistBypass 走 fallback 时, recommendedStake = preliminaryStake,
+        // 紧接着又被乘一次 → 同一 multiplier 累积 0.50 × 0.50 = 0.25, 把好信号砍到 minOrder 以下.
+        // 现统一: 本块只对"legacy formula path (Kelly 未采用)"生效; Kelly 真正采用时跳过这次, 由
+        // 下面 Kelly 块末单点应用.
         if ("LONG_HORIZON".equals(marketType)) {
             BigDecimal multiplier = risk.getLongHorizonStakeMultiplier() == null
                     ? new BigDecimal("0.50")
                     : safe(risk.getLongHorizonStakeMultiplier());
             preliminaryStake = preliminaryStake.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
-            reasons.add("[LONG_HORIZON_STAKE] Long-horizon market stake multiplier applied: "
+            reasons.add("[LONG_HORIZON_STAKE] Long-horizon market stake multiplier applied (preliminary): "
                     + multiplier.setScale(2, RoundingMode.HALF_UP) + ".");
         }
         preliminaryStake = preliminaryStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
@@ -916,6 +921,9 @@ public class SmartWalletSignalRiskService {
 
         // ── Gate 10: Kelly 仓位计算 ─────────────────────────────────────────────
         BigDecimal recommendedStake;
+        // 2026-05-19 ray@cowork: 仅当 Kelly 真正返回 > 0 stake 时才置 true; null / 0 EV fallback 走 preliminaryStake
+        // 路径不应再二次应用 LONG_HORIZON multiplier (preliminaryStake 已经在上面乘过一次).
+        boolean kellyStakeAdopted = false;
         if (risk.isKellyStakeEnabled()) {
             BigDecimal kellyStake = kellyStakeCalculator.compute(
                     profitabilityEstimate.getCalibratedFollowProbability(),
@@ -949,6 +957,7 @@ public class SmartWalletSignalRiskService {
                         manualAllowlistApplied);
             } else {
                 recommendedStake = kellyStake;
+                kellyStakeAdopted = true;
                 reasons.add("Kelly stake=" + kellyStake + " (p=" +
                         safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) +
                         " price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ").");
@@ -956,7 +965,9 @@ public class SmartWalletSignalRiskService {
         } else {
             recommendedStake = preliminaryStake;
         }
-        if ("LONG_HORIZON".equals(marketType) && risk.isKellyStakeEnabled()) {
+        // 2026-05-19 ray@cowork: 仅在"真正采用 Kelly stake"路径下应用一次; preliminaryStake fallback / Kelly 未启用
+        // 都不再二次乘 — preliminaryStake 已经在上方 LONG_HORIZON 块里乘过.
+        if ("LONG_HORIZON".equals(marketType) && kellyStakeAdopted) {
             BigDecimal multiplier = risk.getLongHorizonStakeMultiplier() == null
                     ? new BigDecimal("0.50")
                     : safe(risk.getLongHorizonStakeMultiplier());

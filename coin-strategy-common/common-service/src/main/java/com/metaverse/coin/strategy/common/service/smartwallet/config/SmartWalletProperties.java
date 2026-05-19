@@ -62,6 +62,11 @@ public class SmartWalletProperties {
     private IntentAggregationConfig intentAggregation = new IntentAggregationConfig();
     /** 2026-05-17 ray@cowork: 周期性刷新 smart_wallet_market_info.market_end_at 的 Job 配置 */
     private MarketInfoRefresh marketInfoRefresh = new MarketInfoRefresh();
+    /**
+     * 2026-05-19 ray@cowork: 每日自动从 smart_wallet_profile 选最近活跃 + 高 PnL + 高胜率
+     * leader 入 manual_allowlist (PAPER) 的 Job 配置。
+     */
+    private AutoAllowlistConfig autoAllowlist = new AutoAllowlistConfig();
 
     @Data
     public static class PolymarketMonitor {
@@ -1661,5 +1666,75 @@ public class SmartWalletProperties {
 
         /** 单批最大扫描行数; 默认 200, 避免单轮跑爆 Polymarket API */
         private int batchSize = 200;
+    }
+
+    /**
+     * 2026-05-19 ray@cowork: WeeklyTopLeaderAutoAllowlistJob 用的配置。
+     * <p>
+     * 每天扫一次 smart_wallet_profile, 筛选条件:
+     * <ul>
+     *   <li>realized PnL ≥ {@link #minPnlUsdc} (默认 $10k)</li>
+     *   <li>total trades ≥ {@link #minLifetimeTrades} (默认 30, 兜底; 真正想要的是 7d trades 但 profile 维度不一定有)</li>
+     *   <li>最近 7d 有交易 ({@code recentTradeCount7d ≥ minRecent7dTrades} 或 {@code lastTradeAt} 在 {@link #activeWithinDays} 天内)</li>
+     *   <li>winRate ≥ {@link #minWinRate}</li>
+     *   <li>maxDrawdown ≤ {@link #maxDrawdown}</li>
+     * </ul>
+     * 然后按 winRate 排序取 TOP {@link #topN}, 默认 PAPER 模式 + 30 天过期写入 manual_allowlist.
+     */
+    @Data
+    public static class AutoAllowlistConfig {
+        /** 总开关; 默认关, 显式 yml 打开 */
+        private boolean enabled = false;
+
+        /** Spring cron 6 字段表达式; 默认每天 6:00 (Asia/Shanghai) */
+        private String cron = "0 0 6 * * *";
+
+        /** cron 时区 */
+        private String zone = "Asia/Shanghai";
+
+        /** TOP N 入白名单 */
+        private int topN = 10;
+
+        /** 历史 total_trades 下限 (兜底, 防止抓到一锤子大单运气钱包) */
+        private int minLifetimeTrades = 30;
+
+        /** 最近 7d 内最少交易笔数; 0 表示不卡 (允许走 lastTradeAt 路径) */
+        private int minRecent7dTrades = 1;
+
+        /** 最近活跃窗口 (天); lastTradeAt 必须在此窗口内 */
+        private int activeWithinDays = 7;
+
+        /** realized PnL 下限 (USDC) */
+        private BigDecimal minPnlUsdc = new BigDecimal("10000");
+
+        /** 最低胜率 */
+        private BigDecimal minWinRate = new BigDecimal("0.55");
+
+        /** 最大回撤 (drawdown rate); 1.0 表示不卡 */
+        private BigDecimal maxDrawdown = new BigDecimal("0.30");
+
+        /** stake multiplier (写入 allowlist) */
+        private BigDecimal stakeMultiplier = new BigDecimal("0.50");
+
+        /** 默认执行模式: PAPER / LIVE / BOTH */
+        private String defaultMode = "PAPER";
+
+        /** 入库后过期天数 */
+        private int expirationDays = 30;
+
+        /** LIVE 模式下每日最大订单数 (写入 allowlist) */
+        private int maxLiveOrdersPerDay = 5;
+
+        /** LIVE 模式下单次最大订单数 (写入 allowlist) */
+        private int maxLiveOrdersPerRun = 2;
+
+        /** 是否覆盖已存在的 active allowlist 条目; false 时仅新增 */
+        private boolean overwriteExisting = false;
+
+        /** 入库时的 reason 前缀 */
+        private String reasonPrefix = "AUTO_WEEKLY_TOP_LEADER";
+
+        /** 入库时的 createdBy */
+        private String createdBy = "WeeklyTopLeaderAutoAllowlistJob";
     }
 }

@@ -53,6 +53,17 @@
             <version>0.0.1-SNAPSHOT</version>
             <scope>compile</scope>
         </dependency>
+        <!--
+          2026-05-19 ray@cowork: SmartWalletAuditController 用了 @Operation / @Tag (io.swagger.v3.oas.annotations.*)
+          但 pom 一直没声明依赖, scripts/build-test.sh 全量 build 直接编译失败. 加最小依赖 swagger-annotations
+          (只是注解类, 不引入 springdoc-ui / servlet 整套, 避免污染 Spring Boot 2.7 web classpath).
+          版本 2.2.21 — Spring Boot 2.7 / 3.x 都兼容.
+        -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations</artifactId>
+            <version>2.2.21</version>
+        </dependency>
     </dependencies>
 
     <profiles>
