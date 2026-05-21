@@ -64,6 +64,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -78,6 +80,10 @@ public class SmartWalletReadService {
             "OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE", "RESOLVED_UNCLAIMED"
     );
     private static final String PAPER_BOOK_EXECUTION_ADDRESS = "paper-book";
+    private static final Pattern SPORTS_MARKET_SLUG_PATTERN = Pattern.compile(
+            "^(([a-z0-9]+)-[a-z0-9]+-[a-z0-9]+-\\d{4}-\\d{2}-\\d{2})(?:-.+)?$",
+            Pattern.CASE_INSENSITIVE
+    );
 
     private final SmartWalletProfileMapper profileMapper;
     private final SmartWalletTradeEventMapper tradeEventMapper;
@@ -1531,7 +1537,15 @@ public class SmartWalletReadService {
         if (!StringUtils.hasText(marketSlug)) {
             return null;
         }
-        return "https://polymarket.com/event/" + marketSlug.trim();
+        String slug = marketSlug.trim();
+        Matcher sportsMarket = SPORTS_MARKET_SLUG_PATTERN.matcher(slug);
+        if (sportsMarket.matches()) {
+            return "https://polymarket.com/sports/"
+                    + sportsMarket.group(2).toLowerCase(Locale.ROOT)
+                    + "/"
+                    + sportsMarket.group(1).toLowerCase(Locale.ROOT);
+        }
+        return "https://polymarket.com/event/" + slug;
     }
 
     private String buildInternalMarketUrl(String marketId) {

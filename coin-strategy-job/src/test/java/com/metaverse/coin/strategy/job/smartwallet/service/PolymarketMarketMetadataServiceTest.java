@@ -197,6 +197,38 @@ class PolymarketMarketMetadataServiceTest {
     }
 
     @Test
+    void shouldPreferExactEventSlugOverMarketSlugFromGammaMarkets() {
+        PolymarketApiClient.MarketMetadata primary = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .question("Lakers vs. Knicks: Moneyline")
+                .slug("nba-lal-nyk-2026-05-20-moneyline")
+                .closed(false)
+                .acceptingOrders(true)
+                .outcomes(List.of("Lakers", "Knicks"))
+                .outcomeTokenIds(Map.of("Lakers", "token-lal", "Knicks", "token-nyk"))
+                .build();
+        PolymarketApiClient.MarketMetadata exactEvent = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId("0xmarket")
+                .marketId("market-1")
+                .question("Lakers vs. Knicks: Moneyline")
+                .slug("nba-lakers-knicks-2026-05-20")
+                .closed(false)
+                .acceptingOrders(true)
+                .outcomes(List.of("Lakers", "Knicks"))
+                .outcomeTokenIds(Map.of("Lakers", "token-lal", "Knicks", "token-nyk"))
+                .build();
+        when(polymarketApiClient.fetchMarketMetadata("0xmarket")).thenReturn(primary);
+        when(polymarketApiClient.searchMarkets("Lakers vs. Knicks: Moneyline", 10, true))
+                .thenReturn(List.of(exactEvent));
+
+        PolymarketApiClient.MarketMetadata metadata =
+                service.getByConditionId("0xmarket", true, "Lakers vs. Knicks: Moneyline");
+
+        assertEquals("nba-lakers-knicks-2026-05-20", metadata.getSlug());
+    }
+
+    @Test
     void shouldKeepCachedResolvedMetadataMonotonicWhenPrimaryRegresses() {
         PolymarketApiClient.MarketMetadata resolved = PolymarketApiClient.MarketMetadata.builder()
                 .conditionId("0xmarket")

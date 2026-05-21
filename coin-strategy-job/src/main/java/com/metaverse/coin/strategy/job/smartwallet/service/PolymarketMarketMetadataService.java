@@ -72,7 +72,7 @@ public class PolymarketMarketMetadataService {
             if (shouldProbeClobFallback(primary)) {
                 clobFallback = findClobMarketByConditionId(normalized);
             }
-            if (!StringUtils.hasText(primary == null ? null : primary.getSlug())) {
+            if (shouldProbeEventSlugFallback(primary)) {
                 activeEventFallback = findActiveEventByConditionId(normalized);
             }
             if (shouldProbeExactFallback(primary, questionHint)) {
@@ -158,11 +158,12 @@ public class PolymarketMarketMetadataService {
             PolymarketApiClient.MarketMetadata cachedMetadata = cache.get(conditionId);
             boolean slugMissing = (slugSource == null || !StringUtils.hasText(slugSource.getSlug()))
                     && (cachedMetadata == null || !StringUtils.hasText(cachedMetadata.getSlug()));
+            boolean slugNeedsEventLookup = shouldProbeEventSlugFallback(slugSource);
             String questionHint = slugSource != null ? slugSource.getQuestion() : null;
-            if (slugMissing && StringUtils.hasText(questionHint)) {
+            if ((slugMissing || slugNeedsEventLookup) && StringUtils.hasText(questionHint)) {
                 searchFallback = findExactByQuestionHint(conditionId, questionHint);
             }
-            PolymarketApiClient.MarketMetadata activeEventFallback = slugMissing
+            PolymarketApiClient.MarketMetadata activeEventFallback = (slugMissing || slugNeedsEventLookup)
                     ? findActiveEventByConditionId(conditionId)
                     : null;
             PolymarketApiClient.MarketMetadata merged = mergeMetadata(
@@ -604,6 +605,9 @@ public class PolymarketMarketMetadataService {
         if (primary == null || !StringUtils.hasText(questionHint)) {
             return false;
         }
+        if (shouldProbeEventSlugFallback(primary)) {
+            return true;
+        }
         if (isIncompleteMetadata(primary, List.of())) {
             return true;
         }
@@ -628,6 +632,20 @@ public class PolymarketMarketMetadataService {
             return false;
         }
         return primary.isClosed() || !primary.isAcceptingOrders();
+    }
+
+    private boolean shouldProbeEventSlugFallback(PolymarketApiClient.MarketMetadata primary) {
+        if (primary == null || !StringUtils.hasText(primary.getSlug())) {
+            return true;
+        }
+        String source = primary.getResolutionSource();
+        if (!StringUtils.hasText(source)) {
+            return false;
+        }
+        String normalized = source.trim().toUpperCase(Locale.ROOT);
+        return "GAMMA_MARKETS".equals(normalized)
+                || "GAMMA_MARKETS_BATCH".equals(normalized)
+                || "CLOB_MARKET".equals(normalized);
     }
 
     private boolean shouldRepairIncompleteMetadata(PolymarketApiClient.MarketMetadata metadata,
@@ -730,10 +748,7 @@ public class PolymarketMarketMetadataService {
                         fallback == null ? null : fallback.getQuestion(),
                         cached == null ? null : cached.getQuestion(),
                         local == null ? null : local.getQuestion()))
-                .slug(firstText(base.getSlug(),
-                        fallback == null ? null : fallback.getSlug(),
-                        cached == null ? null : cached.getSlug(),
-                        local == null ? null : local.getSlug()))
+                .slug(preferredEventSlug(primary, fallback, cached, local, base))
                 .category(firstText(base.getCategory(),
                         fallback == null ? null : fallback.getCategory(),
                         cached == null ? null : cached.getCategory(),
@@ -812,6 +827,40 @@ public class PolymarketMarketMetadataService {
                             local == null ? null : local.getUmaResolutionStatus()));
         }
         return builder.build();
+    }
+
+    private String preferredEventSlug(PolymarketApiClient.MarketMetadata primary,
+                                      PolymarketApiClient.MarketMetadata fallback,
+                                      PolymarketApiClient.MarketMetadata cached,
+                                      PolymarketApiClient.MarketMetadata local,
+                                      PolymarketApiClient.MarketMetadata base) {
+        return firstText(
+                trustedEventSlug(fallback),
+                trustedEventSlug(primary),
+                trustedEventSlug(cached),
+                trustedEventSlug(local),
+                base == null ? null : base.getSlug(),
+                fallback == null ? null : fallback.getSlug(),
+                cached == null ? null : cached.getSlug(),
+                local == null ? null : local.getSlug()
+        );
+    }
+
+    private String trustedEventSlug(PolymarketApiClient.MarketMetadata metadata) {
+        if (metadata == null || !StringUtils.hasText(metadata.getSlug())) {
+            return null;
+        }
+        String source = metadata.getResolutionSource();
+        if (!StringUtils.hasText(source)) {
+            return null;
+        }
+        String normalized = source.trim().toUpperCase(Locale.ROOT);
+        if ("GAMMA_EVENTS_ACTIVE_INDEX".equals(normalized)
+                || "GAMMA_SEARCH_EXACT".equals(normalized)
+                || "GAMMA_EVENT_SLUG_EXACT".equals(normalized)) {
+            return metadata.getSlug().trim();
+        }
+        return null;
     }
 
     private PolymarketApiClient.MarketMetadata pickTrustedResolved(String conditionId,
