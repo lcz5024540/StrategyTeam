@@ -57,7 +57,7 @@ prod 环境: 暂时取消，配置文件保留为模板 (yml 的 prod profile + 
 ### 2.3 env 文件 — 按环境拆分
 
 新目录树:
-```
+```text
 deploy/linux/env/
 ├── shared/
 │   └── secrets.env                  # 跨环境共享: RSA 路径 / DB_PASSWORD 密文 / Polymarket 密钥 / Binance
@@ -112,6 +112,7 @@ deploy/linux/env/
 ## 3. 部署前必须配置的外部依赖
 
 ### MySQL (49.51.250.174 — DB 跟 job 同机)
+
 ```sql
 -- root 本机访问 (job 跟 DB 同机)
 GRANT ALL ON coin_strategy.* TO 'root'@'127.0.0.1' IDENTIFIED BY '<明文密码>';
@@ -122,6 +123,7 @@ FLUSH PRIVILEGES;
 `/etc/mysql/mysql.conf.d/mysqld.cnf` 里 `bind-address = 0.0.0.0` 或显式监听内网网卡。
 
 ### 防火墙
+
 ```bash
 # 43.139.186.27 (web/前端 宿主)
 sudo ufw allow 80/tcp                                          # nginx
@@ -134,6 +136,7 @@ sudo ufw deny 8081                                             # job loopback on
 ```
 
 ### RSA 私钥（解密 ENC 密文）
+
 ```bash
 # 本地一次性生成
 bash scripts/generate-rsa-keys.sh

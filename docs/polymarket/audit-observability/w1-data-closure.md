@@ -20,16 +20,19 @@ updated: 2026-05-17
 **目标**：从 leader 落单 → 我方信号 → follow_task → CLOB 订单 → 成交 → 仓位 → 结算，全链路共享同一 trace_id。
 
 ### 数据模型
+
 - **trace_id 生成**：`tev_%012d`（trade_event.id 派生），16 字符固定长度
 - **5 表带 trace_id 列**：`smart_wallet_trade_event` / `smart_wallet_follow_task` / `smart_wallet_order` / `smart_wallet_trade_order` / `smart_wallet_position`（position 用 `origin_trace_id` 语义：首次开仓的 trace）
 
 ### 核心组件
+
 - `TraceIds`（common-service） — 生成 / 解析 / 校验
 - `TraceContext`（common-service） — MDC try-with-resources
 - `TraceQueryService` + Web `GET /smart-wallet/trace/{traceId}` — 反查全链路时间线
 - logback pattern `[trace=%X{traceId:-}]` — 所有日志自动带 trace_id
 
 ### 验证 SQL
+
 ```sql
 SELECT COUNT(*) FROM smart_wallet_trade_event WHERE trace_id IS NOT NULL AND created_at >= NOW() - INTERVAL 1 DAY;
 ```
@@ -41,7 +44,8 @@ SELECT COUNT(*) FROM smart_wallet_trade_event WHERE trace_id IS NOT NULL AND cre
 **目标**：每个被风控拒绝 / 降级的信号都做 shadow 模拟，结算后回填影子 PnL，对比"若放行 vs 真实"的胜率差异。
 
 ### 数据流
-```
+
+```sql
 SignalRiskService 决策 (REJECTED/PAPER_SHADOW/DOWNGRADED)
     ↓
 SignalShadowRecorder.record(event, decision, ...)
@@ -57,10 +61,12 @@ ShadowVsLiveWeeklyReportJob (周一 06:00)
 ```
 
 ### 第十四批 #1 新增维度
+
 - `entry_estimator_source` 字段（"VWAP(OK)" / "VWAP(DRY_FALLBACK)" / "PROXY" / null）
 - 周报新增 `estimatorSourceBreakdown` — VWAP-rejected vs PROXY-rejected 的胜率/平均滑点对比
 
 ### 关键 service / table
+
 | 组件 | 位置 |
 | --- | --- |
 | `SignalShadowRecorder` | `coin-strategy-job/.../service/` |
@@ -76,7 +82,8 @@ ShadowVsLiveWeeklyReportJob (周一 06:00)
 **目标**：每日跑 T-1 日 replay backtest，与实盘 PnL / 信号数对比；diff > 阈值告警。
 
 ### 数据流
-```
+
+```text
 LiveReplayDiffJob (每日 02:00 Asia/Shanghai)
     ↓
 LiveReplayDiffReportService.runDailyDiff()
@@ -88,10 +95,12 @@ LiveReplayDiffReportService.runDailyDiff()
 ```
 
 ### Web 查询
+
 - `GET /smart-wallet/audit/live-replay-diff/latest` — 最新一天
 - `GET /smart-wallet/audit/live-replay-diff/history?limitDays=30` — 历史 trend
 
 ### 阈值配置
+
 - `audit.live-replay-pnl-diff-bps=100`（默认）
 - `audit.live-replay-signal-miss-pct=0.05`
 
@@ -102,7 +111,8 @@ LiveReplayDiffReportService.runDailyDiff()
 **目标**：UMA Oracle 争议、Polymarket resolution 延迟、`MarketResolutionResolver` 解析失败全部可观测；找出"卡 settlement 市场"。
 
 ### 数据流
-```
+
+```sql
 SettlementSourceAuditJob (每小时整点)
     ↓
 SettlementSourceAuditService.runScheduled()
@@ -126,6 +136,7 @@ ResolutionTriDiffService.runScheduled()
 ```
 
 ### Web 查询
+
 - `GET /smart-wallet/audit/settlement-source` — 实时报表
 - `GET /smart-wallet/audit/resolution/{marketId}` — 单市场所有审计快照
 - `GET /smart-wallet/audit/resolution/needs-review` — 需人工 review
@@ -136,7 +147,7 @@ ResolutionTriDiffService.runScheduled()
 
 ## 五、4 个数据闭环的关系图
 
-```
+```text
                   ┌──────────────────────────────────┐
                   │  trace_id  (W1-T3, 链路根)        │
                   │  生成于 trade_event → 透传 5 表    │

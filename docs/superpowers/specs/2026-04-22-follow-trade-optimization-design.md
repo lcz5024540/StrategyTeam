@@ -60,7 +60,7 @@ updated: 2026-04-27
 
 **`FollowTradeAttributionView`** 输出字段：
 
-```
+```text
 groupKey          // 分组维度描述
 tradeCount        // 笔数
 winRate           // 胜率
@@ -86,7 +86,7 @@ exitTypeBreakdown // 各退出类型占比 Map<String, Integer>
 
 预测市场二元结果的 Kelly 比例：
 
-```
+```text
 f* = (p × b - (1 - p)) / b
 
 其中：
@@ -96,7 +96,7 @@ f* = (p × b - (1 - p)) / b
 
 实际下注额：
 
-```
+```text
 stake = availableCapital × kellyFraction × f*
         ↓ floor: minOrderUsdc
         ↓ ceil:  maxStakeUsdc
@@ -175,7 +175,7 @@ public interface ExitSignalProvider {
 
 ## 6. 整体架构
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    信号入场层（已有）                      │
 │  SmartWalletSignalRiskService.evaluate()                │

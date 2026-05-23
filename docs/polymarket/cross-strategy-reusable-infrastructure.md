@@ -21,6 +21,7 @@ updated: 2026-05-17
 ## 一、✅ 已可直接复用（零改动）
 
 ### 1.1 trace 基础设施
+
 | 组件 | 位置 | 复用方式 |
 | --- | --- | --- |
 | `TraceIds` | `common-service/.../service/trace/` | 任何策略只需新增前缀（`wth_` / `btc_`）即可生成自己的 trace_id |
@@ -28,6 +29,7 @@ updated: 2026-05-17
 | logback pattern `%X{traceId}` | `logback-spring.xml` | 全局共享 |
 
 ### 1.2 通用告警通道
+
 | 组件 | 位置 | 复用方式 |
 | --- | --- | --- |
 | `StrategyAuditAlertSink` 接口 | `common-service/.../service/alert/` | 跨策略统一接口，签名 `publish(strategyId, alertType, ...)` |
@@ -35,11 +37,13 @@ updated: 2026-05-17
 | `AlertType` 枚举 | `engine/monitor/AlertType.java` | 新策略追加 `AUDIT_WEATHER_*` / `AUDIT_BTC5M_*` 即可 |
 
 ### 1.3 Kelly 仓位计算
+
 | 组件 | 位置 | 复用方式 |
 | --- | --- | --- |
 | `KellyStakeCalculator` | `coin-strategy-job/.../service/` | 纯算法 + 无策略状态，新策略直接调 `compute(...)` |
 
 ### 1.4 影子记账（二元市场算法）
+
 | 组件 | 位置 | 复用方式 |
 | --- | --- | --- |
 | `ShadowFillSimulationService` | `coin-strategy-job/.../service/` | 输入 side+stakeUsdc+snapshot，输出 VWAP 估算；任何 binary market 适用 |
@@ -50,6 +54,7 @@ updated: 2026-05-17
 ## 二、🟡 需小幅适配
 
 ### 2.1 行为漂移检测
+
 | 组件 | 改动 |
 | --- | --- |
 | `LeaderBehaviorDriftService` | 7 维特征向量是跟单专用（包含 5-cat one-hot），天气/BTC 需要自定义特征向量。建议抽 `BehaviorVectorizer<E>` 接口（详见 Tier B），各策略实现自己的 vectorizer |
@@ -57,6 +62,7 @@ updated: 2026-05-17
 | `behavior_vector_json` 列 | 已是 JSON LONGTEXT，天气/BTC 写自己的特征向量即可，但需要按 strategy_id 区分 |
 
 ### 2.2 市场流动性分位
+
 | 组件 | 改动 |
 | --- | --- |
 | `MarketLiquidityPercentileService` | `category` 字段是 Polymarket 品类 (POLITICS/CRYPTO/SPORTS/WEATHER)，天气策略可直接复用 WEATHER 分桶；BTC 5min 需要新分桶维度（例如 BTC_5M / BTC_15M） |
@@ -64,17 +70,20 @@ updated: 2026-05-17
 | `MarketLiquidityPercentileSnapshotService` | 输入是 `PredictionMarketOpportunity`，需要新策略也把自己的 opportunity 注入到同一个 `opportunityService.list()` 或换为多源聚合 |
 
 ### 2.3 结算审计
+
 | 组件 | 改动 |
 | --- | --- |
 | `MarketResolutionResolver` | UMA Oracle 字段在 Polymarket 普适，天气也走 UMA；BTC 5min 走 Polymarket 自有结算或 Pyth Network，需要新策略提供等价的解析层 |
 | `pm_resolution_audit` 表 | 通用，可加 `strategy_id` 列后区分 |
 
 ### 2.4 滑点事后统计
+
 | 组件 | 改动 |
 | --- | --- |
 | `SlippagePostFactReportService` | 当前查 `smart_wallet_order` + `smart_wallet_trade_event`，新策略需要自己的 order/event 表；或抽 `OrderRepository<O>` 接口 |
 
 ### 2.5 Live↔Replay diff
+
 | 组件 | 改动 |
 | --- | --- |
 | `LiveReplayDiffReportService` | 依赖 `SmartWalletReplayBacktestService` (跟单专属)，新策略需要自己的 ReplayBacktest 实现；建议抽 `StrategyReplayEngine<R>` 接口 |
@@ -85,6 +94,7 @@ updated: 2026-05-17
 ## 三、⚠️ 需 Tier B/C 抽象（天气/BTC 上线前 1-2 周完成）
 
 ### 3.1 SignalRiskService 责任链化
+
 当前 `SmartWalletSignalRiskService` 700+ 行，11 个 Gate 互相耦合。新策略需要 reuse 部分 Gate（如 G11 价格冲击三段式、G2c 行为漂移），不同 Gate 组合。
 
 **建议抽象**：
@@ -106,11 +116,13 @@ class StrategyRiskEngine<S, R> {  // 责任链 + 早返
 - BTC 5min：G1 blocklist + G2 btc-source + G6 market-end + G11 priceImpact + G_btc_volatility + ...
 
 ### 3.2 Accounting / Position 抽象
+
 `SmartWalletAccountingService` 中混合了 leader-specific 字段（`source=FOLLOW_TRADE/WEATHER`）。建议：
 - 把 `smart_wallet_position` 抽出 `PositionEntity` 基类
 - 各策略继承或用 `source` 字段区分
 
 ### 3.3 OrderRequestFactory + ExecutionGateway
+
 当前 `PolymarketOrderRequestFactory` + `LoggingPolymarketExecutionGateway` 强耦合 SmartWalletSignal。建议抽：
 ```java
 interface OrderRequestFactory<S> {
@@ -122,6 +134,7 @@ interface ExecutionGateway<S> {
 ```
 
 ### 3.4 Audit Job 模板
+
 当前 7 个 Audit Job 各自实现 `@Scheduled` + `AtomicBoolean running` + try/catch 模板代码。抽 `AuditJobTemplate` 基类减少 boilerplate。
 
 ---

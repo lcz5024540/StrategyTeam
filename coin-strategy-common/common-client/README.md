@@ -46,6 +46,7 @@ BinanceApiService apiService = new BinanceApiService(apiKey, secretKey);
 通过 `BinanceSpotService` 和 `BinanceMarketDataService` 提供核心功能。
 
 ### 1. 账户信息
+
 ```java
 // 获取账户信息（余额、权限等）
 BinanceAccountInfo account = apiService.account();
@@ -53,6 +54,7 @@ System.out.println("BTC 余额: " + account.getAssetBalance("BTC").getFree());
 ```
 
 ### 2. 交易 (Trade)
+
 ```java
 // 下限价单 (买入 0.01 BTC @ 50000 USDT)
 BinanceOrder order = apiService.placeSpotOrder(
@@ -71,6 +73,7 @@ List<BinanceTradeHistory> trades = apiService.getSpotMyTrades("BTCUSDT", null, 1
 ```
 
 ### 3. 市场行情 (Market Data)
+
 ```java
 // 获取最新成交
 List<BinanceTrade> trades = apiService.getTrades("BTCUSDT", 20);

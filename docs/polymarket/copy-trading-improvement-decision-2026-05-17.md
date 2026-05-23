@@ -41,7 +41,7 @@ updated: 2026-05-17
 
 ### 1.3 文档体系
 
-```
+```text
 docs/polymarket/
 ├── copy-trading-improvement-decision-2026-05-17.md  # 本文件 (当前生效主决议)
 ├── audit-observability-index.md                      # 主题速查
@@ -206,7 +206,7 @@ docs/polymarket/
 
 ### 8.3 health 阈值与状态机
 
-```
+```text
                               ┌──────────────────────────────────────────┐
 evaluated < minEvaluatedCount ┤  → OK  (样本不足, 灰度初期常见)            │
                               └──────────────────────────────────────────┘
@@ -315,7 +315,7 @@ WARN_* 三态都会 publish 同一类型 `AUDIT_LEADER_ROLLING_HEALTH`，靠 `he
 - `coin-strategy-web/.../web/controller/smartwallet/SmartWalletAuditController.java` — 加端点 + 注入新 service
 
 **端点签名**：
-```
+```text
 GET /smart-wallet/audit/copy-trading-health?historyDays=14&driftLookbackHours=24
 ```
 

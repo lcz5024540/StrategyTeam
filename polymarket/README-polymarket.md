@@ -542,7 +542,7 @@ Required local secrets live in `scripts/polymarket-env.sh`:
 ### 2. Start the service
 
 ```bash
-cd /Users/jenniferni/jenifer/ray/CoinStrategy
+cd /path/to/CoinStrategy
 scripts/run-smart-wallet.sh
 ```
 

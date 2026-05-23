@@ -48,6 +48,7 @@ OkxApiService okxService = new OkxApiService(okxApi, client, simulated);
 管理账户资产、持仓、杠杆配置等。通过 `okxService.account` 访问。
 
 ### 2.1 查看余额 (Get Balance)
+
 ```java
 // 获取所有币种余额
 OkxRestResponse<Balance> allBalances = okxService.account.getBalance(null);
@@ -57,6 +58,7 @@ OkxRestResponse<Balance> btcBalance = okxService.account.getBalance("BTC");
 ```
 
 ### 2.2 查看持仓信息 (Get Positions)
+
 ```java
 // 查看所有持仓
 OkxRestResponse<Map<String, Object>> positions = okxService.account.getPositions(null, null);
@@ -66,6 +68,7 @@ OkxRestResponse<Map<String, Object>> swapPositions = okxService.account.getPosit
 ```
 
 ### 2.3 账户配置与风险 (Configuration & Risk)
+
 ```java
 // 查看账户配置 (持仓模式、杠杆倍数等)
 OkxRestResponse<OkxAccountConfig> config = okxService.account.getAccountConfig();
@@ -89,6 +92,7 @@ okxService.account.setPositionMode(setPosModeReq);
 ```
 
 ### 2.4 账单与费率 (Bills & Fees)
+
 ```java
 // 查看7日内账单
 Map<String, Object> billParams = new HashMap<>();
@@ -102,6 +106,7 @@ OkxRestResponse<OkxTradeFee> fees = okxService.account.getTradeFee(feeParams);
 ```
 
 ### 2.5 交易额度查询 (Limits)
+
 ```java
 // 查看最大可买/卖数量
 Map<String, Object> maxSizeParams = new HashMap<>();
@@ -121,6 +126,7 @@ OkxRestResponse<OkxMaxAvailSize> availSize = okxService.account.getMaxAvailSize(
 支持下单、撤单、修改订单、查询订单及成交明细等。通过 `okxService.trade` 访问。
 
 ### 3.1 下单 (Place Order)
+
 ```java
 // 单个下单
 PlaceOrderReq req = PlaceOrderReq.builder()
@@ -141,6 +147,7 @@ OkxRestResponse<PlaceOrderRsp> batchResponse = okxService.trade.batchOrders(batc
 ```
 
 ### 3.2 撤单 (Cancel Order)
+
 ```java
 // 单个撤单
 CancelOrderReq cancelReq = CancelOrderReq.builder()
@@ -162,6 +169,7 @@ okxService.trade.massCancel(massCancelReq);
 ```
 
 ### 3.3 修改订单 (Amend Order)
+
 ```java
 // 修改订单
 AmendOrderReq amendReq = AmendOrderReq.builder()
@@ -173,6 +181,7 @@ okxService.trade.amendOrder(amendReq);
 ```
 
 ### 3.4 市价全平 (Close Position)
+
 ```java
 // 市价全平 BTC-USDT-SWAP 多单
 ClosePositionReq closeReq = ClosePositionReq.builder()
@@ -184,6 +193,7 @@ okxService.trade.closePosition(closeReq);
 ```
 
 ### 3.5 订单与成交查询 (Query Orders & Fills)
+
 ```java
 // 查询订单信息
 OkxRestResponse<OkxOrder> order = okxService.trade.getOrder("BTC-USDT", "123456789", null);
@@ -208,6 +218,7 @@ OkxRestResponse<OkxTransaction> fills = okxService.trade.getFills(fillsParams);
 委托策略下单，如止盈止损、计划委托等。通过 `okxService.algoTrading` 访问。
 
 ### 4.1 策略委托下单 (Place Algo Order)
+
 ```java
 Map<String, Object> algoReq = new HashMap<>();
 algoReq.put("instId", "BTC-USDT");
@@ -221,6 +232,7 @@ OkxRestResponse<PlaceAlgoOrderRsp> response = okxService.algoTrading.placeAlgoOr
 ```
 
 ### 4.2 策略委托撤单 (Cancel Algo Order)
+
 ```java
 List<Map<String, Object>> cancelList = new ArrayList<>();
 Map<String, Object> item = new HashMap<>();
@@ -231,6 +243,7 @@ okxService.algoTrading.cancelAlgoOrder(cancelList);
 ```
 
 ### 4.3 策略委托查询 (Query Algo Orders)
+
 ```java
 // 查询未完成策略委托
 Map<String, Object> pendingParams = new HashMap<>();
@@ -248,6 +261,7 @@ OkxRestResponse<OkxAlgoOrder> history = okxService.algoTrading.getAlgoOrdersHist
 现货/合约网格策略。通过 `okxService.gridTrading` 访问。
 
 ### 5.1 网格策略下单 (Place Grid Algo Order)
+
 ```java
 PlaceGridAlgoOrderReq gridReq = PlaceGridAlgoOrderReq.builder()
         .instId("BTC-USDT")
@@ -261,6 +275,7 @@ OkxRestResponse<PlaceGridAlgoOrderRsp> gridRsp = okxService.gridTrading.placeGri
 ```
 
 ### 5.2 停止网格策略 (Stop Grid Algo Order)
+
 ```java
 StopGridAlgoOrderReq stopReq = StopGridAlgoOrderReq.builder()
         .algoId("123456")
@@ -272,6 +287,7 @@ okxService.gridTrading.stopGridAlgoOrder(stopReq);
 ```
 
 ### 5.3 网格策略查询 (Query Grid Orders)
+
 ```java
 // 查询网格策略详情
 OkxRestResponse<GridAlgoOrder> details = okxService.gridTrading.getGridAlgoOrderDetails("123456", null);
@@ -287,6 +303,7 @@ OkxRestResponse<GridAlgoOrderPosition> positions = okxService.gridTrading.getGri
 通过 `okxService.signalBot` 访问。
 
 ### 6.1 信号策略下单 (Place Signal Algo Order)
+
 ```java
 PlaceSignalAlgoOrderReq signalReq = PlaceSignalAlgoOrderReq.builder()
         .signalChanId("123")
@@ -301,6 +318,7 @@ OkxRestResponse<PlaceSignalAlgoOrderRsp> signalRsp = okxService.signalBot.placeS
 通过 `okxService.recurringBuy` 访问。
 
 ### 7.1 定投策略下单 (Place Recurring Buy Algo Order)
+
 ```java
 PlaceRecurringBuyAlgoOrderReq recurringReq = PlaceRecurringBuyAlgoOrderReq.builder()
         .stgyName("BTC Investment")
@@ -314,6 +332,7 @@ OkxRestResponse<PlaceRecurringBuyAlgoOrderRsp> recurringRsp = okxService.recurri
 获取深度、K线、最新成交、指数行情等。通过 `okxService.marketData` 访问。
 
 ### 8.1 深度数据 (Order Book)
+
 ```java
 // 获取深度 (前20档)
 OkxRestResponse<OkxOrderBook> books = okxService.marketData.getOrderBook("BTC-USDT", 20);
@@ -323,6 +342,7 @@ OkxRestResponse<OkxOrderBook> fullBooks = okxService.marketData.getOrderBookFull
 ```
 
 ### 8.2 K线数据 (Candlesticks)
+
 ```java
 // 获取 K线数据 (bar: 1m, 1H, 1D)
 OkxRestResponse<OkxCandle> candles = okxService.marketData.getCandles("BTC-USDT", "1H", null, null, 100);
@@ -332,6 +352,7 @@ OkxRestResponse<OkxCandle> historyCandles = okxService.marketData.getHistoryCand
 ```
 
 ### 8.3 行情与成交 (Tickers & Trades)
+
 ```java
 // 获取所有产品行情
 OkxRestResponse<OkxTicker> tickers = okxService.marketData.getTickers("SWAP", null);
@@ -348,6 +369,7 @@ OkxRestResponse<OkxTrade> trades = okxService.marketData.getTrades("BTC-USDT", 5
 获取交易产品信息、费率、系统时间等。通过 `okxService.publicData` 访问。
 
 ### 9.1 基础信息 (General Info)
+
 ```java
 // 获取交易产品信息
 OkxRestResponse<Map<String, Object>> instruments = okxService.publicData.getInstruments("SWAP", null, null);
@@ -357,6 +379,7 @@ OkxRestResponse<Map<String, Object>> time = okxService.publicData.getSystemTime(
 ```
 
 ### 9.2 资金费率与持仓量 (Funding Rate & Open Interest)
+
 ```java
 // 获取永续合约当前资金费率
 OkxRestResponse<Map<String, Object>> fundingRate = okxService.publicData.getFundingRate("BTC-USDT-SWAP");
@@ -370,6 +393,7 @@ OkxRestResponse<Map<String, Object>> openInterest = okxService.publicData.getOpe
 资金划转、提币等。通过 `okxService.funding` 访问。
 
 ### 10.1 资金划转 (Transfer)
+
 ```java
 Map<String, Object> transferReq = new HashMap<>();
 transferReq.put("ccy", "USDT");
@@ -380,6 +404,7 @@ OkxRestResponse<Map<String, Object>> transfer = okxService.funding.assetTransfer
 ```
 
 ### 10.2 充提币 (Deposit & Withdrawal)
+
 ```java
 // 获取充值地址
 OkxRestResponse<Map<String, Object>> depositAddr = okxService.funding.getDepositAddress("USDT");
@@ -400,6 +425,7 @@ OkxRestResponse<Map<String, Object>> withdrawal = okxService.funding.withdrawal(
 获取多空比、持仓量、大单成交等。通过 `okxService.rubik` 访问。
 
 ### 11.1 交易数据 (Trading Data)
+
 ```java
 // 获取支持的币种
 OkxRestResponse<String> supportCoin = okxService.rubik.getSupportCoin();
@@ -418,6 +444,7 @@ OkxRestResponse<OkxOpenInterestVolume> oiVolume = okxService.rubik.getOpenIntere
 ```
 
 ### 11.2 期权数据 (Option Data)
+
 ```java
 // 获取期权持仓量及交易量
 OkxRestResponse<OkxOpenInterestVolume> optOiVolume = okxService.rubik.getOptionOpenInterestVolume("BTC", "1D");
@@ -434,6 +461,7 @@ OkxRestResponse<OkxTakerVolume> optTakerBlock = okxService.rubik.getOptionTakerB
 赚币服务。通过 `okxService.earn` (Staking) 和 `okxService.savings` (Simple Earn) 访问。
 
 ### 12.1 简单赚币 (Savings / Simple Earn)
+
 ```java
 // 获取余额
 OkxRestResponse<OkxSavingsBalance> savingsBalance = okxService.savings.getSavingsBalance("USDT");
@@ -449,6 +477,7 @@ OkxRestResponse<OkxSavingsPurchaseRedemptRsp> response = okxService.savings.savi
 ```
 
 ### 12.2 链上赚币 (Staking DeFi / On-chain Earn)
+
 ```java
 // 获取项目列表
 OkxRestResponse<OkxStakingOffer> offers = okxService.earn.getStakingOffers(null);

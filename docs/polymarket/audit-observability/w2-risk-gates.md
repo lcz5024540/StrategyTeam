@@ -17,7 +17,7 @@ updated: 2026-05-17
 
 ## 一、Gate 执行顺序（SmartWalletSignalRiskService 责任链）
 
-```
+```text
 G1   Manual blocklist
 G2   Wallet archetype                     (OBSERVE_ONLY → 拒绝)
 G2a  Wallet score / 流动性 / 价差          (基础硬阈值)
@@ -40,11 +40,13 @@ G11  其它 slippage 兜底
 ## 二、各 Gate 详解
 
 ### W2-T1 流动性 P30 滚动门
+
 - 数据源：`pm_market_liquidity_percentile_daily.liquidity_p30`（每日 02:30 snapshot）
 - 当 category 滚动 P30 已计算 → 门槛 = P30；否则 fallback `properties.minMarketLiquidity` 硬阈值
 - 配置：`signal-risk.enable-liquidity-rolling-percentile`（**prod=true**, test 默认 false）
 
 ### W2-T1.4 价差 P70 门
+
 - 数据源：`pm_market_liquidity_percentile_daily.spread_bps_p70`
 - 三档：
   - `spread ≤ P70` → 全仓
@@ -53,16 +55,19 @@ G11  其它 slippage 兜底
 - 配置：`signal-risk.enable-spread-p70-gate`（**prod=true**, test 默认 false）
 
 ### W2-T2 Leader 滑动窗口胜率门
+
 - 数据源：`smart_wallet_order(BUY+ENTRY) ⨝ smart_wallet_position(已关闭)` 最近 N 笔
 - 三态：ACTIVE / COOLING（仓位 ×0.05）/ SUSPENDED
 - 配置：`signal-risk.enable-leader-rolling-gate=false`（**默认关闭**，待 W1-T4 数据验证）
 
 ### W2-T3 共识强度（BOOST_ONLY）
+
 - `EntityAwareConsensusService` 输出多实体共识 → Kelly 仓位倍率
 - 2 实体 ×1.20 / 3+ 实体 ×1.50
 - 配置：`consensus-gate-mode=BOOST_ONLY`（默认；可切 HARD_GATE）
 
 ### W2-T4 价格冲击三段式 + MAKER 路由
+
 - bps source：**VWAP**（`MarketPriceImpactEstimator`，基于 market_snapshot 订单簿深度逐档 VWAP）/ **PROXY**（既有 `profitabilityEstimate.estimatedSlippageUsdc/stake`）
 - 三段式：
   - `< 100 bps` → 全仓 NORMAL
@@ -76,6 +81,7 @@ G11  其它 slippage 兜底
   - `signal-risk.maker-only-timeout-tracker-enabled`（**prod=true / test=true**）
 
 ### W2-T5 距结算时间门
+
 - 三档：
   - `< 30 min` → 拒绝
   - `[30, 120) min` → 仓位 ×0.5
@@ -84,6 +90,7 @@ G11  其它 slippage 兜底
 - 豁免列表 `time-to-expiry-exempt-market-types`（天气 / BTC 5min 上线时配置）
 
 ### W2-T6 Leader 行为漂移门
+
 - 数据源：`smart_wallet_behavior_profile.behavior_vector_json` 优先（方案 B），fallback 实时聚合最近 N 天 trade_event
 - 7 维特征：`[log10(size+1)/6, sideBuy, cat_POLITICS, cat_CRYPTO, cat_SPORTS, cat_WEATHER, cat_OTHER]`
 - cosine 距离三态：ACTIVE / DRIFTED（×0.25）/ DRIFTED_SEVERE（拒绝）
@@ -105,7 +112,7 @@ G11  其它 slippage 兜底
 
 ## 四、Hot path 数据流（一个信号经过 G11 的完整链路）
 
-```
+```sql
 SmartWalletFollowTaskService.createFollowTaskIfQualified(event)
     ↓
 SmartWalletSignalRiskService.evaluate(profile, event)

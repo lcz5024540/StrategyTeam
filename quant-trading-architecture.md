@@ -17,7 +17,7 @@ updated: 2026-05-12
 
 ## 二、分层架构总览
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │                      Presentation Layer                      │
 │         Dashboard / Monitoring / Alert / REST API            │
@@ -249,7 +249,7 @@ public interface OrderEngine {
 ```
 
 **订单执行流程:**
-```
+```text
 Signal → RiskCheck → PositionCheck → OrderSplit → ExchangeRoute → Execution → Fill
           ↓              ↓              ↓             ↓              ↓
        Reject?      Adjust Size?    TWAP/Iceberg   Best Price    Notify Strategy
@@ -524,7 +524,7 @@ public class LiveDataWebSocket {
 
 ## 四、Maven 模块划分
 
-```
+```text
 quant-trading-system/
 ├── pom.xml                           (Parent BOM)
 ├── quant-common/                     (通用模型 + 工具)
@@ -653,7 +653,7 @@ public class PortfolioOptimizer {
 
 ## 七、数据流全景
 
-```
+```text
 [Chain Monitor]──┐
 [WS Binance]─────┤
 [WS OKX]─────────┤──→ [MarketDataFeed] ──→ [Event Bus (Disruptor)]

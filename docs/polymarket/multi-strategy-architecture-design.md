@@ -20,7 +20,7 @@ updated: 2026-05-11
 
 ### 1.1 当前代码结构
 
-```
+```text
 coin-strategy-job/src/main/java/.../job/
 ├── smartwallet/           ← 跟单策略（功能最完整）
 │   ├── config/            SmartWalletProperties
@@ -230,7 +230,7 @@ public interface UnifiedPositionManager {
 
 **改动范围**：将 `smartwallet.service` 中的基础设施类下沉到 `engine` 包，策略逻辑保持原地。
 
-```
+```text
 现在：smartwallet.service.PolymarketApiClient
 目标：engine.infra.PolymarketClobService（共享）
 
@@ -257,7 +257,7 @@ public interface UnifiedPositionManager {
 
 **改动范围**：
 
-```
+```text
 保留：weather/ 包内的所有业务逻辑
 改动：
 1. WeatherArbitrageJob 实现 PolymarketStrategy 接口
@@ -309,7 +309,7 @@ flowchart LR
 
 **模块结构**：
 
-```
+```text
 btcminute/
 ├── config/
 │   └── BtcMinuteStrategyProperties.java
@@ -400,7 +400,7 @@ flowchart TD
 
 **模块结构**：
 
-```
+```text
 grid/
 ├── config/
 │   └── GridTradingProperties.java
@@ -566,7 +566,7 @@ strategy-engine:
 
 ### 7.1 目标结构
 
-```
+```text
 coin-strategy-job/src/main/java/.../job/
 ├── engine/                             ← 【新建】策略引擎 & 共享基础设施
 │   ├── PolymarketStrategy.java         ← 策略 SPI 接口

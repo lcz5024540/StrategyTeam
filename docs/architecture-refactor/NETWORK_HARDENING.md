@@ -16,7 +16,7 @@ updated: 2026-05-14
 
 ## 一、当前网络拓扑（推测）
 
-```
+```text
                     ┌─────────────┐
   公网 →  nginx →  │ coin-strategy-web :8080 │
                     └────┬────────┘
@@ -36,7 +36,7 @@ updated: 2026-05-14
 
 ## 二、目标拓扑
 
-```
+```text
                     ┌─────────────┐
   公网 →  nginx →  │ web :8080   │←──────┐
                     └────┬────────┘       │
@@ -183,9 +183,12 @@ public class JobInternalAccessFilter implements Filter {
         // 实现 CIDR 匹配
         return ALLOWED_INTERNAL_CIDRS.stream().anyMatch(cidr -> matchCidr(ip, cidr));
     }
-    // ... matchCidr 实现略
+    // 【待补充】matchCidr 的实现此处省略，需补全：解析 CIDR（IP + 掩码位数），
+    // 将传入 IP 与网段起止地址做整数比较，判断是否落在范围内。
 }
 ```
+
+> **【待补充】** 上方 `matchCidr` 为占位实现（原文写「实现略」）。这是网络访问控制的核心校验逻辑，必须补全为完整且经测试的 CIDR 匹配实现后方可用于生产。
 
 注意：如果在 K8s 内部署，`X-Forwarded-For` 也要纳入考虑（不能信任）。
 
@@ -193,7 +196,7 @@ public class JobInternalAccessFilter implements Filter {
 
 在仓库 README 加一段 deployment note：
 
-```
+```text
 ## 部署须知
 
 - coin-strategy-web (8080): 唯一对外入口

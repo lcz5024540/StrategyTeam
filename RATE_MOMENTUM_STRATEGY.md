@@ -14,6 +14,7 @@ updated: 2026-02-01
 你观察到的现象是：“当交易所代币的存款利率（Lending Rate / APY）短期飙升时，币价同步飙升；当利率陡降时，币价也会波动。”
 
 ### 1.1 经济学逻辑推演
+
 在加密货币市场中，存款利率飙升通常意味着**借贷需求（Borrowing Demand）**的剧烈增加，因为交易所需要提高存款利率来吸引流动性以满足借贷。
 
 通常借币有两种主要用途：
@@ -21,6 +22,7 @@ updated: 2026-02-01
 2.  **刚性效用/权益（Utility/Governance/Airdrop）**：借入代币以获得快照资格、参与Launchpool打新、或链上治理投票。
 
 ### 1.2 为什么会出现“利率飙升 + 价格飙升”？
+
 这是一个非常典型的**逼空（Short Squeeze）**或**抢购（Rush to Buy）**信号：
 
 *   **场景 A：逼空 (Short Squeeze)**
@@ -39,6 +41,7 @@ updated: 2026-02-01
 基于上述分析，我们可以设计一个 **“利率-动量双因子策略” (Interest Rate & Momentum Dual-Factor Strategy)**。
 
 ### 2.1 核心逻辑
+
 *   **监控对象**：目标代币的 活期存款APY (Simple Earn) 或 杠杆借贷利率 (Margin Borrow Rate)。
 *   **触发条件**：
     1.  **利率爆发**：当前利率显著高于过去 N 小时的平均利率（例如 `Current > Avg * 1.5`）。
@@ -51,6 +54,7 @@ updated: 2026-02-01
 ### 2.2 架构设计
 
 #### 模块划分
+
 1.  **Monitor (监控层)**
     *   **RateMonitor**: 轮询 Binance Simple Earn / Margin 接口，获取 `latestAnnualPercentageRate` 或 `nextHourlyInterestRate`。
     *   **PriceMonitor**: 订阅 Ticker 或 KLine 数据。
@@ -62,6 +66,7 @@ updated: 2026-02-01
     *   执行下单逻辑，建议配合 移动止盈 (Trailing Stop)。
 
 ### 2.3 数据源 (可行性验证)
+
 基于当前 `common-client` 代码库，我们已经具备获取相关数据的能力：
 
 *   **Binance Simple Earn (活期利率)**
@@ -114,12 +119,16 @@ public class RateMomentumStrategy {
 }
 ```
 
+> **【待核对】** 上方伪代码引用了变量 `isPriceReversing`，但全段只定义了 `isPriceRising`，`isPriceReversing` 从未定义。需补其定义，或改为正确条件（如 `!isPriceRising`）。
+
 ## 4. 风险提示
+
 1.  **虚假信号**：如果是交易所调整基础利率（如美联储加息导致USDT利率普涨），而非针对特定代币的借贷需求，需要剔除大盘影响（Baseline Filter）。
 2.  **流动性陷阱**：小币种利率飙升可能因为流动性极差，此时价格极易被操纵。建议只针对 TOP50 代币运行。
 3.  **滞后性**：Simple Earn 的 APY 可能是每日更新，Margin 利率是每小时更新，可能存在滞后。建议优先使用 **Margin Hourly Rate**。
 
 ## 5. 下一步建议
+
 如果确认开发此策略，建议先构建一个 **Rate Monitor Dashboard**，记录并可视化 TOP 代币的“利率-价格”曲线，验证历史胜率后再接入自动交易。
 
 ---

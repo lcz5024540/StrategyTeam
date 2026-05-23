@@ -21,6 +21,7 @@ updated: 2026-05-13
 ## 模块说明
 
 ### 1. [common-base](common-base)
+
 - **定位**: 基础核心模块。
 - **用途**: 存放项目中最基础的组件。
   - **Utils**: 通用工具类 (e.g., `DateUtils`, `SignUtils`)。
@@ -28,12 +29,14 @@ updated: 2026-05-13
   - **Base Classes**: 基础异常类、基础响应对象等。
 
 ### 2. [common-client](common-client)
+
 - **定位**: 第三方服务客户端集成。
 - **用途**: 封装与外部交易所或数据源的交互逻辑。
   - **Exchanges**: Binance, OKX, Gate.io 等交易所的 API 封装。
   - **Features**: 包含签名认证、HTTP 请求封装 (Retrofit/OkHttp)、接口定义等。
 
 ### 3. [common-model](common-model)
+
 - **定位**: 数据模型模块。
 - **用途**: 存放全系统通用的数据结构。
   - **Entities**: 数据库实体类。
@@ -41,16 +44,20 @@ updated: 2026-05-13
   - **Enums**: 通用枚举类型。
 
 ### 4. [common-dao](common-dao)
+
 - **定位**: 数据访问层。
 - **用途**: 处理数据库交互。
   - **Resources**: 包含数据库初始化脚本 (`db.sql`)。
 
 ### 5. [common-cache](common-cache)
+
 - **定位**: 缓存支持模块。
 - **用途**: Redis 配置与本地缓存工具。
 
 ### 6. [common-api](common-api) & [common-service](common-service)
+
 - **定位**: 接口与通用业务逻辑。
+- **用途**: **【待补充】** 补充 common-api 与 common-service 各自的用途说明。
 
 ## 如何使用
 

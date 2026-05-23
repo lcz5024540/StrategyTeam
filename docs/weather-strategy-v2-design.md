@@ -13,7 +13,7 @@ updated: 2026-05-12
 
 ### 1.1 现有架构
 
-```
+```text
 WeatherArbitrageJob (15min @Scheduled)
   → WeatherMarketScanService.scanMarkets()        // 从 Gamma API 拉活跃市场
   → WeatherMarketTitleParser.parse()               // 正则解析 question → city/threshold/type
@@ -42,7 +42,7 @@ WeatherArbitrageJob (15min @Scheduled)
 
 ### 2.1 架构：数据源聚合器
 
-```
+```text
 WeatherForecastAggregator (新增)
   ├── OpenMeteoEnsembleForecastProvider (新增，主力)
   │     └── 7 个集成模型 × N 成员 → 原始成员温度分布
@@ -56,7 +56,7 @@ WeatherForecastAggregator (新增)
 
 **选择理由**：免费（非商业 <10K 调用/天），提供 7 个全球数值天气模型的**原始集成成员数据**，而非单点预报。
 
-```
+```text
 GET https://ensemble-api.open-meteo.com/v1/ensemble
   ?latitude=40.7128&longitude=-74.006
   &daily=temperature_2m_max,temperature_2m_min
@@ -107,7 +107,7 @@ public class OpenMeteoEnsembleForecastProvider {
 
 对于 `leadHours < 6` 的市场，预报已不是最重要的——**当天实际观测到的气温**才是。
 
-```
+```text
 GET https://api.open-meteo.com/v1/forecast
   ?latitude=40.7128&longitude=-74.006
   &hourly=temperature_2m
@@ -178,7 +178,7 @@ public class WeatherForecastAggregator {
 
 **升级**：直接用集成成员的经验分布计算概率，无需正态假设。
 
-```
+```text
 如果 82 个集成成员中，有 65 个预测 maxTemp > 80°F
 → P(maxTemp > 80°F) = 65/82 = 0.793
 → 如果市场 YES 价格 = 0.65，edge = (0.793 - 0.65) / 0.65 = 22%
@@ -207,6 +207,7 @@ public class WeatherFairValueServiceV2 {
 
         // ── Layer 2: 集成分布层 (有集成数据时) ──
         // 适用场景：有 ≥50 个集成成员，直接用经验分布
+        // 【待核对】上方注释写「≥50」，下方代码判断为「>= 30」，阈值不一致，需统一
         if (data.getEnsemble() != null && data.getEnsemble().getTotalMembers() >= 30) {
             return computeFromEnsemble(spec, data, calibration);
         }
@@ -262,9 +263,12 @@ private WeatherFairValueResult computeFromObservation(WeatherMarketSpec spec,
         }
     }
     // MIN 温度类似逻辑（看凌晨最低温是否已触底）
-    // ...
+    // 【待补充】MIN 温度分支逻辑尚未实现，需对称补全：判断凌晨最低温是否已触底，
+    // 参照上方 MAX 分支返回 observation_projected / observation_unlikely 结果。
 }
 ```
+
+> **【待补充】** 上方 `computeFromObservation` 的 MIN（最低温）分支仅有注释、逻辑未实现，需参照 MAX 分支对称补全。
 
 ### 3.4 Layer 2：集成经验分布
 
@@ -415,7 +419,7 @@ public class WeatherMultiTierScheduler {
 
 ### 5.1 分数 Kelly 公式
 
-```
+```text
 f* = (p × b - q) / b × kellyFraction
 
 其中：
@@ -478,7 +482,7 @@ public class WeatherKellyStakeService {
 
 在 Kelly 基础上，再乘以 confidence 系数，避免低置信度信号赌太大：
 
-```
+```text
 最终仓位 = kellyStake × confidence × edgeDecayFactor
 
 edgeDecayFactor：如果 edge 相对于阈值只是刚刚超过，额外打折
@@ -710,7 +714,7 @@ public void dailyReport() {
 
 ## 九、完整流程图
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │                    WeatherMultiTierScheduler                         │
 │  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌──────────┐                │

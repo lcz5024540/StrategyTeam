@@ -19,23 +19,27 @@ updated: 2026-05-17
 ## 一、按用途分组
 
 ### 🔍 链路追踪（按 trace 或 leader 反查）
+
 | 端点 | 输入 | 输出 |
 | --- | --- | --- |
 | `GET /trace/{traceId}` | trace_id | 全链路时间线 (trade_event + follow_task + order + trade_order + position + shadow) + 关键耗时 |
 | `GET /traces/by-leader/{wallet}?lookbackDays=&limit=` | leader 钱包 | 最近 N 天 trade_event 列表 (含 traceId) |
 
 ### 👻 影子记账
+
 | 端点 | 输入 | 输出 |
 | --- | --- | --- |
 | `GET /shadow/records?leaderAddress=&decisionStatus=&rejectLayer=&status=&limit=` | 多条件过滤 | shadow 记录列表 (默认 50, 上限 500) |
 | `GET /shadow/records/{id}` | id | 单条 shadow 详情 |
 
 ### 🚨 审计告警
+
 | 端点 | 输入 | 输出 |
 | --- | --- | --- |
 | `GET /audit/alerts?alertType=&onlyUnresolved=&sinceCreatedAt=&limit=` | 多条件 | strategy_alert 中 strategy_id=SMART_WALLET_AUDIT 的告警 |
 
 ### 📊 审计报表
+
 | 端点 | 输入 | 输出 |
 | --- | --- | --- |
 | `GET /audit/settlement-source` | - | 实时聚合 lifecycle/parseFailure/overdue/claim 异常 |
@@ -46,6 +50,7 @@ updated: 2026-05-17
 | `GET /audit/leader-drift-aggregation?lookbackHours=` | 窗口 | 活跃 leader 列表 |
 
 ### 🔎 Resolution 审计
+
 | 端点 | 输入 | 输出 |
 | --- | --- | --- |
 | `GET /audit/resolution/{marketId}?limit=` | marketId | 该市场所有审计快照 |
@@ -53,12 +58,14 @@ updated: 2026-05-17
 | `GET /audit/resolution/uma-inconsistent?limit=` | - | closed=true 但 uma_resolved=false |
 
 ### 👤 Leader 诊断
+
 | 端点 | 输入 | 输出 |
 | --- | --- | --- |
 | `GET /leader-rolling/{wallet}?windowSize=` | leader | 滑动窗口胜率 + 最近 closes |
 | `GET /leader-drift/{wallet}?lookbackDays=` | leader | 7 维 centroid + cosine 距离 |
 
 ### 💧 流动性 / 价差分位
+
 | 端点 | 输入 | 输出 |
 | --- | --- | --- |
 | `GET /market-liquidity/percentile?asOfDate=` | 日期 | 各 category 当日 P10/P30/P50/P70 + spreadP70 |
@@ -82,7 +89,7 @@ updated: 2026-05-17
 
 ## 三、Service 与 View 文件位置
 
-```
+```text
 coin-strategy-web/src/main/java/com/metaverse/coin/strategy/web/
 ├── controller/smartwallet/
 │   └── SmartWalletAuditController.java       # 全部 18 端点 入口

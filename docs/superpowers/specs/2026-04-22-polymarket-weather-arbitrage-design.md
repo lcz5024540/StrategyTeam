@@ -30,7 +30,7 @@ Polymarket 上存在低价格（0.1¢–10¢）的天气预测市场，市场定
 
 ### 2.1 新建模块位置
 
-```
+```text
 coin-strategy-job/src/main/java/.../job/weather/
 ├── WeatherArbitrageJob.java              # 调度入口（每15分钟）
 ├── config/
@@ -67,7 +67,7 @@ coin-strategy-job/src/main/java/.../job/weather/
 
 ### 3.1 tomorrow.io 数据拉取
 
-```
+```text
 GET /v4/weather/forecast
   ?location={city}
   &timesteps=1d
@@ -82,12 +82,12 @@ GET /v4/weather/forecast
 假设天气预报误差服从正态分布，σ = 3.5°F（初始假设，未经验证，后续可按城市/季节校准）。
 
 **最高温超过阈值类市场**（`type=MAX`）：
-```
+```text
 P(YES) = 1 - Φ((threshold - forecastTempMaxF) / 3.5)
 ```
 
 **最低温低于阈值类市场**（`type=MIN`）：
-```
+```text
 P(YES) = Φ((threshold - forecastTempMinF) / 3.5)
 ```
 
@@ -95,7 +95,7 @@ P(YES) = Φ((threshold - forecastTempMinF) / 3.5)
 
 ### 3.3 信号生成（WeatherArbitrageSignalService）
 
-```
+```text
 edge = (fairValue - marketYesPrice) / marketYesPrice
 
 if edge > 0.10 && liquidity >= 50 USDC && yesPrice < 0.10:
@@ -164,7 +164,7 @@ weather-arbitrage:
 
 `WeatherArbitrageJob`，`@Scheduled(fixedDelay = 15min)`：
 
-```
+```text
 1. WeatherMarketScanService      → 拉 Polymarket 天气市场，应用过滤规则
 2. TomorrowIoApiClient           → 拉各城市次日预报
 3. WeatherFairValueService       → 计算各市场公允概率

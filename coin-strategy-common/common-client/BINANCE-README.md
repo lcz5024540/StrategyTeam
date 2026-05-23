@@ -32,7 +32,7 @@ updated: 2026-02-03
 *   `BINANCE_SECRET_KEY`
 
 或者在 IDE 的 Run Configuration 中设置 JVM 参数：
-```
+```text
 -Dbinance.api.key=your_key -Dbinance.secret.key=your_secret
 ```
 
@@ -184,6 +184,8 @@ System.out.println(openOcos);
 // 需要 orderListId
 // spotService.cancelOCO("BTCUSDT", 12345L, null, null);
 ```
+
+> **【待补充】** 本节 `getOCO`（查询特定 OCO）与 `cancelOCO`（撤销 OCO）的示例当前为注释状态、未完成。需确认 `spotService` 是否已提供这两个方法并补全可运行示例；若暂不支持，应改为明确标注「OCO 查询 / 撤销接口暂未提供」。
 
 ### 10. 佣金费率 (Commission Rate)
 

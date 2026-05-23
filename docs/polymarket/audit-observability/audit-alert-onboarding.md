@@ -46,7 +46,7 @@ updated: 2026-05-17
 **典型 message**：`pnl_diff_bps=XX signal_miss_pct=YY pnlExceeded=true|false signalMissExceeded=true|false`
 
 **第一步**：看 Web 端 trend
-```
+```text
 GET /smart-wallet/audit/live-replay-diff/latest   # 最新一日
 GET /smart-wallet/audit/live-replay-diff/history?limitDays=30  # trend
 ```
@@ -71,7 +71,7 @@ GET /smart-wallet/audit/live-replay-diff/history?limitDays=30  # trend
 **典型 message**：top-3 reject_layer 摘要 + pnlDiff
 
 **第一步**：看 Web 端按 reject_layer 分桶
-```
+```text
 GET /smart-wallet/shadow/records?status=SETTLED&limit=200  # 详情列表
 GET /smart-wallet/audit/shadow-estimator-source?lookbackDays=7  # VWAP vs PROXY 验证
 ```
@@ -94,7 +94,7 @@ GET /smart-wallet/audit/shadow-estimator-source?lookbackDays=7  # VWAP vs PROXY 
 **典型 message**：parseFailure=N resolutionDelayed=M pendingSettlementOverdue=K claimFailureMax=X
 
 **第一步**：看 Web 端
-```
+```text
 GET /smart-wallet/audit/settlement-source
 ```
 
@@ -116,7 +116,7 @@ GET /smart-wallet/audit/settlement-source
 **典型 message**：category=POLITICS p95=Xbps overall p95=Ybps
 
 **第一步**：看 Web 端按 category 分桶
-```
+```text
 GET /smart-wallet/audit/slippage-postfact?lookbackDays=7
 ```
 
@@ -137,7 +137,7 @@ GET /smart-wallet/audit/slippage-postfact?lookbackDays=7
 **典型 message**：(drifted+severe)/evaluated=X% topDrifted 3 个 leader 摘要
 
 **第一步**：聚合 + 单点
-```
+```text
 GET /smart-wallet/audit/leader-drift-aggregation?lookbackHours=24
 GET /smart-wallet/leader-drift/{wallet}  # 单 leader 详情
 ```
@@ -161,7 +161,7 @@ GET /smart-wallet/leader-drift/{wallet}  # 单 leader 详情
 **典型 message**：OURS_VS_UMA=X OURS_VS_GAMMA=Y UMA_VS_GAMMA=Z HISTORY_CONFLICT=W + topConflicted 3 个 marketId
 
 **第一步**：看 web 端
-```
+```text
 GET /smart-wallet/audit/resolution-tridiff?lookbackHours=24
 GET /smart-wallet/audit/resolution/{marketId}  # 单市场审计快照
 ```
@@ -184,7 +184,7 @@ GET /smart-wallet/audit/resolution/{marketId}  # 单市场审计快照
 **典型 message**：`coolingRatio=X overallWinRate=Y healthStatus=WARN_*`
 
 **第一步**：看 Web 端 trend
-```
+```text
 GET /smart-wallet/audit/leader-rolling-aggregation/history?historyDays=30
 GET /smart-wallet/audit/leader-rolling-aggregation?lookbackDays=14
 GET /smart-wallet/audit/copy-trading-health  # 第十九批 #5: 三件套总览
@@ -258,7 +258,7 @@ GET /smart-wallet/audit/copy-trading-health  # 第十九批 #5: 三件套总览
 - 任一子源失败 → 该字段 null + `errors` 数组记录原因，不阻塞另外两源
 - 推荐 on-call 收到任何 `AUDIT_*` 后第一步：先 curl 该端点拿整体盘面再下钻
 
-```
+```text
 GET /smart-wallet/audit/copy-trading-health?historyDays=14&driftLookbackHours=24
 ```
 

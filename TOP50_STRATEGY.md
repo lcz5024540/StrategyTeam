@@ -10,6 +10,7 @@ updated: 2026-02-01
 # TOP50 策略方案 (TOP50 Strategy Proposal)
 
 ## 1. 策略概述 (Overview)
+
 **策略名称**: TOP50 趋势与波动率策略 (TOP50 Trend & Volatility Strategy)
 **核心目标**: 捕捉市场前50大交易量代币的波动机会，结合盘口买卖压力与外部数据支撑，进行趋势跟随或反转交易。
 **适用周期**: 15分钟 (15m) / 1小时 (1H) / 4小时 (4H)
@@ -17,6 +18,7 @@ updated: 2026-02-01
 ## 2. 核心模块详解 (Detailed Modules)
 
 ### 2.1 标的筛选器 (Universe Selector)
+
 - **规则**: 动态筛选排名前50的代币。
 - **数据源**: 交易所 (Binance/OKX) 24小时成交量 (Quote Volume) 排名。
 - **过滤条件 (Filter Criteria)**:
@@ -26,6 +28,7 @@ updated: 2026-02-01
 - **更新机制**: 每 4 小时重新扫描并更新一次白名单。
 
 ### 2.2 波动率分析引擎 (Volatility Engine)
+
 - **核心逻辑**: 寻找“静默后爆发”或“异常剧烈波动”的时刻。
 - **关键指标**:
   - **ATR (Average True Range)**: 使用 14 周期 ATR 衡量绝对波动值。
@@ -33,6 +36,7 @@ updated: 2026-02-01
   - **Volume Spike**: 当前周期成交量 > 过去 20 周期平均成交量的 2-3 倍。
 
 ### 2.3 订单流与盘口分析 (Order Flow & Depth Analysis)
+
 - **核心逻辑**: 确认价格变动背后的资金真实意图。
 - **关键指标**:
   - **挂单深度 (Order Book Depth)**:
@@ -45,6 +49,7 @@ updated: 2026-02-01
     - 监控单笔价值 > $100,000 的成交单，判断主力方向。
 
 ### 2.4 外部数据集成 (External Data Integration)
+
 - **核心逻辑**: 引入场外/衍生品数据作为趋势确认器。
 - **推荐数据源**:
   - **Coinglass API** (或交易所自带数据):
@@ -56,11 +61,13 @@ updated: 2026-02-01
 ## 3. 详细执行步骤 (Execution Steps)
 
 ### 阶段一：扫描与准备 (Scanning Phase)
+
 1.  **定时任务 (每4小时)**: 调用交易所 API 获取所有 USDT 交易对的 24h 成交量。
 2.  **过滤**: 剔除稳定币、杠杆代币，选取 Top 50。
 3.  **订阅**: 建立 WebSocket 连接，订阅这 50 个代币的 K线 (15m) 和 归集后的深度数据。
 
 ### 阶段二：信号生成 (Signal Generation Phase) - 伪代码
+
 ```python
 # 对每个代币每 15 分钟执行一次
 def check_signal(token):
@@ -93,6 +100,7 @@ def check_signal(token):
 ```
 
 ### 阶段三：交易执行 (Execution Phase)
+
 1.  **开仓**:
     - 使用限价单 (Limit Order) 挂在买一价，或者使用 IOC (Immediate or Cancel) 吃单，取决于信号的紧急程度。
     - 建议初始仓位: 总资金的 2% - 5% (固定比例)。
@@ -139,6 +147,7 @@ com.metaverse.coin.strategy.core.top50
     - 在测试网或模拟环境运行，记录信号触发频率和胜率。
 
 ## 6. 已确认配置 (Confirmed Configuration)
+
 - **交易所**: Binance 和 OKX 均支持 (双交易所模式)。
 - **交易市场**: 支持 现货 (Spot) 和 永续合约 (Perpetual Futures)。
 - **外部数据源**: 后续接入 Coinglass, CoinGecko 等第三方数据 (初期使用交易所 Public Data)。

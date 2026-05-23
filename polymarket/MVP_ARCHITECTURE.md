@@ -9,7 +9,7 @@ updated: 2026-04-10
 
 # 量化策略平台 MVP Java 架构设计文档
 
-本文档基于当前仓库结构与 [PRODUCT_DESIGN.md](./PRODUCT_DESIGN.md) 中的产品定位整理，目标是给出一版可直接指导当前 `CoinStrategy` 仓库演进的 MVP 架构方案。
+本文档基于当前仓库结构与 [PRODUCT_DESIGN.md](../PRODUCT_DESIGN.md) 中的产品定位整理，目标是给出一版可直接指导当前 `CoinStrategy` 仓库演进的 MVP 架构方案。
 
 ## 1. 文档目标
 
@@ -19,7 +19,7 @@ updated: 2026-04-10
 
 1. 当前仓库已经具备“策略执行能力 + smart wallet 数据服务 + Web 看板”的雏形，适合沿着现有结构演进。
 2. 如果第一阶段直接做全自动托管，账户授权、执行风控、账单分润、对账审计会显著拉高复杂度。
-3. 从产品验证路径上，先证明“策略可展示、可解释、可跟投、可结算”更符合 [PRODUCT_DESIGN.md](./PRODUCT_DESIGN.md) 中的 Phase 1 到 Phase 3 路线。
+3. 从产品验证路径上，先证明“策略可展示、可解释、可跟投、可结算”更符合 [PRODUCT_DESIGN.md](../PRODUCT_DESIGN.md) 中的 Phase 1 到 Phase 3 路线。
 
 MVP 的核心目标：
 
@@ -735,45 +735,17 @@ MVP 的主链路如下：
 - 已具备 MVP 演进基础
 - 尚未完全满足本文的 5 条设计原则
 - 需要通过“补模型、补分层、补快照、补结算域”四步完成收口
-- `user_strategy_hwm`
-- `billing_ledger`
 
-用途：
+## 14. API 草案
 
-- 批次化结算
-- 明细账单
-- 单用户单策略高水位
-- 平台账务流水
-
-### 11.4 看板分析
-
-- `platform_daily_snapshot`
-- `strategy_daily_snapshot`
-- `user_daily_snapshot`
-
-用途：
-
-- 平台总览
-- 策略详情页曲线与统计
-- 用户个人看板
-
-### 11.5 建模原则
-
-- 看板查询优先查快照表
-- 结算与看板不要直接扫订单明细实时聚合
-- 信号、订单、结算分表
-- High Water Mark 单独存储，不临时推导
-
-## 12. API 草案
-
-### 12.1 StrategyController
+### 14.1 StrategyController
 
 - `GET /api/strategies`
 - `GET /api/strategies/{strategyCode}`
 - `GET /api/strategies/{strategyCode}/metrics`
 - `GET /api/strategies/{strategyCode}/signals`
 
-### 12.2 PortfolioController
+### 14.2 PortfolioController
 
 - `GET /api/portfolio/overview`
 - `GET /api/portfolio/positions`
@@ -781,7 +753,7 @@ MVP 的主链路如下：
 - `GET /api/portfolio/settlements`
 - `GET /api/portfolio/timeline`
 
-### 12.3 SubscriptionController
+### 14.3 SubscriptionController
 
 - `GET /api/subscriptions`
 - `POST /api/subscriptions`
@@ -789,9 +761,9 @@ MVP 的主链路如下：
 - `POST /api/subscriptions/{id}/pause`
 - `POST /api/subscriptions/{id}/resume`
 
-## 13. MVP 版本路线
+## 15. MVP 版本路线
 
-### 13.1 第一版
+### 15.1 第一版
 
 - 策略产品中心：趋势策略、资金费率套利策略、Polymarket 跟投策略
 - 用户参与方式：订阅 / 跟投
@@ -799,23 +771,23 @@ MVP 的主链路如下：
 - 展示：策略列表、策略详情、个人看板
 - 执行：以信号型、半自动为主
 
-### 13.2 第二版
+### 15.2 第二版
 
 - Polymarket smart money 更完整跟单能力
 - 钱包脱敏公开交易流
 - 完整 High Water Mark 账单
 - 平台总览看板
 
-### 13.3 第三版
+### 15.3 第三版
 
 - 托管 / 半托管执行
 - 策略入驻市场
 - 策略经理后台
 - 策略审核与分发机制
 
-## 14. 从当前仓库到目标架构的演进顺序
+## 16. 从当前仓库到目标架构的演进顺序
 
-### 14.1 第一步：补齐 core 抽象
+### 16.1 第一步：补齐 core 抽象
 
 新增：
 
@@ -830,7 +802,7 @@ MVP 的主链路如下：
 - 统一信号输出
 - 统一指标口径
 
-### 14.2 第二步：job 内按领域拆包
+### 16.2 第二步：job 内按领域拆包
 
 将现有 `smartwallet` 能力逐步迁移为：
 
@@ -846,7 +818,7 @@ MVP 的主链路如下：
 - 降低单一大包复杂度
 - 让 smart wallet 从“平台主语义”退回到“某类策略来源”
 
-### 14.3 第三步：引入平台语义数据模型
+### 16.3 第三步：引入平台语义数据模型
 
 优先新增：
 
@@ -862,7 +834,7 @@ MVP 的主链路如下：
 
 - 让平台具备完整的“策略-用户-订单-结算”闭环
 
-### 14.4 第四步：web 拆成三类产品接口
+### 16.4 第四步：web 拆成三类产品接口
 
 新增：
 
@@ -875,7 +847,7 @@ MVP 的主链路如下：
 - 与 MVP 页面直接对齐
 - 让 Web 成为清晰的产品入口层
 
-### 14.5 第五步：快照化看板查询
+### 16.5 第五步：快照化看板查询
 
 新增：
 
@@ -888,7 +860,7 @@ MVP 的主链路如下：
 - 支撑后续数据量增长
 - 降低策略详情页与个人看板实时聚合压力
 
-## 15. 对当前仓库的判断
+## 17. 对当前仓库的判断
 
 如果以“是否符合当前需求”来评估，结论如下：
 
@@ -904,7 +876,7 @@ MVP 的主链路如下：
 - `coin-strategy-common` 需要收敛到基础设施职责
 - 数据模型需要从 `smart_wallet_*` 逐步升级到平台语义模型
 
-## 16. 总结
+## 18. 总结
 
 这套 MVP 架构的核心不是“做一个更复杂的交易机器人”，而是把当前仓库演进成一个真正的“策略产品平台”：
 
@@ -913,7 +885,7 @@ MVP 的主链路如下：
 - 平台可以按 realized pnl 做结算与分润
 - 系统可以通过快照和投影支撑后续规模化查询
 
-这条路线与当前仓库现状兼容，也与 [PRODUCT_DESIGN.md](./PRODUCT_DESIGN.md) 中的产品路线保持一致，适合作为接下来一到两个版本的架构基线。
+这条路线与当前仓库现状兼容，也与 [PRODUCT_DESIGN.md](../PRODUCT_DESIGN.md) 中的产品路线保持一致，适合作为接下来一到两个版本的架构基线。
 
 ---
 

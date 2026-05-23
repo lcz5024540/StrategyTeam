@@ -44,6 +44,7 @@ updated: 2026-05-17
 每日 09:30（晨会前）跑：
 
 ### 1.1 抓数据
+
 ```bash
 # 当日 COOLING leader 数 / 总活跃 leader 数
 curl -s '/strategy/api/smart-wallet/audit/leader-rolling-aggregation?lookbackDays=14' \
@@ -51,6 +52,7 @@ curl -s '/strategy/api/smart-wallet/audit/leader-rolling-aggregation?lookbackDay
 ```
 
 ### 1.2 看 3 个指标
+
 | 指标 | 健康范围 | 异常处置 |
 | --- | --- | --- |
 | `coolingCount / evaluated` | < 15% | 超过 → 看 1.3 决策树 |
@@ -58,6 +60,7 @@ curl -s '/strategy/api/smart-wallet/audit/leader-rolling-aggregation?lookbackDay
 | `coldCount / activeLeaders` | < 30% | 超过 → 监控周期窗口太短, 加长 lookback |
 
 ### 1.3 看 top-15 COOLING leader 列表
+
 ```bash
 curl -s '/strategy/api/smart-wallet/audit/leader-rolling-aggregation?lookbackDays=14' \
   | jq '.topCoolingLeaders[] | {leaderAddress, sampleCount, winRate, totalPnlUsdc, status}'
@@ -74,6 +77,7 @@ curl -s '/strategy/api/smart-wallet/audit/leader-rolling-aggregation?lookbackDay
 每周一 10:00（与 ShadowVsLiveWeeklyReport 同步看）：
 
 ### 2.1 跑 7 天聚合
+
 ```bash
 curl -s '/strategy/api/smart-wallet/audit/leader-rolling-aggregation?lookbackDays=7' > rolling-week.json
 curl -s '/strategy/api/smart-wallet/audit/shadow-estimator-source?lookbackDays=7' > vwap-week.json
@@ -81,6 +85,7 @@ curl -s '/strategy/api/smart-wallet/audit/live-replay-diff/history?limitDays=7' 
 ```
 
 ### 2.2 三方对照
+
 | 维度 | rolling-week | vwap-week | replay-week |
 | --- | --- | --- | --- |
 | 整体胜率 | overallWinRate | buckets[*].winRate | (live-side) |
@@ -88,6 +93,7 @@ curl -s '/strategy/api/smart-wallet/audit/live-replay-diff/history?limitDays=7' 
 | 异常告警 | `coolingCount` 超阈值 | `verdict` 字段 | `pnl_diff_exceeded` 标志 |
 
 ### 2.3 周报输出（写入运营月报）
+
 - 本周 COOLING leader 总数 / 平均 winRate / top-3 持续 COOLING leader 列表
 - 与上周对比的变化趋势
 - 建议：阈值是否调整？是否上 prod？
@@ -97,6 +103,7 @@ curl -s '/strategy/api/smart-wallet/audit/live-replay-diff/history?limitDays=7' 
 ## 三、阈值调整决策树
 
 ### 3.1 当前 test profile 阈值
+
 ```yaml
 enable-leader-rolling-gate: true
 leader-rolling-min-samples: 10        # 默认 8 + 2
@@ -106,7 +113,7 @@ leader-rolling-cooling-stake-multiplier: 0.05
 
 ### 3.2 决策树
 
-```
+```text
 本周 COOLING leader 比例 ?
 │
 ├─ < 1% (几乎零触发)
@@ -134,6 +141,7 @@ leader-rolling-cooling-stake-multiplier: 0.05
 ```
 
 ### 3.3 上 prod 触发条件
+
 全部满足 → 上 prod（修改 `application-prod.yml`）：
 
 - [ ] test profile 连续 ≥ 14 天处于 "1% - 15% COOLING" 区间

@@ -68,7 +68,7 @@ Polymarket 是基于 Polygon 网络、采用 CLOB (Central Limit Order Book) 机
 
 ### 2.3 执行架构（综合多个仓库的通用范式）
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                          LEADER 钱包源                                  │
 │   (1...N 个 Polygon 地址，由用户在 config 中配置)                       │
@@ -218,7 +218,7 @@ def manage_positions(positions):
 
 设 NOAA 给出最高温点预报 `μ = 85°F`，历史 1 日 RMSE = `σ = 2.5°F`，对阈值 `T = 80°F`：
 
-```
+```text
 p_model(High > T) = 1 - Φ((T - μ) / σ) = 1 - Φ((80-85)/2.5) = 1 - Φ(-2) ≈ 0.977
 ```
 
@@ -242,7 +242,7 @@ def ensemble_probability(member_forecasts, threshold):
 
 ### 3.4 执行架构（suislanchez/polymarket-kalshi-weather-bot）
 
-```
+```text
 ┌───────────────────────────────────────────────────────────────────┐
 │                        DATA SOURCES                               │
 │  Open-Meteo (GFS 31-member)   NWS Observations   Polymarket Gamma │
@@ -392,7 +392,7 @@ def fuse_signals(rsi, mom_1m, mom_5m, vwap_dev, sma_sig, skew):
 
 ### 4.4 7-Phase 生产架构（aulekator 仓库）
 
-```
+```text
 ┌────────────┐  ┌─────────────┐  ┌────────────┐  ┌──────────────┐
 │ Phase 1    │  │ Phase 2     │  │ Phase 3    │  │ Phase 4      │
 │ Data       │→ │ Ingestion   │→ │ Nautilus   │→ │ Strategy     │
@@ -475,7 +475,7 @@ def find_yes_no_arb(orderbook, max_cost=0.985, min_size=10):
 
 [Polymarket/poly-market-maker](https://github.com/Polymarket/poly-market-maker) 是官方开源的市场做市 keeper。每 `sync_interval` (默认 30s) 执行：
 
-```
+```text
 1. 抓取当前 midpoint
 2. 计算 expected orders (按策略)
 3. diff(expected, open_orders) → cancels + new placements

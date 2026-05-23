@@ -108,7 +108,7 @@ FLUSH PRIVILEGES;
 ```
 
 `/etc/mysql/mysql.conf.d/mysqld.cnf`:
-```
+```text
 bind-address = 0.0.0.0
 ```
 

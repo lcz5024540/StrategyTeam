@@ -15,8 +15,8 @@ updated: 2026-04-10
 
 本轮存在一个前提限制：用户提到的“原图”没有在本轮会话中实际提供，因此本文暂时以仓库中的 7 步定义作为辅助代用基准：
 
-- [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L179)
-- [polymarket_quant_main_loop.svg](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_main_loop.svg)
+- [polymarket_quant_system.md](polymarket_quant_system.md#L179)
+- [polymarket_quant_main_loop.svg](polymarket_quant_main_loop.svg)
 
 这意味着：
 
@@ -33,8 +33,8 @@ updated: 2026-04-10
 
 主要依据：
 
-- 风控在跟单任务执行前已经较完整存在，涵盖 freshness、价格区间、预算、仓位上限、重复仓位、共识门槛、最小下单额等检查，见 [SmartWalletSignalRiskService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSignalRiskService.java#L45)。
-- 执行后监控和结算链路比较完整，包含订单轮询、仓位/余额同步、settlement sync、claim retry，见 [SmartWalletOrderPollingService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L26)、[SmartWalletPositionSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)、[SmartWalletSettlementSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)、[SmartWalletClaimService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)。
+- 风控在跟单任务执行前已经较完整存在，涵盖 freshness、价格区间、预算、仓位上限、重复仓位、共识门槛、最小下单额等检查，见 [SmartWalletSignalRiskService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSignalRiskService.java#L45)。
+- 执行后监控和结算链路比较完整，包含订单轮询、仓位/余额同步、settlement sync、claim retry，见 [SmartWalletOrderPollingService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L26)、[SmartWalletPositionSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)、[SmartWalletSettlementSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)、[SmartWalletClaimService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)。
 
 ### 口径 B：按是否严格符合图片主循环设计
 
@@ -51,13 +51,13 @@ updated: 2026-04-10
 
 | 步骤 | 名称 | 触发时机 | 输入数据 | 输出动作 | 基准证据 |
 |---|---|---|---|---|---|
-| 1 | 市场扫描 | 每轮循环开始 | `GET /markets` 活跃市场列表 | 生成可交易市场集合 | [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L186) |
-| 2 | 订单簿与价格 | 步骤 1 之后 | WS 或 `/book`、`/price` | 更新本地 orderbook / price 缓存 | [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L190) |
-| 3 | 持仓与余额同步 | 步骤 2 之后 | `/positions` + `/balance` | 刷新本地账户状态 | [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L194) |
-| 4 | 策略计算 / 信号生成 | 步骤 3 之后 | 本地状态和市场数据 | 生成交易信号 | [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L197) |
-| 5 | 风控检查 | 有交易信号后 | 信号、持仓、余额、敞口 | 通过/拒绝信号 | [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L205) |
-| 6 | 订单执行 | 风控通过后 | 已通过风控的订单意图 | `POST /order` 签名下单 | [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L213) |
-| 7 | 监控与结算检测 | 执行后并持续循环 | 订单状态、市场 resolved 状态、redeem 条件 | 轮询、结算、claim | [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L216) |
+| 1 | 市场扫描 | 每轮循环开始 | `GET /markets` 活跃市场列表 | 生成可交易市场集合 | [polymarket_quant_system.md](polymarket_quant_system.md#L186) |
+| 2 | 订单簿与价格 | 步骤 1 之后 | WS 或 `/book`、`/price` | 更新本地 orderbook / price 缓存 | [polymarket_quant_system.md](polymarket_quant_system.md#L190) |
+| 3 | 持仓与余额同步 | 步骤 2 之后 | `/positions` + `/balance` | 刷新本地账户状态 | [polymarket_quant_system.md](polymarket_quant_system.md#L194) |
+| 4 | 策略计算 / 信号生成 | 步骤 3 之后 | 本地状态和市场数据 | 生成交易信号 | [polymarket_quant_system.md](polymarket_quant_system.md#L197) |
+| 5 | 风控检查 | 有交易信号后 | 信号、持仓、余额、敞口 | 通过/拒绝信号 | [polymarket_quant_system.md](polymarket_quant_system.md#L205) |
+| 6 | 订单执行 | 风控通过后 | 已通过风控的订单意图 | `POST /order` 签名下单 | [polymarket_quant_system.md](polymarket_quant_system.md#L213) |
+| 7 | 监控与结算检测 | 执行后并持续循环 | 订单状态、市场 resolved 状态、redeem 条件 | 轮询、结算、claim | [polymarket_quant_system.md](polymarket_quant_system.md#L216) |
 
 ## 4. 当前真实运行图
 
@@ -76,21 +76,21 @@ Polymarket leaderboard / watchlist wallets
 
 对应证据：
 
-- 钱包发现入口来自 `fetchLeaderboard()`，不是全市场扫描，见 [PolymarketWalletDiscoveryService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L39)。
-- 交易同步入口来自 `fetchUserTrades(walletAddress)`，见 [PolymarketWalletDiscoveryService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L118)。
-- trade event 进入 follow task，见 [SmartWalletFollowTaskService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L54)。
-- follow task 按 `poll-fixed-delay-ms` 调度执行，见 [SmartWalletFollowTaskService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L196)。
+- 钱包发现入口来自 `fetchLeaderboard()`，不是全市场扫描，见 [PolymarketWalletDiscoveryService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L39)。
+- 交易同步入口来自 `fetchUserTrades(walletAddress)`，见 [PolymarketWalletDiscoveryService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L118)。
+- trade event 进入 follow task，见 [SmartWalletFollowTaskService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L54)。
+- follow task 按 `poll-fixed-delay-ms` 调度执行，见 [SmartWalletFollowTaskService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L196)。
 
 ### 辅助后台链路
 
 这些能力存在，但并不构成单一主循环的一部分：
 
-- recent market snapshot: [MarketSnapshotCollectorService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L117)
-- live validation: [SmartWalletLiveValidationService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L48)
-- order polling: [SmartWalletOrderPollingService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L26)
-- balance / positions sync: [SmartWalletPositionSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)
-- settlement sync: [SmartWalletSettlementSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)
-- claim processing: [SmartWalletClaimService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)
+- recent market snapshot: [MarketSnapshotCollectorService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L117)
+- live validation: [SmartWalletLiveValidationService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L48)
+- order polling: [SmartWalletOrderPollingService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L26)
+- balance / positions sync: [SmartWalletPositionSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)
+- settlement sync: [SmartWalletSettlementSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)
+- claim processing: [SmartWalletClaimService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)
 
 ### Scheduler 一览
 
@@ -106,7 +106,7 @@ Polymarket leaderboard / watchlist wallets
 | settlement sync | 300s | 结算扫描与 retry | 否 | 结算 |
 | claim | 60s | claim / retry / waiting confirmation | 否 | 结算 |
 
-频率与开关证据见 [application.yml](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/resources/application.yml#L37)。
+频率与开关证据见 [application.yml](../coin-strategy-job/src/main/resources/application.yml#L37)。
 
 ## 5. 7 步逐项对照表
 
@@ -126,17 +126,17 @@ Polymarket leaderboard / watchlist wallets
 
 证据：
 
-- 原图要求“主循环开始（每 N 秒）”，见 [polymarket_quant_system.md](/Users/lichangzheng.ray/Ray/CoinStrategy/polymarket_quant_system.md#L181)。
+- 原图要求“主循环开始（每 N 秒）”，见 [polymarket_quant_system.md](polymarket_quant_system.md#L181)。
 - 当前代码存在多个独立 `@Scheduled`：discovery、trade sync、follow task poll、snapshot、live validation、order polling、position sync、settlement、claim，分别见：
-  - [PolymarketWalletDiscoveryService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L159)
-  - [PolymarketWalletDiscoveryService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L171)
-  - [SmartWalletFollowTaskService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L196)
-  - [MarketSnapshotCollectorService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L117)
-  - [SmartWalletLiveValidationService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L48)
-  - [SmartWalletOrderPollingService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L26)
-  - [SmartWalletPositionSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)
-  - [SmartWalletSettlementSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)
-  - [SmartWalletClaimService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)
+  - [PolymarketWalletDiscoveryService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L159)
+  - [PolymarketWalletDiscoveryService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L171)
+  - [SmartWalletFollowTaskService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L196)
+  - [MarketSnapshotCollectorService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L117)
+  - [SmartWalletLiveValidationService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L48)
+  - [SmartWalletOrderPollingService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L26)
+  - [SmartWalletPositionSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)
+  - [SmartWalletSettlementSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)
+  - [SmartWalletClaimService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)
 
 原因判断：
 
@@ -147,9 +147,9 @@ Polymarket leaderboard / watchlist wallets
 
 证据：
 
-- 入口先抓 leaderboard，再分析 top wallets，见 [PolymarketWalletDiscoveryService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L39)。
-- 随后同步 watchlist 钱包交易，调用 `fetchUserTrades(walletAddress)`，见 [PolymarketWalletDiscoveryService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L118)。
-- 配置层直接把 discovery、event sync、watchlist batch/cooldown 作为一等概念，见 [application.yml](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/resources/application.yml#L69)。
+- 入口先抓 leaderboard，再分析 top wallets，见 [PolymarketWalletDiscoveryService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L39)。
+- 随后同步 watchlist 钱包交易，调用 `fetchUserTrades(walletAddress)`，见 [PolymarketWalletDiscoveryService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L118)。
+- 配置层直接把 discovery、event sync、watchlist batch/cooldown 作为一等概念，见 [application.yml](../coin-strategy-job/src/main/resources/application.yml#L69)。
 
 原因判断：
 
@@ -160,9 +160,9 @@ Polymarket leaderboard / watchlist wallets
 
 证据：
 
-- `MarketSnapshotCollectorService.collectRecentActiveMarketSnapshots()` 先读近期 `smart_wallet_trade_event`，再对这些事件涉及市场采集 snapshot，见 [MarketSnapshotCollectorService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L89)。
-- 快照采集包括 `fetchOrderBook` 和 `fetchMarketTrades`，见 [MarketSnapshotCollectorService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L49)。
-- 该任务是独立定时任务，而不是 follow task 执行前的依赖，见 [MarketSnapshotCollectorService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L117)。
+- `MarketSnapshotCollectorService.collectRecentActiveMarketSnapshots()` 先读近期 `smart_wallet_trade_event`，再对这些事件涉及市场采集 snapshot，见 [MarketSnapshotCollectorService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L89)。
+- 快照采集包括 `fetchOrderBook` 和 `fetchMarketTrades`，见 [MarketSnapshotCollectorService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L49)。
+- 该任务是独立定时任务，而不是 follow task 执行前的依赖，见 [MarketSnapshotCollectorService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L117)。
 
 原因判断：
 
@@ -173,10 +173,10 @@ Polymarket leaderboard / watchlist wallets
 
 证据：
 
-- `auto-execution-enabled: false`，见 [application.yml](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/resources/application.yml#L40)。
-- `live-validation.enabled: false`，且注释写明只是 auxiliary LIVE lane，见 [application.yml](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/resources/application.yml#L208)。
-- claim 默认为 `MANUAL_CONFIRM`，见 [application.yml](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/resources/application.yml#L243)。
-- live validation 逻辑本身也把 LIVE 描述为 validation lane，不是默认主执行模式，见 [SmartWalletLiveValidationService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L56)。
+- `auto-execution-enabled: false`，见 [application.yml](../coin-strategy-job/src/main/resources/application.yml#L40)。
+- `live-validation.enabled: false`，且注释写明只是 auxiliary LIVE lane，见 [application.yml](../coin-strategy-job/src/main/resources/application.yml#L208)。
+- claim 默认为 `MANUAL_CONFIRM`，见 [application.yml](../coin-strategy-job/src/main/resources/application.yml#L243)。
+- live validation 逻辑本身也把 LIVE 描述为 validation lane，不是默认主执行模式，见 [SmartWalletLiveValidationService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L56)。
 
 原因判断：
 
@@ -191,8 +191,8 @@ Polymarket leaderboard / watchlist wallets
 - 次因 1：`限频/成本约束`
 - 次因 2：`历史包袱/命名继承`
 - 证据：
-  - leaderboards / wallets 是入口一等公民，见 [PolymarketWalletDiscoveryService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L39)
-  - `smart_wallet_*` 表和 follow task 模型天然围绕 wallet event 展开，见 [SmartWalletFollowTaskService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L54)
+  - leaderboards / wallets 是入口一等公民，见 [PolymarketWalletDiscoveryService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/PolymarketWalletDiscoveryService.java#L39)
+  - `smart_wallet_*` 表和 follow task 模型天然围绕 wallet event 展开，见 [SmartWalletFollowTaskService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L54)
 
 ### 步骤 2：订单簿与价格
 
@@ -200,7 +200,7 @@ Polymarket leaderboard / watchlist wallets
 - 次因 1：`实现复杂度`
 - 次因 2：`渐进式落地`
 - 证据：
-  - 快照由近期 trade event 反推市场列表，见 [MarketSnapshotCollectorService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L89)
+  - 快照由近期 trade event 反推市场列表，见 [MarketSnapshotCollectorService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/MarketSnapshotCollectorService.java#L89)
   - 并未进入 follow task 执行前必经链路，推断待作者确认
 
 ### 步骤 3：持仓与余额同步
@@ -209,8 +209,8 @@ Polymarket leaderboard / watchlist wallets
 - 次因 1：`风控优先级`
 - 次因 2：`手动验证策略`
 - 证据：
-  - 同步逻辑独立定时运行，见 [SmartWalletPositionSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)
-  - 只有 auto execution、live validation 或已有 live position 时才真正需要同步，见 [SmartWalletPositionSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L76)
+  - 同步逻辑独立定时运行，见 [SmartWalletPositionSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L30)
+  - 只有 auto execution、live validation 或已有 live position 时才真正需要同步，见 [SmartWalletPositionSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletPositionSyncService.java#L76)
 
 ### 步骤 4：策略计算 / 信号生成
 
@@ -218,7 +218,7 @@ Polymarket leaderboard / watchlist wallets
 - 次因 1：`历史包袱/命名继承`
 - 次因 2：`渐进式落地`
 - 证据：
-  - `recordTradeEvent()` 直接产生 follow task，说明信号是事件驱动，不是统一 strategy engine 先产出 signal，见 [SmartWalletFollowTaskService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L54)
+  - `recordTradeEvent()` 直接产生 follow task，说明信号是事件驱动，不是统一 strategy engine 先产出 signal，见 [SmartWalletFollowTaskService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletFollowTaskService.java#L54)
 
 ### 步骤 5：风控检查
 
@@ -226,7 +226,7 @@ Polymarket leaderboard / watchlist wallets
 - 次因 1：无
 - 次因 2：无
 - 证据：
-  - 风控覆盖 freshness、价格、预算、仓位、重复任务、共识、最小下单额等，见 [SmartWalletSignalRiskService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSignalRiskService.java#L45)
+  - 风控覆盖 freshness、价格、预算、仓位、重复任务、共识、最小下单额等，见 [SmartWalletSignalRiskService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSignalRiskService.java#L45)
 
 ### 步骤 6：订单执行
 
@@ -234,8 +234,8 @@ Polymarket leaderboard / watchlist wallets
 - 次因 1：`风控优先级`
 - 次因 2：`渐进式落地`
 - 证据：
-  - 默认 `auto-execution-enabled: false`，见 [application.yml](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/resources/application.yml#L40)
-  - LIVE 只在 validation lane 中尝试，且每轮有严格 execution cap，见 [SmartWalletLiveValidationService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L89)
+  - 默认 `auto-execution-enabled: false`，见 [application.yml](../coin-strategy-job/src/main/resources/application.yml#L40)
+  - LIVE 只在 validation lane 中尝试，且每轮有严格 execution cap，见 [SmartWalletLiveValidationService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletLiveValidationService.java#L89)
 
 ### 步骤 7：监控与结算
 
@@ -243,9 +243,9 @@ Polymarket leaderboard / watchlist wallets
 - 次因 1：这一段反而是当前实现最完整区域
 - 次因 2：无
 - 证据：
-  - order polling 指数退避，见 [SmartWalletOrderPollingService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L90)
-  - settlement scheduled sync + retry，见 [SmartWalletSettlementSyncService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)
-  - claim + waiting confirmation + retry，见 [SmartWalletClaimService.java](/Users/lichangzheng.ray/Ray/CoinStrategy/coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)
+  - order polling 指数退避，见 [SmartWalletOrderPollingService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletOrderPollingService.java#L90)
+  - settlement scheduled sync + retry，见 [SmartWalletSettlementSyncService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletSettlementSyncService.java#L101)
+  - claim + waiting confirmation + retry，见 [SmartWalletClaimService.java](../coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/service/SmartWalletClaimService.java#L107)
 
 ## 8. 哪些是合理业务取舍，哪些是真缺口
 
@@ -341,7 +341,7 @@ Polymarket leaderboard / watchlist wallets
 | `business_goal_covered` | 是否覆盖业务目标 |
 | `architecture_aligned` | 是否符合原图控制流 |
 
-## 11. 验收结[funding-rate-arbitrage-design.md](..%2F..%2FDownloads%2Ffunding-rate-arbitrage-design.md)果对应
+## 11. 验收结果对应
 
 本报告已经覆盖以下检查项：
 

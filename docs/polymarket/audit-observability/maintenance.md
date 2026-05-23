@@ -17,7 +17,7 @@ updated: 2026-05-17
 
 ## 一、文档三层结构
 
-```
+```text
 docs/polymarket/
 │
 ├── copy-trading-improvement-decision-2026-05-17.md   # 当前主决议 (第十七批起承接)
@@ -80,11 +80,13 @@ docs/polymarket/
 ## 四、归档机制
 
 ### 主决议归档触发条件
+
 - 主决议节数 > 30，**或**
 - 体量 > 2500 行，**或**
 - 跨自然年（2026 年底强制归档）
 
 ### 归档流程
+
 1. 把当前主决议（如 `copy-trading-improvement-decision-2026-05-17.md`）重命名为 `archive/copy-trading-improvement-decision-YYYY-Q?-archived.md`，**或** 直接物理清理（按第十八批先例：靠 `git log` 保留历史）
 2. 把"当前事实快照"摘要写入新主决议 `copy-trading-improvement-decision-YYYY-MM-DD.md` 第一节作为 "Context inherited from archived doc"
 3. 子文档不动 (audit-observability/ 始终代表"当下事实")
@@ -92,6 +94,7 @@ docs/polymarket/
 5. PR 描述说明归档原因 + 评估的人
 
 ### 归档后主决议保留作用
+
 - 法律审计 / 复盘 / 重大变更回溯
 - 不允许修改 / 不允许引用作为"当下事实"（用主题子文档替代）
 - 可被搜索（git grep / IDE search 等）

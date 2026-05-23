@@ -248,7 +248,7 @@ sequenceDiagram
 
 交易事件进入系统后经过以下处理链路：
 
-```
+```text
 recordTradeEvent → 去重 → 黑名单检查 → 钱包准入 → 意图聚合 (P0-2 🆕) → 实体智能增强
   → 市场状态检查 → 退出意图分类 (🆕) → 风控评估 → 创建 FollowTask
 ```
@@ -391,7 +391,7 @@ flowchart TD
 
 **订单参数构造流程（`prepareLocalDraft`）：**
 
-```
+```text
 1. cappedStake = min(max(recommendedStake, minOrderUsdc), maxOrderUsdc)
 2. 选择订单策略: resolveOrderStrategy() → TAKER / MAKER
 3. TAKER: limitPrice = rawPrice + slippage (动态/固定)
@@ -475,7 +475,7 @@ flowchart TD
 | 持仓时长 | 40 | `min(holdingHours / 24, 1) × 40`，1 天以上拿满 |
 | 资金占比 | 25 | 该仓位 `costBasisUsdc` / 全部开仓 `costBasisUsdc` 之和，在 40% 集中度处饱和 |
 | 流动性代理 | 15 | 用 `\|ROI\|` 反向衡量——ROI 越接近 0，"卡在僵尸市场"的可能越高 |
-| 机会成本 | 20 | `pendingSignals / maxOpenPositions × 20`，目前 `countPendingSignals()` 暂硬编码为 0（TODO 占位）|
+| 机会成本 | 20 | `pendingSignals / maxOpenPositions × 20`。**【待核对】** 此处称 `countPendingSignals()` 硬编码为 0，但 minimal-implementations-fix-plan 的 F-P1-17 标记该项已于 2026-05-17 改为真实查询；本表述疑似过时，需与代码核对后更新 |
 
 **资格 / 安全保护：**
 - 候选必须 `holdingHours ≥ holdingPeriodHours` 且 `ROI ∈ [deadZoneLowRate, deadZoneHighRate]`
@@ -697,7 +697,7 @@ SELECT entry_estimator_source, COUNT(*) cnt,
 
 §3.3 的 13 Gate 流水线在 W2 阶段被进一步细化——多个原本只是"hard threshold"的 Gate 被拆出可独立灰度的子段，并补入新维度（leader 滑动胜率、行为漂移、距结算时间、价格冲击三段式、流动性 / 价差分位）。所有新子段通过 `enable-*` 配置独立灰度，默认 OFF，逐项放行。
 
-```
+```text
 G1   Manual blocklist                                  ← 旧
 G2   Wallet archetype                                  ← 旧 (OBSERVE_ONLY → 拒绝)
 G2a  Wallet score / 流动性 / 价差            🆕         ← 基础硬阈值
@@ -1160,6 +1160,8 @@ flowchart TB
 ---
 
 ## 七、配置参数速查表
+
+> **【待补充】** 下表多处「默认值」列为「—」，需补真实默认值；对确无默认值的参数请标注「无默认 / 必填」。
 
 | 模块 | 参数 | 默认值 | 说明 |
 |------|------|--------|------|

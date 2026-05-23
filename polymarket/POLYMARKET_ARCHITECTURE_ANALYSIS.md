@@ -28,7 +28,7 @@ updated: 2026-05-11
 
 ### 1.2 smartwallet 包结构一览
 
-```
+```text
 coin-strategy-job/src/main/java/.../job/smartwallet/
 ├── config/
 │   ├── SmartWalletProperties.java          // 550+ 行配置项（master switch、风控阈值、Kelly参数等）
@@ -116,7 +116,7 @@ coin-strategy-job/src/main/java/.../job/smartwallet/
 
 ### 2.1 全链路数据流
 
-```
+```text
 [Polymarket Leaderboard API]
         │
         ▼ (每小时全量 / 每5min增量)
@@ -251,7 +251,7 @@ SmartWalletClaimService [每1min]
 
 ### 3.2 关键 ID 关联链
 
-```
+```text
 marketId (Polymarket conditionId)
    ↕  SmartWalletMarketInfoService.getOrCreate(marketId, outcome)
 smart_wallet_market_info.id  ← marketInfoId
@@ -277,7 +277,7 @@ conditionId = marketId (在 Polymarket 中等价)
 
 ### 3.3 订单状态流转
 
-```
+```text
 【Order 状态机】 (SmartWalletOrderEntity.status)
 
 SUBMITTED ──→ LIVE ──────→ MATCHED ──→ (成交处理)
@@ -302,7 +302,7 @@ SUBMITTED ──→ LIVE ──────→ MATCHED ──→ (成交处理)
 
 ### 3.4 仓位状态流转
 
-```
+```text
 【Position 状态机】 (SmartWalletPositionEntity.status)
 
 OPEN ───→ PARTIALLY_CLOSED ───→ CLOSED (提前退出)
@@ -325,7 +325,7 @@ OPEN ───→ PARTIALLY_CLOSED ───→ CLOSED (提前退出)
 
 ### 3.5 Follow Task 状态流转
 
-```
+```text
 【FollowTask 状态机】 (SmartWalletFollowTaskEntity.status)
 
 PENDING ──→ FOLLOWED (执行成功)
@@ -798,6 +798,8 @@ flowchart TD
 **可能原因**: Controller 可能在另一个模块（如 `coin-strategy-web`）中，或者以非标准命名存在。
 
 **影响**: 无法确认 REST API 的完整端点清单和鉴权机制。
+
+> **【待核对】** 本节结论与本文 §1 的目录树（其中列出了 `SmartWalletController.java　// REST API 入口`）冲突。需核对 `SmartWalletController` 究竟位于哪个模块、是否存在，并据此修正 §1 目录树或本节结论。
 
 ---
 

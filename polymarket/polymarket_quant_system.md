@@ -39,7 +39,7 @@ updated: 2026-04-25
 
 Polymarket 采用层级结构组织市场：
 
-```
+```text
 Event（事件）
   └── Market A（市场 A）
         ├── Yes Token (ERC-1155)
@@ -72,7 +72,7 @@ Polymarket 使用 **CLOB（中央限价订单簿）** 撮合：
 
 量化系统分为五大模块：
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    外部数据源                            │
 │  Gamma API │ CLOB API │ Data API │ WebSocket │ Subgraph │
@@ -189,7 +189,7 @@ Polymarket 使用 **CLOB（中央限价订单簿）** 撮合：
 
 系统以固定间隔（建议 5-30 秒，视策略而定）执行以下循环：
 
-```
+```text
 ┌─ 主循环开始（每 N 秒）─────────────────────────────────┐
 │                                                          │
 │  步骤 1  扫描活跃市场                                    │
@@ -609,7 +609,7 @@ GET https://clob.polymarket.com/order/{orderID}
 
 **状态机**：
 
-```
+```text
 live → matched（完全成交）
      → partially_filled（部分成交）
      → canceled（已撤销）
@@ -738,7 +738,7 @@ unrealized_pnl = (current_price - avg_cost) * position_size
 
 ### 基础公式
 
-```
+```text
 总收益（获胜时）= 持仓数量 × $1.00
 总成本          = 买入均价 × 持仓数量 + 手续费
 净利润          = 总收益 - 总成本
@@ -756,7 +756,7 @@ ROI             = 净利润 / 总成本 × 100%
 
 ### 示例计算
 
-```
+```text
 场景：以 $0.40 买入 100 枚 Yes Token，最终获胜
 
 总成本  = 0.40 × 100 + 0.40（手续费约1%）= $40.40
@@ -771,7 +771,7 @@ ROI     = 59.60 / 40.40 ≈ 147.5%
 
 ### 7.1 数据消费：WS 优先，REST 降级
 
-```
+```text
 实时数据流：WebSocket（price_change / book delta）
               │ 断线时降级
               ▼
@@ -799,7 +799,7 @@ REST 补全：GET /book + GET /prices（一次性快照）
 
 所有 CLOB 写操作（POST /order）需要：
 
-```
+```text
 1. 构建 Order 结构体（tokenID, price, size, side, nonce, expiration）
 2. 用私钥生成 EIP-712 签名
 3. 将签名附在 POST body 中

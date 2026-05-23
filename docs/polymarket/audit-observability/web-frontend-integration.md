@@ -17,7 +17,7 @@ updated: 2026-05-17
 
 ## 一、Base URL & 鉴权
 
-```
+```text
 PROD:  http://prod-web:8080/strategy/api/smart-wallet
 TEST:  http://49.51.250.174:8080/strategy/api/smart-wallet
 LOCAL: http://localhost:8080/strategy/api/smart-wallet
@@ -28,6 +28,8 @@ LOCAL: http://localhost:8080/strategy/api/smart-wallet
 ---
 
 ## 二、19 个端点速查表
+
+> **【待核对】** 全文端点路径前缀不统一：本速查表用短路径（如 `/audit/alerts`），而下文部分示例用完整前缀（如 `/strategy/api/smart-wallet/audit/...`），个别 curl/fetch 示例的 `/audit/` 前缀也与速查表不一致。需确认真实 API 基础路径并全文统一。
 
 | Group | Method+Path | 主要 query |
 | --- | --- | --- |
@@ -56,6 +58,7 @@ LOCAL: http://localhost:8080/strategy/api/smart-wallet
 ## 三、典型 dashboard 组合
 
 ### 3.1 "今日健康看板"
+
 首屏 4 个 card：
 
 | Card | 数据源 |
@@ -66,6 +69,7 @@ LOCAL: http://localhost:8080/strategy/api/smart-wallet
 | 三方 diff 今日异常数 | `GET /audit/resolution-tridiff?lookbackHours=24` → `anomalyTotal` |
 
 ### 3.2 "Leader 详情页"
+
 按 leader address 路由进入：
 
 ```js
@@ -77,6 +81,7 @@ const traces  = await fetch(`/traces/by-leader/${wallet}?lookbackDays=7&limit=20
 ```
 
 ### 3.3 "VWAP vs PROXY 实证对比"
+
 量化研究员关注：
 
 ```bash
@@ -95,6 +100,7 @@ curl '/audit/shadow-estimator-source?lookbackDays=14'
 ```
 
 ### 3.4 "市场流动性看板"
+
 ```bash
 # 今日各品类
 curl '/audit/market-liquidity/percentile'
@@ -104,6 +110,7 @@ curl '/audit/market-liquidity/percentile/POLITICS?limitDays=14'
 ```
 
 ### 3.5 "Trace 反查"（线上排查必备）
+
 ```bash
 # 已知 trace_id
 curl '/trace/tev_000000123456'
@@ -119,17 +126,20 @@ curl '/traces/by-leader/0xLeader?lookbackDays=3' \
 ## 四、Response 字段约定
 
 ### 通用规则
+
 - 所有时间字段是 ISO-8601 字符串 (后端用 `java.util.Date`, Jackson 默认序列化)
 - `BigDecimal` 序列化为数字 (不带引号)
 - 空集合返回 `[]` 而非 `null`
 - 阈值命中 boolean 字段以 `*Exceeded` 命名（例如 `pnlDiffExceeded`、`p95Exceeded`）
 
 ### 错误响应
+
 - 404: 资源不存在 (例如 `/trace/{traceId}` traceId 拼写错)
 - 400: 参数非法 (例如 `lookbackDays=99999`)
 - 500: 后端异常 (前端建议显示 toast + retry 按钮)
 
 ### 分页约定
+
 - 没有真正分页, 用 `limit` 截断 + `truncated:true` 标志（如 `LeaderTraceListView`、`SlippagePostFactReportView`）
 - 前端若看到 `truncated:true`，提示用户"还有更多, 缩小窗口或加过滤"
 
@@ -158,7 +168,7 @@ http.get('/strategy/api/smart-wallet/audit/live-replay-diff/latest', () => {
 
 后端启用 `springdoc`, 访问：
 
-```
+```text
 PROD:  http://prod-web:8080/strategy/api/swagger-ui.html
 LOCAL: http://localhost:8080/strategy/api/swagger-ui.html
 ```
