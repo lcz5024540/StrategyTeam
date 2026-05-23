@@ -1,3 +1,12 @@
+---
+title: "Web BFF 接口前端联调指南 (19 个端点)"
+type: design
+status: active
+tags: [polymarket, audit, frontend]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # Web BFF 接口前端联调指南 (19 个端点)
 
 > ⏱️ **创建**: 2026-05-16 第十五批 | 兄弟文档: [`web-bff-interfaces.md`](./web-bff-interfaces.md)
@@ -176,3 +185,8 @@ const { data: latestDiff } = useQuery({
 | Leader 诊断 (rolling, drift) | on-demand, 不自动刷新 |
 | Trace 反查 | on-demand |
 | 告警 (audit/alerts) | 30 s（页面停留时） |
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

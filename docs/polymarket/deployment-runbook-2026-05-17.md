@@ -1,3 +1,12 @@
+---
+title: "部署 Runbook — P0/P1 最小化实施修复批次"
+type: runbook
+status: active
+tags: [polymarket, deploy, runbook]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # 部署 Runbook — P0/P1 最小化实施修复批次
 
 > **生成日期**：2026-05-17
@@ -554,3 +563,8 @@ ssh prod-host '
 > 关联文档：
 > - [`minimal-implementations-fix-plan.md`](./minimal-implementations-fix-plan.md)（实施清单与修复计划）
 > - [`prod-deployment-checklist-w2-t6.md`](./prod-deployment-checklist-w2-t6.md)（W2-T6 / 价差 P70 prod 上线 checklist，与本文件可并行参考）
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

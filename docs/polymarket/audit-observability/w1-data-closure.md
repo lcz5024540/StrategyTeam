@@ -1,3 +1,12 @@
+---
+title: "W1 — 闭环数据 (trace_id / shadow / live-replay-diff / settlement-source)"
+type: audit
+status: active
+tags: [polymarket, audit]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # W1 — 闭环数据 (trace_id / shadow / live-replay-diff / settlement-source)
 
 > ⏱️ **上次更新**: 2026-05-16 第十四批 | 回看主决议第三 / 十 / 十六 / 十七 / 十八 / 十九 / 二十 / 二十一节
@@ -187,3 +196,8 @@ SELECT resolution_status, COUNT(*) cnt
  WHERE observed_at >= NOW() - INTERVAL 1 DAY
  GROUP BY resolution_status;
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

@@ -1,3 +1,12 @@
+---
+title: "Polymarket 跟单策略 — 最小化实施清单与修复计划"
+type: plan
+status: active
+tags: [polymarket, plan]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # Polymarket 跟单策略 — 最小化实施清单与修复计划
 
 > 日期：2026-05-17
@@ -854,3 +863,8 @@ gantt
 > 维护者：跟单策略 owner
 > 上次更新：2026-05-17（自动调度批次：第十一轮 — F-P1-1 prod 灰度配置启用 + F-P1-7/F-P1-8 watchlist 自动订阅协调服务 `PolymarketWatchlistSubscriptionService` + 单测 9 用例）
 > 关联文档：[`smart-wallet-follow-strategy-analysis.md`](./smart-wallet-follow-strategy-analysis.md) §六"当前系统不充分事项汇总"
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

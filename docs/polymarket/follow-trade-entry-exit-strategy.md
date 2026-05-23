@@ -1,3 +1,12 @@
+---
+title: "Polymarket 跟单 + 提前平仓策略体系"
+type: strategy
+status: active
+tags: [polymarket, copy-trading, strategy]
+created: 2026-05-06
+updated: 2026-05-06
+---
+
 # Polymarket 跟单 + 提前平仓策略体系
 
 ## 1. 策略定位
@@ -791,3 +800,8 @@ Polymarket 跟单的关键不是“谁胜率高就跟谁”，而是：
 - 仓位靠折扣 Kelly 和流动性容量。
 - 退出靠止盈、止损、动量衰减、leader 反向行为和 oracle 阶段强制降风险。
 - leader 是否继续可跟，只相信本系统真实/纸面跟单归因，不相信静态 leaderboard 光环。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

@@ -1,3 +1,12 @@
+---
+title: "OKX 交易 (OKX Trading)"
+type: runbook
+status: active
+tags: [common-client]
+created: 2026-01-31
+updated: 2026-01-31
+---
+
 # OKX 交易 (OKX Trading)
 
 通过 `OkxApiService` 提供统一访问接口，支持现货、合约、策略交易、赚币等全线业务。
@@ -466,3 +475,8 @@ OkxRestResponse<OkxAffiliateInviteeDetail> invitee = okxService.affiliate.getAff
 
 ---
 参考文档: [OKX V5 API Documentation](https://www.okx.com/docs-v5/zh/)
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../../docs/MOC-架构与平台.md) ｜ [知识库首页](../../docs/知识库首页.md)

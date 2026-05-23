@@ -1,3 +1,12 @@
+---
+title: "量化交易系统 - 技术架构设计文档"
+type: design
+status: active
+tags: [design]
+created: 2026-05-12
+updated: 2026-05-12
+---
+
 # 量化交易系统 - 技术架构设计文档
 
 ## 一、系统全景
@@ -727,3 +736,8 @@ services:
 | P2 | DEX/CEX 价差套利 | 🟢 |
 | P3 | 社交媒体情绪交易 | ⚪ |
 | P3 | 链上 MEV 策略 | ⚪ |
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](docs/MOC-架构与平台.md) ｜ [知识库首页](docs/知识库首页.md)

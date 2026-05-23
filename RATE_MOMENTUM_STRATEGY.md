@@ -1,3 +1,12 @@
+---
+title: "利率-价格联动策略分析与设计 (Rate-Price Correlation Strategy)"
+type: strategy
+status: active
+tags: [rate-momentum, strategy]
+created: 2026-02-01
+updated: 2026-02-01
+---
+
 # 利率-价格联动策略分析与设计 (Rate-Price Correlation Strategy)
 
 ## 1. 现象分析 (Phenomenon Analysis)
@@ -112,3 +121,8 @@ public class RateMomentumStrategy {
 
 ## 5. 下一步建议
 如果确认开发此策略，建议先构建一个 **Rate Monitor Dashboard**，记录并可视化 TOP 代币的“利率-价格”曲线，验证历史胜率后再接入自动交易。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](docs/MOC-交易策略.md) ｜ [知识库首页](docs/知识库首页.md)

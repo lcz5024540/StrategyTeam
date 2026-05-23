@@ -1,3 +1,12 @@
+---
+title: "ORDER_SECURITY_FIX_PLAN"
+type: plan
+status: active
+tags: [polymarket, security, plan]
+created: 2026-04-13
+updated: 2026-04-13
+---
+
 ## 订单项目安全审计与修复计划（Polymarket）
 
 ### 1. 审计范围
@@ -139,3 +148,8 @@ P0-1 鉴权封禁与密钥脱敏 > P0-2 凭证轮换 > P0-3 并发幂等
 - 同一 followTask 的并发 LIVE 执行不会产生重复下单  
 - 所有输入参数均有边界校验与统一错误码  
 - 生产环境 Swagger 关闭、CORS 白名单可审计、敏感配置零明文
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

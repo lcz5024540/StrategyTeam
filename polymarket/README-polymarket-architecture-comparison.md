@@ -1,3 +1,12 @@
+---
+title: "Polymarket 量化系统架构与当前实现对比"
+type: design
+status: active
+tags: [polymarket, design]
+created: 2026-04-10
+updated: 2026-04-10
+---
+
 # Polymarket 量化系统架构与当前实现对比
 
 本文档旨在对比 [polymarket_quant_system.md](polymarket/polymarket_quant_system.mdsystem.md) 中规划的标准量化交易架构与当前代码库的实际落地情况，评估主循环流程的合理性，并记录已修复的问题。
@@ -67,3 +76,8 @@ Polymarket 限制：Gamma API 和 Data API 免费额度约 1000 次/小时（平
 *   **订单状态轮询**：采用 **1s→2s→4s 指数退避 (Exponential Backoff)**。CLOB API 与 Gamma/Data API 的限额不同（CLOB更宽裕），但通过指数退避有效减少了无效请求，避免了死循环。
 
 **总结**：在本次全面修复中，我们增加了持仓同步、订单轮询指数退避，调整了市场扫描频率，**完全遵循了目标系统的轮询规范与频次约束**，目前的代码库是一个稳定可靠、符合要求且没有超出限流风险的 Polymarket 交易系统。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

@@ -1,3 +1,12 @@
+---
+title: "Priority 5：网络层收敛与 job 内网化部署建议"
+type: design
+status: active
+tags: [design, security]
+created: 2026-05-14
+updated: 2026-05-14
+---
+
 # Priority 5：网络层收敛与 job 内网化部署建议
 
 > 目标：让 job 服务（8081）**只接受内网调用**；web 服务（8080）是唯一对外入口。
@@ -233,3 +242,8 @@ Priority 5 是**部署侧硬化**；Priority 4 是**代码侧把 HTTP 透传改 
 - 都做：架构最终态。
 
 建议先做 Priority 5（成本低、即刻见效），再慢慢推 Priority 4。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../MOC-架构与平台.md) ｜ [知识库首页](../知识库首页.md)

@@ -1,3 +1,12 @@
+---
+title: "跨策略可复用基础设施清单"
+type: design
+status: active
+tags: [polymarket, design]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # 跨策略可复用基础设施清单
 
 > **目的**：天气策略 / BTC 5min 策略 真正开工前 1 周需要 review 本文档。
@@ -160,3 +169,8 @@ interface ExecutionGateway<S> {
 ---
 
 > **回顾节奏**：每个新策略上线前 1 周、每季度结束时 review 一次本文档；新增可复用组件时追加章节。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

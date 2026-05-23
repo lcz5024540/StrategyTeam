@@ -1,3 +1,12 @@
+---
+title: "部署拓扑重构 — 落地清单"
+type: design
+status: active
+tags: [design, deploy]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # 部署拓扑重构 — 落地清单
 
 > 状态: 已落地 (test 环境). prod 暂时取消.
@@ -178,3 +187,8 @@ ssh user@49.51.250.174 'curl http://127.0.0.1:8081/strategy/api/smart-wallet/hea
 1. **被删的 proxy controllers** 之前覆盖了大量 fall-through 路径，前端会有部分 GET/POST 接口直接 404。需要按 smoke test 结果，逐一在 web 端补本地 controller (直查 DB)。
 2. **prod 环境恢复**: 补 `deploy/linux/env/prod/{web,job}.env`，决定 prod 机器分配（如果与 test 同机需要分配不同端口）。
 3. **legacy env 文件** `deploy/linux/env/smart-wallet{,-job,-web}.env` 当前作为 fallback 保留。线上 systemd 单元改名 / 改路径后即可删除。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](MOC-架构与平台.md) ｜ [知识库首页](知识库首页.md)

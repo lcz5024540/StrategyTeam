@@ -1,3 +1,12 @@
+---
+title: "产品设计与战略规划 (Product Design & Strategy)"
+type: design
+status: active
+tags: [design]
+created: 2026-02-01
+updated: 2026-04-07
+---
+
 # 产品设计与战略规划 (Product Design & Strategy)
 
 本文档记录了系统的核心产品定位、分层服务模式、潜在风险评估及技术架构演进建议。
@@ -309,3 +318,8 @@
 *   `coin-strategy-job`: 承担策略调度、数据统计、账单结算任务
 *   `coin-strategy-web`: 提供策略中心、看板、用户视图 API
 *   后续可新增 `coin-strategy-platform` 或 `coin-strategy-billing` 模块，专门承载平台层能力
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](docs/MOC-架构与平台.md) ｜ [知识库首页](docs/知识库首页.md)

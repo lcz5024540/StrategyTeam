@@ -1,3 +1,12 @@
+---
+title: "量化策略平台 MVP Java 架构设计文档"
+type: design
+status: active
+tags: [polymarket, design]
+created: 2026-04-10
+updated: 2026-04-10
+---
+
 # 量化策略平台 MVP Java 架构设计文档
 
 本文档基于当前仓库结构与 [PRODUCT_DESIGN.md](./PRODUCT_DESIGN.md) 中的产品定位整理，目标是给出一版可直接指导当前 `CoinStrategy` 仓库演进的 MVP 架构方案。
@@ -905,3 +914,8 @@ MVP 的主链路如下：
 - 系统可以通过快照和投影支撑后续规模化查询
 
 这条路线与当前仓库现状兼容，也与 [PRODUCT_DESIGN.md](./PRODUCT_DESIGN.md) 中的产品路线保持一致，适合作为接下来一到两个版本的架构基线。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

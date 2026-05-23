@@ -1,3 +1,12 @@
+---
+title: "Tier 通用化 + 跨策略基础设施"
+type: design
+status: active
+tags: [polymarket, audit]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # Tier 通用化 + 跨策略基础设施
 
 > ⏱️ **上次更新**: 2026-05-16 第十四批 | 回看主决议第十二 / 十五节
@@ -83,3 +92,8 @@
 
 - [`cross-strategy-reusable-infrastructure.md`](../cross-strategy-reusable-infrastructure.md) — 完整可复用 vs 待抽清单
 - 主决议第十二 / 十五节 — Tier A/B/C 设计决议过程
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

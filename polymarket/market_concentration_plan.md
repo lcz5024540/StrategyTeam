@@ -1,3 +1,12 @@
+---
+title: "Polymarket 市场持仓集中度风控计划"
+type: plan
+status: active
+tags: [polymarket, plan]
+created: 2026-04-13
+updated: 2026-04-25
+---
+
 # Polymarket 市场持仓集中度风控计划
 
 ## 背景与问题
@@ -250,3 +259,8 @@ smart-wallet:
 | 集中度快照过期导致误判 | 60s TTL + `capturedAt` 透出给 API 调用方 |
 | 正常大市场也可能 CR_3 较高（机构参与） | HHI 双重验证；可按市场 volume 动态调整阈值 |
 | 额外 API 调用增加延迟 | 缓存 60s；异常时降级跳过检查（fail-open） |
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

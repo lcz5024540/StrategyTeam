@@ -1,3 +1,12 @@
+---
+title: "单交易所资金费率套利实施进度"
+type: strategy
+status: active
+tags: [funding-rate, arbitrage]
+created: 2026-04-13
+updated: 2026-04-18
+---
+
 # 单交易所资金费率套利实施进度
 
 本文档仅记录“单交易所期现套利”的开发进度、已完成工作、当前不足与后续计划。
@@ -136,3 +145,8 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 1. 增加异常退出和回滚失败告警。
 2. 明确单元测试、模拟测试和联网测试的边界。
 3. 使用小资金进行长时间运行验证。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

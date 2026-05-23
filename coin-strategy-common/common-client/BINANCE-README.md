@@ -1,3 +1,12 @@
+---
+title: "Binance API 使用说明"
+type: runbook
+status: active
+tags: [common-client]
+created: 2026-01-31
+updated: 2026-02-03
+---
+
 # Binance API 使用说明
 
 ## 集成测试配置 (Integration Test Configuration)
@@ -515,3 +524,8 @@ BinanceFuturesDownloadId downloadId = futuresService.getDownloadIdForTradeHistor
 BinanceFuturesDownloadStatus status = futuresService.getDownloadIdStatus(downloadId.getDownloadId());
 System.out.println("Download URL: " + status.getUrl());
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../../docs/MOC-架构与平台.md) ｜ [知识库首页](../../docs/知识库首页.md)

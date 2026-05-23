@@ -1,3 +1,12 @@
+---
+title: "多交易账户与成组凭证平台化规划 Task"
+type: plan
+status: active
+tags: [polymarket, plan]
+created: 2026-04-23
+updated: 2026-04-23
+---
+
 # 多交易账户与成组凭证平台化规划 Task
 
 ## Summary
@@ -189,3 +198,8 @@
 - 收益分成默认基于“策略归因净收益”，不基于账户总收益
 - 若用户不使用独立子账户，系统允许接入，但默认标记为高归因风险并限制收益分成模式
 - 敏感凭证默认不落业务表明文，只通过 `vault_ref` 访问
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

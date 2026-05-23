@@ -1,3 +1,12 @@
+---
+title: "多交易所资金费率套利实施进度"
+type: strategy
+status: active
+tags: [funding-rate, arbitrage]
+created: 2026-04-13
+updated: 2026-04-13
+---
+
 # 多交易所资金费率套利实施进度
 
 本文档仅记录“多交易所套利”的当前状态、差距分析和实施规划。
@@ -82,3 +91,8 @@
 单交易所套利实施进度详见：
 
 * [单交易所套利实施进度](./FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE_SHARE.md)
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

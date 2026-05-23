@@ -1,3 +1,12 @@
+---
+title: "Polymarket 多策略架构设计文档"
+type: design
+status: active
+tags: [polymarket, design]
+created: 2026-05-11
+updated: 2026-05-11
+---
+
 # Polymarket 多策略架构设计文档
 
 > 日期：2026-05-11
@@ -679,3 +688,8 @@ Phase 2 和 Phase 3 可并行开发。Phase 0 是所有后续工作的前置条�
 2. Phase 1 让现有策略先跑通统一框架，验证接口设计是否合理
 3. BTC 策略比网格策略简单（无需挂单管理），适合先做验证框架可行性
 4. 网格策略最复杂但利润潜力最大（maker fee=0 + 价差收益），适合作为压轴
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

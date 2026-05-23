@@ -1,3 +1,12 @@
+---
+title: "AUDIT_* 告警 Onboarding 决策树（第十九批 #6）"
+type: audit
+status: active
+tags: [polymarket, audit]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # AUDIT_* 告警 Onboarding 决策树（第十九批 #6）
 
 > **目的**：把跟单 6 个 `AUDIT_*` AlertType（含第十八批新增的 `AUDIT_LEADER_ROLLING_HEALTH`）的
@@ -256,3 +265,8 @@ GET /smart-wallet/audit/copy-trading-health?historyDays=14&driftLookbackHours=24
 ---
 
 > *最后更新*：2026-05-16 第十九批 — AUDIT_* 告警 onboarding 决策树落档
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

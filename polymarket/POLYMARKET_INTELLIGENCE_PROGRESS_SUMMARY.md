@@ -1,3 +1,12 @@
+---
+title: "Polymarket Intelligence 改动总结"
+type: report
+status: active
+tags: [polymarket, report]
+created: 2026-04-12
+updated: 2026-04-12
+---
+
 # Polymarket Intelligence 改动总结
 
 > 日期：2026-04-12
@@ -444,3 +453,8 @@ POST /smart-wallet/follow-tasks/intelligence/replay-recent?limit=100&includeProc
 ## 9. 一句话总结
 
 这次改动的本质，不是“多加了两个接口”，而是把 Polymarket 的跟单链路从“按地址做反应”，升级成了“按可信实体做决策，并支持延迟重评与历史回放”的可扩展基础设施。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

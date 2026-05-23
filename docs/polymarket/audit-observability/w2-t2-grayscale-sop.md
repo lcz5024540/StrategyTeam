@@ -1,3 +1,12 @@
+---
+title: "W2-T2 Leader 滑动窗口胜率门 — 灰度观察 SOP"
+type: runbook
+status: active
+tags: [polymarket, audit, deploy]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # W2-T2 Leader 滑动窗口胜率门 — 灰度观察 SOP
 
 > ⏱️ **创建**: 2026-05-16 第十七批 ｜ ⏱️ **第十八批升级**: 2026-05-16 已自动化（见下方"零、自动化模式"）
@@ -185,3 +194,8 @@ W2-T2 与同时启用的其他门可能叠加：
 - 每月第一周 review 本文档（结合实际灰度数据 / 调整记录补充章节）
 - 阈值调整后立即更新 3.1 节
 - 上 prod 后在 [prod-deployment-checklist-w2-t6.md](../prod-deployment-checklist-w2-t6.md) 同步 W2-T2 阈值
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

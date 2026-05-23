@@ -1,3 +1,12 @@
+---
+title: "Prod 部署 Checklist — W2-T6 Leader 行为漂移门 + W2-T1.4 价差 P70 门"
+type: runbook
+status: active
+tags: [polymarket, deploy]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # Prod 部署 Checklist — W2-T6 Leader 行为漂移门 + W2-T1.4 价差 P70 门
 
 > **状态**：2026-05-16 第十三批生成。Prod 暂未真正上线（test profile 仍是事实生产）。本文档作为 prod 真正启动时的 step-by-step 部署 checklist。
@@ -176,3 +185,8 @@ curl 'http://<prod-web>/strategy/api/smart-wallet/audit/resolution-tridiff?lookb
 - Web 接口列表（21 个端点）：`docs/polymarket/audit-observability/web-bff-interfaces.md`
 
 > **变更追踪**：本 checklist 每次 prod 阈值调整后需 update version；prod 真正部署当天添加 "首次部署日志" 章节。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

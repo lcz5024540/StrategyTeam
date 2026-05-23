@@ -1,3 +1,12 @@
+---
+title: "TOP50 策略方案 (TOP50 Strategy Proposal)"
+type: strategy
+status: active
+tags: [top50, strategy]
+created: 2026-02-01
+updated: 2026-02-01
+---
+
 # TOP50 策略方案 (TOP50 Strategy Proposal)
 
 ## 1. 策略概述 (Overview)
@@ -133,3 +142,8 @@ com.metaverse.coin.strategy.core.top50
 - **交易所**: Binance 和 OKX 均支持 (双交易所模式)。
 - **交易市场**: 支持 现货 (Spot) 和 永续合约 (Perpetual Futures)。
 - **外部数据源**: 后续接入 Coinglass, CoinGecko 等第三方数据 (初期使用交易所 Public Data)。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](docs/MOC-交易策略.md) ｜ [知识库首页](docs/知识库首页.md)

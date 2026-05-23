@@ -1,3 +1,12 @@
+---
+title: "Gate.io 交易 (Gate.io Trading)"
+type: runbook
+status: active
+tags: [common-client]
+created: 2026-02-01
+updated: 2026-02-01
+---
+
 # Gate.io 交易 (Gate.io Trading)
 
 通过 `GateApiService` 提供统一访问接口，集成官方 `gateapi-java` SDK，支持现货、合约、钱包等业务。
@@ -123,3 +132,8 @@ import io.gate.gateapi.models.TotalBalance;
 TotalBalance totalBalance = gateService.getWalletService().getTotalBalance("USDT");
 System.out.println("Total USDT Value: " + totalBalance.getTotal().getAmount());
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../../docs/MOC-架构与平台.md) ｜ [知识库首页](../../docs/知识库首页.md)

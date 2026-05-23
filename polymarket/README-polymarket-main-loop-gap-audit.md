@@ -1,3 +1,12 @@
+---
+title: "基于 7 步主循环的当前实现偏差核验报告"
+type: audit
+status: active
+tags: [polymarket, audit]
+created: 2026-04-10
+updated: 2026-04-10
+---
+
 # 基于 7 步主循环的当前实现偏差核验报告
 
 ## 1. 结论摘要
@@ -351,3 +360,8 @@ Polymarket leaderboard / watchlist wallets
 
 1. 逐行比对“仓库 7 步定义”和“外部原图”是否一致。
 2. 若有差异，只重算第 3、5、6、7 节，不必重做整份报告。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

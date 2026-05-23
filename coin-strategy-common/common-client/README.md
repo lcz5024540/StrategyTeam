@@ -1,3 +1,12 @@
+---
+title: "Coin Strategy Common Client"
+type: overview
+status: active
+tags: [common-client]
+created: 2025-01-31
+updated: 2026-02-01
+---
+
 # Coin Strategy Common Client
 
 此模块封装了主流交易所 API 的调用，提供了统一且强类型的访问接口。
@@ -333,3 +342,8 @@ mvn test -pl coin-strategy-common/common-client
 - **集成测试**: `BinanceApiServiceTest` 包含连接真实 API (Testnet) 的测试用例。
   - 默认情况下，需要真实网络连接的测试已被禁用 (`@Disabled`)，以确保构建可以通过。
   - 如需运行集成测试，请在 `BinanceApiServiceTest.java` 中移除 `@Disabled` 注解，并配置有效的 Testnet API Key 和 Secret Key。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../../docs/MOC-架构与平台.md) ｜ [知识库首页](../../docs/知识库首页.md)

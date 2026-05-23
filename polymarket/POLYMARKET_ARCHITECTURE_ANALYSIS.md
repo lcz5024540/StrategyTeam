@@ -1,3 +1,12 @@
+---
+title: "Polymarket 跟单系统 — 完整架构分析报告"
+type: design
+status: active
+tags: [polymarket, design]
+created: 2026-05-11
+updated: 2026-05-11
+---
+
 # Polymarket 跟单系统 — 完整架构分析报告
 
 > 基于 `CoinStrategy` 项目源码逐文件分析，所有结论均引用类名/方法名/字段名。
@@ -929,3 +938,8 @@ public enum MarketLifecycle {
 
 > **本文档基于 2026-04-26 对 `CoinStrategy` 项目 `smartwallet` 模块的完整代码分析生成。**
 > **所有结论引用实际类名/方法名/字段名，推断处已标记【推断】，未找到处已标记【未在代码中找到】。**
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

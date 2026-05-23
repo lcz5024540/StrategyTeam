@@ -1,3 +1,12 @@
+---
+title: "Polymarket对冲套利量化系统设计文档"
+type: design
+status: active
+tags: [polymarket, design]
+created: 2026-04-10
+updated: 2026-04-10
+---
+
 # Polymarket对冲套利量化系统设计文档
 
 ## 目录
@@ -1058,3 +1067,8 @@ function balanceOf(
 **文档版本**: v1.0  
 **最后更新**: 2024-04-09  
 **维护者**: Arbitrage Team
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

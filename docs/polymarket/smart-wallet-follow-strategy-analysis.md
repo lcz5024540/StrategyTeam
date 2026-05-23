@@ -1,3 +1,12 @@
+---
+title: "Polymarket 跟单策略全流程分析"
+type: research
+status: active
+tags: [polymarket, copy-trading, research]
+created: 2026-05-06
+updated: 2026-05-17
+---
+
 # Polymarket 跟单策略全流程分析
 
 > 日期：2026-05-17
@@ -1310,3 +1319,8 @@ flowchart TB
 | 周一 07:00 🆕 | W2-T4.5 滑点事后统计 | `SlippagePostFactReportJob.scheduledRun`（`cron 0 0 7 * * MON`） |
 
 > 注：意图聚合（`FollowIntentAggregationService`）与退出跟单（`FollowPositionAdjustmentService`）本身不是 `@Scheduled`，而是被 `recordTradeEvent` / `executeTask` 同步驱动。`SignalShadowRecorder` / `MarketPriceImpactEstimator` / `LeaderBehaviorDriftService` / `LeaderRollingPerformanceService` / `AllowlistSignalAggregationService` / `FollowExposureLimitService` / `TimeAwareStopLossService` / `SignalScoreModelService` 均为同步内联组件，本表只列出 `@Scheduled` 任务。`PolymarketMarketDataStreamService` 通过 WebSocket 推流被动接收事件，亦不在此表。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

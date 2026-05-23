@@ -1,3 +1,12 @@
+---
+title: "Polymarket 天气套利自主开单系统 — 设计文档"
+type: design
+status: active
+tags: [polymarket, strategy, design]
+created: 2026-04-22
+updated: 2026-04-28
+---
+
 # Polymarket 天气套利自主开单系统 — 设计文档
 
 **日期**：2026-04-22  
@@ -226,3 +235,8 @@ scanned_at    DATETIME
 | 资金池耗尽 | 开单前硬校验，拒绝超额信号 |
 | 止损未触发导致持有至结算归零 | 结算时间 ≤ 12h 的市场不开新仓 |
 | 与跟单/对冲逻辑互扰 | `source=WEATHER` 字段隔离，执行层仅通过接口调用 |
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

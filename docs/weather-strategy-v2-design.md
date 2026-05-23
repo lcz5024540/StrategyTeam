@@ -1,3 +1,12 @@
+---
+title: "天气温度预测策略 V2 — 完整技术方案"
+type: design
+status: active
+tags: [polymarket, strategy, design]
+created: 2026-05-12
+updated: 2026-05-12
+---
+
 # 天气温度预测策略 V2 — 完整技术方案
 
 ## 一、现状分析与瓶颈诊断
@@ -817,3 +826,8 @@ public void dailyReport() {
 - Open-Meteo API 保持免费可用
 - 每日有效交易窗口约 16 小时（温度主要在白天变化）
 - 滑点+手续费约占毛利的 10-15%
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](MOC-Polymarket.md) ｜ [知识库首页](知识库首页.md)

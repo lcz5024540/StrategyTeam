@@ -1,3 +1,12 @@
+---
+title: "CEX借贷-链上Stable LP套利策略 (CEX Loan to On-chain Stable LP Strategy)"
+type: strategy
+status: active
+tags: [onchain-lp, strategy]
+created: 2026-04-10
+updated: 2026-04-10
+---
+
 # CEX借贷-链上Stable LP套利策略 (CEX Loan to On-chain Stable LP Strategy)
 
 ## 1. 策略概述 (Overview)
@@ -111,3 +120,8 @@ public class OnChainArbitrageStrategy extends BaseStrategy {
     }
 }
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

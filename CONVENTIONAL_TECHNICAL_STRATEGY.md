@@ -1,3 +1,12 @@
+---
+title: "常规技术分析策略方案 (Conventional Technical Analysis Strategy)"
+type: strategy
+status: active
+tags: [technical-analysis, strategy]
+created: 2026-02-01
+updated: 2026-02-01
+---
+
 # 常规技术分析策略方案 (Conventional Technical Analysis Strategy)
 
 ## 1. 策略概述 (Overview)
@@ -87,3 +96,8 @@ public interface RiskManager {
     void emergencyClose(); // 一键清仓
 }
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](docs/MOC-交易策略.md) ｜ [知识库首页](docs/知识库首页.md)

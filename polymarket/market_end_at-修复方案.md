@@ -1,3 +1,12 @@
+---
+title: "`market_end_at` 数据链路诊断 + 修复方案"
+type: troubleshooting
+status: active
+tags: [polymarket, troubleshooting]
+created: 2026-05-18
+updated: 2026-05-18
+---
+
 # `market_end_at` 数据链路诊断 + 修复方案
 
 **触发问题**：`smart_wallet_market_info` 70,176 行中 53,614 行（76%）`market_end_at IS NULL`，2,098 行（3%）有未来值，14,464 行（21%）已过期。
@@ -274,3 +283,8 @@ smart-wallet:
 - `coin-strategy-job/.../PolymarketApiClient.java` line 984（`endAt` 字段解析降级链：endDateISO → endDate → gameStartTime → eventStartDate）
 - `coin-strategy-job/.../SmartWalletAccountingService.java` line 4915-4983（**已 deprecated 的 backfill no-op 方法**）
 - `coin-strategy-web/.../SmartWalletAccountingController.java`（暴露的 backfill HTTP endpoint，路由到上面已 dead 的方法）
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

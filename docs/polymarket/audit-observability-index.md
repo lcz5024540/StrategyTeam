@@ -1,3 +1,12 @@
+---
+title: "跟单策略闭环可观测性 — 主题导航索引"
+type: index
+status: active
+tags: [polymarket, audit]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # 跟单策略闭环可观测性 — 主题导航索引
 
 > **2026-05-16 第十八批更新**：旧主决议（第 1-16 批历史时间线）已物理清理；
@@ -143,3 +152,8 @@
 | `sql/polymarket/*_migration.sql` | 单文件 migration（含第十八批 `leader_rolling_aggregation_daily_migration.sql`） |
 
 > 索引每月更新一次；新增批次或新 Tier 改造时同步增订。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

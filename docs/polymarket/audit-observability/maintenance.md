@@ -1,3 +1,12 @@
+---
+title: "文档维护机制"
+type: runbook
+status: active
+tags: [polymarket, audit]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # 文档维护机制
 
 > ⏱️ **创建**: 2026-05-16 第十五批
@@ -148,3 +157,8 @@ docs/polymarket/
 ### 跟单策略 W2-T6 ⚠️ leader 专属
 ...
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

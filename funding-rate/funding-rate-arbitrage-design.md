@@ -1,3 +1,12 @@
+---
+title: "跨交易所资金费套利系统详细设计方案"
+type: design
+status: active
+tags: [funding-rate, arbitrage, design]
+created: 2026-04-10
+updated: 2026-04-14
+---
+
 # 跨交易所资金费套利系统详细设计方案
 
 ## 目录
@@ -1012,3 +1021,8 @@ public class FundingRateArbitrageStrategy implements Strategy {
 ---
 
 ## 详细流程图见下一部分...
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

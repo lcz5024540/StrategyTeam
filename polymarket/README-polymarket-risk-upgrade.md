@@ -1,3 +1,12 @@
+---
+title: "Polymarket 跟单风控升级设计"
+type: design
+status: active
+tags: [polymarket, security]
+created: 2026-04-10
+updated: 2026-04-10
+---
+
 # Polymarket 跟单风控升级设计
 
 ## 1. 目标
@@ -694,3 +703,8 @@
 `trade effect label + 交易级 EV 模型`
 
 因为这一步最直接决定“这笔单到底该不该跟”。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

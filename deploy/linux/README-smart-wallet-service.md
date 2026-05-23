@@ -1,3 +1,12 @@
+---
+title: "Smart Wallet Linux 制品部署说明"
+type: runbook
+status: active
+tags: [deploy, copy-trading]
+created: 2026-04-19
+updated: 2026-05-14
+---
+
 # Smart Wallet Linux 制品部署说明
 
 > 新拓扑（test 环境）— prod 暂时取消。详见 `docs/deploy-topology-refactor.md`。
@@ -184,3 +193,8 @@ open http://43.139.186.27/
 ## 11. 已知影响
 
 新架构下 **web 不再透传请求给 job**。前端任何依赖 `JobApiProxyController` / `SmartWalletReadProxyController` / `SmartWalletWriteProxyController` fall-through 的接口会 404。需要在 web 端补本地 controller（直查 DB），具体哪些接口请按 smoke test 结果逐一处理。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../../docs/MOC-架构与平台.md) ｜ [知识库首页](../../docs/知识库首页.md)

@@ -1,3 +1,12 @@
+---
+title: "Polymarket 自动化交易策略深度分析报告"
+type: research
+status: active
+tags: [polymarket, research]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # Polymarket 自动化交易策略深度分析报告
 
 > 范围：跟单交易 (Copy Trading)、天气预测、5 分钟 BTC 短期预测、套利与做市
@@ -674,3 +683,8 @@ MAX_OPEN_POSITIONS=20
 ---
 
 > **免责声明**：本报告为开源代码研究汇总，所有策略与代码片段仅供学习。预测市场涉及资金损失风险，并在部分地区受法律限制。任何实操前请充分回测、纸交易、并咨询合规意见。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](docs/MOC-Polymarket.md) ｜ [知识库首页](docs/知识库首页.md)

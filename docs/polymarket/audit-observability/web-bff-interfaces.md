@@ -1,3 +1,12 @@
+---
+title: "Web BFF 接口清单（共 18 个）"
+type: design
+status: active
+tags: [polymarket, audit, web]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # Web BFF 接口清单（共 18 个）
 
 > ⏱️ **上次更新**: 2026-05-16 第十四批 | 回看主决议第十一节 + 各批 web 章节
@@ -145,3 +154,8 @@ curl "$PROD/market-liquidity/percentile/POLITICS?limitDays=14"
 - 按 trace_id 一次性返回 Mermaid 时序图（前端直接渲染链路）
 - 多 leader 对比（同时取 N 个 leader 的 rolling / drift）
 - shadow vs live 直接 join 一行返回（当前需要前端组合 2 个端点）
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

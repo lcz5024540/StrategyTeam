@@ -1,3 +1,12 @@
+---
+title: "单交易所资金费率套利策略"
+type: strategy
+status: active
+tags: [funding-rate, arbitrage]
+created: 2026-04-13
+updated: 2026-04-26
+---
+
 # 单交易所资金费率套利策略
 
 ## 0. 代码对齐版补充文档
@@ -159,3 +168,8 @@
 * 单交易所持久化表：`single_exchange_funding_rate_history`、`single_exchange_arbitrage_position`
 
 实施进度详见：[单交易所套利实施进度](./FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE_SHARE.md)
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

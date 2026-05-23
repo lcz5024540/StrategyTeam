@@ -1,3 +1,12 @@
+---
+title: "LONG_HORIZON_STAKE 双重缩减修复"
+type: troubleshooting
+status: active
+tags: [polymarket, troubleshooting]
+created: 2026-05-20
+updated: 2026-05-20
+---
+
 # LONG_HORIZON_STAKE 双重缩减修复
 
 ## 历史 Bug
@@ -137,3 +146,8 @@ WHERE market_type = 'LONG_HORIZON'
 ORDER BY id DESC
 LIMIT 20;
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

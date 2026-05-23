@@ -1,3 +1,12 @@
+---
+title: "Polymarket 量化交易系统设计文档"
+type: design
+status: active
+tags: [polymarket, design]
+created: 2026-04-10
+updated: 2026-04-25
+---
+
 # Polymarket 量化交易系统设计文档
 
 > 基于 Polymarket 官方 API 的完整量化交易系统规划，涵盖数据采集、策略计算、风控执行、监控收益全流程。
@@ -856,3 +865,8 @@ monitor_thread.start()
 ---
 
 *文档生成时间：2026-04-09 | 基于 Polymarket 官方文档整理*
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

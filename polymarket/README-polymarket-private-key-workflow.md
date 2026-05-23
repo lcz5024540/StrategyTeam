@@ -1,3 +1,12 @@
+---
+title: "Polymarket 跟单策略私钥管理与创建流程"
+type: runbook
+status: active
+tags: [polymarket, security, runbook]
+created: 2026-04-23
+updated: 2026-04-23
+---
+
 # Polymarket 跟单策略私钥管理与创建流程
 
 本文档整理当前代码库里，Polymarket 跟单策略如何管理执行钱包私钥，以及如果要新建一个私钥参与跟单策略，推荐按什么流程落地。
@@ -388,3 +397,8 @@ smart-wallet:
 
 1. 增加一个“私钥已配置但不回显”的后台管理说明页。
 2. 把执行钱包模板文件进一步去敏，并明确区分“示例模板”和“真实部署文件”。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

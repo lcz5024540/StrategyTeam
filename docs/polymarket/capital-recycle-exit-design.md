@@ -1,3 +1,12 @@
+---
+title: "资金回收退出方案（Capital Recycling Exit）"
+type: design
+status: active
+tags: [polymarket, strategy, design]
+created: 2026-05-06
+updated: 2026-05-06
+---
+
 # 资金回收退出方案（Capital Recycling Exit）
 
 ## 背景
@@ -79,3 +88,8 @@ smart-wallet:
 ## 日期
 
 2026-05-02
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

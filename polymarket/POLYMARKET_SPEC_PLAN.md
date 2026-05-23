@@ -1,3 +1,12 @@
+---
+title: "Polymarket 量化系统 — 规约编程计划文档"
+type: plan
+status: active
+tags: [polymarket, plan]
+created: 2026-04-12
+updated: 2026-04-19
+---
+
 # Polymarket 量化系统 — 规约编程计划文档
 
 > 版本：v1.1 | 日期：2026-04-12
@@ -964,3 +973,8 @@ ALTER TABLE smart_wallet_follow_task
 ---
 
 *文档版本 v1.1 — 下一步：按 Phase 1 任务清单逐项实现。每个阶段完成后更新各 Task 的状态标记。*
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

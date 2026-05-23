@@ -1,3 +1,12 @@
+---
+title: "跟单策略改进决议备忘录 (2026-05-17 起)"
+type: retro
+status: active
+tags: [polymarket, copy-trading, retro]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # 跟单策略改进决议备忘录 (2026-05-17 起)
 
 > **📚 主题导航**：当下事实快照见 [`audit-observability/`](./audit-observability/)；按主题速查
@@ -443,3 +452,8 @@ mvn -pl coin-strategy-job test -Dtest=LeaderRollingMonitorServiceTest
 6. **AUDIT_* 决策树自动化校验** — 把 `audit-alert-onboarding.md` 的回退字段表与 `SmartWalletProperties.Audit` 字段做 grep 一致性校验，防止字段重命名后文档失效
 
 > *本批最后更新*：2026-05-16 — 第十九批：测试覆盖 + 统一 health 端点 + 告警 onboarding 决策树
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../MOC-Polymarket.md) ｜ [知识库首页](../知识库首页.md)

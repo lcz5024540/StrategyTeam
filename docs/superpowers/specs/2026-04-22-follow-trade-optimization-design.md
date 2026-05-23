@@ -1,3 +1,12 @@
+---
+title: "跟单策略优化设计文档"
+type: design
+status: active
+tags: [polymarket, copy-trading, design]
+created: 2026-04-22
+updated: 2026-04-27
+---
+
 # 跟单策略优化设计文档
 
 **日期**：2026-04-22  
@@ -217,3 +226,8 @@ public interface ExitSignalProvider {
 - 入场信号源的改造（watchlist 钱包筛选标准调整）
 - 共识门控参数调整
 - 非跟单策略模块的任何改动
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

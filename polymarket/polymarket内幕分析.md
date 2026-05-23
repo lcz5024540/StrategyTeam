@@ -1,3 +1,12 @@
+---
+title: "📘 Polymarket 量化交易系统设计文档（产品化版本）"
+type: research
+status: active
+tags: [polymarket, research]
+created: 2026-04-12
+updated: 2026-04-12
+---
+
 # 📘 Polymarket 量化交易系统设计文档（产品化版本）
 
 ---
@@ -401,3 +410,8 @@ Score = w1*AVR + w2*Jump + w3*HHI + w4*Fresh
 
 ---
 
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

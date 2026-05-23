@@ -1,3 +1,12 @@
+---
+title: "Coin Strategy Common Modules"
+type: overview
+status: active
+tags: [common-api]
+created: 2026-01-25
+updated: 2026-05-13
+---
+
 # Coin Strategy Common Modules
 
 此目录包含 `CoinStrategy` 项目的所有公共模块。这些模块旨在提供可重用的基础架构、工具类、API 客户端和通用业务逻辑。
@@ -64,3 +73,8 @@
 ```bash
 mvn clean install -pl coin-strategy-common -am
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../docs/MOC-架构与平台.md) ｜ [知识库首页](../docs/知识库首页.md)

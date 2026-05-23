@@ -1,3 +1,12 @@
+---
+title: "W2 — 风控门控 (T1-T6 共 11 个 Gate)"
+type: audit
+status: active
+tags: [polymarket, audit, security]
+created: 2026-05-17
+updated: 2026-05-17
+---
+
 # W2 — 风控门控 (T1-T6 共 11 个 Gate)
 
 > ⏱️ **上次更新**: 2026-05-16 第十四批 | 回看主决议第四 / 十六 / 十八节
@@ -169,3 +178,8 @@ Web 端可看：
 - `/leader-drift/{wallet}` — 单 leader 行为漂移
 - `/market-liquidity/percentile` — 当日各品类 P30/P70
 - `/audit/slippage-postfact` — 滑点事后统计
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)
