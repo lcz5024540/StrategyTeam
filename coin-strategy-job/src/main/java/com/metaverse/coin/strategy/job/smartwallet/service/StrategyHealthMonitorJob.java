@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.job.engine.monitor.AlertType;
+import com.metaverse.coin.strategy.job.smartwallet.audit.SmartWalletAuditAlertSink;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,10 @@ import java.util.Date;
  *   - 资金 ≤ 0                        → ERROR（策略已完全阻断）
  *   - 4h 无开仓                       → WARN
  *   - 24h 无开仓                      → ERROR + 完整诊断 dump
+ *
+ * <p>P1-4：除写本地日志外，WARN/CRITICAL 分支同时通过 {@link SmartWalletAuditAlertSink}
+ * 外发（落 strategy_alert 表 + 飞书），避免“零开单”长时间无人感知。外发失败降级为日志，
+ * 不阻断健康检查。</p>
  */
 @Slf4j
 @Service
@@ -35,6 +41,7 @@ public class StrategyHealthMonitorJob {
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final SmartWalletFollowTaskService followTaskService;
     private final SmartWalletAccountingService accountingService;
+    private final SmartWalletAuditAlertSink alertSink;
 
     /** 当可用资金低于预算的此比例时触发早期告警 */
     private static final BigDecimal LOW_CAPITAL_WARN_RATE = new BigDecimal("0.20");
@@ -64,6 +71,11 @@ public class StrategyHealthMonitorJob {
                             "budget={} USDC.",
                     available.setScale(2, RoundingMode.HALF_UP),
                     budget.setScale(2, RoundingMode.HALF_UP));
+            safePublish(AlertType.HEALTH_CAPITAL_DEPLETED, "跟单策略可用资金耗尽",
+                    String.format("可用资金耗尽，所有新信号被阻断。available=%s USDC, budget=%s USDC",
+                            available.setScale(2, RoundingMode.HALF_UP),
+                            budget.setScale(2, RoundingMode.HALF_UP)),
+                    available, budget);
         } else if (budget.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal utilizationRate = budget.subtract(available).divide(budget, 4, RoundingMode.HALF_UP);
             BigDecimal remainingRate = BigDecimal.ONE.subtract(utilizationRate);
@@ -74,6 +86,12 @@ public class StrategyHealthMonitorJob {
                         available.setScale(2, RoundingMode.HALF_UP),
                         remainingRate.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
                         budget.setScale(2, RoundingMode.HALF_UP));
+                safePublish(AlertType.HEALTH_CAPITAL_LOW, "跟单策略可用资金偏低",
+                        String.format("可用资金偏低，预算剩余 %s%%。available=%s USDC, budget=%s USDC",
+                                remainingRate.multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
+                                available.setScale(2, RoundingMode.HALF_UP),
+                                budget.setScale(2, RoundingMode.HALF_UP)),
+                        available, budget);
             }
         }
     }
@@ -114,6 +132,17 @@ public class StrategyHealthMonitorJob {
                     summary.getMinDistinctEntities(), summary.getConsensusSignalCount(),
                     summary.isCriticalBlockDetected(), summary.getPrimaryBlockReason());
 
+            safePublish(AlertType.HEALTH_NO_OPEN_24H, "跟单策略 24h 零开仓",
+                    String.format("过去 24h 零开仓，策略可能结构性卡死。available=%s, openPositions=%s/%s, "
+                                    + "qualifiedWallets=%s, recentEvents=%s, topRejections=%s, primaryBlock=%s",
+                            summary.getAvailableCapitalUsdc(),
+                            summary.getOpenPositionCount(), summary.getMaxOpenPositions(),
+                            summary.getQualifiedWatchlistCount(),
+                            summary.getRecentTradeEventCount(),
+                            summary.getTopRejectionCategories(),
+                            summary.getPrimaryBlockReason()),
+                    BigDecimal.ZERO, null);
+
         } else if (followed4h == 0) {
             // 4h 无开仓：中级告警，摘要即可
             SignalHealthSummaryView summary = followTaskService.getSignalHealthSummary(4);
@@ -126,9 +155,37 @@ public class StrategyHealthMonitorJob {
                     summary.getConsensusSignalCount(),
                     summary.getTopRejectionCategories());
 
+            safePublish(AlertType.HEALTH_NO_OPEN_4H, "跟单策略 4h 零开仓",
+                    String.format("过去 4h 零开仓。available=%s USDC, qualifiedWallets=%s, "
+                                    + "activeConsensusSignals=%s, topRejections=%s",
+                            summary.getAvailableCapitalUsdc(),
+                            summary.getQualifiedWatchlistCount(),
+                            summary.getConsensusSignalCount(),
+                            summary.getTopRejectionCategories()),
+                    BigDecimal.ZERO, null);
+
         } else {
             log.debug("[HealthMonitor] Strategy is healthy: followed1h={}, followed4h={}, followed24h={}",
                     followed1h, followed4h, followed24h);
+        }
+    }
+
+    // ── 告警外发 ─────────────────────────────────────────────────────────────
+
+    /**
+     * 把健康告警外发到已有的策略审计告警 Sink（默认 {@code FeishuStrategyAuditAlertSink}：
+     * 先落 strategy_alert 表 + 日志，再按开关 / 严重级别 / 去重窗口决定是否推送飞书）。
+     *
+     * <p>外发失败必须降级为日志、绝不能抛断 HealthMonitor 主流程——Sink 实现本身已约定
+     * swallow 异常，这里再包一层 try/catch 作为兜底防御。</p>
+     */
+    private void safePublish(AlertType alertType, String title, String message,
+                             BigDecimal metricValue, BigDecimal threshold) {
+        try {
+            alertSink.publish(alertType, title, message, metricValue, threshold);
+        } catch (RuntimeException e) {
+            log.warn("[HealthMonitor] alert publish failed (swallowed) type={} err={}",
+                    alertType, e.toString());
         }
     }
 

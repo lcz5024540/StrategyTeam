@@ -32,6 +32,20 @@ public enum AlertType {
     /** 策略启停 */
     STRATEGY_TOGGLED(AlertLevel.INFO, "策略启停操作"),
 
+    // ── P1-4 跟单策略健康监控告警（StrategyHealthMonitorJob 外发） ──
+
+    /** 跟单策略 24h 零开仓（结构性卡死风险） */
+    HEALTH_NO_OPEN_24H(AlertLevel.CRITICAL, "跟单策略 24h 零开仓"),
+
+    /** 跟单策略 4h 零开仓 */
+    HEALTH_NO_OPEN_4H(AlertLevel.WARN, "跟单策略 4h 零开仓"),
+
+    /** 跟单策略可用资金耗尽，新信号全部被阻断 */
+    HEALTH_CAPITAL_DEPLETED(AlertLevel.CRITICAL, "跟单策略可用资金耗尽"),
+
+    /** 跟单策略可用资金偏低，可能很快归零 */
+    HEALTH_CAPITAL_LOW(AlertLevel.WARN, "跟单策略可用资金偏低"),
+
     // ── W1-T1.5 / W1-T4.5 智能钱包审计告警（统一告警通道接入） ──
 
     /** W1-T1: Live↔Replay 一致性差异超阈值 */
