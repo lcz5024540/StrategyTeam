@@ -10,9 +10,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -122,8 +124,10 @@ public class ClosedPositionSyncDispatcher {
         AtomicInteger inserted = new AtomicInteger();
         AtomicInteger visited = new AtomicInteger();
 
-        List<CompletableFuture<Void>> futures = wallets.stream()
-                .map(wallet -> CompletableFuture.runAsync(() -> {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (String wallet : wallets) {
+            try {
+                futures.add(CompletableFuture.runAsync(() -> {
                     try {
                         ClosedPositionIncrementalSyncService.SyncResult r = action.apply(wallet);
                         ok.incrementAndGet();
@@ -137,8 +141,13 @@ public class ClosedPositionSyncDispatcher {
                         log.warn("[ClosedPositionSyncDispatcher] {} sync failed wallet={}: {}",
                                 mode, wallet, ex.getMessage());
                     }
-                }, closedSyncExecutor))
-                .toList();
+                }, closedSyncExecutor));
+            } catch (RejectedExecutionException ex) {
+                failed.incrementAndGet();
+                log.warn("[ClosedPositionSyncDispatcher] {} sync rejected wallet={} reason=executor-saturated message={}",
+                        mode, wallet, ex.getMessage());
+            }
+        }
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         } catch (Exception ex) {

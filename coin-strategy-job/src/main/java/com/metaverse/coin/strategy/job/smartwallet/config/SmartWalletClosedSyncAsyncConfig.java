@@ -15,7 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * - 当前 2 核服务器：core=1, max=2, queue=200, HTTP 并发上限 4（由 ClosedPositionIncrementalSyncService 的 Semaphore 控制）
  * - 升级到 4 核时：通过 smart-wallet.polymarket.closed-position-sync.thread-pool-* 配置覆盖即可，无需改代码
  *
- * 拒绝策略：CallerRunsPolicy —— 让调度线程自己执行，避免任务丢失。
+ * 拒绝策略：AbortPolicy —— 队列满时由 dispatcher 记录跳过，禁止回落到调度线程执行。
  */
 @Slf4j
 @Configuration
@@ -40,7 +40,7 @@ public class SmartWalletClosedSyncAsyncConfig {
         executor.setAllowCoreThreadTimeOut(true);
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         log.info("[SmartWalletClosedSyncAsyncConfig] executor ready core={} max={} queue={}", core, max, queue);
         return executor;
