@@ -170,6 +170,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -184,6 +185,10 @@ import java.util.Map;
 public class SmartWalletController {
 
     private static final DateTimeFormatter EXPORT_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+
+    /** CSV 导出中 java.util.Date 列统一按北京时间 (东八区) 格式化。 */
+    private static final DateTimeFormatter CSV_BJT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai"));
 
     private final SmartWalletProperties properties;
     private final SmartWalletRegistryService walletRegistryService;
@@ -1486,7 +1491,14 @@ public class SmartWalletController {
         if (value == null) {
             return "";
         }
-        return "\"" + String.valueOf(value).replace("\"", "\"\"") + "\"";
+        String text;
+        if (value instanceof java.util.Date) {
+            // 统一北京时间, 与 JSON 出参 (JacksonConfig) / marketEndAtBjt 风格一致
+            text = CSV_BJT.format(((java.util.Date) value).toInstant());
+        } else {
+            text = String.valueOf(value);
+        }
+        return "\"" + text.replace("\"", "\"\"") + "\"";
     }
 
 }

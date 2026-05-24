@@ -6,6 +6,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
+import java.util.TimeZone;
+
 /**
  * Web 应用入口。
  *
@@ -25,6 +27,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 public class CoinStrategyWebApplication {
 
     public static void main(String[] args) {
+        // 全局统一 JVM 默认时区为北京时间 (东八区)。影响 Date.toString()、无显式时区的
+        // SimpleDateFormat / LocalDate.now() / LocalDateTime.now() 以及 logback %d 日志时间戳。
+        // 数据库连接已通过 JDBC serverTimezone=Asia/Shanghai 显式声明, 不受此设置影响。
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
         SpringApplication.run(CoinStrategyWebApplication.class, args);
     }
 
