@@ -84,6 +84,13 @@ public class SmartWalletProperties {
         private Integer closedPositionLimit = 50;
         private Integer recentTradeLimit = 30;
         private Integer userTradeHistoryLookbackDays = 90;
+        /**
+         * Warm/Hot 钱包首次提升做全量回填时的时间下界（天）。
+         * 仅作用于 PolymarketWalletDiscoveryService 的 warm promotion backfill：
+         * checkpoint 为空时不再翻页到 MAX_USER_TRADE_HISTORY_OFFSET 拉取全历史，
+         * 只回填最近 N 天，避免历史成交洪峰把跳过原因错误归因为 MARKET_RESOLVED。
+         */
+        private Integer warmPromotionBackfillLookbackDays = 2;
         private Integer discoveryProfileTradeLimit = 30;
         private Integer sessionCoverageLookbackDays = 30;
         private Long discoveryFixedDelayMs = 3600000L;

@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
 import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
@@ -16,6 +17,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -50,6 +55,8 @@ class PolymarketWalletDiscoveryServiceTest {
     private SmartWalletProfileTruthRefreshService profileTruthRefreshService;
     @Mock
     private SmartWalletManualAllowlistService manualAllowlistService;
+    @Mock
+    private SmartWalletManualBlocklistService manualBlocklistService;
 
     @Test
     void shouldDeduplicateAcrossLeaderboardQueriesAndTrackHitCount() {
@@ -424,8 +431,135 @@ class PolymarketWalletDiscoveryServiceTest {
         assertTrue(checkpointCaptor.getValue().getTime() >= beforeSync);
     }
 
+    @Test
+    void shouldTruncateBackfillToLookbackWindowWhenCheckpointIsNull() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        properties.getPolymarket().setRecentTradeLimit(2);
+        properties.getPolymarket().setWarmPromotionBackfillLookbackDays(2);
+
+        long now = System.currentTimeMillis();
+        SmartWalletProfileEntity warmWallet = new SmartWalletProfileEntity()
+                .setId(31L)
+                .setWalletAddress("0xhot")
+                .setAlias("fresh-hot-wallet")
+                .setChain("polygon")
+                .setMonitorTier("WARM");
+        // 新晋 HOT 钱包：lastEventSyncAt 为空，修复前会一路翻页回填全历史成交。
+        SmartWalletProfileEntity promotedWallet = new SmartWalletProfileEntity()
+                .setId(31L)
+                .setWalletAddress("0xhot")
+                .setAlias("fresh-hot-wallet")
+                .setChain("polygon")
+                .setMonitorTier("HOT")
+                .setQualified(Boolean.TRUE)
+                .setWatchEnabled(Boolean.TRUE)
+                .setLastMetricsRefreshAt(new java.util.Date(now))
+                .setLastEventSyncAt(null);
+
+        when(profileStoreService.listWarmWatchlist()).thenReturn(List.of(warmWallet));
+        lenient().when(walletOrderAggregationService.snapshot("0xhot")).thenReturn(WalletOrderAggregationService.WalletSnapshot.builder()
+                .walletAddress("0xhot")
+                .closedOrders(List.of(
+                        WalletOrderAggregationService.ClosedOrderSnapshot.builder()
+                                .walletAddress("0xhot")
+                                .investedUsdc(new BigDecimal("12"))
+                                .realizedPnlUsdc(new BigDecimal("3"))
+                                .settlementAt(new java.util.Date())
+                                .build()
+                ))
+                .build());
+        when(polymarketApiClient.fetchUserTrades("0xhot", properties.getPolymarket().getDiscoveryProfileTradeLimit()))
+                .thenReturn(List.of());
+        when(monitorService.ingestWalletMetrics(any())).thenReturn(promotedWallet);
+        when(profileTruthRefreshService.buildTruthMetrics(any(), any(), any()))
+                .thenAnswer(invocation -> truthMetrics(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
+        // offset 0：两笔在 2 天回填窗口内的成交。
+        when(polymarketApiClient.fetchUserTrades("0xhot", 2, 0)).thenReturn(List.of(
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("trade-recent-2").walletAddress("0xhot").marketId("market-r2")
+                        .question("QR2").outcome("YES").side("BUY")
+                        .price(new BigDecimal("0.51")).size(new BigDecimal("8"))
+                        .tradedAt(now - 3_600_000L)
+                        .build(),
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("trade-recent-1").walletAddress("0xhot").marketId("market-r1")
+                        .question("QR1").outcome("YES").side("BUY")
+                        .price(new BigDecimal("0.49")).size(new BigDecimal("6"))
+                        .tradedAt(now - 7_200_000L)
+                        .build()
+        ));
+        // offset 2：两笔早于 2 天回填窗口的历史成交，命中时间下界后应停止翻页、不予回填。
+        when(polymarketApiClient.fetchUserTrades("0xhot", 2, 2)).thenReturn(List.of(
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("trade-old-1").walletAddress("0xhot").marketId("market-o1")
+                        .question("QO1").outcome("YES").side("BUY")
+                        .price(new BigDecimal("0.40")).size(new BigDecimal("4"))
+                        .tradedAt(now - 5L * 24L * 3_600_000L)
+                        .build(),
+                PolymarketApiClient.UserTrade.builder()
+                        .tradeId("trade-old-2").walletAddress("0xhot").marketId("market-o2")
+                        .question("QO2").outcome("YES").side("BUY")
+                        .price(new BigDecimal("0.38")).size(new BigDecimal("4"))
+                        .tradedAt(now - 10L * 24L * 3_600_000L)
+                        .build()
+        ));
+        when(marketMetadataService.resolveCanonicalConditionId(any(), any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        PolymarketWalletDiscoveryService service = newService(properties);
+
+        int refreshed = service.refreshWarmWalletMetricsBatch();
+
+        assertEquals(1, refreshed);
+        ArgumentCaptor<PolymarketTradeEventRequest> captor = ArgumentCaptor.forClass(PolymarketTradeEventRequest.class);
+        // 仅回填窗口内的两笔成交进入风控链路，历史成交被时间下界拦截。
+        verify(monitorService, org.mockito.Mockito.times(2)).ingestTradeEvent(captor.capture());
+        assertEquals(List.of("trade-recent-1", "trade-recent-2"),
+                captor.getAllValues().stream().map(PolymarketTradeEventRequest::getExternalTradeId).toList());
+        // 命中时间下界后停止翻页，不再请求 offset=4。
+        verify(polymarketApiClient, org.mockito.Mockito.never()).fetchUserTrades("0xhot", 2, 4);
+    }
+
+    @Test
+    void scheduledTradeSyncShouldSubmitWorkToEventExecutorAndSkipOverlap() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        CapturingExecutor executor = new CapturingExecutor();
+        when(monitorService.isEventSyncEnabled()).thenReturn(true);
+        PolymarketWalletDiscoveryService service = newService(properties, executor);
+
+        service.scheduledSyncWatchlistTrades();
+        service.scheduledSyncWatchlistTrades();
+
+        assertEquals(1, executor.executeCount.get());
+        verify(profileStoreService, org.mockito.Mockito.never()).listExecutableWatchlist();
+
+        when(profileStoreService.listExecutableWatchlist()).thenReturn(List.of());
+        executor.runCaptured();
+
+        service.scheduledSyncWatchlistTrades();
+        assertEquals(2, executor.executeCount.get());
+    }
+
+    @Test
+    void scheduledTradeSyncShouldResetRunningFlagWhenEventExecutorRejects() {
+        SmartWalletProperties properties = new SmartWalletProperties();
+        RejectingExecutor executor = new RejectingExecutor();
+        when(monitorService.isEventSyncEnabled()).thenReturn(true);
+        PolymarketWalletDiscoveryService service = newService(properties, executor);
+
+        service.scheduledSyncWatchlistTrades();
+        service.scheduledSyncWatchlistTrades();
+
+        assertEquals(2, executor.executeCount.get());
+        verify(profileStoreService, org.mockito.Mockito.never()).listExecutableWatchlist();
+    }
+
     private PolymarketWalletDiscoveryService newService(SmartWalletProperties properties) {
-        return new PolymarketWalletDiscoveryService(
+        return newService(properties, Runnable::run);
+    }
+
+    private PolymarketWalletDiscoveryService newService(SmartWalletProperties properties, Executor eventSyncExecutor) {
+        PolymarketWalletDiscoveryService service = new PolymarketWalletDiscoveryService(
                 polymarketApiClient,
                 monitorService,
                 selectionService,
@@ -438,8 +572,39 @@ class PolymarketWalletDiscoveryServiceTest {
                 walletOrderAggregationService,
                 leaderTradeOutcomeRebuildService,
                 profileTruthRefreshService,
-                manualAllowlistService
+                manualAllowlistService,
+                manualBlocklistService
         );
+        service.setEventSyncExecutorForTest(eventSyncExecutor);
+        return service;
+    }
+
+    private static class CapturingExecutor implements Executor {
+        private final AtomicInteger executeCount = new AtomicInteger();
+        private final AtomicReference<Runnable> captured = new AtomicReference<>();
+
+        @Override
+        public void execute(Runnable command) {
+            executeCount.incrementAndGet();
+            captured.set(command);
+        }
+
+        private void runCaptured() {
+            Runnable command = captured.getAndSet(null);
+            if (command != null) {
+                command.run();
+            }
+        }
+    }
+
+    private static class RejectingExecutor implements Executor {
+        private final AtomicInteger executeCount = new AtomicInteger();
+
+        @Override
+        public void execute(Runnable command) {
+            executeCount.incrementAndGet();
+            throw new RejectedExecutionException("full");
+        }
     }
 
     private PolymarketWalletMetricsRequest truthMetrics(String walletAddress,

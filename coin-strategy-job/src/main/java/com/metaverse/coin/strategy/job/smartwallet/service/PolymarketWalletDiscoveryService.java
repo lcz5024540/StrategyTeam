@@ -11,8 +11,11 @@ import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySumm
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSummary;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletEventSyncAsyncConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -34,6 +37,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -60,10 +65,18 @@ public class PolymarketWalletDiscoveryService {
     private final SmartWalletProfileTruthRefreshService profileTruthRefreshService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
     private final SmartWalletManualBlocklistService manualBlocklistService;
+    @Autowired
+    @Qualifier(SmartWalletEventSyncAsyncConfig.EXECUTOR_BEAN_NAME)
+    private Executor eventSyncExecutor = Runnable::run;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
     private final AtomicBoolean firstDiscoveryRun = new AtomicBoolean(true);
     private final AtomicBoolean firstLeaderboardRefreshRun = new AtomicBoolean(true);
+    private final AtomicBoolean eventSyncRunning = new AtomicBoolean(false);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
+
+    void setEventSyncExecutorForTest(Executor eventSyncExecutor) {
+        this.eventSyncExecutor = eventSyncExecutor == null ? Runnable::run : eventSyncExecutor;
+    }
 
     public PolymarketDiscoverySummary analyzeTopWallets() {
         return analyzeTopWallets(null, true);
@@ -379,13 +392,27 @@ public class PolymarketWalletDiscoveryService {
             log.debug("{} action=定时同步Polymarket观察名单交易 result=跳过 reason=事件同步开关未开启", LOG_PREFIX);
             return;
         }
+        if (!eventSyncRunning.compareAndSet(false, true)) {
+            log.warn("{} action=定时同步Polymarket观察名单交易 result=跳过 reason=上一轮事件同步仍在运行", LOG_PREFIX);
+            return;
+        }
         try {
-            log.info("{} action=定时同步Polymarket观察名单交易 result=开始", LOG_PREFIX);
-            int imported = syncWatchlistTradesBatch();
-            log.info("{} action=定时同步Polymarket观察名单交易 result=完成 importedTradeEvents={}",
-                    LOG_PREFIX, imported);
-        } catch (Exception e) {
-            log.warn("{} action=定时同步Polymarket观察名单交易 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
+            eventSyncExecutor.execute(() -> {
+                try {
+                    log.info("{} action=定时同步Polymarket观察名单交易 result=开始", LOG_PREFIX);
+                    int imported = syncWatchlistTradesBatch();
+                    log.info("{} action=定时同步Polymarket观察名单交易 result=完成 importedTradeEvents={}",
+                            LOG_PREFIX, imported);
+                } catch (Exception e) {
+                    log.warn("{} action=定时同步Polymarket观察名单交易 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
+                } finally {
+                    eventSyncRunning.set(false);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            eventSyncRunning.set(false);
+            log.warn("{} action=定时同步Polymarket观察名单交易 result=跳过 reason=事件同步线程池繁忙 message={}",
+                    LOG_PREFIX, rootMessage(e));
         }
     }
 
@@ -522,10 +549,17 @@ public class PolymarketWalletDiscoveryService {
 
     private List<PolymarketApiClient.UserTrade> fetchBackfillTradesAfterCheckpoint(SmartWalletProfileEntity wallet, Date checkpoint) {
         int pageSize = Math.max(1, properties.getPolymarket().getRecentTradeLimit());
+        // 时间下界：checkpoint 为空时（如新晋 HOT 钱包 lastEventSyncAt=null），原逻辑会一直翻页到
+        // MAX_USER_TRADE_HISTORY_OFFSET 拉取全历史成交，造成历史事件洪峰。这里强制以
+        // warmPromotionBackfillLookbackDays 截断，并取与 checkpoint 较晚者作为有效下界。
+        long lookbackFloorMillis = System.currentTimeMillis() - warmPromotionBackfillLookbackMillis();
+        long floorMillis = checkpoint == null
+                ? lookbackFloorMillis
+                : Math.max(checkpoint.getTime(), lookbackFloorMillis);
         int offset = 0;
-        boolean reachedCheckpoint = false;
+        boolean reachedFloor = false;
         Map<String, PolymarketApiClient.UserTrade> deduped = new LinkedHashMap<>();
-        while (!reachedCheckpoint && offset <= PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET) {
+        while (!reachedFloor && offset <= PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET) {
             List<PolymarketApiClient.UserTrade> chunk = polymarketApiClient.fetchUserTrades(wallet.getWalletAddress(), pageSize, offset);
             if (chunk == null || chunk.isEmpty()) {
                 break;
@@ -534,8 +568,9 @@ public class PolymarketWalletDiscoveryService {
                 if (trade == null || !StringUtils.hasText(trade.getTradeId())) {
                     continue;
                 }
-                if (checkpoint != null && trade.getTradedAt() != null && trade.getTradedAt() <= checkpoint.getTime()) {
-                    reachedCheckpoint = true;
+                // fetchUserTrades 按 tradedAt 倒序返回，命中下界即可停止翻页。
+                if (trade.getTradedAt() != null && trade.getTradedAt() <= floorMillis) {
+                    reachedFloor = true;
                     break;
                 }
                 deduped.putIfAbsent(trade.getTradeId(), trade);
@@ -546,6 +581,13 @@ public class PolymarketWalletDiscoveryService {
             offset += pageSize;
         }
         return orderTradesChronologically(deduped.values());
+    }
+
+    /** Warm promotion 回填的时间下界（毫秒）；防止 checkpoint 为空时回填全历史成交。 */
+    private long warmPromotionBackfillLookbackMillis() {
+        Integer days = properties.getPolymarket().getWarmPromotionBackfillLookbackDays();
+        int safeDays = (days == null || days <= 0) ? 2 : days;
+        return java.util.concurrent.TimeUnit.DAYS.toMillis(safeDays);
     }
 
     private List<PolymarketApiClient.UserTrade> filterTradesAfterCheckpoint(List<PolymarketApiClient.UserTrade> trades, Date checkpoint) {
