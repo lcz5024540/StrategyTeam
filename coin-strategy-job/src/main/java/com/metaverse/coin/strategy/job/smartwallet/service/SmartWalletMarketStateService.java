@@ -191,14 +191,37 @@ public class SmartWalletMarketStateService {
                 .filter(java.util.Objects::nonNull)
                 .max(Date::compareTo)
                 .orElse(null);
-        if (lastSyncAt == null || System.currentTimeMillis() - lastSyncAt.getTime() > DEFAULT_METADATA_STALE_MS) {
+        if (lastSyncAt == null) {
             return null;
         }
         MarketStateSnapshot snapshot = snapshotFromRows(rows);
+        // 修复五 5B：缓存 TTL 按距结算时间自适应——临近结算强制刷新，远期市场维持 60s。
+        if (System.currentTimeMillis() - lastSyncAt.getTime() > adaptiveMetadataTtlMs(snapshot)) {
+            return null;
+        }
         if (isActiveIncomplete(snapshot) || (snapshot != null && snapshot.isActive() && rowsMissingToken(rows))) {
             return null;
         }
         return snapshot;
+    }
+
+    /**
+     * 修复五 5B：市场元数据缓存的自适应 TTL（毫秒）。
+     * 距结算 ≤10 分钟时返回 0（每次强制刷新）；≤1 小时用 15 秒；其余维持默认 60 秒。
+     * marketEndAt 缺失（长尾市场常见）时退回默认 60 秒。
+     */
+    private long adaptiveMetadataTtlMs(MarketStateSnapshot snapshot) {
+        if (snapshot == null || snapshot.marketEndAt() == null || snapshot.marketEndAt() <= 0) {
+            return DEFAULT_METADATA_STALE_MS;
+        }
+        long remainingMs = snapshot.marketEndAt() - System.currentTimeMillis();
+        if (remainingMs <= 10L * 60_000L) {
+            return 0L;
+        }
+        if (remainingMs <= 60L * 60_000L) {
+            return 15_000L;
+        }
+        return DEFAULT_METADATA_STALE_MS;
     }
 
     private MarketStateSnapshot snapshotFromRows(List<SmartWalletMarketInfoEntity> rows) {
@@ -481,101 +504,9 @@ public class SmartWalletMarketStateService {
             return directMapping;
         }
 
-        // Step 2: Keyword-based classification from combined text
-        String combined = normalizeForMatching(sourceCategory + " " + question);
-
-        if (containsAny(combined,
-                // Crypto tokens & projects (comprehensive)
-                "crypto", "cryptocurrency", "bitcoin", "ethereum", "solana",
-                "btc", "eth", "sol", "xrp", "ripple", "doge", "dogecoin",
-                "cardano", "bnb", "binance", "avax", "avalanche",
-                "matic", "polygon", "chainlink", "polkadot",
-                "sui", "aptos", "arb", "arbitrum", "optimism",
-                "cosmos", "uniswap", "aave",
-                "ltc", "litecoin", "bch", "filecoin", "hbar", "hedera",
-                "xlm", "stellar", "algorand", "icp", "vechain",
-                "fantom", "sandbox", "axie",
-                "shib", "pepe", "floki", "bonk", "meme coin",
-                "toncoin", "trx", "tron", "eos",
-                "sei", "injective", "jupiter", "render", "rndr",
-                "kaspa", "celestia", "stacks",
-                "pendle", "pyth", "jto", "worldcoin",
-                "blockchain", "defi", "nft", "stablecoin",
-                "usdt", "usdc", "coinbase", "kraken",
-                "mining", "halving", "altcoin", "memecoin",
-                // Price-related patterns strongly indicating crypto
-                "above $", "below $", "reach $", "hit $", "break $",
-                "$100k", "$50k", "$10k", "$1k")) {
-            return CATEGORY_CRYPTO;
-        }
-        if (containsAny(combined,
-                "politic", "election", "president", "senate", "congress",
-                "parliament", "governor", "mayor", "prime minister",
-                "referendum", "vote", "democrat", "republican", "gop",
-                "trump", "biden", "party", "ballot", "primary",
-                "cabinet", "legislation", "bill pass", "veto",
-                "supreme court", "executive order", "impeach")) {
-            return CATEGORY_POLITICS;
-        }
-        if (containsAny(combined,
-                "sports", "nba", "nfl", "mlb", "nhl", "mls",
-                "soccer", "football", "baseball", "basketball", "tennis",
-                "golf", "ufc", "mma", "boxing", "fifa", "f1", "formula 1",
-                "champions league", "premier league", "la liga", "serie a",
-                "bundesliga", "world cup", "super bowl", "playoffs",
-                "game ", "match", "vs.", "vs ", " v ",
-                // Common NBA/NFL/MLB teams & terms
-                "lakers", "celtics", "warriors", "76ers", "sixers",
-                "bucks", "nets", "knicks", "bulls", "heat", "nuggets",
-                "chiefs", "eagles", "cowboys", "49ers", "ravens",
-                "yankees", "dodgers", "braves", "astros", "mets",
-                "mvp", "championship", "finals", "series",
-                "o/u", "over/under", "spread", "point",
-                // Soccer
-                "real madrid", "barcelona", "manchester", "liverpool",
-                "arsenal", "chelsea", "bayern", "psg", "juventus")) {
-            return CATEGORY_SPORTS;
-        }
-        if (containsAny(combined,
-                "weather", "rain", "snow", "temperature", "hurricane",
-                "storm", "sunny", "wind", "climate", "tornado",
-                "flood", "drought", "heatwave", "wildfire")) {
-            return CATEGORY_WEATHER;
-        }
-        if (containsAny(combined,
-                "macro", "cpi", "inflation", "gdp", "fed", "fomc",
-                "recession", "unemployment", "interest rate", "treasury",
-                "oil", "gold", "silver", "commodity", "forex",
-                "bond", "yield", "tariff", "trade war", "sanctions",
-                "central bank", "ecb", "boj", "rate cut", "rate hike",
-                "jobs report", "nonfarm", "ppi", "pce")) {
-            return CATEGORY_MACRO;
-        }
-        if (containsAny(combined,
-                "business", "company", "earnings", "ipo", "merger",
-                "acquisition", "ceo", "revenue", "stock", "shares",
-                "tesla", "apple", "nvidia", "amazon", "google", "meta",
-                "microsoft", "openai", "spacex", "tiktok",
-                "market cap", "quarterly", "profit", "layoff",
-                "ipo", "spac", "sec", "antitrust", "valuation")) {
-            return CATEGORY_BUSINESS;
-        }
-        if (containsAny(combined,
-                "entertainment", "movie", "film", "oscar", "grammy",
-                "emmy", "music", "tv", "television", "celebrity",
-                "box office", "streaming", "netflix", "disney",
-                "album", "concert", "award", "billboard",
-                "kardashian", "taylor swift", "drake")) {
-            return CATEGORY_ENTERTAINMENT;
-        }
-        if (containsAny(combined,
-                "news", "current event", "breaking", "world",
-                "war", "conflict", "headline", "crisis",
-                "earthquake", "eruption", "terrorist", "peace",
-                "ceasefire", "treaty", "refugee", "nato", "un ")) {
-            return CATEGORY_CURRENT_EVENTS;
-        }
-        return CATEGORY_OTHER;
+        // Step 2: 关键词分类 —— 修复一（6.2）抽到 MarketCategoryClassifier 静态工具，
+        // 与 SmartWalletFollowTaskService 的 S2.5 入口闸门共用同一套关键词，避免重复维护。
+        return MarketCategoryClassifier.classifyByText(sourceCategory + " " + question);
     }
 
     /**
@@ -623,25 +554,6 @@ public class SmartWalletMarketStateService {
         }
         // Not recognized — fall through to keyword matching
         return null;
-    }
-
-    private boolean containsAny(String haystack, String... needles) {
-        if (!StringUtils.hasText(haystack) || needles == null) {
-            return false;
-        }
-        for (String needle : needles) {
-            if (StringUtils.hasText(needle) && haystack.contains(needle.toLowerCase(Locale.ROOT))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private String normalizeForMatching(String value) {
-        if (!StringUtils.hasText(value)) {
-            return "";
-        }
-        return value.trim().toLowerCase(Locale.ROOT);
     }
 
     private String firstQuestion(List<SmartWalletMarketInfoEntity> rows) {

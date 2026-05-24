@@ -1,13 +1,15 @@
 ---
 title: "Polymarket 跟单系统 — 完整架构分析报告"
 type: design
-status: active
+status: archived
 tags: [polymarket, design]
 created: 2026-05-11
-updated: 2026-05-11
+updated: 2026-05-23
 ---
 
 # Polymarket 跟单系统 — 完整架构分析报告
+
+> **【架构入口已迁移】** 架构统一权威入口现为 [polymarket-现行架构.md](polymarket-现行架构.md)。本文保留为历史设计稿 / 深度参考，不再作为架构入口。
 
 > 基于 `CoinStrategy` 项目源码逐文件分析，所有结论均引用类名/方法名/字段名。
 > 分析时间：2026-04-26 | 分析范围：`coin-strategy-job/smartwallet` 模块 + `common-model` + `common-dao`
@@ -791,15 +793,13 @@ flowchart TD
 
 **严重程度**: 🟡 中
 
-### 6.10 【未在代码中找到】Controller 层
+### 6.10 Controller 层
 
-**说明**: 在 `coin-strategy-job/src/main/java/.../smartwallet/controller/` 目录下未匹配到 Controller 文件。`SmartWalletController.java` 路径被提及但 Glob 扫描未返回。
+**位置**: `coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/smartwallet/controller/SmartWalletController.java`（2026-05-23 核验确认存在）。
 
-**可能原因**: Controller 可能在另一个模块（如 `coin-strategy-web`）中，或者以非标准命名存在。
+**Web 模块**: `coin-strategy-web` 中按职责拆分了多个本地 BFF Controller，例如 `SmartWalletAuditController`、`SmartWalletReadController`、`SmartWalletSettlementController`、`SmartWalletFollowTasksController`、`SmartWalletPositionWriteController`。
 
-**影响**: 无法确认 REST API 的完整端点清单和鉴权机制。
-
-> **【待核对】** 本节结论与本文 §1 的目录树（其中列出了 `SmartWalletController.java　// REST API 入口`）冲突。需核对 `SmartWalletController` 究竟位于哪个模块、是否存在，并据此修正 §1 目录树或本节结论。
+**说明**: 早期分析因 Glob 扫描未命中而误判「未找到」，现已更正；§1 目录树中的 `SmartWalletController.java` 条目属实。
 
 ---
 

@@ -28,9 +28,9 @@ updated: 2026-05-17
 | **W1 闭环数据** | trace_id 五表覆盖 / Shadow 记账 + 周报 / Live↔Replay diff 历史 / Resolution audit + 三方 diff |
 | **W2 风控门控** | T1 流动性 P30 + T1.4 价差 P70 / T2 leader 滑动窗口 / T3 共识 BOOST_ONLY / T4 价格冲击三段式 + MAKER 路由 / T5 距结算时间 / T6 行为漂移 |
 | **Tier 通用化** | A: TraceIds + TraceContext + StrategyAuditAlertSink；B: BehaviorVectorizer + CentroidDriftDetector + SignalRiskGate/Pipeline 契约 |
-| **Web BFF 接口** | 20 个端点（trace / shadow / audit / leader / market-liquidity / live-replay-diff / resolution / leader-rolling-aggregation 等） |
+| **Web BFF 接口** | 22 个端点（trace / shadow / audit / leader / market-liquidity / live-replay-diff / resolution / leader-rolling-aggregation 等） |
 | **Audit Jobs** | 10 个：LiveReplayDiff / Shadow*  / SettlementSourceAudit / SlippagePostFact / LeaderDriftAggregation / MarketLiquidityPercentileSnapshot / ResolutionTriDiff / MakerOnlyTimeoutTracker 等 |
-| **告警通道** | AuditAlertSink 统一收口；5 个 AUDIT_* AlertType (LIVE_REPLAY_DIFF / SHADOW_VS_LIVE / SETTLEMENT_SOURCE / SLIPPAGE_POSTFACT / LEADER_DRIFT / RESOLUTION_TRIDIFF) |
+| **告警通道** | AuditAlertSink 统一收口；7 个 AUDIT_* AlertType (LIVE_REPLAY_DIFF / SHADOW_VS_LIVE / SETTLEMENT_SOURCE / SLIPPAGE_POSTFACT / LEADER_DRIFT / RESOLUTION_TRIDIFF / LEADER_ROLLING_HEALTH) |
 
 ### 1.2 当前灰度状态
 
@@ -49,7 +49,7 @@ docs/polymarket/
 │   ├── w1-data-closure.md            # W1 闭环数据
 │   ├── w2-risk-gates.md              # W2 风控门控
 │   ├── tier-generalization.md        # 跨策略 Tier A/B/C
-│   ├── web-bff-interfaces.md         # 21 个 BFF 端点清单
+│   ├── web-bff-interfaces.md         # 22 个 BFF 端点清单
 │   ├── web-frontend-integration.md   # 前端联调辅助
 │   ├── audit-alert-onboarding.md     # AUDIT_* 告警 onboarding
 │   ├── maintenance.md                # 文档维护流程
@@ -142,7 +142,7 @@ docs/polymarket/
 2. **飞书 / 邮件 audit sink**（多次跳过，运维确认是否真需要）
 3. **天气策略 backlog 排期评估**（基于 `cross-strategy-reusable-infrastructure.md` 与第十七批已就位的 SignalRiskGate 契约）
 4. **跨策略基础设施使用样例**（用 BehaviorVectorizer + CentroidDriftDetector + SignalRiskGate 写"天气 actor drift" 最小原型，验证三件套完整链路）
-5. **AlertType 跨策略命名约定**（当前 5 个 AUDIT_* 都是跟单专用，新增天气时如何命名）
+5. **AlertType 跨策略命名约定**（当前 7 个 AUDIT_* 都是跟单专用，新增天气时如何命名）
 6. **主题子文档月度更新**（按 maintenance.md 第三节 checklist，每月 1 日跑）
 
 ---
@@ -155,7 +155,7 @@ docs/polymarket/
 
 ---
 
-## 八、第十八批（2026-05-16）落地：W2-T2 灰度数据观察 自动化
+## 八、第十八批（2026-05-17）落地：W2-T2 灰度数据观察 自动化
 
 按用户「继续执行 W2-T2 灰度数据观察」指令，把第十七批的 SOP 从「每日人工 curl + 表格」升级为「Job + 历史落表 + 异常告警 + trend 端点」一条龙。
 
@@ -268,16 +268,16 @@ WARN_* 三态都会 publish 同一类型 `AUDIT_LEADER_ROLLING_HEALTH`，靠 `he
 3. **trend dashboard 接入**：让前端把 `latestHealthStatus` 做成首页 banner，rows 出 trend 线图
 4. **多 lookback 档上线**：test 7d 稳定后改 `[7,14]`，对比短/长期 trend 一致性
 5. **拉齐 LeaderDriftAggregation / ShadowWeeklyReport / W2-T2 三个 trend 端点**到一个 unified `/audit/copy-trading-health` 入口（一次 curl 看三件套）
-6. **第十八批同型告警 onboarding 文档**（统一 5 个 AUDIT_* 的"看到告警 → 看哪个 trend → 调哪个字段"决策树）
+6. **第十八批同型告警 onboarding 文档**（统一 7 个 AUDIT_* 的"看到告警 → 看哪个 trend → 调哪个字段"决策树）
 7. **飞书 / 邮件 audit sink**（依然多次跳过，运维确认是否真需要）
 
 ---
 
-> *最后更新*：2026-05-16 — 第十八批（W2-T2 灰度数据观察 SOP→自动化升级）
+> *最后更新*：2026-05-17 — 第十八批（W2-T2 灰度数据观察 SOP→自动化升级）
 
 ---
 
-## 九、第十九批（2026-05-16 自动化追加）落地：执行下一轮 #1 / #5 / #6（跳过 #2 / #3 / #4 / #7）
+## 九、第十九批（2026-05-17 自动化追加）落地：执行下一轮 #1 / #5 / #6（跳过 #2 / #3 / #4 / #7）
 
 按调度任务"根据该文档中设计的计划去实现"指令对第八节 8.7 下一轮 7 项做盘点。
 本批选定以下 3 项纯低风险自动化型工作（其余依赖运行时数据 / 前端联调 / 运维凭证）：
@@ -451,7 +451,7 @@ mvn -pl coin-strategy-job test -Dtest=LeaderRollingMonitorServiceTest
 5. **`CopyTradingHealthReadService` 单测** — 本批新增 service 未补 test，下批补
 6. **AUDIT_* 决策树自动化校验** — 把 `audit-alert-onboarding.md` 的回退字段表与 `SmartWalletProperties.Audit` 字段做 grep 一致性校验，防止字段重命名后文档失效
 
-> *本批最后更新*：2026-05-16 — 第十九批：测试覆盖 + 统一 health 端点 + 告警 onboarding 决策树
+> *本批最后更新*：2026-05-17 — 第十九批：测试覆盖 + 统一 health 端点 + 告警 onboarding 决策树
 
 ---
 

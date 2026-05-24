@@ -21,9 +21,9 @@ import java.util.List;
 /**
  * 跟单暴露上限控制服务。
  *
- * 解决白名单地址持续高频开仓导致我方 TVL 被打满的问题。
+ * 解决白名单地址持续高频开仓导致单市场 / 单地址资金过度集中的问题。
  *
- * 三层暴露上限：
+ * 两层暴露上限：
  *
  * ┌──────────────────────────────────────────────────────────────┐
  * │ Layer 1: 单市场上限 (maxPerMarketUsdc)                      │
@@ -33,14 +33,14 @@ import java.util.List;
  * │ Layer 2: 单跟单地址上限 (maxPerFollowWalletUsdc)            │
  * │   - 跟同一个白名单地址产生的所有持仓总成本不超过 Y USDC      │
  * │   - 防止对单一地址的过度依赖                                │
- * │                                                              │
- * │ Layer 3: 总 TVL 利用率上限 (maxTvlUtilizationPct)           │
- * │   - 所有跟单持仓的总成本 / 总 TVL 不超过 Z%                │
- * │   - 确保留有足够的安全边际和资金灵活性                      │
  * └──────────────────────────────────────────────────────────────┘
  *
  * 每层返回：剩余可用额度（remainingBudget），
- * 最终可用额度 = min(Layer1, Layer2, Layer3)
+ * 最终可用额度 = min(Layer1, Layer2)
+ *
+ * 注：原 Layer 3「总 TVL 利用率上限」已移除——该限制以扣除持仓后的自由资金为基数，
+ *     会随持仓增长自我收紧并最终死锁，损害资金使用效率；总资金上限已由动态预算
+ *     （初始预算 ± 盈亏）天然约束。
  */
 @Service
 @Slf4j
@@ -59,11 +59,10 @@ public class FollowExposureLimitService {
      * @param outcome         YES / NO
      * @param walletAddress   被跟单的白名单地址
      * @param proposedStake   建议下单金额
-     * @param availableCapital 当前可用资金总额
      * @return 暴露检查结果
      */
     public ExposureCheckResult check(String marketId, String outcome, String walletAddress,
-                                      BigDecimal proposedStake, BigDecimal availableCapital) {
+                                      BigDecimal proposedStake) {
         SmartWalletProperties.ExposureLimitConfig config = getExposureLimitConfig();
         List<String> reasons = new ArrayList<>();
 
@@ -107,34 +106,17 @@ public class FollowExposureLimitService {
                     .build();
         }
 
-        // ── Layer 3: 总 TVL 利用率上限 ──
+        // ── 总暴露：仅用于观测与日志，不再作为利用率上限拦截 ──
+        // 原 Layer 3「总 TVL 利用率上限」已移除：其以扣除持仓后的自由资金为基数，
+        // 会随持仓增长自我收紧并最终死锁，损害资金使用效率；总资金上限已由动态
+        // 预算（初始预算 ± 盈亏）天然约束，无需在此重复限制。
         BigDecimal totalExposure = sumAllOpenCost();
-        BigDecimal maxTotalExposure = availableCapital
-                .multiply(config.getMaxTvlUtilizationPct())
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal totalRemaining = maxTotalExposure.subtract(totalExposure).max(BigDecimal.ZERO);
-
-        if (totalRemaining.compareTo(BigDecimal.ZERO) <= 0) {
-            reasons.add("[TVL_UTILIZATION_FULL] totalExposure=" + totalExposure.setScale(2, RoundingMode.HALF_UP)
-                    + " >= maxTotalExposure=" + maxTotalExposure.setScale(2, RoundingMode.HALF_UP)
-                    + " (tvl=" + availableCapital.setScale(2, RoundingMode.HALF_UP)
-                    + " × " + config.getMaxTvlUtilizationPct() + ")");
-            return ExposureCheckResult.builder()
-                    .allowed(false)
-                    .remainingBudget(BigDecimal.ZERO)
-                    .reason("TVL_UTILIZATION_LIMIT")
-                    .reasons(reasons)
-                    .marketExposure(marketExposure)
-                    .walletExposure(walletExposure)
-                    .totalExposure(totalExposure)
-                    .build();
-        }
 
         // ── P0-3: 计算净方向性暴露 ──
         NetExposureSnapshot netSnapshot = computeNetMarketExposure(marketId, outcome);
 
-        // ── 综合：取三层最小可用额度 ──
-        BigDecimal effectiveBudget = marketRemaining.min(walletRemaining).min(totalRemaining);
+        // ── 综合：取两层最小可用额度 ──
+        BigDecimal effectiveBudget = marketRemaining.min(walletRemaining);
 
         // P0-3: 如果新订单方向是降低净暴露（反向减仓），给予更宽松的额度
         boolean reducesNetExposure = netSnapshot.isNewOrderReducesNet(outcome);
@@ -156,8 +138,7 @@ public class FollowExposureLimitService {
             reasons.add("[EXPOSURE_CLIPPED] proposedStake=" + proposedStake.setScale(2, RoundingMode.HALF_UP)
                     + " clipped to " + finalStake.setScale(2, RoundingMode.HALF_UP)
                     + " (marketRemaining=" + marketRemaining.setScale(2, RoundingMode.HALF_UP)
-                    + ", walletRemaining=" + walletRemaining.setScale(2, RoundingMode.HALF_UP)
-                    + ", totalRemaining=" + totalRemaining.setScale(2, RoundingMode.HALF_UP) + ")");
+                    + ", walletRemaining=" + walletRemaining.setScale(2, RoundingMode.HALF_UP) + ")");
         }
 
         return ExposureCheckResult.builder()

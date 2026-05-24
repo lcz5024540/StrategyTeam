@@ -9,7 +9,7 @@ updated: 2026-05-17
 
 # 跟单策略闭环可观测性 — 主题导航索引
 
-> **2026-05-16 第十八批更新**：旧主决议（第 1-16 批历史时间线）已物理清理；
+> **2026-05-17 第十八批更新**：旧主决议（第 1-16 批历史时间线）已物理清理；
 > 当前生效主决议为 [`copy-trading-improvement-decision-2026-05-17.md`](./copy-trading-improvement-decision-2026-05-17.md)。
 > 16 批历史决策可通过 `git log` 回溯；本索引覆盖按主题导航当下生效的事实。
 
@@ -131,7 +131,7 @@ updated: 2026-05-17
 | 第十五批 | 2026-05-16 | source 桶对比工具 + W2-T2 leader-rolling test 灰度 + Tier B 接口抽取 + frontend integration 文档 | 旧主决议 二十二 |
 | 第十六批 | 2026-05-16 | W2-T2 web 端点 + LeaderBehaviorDrift 重构依赖 BehaviorVectorizer | 旧主决议 二十三 |
 | 第十七批 | 2026-05-17 | SignalRiskGate Tier B + W2-T2 SOP 文档 + 旧主决议归档 + 新主决议创建 | 新主决议 二 |
-| 第十八批 ⭐ | 2026-05-16 | W2-T2 灰度数据观察 自动化 (Job + 日级表 + 健康告警 + history 端点) | 新主决议 八 |
+| 第十八批 ⭐ | 2026-05-17 | W2-T2 灰度数据观察 自动化 (Job + 日级表 + 健康告警 + history 端点) | 新主决议 八 |
 
 ---
 

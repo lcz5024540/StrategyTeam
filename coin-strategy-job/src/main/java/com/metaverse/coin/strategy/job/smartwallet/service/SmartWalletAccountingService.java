@@ -133,6 +133,14 @@ public class SmartWalletAccountingService {
     private volatile String cachedPerformanceMode;
     private volatile long cachedPerformanceExpiresAt;
 
+    // ---- 估值价（markPrice）防污染常量 ----
+    /** 二元预测市场单份额估值价的合法区间下端点（USDC/share）。 */
+    private static final BigDecimal MARK_PRICE_FLOOR = new BigDecimal("0.001");
+    /** 二元预测市场单份额估值价的合法区间上端点；未结算持仓估值价不得达到 $1.00 全额赔付。 */
+    private static final BigDecimal MARK_PRICE_CEIL = new BigDecimal("0.999");
+    /** trade_event 回退估值价相对上一次可信 mark 的最大允许跳变倍数。 */
+    private static final BigDecimal MARK_PRICE_MAX_JUMP_RATIO = new BigDecimal("3");
+
     public void recordExecution(SmartWalletFollowTaskEntity task, SmartWalletExecutionResult result) {
         marketInfoService.populate(task);
         if (task == null || !StringUtils.hasText(task.getMarketId()) || !StringUtils.hasText(task.getOutcome())) {
@@ -3128,6 +3136,14 @@ public class SmartWalletAccountingService {
         if (position == null || safe(position.getQuantity()).compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
+        // 结算前置兜底校验：市场仍在接受订单（仍在交易）时，绝不能按 $1.00 全额赔付入账。
+        // 调用方虽已有 settlementTerminalCheck，此处再兜一层，防止任何路径把"仅上涨 30% 的活跃市场"
+        // 误结算成数倍 ROI（参见 跟单ROI虚高根因分析-2026-05-24 路径 A）。
+        if (metadata != null && metadata.isAcceptingOrders()) {
+            log.warn("[SETTLEMENT_GUARD] 拒绝结算仍在交易的市场 positionId={} marketId={} closed={} resolved={} acceptingOrders=true",
+                    position.getId(), position.getMarketId(), metadata.isClosed(), metadata.isResolved());
+            return;
+        }
         Date now = new Date();
         Date settlementAt = settlementAt(metadata, now);
         String effectiveOutcome = resolveEffectiveOutcome(position.getTokenId(), position.getOutcome(), metadata);
@@ -3185,10 +3201,17 @@ public class SmartWalletAccountingService {
     }
 
     private Date settlementAt(PolymarketApiClient.MarketMetadata metadata, Date fallback) {
+        Date fallbackDate = fallback == null ? new Date() : fallback;
         if (metadata != null && metadata.getEndAt() != null && metadata.getEndAt() > 0) {
-            return new Date(metadata.getEndAt());
+            Date endAt = new Date(metadata.getEndAt());
+            // 名义到期时间晚于当前时刻 → 市场尚未真正结束，不能当作结算时刻，
+            // 否则会写出"未来日期结算"记录（参见问题记录-2026-05-24 P2-2）。
+            if (endAt.after(fallbackDate)) {
+                return fallbackDate;
+            }
+            return endAt;
         }
-        return fallback == null ? new Date() : fallback;
+        return fallbackDate;
     }
 
     private BigDecimal settlementPrice(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {
@@ -3247,21 +3270,43 @@ public class SmartWalletAccountingService {
 
         // ── 优先使用 orderbook 实时价格，避免被 trade_event 中异常的 leader 交易价格污染 ──
         BigDecimal markPrice = resolveRealtimeMarkPrice(position);
+        boolean markPriceTrusted = markPrice != null && markPrice.compareTo(BigDecimal.ZERO) > 0;
 
-        // ── fallback: trade_event 最新价格 ──
-        if (markPrice == null || markPrice.compareTo(BigDecimal.ZERO) <= 0) {
+        // ── fallback: trade_event 最新价格（leader 成交价可能被污染，须做区间 + 跳变校验）──
+        if (!markPriceTrusted) {
             SmartWalletTradeEventEntity latestEvent = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
                     .eq(SmartWalletTradeEventEntity::getMarketId, position.getMarketId())
                     .eq(SmartWalletTradeEventEntity::getOutcome, position.getOutcome())
                     .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
                     .last("limit 1"));
-            markPrice = latestEvent != null ? safe(latestEvent.getPrice()) : safe(position.getLastMarkPrice());
+            BigDecimal eventPrice = latestEvent == null ? null : safe(latestEvent.getPrice());
+            if (isSaneMarkPrice(eventPrice) && withinMarkPriceJumpLimit(eventPrice, position.getLastMarkPrice())) {
+                markPrice = eventPrice;
+                markPriceTrusted = true;
+            } else if (eventPrice != null && eventPrice.compareTo(BigDecimal.ZERO) > 0) {
+                log.warn("[MARK_PRICE_POLLUTED] 丢弃异常 trade_event 回退价 positionId={} marketId={} outcome={} eventPrice={} lastMarkPrice={}",
+                        position.getId(), position.getMarketId(), position.getOutcome(), eventPrice, position.getLastMarkPrice());
+            }
         }
 
-        // ── 最终 fallback: 使用仓位已有的 lastMarkPrice ──
-        if (markPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            markPrice = safe(position.getLastMarkPrice());
+        // ── 最终 fallback: 使用仓位已有的 lastMarkPrice（同样要求落在合法区间）──
+        if (!markPriceTrusted) {
+            BigDecimal lastMark = safe(position.getLastMarkPrice());
+            if (isSaneMarkPrice(lastMark)) {
+                markPrice = lastMark;
+                markPriceTrusted = true;
+            }
         }
+
+        // ── 无任何可信估值价：保留现状，不写入污染值，避免 ROI 虚高 ──
+        if (!markPriceTrusted) {
+            log.warn("[MARK_PRICE_UNAVAILABLE] 跳过本次 markToMarket，保留上次估值 positionId={} marketId={} outcome={} lastMarkPrice={}",
+                    position.getId(), position.getMarketId(), position.getOutcome(), position.getLastMarkPrice());
+            return;
+        }
+
+        // 可信源也做上限兜底：未结算持仓的估值价收敛进 [0.001, 0.999]，杜绝按 $1.00 全额赔付估值
+        markPrice = clampMarkPrice(markPrice);
 
         BigDecimal unrealized = markPrice.multiply(safe(position.getQuantity()))
                 .subtract(safe(position.getCostBasisUsdc()))
@@ -3770,6 +3815,44 @@ public class SmartWalletAccountingService {
             return BigDecimal.ZERO;
         }
         return safe(notional).divide(price, 8, RoundingMode.DOWN);
+    }
+
+    /** 估值价是否落在二元市场合法区间 [MARK_PRICE_FLOOR, MARK_PRICE_CEIL] 内。 */
+    private boolean isSaneMarkPrice(BigDecimal price) {
+        return price != null
+                && price.compareTo(MARK_PRICE_FLOOR) >= 0
+                && price.compareTo(MARK_PRICE_CEIL) <= 0;
+    }
+
+    /**
+     * 把可信源估值价收敛进 [MARK_PRICE_FLOOR, MARK_PRICE_CEIL]，
+     * 杜绝出现 ≥ $1.00 的全额赔付价污染未结算持仓的浮动盈亏。
+     */
+    private BigDecimal clampMarkPrice(BigDecimal price) {
+        if (price == null || price.compareTo(MARK_PRICE_FLOOR) < 0) {
+            return MARK_PRICE_FLOOR;
+        }
+        if (price.compareTo(MARK_PRICE_CEIL) > 0) {
+            return MARK_PRICE_CEIL;
+        }
+        return price;
+    }
+
+    /**
+     * trade_event 回退估值价相对上一次可信 mark 的跳变是否在允许倍数内。
+     * 无历史参照时仅靠区间校验放行；用于拦截 leader 成交价被污染（如 ≈$1.00）导致的 ROI 虚高。
+     */
+    private boolean withinMarkPriceJumpLimit(BigDecimal candidate, BigDecimal reference) {
+        if (candidate == null) {
+            return false;
+        }
+        BigDecimal ref = safe(reference);
+        if (ref.compareTo(BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+        BigDecimal upper = ref.multiply(MARK_PRICE_MAX_JUMP_RATIO);
+        BigDecimal lower = ref.divide(MARK_PRICE_MAX_JUMP_RATIO, 8, RoundingMode.HALF_UP);
+        return candidate.compareTo(lower) >= 0 && candidate.compareTo(upper) <= 0;
     }
 
     private boolean isSettledStatus(String status) {
@@ -4621,16 +4704,41 @@ public class SmartWalletAccountingService {
                 .filter(this::isEarlyExitOrder)
                 .filter(this::isCountableExitOrder)
                 .toList();
-        BigDecimal entryQuantity = entryOrders.stream()
-                .map(SmartWalletOrderEntity::getSize)
-                .map(this::safe)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(8, RoundingMode.HALF_UP);
-        BigDecimal entryCost = entryOrders.stream()
-                .map(SmartWalletOrderEntity::getNotionalUsdc)
-                .map(this::safe)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(8, RoundingMode.HALF_UP);
+        // ROI 口径统一：与 SmartWalletTradeOrderService.buildTradeOrder 保持一致 ——
+        // 有 fill 时以 fill（实际成交）为准，无 fill 时回退 order 口径，
+        // 避免同一持仓因 order.notionalUsdc != fill.notionalUsdc 在不同页面 roiRate 打架。
+        List<SmartWalletFillEntity> entryFills = position == null || position.getId() == null
+                ? List.of()
+                : fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                                .eq(SmartWalletFillEntity::getPositionId, position.getId()))
+                        .stream()
+                        .filter(fill -> fill != null && "BUY".equalsIgnoreCase(fill.getSide()))
+                        .toList();
+        BigDecimal entryQuantity;
+        BigDecimal entryCost;
+        if (entryFills.isEmpty()) {
+            entryQuantity = entryOrders.stream()
+                    .map(SmartWalletOrderEntity::getSize)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+            entryCost = entryOrders.stream()
+                    .map(SmartWalletOrderEntity::getNotionalUsdc)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+        } else {
+            entryQuantity = entryFills.stream()
+                    .map(SmartWalletFillEntity::getSize)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+            entryCost = entryFills.stream()
+                    .map(SmartWalletFillEntity::getNotionalUsdc)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+        }
         BigDecimal exitQuantity = exitOrders.stream()
                 .map(SmartWalletOrderEntity::getSize)
                 .map(this::safe)
@@ -4735,6 +4843,21 @@ public class SmartWalletAccountingService {
                     + ", totalPnl=" + safe(totalPnl)
                     + ", entryAvgPrice=" + entryAvgPrice
                     + ", status=" + (position == null ? null : position.getStatus());
+        }
+        // 看门狗盲区补全：未结算持仓若被按 ≈$1.00 全额赔付价估值，roiRate 会恰好压在二元上限
+        // (1-p)/p 上、不超过它，因而上面的判据永远抓不到。改用 lastMarkPrice 直接判定：
+        // 未结算持仓的估值价达到 MARK_PRICE_CEIL，即 markPrice 被污染或市场被提前结算的指纹。
+        String status = position == null ? null : position.getStatus();
+        boolean unsettled = status == null
+                || isActivePositionStatus(status)
+                || isOraclePendingPositionStatus(status);
+        BigDecimal markPrice = position == null ? null : safe(position.getLastMarkPrice());
+        if (unsettled && markPrice != null && markPrice.compareTo(MARK_PRICE_CEIL) >= 0) {
+            return "unsettled position marked at full-payout price; lastMarkPrice=" + markPrice
+                    + ", roiRate=" + safe(roiRate)
+                    + ", entryAvgPrice=" + entryAvgPrice
+                    + ", status=" + status
+                    + " (markPrice suspected polluted / premature settlement)";
         }
         return null;
     }

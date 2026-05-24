@@ -9,7 +9,7 @@ updated: 2026-05-17
 
 # AUDIT_* 告警 Onboarding 决策树（第十九批 #6）
 
-> **目的**：把跟单 6 个 `AUDIT_*` AlertType（含第十八批新增的 `AUDIT_LEADER_ROLLING_HEALTH`）的
+> **目的**：把跟单 7 个 `AUDIT_*` AlertType（含第十八批新增的 `AUDIT_LEADER_ROLLING_HEALTH`）的
 > 「看到告警 → 看哪个 trend → 调哪个字段」决策树落档。
 >
 > 适用范围：on-call / 运维 / 量化研究员收到 `strategy_alert` 表
@@ -19,7 +19,7 @@ updated: 2026-05-17
 
 ---
 
-## 0. 总览：6 个 AUDIT_* AlertType
+## 0. 总览：7 个 AUDIT_* AlertType
 
 所有跟单审计告警共 6 种类型，全部 level=WARN，写入 `strategy_alert` 表，
 统一来源 `strategy_id=SMART_WALLET_AUDIT`：
@@ -264,7 +264,7 @@ GET /smart-wallet/audit/copy-trading-health?historyDays=14&driftLookbackHours=24
 
 ---
 
-> *最后更新*：2026-05-16 第十九批 — AUDIT_* 告警 onboarding 决策树落档
+> *最后更新*：2026-05-17 第十九批 — AUDIT_* 告警 onboarding 决策树落档
 
 ---
 

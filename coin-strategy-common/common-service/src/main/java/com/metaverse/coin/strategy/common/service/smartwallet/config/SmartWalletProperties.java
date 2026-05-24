@@ -452,6 +452,32 @@ public class SmartWalletProperties {
         private Integer longHorizonMinHours = 48;
         private BigDecimal longHorizonStakeMultiplier = new BigDecimal("0.50");
         private Integer maxSignalAgeSeconds = 3600;
+        /**
+         * 任务生成入口（S4 市场状态检查之前）的硬新鲜度上限（秒）。
+         * openedAt 早于该上限的交易事件直接落 SKIPPED/STALE，不再进入市场刷新与候选增强，
+         * 避免历史成交（warm promotion 全量回填、WS 积压重放等）被 S4 市场生命周期检查
+         * 误归因为 MARKET_RESOLVED。默认 10800（3 小时），与 paperCanaryMaxSignalAgeSeconds
+         * 对齐——超过该窗口任何 lane 都不可能再是有效跟单信号。
+         */
+        private Integer maxIngestSignalAgeSeconds = 10800;
+        /**
+         * 修复一（6.2）：入口硬新鲜度上限按市场类别分级（秒）。
+         * key 为 MarketCategoryClassifier 的类别（SPORTS / CRYPTO / WEATHER / CURRENT_EVENTS /
+         * ENTERTAINMENT / POLITICS / MACRO / BUSINESS）；命中则用对应窗口，未命中（含 OTHER）
+         * 回退到 maxIngestSignalAgeSeconds。默认值依据《7 项交易侧修复实施清单》——
+         * 快市场（SPORTS）收紧到 10 分钟、长尾市场维持 3 小时。
+         * 本项为配置项：运营可按灰度需要放宽（如初期 SPORTS 用 1200~1800），异常时改配置即可回退。
+         */
+        private java.util.Map<String, Integer> maxIngestSignalAgeByCategory = new java.util.LinkedHashMap<>(java.util.Map.of(
+                "SPORTS", 600,
+                "CRYPTO", 1800,
+                "WEATHER", 1800,
+                "CURRENT_EVENTS", 3600,
+                "ENTERTAINMENT", 3600,
+                "POLITICS", 10800,
+                "MACRO", 10800,
+                "BUSINESS", 10800
+        ));
         private BigDecimal minTriggerSizeUsdc = new BigDecimal("5");
         /** 跟单金额相对源钱包本次真实触发名义本金的最大倍数；<=0 表示不限制 */
         private BigDecimal maxStakeToTriggerNotionalRatio = new BigDecimal("0.10");
@@ -1622,9 +1648,6 @@ public class SmartWalletProperties {
 
         /** 单跟单地址持仓上限 (USDC)。防止对单一白名单地址过度依赖 */
         private BigDecimal maxPerFollowWalletUsdc = new BigDecimal("300");
-
-        /** 总 TVL 利用率上限。所有跟单持仓总成本 / 总 TVL 不超过此比例 */
-        private BigDecimal maxTvlUtilizationPct = new BigDecimal("0.80");
     }
 
     // ── 意图聚合配置 ──

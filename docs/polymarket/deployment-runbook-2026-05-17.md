@@ -9,6 +9,8 @@ updated: 2026-05-17
 
 # 部署 Runbook — P0/P1 最小化实施修复批次
 
+> **TL;DR**：本 Runbook 覆盖 P0/P1 修复批次（P0 资金 / 数据正确性 6 项 + P1 灰度 / 策略质量 17 项）从「DDL 已上库」到「灰度 → 全量 → 回滚」的完整 step-by-step 路径。**部署前必做**：删除 `PmResolutionAuditEntity` 上两个注解并对 SQL 上库结果 sanity check（第一章）。**T+0 当天**：构建产物 → 部署 job / web → 5 分钟内完成 smoke test（第三章）。**T+1 ~ T+30**：按阶段 A–F 逐个打开默认 OFF 的灰度开关（第四章）。出问题首选单开关回滚（第六章）。待运维提供 3 项：飞书 webhook、WS endpoint 联调、user channel auth token。
+
 > **生成日期**：2026-05-17
 > **关联计划**：[`minimal-implementations-fix-plan.md`](./minimal-implementations-fix-plan.md)（11 轮自动调度合入完毕）
 > **关联代码**：分支 `polymarket-5-min-weather`，尚未 commit（git status 可见）

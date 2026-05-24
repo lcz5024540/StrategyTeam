@@ -54,10 +54,21 @@ updated: 2026-05-13
 - **定位**: 缓存支持模块。
 - **用途**: Redis 配置与本地缓存工具。
 
-### 6. [common-api](common-api) & [common-service](common-service)
+### 6. [common-api](common-api)
 
-- **定位**: 接口与通用业务逻辑。
-- **用途**: **【待补充】** 补充 common-api 与 common-service 各自的用途说明。
+- **定位**: 统一交易抽象接口层。
+- **用途**: 定义跨交易所的统一数据模型与服务接口，让上层策略面向统一接口编程，与具体交易所 SDK 解耦。
+  - **统一模型**: `UnifiedOrder`、`OrderStatus`、`Side`、`OrderType`。
+  - **服务接口**: `ITradeService`（下单 / 撤单 / 查询）、`IMarketDataService`（行情数据）。
+
+### 7. [common-service](common-service)
+
+- **定位**: 通用业务服务层。
+- **用途**: 承载可跨模块复用的业务逻辑与服务组件，依赖 `common-dao` / `common-model`。
+  - **行为分析**: `BehaviorVectorizer`、`CentroidDriftDetector` 等行为向量化与漂移检测。
+  - **记账与追踪**: `PositionAccountingPort` 记账端口、`TraceContext` / `TraceIds` 链路追踪。
+  - **告警**: `StrategyAuditAlertSink` 审计告警下沉。
+  - **智能钱包**: `SmartWalletProperties` 配置类及各类只读查询视图模型（`*View`）。
 
 ## 如何使用
 

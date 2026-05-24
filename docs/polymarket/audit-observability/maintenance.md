@@ -71,7 +71,7 @@ docs/polymarket/
 - [ ] 4 个主题子文档（W1/W2/Tier/web-bff）是否过期 — 查"上次更新"标注，若 > 30 天 → review
 - [ ] 检查 `audit-observability/` 下所有文档头部的 ⏱️ 时间戳
 - [ ] 跑 audit Job 健康指标 → 若有连续告警，在 W1/W2 子文档加 "已知问题" 段
-- [ ] 更新 `web-bff-interfaces.md` 的端点数（第十八批：21 个）
+- [ ] 更新 `web-bff-interfaces.md` 的端点数（截至第十九批：22 个）
 - [ ] Web 端点 hit count 监控（如有）→ 删除"无人使用 90+ 天"的端点
 - [ ] 跑跨策略基础设施清单 review — 若新策略已开工，更新 Tier B/C 抽取进度
 

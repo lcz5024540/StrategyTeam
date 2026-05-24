@@ -182,7 +182,7 @@ curl 'http://<prod-web>/strategy/api/smart-wallet/audit/resolution-tridiff?lookb
 - W2 风控门控精华：`docs/polymarket/audit-observability/w2-risk-gates.md`
 - W2-T2 灰度 SOP：`docs/polymarket/audit-observability/w2-t2-grayscale-sop.md`
 - 全部 SQL schema：`sql/polymarket/smart_wallet_audit_observability_schema.sql`
-- Web 接口列表（21 个端点）：`docs/polymarket/audit-observability/web-bff-interfaces.md`
+- Web 接口列表（22 个端点）：`docs/polymarket/audit-observability/web-bff-interfaces.md`
 
 > **变更追踪**：本 checklist 每次 prod 阈值调整后需 update version；prod 真正部署当天添加 "首次部署日志" 章节。
 

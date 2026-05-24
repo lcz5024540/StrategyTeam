@@ -1,13 +1,15 @@
 ---
 title: "Polymarket 量化系统架构与当前实现对比"
 type: design
-status: active
+status: archived
 tags: [polymarket, design]
 created: 2026-04-10
-updated: 2026-04-10
+updated: 2026-05-23
 ---
 
 # Polymarket 量化系统架构与当前实现对比
+
+> **【架构入口已迁移】** 架构统一权威入口现为 [polymarket-现行架构.md](polymarket-现行架构.md)。本文保留为历史设计稿 / 深度参考，不再作为架构入口。
 
 本文档旨在对比 [polymarket_quant_system.md](polymarket_quant_system.md) 中规划的标准量化交易架构与当前代码库的实际落地情况，评估主循环流程的合理性，并记录已修复的问题。
 

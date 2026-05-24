@@ -881,6 +881,72 @@ public class SmartWalletFollowTaskService {
                 "allowlistStatus", allowlist == null ? null : allowlist.getStatus(),
                 "reasonSummary", "钱包已进入候选任务生成链路"));
 
+        // ── S2.5: 入口硬新鲜度闸门（S3 候选增强 / S4 市场检查之前）──
+        // 历史成交（warm promotion 全量回填、WS 积压重放等）的 openedAt 远早于当前时间。
+        // 若放行会先被 S4 市场生命周期检查拦成 MARKET_RESOLVED，掩盖真实的 STALE 归因，
+        // 并白白消耗市场刷新与候选增强。这里按 openedAt 做硬判定，直接落 SKIPPED/STALE。
+        // 修复一（6.2）：新鲜度窗口按市场类别分级——快市场（如 SPORTS）窗口远小于长尾市场。
+        // S2.5 早于市场元数据获取，此刻只有 event.question，故用纯关键词分类（无 API 调用）。
+        if (event.getOpenedAt() != null) {
+            String ingestCategory = MarketCategoryClassifier.classifyByText(event.getQuestion());
+            long ingestMaxAgeMs = maxIngestSignalAgeMsFor(ingestCategory);
+            long signalAgeMs = Math.max(0L, System.currentTimeMillis() - event.getOpenedAt().getTime());
+            if (signalAgeMs > ingestMaxAgeMs) {
+                createIngestStaleSkippedTask(event, signalAgeMs, ingestMaxAgeMs);
+                markSourceEventProcessed(event);
+                log.info("{} action=根据交易事件生成跟单任务 result=已创建历史成交拦截任务 eventId={} wallet={} marketId={} outcome={} category={} signalAgeMs={} maxAgeMs={} {}",
+                        LOG_PREFIX, event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
+                        ingestCategory, signalAgeMs, ingestMaxAgeMs, eventTrace(event));
+                log.info("{}", flow("S5_RISK_EVALUATED", "评估跟单风控", "拒绝", event, null,
+                        "firstRejectGate", "G5_SIGNAL_STALE_INGEST",
+                        "blockerCategories", "SIGNAL_FRESHNESS",
+                        "reasonSummary", "交易事件 openedAt 早于入口新鲜度上限（类别=" + ingestCategory + "），判定为历史成交"));
+                return;
+            }
+        }
+
+        // ---- 修复三（6.1）：市场状态检查前移到 S3 候选增强之前 ----
+        // 死市场（已结算/关闭/不接单）在此直接拦截，避免白白消耗实体解析与候选增强。
+        // 解析出的 marketState 同时透传给 S5 风控（修复六：单事件市场状态只解析一次）。
+        SmartWalletMarketInfoEntity marketInfo = ensureMarketInfoForEvent(event);
+        MarketStateSnapshot marketState = refreshMarketState(event);
+        // ── 跟单开单时间 vs 市场关闭状态 审计日志（方案A / 修复四 决策数据采集）──
+        // 结构化单行日志，不入库；运营可直接 grep "[FOLLOW_MARKET_AUDIT]" 做统计：
+        //   · signalAgeSec 小 且 marketClosedAtProcessing=true → lifecycle 滞后证据（指向修复四）
+        //   · 市场确为关闭（lifecycle 准确）→ 方案A 成立
+        long auditOpenedAtMs = event.getOpenedAt() == null ? 0L : event.getOpenedAt().getTime();
+        long auditSignalAgeSec = auditOpenedAtMs <= 0
+                ? -1L
+                : Math.max(0L, System.currentTimeMillis() - auditOpenedAtMs) / 1000L;
+        Long auditMarketEndAt = marketState.marketEndAt();
+        boolean auditEndAtPassed = auditMarketEndAt != null && auditMarketEndAt > 0
+                && auditMarketEndAt < System.currentTimeMillis();
+        log.info("[FOLLOW_MARKET_AUDIT] eventId={} wallet={} marketId={} outcome={} side={} "
+                        + "leaderOpenedAtMs={} leaderOpenedAtBjt={} signalAgeSec={} "
+                        + "marketClosedAtProcessing={} marketLifecycle={} closed={} acceptingOrders={} "
+                        + "resolvedOutcome={} marketEndAtMs={} endAtPassed={} category={}",
+                event.getId(), event.getWalletAddress(), event.getMarketId(), event.getOutcome(), event.getSide(),
+                auditOpenedAtMs, openedAtBjt(event), auditSignalAgeSec,
+                !marketState.isActive(), marketState.marketLifecycle(), marketState.closed(),
+                marketState.acceptingOrders(), marketState.resolvedOutcome(),
+                auditMarketEndAt, auditEndAtPassed,
+                MarketCategoryClassifier.classifyByText(event.getQuestion()));
+        if (!marketState.isActive()) {
+            // candidate 此刻尚未生成；前移代价：拦截任务缺 entityId/followCandidateId，对死市场记录可接受。
+            createLifecycleSkippedTask(event, null, marketInfo, marketState);
+            markSourceEventProcessed(event);
+            log.info("{} action=根据交易事件生成跟单任务 result=已创建生命周期拦截任务（前移） eventId={} marketId={} outcome={} reason={} {}",
+                    LOG_PREFIX, event.getId(), event.getMarketId(), event.getOutcome(),
+                    marketState.blockingReasonMessage(), eventTrace(event));
+            log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "拒绝", event, null,
+                    "firstRejectGate", "G6_MARKET_NOT_ACTIVE",
+                    "blockerCategories", "MARKET_STATE",
+                    "reasonSummary", marketState.blockingReasonMessage()));
+            return;
+        }
+        log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "通过", event, null,
+                "reasonSummary", "市场可交易，继续候选增强与风控评估"));
+
         // ---- Step 1: Intelligence Enrich ----
         // 将钱包地址解析为实体 ID + 聚类置信度，写入 wallet_follow_candidate 作为中间记录
         WalletFollowCandidateEntity candidate = enrichAndSaveCandidate(event);
@@ -893,25 +959,6 @@ public class SmartWalletFollowTaskService {
                 "entityId", candidate.getEntityId(),
                 "consensusEntities", candidate.getEntityConsensusDedupCount(),
                 "reasonSummary", candidate.getRejectionReason()));
-
-        SmartWalletMarketInfoEntity marketInfo = ensureMarketInfoForEvent(event);
-        MarketStateSnapshot marketState = refreshMarketState(event);
-        if (!marketState.isActive()) {
-            createLifecycleSkippedTask(event, candidate, marketInfo, marketState);
-            markSourceEventProcessed(event);
-            log.info("{} action=根据交易事件生成跟单任务 result=已创建生命周期拦截任务 eventId={} candidateId={} marketId={} outcome={} reason={} {}",
-                    LOG_PREFIX, event.getId(), candidate.getId(), event.getMarketId(), event.getOutcome(),
-                    marketState.blockingReasonMessage(), eventTrace(event));
-            log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "拒绝", event, null,
-                    "candidateId", candidate.getId(),
-                    "firstRejectGate", "G6_MARKET_NOT_ACTIVE",
-                    "blockerCategories", "MARKET_STATE",
-                    "reasonSummary", marketState.blockingReasonMessage()));
-            return;
-        }
-        log.info("{}", flow("S4_MARKET_CHECK", "市场状态检查", "通过", event, null,
-                "candidateId", candidate.getId(),
-                "reasonSummary", "市场可交易，继续风控评估"));
 
         if ("PENDING".equalsIgnoreCase(candidate.getEnrichmentStatus())) {
             createSkippedTaskForPendingCandidate(event, candidate, marketInfo);
@@ -927,7 +974,8 @@ public class SmartWalletFollowTaskService {
         }
 
         // ---- Step 2: Risk Evaluation（沿用原有逻辑，现在共识内部已用实体去重）----
-        SignalRiskDecision decision = signalRiskService.evaluate(profile, event);
+        // 修复六：透传市场状态前移预检已解析的 marketState，G6 不再重复解析。
+        SignalRiskDecision decision = signalRiskService.evaluate(profile, event, null, null, marketState);
         log.info("{} action=评估跟单风控 result={} eventId={} wallet={} marketId={} outcome={} recommendedStakeUsdc={} reasons={} {}",
                 LOG_PREFIX, decision.isAccepted() ? "通过" : "拒绝", event.getId(), event.getWalletAddress(),
                 event.getMarketId(), event.getOutcome(), decision.getRecommendedStakeUsdc(),
@@ -1048,6 +1096,59 @@ public class SmartWalletFollowTaskService {
                 "firstRejectGate", "G1_MANUAL_BLOCKLIST",
                 "blockerCategories", effectiveReason,
                 "reasonSummary", effectiveReason));
+    }
+
+    /**
+     * 入口硬新鲜度闸门命中：交易事件 openedAt 早于 maxIngestSignalAgeSeconds，
+     * 判定为历史成交而非新鲜跟单信号，落 SKIPPED/STALE。在 S3 候选增强、S4 市场检查
+     * 之前执行，避免历史成交被市场生命周期检查误归因为 MARKET_RESOLVED。
+     */
+    private void createIngestStaleSkippedTask(SmartWalletTradeEventEntity event, long signalAgeMs, long maxAgeMs) {
+        SmartWalletFollowTaskEntity task = new SmartWalletFollowTaskEntity()
+                .setWalletAddress(event.getWalletAddress())
+                .setSourceEventId(event.getId())
+                .setTraceId(event.getTraceId())
+                .setSide(event.getSide())
+                .setTriggerPrice(event.getPrice())
+                .setTriggerSizeUsdc(event.getSizeUsdc())
+                .setRecommendedStakeUsdc(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .setStatus(STATUS_SKIPPED)
+                .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
+                .setErrorMessage("[SIGNAL_STALE_INGEST] Trade event openedAt is " + (signalAgeMs / 1000)
+                        + "s old, exceeding ingest freshness limit " + (maxAgeMs / 1000)
+                        + "s; treated as historical trade rather than a fresh follow signal.")
+                .setPrimarySkipReason("STALE")
+                .setSkipReasonTags("STALE,SIGNAL_STALE_INGEST")
+                .setScheduledAt(new Date())
+                .setCreatedAt(new Date())
+                .setUpdatedAt(new Date());
+        followTaskMapper.insert(task);
+        log.info("{} action=创建历史成交拦截任务 result=SKIPPED followTaskId={} eventId={} wallet={} marketId={} outcome={} signalAgeMs={} maxAgeMs={} {}",
+                LOG_PREFIX, task.getId(), event.getId(), event.getWalletAddress(), event.getMarketId(),
+                event.getOutcome(), signalAgeMs, maxAgeMs, eventTrace(event));
+    }
+
+    /** 入口硬新鲜度上限（毫秒）——默认/兜底窗口（来源 risk.maxIngestSignalAgeSeconds，默认 10800s）。 */
+    private long maxIngestSignalAgeMs() {
+        return maxIngestSignalAgeMsFor(null);
+    }
+
+    /**
+     * 修复一（6.2）：按市场类别返回入口硬新鲜度上限（毫秒）。
+     * category 命中 {@code risk.maxIngestSignalAgeByCategory} 则用对应窗口；
+     * 未命中（含 null / OTHER）回退到 {@code risk.maxIngestSignalAgeSeconds}（默认 10800s）。
+     */
+    private long maxIngestSignalAgeMsFor(String category) {
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        Integer defaultSeconds = risk == null ? null : risk.getMaxIngestSignalAgeSeconds();
+        int safeDefaultSeconds = (defaultSeconds == null || defaultSeconds <= 0) ? 10800 : defaultSeconds;
+        if (risk != null && category != null && risk.getMaxIngestSignalAgeByCategory() != null) {
+            Integer categorySeconds = risk.getMaxIngestSignalAgeByCategory().get(category);
+            if (categorySeconds != null && categorySeconds > 0) {
+                return categorySeconds * 1000L;
+            }
+        }
+        return safeDefaultSeconds * 1000L;
     }
 
     /**
@@ -1347,8 +1448,13 @@ public class SmartWalletFollowTaskService {
                 .setStatus("SKIPPED")
                 .setExecutionMode(properties.isAutoExecutionEnabled() ? "LIVE" : "PAPER")
                 .setErrorMessage(marketState.blockingReasonMessage())
+                // 修复二（6.4 归因抹平）：primary_skip_reason 仍保留 NON_TRADABLE
+                // —— 下游 G6 短路判断（buy && !"NON_TRADABLE".equals(primary)）与
+                // primarySkipReason() 优先级词表均依赖它，不能直接改成 MARKET_RESOLVED；
+                // 细分原因（MARKET_RESOLVED / MARKET_NOT_ACCEPTING_ORDERS / MARKET_CLOSED）
+                // 放进 skip_reason_tags，DB 端可用 LIKE '%MARKET_RESOLVED%' 精确归因。
                 .setPrimarySkipReason("NON_TRADABLE")
-                .setSkipReasonTags("NON_TRADABLE")
+                .setSkipReasonTags("NON_TRADABLE," + marketState.blockingReasonCode())
                 .setScheduledAt(new Date())
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
@@ -1990,6 +2096,58 @@ public class SmartWalletFollowTaskService {
             }
         }
         return properties.getFollowDelaySeconds() * 1000L;
+    }
+
+    /**
+     * 修复七（6.7）：停机积压批量排空快速通道。
+     * 服务停机期间事件积压，恢复后若逐条走完整 S1–S6 既慢、又会因市场已结算产出大量 MARKET_RESOLVED。
+     * 本任务定期扫描尚未处理（processed=0）的 trade_event：openedAt 已超「按市场类别分级」的
+     * 新鲜度窗口者，直接批量落 SKIPPED/STALE 并标记 processed，不再逐条走完整链路；
+     * 仍在窗口内的事件留给正常链路。与修复一共用分级窗口工具，方向安全（宁可漏跟不可错跟）。
+     */
+    @Scheduled(fixedDelayString = "${smart-wallet.signal-risk.stale-backlog-drain-fixed-delay-ms:120000}")
+    public void drainStaleSignalBacklog() {
+        List<SmartWalletTradeEventEntity> backlog = tradeEventMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                        .eq(SmartWalletTradeEventEntity::getProcessed, Boolean.FALSE)
+                        .isNotNull(SmartWalletTradeEventEntity::getOpenedAt)
+                        .orderByAsc(SmartWalletTradeEventEntity::getId)
+                        .last("limit 500"));
+        if (backlog.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        int scanned = 0;
+        int drained = 0;
+        for (SmartWalletTradeEventEntity event : backlog) {
+            if (event == null || event.getId() == null || event.getOpenedAt() == null) {
+                continue;
+            }
+            scanned++;
+            String category = MarketCategoryClassifier.classifyByText(event.getQuestion());
+            long maxAgeMs = maxIngestSignalAgeMsFor(category);
+            long ageMs = Math.max(0L, now - event.getOpenedAt().getTime());
+            if (ageMs <= maxAgeMs) {
+                continue;   // 仍在分级窗口内：留给正常链路处理
+            }
+            // 已有跟单任务的积压事件只补标 processed，避免重复落任务
+            if (findTaskBySourceEventId(event.getId()) != null) {
+                markSourceEventProcessed(event);
+                continue;
+            }
+            try {
+                createIngestStaleSkippedTask(event, ageMs, maxAgeMs);
+                markSourceEventProcessed(event);
+                drained++;
+            } catch (Exception ex) {
+                log.warn("{} action=停机积压批量排空 result=单条失败 eventId={} reason={}",
+                        LOG_PREFIX, event.getId(), ex.getMessage());
+            }
+        }
+        if (scanned > 0) {
+            log.info("{} action=停机积压批量排空 result=完成 scanned={} drainedStale={}",
+                    LOG_PREFIX, scanned, drained);
+        }
     }
 
     private void markSourceEventProcessed(SmartWalletTradeEventEntity event) {

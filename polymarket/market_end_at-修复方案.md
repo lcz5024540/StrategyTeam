@@ -17,36 +17,16 @@ updated: 2026-05-18
 
 ## 一、完整链路（按时间顺序）
 
-```text
-[1] WS 收到 trade_event
-        │
-        ▼
-[2] SmartWalletFollowTaskService.recordTradeEvent → ensureMarketInfoForEvent
-        │
-        ▼
-[3] resolveMarketEndAt(marketId, questionHint)   ← coin-strategy-job/.../SmartWalletFollowTaskService.java:2004
-        │ try {
-        │   metadata = marketMetadataService.getByConditionId(marketId, refresh=false, questionHint)
-        │   return metadata == null ? null : metadata.getEndAt();
-        │ } catch (Exception e) { return null; }
-        ▼
-[4] PolymarketMarketMetadataService.getByConditionId(refresh=false)
-        │ → 走 cache / persisted / local
-        │ → 仅当 (!refresh && hotPathExternalRefreshEnabled()) 才命中 Polymarket Gamma API
-        ▼
-[5] PolymarketApiClient.fetchMarketMetadata(conditionId)
-        │ → endAt = epochMillis(market, "endDateISO", "endDate", "gameStartTime", "eventStartDate")
-        │ → 多字段降级解析；如果四个字段都没有，endAt = null
-        ▼
-[6] SmartWalletMarketInfoService.getOrCreate(marketId, outcome, ..., marketEndAt)
-        │ → 关键代码 (line 230)：
-        │   if (marketEndAt != null && (existing.getMarketEndAt() == null || existing.getMarketEndAt() <= 0)) {
-        │       existing.setMarketEndAt(marketEndAt);
-        │       updated = true;
-        │   }
-        │ ⚠️ 仅在 existing 是 NULL/0 时更新 → 永不刷新过期值
-        ▼
-[7] 落库 smart_wallet_market_info.market_end_at
+```mermaid
+flowchart TD
+    N1["[1] WS 收到 trade_event"]
+    N2["[2] SmartWalletFollowTaskService.recordTradeEvent → ensureMarketInfoForEvent"]
+    N3["[3] resolveMarketEndAt(marketId, questionHint)<br/>← SmartWalletFollowTaskService.java:2004<br/>try metadata = getByConditionId(marketId, refresh=false, questionHint);<br/>return metadata==null ? null : metadata.getEndAt();<br/>catch Exception → return null"]
+    N4["[4] PolymarketMarketMetadataService.getByConditionId(refresh=false)<br/>→ 走 cache / persisted / local<br/>→ 仅当 (!refresh AND hotPathExternalRefreshEnabled()) 才命中 Polymarket Gamma API"]
+    N5["[5] PolymarketApiClient.fetchMarketMetadata(conditionId)<br/>→ endAt = epochMillis(market, endDateISO, endDate, gameStartTime, eventStartDate)<br/>→ 多字段降级解析；如果四个字段都没有，endAt = null"]
+    N6["[6] SmartWalletMarketInfoService.getOrCreate(marketId, outcome, ..., marketEndAt)<br/>→ 关键代码 (line 230)：仅在 existing.endAt 为 NULL/0 时 setMarketEndAt<br/>⚠️ 永不刷新过期值"]
+    N7["[7] 落库 smart_wallet_market_info.market_end_at"]
+    N1 --> N2 --> N3 --> N4 --> N5 --> N6 --> N7
 ```
 
 ---

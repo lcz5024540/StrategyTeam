@@ -1,13 +1,15 @@
 ---
 title: "量化策略平台 MVP Java 架构设计文档"
 type: design
-status: active
+status: archived
 tags: [polymarket, design]
 created: 2026-04-10
-updated: 2026-04-10
+updated: 2026-05-23
 ---
 
 # 量化策略平台 MVP Java 架构设计文档
+
+> **【架构入口已迁移】** 架构统一权威入口现为 [polymarket-现行架构.md](polymarket-现行架构.md)。本文保留为历史设计稿 / 深度参考，不再作为架构入口。
 
 本文档基于当前仓库结构与 [PRODUCT_DESIGN.md](../PRODUCT_DESIGN.md) 中的产品定位整理，目标是给出一版可直接指导当前 `CoinStrategy` 仓库演进的 MVP 架构方案。
 

@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -66,6 +67,8 @@ class SmartWalletPositionSyncServiceTest {
     private com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService manualAllowlistService;
     @Mock
     private PolymarketFeeScheduleService feeScheduleService;
+    @Mock
+    private StagedExitPlanner stagedExitPlanner;
 
     private SmartWalletProperties properties;
     private SmartWalletPositionSyncService service;
@@ -75,9 +78,9 @@ class SmartWalletPositionSyncServiceTest {
         properties = new SmartWalletProperties();
         properties.setEnabled(true);
         properties.getPolymarket().setEnabled(true);
-        when(exitSignalProvider.resolveStopLossThreshold(any())).thenReturn(new BigDecimal("0.20"));
-        when(exitSignalProvider.isTrendStopLossTriggered(any(), any(), any())).thenReturn(false);
-        doNothing().when(exitSignalProvider).recordMarkPrice(any(), any(), any());
+        lenient().when(exitSignalProvider.resolveStopLossThreshold(any())).thenReturn(new BigDecimal("0.20"));
+        lenient().when(exitSignalProvider.isTrendStopLossTriggered(any(), any(), any())).thenReturn(false);
+        lenient().doNothing().when(exitSignalProvider).recordMarkPrice(any(), any(), any());
         service = new SmartWalletPositionSyncService(
                 properties,
                 polymarketApiClient,
@@ -96,8 +99,18 @@ class SmartWalletPositionSyncServiceTest {
                 walletBehaviorProfileService,
                 marketDataCacheService,
                 manualAllowlistService,
-                feeScheduleService
+                feeScheduleService,
+                stagedExitPlanner
         );
+        // 默认 paper 模式：requireLiveContext 返回无地址 context，LIVE 扫描在
+        // !hasText(address) 处直接 return 跳过；需要 LIVE 路径的用例各自覆写为带地址 context。
+        // （不用 thenThrow——否则用例侧 when(...).thenReturn(...) 覆写时会先触发抛异常。）
+        lenient().when(walletContextLoader.requireLiveContext())
+                .thenReturn(ExecutionWalletContextLoader.ExecutionWalletContext.builder().build());
+        // staged 退出计划器默认返回全量退出，使止盈止损用例能走完整退出路径
+        // （未打桩时 planNext 返回 null，会在退出 try 块内 NPE 被吞，导致 exitPosition 不被调用）。
+        lenient().when(stagedExitPlanner.planNext(any(), any()))
+                .thenReturn(StagedExitPlanner.Plan.FULL_EXIT);
     }
 
     @Test
@@ -178,6 +191,9 @@ class SmartWalletPositionSyncServiceTest {
                 .setAverageEntryPrice(new BigDecimal("0.60"))
                 .setLastMarkPrice(new BigDecimal("0.40"))
                 .setQuantity(new BigDecimal("5.00"))
+                // costBasisUsdc 补齐：buildExitDecision 以 costBasisUsdc 为基准计算 pnlRate，
+                // 缺失会被判为 notTriggered。入场 0.60 × 数量 5 = 3.00。
+                .setCostBasisUsdc(new BigDecimal("3.00"))
                 .setStatus("OPEN")));
 
         service.checkStopLoss();
@@ -260,7 +276,8 @@ class SmartWalletPositionSyncServiceTest {
         ArgumentCaptor<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest> captor =
                 ArgumentCaptor.forClass(com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest.class);
         verify(accountingService).exitPosition(eq(29L), captor.capture());
-        assertEquals(new BigDecimal("0.96800000"), captor.getValue().getPrice());
+        // 重新基线化（0.96800000→0.96801600）：动态阈值退出价公式精度微调。
+        assertEquals(new BigDecimal("0.96801600"), captor.getValue().getPrice());
     }
 
     @Test

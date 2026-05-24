@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Date;
@@ -40,6 +41,8 @@ class SmartWalletSettlementSyncServiceTest {
     private SmartWalletSettlementRetryMapper settlementRetryMapper;
     @Mock
     private JdbcTemplate jdbcTemplate;
+    @Mock
+    private ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
 
     private SmartWalletSettlementSyncService service;
 
@@ -55,7 +58,8 @@ class SmartWalletSettlementSyncServiceTest {
                 settlementRunMapper,
                 settlementRetryMapper,
                 new ObjectMapper(),
-                jdbcTemplate
+                jdbcTemplate,
+                tradeOrderServiceProvider
         );
     }
 

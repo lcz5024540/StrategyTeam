@@ -103,7 +103,9 @@ public class RateMomentumStrategy {
         
         // 3. 信号判断
         boolean isRateSpiking = currentRate.doubleValue() > avgRate * RATE_SPIKE_THRESHOLD;
-        boolean isPriceRising = (currentPrice - lastPrice) / lastPrice > PRICE_MOMENTUM_THRESHOLD;
+        double priceMomentum = (currentPrice - lastPrice) / lastPrice;
+        boolean isPriceRising = priceMomentum > PRICE_MOMENTUM_THRESHOLD;
+        boolean isPriceReversing = priceMomentum < -PRICE_MOMENTUM_THRESHOLD;  // 价格向下反转（动量跌破负阈值）
         
         // 4. 执行逻辑
         if (isRateSpiking && isPriceRising) {
@@ -119,7 +121,7 @@ public class RateMomentumStrategy {
 }
 ```
 
-> **【待核对】** 上方伪代码引用了变量 `isPriceReversing`，但全段只定义了 `isPriceRising`，`isPriceReversing` 从未定义。需补其定义，或改为正确条件（如 `!isPriceRising`）。
+> 说明：`isPriceReversing` 与 `isPriceRising` 对称定义 —— 用同一个 `priceMomentum`，向上突破阈值为「上涨」，向下跌破负阈值为「反转」。退出条件「利率不再飙升 **或** 价格反转」即可触发平仓；此处用主动下跌而非「非上涨」，避免价格横盘时被误平。
 
 ## 4. 风险提示
 

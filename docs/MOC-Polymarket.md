@@ -20,12 +20,16 @@ Polymarket 预测市场策略是本项目当前最活跃的方向，文档分散
 
 ## 二、架构与系统设计
 
-- [MVP_ARCHITECTURE](../polymarket/MVP_ARCHITECTURE.md) — 最小可行架构
-- [POLYMARKET_ARCHITECTURE_ANALYSIS](../polymarket/POLYMARKET_ARCHITECTURE_ANALYSIS.md) — 架构分析
-- [README-polymarket-architecture-comparison](../polymarket/README-polymarket-architecture-comparison.md) — 架构方案对比
-- [polymarket_arbitrage_system_design](../polymarket/polymarket_arbitrage_system_design.md) — 套利系统设计
-- [polymarket_quant_system](../polymarket/polymarket_quant_system.md) — 量化系统设计
+- **[polymarket-现行架构](../polymarket/polymarket-现行架构.md) — 现行架构权威入口（首选阅读）**
 - [multi-strategy-architecture-design](polymarket/multi-strategy-architecture-design.md) — 多策略架构设计
+
+历史设计稿 / 深度参考（架构入口已迁移至上方现行架构文档）：
+
+- [MVP_ARCHITECTURE](../polymarket/MVP_ARCHITECTURE.md) — 量化策略平台 MVP 架构设计稿
+- [POLYMARKET_ARCHITECTURE_ANALYSIS](../polymarket/POLYMARKET_ARCHITECTURE_ANALYSIS.md) — 逐文件源码现状分析
+- [README-polymarket-architecture-comparison](../polymarket/README-polymarket-architecture-comparison.md) — 规划 vs 实现对比
+- [polymarket_arbitrage_system_design](../polymarket/polymarket_arbitrage_system_design.md) — 对冲套利系统设计稿（独立业务线）
+- [polymarket_quant_system](../polymarket/polymarket_quant_system.md) — Polymarket 官方 API 规范参考
 - [cross-strategy-reusable-infrastructure](polymarket/cross-strategy-reusable-infrastructure.md) — 跨策略可复用基础设施
 
 ## 三、策略设计

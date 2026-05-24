@@ -1,5 +1,5 @@
 ---
-title: "Web BFF 接口清单（共 18 个）"
+title: "Web BFF 接口清单（共 22 个）"
 type: design
 status: active
 tags: [polymarket, audit, web]
@@ -7,9 +7,9 @@ created: 2026-05-17
 updated: 2026-05-17
 ---
 
-# Web BFF 接口清单（共 18 个）
+# Web BFF 接口清单（共 22 个）
 
-> ⏱️ **上次更新**: 2026-05-16 第十四批 | 回看主决议第十一节 + 各批 web 章节
+> ⏱️ **上次更新**: 2026-05-23 第十九批 | 回看主决议第十一节 + 各批 web 章节
 >
 > **架构原则**：所有 GET 在 `coin-strategy-web` 本地实现（直查 DB），proxy 已废弃。
 > 路由前缀：`/strategy/api/smart-wallet`，源码：`SmartWalletAuditController.java`
@@ -71,9 +71,20 @@ updated: 2026-05-17
 | `GET /market-liquidity/percentile?asOfDate=` | 日期 | 各 category 当日 P10/P30/P50/P70 + spreadP70 |
 | `GET /market-liquidity/percentile/{category}?limitDays=` | category | 历史 trend |
 
+### 📈 W2-T2 滑动聚合 / 健康（第十八-十九批）
+
+| 端点 | 输入 | 输出 |
+| --- | --- | --- |
+| `GET /audit/shadow-estimator-source?lookbackDays=` | 窗口 | VWAP / PROXY 分桶实证对比 |
+| `GET /audit/leader-rolling-aggregation` | 【待补充】 | 【待补充】 |
+| `GET /audit/leader-rolling-aggregation/history` | 【待补充】 | 【待补充】 |
+| `GET /audit/copy-trading-health` | 【待补充】 | 跟单健康聚合（合并 3 个子源） |
+
 ---
 
 ## 二、按批次落地（含 ⭐ 标 = 新增）
+
+> **【待补充】** 下表仅覆盖到第十三批；第十四批之后新增的端点（shadow-estimator-source、leader-rolling-aggregation 系列、copy-trading-health 等）尚未补入。
 
 | 批次 | 端点 |
 | --- | --- |

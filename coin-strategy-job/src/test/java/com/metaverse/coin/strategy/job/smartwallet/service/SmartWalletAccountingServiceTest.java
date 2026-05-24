@@ -90,6 +90,10 @@ class SmartWalletAccountingServiceTest {
     private SmartWalletMarketLinkService marketLinkService;
     @Mock
     private ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
+    @Mock
+    private PolymarketFeeScheduleService feeScheduleService;
+    @Mock
+    private PolymarketMarketDataCacheService marketDataCacheService;
 
     private SmartWalletAccountingService service;
 
@@ -119,7 +123,9 @@ class SmartWalletAccountingServiceTest {
                 marketInfoService,
                 marketStateService,
                 marketLinkService,
-                tradeOrderServiceProvider
+                tradeOrderServiceProvider,
+                feeScheduleService,
+                marketDataCacheService
         );
     }
 

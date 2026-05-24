@@ -1,5 +1,5 @@
 ---
-title: "Web BFF 接口前端联调指南 (19 个端点)"
+title: "Web BFF 接口前端联调指南 (22 个端点)"
 type: design
 status: active
 tags: [polymarket, audit, frontend]
@@ -7,7 +7,7 @@ created: 2026-05-17
 updated: 2026-05-17
 ---
 
-# Web BFF 接口前端联调指南 (19 个端点)
+# Web BFF 接口前端联调指南 (22 个端点)
 
 > ⏱️ **创建**: 2026-05-16 第十五批 | 兄弟文档: [`web-bff-interfaces.md`](./web-bff-interfaces.md)
 >
@@ -23,13 +23,13 @@ TEST:  http://49.51.250.174:8080/strategy/api/smart-wallet
 LOCAL: http://localhost:8080/strategy/api/smart-wallet
 ```
 
-鉴权：复用项目既有 auth filter，本批 19 个端点都需要登录态。前端调用时附带 Session Cookie 或 Authorization 头（按现有约定）。
+鉴权：复用项目既有 auth filter，本批 22 个端点都需要登录态。前端调用时附带 Session Cookie 或 Authorization 头（按现有约定）。
 
 ---
 
-## 二、19 个端点速查表
+## 二、22 个端点速查表
 
-> **【待核对】** 全文端点路径前缀不统一：本速查表用短路径（如 `/audit/alerts`），而下文部分示例用完整前缀（如 `/strategy/api/smart-wallet/audit/...`），个别 curl/fetch 示例的 `/audit/` 前缀也与速查表不一致。需确认真实 API 基础路径并全文统一。
+> **说明**：API 基础路径为 `/strategy/api/smart-wallet`（由 `server.servlet.context-path=/strategy/api` + Controller 的 `@RequestMapping("/smart-wallet")` 组成）。本速查表及下文示例中的路径均为该基础路径之后的相对路径 —— 完整 URL = `/strategy/api/smart-wallet` + 表中路径。
 
 | Group | Method+Path | 主要 query |
 | --- | --- | --- |
@@ -52,6 +52,9 @@ LOCAL: http://localhost:8080/strategy/api/smart-wallet
 | Leader | `GET /leader-drift/{wallet}` | `lookbackDays=30` |
 | Market | `GET /market-liquidity/percentile` | `asOfDate=` |
 | Market | `GET /market-liquidity/percentile/{category}` | `limitDays=30` |
+| Audit | `GET /audit/leader-rolling-aggregation` | 【待补充】query 参数 |
+| Audit | `GET /audit/leader-rolling-aggregation/history` | 【待补充】query 参数 |
+| Audit | `GET /audit/copy-trading-health` | 【待补充】query 参数 |
 
 ---
 

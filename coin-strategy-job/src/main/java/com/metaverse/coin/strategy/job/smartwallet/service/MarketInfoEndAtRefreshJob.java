@@ -38,7 +38,8 @@ public class MarketInfoEndAtRefreshJob {
 
     private final SmartWalletProperties properties;
     private final SmartWalletMarketInfoService marketInfoService;
-    private final PolymarketMarketMetadataService marketMetadataService;
+    // 修复五 5A：从 endAt-only 刷新升级为 lifecycle 全量刷新，改用 SmartWalletMarketStateService。
+    private final SmartWalletMarketStateService marketStateService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -68,19 +69,16 @@ public class MarketInfoEndAtRefreshJob {
             int failed = 0;
             for (SmartWalletMarketInfoEntity info : stale) {
                 try {
-                    PolymarketApiClient.MarketMetadata metadata = marketMetadataService
-                            .getByConditionId(info.getMarketId(), true, info.getQuestion());
-                    if (metadata == null) {
-                        failed++;
-                        continue;
-                    }
-                    Long endAt = metadata.getEndAt();
-                    if (endAt != null && endAt > 0 && !endAt.equals(info.getMarketEndAt())) {
-                        info.setMarketEndAt(endAt);
-                        info.setUpdatedAt(new Date());
-                        marketInfoService.update(info);
-                        updated++;
-                    }
+                    // 修复五 5A：lifecycle 全量刷新。refreshMarket(forceRefresh=true) 内部重拉
+                    // Polymarket 元数据并回写 marketEndAt / closed / acceptingOrders /
+                    // resolvedOutcome / marketLifecycle 并持久化——不再只刷 endAt。
+                    marketStateService.refreshMarket(
+                            info.getMarketId(),
+                            info.getQuestion(),
+                            org.springframework.util.StringUtils.hasText(info.getOutcome())
+                                    ? List.of(info.getOutcome()) : List.of(),
+                            true);
+                    updated++;
                 } catch (RuntimeException ex) {
                     failed++;
                     log.debug("{} skip marketId={} reason={}", LOG_PREFIX, info.getMarketId(), ex.getMessage());

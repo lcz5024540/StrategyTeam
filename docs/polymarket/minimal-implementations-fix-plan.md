@@ -349,13 +349,13 @@ gantt
 |---------|------|---------|------|
 | `pending_order_timeout_tracker` 表 | GTC 全局超时持久化 | F-P1-3 | ✅ 服务侧 (Entity + Mapper + Tracker + reload + write-through) 已上线；DDL 仍待 DBA 各环境执行 |
 | `pending_maker_only_tracker` 表 | MAKER_ONLY 持久化 | F-P1-4 | ✅ 服务侧 (Entity + Mapper + Tracker write-through + replayPendingFromDb) 已上线（第四轮）；DDL 仍待 DBA 各环境执行 |
-| `position_mark_price_history` 表 | TimeAware stop-loss 价格历史 | F-P2-23 | 待补充 |
-| `pm_follow_trade_attribution_daily` 表 | 跟单归因落表 | F-P2-8 | 待补充 |
+| `position_mark_price_history` 表 | TimeAware stop-loss 价格历史 | F-P2-23 | 未落地，F-P2-23 待实现 |
+| `pm_follow_trade_attribution_daily` 表 | 跟单归因落表 | F-P2-8 | 未落地，F-P2-8 待实现 |
 | `entity_primary_wallet` 索引 | 实体主钱包反查 | F-P1-14 | ✅ 服务侧已上线（第七轮，直接复用 `wallet_entity_map.is_primary_wallet` 字段）；为优化查询性能可后续追加 `idx_wallet_entity_map_entity_primary (entity_id, is_primary_wallet)` 复合索引（非阻塞） |
 | `pm_resolution_audit.uma_disputed` 列 | UMA Oracle 争议中标记 | F-P1-12 | ✅ 服务侧 + Entity 占位 (`@TableField(exist=false)`) 已就位；DDL 草案 `2026-05-17__f-p1-12_uma_dispute_audit_columns_draft.sql` 仍待 DBA 各环境执行 |
 | `pm_resolution_audit.uma_dispute_observed_at` 列 | UMA 争议首次观察时间 | F-P1-12 | ✅ 同上，与 `uma_disputed` 同一 DDL 文件，落库后需删 entity 上 `@TableField(exist=false)` 注解 |
-| `smart_wallet_behavior_profile.behavior_vector_schema_version` 列 | 行为向量 schema 版本 | F-P2-3 | 待补充 |
-| `strategy_alert.dedupe_key` 列 | 告警细粒度去重 | F-P2-7 | 待补充 |
+| `smart_wallet_behavior_profile.behavior_vector_schema_version` 列 | 行为向量 schema 版本 | F-P2-3 | 未落地，F-P2-3 待 DDL |
+| `strategy_alert.dedupe_key` 列 | 告警细粒度去重 | F-P2-7 | 未落地，F-P2-7 待 DDL |
 
 ---
 

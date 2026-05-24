@@ -17,38 +17,39 @@ updated: 2026-05-12
 
 ## 二、分层架构总览
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│                      Presentation Layer                      │
-│         Dashboard / Monitoring / Alert / REST API            │
-├──────────────────────────────────────────────────────────────┤
-│                       Strategy Layer                         │
-│  ┌────────────┐ ┌──────────┐ ┌────────┐ ┌────────────────┐  │
-│  │ Polymarket │ │ BTC/ETH  │ │ Weather│ │  Grid Trading  │  │
-│  │ CopyTrade  │ │ Predict  │ │Predict │ │   Strategy     │  │
-│  └────────────┘ └──────────┘ └────────┘ └────────────────┘  │
-│  ┌────────────┐ ┌──────────┐ ┌─────────────────────────┐    │
-│  │ CEX Funding│ │ Arbitrage│ │  ... Future Strategies  │    │
-│  │ Rate Arb   │ │ Cross-Ex │ │                         │    │
-│  └────────────┘ └──────────┘ └─────────────────────────┘    │
-├──────────────────────────────────────────────────────────────┤
-│                      Core Engine Layer                       │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐  │
-│  │  Order    │ │  Risk    │ │ Position │ │  Event Bus    │  │
-│  │  Engine   │ │  Engine  │ │ Manager  │ │  (Disruptor)  │  │
-│  └──────────┘ └──────────┘ └──────────┘ └───────────────┘  │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐  │
-│  │ Data     │ │ Signal   │ │ Account  │ │  Scheduler    │  │
-│  │ Engine   │ │ Engine   │ │ Manager  │ │               │  │
-│  └──────────┘ └──────────┘ └──────────┘ └───────────────┘  │
-├──────────────────────────────────────────────────────────────┤
-│                    Infrastructure Layer                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐  │
-│  │ Exchange  │ │  Market  │ │ Database │ │  Config &     │  │
-│  │ Adapters  │ │  Data    │ │  Layer   │ │  Discovery    │  │
-│  │ (Gateway) │ │  Feed    │ │          │ │               │  │
-│  └──────────┘ └──────────┘ └──────────┘ └───────────────┘  │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph PL["Presentation Layer"]
+        P1["Dashboard / Monitoring / Alert / REST API"]
+    end
+    subgraph SL["Strategy Layer"]
+        S1["Polymarket CopyTrade"]
+        S2["BTC/ETH Predict"]
+        S3["Weather Predict"]
+        S4["Grid Trading Strategy"]
+        S5["CEX Funding Rate Arb"]
+        S6["Arbitrage Cross-Ex"]
+        S7["... Future Strategies"]
+    end
+    subgraph CE["Core Engine Layer"]
+        C1["Order Engine"]
+        C2["Risk Engine"]
+        C3["Position Manager"]
+        C4["Event Bus (Disruptor)"]
+        C5["Data Engine"]
+        C6["Signal Engine"]
+        C7["Account Manager"]
+        C8["Scheduler"]
+    end
+    subgraph IL["Infrastructure Layer"]
+        I1["Exchange Adapters (Gateway)"]
+        I2["Market Data Feed"]
+        I3["Database Layer"]
+        I4["Config & Discovery"]
+    end
+    PL --> SL
+    SL --> CE
+    CE --> IL
 ```
 
 ---
@@ -249,10 +250,14 @@ public interface OrderEngine {
 ```
 
 **订单执行流程:**
-```text
-Signal → RiskCheck → PositionCheck → OrderSplit → ExchangeRoute → Execution → Fill
-          ↓              ↓              ↓             ↓              ↓
-       Reject?      Adjust Size?    TWAP/Iceberg   Best Price    Notify Strategy
+```mermaid
+flowchart LR
+    Signal --> RiskCheck --> PositionCheck --> OrderSplit --> ExchangeRoute --> Execution --> Fill
+    RiskCheck -.-> R1["Reject?"]
+    PositionCheck -.-> R2["Adjust Size?"]
+    OrderSplit -.-> R3["TWAP / Iceberg"]
+    ExchangeRoute -.-> R4["Best Price"]
+    Execution -.-> R5["Notify Strategy"]
 ```
 
 #### 3.2.4 Risk Engine — 风控引擎
@@ -653,34 +658,26 @@ public class PortfolioOptimizer {
 
 ## 七、数据流全景
 
-```text
-[Chain Monitor]──┐
-[WS Binance]─────┤
-[WS OKX]─────────┤──→ [MarketDataFeed] ──→ [Event Bus (Disruptor)]
-[REST Weather]───┤                              │
-[WS Polymarket]──┘                              │
-                                                ↓
-                                    ┌───────────────────────┐
-                                    │    Strategy Router     │
-                                    │  (按事件类型分发到策略)  │
-                                    └───────────────────────┘
-                                                │
-                          ┌─────────────────────┼─────────────────────┐
-                          ↓                     ↓                     ↓
-                   [CopyTrade]           [BTC Predict]          [Grid Trading]
-                          │                     │                     │
-                          ↓                     ↓                     ↓
-                    TradingSignal         TradingSignal         TradingSignal
-                          │                     │                     │
-                          └─────────────────────┼─────────────────────┘
-                                                ↓
-                                         [Risk Engine]
-                                          ↓ Pass/Reject
-                                    [Order Engine]
-                                          ↓
-                                ┌─────────┼─────────┐
-                                ↓         ↓         ↓
-                          [Polymarket] [Binance]  [OKX]
+```mermaid
+flowchart TB
+    M1["Chain Monitor"] --> FEED
+    M2["WS Binance"] --> FEED
+    M3["WS OKX"] --> FEED
+    M4["REST Weather"] --> FEED
+    M5["WS Polymarket"] --> FEED
+    FEED["MarketDataFeed"] --> BUS["Event Bus (Disruptor)"]
+    BUS --> ROUTER["Strategy Router<br/>(按事件类型分发到策略)"]
+    ROUTER --> CT["CopyTrade"]
+    ROUTER --> BP["BTC Predict"]
+    ROUTER --> GT["Grid Trading"]
+    CT --> SIG["TradingSignal"]
+    BP --> SIG
+    GT --> SIG
+    SIG --> RISK["Risk Engine"]
+    RISK -->|Pass / Reject| ORDER["Order Engine"]
+    ORDER --> EX1["Polymarket"]
+    ORDER --> EX2["Binance"]
+    ORDER --> EX3["OKX"]
 ```
 
 ---
@@ -727,15 +724,15 @@ services:
 
 | 阶段 | 策略 | 优先级 |
 |------|------|--------|
-| P0 | Polymarket 跟单 + 网格 | 🔴 |
-| P0 | BTC/ETH 5min 预测 | 🔴 |
-| P1 | 天气预测交易 | 🟡 |
-| P1 | CEX 资金费率套利 | 🟡 |
-| P2 | 跨交易所三角套利 | 🟢 |
-| P2 | 期权波动率套利 | 🟢 |
-| P2 | DEX/CEX 价差套利 | 🟢 |
-| P3 | 社交媒体情绪交易 | ⚪ |
-| P3 | 链上 MEV 策略 | ⚪ |
+| P0 | Polymarket 跟单 + 网格 | 最高 |
+| P0 | BTC/ETH 5min 预测 | 最高 |
+| P1 | 天气预测交易 | 高 |
+| P1 | CEX 资金费率套利 | 高 |
+| P2 | 跨交易所三角套利 | 中 |
+| P2 | 期权波动率套利 | 中 |
+| P2 | DEX/CEX 价差套利 | 中 |
+| P3 | 社交媒体情绪交易 | 低 |
+| P3 | 链上 MEV 策略 | 低 |
 
 ---
 

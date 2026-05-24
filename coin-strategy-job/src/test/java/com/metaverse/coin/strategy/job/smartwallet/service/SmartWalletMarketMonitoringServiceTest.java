@@ -158,7 +158,7 @@ class SmartWalletMarketMonitoringServiceTest {
                         .build()
         ));
 
-        OffsetPageView<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView> page =
+        OffsetPageView<com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitorItemView> page =
                 service.tablePage(1, 10, 14, null, "POLITICS", null, null, null);
 
         assertEquals(1, page.items().size());
@@ -218,16 +218,20 @@ class SmartWalletMarketMonitoringServiceTest {
     }
 
     @Test
-    void shouldHideExpiredMarketsEvenIfPersistedSnapshotStillSaysActive() {
+    void shouldHideMarketsWhosePersistedSnapshotIsNoLongerActive() {
+        // 契约变更：监控视图按 lifecycle/closed/acceptingOrders 判活跃，不再按 marketEndAt 过期
+        // （shouldDisplayActiveMarket 的 marketEndAt 参数已弃用——Polymarket 长尾市场 endAt 常陈旧）。
+        // 故"应隐藏"的市场以非活跃 lifecycle 表达，而非过去式 endAt。
         when(tradeEventMapper.selectList(any())).thenReturn(List.of(
-                event("market-expired", "Will expired active market disappear?")
+                event("market-expired", "Will a non-active market disappear?")
         ));
         when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
                 "market-expired", MarketStateSnapshot.builder()
                         .marketId("market-expired")
-                        .question("Will expired active market disappear?")
-                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
-                        .acceptingOrders(true)
+                        .question("Will a non-active market disappear?")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(false)
+                        .closed(true)
                         .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
                         .marketEndAt(System.currentTimeMillis() - 60_000L)
                         .build()
@@ -257,11 +261,14 @@ class SmartWalletMarketMonitoringServiceTest {
                         .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
                         .marketEndAt(System.currentTimeMillis() + 3_600_000L)
                         .build(),
+                // 契约变更：候选过滤按 lifecycle 判活跃，不再按 marketEndAt；
+                // "应排除"的市场以非活跃 lifecycle 表达。
                 "market-expired", MarketStateSnapshot.builder()
                         .marketId("market-expired")
-                        .question("Will expired market be dropped from candidates?")
-                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
-                        .acceptingOrders(true)
+                        .question("Will a non-active market be dropped from candidates?")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(false)
+                        .closed(true)
                         .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
                         .marketEndAt(System.currentTimeMillis() - 60_000L)
                         .build()
@@ -404,7 +411,15 @@ class SmartWalletMarketMonitoringServiceTest {
         when(marketStateService.loadPersistedMarkets(any())).thenReturn(Map.of(
                 "market-closed-task", activeSnapshot("market-closed-task"),
                 "market-resolved-task", activeSnapshot("market-resolved-task"),
-                "market-ended-task", activeSnapshot("market-ended-task")
+                // 契约变更：仅 endAt 过去已不再排除；"ended" 市场以非活跃 lifecycle 表达
+                // （真实链路中已结束的市场最终会被元数据同步标记为 CLOSED）。
+                "market-ended-task", MarketStateSnapshot.builder()
+                        .marketId("market-ended-task")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
+                        .acceptingOrders(false)
+                        .closed(true)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build()
         ));
 
         List<String> candidates = service.listCandidateMarketIds(20, 14);

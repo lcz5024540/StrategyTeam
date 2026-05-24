@@ -1,10 +1,10 @@
 ---
 title: "LONG_HORIZON_STAKE 双重缩减修复"
 type: troubleshooting
-status: active
+status: archived
 tags: [polymarket, troubleshooting]
 created: 2026-05-20
-updated: 2026-05-20
+updated: 2026-05-23
 ---
 
 # LONG_HORIZON_STAKE 双重缩减修复
@@ -27,11 +27,9 @@ updated: 2026-05-20
 | C. Kelly 启用 + `kellyStake==null` fallback | ✅ 1 次 → recommendedStake=preliminaryStake | ✅ 又乘 1 次 | **0.50 × 0.50 = 0.25** ❌ |
 | D. Kelly 启用 + negativeEV + manualAllowlistBypass | ✅ 1 次 → recommendedStake=preliminaryStake | ✅ 又乘 1 次 | **0.50 × 0.50 = 0.25** ❌ |
 
-5/17 那笔 task #102271 (Kelly stake=$24.91, manualAllowlist 白名单 paper 信号) 正是落在路径 D — Kelly 算正 EV 但走 `recommendedStake = kellyStake` 路径 B 应该只乘 1 次... 等等, 让我们再校对一下事实。
+5/17 那笔 task #102271（Kelly stake=$24.91，p=0.7318，manualAllowlist 白名单 paper 信号）落在**路径 B**：log 显示「Kelly stake=24.91 — Kelly 算正 EV」，走 `recommendedStake = kellyStake`，按理只乘 1 次。但报告里写了「应用 2 次」—— 原因是 `preliminaryStake` 在 line 712 被乘后，通过 line 915 的 `tradeProfitabilityScoringService.estimate(profile, event, consensus, preliminaryStake)` 影响了 profitabilityEstimate（continuum 计算），进而压低了 kellyStake 自身的输入。严格说这不是「再乘一次」，但效果类似：preliminaryStake 缩水 → profitability scoring 偏低 → 后续 cap 偏小。
 
-实际更仔细: log 显示 "Kelly stake=24.91 (p=0.7318) — Kelly 算正 EV" → 路径 B. 路径 B 按理只乘 1 次。但报告里写了"应用 2 次". 这是因为 preliminaryStake 在 line 712 被乘后, 通过 line 915 的 `tradeProfitabilityScoringService.estimate(profile, event, consensus, preliminaryStake)` 影响了 profitabilityEstimate (continuum 计算), 进而影响 kellyStake 本身的输入 — 严格说不是"再乘一次", 但效果类似 (preliminaryStake 缩水 → profitability scoring 偏低 → 后续 cap 偏小).
-
-无论如何, **路径 C/D 的双重缩减是真 bug**, 路径 B 的"间接污染"也只有把 711-715 块用 `kellyStakeAdopted` 控制才能完全干净.
+结论：**路径 C/D 的双重缩减是真 bug**；路径 B 的「间接污染」也只有把 711-715 块用 `kellyStakeAdopted` 控制才能完全干净。
 
 ## 修复
 

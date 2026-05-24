@@ -95,19 +95,32 @@ public class SmartWalletSignalRiskService {
     private MarketPriceImpactEstimator marketPriceImpactEstimator;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
-        return evaluate(profile, event, null, null);
+        return evaluate(profile, event, null, null, null);
     }
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
                                        SmartWalletTradeEventEntity event,
                                        SmartWalletProperties.SignalRisk overrideRisk) {
-        return evaluate(profile, event, overrideRisk, null);
+        return evaluate(profile, event, overrideRisk, null, null);
     }
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
                                        SmartWalletTradeEventEntity event,
                                        SmartWalletProperties.SignalRisk overrideRisk,
                                        Long currentFollowTaskId) {
+        return evaluate(profile, event, overrideRisk, currentFollowTaskId, null);
+    }
+
+    /**
+     * 修复六（6.6）：单事件市场状态上下文复用。
+     * {@code preResolvedMarketState} 非空时，G6 直接复用调用方（{@code createFollowTaskIfQualified}
+     * 的市场状态前移预检）已解析的快照，避免同一事件重复解析市场状态；为 null 时 G6 自行 refreshMarket。
+     */
+    public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
+                                       SmartWalletTradeEventEntity event,
+                                       SmartWalletProperties.SignalRisk overrideRisk,
+                                       Long currentFollowTaskId,
+                                       MarketStateSnapshot preResolvedMarketState) {
         List<String> reasons = new ArrayList<>();
         boolean accepted = true;
         boolean overrideApplied = false;
@@ -408,11 +421,14 @@ public class SmartWalletSignalRiskService {
         if (accepted) gateStage = 5; // 通过信号新鲜度
 
         // ── Gate 6: 市场状态 / 时间窗口 ──
-        MarketStateSnapshot marketState = marketStateService.refreshMarket(
-                event.getMarketId(),
-                event.getQuestion(),
-                StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
-        );
+        // 修复六（6.6）：优先复用调用方已解析的市场状态快照，避免单事件重复解析。
+        MarketStateSnapshot marketState = preResolvedMarketState != null
+                ? preResolvedMarketState
+                : marketStateService.refreshMarket(
+                        event.getMarketId(),
+                        event.getQuestion(),
+                        StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
+                );
         if (!marketState.isActive()) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G6_MARKET_NOT_ACTIVE";
@@ -1090,7 +1106,7 @@ public class SmartWalletSignalRiskService {
                 reasons.add("Recommended stake is below execution wallet minimum order after capital scaling.");
             }
         }
-        // ── Gate 10c: 暴露上限检查 (单市场/单地址/总TVL) ──
+        // ── Gate 10c: 暴露上限检查 (单市场/单地址) ──
         FollowExposureLimitService.ExposureCheckResult lastExposureResult = null;
         if (accepted) {
             SmartWalletProperties.ExposureLimitConfig exposureConfig = properties.getExposureLimit();
@@ -1098,7 +1114,7 @@ public class SmartWalletSignalRiskService {
                 FollowExposureLimitService.ExposureCheckResult exposureResult =
                         followExposureLimitService.check(
                                 event.getMarketId(), event.getOutcome(), event.getWalletAddress(),
-                                recommendedStake, availableCapital);
+                                recommendedStake);
                 lastExposureResult = exposureResult;
                 if (!exposureResult.isAllowed()) {
                     accepted = false;
@@ -2234,13 +2250,15 @@ public class SmartWalletSignalRiskService {
                 ? "BOOST_ONLY"
                 : risk.getConsensusGateMode().trim().toUpperCase(Locale.ROOT);
         boolean hardGate = "HARD_GATE".equals(gateMode);
-        boolean accepted;
-        if (!risk.isEnableConsensusGate() || !hardGate) {
-            // BOOST_ONLY 或共识门完全关闭：始终接受，多实体共识的强度由 EntryStrategyRouter 计算 stakeMultiplier 体现。
-            accepted = true;
-        } else {
-            accepted = !consensusEntityCountFailed && !consensusScoreFailed;
-        }
+        // 修复（回归）：CONSENSUS 策略是否"匹配"只取决于共识本身是否充分，与 gateMode 无关。
+        // 此前 BOOST_ONLY（默认）下无条件 accepted=true，经 EntryStrategyRouter(ANY) 后
+        // CONSENSUS 永远算"已匹配策略" → 整个信号永久放行，使
+        // HIGH_QUALITY_SINGLE_WALLET 行为门 / SINGLE_WALLET_PAPER_CANARY canary 门彻底失效。
+        // gateMode（BOOST_ONLY vs HARD_GATE）只决定 reason 文案/是否硬拒绝，
+        // 绝不能让 CONSENSUS 在 router 里伪装成已匹配策略。
+        // 共识门关闭时 *Failed 标志恒为 false → CONSENSUS 仍匹配（保持"不校验即放行"语义）；
+        // 共识不足时 CONSENSUS 不匹配，但不是硬 blocker —— 能否进场交给其它 fallback 策略。
+        boolean accepted = !consensusEntityCountFailed && !consensusScoreFailed;
         if (consensusEntityCountFailed) {
             int effectiveWindow = risk.getConsensusWindowSeconds() == null ? 180 : risk.getConsensusWindowSeconds();
             String prefix = hardGate ? "" : "[CONSENSUS_BOOST_ONLY_NOTICE] ";

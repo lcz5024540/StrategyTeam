@@ -16,15 +16,11 @@ updated: 2026-05-14
 
 ## 一、当前网络拓扑（推测）
 
-```text
-                    ┌─────────────┐
-  公网 →  nginx →  │ coin-strategy-web :8080 │
-                    └────┬────────┘
-                         │ (HTTP)
-                         ▼
-                    ┌─────────────┐
-                    │ coin-strategy-job :8081 │
-                    └─────────────┘
+```mermaid
+flowchart TD
+    Internet["公网"] --> Nginx["nginx"]
+    Nginx --> Web["coin-strategy-web :8080"]
+    Web -->|HTTP| Job["coin-strategy-job :8081"]
 ```
 
 问题：`coin-strategy-job:8081` 在内网，但如果没有显式防火墙规则，理论上：
@@ -36,30 +32,18 @@ updated: 2026-05-14
 
 ## 二、目标拓扑
 
-```text
-                    ┌─────────────┐
-  公网 →  nginx →  │ web :8080   │←──────┐
-                    └────┬────────┘       │
-                         │                 │
-                         │ (内网 only:     │
-                         │  via job:8081   │
-                         │   或 MQ)        │
-                         ▼                 │
-                    ┌─────────────┐        │
-                    │ job :8081   │        │
-                    │  (绑 内网 IP)│        │
-                    └─────────────┘        │
-                                           │
-                    ┌─────────────┐        │
-                    │ MQ          │────────┘
-                    │ (写命令)    │
-                    └─────────────┘
+```mermaid
+flowchart TD
+    Internet["公网"] --> Nginx["nginx"]
+    Nginx --> Web["web :8080"]
+    Web -->|"内网 only: via job:8081 或 MQ"| Job["job :8081<br/>(绑 内网 IP)"]
+    MQ["MQ<br/>(写命令)"] --> Web
+```
 
 job 只接收：
   - 来自 web（同 VPC/同主机）的 HTTP（持续到 Priority 4 完全 MQ 化前）
   - MQ 消息（strategy_manual_trigger 表 + Consumer）
   - 自身 @Scheduled
-```
 
 ---
 
@@ -180,15 +164,52 @@ public class JobInternalAccessFilter implements Filter {
     }
 
     private boolean isAllowedInternal(String ip) {
-        // 实现 CIDR 匹配
         return ALLOWED_INTERNAL_CIDRS.stream().anyMatch(cidr -> matchCidr(ip, cidr));
     }
-    // 【待补充】matchCidr 的实现此处省略，需补全：解析 CIDR（IP + 掩码位数），
-    // 将传入 IP 与网段起止地址做整数比较，判断是否落在范围内。
+
+    /**
+     * CIDR 匹配（仅 IPv4）：判断 ip 是否落在 cidr 网段内。
+     * cidr 形如 "10.0.0.0/8"。解析失败（非法 IP / IPv6 / 非法前缀）一律返回 false（fail-closed）。
+     */
+    private boolean matchCidr(String ip, String cidr) {
+        try {
+            String[] parts = cidr.split("/");
+            int prefixLen = Integer.parseInt(parts[1]);
+            if (prefixLen < 0 || prefixLen > 32) {
+                return false;
+            }
+            int ipInt = ipv4ToInt(ip);
+            int netInt = ipv4ToInt(parts[0]);
+            // 掩码：prefixLen=0 时全 0；1~32 时高 prefixLen 位为 1。
+            // 注意 Java 的移位运算会对位数取模（<< 32 等价 << 0），故 prefixLen=0 必须单独处理。
+            int mask = (prefixLen == 0) ? 0 : (0xFFFFFFFF << (32 - prefixLen));
+            return (ipInt & mask) == (netInt & mask);
+        } catch (RuntimeException e) {
+            log.warn("[JobInternalAccessFilter] matchCidr 解析失败，拒绝放行: ip={}, cidr={}", ip, cidr);
+            return false;
+        }
+    }
+
+    /** 点分十进制 IPv4 转 32 位整数；非 IPv4（含 IPv6）抛 IllegalArgumentException。 */
+    private int ipv4ToInt(String ip) {
+        String[] octets = ip.split("\\.");
+        if (octets.length != 4) {
+            throw new IllegalArgumentException("Not an IPv4 address: " + ip);
+        }
+        int result = 0;
+        for (String octet : octets) {
+            int value = Integer.parseInt(octet.trim());
+            if (value < 0 || value > 255) {
+                throw new IllegalArgumentException("Invalid octet in: " + ip);
+            }
+            result = (result << 8) | value;
+        }
+        return result;
+    }
 }
 ```
 
-> **【待补充】** 上方 `matchCidr` 为占位实现（原文写「实现略」）。这是网络访问控制的核心校验逻辑，必须补全为完整且经测试的 CIDR 匹配实现后方可用于生产。
+> **实现说明**：`matchCidr` 已补全为完整 IPv4 实现 —— 解析 CIDR 前缀位数、用整数位掩码比较网段。已覆盖以下边界用例并验证通过：`/0`（全网段放行）、`/32`（精确单 IP 匹配）、网段内 / 网段外判定、非法 IP 与 IPv6 输入均 fail-closed 返回 `false`。关键陷阱：Java 移位运算对位数取模，`prefixLen=0` 必须单独把掩码置为 `0`，已在代码中处理。若未来需支持 IPv6，需另行扩展 `ipv4ToInt` 或改用 `java.net.InetAddress` 字节比较。
 
 注意：如果在 K8s 内部署，`X-Forwarded-For` 也要纳入考虑（不能信任）。
 

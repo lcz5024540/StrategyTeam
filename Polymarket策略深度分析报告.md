@@ -68,48 +68,15 @@ Polymarket 是基于 Polygon 网络、采用 CLOB (Central Limit Order Book) 机
 
 ### 2.3 执行架构（综合多个仓库的通用范式）
 
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                          LEADER 钱包源                                  │
-│   (1...N 个 Polygon 地址，由用户在 config 中配置)                       │
-└─────────────────────┬──────────────────────────────────────────────────┘
-                      │
-            ┌─────────▼──────────┐
-            │  事件采集层 (3 路) │
-            │ ① 轮询 Data API    │   /trades?user=0x...&limit=50
-            │ ② WebSocket trade  │   real-time channel
-            │ ③ 链上 logs 监听   │   Polygon RPC eth_getLogs
-            └─────────┬──────────┘
-                      │ normalized TradeEvent{market_id, side, size, price, ts}
-            ┌─────────▼──────────┐
-            │   去重 / 状态机    │   leader_event_id → 幂等键
-            │ (Supabase / Redis) │   防止同笔成交被多次复制
-            └─────────┬──────────┘
-                      │
-            ┌─────────▼──────────┐
-            │   过滤 & 缩放器    │
-            │ - 流动性最小值     │
-            │ - 价差阈值         │
-            │ - 类别白名单       │
-            │ - 单笔最大 USD     │
-            │ - leader 占比 → follower 占比 (按 capital 比例缩放) │
-            └─────────┬──────────┘
-                      │ ScaledOrderIntent
-            ┌─────────▼──────────┐
-            │   预交易模拟       │   再次抓 orderbook，验证 slippage、spread
-            │   (Pre-flight)     │
-            └─────────┬──────────┘
-                      │ OK / REJECT
-            ┌─────────▼──────────┐
-            │ py-clob-client 下单│   post limit order (GTC)
-            └─────────┬──────────┘
-                      │ order_id
-            ┌─────────▼──────────┐
-            │   退出策略管理     │
-            │ A. 镜像退出: 监听 leader 卖出，同步跟卖 │
-            │ B. 独立 TP/SL: 价格 ≥ +20% or ≤ -30%   │
-            │ C. 到期解算: 等待 market 结算          │
-            └────────────────────┘
+```mermaid
+flowchart TB
+    L["LEADER 钱包源<br/>1...N 个 Polygon 地址，由用户在 config 中配置"] --> CL
+    CL["事件采集层 (3 路)<br/>① 轮询 Data API /trades (user=0x..., limit=50)<br/>② WebSocket trade real-time channel<br/>③ 链上 logs 监听 Polygon RPC eth_getLogs"] -->|"normalized TradeEvent: market_id / side / size / price / ts"| DD
+    DD["去重 / 状态机<br/>leader_event_id → 幂等键 (Supabase / Redis)<br/>防止同笔成交被多次复制"] --> FT
+    FT["过滤 & 缩放器<br/>流动性最小值 · 价差阈值 · 类别白名单<br/>单笔最大 USD · leader 占比按 capital 比例缩放为 follower 占比"] -->|ScaledOrderIntent| PF
+    PF["预交易模拟 (Pre-flight)<br/>再次抓 orderbook，验证 slippage、spread"] -->|OK / REJECT| OP
+    OP["py-clob-client 下单<br/>post limit order (GTC)"] -->|order_id| EX
+    EX["退出策略管理<br/>A. 镜像退出: 监听 leader 卖出，同步跟卖<br/>B. 独立 TP/SL: 价格 ≥ +20% 或 ≤ -30%<br/>C. 到期解算: 等待 market 结算"]
 ```
 
 **Supabase Realtime 子架构**（GiordanoSouza 流派）：把所有 `trade_events` 写入 Postgres 表，开启 Realtime，bot 监听 `INSERT` 事件，几乎实现 push 式触发，避免 API 轮询。这是把"事件驱动"做得最简洁的开源实现。
@@ -242,44 +209,13 @@ def ensemble_probability(member_forecasts, threshold):
 
 ### 3.4 执行架构（suislanchez/polymarket-kalshi-weather-bot）
 
-```text
-┌───────────────────────────────────────────────────────────────────┐
-│                        DATA SOURCES                               │
-│  Open-Meteo (GFS 31-member)   NWS Observations   Polymarket Gamma │
-│  Kalshi KXHIGH series                                             │
-└──────────┬────────────────┬──────────────┬───────────────┬────────┘
-           │                │              │               │
-           ▼                ▼              ▼               ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Weather Signal Engine  (backend/core/weather_signals.py)    │
-│                                                              │
-│  for city in CITIES:                                         │
-│     ensemble = open_meteo.fetch(city, ensemble=True)         │
-│     for market in active_markets(city):                      │
-│         T = market.threshold                                 │
-│         p_model = ensemble_above(ensemble, T)                │
-│         p_market = market.best_ask  (for YES side)           │
-│         edge = p_model - p_market                            │
-│         if abs(edge) > 0.08:                                 │
-│             confidence = ensemble_agreement(ensemble, T)     │
-│             emit Signal(market, side, edge, confidence)      │
-└──────────────────────┬───────────────────────────────────────┘
-                       │
-            ┌──────────▼───────────┐
-            │  Kelly Sizing 0.15×  │   size = 0.15 × kelly × bankroll
-            │  Max $100/trade      │   capped
-            │  Edge ≥ 8%           │
-            │  Entry price ≤ 0.70  │   不追高已经稳赢的腿
-            └──────────┬───────────┘
-                       │
-            ┌──────────▼───────────┐
-            │  CLOB Order Placer   │   py-clob-client / TS clob-client
-            └──────────┬───────────┘
-                       │
-            ┌──────────▼───────────┐
-            │ Settlement Engine    │   到期后用 NWS 真实观测验证 → 计算 Brier score
-            │ Calibration Tracker  │   反推模型漂移
-            └──────────────────────┘
+```mermaid
+flowchart TB
+    DS["DATA SOURCES<br/>Open-Meteo (GFS 31-member) · NWS Observations<br/>Polymarket Gamma · Kalshi KXHIGH series"] --> WSE
+    WSE["Weather Signal Engine — backend/core/weather_signals.py<br/>对每个 city / active market 计算:<br/>p_model = ensemble_above(ensemble, T)<br/>edge = p_model − p_market(best_ask)<br/>若 abs(edge) > 0.08 → emit Signal(market, side, edge, confidence)"] --> KS
+    KS["Kelly Sizing 0.15×<br/>size = 0.15 × kelly × bankroll，单笔上限 $100<br/>Edge ≥ 8% · Entry price ≤ 0.70 (不追高稳赢的腿)"] --> COP
+    COP["CLOB Order Placer<br/>py-clob-client / TS clob-client"] --> SE
+    SE["Settlement Engine + Calibration Tracker<br/>到期后用 NWS 真实观测验证 → 计算 Brier score → 反推模型漂移"]
 ```
 
 ### 3.5 核心代码片段
@@ -392,29 +328,15 @@ def fuse_signals(rsi, mom_1m, mom_5m, vwap_dev, sma_sig, skew):
 
 ### 4.4 7-Phase 生产架构（aulekator 仓库）
 
-```text
-┌────────────┐  ┌─────────────┐  ┌────────────┐  ┌──────────────┐
-│ Phase 1    │  │ Phase 2     │  │ Phase 3    │  │ Phase 4      │
-│ Data       │→ │ Ingestion   │→ │ Nautilus   │→ │ Strategy     │
-│ Sources    │  │ adapters    │  │ Core (data │  │ Brain        │
-│ (Coinbase, │  │ + validators│  │ engine,    │  │ - spike      │
-│ Binance,   │  │ + rate-limit│  │ event bus) │  │ - sentiment  │
-│ News, F&G) │  │             │  │            │  │ - divergence │
-└────────────┘  └─────────────┘  └────────────┘  └──────┬───────┘
-                                                        │
-                                                        ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Phase 5 Execution                                            │
-│  - risk_engine.py  (size cap, SL 30%, TP 20%, exposure)      │
-│  - polymarket_client.py  (py-clob-client wrapper)            │
-└────────────────┬─────────────────────────────────────────────┘
-                 │
-       ┌─────────▼─────────┐    ┌─────────────────────────┐
-       │ Phase 6 Monitoring│    │ Phase 7 Feedback        │
-       │ Grafana + Prom    │←──→│ learning_engine.py      │
-       │ - win rate        │    │ - re-weight signals     │
-       │ - latency         │    │   based on rolling PnL  │
-       └───────────────────┘    └─────────────────────────┘
+```mermaid
+flowchart TB
+    P1["Phase 1 · Data Sources<br/>Coinbase, Binance, News, F&G"] --> P2
+    P2["Phase 2 · Ingestion<br/>adapters + validators + rate-limit"] --> P3
+    P3["Phase 3 · Nautilus Core<br/>data engine, event bus"] --> P4
+    P4["Phase 4 · Strategy Brain<br/>spike / sentiment / divergence"] --> P5
+    P5["Phase 5 · Execution<br/>risk_engine.py (size cap, SL 30%, TP 20%, exposure)<br/>polymarket_client.py (py-clob-client wrapper)"] --> P6
+    P6["Phase 6 · Monitoring<br/>Grafana + Prometheus — win rate, latency"] <--> P7
+    P7["Phase 7 · Feedback<br/>learning_engine.py — 按 rolling PnL 重新加权信号"]
 ```
 
 `Phase 7` 的精髓：每笔交易结算后，把 (signals_at_entry, outcome) 写入 store，每 200 笔做一次 logistic regression 重新拟合 signal weights，实现 **在线学习**。
@@ -475,11 +397,11 @@ def find_yes_no_arb(orderbook, max_cost=0.985, min_size=10):
 
 [Polymarket/poly-market-maker](https://github.com/Polymarket/poly-market-maker) 是官方开源的市场做市 keeper。每 `sync_interval` (默认 30s) 执行：
 
-```text
-1. 抓取当前 midpoint
-2. 计算 expected orders (按策略)
-3. diff(expected, open_orders) → cancels + new placements
-4. 执行 cancel + place
+```mermaid
+flowchart LR
+    A["1. 抓取当前 midpoint"] --> B["2. 计算 expected orders (按策略)"]
+    B --> C["3. diff(expected, open_orders)<br/>→ cancels + new placements"]
+    C --> D["4. 执行 cancel + place"]
 ```
 
 #### Bands 策略

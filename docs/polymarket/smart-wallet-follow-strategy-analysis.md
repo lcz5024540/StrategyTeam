@@ -475,7 +475,7 @@ flowchart TD
 | 持仓时长 | 40 | `min(holdingHours / 24, 1) × 40`，1 天以上拿满 |
 | 资金占比 | 25 | 该仓位 `costBasisUsdc` / 全部开仓 `costBasisUsdc` 之和，在 40% 集中度处饱和 |
 | 流动性代理 | 15 | 用 `\|ROI\|` 反向衡量——ROI 越接近 0，"卡在僵尸市场"的可能越高 |
-| 机会成本 | 20 | `pendingSignals / maxOpenPositions × 20`。**【待核对】** 此处称 `countPendingSignals()` 硬编码为 0，但 minimal-implementations-fix-plan 的 F-P1-17 标记该项已于 2026-05-17 改为真实查询；本表述疑似过时，需与代码核对后更新 |
+| 机会成本 | 20 | `pendingSignals / maxOpenPositions × 20`；`countPendingSignals()` 已是真实查询（查 `smart_wallet_follow_task` 中 `status=PENDING` 且 `created_at >= now - lookbackHours` 的行数，`lookbackHours` 默认 24），仅 mapper 缺失或查询异常时 fallback 0 |
 
 **资格 / 安全保护：**
 - 候选必须 `holdingHours ≥ holdingPeriodHours` 且 `ROI ∈ [deadZoneLowRate, deadZoneHighRate]`
@@ -1200,23 +1200,23 @@ flowchart TB
 | 到期退出 | `signal-risk.enable-auto-time-window-exit` | false | 到期退出开关 |
 | 到期退出 | `signal-risk.auto-time-window-exit-hours-before-end` | 2 | 到期前退出小时数 |
 | 资金回收 🆕 | `signal-risk.capital-recycle.enabled` | false | 资金回收总开关 |
-| 资金回收 🆕 | `signal-risk.capital-recycle.paper-enabled` / `live-enabled` | true/false | 分模式开关 |
-| 资金回收 🆕 | `signal-risk.capital-recycle.holding-period-hours` | — | 进入候选的最低持仓时长 |
-| 资金回收 🆕 | `signal-risk.capital-recycle.dead-zone-low-rate` / `dead-zone-high-rate` | — | ROI 死区上下界 |
-| 资金回收 🆕 | `signal-risk.capital-recycle.recycle-threshold` | — | 评分阈值（0~100） |
-| 资金回收 🆕 | `signal-risk.capital-recycle.max-recycle-per-round` | — | 每轮最大回收数 |
-| 资金回收 🆕 | `signal-risk.capital-recycle.min-retain-positions` | — | 至少保留的开仓数 |
+| 资金回收 🆕 | `signal-risk.capital-recycle.paper-enabled` / `live-enabled` | false/true | 分模式开关 |
+| 资金回收 🆕 | `signal-risk.capital-recycle.holding-period-hours` | 8 | 进入候选的最低持仓时长 |
+| 资金回收 🆕 | `signal-risk.capital-recycle.dead-zone-low-rate` / `dead-zone-high-rate` | -0.05 / 0.08 | ROI 死区上下界 |
+| 资金回收 🆕 | `signal-risk.capital-recycle.recycle-threshold` | 60 | 评分阈值（0~100） |
+| 资金回收 🆕 | `signal-risk.capital-recycle.max-recycle-per-round` | 3 | 每轮最大回收数 |
+| 资金回收 🆕 | `signal-risk.capital-recycle.min-retain-positions` | 3 | 至少保留的开仓数 |
 | 资金回收 🆕 | `signal-risk.capital-recycle.cooldown-minutes` | 30 | 单仓位冷却分钟数 |
-| 资金回收 🆕 | `signal-risk.capital-recycle.daily-recycle-budget-usdc` | — | UTC 日预算上限 |
+| 资金回收 🆕 | `signal-risk.capital-recycle.daily-recycle-budget-usdc` | 100 | UTC 日预算上限 |
 | 意图聚合 🆕 | `intent-aggregation.window-minutes` | 5 | 同地址 + 市场 + outcome + side 聚合窗口 |
-| 白名单 🆕 | `manual-allowlist` 实体字段 | — | `allowedExecutionModes` (PAPER/LIVE/BOTH)、`stakeMultiplier` (默认 0.50，上限 1.0)、`maxLiveOrdersPerDay` (默认 5)、`maxLiveOrdersPerRun` (默认 2)、`expiresAt` (默认 +30 天) |
-| 黑名单 🆕 | 自动入黑规则 | — | 35 天无可信关闭样本（`sourceConfidence >= 0.55`）→ 自动写入 `INACTIVE_GT_35D_BLOCKLIST` |
+| 白名单 🆕 | `manual-allowlist` 实体字段 | （见说明） | `allowedExecutionModes` (PAPER/LIVE/BOTH)、`stakeMultiplier` (默认 0.50，上限 1.0)、`maxLiveOrdersPerDay` (默认 5)、`maxLiveOrdersPerRun` (默认 2)、`expiresAt` (默认 +30 天) |
+| 黑名单 🆕 | 自动入黑规则 | （见说明） | 35 天无可信关闭样本（`sourceConfidence >= 0.55`）→ 自动写入 `INACTIVE_GT_35D_BLOCKLIST` |
 | W2-T1 流动性 🆕 | `signal-risk.enable-liquidity-rolling-percentile` | false (prod=true) | 启用 P30 滚动门 |
 | W2-T1.4 价差 🆕 | `signal-risk.enable-spread-p70-gate` | false (prod=true) | 启用 P70 价差门 |
 | W2-T1.4 价差 🆕 | `signal-risk.spread-p70-downgrade-factor` / `spread-p70-reject-factor` | 1.5 / 2.0 | P70 倍率档位 |
 | W2-T1.4 价差 🆕 | `signal-risk.spread-p70-downgrade-multiplier` | 0.5 | 中档降级仓位倍率 |
 | W2-T2 滑动胜率 🆕 | `signal-risk.enable-leader-rolling-gate` | false | 启用 leader 滑动窗口胜率门 |
-| W2-T2 滑动胜率 🆕 | `signal-risk.leader-rolling-window-size` | — | N 笔滑动窗口大小 |
+| W2-T2 滑动胜率 🆕 | `signal-risk.leader-rolling-window-size` | 20 | N 笔滑动窗口大小 |
 | W2-T3 共识 🆕 | `signal-risk.consensus-gate-mode` | BOOST_ONLY | `BOOST_ONLY` / `HARD_GATE` |
 | W2-T3 共识 🆕 | `signal-risk.consensus-boost-multipliers` | 2:1.20, 3+:1.50 | 实体数 → 倍率 |
 | W2-T4 价格冲击 🆕 | `signal-risk.enable-price-impact-gate` | true | 启用三段式 |
@@ -1228,11 +1228,11 @@ flowchart TB
 | W2-T5 距结算 🆕 | `signal-risk.enable-time-to-expiry-gate` | true | 启用距结算门 |
 | W2-T5 距结算 🆕 | `signal-risk.time-to-expiry-reject-minutes` / `downgrade-minutes` | 30 / 120 | 三档边界 |
 | W2-T5 距结算 🆕 | `signal-risk.time-to-expiry-downgrade-multiplier` | 0.5 | 中档仓位倍率 |
-| W2-T5 距结算 🆕 | `signal-risk.time-to-expiry-exempt-market-types` | — | 豁免品类（天气 / BTC 5min）|
+| W2-T5 距结算 🆕 | `signal-risk.time-to-expiry-exempt-market-types` | 空列表 | 豁免品类（天气 / BTC 5min）|
 | W2-T6 行为漂移 🆕 | `signal-risk.enable-leader-drift-gate` | false (prod=true / test=true) | 启用行为漂移门 |
 | W2-T6 行为漂移 🆕 | `signal-risk.leader-drift-threshold` / `severe-threshold` | 0.40 / 0.60 | cosine 距离阈值 |
 | W2-T6 行为漂移 🆕 | `signal-risk.leader-drift-stake-multiplier` | 0.25 | DRIFTED 仓位倍率 |
-| W2-T6 行为漂移 🆕 | `signal-risk.leader-drift-min-samples` | — | cold-start 最小样本数 |
+| W2-T6 行为漂移 🆕 | `signal-risk.leader-drift-min-samples` | 10 | cold-start 最小样本数 |
 | W1-T1 LiveDiff 🆕 | `audit.live-replay-diff-enabled` | true | LiveReplayDiff 总开关 |
 | W1-T1 LiveDiff 🆕 | `audit.live-replay-diff-cron` | `0 0 2 * * *` | 日 02:00 Asia/Shanghai |
 | W1-T1 LiveDiff 🆕 | `audit.live-replay-pnl-diff-bps` | 100 | PnL 差异 bps 阈值 |

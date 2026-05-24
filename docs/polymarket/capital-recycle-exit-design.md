@@ -85,12 +85,6 @@ smart-wallet:
           记录 exitReason = CAPITAL_RECYCLE_AUTO_EXIT
 ```
 
-## 日期
-
-2026-05-02
-
-> **【待核对】** 此处「日期 2026-05-02」与文件 frontmatter 的 `created: 2026-05-06` 不一致。建议二选一保留（推荐以 frontmatter 为准），并删除这个孤立的「日期」小节。
-
 ---
 
 <!-- kb-backlink -->

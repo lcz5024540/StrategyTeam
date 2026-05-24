@@ -206,8 +206,7 @@ public class WeatherFairValueServiceV2 {
         }
 
         // ── Layer 2: 集成分布层 (有集成数据时) ──
-        // 适用场景：有 ≥50 个集成成员，直接用经验分布
-        // 【待核对】上方注释写「≥50」，下方代码判断为「>= 30」，阈值不一致，需统一
+        // 适用场景：有 ≥30 个集成成员，直接用经验分布
         if (data.getEnsemble() != null && data.getEnsemble().getTotalMembers() >= 30) {
             return computeFromEnsemble(spec, data, calibration);
         }
@@ -261,14 +260,36 @@ private WeatherFairValueResult computeFromObservation(WeatherMarketSpec spec,
             BigDecimal prob = computeRemainingHoursProbability(gap, remaining, data.getEnsemble());
             return buildResult(prob, new BigDecimal("0.90"), data.getLeadHours(), "observation_unlikely");
         }
+    } else {
+        // MIN 温度：市场问"今天最低温是否低于阈值"，最低温通常在凌晨触底
+        BigDecimal observedMin = obs.getTodayObservedMinF();
+
+        if (observedMin.compareTo(threshold) < 0) {
+            // 已经低于阈值 → 几乎确定 YES
+            return buildResult(new BigDecimal("0.98"), new BigDecimal("0.99"),
+                    data.getLeadHours(), "observation_exceeded");
+        }
+
+        // 还没触底，但还有剩余可能更冷的小时
+        BigDecimal gap = observedMin.subtract(threshold); // 还需再降多少度
+        List<BigDecimal> remaining = obs.getRemainingHourForecastsF();
+        BigDecimal projectedMin = remaining.stream()
+                .reduce(observedMin, BigDecimal::min);
+
+        if (projectedMin.compareTo(threshold) < 0) {
+            // 逐时预报显示今天还能跌破阈值
+            BigDecimal prob = computeRemainingHoursProbability(gap, remaining, data.getEnsemble());
+            return buildResult(prob, new BigDecimal("0.95"), data.getLeadHours(), "observation_projected");
+        } else {
+            // 逐时预报显示今天大概率跌不破
+            BigDecimal prob = computeRemainingHoursProbability(gap, remaining, data.getEnsemble());
+            return buildResult(prob, new BigDecimal("0.90"), data.getLeadHours(), "observation_unlikely");
+        }
     }
-    // MIN 温度类似逻辑（看凌晨最低温是否已触底）
-    // 【待补充】MIN 温度分支逻辑尚未实现，需对称补全：判断凌晨最低温是否已触底，
-    // 参照上方 MAX 分支返回 observation_projected / observation_unlikely 结果。
 }
 ```
 
-> **【待补充】** 上方 `computeFromObservation` 的 MIN（最低温）分支仅有注释、逻辑未实现，需参照 MAX 分支对称补全。
+> **实现说明**：`computeFromObservation` 的 MIN（最低温）分支已参照 MAX 分支对称补全 —— 把「已超过阈值」换成「已低于阈值」、`max` 归约换成 `min`、比较方向由 `>` 翻转为 `<`，`gap` 改为「还需再降多少度」，并复用同一 `computeRemainingHoursProbability` 计算剩余小时触底概率，返回 `observation_exceeded / observation_projected / observation_unlikely` 三态与 MAX 对齐。
 
 ### 3.4 Layer 2：集成经验分布
 

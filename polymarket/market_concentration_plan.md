@@ -234,10 +234,11 @@ GET /api/smart-wallet/concentration/{conditionId}?outcome=YES
 
 ## 实施顺序
 
-```text
-P0-4（Config）→ P0-1（API）→ P0-2（Service）→ P0-3（Risk Gate）
-→ P1-1（Penalty）→ P1-2（Mode）
-→ P2-1（API）→ P2-2（Monitor Job）
+```mermaid
+flowchart LR
+    P04["P0-4 Config"] --> P01["P0-1 API"] --> P02["P0-2 Service"] --> P03["P0-3 Risk Gate"]
+    P03 --> P11["P1-1 Penalty"] --> P12["P1-2 Mode"]
+    P12 --> P21["P2-1 API"] --> P22["P2-2 Monitor Job"]
 ```
 
 ---

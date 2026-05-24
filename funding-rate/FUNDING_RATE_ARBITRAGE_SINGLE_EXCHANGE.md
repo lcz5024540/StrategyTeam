@@ -155,7 +155,7 @@ updated: 2026-04-26
 * `com.metaverse.coin.strategy.core.arbitrage.decision.SingleExchangeSpotFuturesArbitrageStrategy`
 * `com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor`
 * `com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan`
-* `com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskController`
+* `com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService`
 * `com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageRebalanceService`
 * `com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeFundingRateHistory`
 * `com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition`

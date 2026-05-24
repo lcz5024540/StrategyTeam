@@ -17,6 +17,7 @@ updated: 2026-05-23
 - [项目 README](../README.md) — 开发内容定义、系统分层架构、前端启停说明
 - [PRODUCT_DESIGN](../PRODUCT_DESIGN.md) — 产品设计文档
 - [quant-trading-architecture](../quant-trading-architecture.md) — 量化交易平台架构
+- [polymarket-现行架构](../polymarket/polymarket-现行架构.md) — Polymarket 跟单系统现行架构权威入口
 - [java_architecture_design.svg](../java_architecture_design.svg) — Java 架构设计图
 
 ## 二、架构重构与部署拓扑
