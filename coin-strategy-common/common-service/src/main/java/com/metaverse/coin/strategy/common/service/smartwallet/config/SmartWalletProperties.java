@@ -1378,6 +1378,26 @@ public class SmartWalletProperties {
          * 默认 10; 与 SOP 中"灰度初期 leader 池 < 10 个不算 cooling"一致.
          */
         private Integer leaderRollingAggregationMinEvaluatedCount = 10;
+
+        // ── T-B7: 事件摄取时延监控 (TradeEventIngestLagJob) ──
+        /**
+         * 是否开启事件摄取时延监控 Job. 默认开启 (纯只读聚合, 无副作用).
+         * 关闭后整个 Job 不再触发, 也不会输出日志.
+         */
+        private boolean ingestLagMonitorEnabled = true;
+        /** 摄取时延监控 cron, 默认每 30 分钟 (HH:05 / HH:35) 触发, 错开整点高峰. 6 段 Spring cron. */
+        private String ingestLagMonitorCron = "0 5/30 * * * *";
+        /** 摄取时延监控调度时区. */
+        private String ingestLagMonitorZone = "Asia/Shanghai";
+        /** 摄取时延统计回看窗口 (小时), 默认 4h. */
+        private Integer ingestLagWindowHours = 4;
+        /**
+         * smart_wallet_trade_event 摄取时延 (opened_at→created_at) 的 P90 超过此秒数时 WARN.
+         * 默认 600s (= 10min), 与 SPORTS 类硬新鲜度门约 600s 上限一致.
+         */
+        private Integer ingestLagWarnP90Seconds = 600;
+        /** 单次扫描的最大样本数, 防止极端流量下 Job 阻塞. 默认 20000. */
+        private Integer ingestLagMaxSamples = 20000;
     }
 
     @Data

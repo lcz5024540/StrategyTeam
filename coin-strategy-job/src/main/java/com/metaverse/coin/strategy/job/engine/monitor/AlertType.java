@@ -46,6 +46,9 @@ public enum AlertType {
     /** 跟单策略可用资金偏低，可能很快归零 */
     HEALTH_CAPITAL_LOW(AlertLevel.WARN, "跟单策略可用资金偏低"),
 
+    /** T-B7: 事件摄取延迟 P90 超阈值（smart_wallet_trade_event 的 opened_at→created_at） */
+    HEALTH_INGEST_LAG_HIGH(AlertLevel.WARN, "事件摄取延迟 P90 超阈值"),
+
     // ── W1-T1.5 / W1-T4.5 智能钱包审计告警（统一告警通道接入） ──
 
     /** W1-T1: Live↔Replay 一致性差异超阈值 */

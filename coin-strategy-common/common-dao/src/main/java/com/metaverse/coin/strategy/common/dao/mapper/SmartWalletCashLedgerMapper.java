@@ -55,4 +55,24 @@ public interface SmartWalletCashLedgerMapper extends BaseMapper<SmartWalletCashL
                                      @Param("mode") String mode,
                                      @Param("referenceType") String referenceType,
                                      @Param("referenceId") Long referenceId);
+
+    /**
+     * 指定账户(execution_address)截至当前的累计余额 = SUM(IN: +amount / OUT: -amount).
+     *
+     * <p>用于 {@code appendCashLedger} 写入新流水时回填 {@code balance_after}：取该账户已有
+     * 全部流水的带符号累加值作为本批写入前的余额锚点。直接以 {@code amount}/{@code direction}
+     * 计算、不依赖历史行的 {@code balance_after}，因此对历史 {@code balance_after} 为 NULL 的
+     * 旧数据天然自愈。{@code execution_address} 为 NULL 表示纸面账户(paper-book)。</p>
+     */
+    @Select("<script>"
+            + "SELECT COALESCE(SUM(CASE WHEN direction = 'OUT' THEN -amount ELSE amount END), 0)"
+            + " FROM smart_wallet_cash_ledger"
+            + "<where>"
+            + "  <choose>"
+            + "    <when test=\"executionAddress != null\"> execution_address = #{executionAddress} </when>"
+            + "    <otherwise> execution_address IS NULL </otherwise>"
+            + "  </choose>"
+            + "</where>"
+            + "</script>")
+    BigDecimal runningBalance(@Param("executionAddress") String executionAddress);
 }

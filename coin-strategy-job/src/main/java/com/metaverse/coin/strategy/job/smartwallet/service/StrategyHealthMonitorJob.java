@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.engine.monitor.AlertType;
+import com.metaverse.coin.strategy.job.engine.monitor.StrategyAlertService;
 import com.metaverse.coin.strategy.job.smartwallet.audit.SmartWalletAuditAlertSink;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalHealthSummaryView;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class StrategyHealthMonitorJob {
     private final SmartWalletFollowTaskService followTaskService;
     private final SmartWalletAccountingService accountingService;
     private final SmartWalletAuditAlertSink alertSink;
+    private final StrategyAlertService strategyAlertService;
 
     /** 当可用资金低于预算的此比例时触发早期告警 */
     private static final BigDecimal LOW_CAPITAL_WARN_RATE = new BigDecimal("0.20");
@@ -76,7 +78,13 @@ public class StrategyHealthMonitorJob {
                             available.setScale(2, RoundingMode.HALF_UP),
                             budget.setScale(2, RoundingMode.HALF_UP)),
                     available, budget);
-        } else if (budget.compareTo(BigDecimal.ZERO) > 0) {
+            return;
+        }
+
+        // 可用资金已 > 0：资金耗尽条件不再满足，自动恢复 DEPLETED 告警
+        autoResolve(AlertType.HEALTH_CAPITAL_DEPLETED);
+
+        if (budget.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal utilizationRate = budget.subtract(available).divide(budget, 4, RoundingMode.HALF_UP);
             BigDecimal remainingRate = BigDecimal.ONE.subtract(utilizationRate);
             if (remainingRate.compareTo(LOW_CAPITAL_WARN_RATE) < 0) {
@@ -92,6 +100,9 @@ public class StrategyHealthMonitorJob {
                                 available.setScale(2, RoundingMode.HALF_UP),
                                 budget.setScale(2, RoundingMode.HALF_UP)),
                         available, budget);
+            } else {
+                // 资金已回到预算 20% 以上：资金偏低条件不再满足，自动恢复 LOW 告警
+                autoResolve(AlertType.HEALTH_CAPITAL_LOW);
             }
         }
     }
@@ -163,8 +174,13 @@ public class StrategyHealthMonitorJob {
                             summary.getConsensusSignalCount(),
                             summary.getTopRejectionCategories()),
                     BigDecimal.ZERO, null);
+            // 过去 24h 内已有开仓 → 24h 零开仓条件不再满足，自动恢复对应告警
+            autoResolve(AlertType.HEALTH_NO_OPEN_24H);
 
         } else {
+            // 过去 4h 内已有开仓，策略恢复活跃 → 自动恢复 4h / 24h 零开仓告警
+            autoResolve(AlertType.HEALTH_NO_OPEN_4H);
+            autoResolve(AlertType.HEALTH_NO_OPEN_24H);
             log.debug("[HealthMonitor] Strategy is healthy: followed1h={}, followed4h={}, followed24h={}",
                     followed1h, followed4h, followed24h);
         }
@@ -185,6 +201,22 @@ public class StrategyHealthMonitorJob {
             alertSink.publish(alertType, title, message, metricValue, threshold);
         } catch (RuntimeException e) {
             log.warn("[HealthMonitor] alert publish failed (swallowed) type={} err={}",
+                    alertType, e.toString());
+        }
+    }
+
+    /**
+     * 当某类健康问题的触发条件已不再满足时，把 strategy_alert 中该类型所有未恢复告警标记为
+     * resolved，形成「检测 → 外发 → 条件恢复后自动清除」闭环，避免告警长期挂在未恢复状态
+     * （此前全仓无任何把 {@code resolved} 置 1 的逻辑，告警只增不减）。
+     *
+     * <p>外发 / 落库失败必须 swallow、绝不能抛断 HealthMonitor 主流程。</p>
+     */
+    private void autoResolve(AlertType alertType) {
+        try {
+            strategyAlertService.autoResolveByStrategy(SmartWalletAuditAlertSink.STRATEGY_ID, alertType);
+        } catch (RuntimeException e) {
+            log.warn("[HealthMonitor] alert auto-resolve failed (swallowed) type={} err={}",
                     alertType, e.toString());
         }
     }

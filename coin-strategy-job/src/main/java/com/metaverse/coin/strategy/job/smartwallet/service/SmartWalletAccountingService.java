@@ -2988,14 +2988,22 @@ public class SmartWalletAccountingService {
     }
 
     private void appendCashLedger(SmartWalletOrderEntity order, SmartWalletFillEntity fill, PositionUpdateResult positionUpdate) {
+        // P2-1: 写入流水的同时回填 balance_after —— 以该账户已有全部流水的带符号累加值作为
+        // 本批写入前的余额锚点, 再逐条累加. 锚点直接取自 amount/direction, 不依赖历史
+        // balance_after, 因此对历史 balance_after 为 NULL 的旧数据天然自愈.
+        String executionAddress = fill.getExecutionAddress();
+        BigDecimal balance = safe(cashLedgerMapper.runningBalance(executionAddress));
+
         String direction = "SELL".equalsIgnoreCase(fill.getSide()) ? "IN" : "OUT";
         BigDecimal signedAmount = safe(fill.getNotionalUsdc());
+        balance = applyLedgerSign(balance, direction, signedAmount);
         cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                .setExecutionAddress(fill.getExecutionAddress())
+                .setExecutionAddress(executionAddress)
                 .setAsset(ASSET_USDC_E)
                 .setEntryType("ORDER_NOTIONAL")
                 .setDirection(direction)
                 .setAmount(signedAmount)
+                .setBalanceAfter(balance)
                 .setReferenceType("ORDER")
                 .setReferenceId(order.getId())
                 .setMarketId(fill.getMarketId())
@@ -3004,12 +3012,14 @@ public class SmartWalletAccountingService {
                 .setCreatedAt(new Date()));
         BigDecimal tradingFeeUsdc = safe(fill.getTradingFeeUsdc(), fill.getFeeUsdc());
         if (tradingFeeUsdc.compareTo(BigDecimal.ZERO) > 0) {
+            balance = applyLedgerSign(balance, "OUT", tradingFeeUsdc);
             cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                    .setExecutionAddress(fill.getExecutionAddress())
+                    .setExecutionAddress(executionAddress)
                     .setAsset(ASSET_USDC_E)
                     .setEntryType("FEE")
                     .setDirection("OUT")
                     .setAmount(tradingFeeUsdc)
+                    .setBalanceAfter(balance)
                     .setReferenceType("FILL")
                     .setReferenceId(fill.getId())
                     .setMarketId(fill.getMarketId())
@@ -3019,12 +3029,14 @@ public class SmartWalletAccountingService {
         }
         BigDecimal gasFeeUsdc = safe(fill.getGasFeeUsdc());
         if (gasFeeUsdc.compareTo(BigDecimal.ZERO) > 0) {
+            balance = applyLedgerSign(balance, "OUT", gasFeeUsdc);
             cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                    .setExecutionAddress(fill.getExecutionAddress())
+                    .setExecutionAddress(executionAddress)
                     .setAsset(ASSET_USDC_E)
                     .setEntryType("NETWORK_FEE")
                     .setDirection("OUT")
                     .setAmount(gasFeeUsdc)
+                    .setBalanceAfter(balance)
                     .setReferenceType("FILL")
                     .setReferenceId(fill.getId())
                     .setMarketId(fill.getMarketId())
@@ -3033,12 +3045,16 @@ public class SmartWalletAccountingService {
                     .setCreatedAt(new Date()));
         }
         if (positionUpdate != null && positionUpdate.realizedDelta().compareTo(BigDecimal.ZERO) != 0) {
+            String pnlDirection = positionUpdate.realizedDelta().compareTo(BigDecimal.ZERO) >= 0 ? "IN" : "OUT";
+            BigDecimal pnlAmount = positionUpdate.realizedDelta().abs();
+            balance = applyLedgerSign(balance, pnlDirection, pnlAmount);
             cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                    .setExecutionAddress(fill.getExecutionAddress())
+                    .setExecutionAddress(executionAddress)
                     .setAsset(ASSET_USDC_E)
                     .setEntryType("REALIZED_PNL")
-                    .setDirection(positionUpdate.realizedDelta().compareTo(BigDecimal.ZERO) >= 0 ? "IN" : "OUT")
-                    .setAmount(positionUpdate.realizedDelta().abs())
+                    .setDirection(pnlDirection)
+                    .setAmount(pnlAmount)
+                    .setBalanceAfter(balance)
                     .setReferenceType("POSITION")
                     .setReferenceId(positionUpdate.position().getId())
                     .setMarketId(fill.getMarketId())
@@ -3046,6 +3062,13 @@ public class SmartWalletAccountingService {
                     .setOccurredAt(fill.getFilledAt())
                     .setCreatedAt(new Date()));
         }
+    }
+
+    /** 按方向把流水金额累加到运行余额: IN → +amount, OUT → -amount. */
+    private static BigDecimal applyLedgerSign(BigDecimal balance, String direction, BigDecimal amount) {
+        BigDecimal base = balance == null ? BigDecimal.ZERO : balance;
+        BigDecimal delta = amount == null ? BigDecimal.ZERO : amount;
+        return "OUT".equalsIgnoreCase(direction) ? base.subtract(delta) : base.add(delta);
     }
 
     private void rebuildDailyReport(String executionAddress, LocalDate reportDate) {

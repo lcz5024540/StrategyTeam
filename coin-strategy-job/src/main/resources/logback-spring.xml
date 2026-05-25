@@ -27,9 +27,12 @@
             <pattern>${LOG_PATTERN}</pattern>
             <charset>UTF-8</charset>
         </encoder>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <!-- 按天滚动: 每天 00:00 自动归档 -->
-            <fileNamePattern>${LOG_DIR}/job-%d{yyyy-MM-dd}.log</fileNamePattern>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- 按天 + 单文件大小双维度滚动: 每天 00:00 归档; 单天日志超过 maxFileSize 时
+                 追加 .0/.1/... 索引继续滚动, 避免单文件无上限膨胀 (历史曾出现单文件 92MB) -->
+            <fileNamePattern>${LOG_DIR}/job-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- 单个日志文件大小上限 -->
+            <maxFileSize>100MB</maxFileSize>
             <!-- 保留最近 30 天的日志 -->
             <maxHistory>30</maxHistory>
             <!-- 所有归档日志总大小上限 -->
@@ -50,8 +53,9 @@
             <pattern>${LOG_PATTERN}</pattern>
             <charset>UTF-8</charset>
         </encoder>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_DIR}/job-error-%d{yyyy-MM-dd}.log</fileNamePattern>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/job-error-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
             <maxHistory>30</maxHistory>
             <totalSizeCap>500MB</totalSizeCap>
             <cleanHistoryOnStart>true</cleanHistoryOnStart>
