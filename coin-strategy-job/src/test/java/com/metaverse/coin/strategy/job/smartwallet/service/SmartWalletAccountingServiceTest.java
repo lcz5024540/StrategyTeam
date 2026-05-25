@@ -1471,4 +1471,37 @@ class SmartWalletAccountingServiceTest {
         }
         return LocalDateTime.ofInstant(date.toInstant(), zoneId);
     }
+
+    /**
+     * P2-2：结算时刻必须 clamp 到 [openedAt, now]，杜绝未来日期结算 / 结算早于开仓。
+     * 参见 docs/problem/问题排查修复方案-2026-05-25.md。
+     */
+    @Test
+    void settlementAt_clampsSettlementTimeIntoOpenedAtToNowRange() {
+        long base = 1_700_000_000_000L;
+        Date openedAt = new Date(base);
+        Date now = new Date(base + 3_600_000L); // openedAt + 1h
+
+        // 1) 名义到期在未来 → clamp 到 now（杜绝"未来日期结算"）
+        PolymarketApiClient.MarketMetadata future = PolymarketApiClient.MarketMetadata.builder()
+                .endAt(base + 7L * 24 * 3_600_000L).build();
+        assertEquals(now, service.settlementAt(future, now, openedAt));
+
+        // 2) 名义到期早于开仓 → clamp 到 openedAt（杜绝"结算早于开仓"）
+        PolymarketApiClient.MarketMetadata beforeOpen = PolymarketApiClient.MarketMetadata.builder()
+                .endAt(base - 3_600_000L).build();
+        assertEquals(openedAt, service.settlementAt(beforeOpen, now, openedAt));
+
+        // 3) 名义到期落在 [openedAt, now] 内 → 原样返回
+        Date within = new Date(base + 1_800_000L);
+        PolymarketApiClient.MarketMetadata inRange = PolymarketApiClient.MarketMetadata.builder()
+                .endAt(within.getTime()).build();
+        assertEquals(within, service.settlementAt(inRange, now, openedAt));
+
+        // 4) metadata 为空 → 退回真实结算处理时刻 now
+        assertEquals(now, service.settlementAt(null, now, openedAt));
+
+        // 5) openedAt 为空 → 区间收敛为 {now}
+        assertEquals(now, service.settlementAt(future, now, null));
+    }
 }

@@ -3145,7 +3145,7 @@ public class SmartWalletAccountingService {
             return;
         }
         Date now = new Date();
-        Date settlementAt = settlementAt(metadata, now);
+        Date settlementAt = settlementAt(metadata, now, position.getOpenedAt());
         String effectiveOutcome = resolveEffectiveOutcome(position.getTokenId(), position.getOutcome(), metadata);
         BigDecimal resolutionPrice = settlementPrice(position, metadata);
         BigDecimal settlementProceeds = safe(position.getQuantity()).multiply(resolutionPrice).setScale(8, RoundingMode.HALF_UP);
@@ -3200,18 +3200,37 @@ public class SmartWalletAccountingService {
         markFollowTaskSettled(position.getId());
     }
 
-    private Date settlementAt(PolymarketApiClient.MarketMetadata metadata, Date fallback) {
-        Date fallbackDate = fallback == null ? new Date() : fallback;
+    /**
+     * 计算仓位结算时刻，并 clamp 到 {@code [openedAt, now]} 闭区间。
+     *
+     * <p>默认用真实结算处理时刻 {@code now}；市场名义到期时间 {@code metadata.endAt}
+     * 仅作落在合理区间内时的候选估计：
+     * <ul>
+     *   <li>上界保护：名义到期晚于当前时刻 → 退回 {@code now}，杜绝"未来日期结算"；</li>
+     *   <li>下界保护：名义到期早于开仓时刻（在已到期市场补开仓）→ 退回 {@code openedAt}，
+     *       杜绝"结算早于开仓"。</li>
+     * </ul>
+     * 参见 docs/problem/问题排查修复方案-2026-05-25.md P2-2。
+     *
+     * <p>package-private 以便 {@code SmartWalletAccountingServiceTest} 直接单测。
+     */
+    Date settlementAt(PolymarketApiClient.MarketMetadata metadata, Date now, Date openedAt) {
+        Date upper = (now == null) ? new Date() : now;
+        // 下界 = 开仓时刻；缺失或晚于上界（异常）时退化为上界，区间收敛为 {now}。
+        Date lower = (openedAt != null && openedAt.before(upper)) ? openedAt : upper;
+        // 默认用真实结算处理时刻；名义到期时间仅作候选。
+        Date candidate = upper;
         if (metadata != null && metadata.getEndAt() != null && metadata.getEndAt() > 0) {
-            Date endAt = new Date(metadata.getEndAt());
-            // 名义到期时间晚于当前时刻 → 市场尚未真正结束，不能当作结算时刻，
-            // 否则会写出"未来日期结算"记录（参见问题记录-2026-05-24 P2-2）。
-            if (endAt.after(fallbackDate)) {
-                return fallbackDate;
-            }
-            return endAt;
+            candidate = new Date(metadata.getEndAt());
         }
-        return fallbackDate;
+        // clamp 到 [lower, upper]
+        if (candidate.before(lower)) {
+            return lower;
+        }
+        if (candidate.after(upper)) {
+            return upper;
+        }
+        return candidate;
     }
 
     private BigDecimal settlementPrice(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {
