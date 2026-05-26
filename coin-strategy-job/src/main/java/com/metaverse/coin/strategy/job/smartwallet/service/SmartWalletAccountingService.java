@@ -2436,7 +2436,11 @@ public class SmartWalletAccountingService {
         return ORDER_STATUS_SETTLEMENT_PENDING_ORACLE;
     }
 
-    private SettlementTerminalCheck settlementTerminalCheck(PolymarketApiClient.MarketMetadata metadata,
+    /**
+     * package-private 便于 SmartWalletAccountingServiceTest / 新增 SettlementGateTest 直接单测；
+     * 业务调用方仍在本类内。
+     */
+    SettlementTerminalCheck settlementTerminalCheck(PolymarketApiClient.MarketMetadata metadata,
                                                             boolean marketEnded) {
         if (metadata == null) {
             return new SettlementTerminalCheck(false, "metadata_null");
@@ -2453,6 +2457,14 @@ public class SmartWalletAccountingService {
         if (marketEnded && metadata.isClosed()) {
             return new SettlementTerminalCheck(true, "ended_and_closed");
         }
+        // P2-2 收紧：所有"早结算"路径都必须先满足 marketEnded（已到 Polymarket 名义到期时间）。
+        // 此前 uma_resolved / winning_token / final_price_inference 三条路径只要 acceptingOrders=false
+        // 就放行，导致 metadata 抖动（如短暂 pause + winningTokenId 设置）即按 settlementPrice=1
+        // 误结算尚未到期的市场，realized_pnl 直接灌成虚高（参见用户 2026-05-26 反馈 / ROI 虚高
+        // 根因 路径 A）。这里强制要求 marketEnded 后才能走早结算分支，未到期一律打回 market_not_ended。
+        if (!marketEnded) {
+            return new SettlementTerminalCheck(false, "early_settlement_blocked_market_not_ended");
+        }
         if (metadata.isResolved() && isUmaResolved(metadata) && !metadata.isAcceptingOrders()) {
             return new SettlementTerminalCheck(true, "uma_resolved_accepting_orders_false");
         }
@@ -2465,9 +2477,6 @@ public class SmartWalletAccountingService {
                 && "FINAL_PRICE_INFERENCE".equalsIgnoreCase(metadata.getResolutionSource())
                 && !metadata.isAcceptingOrders()) {
             return new SettlementTerminalCheck(true, "final_price_inference_accepting_orders_false");
-        }
-        if (!marketEnded) {
-            return new SettlementTerminalCheck(false, "market_not_ended");
         }
         if (!metadata.isClosed()) {
             return new SettlementTerminalCheck(false, "closed_flag_false_without_authoritative_resolution");
@@ -2485,7 +2494,8 @@ public class SmartWalletAccountingService {
                 || umaStatus.contains("final");
     }
 
-    private record SettlementTerminalCheck(boolean canSettle, String reason) {
+    /** package-private 便于单测直接断言 canSettle()/reason()。 */
+    record SettlementTerminalCheck(boolean canSettle, String reason) {
     }
 
     private String oraclePhaseSuffix(PolymarketApiClient.MarketMetadata metadata) {
@@ -3169,6 +3179,17 @@ public class SmartWalletAccountingService {
         if (metadata != null && metadata.isAcceptingOrders()) {
             log.warn("[SETTLEMENT_GUARD] 拒绝结算仍在交易的市场 positionId={} marketId={} closed={} resolved={} acceptingOrders=true",
                     position.getId(), position.getMarketId(), metadata.isClosed(), metadata.isResolved());
+            return;
+        }
+        // P2-2 defense-in-depth：未到 Polymarket 名义到期时间 metadata.endAt 也绝不结算，
+        // 防止上游 settlementTerminalCheck 任一旁路把"未到期但 winningTokenId 已设/推断价已生成"
+        // 的市场放行进来（参见 2026-05-26 用户反馈"未到预计结算时间提前结算"）。
+        long nowMs = System.currentTimeMillis();
+        if (metadata != null && metadata.getEndAt() != null && metadata.getEndAt() > 0
+                && metadata.getEndAt() > nowMs) {
+            log.warn("[SETTLEMENT_GATE_ENDAT] 拒绝结算未到期市场 positionId={} marketId={} endAt={} now={} closed={} resolved={} winningTokenId={}",
+                    position.getId(), position.getMarketId(), metadata.getEndAt(), nowMs,
+                    metadata.isClosed(), metadata.isResolved(), metadata.getWinningTokenId());
             return;
         }
         Date now = new Date();
