@@ -2282,7 +2282,6 @@ public class SmartWalletFollowTaskService {
                 .openCostUsdc(capacity.getTotalOpenCostUsdc())
                 .realizedPnlUsdc(realizedPnl)
                 .openPositionCount(capacity.getOpenPositionCount() == null ? 0 : capacity.getOpenPositionCount())
-                .maxOpenPositions(risk.getMaxOpenPositions() == null ? 0 : risk.getMaxOpenPositions())
                 .qualifiedWatchlistCount(qualifiedWatchlistCount)
                 .recentTradeEventCount(recentEventCount)
                 .tasksByStatus(tasksByStatus)

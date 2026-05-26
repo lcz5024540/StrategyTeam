@@ -123,7 +123,7 @@ public class StrategyHealthMonitorJob {
                             "  realizedPnl        = {}\n" +
                             "  maxTotalOpenCost   = {}\n" +
                             "  openCost           = {}\n" +
-                            "  openPositions      = {}/{}\n" +
+                            "  openPositions      = {}\n" +
                             "  qualifiedWatchlist = {}\n" +
                             "  recentTradeEvents  = {}\n" +
                             "  tasksByStatus      = {}\n" +
@@ -134,7 +134,7 @@ public class StrategyHealthMonitorJob {
                     summary.getRealizedPnlUsdc(),
                     summary.getMaxTotalOpenCostUsdc(),
                     summary.getOpenCostUsdc(),
-                    summary.getOpenPositionCount(), summary.getMaxOpenPositions(),
+                    summary.getOpenPositionCount(),
                     summary.getQualifiedWatchlistCount(),
                     summary.getRecentTradeEventCount(),
                     summary.getTasksByStatus(),
@@ -144,10 +144,10 @@ public class StrategyHealthMonitorJob {
                     summary.isCriticalBlockDetected(), summary.getPrimaryBlockReason());
 
             safePublish(AlertType.HEALTH_NO_OPEN_24H, "跟单策略 24h 零开仓",
-                    String.format("过去 24h 零开仓，策略可能结构性卡死。available=%s, openPositions=%s/%s, "
+                    String.format("过去 24h 零开仓，策略可能结构性卡死。available=%s, openPositions=%s, "
                                     + "qualifiedWallets=%s, recentEvents=%s, topRejections=%s, primaryBlock=%s",
                             summary.getAvailableCapitalUsdc(),
-                            summary.getOpenPositionCount(), summary.getMaxOpenPositions(),
+                            summary.getOpenPositionCount(),
                             summary.getQualifiedWatchlistCount(),
                             summary.getRecentTradeEventCount(),
                             summary.getTopRejectionCategories(),

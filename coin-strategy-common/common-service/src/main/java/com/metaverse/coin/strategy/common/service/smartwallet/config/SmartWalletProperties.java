@@ -715,6 +715,13 @@ public class SmartWalletProperties {
         /** 价差快照陈旧度上限 (毫秒, 超过即跳过本门控)。默认 5 分钟与既有 askDepth 一致。 */
         private long spreadP70SnapshotMaxAgeMs = 300_000L;
 
+        /**
+         * @deprecated G4_MAX_OPEN_POSITIONS 入场闸门已硬移除，本字段不再用于入场拦截。
+         *     仅 {@link com.metaverse.coin.strategy.job.smartwallet.service.CapitalRecycleExitService}
+         *     的资源压力评分 fallback、以及 {@link com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletCapacitySummaryView}
+         *     的展示口径仍读取它。新代码不应再依赖。
+         */
+        @Deprecated
         private Integer maxOpenPositions = 10;
         /**
          * F-P1-17: {@link com.metaverse.coin.strategy.job.smartwallet.service.CapitalRecycleExitService#countPendingSignals}

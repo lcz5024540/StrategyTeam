@@ -42,8 +42,6 @@ public class SignalHealthSummaryView {
     // ── 持仓状态 ──────────────────────────────────────────────────────────
     /** 当前 OPEN 持仓数量 */
     private int openPositionCount;
-    /** 最大允许同时持仓数 */
-    private int maxOpenPositions;
 
     // ── 钱包池状态 ────────────────────────────────────────────────────────
     /** watch_enabled=true 且 qualified=true 的有效钱包数 */

@@ -370,14 +370,8 @@ public class SmartWalletSignalRiskService {
         }
         if (accepted) gateStage = 3; // 通过触发金额/价格带
 
-        // ── Gate 4: 组合约束（持仓数 / 总成本 / 可用资金）──
-        Integer openPositions = countOpenPositions();
-        if (openPositions >= defaultInt(risk.getMaxOpenPositions(), Integer.MAX_VALUE)) {
-            accepted = false;
-            if (firstRejectGate == null) firstRejectGate = "G4_MAX_OPEN_POSITIONS";
-            reasons.add("Open position count has reached the portfolio limit.");
-        }
-
+        // ── Gate 4: 组合约束（总成本 / 可用资金）──
+        // G4_MAX_OPEN_POSITIONS 已硬移除：取消组合层「持仓数」上限拦截，由总成本 / 可用资金两道阀控制规模。
         BigDecimal totalOpenCost = totalOpenCostUsdc();
         if (totalOpenCost.compareTo(safe(risk.getMaxTotalOpenCostUsdc())) >= 0) {
             accepted = false;

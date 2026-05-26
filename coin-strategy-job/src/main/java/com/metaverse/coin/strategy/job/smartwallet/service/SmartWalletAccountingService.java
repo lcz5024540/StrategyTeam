@@ -1710,7 +1710,9 @@ public class SmartWalletAccountingService {
                     .setLastMarkPrice(snapshot.lastPrice())
                     .setOpenedAt(snapshot.openedAt())
                     .setLastFilledAt(snapshot.lastFilledAt())
-                    .setClosedAt(snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null)
+                    .setClosedAt(SettlementTimeGuard.clamp(
+                            snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null,
+                            snapshot.openedAt(), "rebuildPositionFromFills"))
                     .setStatus(snapshot.status())
                     .setUpdatedAt(new Date());
             if (updatePositionChecked(position, "rebuildPositionFromFills")) {
@@ -2834,7 +2836,9 @@ public class SmartWalletAccountingService {
                 .setRealizedPnlUsdc(realized)
                 .setLastMarkPrice(fill.getPrice())
                 .setLastFilledAt(fill.getFilledAt())
-                .setClosedAt(quantity.compareTo(BigDecimal.ZERO) == 0 ? fill.getFilledAt() : null)
+                .setClosedAt(SettlementTimeGuard.clamp(
+                        quantity.compareTo(BigDecimal.ZERO) == 0 ? fill.getFilledAt() : null,
+                        position.getOpenedAt(), "appendFill.upsertPosition"))
                 .setStatus(lifecycleStatus)
                 .setUpdatedAt(new Date());
         markToMarket(position);
@@ -3215,7 +3219,7 @@ public class SmartWalletAccountingService {
                     .setAverageEntryPrice(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
                     .setNetSide("FLAT")
                     .setStatus("RESOLVED_UNCLAIMED")
-                    .setClosedAt(finalSettlementAt)
+                    .setClosedAt(SettlementTimeGuard.clamp(finalSettlementAt, p.getOpenedAt(), "resolvePosition"))
                     .setLastFilledAt(finalSettlementAt);
         }, "resolvePosition", 3);
         rebuildDailyReport(position.getExecutionAddress(), toLocalDate(settlementAt));
@@ -3526,7 +3530,9 @@ public class SmartWalletAccountingService {
                 .setLastMarkPrice(snapshot.lastPrice())
                 .setOpenedAt(snapshot.openedAt())
                 .setLastFilledAt(snapshot.lastFilledAt())
-                .setClosedAt(snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null)
+                .setClosedAt(SettlementTimeGuard.clamp(
+                        snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null,
+                        snapshot.openedAt(), "repairPrematureSettlement"))
                 .setStatus(snapshot.status())
                 .setUpdatedAt(new Date());
         if (!updatePositionChecked(position, "repairPrematureSettlement")) {

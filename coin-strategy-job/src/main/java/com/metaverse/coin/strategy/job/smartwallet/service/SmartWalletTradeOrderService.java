@@ -544,7 +544,7 @@ public class SmartWalletTradeOrderService {
                 .setSettlementPrice(settlementPrice)
                 .setSettlementProceedsUsdc(settlementProceeds)
                 .setSettlementPnlUsdc(settled ? settlementPnl : BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
-                .setSettledAt(settled ? position.getClosedAt() : null)
+                .setSettledAt(settled ? SettlementTimeGuard.clamp(position.getClosedAt(), position.getOpenedAt(), "syncTradeOrder") : null)
                 .setTotalRealizedPnlUsdc(totalRealized)
                 .setTotalPnlUsdc(totalPnl)
                 .setRoiRate(roiRate)
