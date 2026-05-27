@@ -17,8 +17,8 @@ import com.metaverse.coin.strategy.job.smartwallet.model.LeaderTradeOutcomeRebui
 import com.metaverse.coin.strategy.job.smartwallet.model.LeaderTradeOutcomeSummaryView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -55,7 +55,19 @@ public class LeaderTradeOutcomeRebuildService {
     private final PolymarketApiClient polymarketApiClient;
     private final PolymarketMarketMetadataService marketMetadataService;
 
-    @Transactional
+    /**
+     * 重建 leader 钱包的成交闭环视图。
+     *
+     * <p><b>2026-05-27 ray@cowork（P1-8 修复）：</b> 此方法<strong>不再使用 {@code @Transactional}</strong>。
+     * 原先把整个 wallet 循环（含 Polymarket HTTP 调用 + 每个 outcome 的 upsert）包在单个事务里，
+     * 一旦任何 wallet 的 HTTP 请求慢，整段事务持锁不放，下游开仓链路碰到
+     * {@code smart_wallet_leader_trade_outcome} / {@code smart_wallet_market_info} 就排队，
+     * 最终大量 {@code Lock wait timeout}（07:48 起 25 次 ERROR + 4h 零开仓）。
+     *
+     * <p>现在依赖 JDBC autocommit + 单语句 {@code INSERT ... ON DUPLICATE KEY UPDATE}
+     * （见 {@link SmartWalletLeaderTradeOutcomeMapper#upsert}）保证单行原子写入，
+     * 持锁窗口压到毫秒级，HTTP I/O 自然落在事务之外。
+     */
     public LeaderTradeOutcomeRebuildResult rebuild(String walletAddress, Integer limit) {
         List<String> wallets = resolveWallets(walletAddress, limit);
         int fetchedTrades = 0;
@@ -106,9 +118,20 @@ public class LeaderTradeOutcomeRebuildService {
             if (!accumulator.shouldEmit()) {
                 continue;
             }
-            SmartWalletLeaderTradeOutcomeEntity entity = buildOutcome(accumulator, probablyTruncated);
-            upsert(entity);
-            built.add(entity);
+            // 单 outcome 失败（含锁等待）不应连累同一 wallet 的其它 outcome；
+            // upsert 是单语句 + autocommit，即便回滚也只丢这一行，无需手工重试事务。
+            try {
+                SmartWalletLeaderTradeOutcomeEntity entity = buildOutcome(accumulator, probablyTruncated);
+                upsert(entity);
+                built.add(entity);
+            } catch (PessimisticLockingFailureException lockEx) {
+                // 覆盖 CannotAcquireLockException（Lock wait timeout）、DeadlockLoserDataAccessException 等子类
+                log.warn("Lock contention skipping outcome wallet={} market={} outcome={} reason={}",
+                        walletAddress, accumulator.marketId, accumulator.outcome, rootMessage(lockEx));
+            } catch (Exception ex) {
+                log.warn("Failed to persist outcome wallet={} market={} outcome={} reason={}",
+                        walletAddress, accumulator.marketId, accumulator.outcome, rootMessage(ex), ex);
+            }
         }
         return built;
     }
@@ -204,18 +227,13 @@ public class LeaderTradeOutcomeRebuildService {
     }
 
     private void upsert(SmartWalletLeaderTradeOutcomeEntity entity) {
-        SmartWalletLeaderTradeOutcomeEntity existing = leaderOutcomeMapper.selectOne(new LambdaQueryWrapper<SmartWalletLeaderTradeOutcomeEntity>()
-                .eq(SmartWalletLeaderTradeOutcomeEntity::getWalletAddress, entity.getWalletAddress())
-                .eq(SmartWalletLeaderTradeOutcomeEntity::getMarketId, entity.getMarketId())
-                .eq(SmartWalletLeaderTradeOutcomeEntity::getOutcome, entity.getOutcome())
-                .last("limit 1"));
-        if (existing == null) {
-            leaderOutcomeMapper.insert(entity);
-            return;
-        }
-        entity.setId(existing.getId());
-        entity.setCreatedAt(existing.getCreatedAt());
-        leaderOutcomeMapper.updateById(entity);
+        // 2026-05-27 ray@cowork（P1-8 修复）：
+        // 旧逻辑 selectOne → insert / updateById 在 MySQL REPEATABLE READ 下，
+        // SELECT 会走 (wallet_address, market_id, outcome) 唯一索引并占用 next-key 锁，
+        // 紧跟的 INSERT 又申请插入意向锁；同 wallet 并发 rebuild 或与开仓链路交叉时极易撞锁。
+        // 改为单语句 ON DUPLICATE KEY UPDATE，由 InnoDB 一次性获取/释放锁，窗口压到毫秒级。
+        // created_at 保留首次值；wallet/market/outcome 是唯一键，无需也不能更新。
+        leaderOutcomeMapper.upsert(entity);
     }
 
     private List<String> resolveWallets(String walletAddress, Integer limit) {

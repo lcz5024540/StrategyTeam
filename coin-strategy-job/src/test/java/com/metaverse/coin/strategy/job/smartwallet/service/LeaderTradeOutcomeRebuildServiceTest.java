@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -56,8 +57,10 @@ class LeaderTradeOutcomeRebuildServiceTest {
                 polymarketApiClient,
                 marketMetadataService
         );
-        when(leaderOutcomeMapper.selectOne(any())).thenReturn(null);
-        when(marketInfoService.getOrCreate(any(), any(), any(), any(), any(), any()))
+        // 2026-05-27 ray@cowork（P1-8）：upsert 改为单语句 mapper 方法，
+        // 默认返回 0 即可，无需显式 stub。getOrCreate 仍要 stub。
+        // lenient 是为了允许个别用例在 rebuildWallet 早退（无 outcome 触发）时不调用 getOrCreate。
+        lenient().when(marketInfoService.getOrCreate(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new SmartWalletMarketInfoEntity().setId(99L));
     }
 
