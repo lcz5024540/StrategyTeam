@@ -1,0 +1,51 @@
+# Generated from ray-agent docs/skills/setup-cicd/templates/Dockerfile.backend (2026-05-27)
+# 填充参数：
+#   <APP_MODULE>      = coin-strategy-web
+#   <APP_PORT>        = 8080
+#   <JAVA_VERSION>    = 17
+
+# ========== Stage 1: build ==========
+FROM maven:3.9-eclipse-temurin-17 AS build
+
+WORKDIR /workspace
+
+# 1) 先把所有 pom.xml 拷进去，触发 maven 依赖下载 + cache
+COPY pom.xml ./
+COPY coin-strategy-common/pom.xml coin-strategy-common/
+COPY coin-strategy-common/common-client/pom.xml coin-strategy-common/common-client/ 2>/dev/null || true
+COPY coin-strategy-core/pom.xml coin-strategy-core/
+COPY coin-strategy-job/pom.xml coin-strategy-job/
+COPY coin-strategy-web/pom.xml coin-strategy-web/
+
+RUN mvn -B -ntp dependency:go-offline -DskipTests || true
+
+# 2) 拷源码，build
+COPY . .
+RUN mvn -B -ntp -DskipTests clean package
+
+# ========== Stage 2: runtime ==========
+FROM eclipse-temurin:17-jre-alpine AS runtime
+
+# 非 root 用户跑应用
+RUN addgroup -S app && adduser -S app -G app
+
+WORKDIR /app
+
+# 从 build 阶段只拷可执行 jar，排除 sources / original
+COPY --from=build /workspace/coin-strategy-web/target/*.jar /app/app.jar
+
+# 健康检查：TCP 探测（CoinStrategy 当前未启用 Spring Boot Actuator —— grep 全仓库 pom 0 命中，2026-05-27 验证）
+# 未来如启用 Actuator，可改回 wget /actuator/health 探测。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD nc -z localhost 8080 || exit 1
+
+USER app
+
+EXPOSE 8080
+
+# 用 exec form，保证 PID 1 是 java，能正确接收 SIGTERM
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "/app/app.jar"]

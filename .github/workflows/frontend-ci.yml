@@ -1,0 +1,65 @@
+# Generated from ray-agent docs/skills/setup-cicd/templates/frontend-ci.yml (2026-05-27)
+# 填充参数：
+#   <FRONTEND_DIR>   = coin-strategy-frontend
+#   <NODE_VERSION>   = 22
+#   <MAIN_BRANCH>    = main
+
+name: Frontend CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "coin-strategy-frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "coin-strategy-frontend/**"
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: coin-strategy-frontend
+
+jobs:
+  build-and-test:
+    name: Vite Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: coin-strategy-frontend/package-lock.json
+
+      - name: Install deps (npm ci)
+        run: npm ci
+
+      - name: Type check
+        run: |
+          if [ -f tsconfig.json ]; then
+            npx tsc --noEmit
+          else
+            echo "no tsconfig.json, skipping"
+          fi
+
+      - name: Build (vite)
+        run: npm run build
+
+      - name: Upload dist
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: coin-strategy-frontend/dist
+          retention-days: 14
