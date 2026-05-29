@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrde
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeOrderEntity;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -262,16 +263,30 @@ public class SmartWalletMarketInfoService {
             }
             return existing;
         }
-        SmartWalletMarketInfoEntity newInfo = new SmartWalletMarketInfoEntity()
-                .setMarketId(normalizedMarketId)
-                .setQuestion(question)
-                .setOutcome(normalizedOutcome)
-                .setTokenId(tokenId)
-                .setIndexSet(indexSet)
-                .setMarketEndAt(marketEndAt);
-        marketInfoMapper.insert(newInfo);
-        cacheById.put(newInfo.getId(), newInfo);
-        return newInfo;
+        // 2026-05-29 ray@cowork: 改为 upsert + 二次 SELECT，修复并发场景下重复触发
+        // Duplicate entry … uk_market_outcome 的问题（5-29 单日 422 次，详 P0-2）。
+        // 失败时再做一次 SELECT 兜底（极端竞态：upsert 与下游 DDL/手工写入同时发生）。
+        try {
+            marketInfoMapper.upsertByMarketOutcome(
+                    normalizedMarketId,
+                    normalizedOutcome,
+                    question,
+                    tokenId,
+                    indexSet,
+                    marketEndAt);
+        } catch (DuplicateKeyException dupe) {
+            // ON DUPLICATE KEY UPDATE 理论上不会抛 1062，这里只为防御性兜底；
+            // 不打堆栈、降级为 WARN，避免污染 job-error-current.log。
+            log.warn("[SmartWalletMarketInfo] duplicate on upsert, falling back to re-select: marketId={}, outcome={}, cause={}",
+                    normalizedMarketId, normalizedOutcome, dupe.getMostSpecificCause() == null ? "n/a" : dupe.getMostSpecificCause().getMessage());
+        }
+        SmartWalletMarketInfoEntity saved = getByMarketIdAndOutcome(normalizedMarketId, normalizedOutcome);
+        if (saved == null) {
+            throw new IllegalStateException("Failed to load smart_wallet_market_info after upsert: marketId="
+                    + normalizedMarketId + ", outcome=" + normalizedOutcome);
+        }
+        cacheById.put(saved.getId(), saved);
+        return saved;
     }
 
     public void update(SmartWalletMarketInfoEntity entity) {

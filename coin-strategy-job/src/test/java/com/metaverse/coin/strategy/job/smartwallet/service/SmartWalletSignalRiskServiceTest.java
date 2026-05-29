@@ -1476,6 +1476,168 @@ class SmartWalletSignalRiskServiceTest {
         assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("PAPER_CANARY_STALE_SOFTENED")));
     }
 
+    // ─── G6b: 临近赛事尾段 + 低概率方向 拒单门 ────────────────────────────────────
+
+    @Test
+    void shouldRejectWhenWithin12hAndPriceBelow10pct() {
+        // 默认 enableLatePoorOddsRejection=true, maxH=12, maxPrice=0.10
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.05"))  // < 0.10
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        // endAt = 3h from now (well under 12h threshold)
+        long shortEndAt = System.currentTimeMillis() + 3 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(shortEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(), "Should reject low-price entry within 12h of market end");
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")),
+                "Reasons should contain LATE_LOW_PROB_BLOCK; got: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldRejectWhenJustInsideNewTimeWindow_10hAndPriceBelow10pct() {
+        // 边界: endAt = 10h(在新阈值 12h 内,但在旧阈值 5h 外), price 0.06 → 命中
+        // 该用例确保新放宽到 12h 后, 6-12h 区间也能拦下来。
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.06"))
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        long tenHourEndAt = System.currentTimeMillis() + 10 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(tenHourEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(), "10h should be inside the 12h window and trigger G6b");
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
+    @Test
+    void shouldNotTriggerG6bWhenPriceAtOrAboveThreshold() {
+        // 距 marketEndAt 仍只剩 3h, 但 price = 0.10 (= 上限, 不命中"<")
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.10"))  // 等于上限, 不严格小于, 不命中
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        long shortEndAt = System.currentTimeMillis() + 3 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(shortEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // G6b 不应命中 (可能被其他门拒, 但 firstRejectGate 不应是 G6b)
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6b_"),
+                    "G6b should not trigger when price == maxPrice; firstRejectGate=" + decision.getFirstRejectGate());
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
+    @Test
+    void shouldNotTriggerG6bWhenFarFromMarketEnd() {
+        // price = 0.05 (< 0.10) 但距 marketEndAt 还有 30h (> 5h), 不命中
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.05"))
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);  // 默认 endAt = now + 30h
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6b_"),
+                    "G6b should not trigger when far from market end; firstRejectGate=" + decision.getFirstRejectGate());
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
+    @Test
+    void shouldNotTriggerG6bWhenGateDisabled() {
+        // 双条件都满足, 但 enableLatePoorOddsRejection=false → 不命中
+        properties.getSignalRisk().setEnableLatePoorOddsRejection(false);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.05"))
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        long shortEndAt = System.currentTimeMillis() + 3 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(shortEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6b_"),
+                    "Disabled gate must not trigger; firstRejectGate=" + decision.getFirstRejectGate());
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
     private SmartWalletProfileEntity baseProfile() {
         return new SmartWalletProfileEntity()
                 .setWalletAddress("0xabc")

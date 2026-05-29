@@ -251,7 +251,28 @@ public class PolymarketClobExecutionService {
     public SmartWalletExecutionResult executeLiveExit(SmartWalletPositionEntity position,
                                                       BigDecimal requestedPrice,
                                                       String exitReason) {
-        return executeLiveExitInternal(position, requestedPrice, exitReason, null);
+        return executeLiveExitInternal(position, requestedPrice, exitReason, null, false);
+    }
+
+    /**
+     * B1 强制价通道 — 让上层 (例如 PositionPriceMonitorService 的自动减仓) 完全绕过
+     * {@link #resolveLiveExitPriceReference} 的 bestBid → midpoint → lastTradePrice 解析顺序,
+     * 直接把传入的 forcedPrice 作为 referencePrice 喂给 prepareExit。
+     *
+     * <p>用途: 自动减仓需要把 SELL 挂到 tick floor (0.001) 等任何买家接货, 但默认通道在空 bid +
+     * 有 lastTradePrice 的场景下会用 lastTradePrice 当 reference, 导致挂在原市场价附近,
+     * 失去"任何价位都接受"的本意。</p>
+     *
+     * <p>注意: forcedPrice 仍会经过 {@code prepareExit} 内的 slippage / tick snap 调整,
+     * 但不再被外部 reference 价 (bestBid / midpoint / lastTrade) 覆盖。</p>
+     */
+    public SmartWalletExecutionResult executeLiveExitAtForcedPrice(SmartWalletPositionEntity position,
+                                                                   BigDecimal forcedPrice,
+                                                                   String exitReason) {
+        if (forcedPrice == null || forcedPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("forcedPrice must be positive for executeLiveExitAtForcedPrice.");
+        }
+        return executeLiveExitInternal(position, forcedPrice, exitReason, null, true);
     }
 
     /**
@@ -288,7 +309,7 @@ public class PolymarketClobExecutionService {
                 log.warn("{} action=LIVE部分退出 result=回退全平 reason=enableLivePartialExit=false positionId={} ratio={}",
                         LOG_PREFIX, position.getId(), ratio);
             }
-            return executeLiveExitInternal(position, requestedPrice, exitReason, null);
+            return executeLiveExitInternal(position, requestedPrice, exitReason, null, false);
         }
 
         BigDecimal totalQty = position.getQuantity();
@@ -303,12 +324,12 @@ public class PolymarketClobExecutionService {
             // 切片太小不下单，回退全平避免留下"无人管的尾巴"
             log.warn("{} action=LIVE部分退出 result=切片过小回退全平 positionId={} totalQty={} ratio={} exitQty={} minSize={}",
                     LOG_PREFIX, position.getId(), totalQty, ratio, exitQty, minSize);
-            return executeLiveExitInternal(position, requestedPrice, exitReason + ";PARTIAL_TOO_SMALL", null);
+            return executeLiveExitInternal(position, requestedPrice, exitReason + ";PARTIAL_TOO_SMALL", null, false);
         }
 
         log.info("{} action=提交LIVE部分退出订单 result=开始 positionId={} totalQty={} ratio={} exitQty={} exitReason={}",
                 LOG_PREFIX, position.getId(), totalQty, ratio, exitQty, exitReason);
-        return executeLiveExitInternal(position, requestedPrice, exitReason + ";ratio=" + ratio, exitQty);
+        return executeLiveExitInternal(position, requestedPrice, exitReason + ";ratio=" + ratio, exitQty, false);
     }
 
     /**
@@ -318,14 +339,18 @@ public class PolymarketClobExecutionService {
     private SmartWalletExecutionResult executeLiveExitInternal(SmartWalletPositionEntity position,
                                                                 BigDecimal requestedPrice,
                                                                 String exitReason,
-                                                                BigDecimal overrideQuantity) {
+                                                                BigDecimal overrideQuantity,
+                                                                boolean forcePrice) {
         if (position == null) {
             throw new IllegalArgumentException("position must be provided for live exit.");
         }
-        log.info("{} action=提交LIVE退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={} overrideQuantity={} exitReason={}",
-                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice, overrideQuantity, exitReason);
+        log.info("{} action=提交LIVE退出订单 result=开始 positionId={} marketId={} outcome={} requestedPrice={} overrideQuantity={} forcePrice={} exitReason={}",
+                LOG_PREFIX, position.getId(), position.getMarketId(), position.getOutcome(), requestedPrice, overrideQuantity, forcePrice, exitReason);
         ExecutionWalletContextLoader.ExecutionWalletContext wallet = walletContextLoader.requireLiveContext();
-        ExitPriceReference priceReference = resolveLiveExitPriceReference(position, requestedPrice);
+        // B1: forcePrice=true 时直接把传入价当 reference, 不再走 bestBid/midpoint/lastTrade 解析。
+        ExitPriceReference priceReference = forcePrice
+                ? new ExitPriceReference(requestedPrice, "FORCED")
+                : resolveLiveExitPriceReference(position, requestedPrice);
         PolymarketOrderRequestFactory.PreparedPolymarketOrder order = orderRequestFactory.prepareExit(position, priceReference.price(), wallet, overrideQuantity);
         log.info("{} action=准备LIVE退出下单参数 result=完成 positionId={} marketId={} outcome={} tokenId={} side={} limitPrice={} size={} notionalUsdc={} pricingSource={}",
                 LOG_PREFIX, position.getId(), order.getMarketId(), order.getOutcome(), order.getTokenId(), order.getSide(),

@@ -70,7 +70,10 @@ public enum AlertType {
     AUDIT_RESOLUTION_TRIDIFF(AlertLevel.WARN, "结算三方 diff 不一致"),
 
     /** W2-T2 灰度自动化 (第十八批): leader 滑动窗口胜率灰度健康检查异常 (coolingRatio 过高 / overallWinRate 过低). */
-    AUDIT_LEADER_ROLLING_HEALTH(AlertLevel.WARN, "Leader 滑动窗口胜率灰度健康异常");
+    AUDIT_LEADER_ROLLING_HEALTH(AlertLevel.WARN, "Leader 滑动窗口胜率灰度健康异常"),
+
+    /** PositionPriceMonitorService: 持仓 token 的 best bid 完全为空, 等同于无人接货, 极有可能本仓位最终判负, 运维需关注是否手动减仓。 */
+    POSITION_EMPTY_BID_BOOK(AlertLevel.WARN, "持仓 best bid 为空,无人接货,可能判负");
 
     private final AlertLevel defaultLevel;
     private final String description;

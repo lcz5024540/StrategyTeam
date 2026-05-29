@@ -68,6 +68,19 @@ public class SmartWalletProperties {
      */
     private AutoAllowlistConfig autoAllowlist = new AutoAllowlistConfig();
 
+    /**
+     * 持仓侧价格监控 (PositionPriceMonitorService) 配置。
+     *
+     * <p>专门解决: (a) 持仓 token 的 best bid 完全为空 (无人接货) 这种"几乎判负"信号未被既有
+     * CapitalRecycleExitService (5min + 死区 ROI 才触发) / TimeAwareStopLossService (依赖 mark
+     * price 实际下跌) 抓到; (b) 不同 entry 价位的仓位对价格变化的敏感度不同, 但既有
+     * MarketSnapshotCollectorService 是按市场维度统一节奏, 没有按持仓 entry 分档加密刷新。</p>
+     *
+     * <p>本模块仅做观测告警 (WARN log + SmartWalletAuditAlertSink → strategy_alert 表 + 飞书),
+     * 不下任何订单, 不参与撮合决策。运维基于告警自行评估是否手动减仓。</p>
+     */
+    private PositionPriceMonitor positionPriceMonitor = new PositionPriceMonitor();
+
     @Data
     public static class PolymarketMonitor {
         private boolean enabled = true;
@@ -731,6 +744,28 @@ public class SmartWalletProperties {
         private Integer pendingSignalLookbackHours = 24;
         private BigDecimal maxTotalOpenCostUsdc = new BigDecimal("500");
         private Integer maxHoursToMarketEnd = 72;
+
+        // ── G6b: 临近赛事尾段 + 低概率方向 拒单门 ──────────────────────────────
+        // 背景: 体育 / 事件类市场进入最后几小时时, 隐含概率 < 10% 的 outcome 几乎注定归零,
+        // 此时跟单 leader 的开仓相当于"必输"。盘口同时极宽 (bid 0.03 / ask 0.07 之类),
+        // 也没有套利空间。直接在入口拒绝, 避免事后再做退出处理。
+        // 双条件 AND 触发: distance to marketEndAt < latePoorOddsMaxHoursToEnd
+        //                AND event.price < latePoorOddsMaxPrice
+        // 紧急回滚: 把 enableLatePoorOddsRejection 设 false。
+        /** 是否启用临近尾段 + 低概率拒单门 (默认开启)。 */
+        private boolean enableLatePoorOddsRejection = true;
+        /**
+         * 触发该门的"距 marketEndAt 剩余小时数"上限 (含)。
+         * 默认 12h: 体育冷门方向通常在赛前最后半天才彻底失去套利空间, 12h 给前置半天的安全垫;
+         * 调小至 2-5h 收窄到最临近尾段, 调大至 24h 进一步保守。
+         */
+        private Integer latePoorOddsMaxHoursToEnd = 12;
+        /**
+         * 触发该门的 event.price 上限 (不含): price < 此值 才命中。0.10 = 10% 隐含概率。
+         * 与 12h 时间窗联合, 拒绝所有"距赛事 ≤12h 且隐含 < 10%"的跟单。
+         */
+        private BigDecimal latePoorOddsMaxPrice = new BigDecimal("0.10");
+
         /** 同一 marketId + outcome 最多允许生成的入场订单数，防止同一预测方向被反复加仓刷单 */
         private boolean blockMarketOutcomeOrderLimit = true;
         private Integer maxOrdersPerMarketOutcome = 3;
@@ -1793,5 +1828,98 @@ public class SmartWalletProperties {
 
         /** 入库时的 createdBy */
         private String createdBy = "WeeklyTopLeaderAutoAllowlistJob";
+    }
+
+    /**
+     * 持仓侧价格监控配置。详见根级别字段 {@link #positionPriceMonitor} 的 Javadoc。
+     *
+     * <p>三档监控节奏 + 空 bid 告警, 全部默认开启 (告警没有破坏性, 只是 WARN + 写 strategy_alert)。
+     * 紧急回滚: enabled=false 即整体下线; emptyBidAlertEnabled=false 仅关空盘口告警。</p>
+     */
+    @Data
+    public static class PositionPriceMonitor {
+
+        /** 总开关 (默认开)。 */
+        private boolean enabled = true;
+
+        /** 调度扫描节奏 (毫秒)。每次扫描里逐仓再按 tier 间隔判断是否实际执行。默认 30s。 */
+        private long scanIntervalMs = 30_000L;
+
+        /** 单轮最多评估的仓位数, 防止突发扫描压垮 orderbook API。 */
+        private int maxPositionsPerRound = 100;
+
+        // ── 三档 entry 价位 → 不同监控间隔 ───────────────────────────────────
+        /** 低价档上限 (不含): entry < tierLowPrice 走 lowTierIntervalSeconds 节奏。默认 0.10。 */
+        private BigDecimal tierLowPrice = new BigDecimal("0.10");
+        /** 中价档上限 (不含): tierLowPrice ≤ entry < tierMidPrice 走 midTierIntervalSeconds。默认 0.30。 */
+        private BigDecimal tierMidPrice = new BigDecimal("0.30");
+        /** 低价档刷新间隔: 默认 2 分钟。 */
+        private int lowTierIntervalSeconds = 120;
+        /** 中价档刷新间隔: 默认 10 分钟。 */
+        private int midTierIntervalSeconds = 600;
+        /** 高价档 (entry ≥ tierMidPrice) 刷新间隔: 默认 30 分钟。 */
+        private int highTierIntervalSeconds = 1800;
+
+        // ── 空 bid 告警 ───────────────────────────────────────────────────────
+        /** 是否启用"best bid 为空"告警 (默认开)。 */
+        private boolean emptyBidAlertEnabled = true;
+        /**
+         * 同一仓位的空 bid 告警冷却 (秒), 防止刷屏。在冷却期内即使 bids 仍空, 也不再 publish。
+         * 默认 30 分钟; SmartWalletAuditAlertSink 默认实现 ({@code StrategyAlertService}) 自带
+         * 同 strategyId+alertType 去重, 本字段是 publish 调用次数的额外节流。
+         */
+        private int alertCooldownSeconds = 1800;
+
+        // ── 内存观测 ─────────────────────────────────────────────────────────
+        /** 最近告警的内存 ring buffer 大小, 供 dashboard /readiness 端点回看。 */
+        private int recentAlertsBufferSize = 200;
+
+        // ── 自动减仓 (三条件 AND 触发) ─────────────────────────────────────────
+        // 仅当 空 bid + 参考价 (mark > entry fallback) < autoExitMaxReferencePrice + 持仓
+        // ≥ autoExitMinHoldingMinutes 全部满足时, 调用 PolymarketClobExecutionService 的
+        // forcedPrice 通道在 autoExitTickFloorPrice 真实价位挂 SELL, 等任何买家接货。
+        /** 是否启用自动减仓动作 (默认关, 需运维明确启用)。 */
+        private boolean autoExitEnabled = false;
+        /** LIVE 模式是否允许自动减仓真下单。默认关。 */
+        private boolean autoExitLiveEnabled = false;
+        /** PAPER 模式是否允许自动减仓 (只走 ShadowFillSimulationService, 不真下单)。默认开。 */
+        private boolean autoExitPaperEnabled = true;
+        /**
+         * 触发自动减仓的"参考价"上限 (不含): 参考价 < 此值 才进入候选。默认 0.05。
+         * D1: 参考价优先取 lastMarkPrice, 缺失或非正时退回 averageEntryPrice;
+         * 与 tier 计算口径一致, 让"entry 高但现价已经塌掉"的浮亏仓位也能被自动减仓。
+         */
+        private BigDecimal autoExitMaxReferencePrice = new BigDecimal("0.05");
+        /** 触发自动减仓的最小持仓时长 (分钟): now - openedAt ≥ 此值。默认 60 分钟。 */
+        private int autoExitMinHoldingMinutes = 60;
+        /** 自动减仓挂 SELL 限价 (tick floor): 默认 0.001 = Polymarket 最小 tick。 */
+        private BigDecimal autoExitTickFloorPrice = new BigDecimal("0.001");
+
+        // ── D2: 连续空 bid 计数, 防瞬时盘口空抖动误触发 ──────────────────────────
+        /**
+         * 连续观测到 N 次空 bid 才触发告警 / 自动减仓。
+         * 默认 2: 30s 节奏下两次观测共 ~60s 都是空 bid, 已经显著超过盘口微结构 ms 级抖动窗口。
+         */
+        private int consecutiveEmptyBidThreshold = 2;
+
+        // ── E1: 自动减仓失败 retry 与告警 cooldown 分离 ────────────────────────
+        /**
+         * LIVE 自动减仓 returns LIVE_ORDER_FAILED 后, 下一次重试要等的秒数。
+         * 默认 120s, 远短于 alertCooldownSeconds (默认 1800s), 让瞬时网络 / API 故障可快速重试。
+         */
+        private int autoExitFailureRetrySeconds = 120;
+        /**
+         * 连续失败 N 次后, 退化到 alertCooldownSeconds 长间隔, 避免无限快速重试持续打 API。
+         * 默认 3 次。
+         */
+        private int autoExitFailureMaxRetries = 3;
+
+        // ── B2: 已存在 SELL 单时的"重算并替换"行为 ──────────────────────────────
+        /**
+         * 自动减仓发起前是否查 smart_wallet_order 表是否已有同仓位 SELL 活跃单。
+         * true (默认): 有 → cancel + 按当前 quantity & 当前 tickFloor 重下;
+         * false: 任何活跃 SELL 都不再下新单 (保守, 适合刚上线灰度)。
+         */
+        private boolean autoExitReplaceExistingOrder = true;
     }
 }

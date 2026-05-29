@@ -487,6 +487,33 @@ public class SmartWalletSignalRiskService {
         }
         if (accepted) gateStage = 6; // 通过市场状态
 
+        // ── Gate 6b: 临近赛事尾段 + 低概率方向 拒单门 ─────────────────────────────
+        // 体育 / 事件类市场剩余时间不长 (默认 ≤ 12h) 且 leader 跟的方向 implied prob 极低
+        // (默认 < 10%) 时, 跟单几乎注定亏损且无套利空间, 直接拒。
+        // 双条件 AND 才触发; 任一不满足都放行交给后续门控判定。endAt 取 G6 已解析的最终值。
+        if (accepted && risk.isEnableLatePoorOddsRejection()
+                && endAt != null && endAt > 0
+                && risk.getLatePoorOddsMaxHoursToEnd() != null
+                && risk.getLatePoorOddsMaxPrice() != null) {
+            long remainingMs = endAt - System.currentTimeMillis();
+            long thresholdMs = risk.getLatePoorOddsMaxHoursToEnd().longValue() * 3600_000L;
+            if (remainingMs > 0 && remainingMs <= thresholdMs
+                    && price.compareTo(safe(risk.getLatePoorOddsMaxPrice())) < 0) {
+                accepted = false;
+                if (firstRejectGate == null) {
+                    firstRejectGate = "G6b_LATE_LOW_PROB(remainingH=" + (remainingMs / 3600_000L)
+                            + ",price=" + price.setScale(4, RoundingMode.HALF_UP)
+                            + ",maxH=" + risk.getLatePoorOddsMaxHoursToEnd()
+                            + ",maxPrice=" + safe(risk.getLatePoorOddsMaxPrice()) + ")";
+                }
+                reasons.add("[LATE_LOW_PROB_BLOCK] Within "
+                        + risk.getLatePoorOddsMaxHoursToEnd() + "h of market end and price "
+                        + price.setScale(4, RoundingMode.HALF_UP) + " < "
+                        + safe(risk.getLatePoorOddsMaxPrice())
+                        + "; arbitrage window too narrow, skipping follow.");
+            }
+        }
+
         boolean hasOppositeOpenPosition = hasOpenPositionOnSameMarketDifferentOutcome(event.getMarketId(), event.getOutcome());
         MarketRoutingContext marketRouting = classifyMarket(event, marketState, endAt, risk, hasOppositeOpenPosition);
         String marketType = marketRouting.marketType();
