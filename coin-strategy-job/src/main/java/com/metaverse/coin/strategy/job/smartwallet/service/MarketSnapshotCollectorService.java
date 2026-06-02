@@ -75,7 +75,19 @@ public class MarketSnapshotCollectorService {
         PolymarketApiClient.OrderBook orderBook = usedWs
                 ? marketDataSnapshot.getOrderBook()
                 : marketDataCache.getOrderBook(tokenId);
-        List<PolymarketApiClient.MarketTrade> trades = polymarketApiClient.fetchMarketTrades(conditionId, 50, recentEpochSeconds(120));
+        // 问题4 修复（2026-06-02）：CLOB /trades 端点需要 API key，test 环境未配置 → 401。
+        // trades 仅用于补充 lastTradePrice/volume 等次要字段；盘口核心字段（bestBid/bestAsk/
+        // depth/mid）来自 orderBook。此前 trades 抛 401 会让整个 collectSnapshot 抛出、快照不落库，
+        // 导致 smart_wallet_market_snapshot 长期为空。这里把 trades 拉取降级为非致命：失败则空列表，
+        // 仍保存基于盘口的快照，保证开单/估值价能用上真实盘口。
+        List<PolymarketApiClient.MarketTrade> trades;
+        try {
+            trades = polymarketApiClient.fetchMarketTrades(conditionId, 50, recentEpochSeconds(120));
+        } catch (Exception tradesEx) {
+            trades = java.util.List.of();
+            log.debug("Market snapshot trades fetch failed (non-fatal) marketId={} outcome={}: {}",
+                    conditionId, normalizedOutcome, tradesEx.getMessage());
+        }
         BigDecimal mid = safe(orderBook.getMidpoint());
         if (mid.compareTo(BigDecimal.ZERO) <= 0) {
             mid = midpointFromTop(orderBook);

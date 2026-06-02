@@ -76,6 +76,12 @@ import java.util.function.Consumer;
 public class SmartWalletAccountingService {
 
     private static final String PAPER_BOOK_EXECUTION_ADDRESS = "paper-book";
+    /**
+     * 问题5 修复（2026-06-01）：本地权威结算最小持仓年龄。
+     * 仅当持仓已开仓超过该时长，才允许用本地 market_info.resolved_outcome 兜底结算，
+     * 避免对刚开仓的仓位因瞬时本地状态抖动而误结算。
+     */
+    private static final long LOCAL_AUTH_SETTLE_MIN_AGE_MS = 2L * 3600_000L;
     private static final String POSITION_STATUS_SETTLEMENT_PENDING_ORACLE = "SETTLEMENT_PENDING_ORACLE";
     private static final String POSITION_STATUS_WAIT_FINAL_PRICE = "WAIT_FINAL_PRICE";
     private static final String POSITION_STATUS_NEED_MANUAL_CHECK = "NEED_MANUAL_CHECK";
@@ -2179,6 +2185,16 @@ public class SmartWalletAccountingService {
             }
         }
         for (SmartWalletPositionEntity position : positions) {
+            // 问题5 修复（2026-06-01）：本地权威结算优先。
+            // 当本地 market_info 已确认终局（resolved_outcome 非空 + closed + lifecycle=RESOLVED），
+            // 直接据此结算，绕过依赖在线 Gamma/UMA 二次确认的旧闸——后者对长尾 endAt（赛事 dispute
+            // 窗口设在数天后）或缺 winningTokenId 的纸面市场会把已结算市场误判为 future/oracle-pending，
+            // 导致仓位永久卡在 OPEN（巡检实测 17 笔，最早 5/28）。复用 resolvePosition 的全部记账逻辑，
+            // 胜负由 settlementPrice 的 outcome 名称对比路径判定，安全且与现有纸面结算口径一致。
+            if (tryLocalAuthoritativeSettle(position)) {
+                resolved++;
+                continue;
+            }
             PolymarketApiClient.MarketMetadata metadata = metadataByMarket.get(position.getMarketId());
             if (metadata == null) {
                 continue;
@@ -3167,6 +3183,66 @@ public class SmartWalletAccountingService {
         } else {
             dailyReportMapper.updateById(entity);
         }
+    }
+
+    /**
+     * 问题5 修复（2026-06-01）：基于本地 market_info 的权威兜底结算。
+     *
+     * <p>仅在本地已确认市场终局时触发：{@code resolved_outcome} 非空 + {@code closed=true}
+     * + {@code market_lifecycle=RESOLVED}，且持仓已开仓超过 {@link #LOCAL_AUTH_SETTLE_MIN_AGE_MS}。
+     * 满足时用本地数据构造权威 {@link PolymarketApiClient.MarketMetadata}（resolved + closed +
+     * acceptingOrders=false + endAt=null），复用 {@link #resolvePosition} 与
+     * {@link #syncResolvedPaperOrderStatuses} 完成结算与订单状态回写，胜负由
+     * {@code settlementPrice} 的 outcome 名称对比路径判定。</p>
+     *
+     * <p>设计为<b>纯增量、严格门控</b>：不放宽任何既有安全闸（仍走 resolvePosition 顶部的
+     * acceptingOrders / endAt 防护），只为「本地已盖棺、在线元数据滞后」这一类卡死仓位补一条出路。</p>
+     *
+     * @return 已据本地权威完成结算返回 true；否则 false（交回原在线结算流程）。
+     */
+    private boolean tryLocalAuthoritativeSettle(SmartWalletPositionEntity position) {
+        if (position == null || safe(position.getQuantity()).compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        if (!StringUtils.hasText(position.getMarketId()) || position.getMarketInfoId() == null) {
+            return false;
+        }
+        SmartWalletMarketInfoEntity mi = marketInfoService.getById(position.getMarketInfoId());
+        if (mi == null) {
+            return false;
+        }
+        boolean closed = Boolean.TRUE.equals(mi.getClosed());
+        boolean resolvedLifecycle = "RESOLVED".equalsIgnoreCase(mi.getMarketLifecycle());
+        String resolvedOutcome = mi.getResolvedOutcome();
+        if (!StringUtils.hasText(resolvedOutcome) || !closed || !resolvedLifecycle) {
+            return false;
+        }
+        // 安全闸：仅结算已开仓足够久的仓位，避免刚开仓即被本地瞬时状态误结算。
+        if (position.getOpenedAt() != null
+                && System.currentTimeMillis() - position.getOpenedAt().getTime() < LOCAL_AUTH_SETTLE_MIN_AGE_MS) {
+            return false;
+        }
+        PolymarketApiClient.MarketMetadata authoritative = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId(position.getMarketId())
+                .marketId(position.getMarketId())
+                .question(StringUtils.hasText(position.getQuestion()) ? position.getQuestion() : mi.getQuestion())
+                .active(false)
+                .closed(true)
+                .acceptingOrders(false)
+                .resolvedOutcome(resolvedOutcome)
+                .winningTokenId(StringUtils.hasText(mi.getTokenId())
+                        && resolvedOutcome.equalsIgnoreCase(mi.getOutcome()) ? mi.getTokenId() : null)
+                .resolutionStatus(MarketResolutionResolver.STATUS_RESOLVED)
+                .resolutionSource("LOCAL_MARKET_INFO_AUTHORITATIVE")
+                .resolutionObservedAt(System.currentTimeMillis())
+                .endAt(null)
+                .build();
+        log.warn("[LOCAL_AUTH_SETTLE] 本地权威兜底结算 positionId={} marketId={} outcome={} resolvedOutcome={} lifecycle={} closed={}",
+                position.getId(), position.getMarketId(), position.getOutcome(),
+                resolvedOutcome, mi.getMarketLifecycle(), closed);
+        syncResolvedPaperOrderStatuses(position.getMarketId(), authoritative);
+        resolvePosition(position, authoritative);
+        return true;
     }
 
     private void resolvePosition(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {

@@ -416,8 +416,12 @@ public class PolymarketApiClient {
         if (!StringUtils.hasText(tokenId)) {
             throw new IllegalArgumentException("tokenId is required");
         }
+        // 问题4 修复（2026-06-02）：Polymarket CLOB /book 端点要求 query 参数为 snake_case
+        // token_id；此前误用 tokenID 导致每次请求返回 HTTP 400，盘口 REST 拉取全军覆没，
+        // 进而 smart_wallet_market_snapshot 长期为空、开单/估值价 fallback 到 rawPrice（现价）。
+        // 实测：?tokenID= → 400；?token_id= → 200（含完整 bids/asks）。
         JsonNode body = getJson(buildUri(properties.getExecutionWallet().getApiBaseUrl(),
-                "/book", Map.of("tokenID", tokenId.trim())));
+                "/book", Map.of("token_id", tokenId.trim())));
         List<OrderBookLevel> bids = parseOrderBookLevels(body.get("bids"));
         List<OrderBookLevel> asks = parseOrderBookLevels(body.get("asks"));
         bids.sort(Comparator.comparing(OrderBookLevel::getPrice).reversed());
