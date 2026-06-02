@@ -154,6 +154,19 @@ public class CapitalRecycleExitService {
                     continue;
                 }
 
+                // 2026-05-29 ray@cowork (亏损根因 #1 修复)：退出前校验 bid 侧吸纳能力。
+                // 防止"挂 SELL 但盘口没人接"→ 真实场景挂单残留、PAPER 场景账面价值与实际可成交价脱节。
+                BidLiquidityCheck liquidityCheck = checkBidLiquidity(position, config);
+                if (!liquidityCheck.passed()) {
+                    log.info("CAPITAL_RECYCLE skipped positionId={} reason=INSUFFICIENT_BID_DEPTH bidDepth={} required>={} absorbRatio={} mode=PAPER",
+                            position.getId(),
+                            liquidityCheck.bidDepth() == null ? "n/a" : liquidityCheck.bidDepth().setScale(2, RoundingMode.HALF_UP),
+                            liquidityCheck.requiredDepth() == null ? "n/a" : liquidityCheck.requiredDepth().setScale(2, RoundingMode.HALF_UP),
+                            liquidityCheck.absorbRatio() == null ? "n/a" : liquidityCheck.absorbRatio().setScale(3, RoundingMode.HALF_UP));
+                    applyCooldown(position.getId(), config);
+                    continue;
+                }
+
                 SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
                 exitRequest.setPrice(exitPrice);
                 exitRequest.setQuantity(position.getQuantity());
@@ -164,7 +177,7 @@ public class CapitalRecycleExitService {
                 recordDailyRecycled(safe(position.getCostBasisUsdc()));
                 recycled++;
 
-                log.info("CAPITAL_RECYCLE triggered positionId={} marketId={} outcome={} score={} holdingH={} roi={}% cost={} exitPrice={} pnl={} currentStatus={}",
+                log.info("CAPITAL_RECYCLE triggered positionId={} marketId={} outcome={} score={} holdingH={} roi={}% cost={} exitPrice={} pnl={} currentStatus={} bidAbsorb={}",
                         position.getId(),
                         position.getMarketId(),
                         position.getOutcome(),
@@ -174,7 +187,8 @@ public class CapitalRecycleExitService {
                         safe(position.getCostBasisUsdc()).setScale(2, RoundingMode.HALF_UP),
                         exitPrice,
                         safe(exitResult.getRealizedPnlDeltaUsdc()).setScale(2, RoundingMode.HALF_UP),
-                        exitResult.getCurrentStatus());
+                        exitResult.getCurrentStatus(),
+                        liquidityCheck.absorbRatio() == null ? "n/a" : liquidityCheck.absorbRatio().setScale(3, RoundingMode.HALF_UP));
             } catch (Exception ex) {
                 log.warn("CAPITAL_RECYCLE exit failed for positionId={} marketId={}: {}",
                         position.getId(),
@@ -223,6 +237,19 @@ public class CapitalRecycleExitService {
                 BigDecimal exitPrice = resolveRealtimeExitPrice(position);
                 if (exitPrice.compareTo(BigDecimal.ZERO) <= 0) {
                     log.debug("LIVE CAPITAL_RECYCLE skipped positionId={} — unable to resolve realtime exit price", position.getId());
+                    applyCooldown(position.getId(), config);
+                    continue;
+                }
+
+                // 2026-05-29 ray@cowork (亏损根因 #1 修复)：退出前校验 bid 侧吸纳能力。
+                // LIVE 模式下尤为关键——空盘口挂 SELL 会挂单不成交、占用槽位、并被 stale-order GC 误判。
+                BidLiquidityCheck liquidityCheck = checkBidLiquidity(position, config);
+                if (!liquidityCheck.passed()) {
+                    log.info("LIVE CAPITAL_RECYCLE skipped positionId={} reason=INSUFFICIENT_BID_DEPTH bidDepth={} required>={} absorbRatio={}",
+                            position.getId(),
+                            liquidityCheck.bidDepth() == null ? "n/a" : liquidityCheck.bidDepth().setScale(2, RoundingMode.HALF_UP),
+                            liquidityCheck.requiredDepth() == null ? "n/a" : liquidityCheck.requiredDepth().setScale(2, RoundingMode.HALF_UP),
+                            liquidityCheck.absorbRatio() == null ? "n/a" : liquidityCheck.absorbRatio().setScale(3, RoundingMode.HALF_UP));
                     applyCooldown(position.getId(), config);
                     continue;
                 }
@@ -575,6 +602,62 @@ public class CapitalRecycleExitService {
 
     private static BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    // ─── Bid-Liquidity Guard (亏损根因 #1 修复, 2026-05-29 ray@cowork) ──────────────
+
+    /**
+     * 退出前盘口吸纳能力校验。
+     * <p>
+     * 与 {@link #computeLiquidityScore} 的差异：
+     * <ul>
+     *   <li>{@code computeLiquidityScore}：用 0~15 分纳入 candidate score，作为"是否值得回收"的软性输入；</li>
+     *   <li>本方法：硬性闸门——absorbRatio &lt; {@code minBidAbsorbRatio} 时直接跳过本轮回收，
+     *       理由是"挂 SELL 但盘口没人接 → PAPER 账面损益脱离真实可成交价 / LIVE 挂单残留"。</li>
+     * </ul>
+     * <p>
+     * absorbRatio = (best bid 下 {@code bidDepthWindowCents} 美分内累计 size) / position.quantity。
+     * 配置缺失或 ratio = 0 时视为不校验（向后兼容 + 紧急关闭通道）。
+     * orderbook 不可用（API 失败 / 缓存空）时**保守放行** —— 避免外部依赖故障导致止损路径全瘫。
+     */
+    private BidLiquidityCheck checkBidLiquidity(SmartWalletPositionEntity position,
+                                                SmartWalletProperties.CapitalRecycle config) {
+        BigDecimal minRatio = config.getMinBidAbsorbRatio();
+        if (minRatio == null || minRatio.signum() <= 0) {
+            return BidLiquidityCheck.passThrough("disabled");
+        }
+        BigDecimal quantity = position.getQuantity();
+        if (quantity == null || quantity.signum() <= 0) {
+            return BidLiquidityCheck.passThrough("no_quantity");
+        }
+        BigDecimal window = config.getBidDepthWindowCents();
+        if (window == null || window.signum() <= 0) {
+            window = new BigDecimal("0.03");
+        }
+        BigDecimal bidDepth = fetchBidDepthWithinCents(position, window);
+        if (bidDepth == null) {
+            // orderbook 不可用：保守放行，让 resolveRealtimeExitPrice 的 markToMarket fallback 处理。
+            return BidLiquidityCheck.passThrough("orderbook_unavailable");
+        }
+        BigDecimal required = quantity.multiply(minRatio);
+        BigDecimal absorbRatio = bidDepth.divide(quantity, 6, RoundingMode.HALF_UP);
+        boolean ok = bidDepth.compareTo(required) >= 0;
+        return new BidLiquidityCheck(ok, bidDepth, required, absorbRatio);
+    }
+
+    /**
+     * Bid-liquidity 校验结果。
+     * <p>
+     * - {@code passed=false} 时调用方应跳过本轮 + cooldown；
+     * - {@code passed=true} 但 {@code bidDepth==null} 表示 orderbook 不可用，保守放行。
+     */
+    private record BidLiquidityCheck(boolean passed,
+                                     BigDecimal bidDepth,
+                                     BigDecimal requiredDepth,
+                                     BigDecimal absorbRatio) {
+        static BidLiquidityCheck passThrough(String reason) {
+            return new BidLiquidityCheck(true, null, null, null);
+        }
     }
 
     // ─── Inner Types ─────────────────────────────────────────────────────────────

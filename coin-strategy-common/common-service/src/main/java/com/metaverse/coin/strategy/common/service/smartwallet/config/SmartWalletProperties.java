@@ -368,6 +368,17 @@ public class SmartWalletProperties {
          */
         private boolean enablePendingTrackerPersistence = true;
 
+        // ── Fix 5: 入场 BUY 单 5min 超时撤销 ────────────────────────────────────
+        // 与 enableGtcGlobalTimeout 独立: GTC 全局 60s 是面向所有 GTC 单的兜底, 这里只针对
+        // "BUY 入场单" 给一个更宽的 5min 窗口 (给市场出现合理 ask 留时间), 之后强制 cancel
+        // 释放资金。复用 GtcOrderTimeoutTracker, 通过 registerWithTimeout overload 区分。
+        /** 是否启用入场 BUY 单 5min 超时撤销 (默认关, 灰度起步)。 */
+        private boolean enableEntryBuyTimeout = false;
+        /** 入场 BUY 超时秒数, 默认 300 = 5min。 */
+        private int entryBuyTimeoutSeconds = 300;
+        /** 入场 BUY 超时撤销最大尝试次数, 与 gtcCancelMaxAttempts 独立。 */
+        private int entryBuyCancelMaxAttempts = 2;
+
         // ── F-P1-15: MAKER 限价参考实时 best bid ─────────────────────────
         /**
          * 是否启用 MAKER 模式下"参考实时 best bid 收口"的限价计算。
@@ -459,6 +470,19 @@ public class SmartWalletProperties {
         private boolean allowSellSignal = false;
         private boolean enableAutoStopLoss = false;
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
+
+        /**
+         * 2026-05-29 ray@cowork (亏损根因 #3 修复)：按 {@code normalized_category} 黑名单的品类拒单门。
+         * <p>
+         * 取自 {@link com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity#normalizedCategory}
+         * （fallback 到 {@code sourceCategory}）；命中 → 拒单 → {@code firstRejectGate=G6_CATEGORY_DISABLED}。
+         * 大小写不敏感（比较时统一 upper-case）。空集合 = 不启用本门。
+         * <p>
+         * 本期默认空；运营按 DB {@code strategy_runtime_config} 中
+         * {@code smart-wallet.signal-risk.disabled-categories=SPORTS} 配置启用。
+         * 详 {@code docs/problem/亏损根因分析-2026-05-29.md} 根因 #3。
+         */
+        private java.util.Set<String> disabledCategories = new java.util.LinkedHashSet<>();
         private boolean enableAutoTakeProfit = false;
         private BigDecimal autoTakeProfitThresholdRate = new BigDecimal("0.35");
         private Integer fastEventMaxHours = 24;
@@ -752,6 +776,41 @@ public class SmartWalletProperties {
         // 双条件 AND 触发: distance to marketEndAt < latePoorOddsMaxHoursToEnd
         //                AND event.price < latePoorOddsMaxPrice
         // 紧急回滚: 把 enableLatePoorOddsRejection 设 false。
+        // ── G6c: 开单侧实时盘口护栏 (空 ask 拒单 + 价位脱钩拒单) ──────────────────
+        // Fix 1 (空 ask 硬闸) + Fix 3 (TAKER 价位脱钩钳制) 的入口配置。
+        // 与 G8c 互补: G8c 看深度数量, G6c 看深度存在性 + 价位与盘口距离。
+        /**
+         * 是否启用 G6c 入口盘口护栏 (默认 false 灰度起步)。
+         * 开启后会在 G6b 之后多 1 次 snapshot/orderbook 查询, 故先 PAPER 灰度。
+         */
+        private boolean enableEntryEmptyAskRejection = false;
+        /**
+         * G6c 拒单是否同样对 PAPER 路径生效 (true) 还是仅 LIVE 生效 (false)。
+         * 灰度推荐先 true 以让 ShadowVsLive 报告能看到对齐的拒单率, 稳定后可改 false。
+         */
+        private boolean entryEmptyAskApplyToPaper = true;
+        /**
+         * snapshot 陈旧度上限 (毫秒) — 超过此值视为不可用并触发 fail-policy。
+         * 默认 60s, 与 MarketSnapshotCollectorService 的 45s 调度留 15s 容差。
+         */
+        private long entryAskSnapshotMaxAgeMs = 60_000L;
+        /**
+         * snapshot 陈旧 / 缺失时的策略:
+         *   FAIL_OPEN  - 放行交由 G8c 兜底 (默认, 保守)
+         *   FAIL_CLOSED - 直接拒 (运维需先确认 snapshot SLO)
+         */
+        private String entryAskStaleStrategy = "FAIL_OPEN";
+
+        // ── Fix 3: TAKER 限价钳到 bestAsk × (1 + premium) ──────────────────────
+        /** 是否启用 TAKER 限价的 bestAsk 上限钳制 (默认 false 灰度起步)。 */
+        private boolean enableEntryAskPriceCap = false;
+        /**
+         * 钳制上限: limitPrice ≤ bestAsk × (1 + maxBuyPremiumVsBestAsk)。
+         * 默认 0.50 = 50%, 留出 leader 与 follower 间真实涨幅的空间, 又能拦"event.price 远高于本地 bestAsk"
+         * 的孤儿单场景。
+         */
+        private BigDecimal maxBuyPremiumVsBestAsk = new BigDecimal("0.50");
+
         /** 是否启用临近尾段 + 低概率拒单门 (默认开启)。 */
         private boolean enableLatePoorOddsRejection = true;
         /**
@@ -1113,6 +1172,19 @@ public class SmartWalletProperties {
         private BigDecimal dailyRecycleBudgetUsdc = new BigDecimal("100");
         /** 同一仓位评估后的冷却分钟数 */
         private Integer cooldownMinutes = 30;
+        /**
+         * 2026-05-29 ray@cowork (亏损根因 #1 修复)：退出前必须验证 bid 侧吸纳能力。
+         * absorbRatio = (best bid 下 bidDepthWindowCents 美分内累计 size) / position.quantity；
+         * 低于该阈值则跳过本轮（cooldown 后再评估），避免向"空盘口"挂单导致挂单残留 / 滑点放大。
+         * 默认 0.5 = 盘口至少能吃下半仓；改为 0 视为不校验（不推荐）。
+         */
+        private BigDecimal minBidAbsorbRatio = new BigDecimal("0.5");
+        /**
+         * 累计 bid 深度时的价格窗口（best bid 下 N 美分以内），与 {@code minBidAbsorbRatio} 配对。
+         * 默认 0.03 美分（即 3 个 tick），与 {@link CapitalRecycleExitService#computeLiquidityScore}
+         * 中的 F-P1-16 评分窗口一致。
+         */
+        private BigDecimal bidDepthWindowCents = new BigDecimal("0.03");
     }
 
     @Data

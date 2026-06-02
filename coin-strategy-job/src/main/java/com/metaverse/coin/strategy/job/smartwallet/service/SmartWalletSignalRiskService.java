@@ -415,6 +415,28 @@ public class SmartWalletSignalRiskService {
         if (accepted) gateStage = 5; // 通过信号新鲜度
 
         // ── Gate 6: 市场状态 / 时间窗口 ──
+        // 2026-05-29 ray@cowork (亏损根因 #3 修复)：品类黑名单门 (G6_CATEGORY_DISABLED)。
+        // 取 SmartWalletMarketInfo.normalizedCategory（fallback sourceCategory），
+        // 与 SignalRisk.disabledCategories（大小写不敏感）比对；命中即拒。
+        // 这一门置于 G6 块开头，先于 marketState 解析，避免无谓的 Polymarket Gamma 远程刷新。
+        if (accepted) {
+            String marketCategory = resolveMarketCategory(event);
+            java.util.Set<String> disabledCategories = risk.getDisabledCategories();
+            if (marketCategory != null && disabledCategories != null && !disabledCategories.isEmpty()) {
+                String catUpper = marketCategory.toUpperCase(java.util.Locale.ROOT);
+                boolean blocked = disabledCategories.stream()
+                        .filter(StringUtils::hasText)
+                        .map(s -> s.toUpperCase(java.util.Locale.ROOT))
+                        .anyMatch(catUpper::equals);
+                if (blocked) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G6_CATEGORY_DISABLED(" + catUpper + ")";
+                    reasons.add("[CATEGORY_BLOCKED] normalizedCategory=" + catUpper
+                            + " is on signal-risk.disabled-categories blocklist (亏损根因 #3 修复). "
+                            + "改 strategy_runtime_config 中 smart-wallet.signal-risk.disabled-categories 后可立即放行。");
+                }
+            }
+        }
         // 修复六（6.6）：优先复用调用方已解析的市场状态快照，避免单事件重复解析。
         MarketStateSnapshot marketState = preResolvedMarketState != null
                 ? preResolvedMarketState
@@ -511,6 +533,30 @@ public class SmartWalletSignalRiskService {
                         + price.setScale(4, RoundingMode.HALF_UP) + " < "
                         + safe(risk.getLatePoorOddsMaxPrice())
                         + "; arbitrage window too narrow, skipping follow.");
+            }
+        }
+
+        // ── Gate 6c: 入口盘口护栏 (空 ask 硬闸) ─────────────────────────────────
+        // Fix 1: 当 enableDepthAwareSizing=false 时 G8c 不生效, 缺少"asks 完全为空"的硬保护。
+        // 这里独立判定: 用 snapshot 看 bestAsk, 空 → 拒。snapshot 陈旧 → 按 entryAskStaleStrategy 决策。
+        // 与 G8c 互补不冲突: G8c 看深度数量 (≥ minAcceptableDepthUsdc), G6c 看 bestAsk 存在性。
+        if (accepted && risk.isEnableEntryEmptyAskRejection()) {
+            G6cAskCheckOutcome askOutcome = evaluateEntryAskSanity(event, risk);
+            entryAskCheckCounters.merge(askOutcome, 1L, Long::sum);
+            if (askOutcome == G6cAskCheckOutcome.REJECT_EMPTY_ASK) {
+                accepted = false;
+                if (firstRejectGate == null) {
+                    firstRejectGate = "G6c_ENTRY_EMPTY_ASK";
+                }
+                reasons.add("[ENTRY_EMPTY_ASK] Target token's best ask is empty in latest snapshot; "
+                        + "buying here would rest indefinitely without a counterparty. Skipping.");
+            } else if (askOutcome == G6cAskCheckOutcome.REJECT_STALE_FAIL_CLOSED) {
+                accepted = false;
+                if (firstRejectGate == null) {
+                    firstRejectGate = "G6c_ENTRY_ASK_SNAPSHOT_STALE";
+                }
+                reasons.add("[ENTRY_ASK_SNAPSHOT_STALE] Ask snapshot age > "
+                        + risk.getEntryAskSnapshotMaxAgeMs() + "ms with FAIL_CLOSED policy; skipping.");
             }
         }
 
@@ -1897,6 +1943,64 @@ public class SmartWalletSignalRiskService {
                     event.getMarketId(), e.toString());
             return null;
         }
+    }
+
+    /**
+     * G6c: 评估入口盘口的 bestAsk 是否可用。
+     *
+     * <p>Pure-ish: 仅依赖 snapshot 缓存查询, 不做实时 fetch (避免引入额外 CLOB API 调用)。
+     * snapshot 太老 → 按 {@code entryAskStaleStrategy} 配置决定 FAIL_OPEN / FAIL_CLOSED。</p>
+     */
+    G6cAskCheckOutcome evaluateEntryAskSanity(SmartWalletTradeEventEntity event,
+                                              SmartWalletProperties.SignalRisk risk) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            return G6cAskCheckOutcome.SKIP_NO_DATA;
+        }
+        SmartWalletMarketSnapshotEntity snapshot;
+        try {
+            snapshot = marketSnapshotCollectorService
+                    .findFreshSnapshot(event.getMarketId(), event.getOutcome());
+        } catch (Exception ex) {
+            log.debug("G6c snapshot lookup failed marketId={} err={}", event.getMarketId(), ex.toString());
+            return failOnStale(risk);
+        }
+        if (snapshot == null || snapshot.getSnapshotAt() == null) {
+            return failOnStale(risk);
+        }
+        long ageMs = System.currentTimeMillis() - snapshot.getSnapshotAt().getTime();
+        if (ageMs > risk.getEntryAskSnapshotMaxAgeMs()) {
+            return failOnStale(risk);
+        }
+        BigDecimal bestAsk = snapshot.getBestAsk();
+        if (bestAsk == null || bestAsk.compareTo(BigDecimal.ZERO) <= 0) {
+            return G6cAskCheckOutcome.REJECT_EMPTY_ASK;
+        }
+        return G6cAskCheckOutcome.OK;
+    }
+
+    private G6cAskCheckOutcome failOnStale(SmartWalletProperties.SignalRisk risk) {
+        String policy = risk.getEntryAskStaleStrategy() == null ? "FAIL_OPEN" : risk.getEntryAskStaleStrategy();
+        return "FAIL_CLOSED".equalsIgnoreCase(policy)
+                ? G6cAskCheckOutcome.REJECT_STALE_FAIL_CLOSED
+                : G6cAskCheckOutcome.SKIP_STALE_FAIL_OPEN;
+    }
+
+    /** G6c 评估结果分类, 供门控判定 + 运维计数。 */
+    enum G6cAskCheckOutcome {
+        OK,
+        REJECT_EMPTY_ASK,
+        REJECT_STALE_FAIL_CLOSED,
+        SKIP_STALE_FAIL_OPEN,
+        SKIP_NO_DATA
+    }
+
+    /** 阶段 0 监控: G6c 各 outcome 累计计数, 暴露给 dashboard。 */
+    private final java.util.concurrent.ConcurrentHashMap<G6cAskCheckOutcome, Long> entryAskCheckCounters =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public java.util.Map<G6cAskCheckOutcome, Long> entryAskCheckCounters() {
+        return new java.util.EnumMap<>(entryAskCheckCounters);
     }
 
     private BigDecimal resolveAskDepth(SmartWalletTradeEventEntity event,

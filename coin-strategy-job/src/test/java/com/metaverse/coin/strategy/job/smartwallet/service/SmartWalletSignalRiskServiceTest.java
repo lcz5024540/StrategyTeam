@@ -1638,6 +1638,156 @@ class SmartWalletSignalRiskServiceTest {
         assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
     }
 
+    // ─── G6c: 入口盘口护栏 (空 ask 拒单) ─────────────────────────────────────────
+
+    @Test
+    void g6c_disabledByDefault_doesNotGate() {
+        // 默认 enableEntryEmptyAskRejection=false → 完全不查 snapshot, 不影响其他闸
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6c_"),
+                    "G6c 默认关, 不应是 firstRejectGate; got=" + decision.getFirstRejectGate());
+        }
+    }
+
+    @Test
+    void g6c_rejectsWhenBestAskEmptyAndEnabled() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        // snapshot 新鲜 (just now), 但 bestAsk = null → REJECT_EMPTY_ASK
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date());
+        snap.setBestAsk(null);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_EMPTY_ASK")),
+                "Should contain ENTRY_EMPTY_ASK reason; got: " + decision.getReasons());
+    }
+
+    @Test
+    void g6c_rejectsWhenBestAskZero() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date());
+        snap.setBestAsk(BigDecimal.ZERO);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_EMPTY_ASK")));
+    }
+
+    @Test
+    void g6c_failOpenWhenSnapshotStaleByDefault() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        properties.getSignalRisk().setEntryAskSnapshotMaxAgeMs(60_000L);
+        // 默认策略 FAIL_OPEN → snapshot 陈旧应当放行
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date(System.currentTimeMillis() - 600_000L)); // 10min 前 (> 60s)
+        snap.setBestAsk(null);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // FAIL_OPEN: 不因 G6c 拒, 但可能因后续闸拒
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6c_"));
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_EMPTY_ASK")));
+    }
+
+    @Test
+    void g6c_failClosedWhenConfiguredAndStale() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        properties.getSignalRisk().setEntryAskStaleStrategy("FAIL_CLOSED");
+        properties.getSignalRisk().setEntryAskSnapshotMaxAgeMs(60_000L);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date(System.currentTimeMillis() - 600_000L));
+        snap.setBestAsk(new BigDecimal("0.50"));
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_ASK_SNAPSHOT_STALE")),
+                "Should contain ENTRY_ASK_SNAPSHOT_STALE reason; got: " + decision.getReasons());
+    }
+
+    @Test
+    void g6c_counterTracksAllOutcomes() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date());
+        snap.setBestAsk(null);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        service.evaluate(profile, event);
+
+        java.util.Map<SmartWalletSignalRiskService.G6cAskCheckOutcome, Long> counters =
+                service.entryAskCheckCounters();
+        assertEquals(Long.valueOf(1L),
+                counters.get(SmartWalletSignalRiskService.G6cAskCheckOutcome.REJECT_EMPTY_ASK),
+                "REJECT_EMPTY_ASK counter should be 1; got map=" + counters);
+    }
+
     private SmartWalletProfileEntity baseProfile() {
         return new SmartWalletProfileEntity()
                 .setWalletAddress("0xabc")

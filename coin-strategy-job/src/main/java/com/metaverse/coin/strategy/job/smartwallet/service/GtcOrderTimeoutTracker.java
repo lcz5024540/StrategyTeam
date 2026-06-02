@@ -66,7 +66,8 @@ public class GtcOrderTimeoutTracker {
     /** 启动期回放：扫表中 cancelStatus=PENDING 的记录，重建内存 tracker。 */
     @PostConstruct
     public void replayPendingFromDb() {
-        if (!isEnabled() || !isPersistenceEnabled() || trackerMapper == null) {
+        // Fix 5: 任一种 timeout 启用都 replay (覆盖入场 BUY 重启场景)
+        if (!isAnyTimeoutEnabledForReplay() || !isPersistenceEnabled() || trackerMapper == null) {
             return;
         }
         try {
@@ -111,8 +112,26 @@ public class GtcOrderTimeoutTracker {
     public void register(Long orderId, String externalOrderId, String executionAddress,
                          String orderStrategy, String marketId, String outcome, Long followTaskId) {
         if (!isEnabled()) return;
+        registerInternal(orderId, externalOrderId, executionAddress,
+                orderStrategy, marketId, outcome, followTaskId, effectiveTimeoutMs());
+    }
+
+    /**
+     * Fix 5: 自定义超时的 register, 不检查 isEnabled, 由调用方决定 (例如入场 BUY 5min 单走这条路径)。
+     *
+     * <p>调用方需自行用 {@code enableEntryBuyTimeout} 等独立开关 guard, 防止误注册。</p>
+     */
+    public void registerWithTimeout(Long orderId, String externalOrderId, String executionAddress,
+                                    String orderStrategy, String marketId, String outcome,
+                                    Long followTaskId, long timeoutMs) {
+        registerInternal(orderId, externalOrderId, executionAddress,
+                orderStrategy, marketId, outcome, followTaskId, timeoutMs);
+    }
+
+    private void registerInternal(Long orderId, String externalOrderId, String executionAddress,
+                                  String orderStrategy, String marketId, String outcome,
+                                  Long followTaskId, long timeoutMs) {
         if (externalOrderId == null || externalOrderId.isBlank()) return;
-        long timeoutMs = effectiveTimeoutMs();
         long expireAtMs = System.currentTimeMillis() + timeoutMs;
         GtcEntry entry = new GtcEntry(null, orderId, externalOrderId, executionAddress,
                 orderStrategy, System.currentTimeMillis(), expireAtMs, 0);
@@ -166,17 +185,22 @@ public class GtcOrderTimeoutTracker {
     /** 扫描间隔可配，默认 3 秒。 */
     @Scheduled(fixedDelayString = "${smart-wallet.execution-wallet.gtc-cancel-scan-interval-ms:3000}")
     public void scan() {
-        if (!isEnabled()) return;
+        // Fix 5: scan 同时服务 GTC 全局超时 + 入场 BUY 超时, 任一开启都跑
+        if (!isAnyTimeoutEnabled()) return;
         if (pending.isEmpty()) return;
         long now = System.currentTimeMillis();
         int cancelled = 0;
         int failed = 0;
         int abandoned = 0;
-        int maxAttempts = Math.max(1, properties.getExecutionWallet().getGtcCancelMaxAttempts());
+        SmartWalletProperties.ExecutionWallet ewCfg = properties.getExecutionWallet();
+        int gtcMaxAttempts = Math.max(1, ewCfg.getGtcCancelMaxAttempts());
+        int entryBuyMaxAttempts = Math.max(1, ewCfg.getEntryBuyCancelMaxAttempts());
         for (Iterator<Map.Entry<String, GtcEntry>> it = pending.entrySet().iterator(); it.hasNext();) {
             Map.Entry<String, GtcEntry> e = it.next();
             GtcEntry entry = e.getValue();
             if (now < entry.expireAtMs) continue;
+            // Fix 5: 入场 BUY 用独立 maxAttempts (默认 2, 比 GTC 3 更保守)
+            int maxAttempts = "ENTRY_BUY".equals(entry.orderStrategy) ? entryBuyMaxAttempts : gtcMaxAttempts;
             try {
                 ExecutionWalletContextLoader.ExecutionWalletContext wallet =
                         walletContextLoader.requireLiveContext();
@@ -237,6 +261,18 @@ public class GtcOrderTimeoutTracker {
         SmartWalletProperties.ExecutionWallet ew =
                 properties == null ? null : properties.getExecutionWallet();
         return ew != null && ew.isEnableGtcGlobalTimeout();
+    }
+
+    /** Fix 5: 任一种超时机制开启 (GTC 全局或入场 BUY) 都让 scan 跑。 */
+    private boolean isAnyTimeoutEnabled() {
+        SmartWalletProperties.ExecutionWallet ew =
+                properties == null ? null : properties.getExecutionWallet();
+        return ew != null && (ew.isEnableGtcGlobalTimeout() || ew.isEnableEntryBuyTimeout());
+    }
+
+    /** Fix 5: replay 同样需要看任一开关 (重启后入场 BUY 仍要被 cancel)。 */
+    private boolean isAnyTimeoutEnabledForReplay() {
+        return isAnyTimeoutEnabled();
     }
 
     private boolean isPersistenceEnabled() {

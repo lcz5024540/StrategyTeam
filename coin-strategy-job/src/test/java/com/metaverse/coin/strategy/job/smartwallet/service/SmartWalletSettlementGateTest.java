@@ -154,4 +154,71 @@ class SmartWalletSettlementGateTest {
         assertFalse(check.canSettle());
         assertEquals("market_still_accepting_orders", check.reason());
     }
+
+    /**
+     * 2026-05-30 修复回归用例（见 docs/problem/订单未结算根因排查-2026-05-30.md）：
+     * 体育/赛事类 market 的"四指标全终结"状态（closed=true && !acceptingOrders &&
+     * resolved=true && winningTokenId 非空），即便 Polymarket endAt 尚未到达（marketEnded=false），
+     * 也应允许结算。修复前会被 d4302c90 引入的 !marketEnded 硬闸误判为"提前结算"，
+     * 导致 18 笔 OPEN 仓位永久卡死、paper-book 余额透支。
+     */
+    @Test
+    void oracleTerminalAllSignalsSet_allowed_evenIfMarketNotEnded() {
+        PolymarketApiClient.MarketMetadata md = mock(PolymarketApiClient.MarketMetadata.class);
+        lenient().when(md.isClosed()).thenReturn(true);
+        lenient().when(md.isAcceptingOrders()).thenReturn(false);
+        lenient().when(md.isResolved()).thenReturn(true);
+        lenient().when(md.getWinningTokenId()).thenReturn("token-yes");
+        lenient().when(md.getSlug()).thenReturn("test-market");
+        lenient().when(md.getUmaResolutionStatus()).thenReturn(null);
+
+        SettlementTerminalCheck check = service.settlementTerminalCheck(md, /*marketEnded*/ false);
+
+        assertTrue(check.canSettle(),
+                "四指标全终结（closed/!acceptingOrders/resolved/winningTokenId 非空）应放行，"
+                        + "即便 Polymarket endAt 未到——修复体育/赛事类被永久卡住的回归。");
+        assertEquals("oracle_terminal_all_signals_set", check.reason());
+    }
+
+    /**
+     * 2026-05-30 修复回归用例：四指标缺一不可——resolved=false 时（d4302c90 当年防的
+     * "单一抖动"场景），即便 closed/acceptingOrders/winningTokenId 都到位，新短路也不放行，
+     * 仍由 !marketEnded 硬闸拦下。
+     */
+    @Test
+    void oracleTerminal_resolvedFalse_stillBlocked() {
+        PolymarketApiClient.MarketMetadata md = mock(PolymarketApiClient.MarketMetadata.class);
+        lenient().when(md.isClosed()).thenReturn(true);
+        lenient().when(md.isAcceptingOrders()).thenReturn(false);
+        lenient().when(md.isResolved()).thenReturn(false);
+        lenient().when(md.getWinningTokenId()).thenReturn("token-yes");
+        lenient().when(md.getSlug()).thenReturn("test-market");
+
+        SettlementTerminalCheck check = service.settlementTerminalCheck(md, /*marketEnded*/ false);
+
+        assertFalse(check.canSettle(),
+                "resolved=false 不构成"四指标全终结"，新短路不放行，仍被 !marketEnded 硬闸拦下");
+        assertEquals("early_settlement_blocked_market_not_ended", check.reason());
+    }
+
+    /**
+     * 2026-05-30 修复回归用例：四指标缺一不可——winningTokenId 为空时，
+     * 新短路不放行，仍由 !marketEnded 硬闸拦下。
+     */
+    @Test
+    void oracleTerminal_winningTokenEmpty_stillBlocked() {
+        PolymarketApiClient.MarketMetadata md = mock(PolymarketApiClient.MarketMetadata.class);
+        lenient().when(md.isClosed()).thenReturn(true);
+        lenient().when(md.isAcceptingOrders()).thenReturn(false);
+        lenient().when(md.isResolved()).thenReturn(true);
+        lenient().when(md.getWinningTokenId()).thenReturn("");
+        lenient().when(md.getSlug()).thenReturn("test-market");
+        lenient().when(md.getUmaResolutionStatus()).thenReturn(null);
+
+        SettlementTerminalCheck check = service.settlementTerminalCheck(md, /*marketEnded*/ false);
+
+        assertFalse(check.canSettle(),
+                "winningTokenId 空不构成"四指标全终结"，新短路不放行，仍被 !marketEnded 硬闸拦下");
+        assertEquals("early_settlement_blocked_market_not_ended", check.reason());
+    }
 }

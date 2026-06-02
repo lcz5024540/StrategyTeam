@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 
 @Mapper
@@ -24,7 +23,13 @@ public interface SmartWalletMarketInfoMapper extends BaseMapper<SmartWalletMarke
      *       而是用 {@code COALESCE(VALUES(...), ...)} 增量补齐当前 NULL 的字段，
      *       已有非 NULL 值的字段保留（避免误覆盖业务侧手工修正过的值）；</li>
      *   <li>{@code market_end_at} 仅在 incoming 非空时覆盖（与 Service 层 5-17 修复一致：让 Polymarket 最新值生效）；</li>
-     *   <li>不回写 {@code id} 字段——调用方需自行二次 {@code SELECT} 拿到主键。</li>
+     *   <li>不回写 {@code id} 字段——调用方必须二次 {@code SELECT} 拿到主键
+     *       （见 {@code SmartWalletMarketInfoService.getOrCreate} 中 upsert 后调用
+     *       {@code getByMarketIdAndOutcome} 的实现）。这里**故意不加** {@code @Options(useGeneratedKeys=true)}：
+     *       因为本方法用多个 {@code @Param} 参数而非单一 entity 对象，MyBatis 找不到
+     *       可写入 {@code id} 的目标对象，会抛
+     *       {@code "Could not determine which parameter to assign generated keys to"}
+     *       （2026-05-30 LeaderTradeOutcomeRebuildService 凌晨 00:56 已现场触发过）。</li>
      * </ul>
      *
      * @return 受影响行数（INSERT=1，UPDATE 命中=2，UPDATE 未变化=0）
@@ -38,7 +43,6 @@ public interface SmartWalletMarketInfoMapper extends BaseMapper<SmartWalletMarke
             + "index_set     = COALESCE(index_set,     VALUES(index_set)), "
             + "market_end_at = COALESCE(VALUES(market_end_at), market_end_at), "
             + "updated_at    = CURRENT_TIMESTAMP")
-    @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     int upsertByMarketOutcome(@Param("marketId") String marketId,
                               @Param("outcome") String outcome,
                               @Param("question") String question,

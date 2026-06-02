@@ -2473,6 +2473,18 @@ public class SmartWalletAccountingService {
         if (marketEnded && metadata.isClosed()) {
             return new SettlementTerminalCheck(true, "ended_and_closed");
         }
+        // 2026-05-30 修复（见 docs/problem/订单未结算根因排查-2026-05-30.md）：
+        // 已 oracle 盖棺的市场（"四指标全终结"）允许在 endAt 之前结算。
+        // 体育/赛事类 market 的 Polymarket endAt 通常设在赛事后 ~1 周（resolution dispute window），
+        // 但赛事结束后 30min~1h 内 oracle 已 resolve，closed/acceptingOrders/winningTokenId 全部到位；
+        // 之前 d4302c90 引入的 !marketEnded 硬闸把这类合法终结状态误判为"提前结算"——
+        // 巡检实测 18 笔 OPEN 永久卡在 early_settlement_blocked_market_not_ended（resolved_positions=0/548 次 run）。
+        // 这里要求四指标"全部"满足（closed=true && !acceptingOrders && resolved=true && winningTokenId 非空）
+        // 才放行——任何 d4302c90 当年防的"单一抖动"场景（如 winningTokenId 闪现 / acceptingOrders 短暂 pause）
+        // 都不会同时满足全部四个指标，因此既保留 d4302c90 的防虚高初衷，又解开赛事市场的结算路径。
+        if (isOracleTerminalAllSignalsSet(metadata)) {
+            return new SettlementTerminalCheck(true, "oracle_terminal_all_signals_set");
+        }
         // P2-2 收紧：所有"早结算"路径都必须先满足 marketEnded（已到 Polymarket 名义到期时间）。
         // 此前 uma_resolved / winning_token / final_price_inference 三条路径只要 acceptingOrders=false
         // 就放行，导致 metadata 抖动（如短暂 pause + winningTokenId 设置）即按 settlementPrice=1
@@ -2498,6 +2510,23 @@ public class SmartWalletAccountingService {
             return new SettlementTerminalCheck(false, "closed_flag_false_without_authoritative_resolution");
         }
         return new SettlementTerminalCheck(false, "not_terminal");
+    }
+
+    /**
+     * 2026-05-30 修复（见 docs/problem/订单未结算根因排查-2026-05-30.md）：
+     * "四指标全终结"——已 oracle 盖棺市场的统一判定，闸 1 (settlementTerminalCheck) 与
+     * 闸 2 (resolvePosition 顶部 SETTLEMENT_GATE_ENDAT) 必须用同一份逻辑，否则会出现
+     * "上游放行 + 下游拦截"的死锁（resolved++ 假涨但 DB 无写入）。
+     *
+     * <p>四指标 AND 关系：{@code closed=true && !acceptingOrders && resolved=true &&
+     * winningTokenId 非空}——任何 d4302c90 当年防的"单一抖动"场景都不会同时满足全部四个。
+     */
+    private boolean isOracleTerminalAllSignalsSet(PolymarketApiClient.MarketMetadata metadata) {
+        return metadata != null
+                && metadata.isClosed()
+                && !metadata.isAcceptingOrders()
+                && metadata.isResolved()
+                && StringUtils.hasText(metadata.getWinningTokenId());
     }
 
     private boolean isUmaResolved(PolymarketApiClient.MarketMetadata metadata) {
@@ -3260,9 +3289,15 @@ public class SmartWalletAccountingService {
         // P2-2 defense-in-depth：未到 Polymarket 名义到期时间 metadata.endAt 也绝不结算，
         // 防止上游 settlementTerminalCheck 任一旁路把"未到期但 winningTokenId 已设/推断价已生成"
         // 的市场放行进来（参见 2026-05-26 用户反馈"未到预计结算时间提前结算"）。
+        // 2026-05-30 修复（见 docs/problem/订单未结算根因排查-2026-05-30.md）：
+        // 闸 1 (settlementTerminalCheck) 已允许"已 oracle 盖棺"市场（四指标全终结）放行，
+        // 闸 2 这里必须保持一致，否则会 silent return 导致 resolved++ 假涨但 DB 无写入
+        // ——巡检实测：部署闸 1 修复后 run 769~772 resolved_positions=10 但 position.status
+        // 仍全部 OPEN，正是因为闸 2 拦下并 silent return（也未抛异常让上游计数仍 +1）。
         long nowMs = System.currentTimeMillis();
         if (metadata != null && metadata.getEndAt() != null && metadata.getEndAt() > 0
-                && metadata.getEndAt() > nowMs) {
+                && metadata.getEndAt() > nowMs
+                && !isOracleTerminalAllSignalsSet(metadata)) {
             log.warn("[SETTLEMENT_GATE_ENDAT] 拒绝结算未到期市场 positionId={} marketId={} endAt={} now={} closed={} resolved={} winningTokenId={}",
                     position.getId(), position.getMarketId(), metadata.getEndAt(), nowMs,
                     metadata.isClosed(), metadata.isResolved(), metadata.getWinningTokenId());

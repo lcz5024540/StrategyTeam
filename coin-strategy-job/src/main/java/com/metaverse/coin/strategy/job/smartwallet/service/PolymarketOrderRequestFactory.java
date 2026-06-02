@@ -240,8 +240,39 @@ public class PolymarketOrderRequestFactory {
             BigDecimal effectiveSlippageRate = resolveSlippageRate(wallet, conditionId, outcome);
             BigDecimal slippage = rawPrice.multiply(effectiveSlippageRate);
             limitPrice = rawPrice.add(slippage).min(BigDecimal.ONE).setScale(4, RoundingMode.HALF_UP);
-            log.info("{} action=OrderStrategy signalId={} strategy=TAKER slippageRate={} limitPrice={}",
-                    LOG_PREFIX, signalId, effectiveSlippageRate, limitPrice);
+            // Fix 3: 钳到 bestAsk × (1 + premium), 防止 leader 价远高于本地 bestAsk 时挂孤儿单。
+            // 与 maker/slippage 互补: maker 不付 taker fee, 钳制不影响 maker 路径; slippage 看深度,
+            // 钳制看价位锚, 两个维度独立。
+            SmartWalletProperties.SignalRisk riskCfg = smartWalletProperties == null ? null
+                    : smartWalletProperties.getSignalRisk();
+            if (riskCfg != null && riskCfg.isEnableEntryAskPriceCap()) {
+                BigDecimal bestAsk = fetchBestAsk(conditionId, outcome,
+                        smartWalletProperties.getExecutionWallet() == null ? 60_000L
+                                : smartWalletProperties.getExecutionWallet().getMakerBestBidSnapshotMaxAgeMs());
+                if (bestAsk != null && bestAsk.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal premium = riskCfg.getMaxBuyPremiumVsBestAsk() == null
+                            ? BigDecimal.ZERO : riskCfg.getMaxBuyPremiumVsBestAsk();
+                    BigDecimal cap = bestAsk.multiply(BigDecimal.ONE.add(premium))
+                            .min(BigDecimal.ONE)
+                            .setScale(4, RoundingMode.HALF_UP);
+                    if (limitPrice.compareTo(cap) > 0) {
+                        log.info("{} action=OrderStrategy signalId={} strategy=TAKER slippageRate={} "
+                                        + "limitPriceRaw={} bestAsk={} premium={} capPrice={} → CAPPED",
+                                LOG_PREFIX, signalId, effectiveSlippageRate, limitPrice, bestAsk, premium, cap);
+                        limitPrice = cap;
+                    } else {
+                        log.info("{} action=OrderStrategy signalId={} strategy=TAKER slippageRate={} "
+                                        + "limitPrice={} bestAsk={} cap={} → within cap",
+                                LOG_PREFIX, signalId, effectiveSlippageRate, limitPrice, bestAsk, cap);
+                    }
+                } else {
+                    log.info("{} action=OrderStrategy signalId={} strategy=TAKER slippageRate={} limitPrice={} (no bestAsk for cap, fallback)",
+                            LOG_PREFIX, signalId, effectiveSlippageRate, limitPrice);
+                }
+            } else {
+                log.info("{} action=OrderStrategy signalId={} strategy=TAKER slippageRate={} limitPrice={}",
+                        LOG_PREFIX, signalId, effectiveSlippageRate, limitPrice);
+            }
         }
 
         BigDecimal normalizedLimitPrice = snapToTick(limitPrice, minimumTickSize);
@@ -385,11 +416,29 @@ public class PolymarketOrderRequestFactory {
         BigDecimal bestBid = fetchBestBid(conditionId, outcome,
                 ew == null ? 30_000L : ew.getMakerBestBidSnapshotMaxAgeMs());
         if (bestBid == null || bestBid.compareTo(BigDecimal.ZERO) <= 0) {
+            // Fix 4: 链式 fallback — bestBid 空时优先用 bestAsk - 1 tick 作为锚
+            // (仍是 maker, 仍在 ask 之下, 但比 rawPrice + 1tick 更贴近实际市场)
+            BigDecimal bestAsk = fetchBestAsk(conditionId, outcome,
+                    ew == null ? 30_000L : ew.getMakerBestBidSnapshotMaxAgeMs());
+            if (bestAsk != null && bestAsk.compareTo(tickSize) > 0) {
+                BigDecimal askAnchored = bestAsk
+                        .subtract(tickSize)
+                        .max(tickSize)
+                        .min(BigDecimal.ONE)
+                        .setScale(4, RoundingMode.HALF_UP);
+                // 与 cappedRaw (rawPrice + tickBuffer*tick) 取小, 避免买在 raw 之上
+                BigDecimal chosen = cappedRaw.min(askAnchored).setScale(4, RoundingMode.HALF_UP);
+                log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} "
+                                + "(bestBid 不可用, fallback bestAsk={} - 1tick → {}, cappedRaw={}, picked=min)",
+                        LOG_PREFIX, signalId, chosen, bestAsk, askAnchored, cappedRaw);
+                return chosen;
+            }
             BigDecimal fallback = rawPrice
                     .add(tickSize)
                     .min(BigDecimal.ONE)
                     .setScale(4, RoundingMode.HALF_UP);
-            log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} (bestBid 不可用，fallback rawPrice + 1tick)",
+            log.info("{} action=OrderStrategy signalId={} strategy=MAKER limitPrice={} "
+                            + "(bestBid 和 bestAsk 都不可用, fallback rawPrice + 1tick)",
                     LOG_PREFIX, signalId, fallback);
             return fallback;
         }
@@ -418,6 +467,25 @@ public class PolymarketOrderRequestFactory {
                 return null;
             }
             return snapshot.getBestBid();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Fix 4 二级 fallback: 抓取最近 N 毫秒内的 bestAsk, 与 fetchBestBid 对称。
+     */
+    private BigDecimal fetchBestAsk(String conditionId, String outcome, long maxAgeMs) {
+        try {
+            SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService
+                    .findLatestSnapshotAtOrBefore(conditionId, outcome, new Date());
+            if (snapshot == null || snapshot.getSnapshotAt() == null) {
+                return null;
+            }
+            if (System.currentTimeMillis() - snapshot.getSnapshotAt().getTime() > maxAgeMs) {
+                return null;
+            }
+            return snapshot.getBestAsk();
         } catch (Exception e) {
             return null;
         }

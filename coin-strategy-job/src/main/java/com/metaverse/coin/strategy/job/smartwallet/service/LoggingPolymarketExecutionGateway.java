@@ -107,6 +107,33 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                             LOG_PREFIX, orderId, order.getOrderStrategy(), trackerErr.toString());
                 }
             }
+            // Fix 5: 入场 BUY 5min 超时撤销 — 与 GTC 全局超时独立的开关 + 更宽的窗口
+            // 复用同一个 tracker (DB 表 + scan 调度共享), 通过 orderStrategy="ENTRY_BUY" 区分。
+            // 注意: 即使 GTC 全局超时 enabled, 这里仍按 BUY 单独注册一条 5min 的, 让两条超时机制各管各的。
+            if (success && orderId != null && gtcOrderTimeoutTracker != null
+                    && "BUY".equalsIgnoreCase(order.getSide())
+                    && properties != null
+                    && properties.getExecutionWallet() != null
+                    && properties.getExecutionWallet().isEnableEntryBuyTimeout()) {
+                try {
+                    long entryBuyTimeoutMs = Math.max(60, properties.getExecutionWallet()
+                            .getEntryBuyTimeoutSeconds()) * 1000L;
+                    gtcOrderTimeoutTracker.registerWithTimeout(
+                            null,
+                            orderId,
+                            wallet.getAddress(),
+                            "ENTRY_BUY",
+                            order.getMarketId(),
+                            order.getOutcome(),
+                            null,
+                            entryBuyTimeoutMs);
+                    log.info("{} action=entryBuyTimeoutRegistered externalOrderId={} timeoutSec={} marketId={} outcome={}",
+                            LOG_PREFIX, orderId, entryBuyTimeoutMs / 1000L, order.getMarketId(), order.getOutcome());
+                } catch (RuntimeException trackerErr) {
+                    log.warn("{} entry-buy tracker register failed externalOrderId={} err={}",
+                            LOG_PREFIX, orderId, trackerErr.toString());
+                }
+            }
             return SmartWalletExecutionResult.builder()
                     .signalId(signal.getSignalId())
                     .mode(mode)
