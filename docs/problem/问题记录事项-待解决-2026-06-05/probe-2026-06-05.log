@@ -1,0 +1,13 @@
+=== 巡检可达性探测 2026-06-05 09:10 CST (01:10 UTC) ===
+脚本: probe_connectivity.py (沿用 06-03/06-04 版，只读)
+egress public IP: 172.96.141.154
+internet baseline github:443 -> FAIL TimeoutError (6.0s)
+internet baseline pypi:443   -> OPEN (0.1s)
+49.51.250.174:22   -> FAIL TimeoutError (6.0s)
+49.51.250.174:80   -> FAIL TimeoutError (6.0s)
+49.51.250.174:443  -> FAIL TimeoutError (6.0s)
+49.51.250.174:3306 -> FAIL TimeoutError (6.0s)
+49.51.250.174:8080 -> FAIL TimeoutError (6.0s)
+
+结论: 目标服务器五端口全部超时; 沙箱公网基线 pypi:443 正常 (0.1s) -> 沙箱出网可用,问题在服务器侧。
+出网 IP 172.96.141.154 与 06-03/06-04 完全相同,连续第 3 期被拒。

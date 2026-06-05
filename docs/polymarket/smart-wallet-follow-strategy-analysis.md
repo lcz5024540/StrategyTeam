@@ -15,6 +15,39 @@ updated: 2026-05-17
 
 ---
 
+## 〇、现行实现总览（2026-06-05 更新 · 权威，先读本节）
+
+> 下文 v2.2（一~）为历史全景分析，仍可参考；**当前代码的端到端真实行为以本节 + 链路文档为准**。
+> 完整链路/表/调度/风控门详见 → [smart-wallet 交易流程链路与架构](../smart-wallet-交易流程链路与架构-2026-06-03.md)；
+> 风险与修复状态详见 → [全盘风险审计-量化产品视角](全盘风险审计-量化产品视角-2026-06-03.md)（路径见 `docs/problem/`）。
+
+### 0.1 端到端链路（S1–S9，现行）
+1. **S1 事件摄取**：`PolymarketWalletDiscoveryService.scheduledSyncWatchlistTrades`（@Scheduled 30s，节拍在共享池；真正抓取跑在专用单线程 `smartWalletEventSyncExecutor`，`eventSyncRunning` 防重入）。按 HOT 钱包批 `fetchUserTrades`（游标=`smart_wallet_profile.last_event_sync_at`）→ `ingestTradeEvent` → `smart_wallet_trade_event(processed=false)`。
+2. **S2 候选/实体聚类**：`wallet_follow_candidate`、`wallet_entity_map`。
+3. **S3 风控评估**：`SmartWalletFollowTaskService.recordTradeEvent → createFollowTaskIfQualified → SmartWalletSignalRiskService.evaluate`，过 G0–G13 门（见 0.2），输出 `FOLLOWED/PAPER_SHADOW/SKIPPED/PENDING`，入场取价 `resolveFreshEntryPrice`（实时 best-ask→mid→leader 价兜底）。
+4. **S4 定仓**：`KellyCalculator`（折扣 Kelly）+ `FollowExposureLimitService`（per-market/per-leader）+ 资金上下文 `min(策略可用资金, 链上钱包余额)`。
+5. **S5 执行**：`SmartWalletFollowTaskService.processPendingTasks`（@Scheduled 5s，`claimTaskForExecution` 乐观锁）→ `LoggingPolymarketExecutionGateway`（PAPER 记账 / LIVE 经 `PolymarketOrderRequestFactory`+`PolymarketClobExecutionService` 下单）。
+6. **S6 记账**：`SmartWalletAccountingService.recordExecution→applyFillToPosition`，写 `smart_wallet_position`(@Version) + `smart_wallet_cash_ledger`。
+7. **S7 盯市**：`markToMarket` 优先实时盘口 bestBid→mid，再 trade_event 价（带跳变防污染）；`GtcOrderTimeoutTracker` 挂单超时撤销。
+8. **S8 出场**：`SmartWalletPositionSyncService`（止盈止损分层 0.35/0.25/0.15/0.05、趋势止损）、`CapitalRecycleExitService`（持仓>8h 死区回收）、`FollowPositionAdjustmentService`（leader SELL→`DYNAMIC_FOLLOW_EXIT` 全/部分平、对手 BUY 先平后反手）。
+9. **S9 结算/认领**：`SmartWalletSettlementSyncService→syncSettlements→resolvePosition`（settlementPrice 1/0）+ **本地权威兜底结算** + **坍塌即亏损结算**；`OPEN→RESOLVED_UNCLAIMED→CLAIMED`，未决落 `SETTLEMENT_PENDING_ORACLE`/retry；`SmartWalletClaimService` 链上认领。
+
+### 0.2 风控门顺序（现行 G0–G13）
+G0 组合级熔断(R1) → G1 名单/资格/冷却 → G2 画像/滚动/漂移 → G3 触发额/价带 → G4 总成本/可用资金/**持仓数上限/单品类上限(R6)** → G5 信号新鲜度 → G6 品类黑名单/市场状态/到期 → G6c 空盘口 → G7 卖出/临尾低赔率 → G8 深度/费用 → G10 Kelly EV → G10a/b/c 缓冲/最小单/敞口 → G11 概率/净EV/滑点/价差/打分/价格冲击 → G12 入场策略路由 → G13 加仓/重复仓。
+
+### 0.3 2026-06 现行变更（相对 v2.2 的关键差异）
+- **成交真实化**：纸面开仓套滑点、止盈止损按真实盘口 bid、跟随 leader 平仓按本账户 bid（不再用阈值价/leader 价记账）。
+- **风控底线**：新增 G0 组合级熔断（人工 kill-switch + 当日亏损停开新仓，fail-safe 只拦新仓）；G4 新增持仓数(默认50)与单品类成本(默认200 USDC)硬上限；在途 PENDING 资金计入"已占用"防超额；allowlist 绕过冷却/leader 不盈利门改为追加 0.5 降仓；手动执行端点 LIVE 收口到 `allow-manual-live-execution`（默认 false）。
+- **稳定性**：`PolymarketApiClient` OkHttp 加 `callTimeout`（根治卡死请求占线程→事件同步停摆）；调度池核感知（下限24）。
+- **可观测/对账**：健康监控新增"盘口快照管道停滞/为空""结算积压"告警；新增 LIVE 现金对账作业（链上 USDC vs 本地可用资金漂移告警）。
+- **leader 质量**：胜率分母剔除 breakeven 平局。
+- **结算**：修复"已 resolved 却卡 OPEN"（本地权威兜底 + 坍塌即亏损）。
+
+### 0.4 关键代码入口
+`SmartWalletSignalRiskService`(门) · `KellyCalculator`(定仓) · `LoggingPolymarketExecutionGateway`/`PolymarketOrderRequestFactory`/`PolymarketClobExecutionService`(执行) · `SmartWalletAccountingService`(记账/资金/结算) · `SmartWalletPositionSyncService`/`CapitalRecycleExitService`/`FollowPositionAdjustmentService`(出场) · `SmartWalletSettlementSyncService`/`SmartWalletClaimService`(结算认领) · `PolymarketWalletDiscoveryService`(摄取) · `StrategyHealthMonitorJob`/`SmartWalletReconciliationJob`(监控对账)。
+
+---
+
 ## 一、系统全景流程图
 
 ```mermaid

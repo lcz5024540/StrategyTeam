@@ -34,9 +34,10 @@ Polymarket 预测市场策略是本项目当前最活跃的方向，文档分散
 
 ## 三、策略设计
 
+- **[smart-wallet 交易流程链路与架构](smart-wallet-交易流程链路与架构-2026-06-03.md) — 现行跟单逻辑端到端链路（S1–S9 / 风控门 G0–G13 / 调度 / 表，2026-06-05，首选阅读）**
 - [follow-trade-entry-exit-strategy](polymarket/follow-trade-entry-exit-strategy.md) — 跟单进出场策略
 - [capital-recycle-exit-design](polymarket/capital-recycle-exit-design.md) — 资金回收与退出设计
-- [smart-wallet-follow-strategy-analysis](polymarket/smart-wallet-follow-strategy-analysis.md) — 智能钱包跟随策略分析
+- [smart-wallet-follow-strategy-analysis](polymarket/smart-wallet-follow-strategy-analysis.md) — 智能钱包跟随策略分析（已补「〇、现行实现总览 2026-06-05」）
 - [follow-trade-optimization-design](superpowers/specs/2026-04-22-follow-trade-optimization-design.md) — 跟单优化设计
 - [polymarket-weather-arbitrage-design](superpowers/specs/2026-04-22-polymarket-weather-arbitrage-design.md) — 天气套利策略设计
 - [weather-strategy-v2-design](weather-strategy-v2-design.md) — 天气策略 v2 设计
@@ -54,6 +55,8 @@ Polymarket 预测市场策略是本项目当前最活跃的方向，文档分散
 
 ## 五、风控、安全与审计
 
+- **[全盘风险审计-量化产品视角](problem/全盘风险审计-量化产品视角-2026-06-03.md) — 量化风险全盘审计 R1–R20（熔断/资金/集中度/对账/alpha），含修复状态（2026-06）**
+- [策略代码自检-盈利与胜率风险审计](problem/策略代码自检-盈利与胜率风险审计-2026-06-03.md) — 成交真实化 / leader 胜率 / EV-Kelly / 出场 审计
 - [ORDER_SECURITY_FIX_PLAN](../polymarket/ORDER_SECURITY_FIX_PLAN.md) — 订单安全修复方案
 - [README-polymarket-risk-upgrade](../polymarket/README-polymarket-risk-upgrade.md) — 风控升级
 - [README-polymarket-main-loop-gap-audit](../polymarket/README-polymarket-main-loop-gap-audit.md) — 主循环缺口审计
