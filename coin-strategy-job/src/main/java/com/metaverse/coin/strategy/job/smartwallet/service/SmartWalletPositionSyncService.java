@@ -1034,6 +1034,14 @@ public class SmartWalletPositionSyncService {
                                                       BigDecimal threshold,
                                                       AutoExitMode mode,
                                                       BigDecimal fallbackPrice) {
+        // 盈利审计修复(2026-06-03, P0-1)：纸面止盈/止损此前按"恰好触发阈值价"零滑点记账，
+        // 系统性虚高纸面收益/胜率。改为优先用真实盘口 bid（fallbackPrice = 调用前刚由 orderbook
+        // bestBid 刷新的 markPrice）作为成交价——止损按真实 bid 兑现（gap-down 时更真实），
+        // 止盈触发时 bid 已≥阈值，用 bid 同样真实。盘口不可用时退回阈值价（保留原兜底行为）。
+        BigDecimal realBid = safe(fallbackPrice);
+        if (realBid.compareTo(BigDecimal.ZERO) > 0 && realBid.compareTo(BigDecimal.ONE) <= 0) {
+            return realBid.setScale(8, RoundingMode.HALF_UP);
+        }
         BigDecimal quantity = safe(position == null ? null : position.getQuantity());
         BigDecimal costBasis = safe(position == null ? null : position.getCostBasisUsdc());
         if (quantity.compareTo(BigDecimal.ZERO) <= 0 || costBasis.compareTo(BigDecimal.ZERO) <= 0 || threshold == null) {

@@ -44,9 +44,14 @@ public class StrategyHealthMonitorJob {
     private final SmartWalletAccountingService accountingService;
     private final SmartWalletAuditAlertSink alertSink;
     private final StrategyAlertService strategyAlertService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
 
     /** 当可用资金低于预算的此比例时触发早期告警 */
     private static final BigDecimal LOW_CAPITAL_WARN_RATE = new BigDecimal("0.20");
+    /** R3：盘口快照超过该时长无新数据视为管道停滞（采集每 ~45s 一次，留足容差）。 */
+    private static final long SNAPSHOT_STALE_MS = 5L * 60_000L;
+    /** R3：结算积压（已 resolved 却卡 OPEN）超过该笔数即告警。 */
+    private static final long SETTLEMENT_BACKLOG_THRESHOLD = 5L;
 
     @Scheduled(fixedDelayString = "${polymarket.smart-wallet.health-monitor-delay-ms:3600000}")
     public void checkPositionHealth() {
@@ -56,6 +61,8 @@ public class StrategyHealthMonitorJob {
         try {
             checkCapital();
             checkPositionActivity();
+            checkSnapshotPipeline();
+            checkSettlementBacklog();
         } catch (Exception e) {
             log.error("[HealthMonitor] Unexpected error during health check: {}", e.getMessage(), e);
         }
@@ -195,6 +202,45 @@ public class StrategyHealthMonitorJob {
      * <p>外发失败必须降级为日志、绝不能抛断 HealthMonitor 主流程——Sink 实现本身已约定
      * swallow 异常，这里再包一层 try/catch 作为兜底防御。</p>
      */
+    // ── R3 盘口快照管道健康（2026-06-03 全盘风险审计）─────────────────────────
+    // 快照采集器每 ~45s 跑一次；若 smart_wallet_market_snapshot 长时间无新数据(或为空)，
+    // 说明盘口管道停滞，开单/估值会退化为现价——这正是本次会话里静默发生过的故障。
+    private void checkSnapshotPipeline() {
+        java.util.Date latest = marketSnapshotCollectorService.latestSnapshotAt();
+        long ageMs = latest == null ? Long.MAX_VALUE : (System.currentTimeMillis() - latest.getTime());
+        if (latest == null || ageMs > SNAPSHOT_STALE_MS) {
+            String latestStr = latest == null ? "EMPTY" : String.valueOf(latest);
+            log.error("[HealthMonitor] SNAPSHOT PIPELINE STALE: latestSnapshotAt={}, age={}min > {}min. "
+                            + "开单/估值将退化为现价，请排查 MarketSnapshotCollector / Polymarket CLOB /book。",
+                    latestStr, ageMs == Long.MAX_VALUE ? "∞" : (ageMs / 60_000),
+                    SNAPSHOT_STALE_MS / 60_000);
+            BigDecimal ageMin = ageMs == Long.MAX_VALUE
+                    ? BigDecimal.valueOf(999999)
+                    : BigDecimal.valueOf(ageMs / 60_000);
+            safePublish(AlertType.HEALTH_SNAPSHOT_STALE, "盘口快照管道停滞/为空",
+                    String.format("快照管道停滞，开单/估值退化为现价。latestSnapshotAt=%s, ageMin=%s, 阈值=%dmin",
+                            latestStr, ageMs == Long.MAX_VALUE ? "∞" : String.valueOf(ageMs / 60_000),
+                            SNAPSHOT_STALE_MS / 60_000),
+                    ageMin, BigDecimal.valueOf(SNAPSHOT_STALE_MS / 60_000));
+        } else {
+            autoResolve(AlertType.HEALTH_SNAPSHOT_STALE);
+        }
+    }
+
+    // ── R3 结算积压健康 ──────────────────────────────────────────────────────
+    private void checkSettlementBacklog() {
+        long stuck = accountingService.openInResolvedMarketCount();
+        if (stuck > SETTLEMENT_BACKLOG_THRESHOLD) {
+            log.warn("[HealthMonitor] SETTLEMENT BACKLOG: {} OPEN positions whose market already resolved (stuck OPEN). "
+                    + "请排查结算同步(SmartWalletSettlementSyncService / 本地权威结算)。", stuck);
+            safePublish(AlertType.HEALTH_SETTLEMENT_BACKLOG, "结算积压(已结算市场仓位卡 OPEN)",
+                    String.format("有 %d 笔 OPEN 持仓所在市场已 resolved 却未入账，疑似结算卡死。", stuck),
+                    BigDecimal.valueOf(stuck), BigDecimal.valueOf(SETTLEMENT_BACKLOG_THRESHOLD));
+        } else {
+            autoResolve(AlertType.HEALTH_SETTLEMENT_BACKLOG);
+        }
+    }
+
     private void safePublish(AlertType alertType, String title, String message,
                              BigDecimal metricValue, BigDecimal threshold) {
         try {

@@ -137,6 +137,9 @@ public class SmartWalletSignalRiskService {
         boolean manualBlocklistApplied = manualBlocklistService.isBlocked(signalWalletAddress);
         boolean manualWatchDisabled = profile != null && Boolean.FALSE.equals(profile.getManualWatchEnabled());
         boolean addressAdmissionRejected = false;
+        // R11(2026-06-03 全盘风险审计)：记录 allowlist 是否绕过了风控门(观察冷却 / leader 当前持仓不盈利)。
+        // 绕过准入只是放行，但风险更高 → 后续对仓位再追加一道折扣(降仓)，而非"只打日志"。
+        boolean allowlistRiskBypassApplied = false;
         // ── Gate 1: 钱包准入（手动禁用 / 观察冷却 / 白名单 / 资质） ──
         if (manualBlocklistApplied) {
             accepted = false;
@@ -158,6 +161,7 @@ public class SmartWalletSignalRiskService {
                     + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
         } else if (manualAllowlistApplied) {
             if (isObserveCooldownActive(profile)) {
+                allowlistRiskBypassApplied = true; // R11：冷却期被 allowlist 绕过 → 后续降仓
                 reasons.add("[MANUAL_ALLOWLIST_COOLDOWN_BYPASS] Wallet is in observe cooldown until "
                         + profile.getObserveCooldownUntil()
                         + " but manual allowlist bypasses cooldown gate. Reason: " + profile.getObserveCooldownReason());
@@ -178,6 +182,18 @@ public class SmartWalletSignalRiskService {
         if (accepted) gateStage = 1; // 通过钱包准入
 
         SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
+        // ── G0 组合级熔断总闸（R1, 2026-06-03 全盘风险审计）──────────────────────
+        // 人工 kill-switch / 当日已实现亏损超限 → 立即停止开"新仓"。fail-safe：仅拦截开仓评估路径，
+        // 平仓/止损/结算走独立链路不受影响。默认全关(不改变现有行为)，配 strategy_runtime_config 即热生效。
+        if (accepted) {
+            String riskHaltReason = resolveRiskHaltReason(risk);
+            if (riskHaltReason != null) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = riskHaltReason;
+                reasons.add("[RISK_HALT] 组合级熔断生效，停止开新仓: " + riskHaltReason
+                        + "；平仓/结算不受影响，解除请改 strategy_runtime_config。");
+            }
+        }
         boolean suspiciouslyPerfectWinRate = false;
         WalletArchetypeView archetype = walletArchetypeClassifierService.classify(
                 profile == null ? null : profile.getWalletAddress(),
@@ -385,6 +401,37 @@ public class SmartWalletSignalRiskService {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G4_CAPITAL_DEPLETED";
             reasons.add("Available capital is depleted. Strategy is paused to avoid bankroll penetration.");
+        }
+        // ── R6 集中度硬上限（2026-06-03 全盘风险审计）：持仓数 / 单品类成本 ──────────
+        // 在总成本/可用资金之外再加两道硬闸控尾部风险；值>0 启用，命中只拒新开仓(fail-safe)。
+        if (accepted) {
+            int posCap = risk.getMaxOpenPositionsHardCap() == null ? 0 : risk.getMaxOpenPositionsHardCap();
+            if (posCap > 0) {
+                Long openCount = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+                long oc = openCount == null ? 0L : openCount;
+                if (oc >= posCap) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G4_MAX_OPEN_POSITIONS_CAP";
+                    reasons.add("[CONCENTRATION] Open position count " + oc + " reached hard cap " + posCap + ".");
+                }
+            }
+        }
+        if (accepted) {
+            BigDecimal catCap = safe(risk.getMaxPerCategoryOpenCostUsdc());
+            if (catCap.compareTo(BigDecimal.ZERO) > 0) {
+                String cat = resolveMarketCategory(event);
+                if (StringUtils.hasText(cat)) {
+                    BigDecimal catCost = categoryOpenCostUsdc(cat);
+                    if (catCost.compareTo(catCap) >= 0) {
+                        accepted = false;
+                        if (firstRejectGate == null) firstRejectGate = "G4_PER_CATEGORY_CAP(" + cat + ")";
+                        reasons.add("[CONCENTRATION] Category '" + cat + "' open cost "
+                                + catCost.setScale(2, RoundingMode.HALF_UP) + " reached cap "
+                                + catCap.setScale(2, RoundingMode.HALF_UP) + ".");
+                    }
+                }
+            }
         }
         if (accepted) gateStage = 4; // 通过组合约束
         if (capitalContext.liveWalletBalanceApplied()) {
@@ -668,6 +715,7 @@ public class SmartWalletSignalRiskService {
                             + "treated as new entry, PnL gate skipped for allowlist wallet.");
                 } else if (!leaderPositionCheck.accepted()) {
                     // Existing position with non-positive PnL — still allow but log a warning
+                    allowlistRiskBypassApplied = true; // R11：leader 当前持仓不盈利却被 allowlist 放行 → 后续降仓
                     reasons.add("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] " + leaderPositionCheck.reason()
                             + " — allowlist wallet bypasses rejection but leader position is not profitable.");
                     log.warn("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] wallet={} marketId={} outcome={} leaderPnlCheck={}",
@@ -1089,6 +1137,13 @@ public class SmartWalletSignalRiskService {
             recommendedStake = recommendedStake.multiply(stakeMultiplierApplied).setScale(2, RoundingMode.HALF_UP);
             reasons.add("[MANUAL_ALLOWLIST_STAKE_MULTIPLIER] Applied manual allowlist stake multiplier="
                     + stakeMultiplierApplied.setScale(4, RoundingMode.HALF_UP) + ".");
+            // R11(2026-06-03)：若本信号绕过了风控门(观察冷却 / leader 当前持仓不盈利)，对仓位再追加 0.5 折扣，
+            // 以匹配"放行但风险更高"的事实——不再只打日志。最终仍受最小单/敞口门约束。
+            if (allowlistRiskBypassApplied) {
+                recommendedStake = recommendedStake.multiply(new BigDecimal("0.5")).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[ALLOWLIST_RISK_BYPASS_HAIRCUT] Risk gate bypassed (cooldown/leader-not-profitable); "
+                        + "stake additionally halved for higher risk.");
+            }
             if (allowlistPriceClampApplied) {
                 BigDecimal normalMin = safe(risk.getMinFollowPrice());
                 BigDecimal normalMax = safe(risk.getMaxFollowPrice());
@@ -1986,6 +2041,60 @@ public class SmartWalletSignalRiskService {
                 : G6cAskCheckOutcome.SKIP_STALE_FAIL_OPEN;
     }
 
+    // ── R1 组合级熔断（2026-06-03 全盘风险审计）：判定与缓存 ───────────────────────
+    private volatile long riskHaltComputedAtMs = 0L;
+    private volatile BigDecimal cachedTodayRealizedPnl = null;
+
+    /** 返回非空=应熔断停开新仓的原因；null=放行。人工 kill-switch 即时生效，当日亏损门带缓存。 */
+    private String resolveRiskHaltReason(SmartWalletProperties.SignalRisk risk) {
+        if (risk == null) {
+            return null;
+        }
+        if (risk.isTradingHalted()) {
+            return "G0_RISK_HALT(manual_kill_switch)";
+        }
+        BigDecimal maxDailyLoss = risk.getMaxDailyLossUsdc();
+        if (maxDailyLoss != null && maxDailyLoss.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal todayPnl = cachedTodayRealizedPnl(risk);
+            if (todayPnl != null && todayPnl.compareTo(maxDailyLoss.negate()) <= 0) {
+                return "G0_RISK_HALT(daily_loss=" + todayPnl.setScale(2, RoundingMode.HALF_UP)
+                        + ",limit=-" + maxDailyLoss.setScale(2, RoundingMode.HALF_UP) + ")";
+            }
+        }
+        return null;
+    }
+
+    /** 当日(本地时区)已实现 PnL 合计，带 TTL 缓存避免每信号查库；失败时退回旧值(为 null 则当日亏损门不触发)。 */
+    private BigDecimal cachedTodayRealizedPnl(SmartWalletProperties.SignalRisk risk) {
+        long now = System.currentTimeMillis();
+        long ttl = risk.getRiskHaltCacheMs() > 0 ? risk.getRiskHaltCacheMs() : 30_000L;
+        BigDecimal cached = cachedTodayRealizedPnl;
+        if (cached != null && now - riskHaltComputedAtMs < ttl) {
+            return cached;
+        }
+        try {
+            java.time.LocalDate today = java.time.LocalDate.now();
+            BigDecimal sum = BigDecimal.ZERO;
+            for (com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView r
+                    : accountingService.listDailyReports(20)) {
+                if (r == null || r.getReportDate() == null) {
+                    continue;
+                }
+                java.time.LocalDate d = r.getReportDate().toInstant()
+                        .atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                if (today.equals(d)) {
+                    sum = sum.add(safe(r.getRealizedPnlUsdc()));
+                }
+            }
+            cachedTodayRealizedPnl = sum;
+            riskHaltComputedAtMs = now;
+            return sum;
+        } catch (Exception e) {
+            log.debug("[RISK_HALT] today realized PnL compute failed: {}", e.toString());
+            return cached;
+        }
+    }
+
     /** G6c 评估结果分类, 供门控判定 + 运维计数。 */
     enum G6cAskCheckOutcome {
         OK,
@@ -2598,6 +2707,24 @@ public class SmartWalletSignalRiskService {
         return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : fallback;
     }
 
+    /** R6(2026-06-03)：某一品类(normalizedCategory，fallback sourceCategory) 的累计未结算持仓成本(USDC)。 */
+    private BigDecimal categoryOpenCostUsdc(String categoryLower) {
+        if (!StringUtils.hasText(categoryLower)) {
+            return BigDecimal.ZERO;
+        }
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        marketInfoService.populatePositions(positions);
+        BigDecimal sum = BigDecimal.ZERO;
+        for (SmartWalletPositionEntity p : positions) {
+            String c = StringUtils.hasText(p.getNormalizedCategory()) ? p.getNormalizedCategory() : p.getSourceCategory();
+            if (c != null && categoryLower.equalsIgnoreCase(c)) {
+                sum = sum.add(safe(p.getCostBasisUsdc()));
+            }
+        }
+        return sum;
+    }
+
     private BigDecimal totalOpenCostUsdc() {
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
                 .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
@@ -2605,6 +2732,9 @@ public class SmartWalletSignalRiskService {
         for (SmartWalletPositionEntity position : positions) {
             total = total.add(safe(position.getCostBasisUsdc()));
         }
+        // R4(2026-06-03 全盘风险审计)：把"在途已预留但尚未成交"的 PENDING 任务也计入组合占用，
+        // 使 G4_MAX_TOTAL_OPEN_COST 不会被多个待执行信号绕过而突破 maxTotalOpenCostUsdc。
+        total = total.add(safe(accountingService.inFlightReservedUsdc()));
         return total;
     }
 

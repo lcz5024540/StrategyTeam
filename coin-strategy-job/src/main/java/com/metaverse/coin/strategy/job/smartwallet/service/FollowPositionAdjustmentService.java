@@ -749,20 +749,31 @@ public class FollowPositionAdjustmentService {
     }
 
     /**
-     * 解析退出价格：优先用 leader 事件中的价格，回退到仓位的 lastMarkPrice / averageEntryPrice。
+     * 解析退出价格。
+     *
+     * <p>R8(2026-06-03 盈利审计修复)：<b>优先用"本账户实时盘口 bid"</b>而非 leader 的成交价。
+     * leader 通常体量更大/更快，成交在 follower 拿不到的更优档位；若用 leader 价记账，PAPER 的退出
+     * 收益/胜率会系统性虚高，且与真实可成交价背离。这里先 markToMarket 刷新一次本账户标记价
+     * （来源是实时 orderbook bestBid），再按 [本账户 bid → leader 价 → 均价] 回退。LIVE 路径
+     * executeLiveExit 仍会自行再解析 bid 下单，此处口径与之一致、互不冲突。</p>
      *
      * <p>F-P0-2: 三段价格回退链全部不可用时返回 {@code null}（让调用方走 SKIP），
-     * 不再硬编码 0.50 兜底，避免在极端情况下用远偏离市场的价格强行下单。
+     * 不再硬编码 0.50 兜底，避免在极端情况下用远偏离市场的价格强行下单。</p>
      *
-     * @return 可用的退出价格；若无任何可用价（含 leader 事件、lastMarkPrice、averageEntryPrice）
-     *         则返回 {@code null}，调用方应该把对应仓位标 EXIT_PRICE_UNAVAILABLE 并 SKIP。
+     * @return 可用的退出价格；若无任何可用价则返回 {@code null}，调用方应标 EXIT_PRICE_UNAVAILABLE 并 SKIP。
      */
     private BigDecimal resolveExitPrice(SmartWalletTradeEventEntity event, SmartWalletPositionEntity position) {
-        if (event != null && event.getPrice() != null && event.getPrice().compareTo(BigDecimal.ZERO) > 0) {
-            return event.getPrice();
+        // R8：先用实时盘口刷新本账户标记价（bestBid）；市场不活跃/取价失败时保留上次值，不阻断。
+        try {
+            accountingService.markToMarket(position);
+        } catch (Exception ignore) {
+            // best-effort，失败则用仓位已有 lastMarkPrice
         }
         if (position.getLastMarkPrice() != null && position.getLastMarkPrice().compareTo(BigDecimal.ZERO) > 0) {
             return position.getLastMarkPrice();
+        }
+        if (event != null && event.getPrice() != null && event.getPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return event.getPrice();
         }
         if (position.getAverageEntryPrice() != null && position.getAverageEntryPrice().compareTo(BigDecimal.ZERO) > 0) {
             return position.getAverageEntryPrice();

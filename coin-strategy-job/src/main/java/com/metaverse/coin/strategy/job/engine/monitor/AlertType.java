@@ -73,7 +73,16 @@ public enum AlertType {
     AUDIT_LEADER_ROLLING_HEALTH(AlertLevel.WARN, "Leader 滑动窗口胜率灰度健康异常"),
 
     /** PositionPriceMonitorService: 持仓 token 的 best bid 完全为空, 等同于无人接货, 极有可能本仓位最终判负, 运维需关注是否手动减仓。 */
-    POSITION_EMPTY_BID_BOOK(AlertLevel.WARN, "持仓 best bid 为空,无人接货,可能判负");
+    POSITION_EMPTY_BID_BOOK(AlertLevel.WARN, "持仓 best bid 为空,无人接货,可能判负"),
+
+    /** R3(2026-06-03): 盘口快照管道停滞/为空——smart_wallet_market_snapshot 长时间无新数据，开单/估值将退化为现价。 */
+    HEALTH_SNAPSHOT_STALE(AlertLevel.CRITICAL, "盘口快照管道停滞或为空"),
+
+    /** R3(2026-06-03): 结算积压——OPEN 持仓所在市场已 resolved 却未入账(卡 OPEN)。 */
+    HEALTH_SETTLEMENT_BACKLOG(AlertLevel.WARN, "结算积压(已结算市场仓位卡 OPEN)"),
+
+    /** R19(2026-06-03): 本地账与链上余额对账漂移——本地可用资金 vs 执行钱包链上 USDC 偏差超阈值。 */
+    AUDIT_RECONCILE_DRIFT(AlertLevel.WARN, "本地账与链上余额对账漂移");
 
     private final AlertLevel defaultLevel;
     private final String description;

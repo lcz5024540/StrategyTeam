@@ -82,6 +82,18 @@ public class SmartWalletAccountingService {
      * 避免对刚开仓的仓位因瞬时本地状态抖动而误结算。
      */
     private static final long LOCAL_AUTH_SETTLE_MIN_AGE_MS = 2L * 3600_000L;
+    /**
+     * 问题5 续修（2026-06-02）：过期/坍塌仓位强制按亏损结算的开关与阈值。
+     * 适用场景：市场已对该 outcome 定性为「亏损方」（报价坍塌到地板价、盘口无 bid、无法卖出），
+     * 但本地 {@code market_info.resolved_outcome} 因解析管道滞后 / Polymarket 名义 endAt 远期
+     * 仍未落地，导致仓位永久卡 OPEN。此时按 settlementPrice=0 结算为亏损并置终态。
+     * 仅对「报价已坍塌（mark ≤ ceil，确认是亏损方）」的老仓位生效；高报价（可能是赢方）绝不强平为 0。
+     */
+    private static final boolean ENABLE_EXPIRED_WORTHLESS_SETTLE = true;
+    /** 仓位开仓至少经过该时长才允许「坍塌即亏损」强制结算，避免对刚开仓的瞬时下探误判。 */
+    private static final long EXPIRED_WORTHLESS_MIN_AGE_MS = 6L * 3600_000L;
+    /** 报价坍塌地板价：mark ≤ 该值视为该 outcome 已被市场判负（无法卖出 / 价值归零）。 */
+    private static final BigDecimal EXPIRED_WORTHLESS_PRICE_CEIL = new BigDecimal("0.05");
     private static final String POSITION_STATUS_SETTLEMENT_PENDING_ORACLE = "SETTLEMENT_PENDING_ORACLE";
     private static final String POSITION_STATUS_WAIT_FINAL_PRICE = "WAIT_FINAL_PRICE";
     private static final String POSITION_STATUS_NEED_MANUAL_CHECK = "NEED_MANUAL_CHECK";
@@ -1118,7 +1130,55 @@ public class SmartWalletAccountingService {
             lockedClaimProceeds = lockedClaimProceeds.add(lockedClaimProceedsForPosition(position));
         }
         BigDecimal budget = safe(properties.getSignalRisk().getMaxTotalOpenCostUsdc());
-        return budget.add(realized).subtract(fees).subtract(openCost).subtract(lockedClaimProceeds).setScale(8, RoundingMode.HALF_UP);
+        // R4(2026-06-03 全盘风险审计)：扣减"在途已预留但尚未落为持仓成本"的资金（PENDING 跟单任务），
+        // 防同一笔 bankroll 被多个待执行信号重复定仓导致超额配置/透支。
+        BigDecimal inFlightReserved = inFlightReservedUsdc();
+        return budget.add(realized).subtract(fees).subtract(openCost)
+                .subtract(lockedClaimProceeds).subtract(inFlightReserved)
+                .setScale(8, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * R4(2026-06-03 全盘风险审计)：在途资金预留——已批准、已定 stake 但尚未执行成交的跟单任务(status=PENDING)。
+     * <p>这些任务尚未成交、还没有对应持仓成本；若不计入"已占用"，每个待执行信号都会看到全额 bankroll，
+     * N 个并发/同窗信号会各自对同一笔钱定仓 → 超额配置。FOLLOWED 任务已有持仓成本(已计入 openCost)，
+     * 故不在此统计，避免双计。bankroll 为全局口径，此处亦全局统计。失败返回 0(保守=不额外扣减)。</p>
+     */
+    /** R3(2026-06-03)：OPEN/PARTIALLY_CLOSED 持仓中，所在市场本地已有 resolved_outcome 却仍未结算(卡 OPEN)的笔数。 */
+    public long openInResolvedMarketCount() {
+        try {
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                    .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+            marketInfoService.populatePositions(positions);
+            long n = 0;
+            for (SmartWalletPositionEntity p : positions) {
+                if (StringUtils.hasText(p.getResolvedOutcome())) {
+                    n++;
+                }
+            }
+            return n;
+        } catch (Exception e) {
+            log.debug("[SETTLEMENT_BACKLOG] count failed: {}", e.toString());
+            return 0L;
+        }
+    }
+
+    public BigDecimal inFlightReservedUsdc() {
+        try {
+            List<SmartWalletFollowTaskEntity> pending = followTaskMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                            .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING"));
+            BigDecimal sum = BigDecimal.ZERO;
+            if (pending != null) {
+                for (SmartWalletFollowTaskEntity t : pending) {
+                    sum = sum.add(safe(t.getRecommendedStakeUsdc()));
+                }
+            }
+            return sum.setScale(8, RoundingMode.HALF_UP);
+        } catch (Exception e) {
+            log.debug("[INFLIGHT_RESERVE] compute failed: {}", e.toString());
+            return BigDecimal.ZERO;
+        }
     }
 
     public BigDecimal lockedClaimProceedsUsdc() {
@@ -2192,6 +2252,12 @@ public class SmartWalletAccountingService {
             // 导致仓位永久卡在 OPEN（巡检实测 17 笔，最早 5/28）。复用 resolvePosition 的全部记账逻辑，
             // 胜负由 settlementPrice 的 outcome 名称对比路径判定，安全且与现有纸面结算口径一致。
             if (tryLocalAuthoritativeSettle(position)) {
+                resolved++;
+                continue;
+            }
+            // 问题5 续修（2026-06-02）：坍塌/无法卖出的亏损仓位强制按 0 结算（详见 tryExpiredWorthlessSettle）。
+            // 解决「输了却一直 OPEN」——报价已归零、盘口无人接、但 resolved_outcome 尚未落地的仓位。
+            if (tryExpiredWorthlessSettle(position)) {
                 resolved++;
                 continue;
             }
@@ -3271,6 +3337,75 @@ public class SmartWalletAccountingService {
                 resolvedOutcome, mi.getMarketLifecycle(), closed);
         syncResolvedPaperOrderStatuses(position.getMarketId(), authoritative);
         resolvePosition(position, authoritative);
+        return true;
+    }
+
+    /**
+     * 问题5 续修（2026-06-02）：「输了却一直 OPEN」的兜底结算。
+     *
+     * <p>场景：持有的 outcome 已被市场判负——报价坍塌到地板价、盘口无 bid、无法卖出，
+     * 但本地 {@code resolved_outcome} 因解析管道滞后 / Polymarket 名义 endAt 远期仍未落地，
+     * 现有两条结算路径（在线 Gamma/UMA、{@link #tryLocalAuthoritativeSettle}）都依赖
+     * 正式结算数据 → 仓位永久卡 OPEN。</p>
+     *
+     * <p>判定「已判负」用<b>报价坍塌</b>而非 endAt（赛事市场 endAt 常设在 dispute 窗口、远在未来，不可靠）：
+     * {@code last_mark_price ≤ EXPIRED_WORTHLESS_PRICE_CEIL}（来自已修复的实时盘口 bestBid 标记）。
+     * 同时要求仓位已开仓 ≥ {@link #EXPIRED_WORTHLESS_MIN_AGE_MS}，避免对刚开仓的瞬时下探误判。</p>
+     *
+     * <p><b>安全保证</b>：仅对「报价已坍塌（≤ ceil = 亏损方）」的仓位生效；报价偏高（可能是赢方）
+     * 的仓位一律不动，绝不会把赢单错判为亏损按 0 结算。结算价固定为 0 → 实现亏损 = -成本，
+     * 复用 {@link #resolvePosition} 的全部记账逻辑（现金流水 / 仓位置终态 / 日报重建 / 订单回写）。</p>
+     *
+     * @return 已强制按亏损结算返回 true；否则 false（交回原结算流程）。
+     */
+    private boolean tryExpiredWorthlessSettle(SmartWalletPositionEntity position) {
+        if (!ENABLE_EXPIRED_WORTHLESS_SETTLE) {
+            return false;
+        }
+        if (position == null || safe(position.getQuantity()).compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        if (!PAPER_BOOK_EXECUTION_ADDRESS.equals(position.getExecutionAddress())) {
+            return false;
+        }
+        // 开仓时长闸：太新的仓位不强制结算（瞬时下探 / 刚建仓盘口未稳）。
+        if (position.getOpenedAt() == null
+                || System.currentTimeMillis() - position.getOpenedAt().getTime() < EXPIRED_WORTHLESS_MIN_AGE_MS) {
+            return false;
+        }
+        // 用实时盘口刷新标记价（盘口已修复；市场不活跃时该调用早退、保留上次低价标记）。
+        try {
+            markToMarket(position);
+        } catch (Exception ignore) {
+            // 标记失败不阻断：用仓位已有 last_mark_price 判定。
+        }
+        BigDecimal mark = position.getLastMarkPrice();
+        // 仅当报价已坍塌到地板价（确认亏损方）才强制结算；缺标记价 / 报价偏高 → 不动，避免错判赢方。
+        if (mark == null || mark.compareTo(EXPIRED_WORTHLESS_PRICE_CEIL) > 0) {
+            return false;
+        }
+        // 构造「判负」元数据：winningTokenId / resolvedOutcome 用 sentinel（必不等于本仓位的
+        // token / outcome）→ settlementPrice 走 isWinningPosition=false 分支 → 结算价 0。
+        // endAt=null & acceptingOrders=false 以通过 resolvePosition 顶部的 GATE/GUARD。
+        PolymarketApiClient.MarketMetadata loserMeta = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId(position.getMarketId())
+                .marketId(position.getMarketId())
+                .question(position.getQuestion())
+                .active(false)
+                .closed(true)
+                .acceptingOrders(false)
+                .resolutionStatus(MarketResolutionResolver.STATUS_RESOLVED)
+                .resolvedOutcome("__EXPIRED_WORTHLESS_LOSS__")
+                .winningTokenId("__EXPIRED_WORTHLESS_NO_WIN__")
+                .resolutionSource("EXPIRED_WORTHLESS_AUTO_LOSS")
+                .resolutionObservedAt(System.currentTimeMillis())
+                .endAt(null)
+                .build();
+        log.warn("[EXPIRED_WORTHLESS_SETTLE] outcome 已被市场判负(报价坍塌且无法卖出), 强制按0结算 "
+                        + "positionId={} marketId={} outcome={} mark={} costBasis={} openedAt={}",
+                position.getId(), position.getMarketId(), position.getOutcome(),
+                mark, position.getCostBasisUsdc(), position.getOpenedAt());
+        resolvePosition(position, loserMeta);
         return true;
     }
 

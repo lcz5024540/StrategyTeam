@@ -41,16 +41,38 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 @Configuration
 public class SchedulingConfig {
 
-    /** 调度线程池默认大小。 */
+    /**
+     * 池大小下限。设为 24：实测在 2 核机上重型批处理任务
+     * （ClosedPositionSync 并发子任务、OrderAnalysis、LeaderTradeOutcomeRebuild、metadata 刷新等）
+     * 会同时占满线程，pool=8 时 30s 高频事件同步触发抢不到线程 → 摄取停摆 → 不开单。
+     * 这些任务绝大多数 I/O 密集（HTTP/DB 等待，线程多在 park），线程数应按「并发阻塞任务数」而非核数定，
+     * 故下限取 24（≈重型任务并发数 + 高频触发余量）；24 个线程栈约 12MB，对 4G 内存可忽略。
+     * 配合 PolymarketApiClient 的 callTimeout（约束单次调用总时长）共同根治「长时间不开单」。
+     */
+    public static final int MIN_POOL_SIZE = 24;
+    /** 池大小上限（防止误配置开过多线程）。 */
+    public static final int MAX_POOL_SIZE = 48;
+    /** 兼容保留：历史固定默认值；实际默认改为核感知 {@link #resolveDefaultPoolSize()}。 */
     public static final int DEFAULT_POOL_SIZE = 8;
 
     /** Spring 识别为全局 {@code @Scheduled} 调度器的固定 Bean 名。 */
     public static final String SCHEDULER_BEAN_NAME = "taskScheduler";
 
+    /**
+     * 核感知默认池大小：{@code cores * 4}，钳到 {@code [MIN_POOL_SIZE, MAX_POOL_SIZE]}。
+     * <p>这些 @Scheduled 任务绝大多数为 I/O 密集（HTTP/DB 等待），线程多数时间 park，
+     * 故线程数可适度高于核数。按核数线性伸缩：2 核→8、4 核→16、8 核→32，服务器升配后自动放大，
+     * 无需改代码；仍可用 {@code spring.task.scheduling.pool.size} 显式覆盖。</p>
+     */
+    public static int resolveDefaultPoolSize() {
+        int cores = Math.max(1, Runtime.getRuntime().availableProcessors());
+        return Math.min(MAX_POOL_SIZE, Math.max(MIN_POOL_SIZE, cores * 4));
+    }
+
     @Bean(name = SCHEDULER_BEAN_NAME, destroyMethod = "shutdown")
     public ThreadPoolTaskScheduler taskScheduler(
-            @Value("${spring.task.scheduling.pool.size:8}") int poolSize) {
-        int effectivePoolSize = poolSize > 0 ? poolSize : DEFAULT_POOL_SIZE;
+            @Value("${spring.task.scheduling.pool.size:-1}") int poolSize) {
+        int effectivePoolSize = poolSize > 0 ? poolSize : resolveDefaultPoolSize();
 
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(effectivePoolSize);

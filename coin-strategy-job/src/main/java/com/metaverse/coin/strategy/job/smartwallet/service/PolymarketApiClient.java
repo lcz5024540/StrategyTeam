@@ -59,12 +59,18 @@ public class PolymarketApiClient {
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
+            // 2026-06-03 修复：callTimeout 约束「整次调用」的总时长（含 connect+write+read+重试/重定向）。
+            // readTimeout 只约束相邻两次读之间的间隔，服务器保持连接慢喂字节时不会触发；缺 callTimeout 时
+            // 一次卡住的 Polymarket 请求会永久占住线程——HOT 事件同步是单线程专用 executor，一旦它被卡死，
+            // eventSyncRunning 永不复位，后续同步全部跳过，造成「长时间不开单」（实测 16h 停摆）。
+            .callTimeout(35, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build();
     private final OkHttpClient fastFallbackClient = httpClient.newBuilder()
             .connectTimeout(4, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .writeTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
             .build();
     private final Map<String, Long> externalFailureCooldownUntilMs = new ConcurrentHashMap<>();
     private final AtomicInteger metadataEndpointConsecutiveFailures = new AtomicInteger();

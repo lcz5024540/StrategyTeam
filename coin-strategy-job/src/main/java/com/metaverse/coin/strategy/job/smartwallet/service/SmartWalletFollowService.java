@@ -112,6 +112,20 @@ public class SmartWalletFollowService {
                     .message("LIVE mode is disabled. Set smart-wallet.auto-execution-enabled=true after checking /strategy/api/smart-wallet/execution-wallet/status.")
                     .build();
         }
+        // R12(2026-06-03 全盘风险审计)：该手动端点绕过主风控链路(冷却/漂移/leader 盈利/净 EV)，
+        // 默认禁止用它触发 LIVE 实盘下单，避免无门控的实盘 override 误用；确需人工实盘时显式开启开关。
+        if (normalizedMode == ExecutionMode.LIVE
+                && (properties.getExecutionWallet() == null
+                    || !properties.getExecutionWallet().isAllowManualLiveExecution())) {
+            return SmartWalletExecutionResult.builder()
+                    .signalId(signalId)
+                    .mode(normalizedMode)
+                    .success(false)
+                    .message("Manual LIVE execution is disabled (bypasses full risk gating). "
+                            + "Set smart-wallet.execution-wallet.allow-manual-live-execution=true to override, "
+                            + "or let LIVE follows go through the risk-gated automated pipeline.")
+                    .build();
+        }
         return executionGateway.execute(signal, normalizedMode);
     }
 

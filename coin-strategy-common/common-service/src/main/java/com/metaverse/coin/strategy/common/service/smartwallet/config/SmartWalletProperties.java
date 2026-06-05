@@ -284,6 +284,12 @@ public class SmartWalletProperties {
     @Data
     public static class ExecutionWallet {
         private boolean enabled = false;
+        /**
+         * R12(2026-06-03 全盘风险审计)：是否允许"手动执行端点"(/smart-wallet executeSignal) 触发 LIVE 实盘下单。
+         * 默认 false：该手动通道<b>绕过了主风控链路</b>(冷却/漂移/leader 盈利/净 EV 等)，仅作 PAPER 调试用；
+         * 若关闭则手动 LIVE 被拒，实盘只能走经完整风控的自动跟单管道。确需人工实盘 override 时显式置 true。
+         */
+        private boolean allowManualLiveExecution = false;
         private String chain = "polygon";
         private Integer chainId = 137;
         private String address;
@@ -467,6 +473,18 @@ public class SmartWalletProperties {
 
     @Data
     public static class SignalRisk {
+        // ── R1 组合级熔断总闸（2026-06-03 全盘风险审计）──────────────────────────
+        // 量化产品底线：亏损/回撤/人工触发时自动"只停开新仓、不阻平仓与结算"(fail-safe)。
+        // 全部默认关闭/0 = 不改变现有行为；运营在 strategy_runtime_config 配阈值即可热生效，无需发版。
+        /** 人工紧急熔断开关：true → 立即停止一切新开仓（kill switch）。 */
+        private boolean tradingHalted = false;
+        /** 当日已实现亏损达到该值(USDC, 正数)即停开新仓；0 或负 = 不启用。 */
+        private BigDecimal maxDailyLossUsdc = BigDecimal.ZERO;
+        /** 账户权益滚动回撤达到该比率(0~1)即停开新仓；0 = 不启用。 */
+        private BigDecimal maxAccountDrawdownRate = BigDecimal.ZERO;
+        /** 熔断状态缓存毫秒数，避免每个信号都查库；默认 30s。 */
+        private long riskHaltCacheMs = 30_000L;
+
         private boolean allowSellSignal = false;
         private boolean enableAutoStopLoss = false;
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
@@ -767,6 +785,13 @@ public class SmartWalletProperties {
          */
         private Integer pendingSignalLookbackHours = 24;
         private BigDecimal maxTotalOpenCostUsdc = new BigDecimal("500");
+        // ── R6 集中度硬上限（2026-06-03 全盘风险审计）──────────────────────────
+        // 量化产品的尾部风险控制：在 maxTotalOpenCostUsdc(总成本) 之外，再加"持仓数"与"单品类成本"硬闸。
+        // 语义：值 > 0 即启用；≤ 0 = 关闭。命中只拒新开仓，不影响已有持仓/平仓/结算(fail-safe)。
+        /** 同时持有的未结算持仓数(OPEN/PARTIALLY_CLOSED)硬上限；0=关闭。建议 50。 */
+        private Integer maxOpenPositionsHardCap = 50;
+        /** 单一品类(normalizedCategory) 的累计持仓成本上限(USDC)；0=关闭。建议 200(=bankroll 40%)。 */
+        private BigDecimal maxPerCategoryOpenCostUsdc = new BigDecimal("200");
         private Integer maxHoursToMarketEnd = 72;
 
         // ── G6b: 临近赛事尾段 + 低概率方向 拒单门 ──────────────────────────────

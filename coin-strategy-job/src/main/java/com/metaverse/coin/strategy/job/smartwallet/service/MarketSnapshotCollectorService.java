@@ -157,6 +157,15 @@ public class MarketSnapshotCollectorService {
         }
     }
 
+    /** R3(2026-06-03)：最近一条快照的时间，用于健康监控判断盘口快照管道是否停滞/为空（null=表空）。 */
+    public java.util.Date latestSnapshotAt() {
+        SmartWalletMarketSnapshotEntity latest = marketSnapshotMapper.selectOne(
+                new LambdaQueryWrapper<SmartWalletMarketSnapshotEntity>()
+                        .orderByDesc(SmartWalletMarketSnapshotEntity::getSnapshotAt)
+                        .last("limit 1"));
+        return latest == null ? null : latest.getSnapshotAt();
+    }
+
     public List<SmartWalletMarketSnapshotEntity> listRecentSnapshots(String marketId, String outcome, int limit) {
         LambdaQueryWrapper<SmartWalletMarketSnapshotEntity> query = new LambdaQueryWrapper<SmartWalletMarketSnapshotEntity>()
                 .orderByDesc(SmartWalletMarketSnapshotEntity::getSnapshotAt)

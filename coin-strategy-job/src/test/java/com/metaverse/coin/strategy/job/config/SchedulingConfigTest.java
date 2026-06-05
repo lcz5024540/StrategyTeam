@@ -25,7 +25,7 @@ class SchedulingConfigTest {
                     ThreadPoolTaskScheduler.class);
 
             assertNotNull(scheduler);
-            assertEquals(SchedulingConfig.DEFAULT_POOL_SIZE,
+            assertEquals(SchedulingConfig.resolveDefaultPoolSize(),
                     scheduler.getScheduledThreadPoolExecutor().getCorePoolSize());
 
             CountDownLatch latch = new CountDownLatch(1);

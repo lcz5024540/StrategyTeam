@@ -156,7 +156,20 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     .build();
         }
         java.math.BigDecimal paperNotional = signal.getRecommendedStakeUsdc();
-        java.math.BigDecimal paperPrice    = signal.getMarket() == null ? null : signal.getMarket().getPrice();
+        java.math.BigDecimal paperBasePrice = signal.getMarket() == null ? null : signal.getMarket().getPrice();
+        // 盈利审计修复(2026-06-03, P0-1)：纸面开仓此前按 best-ask 触价、零滑点直接 FILLED，
+        // 系统性高估纸面收益/胜率。这里套用与实盘 TAKER 一致的滑点（BUY 向上付价），使纸面成交价
+        // 贴近真实可成交价；不改变是否下单，仅让记账更真实、纸面与实盘可比。
+        java.math.BigDecimal paperPrice = paperBasePrice;
+        if (paperBasePrice != null && paperBasePrice.compareTo(java.math.BigDecimal.ZERO) > 0
+                && properties.getExecutionWallet() != null) {
+            java.math.BigDecimal slip = properties.getExecutionWallet().getPriceSlippageRate();
+            if (slip != null && slip.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                paperPrice = paperBasePrice.add(paperBasePrice.multiply(slip))
+                        .min(java.math.BigDecimal.ONE)
+                        .setScale(8, java.math.RoundingMode.HALF_UP);
+            }
+        }
         java.math.BigDecimal paperFee = estimateFee(paperNotional, properties.getExecutionWallet().getEstimatedFeeRate());
         PaperTokenInfo paperTokenInfo = resolvePaperTokenInfo(marketId, question, outcome);
         log.info("{} action=创建PAPER模拟跟单订单 result=成功 signalId={} marketId={} outcome={} tokenId={} indexSet={} price={} notionalUsdc={} feeUsdc={} externalOrderId={}",

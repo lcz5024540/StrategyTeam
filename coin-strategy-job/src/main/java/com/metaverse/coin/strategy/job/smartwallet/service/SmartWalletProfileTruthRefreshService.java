@@ -272,6 +272,8 @@ public class SmartWalletProfileTruthRefreshService {
             stats.roiCount++;
             if (pnl.compareTo(BigDecimal.ZERO) > 0) {
                 stats.wins++;
+            } else if (pnl.compareTo(BigDecimal.ZERO) < 0) {
+                stats.losses++;
             }
             if (row.getLastTradeAt() != null) {
                 stats.lastTradeAt = row.getLastTradeAt();
@@ -280,12 +282,16 @@ public class SmartWalletProfileTruthRefreshService {
                     stats.recentTradeCount7d++;
                     if (pnl.compareTo(BigDecimal.ZERO) > 0) {
                         stats.recentWins7d++;
+                    } else if (pnl.compareTo(BigDecimal.ZERO) < 0) {
+                        stats.recentLosses7d++;
                     }
                 }
                 if (t >= cutoff30d) {
                     stats.recentTradeCount30d++;
                     if (pnl.compareTo(BigDecimal.ZERO) > 0) {
                         stats.recentWins30d++;
+                    } else if (pnl.compareTo(BigDecimal.ZERO) < 0) {
+                        stats.recentLosses30d++;
                     }
                 }
             }
@@ -302,8 +308,11 @@ public class SmartWalletProfileTruthRefreshService {
             }
         }
         stats.total = rows.size();
-        stats.recentWinRate7d = stats.recentTradeCount7d == 0 ? null : rate(stats.recentWins7d, stats.recentTradeCount7d);
-        stats.recentWinRate30d = stats.recentTradeCount30d == 0 ? null : rate(stats.recentWins30d, stats.recentTradeCount30d);
+        // 盈利审计修复(2026-06-03,P1)：近期胜率分母剔除平局(breakeven)，用 wins/(wins+losses)。
+        int recent7dDecisive = stats.recentWins7d + stats.recentLosses7d;
+        int recent30dDecisive = stats.recentWins30d + stats.recentLosses30d;
+        stats.recentWinRate7d = recent7dDecisive == 0 ? null : rate(stats.recentWins7d, recent7dDecisive);
+        stats.recentWinRate30d = recent30dDecisive == 0 ? null : rate(stats.recentWins30d, recent30dDecisive);
         return stats;
     }
 
@@ -418,6 +427,9 @@ public class SmartWalletProfileTruthRefreshService {
     private static class TruthStats {
         private int total;
         private long wins;
+        private long losses;
+        private int recentLosses7d;
+        private int recentLosses30d;
         private BigDecimal pnl = BigDecimal.ZERO;
         private BigDecimal cost = BigDecimal.ZERO;
         private BigDecimal roiSum = BigDecimal.ZERO;
@@ -436,10 +448,13 @@ public class SmartWalletProfileTruthRefreshService {
         }
 
         private BigDecimal winRate() {
-            if (total <= 0) {
+            // 盈利审计修复(2026-06-03,P1)：分母用"胜+负"(剔除 breakeven 平局)而非全部已结算笔数，
+            // 避免临近 0.5 结算的平局把好 leader 的胜率压低、误拒于 minWinRate 阈值之下。
+            long decisive = wins + losses;
+            if (decisive <= 0) {
                 return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
             }
-            return BigDecimal.valueOf(wins).divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
+            return BigDecimal.valueOf(wins).divide(BigDecimal.valueOf(decisive), 4, RoundingMode.HALF_UP);
         }
 
         private BigDecimal averageSize() {
