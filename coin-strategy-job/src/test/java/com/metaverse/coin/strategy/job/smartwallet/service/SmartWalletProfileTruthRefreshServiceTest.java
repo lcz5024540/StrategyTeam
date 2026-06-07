@@ -57,7 +57,8 @@ class SmartWalletProfileTruthRefreshServiceTest {
                 orderAnalysisMapper,
                 marketInfoService,
                 scoringService,
-                profileStoreService
+                profileStoreService,
+                new com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties()
         );
     }
 

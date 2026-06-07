@@ -23,6 +23,15 @@ public class SmartWalletProfileEntity {
     private String alias;
     private String source;
     private BigDecimal winRate;
+    /** Beta后验/Wilson 方案（2026-06-05）：决断样本数 = wins+losses（剔除平局）。需先执行迁移 SQL 加列再部署。 */
+    @TableField("decisive_trades")
+    private Integer decisiveTrades;
+    /** Wilson 单侧95%下界可信胜率（门槛比较用，小样本自动惩罚）。 */
+    @TableField("credible_win_rate")
+    private BigDecimal credibleWinRate;
+    /** Beta(m=8,p0=0.5) 后验均值收缩胜率（排序用）。 */
+    @TableField("shrunk_win_rate")
+    private BigDecimal shrunkWinRate;
     private BigDecimal realizedPnlUsdc;
     private Integer totalTrades;
     private BigDecimal averageSizeUsdc;

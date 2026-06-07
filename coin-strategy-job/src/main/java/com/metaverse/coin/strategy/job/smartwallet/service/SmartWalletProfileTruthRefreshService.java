@@ -45,6 +45,7 @@ public class SmartWalletProfileTruthRefreshService {
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletScoringService scoringService;
     private final SmartWalletProfileStoreService profileStoreService;
+    private final com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties properties;
 
     public PolymarketWalletMetricsRequest buildTruthMetrics(String walletAddress,
                                                             String alias,
@@ -62,6 +63,19 @@ public class SmartWalletProfileTruthRefreshService {
         request.setChain("polygon");
         request.setAlias(alias);
         request.setWinRate(stats.winRate());
+        // Beta后验/Wilson 方案（2026-06-05）：可信胜率随真值刷新影子常算常存（消费由
+        // enableCredibleWinRate 开关控制）。Wilson 下界供门槛、Beta 后验均值供排序。
+        request.setDecisiveTrades((int) Math.min(Integer.MAX_VALUE, stats.wins + stats.losses));
+        double wilsonZ = configDouble(properties.getWinRateWilsonZ(),
+                com.metaverse.coin.strategy.common.service.stats.WinRateStatistics.DEFAULT_WILSON_Z);
+        double priorStrength = configDouble(properties.getWinRatePriorStrength(),
+                com.metaverse.coin.strategy.common.service.stats.WinRateStatistics.DEFAULT_PRIOR_STRENGTH);
+        double priorMean = configDouble(properties.getWinRatePriorMean(),
+                com.metaverse.coin.strategy.common.service.stats.WinRateStatistics.DEFAULT_PRIOR_MEAN);
+        request.setCredibleWinRate(com.metaverse.coin.strategy.common.service.stats.WinRateStatistics
+                .wilsonLowerBound(stats.wins, stats.losses, wilsonZ));
+        request.setShrunkWinRate(com.metaverse.coin.strategy.common.service.stats.WinRateStatistics
+                .betaPosteriorMean(stats.wins, stats.losses, priorStrength, priorMean));
         request.setRealizedPnlUsdc(scale(stats.pnl, 4));
         request.setTotalTrades(trustedClosed.size());
         request.setAverageSizeUsdc(scale(stats.averageSize(), 4));
@@ -209,6 +223,10 @@ public class SmartWalletProfileTruthRefreshService {
 
     private void applyMetrics(SmartWalletProfileEntity profile, PolymarketWalletMetricsRequest metrics) {
         profile.setWinRate(safe(metrics.getWinRate()));
+        // Beta后验/Wilson 方案（2026-06-05）：真值路径总是回写可信胜率（含 null=决断样本为 0 的「未知」）。
+        profile.setDecisiveTrades(metrics.getDecisiveTrades());
+        profile.setCredibleWinRate(metrics.getCredibleWinRate());
+        profile.setShrunkWinRate(metrics.getShrunkWinRate());
         profile.setRealizedPnlUsdc(safe(metrics.getRealizedPnlUsdc()));
         profile.setTotalTrades(metrics.getTotalTrades() == null ? 0 : metrics.getTotalTrades());
         profile.setAverageSizeUsdc(safe(metrics.getAverageSizeUsdc()));
@@ -412,6 +430,11 @@ public class SmartWalletProfileTruthRefreshService {
 
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /** 可信胜率参数（Wilson z / Beta 先验）取配置值，未配置则回退 WinRateStatistics 默认常量。 */
+    private double configDouble(BigDecimal value, double fallback) {
+        return value == null ? fallback : value.doubleValue();
     }
 
     public record DiscoveryMetadata(Date lastDiscoveredAt,

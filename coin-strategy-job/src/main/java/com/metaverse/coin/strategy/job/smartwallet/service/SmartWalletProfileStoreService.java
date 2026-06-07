@@ -116,6 +116,17 @@ public class SmartWalletProfileStoreService {
         if (request.getRecentTradeCount30d() != null) {
             entity.setRecentTradeCount30d(Math.max(request.getRecentTradeCount30d(), 0));
         }
+        // Beta后验/Wilson 方案（2026-06-05）：非真值来源（discovery 等）不产出可信胜率字段，
+        // 沿用「非空才覆盖」模式，避免 null 把真值刷新已写入的可信值冲掉。
+        if (request.getDecisiveTrades() != null) {
+            entity.setDecisiveTrades(Math.max(request.getDecisiveTrades(), 0));
+        }
+        if (request.getCredibleWinRate() != null) {
+            entity.setCredibleWinRate(request.getCredibleWinRate());
+        }
+        if (request.getShrunkWinRate() != null) {
+            entity.setShrunkWinRate(request.getShrunkWinRate());
+        }
         if (request.getLastDiscoveredAt() != null) {
             entity.setLastDiscoveredAt(request.getLastDiscoveredAt());
             entity.setLastDiscoveryQuery(request.getLastDiscoveryQuery());
@@ -633,7 +644,7 @@ public class SmartWalletProfileStoreService {
     }
 
     private String firstQualificationBlockReason(SmartWalletProfileEntity wallet) {
-        if (safe(wallet.getWinRate()).compareTo(safe(properties.getMinWinRate())) < 0) {
+        if (gateWinRate(wallet).compareTo(safe(properties.getMinWinRate())) < 0) {
             return "WIN_RATE_BELOW_THRESHOLD";
         }
         if (safe(wallet.getWalletScore()).compareTo(safe(properties.getMinWalletScore())) < 0) {
@@ -909,8 +920,29 @@ public class SmartWalletProfileStoreService {
         return evaluateQualification(wallet).qualified();
     }
 
+    /**
+     * Beta后验/Wilson 方案（2026-06-05）：资格门使用的有效胜率。
+     * 开关开启时用 Wilson 下界（credible_win_rate，小样本自动惩罚）；可信值缺失回退点估计
+     * （避免历史数据未回填导致批量失格）；决断样本不足 winRateMinDecisiveTrades 视为 0（不达标）。
+     * 开关关闭 → 维持点估计，零行为变化。⚠️ 开启前先影子对照并按下界口径重标 minWinRate。
+     */
+    private BigDecimal gateWinRate(SmartWalletProfileEntity wallet) {
+        BigDecimal pointEstimate = safe(wallet.getWinRate());
+        if (!properties.isEnableCredibleWinRate()) {
+            return pointEstimate;
+        }
+        Integer decisive = wallet.getDecisiveTrades();
+        int minDecisive = properties.getWinRateMinDecisiveTrades() == null
+                ? 10 : Math.max(0, properties.getWinRateMinDecisiveTrades());
+        if (decisive != null && decisive < minDecisive) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal credible = wallet.getCredibleWinRate();
+        return credible != null ? credible : pointEstimate;
+    }
+
     private QualificationEvaluation evaluateQualification(SmartWalletProfileEntity wallet) {
-        BigDecimal winRate = safe(wallet.getWinRate());
+        BigDecimal winRate = gateWinRate(wallet);
         BigDecimal minWinRate = safe(properties.getMinWinRate());
         BigDecimal walletScore = safe(wallet.getWalletScore());
         BigDecimal minWalletScore = safe(properties.getMinWalletScore());

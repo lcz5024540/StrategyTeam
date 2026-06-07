@@ -109,7 +109,9 @@ public class WeeklyTopLeaderAutoAllowlistJob {
                 filterTrades++;
                 continue;
             }
-            BigDecimal winRate = p.getWinRate();
+            // Beta后验/Wilson 方案（2026-06-05）：开关开启时过滤/排序用收缩胜率（小样本向先验收缩，
+            // 治「1胜0负=100% 霸榜」幸存者偏差）；可信值缺失回退点估计。开关关闭=原行为。
+            BigDecimal winRate = rankWinRate(p);
             if (winRate == null || winRate.compareTo(cfg.getMinWinRate()) < 0) {
                 filterWinRate++;
                 continue;
@@ -127,7 +129,7 @@ public class WeeklyTopLeaderAutoAllowlistJob {
         }
 
         candidates.sort(Comparator
-                .comparing((SmartWalletProfileEntity p) -> nullSafe(p.getWinRate())).reversed()
+                .comparing((SmartWalletProfileEntity p) -> nullSafe(rankWinRate(p))).reversed()
                 .thenComparing(p -> nullSafe(p.getRealizedPnlUsdc()), Comparator.reverseOrder()));
 
         int topN = Math.max(cfg.getTopN(), 0);
@@ -233,6 +235,21 @@ public class WeeklyTopLeaderAutoAllowlistJob {
 
     private static BigDecimal nullSafe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * Beta后验/Wilson 方案（2026-06-05）：选池过滤/排序用的有效胜率。
+     * 开关开启且 shrunk_win_rate（Beta 后验均值）可用 → 用收缩胜率；否则回退点估计。
+     * 开关关闭 → 维持点估计，零行为变化。
+     */
+    private BigDecimal rankWinRate(SmartWalletProfileEntity p) {
+        if (p == null) {
+            return null;
+        }
+        if (properties.isEnableCredibleWinRate() && p.getShrunkWinRate() != null) {
+            return p.getShrunkWinRate();
+        }
+        return p.getWinRate();
     }
 
     /** 简单的统计 DTO; 给单测 / 手动触发用. */

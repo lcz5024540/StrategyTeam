@@ -24,6 +24,31 @@ public class SmartWalletProperties {
     private boolean runtimeConfigApiEnabled = false;
     private boolean requireTagMatch = true;
     private BigDecimal minWinRate = new BigDecimal("0.62");
+    /**
+     * Beta后验/Wilson 可信胜率开关（2026-06-05 方案）。true → leader 资格门用 Wilson 下界
+     * （credible_win_rate）替代点估计、自动选池排序用 Beta 后验均值（shrunk_win_rate）。
+     * 可信值由 ProfileTruthRefreshService 影子常算常存（与开关无关）；本开关只控消费。
+     * ⚠️ Wilson 下界 ≤ 点估计，开启前先看影子分布并按下界口径重标 minWinRate（如 0.62→0.55），
+     * 否则现有 leader 会批量失格。默认关闭，可热回滚。
+     */
+    private boolean enableCredibleWinRate = false;
+    /** 可信胜率口径下的最小决断样本数（wins+losses）；不足则资格门视为不达标（仅开关开启时生效）。 */
+    private Integer winRateMinDecisiveTrades = 10;
+    /**
+     * Wilson 下界置信系数 z（方案 §4）。1.645=单侧95%（默认，门槛只关心下界）；1.96=双侧95%（更保守）。
+     * 越大下界越低、小样本惩罚越重。由 ProfileTruthRefreshService 计算 credible_win_rate 时使用。
+     */
+    private BigDecimal winRateWilsonZ = new BigDecimal("1.645");
+    /**
+     * Beta 先验伪计数 m=α₀+β₀（方案 §4）。相当于先验贡献 m 笔决断样本；越大收缩越强。默认 8。
+     * 由 ProfileTruthRefreshService 计算 shrunk_win_rate 时使用。
+     */
+    private BigDecimal winRatePriorStrength = new BigDecimal("8");
+    /**
+     * Beta 先验中心 p₀（方案 §4）。无群体统计时取 0.5；校准期可换成同期 leader 群体均胜率。
+     * 由 ProfileTruthRefreshService 计算 shrunk_win_rate 时使用。
+     */
+    private BigDecimal winRatePriorMean = new BigDecimal("0.5");
     private BigDecimal minWalletScore = new BigDecimal("0.70");
     private Integer minTotalTrades = 25;
     private BigDecimal minRealizedPnlUsdc = new BigDecimal("1000");
