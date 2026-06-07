@@ -2527,6 +2527,14 @@ public class SmartWalletAccountingService {
         if (metadata == null) {
             return new SettlementTerminalCheck(false, "metadata_null");
         }
+        // ── A1 争议期禁止结算（2026-06-05 补充场景库：结算反转防线）─────────────────────
+        // UMA 仲裁争议中(umaDisputed=true) 的市场 outcome 可能翻盘；此时结算会按当前(可能错误)
+        // 结果记账并复利回可用资金，若随后反转则账面虚增且无冲正路径(R19 未闭环)。fail-closed：
+        // 争议期一律不结算、留待 dispute 清除后下一轮按最终 outcome 正确结算。只延迟、绝不误结算金额。
+        // 置于所有 canSettle=true 分支之前，确保争议市场永不放行。默认开启，可热回滚。
+        if (properties != null && properties.isBlockSettlementWhileDisputed() && metadata.isUmaDisputed()) {
+            return new SettlementTerminalCheck(false, "blocked_uma_disputed");
+        }
         if (!StringUtils.hasText(metadata.getSlug())
                 && (metadata.getOutcomeTokenIds() == null || metadata.getOutcomeTokenIds().isEmpty())
                 && metadata.isClosed()
@@ -3384,6 +3392,20 @@ public class SmartWalletAccountingService {
         if (mark == null || mark.compareTo(EXPIRED_WORTHLESS_PRICE_CEIL) > 0) {
             return false;
         }
+        // ── C4（2026-06-05 补充场景库）：坏 tick 防护 —— 低 mark 须经多源印证才归零结算 ──────
+        // 若近窗口内有成交价显著高于阈值，与「报价坍塌」矛盾 → 低 mark 疑似坏 tick/陈旧，跳过本轮，
+        // 留待真实结算或下轮（mark 持续低）再处理；只阻断、绝不误结算。默认开启，可热回滚。
+        if (properties != null && properties.isWorthlessSettleRequireCorroboration()) {
+            int windowHours = properties.getWorthlessSettleCorroborationWindowHours() == null
+                    ? 6 : Math.max(1, properties.getWorthlessSettleCorroborationWindowHours());
+            BigDecimal maxRecent = maxRecentTradePrice(position.getMarketId(), position.getOutcome(), windowHours);
+            if (isWorthlessSettleContradicted(maxRecent, properties.getWorthlessSettleContradictionPriceCeil())) {
+                log.warn("[EXPIRED_WORTHLESS_GUARD] 跳过归零结算: 近{}h成交最高价={} 与坍塌(mark={})矛盾, 疑似坏tick/陈旧 "
+                                + "positionId={} marketId={} outcome={}",
+                        windowHours, maxRecent, mark, position.getId(), position.getMarketId(), position.getOutcome());
+                return false;
+            }
+        }
         // 构造「判负」元数据：winningTokenId / resolvedOutcome 用 sentinel（必不等于本仓位的
         // token / outcome）→ settlementPrice 走 isWinningPosition=false 分支 → 结算价 0。
         // endAt=null & acceptingOrders=false 以通过 resolvePosition 顶部的 GATE/GUARD。
@@ -3407,6 +3429,48 @@ public class SmartWalletAccountingService {
                 mark, position.getCostBasisUsdc(), position.getOpenedAt());
         resolvePosition(position, loserMeta);
         return true;
+    }
+
+    /**
+     * C4 纯函数：坍塌归零结算的坏 tick 矛盾判定。近窗口成交最高价显著高于 contradictionCeil 时返回 true
+     * （= 与「报价坍塌」矛盾，应跳过归零结算）。无近成交(null)或阈值非法 → false（不阻断，沿用既有语义）。
+     */
+    static boolean isWorthlessSettleContradicted(BigDecimal maxRecentTradePrice, BigDecimal contradictionCeil) {
+        if (maxRecentTradePrice == null) {
+            return false;
+        }
+        if (contradictionCeil == null || contradictionCeil.compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        return maxRecentTradePrice.compareTo(contradictionCeil) > 0;
+    }
+
+    /** C4: 近 windowHours 小时该 market+outcome 的 trade_event 最高有效成交价；mapper 缺失/无数据/异常返回 null。 */
+    private BigDecimal maxRecentTradePrice(String marketId, String outcome, int windowHours) {
+        if (tradeEventMapper == null || !StringUtils.hasText(marketId) || !StringUtils.hasText(outcome)) {
+            return null;
+        }
+        try {
+            long cutoff = System.currentTimeMillis() - (long) Math.max(1, windowHours) * 3600_000L;
+            List<SmartWalletTradeEventEntity> rows = tradeEventMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                            .eq(SmartWalletTradeEventEntity::getMarketId, marketId)
+                            .eq(SmartWalletTradeEventEntity::getOutcome, outcome)
+                            .ge(SmartWalletTradeEventEntity::getOpenedAt, new Date(cutoff)));
+            BigDecimal max = null;
+            if (rows != null) {
+                for (SmartWalletTradeEventEntity e : rows) {
+                    BigDecimal p = e.getPrice();
+                    if (p != null && p.compareTo(BigDecimal.ZERO) > 0 && (max == null || p.compareTo(max) > 0)) {
+                        max = p;
+                    }
+                }
+            }
+            return max;
+        } catch (Exception ex) {
+            log.debug("[WORTHLESS_GUARD] maxRecentTradePrice failed marketId={} error={}", marketId, ex.toString());
+            return null;
+        }
     }
 
     private void resolvePosition(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {

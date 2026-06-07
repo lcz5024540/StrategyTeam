@@ -4,6 +4,7 @@ import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalle
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
@@ -79,6 +80,13 @@ public class FollowPositionAdjustmentService {
      */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private SmartWalletFollowTaskMapper followTaskMapper;
+
+    /**
+     * F1（2026-06-05 补充场景库：按 leader 自身减仓比例镜像）。可选注入：
+     * 缺失时退回既有 leaderSellUsdc/followerTotalCost 代理口径，不影响主路径。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SmartWalletTradeEventMapper tradeEventMapper;
 
     /** F-P1-10: 并发执行专用线程池；@PostConstruct 创建，@PreDestroy 关闭。 */
     private ExecutorService adjustmentExecutor;
@@ -368,19 +376,42 @@ public class FollowPositionAdjustmentService {
         // leader 卖出金额
         BigDecimal leaderSellUsdc = safe(event.getSizeUsdc());
 
-        // 减仓比例 = leader卖出 / follower总成本，上限 100%
-        BigDecimal exitRatio;
-        if (followerTotalCost.compareTo(BigDecimal.ZERO) <= 0 || leaderSellUsdc.compareTo(BigDecimal.ZERO) <= 0) {
-            // 无法计算比例，退化为全平
-            log.warn("{} action=部分减仓 result=退化为全平 followerTotalCost={} leaderSellUsdc={}",
-                    LOG_PREFIX, followerTotalCost, leaderSellUsdc);
-            return executeFullExit(positions, task, event, mode, AdjustmentAction.FULL_EXIT,
-                    "SOURCE_SELL: unable to compute partial ratio, falling back to full exit.");
-        }
-        exitRatio = leaderSellUsdc.divide(followerTotalCost, 4, RoundingMode.HALF_UP).min(BigDecimal.ONE);
+        BigDecimal exitRatio = null;
 
-        log.info("{} action=计算部分减仓比例 leaderSellUsdc={} followerTotalCost={} exitRatio={}",
-                LOG_PREFIX, leaderSellUsdc, followerTotalCost, exitRatio);
+        // ── F1（2026-06-05 补充场景库）：优先按 leader 自身减仓比例镜像 ──────────────────
+        // reduceRatio = leader 本次卖出份额 / leader 卖出前自身持仓份额。
+        // 既有代理口径 leaderSellUsdc/followerTotalCost 在 leader 远大于我方时会严重过度平仓
+        // （leader 只卖其 5% 仓位，我方却被平 50%）。flag 默认关、数据不可用时回退代理口径，零风险。
+        boolean proRataEnabled = properties != null
+                && properties.getSignalRisk() != null
+                && properties.getSignalRisk().isEnableLeaderProRataExit();
+        if (proRataEnabled) {
+            BigDecimal leaderSellShares = resolveLeaderSellShares(event);
+            BigDecimal leaderPriorQty = computeLeaderPriorPositionShares(event);
+            BigDecimal proRata = computeLeaderProRataRatio(leaderSellShares, leaderPriorQty);
+            if (proRata != null) {
+                exitRatio = proRata;
+                log.info("{} action=按leader减仓比例镜像 leaderSellShares={} leaderPriorQty={} exitRatio={}",
+                        LOG_PREFIX, leaderSellShares, leaderPriorQty, exitRatio);
+            } else {
+                log.info("{} action=leader减仓比例不可用,回退代理口径 leaderSellShares={} leaderPriorQty={}",
+                        LOG_PREFIX, leaderSellShares, leaderPriorQty);
+            }
+        }
+
+        // ── 回退/默认：减仓比例 = leader卖出USDC / follower总成本，上限 100% ──
+        if (exitRatio == null) {
+            if (followerTotalCost.compareTo(BigDecimal.ZERO) <= 0 || leaderSellUsdc.compareTo(BigDecimal.ZERO) <= 0) {
+                // 无法计算比例，退化为全平
+                log.warn("{} action=部分减仓 result=退化为全平 followerTotalCost={} leaderSellUsdc={}",
+                        LOG_PREFIX, followerTotalCost, leaderSellUsdc);
+                return executeFullExit(positions, task, event, mode, AdjustmentAction.FULL_EXIT,
+                        "SOURCE_SELL: unable to compute partial ratio, falling back to full exit.");
+            }
+            exitRatio = leaderSellUsdc.divide(followerTotalCost, 4, RoundingMode.HALF_UP).min(BigDecimal.ONE);
+            log.info("{} action=计算部分减仓比例(代理口径) leaderSellUsdc={} followerTotalCost={} exitRatio={}",
+                    LOG_PREFIX, leaderSellUsdc, followerTotalCost, exitRatio);
+        }
 
         // F-P0-1: LIVE 部分退出已实现，配置开关 enableLivePartialExit 控制
         boolean liveLivePartialExitEnabled = properties != null
@@ -780,6 +811,94 @@ public class FollowPositionAdjustmentService {
         }
         // F-P0-2: 拒绝 0.50 硬兜底，让调用方 SKIP（primarySkipReason=EXIT_PRICE_UNAVAILABLE）
         return null;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // F1（2026-06-05 补充场景库）：按 leader 自身减仓比例镜像跟随退出
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * F1 纯函数：leader 按比例减仓的镜像比例 = 本次卖出份额 / 卖出前自身持仓份额。
+     * 任一输入为空/非正、或比例≤0 时返回 null（调用方回退既有代理口径）；结果钳到上限 1.0。
+     * 抽为 package-private static 便于单测，不依赖任何实例状态。
+     */
+    static BigDecimal computeLeaderProRataRatio(BigDecimal leaderSellShares,
+                                                BigDecimal leaderPriorPositionShares) {
+        if (leaderSellShares == null || leaderPriorPositionShares == null) {
+            return null;
+        }
+        if (leaderSellShares.compareTo(BigDecimal.ZERO) <= 0
+                || leaderPriorPositionShares.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        BigDecimal ratio = leaderSellShares.divide(leaderPriorPositionShares, 4, RoundingMode.HALF_UP);
+        if (ratio.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        return ratio.min(BigDecimal.ONE);
+    }
+
+    /** leader 本次卖出份额：优先 sizeShares，缺失时用 sizeUsdc/price 估算；都不可用返回 0。 */
+    private BigDecimal resolveLeaderSellShares(SmartWalletTradeEventEntity event) {
+        if (event == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal shares = safe(event.getSizeShares());
+        if (shares.compareTo(BigDecimal.ZERO) > 0) {
+            return shares;
+        }
+        BigDecimal usdc = safe(event.getSizeUsdc());
+        BigDecimal price = safe(event.getPrice());
+        if (usdc.compareTo(BigDecimal.ZERO) > 0 && price.compareTo(BigDecimal.ZERO) > 0) {
+            return usdc.divide(price, 8, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
+
+    /**
+     * leader 在本次卖出前的净持仓份额 = Σ(更早 BUY 份额) − Σ(更早 SELL 份额)，
+     * 取自 trade_event 历史（openedAt 早于当前事件）。mapper 缺失/无历史/净仓≤0 时返回 null
+     * （调用方回退代理口径）。份额优先 sizeShares，缺失用 sizeUsdc/price 估算。
+     */
+    private BigDecimal computeLeaderPriorPositionShares(SmartWalletTradeEventEntity event) {
+        if (tradeEventMapper == null || event == null
+                || event.getWalletAddress() == null || event.getWalletAddress().isBlank()
+                || event.getMarketId() == null || event.getMarketId().isBlank()
+                || event.getOutcome() == null || event.getOutcome().isBlank()
+                || event.getOpenedAt() == null) {
+            return null;
+        }
+        try {
+            List<SmartWalletTradeEventEntity> priors = tradeEventMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                            .eq(SmartWalletTradeEventEntity::getWalletAddress, event.getWalletAddress())
+                            .eq(SmartWalletTradeEventEntity::getMarketId, event.getMarketId())
+                            .eq(SmartWalletTradeEventEntity::getOutcome, event.getOutcome())
+                            .lt(SmartWalletTradeEventEntity::getOpenedAt, event.getOpenedAt()));
+            if (priors == null || priors.isEmpty()) {
+                return null;
+            }
+            BigDecimal net = BigDecimal.ZERO;
+            for (SmartWalletTradeEventEntity e : priors) {
+                BigDecimal sh = safe(e.getSizeShares());
+                if (sh.compareTo(BigDecimal.ZERO) <= 0) {
+                    BigDecimal usdc = safe(e.getSizeUsdc());
+                    BigDecimal price = safe(e.getPrice());
+                    if (usdc.compareTo(BigDecimal.ZERO) > 0 && price.compareTo(BigDecimal.ZERO) > 0) {
+                        sh = usdc.divide(price, 8, RoundingMode.HALF_UP);
+                    }
+                }
+                if ("SELL".equalsIgnoreCase(e.getSide())) {
+                    net = net.subtract(sh);
+                } else {
+                    net = net.add(sh);
+                }
+            }
+            return net.compareTo(BigDecimal.ZERO) > 0 ? net : null;
+        } catch (Exception ex) {
+            log.debug("{} computeLeaderPriorPositionShares failed: {}", LOG_PREFIX, ex.toString());
+            return null;
+        }
     }
 
     private BigDecimal safe(BigDecimal v) {

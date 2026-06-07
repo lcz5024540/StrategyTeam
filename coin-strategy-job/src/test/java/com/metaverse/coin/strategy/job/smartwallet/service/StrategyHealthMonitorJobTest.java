@@ -41,6 +41,7 @@ class StrategyHealthMonitorJobTest {
     @Mock private SmartWalletAccountingService accountingService;
     @Mock private SmartWalletAuditAlertSink alertSink;
     @Mock private StrategyAlertService strategyAlertService;
+    @Mock private MarketSnapshotCollectorService marketSnapshotCollectorService;
 
     private SmartWalletProperties properties;
     private StrategyHealthMonitorJob job;
@@ -51,7 +52,7 @@ class StrategyHealthMonitorJobTest {
         properties.setEnabled(true);
         properties.getSignalRisk().setMaxTotalOpenCostUsdc(new BigDecimal("500"));
         job = new StrategyHealthMonitorJob(properties, followTaskMapper, followTaskService,
-                accountingService, alertSink, strategyAlertService);
+                accountingService, alertSink, strategyAlertService, marketSnapshotCollectorService);
     }
 
     @Test

@@ -16,6 +16,23 @@ public class SmartWalletProperties {
     private boolean enabled = true;
     private boolean autoExecutionEnabled = false;
     /**
+     * A1（2026-06-05 补充场景库：结算反转防线）：UMA 仲裁争议中（{@code umaDisputed=true}）的市场
+     * 禁止结算。争议期 outcome 可能翻盘，若此时按当前（可能错误）结果结算并把已实现 PnL 复利回
+     * 可用资金，随后反转则账面资金虚增且无冲正路径。fail-closed：争议期一律不结算，仅延迟到
+     * dispute 清除后下一轮按最终 outcome 正确结算；只延迟、绝不误结算金额。默认开启，可热回滚。
+     */
+    private boolean blockSettlementWhileDisputed = true;
+    /**
+     * C4（2026-06-05 补充场景库：坍塌归零结算的坏 tick 防护）：按 0 强制结算前要求多源印证。
+     * 若近 {@code worthlessSettleCorroborationWindowHours} 小时内该市场+outcome 有成交价显著高于
+     * {@code worthlessSettleContradictionPriceCeil}，则与「报价坍塌」矛盾 → 低 mark 疑似坏 tick/陈旧，
+     * 跳过本轮归零结算（只阻断、绝不误结算，留待真实结算或下轮持续低价再处理）。无近成交则不阻断
+     * （沿用既有「无 bid/无法卖出=坍塌」语义）。默认开启，可热回滚。
+     */
+    private boolean worthlessSettleRequireCorroboration = true;
+    private Integer worthlessSettleCorroborationWindowHours = 6;
+    private BigDecimal worthlessSettleContradictionPriceCeil = new BigDecimal("0.15");
+    /**
      * 白名单钱包是否允许 LIVE 执行。默认 false（仅 PAPER）。
      * 开启后，仍需白名单条目 allowedExecutionModes 包含 LIVE 且 autoExecutionEnabled=true 才真正走 LIVE。
      */
@@ -511,6 +528,15 @@ public class SmartWalletProperties {
         private long riskHaltCacheMs = 30_000L;
 
         private boolean allowSellSignal = false;
+        /**
+         * F1（2026-06-05 补充场景库：按 leader 自身减仓比例镜像跟随退出）。
+         * true → 部分跟随退出时，减仓比例 = leader 本次卖出份额 / leader 卖出前自身持仓份额
+         * （从 trade_event 历史净仓推算），更贴近 leader 的真实减仓意图；
+         * false（默认）→ 沿用既有 leaderSellUsdc / followerTotalCost 代理口径。
+         * 数据不可用（无 trade_event mapper / 无历史 / 净仓≤0）时自动回退代理口径。
+         * 默认关闭：依赖 leader 成交摄取完整性，建议在 PAPER 验证镜像比例无系统性偏差后再开启。
+         */
+        private boolean enableLeaderProRataExit = false;
         private boolean enableAutoStopLoss = false;
         private BigDecimal autoStopLossThresholdRate = new BigDecimal("0.50");
 
@@ -576,6 +602,60 @@ public class SmartWalletProperties {
         private BigDecimal entryLocalTopRangePosition = new BigDecimal("0.85");
         private BigDecimal entryLocalTopMove5mRate = new BigDecimal("0.06");
         private Integer entryTimingSnapshotMaxAgeSeconds = 180;
+
+        // ── G15 临近结算「高价低赔率」拒单门（2026-06-05 补充场景库 C2）──────────────
+        // 与既有 G6b（enableLatePoorOddsRejection，拦「临尾 + 方向概率过低 price<maxPrice」）
+        // 对称：本门拦「临尾 + 买在过高价」。买 YES@0.96 距结算 1 天 → 上行 ≤4%、下行 -100%，
+        // 跟单延迟放大尾部不对称，弊大于利。双条件 AND（剩余时间 ≤ maxHours 且 BUY 价 ≥ minPrice）
+        // 才触发；仅作用于真实新开仓（BUY 且非 DYNAMIC_FOLLOW_EXIT）。默认开启（与 G6b 对称），
+        // 阈值保守极少误伤；紧急回滚把 enableHighPriceLowRewardRejection 设 false 即可。
+        private boolean enableHighPriceLowRewardRejection = true;
+        private Integer highPriceLowRewardMaxHoursToEnd = 24;
+        private BigDecimal highPriceLowRewardMinPrice = new BigDecimal("0.95");
+
+        // ── G17 确定性净成本门（2026-06-05 补充场景库 D1：gas 尖峰 + claim 粉尘 + 手续费占比）──
+        // 不依赖被压缩的 p_win（P0-2 暂放），只看「已知确定成本（双边手续费 + 往返 gas）占 stake 的
+        // 比例」作为净 EV 的下沿保护：比例 > maxCostRatio → 拒（小 stake 被固定成本吃穿，含 claim 粉尘）；
+        // 往返 gas 估算 > maxGasUsdc → 拒（gas 尖峰门）。仅拦真实新开仓 BUY；DYNAMIC_FOLLOW_EXIT 不拦。
+        // 默认开启、阈值宽松（双边费 2×2%=4% + 微量 gas，正常 stake 远低于 10% 上限），几乎不误伤。
+        private boolean enableNetOfCostGate = true;
+        private BigDecimal netOfCostMaxCostRatio = new BigDecimal("0.10");
+        private BigDecimal netOfCostRoundTripGasUsdc = new BigDecimal("0.05");
+        private BigDecimal netOfCostMaxGasUsdc = new BigDecimal("1.00");
+        private BigDecimal netOfCostFeeRate = new BigDecimal("0.02");
+
+        // ── G16 市场异常波动熔断（2026-06-05 补充场景库 C3：新闻冲击 / 突发重定价）────────────
+        // 短窗口内该市场 trade_event 价格的绝对摆动（概率空间 0~1）超过 maxMoveRate 即暂停新开仓——
+        // 剧烈重定价时复制延迟最致命（leader 可能已撤、我方还在追）；出场(SELL/DYNAMIC_FOLLOW_EXIT)不受影响。
+        // 需 ≥ minSamples 笔窗口内成交才判定，避免单笔噪声误杀。仅在 enableVolatilityHalt=true 时查询，
+        // 默认关闭、零开销/零行为变化；启用前建议回放校准阈值，避免正常波动市场被误熔断。
+        private boolean enableVolatilityHalt = false;
+        private Integer volatilityHaltWindowMinutes = 5;
+        private BigDecimal volatilityHaltMaxMoveRate = new BigDecimal("0.20");
+        private Integer volatilityHaltMinSamples = 3;
+
+        // ── E1 资金曲线自适应仓位（2026-06-05 补充场景库：组合层 anti-martingale）──────────
+        // 账户权益(近 lookback 日累计已实现 PnL 曲线)进入回撤时整体收量：回撤越深 stake 倍率越低，
+        // 与 G0 熔断分层衔接（软收量 → 硬停手）。回撤率 = (窗口内权益峰值 − 当前权益)/资金基数
+        // （资金基数取 maxTotalOpenCostUsdc）。dd≤start→×1.0；dd≥max→×floor；之间线性。
+        // 默认关闭：启用前在 PAPER 校准 start/max/floor，避免连亏时过度收量拖累恢复。
+        private boolean enableEquityCurveThrottle = false;
+        private Integer equityCurveLookbackDays = 14;
+        private BigDecimal equityCurveThrottleStartDrawdown = new BigDecimal("0.05");
+        private BigDecimal equityCurveThrottleMaxDrawdown = new BigDecimal("0.20");
+        private BigDecimal equityCurveThrottleFloorMultiplier = new BigDecimal("0.30");
+
+        // ── B1 刷量 / 女巫 leader 检测（2026-06-05 补充场景库：alpha 真伪）──────────────────
+        // 无对手方数据时的保守启发：leader 在某市场+outcome 的窗口内 gross 成交额很大、但净敞口变化
+        // 极小（net/gross < maxNetToGrossRatio）且成交笔数 ≥ minTrades → 疑似对敲/churn 制造假量，
+        // 判 SUSPECTED_WASH → 仅 observe（拒绝跟单），不纳入实盘。阈值保守、默认关闭；注意：活跃 MM/
+        // 套利者也可能命中（B2 已由 archetype 处理），启用前需结合画像复核，避免误杀正常 scalper。
+        private boolean enableWashSuspicionGate = false;
+        private Integer washSuspicionWindowMinutes = 120;
+        private Integer washSuspicionMinTrades = 8;
+        private BigDecimal washSuspicionMinGrossUsdc = new BigDecimal("500");
+        private BigDecimal washSuspicionMaxNetToGrossRatio = new BigDecimal("0.05");
+
         private boolean enableSignalScoreGate = false;
         private BigDecimal minLiveSignalScore = new BigDecimal("72");
         private BigDecimal minStandardSignalScore = new BigDecimal("82");
