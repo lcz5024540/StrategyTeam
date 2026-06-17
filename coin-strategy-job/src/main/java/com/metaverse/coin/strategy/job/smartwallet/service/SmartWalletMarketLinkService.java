@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,6 +25,9 @@ public class SmartWalletMarketLinkService {
     private static final Pattern SPORTS_MARKET_SLUG_PATTERN = Pattern.compile(
             "^(([a-z0-9]+)-[a-z0-9]+-[a-z0-9]+-\\d{4}-\\d{2}-\\d{2})(?:-.+)?$",
             Pattern.CASE_INSENSITIVE
+    );
+    private static final Set<String> SPORTS_URL_ROOTS = Set.of(
+            "mlb", "nba", "nfl", "nhl", "wnba", "epl", "ucl"
     );
 
     private final PolymarketMarketMetadataService marketMetadataService;
@@ -135,10 +139,12 @@ public class SmartWalletMarketLinkService {
         String slug = marketSlug.trim();
         Matcher sportsMarket = SPORTS_MARKET_SLUG_PATTERN.matcher(slug);
         if (sportsMarket.matches()) {
-            return "https://polymarket.com/sports/"
-                    + sportsMarket.group(2).toLowerCase(Locale.ROOT)
-                    + "/"
-                    + sportsMarket.group(1).toLowerCase(Locale.ROOT);
+            String root = sportsMarket.group(2).toLowerCase(Locale.ROOT);
+            String eventSlug = sportsMarket.group(1).toLowerCase(Locale.ROOT);
+            if (SPORTS_URL_ROOTS.contains(root)) {
+                return "https://polymarket.com/sports/" + root + "/" + eventSlug;
+            }
+            return "https://polymarket.com/event/" + eventSlug;
         }
         return "https://polymarket.com/event/" + slug;
     }
