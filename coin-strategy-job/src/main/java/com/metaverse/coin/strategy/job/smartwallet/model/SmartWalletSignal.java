@@ -20,6 +20,7 @@ public class SmartWalletSignal {
     private SmartWalletProfile wallet;
     private PredictionMarketOpportunity market;
     private String followOutcome;
+    private String side;
     private BigDecimal walletScore;
     private BigDecimal signalScore;
     private BigDecimal recommendedStakeUsdc;

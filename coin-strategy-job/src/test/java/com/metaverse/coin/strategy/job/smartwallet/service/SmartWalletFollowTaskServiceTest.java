@@ -18,7 +18,9 @@ import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWallet
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityResolutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.service.WalletEntityResolutionService;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
+import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowTaskView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,7 @@ import java.util.Date;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -87,6 +90,8 @@ class SmartWalletFollowTaskServiceTest {
     private SmartWalletManualAllowlistService manualAllowlistService;
     @Mock
     private SmartWalletManualBlocklistService manualBlocklistService;
+    @Mock
+    private FollowPositionAdjustmentService followPositionAdjustmentService;
 
     @InjectMocks
     private SmartWalletFollowTaskService service;
@@ -598,6 +603,52 @@ class SmartWalletFollowTaskServiceTest {
         // freshEvent 留给正常链路，不被批量排空触碰
         assertEquals(Boolean.FALSE, freshEvent.getProcessed());
         verify(followTaskMapper, times(1)).insert(any());
+    }
+
+    @Test
+    void shouldSkipSellFollowExitWhenFollowerHasNoOpenPosition() {
+        SmartWalletFollowTaskEntity task = followTask(2597L, new BigDecimal("37.39"))
+                .setSide("SELL")
+                .setExecutionMode("PAPER")
+                .setStatus("PENDING");
+        SmartWalletTradeEventEntity event = tradeEvent()
+                .setId(task.getSourceEventId())
+                .setSide("SELL")
+                .setSizeUsdc(new BigDecimal("5964.24400000"));
+        SmartWalletProfileEntity profile = profile();
+        SignalRiskDecision decision = SignalRiskDecision.builder()
+                .accepted(true)
+                .entryLane("DYNAMIC_FOLLOW_EXIT")
+                .exitIntent("SOURCE_SELL")
+                .recommendedStakeUsdc(new BigDecimal("37.39"))
+                .reasons(List.of("[MARKET_TYPE] marketType=FAST_EVENT, entryLane=DYNAMIC_FOLLOW_EXIT, exitIntent=SOURCE_SELL."))
+                .build();
+
+        when(followTaskMapper.selectById(2597L)).thenReturn(task);
+        when(tradeEventMapper.selectById(task.getSourceEventId())).thenReturn(event);
+        when(profileMapper.selectOne(any())).thenReturn(profile);
+        when(signalRiskService.evaluate(eq(profile), eq(event), isNull(), eq(2597L))).thenReturn(decision);
+        when(followPositionAdjustmentService.adjust(any(), eq(event), eq("SOURCE_SELL"), eq(ExecutionMode.PAPER)))
+                .thenReturn(FollowPositionAdjustmentService.AdjustmentResult.builder()
+                        .action(FollowPositionAdjustmentService.AdjustmentAction.NO_POSITION_SKIP)
+                        .success(true)
+                        .message("Follower has no open position for this market+outcome. Safe skip.")
+                        .exitedQuantity(BigDecimal.ZERO)
+                        .exitedNotionalUsdc(BigDecimal.ZERO)
+                        .build());
+
+        SmartWalletExecutionResult result = service.executeTaskNow(2597L, ExecutionMode.PAPER);
+
+        assertFalse(result.isSuccess());
+        assertEquals("SKIPPED", result.getStatus());
+        assertTrue(result.getMessage().contains("NO_POSITION_TO_EXIT"));
+        ArgumentCaptor<SmartWalletFollowTaskEntity> taskCaptor = ArgumentCaptor.forClass(SmartWalletFollowTaskEntity.class);
+        verify(followTaskMapper).updateById(taskCaptor.capture());
+        assertEquals("SKIPPED", taskCaptor.getValue().getStatus());
+        assertEquals("NO_POSITION_TO_EXIT", taskCaptor.getValue().getPrimarySkipReason());
+        assertTrue(taskCaptor.getValue().getSkipReasonTags().contains("DYNAMIC_FOLLOW_EXIT"));
+        verify(executionGateway, org.mockito.Mockito.never()).execute(any(), any());
+        verify(accountingService, org.mockito.Mockito.never()).recordExecution(any(), any());
     }
 
     private SmartWalletFollowTaskEntity followTask(Long id, BigDecimal stake) {

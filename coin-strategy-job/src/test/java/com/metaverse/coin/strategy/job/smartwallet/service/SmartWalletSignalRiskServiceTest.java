@@ -940,6 +940,7 @@ class SmartWalletSignalRiskServiceTest {
         properties.getSignalRisk().setEnableSingleWalletOverride(false);
         properties.getSignalRisk().setKellyStakeEnabled(false);
         properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setEnableNetOfCostGate(false);
         properties.getSignalRisk().setMaxSignalAgeSeconds(300); // 300s base; HF cap = min(300s,45s) = 45s
 
         SmartWalletProfileEntity profile = baseProfile()
@@ -1346,6 +1347,79 @@ class SmartWalletSignalRiskServiceTest {
                         + decision.getReasons());
         assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("FAST_EVENT_ENTRY_BLOCK")),
                 "Long-dated sports futures must not be blocked as FAST_EVENT. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldBlockSpecificSportsMatchEvenWhenMarketEndAtLooksLongDated() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setManualAllowlistBypassFastEventBlock(true);
+        properties.getSignalRisk().setMaxHoursToMarketEnd(2000);
+        properties.getSignalRisk().setLongHorizonMinHours(48);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setQuestion("Grass Court Championships: Aryna Sabalenka vs Nikola Bartunkova")
+                .setOutcome("NIKOLA BARTUNKOVA")
+                .setSizeUsdc(new BigDecimal("5964.24"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        long sevenDaysFromNow = System.currentTimeMillis() + 7L * 24L * 3_600_000L;
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(sevenDaysFromNow)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_SPORTS)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(), "Specific sports match must not be treated as long horizon. Reasons: "
+                + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("marketType=FAST_EVENT")));
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("FAST_EVENT_ENTRY_BLOCK")));
+    }
+
+    @Test
+    void shouldRejectResolvedMarketStateBeforeNewEntry() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_RESOLVED)
+                        .acceptingOrders(true)
+                        .resolvedOutcome("NO")
+                        .marketEndAt(System.currentTimeMillis() + 3_600_000L)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_SPORTS)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertEquals("G6_MARKET_RESOLVED", decision.getFirstRejectGate());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("[MARKET_RESOLVED]")));
     }
 
     @Test

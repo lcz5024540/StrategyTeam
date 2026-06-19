@@ -492,6 +492,19 @@ public class SmartWalletSignalRiskService {
                         event.getQuestion(),
                         StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
                 );
+        boolean marketResolved = marketState != null
+                && (StringUtils.hasText(marketState.resolvedOutcome())
+                || SmartWalletMarketStateService.LIFECYCLE_RESOLVED.equalsIgnoreCase(marketState.marketLifecycle()));
+        if (marketResolved) {
+            accepted = false;
+            if (firstRejectGate == null) {
+                firstRejectGate = "G6_MARKET_RESOLVED";
+            }
+            reasons.add("[MARKET_RESOLVED] Market is already resolved; new entry is blocked"
+                    + (StringUtils.hasText(marketState.resolvedOutcome())
+                    ? " (resolvedOutcome=" + marketState.resolvedOutcome() + ")."
+                    : "."));
+        }
         if (!marketState.isActive()) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G6_MARKET_NOT_ACTIVE";
@@ -674,16 +687,11 @@ public class SmartWalletSignalRiskService {
             reasons.add("SELL signals are disabled by risk policy.");
         }
         if ("FAST_EVENT".equals(marketType)
-                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
-                && !(manualAllowlistApplied && risk.isManualAllowlistBypassFastEventBlock())) {
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G7_FAST_EVENT_BLOCKED";
             reasons.add("[FAST_EVENT_ENTRY_BLOCK] Fast-event markets are blocked for new entry; only dynamic follow-exit signals are allowed."
                     + (manualAllowlistApplied ? " [MANUAL_ALLOWLIST_FAST_EVENT_NOTE] Allowlist wallet also blocked — API rate-limit constraints prevent fast-event tracking." : ""));
-        } else if ("FAST_EVENT".equals(marketType)
-                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
-                && manualAllowlistApplied) {
-            reasons.add("[MANUAL_ALLOWLIST_FAST_EVENT_BYPASS] Fast-event entry block bypassed for manual allowlist paper validation.");
         }
 
         boolean hasDuplicatePosition = risk.isBlockDuplicateOpenPosition()
@@ -1861,6 +1869,12 @@ public class SmartWalletSignalRiskService {
                                      Long marketEndAt,
                                      SmartWalletProperties.SignalRisk risk) {
         long fastHours = defaultInt(risk.getFastEventMaxHours(), 24);
+        String text = ((event == null ? "" : nullToEmpty(event.getQuestion())) + " "
+                + (marketState == null ? "" : nullToEmpty(marketState.normalizedCategory())) + " "
+                + (marketState == null ? "" : nullToEmpty(marketState.sourceCategory()))).toLowerCase(Locale.ROOT);
+        if (isSpecificSportsEvent(text)) {
+            return "FAST_EVENT";
+        }
         if (marketEndAt != null && marketEndAt > 0) {
             long remainingMs = marketEndAt - System.currentTimeMillis();
             if (remainingMs > 0 && remainingMs <= fastHours * 3600_000L) {
@@ -1876,9 +1890,6 @@ public class SmartWalletSignalRiskService {
                 return "LONG_HORIZON";
             }
         }
-        String text = ((event == null ? "" : nullToEmpty(event.getQuestion())) + " "
-                + (marketState == null ? "" : nullToEmpty(marketState.normalizedCategory())) + " "
-                + (marketState == null ? "" : nullToEmpty(marketState.sourceCategory()))).toLowerCase(Locale.ROOT);
         if (containsAny(text, List.of("sports", "sport", "nba", "nfl", "nhl", "mlb", "soccer", "football",
                 "tennis", "ufc", "boxing", "mma", "esports", "e-sports", "cs2", "counter-strike",
                 "league of legends", "dota", "fifa", "valorant", "overwatch", " vs "))) {
@@ -1889,6 +1900,16 @@ public class SmartWalletSignalRiskService {
             return "STANDARD_BINARY";
         }
         return "UNKNOWN";
+    }
+
+    private boolean isSpecificSportsEvent(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        boolean sports = containsAny(text, List.of("sports", "sport", "nba", "nfl", "nhl", "mlb", "soccer",
+                "football", "tennis", "ufc", "boxing", "mma", "esports", "e-sports", "cs2",
+                "counter-strike", "league of legends", "dota", "fifa", "valorant", "overwatch"));
+        return sports && containsAny(text, List.of(" vs ", " v ", " at "));
     }
 
     private boolean containsAny(String value, List<String> needles) {

@@ -155,6 +155,27 @@ public class LoggingPolymarketExecutionGateway implements PolymarketExecutionGat
                     .tradingFeeUsdc(liveFee)
                     .build();
         }
+        String requestedSide = signal.getSide();
+        if (requestedSide != null && "SELL".equalsIgnoreCase(requestedSide)) {
+            String message = "Paper entry gateway does not create SELL orders; sell signals must be handled by dynamic follow-exit.";
+            log.warn("{} action=创建PAPER模拟跟单订单 result=拒绝 signalId={} marketId={} outcome={} side={} reason={}",
+                    LOG_PREFIX, signal.getSignalId(), marketId, outcome, requestedSide, message);
+            return SmartWalletExecutionResult.builder()
+                    .signalId(signal.getSignalId())
+                    .mode(ExecutionMode.PAPER)
+                    .success(false)
+                    .message("[SELL_ENTRY_BLOCKED] " + message)
+                    .marketId(marketId)
+                    .outcome(outcome)
+                    .side(requestedSide)
+                    .orderType("GTC")
+                    .status("SKIPPED")
+                    .price(signal.getMarket() == null ? null : signal.getMarket().getPrice())
+                    .notionalUsdc(signal.getRecommendedStakeUsdc())
+                    .feeUsdc(BigDecimal.ZERO)
+                    .tradingFeeUsdc(BigDecimal.ZERO)
+                    .build();
+        }
         java.math.BigDecimal paperNotional = signal.getRecommendedStakeUsdc();
         java.math.BigDecimal paperBasePrice = signal.getMarket() == null ? null : signal.getMarket().getPrice();
         // 盈利审计修复(2026-06-03, P0-1)：纸面开仓此前按 best-ask 触价、零滑点直接 FILLED，
