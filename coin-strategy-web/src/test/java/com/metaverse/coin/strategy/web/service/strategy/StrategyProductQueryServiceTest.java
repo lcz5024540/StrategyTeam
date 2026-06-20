@@ -3,9 +3,11 @@ package com.metaverse.coin.strategy.web.service.strategy;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.StrategyRuntimeConfigMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageFundingSettlement;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.StrategyRuntimeConfigEntity;
 import com.metaverse.coin.strategy.web.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.web.model.StrategyDashboardOverviewView;
 import com.metaverse.coin.strategy.web.model.StrategyFactorView;
@@ -63,6 +65,8 @@ class StrategyProductQueryServiceTest {
     private SingleExchangeArbitrageOrderMapper orderMapper;
     @Mock
     private SingleExchangeArbitrageFundingSettlementMapper settlementMapper;
+    @Mock
+    private StrategyRuntimeConfigMapper strategyRuntimeConfigMapper;
 
     private StrategyProductQueryService service;
 
@@ -74,7 +78,8 @@ class StrategyProductQueryServiceTest {
                 positionMapper,
                 orderMapper,
                 settlementMapper,
-                new SingleExchangeSpotFuturesProperties(3, new BigDecimal("0.0005"))
+                new SingleExchangeSpotFuturesProperties(3, new BigDecimal("0.0005")),
+                strategyRuntimeConfigMapper
         );
         lenient().when(positionMapper.selectList(any())).thenReturn(List.of());
         lenient().when(orderMapper.selectList(any())).thenReturn(List.of());
@@ -269,6 +274,11 @@ class StrategyProductQueryServiceTest {
                 /* stopLossRealizedPnlUsdc */ BigDecimal.ZERO
         );
         lenient().when(reportReadService.performance(any())).thenReturn(performance);
+        lenient().when(strategyRuntimeConfigMapper.selectOne(any()))
+                .thenReturn(new StrategyRuntimeConfigEntity()
+                        .setStrategyCode("POLYMARKET_COPY")
+                        .setConfigKey("smart-wallet.signal-risk.max-total-open-cost-usdc")
+                        .setConfigValue("850"));
 
         SmartWalletPnlSummaryView summary = new SmartWalletPnlSummaryView(
                 /* totalOrders */ 10,

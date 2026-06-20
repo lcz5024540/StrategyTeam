@@ -22,6 +22,9 @@ public class SmartWalletReportReadService {
     private static final List<String> CLOSED_STATUSES = List.of("CLOSED", "SETTLED", "SETTLEMENT_FAILED");
     private static final List<String> PENDING_SETTLEMENT_STATUSES = List.of("SETTLEMENT_PENDING_ORACLE", "RESOLVED_UNCLAIMED");
     private static final List<String> CAPITAL_LOCKED_STATUSES = List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE", "RESOLVED_UNCLAIMED");
+    private static final List<String> TRADE_ORDER_ACTIVE_STATUSES = List.of("OPEN", "PARTIALLY_CLOSED");
+    private static final List<String> TRADE_ORDER_PENDING_SETTLEMENT_STATUSES = List.of("SETTLEMENT_PENDING_ORACLE", "RESOLVED_UNCLAIMED");
+    private static final List<String> TRADE_ORDER_COMPLETED_STATUSES = List.of("CLOSED", "SETTLED", "EXITED", "CLAIMED");
 
     private final SmartWalletOrderMapper orderMapper;
     private final SmartWalletFillMapper fillMapper;
@@ -105,11 +108,10 @@ public class SmartWalletReportReadService {
         List<SmartWalletTradeOrderEntity> tradeOrders = tradeOrderMapper.selectList(new LambdaQueryWrapper<>());
         Date now = new Date();
 
-        // 总览页面所有"订单 / 盈利订单 / 亏损订单 / 收益"统一以 smart_wallet_trade_order 为口径，
-        // 让首页统计与"订单记录页(/trade-orders/page)"按 pnl 过滤出的条数严格一致。
+        // 总览页面收益统一以 smart_wallet_trade_order 为口径；胜率只纳入已完成/已结算订单。
         int totalOrders = 0, filledOrders = 0;
         int openPos = 0, pendingPos = 0, closedPos = 0;
-        int winPos = 0, losePos = 0;                       // 按 total_pnl 符号统计：覆盖所有状态
+        int winPos = 0, losePos = 0;
         BigDecimal unrealized = BigDecimal.ZERO;
         BigDecimal pendingSettlement = BigDecimal.ZERO;
         BigDecimal realizedAsOfNow = BigDecimal.ZERO;
@@ -126,25 +128,31 @@ public class SmartWalletReportReadService {
 
             BigDecimal pnl = safe(order.getTotalPnlUsdc());
 
-            // 盈利/亏损订单数 == 订单记录页按 pnl 过滤的条数（任何状态都计入）
-            if (pnl.compareTo(BigDecimal.ZERO) > 0) {
-                winPos++;
-                totalWins = totalWins.add(pnl);
-            } else if (pnl.compareTo(BigDecimal.ZERO) < 0) {
-                losePos++;
-                totalLosses = totalLosses.add(pnl.abs());
-            }
-
-            if (isOpenTradeOrder(order)) {
-                openPos++;
-                unrealized = unrealized.add(pnl);
-            } else if (isFutureCompletedTradeOrder(order, now)) {
-                // 已平/已结算但 settled_at / last_exit_at 还在未来：算待结算
-                pendingPos++;
-                pendingSettlement = pendingSettlement.add(pnl);
-            } else {
-                closedPos++;
-                realizedAsOfNow = realizedAsOfNow.add(pnl);
+            TradeOrderSettlementBucket bucket = classifyTradeOrderSettlement(order, now);
+            switch (bucket) {
+                case OPEN -> {
+                    openPos++;
+                    unrealized = unrealized.add(pnl);
+                }
+                case PENDING_SETTLEMENT -> {
+                    // Oracle pending / unresolved future outcome: not part of win-rate yet.
+                    pendingPos++;
+                    pendingSettlement = pendingSettlement.add(pnl);
+                }
+                case COMPLETED -> {
+                    closedPos++;
+                    realizedAsOfNow = realizedAsOfNow.add(pnl);
+                    if (pnl.compareTo(BigDecimal.ZERO) > 0) {
+                        winPos++;
+                        totalWins = totalWins.add(pnl);
+                    } else if (pnl.compareTo(BigDecimal.ZERO) < 0) {
+                        losePos++;
+                        totalLosses = totalLosses.add(pnl.abs());
+                    }
+                }
+                case IGNORED -> {
+                    // Failed/skipped/unknown trade-order states are operational outcomes, not settled trades.
+                }
             }
         }
 
@@ -328,7 +336,39 @@ public class SmartWalletReportReadService {
     }
 
     private boolean isOpenTradeOrder(SmartWalletTradeOrderEntity order) {
-        return order != null && "OPEN".equalsIgnoreCase(order.getStatus());
+        return order != null && containsIgnoreCase(TRADE_ORDER_ACTIVE_STATUSES, order.getStatus());
+    }
+
+    private TradeOrderSettlementBucket classifyTradeOrderSettlement(SmartWalletTradeOrderEntity order, Date now) {
+        if (order == null) {
+            return TradeOrderSettlementBucket.IGNORED;
+        }
+        if (isPendingSettlementTradeOrder(order, now)) {
+            return TradeOrderSettlementBucket.PENDING_SETTLEMENT;
+        }
+        if (isOpenTradeOrder(order)) {
+            return TradeOrderSettlementBucket.OPEN;
+        }
+        if (isCompletedTradeOrderForWinRate(order, now)) {
+            return TradeOrderSettlementBucket.COMPLETED;
+        }
+        return TradeOrderSettlementBucket.IGNORED;
+    }
+
+    private boolean isPendingSettlementTradeOrder(SmartWalletTradeOrderEntity order, Date now) {
+        if (order == null) {
+            return false;
+        }
+        return containsIgnoreCase(TRADE_ORDER_PENDING_SETTLEMENT_STATUSES, order.getStatus())
+                || isOpenTradeOrderPastMarketEnd(order, now)
+                || isFutureCompletedTradeOrder(order, now);
+    }
+
+    private boolean isCompletedTradeOrderForWinRate(SmartWalletTradeOrderEntity order, Date now) {
+        if (order == null || isOpenTradeOrder(order) || isPendingSettlementTradeOrder(order, now)) {
+            return false;
+        }
+        return containsIgnoreCase(TRADE_ORDER_COMPLETED_STATUSES, order.getStatus());
     }
 
     private boolean isFutureCompletedTradeOrder(SmartWalletTradeOrderEntity order, Date now) {
@@ -337,6 +377,25 @@ public class SmartWalletReportReadService {
         }
         Date outcomeAt = order.getSettledAt() != null ? order.getSettledAt() : order.getLastExitAt();
         return outcomeAt != null && outcomeAt.after(now);
+    }
+
+    private boolean isOpenTradeOrderPastMarketEnd(SmartWalletTradeOrderEntity order, Date now) {
+        if (order == null || now == null || !isOpenTradeOrder(order)) {
+            return false;
+        }
+        Long marketEndAt = order.getMarketEndAt();
+        return marketEndAt != null && marketEndAt > 0 && marketEndAt <= now.getTime();
+    }
+
+    private boolean containsIgnoreCase(List<String> statuses, String status) {
+        return status != null && statuses.stream().anyMatch(candidate -> candidate.equalsIgnoreCase(status));
+    }
+
+    private enum TradeOrderSettlementBucket {
+        OPEN,
+        PENDING_SETTLEMENT,
+        COMPLETED,
+        IGNORED
     }
 
     private BigDecimal realizedPnl(SmartWalletPositionEntity p) {
