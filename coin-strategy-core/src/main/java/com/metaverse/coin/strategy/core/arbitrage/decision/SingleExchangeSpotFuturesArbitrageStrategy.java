@@ -105,6 +105,21 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         return running.get();
     }
 
+    public String runOnce() {
+        boolean wasRunning = running.get();
+        if (!wasRunning) {
+            running.set(true);
+        }
+        try {
+            executeLogic();
+            return "Single exchange spot-futures arbitrage run-once completed.";
+        } finally {
+            if (!wasRunning) {
+                running.set(false);
+            }
+        }
+    }
+
     private void executeLogic() {
         if (!running.get()) {
             return;

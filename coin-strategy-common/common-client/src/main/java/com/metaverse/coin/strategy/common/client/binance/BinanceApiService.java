@@ -16,10 +16,15 @@ import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceOrder
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceTradeHistory;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceApiKeyPermission;
 import com.metaverse.coin.strategy.common.model.binance.entity.wallet.BinanceUniversalTransferResult;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Credentials;
+import okhttp3.OkHttpClient;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URI;
@@ -33,6 +38,9 @@ public class BinanceApiService {
     private final SpotClient spotClient;
     private final UMFuturesClientImpl futuresClient;
     private final CMFuturesClientImpl coinFuturesClient;
+    private final String apiKey;
+    @Getter(AccessLevel.NONE)
+    private final String secretKey;
 
     private final BinanceSpotService spotService;
     private final BinanceFuturesService futuresService;
@@ -66,14 +74,17 @@ public class BinanceApiService {
         UMFuturesClientImpl futuresClient = new UMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl);
         CMFuturesClientImpl coinFuturesClient = new CMFuturesClientImpl(apiKey, secretKey, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com");
         applyProxyIfConfigured(spotClient, futuresClient, coinFuturesClient, proxyHost, proxyPort, proxyType, proxyUsername, proxyPassword);
+        OkHttpClient proxiedHttpClient = buildOkHttpClient(proxyHost, proxyPort, proxyType, proxyUsername, proxyPassword);
 
         this.spotClient = spotClient;
         this.futuresClient = futuresClient;
         this.coinFuturesClient = coinFuturesClient;
+        this.apiKey = apiKey;
+        this.secretKey = secretKey;
 
-        this.spotService = new BinanceSpotService(spotClient);
-        this.futuresService = new BinanceFuturesService(futuresClient);
-        this.coinFuturesService = new BinanceCoinFuturesService(coinFuturesClient, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com", apiKey, secretKey);
+        this.spotService = new BinanceSpotService(spotClient, apiKey, spotBaseUrl, proxiedHttpClient);
+        this.futuresService = new BinanceFuturesService(futuresClient, futuresBaseUrl, apiKey, secretKey, proxiedHttpClient);
+        this.coinFuturesService = new BinanceCoinFuturesService(coinFuturesClient, futuresBaseUrl != null ? futuresBaseUrl : "https://dapi.binance.com", apiKey, secretKey, proxiedHttpClient);
         this.walletService = new BinanceWalletService(spotClient, apiKey, secretKey, spotBaseUrl);
         this.marginService = new BinanceMarginService(spotClient, spotBaseUrl, apiKey, secretKey);
         this.marketDataService = new BinanceMarketDataService(spotClient);
@@ -106,6 +117,25 @@ public class BinanceApiService {
         log.info("Configured Binance clients to use {} proxy {}:{}", proxy.type(), proxySettings.host(), proxySettings.port());
     }
 
+    private static OkHttpClient buildOkHttpClient(String proxyHost,
+                                                  int proxyPort,
+                                                  String proxyType,
+                                                  String proxyUsername,
+                                                  String proxyPassword) {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder();
+        if (!hasText(proxyHost)) {
+            return builder.build();
+        }
+        ProxySettings proxySettings = normalizeProxySettings(proxyHost, proxyPort, proxyType);
+        Proxy proxy = new Proxy(proxySettings.type(), new InetSocketAddress(proxySettings.host(), proxySettings.port()));
+        builder.proxy(proxy);
+        okhttp3.Authenticator authenticator = buildProxyAuthenticator(proxyUsername, proxyPassword);
+        if (authenticator != null) {
+            builder.proxyAuthenticator(authenticator);
+        }
+        return builder.build();
+    }
+
     private static Proxy.Type resolveProxyType(String proxyType) {
         if ("SOCKS".equalsIgnoreCase(proxyType) || "SOCKS5".equalsIgnoreCase(proxyType)) {
             return Proxy.Type.SOCKS;
@@ -125,6 +155,24 @@ public class BinanceApiService {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    public String signHmacSha256Hex(String payload) {
+        if (!hasText(secretKey)) {
+            throw new IllegalStateException("Binance secret key is required for signing requests");
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secretKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] bytes = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(bytes.length * 2);
+            for (byte item : bytes) {
+                builder.append(String.format("%02x", item));
+            }
+            return builder.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to sign Binance request", e);
+        }
     }
 
     private static ProxySettings normalizeProxySettings(String proxyHost, int proxyPort, String proxyType) {
@@ -186,6 +234,10 @@ public class BinanceApiService {
     
     public BinanceOrder placeSpotOrder(String symbol, String side, String type, String timeInForce, String quantity, String price) {
         return spotService.placeOrder(symbol, side, type, timeInForce, quantity, price);
+    }
+
+    public String testSpotOrder(String symbol, String side, String type, String timeInForce, String quantity, String price) {
+        return spotService.testNewOrder(symbol, side, type, timeInForce, quantity, price);
     }
     
     public BinanceOrder getSpotOrder(String symbol, Long orderId, String origClientOrderId) {
@@ -333,6 +385,11 @@ public class BinanceApiService {
     public BinanceFuturesOrder placeFuturesOrder(String symbol, String side, String positionSide, String type, 
                                     String timeInForce, String quantity, String price, Boolean reduceOnly) {
         return futuresService.placeOrder(symbol, side, positionSide, type, timeInForce, quantity, price, reduceOnly);
+    }
+
+    public void testFuturesOrder(String symbol, String side, String positionSide, String type,
+                                 String timeInForce, String quantity, String price, Boolean reduceOnly) {
+        futuresService.testNewOrder(symbol, side, positionSide, type, timeInForce, quantity, price, reduceOnly);
     }
 
     public BinanceFuturesOrder openLong(String symbol, String type, String quantity, String price, String timeInForce) {

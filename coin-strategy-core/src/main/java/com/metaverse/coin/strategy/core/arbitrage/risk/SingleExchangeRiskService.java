@@ -8,10 +8,12 @@ import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccou
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo.BinanceBalance;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeDepthMonitor;
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeDepthSnapshot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Service;
 
@@ -36,6 +38,8 @@ public class SingleExchangeRiskService {
     private final BinanceApiService binanceApiService;
     private final SingleExchangeDepthMonitor depthMonitor;
     private final SingleExchangeSpotFuturesProperties properties;
+    @Autowired(required = false)
+    private BinanceQueryDataProvider queryDataProvider;
 
     /**
      * Check if a new trade is allowed.
@@ -222,7 +226,7 @@ public class SingleExchangeRiskService {
 
     public BigDecimal getMarginRatio() {
         try {
-            BinanceFuturesAccount futuresAccount = binanceApiService.getFuturesService().account();
+            BinanceFuturesAccount futuresAccount = getQueryDataProvider().getFuturesAccount();
             BigDecimal marginRatio = calculateMarginRatio(futuresAccount);
             log.info("Current Futures Margin Ratio: {}", marginRatio);
             return marginRatio;
@@ -374,7 +378,7 @@ public class SingleExchangeRiskService {
         }
 
         try {
-            BinanceFuturesAccount futuresAccount = binanceApiService.getFuturesAccount();
+            BinanceFuturesAccount futuresAccount = getQueryDataProvider().getFuturesAccount();
             futuresAvailableBalance = Optional.ofNullable(futuresAccount.getAssets())
                     .orElse(List.of())
                     .stream()
@@ -409,6 +413,13 @@ public class SingleExchangeRiskService {
             return new BigDecimal("999");
         }
         return marginBalance.divide(maintMargin, 2, RoundingMode.HALF_DOWN);
+    }
+
+    private BinanceQueryDataProvider getQueryDataProvider() {
+        if (queryDataProvider != null) {
+            return queryDataProvider;
+        }
+        return new com.metaverse.coin.strategy.core.arbitrage.market.HttpBinanceQueryDataProvider(binanceApiService);
     }
 
     private record VwapEstimate(BigDecimal vwap, BigDecimal availableQty, boolean sufficient) {

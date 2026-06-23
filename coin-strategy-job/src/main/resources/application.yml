@@ -39,11 +39,38 @@ binance:
     proxy-host: "127.0.0.1"
     proxy-port: 7897
     proxy-type: HTTP
+  websocket:
+    # [FIXED-ONCE] 查询读取路径优先使用 Binance WebSocket 缓存；写接口仍走 HTTP。
+    enabled: true
+    # [FIXED-ONCE] 公共行情流提供标记价格、资金费率、ticker 和深度快照。
+    public-market-enabled: true
+    # [TUNE] WebSocket 缓存条目的最大有效期，超过后使用 HTTP 回补。
+    cache-ttl-ms: 5000
+    # [FIXED-ONCE] 保持启用，以便启动、断线和仅支持 REST 的读取场景能安全对账回补。
+    http-fallback-enabled: true
+    # [TUNE] Binance WebSocket 连接失败后的重连延迟。
+    reconnect-delay-ms: 5000
+    # [FIXED-ONCE] 应用层 JSON 发送速率低于 Binance 5 条/秒限制，为自动 PONG 帧预留余量。
+    outbound-message-limit-per-second: 4
+    # [FIXED-ONCE] Binance 限制每个 IP 每 5 分钟最多 300 次 WebSocket 连接请求。
+    connection-request-limit: 300
+    connection-request-window-ms: 300000
+    # [FIXED-ONCE] Binance 限制单个 WebSocket 连接最多订阅 1024 个 stream。
+    max-streams-per-connection: 1024
+    # [TUNE] 0 表示订阅批次按连接剩余 stream 容量自动拆分。
+    public-subscribe-batch-size: 0
+    # [FIXED-ONCE] 公共 WebSocket 端点。
+    spot-stream-url: "wss://stream.binance.com"
+    futures-stream-url: "wss://fstream.binance.com"
+    # [TUNE] 可选的启动订阅交易对，多个交易对用英文逗号分隔；为空表示从活跃策略使用情况动态订阅。
+    symbols: ""
 
 arbitrage:
   spot-futures:
     # [TUNE] 单交易所期现套利策略的主交易对。
     symbol: "BTCUSDT"
+    #暂时用模拟单：BINANCE_TEST，后续用真实单：BINANCE_LIVE
+    order-execution-mode: "BINANCE_TEST"
     # [TUNE] 单次开仓使用的现货侧预算金额（USDT），杠杆应用前的基准资金。
     trade-usdt-amount: 100
     # [TUNE] 对冲用合约空单的杠杆倍数。建议保持在 1x-3x 区间；
@@ -88,6 +115,12 @@ arbitrage:
     emergency-close-liquidity-override-enabled: true
     # [TUNE] 是否启用“现货账户 -> U 本位合约账户”的自动再平衡划转。
     rebalance-enabled: true
+    # [FIXED-ONCE] 启用持久化的 FundingArb 仓位/订单跟踪以及自动平仓检查
+    tracking-enabled: true
+    # [FIXED-ONCE] 每轮跟踪任务结束后等待多久再执行下一轮，默认 60 秒
+    tracking-fixed-delay-ms: 60000
+    # [TUNE] 每轮跟踪扫描的最大活跃持久化仓位数
+    tracking-position-limit: 50
     # [TUNE] 当合约保证金率低于该值时，触发自动补充合约保证金。
     rebalance-threshold-margin-ratio: 1.5
     # [TUNE] 自动划转后的目标保证金率；系统会按该目标反推所需划转金额。

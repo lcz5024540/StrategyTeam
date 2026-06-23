@@ -40,7 +40,7 @@ public class SecretDecryptor {
         } else {
             this.privateKey = null;
             this.publicKey = null;
-            log.info("[SecretDecryptor] APP_RSA_PRIVATE_KEY_PATH not set; " +
+            log.error("[SecretDecryptor] APP_RSA_PRIVATE_KEY_PATH not set; " +
                      "ENC(...) values will cause startup failure if present.");
         }
     }

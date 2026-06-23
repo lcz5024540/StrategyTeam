@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.*;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
 
 import java.util.Calendar;
 import java.util.LinkedHashMap;
@@ -19,6 +20,10 @@ public class BinanceSpotService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public BinanceSpotService(SpotClient spotClient) {
+        this(spotClient, null, null, null);
+    }
+
+    public BinanceSpotService(SpotClient spotClient, String apiKey, String baseUrl, OkHttpClient httpClient) {
         this.spotClient = spotClient;
         this.objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }

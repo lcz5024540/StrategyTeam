@@ -5,7 +5,9 @@ import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFu
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
+import com.metaverse.coin.strategy.job.funding.service.FundingArbLifecycleService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -33,6 +35,12 @@ class BinanceSingleExchangeFundingRateArbitrageServiceTest {
 
     @Mock
     private SingleExchangeRiskService riskService;
+
+    @Mock
+    private FundingArbLifecycleService lifecycleService;
+
+    @Mock
+    private BinanceQueryDataProvider queryDataProvider;
 
     @InjectMocks
     private BinanceSingleExchangeFundingRateArbitrageService arbitrageService;
@@ -71,8 +79,8 @@ class BinanceSingleExchangeFundingRateArbitrageServiceTest {
                 .leverage(3)
                 .build();
 
-        when(binanceApiService.getFuturesFundingRate("BTCUSDT")).thenReturn(btcRate);
-        when(binanceApiService.getFuturesFundingRate("ETHUSDT")).thenReturn(ethRate);
+        when(queryDataProvider.getPremiumIndex("BTCUSDT")).thenReturn(btcRate);
+        when(queryDataProvider.getPremiumIndex("ETHUSDT")).thenReturn(ethRate);
         when(orderExecutor.createSpotFuturesPlan("BTCUSDT", new BigDecimal("50"), 3)).thenReturn(btcPlan);
         when(orderExecutor.createSpotFuturesPlan("ETHUSDT", new BigDecimal("50"), 3)).thenReturn(ethPlan);
         when(riskService.checkTradeRisk(btcPlan)).thenReturn(true);
@@ -98,7 +106,7 @@ class BinanceSingleExchangeFundingRateArbitrageServiceTest {
                 .symbol("BTCUSDT")
                 .lastFundingRate(new BigDecimal("0.0001"))
                 .build();
-        when(binanceApiService.getFuturesFundingRate("BTCUSDT")).thenReturn(lowRate);
+        when(queryDataProvider.getPremiumIndex("BTCUSDT")).thenReturn(lowRate);
 
         String result = arbitrageService.executeArbitrage(List.of("BTCUSDT"), new BigDecimal("50"), new BigDecimal("0.0005"), 3);
 
