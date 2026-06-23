@@ -30,12 +30,31 @@ public class SmartWalletPositionEntity {
     private BigDecimal feePolTotal;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal unrealizedPnlUsdc;
+    /**
+     * 可领取收益USDC. 此字段当前**仅存在于 entity / view 层, 不持久化到 smart_wallet_position 表**.
+     * 业务上通过 SmartWalletAccountingService.lockedClaimProceedsForPosition(position) 在
+     * RESOLVED_UNCLAIMED 状态下实时计算; SmartWalletReportReadService /
+     * SmartWalletSettlementReadService 读到的 getter 永远是 null (safe() 会转 0), 这是历史现状,
+     * 不是 bug 也不是本次修改引入. 加 @TableField(exist = false) 是为了让 MyBatis-Plus 自动
+     * SELECT 不再带上 claimable_proceeds_usdc 列, 避免 BadSqlGrammarException.
+     * 未来如果业务要落库, 再去掉这个注解 + 加 DDL.
+     */
+    @TableField(exist = false)
+    private BigDecimal claimableProceedsUsdc;
     private BigDecimal lastMarkPrice;
     private Date openedAt;
     private Date lastFilledAt;
     private Date closedAt;
     private String status;
     private String source;  // FOLLOW_TRADE / WEATHER
+
+    /**
+     * 仓位首次开仓时的 trace_id (此后即使 trade_order 合并也不覆盖).
+     * 用于按 trace_id 反查"这笔 leader 行为最终成了哪个仓位".
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md (W1-T3).
+     */
+    private String originTraceId;
+
     private Date createdAt;
     private Date updatedAt;
 

@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletMarketSnapshotMa
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -31,8 +32,11 @@ public class MarketSnapshotCollectorService {
     private final PolymarketMarketDataStreamService marketDataStreamService;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final PolymarketMarketDataCacheService marketDataCache;
+    private final SmartWalletProperties smartWalletProperties;
     private final LongAdder wsSnapshotHits = new LongAdder();
     private final LongAdder restSnapshotFallbacks = new LongAdder();
+    private final LongAdder hotPathWsHits = new LongAdder();
+    private final LongAdder hotPathDbFallbacks = new LongAdder();
 
     public SmartWalletMarketSnapshotEntity saveSnapshot(SmartWalletMarketSnapshotEntity snapshot) {
         if (snapshot == null || !StringUtils.hasText(snapshot.getMarketId()) || snapshot.getSnapshotAt() == null) {
@@ -71,7 +75,19 @@ public class MarketSnapshotCollectorService {
         PolymarketApiClient.OrderBook orderBook = usedWs
                 ? marketDataSnapshot.getOrderBook()
                 : marketDataCache.getOrderBook(tokenId);
-        List<PolymarketApiClient.MarketTrade> trades = polymarketApiClient.fetchMarketTrades(conditionId, 50, recentEpochSeconds(120));
+        // 问题4 修复（2026-06-02）：CLOB /trades 端点需要 API key，test 环境未配置 → 401。
+        // trades 仅用于补充 lastTradePrice/volume 等次要字段；盘口核心字段（bestBid/bestAsk/
+        // depth/mid）来自 orderBook。此前 trades 抛 401 会让整个 collectSnapshot 抛出、快照不落库，
+        // 导致 smart_wallet_market_snapshot 长期为空。这里把 trades 拉取降级为非致命：失败则空列表，
+        // 仍保存基于盘口的快照，保证开单/估值价能用上真实盘口。
+        List<PolymarketApiClient.MarketTrade> trades;
+        try {
+            trades = polymarketApiClient.fetchMarketTrades(conditionId, 50, recentEpochSeconds(120));
+        } catch (Exception tradesEx) {
+            trades = java.util.List.of();
+            log.debug("Market snapshot trades fetch failed (non-fatal) marketId={} outcome={}: {}",
+                    conditionId, normalizedOutcome, tradesEx.getMessage());
+        }
         BigDecimal mid = safe(orderBook.getMidpoint());
         if (mid.compareTo(BigDecimal.ZERO) <= 0) {
             mid = midpointFromTop(orderBook);
@@ -141,6 +157,15 @@ public class MarketSnapshotCollectorService {
         }
     }
 
+    /** R3(2026-06-03)：最近一条快照的时间，用于健康监控判断盘口快照管道是否停滞/为空（null=表空）。 */
+    public java.util.Date latestSnapshotAt() {
+        SmartWalletMarketSnapshotEntity latest = marketSnapshotMapper.selectOne(
+                new LambdaQueryWrapper<SmartWalletMarketSnapshotEntity>()
+                        .orderByDesc(SmartWalletMarketSnapshotEntity::getSnapshotAt)
+                        .last("limit 1"));
+        return latest == null ? null : latest.getSnapshotAt();
+    }
+
     public List<SmartWalletMarketSnapshotEntity> listRecentSnapshots(String marketId, String outcome, int limit) {
         LambdaQueryWrapper<SmartWalletMarketSnapshotEntity> query = new LambdaQueryWrapper<SmartWalletMarketSnapshotEntity>()
                 .orderByDesc(SmartWalletMarketSnapshotEntity::getSnapshotAt)
@@ -185,6 +210,111 @@ public class MarketSnapshotCollectorService {
                 .orderByDesc(SmartWalletMarketSnapshotEntity::getSnapshotAt)
                 .last("limit 1");
         return marketSnapshotMapper.selectOne(query);
+    }
+
+    /**
+     * F-P1-7: Hot-path "freshest available snapshot" read.
+     *
+     * <p>当 {@code smart-wallet.polymarket.enable-ws-hot-path-snapshot=true} 时优先尝试从
+     * {@link PolymarketMarketDataStreamService#getSnapshot(String)} (in-memory WS 实时数据,
+     * 时延 < 1s) 合成一个 {@link SmartWalletMarketSnapshotEntity} 返回, 不可用 / stale
+     * (超过 {@code wsHotPathSnapshotMaxAgeMs}) 时自动回落到 {@link #findLatestSnapshotAtOrBefore}
+     * (45s polling 入库的 DB 结果)。开关关闭 (默认) 时与 {@code findLatestSnapshotAtOrBefore(..., now)}
+     * 完全一致, 零回归风险。
+     *
+     * <p>设计意图: 让信号风控 / 入场漂移 / 流动性深度判定的 hot-path 不再等 45s polling 周期,
+     * 减少 G6/G7/G9 在快速行情下的误判。WS 暂时只覆盖 orderbook + lastTradePrice, 其他维度
+     * (tradeCount30s / buyVolume30s / realizedVol30s / timeToEndSeconds) 在合成 snapshot 中
+     * 留空(下游消费方按 null 走 fallback 行为, 不会引入脏数据)。
+     *
+     * @return 最新可用 snapshot, 若 WS 与 DB 均不可用则返回 null
+     */
+    public SmartWalletMarketSnapshotEntity findFreshSnapshot(String marketId, String outcome) {
+        if (!StringUtils.hasText(marketId)) {
+            return null;
+        }
+        if (smartWalletProperties == null
+                || smartWalletProperties.getPolymarket() == null
+                || !smartWalletProperties.getPolymarket().isEnableWsHotPathSnapshot()) {
+            // 开关关闭或配置缺失 — 旧行为 (DB polling 结果), 不计入 hot-path 计数器
+            return findLatestSnapshotAtOrBefore(marketId, outcome, new Date());
+        }
+        SmartWalletMarketSnapshotEntity wsSnapshot = tryBuildHotPathSnapshotFromWs(marketId, outcome);
+        if (wsSnapshot != null) {
+            hotPathWsHits.increment();
+            return wsSnapshot;
+        }
+        hotPathDbFallbacks.increment();
+        return findLatestSnapshotAtOrBefore(marketId, outcome, new Date());
+    }
+
+    /**
+     * 尝试从 WS 内存 snapshot 合成一个轻量 hot-path snapshot。
+     * 失败 / stale / 元数据缺失全部返回 null, 让调用方走 DB fallback。
+     */
+    private SmartWalletMarketSnapshotEntity tryBuildHotPathSnapshotFromWs(String marketId, String outcome) {
+        try {
+            PolymarketApiClient.MarketMetadata metadata = marketMetadataService.getByConditionId(marketId);
+            if (metadata == null || metadata.getOutcomeTokenIds() == null) {
+                return null;
+            }
+            String normalizedOutcome = normalizeOutcome(outcome);
+            String tokenId = metadata.getOutcomeTokenIds().get(normalizedOutcome);
+            if (!StringUtils.hasText(tokenId)) {
+                return null;
+            }
+            PolymarketMarketDataStreamService.MarketDataSnapshot wsData = marketDataStreamService.getSnapshot(tokenId);
+            if (wsData == null || wsData.getOrderBook() == null || wsData.getUpdatedAt() == null) {
+                return null;
+            }
+            long maxAge = smartWalletProperties.getPolymarket().getWsHotPathSnapshotMaxAgeMs();
+            if (maxAge > 0 && System.currentTimeMillis() - wsData.getUpdatedAt().getTime() > maxAge) {
+                // WS 数据 stale — 视为不可用, 回落到 DB
+                return null;
+            }
+            PolymarketApiClient.OrderBook orderBook = wsData.getOrderBook();
+            BigDecimal mid = safe(orderBook.getMidpoint());
+            if (mid.compareTo(BigDecimal.ZERO) <= 0) {
+                mid = midpointFromTop(orderBook);
+            }
+            if (mid.compareTo(BigDecimal.ZERO) <= 0) {
+                // orderbook 为空 — 视为不可用
+                return null;
+            }
+            // 注意: 这是 *transient* entity, 不入库; 仅返回给 hot-path 调用者读 spread / depth / mid 等字段
+            return new SmartWalletMarketSnapshotEntity()
+                    .setMarketId(marketId.trim())
+                    .setOutcome(normalizedOutcome)
+                    .setSnapshotAt(wsData.getUpdatedAt())
+                    .setMidPrice(mid)
+                    .setBestBid(topPrice(orderBook.getBids()))
+                    .setBestAsk(topPrice(orderBook.getAsks()))
+                    .setSpreadBps(resolveSpreadBps(orderBook, mid))
+                    .setBidDepth1c(depthWithin(orderBook.getBids(), mid, new BigDecimal("0.01")))
+                    .setAskDepth1c(depthWithin(orderBook.getAsks(), mid, new BigDecimal("0.01")))
+                    .setBidDepth3c(depthWithin(orderBook.getBids(), mid, new BigDecimal("0.03")))
+                    .setAskDepth3c(depthWithin(orderBook.getAsks(), mid, new BigDecimal("0.03")))
+                    .setBidDepth5c(depthWithin(orderBook.getBids(), mid, new BigDecimal("0.05")))
+                    .setAskDepth5c(depthWithin(orderBook.getAsks(), mid, new BigDecimal("0.05")))
+                    .setOrderImbalance(orderImbalance(orderBook, mid))
+                    .setLastTradePrice(safe(wsData.getLastTradePrice()));
+            // tradeCount30s / buyVolume30s / sellVolume30s / realizedVol30s / timeToEndSeconds 留空,
+            // 这些指标 WS 没有 — 调用方读到 null 时走自己的 fallback 路径, 不会引入脏数据
+        } catch (Exception ex) {
+            // 任何异常 — 视为不可用, 静默回落, 不打 ERROR 日志避免 hot-path log spam
+            log.debug("[F-P1-7] hot-path WS snapshot synthesis skipped marketId={} outcome={} reason={}",
+                    marketId, outcome, ex.toString());
+            return null;
+        }
+    }
+
+    /** F-P1-7 hot-path 计数 — 用于运维观察 WS hit 率 / DB fallback 比例 */
+    public long getHotPathWsHits() {
+        return hotPathWsHits.sum();
+    }
+
+    public long getHotPathDbFallbacks() {
+        return hotPathDbFallbacks.sum();
     }
 
     private String normalizeOutcome(String outcome) {

@@ -4,7 +4,7 @@ import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
@@ -91,6 +92,7 @@ class LoggingPolymarketExecutionGatewayTest {
         SmartWalletSignal signal = SmartWalletSignal.builder()
                 .signalId("signal-paper")
                 .followOutcome("YES")
+                .side("BUY")
                 .recommendedStakeUsdc(new BigDecimal("5.00"))
                 .market(PredictionMarketOpportunity.builder()
                         .marketId("condition-paper")
@@ -113,5 +115,27 @@ class LoggingPolymarketExecutionGatewayTest {
 
         assertTrue(result.isSuccess());
         assertEquals("token-yes", result.getTokenId());
+    }
+
+    @Test
+    void shouldRejectPaperSellSignalBeforeCreatingEntryOrder() {
+        SmartWalletSignal signal = SmartWalletSignal.builder()
+                .signalId("signal-sell")
+                .followOutcome("NO")
+                .side("SELL")
+                .recommendedStakeUsdc(new BigDecimal("5.00"))
+                .market(PredictionMarketOpportunity.builder()
+                        .marketId("condition-sell")
+                        .question("Will sell be blocked?")
+                        .price(new BigDecimal("0.40"))
+                        .build())
+                .build();
+
+        SmartWalletExecutionResult result = gateway.execute(signal, ExecutionMode.PAPER);
+
+        assertFalse(result.isSuccess());
+        assertEquals("SKIPPED", result.getStatus());
+        assertEquals("SELL", result.getSide());
+        assertTrue(result.getMessage().contains("SELL_ENTRY_BLOCKED"));
     }
 }

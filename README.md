@@ -1,29 +1,32 @@
-## 前期事项
-### 开发内容定义
-````
-1. 对接binance api
-2. 对接okx api
-3. 设计数据库表结构
-4. 完成数据库操作
-5. 监控数据操作
-6. 导入用户apikey和secretKey，添加用户。并实现监控功能
-7. 记录每日收益数据
-8. 分析收益点，形成图表
-````
+# CoinStrategy 量化交易平台
 
-#### 一. 功能点
-  1. 便于用户添加apikey和secretKey。后期添加界面，前期数据库操作
-  2. 根据用户指定配额，操作数据，不影响其他任务，例如，账户有1w U，实际只支配5000U，那么只操作5000U部分。为程序设定限额.
-  3. 第一版，只在指定账户中进行操作，不对多账户进行转账操控。后期支持多cex的对冲套利。
+## 项目概述
 
-#### 二、策略设计
-  1. 对冲（优先实现）
-  2. 网格 （第二阶段实现）
-  3. 指标分析，自动买入卖出。（第三阶段实现）（分析历史涨跌、收盘价、开盘价、涨幅、超跌等等数据）。监控历史指定币种数据，进行分析数据。然后控制买入卖出。最后完成。
+CoinStrategy 是一个面向加密货币市场的量化交易平台，目标是在统一框架下接入多家交易所、按额度托管用户资金，并支撑多种交易策略的研发与运行。
 
-#### 三、链上撸羊毛
-  1. 项目方空投。主要是链上交易
-  2. 记录交易损耗、记录交易的项目
+### 建设目标
+
+1. **交易所接入**：对接 Binance、OKX 等 CEX API，统一行情与交易能力。
+2. **数据底座**：设计数据库表结构，完成数据持久化与监控数据的读写。
+3. **用户与额度**：导入用户 API Key / Secret，按用户设定的配额独立操作资金（如账户有 1w U、仅支配 5000 U，则只操作这 5000 U），互不影响其他任务。
+4. **收益分析**：记录每日收益数据，分析收益点并形成可视化图表。
+
+### 功能边界
+
+1. **API Key 管理**：便于用户录入 API Key / Secret —— 前期通过数据库操作，后期提供管理界面。
+2. **额度隔离**：严格按用户设定的配额操作，为程序设定限额，不影响账户内其他资金与任务。
+3. **账户范围**：第一版仅在指定单账户内操作，不做跨账户转账；后期再支持多 CEX 对冲套利。
+
+### 策略路线
+
+1. **对冲策略**（优先实现）
+2. **网格策略**（第二阶段）
+3. **指标分析自动交易**（第三阶段）：基于历史涨跌、开收盘价、涨幅、超跌等数据分析指定币种，自动控制买入与卖出。
+
+### 链上交互
+
+1. 参与项目方空投，以链上交易为主。
+2. 记录交易损耗与参与过的项目。
 
 ## 系统架构设计 (System Architecture)
 
@@ -78,7 +81,7 @@ graph TD
 
 ## 平台架构文档
 
-*   [量化策略平台 MVP Java 架构设计文档](MVP_ARCHITECTURE.md)
+*   [量化策略平台 MVP Java 架构设计文档](polymarket/MVP_ARCHITECTURE.md)
 
 ## 前端启动与停止
 
@@ -139,8 +142,7 @@ Y
 
 ## 策略文档索引 (Strategy Documentation)
 
-*   [资金费率套利策略 (Funding Rate Arbitrage)](funding-rate/FUNDING_RATE_ARBITRAGE.md_ARBITRAGE.md)
+*   [资金费率套利策略 (Funding Rate Arbitrage)](funding-rate/FUNDING_RATE_ARBITRAGE.md)
 *   [TOP50 趋势与波动率策略 (Top 50 Trend & Volatility)](TOP50_STRATEGY.md)
 *   [常规技术分析策略 (Conventional Technical Analysis)](CONVENTIONAL_TECHNICAL_STRATEGY.md)
-*   [链上借贷+LP稳定币策略 (On-chain Lending & LP)](funding-rate/CEX_LOAN_ONCHAIN_STABLE_LP_STRATEGY.mdP_STRATEGY.md)
-
+*   [链上借贷+LP稳定币策略 (On-chain Lending & LP)](funding-rate/CEX_LOAN_ONCHAIN_STABLE_LP_STRATEGY.md)

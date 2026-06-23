@@ -1,3 +1,12 @@
+---
+title: "Coin Strategy Common Client"
+type: overview
+status: active
+tags: [common-client]
+created: 2025-01-31
+updated: 2026-02-01
+---
+
 # Coin Strategy Common Client
 
 此模块封装了主流交易所 API 的调用，提供了统一且强类型的访问接口。
@@ -37,6 +46,7 @@ BinanceApiService apiService = new BinanceApiService(apiKey, secretKey);
 通过 `BinanceSpotService` 和 `BinanceMarketDataService` 提供核心功能。
 
 ### 1. 账户信息
+
 ```java
 // 获取账户信息（余额、权限等）
 BinanceAccountInfo account = apiService.account();
@@ -44,6 +54,7 @@ System.out.println("BTC 余额: " + account.getAssetBalance("BTC").getFree());
 ```
 
 ### 2. 交易 (Trade)
+
 ```java
 // 下限价单 (买入 0.01 BTC @ 50000 USDT)
 BinanceOrder order = apiService.placeSpotOrder(
@@ -62,6 +73,7 @@ List<BinanceTradeHistory> trades = apiService.getSpotMyTrades("BTCUSDT", null, 1
 ```
 
 ### 3. 市场行情 (Market Data)
+
 ```java
 // 获取最新成交
 List<BinanceTrade> trades = apiService.getTrades("BTCUSDT", 20);
@@ -333,3 +345,8 @@ mvn test -pl coin-strategy-common/common-client
 - **集成测试**: `BinanceApiServiceTest` 包含连接真实 API (Testnet) 的测试用例。
   - 默认情况下，需要真实网络连接的测试已被禁用 (`@Disabled`)，以确保构建可以通过。
   - 如需运行集成测试，请在 `BinanceApiServiceTest.java` 中移除 `@Disabled` 注解，并配置有效的 Testnet API Key 和 Secret Key。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../../docs/MOC-架构与平台.md) ｜ [知识库首页](../../docs/知识库首页.md)

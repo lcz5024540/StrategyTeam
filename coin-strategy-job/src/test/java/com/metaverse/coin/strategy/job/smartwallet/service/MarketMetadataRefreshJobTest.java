@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,13 +55,13 @@ class MarketMetadataRefreshJobTest {
                 .thenReturn(List.of("market-missing", "market-stale", "market-fresh"));
         when(marketStateService.loadPersistedMarkets(List.of("market-missing", "market-stale", "market-fresh")))
                 .thenReturn(Map.of(
-                        "market-stale", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        "market-stale", MarketStateSnapshot.builder()
                                 .marketId("market-stale")
                                 .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                                 .lastMetadataSyncAt(stale)
                                 .acceptingOrders(true)
                                 .build(),
-                        "market-fresh", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        "market-fresh", MarketStateSnapshot.builder()
                                 .marketId("market-fresh")
                                 .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                                 .lastMetadataSyncAt(fresh)
@@ -98,13 +100,13 @@ class MarketMetadataRefreshJobTest {
         when(marketMonitoringService.listCandidateMarketIds(3, 30)).thenReturn(List.of("market-stale"));
         when(marketStateService.loadPersistedMarkets(List.of("market-incomplete", "market-stale")))
                 .thenReturn(Map.of(
-                        "market-incomplete", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        "market-incomplete", MarketStateSnapshot.builder()
                                 .marketId("market-incomplete")
                                 .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                                 .lastMetadataSyncAt(fresh)
                                 .acceptingOrders(true)
                                 .build(),
-                        "market-stale", SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                        "market-stale", MarketStateSnapshot.builder()
                                 .marketId("market-stale")
                                 .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                                 .lastMetadataSyncAt(stale)

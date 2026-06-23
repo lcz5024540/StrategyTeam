@@ -1,7 +1,16 @@
 # ============================================================
-# coin-strategy-web — PROD 生产环境
-# 说明: 生产环境 web 和 job 在不同服务器上
-#       需要通过环境变量 JOB_SERVER_HOST 指定 job 服务器 IP
+# coin-strategy-web — PROD 生产环境（暂未上线）
+# ─────────────────────────────────────────────────────────────
+# Prod 环境暂时取消，仅保留模板以便未来恢复。当前所有部署都走 test profile。
+# 恢复 prod 时请补：
+#   - DB_HOST / DB_USERNAME / DB_PASSWORD 默认值或强制 env 注入
+#   - 是否与 test 同机 (43.139.186.27) 部署，若是则需为 prod 分配不同 web 端口
+#     (test 默认 8080，可改 prod 用 8082 之类，避免冲突)
+# 切勿在没有上述决策前用本 profile 启动。
 # ============================================================
-dashboard:
-  smart-wallet-base-url: http://${JOB_SERVER_HOST:127.0.0.1}:8081
+spring:
+  datasource:
+    url: "jdbc:mysql://${DB_HOST:127.0.0.1}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "${DB_USERNAME:root}"
+    password: "${DB_PASSWORD:}"
+    driver-class-name: "com.mysql.cj.jdbc.Driver"

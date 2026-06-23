@@ -1,3 +1,12 @@
+---
+title: "Polymarket Smart Wallet Copy Trading"
+type: overview
+status: active
+tags: [polymarket, overview]
+created: 2026-04-10
+updated: 2026-04-14
+---
+
 # Polymarket Smart Wallet Copy Trading
 
 ## Product Goal
@@ -533,7 +542,7 @@ Required local secrets live in `scripts/polymarket-env.sh`:
 ### 2. Start the service
 
 ```bash
-cd /Users/jenniferni/jenifer/ray/CoinStrategy
+cd /path/to/CoinStrategy
 scripts/run-smart-wallet.sh
 ```
 
@@ -923,3 +932,8 @@ graph TB
     H -->|失败或待确认| J[写入retry/等待确认]
     J --> G
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

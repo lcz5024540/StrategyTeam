@@ -1,3 +1,12 @@
+---
+title: "跟单策略优化设计文档"
+type: design
+status: active
+tags: [polymarket, copy-trading, design]
+created: 2026-04-22
+updated: 2026-04-27
+---
+
 # 跟单策略优化设计文档
 
 **日期**：2026-04-22  
@@ -51,7 +60,7 @@
 
 **`FollowTradeAttributionView`** 输出字段：
 
-```
+```text
 groupKey          // 分组维度描述
 tradeCount        // 笔数
 winRate           // 胜率
@@ -77,7 +86,7 @@ exitTypeBreakdown // 各退出类型占比 Map<String, Integer>
 
 预测市场二元结果的 Kelly 比例：
 
-```
+```text
 f* = (p × b - (1 - p)) / b
 
 其中：
@@ -87,7 +96,7 @@ f* = (p × b - (1 - p)) / b
 
 实际下注额：
 
-```
+```text
 stake = availableCapital × kellyFraction × f*
         ↓ floor: minOrderUsdc
         ↓ ceil:  maxStakeUsdc
@@ -166,7 +175,7 @@ public interface ExitSignalProvider {
 
 ## 6. 整体架构
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    信号入场层（已有）                      │
 │  SmartWalletSignalRiskService.evaluate()                │
@@ -217,3 +226,8 @@ public interface ExitSignalProvider {
 - 入场信号源的改造（watchlist 钱包筛选标准调整）
 - 共识门控参数调整
 - 非跟单策略模块的任何改动
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../../MOC-Polymarket.md) ｜ [知识库首页](../../知识库首页.md)

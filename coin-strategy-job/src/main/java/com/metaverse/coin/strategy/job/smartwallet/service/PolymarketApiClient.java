@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +43,7 @@ public class PolymarketApiClient {
 
     private static final int DEFAULT_FULL_HISTORY_PAGE_SIZE = 200;
     private static final int MAX_FULL_HISTORY_PAGES = 20;
+    private static final int DEFAULT_USER_TRADE_HISTORY_LOOKBACK_DAYS = 90;
     public static final int MAX_USER_TRADE_HISTORY_OFFSET = 3_000;
     private static final String METADATA_ENDPOINT_COOLDOWN_KEY = "metadata-endpoint:markets-condition-ids";
 
@@ -58,12 +59,18 @@ public class PolymarketApiClient {
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
+            // 2026-06-03 修复：callTimeout 约束「整次调用」的总时长（含 connect+write+read+重试/重定向）。
+            // readTimeout 只约束相邻两次读之间的间隔，服务器保持连接慢喂字节时不会触发；缺 callTimeout 时
+            // 一次卡住的 Polymarket 请求会永久占住线程——HOT 事件同步是单线程专用 executor，一旦它被卡死，
+            // eventSyncRunning 永不复位，后续同步全部跳过，造成「长时间不开单」（实测 16h 停摆）。
+            .callTimeout(35, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build();
     private final OkHttpClient fastFallbackClient = httpClient.newBuilder()
             .connectTimeout(4, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .writeTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
             .build();
     private final Map<String, Long> externalFailureCooldownUntilMs = new ConcurrentHashMap<>();
     private final AtomicInteger metadataEndpointConsecutiveFailures = new AtomicInteger();
@@ -121,12 +128,34 @@ public class PolymarketApiClient {
     }
 
     public List<ClosedPosition> fetchClosedPositions(String walletAddress, Integer limit, int offset) {
+        return fetchClosedPositions(walletAddress, limit, offset, null, null);
+    }
+
+    /**
+     * 支持按时间排序的 closed-positions 抓取（增量同步主入口）。
+     * 当 sortBy=TIMESTAMP & sortDirection=ASC 时，�订单总是追加在序列尾部，
+     * 增量场景可基于 closed_at 高水位 + offset 跳过已抓数据。
+     *
+     * @param sortBy        例如 "TIMESTAMP"，传 null 则不附加 sortBy 参数
+     * @param sortDirection 例如 "ASC" / "DESC"，传 null 则不附加 sortDirection 参数
+     */
+    public List<ClosedPosition> fetchClosedPositions(String walletAddress,
+                                                    Integer limit,
+                                                    int offset,
+                                                    String sortBy,
+                                                    String sortDirection) {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("user", walletAddress);
         params.put("limit", String.valueOf(limit == null
                 ? properties.getPolymarket().getClosedPositionLimit()
                 : Math.max(1, limit)));
         params.put("offset", String.valueOf(Math.max(0, offset)));
+        if (StringUtils.hasText(sortBy)) {
+            params.put("sortBy", sortBy.trim());
+        }
+        if (StringUtils.hasText(sortDirection)) {
+            params.put("sortDirection", sortDirection.trim());
+        }
 
         JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
                 "/closed-positions", params));
@@ -302,6 +331,8 @@ public class PolymarketApiClient {
         params.put("limit", String.valueOf(limit == null ? properties.getPolymarket().getRecentTradeLimit() : limit));
         params.put("offset", String.valueOf(safeOffset));
         params.put("takerOnly", "true");
+        params.put("sortBy", "TIMESTAMP");
+        params.put("sortDirection", "DESC");
 
         JsonNode body = getJson(buildUri(properties.getPolymarket().getDataApiBaseUrl(),
                 "/trades", params));
@@ -330,6 +361,7 @@ public class PolymarketApiClient {
                     .tradedAt(epochMillis(node, "timestamp", "createdAt", "time"))
                     .build());
         }
+        result.sort(Comparator.comparing(UserTrade::getTradedAt, Comparator.nullsLast(Comparator.reverseOrder())));
         return result;
     }
 
@@ -342,6 +374,7 @@ public class PolymarketApiClient {
             return List.of();
         }
         int safePageSize = Math.max(1, Math.min(pageSize, 500));
+        long cutoffMillis = userTradeHistoryCutoffMillis();
         Map<String, UserTrade> deduped = new LinkedHashMap<>();
         for (int page = 0; page < MAX_FULL_HISTORY_PAGES; page++) {
             int offset = page * safePageSize;
@@ -356,9 +389,13 @@ public class PolymarketApiClient {
                 if (trade == null) {
                     continue;
                 }
+                Long tradedAt = trade.getTradedAt();
+                if (tradedAt != null && tradedAt < cutoffMillis) {
+                    continue;
+                }
                 deduped.put(userTradeKey(trade), trade);
             }
-            if (chunk.size() < safePageSize) {
+            if (chunk.size() < safePageSize || reachedUserTradeHistoryCutoff(chunk, cutoffMillis)) {
                 break;
             }
         }
@@ -367,12 +404,30 @@ public class PolymarketApiClient {
         return result;
     }
 
+    private long userTradeHistoryCutoffMillis() {
+        Integer configuredDays = properties.getPolymarket().getUserTradeHistoryLookbackDays();
+        int lookbackDays = configuredDays == null || configuredDays <= 0
+                ? DEFAULT_USER_TRADE_HISTORY_LOOKBACK_DAYS
+                : configuredDays;
+        return System.currentTimeMillis() - TimeUnit.DAYS.toMillis(lookbackDays);
+    }
+
+    private boolean reachedUserTradeHistoryCutoff(List<UserTrade> chunk, long cutoffMillis) {
+        return chunk.stream()
+                .filter(ug -> ug != null && ug.getTradedAt() != null)
+                .anyMatch(ug -> ug.getTradedAt() < cutoffMillis);
+    }
+
     public OrderBook fetchOrderBook(String tokenId) {
         if (!StringUtils.hasText(tokenId)) {
             throw new IllegalArgumentException("tokenId is required");
         }
+        // 问题4 修复（2026-06-02）：Polymarket CLOB /book 端点要求 query 参数为 snake_case
+        // token_id；此前误用 tokenID 导致每次请求返回 HTTP 400，盘口 REST 拉取全军覆没，
+        // 进而 smart_wallet_market_snapshot 长期为空、开单/估值价 fallback 到 rawPrice（现价）。
+        // 实测：?tokenID= → 400；?token_id= → 200（含完整 bids/asks）。
         JsonNode body = getJson(buildUri(properties.getExecutionWallet().getApiBaseUrl(),
-                "/book", Map.of("tokenID", tokenId.trim())));
+                "/book", Map.of("token_id", tokenId.trim())));
         List<OrderBookLevel> bids = parseOrderBookLevels(body.get("bids"));
         List<OrderBookLevel> asks = parseOrderBookLevels(body.get("asks"));
         bids.sort(Comparator.comparing(OrderBookLevel::getPrice).reversed());
@@ -432,6 +487,20 @@ public class PolymarketApiClient {
         MarketMetadata metadata = metadataByConditionId.get(conditionId.trim());
         if (metadata == null) {
             throw new IllegalStateException("Polymarket market metadata not found for conditionId=" + conditionId);
+        }
+        return metadata;
+    }
+
+    public MarketMetadata fetchClobMarketMetadata(String conditionId) {
+        if (!StringUtils.hasText(conditionId)) {
+            throw new IllegalArgumentException("conditionId is required");
+        }
+        JsonNode body = getJson(buildUri(properties.getExecutionWallet().getApiBaseUrl(),
+                "/markets/" + URLEncoder.encode(conditionId.trim(), StandardCharsets.UTF_8),
+                Map.of()));
+        MarketMetadata metadata = parseMarketMetadata(body);
+        if (metadata == null || !StringUtils.hasText(metadata.getConditionId())) {
+            throw new IllegalStateException("Polymarket CLOB market metadata not found for conditionId=" + conditionId);
         }
         return metadata;
     }
@@ -864,6 +933,8 @@ public class PolymarketApiClient {
         }
         String winningTokenId = text(market, "winningTokenId", "winning_token_id", "winnerTokenId", "winner_token_id");
         String umaResolutionStatus = text(market, "umaResolutionStatus", "uma_resolution_status");
+        // F-P1-12: 解析 UMA 争议标记 (Gamma 在 disputed / uma_disputed / 部分老 schema 用 inDispute)
+        boolean umaDisputed = bool(market, "disputed", "umaDisputed", "uma_disputed", "inDispute");
         JsonNode tokensNode = parseArrayNode(market.get("tokens"));
         List<MarketResolutionResolver.TokenInfo> tokenWinners = new ArrayList<>();
         if (tokensNode != null && tokensNode.isArray()) {
@@ -886,6 +957,7 @@ public class PolymarketApiClient {
                         .acceptingOrders(acceptingOrders)
                         .acceptingOrdersPresent(acceptingOrdersPresent)
                         .umaResolutionStatus(umaResolutionStatus)
+                        .umaDisputed(umaDisputed)
                         .explicitWinningTokenId(winningTokenId)
                         .explicitWinnerOutcome(normalizeOutcomeLabel(text(market, "winner", "winningOutcome", "resolutionOutcome")))
                         .outcomes(outcomes)
@@ -916,6 +988,7 @@ public class PolymarketApiClient {
                 .closed(closed)
                 .acceptingOrders(acceptingOrders)
                 .umaResolutionStatus(umaResolutionStatus)
+                .umaDisputed(umaDisputed)
                 .resolvedOutcome(resolution.getWinningOutcome())
                 .winningTokenId(resolution.getWinningTokenId())
                 .endAt(epochMillis(market, "endDateISO", "endDate", "gameStartTime", "eventStartDate"))
@@ -1240,8 +1313,26 @@ public class PolymarketApiClient {
         return compact.substring(0, 157) + "...";
     }
 
+    /** 单次 HTTP 响应体最大允许大小 (50 MB)，超限直接抛异常避免 OOM */
+    private static final int MAX_RESPONSE_BODY_BYTES = 50 * 1024 * 1024;
+
     private byte[] readAll(InputStream inputStream) throws IOException {
-        return inputStream == null ? new byte[0] : inputStream.readAllBytes();
+        if (inputStream == null) {
+            return new byte[0];
+        }
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream(8192);
+        byte[] chunk = new byte[8192];
+        int totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = inputStream.read(chunk)) != -1) {
+            totalRead += bytesRead;
+            if (totalRead > MAX_RESPONSE_BODY_BYTES) {
+                throw new IOException("Response body exceeded max allowed size of "
+                        + MAX_RESPONSE_BODY_BYTES + " bytes, aborting read to prevent OOM");
+            }
+            buffer.write(chunk, 0, bytesRead);
+        }
+        return buffer.toByteArray();
     }
 
     private void sleepQuietly(long millis) {
@@ -1668,6 +1759,8 @@ public class PolymarketApiClient {
         private boolean closed;
         private boolean acceptingOrders;
         private String umaResolutionStatus;
+        /** F-P1-12: UMA Oracle 是否争议中。由 Gamma metadata 的 disputed / uma_disputed 字段解析。 */
+        private boolean umaDisputed;
         private String resolvedOutcome;
         private String winningTokenId;
         private Long endAt;

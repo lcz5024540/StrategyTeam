@@ -36,7 +36,7 @@ public class PolymarketPythonSdkBridge implements PolymarketClobClient {
         ProcessBuilder builder = new ProcessBuilder(
                 python,
                 "-c",
-                "import importlib.util; raise SystemExit(0 if importlib.util.find_spec('py_clob_client') else 1)"
+                "import importlib.util; raise SystemExit(0 if importlib.util.find_spec('py_clob_client_v2') else 1)"
         );
         try {
             Process process = builder.start();

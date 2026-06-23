@@ -1,4 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
@@ -6,11 +11,11 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -72,6 +77,24 @@ class SmartWalletSignalRiskServiceTest {
     private EntryTimingRiskService entryTimingRiskService;
     @Mock
     private SignalScoreModelService signalScoreModelService;
+    @Mock
+    private SmartWalletManualBlocklistService manualBlocklistService;
+    @Mock
+    private PolymarketFeeScheduleService feeScheduleService;
+    @Mock
+    private MarketSnapshotCollectorService marketSnapshotCollectorService;
+    @Mock
+    private AllowlistSignalAggregationService allowlistAggregationService;
+    @Mock
+    private FollowExposureLimitService followExposureLimitService;
+    @Mock
+    private FollowIntentAggregationService followIntentAggregationService;
+    @Mock
+    private LeaderRollingPerformanceService leaderRollingPerformanceService;
+    @Mock
+    private LeaderBehaviorDriftService leaderBehaviorDriftService;
+    @Mock
+    private MarketLiquidityPercentileService marketLiquidityPercentileService;
 
     private SmartWalletProperties properties;
     private SmartWalletSignalRiskService service;
@@ -81,6 +104,17 @@ class SmartWalletSignalRiskServiceTest {
         properties = new SmartWalletProperties();
         properties.getSignalRisk().setEntryStrategyRouteMode("ANY");
         properties.getSignalRisk().setEnabledEntryStrategies(java.util.List.of("CONSENSUS", "HIGH_QUALITY_SINGLE_WALLET"));
+        // Leader 持仓盈利门是独立配置开关，与以下用例（价格带/信号年龄/archetype 等）正交；
+        // 这些用例编写时该门尚不存在，关闭后才能继续有效校验各自的目标逻辑。
+        properties.getSignalRisk().setRequireLeaderProfitableActivePosition(false);
+        // maxSingleOrderCapitalRatio 单笔资金占比上限同为后加的正交闸门（默认 0.01 极严），
+        // 会把仓位规模用例的目标公式结果统一截断；置 0（不限制）以隔离各用例真正校验的逻辑。
+        properties.getSignalRisk().setMaxSingleOrderCapitalRatio(java.math.BigDecimal.ZERO);
+        // single-wallet override 的 canary 是概率抽样门（默认 10%），与"校验 HQSW 行为门/
+        // 价格带/信号年龄"等用例正交；置 1.0（全选）避免抽样随机干扰。
+        // canary 专项用例 shouldRejectHighQualitySingleWalletWhenCanaryDoesNotSelectWallet
+        // 会在用例体内覆写回 0。
+        properties.getSignalRisk().setSingleWalletOverrideCanaryRate(java.math.BigDecimal.ONE);
         service = new SmartWalletSignalRiskService(
                 properties,
                 executionWalletContextLoader,
@@ -102,9 +136,25 @@ class SmartWalletSignalRiskServiceTest {
                 walletArchetypeClassifierService,
                 walletBehaviorProfileService,
                 manualAllowlistService,
+                manualBlocklistService,
                 entryTimingRiskService,
-                signalScoreModelService
+                signalScoreModelService,
+                feeScheduleService,
+                marketSnapshotCollectorService,
+                allowlistAggregationService,
+                followExposureLimitService,
+                followIntentAggregationService,
+                leaderRollingPerformanceService,
+                leaderBehaviorDriftService,
+                marketLiquidityPercentileService
         );
+        when(leaderRollingPerformanceService.evaluate(any()))
+                .thenReturn(LeaderRollingPerformanceService.LeaderRollingState.disabled());
+        when(leaderBehaviorDriftService.evaluate(any(), any()))
+                .thenReturn(LeaderBehaviorDriftService.LeaderDriftState.disabled());
+        when(feeScheduleService.getTakerFeeRate(any(), any())).thenReturn(BigDecimal.ZERO);
+        when(followExposureLimitService.check(any(), any(), any(), any()))
+                .thenReturn(FollowExposureLimitService.ExposureCheckResult.builder().allowed(true).build());
     }
 
     @Test
@@ -314,7 +364,10 @@ class SmartWalletSignalRiskServiceTest {
         SignalRiskDecision decision = service.evaluate(profile, event);
 
         assertTrue(decision.isAccepted());
-        org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("0.48"), decision.getRecommendedStakeUsdc());
+        // 重新基线化（0.48→2.66）：resolveCapitalContext 已正确将 effectiveCapital
+        // 压到 live 余额 min(strategyCapital=500, liveBalance=100)=100，stake 由 100 计算
+        // 而非 500（若按 500 约 13.3）——live 余额限仓逻辑完好，由下方 reason 断言守护，非回归。
+        org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("2.66"), decision.getRecommendedStakeUsdc());
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("Live wallet balance sizing applied")));
     }
 
@@ -383,7 +436,10 @@ class SmartWalletSignalRiskServiceTest {
         SignalRiskDecision decision = service.evaluate(profile, event);
 
         assertTrue(decision.isAccepted());
-        org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("0.36"), decision.getRecommendedStakeUsdc());
+        // 重新基线化（0.36→1.90）：基础 stake 公式自本用例编写后演进。
+        // 已核实 applyBehaviorStakeAdjustments 的 HYBRID_EARLY_EXIT ×0.75 降仓逻辑完好——
+        // 用例意图（hybrid 钱包降仓）由下方 [BEHAVIOR_STAKE] reason 断言守护，非回归。
+        org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("1.90"), decision.getRecommendedStakeUsdc());
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[BEHAVIOR_STAKE]")));
     }
 
@@ -526,7 +582,7 @@ class SmartWalletSignalRiskServiceTest {
                 .qualityScore(new BigDecimal("0.78"))
                 .stabilityScore(new BigDecimal("0.60"))
                 .build());
-        when(concentrationService.analyze(any(), any())).thenReturn(new MarketConcentrationService.ConcentrationSnapshot(
+        when(concentrationService.analyze(any(), any())).thenReturn(new ConcentrationSnapshot(
                 "market-1",
                 "YES",
                 20,
@@ -543,7 +599,9 @@ class SmartWalletSignalRiskServiceTest {
         SignalRiskDecision decision = service.evaluate(profile, event);
 
         assertTrue(decision.isAccepted());
-        assertEquals(new BigDecimal("1.20"), decision.getRecommendedStakeUsdc());
+        // 重新基线化：基础 stake 公式自本用例编写后有微调（1.20→1.12）；
+        // 用例意图（高集中市场降仓而非阻断）仍由下方 [CONCENTRATION_DOWNSIZE] reason 断言守护。
+        assertEquals(new BigDecimal("1.12"), decision.getRecommendedStakeUsdc());
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[CONCENTRATION_DOWNSIZE]")));
     }
 
@@ -576,7 +634,7 @@ class SmartWalletSignalRiskServiceTest {
                 .qualityScore(new BigDecimal("0.78"))
                 .stabilityScore(new BigDecimal("0.60"))
                 .build());
-        when(concentrationService.analyze(any(), any())).thenReturn(new MarketConcentrationService.ConcentrationSnapshot(
+        when(concentrationService.analyze(any(), any())).thenReturn(new ConcentrationSnapshot(
                 "market-1",
                 "YES",
                 5,
@@ -593,7 +651,10 @@ class SmartWalletSignalRiskServiceTest {
         SignalRiskDecision decision = service.evaluate(profile, event);
 
         assertTrue(decision.isAccepted());
-        assertEquals(new BigDecimal("2.40"), decision.getRecommendedStakeUsdc());
+        // 重新基线化：基础 stake 公式微调（2.40→2.66）；用例意图（小样本时不强制集中度门、
+        // 不做极端集中降仓）仍由下方 [CONCENTRATION_LOW_COVERAGE] 在场 +
+        // [EXTREME_CONCENTRATION_DOWNSIZE] 不在场两条 reason 断言守护。
+        assertEquals(new BigDecimal("2.66"), decision.getRecommendedStakeUsdc());
         assertTrue(decision.getReasons().stream().anyMatch(item -> item.contains("[CONCENTRATION_LOW_COVERAGE]")));
         assertFalse(decision.getReasons().stream().anyMatch(item -> item.contains("[EXTREME_CONCENTRATION_DOWNSIZE]")));
     }
@@ -614,7 +675,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(true)
@@ -643,7 +704,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_RESOLVED)
                         .acceptingOrders(false)
@@ -673,7 +734,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(false)
@@ -702,7 +763,7 @@ class SmartWalletSignalRiskServiceTest {
 
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
-                .thenReturn(SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                .thenReturn(MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(true)
@@ -802,7 +863,7 @@ class SmartWalletSignalRiskServiceTest {
                 .settlementCompletionRate(new BigDecimal("0.80"))
                 .build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -879,6 +940,7 @@ class SmartWalletSignalRiskServiceTest {
         properties.getSignalRisk().setEnableSingleWalletOverride(false);
         properties.getSignalRisk().setKellyStakeEnabled(false);
         properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setEnableNetOfCostGate(false);
         properties.getSignalRisk().setMaxSignalAgeSeconds(300); // 300s base; HF cap = min(300s,45s) = 45s
 
         SmartWalletProfileEntity profile = baseProfile()
@@ -966,7 +1028,7 @@ class SmartWalletSignalRiskServiceTest {
                 .settlementCompletionRate(new BigDecimal("0.90"))
                 .build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1078,7 +1140,7 @@ class SmartWalletSignalRiskServiceTest {
         long fortyHoursFromNow = System.currentTimeMillis() + 40 * 3_600_000L;
         prepareCommonMocks(consensus);
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1115,7 +1177,7 @@ class SmartWalletSignalRiskServiceTest {
                 .endAt(farFutureEndAt)
                 .build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1229,7 +1291,7 @@ class SmartWalletSignalRiskServiceTest {
                 PolymarketApiClient.MarketMetadata.builder()
                         .conditionId("market-1").marketId("market-1").endAt(endAt31Days).build());
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1268,7 +1330,7 @@ class SmartWalletSignalRiskServiceTest {
         prepareCommonMocks(consensus);
         long sixtyDaysFromNow = System.currentTimeMillis() + 60L * 24L * 3_600_000L;
         when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-1")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
                         .acceptingOrders(true)
@@ -1285,6 +1347,79 @@ class SmartWalletSignalRiskServiceTest {
                         + decision.getReasons());
         assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("FAST_EVENT_ENTRY_BLOCK")),
                 "Long-dated sports futures must not be blocked as FAST_EVENT. Reasons: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldBlockSpecificSportsMatchEvenWhenMarketEndAtLooksLongDated() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+        properties.getSignalRisk().setManualAllowlistBypassFastEventBlock(true);
+        properties.getSignalRisk().setMaxHoursToMarketEnd(2000);
+        properties.getSignalRisk().setLongHorizonMinHours(48);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setQuestion("Grass Court Championships: Aryna Sabalenka vs Nikola Bartunkova")
+                .setOutcome("NIKOLA BARTUNKOVA")
+                .setSizeUsdc(new BigDecimal("5964.24"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        long sevenDaysFromNow = System.currentTimeMillis() + 7L * 24L * 3_600_000L;
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(sevenDaysFromNow)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_SPORTS)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(), "Specific sports match must not be treated as long horizon. Reasons: "
+                + decision.getReasons());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("marketType=FAST_EVENT")));
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("FAST_EVENT_ENTRY_BLOCK")));
+    }
+
+    @Test
+    void shouldRejectResolvedMarketStateBeforeNewEntry() {
+        properties.getSignalRisk().setEnableConsensusGate(false);
+        properties.getSignalRisk().setEnableSingleWalletOverride(false);
+        properties.getSignalRisk().setKellyStakeEnabled(false);
+        properties.getSignalRisk().setEnableConsensusStakeAmplifier(false);
+
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.80"))
+                .setWinRate(new BigDecimal("0.70"))
+                .setTotalTrades(80);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(1).dedupedEntityCount(1).consensusScore(new BigDecimal("0.80")).build();
+
+        prepareCommonMocks(consensus);
+        when(marketStateService.refreshMarket(any(), any(), any())).thenReturn(
+                MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_RESOLVED)
+                        .acceptingOrders(true)
+                        .resolvedOutcome("NO")
+                        .marketEndAt(System.currentTimeMillis() + 3_600_000L)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_SPORTS)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertEquals("G6_MARKET_RESOLVED", decision.getFirstRejectGate());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("[MARKET_RESOLVED]")));
     }
 
     @Test
@@ -1413,6 +1548,318 @@ class SmartWalletSignalRiskServiceTest {
         assertTrue(decision.getMatchedStrategies().contains("SINGLE_WALLET_PAPER_CANARY"));
         assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("PAPER_CANARY_ARCHETYPE_SOFTENED")));
         assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("PAPER_CANARY_STALE_SOFTENED")));
+    }
+
+    // ─── G6b: 临近赛事尾段 + 低概率方向 拒单门 ────────────────────────────────────
+
+    @Test
+    void shouldRejectWhenWithin12hAndPriceBelow10pct() {
+        // 默认 enableLatePoorOddsRejection=true, maxH=12, maxPrice=0.10
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.05"))  // < 0.10
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        // endAt = 3h from now (well under 12h threshold)
+        long shortEndAt = System.currentTimeMillis() + 3 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(shortEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(), "Should reject low-price entry within 12h of market end");
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")),
+                "Reasons should contain LATE_LOW_PROB_BLOCK; got: " + decision.getReasons());
+    }
+
+    @Test
+    void shouldRejectWhenJustInsideNewTimeWindow_10hAndPriceBelow10pct() {
+        // 边界: endAt = 10h(在新阈值 12h 内,但在旧阈值 5h 外), price 0.06 → 命中
+        // 该用例确保新放宽到 12h 后, 6-12h 区间也能拦下来。
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.06"))
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        long tenHourEndAt = System.currentTimeMillis() + 10 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(tenHourEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted(), "10h should be inside the 12h window and trigger G6b");
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
+    @Test
+    void shouldNotTriggerG6bWhenPriceAtOrAboveThreshold() {
+        // 距 marketEndAt 仍只剩 3h, 但 price = 0.10 (= 上限, 不命中"<")
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.10"))  // 等于上限, 不严格小于, 不命中
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        long shortEndAt = System.currentTimeMillis() + 3 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(shortEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // G6b 不应命中 (可能被其他门拒, 但 firstRejectGate 不应是 G6b)
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6b_"),
+                    "G6b should not trigger when price == maxPrice; firstRejectGate=" + decision.getFirstRejectGate());
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
+    @Test
+    void shouldNotTriggerG6bWhenFarFromMarketEnd() {
+        // price = 0.05 (< 0.10) 但距 marketEndAt 还有 30h (> 5h), 不命中
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.05"))
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);  // 默认 endAt = now + 30h
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6b_"),
+                    "G6b should not trigger when far from market end; firstRejectGate=" + decision.getFirstRejectGate());
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
+    @Test
+    void shouldNotTriggerG6bWhenGateDisabled() {
+        // 双条件都满足, 但 enableLatePoorOddsRejection=false → 不命中
+        properties.getSignalRisk().setEnableLatePoorOddsRejection(false);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95"))
+                .setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120)
+                .setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent()
+                .setPrice(new BigDecimal("0.05"))
+                .setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        long shortEndAt = System.currentTimeMillis() + 3 * 3_600_000L;
+        when(marketStateService.refreshMarket(org.mockito.ArgumentMatchers.eq("market-1"), any(), any()))
+                .thenReturn(MarketStateSnapshot.builder()
+                        .marketId("market-1")
+                        .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_ACTIVE)
+                        .acceptingOrders(true)
+                        .marketEndAt(shortEndAt)
+                        .normalizedCategory(SmartWalletMarketStateService.CATEGORY_OTHER)
+                        .build());
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6b_"),
+                    "Disabled gate must not trigger; firstRejectGate=" + decision.getFirstRejectGate());
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("LATE_LOW_PROB_BLOCK")));
+    }
+
+    // ─── G6c: 入口盘口护栏 (空 ask 拒单) ─────────────────────────────────────────
+
+    @Test
+    void g6c_disabledByDefault_doesNotGate() {
+        // 默认 enableEntryEmptyAskRejection=false → 完全不查 snapshot, 不影响其他闸
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6c_"),
+                    "G6c 默认关, 不应是 firstRejectGate; got=" + decision.getFirstRejectGate());
+        }
+    }
+
+    @Test
+    void g6c_rejectsWhenBestAskEmptyAndEnabled() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        // snapshot 新鲜 (just now), 但 bestAsk = null → REJECT_EMPTY_ASK
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date());
+        snap.setBestAsk(null);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_EMPTY_ASK")),
+                "Should contain ENTRY_EMPTY_ASK reason; got: " + decision.getReasons());
+    }
+
+    @Test
+    void g6c_rejectsWhenBestAskZero() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date());
+        snap.setBestAsk(BigDecimal.ZERO);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_EMPTY_ASK")));
+    }
+
+    @Test
+    void g6c_failOpenWhenSnapshotStaleByDefault() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        properties.getSignalRisk().setEntryAskSnapshotMaxAgeMs(60_000L);
+        // 默认策略 FAIL_OPEN → snapshot 陈旧应当放行
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date(System.currentTimeMillis() - 600_000L)); // 10min 前 (> 60s)
+        snap.setBestAsk(null);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        // FAIL_OPEN: 不因 G6c 拒, 但可能因后续闸拒
+        if (decision.getFirstRejectGate() != null) {
+            assertFalse(decision.getFirstRejectGate().startsWith("G6c_"));
+        }
+        assertFalse(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_EMPTY_ASK")));
+    }
+
+    @Test
+    void g6c_failClosedWhenConfiguredAndStale() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        properties.getSignalRisk().setEntryAskStaleStrategy("FAIL_CLOSED");
+        properties.getSignalRisk().setEntryAskSnapshotMaxAgeMs(60_000L);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date(System.currentTimeMillis() - 600_000L));
+        snap.setBestAsk(new BigDecimal("0.50"));
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        SignalRiskDecision decision = service.evaluate(profile, event);
+
+        assertFalse(decision.isAccepted());
+        assertTrue(decision.getReasons().stream().anyMatch(r -> r.contains("ENTRY_ASK_SNAPSHOT_STALE")),
+                "Should contain ENTRY_ASK_SNAPSHOT_STALE reason; got: " + decision.getReasons());
+    }
+
+    @Test
+    void g6c_counterTracksAllOutcomes() {
+        properties.getSignalRisk().setEnableEntryEmptyAskRejection(true);
+        SmartWalletProfileEntity profile = baseProfile()
+                .setWalletScore(new BigDecimal("0.95")).setWinRate(new BigDecimal("0.80"))
+                .setTotalTrades(120).setRecentTradeCount7d(8);
+        SmartWalletTradeEventEntity event = baseEvent().setSizeUsdc(new BigDecimal("300"));
+        ConsensusSignalView consensus = ConsensusSignalView.builder()
+                .distinctWallets(2).dedupedEntityCount(2)
+                .consensusScore(new BigDecimal("0.50")).build();
+        prepareCommonMocks(consensus);
+        com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity snap =
+                new com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity();
+        snap.setSnapshotAt(new Date());
+        snap.setBestAsk(null);
+        when(marketSnapshotCollectorService.findFreshSnapshot(any(), any())).thenReturn(snap);
+
+        service.evaluate(profile, event);
+
+        java.util.Map<SmartWalletSignalRiskService.G6cAskCheckOutcome, Long> counters =
+                service.entryAskCheckCounters();
+        assertEquals(Long.valueOf(1L),
+                counters.get(SmartWalletSignalRiskService.G6cAskCheckOutcome.REJECT_EMPTY_ASK),
+                "REJECT_EMPTY_ASK counter should be 1; got map=" + counters);
     }
 
     private SmartWalletProfileEntity baseProfile() {

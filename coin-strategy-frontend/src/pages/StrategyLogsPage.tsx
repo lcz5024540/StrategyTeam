@@ -13,15 +13,33 @@ const SOURCES: Array<{ value: StrategyLogSource; label: string }> = [
   { value: 'startup', label: 'Startup' },
 ]
 const LEVELS: StrategyLogLevel[] = ['ALL', 'INFO', 'WARN', 'ERROR', 'DEBUG']
-const FLOW_STAGES = [
-  { code: 'S1_EVENT_CAPTURED', label: 'S1 事件捕获 / Event Captured' },
-  { code: 'S2_PROFILE_ADMISSION', label: 'S2 钱包准入 / Profile Admission' },
-  { code: 'S3_CANDIDATE_ENRICHED', label: 'S3 候选增强 / Candidate Enriched' },
-  { code: 'S4_MARKET_CHECK', label: 'S4 市场检查 / Market Check' },
-  { code: 'S5_RISK_EVALUATED', label: 'S5 风控评估 / Risk Evaluated' },
-  { code: 'S6_TASK_CREATED', label: 'S6 任务创建 / Task Created' },
-  { code: 'S7_TASK_CLAIMED', label: 'S7 任务抢占 / Task Claimed' },
-  { code: 'S8_ORDER_EXECUTED', label: 'S8 订单执行 / Order Executed' },
+type FlowStageDefinition = { code: string; label: string }
+type FlowStageGroup = { key: string; label: string; description: string; stages: FlowStageDefinition[] }
+
+const FLOW_STAGE_GROUPS: FlowStageGroup[] = [
+  {
+    key: 'address',
+    label: '地址判定',
+    description: '从交易事件捕获、钱包准入到候选地址增强，判断这个地址是否允许进入跟单链路。',
+    stages: [
+      { code: 'S1_EVENT_CAPTURED', label: 'S1 事件捕获 / Event Captured' },
+      { code: 'S2_PROFILE_ADMISSION', label: 'S2 钱包准入 / Profile Admission' },
+      { code: 'S3_CANDIDATE_ENRICHED', label: 'S3 候选增强 / Candidate Enriched' },
+    ],
+  },
+  {
+    key: 'order',
+    label: '订单判定',
+    description: '从市场检查、风控评估、任务创建到订单执行和持仓退出，判断订单是否允许执行及后续状态。',
+    stages: [
+      { code: 'S4_MARKET_CHECK', label: 'S4 市场检查 / Market Check' },
+      { code: 'S5_RISK_EVALUATED', label: 'S5 风控评估 / Risk Evaluated' },
+      { code: 'S6_TASK_CREATED', label: 'S6 任务创建 / Task Created' },
+      { code: 'S7_TASK_CLAIMED', label: 'S7 任务抢占 / Task Claimed' },
+      { code: 'S8_ORDER_EXECUTED', label: 'S8 订单执行 / Order Executed' },
+      { code: 'S9_POSITION_EXIT', label: 'S9 持仓退出 / Position Exit' },
+    ],
+  },
 ]
 
 type LogTab = 'flow' | 'raw'
@@ -179,6 +197,9 @@ function FlowTimeline({
   if (isError) return <PrimeCard><div className="empty-state">流程日志接口请求失败：{error instanceof Error ? error.message : 'unknown error'}</div></PrimeCard>
   if (flows.length === 0) return <PrimeCard><div className="empty-state">当前筛选条件下暂无 Polymarket flow 日志</div></PrimeCard>
 
+  const addressDecision = resolveDecisionStatus(selectedFlow?.entries || [], FLOW_STAGE_GROUPS[0].stages)
+  const orderDecision = resolveDecisionStatus(selectedFlow?.entries || [], FLOW_STAGE_GROUPS[1].stages)
+
   return (
     <div className="ms-flow-layout">
       <PrimeCard pad={false}>
@@ -209,6 +230,8 @@ function FlowTimeline({
             </div>
             <div className="address-badge-stack">
               <span className={statusClass(selectedFlow?.status)}>{selectedFlow?.status || 'ACTIVE'}</span>
+              <span className={decisionStatusClass(addressDecision)}>地址 {addressDecision}</span>
+              <span className={decisionStatusClass(orderDecision)}>订单 {orderDecision}</span>
               {selectedFlow?.mode ? <span className="badge">{selectedFlow.mode}</span> : null}
               {selectedFlow?.entryLane ? <span className="badge accent">{selectedFlow.entryLane}</span> : null}
             </div>
@@ -222,10 +245,23 @@ function FlowTimeline({
             <span>gate <b>{selectedFlow?.firstRejectGate || selectedFlow?.gateHighWaterMark || '-'}</b></span>
           </div>
           <div className="ms-flow-stages">
-            {FLOW_STAGES.map((stage) => {
-              const entries = selectedFlow?.entries.filter((entry) => isFlowStage(entry.flowStage, stage)) || []
-              return <FlowStage key={stage.code} stage={stage} entries={entries} />
-            })}
+            {FLOW_STAGE_GROUPS.map((group) => (
+              <section className="ms-flow-stage-group" key={group.key}>
+                <header className="ms-flow-stage-group-header">
+                  <div>
+                    <strong>{group.label}</strong>
+                    <span>{group.description}</span>
+                  </div>
+                  <b className={decisionStatusClass(resolveDecisionStatus(selectedFlow?.entries || [], group.stages))}>
+                    {resolveDecisionStatus(selectedFlow?.entries || [], group.stages)}
+                  </b>
+                </header>
+                {group.stages.map((stage) => {
+                  const entries = selectedFlow?.entries.filter((entry) => isFlowStage(entry.flowStage, stage)) || []
+                  return <FlowStage key={stage.code} stage={stage} entries={entries} />
+                })}
+              </section>
+            ))}
           </div>
         </div>
       </PrimeCard>
@@ -233,7 +269,7 @@ function FlowTimeline({
   )
 }
 
-function FlowStage({ stage, entries }: { stage: { code: string; label: string }; entries: StrategyFlowLogEvent[] }) {
+function FlowStage({ stage, entries }: { stage: FlowStageDefinition; entries: StrategyFlowLogEvent[] }) {
   const latest = entries[entries.length - 1]
   return (
     <section className={`ms-flow-stage ${entries.length ? 'has-data' : ''}`}>
@@ -251,7 +287,7 @@ function FlowStage({ stage, entries }: { stage: { code: string; label: string };
               <span>{entry.timestamp}</span>
               <b>{entry.action || '-'}</b>
             </div>
-            <FormattedFlowMessage message={entry.reasonSummary || entry.rawMessage} />
+            <FormattedFlowMessage message={entry.rawMessage || entry.reasonSummary} />
             <div className="address-badge-stack">
               {entry.firstRejectGate ? <span className="badge danger">{entry.firstRejectGate}</span> : null}
               {entry.blockerCategories ? <span className="badge warn">{entry.blockerCategories}</span> : null}
@@ -265,7 +301,7 @@ function FlowStage({ stage, entries }: { stage: { code: string; label: string };
   )
 }
 
-function StageTitle({ stage }: { stage: { code: string; label: string } }) {
+function StageTitle({ stage }: { stage: FlowStageDefinition }) {
   const [index, ...rest] = stage.label.split(/\s+/)
   return (
     <strong className="ms-stage-title">
@@ -275,8 +311,23 @@ function StageTitle({ stage }: { stage: { code: string; label: string } }) {
   )
 }
 
-function isFlowStage(value: string | null | undefined, stage: { code: string; label: string }) {
+function isFlowStage(value: string | null | undefined, stage: FlowStageDefinition) {
   return value === stage.code || value === stage.label
+}
+
+function resolveDecisionStatus(entries: StrategyFlowLogEvent[], stages: FlowStageDefinition[]) {
+  const scoped = entries.filter((entry) => stages.some((stage) => isFlowStage(entry.flowStage, stage)))
+  if (scoped.length === 0) return '未记录'
+  const latest = scoped[scoped.length - 1]
+  const text = scoped
+    .map((entry) => [entry.result, entry.firstRejectGate, entry.blockerCategories, entry.reasonSummary, entry.rawMessage].filter(Boolean).join(' '))
+    .join(' ')
+    .toUpperCase()
+
+  if (/(拒绝|失败|异常|REJECT|FAIL|BLOCK|ERROR)/.test(text)) return '拒绝/失败'
+  if (/(成功|通过|已提交|EXECUT|SUCCESS|FILLED|ACCEPT)/.test(text)) return '通过'
+  if (/(跳过|等待|PENDING|WAIT|CLAIM|CREATED)/.test(text)) return '处理中'
+  return latest?.result || '已记录'
 }
 
 function FormattedFlowMessage({ message, compact = false }: { message?: string | null; compact?: boolean }) {
@@ -412,5 +463,13 @@ function statusClass(value?: string | null) {
   if (normalized.includes('FAIL') || normalized.includes('拒绝') || normalized.includes('BLOCK')) return 'badge danger'
   if (normalized.includes('PENDING') || normalized.includes('WAIT') || normalized.includes('跳过')) return 'badge warn'
   if (normalized.includes('SUCCESS') || normalized.includes('EXECUT') || normalized.includes('成功') || normalized.includes('通过')) return 'badge accent'
+  return 'badge'
+}
+
+function decisionStatusClass(value?: string | null) {
+  const normalized = String(value || '').toUpperCase()
+  if (normalized.includes('拒绝') || normalized.includes('失败') || normalized.includes('REJECT') || normalized.includes('FAIL')) return 'badge danger'
+  if (normalized.includes('处理中') || normalized.includes('未记录') || normalized.includes('PENDING') || normalized.includes('WAIT')) return 'badge warn'
+  if (normalized.includes('通过') || normalized.includes('成功') || normalized.includes('SUCCESS') || normalized.includes('EXECUT')) return 'badge accent'
   return 'badge'
 }

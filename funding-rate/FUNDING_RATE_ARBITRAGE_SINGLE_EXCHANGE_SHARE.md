@@ -1,3 +1,12 @@
+---
+title: "单交易所资金费率套利实施进度"
+type: strategy
+status: active
+tags: [funding-rate, arbitrage]
+created: 2026-04-13
+updated: 2026-04-18
+---
+
 # 单交易所资金费率套利实施进度
 
 本文档仅记录“单交易所期现套利”的开发进度、已完成工作、当前不足与后续计划。
@@ -10,7 +19,7 @@
     * `monitor`：`SingleExchangeFundingRateMonitor`
     * `decision`：`SingleExchangeSpotFuturesArbitrageStrategy`
     * `execution`：`SingleExchangeArbitrageOrderExecutor`
-    * `risk`：`SingleExchangeRiskController`
+    * `risk`：`SingleExchangeRiskService`
     * `rebalance`：`SingleExchangeArbitrageRebalanceService`
 
 ### 1.2 核心能力实现
@@ -44,7 +53,7 @@
     * 已实现单侧失败后的自动回滚。
 * `SingleExchangeSpotFuturesOrderPlan` 已增加 `basisSpread` / `basisRate` 字段，用于策略层过滤。
 
-* **SingleExchangeRiskController**
+* **SingleExchangeRiskService**
     * 已实现开仓前的现货余额检查。
     * 已实现期货可用保证金检查。
     * 已引入 `required-margin-buffer-rate` 作为保证金缓冲。
@@ -103,14 +112,14 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 
 * 已解决。
 * 单交易所套利相关参数已统一收敛到 `SingleExchangeSpotFuturesProperties`，由单一配置对象集中读取 `arbitrage.spot-futures` 下的全部参数。
-* `SingleExchangeSpotFuturesArbitrageStrategy`、`SingleExchangeRiskController`、`SingleExchangeArbitrageRebalanceService` 已不再分散使用 `@Value`，避免配置项扩展时出现重复默认值和参数漂移。
+* `SingleExchangeSpotFuturesArbitrageStrategy`、`SingleExchangeRiskService`、`SingleExchangeArbitrageRebalanceService` 已不再分散使用 `@Value`，避免配置项扩展时出现重复默认值和参数漂移。
 * 当前 `application.yml` 的配置 key 保持不变，因此对现有部署和调参方式无破坏性影响。
 
 ### 2.4 深度与滑点风控缺失
 
 * 已解决。
 * 已新增 `SingleExchangeDepthMonitor`，在运行时读取现货与 U 本位合约的 `depth` 盘口，并在行情缺失时按配置进行快速重试。
-* `SingleExchangeRiskController` 已增加基于逐档 VWAP 的深度与滑点风控：开仓会按计划下单量逐档估算现货与合约侧的成交均价，并据此计算组合滑点率。
+* `SingleExchangeRiskService` 已增加基于逐档 VWAP 的深度与滑点风控：开仓会按计划下单量逐档估算现货与合约侧的成交均价，并据此计算组合滑点率。
 * 开仓阶段采用 fail-closed 策略：若深度数据连续重试后仍不可用，或逐档 VWAP 估算出的组合滑点超过阈值，则直接拒绝开仓。
 * 平仓阶段采用分级校验：即使流动性评估失败或行情缺失，也只记录告警和风险日志，不阻塞平仓执行。
 * `SingleExchangeSpotFuturesArbitrageStrategy` 的净收益估算已改为优先使用本次实时逐档 VWAP 滑点估值，不再依赖“行情缺失时回退固定滑点后继续开仓”的旧逻辑。
@@ -136,3 +145,8 @@ mvn -pl coin-strategy-core -DwithTests=true -Dtest=SingleExchangeSpotFuturesArbi
 1. 增加异常退出和回滚失败告警。
 2. 明确单元测试、模拟测试和联网测试的边界。
 3. 使用小资金进行长时间运行验证。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

@@ -2,20 +2,64 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import lombok.Builder;
 import lombok.Data;
+import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+// 2026-05-17 ray@cowork: 加上 @Component 让 ResolutionLiveRefreshService 能正确注入此 bean。
+// 原代码缺这个注解, 但 ResolutionLiveRefreshService 用 @RequiredArgsConstructor 要求它做依赖 → Spring 启动失败。
+@Component
 public class MarketResolutionResolver {
 
     public static final String STATUS_RESOLVED = "RESOLVED";
     public static final String STATUS_WAIT_FINAL_PRICE = "WAIT_FINAL_PRICE";
     public static final String STATUS_NEED_MANUAL_CHECK = "NEED_MANUAL_CHECK";
     public static final String STATUS_UNRESOLVED = "UNRESOLVED";
+
+    /**
+     * W1-T2.1 增强入口: 解析的同时输出审计 record, 便于上层 audit 聚合.
+     *
+     * <p>原有 {@link #resolve(Request)} 行为完全不变, 仅在内部转调本方法的 Resolution 部分.</p>
+     *
+     * @param marketId 调用方维护的市场 ID (resolver 自身不解析该字段, 仅原样写入 audit)
+     * @param request  与 {@link #resolve(Request)} 完全相同的输入
+     * @return Resolution + ResolutionAuditRecord 一对
+     */
+    public ResolutionWithAudit resolveWithAudit(String marketId, Request request) {
+        Resolution resolution = resolve(request);
+        // F-P1-12: 透传 UMA disputed 标记，让审计层能区分"我方误判"与"UMA 争议中"两种 unresolved
+        boolean umaDisputed = request != null && request.isUmaDisputed();
+        ResolutionAuditRecord audit = ResolutionAuditRecord.builder()
+                .observedAt(new Date())
+                .marketId(marketId)
+                .resolutionStatus(resolution == null ? STATUS_UNRESOLVED : resolution.getResolutionStatus())
+                .resolutionSource(resolution == null ? null : resolution.getResolutionSource())
+                .winningOutcome(resolution == null ? null : resolution.getWinningOutcome())
+                .winningTokenId(resolution == null ? null : resolution.getWinningTokenId())
+                .manualCheckReason(resolution == null ? null : resolution.getManualCheckReason())
+                .closed(request != null && request.isClosed())
+                .acceptingOrdersPresent(request != null && request.isAcceptingOrdersPresent())
+                .acceptingOrders(request != null && request.isAcceptingOrders())
+                .umaResolutionStatus(request == null ? null : request.getUmaResolutionStatus())
+                .umaResolved(request != null && isUmaResolved(request.getUmaResolutionStatus()))
+                .umaDisputed(umaDisputed)
+                .umaDisputeObservedAt(umaDisputed ? new Date() : null)
+                .outcomes(request == null || request.getOutcomes() == null
+                        ? List.of() : new ArrayList<>(request.getOutcomes()))
+                .outcomePrices(request == null || request.getOutcomePrices() == null
+                        ? List.of() : new ArrayList<>(request.getOutcomePrices()))
+                .outcomeTokenIds(request == null || request.getOutcomeTokenIds() == null
+                        ? Map.of() : new LinkedHashMap<>(request.getOutcomeTokenIds()))
+                .build();
+        return new ResolutionWithAudit(resolution, audit);
+    }
 
     public Resolution resolve(Request request) {
         if (request == null) {
@@ -241,6 +285,12 @@ public class MarketResolutionResolver {
         private boolean acceptingOrders;
         private boolean acceptingOrdersPresent;
         private String umaResolutionStatus;
+        /**
+         * F-P1-12: UMA Oracle 争议中标记 (disputed=true)。
+         * <p>当 Gamma metadata 中 disputed=true 时，即便 closed=true 也不应自动归档；
+         * audit 层会把 umaDisputed=true 的样本标 {@code DiffType.UMA_DISPUTED} 单独聚合。
+         */
+        private boolean umaDisputed;
         private String explicitWinningTokenId;
         private String explicitWinnerOutcome;
         @Builder.Default
@@ -269,5 +319,12 @@ public class MarketResolutionResolver {
         private String winningTokenId;
         private String resolutionSource;
         private String manualCheckReason;
+    }
+
+    /**
+     * W1-T2.1 配对结构: 业务用的 Resolution + 审计用的 ResolutionAuditRecord.
+     * 老调用方继续用 {@link #resolve(Request)} 拿 Resolution, 不受影响.
+     */
+    public record ResolutionWithAudit(Resolution resolution, ResolutionAuditRecord audit) {
     }
 }

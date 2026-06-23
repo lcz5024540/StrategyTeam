@@ -1,4 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
@@ -9,7 +12,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletPositionExitRequest;
@@ -23,15 +26,17 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.Date;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class SmartWalletPositionSyncService {
+
+    private static final List<String> AUTO_EXIT_TRADABLE_POSITION_STATUSES =
+            List.of("OPEN", "PARTIALLY_CLOSED");
 
     private final SmartWalletProperties properties;
     private final PolymarketApiClient polymarketApiClient;
@@ -49,6 +54,11 @@ public class SmartWalletPositionSyncService {
     private final MarketConcentrationService marketConcentrationService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final PolymarketMarketDataCacheService marketDataCacheService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
+    // F-P1-5: 退出阈值扣除双边 taker fee
+    private final PolymarketFeeScheduleService feeScheduleService;
+    // F-P1-6: 分批出场 (auto exit 时按 partial-exit-ratios 拆 SELL 单)
+    private final StagedExitPlanner stagedExitPlanner;
     private volatile Date cooldownUntil;
     private volatile String cooldownReason;
     private final AtomicInteger consecutiveRpcFailures = new AtomicInteger(0);
@@ -86,7 +96,17 @@ public class SmartWalletPositionSyncService {
             log.debug("Current USDC balance for {}: {}", context.getAddress(), balance);
 
             List<JsonNode> positions = polymarketApiClient.fetchPositions(context.getAddress(), null);
-            log.debug("Current positions count for {}: {}", context.getAddress(), positions.size());
+            int positionCount = positions.size();
+            log.debug("Current positions count for {}: {}", context.getAddress(), positionCount);
+
+            // 安全阀：如果 API 返回的仓位数超出预期上限，截断并告警防止下游 OOM
+            final int maxPositions = 5000;
+            if (positionCount > maxPositions) {
+                log.warn("fetchPositions returned {} positions for {}, truncating to {} to prevent OOM",
+                        positionCount, context.getAddress(), maxPositions);
+                positions = positions.subList(0, maxPositions);
+            }
+
             clearCooldown();
             consecutiveRpcFailures.set(0);
 
@@ -204,16 +224,6 @@ public class SmartWalletPositionSyncService {
         scanLivePositionsForTakeProfit();
     }
 
-    @Scheduled(fixedDelay = 300_000)
-    public void checkTimeWindowExit() {
-        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
-        if (!properties.isEnabled() || risk == null || !risk.isEnableAutoTimeWindowExit()) {
-            return;
-        }
-        scanPaperPositionsForTimeWindowExit();
-        scanLivePositionsForTimeWindowExit();
-    }
-
     private boolean isNotFoundError(Exception e) {
         String message = collectExceptionText(e);
         return message.contains("status=404");
@@ -235,11 +245,63 @@ public class SmartWalletPositionSyncService {
                 || message.contains("ssl");
     }
 
+    /**
+     * 过滤掉来自白名单钱包的仓位，这些仓位不参与自动退出流程。
+     * 通过批量查询仓位的入场订单，获取信号源钱包地址，检查是否在白名单中。
+     */
+    private List<SmartWalletPositionEntity> filterOutAllowlistPositions(List<SmartWalletPositionEntity> positions) {
+        if (positions == null || positions.isEmpty()) {
+            return positions;
+        }
+        Set<Long> positionIds = positions.stream()
+                .map(SmartWalletPositionEntity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (positionIds.isEmpty()) {
+            return positions;
+        }
+        // 批量查询所有仓位的入场订单(BUY侧)
+        List<SmartWalletOrderEntity> entryOrders = orderMapper.selectList(
+                new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                        .in(SmartWalletOrderEntity::getPositionId, positionIds)
+                        .eq(SmartWalletOrderEntity::getSide, "BUY"));
+        // 收集每个仓位的信号源钱包地址
+        Map<Long, String> positionWallets = new HashMap<>();
+        for (SmartWalletOrderEntity order : entryOrders) {
+            if (order.getPositionId() != null && order.getWalletAddress() != null) {
+                positionWallets.putIfAbsent(order.getPositionId(), order.getWalletAddress());
+            }
+        }
+        // 检查哪些仓位的信号源钱包在白名单中
+        Set<Long> allowlistPositionIds = new HashSet<>();
+        Set<String> checkedWallets = new HashSet<>();
+        Map<String, Boolean> walletAllowlistCache = new HashMap<>();
+        for (Map.Entry<Long, String> entry : positionWallets.entrySet()) {
+            String wallet = entry.getValue().toLowerCase();
+            if (!checkedWallets.contains(wallet)) {
+                walletAllowlistCache.put(wallet, manualAllowlistService.findActive(entry.getValue()).isPresent());
+                checkedWallets.add(wallet);
+            }
+            if (Boolean.TRUE.equals(walletAllowlistCache.get(wallet))) {
+                allowlistPositionIds.add(entry.getKey());
+            }
+        }
+        if (allowlistPositionIds.isEmpty()) {
+            return positions;
+        }
+        log.info("[ALLOWLIST_EXIT_SKIP] 跳过白名单仓位自动退出 positionIds={}", allowlistPositionIds);
+        return positions.stream()
+                .filter(p -> !allowlistPositionIds.contains(p.getId()))
+                .collect(Collectors.toList());
+    }
+
     private void scanPaperPositionsForExit(BigDecimal threshold, AutoExitMode mode) {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
+        openPositions = filterOutAllowlistPositions(openPositions);
         // Populate positions with market info to enable delegate getters
         marketInfoService.populatePositions(openPositions);
 
@@ -299,7 +361,9 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
         for (SmartWalletPositionEntity position : openPositions) {
@@ -314,6 +378,8 @@ public class SmartWalletPositionSyncService {
 
             // Resolve dynamic threshold (falls back to fixed threshold when feature is disabled)
             BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
+            // F-P1-5: 在 wallet / scoring 调整前先扣费率（保证 fee 计入"基准阈值"）
+            threshold = applyFeeAdjustment(threshold, position, mode);
             threshold = adjustThresholdByWalletBehavior(position, threshold, mode);
             threshold = adjustThresholdByExitScoringContext(position, threshold, mode);
 
@@ -340,12 +406,22 @@ public class SmartWalletPositionSyncService {
                     : resolvePaperThresholdExitPrice(position, threshold, mode, decision.markPrice());
 
             try {
+                // F-P1-6: PAPER 模式也分批，逐档调用 accountingService.exitPosition
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, exitPrice);
+                BigDecimal exitQty = stagedPlan.isFullExit()
+                        ? position.getQuantity()
+                        : position.getQuantity().multiply(stagedPlan.getRatioOfRemaining()).setScale(8, RoundingMode.HALF_UP);
                 SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
                 exitRequest.setPrice(exitPrice);
-                exitRequest.setQuantity(position.getQuantity());
-                exitRequest.setReason(exitReason);
+                exitRequest.setQuantity(exitQty);
+                exitRequest.setReason(stagedPlan.isFullExit()
+                        ? exitReason
+                        : exitReason + ";STAGED_LEG=" + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
-                exitSignalProvider.clearPositionHistory(position.getId());
+                if (stagedPlan.isFullExit()) {
+                    // 分批中途保留 trend 历史，全平时清空（与 LIVE 路径一致）
+                    exitSignalProvider.clearPositionHistory(position.getId());
+                }
 
                 log.info("{} triggered positionId={} marketId={} outcome={} mark={} exitPrice={} threshold={}% actual={}% pnl={} trendTriggered={} currentStatus={}",
                         mode.logLabel(),
@@ -389,7 +465,9 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
         for (SmartWalletPositionEntity position : openPositions) {
@@ -404,10 +482,18 @@ public class SmartWalletPositionSyncService {
             }
             try {
                 BigDecimal paperExitPrice = resolvePaperThresholdExitPrice(position, threshold, AutoExitMode.TAKE_PROFIT, decision.markPrice());
+                // F-P1-6: PAPER take-profit 也支持分批
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, paperExitPrice);
+                BigDecimal exitQty = stagedPlan.isFullExit()
+                        ? position.getQuantity()
+                        : position.getQuantity().multiply(stagedPlan.getRatioOfRemaining()).setScale(8, RoundingMode.HALF_UP);
                 SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
                 exitRequest.setPrice(paperExitPrice);
-                exitRequest.setQuantity(position.getQuantity());
-                exitRequest.setReason(AutoExitMode.TAKE_PROFIT.reason());
+                exitRequest.setQuantity(exitQty);
+                exitRequest.setReason(stagedPlan.isFullExit()
+                        ? AutoExitMode.TAKE_PROFIT.reason()
+                        : AutoExitMode.TAKE_PROFIT.reason()
+                                + ";STAGED_LEG=" + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
 
                 log.info("{} triggered positionId={} marketId={} outcome={} entry={} mark={} exitPrice={} threshold={}% actual={}% pnl={} currentStatus={}",
@@ -461,7 +547,9 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
+        openPositions = filterOutAllowlistPositions(openPositions);
         // Populate positions with market info to enable delegate getters
         marketInfoService.populatePositions(openPositions);
         for (SmartWalletPositionEntity position : openPositions) {
@@ -478,11 +566,19 @@ public class SmartWalletPositionSyncService {
                 continue;
             }
             try {
-                SmartWalletExecutionResult result = clobExecutionService.executeLiveExit(
-                        position,
-                        decision.markPrice(),
-                        AutoExitMode.TAKE_PROFIT.reason()
-                );
+                // F-P1-6: 分批出场 — enable-staged-exit=true 时按 partial-exit-ratios 拆 SELL 单
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, decision.markPrice());
+                SmartWalletExecutionResult result = stagedPlan.isFullExit()
+                        ? clobExecutionService.executeLiveExit(
+                                position,
+                                decision.markPrice(),
+                                AutoExitMode.TAKE_PROFIT.reason())
+                        : clobExecutionService.executeLivePartialExit(
+                                position,
+                                stagedPlan.getRatioOfRemaining(),
+                                decision.markPrice(),
+                                AutoExitMode.TAKE_PROFIT.reason()
+                                        + ";STAGED_LEG=" + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 accountingService.recordLiveExitExecution(position, result, AutoExitMode.TAKE_PROFIT.reason());
                 log.info("LIVE take-profit submitted positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% status={} orderId={}",
                         position.getId(),
@@ -531,7 +627,9 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
+        openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
         for (SmartWalletPositionEntity position : openPositions) {
             if (hasPendingLiveExitOrder(position.getId())) {
@@ -545,6 +643,8 @@ public class SmartWalletPositionSyncService {
                     position.getAverageEntryPrice()
             );
             BigDecimal threshold = exitSignalProvider.resolveStopLossThreshold(position);
+            // F-P1-5: 阈值加上双边 taker fee
+            threshold = applyFeeAdjustment(threshold, position, AutoExitMode.STOP_LOSS);
             threshold = adjustThresholdByWalletBehavior(position, threshold, AutoExitMode.STOP_LOSS);
             threshold = adjustThresholdByExitScoringContext(position, threshold, AutoExitMode.STOP_LOSS);
             ExitDecision decision = buildExitDecision(position, threshold, AutoExitMode.STOP_LOSS);
@@ -563,13 +663,22 @@ public class SmartWalletPositionSyncService {
                     ? safe(position.getLastMarkPrice())
                     : decision.markPrice();
             try {
-                SmartWalletExecutionResult result = clobExecutionService.executeLiveExit(
-                        position,
-                        exitPrice,
-                        exitReason
-                );
+                // F-P1-6: 分批出场 — enable-staged-exit=true 时按 partial-exit-ratios 拆 SELL 单
+                StagedExitPlanner.Plan stagedPlan = stagedExitPlanner.planNext(position, exitPrice);
+                SmartWalletExecutionResult result = stagedPlan.isFullExit()
+                        ? clobExecutionService.executeLiveExit(
+                                position,
+                                exitPrice,
+                                exitReason)
+                        : clobExecutionService.executeLivePartialExit(
+                                position,
+                                stagedPlan.getRatioOfRemaining(),
+                                exitPrice,
+                                exitReason + ";STAGED_LEG="
+                                        + (stagedPlan.getLegIndex() + 1) + "/" + stagedPlan.getLegCount());
                 accountingService.recordLiveExitExecution(position, result, exitReason);
-                if (result != null && result.isSuccess()) {
+                if (result != null && result.isSuccess() && stagedPlan.isFullExit()) {
+                    // 只在最后一档（全平）时清掉 trend stop-loss 价格历史，分批中途保留
                     exitSignalProvider.clearPositionHistory(position.getId());
                 }
                 log.info("LIVE stop-loss submitted positionId={} marketId={} outcome={} mark={} threshold={}% actual={}% trendTriggered={} status={} orderId={}",
@@ -607,164 +716,13 @@ public class SmartWalletPositionSyncService {
         }
     }
 
-    private void scanPaperPositionsForTimeWindowExit() {
-        List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
-                new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                        .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
-        marketInfoService.populatePositions(openPositions);
-
-        for (SmartWalletPositionEntity position : openPositions) {
-            accountingService.markToMarket(position);
-            refreshRealtimeMarkPrice(position);
-            ExitDecision decision = buildTimeWindowExitDecision(position);
-            if (!decision.triggered()) {
-                continue;
-            }
-            try {
-                SmartWalletPositionExitRequest exitRequest = new SmartWalletPositionExitRequest();
-                exitRequest.setPrice(decision.markPrice());
-                exitRequest.setQuantity(position.getQuantity());
-                exitRequest.setReason(AutoExitMode.TIME_WINDOW.reason());
-                SmartWalletPositionExitResultView exitResult = accountingService.exitPosition(position.getId(), exitRequest);
-                exitSignalProvider.clearPositionHistory(position.getId());
-                log.info("{} triggered positionId={} marketId={} outcome={} mark={} actual={}% pnl={} currentStatus={}",
-                        AutoExitMode.TIME_WINDOW.logLabel(),
-                        position.getId(),
-                        position.getMarketId(),
-                        position.getOutcome(),
-                        decision.markPrice(),
-                        decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
-                        safe(exitResult.getRealizedPnlDeltaUsdc()).setScale(2, RoundingMode.HALF_UP),
-                        exitResult.getCurrentStatus());
-                log.info("{}", flowPosition("S9_POSITION_EXIT", AutoExitMode.TIME_WINDOW.logLabel(), "成功", position,
-                        "mode", position.getExecutionAddress(),
-                        "exitReason", AutoExitMode.TIME_WINDOW.reason(),
-                        "exitPrice", decision.markPrice(),
-                        "exitQuantity", position.getQuantity(),
-                        "pnlRate", decision.rate(),
-                        "realizedPnlDeltaUsdc", exitResult.getRealizedPnlDeltaUsdc(),
-                        "reasonSummary", AutoExitMode.TIME_WINDOW.reason()));
-            } catch (Exception ex) {
-                log.warn("{} exit failed for positionId={} marketId={}: {}",
-                        AutoExitMode.TIME_WINDOW.logLabel(),
-                        position.getId(),
-                        position.getMarketId(),
-                        ex.getMessage(),
-                        ex);
-                log.info("{}", flowPosition("S9_POSITION_EXIT", AutoExitMode.TIME_WINDOW.logLabel(), "失败", position,
-                        "mode", position.getExecutionAddress(),
-                        "exitReason", AutoExitMode.TIME_WINDOW.reason(),
-                        "firstRejectGate", "S9_EXIT_FAILED",
-                        "blockerCategories", "EXIT_EXECUTION",
-                        "reasonSummary", ex.getMessage()));
-            }
-        }
-    }
-
-    private void scanLivePositionsForTimeWindowExit() {
-        ExecutionWalletContextLoader.ExecutionWalletContext wallet;
-        try {
-            wallet = walletContextLoader.requireLiveContext();
-        } catch (Exception ex) {
-            log.debug("Skip LIVE time-window exit scan because execution wallet is not ready: {}", ex.getMessage());
-            return;
-        }
-        if (!StringUtils.hasText(wallet.getAddress())) {
-            return;
-        }
-        List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
-                new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                        .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
-        marketInfoService.populatePositions(openPositions);
-        for (SmartWalletPositionEntity position : openPositions) {
-            if (hasPendingLiveExitOrder(position.getId())) {
-                continue;
-            }
-            accountingService.markToMarket(position);
-            refreshRealtimeMarkPrice(position);
-            ExitDecision decision = buildTimeWindowExitDecision(position);
-            if (!decision.triggered()) {
-                continue;
-            }
-            try {
-                SmartWalletExecutionResult result = clobExecutionService.executeLiveExit(
-                        position,
-                        decision.markPrice(),
-                        AutoExitMode.TIME_WINDOW.reason()
-                );
-                accountingService.recordLiveExitExecution(position, result, AutoExitMode.TIME_WINDOW.reason());
-                if (result != null && result.isSuccess()) {
-                    exitSignalProvider.clearPositionHistory(position.getId());
-                }
-                log.info("LIVE time-window exit submitted positionId={} marketId={} outcome={} mark={} actual={}% status={} orderId={}",
-                        position.getId(),
-                        position.getMarketId(),
-                        position.getOutcome(),
-                        decision.markPrice(),
-                        decision.rate().multiply(new BigDecimal("100")).setScale(1, RoundingMode.HALF_UP),
-                        result == null ? null : result.getStatus(),
-                        result == null ? null : result.getExternalOrderId());
-                log.info("{}", flowPosition("S9_POSITION_EXIT", "LIVE_TIME-WINDOW", result != null && result.isSuccess() ? "已提交" : "失败", position,
-                        "mode", "LIVE",
-                        "exitReason", AutoExitMode.TIME_WINDOW.reason(),
-                        "externalOrderId", result == null ? null : result.getExternalOrderId(),
-                        "orderStatus", result == null ? null : result.getStatus(),
-                        "exitPrice", decision.markPrice(),
-                        "pnlRate", decision.rate(),
-                        "reasonSummary", result == null ? null : result.getMessage()));
-            } catch (Exception ex) {
-                log.warn("LIVE time-window exit failed for positionId={} marketId={}: {}",
-                        position.getId(),
-                        position.getMarketId(),
-                        ex.getMessage(),
-                        ex);
-                log.info("{}", flowPosition("S9_POSITION_EXIT", "LIVE_TIME-WINDOW", "失败", position,
-                        "mode", "LIVE",
-                        "exitReason", AutoExitMode.TIME_WINDOW.reason(),
-                        "firstRejectGate", "S9_EXIT_FAILED",
-                        "blockerCategories", "EXIT_EXECUTION",
-                        "reasonSummary", ex.getMessage()));
-            }
-        }
-    }
-
-    private ExitDecision buildTimeWindowExitDecision(SmartWalletPositionEntity position) {
-        if (position == null || position.getMarketEndAt() == null || position.getMarketEndAt() <= 0) {
-            return ExitDecision.notTriggered();
-        }
-        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
-        long windowHours = risk.getAutoTimeWindowExitHoursBeforeEnd() == null
-                ? 2L
-                : Math.max(0, risk.getAutoTimeWindowExitHoursBeforeEnd());
-        long remainingMs = position.getMarketEndAt() - System.currentTimeMillis();
-        if (remainingMs <= 0 || remainingMs > windowHours * 3600_000L) {
-            return ExitDecision.notTriggered();
-        }
-        BigDecimal quantity = safe(position.getQuantity());
-        BigDecimal costBasis = safe(position.getCostBasisUsdc());
-        BigDecimal markPrice = safe(position.getLastMarkPrice());
-        if (quantity.compareTo(BigDecimal.ZERO) <= 0
-                || costBasis.compareTo(BigDecimal.ZERO) <= 0
-                || markPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            return ExitDecision.notTriggered();
-        }
-        BigDecimal currentValue = markPrice.multiply(quantity).setScale(8, RoundingMode.HALF_UP);
-        BigDecimal pnlRate = currentValue.subtract(costBasis).divide(costBasis, 8, RoundingMode.HALF_UP);
-        BigDecimal minRoi = risk.getAutoTimeWindowExitMinRoiRate() == null
-                ? new BigDecimal("-1.00")
-                : risk.getAutoTimeWindowExitMinRoiRate();
-        return pnlRate.compareTo(minRoi) >= 0
-                ? new ExitDecision(true, markPrice, pnlRate)
-                : ExitDecision.notTriggered();
-    }
-
     private BigDecimal resolveTakeProfitThreshold(SmartWalletPositionEntity position) {
         SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
         BigDecimal configured = risk.getAutoTakeProfitThresholdRate() == null
                 ? new BigDecimal("0.20")
                 : risk.getAutoTakeProfitThresholdRate();
+        // F-P1-5: 阈值加上双边 taker fee，确保净盈利达到 configured 阈值才出场
+        configured = applyFeeAdjustment(configured, position, AutoExitMode.TAKE_PROFIT);
         BigDecimal unitCost = resolveUnitCostBasis(position);
         if (unitCost.compareTo(BigDecimal.ZERO) <= 0 || unitCost.compareTo(BigDecimal.ONE) >= 0) {
             return configured;
@@ -785,6 +743,83 @@ public class SmartWalletPositionSyncService {
             return configured;
         }
         return configured.min(reachableThreshold);
+    }
+
+    private List<SmartWalletPositionEntity> filterAutoExitTradablePositions(List<SmartWalletPositionEntity> positions) {
+        if (positions == null || positions.isEmpty()) {
+            return List.of();
+        }
+        return positions.stream()
+                .filter(this::isAutoExitTradablePosition)
+                .collect(Collectors.toList());
+    }
+
+    private boolean isAutoExitTradablePosition(SmartWalletPositionEntity position) {
+        if (position == null || !StringUtils.hasText(position.getStatus())) {
+            return false;
+        }
+        return AUTO_EXIT_TRADABLE_POSITION_STATUSES.stream()
+                .anyMatch(status -> status.equalsIgnoreCase(position.getStatus()));
+    }
+
+    /**
+     * F-P1-5：把 taker fee（双边）加到 stop-loss / take-profit 配置阈值上，
+     * 这样实际触发出场时，扣完手续费后的净 ROI 才符合 configured 阈值。
+     *
+     * <p>公式：{@code effectiveThreshold = configured + feeMultiplier × observedTakerFeeRate}，
+     *   其中 {@code feeMultiplier=2} 默认（进出两次 taker fee）。受
+     *   {@code signal-risk.enable-exit-threshold-fee-adjustment}（默认 true）控制；
+     *   单次扣除上限为 {@code signal-risk.exit-threshold-fee-adjustment-cap}（默认 0.08）。</p>
+     *
+     * <p>该方法 fee-rate 来源是 {@link PolymarketFeeScheduleService}（运行时缓存 → 品类映射 → 默认 2%），
+     *   按品类动态生效。</p>
+     */
+    private BigDecimal applyFeeAdjustment(BigDecimal configured,
+                                          SmartWalletPositionEntity position,
+                                          AutoExitMode mode) {
+        if (configured == null) {
+            return null;
+        }
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        if (risk == null || !risk.isEnableExitThresholdFeeAdjustment()) {
+            return configured;
+        }
+        if (feeScheduleService == null || position == null) {
+            return configured;
+        }
+        String marketId = position.getMarketId();
+        String category = null;
+        if (position.getMarketInfo() != null) {
+            // 2026-05-17 ray@cowork: entity 上没有 getCategory()，用 normalized_category 优先，回退 source_category
+            category = position.getMarketInfo().getNormalizedCategory();
+            if (!org.springframework.util.StringUtils.hasText(category)) {
+                category = position.getMarketInfo().getSourceCategory();
+            }
+        }
+        BigDecimal feeRate;
+        try {
+            feeRate = feeScheduleService.getTakerFeeRate(marketId, category);
+        } catch (Exception ex) {
+            log.debug("F-P1-5 fee rate lookup failed for positionId={} marketId={}: {}",
+                    position.getId(), marketId, ex.getMessage());
+            return configured;
+        }
+        if (feeRate == null || feeRate.compareTo(BigDecimal.ZERO) <= 0) {
+            return configured;
+        }
+        BigDecimal multiplier = risk.getExitThresholdFeeMultiplier() == null
+                ? new BigDecimal("2") : risk.getExitThresholdFeeMultiplier();
+        BigDecimal adjustment = feeRate.multiply(multiplier).setScale(6, RoundingMode.HALF_UP);
+        BigDecimal cap = risk.getExitThresholdFeeAdjustmentCap();
+        if (cap != null && cap.compareTo(BigDecimal.ZERO) > 0 && adjustment.compareTo(cap) > 0) {
+            adjustment = cap;
+        }
+        BigDecimal adjusted = configured.add(adjustment).setScale(4, RoundingMode.HALF_UP);
+        if (log.isDebugEnabled()) {
+            log.debug("F-P1-5 fee-adjusted threshold positionId={} marketId={} category={} mode={} configured={} feeRate={} adjustment={} adjusted={}",
+                    position.getId(), marketId, category, mode.logLabel(), configured, feeRate, adjustment, adjusted);
+        }
+        return adjusted;
     }
 
     private BigDecimal adjustThresholdByWalletBehavior(SmartWalletPositionEntity position,
@@ -980,7 +1015,7 @@ public class SmartWalletPositionSyncService {
             return ConcentrationPressure.none();
         }
         SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
-        MarketConcentrationService.ConcentrationSnapshot snap =
+        ConcentrationSnapshot snap =
                 marketConcentrationService.analyze(position.getMarketId(), position.getOutcome());
         if (snap == null || !snap.isDataAvailable()) {
             return ConcentrationPressure.none();
@@ -1024,6 +1059,14 @@ public class SmartWalletPositionSyncService {
                                                       BigDecimal threshold,
                                                       AutoExitMode mode,
                                                       BigDecimal fallbackPrice) {
+        // 盈利审计修复(2026-06-03, P0-1)：纸面止盈/止损此前按"恰好触发阈值价"零滑点记账，
+        // 系统性虚高纸面收益/胜率。改为优先用真实盘口 bid（fallbackPrice = 调用前刚由 orderbook
+        // bestBid 刷新的 markPrice）作为成交价——止损按真实 bid 兑现（gap-down 时更真实），
+        // 止盈触发时 bid 已≥阈值，用 bid 同样真实。盘口不可用时退回阈值价（保留原兜底行为）。
+        BigDecimal realBid = safe(fallbackPrice);
+        if (realBid.compareTo(BigDecimal.ZERO) > 0 && realBid.compareTo(BigDecimal.ONE) <= 0) {
+            return realBid.setScale(8, RoundingMode.HALF_UP);
+        }
         BigDecimal quantity = safe(position == null ? null : position.getQuantity());
         BigDecimal costBasis = safe(position == null ? null : position.getCostBasisUsdc());
         if (quantity.compareTo(BigDecimal.ZERO) <= 0 || costBasis.compareTo(BigDecimal.ZERO) <= 0 || threshold == null) {
@@ -1177,7 +1220,6 @@ public class SmartWalletPositionSyncService {
     private enum AutoExitMode {
         STOP_LOSS("STOP-LOSS", "STOP_LOSS_AUTO_EXIT"),
         TAKE_PROFIT("TAKE-PROFIT", "TAKE_PROFIT_AUTO_EXIT"),
-        TIME_WINDOW("TIME-WINDOW", "TIME_WINDOW_AUTO_EXIT"),
         CAPITAL_RECYCLE("CAPITAL-RECYCLE", "CAPITAL_RECYCLE_AUTO_EXIT");
 
         private final String logLabel;

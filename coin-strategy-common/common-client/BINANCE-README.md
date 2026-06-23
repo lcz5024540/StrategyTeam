@@ -1,3 +1,12 @@
+---
+title: "Binance API 使用说明"
+type: runbook
+status: active
+tags: [common-client]
+created: 2026-01-31
+updated: 2026-02-03
+---
+
 # Binance API 使用说明
 
 ## 集成测试配置 (Integration Test Configuration)
@@ -23,7 +32,7 @@
 *   `BINANCE_SECRET_KEY`
 
 或者在 IDE 的 Run Configuration 中设置 JVM 参数：
-```
+```text
 -Dbinance.api.key=your_key -Dbinance.secret.key=your_secret
 ```
 
@@ -164,17 +173,25 @@ OCO (One Cancels the Other) 订单管理，包括查询和撤销。
 **用法示例:**
 
 ```java
-// 查询所有 Open OCO
+// 查询所有当前挂单 OCO
 String openOcos = spotService.getOpenOCO();
 System.out.println(openOcos);
 
-// 查询特定 OCO
-// String ocoDetails = spotService.getOCO(12345L, null);
+// 查询特定 OCO：按 orderListId 或 origClientOrderId 二选一，另一参数传 null
+String ocoByListId = spotService.getOCO(12345L, null);
+String ocoByClientId = spotService.getOCO(null, "my-oco-list-001");
+System.out.println(ocoByListId);
 
-// 撤销 OCO
-// 需要 orderListId
-// spotService.cancelOCO("BTCUSDT", 12345L, null, null);
+// 撤销 OCO：撤销整个订单列表
+// 参数顺序：symbol, orderListId, listClientOrderId, newClientOrderId
+// 需传 symbol + orderListId（或 listClientOrderId 二选一）；后两个可选参数不用时传 null
+String cancelResult = spotService.cancelOCO("BTCUSDT", 12345L, null, null);
+System.out.println(cancelResult);
 ```
+
+> **实现说明**：`getOCO`（查询特定 OCO）与 `cancelOCO`（撤销 OCO）均已在 `BinanceSpotService` 实现，上方示例已补全为可运行代码 —— `getOCO(orderListId, origClientOrderId)` 两参数二选一、另一传 `null`；`cancelOCO(symbol, orderListId, listClientOrderId, newClientOrderId)` 需 `symbol` 加 `orderListId`（或 `listClientOrderId`）。
+>
+> ⚠️ **注意**：同模块的 `placeOCO`（下单 OCO）目前是**占位桩** —— 实现被注释、固定返回 `"{}"`（底层 SDK `createTrade()` 暂无对应 `oco` 方法），OCO **下单**功能尚不可用；如需使用须先补全底层 SDK 调用。本节示例仅覆盖已可用的查询与撤销。
 
 ### 10. 佣金费率 (Commission Rate)
 
@@ -515,3 +532,8 @@ BinanceFuturesDownloadId downloadId = futuresService.getDownloadIdForTradeHistor
 BinanceFuturesDownloadStatus status = futuresService.getDownloadIdStatus(downloadId.getDownloadId());
 System.out.println("Download URL: " + status.getUrl());
 ```
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[架构与平台 知识地图](../../docs/MOC-架构与平台.md) ｜ [知识库首页](../../docs/知识库首页.md)

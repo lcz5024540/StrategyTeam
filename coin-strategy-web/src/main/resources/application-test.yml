@@ -1,6 +1,13 @@
 # ============================================================
 # coin-strategy-web — TEST 测试环境
-# 说明: 测试环境 web 和 job 在同一台服务器上，直接走 127.0.0.1
+# 部署机: 43.139.186.27 (web + 前端)
+# DB:     49.51.250.174:3306 (统一远程 DB), user=root
+# 说明:   web 跨机连远程 DB; 不再调用 job (新架构下 web/job 互不依赖 HTTP)
 # ============================================================
-dashboard:
-  smart-wallet-base-url: http://127.0.0.1:8081
+spring:
+  datasource:
+    # 统一连远程 DB 49.51.250.174; 通过 DB_HOST 可在临时场景覆盖
+    url: "jdbc:mysql://${DB_HOST:49.51.250.174}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "${DB_USERNAME:root}"
+    password: "${DB_PASSWORD:}"
+    driver-class-name: "com.mysql.cj.jdbc.Driver"

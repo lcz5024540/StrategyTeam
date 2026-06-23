@@ -1,9 +1,11 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -98,7 +100,7 @@ public class MarketConcentrationMonitorJob {
     private boolean checkPosition(SmartWalletPositionEntity position) {
         if (position.getMarketId() == null) return false;
 
-        MarketConcentrationService.ConcentrationSnapshot snap =
+        ConcentrationSnapshot snap =
                 concentrationService.analyze(position.getMarketId(), position.getOutcome());
 
         if (!snap.isDataAvailable()) {

@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.EntryTimingDecision;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -45,8 +45,9 @@ public class EntryTimingRiskService {
         }
 
         Date now = new Date();
-        SmartWalletMarketSnapshotEntity latest = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
-                event.getMarketId(), event.getOutcome(), now);
+        // F-P1-7: hot-path 走 findFreshSnapshot, 开关 enable-ws-hot-path-snapshot=true 时优先 WS in-memory
+        SmartWalletMarketSnapshotEntity latest = marketSnapshotCollectorService.findFreshSnapshot(
+                event.getMarketId(), event.getOutcome());
         if (isStale(latest, risk, now)) {
             try {
                 latest = marketSnapshotCollectorService.collectSnapshot(event.getMarketId(), event.getOutcome());

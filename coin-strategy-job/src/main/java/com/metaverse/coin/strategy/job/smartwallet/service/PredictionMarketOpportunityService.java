@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpsertMarketRequest;
 import org.springframework.stereotype.Service;

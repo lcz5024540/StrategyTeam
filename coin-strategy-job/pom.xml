@@ -12,7 +12,20 @@
 
     <artifactId>coin-strategy-job</artifactId>
 
+    <properties>
+        <!-- P1-1-d 部署可追溯：构建时间戳格式（UTC ISO-8601）。 -->
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <!-- P1-1-d 部署可追溯：构建 commit。默认 unknown；构建/部署脚本应在打包时
+             传入 git 短哈希（-Dgit.commit.id=xxxxxxx），使线上 jar 可反查对应 commit。 -->
+        <git.commit.id>unknown</git.commit.id>
+    </properties>
+
     <dependencies>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-service</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.metaverse</groupId>
             <artifactId>coin-strategy-core</artifactId>
@@ -98,6 +111,12 @@
                     <archive>
                         <manifestEntries>
                             <Built-By>dothetrick</Built-By>
+                            <!-- P1-1-d 部署可追溯：jar MANIFEST 注入构建元信息。
+                                 线上可用 `unzip -p app.jar META-INF/MANIFEST.MF` 反查
+                                 构建版本 / 时间 / commit，解决"部署 jar 无法对应 git 提交"。 -->
+                            <Build-Version>${project.version}</Build-Version>
+                            <Build-Time>${maven.build.timestamp}</Build-Time>
+                            <Build-Commit>${git.commit.id}</Build-Commit>
                         </manifestEntries>
                     </archive>
                 </configuration>

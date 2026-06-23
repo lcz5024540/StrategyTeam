@@ -1,15 +1,21 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
-import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageBucketView;
-import com.metaverse.coin.strategy.job.smartwallet.model.DiscoverySessionCoverageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.DiscoverySessionCoverageBucketView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.DiscoverySessionCoverageView;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketDiscoverySummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSelectionSummary;
+import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletEventSyncAsyncConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -31,6 +37,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -42,6 +50,7 @@ public class PolymarketWalletDiscoveryService {
     private static final String LOG_PREFIX = "[POLY_FOLLOW]";
     private static final String MONITOR_TIER_HOT = "HOT";
     private static final String MONITOR_TIER_WARM = "WARM";
+    private static final String MONITOR_TIER_COLD = "COLD";
     private final PolymarketApiClient polymarketApiClient;
     private final PolymarketSmartWalletMonitorService monitorService;
     private final SmartWalletSelectionService selectionService;
@@ -52,10 +61,22 @@ public class PolymarketWalletDiscoveryService {
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final WalletOrderAggregationService walletOrderAggregationService;
+    private final LeaderTradeOutcomeRebuildService leaderTradeOutcomeRebuildService;
+    private final SmartWalletProfileTruthRefreshService profileTruthRefreshService;
+    private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final SmartWalletManualBlocklistService manualBlocklistService;
+    @Autowired
+    @Qualifier(SmartWalletEventSyncAsyncConfig.EXECUTOR_BEAN_NAME)
+    private Executor eventSyncExecutor = Runnable::run;
     private final AtomicInteger watchlistSyncCursor = new AtomicInteger(0);
     private final AtomicBoolean firstDiscoveryRun = new AtomicBoolean(true);
     private final AtomicBoolean firstLeaderboardRefreshRun = new AtomicBoolean(true);
+    private final AtomicBoolean eventSyncRunning = new AtomicBoolean(false);
     private final Map<String, Long> walletTradeNextAllowedAt = new ConcurrentHashMap<>();
+
+    void setEventSyncExecutorForTest(Executor eventSyncExecutor) {
+        this.eventSyncExecutor = eventSyncExecutor == null ? Runnable::run : eventSyncExecutor;
+    }
 
     public PolymarketDiscoverySummary analyzeTopWallets() {
         return analyzeTopWallets(null, true);
@@ -89,6 +110,7 @@ public class PolymarketWalletDiscoveryService {
                 LOG_PREFIX, perQueryLimit, syncTradesAfterRefresh);
         try {
             candidates = fetchLeaderboardCandidates(perQueryLimit, notes);
+            candidates = filterBlocklistedCandidates(candidates, notes);
             leaderboardStateService.refreshSnapshot(candidates.stream()
                     .map(DiscoveryCandidate::toLeaderboardEntry)
                     .toList());
@@ -114,6 +136,9 @@ public class PolymarketWalletDiscoveryService {
 
         for (DiscoveryCandidate candidate : candidates) {
             try {
+                if (isBlockedOrInactiveCandidate(candidate, notes)) {
+                    continue;
+                }
                 PolymarketWalletMetricsRequest metrics = buildMetrics(candidate);
                 if (metrics == null || metrics.getTotalTrades() == null || metrics.getTotalTrades() == 0) {
                     log.info("{} action=分析Polymarket候选钱包 result=跳过 reason=无已结算交易 wallet={}",
@@ -183,6 +208,11 @@ public class PolymarketWalletDiscoveryService {
 
     public boolean analyzeWalletAndAdmitWatchlist(String walletAddress) {
         if (!StringUtils.hasText(walletAddress)) {
+            return false;
+        }
+        if (manualBlocklistService.isBlocked(walletAddress)) {
+            log.info("{} action=手动分析并纳入观察名单 result=拒绝 wallet={} reason={}",
+                    LOG_PREFIX, walletAddress, manualBlocklistService.activeReason(walletAddress));
             return false;
         }
         String normalizedWalletAddress = walletAddress.trim();
@@ -280,7 +310,7 @@ public class PolymarketWalletDiscoveryService {
             if (wallet == null || !StringUtils.hasText(wallet.getWalletAddress())) {
                 continue;
             }
-            if (!isWarmWallet(wallet)) {
+            if (!isMetricsRefreshCandidate(wallet)) {
                 continue;
             }
             if (enforceDueWindow && !isWarmMetricsRefreshDue(wallet, now)) {
@@ -362,13 +392,27 @@ public class PolymarketWalletDiscoveryService {
             log.debug("{} action=定时同步Polymarket观察名单交易 result=跳过 reason=事件同步开关未开启", LOG_PREFIX);
             return;
         }
+        if (!eventSyncRunning.compareAndSet(false, true)) {
+            log.warn("{} action=定时同步Polymarket观察名单交易 result=跳过 reason=上一轮事件同步仍在运行", LOG_PREFIX);
+            return;
+        }
         try {
-            log.info("{} action=定时同步Polymarket观察名单交易 result=开始", LOG_PREFIX);
-            int imported = syncWatchlistTradesBatch();
-            log.info("{} action=定时同步Polymarket观察名单交易 result=完成 importedTradeEvents={}",
-                    LOG_PREFIX, imported);
-        } catch (Exception e) {
-            log.warn("{} action=定时同步Polymarket观察名单交易 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
+            eventSyncExecutor.execute(() -> {
+                try {
+                    log.info("{} action=定时同步Polymarket观察名单交易 result=开始", LOG_PREFIX);
+                    int imported = syncWatchlistTradesBatch();
+                    log.info("{} action=定时同步Polymarket观察名单交易 result=完成 importedTradeEvents={}",
+                            LOG_PREFIX, imported);
+                } catch (Exception e) {
+                    log.warn("{} action=定时同步Polymarket观察名单交易 result=失败 reason={}", LOG_PREFIX, rootMessage(e));
+                } finally {
+                    eventSyncRunning.set(false);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            eventSyncRunning.set(false);
+            log.warn("{} action=定时同步Polymarket观察名单交易 result=跳过 reason=事件同步线程池繁忙 message={}",
+                    LOG_PREFIX, rootMessage(e));
         }
     }
 
@@ -432,9 +476,16 @@ public class PolymarketWalletDiscoveryService {
 
     private List<SmartWalletProfileEntity> selectWarmMetricsRefreshBatch() {
         long now = System.currentTimeMillis();
-        return profileStoreService.listWarmWatchlist().stream()
+        LinkedHashMap<String, SmartWalletProfileEntity> candidates = new LinkedHashMap<>();
+        profileStoreService.listWarmWatchlist().stream()
                 .filter(item -> item != null && StringUtils.hasText(item.getWalletAddress()))
                 .filter(item -> isWarmMetricsRefreshDue(item, now))
+                .forEach(item -> candidates.put(normalizeWalletKey(item.getWalletAddress()), item));
+        profileStoreService.listColdProfiles().stream()
+                .filter(item -> item != null && StringUtils.hasText(item.getWalletAddress()))
+                .filter(item -> isColdMetricsRefreshCandidate(item, now))
+                .forEach(item -> candidates.putIfAbsent(normalizeWalletKey(item.getWalletAddress()), item));
+        return candidates.values().stream()
                 .sorted(Comparator
                         .comparing(SmartWalletProfileEntity::getLastMetricsRefreshAt, Comparator.nullsFirst(Comparator.naturalOrder()))
                         .thenComparing(SmartWalletProfileEntity::getWalletScore, Comparator.nullsLast(Comparator.reverseOrder())))
@@ -498,10 +549,17 @@ public class PolymarketWalletDiscoveryService {
 
     private List<PolymarketApiClient.UserTrade> fetchBackfillTradesAfterCheckpoint(SmartWalletProfileEntity wallet, Date checkpoint) {
         int pageSize = Math.max(1, properties.getPolymarket().getRecentTradeLimit());
+        // 时间下界：checkpoint 为空时（如新晋 HOT 钱包 lastEventSyncAt=null），原逻辑会一直翻页到
+        // MAX_USER_TRADE_HISTORY_OFFSET 拉取全历史成交，造成历史事件洪峰。这里强制以
+        // warmPromotionBackfillLookbackDays 截断，并取与 checkpoint 较晚者作为有效下界。
+        long lookbackFloorMillis = System.currentTimeMillis() - warmPromotionBackfillLookbackMillis();
+        long floorMillis = checkpoint == null
+                ? lookbackFloorMillis
+                : Math.max(checkpoint.getTime(), lookbackFloorMillis);
         int offset = 0;
-        boolean reachedCheckpoint = false;
+        boolean reachedFloor = false;
         Map<String, PolymarketApiClient.UserTrade> deduped = new LinkedHashMap<>();
-        while (!reachedCheckpoint && offset <= PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET) {
+        while (!reachedFloor && offset <= PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET) {
             List<PolymarketApiClient.UserTrade> chunk = polymarketApiClient.fetchUserTrades(wallet.getWalletAddress(), pageSize, offset);
             if (chunk == null || chunk.isEmpty()) {
                 break;
@@ -510,8 +568,9 @@ public class PolymarketWalletDiscoveryService {
                 if (trade == null || !StringUtils.hasText(trade.getTradeId())) {
                     continue;
                 }
-                if (checkpoint != null && trade.getTradedAt() != null && trade.getTradedAt() <= checkpoint.getTime()) {
-                    reachedCheckpoint = true;
+                // fetchUserTrades 按 tradedAt 倒序返回，命中下界即可停止翻页。
+                if (trade.getTradedAt() != null && trade.getTradedAt() <= floorMillis) {
+                    reachedFloor = true;
                     break;
                 }
                 deduped.putIfAbsent(trade.getTradeId(), trade);
@@ -522,6 +581,13 @@ public class PolymarketWalletDiscoveryService {
             offset += pageSize;
         }
         return orderTradesChronologically(deduped.values());
+    }
+
+    /** Warm promotion 回填的时间下界（毫秒）；防止 checkpoint 为空时回填全历史成交。 */
+    private long warmPromotionBackfillLookbackMillis() {
+        Integer days = properties.getPolymarket().getWarmPromotionBackfillLookbackDays();
+        int safeDays = (days == null || days <= 0) ? 2 : days;
+        return java.util.concurrent.TimeUnit.DAYS.toMillis(safeDays);
     }
 
     private List<PolymarketApiClient.UserTrade> filterTradesAfterCheckpoint(List<PolymarketApiClient.UserTrade> trades, Date checkpoint) {
@@ -574,6 +640,39 @@ public class PolymarketWalletDiscoveryService {
         return now - lastMetricsRefreshAt.getTime() >= warmWalletRefreshMinIntervalMs();
     }
 
+    private boolean isMetricsRefreshCandidate(SmartWalletProfileEntity wallet) {
+        if (wallet == null || manualBlocklistService.isBlocked(wallet.getWalletAddress())
+                || manualBlocklistService.blockForInactivityIfNeeded(wallet)) {
+            return false;
+        }
+        return isWarmWallet(wallet) || isColdWallet(wallet);
+    }
+
+    private boolean isColdMetricsRefreshCandidate(SmartWalletProfileEntity wallet, long now) {
+        if (wallet == null || manualBlocklistService.isBlocked(wallet.getWalletAddress())
+                || manualBlocklistService.blockForInactivityIfNeeded(wallet)) {
+            return false;
+        }
+        if (!isColdWallet(wallet) || !isWarmMetricsRefreshDue(wallet, now)) {
+            return false;
+        }
+        if (manualAllowlistService.isActive(wallet.getWalletAddress())) {
+            return true;
+        }
+        if (wallet.getManualWatchEnabled() != null) {
+            return true;
+        }
+        if (wallet.getLastDiscoveredAt() != null
+                && wallet.getLastDiscoveredAt().getTime() >= now - java.util.concurrent.TimeUnit.DAYS.toMillis(30)) {
+            return true;
+        }
+        BigDecimal minWalletScore = properties.getMinWalletScore() == null ? BigDecimal.ZERO : properties.getMinWalletScore();
+        BigDecimal warmThreshold = minWalletScore.subtract(new BigDecimal("0.10")).max(BigDecimal.ZERO);
+        return wallet.getLastMetricsRefreshAt() == null
+                && wallet.getWalletScore() != null
+                && wallet.getWalletScore().compareTo(warmThreshold) >= 0;
+    }
+
     private boolean needsWarmPromotionBackfill(SmartWalletProfileEntity wallet) {
         if (!isHotWallet(wallet) || wallet == null || wallet.getLastMetricsRefreshAt() == null) {
             return false;
@@ -587,6 +686,10 @@ public class PolymarketWalletDiscoveryService {
 
     private boolean isWarmWallet(SmartWalletProfileEntity wallet) {
         return wallet != null && MONITOR_TIER_WARM.equalsIgnoreCase(wallet.getMonitorTier());
+    }
+
+    private boolean isColdWallet(SmartWalletProfileEntity wallet) {
+        return wallet != null && MONITOR_TIER_COLD.equalsIgnoreCase(wallet.getMonitorTier());
     }
 
     private Date resolveHotSyncCheckpoint(long checkpointMillis, long fallbackNow) {
@@ -644,11 +747,6 @@ public class PolymarketWalletDiscoveryService {
     }
 
     private PolymarketWalletMetricsRequest buildMetrics(DiscoveryCandidate candidate, boolean includeDiscoveryMetadata) {
-        WalletOrderAggregationService.WalletSnapshot snapshot = walletOrderAggregationService.snapshot(candidate.getWalletAddress());
-        List<WalletOrderAggregationService.ClosedOrderSnapshot> positions = snapshot.getClosedOrders();
-        if (CollectionUtils.isEmpty(positions)) {
-            return null;
-        }
         List<PolymarketApiClient.UserTrade> userTrades = polymarketApiClient.fetchUserTrades(
                 candidate.getWalletAddress(),
                 properties.getPolymarket().getDiscoveryProfileTradeLimit()
@@ -662,116 +760,46 @@ public class PolymarketWalletDiscoveryService {
                     LOG_PREFIX, candidate.getWalletAddress(), rootMessage(e), e);
         }
 
-        BigDecimal realizedPnl = BigDecimal.ZERO;
-        BigDecimal totalSize = BigDecimal.ZERO;
-        BigDecimal roiSum = BigDecimal.ZERO;
-        int roiCount = 0;
-        int wins = 0;
-        int recentWins7d = 0;
-        int recentTrades7d = 0;
-        int recentWins = 0;
-        int recentTrades = 0;
-        long lastTradeAt = 0L;
-        long recent7dCutoffMs = System.currentTimeMillis() - 7L * 24L * 3600_000L;
-        long recentCutoffMs = System.currentTimeMillis() - 30L * 24L * 3600_000L;
-
-        List<WalletOrderAggregationService.ClosedOrderSnapshot> orderedPositions = positions.stream()
-                .sorted(Comparator.comparing(item -> item.getSettlementAt() == null ? null : item.getSettlementAt().getTime(),
-                        Comparator.nullsLast(Long::compareTo)))
-                .toList();
-
-        BigDecimal equity = BigDecimal.ZERO;
-        BigDecimal peakEquity = BigDecimal.ZERO;
-        BigDecimal maxDrawdown = BigDecimal.ZERO;
-
-        for (WalletOrderAggregationService.ClosedOrderSnapshot position : orderedPositions) {
-            BigDecimal pnl = safe(position.getRealizedPnlUsdc());
-            BigDecimal size = safe(position.getInvestedUsdc());
-            realizedPnl = realizedPnl.add(pnl);
-            totalSize = totalSize.add(size);
-            if (pnl.compareTo(BigDecimal.ZERO) > 0) {
-                wins++;
-            }
-            if (position.getSettlementAt() != null && position.getSettlementAt().getTime() >= recentCutoffMs) {
-                recentTrades++;
-                if (pnl.compareTo(BigDecimal.ZERO) > 0) {
-                    recentWins++;
-                }
-            }
-            if (position.getSettlementAt() != null && position.getSettlementAt().getTime() >= recent7dCutoffMs) {
-                recentTrades7d++;
-                if (pnl.compareTo(BigDecimal.ZERO) > 0) {
-                    recentWins7d++;
-                }
-            }
-            if (size.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal roi = pnl.divide(size, 6, RoundingMode.HALF_UP);
-                roiSum = roiSum.add(roi.max(BigDecimal.ZERO).min(BigDecimal.ONE));
-                roiCount++;
-            }
-
-            equity = equity.add(pnl);
-            if (equity.compareTo(peakEquity) > 0) {
-                peakEquity = equity;
-            }
-            BigDecimal denominator = peakEquity.max(BigDecimal.ONE);
-            BigDecimal drawdown = peakEquity.subtract(equity).max(BigDecimal.ZERO)
-                    .divide(denominator, 6, RoundingMode.HALF_UP)
-                    .min(BigDecimal.ONE);
-            if (drawdown.compareTo(maxDrawdown) > 0) {
-                maxDrawdown = drawdown;
-            }
-            if (position.getSettlementAt() != null) {
-                lastTradeAt = Math.max(lastTradeAt, position.getSettlementAt().getTime());
-            }
-        }
-
-        for (PolymarketApiClient.UserTrade trade : userTrades) {
-            if (trade != null && trade.getTradedAt() != null) {
-                lastTradeAt = Math.max(lastTradeAt, trade.getTradedAt());
-            }
-        }
-
-        int totalTrades = orderedPositions.size();
         String alias = profile != null && StringUtils.hasText(profile.getAlias()) ? profile.getAlias() : candidate.getAlias();
-        BigDecimal winRate = BigDecimal.valueOf(wins)
-                .divide(BigDecimal.valueOf(totalTrades), 4, RoundingMode.HALF_UP);
-        BigDecimal averageSize = totalTrades == 0 ? BigDecimal.ZERO
-                : totalSize.divide(BigDecimal.valueOf(totalTrades), 4, RoundingMode.HALF_UP);
-        BigDecimal averageRoi = roiCount == 0 ? BigDecimal.ZERO
-                : roiSum.divide(BigDecimal.valueOf(roiCount), 4, RoundingMode.HALF_UP);
-        BigDecimal recentWinRate7d = recentTrades7d == 0 ? null : BigDecimal.valueOf(recentWins7d)
-                .divide(BigDecimal.valueOf(recentTrades7d), 4, RoundingMode.HALF_UP);
-        BigDecimal recentWinRate30d = recentTrades == 0 ? null : BigDecimal.valueOf(recentWins)
-                .divide(BigDecimal.valueOf(recentTrades), 4, RoundingMode.HALF_UP);
         SessionProfile sessionProfile = buildSessionProfile(userTrades);
 
-        PolymarketWalletMetricsRequest request = new PolymarketWalletMetricsRequest();
-        request.setWalletAddress(candidate.getWalletAddress());
-        request.setChain("polygon");
-        request.setAlias(alias);
-        request.setWinRate(winRate);
-        request.setRealizedPnlUsdc(realizedPnl.setScale(4, RoundingMode.HALF_UP));
-        request.setTotalTrades(totalTrades);
-        request.setAverageSizeUsdc(averageSize);
-        request.setAverageRoiRate(averageRoi);
-        request.setMaxDrawdownRate(maxDrawdown.setScale(4, RoundingMode.HALF_UP));
-        request.setLastTradeAt(lastTradeAt > 0 ? new Date(lastTradeAt) : null);
-        if (includeDiscoveryMetadata) {
-            request.setLastDiscoveredAt(new Date());
-            request.setLastDiscoveryQuery(candidate.getLastDiscoveryQuery());
-            request.setLeaderboardHitCount30d(candidate.getLeaderboardHitCount());
+        try {
+            leaderTradeOutcomeRebuildService.rebuild(candidate.getWalletAddress(), null);
+        } catch (Exception e) {
+            log.warn("{} action=重建Polymarket钱包真实闭环 result=失败 wallet={} reason={}",
+                    LOG_PREFIX, candidate.getWalletAddress(), rootMessage(e), e);
         }
-        request.setDominantSession(sessionProfile.dominantSession);
-        request.setAsiaTradeRatio30d(sessionProfile.asiaTradeRatio);
-        request.setEuTradeRatio30d(sessionProfile.euTradeRatio);
-        request.setUsTradeRatio30d(sessionProfile.usTradeRatio);
-        request.setActiveHourHistogramJson(sessionProfile.activeHourHistogramJson);
-        request.setRecentWinRate7d(recentWinRate7d);
-        request.setRecentWinRate30d(recentWinRate30d);
-        request.setRecentTradeCount7d(recentTrades7d);
-        request.setRecentTradeCount30d(recentTrades);
-        return request;
+        SmartWalletProfileTruthRefreshService.DiscoveryMetadata metadata = null;
+        if (includeDiscoveryMetadata) {
+            metadata = new SmartWalletProfileTruthRefreshService.DiscoveryMetadata(
+                    new Date(),
+                    candidate.getLastDiscoveryQuery(),
+                    candidate.getLeaderboardHitCount(),
+                    sessionProfile.dominantSession,
+                    sessionProfile.asiaTradeRatio,
+                    sessionProfile.euTradeRatio,
+                    sessionProfile.usTradeRatio,
+                    sessionProfile.activeHourHistogramJson
+            );
+        }
+        PolymarketWalletMetricsRequest truthMetrics = profileTruthRefreshService.buildTruthMetrics(
+                candidate.getWalletAddress(),
+                alias,
+                metadata
+        );
+        if (truthMetrics == null || truthMetrics.getTotalTrades() == null || truthMetrics.getTotalTrades() <= 0) {
+            log.info("{} action=分析Polymarket候选钱包 result=跳过 reason=INSUFFICIENT_TRUTH_DATA wallet={}",
+                    LOG_PREFIX, candidate.getWalletAddress());
+            return null;
+        }
+        if (!includeDiscoveryMetadata) {
+            truthMetrics.setDominantSession(sessionProfile.dominantSession);
+            truthMetrics.setAsiaTradeRatio30d(sessionProfile.asiaTradeRatio);
+            truthMetrics.setEuTradeRatio30d(sessionProfile.euTradeRatio);
+            truthMetrics.setUsTradeRatio30d(sessionProfile.usTradeRatio);
+            truthMetrics.setActiveHourHistogramJson(sessionProfile.activeHourHistogramJson);
+        }
+        return truthMetrics;
     }
 
     private DiscoveryCandidate toRefreshCandidate(SmartWalletProfileEntity wallet) {
@@ -900,6 +928,47 @@ public class PolymarketWalletDiscoveryService {
             }
         }
         return new ArrayList<>(deduped.values());
+    }
+
+    private List<DiscoveryCandidate> filterBlocklistedCandidates(List<DiscoveryCandidate> candidates, List<String> notes) {
+        if (CollectionUtils.isEmpty(candidates)) {
+            return List.of();
+        }
+        List<DiscoveryCandidate> kept = new ArrayList<>();
+        int skipped = 0;
+        for (DiscoveryCandidate candidate : candidates) {
+            if (isBlockedOrInactiveCandidate(candidate, notes)) {
+                skipped++;
+                continue;
+            }
+            kept.add(candidate);
+        }
+        if (skipped > 0) {
+            notes.add("Skipped " + skipped + " leaderboard candidates due to manual/inactive blocklist.");
+        }
+        return kept;
+    }
+
+    private boolean isBlockedOrInactiveCandidate(DiscoveryCandidate candidate, List<String> notes) {
+        if (candidate == null || !StringUtils.hasText(candidate.getWalletAddress())) {
+            return true;
+        }
+        String wallet = candidate.getWalletAddress();
+        if (manualBlocklistService.isBlocked(wallet)) {
+            log.info("{} action=过滤Polymarket候选钱包 result=跳过 wallet={} reason={}",
+                    LOG_PREFIX, wallet, manualBlocklistService.activeReason(wallet));
+            return true;
+        }
+        SmartWalletProfileEntity existing = profileStoreService.findByWalletAddress(wallet);
+        if (manualBlocklistService.blockForInactivityIfNeeded(existing)) {
+            log.info("{} action=过滤Polymarket候选钱包 result=写入阻断并跳过 wallet={} reason={}",
+                    LOG_PREFIX, wallet, SmartWalletManualBlocklistService.REASON_INACTIVE_GT_35D_BLOCKLIST);
+            if (notes != null) {
+                notes.add("Blocked inactive leaderboard candidate " + wallet + ".");
+            }
+            return true;
+        }
+        return false;
     }
 
     private SmartWalletProperties.PolymarketMonitor.LeaderboardQuery effectiveQuery(

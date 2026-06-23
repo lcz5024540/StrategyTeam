@@ -29,4 +29,10 @@ public class PolymarketWalletMetricsRequest {
     private BigDecimal recentWinRate30d;
     private Integer recentTradeCount7d;
     private Integer recentTradeCount30d;
+    /** Beta后验/Wilson 方案（2026-06-05）：决断样本数 wins+losses；null=本次来源不产出（store 侧不覆盖）。 */
+    private Integer decisiveTrades;
+    /** Wilson 单侧95%下界可信胜率。 */
+    private BigDecimal credibleWinRate;
+    /** Beta 后验均值收缩胜率。 */
+    private BigDecimal shrunkWinRate;
 }

@@ -1,0 +1,48 @@
+---
+title: 交易策略知识地图
+type: index
+status: active
+tags: [strategy, arbitrage]
+updated: 2026-05-23
+---
+
+# 交易策略知识地图 (MOC)
+
+本地图汇总 Polymarket 之外的全部交易策略文档（CEX 与链上）。Polymarket 策略见 [Polymarket MOC](MOC-Polymarket.md)。
+
+返回 [知识库首页](知识库首页.md)
+
+## 一、资金费率套利 (Funding Rate Arbitrage)
+
+通过永续合约资金费率赚取收益，是项目优先实现的对冲类策略。
+
+### 总览与设计
+
+- [FUNDING_RATE_ARBITRAGE](../funding-rate/FUNDING_RATE_ARBITRAGE.md) — 资金费率套利总览
+- [funding-rate-arbitrage-design](../funding-rate/funding-rate-arbitrage-design.md) — 套利策略设计文档
+
+### 单交易所方案
+
+- [FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE](../funding-rate/FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE.md) — 单交易所套利
+- [SINGLE_EXCHANGE_..._EXECUTION_CHAIN](../funding-rate/SINGLE_EXCHANGE_FUNDING_RATE_ARBITRAGE_EXECUTION_CHAIN.md) — 单交易所执行链
+- [SINGLE_EXCHANGE_..._FLOW](../funding-rate/SINGLE_EXCHANGE_FUNDING_RATE_ARBITRAGE_FLOW.md) — 单交易所流程
+- [FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE_SHARE](../funding-rate/FUNDING_RATE_ARBITRAGE_SINGLE_EXCHANGE_SHARE.md) — 单交易所方案（分享版）
+
+### 多交易所方案
+
+- [FUNDING_RATE_ARBITRAGE_MULTI_EXCHANGE](../funding-rate/FUNDING_RATE_ARBITRAGE_MULTI_EXCHANGE.md) — 多交易所套利
+- [FUNDING_RATE_ARBITRAGE_MULTI_EXCHANGE_SHARE](../funding-rate/FUNDING_RATE_ARBITRAGE_MULTI_EXCHANGE_SHARE.md) — 多交易所方案（分享版）
+
+## 二、链上借贷 + 稳定币 LP
+
+- [CEX_LOAN_ONCHAIN_STABLE_LP_STRATEGY](../funding-rate/CEX_LOAN_ONCHAIN_STABLE_LP_STRATEGY.md) — CEX 借贷叠加链上稳定币 LP 策略
+
+## 三、CEX 趋势与技术分析策略
+
+- [TOP50_STRATEGY](../TOP50_STRATEGY.md) — TOP50 趋势与波动率策略
+- [CONVENTIONAL_TECHNICAL_STRATEGY](../CONVENTIONAL_TECHNICAL_STRATEGY.md) — 常规技术分析策略
+- [RATE_MOMENTUM_STRATEGY](../RATE_MOMENTUM_STRATEGY.md) — 利率动量策略
+
+## 研究新策略？
+
+调研一个新策略并把它落地到项目时，使用 `learning-strategy` 技能：调研原理与风险 → 映射到分层架构 → 拆解开发任务。

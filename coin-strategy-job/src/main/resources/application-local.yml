@@ -2,10 +2,14 @@
 # coin-strategy-job — LOCAL 本地开发环境
 # 启动方式: --spring.profiles.active=local
 #
+# 默认 DB:  43.139.186.27:3306/coin_strategy as devuser (跟 web local 一致)
+# 密码:     与 test 环境一致 — 来自 deploy/linux/env/shared/secrets.env 的 DB_PASSWORD (ENC 密文)
+#
 # 数据库密码通过环境变量注入，不允许明文写入此文件。
 # 本地开发请在启动前执行:
 #   source scripts/local-dev.env   (从 scripts/local-dev.env.example 复制后填写)
 # 或在 IntelliJ Run Configuration 的 Environment variables 中设置 DB_PASSWORD。
+# 临时切回本机 DB: DB_HOST=127.0.0.1 DB_USERNAME=root ./scripts/run-job-local.sh
 # ============================================================
 server:
   port: 8081
@@ -13,7 +17,8 @@ server:
 
 spring:
   datasource:
-    url: "jdbc:mysql://127.0.0.1:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
-    username: "root"
+    # DB_HOST/DB_USERNAME 可通过环境变量覆盖, 默认 43.139.186.27 / devuser
+    url: "jdbc:mysql://${DB_HOST:43.139.186.27}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
+    username: "${DB_USERNAME:devuser}"
     password: "${DB_PASSWORD:}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"

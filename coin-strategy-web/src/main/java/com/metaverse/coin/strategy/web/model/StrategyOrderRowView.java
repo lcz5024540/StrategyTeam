@@ -7,6 +7,7 @@ public record StrategyOrderRowView(
         Long followTaskId,
         String executionMode,
         String question,
+        String marketSlug,
         String outcome,
         String side,
         String orderType,

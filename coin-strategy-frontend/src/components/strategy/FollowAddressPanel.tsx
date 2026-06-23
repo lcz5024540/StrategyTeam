@@ -2,7 +2,14 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { profilesApi } from '@/api'
-import type { WalletDiagnosisView, WalletOrderAnalysisView, WalletOrderStatsView, WalletScreenerView } from '@/types'
+import type {
+  SmartWalletManualAllowlistView,
+  SmartWalletManualBlocklistView,
+  WalletDiagnosisView,
+  WalletOrderAnalysisView,
+  WalletOrderStatsView,
+  WalletScreenerView,
+} from '@/types'
 import {
   compactAddress,
   formatAmount,
@@ -88,6 +95,22 @@ function formatEvidencePercent(value: number | null | undefined, dataQuality: st
     return `${formatted}*`
   }
   return formatted
+}
+
+function buildPolymarketProfileUrl(row: Pick<WalletScreenerView, 'walletAddress' | 'alias'>) {
+  const alias = row.alias?.trim()
+  if (alias && /^@[A-Za-z0-9_.-]+$/.test(alias)) {
+    return `https://polymarket.com/${alias}`
+  }
+  return row.walletAddress ? `https://polymarket.com/profile/${row.walletAddress.trim()}` : ''
+}
+
+function buildPolymarketProfileUrlFromAddress(walletAddress: string | null | undefined, alias?: string | null) {
+  const normalizedAlias = alias?.trim()
+  if (normalizedAlias && /^@[A-Za-z0-9_.-]+$/.test(normalizedAlias)) {
+    return `https://polymarket.com/${normalizedAlias}`
+  }
+  return walletAddress ? `https://polymarket.com/profile/${walletAddress.trim()}` : ''
 }
 
 function getArchetypeMeta(value: string | null | undefined): CodeMeta {
@@ -392,6 +415,10 @@ function averageMetric(rows: WalletScreenerView[], picker: (row: WalletScreenerV
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
+function normalizeWalletAddress(value: string | null | undefined) {
+  return value?.trim().toLowerCase() || ''
+}
+
 function buildFocusSummary(row?: WalletScreenerView, diagnosis?: WalletDiagnosisView, stats?: WalletOrderStatsView) {
   if (!row && !diagnosis) {
     return '从监控列表点击一个地址后，这里会输出面向运营的聚焦结论。'
@@ -547,17 +574,31 @@ export function FollowAddressPanel() {
   }
 
   const { data: monitoredPage, isLoading: monitoredLoading } = useQuery({
-    queryKey: ['copyAddressScreener', 'candidates'],
-    queryFn: () => profilesApi.getScreener({ scope: 'candidates', limit: 60 }),
+    queryKey: ['copyAddressScreener', 'all'],
+    queryFn: () => profilesApi.getScreener({ scope: 'all', limit: 200 }),
   })
 
-  const { data: executablePage, isLoading: executableLoading } = useQuery({
-    queryKey: ['copyAddressScreener', 'executable'],
-    queryFn: () => profilesApi.getScreener({ scope: 'executable', limit: 24 }),
+  const { data: allowlistEntries = [], isLoading: allowlistLoading } = useQuery({
+    queryKey: ['copyAddressAllowlist'],
+    queryFn: () => profilesApi.getAllowlist(200),
+  })
+
+  const { data: blocklistEntries = [], isLoading: blocklistLoading } = useQuery({
+    queryKey: ['copyAddressBlocklist'],
+    queryFn: () => profilesApi.getBlocklist(500),
   })
 
   const monitoredAddresses = monitoredPage?.items || []
-  const executableAddresses = executablePage?.items || []
+  const monitoredByWallet = new Map(monitoredAddresses.map((row) => [normalizeWalletAddress(row.walletAddress), row]))
+  const activeAllowlistEntries = allowlistEntries.filter((entry) => entry.active && entry.status === 'ACTIVE')
+  const activeBlocklistEntries = blocklistEntries.filter((entry) => entry.active && entry.status === 'ACTIVE')
+  const allowlistWallets = new Set(activeAllowlistEntries.map((entry) => normalizeWalletAddress(entry.walletAddress)))
+  const blocklistWallets = new Set(activeBlocklistEntries.map((entry) => normalizeWalletAddress(entry.walletAddress)))
+  const executableAddresses = monitoredAddresses
+    .filter((row) => row.monitorTier !== 'COLD' && (row.screenerTier === 'EXECUTABLE_A' || row.screenerTier === 'EXECUTABLE_B'))
+    .filter((row) => !allowlistWallets.has(normalizeWalletAddress(row.walletAddress)))
+    .filter((row) => !blocklistWallets.has(normalizeWalletAddress(row.walletAddress)))
+    .slice(0, 24)
 
   const { data: diagnosis, isLoading: diagnosisLoading } = useQuery({
     queryKey: ['copyAddressDiagnosis', selectedWalletAddress],
@@ -599,65 +640,66 @@ export function FollowAddressPanel() {
   const recentTradeTrend = buildRecentTradeTrend(filteredOrders)
   const normalizedKeyword = keyword.trim().toLowerCase()
 
-  const filteredMonitoredAddresses = monitoredAddresses.filter((row) => {
-    const keywordMatched =
-      normalizedKeyword.length === 0 ||
-      row.walletAddress.toLowerCase().includes(normalizedKeyword) ||
-      (row.alias || '').toLowerCase().includes(normalizedKeyword) ||
-      (row.summary || '').toLowerCase().includes(normalizedKeyword)
-    const sourceMatched = sourceFilter === 'ALL' || row.winSourceType === sourceFilter
-    const archetypeMatched = archetypeFilter === 'ALL' || row.archetype === archetypeFilter
+  const matchesKeyword = (row?: Pick<WalletScreenerView, 'walletAddress' | 'alias' | 'summary'>, walletAddress?: string) => {
+    if (normalizedKeyword.length === 0) return true
     return (
-      keywordMatched &&
-      sourceMatched &&
-      archetypeMatched &&
+      (walletAddress || row?.walletAddress || '').toLowerCase().includes(normalizedKeyword) ||
+      (row?.alias || '').toLowerCase().includes(normalizedKeyword) ||
+      (row?.summary || '').toLowerCase().includes(normalizedKeyword)
+    )
+  }
+
+  const matchesProfileFilters = (row?: WalletScreenerView) => {
+    const sourceMatched = sourceFilter === 'ALL' || row?.winSourceType === sourceFilter
+    const archetypeMatched = archetypeFilter === 'ALL' || row?.archetype === archetypeFilter
+    return sourceMatched && archetypeMatched
+  }
+
+  const filteredMonitoredAddresses = monitoredAddresses.filter((row) => {
+    return (
+      matchesKeyword(row) &&
+      matchesProfileFilters(row) &&
       matchesWatchGroup(row, watchGroup)
     )
   })
+
+  const filteredAllowlistEntries = activeAllowlistEntries.filter((entry) => {
+    const row = monitoredByWallet.get(normalizeWalletAddress(entry.walletAddress))
+    return matchesKeyword(row, entry.walletAddress) && matchesProfileFilters(row)
+  })
+
+  const filteredBlocklistEntries = activeBlocklistEntries.filter((entry) => {
+    const row = monitoredByWallet.get(normalizeWalletAddress(entry.walletAddress))
+    return matchesKeyword(row, entry.walletAddress) && matchesProfileFilters(row)
+  })
+
+  const coldRows = filteredMonitoredAddresses.filter((row) => row.monitorTier === 'COLD' && !blocklistWallets.has(normalizeWalletAddress(row.walletAddress)))
+  const observeRows = filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'OBSERVE' && !blocklistWallets.has(normalizeWalletAddress(row.walletAddress)))
 
   const groupedMonitoredAddresses = [
     {
       key: 'COLD',
       title: '冷处理地址',
       description: '长期无动作，已停止 HOT/WARM 轮询，后续出现新交易再恢复评估。',
-      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier === 'COLD'),
-    },
-    {
-      key: 'EXECUTABLE_A',
-      title: '重点开放地址',
-      description: '优先执行跟单，适合主队列配置。',
-      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_A'),
-    },
-    {
-      key: 'EXECUTABLE_B',
-      title: '可跟单观察地址',
-      description: '可以开放，但建议控制额度或仓位。',
-      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_B'),
+      rows: coldRows,
     },
     {
       key: 'OBSERVE',
       title: '只观察地址',
       description: '保留监控信号，不自动跟单。',
-      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'OBSERVE'),
-    },
-    {
-      key: 'BLOCKLIST',
-      title: '阻断地址',
-      description: '持续跟踪风险，不进入开放名单。',
-      rows: filteredMonitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'BLOCKLIST'),
+      rows: observeRows,
     },
   ].filter((group) => group.rows.length > 0)
 
-  const priorityCount = monitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_A').length
-  const limitedOpenCount = monitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_B').length
-  const coldCount = monitoredAddresses.filter((row) => row.monitorTier === 'COLD').length
+  const priorityCount = monitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_A' && !blocklistWallets.has(normalizeWalletAddress(row.walletAddress))).length
+  const limitedOpenCount = monitoredAddresses.filter((row) => row.monitorTier !== 'COLD' && row.screenerTier === 'EXECUTABLE_B' && !blocklistWallets.has(normalizeWalletAddress(row.walletAddress))).length
+  const coldCount = monitoredAddresses.filter((row) => row.monitorTier === 'COLD' && !blocklistWallets.has(normalizeWalletAddress(row.walletAddress))).length
   const activeCopyCount = executableAddresses.length
   const openPoolCount = priorityCount + limitedOpenCount
   const watchGroupMeta = WATCH_GROUP_OPTIONS.find((option) => option.value === watchGroup) ?? WATCH_GROUP_OPTIONS[0]
 
   const selectedRow =
-    monitoredAddresses.find((item) => item.walletAddress === selectedWalletAddress) ||
-    executableAddresses.find((item) => item.walletAddress === selectedWalletAddress)
+    monitoredAddresses.find((item) => item.walletAddress === selectedWalletAddress)
 
   const focusSummary = buildFocusSummary(selectedRow, diagnosis, windowStats)
   const trendPositiveCount = recentTradeTrend.filter((item) => item.value > 0).length
@@ -693,6 +735,88 @@ export function FollowAddressPanel() {
     sourceFilter !== 'ALL' ? getWinSourceMeta(sourceFilter).label : null,
     archetypeFilter !== 'ALL' ? getArchetypeMeta(archetypeFilter).label : null,
   ].filter((item): item is string => Boolean(item))
+
+  const renderAllowlistRow = (entry: SmartWalletManualAllowlistView) => {
+    const row = monitoredByWallet.get(normalizeWalletAddress(entry.walletAddress))
+    const archetypeMeta = getArchetypeMeta(row?.archetype)
+    const followLaneMeta = getFollowLaneMeta(row?.followLane)
+    const polymarketProfileUrl = buildPolymarketProfileUrlFromAddress(entry.walletAddress, row?.alias)
+    return (
+      <tr key={entry.walletAddress} onClick={() => openWalletDetail(entry.walletAddress)} style={{ cursor: 'pointer' }}>
+        <td>
+          <div className="address-primary-cell">
+            <strong>{row?.alias || compactAddress(entry.walletAddress, 8, 6)}</strong>
+            <span>{compactAddress(entry.walletAddress, 10, 6)}</span>
+            {polymarketProfileUrl ? (
+              <a className="address-polymarket-link" href={polymarketProfileUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                Polymarket
+              </a>
+            ) : null}
+          </div>
+        </td>
+        <td><span className="badge accent">{entry.allowedExecutionModes || 'PAPER'}</span></td>
+        <td>{entry.stakeMultiplier == null ? '-' : formatPercent(entry.stakeMultiplier)}</td>
+        <td>
+          <div className="address-code-stack">
+            <span title={archetypeMeta.description}>{archetypeMeta.code}</span>
+            <span title={followLaneMeta.description}>{followLaneMeta.code}</span>
+          </div>
+        </td>
+        <td>{formatPercent(row?.qualityScore)}</td>
+        <td>{formatEvidencePercent(row?.recentWinRate30d, row?.dataQuality, archetypeMeta.code)}</td>
+        <td>{entry.expiresAt ? new Date(entry.expiresAt).toLocaleDateString('zh-CN') : '不过期'}</td>
+        <td>{truncateText(entry.reason || row?.summary, 80) || '-'}</td>
+        <td>
+          <button
+            type="button"
+            className="btn btn-primary address-action-btn"
+            onClick={(event) => {
+              event.stopPropagation()
+              openWalletDetail(entry.walletAddress)
+            }}
+          >
+            查看详情
+          </button>
+        </td>
+      </tr>
+    )
+  }
+
+  const renderBlocklistRow = (entry: SmartWalletManualBlocklistView) => {
+    const row = monitoredByWallet.get(normalizeWalletAddress(entry.walletAddress))
+    const polymarketProfileUrl = buildPolymarketProfileUrlFromAddress(entry.walletAddress, row?.alias)
+    return (
+      <tr key={entry.walletAddress} onClick={() => openWalletDetail(entry.walletAddress)} style={{ cursor: 'pointer' }}>
+        <td>
+          <div className="address-primary-cell">
+            <strong>{row?.alias || compactAddress(entry.walletAddress, 8, 6)}</strong>
+            <span>{compactAddress(entry.walletAddress, 10, 6)}</span>
+            {polymarketProfileUrl ? (
+              <a className="address-polymarket-link" href={polymarketProfileUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+                Polymarket
+              </a>
+            ) : null}
+          </div>
+        </td>
+        <td>{entry.reason || 'MANUAL_BLOCKLIST'}</td>
+        <td>{row?.lastTradeAt ? new Date(row.lastTradeAt).toLocaleDateString('zh-CN') : '-'}</td>
+        <td>{formatPercent(row?.recentWinRate30d)}</td>
+        <td>{entry.updatedAt ? new Date(entry.updatedAt).toLocaleString('zh-CN') : '-'}</td>
+        <td>
+          <button
+            type="button"
+            className="btn btn-primary address-action-btn"
+            onClick={(event) => {
+              event.stopPropagation()
+              openWalletDetail(entry.walletAddress)
+            }}
+          >
+            查看详情
+          </button>
+        </td>
+      </tr>
+    )
+  }
 
   if (detailMode) {
     return (
@@ -1117,13 +1241,96 @@ export function FollowAddressPanel() {
 
       <section className="panel address-full-panel">
         <div className="section-head">
-          <h2>监控地址</h2>
+          <h2>白名单</h2>
+        </div>
+
+        {allowlistLoading ? (
+          <div className="loading">白名单地址加载中...</div>
+        ) : filteredAllowlistEntries.length === 0 ? (
+          <div className="empty-state">当前筛选条件下没有白名单地址</div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>地址</th>
+                  <th>模式</th>
+                  <th>仓位比例</th>
+                  <th>画像</th>
+                  <th>质量</th>
+                  <th>30D胜率</th>
+                  <th>有效期</th>
+                  <th>备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAllowlistEntries.map(renderAllowlistRow)}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="panel address-full-panel">
+        <div className="section-head">
+          <h2>跟单地址</h2>
+        </div>
+
+        {monitoredLoading ? (
+          <div className="loading">正在跟单地址加载中...</div>
+        ) : executableAddresses.length === 0 ? (
+          <div className="empty-state">当前没有开放中的跟单地址</div>
+        ) : (
+          <div className="address-card-strip">
+            {executableAddresses.map((row) => {
+              const archetypeMeta = getArchetypeMeta(row.archetype)
+              const followLaneMeta = getFollowLaneMeta(row.followLane)
+              const winSourceMeta = getWinSourceMeta(row.winSourceType)
+              return (
+                <button
+                  key={row.walletAddress}
+                  type="button"
+                  className="address-card"
+                  onClick={() => openWalletDetail(row.walletAddress)}
+                >
+                  <div className="address-card-top">
+                    <strong>{row.alias || compactAddress(row.walletAddress, 8, 6)}</strong>
+                    <span className={getTierBadgeClass(row.screenerTier)}>{row.screenerTier}</span>
+                  </div>
+                  <div className="address-card-meta">
+                    <span title={archetypeMeta.description}>{archetypeMeta.code}</span>
+                    <span title={followLaneMeta.description}>{followLaneMeta.code}</span>
+                  </div>
+                  <div className="address-card-metrics">
+                    <span>质量 {formatPercent(row.qualityScore)}</span>
+                    <span>复制 {formatEvidencePercent(row.replicabilityScore, row.dataQuality, archetypeMeta.code)}</span>
+                  </div>
+                  <div className="address-card-metrics">
+                    <span>7D {formatEvidencePercent(row.recentWinRate7d, row.dataQuality, archetypeMeta.code)}</span>
+                    <span>30D {formatEvidencePercent(row.recentWinRate30d, row.dataQuality, archetypeMeta.code)}</span>
+                  </div>
+                  <div className="address-card-metrics">
+                    <span title={winSourceMeta.description}>{winSourceMeta.code}</span>
+                    <span>结算 {formatEvidencePercent(row.settlementWinRate, row.dataQuality, archetypeMeta.code)}</span>
+                  </div>
+                  <div className="address-card-summary">{truncateText(row.summary, 120) || '暂无摘要'}</div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="panel address-full-panel">
+        <div className="section-head">
+          <h2>冷处理 / 观察地址</h2>
         </div>
 
         {monitoredLoading ? (
           <div className="loading">监控地址加载中...</div>
-        ) : filteredMonitoredAddresses.length === 0 ? (
-          <div className="empty-state">当前筛选条件下没有可展示的监控地址</div>
+        ) : groupedMonitoredAddresses.length === 0 ? (
+          <div className="empty-state">当前筛选条件下没有冷处理或观察地址</div>
         ) : (
           groupedMonitoredAddresses.map((group) => (
             <section key={group.key} className="address-group-section">
@@ -1170,6 +1377,7 @@ export function FollowAddressPanel() {
                       const followLaneMeta = getFollowLaneMeta(row.followLane)
                       const winSourceMeta = getWinSourceMeta(row.winSourceType)
                       const exitLaneMeta = getExitLaneMeta(row.recommendedExitLane)
+                      const polymarketProfileUrl = buildPolymarketProfileUrl(row)
 
                       return (
                         <tr
@@ -1181,26 +1389,34 @@ export function FollowAddressPanel() {
                             <div className="address-primary-cell">
                               <strong>{row.alias || compactAddress(row.walletAddress, 8, 6)}</strong>
                               <span>{compactAddress(row.walletAddress, 10, 6)}</span>
+                              {polymarketProfileUrl ? (
+                                <a
+                                  className="address-polymarket-link"
+                                  href={polymarketProfileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  Polymarket
+                                </a>
+                              ) : null}
                             </div>
                           </td>
                           <td>
                             <div className="address-badge-stack">
                               <span className="badge" title={archetypeMeta.description}>{archetypeMeta.code}</span>
                               {row.highFrequencyTradingAddress && row.archetype !== 'HF' ? <span className="badge warn">HF</span> : null}
+                              <span className="badge" title={followLaneMeta.description}>{followLaneMeta.code}</span>
                             </div>
-                            <div className="table-subtext">{archetypeMeta.label}</div>
-                            <div className="table-subtext">{followLaneMeta.label}</div>
                             <div className="table-subtext" title="按 closedAt 统计的去重已关闭市场数（marketId|outcome 去重）">
                               {`7D/30D 已关闭 ${formatNumber(row.dedupOrderCount7d, 0)} / ${formatNumber(row.dedupOrderCount30d, 0)}`}
                             </div>
                           </td>
                           <td>
-                            <span className={getTierBadgeClass(row.screenerTier)}>{row.screenerTier}</span>
-                            <div className="table-subtext">{buildStatusNote(row)}</div>
+                            <span className={getTierBadgeClass(row.screenerTier)} title={buildStatusNote(row)}>{row.screenerTier}</span>
                           </td>
                           <td>
-                            <span className={getSourceBadgeClass(row.winSourceType)}>{winSourceMeta.code}</span>
-                            <div className="table-subtext">{winSourceMeta.label}</div>
+                            <span className={getSourceBadgeClass(row.winSourceType)} title={winSourceMeta.description}>{winSourceMeta.code}</span>
                           </td>
                           <td>{formatEvidencePercent(row.recentWinRate7d, row.dataQuality, archetypeMeta.code)}</td>
                           <td>{formatEvidencePercent(row.recentWinRate30d, row.dataQuality, archetypeMeta.code)}</td>
@@ -1215,8 +1431,7 @@ export function FollowAddressPanel() {
                             </div>
                           </td>
                           <td>
-                            <div>{exitLaneMeta.label}</div>
-                            <div className="table-subtext">{exitLaneMeta.description}</div>
+                            <span className="badge" title={exitLaneMeta.description}>{exitLaneMeta.code}</span>
                           </td>
                           <td>
                             <div>{`新鲜度 ${formatPercent(row.freshnessScore)}`}</div>
@@ -1267,50 +1482,30 @@ export function FollowAddressPanel() {
 
       <section className="panel address-full-panel">
         <div className="section-head">
-          <h2>跟单地址</h2>
+          <h2>阻断地址</h2>
         </div>
 
-        {executableLoading ? (
-          <div className="loading">正在跟单地址加载中...</div>
-        ) : executableAddresses.length === 0 ? (
-          <div className="empty-state">当前没有开放中的跟单地址</div>
+        {blocklistLoading ? (
+          <div className="loading">阻断地址加载中...</div>
+        ) : filteredBlocklistEntries.length === 0 ? (
+          <div className="empty-state">当前筛选条件下没有阻断地址</div>
         ) : (
-          <div className="address-card-strip">
-            {executableAddresses.map((row) => {
-              const archetypeMeta = getArchetypeMeta(row.archetype)
-              const followLaneMeta = getFollowLaneMeta(row.followLane)
-              const winSourceMeta = getWinSourceMeta(row.winSourceType)
-              return (
-                <button
-                  key={row.walletAddress}
-                  type="button"
-                  className="address-card"
-                  onClick={() => openWalletDetail(row.walletAddress)}
-                >
-                  <div className="address-card-top">
-                    <strong>{row.alias || compactAddress(row.walletAddress, 8, 6)}</strong>
-                    <span className={getTierBadgeClass(row.screenerTier)}>{row.screenerTier}</span>
-                  </div>
-                  <div className="address-card-meta">
-                    <span>{archetypeMeta.label}</span>
-                    <span>{followLaneMeta.label}</span>
-                  </div>
-                  <div className="address-card-metrics">
-                    <span>质量 {formatPercent(row.qualityScore)}</span>
-                    <span>复制 {formatEvidencePercent(row.replicabilityScore, row.dataQuality, archetypeMeta.code)}</span>
-                  </div>
-                  <div className="address-card-metrics">
-                    <span>7D {formatEvidencePercent(row.recentWinRate7d, row.dataQuality, archetypeMeta.code)}</span>
-                    <span>30D {formatEvidencePercent(row.recentWinRate30d, row.dataQuality, archetypeMeta.code)}</span>
-                  </div>
-                  <div className="address-card-metrics">
-                    <span>{winSourceMeta.code}</span>
-                    <span>结算 {formatEvidencePercent(row.settlementWinRate, row.dataQuality, archetypeMeta.code)}</span>
-                  </div>
-                  <div className="address-card-summary">{truncateText(row.summary, 120) || '暂无摘要'}</div>
-                </button>
-              )
-            })}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>地址</th>
+                  <th>阻断原因</th>
+                  <th>最近活跃</th>
+                  <th>30D胜率</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBlocklistEntries.map(renderBlocklistRow)}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

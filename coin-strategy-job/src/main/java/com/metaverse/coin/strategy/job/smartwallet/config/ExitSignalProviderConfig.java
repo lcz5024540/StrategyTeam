@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.config;
 
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.service.ExitSignalProvider;
 import com.metaverse.coin.strategy.job.smartwallet.service.ScoredExitSignalProvider;
 import com.metaverse.coin.strategy.job.smartwallet.service.TimeAwareStopLossService;

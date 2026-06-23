@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.risk.application;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import org.springframework.stereotype.Service;
@@ -11,9 +11,12 @@ import java.math.BigDecimal;
 public class BaselineModelConfigApplicationService {
 
     private final SmartWalletProperties properties;
+    private final StrategyRuntimeConfigService runtimeConfigService;
 
-    public BaselineModelConfigApplicationService(SmartWalletProperties properties) {
+    public BaselineModelConfigApplicationService(SmartWalletProperties properties,
+                                                 StrategyRuntimeConfigService runtimeConfigService) {
         this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
     }
 
     public BaselineModelConfigView current() {
@@ -110,6 +113,7 @@ public class BaselineModelConfigApplicationService {
             calibration.setSlippageSpikeScale(coalesce(update.getSlippageSpikeScale(), calibration.getSlippageSpikeScale()));
             calibration.setSlippageSpikeBias(coalesce(update.getSlippageSpikeBias(), calibration.getSlippageSpikeBias()));
         }
+        runtimeConfigService.persistBaselineConfig("baseline-model-api");
         return current();
     }
 

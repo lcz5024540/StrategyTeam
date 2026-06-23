@@ -14,6 +14,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrde
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeOrderEntity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketLinkView;
+import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletOrderPnlCategoryAttributionView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletTradeOrderView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import lombok.RequiredArgsConstructor;
@@ -25,16 +26,23 @@ import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class SmartWalletTradeOrderService {
 
     private static final String ORDER_TYPE_EXIT = "EXIT";
+    private static final int CATEGORY_ATTRIBUTION_QUERY_LIMIT = 20_000;
 
     private final SmartWalletTradeOrderMapper tradeOrderMapper;
     private final SmartWalletPositionMapper positionMapper;
@@ -85,9 +93,19 @@ public class SmartWalletTradeOrderService {
                   UNIQUE KEY `uk_trade_order_position` (`position_id`),
                   KEY `idx_trade_order_market` (`market_info_id`, `status`),
                   KEY `idx_trade_order_execution` (`execution_address`, `status`, `opened_at`),
+                  KEY `idx_trade_order_exec_id` (`execution_address`, `id` DESC),
                   KEY `idx_trade_order_status` (`status`, `updated_at`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """);
+        // 存量表可能缺少 idx_trade_order_exec_id，补建
+        try {
+            jdbcTemplate.execute("""
+                    ALTER TABLE `smart_wallet_trade_order`
+                    ADD INDEX IF NOT EXISTS `idx_trade_order_exec_id` (`execution_address`, `id` DESC)
+                    """);
+        } catch (Exception ignored) {
+            // 索引已存在或不支持 IF NOT EXISTS，忽略
+        }
     }
 
     public SmartWalletTradeOrderEntity upsertFromPosition(Long positionId) {
@@ -145,6 +163,18 @@ public class SmartWalletTradeOrderService {
         return count;
     }
 
+    /**
+     * Detect trade orders stuck in OPEN while their positions are already terminal
+     * (CLOSED / RESOLVED_UNCLAIMED / CLAIMED), and rebuild them.
+     */
+    public int repairStaleTradeOrders() {
+        List<Long> stalePositionIds = tradeOrderMapper.findStaleOpenPositionIds();
+        if (stalePositionIds.isEmpty()) {
+            return 0;
+        }
+        return rebuildByPositionIds(stalePositionIds);
+    }
+
     public int rebuildAll(int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 10_000));
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
@@ -165,6 +195,32 @@ public class SmartWalletTradeOrderService {
         return queryTradeOrdersCursor(safeLimit, lastId, mode, pnl, settlement, status, q);
     }
 
+    public SmartWalletOrderPnlCategoryAttributionView orderPnlCategoryAttribution(String mode, Integer limit) {
+        int safeLimit = Math.max(1, Math.min(limit == null ? 12 : limit, 30));
+        backfillIfTradeOrderTableEmpty(null);
+        LambdaQueryWrapper<SmartWalletTradeOrderEntity> wrapper = new LambdaQueryWrapper<SmartWalletTradeOrderEntity>()
+                .orderByDesc(SmartWalletTradeOrderEntity::getId)
+                .last("limit " + CATEGORY_ATTRIBUTION_QUERY_LIMIT);
+        if ("PAPER".equalsIgnoreCase(mode)) {
+            wrapper.eq(SmartWalletTradeOrderEntity::getExecutionAddress, "paper-book");
+        } else if ("LIVE".equalsIgnoreCase(mode)) {
+            wrapper.ne(SmartWalletTradeOrderEntity::getExecutionAddress, "paper-book");
+        }
+        List<SmartWalletTradeOrderEntity> tradeOrders = tradeOrderMapper.selectList(wrapper);
+        populateMarketInfo(tradeOrders);
+        List<WindowSpec> windowSpecs = List.of(
+                new WindowSpec("30d", "30 天", 30),
+                new WindowSpec("7d", "7 天", 7),
+                new WindowSpec("all", "全部", null)
+        );
+        List<SmartWalletOrderPnlCategoryAttributionView.WindowBucket> windows = windowSpecs.stream()
+                .map(window -> buildCategoryWindow(window, tradeOrders, safeLimit))
+                .toList();
+        return SmartWalletOrderPnlCategoryAttributionView.builder()
+                .windows(windows)
+                .build();
+    }
+
     private void backfillIfTradeOrderTableEmpty(Long lastId) {
         if (lastId != null && lastId > 0) {
             return;
@@ -178,6 +234,98 @@ public class SmartWalletTradeOrderService {
             return;
         }
         rebuildAll(Math.toIntExact(Math.min(positionCount, 10_000L)));
+    }
+
+    private void populateMarketInfo(List<SmartWalletTradeOrderEntity> tradeOrders) {
+        if (tradeOrders == null || tradeOrders.isEmpty()) {
+            return;
+        }
+        Set<Long> marketInfoIds = tradeOrders.stream()
+                .map(SmartWalletTradeOrderEntity::getMarketInfoId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (marketInfoIds.isEmpty()) {
+            return;
+        }
+        Map<Long, SmartWalletMarketInfoEntity> marketInfoById = marketInfoMapper.selectBatchIds(marketInfoIds).stream()
+                .collect(Collectors.toMap(SmartWalletMarketInfoEntity::getId, Function.identity(), (left, right) -> left));
+        tradeOrders.forEach(tradeOrder -> tradeOrder.setMarketInfo(marketInfoById.get(tradeOrder.getMarketInfoId())));
+    }
+
+    private SmartWalletOrderPnlCategoryAttributionView.WindowBucket buildCategoryWindow(WindowSpec window,
+                                                                                       List<SmartWalletTradeOrderEntity> tradeOrders,
+                                                                                       int limit) {
+        long minOpenedAt = window.days == null
+                ? Long.MIN_VALUE
+                : System.currentTimeMillis() - window.days * 24L * 60L * 60L * 1000L;
+        Map<String, PnlOrderCounter> marketCounters = new LinkedHashMap<>();
+        Map<String, PnlOrderCounter> walletCounters = new LinkedHashMap<>();
+        for (SmartWalletTradeOrderEntity tradeOrder : tradeOrders) {
+            if (!withinWindow(tradeOrder, minOpenedAt) || safe(tradeOrder.getTotalPnlUsdc()).compareTo(BigDecimal.ZERO) == 0) {
+                continue;
+            }
+            String category = normalizeCategory(tradeOrder);
+            marketCounters.computeIfAbsent(category, key -> new PnlOrderCounter(key, category, null, category))
+                    .add(tradeOrder.getTotalPnlUsdc());
+
+            String walletAddress = firstText(tradeOrder.getWalletAddress(), tradeOrder.getExecutionAddress(), "UNKNOWN");
+            String walletCategoryKey = walletAddress + "|" + category;
+            String walletCategoryLabel = shortAddress(walletAddress) + " / " + category;
+            walletCounters.computeIfAbsent(walletCategoryKey,
+                            key -> new PnlOrderCounter(key, walletCategoryLabel, walletAddress, category))
+                    .add(tradeOrder.getTotalPnlUsdc());
+        }
+        return SmartWalletOrderPnlCategoryAttributionView.WindowBucket.builder()
+                .window(window.key)
+                .label(window.label)
+                .marketCategories(toCategoryRows(marketCounters, limit))
+                .walletCategories(toCategoryRows(walletCounters, limit))
+                .build();
+    }
+
+    private boolean withinWindow(SmartWalletTradeOrderEntity tradeOrder, long minOpenedAt) {
+        if (minOpenedAt == Long.MIN_VALUE) {
+            return true;
+        }
+        Date openedAt = firstDate(tradeOrder.getOpenedAt(), tradeOrder.getCreatedAt());
+        return openedAt != null && openedAt.getTime() >= minOpenedAt;
+    }
+
+    private List<SmartWalletOrderPnlCategoryAttributionView.OrderPnlCategoryRow> toCategoryRows(Map<String, PnlOrderCounter> counters,
+                                                                                                int limit) {
+        return counters.values().stream()
+                .filter(counter -> counter.totalOrderCount() > 0)
+                .sorted(Comparator.comparing(PnlOrderCounter::totalOrderCount).reversed()
+                        .thenComparing(PnlOrderCounter::profitOrderCount, Comparator.reverseOrder())
+                        .thenComparing(PnlOrderCounter::label))
+                .limit(limit)
+                .map(PnlOrderCounter::toView)
+                .toList();
+    }
+
+    private String normalizeCategory(SmartWalletTradeOrderEntity tradeOrder) {
+        String category = firstText(tradeOrder.getNormalizedCategory(), tradeOrder.getSourceCategory(), "未分类");
+        return category.trim().isEmpty() ? "未分类" : category.trim();
+    }
+
+    private String firstText(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private String shortAddress(String address) {
+        if (!StringUtils.hasText(address)) {
+            return "UNKNOWN";
+        }
+        String trimmed = address.trim();
+        return trimmed.length() > 14 ? trimmed.substring(0, 6) + "..." + trimmed.substring(trimmed.length() - 4) : trimmed;
     }
 
     private CursorPageView<SmartWalletTradeOrderView> queryTradeOrdersCursor(int safeLimit,
@@ -197,8 +345,20 @@ public class SmartWalletTradeOrderService {
         } else if ("LIVE".equalsIgnoreCase(mode)) {
             wrapper.ne(SmartWalletTradeOrderEntity::getExecutionAddress, "paper-book");
         }
-        List<SmartWalletTradeOrderView> filtered = tradeOrderMapper.selectList(wrapper).stream()
-                .map(this::toView)
+        List<SmartWalletTradeOrderEntity> entities = tradeOrderMapper.selectList(wrapper);
+        // Batch-load market info to avoid N+1
+        populateMarketInfo(entities);
+        // Batch-load orders and fills for all position IDs
+        Set<Long> positionIds = entities.stream()
+                .map(SmartWalletTradeOrderEntity::getPositionId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, List<SmartWalletOrderEntity>> ordersByPosition = batchLoadOrders(positionIds);
+        Map<Long, List<SmartWalletFillEntity>> fillsByPosition = batchLoadFills(positionIds);
+        List<SmartWalletTradeOrderView> filtered = entities.stream()
+                .map(entity -> toViewBatch(entity,
+                        ordersByPosition.getOrDefault(entity.getPositionId(), List.of()),
+                        fillsByPosition.getOrDefault(entity.getPositionId(), List.of())))
                 .filter(view -> matchesPnl(view, pnl))
                 .filter(view -> matchesSettlement(view, settlement))
                 .filter(view -> matchesQuery(view, q))
@@ -208,6 +368,96 @@ public class SmartWalletTradeOrderService {
         List<SmartWalletTradeOrderView> items = hasMore ? filtered.subList(0, safeLimit) : filtered;
         String nextCursor = hasMore && !items.isEmpty() ? String.valueOf(items.get(items.size() - 1).getId()) : null;
         return CursorPageView.of(items, nextCursor);
+    }
+
+    private Map<Long, List<SmartWalletOrderEntity>> batchLoadOrders(Set<Long> positionIds) {
+        if (positionIds == null || positionIds.isEmpty()) {
+            return Map.of();
+        }
+        return orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                        .in(SmartWalletOrderEntity::getPositionId, positionIds)
+                        .orderByAsc(SmartWalletOrderEntity::getPlacedAt)
+                        .orderByAsc(SmartWalletOrderEntity::getId))
+                .stream()
+                .collect(Collectors.groupingBy(SmartWalletOrderEntity::getPositionId));
+    }
+
+    private Map<Long, List<SmartWalletFillEntity>> batchLoadFills(Set<Long> positionIds) {
+        if (positionIds == null || positionIds.isEmpty()) {
+            return Map.of();
+        }
+        return fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                        .in(SmartWalletFillEntity::getPositionId, positionIds)
+                        .orderByAsc(SmartWalletFillEntity::getFilledAt)
+                        .orderByAsc(SmartWalletFillEntity::getId))
+                .stream()
+                .collect(Collectors.groupingBy(SmartWalletFillEntity::getPositionId));
+    }
+
+    private SmartWalletTradeOrderView toViewBatch(SmartWalletTradeOrderEntity entity,
+                                                  List<SmartWalletOrderEntity> orders,
+                                                  List<SmartWalletFillEntity> fills) {
+        // Fast path: build URLs from stored slug — zero HTTP calls.
+        // resolve() triggers per-entity API calls and caused >30s page timeouts.
+        SmartWalletMarketLinkView link;
+        if (StringUtils.hasText(entity.getMarketSlug())) {
+            link = marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug());
+        } else if (StringUtils.hasText(entity.getMarketId())) {
+            link = marketLinkService.resolveCacheOnly(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        } else {
+            link = null;
+        }
+        return SmartWalletTradeOrderView.builder()
+                .id(entity.getId())
+                .positionId(entity.getPositionId())
+                .marketInfoId(entity.getMarketInfoId())
+                .executionAddress(entity.getExecutionAddress())
+                .walletAddress(entity.getWalletAddress())
+                .sourceFollowTaskId(entity.getSourceFollowTaskId())
+                .marketId(entity.getMarketId())
+                .marketSlug(entity.getMarketSlug())
+                .marketUrl(link == null ? null : link.getMarketUrl())
+                .externalMarketUrl(link == null ? null : link.getExternalMarketUrl())
+                .internalMarketUrl(link == null ? null : link.getInternalMarketUrl())
+                .marketLinkStatus(link == null ? null : link.getLinkStatus())
+                .tokenId(entity.getTokenId())
+                .question(entity.getQuestion())
+                .outcome(entity.getOutcome())
+                .marketEndAt(entity.getMarketEndAt())
+                .marketEndAtBjt(timeFormatter.formatEpochMillisToBjt(entity.getMarketEndAt()))
+                .marketLifecycle(entity.getMarketLifecycle())
+                .activeMarket(isActiveMarket(entity))
+                .closed(Boolean.TRUE.equals(entity.getClosed()))
+                .acceptingOrders(entity.getAcceptingOrders() == null || entity.getAcceptingOrders())
+                .normalizedCategory(entity.getNormalizedCategory())
+                .sourceCategory(entity.getSourceCategory())
+                .entryQuantity(entity.getEntryQuantity())
+                .entryAvgPrice(entity.getEntryAvgPrice())
+                .entryCostUsdc(entity.getEntryCostUsdc())
+                .entryFeeUsdc(entity.getEntryFeeUsdc())
+                .openedAt(entity.getOpenedAt())
+                .exitQuantity(entity.getExitQuantity())
+                .exitAvgPrice(entity.getExitAvgPrice())
+                .exitProceedsUsdc(entity.getExitProceedsUsdc())
+                .exitRealizedPnlUsdc(entity.getExitRealizedPnlUsdc())
+                .exitFeeUsdc(entity.getExitFeeUsdc())
+                .lastExitAt(entity.getLastExitAt())
+                .remainingQuantity(entity.getRemainingQuantity())
+                .remainingCostBasisUsdc(entity.getRemainingCostBasisUsdc())
+                .lastMarkPrice(entity.getLastMarkPrice())
+                .unrealizedPnlUsdc(entity.getUnrealizedPnlUsdc())
+                .settlementPrice(entity.getSettlementPrice())
+                .settlementProceedsUsdc(entity.getSettlementProceedsUsdc())
+                .settlementPnlUsdc(entity.getSettlementPnlUsdc())
+                .settledAt(entity.getSettledAt())
+                .totalRealizedPnlUsdc(entity.getTotalRealizedPnlUsdc())
+                .totalPnlUsdc(entity.getTotalPnlUsdc())
+                .roiRate(entity.getRoiRate())
+                .status(entity.getStatus())
+                .entryOrderIds(orders.stream().filter(order -> !isExitOrder(order)).map(SmartWalletOrderEntity::getId).toList())
+                .exitOrderIds(orders.stream().filter(this::isExitOrder).map(SmartWalletOrderEntity::getId).toList())
+                .fillIds(fills.stream().map(SmartWalletFillEntity::getId).toList())
+                .build();
     }
 
     private SmartWalletTradeOrderEntity buildEntity(SmartWalletPositionEntity position,
@@ -253,7 +503,10 @@ public class SmartWalletTradeOrderService {
         BigDecimal totalPnl = totalRealized.add(unrealized).setScale(8, RoundingMode.HALF_UP);
         BigDecimal settlementProceeds = sumLedger(ledgers, "SETTLEMENT_PROCEEDS");
         BigDecimal settlementPnl = totalRealized.subtract(exitRealized).setScale(8, RoundingMode.HALF_UP);
-        boolean settled = isSettled(position.getStatus());
+        // Position is settled if status is RESOLVED_UNCLAIMED/CLAIMED,
+        // or if CLOSED with no exit fills (closed through market resolution, not user selling)
+        boolean settled = isSettled(position.getStatus())
+                || ("CLOSED".equalsIgnoreCase(position.getStatus()) && exitFills.isEmpty());
         BigDecimal settlementPrice = settled && safe(position.getLastMarkPrice()).compareTo(BigDecimal.ZERO) >= 0
                 ? safe(position.getLastMarkPrice())
                 : null;
@@ -271,6 +524,8 @@ public class SmartWalletTradeOrderService {
                 .setExecutionAddress(position.getExecutionAddress())
                 .setWalletAddress(firstOrder == null ? null : firstOrder.getWalletAddress())
                 .setSourceFollowTaskId(firstOrder == null ? null : firstOrder.getFollowTaskId())
+                // W1-T3: 聚合订单 trace_id 取首笔 CLOB 单的 trace_id
+                .setTraceId(firstOrder == null ? null : firstOrder.getTraceId())
                 .setEntryQuantity(entryQuantity)
                 .setEntryAvgPrice(weightedAverage(entryCost, entryQuantity))
                 .setEntryCostUsdc(entryCost)
@@ -289,7 +544,7 @@ public class SmartWalletTradeOrderService {
                 .setSettlementPrice(settlementPrice)
                 .setSettlementProceedsUsdc(settlementProceeds)
                 .setSettlementPnlUsdc(settled ? settlementPnl : BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
-                .setSettledAt(settled ? position.getClosedAt() : null)
+                .setSettledAt(settled ? SettlementTimeGuard.clamp(position.getClosedAt(), position.getOpenedAt(), "syncTradeOrder") : null)
                 .setTotalRealizedPnlUsdc(totalRealized)
                 .setTotalPnlUsdc(totalPnl)
                 .setRoiRate(roiRate)
@@ -299,9 +554,15 @@ public class SmartWalletTradeOrderService {
     private SmartWalletTradeOrderView toView(SmartWalletTradeOrderEntity entity) {
         SmartWalletMarketInfoEntity marketInfo = entity.getMarketInfoId() == null ? null : marketInfoMapper.selectById(entity.getMarketInfoId());
         entity.setMarketInfo(marketInfo);
-        SmartWalletMarketLinkView link = StringUtils.hasText(entity.getMarketSlug())
-                ? marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug())
-                : marketLinkService.resolve(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        // Same fast-path as toViewBatch: avoid per-entity HTTP calls.
+        SmartWalletMarketLinkView link;
+        if (StringUtils.hasText(entity.getMarketSlug())) {
+            link = marketLinkService.fromStoredSlug(entity.getMarketId(), entity.getQuestion(), entity.getOutcome(), entity.getMarketSlug());
+        } else if (StringUtils.hasText(entity.getMarketId())) {
+            link = marketLinkService.resolveCacheOnly(entity.getMarketId(), entity.getQuestion(), entity.getOutcome());
+        } else {
+            link = null;
+        }
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
                 .eq(SmartWalletOrderEntity::getPositionId, entity.getPositionId())
                 .orderByAsc(SmartWalletOrderEntity::getPlacedAt)
@@ -377,7 +638,14 @@ public class SmartWalletTradeOrderService {
         if ("OPEN".equals(status) && safe(exitQuantity).compareTo(BigDecimal.ZERO) > 0) {
             return "PARTIALLY_EXITED";
         }
+        if ("RESOLVED_UNCLAIMED".equals(status) || "CLAIMED".equals(status)) {
+            return "SETTLED";
+        }
         if ("CLOSED".equals(status)) {
+            // No exit fills → closed through market resolution (settlement), not user selling
+            if (safe(exitQuantity).compareTo(BigDecimal.ZERO) <= 0) {
+                return "SETTLED";
+            }
             return "EXITED";
         }
         return status;
@@ -413,8 +681,7 @@ public class SmartWalletTradeOrderService {
         if (!"ACTIVE".equalsIgnoreCase(entity.getMarketLifecycle())) return false;
         if (Boolean.TRUE.equals(entity.getClosed())) return false;
         if (entity.getAcceptingOrders() != null && !entity.getAcceptingOrders()) return false;
-        Long endAt = entity.getMarketEndAt();
-        return endAt == null || endAt <= 0 || endAt > System.currentTimeMillis();
+        return true;
     }
 
     private boolean contains(String value, String needle) {
@@ -423,7 +690,8 @@ public class SmartWalletTradeOrderService {
 
     private boolean isSettled(String status) {
         String normalized = normalize(status);
-        return "RESOLVED_UNCLAIMED".equals(normalized) || "CLAIMED".equals(normalized);
+        return "RESOLVED_UNCLAIMED".equals(normalized) || "CLAIMED".equals(normalized)
+                || "SETTLED".equals(normalized);
     }
 
     private BigDecimal sumLedger(List<SmartWalletCashLedgerEntity> ledgers, String entryType) {
@@ -489,5 +757,60 @@ public class SmartWalletTradeOrderService {
 
     private String normalize(String value) {
         return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : "ALL";
+    }
+
+    private record WindowSpec(String key, String label, Integer days) {
+    }
+
+    private static class PnlOrderCounter {
+        private final String key;
+        private final String label;
+        private final String walletAddress;
+        private final String category;
+        private int profitOrderCount;
+        private int lossOrderCount;
+
+        private PnlOrderCounter(String key, String label, String walletAddress, String category) {
+            this.key = key;
+            this.label = label;
+            this.walletAddress = walletAddress;
+            this.category = category;
+        }
+
+        private void add(BigDecimal pnl) {
+            if (pnl == null) {
+                return;
+            }
+            int compared = pnl.compareTo(BigDecimal.ZERO);
+            if (compared > 0) {
+                profitOrderCount++;
+            } else if (compared < 0) {
+                lossOrderCount++;
+            }
+        }
+
+        private int profitOrderCount() {
+            return profitOrderCount;
+        }
+
+        private int totalOrderCount() {
+            return profitOrderCount + lossOrderCount;
+        }
+
+        private String label() {
+            return label;
+        }
+
+        private SmartWalletOrderPnlCategoryAttributionView.OrderPnlCategoryRow toView() {
+            return SmartWalletOrderPnlCategoryAttributionView.OrderPnlCategoryRow.builder()
+                    .key(key)
+                    .label(label)
+                    .walletAddress(walletAddress)
+                    .category(category)
+                    .profitOrderCount(profitOrderCount)
+                    .lossOrderCount(lossOrderCount)
+                    .totalOrderCount(totalOrderCount())
+                    .build();
+        }
     }
 }

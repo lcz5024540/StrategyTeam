@@ -1,12 +1,15 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketTradeEventRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.PolymarketWalletMetricsRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -16,7 +19,11 @@ import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 @Slf4j
@@ -31,6 +38,20 @@ public class PolymarketSmartWalletMonitorService {
     private final SmartWalletFollowTaskService followTaskService;
     private final SmartWalletTimeFormatter timeFormatter;
     private final JdbcTemplate jdbcTemplate;
+
+    // F-P1-8: WS trade-event 推流路径相关
+    // - objectMapper: 注入可空，便于纯 unit test 直接 new 实例不需 Spring 装配
+    // - dedupe map: synchronized LinkedHashMap LRU；命中即跳过 ingestTradeEvent，让 DB 唯一性兜底
+    // - counters: 暴露给 /audit/poly-monitor 端点 / Prometheus 用，便于灰度阶段观察 WS hit 率
+    @Autowired(required = false)
+    private ObjectMapper objectMapper;
+
+    private final Map<String, Long> wsTradeDedupeLru = new LinkedHashMap<>(256, 0.75f, true);
+    private final AtomicLong wsTradeEventsReceived = new AtomicLong();
+    private final AtomicLong wsTradeEventsForwarded = new AtomicLong();
+    private final AtomicLong wsTradeEventsDeduped = new AtomicLong();
+    private final AtomicLong wsTradeEventsParseFailures = new AtomicLong();
+    private final AtomicLong wsTradeEventsDisabledSkips = new AtomicLong();
 
     @PostConstruct
     public void ensureTradeEventSchema() {
@@ -51,6 +72,318 @@ public class PolymarketSmartWalletMonitorService {
                 LOG_PREFIX, profile.getWalletAddress(), profile.getId(), profile.getQualified(),
                 profile.getWatchEnabled(), profile.getWalletScore(), profile.getMonitorTier());
         return profile;
+    }
+
+    /**
+     * F-P1-8: WS trade-event 推流入口。
+     *
+     * <p>由真实 Polymarket WebSocket 客户端在收到 user-trades / market-trades channel 事件后调用，
+     * 把 raw JSON payload 推到风控链路（事件级触发 {@code recordTradeEvent}），不再等 30s polling 窗口。
+     *
+     * <p>设计要点：
+     * <ol>
+     *   <li>开关 {@code polymarket.enable-ws-trade-event-push=false}（默认 OFF）：未实装 WS 客户端时
+     *       即使误调本方法也只是计数 {@code wsTradeEventsDisabledSkips}，不影响主路径；</li>
+     *   <li>本地 LRU 去重 ({@code wsTradeDedupeLru})：WS 风暴 / WS+REST overlap 时避免重复进 DB；
+     *       窗口外的条目惰性清理，超过 {@code wsTradeEventDedupeMaxEntries} 走 LinkedHashMap LRU 淘汰；</li>
+     *   <li>JSON 解析失败 / 必需字段缺失：仅计数 {@code wsTradeEventsParseFailures} + 警告日志，
+     *       不抛异常（避免 WS 帧处理线程因单条脏数据中断订阅）；</li>
+     *   <li>解析成功后透传到既有 {@link #ingestTradeEvent(PolymarketTradeEventRequest)}：
+     *       走和 REST polling 同一条路径，正常进入 {@code SmartWalletFollowTaskService.recordTradeEvent}
+     *       的去重 + 风控 + 跟单任务派发；</li>
+     *   <li>{@code recordTradeEvent} 本身已对 {@code externalTradeId} 做 DB 唯一性检查（line 124-145），
+     *       即便 WS 推流与 REST polling 同时命中同一条 trade 也不会双写。</li>
+     * </ol>
+     *
+     * <p>支持的 JSON 字段（兼容多种命名约定）：
+     * <pre>
+     * {
+     *   "walletAddress"   | "proxyWallet" | "user"     : String,
+     *   "marketId"        | "market" | "conditionId"   : String,
+     *   "externalTradeId" | "tradeId" | "id"           : String,   // 必填，用作去重 key
+     *   "outcome"                                       : String,
+     *   "side"            | "action"                    : String,   // BUY / SELL
+     *   "price"                                         : Number,
+     *   "sizeShares"      | "size" | "shares"           : Number,
+     *   "sizeUsdc"        | "notional" | "usdcSize"     : Number,
+     *   "openedAt"        | "tradedAt" | "ts" | "time"  : Number(epoch ms)
+     * }
+     * </pre>
+     *
+     * @param payload WS 客户端收到的完整 trade payload (单条 trade 或包裹层) JSON 字符串
+     * @return 真正 ingest 的 entity（dedupe / 解析失败 / 开关 OFF 时返回 null）
+     */
+    public SmartWalletTradeEventEntity ingestWsTradeEvent(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return null;
+        }
+        wsTradeEventsReceived.incrementAndGet();
+
+        // 1. 开关检查
+        if (!isWsTradeEventPushEnabled()) {
+            wsTradeEventsDisabledSkips.incrementAndGet();
+            log.debug("{} action=WS推流入口 result=跳过 reason=enable-ws-trade-event-push=false", LOG_PREFIX);
+            return null;
+        }
+
+        // 2. JSON 解析
+        PolymarketTradeEventRequest request;
+        try {
+            request = parseWsTradePayload(payload);
+        } catch (Exception e) {
+            wsTradeEventsParseFailures.incrementAndGet();
+            log.warn("{} action=WS推流入口 result=解析失败 reason={} payloadLen={}",
+                    LOG_PREFIX, e.getMessage(), payload.length());
+            return null;
+        }
+        if (request == null) {
+            wsTradeEventsParseFailures.incrementAndGet();
+            log.warn("{} action=WS推流入口 result=解析失败 reason=必需字段缺失(walletAddress/marketId/externalTradeId)", LOG_PREFIX);
+            return null;
+        }
+
+        // 3. 本地 LRU 去重
+        String tradeId = request.getExternalTradeId();
+        if (tradeId != null && !tradeId.isBlank() && isWithinDedupeWindow(tradeId)) {
+            wsTradeEventsDeduped.incrementAndGet();
+            log.debug("{} action=WS推流入口 result=本地LRU去重命中 externalTradeId={}", LOG_PREFIX, tradeId);
+            return null;
+        }
+        rememberWsTradeId(tradeId);
+
+        // 4. 透传到既有 ingestTradeEvent 路径（包含 recordTradeEvent DB 唯一性兜底 + 风控派发）
+        try {
+            SmartWalletTradeEventEntity saved = ingestTradeEvent(request);
+            wsTradeEventsForwarded.incrementAndGet();
+            return saved;
+        } catch (Exception e) {
+            log.warn("{} action=WS推流入口 result=透传失败 externalTradeId={} reason={}",
+                    LOG_PREFIX, tradeId, rootCauseMessage(e));
+            return null;
+        }
+    }
+
+    /**
+     * F-P1-8 stats 暴露。供 /audit 端点 / 健康检查读取，便于灰度阶段观察 WS hit 率。
+     */
+    public WsTradeEventStats getWsTradeEventStats() {
+        return new WsTradeEventStats(
+                wsTradeEventsReceived.get(),
+                wsTradeEventsForwarded.get(),
+                wsTradeEventsDeduped.get(),
+                wsTradeEventsParseFailures.get(),
+                wsTradeEventsDisabledSkips.get());
+    }
+
+    private boolean isWsTradeEventPushEnabled() {
+        SmartWalletProperties.PolymarketMonitor pm = properties == null ? null : properties.getPolymarket();
+        return pm != null && pm.isEnableWsTradeEventPush();
+    }
+
+    private long getDedupeWindowMs() {
+        SmartWalletProperties.PolymarketMonitor pm = properties == null ? null : properties.getPolymarket();
+        if (pm == null) {
+            return 60_000L;
+        }
+        return pm.getWsTradeEventDedupeWindowMs();
+    }
+
+    private int getDedupeMaxEntries() {
+        SmartWalletProperties.PolymarketMonitor pm = properties == null ? null : properties.getPolymarket();
+        if (pm == null) {
+            return 5_000;
+        }
+        return Math.max(pm.getWsTradeEventDedupeMaxEntries(), 1);
+    }
+
+    private boolean isWithinDedupeWindow(String tradeId) {
+        long windowMs = getDedupeWindowMs();
+        if (windowMs <= 0L) {
+            return false;
+        }
+        synchronized (wsTradeDedupeLru) {
+            Long seenAt = wsTradeDedupeLru.get(tradeId);
+            if (seenAt == null) {
+                return false;
+            }
+            if (System.currentTimeMillis() - seenAt > windowMs) {
+                wsTradeDedupeLru.remove(tradeId);
+                return false;
+            }
+            return true;
+        }
+    }
+
+    private void rememberWsTradeId(String tradeId) {
+        if (tradeId == null || tradeId.isBlank()) {
+            return;
+        }
+        long windowMs = getDedupeWindowMs();
+        if (windowMs <= 0L) {
+            return;
+        }
+        int maxEntries = getDedupeMaxEntries();
+        synchronized (wsTradeDedupeLru) {
+            wsTradeDedupeLru.put(tradeId, System.currentTimeMillis());
+            // LRU 容量上限：超出按访问顺序淘汰最旧
+            if (wsTradeDedupeLru.size() > maxEntries) {
+                Iterator<Map.Entry<String, Long>> it = wsTradeDedupeLru.entrySet().iterator();
+                int removeCount = wsTradeDedupeLru.size() - maxEntries;
+                for (int i = 0; i < removeCount && it.hasNext(); i++) {
+                    it.next();
+                    it.remove();
+                }
+            }
+        }
+    }
+
+    private PolymarketTradeEventRequest parseWsTradePayload(String payload) throws Exception {
+        ObjectMapper mapper = resolveObjectMapper();
+        JsonNode root = mapper.readTree(payload);
+        JsonNode trade = root.has("event") ? root.get("event")
+                : root.has("data") ? root.get("data")
+                : root.has("trade") ? root.get("trade")
+                : root;
+        if (trade == null || trade.isNull()) {
+            return null;
+        }
+
+        String walletAddress = text(trade, "walletAddress", "wallet_address", "proxyWallet", "proxy_wallet", "user", "userAddress", "owner");
+        String marketId = text(trade, "marketId", "market_id", "market", "conditionId", "condition_id");
+        String externalTradeId = text(trade, "externalTradeId", "external_trade_id", "tradeId", "trade_id", "id", "txHash", "transactionHash");
+        if (walletAddress == null || marketId == null || externalTradeId == null) {
+            return null;
+        }
+
+        PolymarketTradeEventRequest req = new PolymarketTradeEventRequest();
+        req.setWalletAddress(walletAddress);
+        String chain = text(trade, "chain");
+        req.setChain(chain == null || chain.isBlank() ? "polygon" : chain);
+        req.setExternalTradeId(externalTradeId);
+        req.setMarketId(marketId);
+        req.setQuestion(text(trade, "question", "title", "marketName"));
+        req.setOutcome(text(trade, "outcome", "outcomeText", "outcomeName"));
+        req.setSide(text(trade, "side", "action"));
+        BigDecimal price = decimal(trade, "price");
+        if (price != null) {
+            req.setPrice(price);
+        }
+        BigDecimal sizeShares = decimal(trade, "sizeShares", "size_shares", "size", "shares", "quantity");
+        if (sizeShares != null) {
+            req.setSizeShares(sizeShares);
+        }
+        BigDecimal sizeUsdc = decimal(trade, "sizeUsdc", "size_usdc", "notional", "notionalUsdc", "usdcSize");
+        if (sizeUsdc != null) {
+            req.setSizeUsdc(sizeUsdc);
+        }
+        Long openedAtMs = epochMillis(trade, "openedAt", "opened_at", "tradedAt", "traded_at", "ts", "time", "timestamp");
+        if (openedAtMs != null) {
+            req.setOpenedAt(new Date(openedAtMs));
+        }
+        return req;
+    }
+
+    private ObjectMapper resolveObjectMapper() {
+        if (objectMapper != null) {
+            return objectMapper;
+        }
+        // 兜底：测试场景未注入 Spring bean 时本地实例化（线程安全，复用即可）
+        objectMapper = new ObjectMapper();
+        return objectMapper;
+    }
+
+    private static String text(JsonNode node, String... keys) {
+        if (node == null) {
+            return null;
+        }
+        for (String key : keys) {
+            JsonNode v = node.get(key);
+            if (v != null && !v.isNull()) {
+                String s = v.asText(null);
+                if (s != null && !s.isBlank()) {
+                    return s.trim();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static BigDecimal decimal(JsonNode node, String... keys) {
+        if (node == null) {
+            return null;
+        }
+        for (String key : keys) {
+            JsonNode v = node.get(key);
+            if (v != null && !v.isNull()) {
+                try {
+                    return new BigDecimal(v.asText());
+                } catch (NumberFormatException ignored) {
+                    // try next key
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Long epochMillis(JsonNode node, String... keys) {
+        if (node == null) {
+            return null;
+        }
+        for (String key : keys) {
+            JsonNode v = node.get(key);
+            if (v == null || v.isNull()) {
+                continue;
+            }
+            try {
+                long raw;
+                if (v.isNumber()) {
+                    raw = v.asLong();
+                } else {
+                    raw = Long.parseLong(v.asText().trim());
+                }
+                // 兼容秒 / 毫秒：< 10^12 当作秒（即 ~2001 年之前），其他当作毫秒
+                if (raw > 0 && raw < 1_000_000_000_000L) {
+                    return raw * 1000L;
+                }
+                if (raw > 0) {
+                    return raw;
+                }
+            } catch (NumberFormatException ignored) {
+                // try next key
+            }
+        }
+        return null;
+    }
+
+    private static String rootCauseMessage(Throwable t) {
+        Throwable cur = t;
+        while (cur.getCause() != null && cur.getCause() != cur) {
+            cur = cur.getCause();
+        }
+        return cur.getMessage();
+    }
+
+    /** F-P1-8 stats DTO. */
+    public static class WsTradeEventStats {
+        private final long received;
+        private final long forwarded;
+        private final long deduped;
+        private final long parseFailures;
+        private final long disabledSkips;
+
+        public WsTradeEventStats(long received, long forwarded, long deduped, long parseFailures, long disabledSkips) {
+            this.received = received;
+            this.forwarded = forwarded;
+            this.deduped = deduped;
+            this.parseFailures = parseFailures;
+            this.disabledSkips = disabledSkips;
+        }
+
+        public long getReceived() { return received; }
+        public long getForwarded() { return forwarded; }
+        public long getDeduped() { return deduped; }
+        public long getParseFailures() { return parseFailures; }
+        public long getDisabledSkips() { return disabledSkips; }
     }
 
     public SmartWalletTradeEventEntity ingestTradeEvent(PolymarketTradeEventRequest request) {

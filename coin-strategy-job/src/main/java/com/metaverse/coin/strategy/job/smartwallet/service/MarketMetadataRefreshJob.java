@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -57,7 +59,7 @@ public class MarketMetadataRefreshJob {
             return;
         }
 
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> persistedStates =
+        Map<String, MarketStateSnapshot> persistedStates =
                 marketStateService.loadPersistedMarkets(candidates);
         int staleOrMissing = (int) candidates.stream()
                 .filter(marketId -> isRefreshDue(marketId, persistedStates.get(marketId), incompleteActiveMarketIdSet, activeMaxStaleMs, closedMaxStaleMs))
@@ -83,7 +85,7 @@ public class MarketMetadataRefreshJob {
             return;
         }
 
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> refreshed =
+        Map<String, MarketStateSnapshot> refreshed =
                 marketStateService.refreshPersistedMarkets(refreshTargets, gammaChunkSize);
         if (!refreshed.isEmpty() || staleOrMissing > 0) {
             log.info("[MarketMetadataRefreshJob] candidateCount={} staleOrMissing={} requested={} refreshed={} skippedCooldown=0 failed={} elapsedMs={} currentChunkSize={}",
@@ -126,7 +128,7 @@ public class MarketMetadataRefreshJob {
     }
 
     private boolean isRefreshDue(String marketId,
-                                 SmartWalletMarketStateService.MarketStateSnapshot snapshot,
+                                 MarketStateSnapshot snapshot,
                                  Set<String> forcedRefreshMarketIds,
                                  long activeMaxStaleMs,
                                  long closedMaxStaleMs) {
@@ -142,7 +144,7 @@ public class MarketMetadataRefreshJob {
         return System.currentTimeMillis() - snapshot.lastMetadataSyncAt().getTime() > maxStaleMs;
     }
 
-    private Date lastSyncAt(SmartWalletMarketStateService.MarketStateSnapshot snapshot) {
+    private Date lastSyncAt(MarketStateSnapshot snapshot) {
         return snapshot == null ? null : snapshot.lastMetadataSyncAt();
     }
 }

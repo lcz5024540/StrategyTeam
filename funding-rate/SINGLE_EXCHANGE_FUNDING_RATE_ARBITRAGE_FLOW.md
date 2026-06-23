@@ -1,3 +1,12 @@
+---
+title: "单交易所资金费率套利策略流程图"
+type: design
+status: active
+tags: [funding-rate, arbitrage, design]
+created: 2026-04-26
+updated: 2026-04-26
+---
+
 # 单交易所资金费率套利策略流程图
 
 本文基于当前仓库已实现代码整理，主参考实现为：
@@ -104,3 +113,8 @@ flowchart LR
 - `single_exchange_arbitrage_funding_settlement`：资金费结算记录。
 - `single_exchange_arbitrage_risk_snapshot`：开仓前、平仓前、再平衡检查快照。
 - `single_exchange_arbitrage_rebalance_record`：自动补保证金记录。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

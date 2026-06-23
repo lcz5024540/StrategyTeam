@@ -1,4 +1,5 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
@@ -7,7 +8,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestRequest;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayBacktestResult;
@@ -15,13 +16,15 @@ import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcen
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayConcentrationWindowSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayStrategyMetrics;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletReplayWindowResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -85,16 +88,131 @@ public class SmartWalletReplayBacktestService {
                 .build();
     }
 
+    /**
+     * W1-T1.1 Live↔Replay 一致性校验入口.
+     *
+     * <p>用与 live 完全相同的市场快照 + leader 事件, 跑出 {@code candidate} 政策（即当前生产配置）
+     * 在指定 UTC 自然日内的应有信号 / 应有成交 / 应有 PnL.</p>
+     *
+     * <p>与 {@link #replay(SmartWalletReplayBacktestRequest)} 的区别:
+     * <ul>
+     *   <li>滑动窗口大小固定为 1 自然日</li>
+     *   <li>窗口锚点为 {@code [date 00:00 UTC, date+1 00:00 UTC)}, 而非"当前时间往回 N 天"</li>
+     * </ul>
+     *
+     * <p>F-P1-2（第二轮 2026-05-17）：真正实现 baseline (上一版策略) vs candidate (当前生产配置) 对比，
+     *   不再返回 placeholder baseline = candidate；diff 报告里可以看到真实的策略行为差异。
+     *   policy_signature 由 {@link SmartWalletProperties.SignalRisk#getPolicyTag()} 提供；
+     *   配置项 {@code signal-risk.enable-replay-live-window-baseline}（默认 true）控制是否跑 baseline.</p>
+     *
+     * <p>对开单 / 资金 / 胜率均无任何直接影响 — 只读 + 内存计算, 不写库不下单.</p>
+     */
+    public SmartWalletReplayWindowResult replayLiveWindow(LocalDate date) {
+        LocalDate safeDate = date == null ? LocalDate.now(ZoneId.of("UTC")) : date;
+        Date since = Date.from(safeDate.atStartOfDay(ZoneId.of("UTC")).toInstant());
+        Date until = Date.from(safeDate.plusDays(1).atStartOfDay(ZoneId.of("UTC")).toInstant());
+        int safeLimit = 10000;
+
+        List<SmartWalletTradeEventEntity> events = loadTradeEventsBetween(since, until, safeLimit);
+        Map<Long, SmartWalletTradeEffectLabelEntity> labelsByEventId = loadLabels(events);
+        Map<String, SmartWalletProfileEntity> profilesByWallet = loadProfiles(events);
+        Map<String, WalletBehaviorProfileView> behaviorsByWallet = loadBehaviorProfiles(events);
+
+        SmartWalletProperties.SignalRisk candidateRisk = candidateRisk();
+        StrategyAccumulator candidate = new StrategyAccumulator(
+                "candidate", candidateRisk.getPolicyTag(), candidateRisk.getExitSignalProviderMode());
+
+        // F-P1-2: 真 baseline A/B —— 用 baselineRisk()（旧策略基线）独立跑一遍，
+        // 默认开启，可通过 enableReplayLiveWindowBaseline=false 关闭以节省扫描成本。
+        boolean baselineEnabled = isReplayLiveWindowBaselineEnabled();
+        SmartWalletProperties.SignalRisk baselineRisk = baselineEnabled ? baselineRisk() : null;
+        StrategyAccumulator baseline = baselineEnabled
+                ? new StrategyAccumulator("baseline", baselineRisk.getPolicyTag(), baselineRisk.getExitSignalProviderMode())
+                : null;
+
+        for (SmartWalletTradeEventEntity event : events) {
+            if (event == null || event.getWalletAddress() == null || event.getWalletAddress().isBlank()) {
+                continue;
+            }
+            String walletKey = normalizeWallet(event.getWalletAddress());
+            SmartWalletProfileEntity profile = profilesByWallet.get(walletKey);
+            WalletBehaviorProfileView behaviorProfile = behaviorsByWallet.get(walletKey);
+            SmartWalletTradeEffectLabelEntity label = labelsByEventId.get(event.getId());
+            if (baselineEnabled) {
+                evaluateScenario(event, profile, behaviorProfile, label, baselineRisk, false, baseline);
+            }
+            evaluateScenario(event, profile, behaviorProfile, label, candidateRisk, true, candidate);
+        }
+
+        // 当 baseline 关闭时仍把 candidate 复制给 baseline，保持消费方接口不变；
+        // 此时 candidatePolicyTag == baselinePolicyTag，下游 diff 报告会显示 policy_diff=NONE.
+        SmartWalletReplayStrategyMetrics baselineMetrics = baselineEnabled
+                ? baseline.toMetrics()
+                : candidate.toMetrics();
+
+        return SmartWalletReplayWindowResult.builder()
+                .windowDays(1)
+                .scannedEvents(events.size())
+                .baseline(baselineMetrics)
+                .candidate(candidate.toMetrics())
+                .build();
+    }
+
+    /**
+     * F-P1-2：是否在 replayLiveWindow 中启用 baseline A/B。默认 true。
+     * 通过 {@code signal-risk.enable-replay-live-window-baseline=false} 可关闭以节省扫描成本。
+     */
+    private boolean isReplayLiveWindowBaselineEnabled() {
+        SmartWalletProperties.SignalRisk risk = properties.getSignalRisk();
+        if (risk == null) {
+            return true;
+        }
+        Boolean enabled = risk.getEnableReplayLiveWindowBaseline();
+        return enabled == null ? true : enabled;
+    }
+
+    private List<SmartWalletTradeEventEntity> loadTradeEventsBetween(Date since, Date until, int limit) {
+        final int pageSize = 1000;
+        List<SmartWalletTradeEventEntity> all = new ArrayList<>();
+        Long lastId = null;
+
+        while (true) {
+            LambdaQueryWrapper<SmartWalletTradeEventEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(SmartWalletTradeEventEntity::getSource, SOURCE)
+                   .ge(SmartWalletTradeEventEntity::getOpenedAt, since)
+                   .lt(SmartWalletTradeEventEntity::getOpenedAt, until);
+
+            if (lastId != null) {
+                wrapper.lt(SmartWalletTradeEventEntity::getId, lastId);
+            }
+
+            wrapper.orderByDesc(SmartWalletTradeEventEntity::getId)
+                   .last("limit " + pageSize);
+
+            List<SmartWalletTradeEventEntity> chunk = tradeEventMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+
+            if (chunk.size() < pageSize || all.size() >= limit) {
+                break;
+            }
+        }
+
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletTradeEventEntity::getOpenedAt)
+                                   .thenComparing(SmartWalletTradeEventEntity::getId))
+                  .limit(limit)
+                  .collect(Collectors.toList());
+    }
+
     private SmartWalletReplayWindowResult replayWindow(Integer windowDays, Integer maxEventsPerWindow) {
         int safeWindowDays = windowDays == null ? 30 : Math.max(windowDays, 1);
         int safeLimit = maxEventsPerWindow == null ? 2000 : Math.max(1, Math.min(maxEventsPerWindow, 10000));
         Date since = Date.from(Instant.now().minus(safeWindowDays, ChronoUnit.DAYS));
-        List<SmartWalletTradeEventEntity> events = tradeEventMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getSource, SOURCE)
-                .ge(SmartWalletTradeEventEntity::getOpenedAt, since)
-                .orderByAsc(SmartWalletTradeEventEntity::getOpenedAt)
-                .orderByAsc(SmartWalletTradeEventEntity::getId)
-                .last("limit " + safeLimit));
+        List<SmartWalletTradeEventEntity> events = loadTradeEvents(since, safeLimit);
         Map<Long, SmartWalletTradeEffectLabelEntity> labelsByEventId = loadLabels(events);
         Map<String, SmartWalletProfileEntity> profilesByWallet = loadProfiles(events);
         Map<String, WalletBehaviorProfileView> behaviorsByWallet = loadBehaviorProfiles(events);
@@ -242,6 +360,43 @@ public class SmartWalletReplayBacktestService {
         }
     }
 
+    private List<SmartWalletTradeEventEntity> loadTradeEvents(Date since, int limit) {
+        final int pageSize = 1000;
+        List<SmartWalletTradeEventEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletTradeEventEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(SmartWalletTradeEventEntity::getSource, SOURCE)
+                   .ge(SmartWalletTradeEventEntity::getOpenedAt, since);
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletTradeEventEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletTradeEventEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletTradeEventEntity> chunk = tradeEventMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= limit) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletTradeEventEntity::getOpenedAt)
+                                   .thenComparing(SmartWalletTradeEventEntity::getId))
+                  .limit(limit)
+                  .collect(Collectors.toList());
+    }
+    
     private Map<Long, SmartWalletTradeEffectLabelEntity> loadLabels(List<SmartWalletTradeEventEntity> events) {
         List<Long> eventIds = events.stream()
                 .map(SmartWalletTradeEventEntity::getId)

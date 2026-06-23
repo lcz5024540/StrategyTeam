@@ -1,4 +1,8 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.MarketConcentrationSnapshotService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
@@ -8,11 +12,11 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFoll
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorItemView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitorTrendPointView;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
-import com.metaverse.coin.strategy.job.strategy.model.OffsetPageView;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitorItemView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitorTrendPointView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletMarketMonitoringSummaryView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.OffsetPageView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -24,6 +28,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -40,9 +45,11 @@ import java.util.stream.Collectors;
 public class SmartWalletMarketMonitoringService {
 
     private static final String SOURCE = "POLYMARKET";
+    private static final List<String> ACTIVE_TASK_STATUSES = List.of("PENDING", "EXECUTING");
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter BJT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
             .withZone(SHANGHAI);
+    private static final long DATASET_CACHE_TTL_MS = 60_000L;
 
     private final SmartWalletTradeEventMapper tradeEventMapper;
     private final SmartWalletFollowTaskMapper followTaskMapper;
@@ -51,6 +58,11 @@ public class SmartWalletMarketMonitoringService {
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
     private final MarketConcentrationSnapshotService concentrationSnapshotService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
+
+    private volatile MarketDataset cachedTableDataset;
+    private volatile int cachedTableDatasetLookbackDays;
+    private volatile long cachedTableDatasetExpiresAt;
 
     public SmartWalletMarketMonitoringSummaryView summary(Integer limit, Integer lookbackDays, Integer trendDays) {
         int safeLimit = limit == null ? 40 : Math.max(10, Math.min(limit, 120));
@@ -96,7 +108,7 @@ public class SmartWalletMarketMonitoringService {
         int safeLookbackDays = lookbackDays == null ? 14 : Math.max(3, Math.min(lookbackDays, 90));
         int safePageSize = pageSize == null ? 10 : Math.max(5, Math.min(pageSize, 100));
         int safePage = page == null ? 1 : Math.max(page, 1);
-        MarketDataset dataset = buildDataset(Math.max(safePageSize * safePage, 80), safeLookbackDays);
+        MarketDataset dataset = getOrBuildTableDataset(safeLookbackDays);
 
         List<SmartWalletMarketMonitorItemView> filteredRows = dataset.rows().stream()
                 .filter(row -> matchesKeyword(row, keyword))
@@ -111,15 +123,67 @@ public class SmartWalletMarketMonitoringService {
         int resolvedPage = Math.min(safePage, totalPages);
         int start = Math.min((resolvedPage - 1) * safePageSize, totalItems);
         int end = Math.min(start + safePageSize, totalItems);
-        List<SmartWalletMarketMonitorItemView> pageItems = filteredRows.subList(start, end);
+        List<SmartWalletMarketMonitorItemView> pageItems = new ArrayList<>(filteredRows.subList(start, end));
+        // Populate outcome prices for page items
+        enrichOutcomePrices(pageItems);
         return OffsetPageView.of(pageItems, resolvedPage, safePageSize, totalItems);
+    }
+
+    private MarketDataset getOrBuildTableDataset(int lookbackDays) {
+        long now = System.currentTimeMillis();
+        MarketDataset cached = this.cachedTableDataset;
+        if (cached != null && now < cachedTableDatasetExpiresAt && lookbackDays == cachedTableDatasetLookbackDays) {
+            return cached;
+        }
+        MarketDataset fresh = buildDataset(500, lookbackDays);
+        this.cachedTableDataset = fresh;
+        this.cachedTableDatasetLookbackDays = lookbackDays;
+        this.cachedTableDatasetExpiresAt = now + DATASET_CACHE_TTL_MS;
+        return fresh;
+    }
+
+    private void enrichOutcomePrices(List<SmartWalletMarketMonitorItemView> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        // 批量获取所有需要的 marketId 的快照，避免 N+1 查询
+        List<String> marketIds = items.stream()
+                .map(SmartWalletMarketMonitorItemView::getMarketId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        Map<String, BigDecimal> yesPriceByMarket = new LinkedHashMap<>();
+        Map<String, BigDecimal> noPriceByMarket = new LinkedHashMap<>();
+        Date now = new Date();
+        for (String marketId : marketIds) {
+            try {
+                var yesSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(marketId, "YES", now);
+                var noSnapshot = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(marketId, "NO", now);
+                if (yesSnapshot != null && yesSnapshot.getMidPrice() != null) {
+                    yesPriceByMarket.put(marketId, yesSnapshot.getMidPrice());
+                }
+                if (noSnapshot != null && noSnapshot.getMidPrice() != null) {
+                    noPriceByMarket.put(marketId, noSnapshot.getMidPrice());
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        for (SmartWalletMarketMonitorItemView item : items) {
+            BigDecimal yesPrice = yesPriceByMarket.get(item.getMarketId());
+            BigDecimal noPrice = noPriceByMarket.get(item.getMarketId());
+            if (yesPrice != null || noPrice != null) {
+                String yes = yesPrice != null ? yesPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
+                String no = noPrice != null ? noPrice.setScale(2, RoundingMode.HALF_UP).toPlainString() : "-";
+                item.setOutcomePrices(yes + " / " + no);
+            }
+        }
     }
 
     public List<String> listCandidateMarketIds(Integer limit, Integer lookbackDays) {
         int safeLimit = limit == null ? 60 : Math.max(10, Math.min(limit, 160));
         int safeLookbackDays = lookbackDays == null ? 30 : Math.max(3, Math.min(lookbackDays, 90));
         MonitoringBaseData dataset = buildBaseData(safeLimit, safeLookbackDays);
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> stateByMarketId = marketStateService.loadPersistedMarkets(
+        Map<String, MarketStateSnapshot> stateByMarketId = marketStateService.loadPersistedMarkets(
                 dataset.accumulators().stream().map(MarketAccumulator::marketId).toList()
         );
         return dataset.accumulators().stream()
@@ -133,7 +197,7 @@ public class SmartWalletMarketMonitoringService {
 
     private MarketDataset buildDataset(int fetchHint, int lookbackDays) {
         MonitoringBaseData baseData = buildBaseData(fetchHint, lookbackDays);
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> stateByMarketId =
+        Map<String, MarketStateSnapshot> stateByMarketId =
                 marketStateService.loadPersistedMarkets(
                         baseData.accumulators().stream().map(MarketAccumulator::marketId).toList());
         Map<String, MarketConcentrationSnapshotService.SnapshotView> concentrationSnapshots =
@@ -159,29 +223,22 @@ public class SmartWalletMarketMonitoringService {
     private MonitoringBaseData buildBaseData(int fetchHint, int lookbackDays) {
         int safeLookbackDays = Math.max(3, Math.min(lookbackDays, 90));
         int safeFetchHint = Math.max(fetchHint, 40);
-        Date since = Date.from(Instant.now().minus(safeLookbackDays, ChronoUnit.DAYS));
+        Instant now = Instant.now();
+        Date since = Date.from(now.minus(safeLookbackDays, ChronoUnit.DAYS));
+        Date activeTaskSince = Date.from(now.minus(resolveActiveTaskMaxAgeSeconds(), ChronoUnit.SECONDS));
 
-        List<SmartWalletTradeEventEntity> recentEvents = tradeEventMapper.selectList(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getSource, SOURCE)
-                .ge(SmartWalletTradeEventEntity::getOpenedAt, since)
-                .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
-                .last("limit " + Math.max(safeFetchHint * 10, 2500)));
-        List<SmartWalletFollowTaskEntity> recentTasks = followTaskMapper.selectList(new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
-                .ge(SmartWalletFollowTaskEntity::getCreatedAt, since)
-                .orderByDesc(SmartWalletFollowTaskEntity::getCreatedAt)
-                .last("limit " + Math.max(safeFetchHint * 8, 1800)));
-        List<SmartWalletPositionEntity> activePositions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
-                .orderByDesc(SmartWalletPositionEntity::getUpdatedAt)
-                .last("limit " + Math.max(safeFetchHint * 6, 1200)));
+        List<SmartWalletTradeEventEntity> recentEvents = loadTradeEvents(since, safeFetchHint);
+        List<SmartWalletFollowTaskEntity> recentTasks = loadFollowTasks(activeTaskSince, safeFetchHint);
+        List<SmartWalletFollowTaskEntity> activeTasks = filterActiveRecentTasks(recentTasks, activeTaskSince);
+        List<SmartWalletPositionEntity> activePositions = loadPositions(safeFetchHint);
 
-        Map<Long, SmartWalletMarketInfoEntity> marketInfoById = loadMarketInfo(recentTasks, activePositions);
+        Map<Long, SmartWalletMarketInfoEntity> marketInfoById = loadMarketInfo(activeTasks, activePositions);
         Map<String, SmartWalletMarketInfoEntity> primaryInfoByMarketId = marketInfoService.batchGetPrimaryByMarketIds(
-                collectCandidateMarketIds(recentEvents, recentTasks, activePositions, marketInfoById)
+                collectCandidateMarketIds(recentEvents, activeTasks, activePositions, marketInfoById)
         );
         LinkedHashMap<String, MarketAccumulator> accumulators = new LinkedHashMap<>();
         ingestEvents(accumulators, recentEvents, primaryInfoByMarketId);
-        ingestTasks(accumulators, recentTasks, marketInfoById, primaryInfoByMarketId);
+        ingestTasks(accumulators, activeTasks, marketInfoById, primaryInfoByMarketId);
         ingestPositions(accumulators, activePositions, marketInfoById, primaryInfoByMarketId);
         accumulators.values().forEach(accumulator -> applyPrimaryMarketInfo(
                 accumulator,
@@ -191,7 +248,30 @@ public class SmartWalletMarketMonitoringService {
                 .sorted(Comparator.comparing(MarketAccumulator::priorityScore).reversed()
                         .thenComparing(MarketAccumulator::lastSignalAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
-        return new MonitoringBaseData(recentEvents, recentTasks, marketInfoById, prioritizedAccumulators);
+        return new MonitoringBaseData(recentEvents, activeTasks, marketInfoById, prioritizedAccumulators);
+    }
+
+    private List<SmartWalletFollowTaskEntity> filterActiveRecentTasks(List<SmartWalletFollowTaskEntity> tasks,
+                                                                      Date activeTaskSince) {
+        if (tasks == null || tasks.isEmpty()) {
+            return List.of();
+        }
+        return tasks.stream()
+                .filter(task -> task != null)
+                .filter(task -> isActiveTaskStatus(task.getStatus()))
+                .filter(task -> task.getCreatedAt() != null && !task.getCreatedAt().before(activeTaskSince))
+                .toList();
+    }
+
+    private boolean isActiveTaskStatus(String status) {
+        return StringUtils.hasText(status)
+                && ACTIVE_TASK_STATUSES.stream().anyMatch(activeStatus -> activeStatus.equalsIgnoreCase(status.trim()));
+    }
+
+    private long resolveActiveTaskMaxAgeSeconds() {
+        SmartWalletProperties.MarketMonitoring marketMonitoring = properties.getMarketMonitoring();
+        Integer maxAgeSeconds = marketMonitoring == null ? null : marketMonitoring.getActiveTaskMaxAgeSeconds();
+        return maxAgeSeconds == null || maxAgeSeconds <= 0 ? 10800L : maxAgeSeconds.longValue();
     }
 
     private List<String> collectCandidateMarketIds(List<SmartWalletTradeEventEntity> recentEvents,
@@ -324,16 +404,16 @@ public class SmartWalletMarketMonitoringService {
     }
 
     private SmartWalletMarketMonitorItemView toItemView(MarketAccumulator accumulator,
-                                                        SmartWalletMarketStateService.MarketStateSnapshot stateSnapshot,
+                                                        MarketStateSnapshot stateSnapshot,
                                                         MarketConcentrationSnapshotService.SnapshotView concentrationView) {
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = stateSnapshot == null
-                ? SmartWalletMarketStateService.MarketStateSnapshot.unknown(accumulator.marketId)
+        MarketStateSnapshot snapshot = stateSnapshot == null
+                ? MarketStateSnapshot.unknown(accumulator.marketId)
                 : stateSnapshot;
         Long displayMarketEndAt = firstNonNull(snapshot.marketEndAt(), accumulator.marketEndAt);
         if (!shouldDisplayActiveMarket(snapshot, displayMarketEndAt)) {
             return null;
         }
-        MarketConcentrationService.ConcentrationSnapshot concentration =
+        ConcentrationSnapshot concentration =
                 concentrationView == null ? null : concentrationView.snapshot();
         boolean concentrationAvailable = concentration != null && concentration.isDataAvailable();
         boolean activeMarket = snapshot.isActive();
@@ -346,6 +426,7 @@ public class SmartWalletMarketMonitoringService {
         return SmartWalletMarketMonitorItemView.builder()
                 .marketId(accumulator.marketId)
                 .question(firstNonBlank(snapshot.question(), accumulator.question))
+                .marketSlug(snapshot.marketSlug())
                 .marketEndAt(displayMarketEndAt)
                 .marketEndAtBjt(formatEpoch(displayMarketEndAt))
                 .marketState("ACTIVE")
@@ -382,21 +463,14 @@ public class SmartWalletMarketMonitoringService {
                 .build();
     }
 
-    private boolean shouldDisplayActiveMarket(SmartWalletMarketStateService.MarketStateSnapshot snapshot,
+    private boolean shouldDisplayActiveMarket(MarketStateSnapshot snapshot,
                                               Long marketEndAt) {
-        if (snapshot == null || !snapshot.isActive()) {
-            return false;
-        }
-        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+        return snapshot != null && snapshot.isActive();
     }
 
     private boolean shouldTrackCandidateMarket(MarketAccumulator accumulator,
-                                               SmartWalletMarketStateService.MarketStateSnapshot snapshot) {
+                                               MarketStateSnapshot snapshot) {
         if (accumulator == null) {
-            return false;
-        }
-        Long marketEndAt = firstNonNull(snapshot == null ? null : snapshot.marketEndAt(), accumulator.marketEndAt);
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
             return false;
         }
         if (snapshot != null) {
@@ -409,11 +483,7 @@ public class SmartWalletMarketMonitoringService {
         if (accumulator == null) {
             return false;
         }
-        if (!isActiveLifecycle(accumulator.marketLifecycle)) {
-            return false;
-        }
-        Long marketEndAt = accumulator.marketEndAt;
-        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+        return isActiveLifecycle(accumulator.marketLifecycle);
     }
 
     private boolean shouldTrackKnownMarket(SmartWalletMarketInfoEntity marketInfo) {
@@ -432,8 +502,7 @@ public class SmartWalletMarketMonitoringService {
         if (!isActiveLifecycle(marketInfo.getMarketLifecycle())) {
             return false;
         }
-        Long marketEndAt = marketInfo.getMarketEndAt();
-        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+        return true;
     }
 
     private boolean isActiveLifecycle(String lifecycle) {
@@ -673,6 +742,113 @@ public class SmartWalletMarketMonitoringService {
                 : StringUtils.hasText(middle) ? middle : right;
     }
 
+    private List<SmartWalletTradeEventEntity> loadTradeEvents(Date since, int fetchHint) {
+        final int pageSize = 1000;
+        List<SmartWalletTradeEventEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletTradeEventEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(SmartWalletTradeEventEntity::getSource, SOURCE)
+                   .ge(SmartWalletTradeEventEntity::getOpenedAt, since);
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletTradeEventEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletTradeEventEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletTradeEventEntity> chunk = tradeEventMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= Math.max(fetchHint * 10, 2500)) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletTradeEventEntity::getOpenedAt).reversed())
+                  .limit(Math.max(fetchHint * 10, 2500))
+                  .collect(Collectors.toList());
+    }
+    
+    private List<SmartWalletFollowTaskEntity> loadFollowTasks(Date since, int fetchHint) {
+        final int pageSize = 1000;
+        List<SmartWalletFollowTaskEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletFollowTaskEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.in(SmartWalletFollowTaskEntity::getStatus, ACTIVE_TASK_STATUSES)
+                   .ge(SmartWalletFollowTaskEntity::getCreatedAt, since);
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletFollowTaskEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletFollowTaskEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletFollowTaskEntity> chunk = followTaskMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= Math.max(fetchHint * 8, 1800)) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletFollowTaskEntity::getCreatedAt).reversed())
+                  .limit(Math.max(fetchHint * 8, 1800))
+                  .collect(Collectors.toList());
+    }
+    
+    private List<SmartWalletPositionEntity> loadPositions(int fetchHint) {
+        final int pageSize = 1000;
+        List<SmartWalletPositionEntity> all = new ArrayList<>();
+        Long lastId = null;
+        
+        while (true) {
+            LambdaQueryWrapper<SmartWalletPositionEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"));
+            
+            if (lastId != null) {
+                wrapper.lt(SmartWalletPositionEntity::getId, lastId);
+            }
+            
+            wrapper.orderByDesc(SmartWalletPositionEntity::getId)
+                   .last("limit " + pageSize);
+            
+            List<SmartWalletPositionEntity> chunk = positionMapper.selectList(wrapper);
+            if (chunk == null || chunk.isEmpty()) {
+                break;
+            }
+            
+            all.addAll(chunk);
+            lastId = chunk.get(chunk.size() - 1).getId();
+            
+            if (chunk.size() < pageSize || all.size() >= Math.max(fetchHint * 6, 1200)) {
+                break;
+            }
+        }
+        
+        return all.stream()
+                  .sorted(Comparator.comparing(SmartWalletPositionEntity::getUpdatedAt).reversed())
+                  .limit(Math.max(fetchHint * 6, 1200))
+                  .collect(Collectors.toList());
+    }
+    
     private boolean isDateStale(Date value, Long maxStaleMs, boolean treatMissingAsStale) {
         if (value == null) {
             return treatMissingAsStale;

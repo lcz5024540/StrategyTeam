@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletCashLedgerMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletDailyReportMapper;
@@ -13,7 +15,7 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFill
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.SettlementSyncSummary;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletFollowAddressDailyReportView;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView;
@@ -88,6 +90,10 @@ class SmartWalletAccountingServiceTest {
     private SmartWalletMarketLinkService marketLinkService;
     @Mock
     private ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
+    @Mock
+    private PolymarketFeeScheduleService feeScheduleService;
+    @Mock
+    private PolymarketMarketDataCacheService marketDataCacheService;
 
     private SmartWalletAccountingService service;
 
@@ -117,7 +123,9 @@ class SmartWalletAccountingServiceTest {
                 marketInfoService,
                 marketStateService,
                 marketLinkService,
-                tradeOrderServiceProvider
+                tradeOrderServiceProvider,
+                feeScheduleService,
+                marketDataCacheService
         );
     }
 
@@ -335,7 +343,7 @@ class SmartWalletAccountingServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(position));
         when(marketStateService.refreshMarkets(any(), eq(false))).thenReturn(Map.of(
                 "market-closed",
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-closed")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(false)
@@ -367,7 +375,7 @@ class SmartWalletAccountingServiceTest {
         when(positionMapper.selectList(any())).thenReturn(List.of(position));
         when(marketStateService.refreshMarkets(any(), eq(false))).thenReturn(Map.of(
                 "market-settlement",
-                SmartWalletMarketStateService.MarketStateSnapshot.builder()
+                MarketStateSnapshot.builder()
                         .marketId("market-settlement")
                         .marketLifecycle(SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED)
                         .acceptingOrders(false)
@@ -1462,5 +1470,38 @@ class SmartWalletAccountingServiceTest {
             return sqlDate.toLocalDate().atStartOfDay();
         }
         return LocalDateTime.ofInstant(date.toInstant(), zoneId);
+    }
+
+    /**
+     * P2-2：结算时刻必须 clamp 到 [openedAt, now]，杜绝未来日期结算 / 结算早于开仓。
+     * 参见 docs/problem/问题排查修复方案-2026-05-25.md。
+     */
+    @Test
+    void settlementAt_clampsSettlementTimeIntoOpenedAtToNowRange() {
+        long base = 1_700_000_000_000L;
+        Date openedAt = new Date(base);
+        Date now = new Date(base + 3_600_000L); // openedAt + 1h
+
+        // 1) 名义到期在未来 → clamp 到 now（杜绝"未来日期结算"）
+        PolymarketApiClient.MarketMetadata future = PolymarketApiClient.MarketMetadata.builder()
+                .endAt(base + 7L * 24 * 3_600_000L).build();
+        assertEquals(now, service.settlementAt(future, now, openedAt));
+
+        // 2) 名义到期早于开仓 → clamp 到 openedAt（杜绝"结算早于开仓"）
+        PolymarketApiClient.MarketMetadata beforeOpen = PolymarketApiClient.MarketMetadata.builder()
+                .endAt(base - 3_600_000L).build();
+        assertEquals(openedAt, service.settlementAt(beforeOpen, now, openedAt));
+
+        // 3) 名义到期落在 [openedAt, now] 内 → 原样返回
+        Date within = new Date(base + 1_800_000L);
+        PolymarketApiClient.MarketMetadata inRange = PolymarketApiClient.MarketMetadata.builder()
+                .endAt(within.getTime()).build();
+        assertEquals(within, service.settlementAt(inRange, now, openedAt));
+
+        // 4) metadata 为空 → 退回真实结算处理时刻 now
+        assertEquals(now, service.settlementAt(null, now, openedAt));
+
+        // 5) openedAt 为空 → 区间收敛为 {now}
+        assertEquals(now, service.settlementAt(future, now, null));
     }
 }

@@ -1,7 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -77,5 +77,33 @@ class PolymarketMarketDataStreamServiceTest {
 
         assertNotNull(service.getSnapshot("token-3"));
         assertNotNull(service.getCachedSnapshot("token-3"));
+    }
+
+    // ── F-P1-7 第十轮：connected state ──────────────────────────────────
+    @Test
+    void shouldDefaultToDisconnectedAndTrackMarkConnectedTransitions() {
+        // 默认未连接
+        assertEquals(false, service.isConnected());
+        PolymarketMarketDataStreamService.MarketDataStreamStats statsBefore = service.getStats();
+        assertEquals(false, statsBefore.isConnected());
+        assertNull(statsBefore.getConnectedAt());
+        assertNull(statsBefore.getDisconnectedAt());
+
+        // 标记已连接
+        service.markConnected(true);
+        assertEquals(true, service.isConnected());
+        PolymarketMarketDataStreamService.MarketDataStreamStats statsConnected = service.getStats();
+        assertEquals(true, statsConnected.isConnected());
+        assertNotNull(statsConnected.getConnectedAt());
+
+        // 断开
+        service.markConnected(false);
+        assertEquals(false, service.isConnected());
+        assertNotNull(service.getStats().getDisconnectedAt());
+
+        // 重连计数透出
+        service.incrementReconnectAttempts();
+        service.incrementReconnectAttempts();
+        assertEquals(2L, service.getStats().getReconnectAttempts());
     }
 }

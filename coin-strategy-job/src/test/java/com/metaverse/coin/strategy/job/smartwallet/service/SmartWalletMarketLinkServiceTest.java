@@ -38,6 +38,21 @@ class SmartWalletMarketLinkServiceTest {
     }
 
     @Test
+    void shouldUseEventUrlForSportsSlugWithUnknownRoot() {
+        SmartWalletMarketLinkService service = new SmartWalletMarketLinkService(marketMetadataService, marketStateService);
+
+        SmartWalletMarketLinkView view = service.fromStoredSlug(
+                "condition-1",
+                "Portugal vs. DR Congo: Portugal O/U 6.5 Corners",
+                "UNDER",
+                "fifwc-prt-cdr-2026-06-17-corners-team-home-6pt5");
+
+        assertEquals(SmartWalletMarketLinkService.STATUS_EXTERNAL_READY, view.getLinkStatus());
+        assertEquals("https://polymarket.com/event/fifwc-prt-cdr-2026-06-17", view.getExternalMarketUrl());
+        assertEquals(view.getExternalMarketUrl(), view.getMarketUrl());
+    }
+
+    @Test
     void shouldReturnInternalFallbackWhenSlugMissing() {
         SmartWalletMarketLinkService service = new SmartWalletMarketLinkService(marketMetadataService, marketStateService);
         when(marketMetadataService.getBestEffortByConditionId(eq("condition-2"), eq(false), eq("Question"), eq(List.of("YES"))))

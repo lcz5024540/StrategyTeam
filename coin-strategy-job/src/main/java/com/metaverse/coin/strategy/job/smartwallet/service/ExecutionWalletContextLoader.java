@@ -1,7 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.job.config.SecretDecryptor;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import lombok.Builder;
 import lombok.Data;
@@ -79,6 +79,17 @@ public class ExecutionWalletContextLoader {
                 .estimatedFeeRate(safe(config.getEstimatedFeeRate(), new BigDecimal("0.0015")))
                 .allowYes(Boolean.TRUE.equals(config.getAllowYes()))
                 .allowNo(Boolean.TRUE.equals(config.getAllowNo()))
+                // Fix-C: 动态滑点
+                .enableDynamicSlippage(config.isEnableDynamicSlippage())
+                .highLiquiditySlippageRate(safe(config.getHighLiquiditySlippageRate(), new BigDecimal("0.01")))
+                .mediumLiquiditySlippageRate(safe(config.getMediumLiquiditySlippageRate(), new BigDecimal("0.02")))
+                .lowLiquiditySlippageRate(safe(config.getLowLiquiditySlippageRate(), new BigDecimal("0.03")))
+                .highLiquidityThresholdUsdc(safe(config.getHighLiquidityThresholdUsdc(), new BigDecimal("5000")))
+                .lowLiquidityThresholdUsdc(safe(config.getLowLiquidityThresholdUsdc(), new BigDecimal("1000")))
+                // Fix-B3: Maker 策略
+                .orderStrategy(config.getOrderStrategy() == null ? "TAKER" : config.getOrderStrategy().trim().toUpperCase())
+                .makerStrategyMinDepthUsdc(safe(config.getMakerStrategyMinDepthUsdc(), new BigDecimal("5000")))
+                .makerStrategyMaxSpreadBps(safe(config.getMakerStrategyMaxSpreadBps(), new BigDecimal("200")))
                 .build();
     }
 
@@ -167,5 +178,18 @@ public class ExecutionWalletContextLoader {
         private BigDecimal estimatedFeeRate;
         private boolean allowYes;
         private boolean allowNo;
+
+        // ── Fix-C: 动态滑点 ──
+        private boolean enableDynamicSlippage;
+        private BigDecimal highLiquiditySlippageRate;
+        private BigDecimal mediumLiquiditySlippageRate;
+        private BigDecimal lowLiquiditySlippageRate;
+        private BigDecimal highLiquidityThresholdUsdc;
+        private BigDecimal lowLiquidityThresholdUsdc;
+
+        // ── Fix-B3: Maker 策略 ──
+        private String orderStrategy;
+        private BigDecimal makerStrategyMinDepthUsdc;
+        private BigDecimal makerStrategyMaxSpreadBps;
     }
 }

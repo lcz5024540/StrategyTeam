@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
 import lombok.Builder;
@@ -189,14 +191,37 @@ public class SmartWalletMarketStateService {
                 .filter(java.util.Objects::nonNull)
                 .max(Date::compareTo)
                 .orElse(null);
-        if (lastSyncAt == null || System.currentTimeMillis() - lastSyncAt.getTime() > DEFAULT_METADATA_STALE_MS) {
+        if (lastSyncAt == null) {
             return null;
         }
         MarketStateSnapshot snapshot = snapshotFromRows(rows);
+        // 修复五 5B：缓存 TTL 按距结算时间自适应——临近结算强制刷新，远期市场维持 60s。
+        if (System.currentTimeMillis() - lastSyncAt.getTime() > adaptiveMetadataTtlMs(snapshot)) {
+            return null;
+        }
         if (isActiveIncomplete(snapshot) || (snapshot != null && snapshot.isActive() && rowsMissingToken(rows))) {
             return null;
         }
         return snapshot;
+    }
+
+    /**
+     * 修复五 5B：市场元数据缓存的自适应 TTL（毫秒）。
+     * 距结算 ≤10 分钟时返回 0（每次强制刷新）；≤1 小时用 15 秒；其余维持默认 60 秒。
+     * marketEndAt 缺失（长尾市场常见）时退回默认 60 秒。
+     */
+    private long adaptiveMetadataTtlMs(MarketStateSnapshot snapshot) {
+        if (snapshot == null || snapshot.marketEndAt() == null || snapshot.marketEndAt() <= 0) {
+            return DEFAULT_METADATA_STALE_MS;
+        }
+        long remainingMs = snapshot.marketEndAt() - System.currentTimeMillis();
+        if (remainingMs <= 10L * 60_000L) {
+            return 0L;
+        }
+        if (remainingMs <= 60L * 60_000L) {
+            return 15_000L;
+        }
+        return DEFAULT_METADATA_STALE_MS;
     }
 
     private MarketStateSnapshot snapshotFromRows(List<SmartWalletMarketInfoEntity> rows) {
@@ -297,10 +322,6 @@ public class SmartWalletMarketStateService {
         if (!acceptingOrders) {
             return LIFECYCLE_CLOSED_UNRESOLVED;
         }
-        Long marketEndAt = primary.getMarketEndAt();
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
-            return LIFECYCLE_CLOSED_UNRESOLVED;
-        }
         return persistedLifecycle;
     }
 
@@ -324,17 +345,26 @@ public class SmartWalletMarketStateService {
             acceptingOrders = existingRows.get(0).getAcceptingOrders() == null || existingRows.get(0).getAcceptingOrders();
         }
         String lifecycle = resolveLifecycle(resolvedOutcome, closed, acceptingOrders, marketEndAt);
+        String question = firstNonBlank(metadata == null ? null : metadata.getQuestion(), firstQuestion(existingRows), questionFallback, marketId);
+        String slug = firstNonBlank(metadata == null ? null : metadata.getSlug(), firstMarketSlug(existingRows));
+        // Include slug in classification — slugs often contain useful keywords (e.g., "will-xrp-hit-3")
+        String classificationText = question + (StringUtils.hasText(slug) ? " " + slug.replace('-', ' ') : "");
+        String newCategory = resolveNormalizedCategory(sourceCategory, classificationText);
+        // When API fails (metadata == null) and new classification falls back to OTHER,
+        // preserve the existing non-OTHER category — don't downgrade on API 404.
+        String existingCategory = firstNormalizedCategory(existingRows);
+        if (CATEGORY_OTHER.equals(newCategory)
+                && StringUtils.hasText(existingCategory)
+                && !CATEGORY_OTHER.equals(existingCategory)) {
+            newCategory = existingCategory;
+        }
         return MarketStateSnapshot.builder()
                 .marketId(marketId)
-                .question(firstNonBlank(metadata == null ? null : metadata.getQuestion(), firstQuestion(existingRows), questionFallback, marketId))
+                .question(question)
                 .marketSlug(firstNonBlank(metadata == null ? null : metadata.getSlug(), firstMarketSlug(existingRows)))
                 .marketEndAt(marketEndAt)
                 .sourceCategory(sourceCategory)
-                .normalizedCategory(resolveNormalizedCategory(sourceCategory, firstNonBlank(
-                        metadata == null ? null : metadata.getQuestion(),
-                        firstQuestion(existingRows),
-                        questionFallback
-                )))
+                .normalizedCategory(newCategory)
                 .marketLifecycle(lifecycle)
                 .closed(closed)
                 .acceptingOrders(acceptingOrders)
@@ -429,6 +459,28 @@ public class SmartWalletMarketStateService {
         }
     }
 
+    /**
+     * Re-run the categorization logic on all existing market_info rows and update
+     * any that are currently OTHER (or any that differ from the new classification).
+     * Returns the number of rows whose category was updated.
+     */
+    public int recategorizeAll() {
+        List<SmartWalletMarketInfoEntity> allRows = marketInfoService.listAll(20_000);
+        int updated = 0;
+        for (SmartWalletMarketInfoEntity row : allRows) {
+            String slug = row.getMarketSlug();
+            String classificationText = (row.getQuestion() == null ? "" : row.getQuestion())
+                    + (StringUtils.hasText(slug) ? " " + slug.replace('-', ' ') : "");
+            String newCategory = resolveNormalizedCategory(row.getSourceCategory(), classificationText);
+            if (!newCategory.equals(row.getNormalizedCategory())) {
+                row.setNormalizedCategory(newCategory);
+                marketInfoService.update(row);
+                updated++;
+            }
+        }
+        return updated;
+    }
+
     private String resolveLifecycle(String resolvedOutcome,
                                     boolean closed,
                                     boolean acceptingOrders,
@@ -442,58 +494,66 @@ public class SmartWalletMarketStateService {
         if (!acceptingOrders) {
             return LIFECYCLE_CLOSED_UNRESOLVED;
         }
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
-            return LIFECYCLE_CLOSED_UNRESOLVED;
-        }
         return LIFECYCLE_ACTIVE;
     }
 
     private String resolveNormalizedCategory(String sourceCategory, String question) {
-        String combined = normalizeForMatching(sourceCategory + " " + question);
-        if (containsAny(combined, "politic", "election", "president", "senate", "congress", "parliament", "governor", "mayor", "prime minister", "referendum", "vote")) {
-            return CATEGORY_POLITICS;
+        // Step 1: Direct mapping from Polymarket sourceCategory (most reliable signal)
+        String directMapping = mapSourceCategoryDirect(sourceCategory);
+        if (directMapping != null) {
+            return directMapping;
         }
-        if (containsAny(combined, "weather", "rain", "snow", "temperature", "hurricane", "storm", "sunny", "wind", "climate")) {
-            return CATEGORY_WEATHER;
+
+        // Step 2: 关键词分类 —— 修复一（6.2）抽到 MarketCategoryClassifier 静态工具，
+        // 与 SmartWalletFollowTaskService 的 S2.5 入口闸门共用同一套关键词，避免重复维护。
+        return MarketCategoryClassifier.classifyByText(sourceCategory + " " + question);
+    }
+
+    /**
+     * Directly map Polymarket's sourceCategory to our normalized category.
+     * Polymarket uses tags like "crypto", "sports", "politics", "pop-culture", etc.
+     */
+    private String mapSourceCategoryDirect(String sourceCategory) {
+        if (!StringUtils.hasText(sourceCategory)) {
+            return null;
         }
-        if (containsAny(combined, "sports", "nba", "nfl", "mlb", "nhl", "soccer", "football", "baseball", "basketball", "tennis", "golf", "ufc", "fifa", "champions league", "match")) {
-            return CATEGORY_SPORTS;
-        }
-        if (containsAny(combined, "crypto", "bitcoin", "ethereum", "solana", "token", "blockchain", "defi", "nft", "btc", "eth")) {
+        String lower = sourceCategory.trim().toLowerCase(Locale.ROOT);
+        // Polymarket category values: crypto, sports, politics, pop-culture, science, business, etc.
+        if (lower.contains("crypto") || lower.contains("coin") || lower.contains("defi")
+                || lower.contains("blockchain") || lower.contains("web3")) {
             return CATEGORY_CRYPTO;
         }
-        if (containsAny(combined, "macro", "cpi", "inflation", "gdp", "fed", "fomc", "recession", "unemployment", "interest rate", "treasury", "oil", "gold")) {
-            return CATEGORY_MACRO;
+        if (lower.contains("politic") || lower.contains("election") || lower.contains("government")) {
+            return CATEGORY_POLITICS;
         }
-        if (containsAny(combined, "business", "company", "earnings", "ipo", "merger", "acquisition", "ceo", "revenue", "stock", "tesla", "apple", "nvidia", "amazon")) {
-            return CATEGORY_BUSINESS;
+        if (lower.contains("sport") || lower.contains("nba") || lower.contains("nfl")
+                || lower.contains("mlb") || lower.contains("soccer") || lower.contains("football")
+                || lower.contains("basketball") || lower.contains("baseball") || lower.contains("tennis")
+                || lower.contains("mma") || lower.contains("boxing") || lower.contains("f1")) {
+            return CATEGORY_SPORTS;
         }
-        if (containsAny(combined, "entertainment", "movie", "film", "oscar", "grammy", "music", "tv", "television", "celebrity", "box office")) {
+        if (lower.contains("entertainment") || lower.contains("pop-culture") || lower.contains("pop culture")
+                || lower.contains("music") || lower.contains("movie") || lower.contains("celebrity")
+                || lower.contains("tv")) {
             return CATEGORY_ENTERTAINMENT;
         }
-        if (containsAny(combined, "news", "current event", "breaking", "world", "war", "conflict", "headline")) {
+        if (lower.contains("business") || lower.contains("finance") || lower.contains("stock")
+                || lower.contains("tech")) {
+            return CATEGORY_BUSINESS;
+        }
+        if (lower.contains("econ") || lower.contains("macro") || lower.contains("fed")
+                || lower.contains("inflation") || lower.contains("commodit")) {
+            return CATEGORY_MACRO;
+        }
+        if (lower.contains("weather") || lower.contains("climate")) {
+            return CATEGORY_WEATHER;
+        }
+        if (lower.contains("world") || lower.contains("news") || lower.contains("conflict")
+                || lower.contains("geopolit") || lower.contains("war")) {
             return CATEGORY_CURRENT_EVENTS;
         }
-        return CATEGORY_OTHER;
-    }
-
-    private boolean containsAny(String haystack, String... needles) {
-        if (!StringUtils.hasText(haystack) || needles == null) {
-            return false;
-        }
-        for (String needle : needles) {
-            if (StringUtils.hasText(needle) && haystack.contains(needle.toLowerCase(Locale.ROOT))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private String normalizeForMatching(String value) {
-        if (!StringUtils.hasText(value)) {
-            return "";
-        }
-        return value.trim().toLowerCase(Locale.ROOT);
+        // Not recognized — fall through to keyword matching
+        return null;
     }
 
     private String firstQuestion(List<SmartWalletMarketInfoEntity> rows) {
@@ -561,6 +621,21 @@ public class SmartWalletMarketStateService {
             }
             if (StringUtils.hasText(row.getSourceCategory())) {
                 return row.getSourceCategory().trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstNormalizedCategory(List<SmartWalletMarketInfoEntity> rows) {
+        if (rows == null) {
+            return null;
+        }
+        for (SmartWalletMarketInfoEntity row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (StringUtils.hasText(row.getNormalizedCategory())) {
+                return row.getNormalizedCategory().trim();
             }
         }
         return null;
@@ -684,49 +759,4 @@ public class SmartWalletMarketStateService {
         return null;
     }
 
-    @Builder
-    public record MarketStateSnapshot(
-            String marketId,
-            String question,
-            String marketSlug,
-            Long marketEndAt,
-            String sourceCategory,
-            String normalizedCategory,
-            String marketLifecycle,
-            boolean closed,
-            boolean acceptingOrders,
-            String resolvedOutcome,
-            Date lastMetadataSyncAt
-    ) {
-        public static MarketStateSnapshot unknown(String marketId) {
-            return MarketStateSnapshot.builder()
-                    .marketId(marketId)
-                    .normalizedCategory(CATEGORY_OTHER)
-                    .marketLifecycle(LIFECYCLE_ACTIVE)
-                    .acceptingOrders(true)
-                    .build();
-        }
-
-        public boolean isActive() {
-            return LIFECYCLE_ACTIVE.equalsIgnoreCase(marketLifecycle);
-        }
-
-        public String blockingReasonCode() {
-            if (LIFECYCLE_RESOLVED.equalsIgnoreCase(marketLifecycle)) {
-                return "MARKET_RESOLVED";
-            }
-            if (!acceptingOrders) {
-                return "MARKET_NOT_ACCEPTING_ORDERS";
-            }
-            return "MARKET_CLOSED";
-        }
-
-        public String blockingReasonMessage() {
-            return switch (blockingReasonCode()) {
-                case "MARKET_RESOLVED" -> "[MARKET_RESOLVED] Market is already resolved.";
-                case "MARKET_NOT_ACCEPTING_ORDERS" -> "[MARKET_NOT_ACCEPTING_ORDERS] Market is no longer accepting orders.";
-                default -> "[MARKET_CLOSED] Market is already closed.";
-            };
-        }
-    }
 }

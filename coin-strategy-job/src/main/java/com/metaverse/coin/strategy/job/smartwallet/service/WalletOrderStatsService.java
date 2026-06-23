@@ -1,7 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderAnalysisEntity;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderStatsView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletOrderStatsView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;

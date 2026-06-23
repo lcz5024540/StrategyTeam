@@ -1,13 +1,15 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
 
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionMode;
 import com.metaverse.coin.strategy.job.smartwallet.model.ExecutionWalletStatus;
 import com.metaverse.coin.strategy.job.smartwallet.model.PredictionMarketOpportunity;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletExecutionResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletProfile;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.SmartWalletProfile;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletScanResponse;
 import com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletSignal;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class SmartWalletFollowService {
     private final PolymarketExecutionGateway executionGateway;
     private final ExecutionWalletContextLoader executionWalletContextLoader;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final MarketLiquidityPercentileService marketLiquidityPercentileService;
 
     public SmartWalletFollowService(SmartWalletProperties properties,
                                     SmartWalletRegistryService walletRegistryService,
@@ -46,7 +49,8 @@ public class SmartWalletFollowService {
                                     SmartWalletLeaderboardStateService leaderboardStateService,
                                     PolymarketExecutionGateway executionGateway,
                                     ExecutionWalletContextLoader executionWalletContextLoader,
-                                    SmartWalletManualAllowlistService manualAllowlistService) {
+                                    SmartWalletManualAllowlistService manualAllowlistService,
+                                    MarketLiquidityPercentileService marketLiquidityPercentileService) {
         this.properties = properties;
         this.walletRegistryService = walletRegistryService;
         this.profileStoreService = profileStoreService;
@@ -56,6 +60,7 @@ public class SmartWalletFollowService {
         this.executionGateway = executionGateway;
         this.executionWalletContextLoader = executionWalletContextLoader;
         this.manualAllowlistService = manualAllowlistService;
+        this.marketLiquidityPercentileService = marketLiquidityPercentileService;
     }
 
     public SmartWalletScanResponse scan(BigDecimal bankrollUsdc) {
@@ -63,9 +68,12 @@ public class SmartWalletFollowService {
         List<SmartWalletSignal> accepted = new ArrayList<>();
         List<SmartWalletSignal> rejected = new ArrayList<>();
 
+        // 提前拉取一次机会列表并缓存，避免每个钱包重复全量查询
+        List<PredictionMarketOpportunity> opportunities = opportunityService.list();
+
         for (SmartWalletProfile wallet : listWalletsForScan()) {
             BigDecimal walletScore = leaderboardStateService.adjustWalletScore(wallet.getAddress(), scoringService.score(wallet));
-            for (PredictionMarketOpportunity market : opportunityService.list()) {
+            for (PredictionMarketOpportunity market : opportunities) {
                 SmartWalletSignal signal = buildSignal(wallet, market, walletScore, normalizedBankroll);
                 if (signal.isExecutable()) {
                     accepted.add(signal);
@@ -102,6 +110,20 @@ public class SmartWalletFollowService {
                     .mode(normalizedMode)
                     .success(false)
                     .message("LIVE mode is disabled. Set smart-wallet.auto-execution-enabled=true after checking /strategy/api/smart-wallet/execution-wallet/status.")
+                    .build();
+        }
+        // R12(2026-06-03 全盘风险审计)：该手动端点绕过主风控链路(冷却/漂移/leader 盈利/净 EV)，
+        // 默认禁止用它触发 LIVE 实盘下单，避免无门控的实盘 override 误用；确需人工实盘时显式开启开关。
+        if (normalizedMode == ExecutionMode.LIVE
+                && (properties.getExecutionWallet() == null
+                    || !properties.getExecutionWallet().isAllowManualLiveExecution())) {
+            return SmartWalletExecutionResult.builder()
+                    .signalId(signalId)
+                    .mode(normalizedMode)
+                    .success(false)
+                    .message("Manual LIVE execution is disabled (bypasses full risk gating). "
+                            + "Set smart-wallet.execution-wallet.allow-manual-live-execution=true to override, "
+                            + "or let LIVE follows go through the risk-gated automated pipeline.")
                     .build();
         }
         return executionGateway.execute(signal, normalizedMode);
@@ -166,11 +188,23 @@ public class SmartWalletFollowService {
             reasons.add("Wallet quality score is strong");
         }
 
-        if (marketLiquidity.compareTo(properties.getMinMarketLiquidity()) < 0) {
+        // W2-T1: 优先使用按品类的 P30 滚动阈值; 服务关闭或样本不足时回退到硬阈值。
+        BigDecimal liquidityThreshold = properties.getMinMarketLiquidity();
+        BigDecimal rollingP30 = marketLiquidityPercentileService == null
+                ? null
+                : marketLiquidityPercentileService.p30ForCategory(market.getCategory());
+        if (rollingP30 != null) {
+            liquidityThreshold = rollingP30;
+        }
+        if (marketLiquidity.compareTo(liquidityThreshold) < 0) {
             executable = false;
-            reasons.add("Market liquidity below threshold");
+            reasons.add(rollingP30 != null
+                    ? "Market liquidity below rolling P30 threshold for category"
+                    : "Market liquidity below threshold");
         } else {
-            reasons.add("Market liquidity is sufficient");
+            reasons.add(rollingP30 != null
+                    ? "Market liquidity is sufficient (rolling P30 by category)"
+                    : "Market liquidity is sufficient");
         }
 
         List<String> walletTags = normalize(wallet.getTags());

@@ -40,7 +40,6 @@ export const PRIME_NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈', route: '/dashboard' },
   { id: 'monitor', label: 'Monitor', icon: '⬢', route: '/dashboard/monitor' },
   { id: 'factor', label: 'Factors', icon: '⬙', route: '/dashboard/factors' },
-  { id: 'config', label: 'Config', icon: '⚙', route: '/dashboard/config' },
   { id: 'logs', label: 'Logs', icon: '≡', route: '/dashboard/logs' },
 ] as const
 

@@ -3,7 +3,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderAnalysisMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderAnalysisEntity;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletOrderAnalysisView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletOrderAnalysisView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -147,11 +147,14 @@ public class SmartWalletOrderAnalysisService {
                 .exitStyle(row.getExitStyle())
                 .exitLeadMinutes(scale(row.getExitLeadMinutes(), 2))
                 .isWin(Boolean.TRUE.equals(row.getIsWin()))
-                .sourceConfidence(scale(row.getSourceConfidence(), 4))
+                .sourceConfidence(scale(legacySourceConfidence(row.getSourceConfidence()), 4))
                 .pendingSettlement(false)
                 .earlySettlement(earlySettlement)
                 .build();
     }
+
+    /** 单钱包最多加载的历史记录数，防止超大钱包撑爆堆内存 */
+    private static final int MAX_PERSISTED_ROWS = 5000;
 
     private List<SmartWalletOrderAnalysisEntity> listPersisted(String walletAddress) {
         if (!StringUtils.hasText(walletAddress)) {
@@ -160,7 +163,8 @@ public class SmartWalletOrderAnalysisService {
         return orderAnalysisMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderAnalysisEntity>()
                 .eq(SmartWalletOrderAnalysisEntity::getWalletAddress, walletAddress.trim())
                 .eq(SmartWalletOrderAnalysisEntity::getSource, SOURCE)
-                .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt));
+                .orderByDesc(SmartWalletOrderAnalysisEntity::getClosedAt)
+                .last("limit " + MAX_PERSISTED_ROWS));
     }
 
     private SmartWalletOrderAnalysisEntity buildEntity(WalletOrderAggregationService.ClosedOrderSnapshot order) {
@@ -205,5 +209,10 @@ public class SmartWalletOrderAnalysisService {
 
     private BigDecimal scale(BigDecimal value, int scale) {
         return value == null ? null : value.setScale(scale, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal legacySourceConfidence(BigDecimal value) {
+        BigDecimal confidence = value == null ? BigDecimal.ZERO : value;
+        return confidence.min(new BigDecimal("0.5000"));
     }
 }

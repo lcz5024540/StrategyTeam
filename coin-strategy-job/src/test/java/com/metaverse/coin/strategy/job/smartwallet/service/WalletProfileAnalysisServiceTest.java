@@ -4,7 +4,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletWalletFeatureDailyMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.smartwallet.model.WalletScreenerView;
 import com.metaverse.coin.strategy.job.strategy.model.CursorPageView;
 import org.junit.jupiter.api.BeforeEach;
@@ -105,7 +105,7 @@ class WalletProfileAnalysisServiceTest {
     @Test
     void screenShouldReturnConservativeFallbackWhenSnapshotMissing() {
         SmartWalletProfileEntity profile = profile("0xdef");
-        when(walletBehaviorProfileService.getPersistedProfile("0xdef")).thenReturn(WalletBehaviorProfileView.builder()
+        WalletBehaviorProfileView staleSnapshot = WalletBehaviorProfileView.builder()
                 .walletAddress("0xdef")
                 .highFrequencyTradingAddress(false)
                 .closedPositionSampleSize(0)
@@ -119,7 +119,10 @@ class WalletProfileAnalysisServiceTest {
                 .stabilityScore(BigDecimal.ZERO)
                 .recommendedExitLane("OBSERVE_ONLY")
                 .summary("No wallet behavior evidence yet.")
-                .build());
+                .build();
+        when(walletBehaviorProfileService.getPersistedProfile("0xdef")).thenReturn(staleSnapshot);
+        // 方案三/方案五修复后：快照 computedAt 缺失视为 stale，会触发实时回退。
+        when(walletBehaviorProfileService.buildProfile(any())).thenReturn(staleSnapshot);
 
         CursorPageView<WalletScreenerView> page = service.screen(
                 List.of(profile),
@@ -137,12 +140,13 @@ class WalletProfileAnalysisServiceTest {
         );
 
         WalletScreenerView row = page.items().get(0);
+        // 数据不足 → 落 OBSERVE 而不是 BLOCKLIST。
         assertEquals("OBSERVE", row.screenerTier());
         assertEquals("OBSERVE_ONLY", row.recommendedExitLane());
         assertEquals("UNKNOWN", row.winSourceType());
         assertTrue(row.fallbackUsed());
         assertTrue(row.behaviorStale());
-        verify(walletBehaviorProfileService, never()).buildProfile(any());
+        verify(walletBehaviorProfileService).buildProfile(any());
     }
 
     private SmartWalletProfileEntity profile(String walletAddress) {

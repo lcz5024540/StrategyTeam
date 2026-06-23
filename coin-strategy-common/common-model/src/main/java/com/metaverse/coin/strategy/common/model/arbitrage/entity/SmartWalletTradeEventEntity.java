@@ -21,6 +21,15 @@ public class SmartWalletTradeEventEntity {
     private String chain;
     private String source;
     private String externalTradeId;
+
+    /**
+     * 跟单链路追踪 ID, 派生自本表 id (格式: tev_%012d). 由
+     * {@code PolymarketSmartWalletMonitorService} 在 ingestTradeEvent 时回填,
+     * 并作为 follow_task / order / trade_order / position 的链路源头.
+     * 详见 docs/polymarket/copy-trading-improvement-decision-2026-05-16.md (W1-T3).
+     */
+    private String traceId;
+
     private String marketId;
     private String question;
     private String outcome;

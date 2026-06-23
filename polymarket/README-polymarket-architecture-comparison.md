@@ -1,23 +1,37 @@
+---
+title: "Polymarket 量化系统架构与当前实现对比"
+type: design
+status: archived
+tags: [polymarket, design]
+created: 2026-04-10
+updated: 2026-05-23
+---
+
 # Polymarket 量化系统架构与当前实现对比
 
-本文档旨在对比 [polymarket_quant_system.md](polymarket/polymarket_quant_system.mdsystem.md) 中规划的标准量化交易架构与当前代码库的实际落地情况，评估主循环流程的合理性，并记录已修复的问题。
+> **【架构入口已迁移】** 架构统一权威入口现为 [polymarket-现行架构.md](polymarket-现行架构.md)。本文保留为历史设计稿 / 深度参考，不再作为架构入口。
+
+本文档旨在对比 [polymarket_quant_system.md](polymarket_quant_system.md) 中规划的标准量化交易架构与当前代码库的实际落地情况，评估主循环流程的合理性，并记录已修复的问题。
 
 ---
 
 ## 1. 架构对齐检查与修复总结
 
 ### 数据层 (Data Layer)
+
 *   **规范要求**：包含市场扫描器、实时价格订阅（WebSocket 首选）、持仓 (`/positions`) 和余额 (`/balance`) 同步。
 *   **当前状态**：`PolymarketApiClient` 已经很好地封装了 Gamma API 和部分 Data API（如 `/markets`, `/trades`）。**已在最新的代码修复中，为 `PolymarketApiClient` 补充了 `fetchBalance` 和 `fetchPositions` 方法**，完善了数据层的基础 REST 调用。
 *   **关于 WebSocket**：当前系统暂不考虑 WebSocket (`wss://ws.polymarket.com`) 实时订阅，现有 REST 轮询足以满足当前的事件驱动（智能钱包跟踪）需求。
 
 ### 策略层 (Strategy) & 风控层 (Risk)
+
 *   **规范要求**：本地策略计算生成信号（无 API 调用）；在下单前执行单市场最大敞口、总持仓数量限制、余额充足、流动性要求等风控检查。
 *   **当前状态**：
     *   **策略层**：属于“跟随策略”（SmartWalletFollowTaskService），通过抓取链上/API 数据提取信号，而非本地主动计算均值回归，这符合目前智能钱包跟单业务的模型。
     *   **风控层**：主要集中在 `SmartWalletLiveValidationService.java` 的 `evaluateTask()` 中。包含：处理不支持的市场或冷冻期、网络熔断与地域限制、基于资金配置控制下注规模 (`resolveStake`)。**符合系统级和操作级的风控要求。** 
 
 ### 执行层 (Execution Layer)
+
 *   **规范要求**：调用 CLOB API 或使用官方 SDK 提交订单，推荐使用 EIP-712 签名的 `create_and_post_order`。
 *   **当前状态**：主要通过 `PolymarketExecutionGateway` 将订单路由到 `PolymarketPythonSdkBridge` 调用 `scripts/polymarket_clob_client.py` 脚本执行。
 *   **问题发现与修复**：原 Python 脚本在处理 FOK 订单时，错误地混用了 `create_market_order` 生成签名后直接调用 `post_order`。**已在最新代码中将其重构为官方推荐的 `client.create_and_post_market_order(args)` (对于 FOK) 和 `client.create_and_post_order(args)` (对于限价单)**，以此保证签名的正确性和执行的稳定性。
@@ -67,3 +81,8 @@ Polymarket 限制：Gamma API 和 Data API 免费额度约 1000 次/小时（平
 *   **订单状态轮询**：采用 **1s→2s→4s 指数退避 (Exponential Backoff)**。CLOB API 与 Gamma/Data API 的限额不同（CLOB更宽裕），但通过指数退避有效减少了无效请求，避免了死循环。
 
 **总结**：在本次全面修复中，我们增加了持仓同步、订单轮询指数退避，调整了市场扫描频率，**完全遵循了目标系统的轮询规范与频次约束**，目前的代码库是一个稳定可靠、符合要求且没有超出限流风险的 Polymarket 交易系统。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

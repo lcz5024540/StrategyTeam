@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.risk.application;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.BaselineModelConfigView;
 import com.metaverse.coin.strategy.job.smartwallet.model.UpdateBaselineModelConfigRequest;
 import org.junit.jupiter.api.Test;
@@ -8,13 +8,15 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class BaselineModelConfigApplicationServiceTest {
 
     @Test
     void shouldReturnCurrentConfig() {
         SmartWalletProperties properties = new SmartWalletProperties();
-        BaselineModelConfigApplicationService service = new BaselineModelConfigApplicationService(properties);
+        BaselineModelConfigApplicationService service = new BaselineModelConfigApplicationService(properties, mock(StrategyRuntimeConfigService.class));
 
         BaselineModelConfigView current = service.current();
 
@@ -26,7 +28,8 @@ class BaselineModelConfigApplicationServiceTest {
     @Test
     void shouldUpdateRuntimeConfigInPlace() {
         SmartWalletProperties properties = new SmartWalletProperties();
-        BaselineModelConfigApplicationService service = new BaselineModelConfigApplicationService(properties);
+        StrategyRuntimeConfigService runtimeConfigService = mock(StrategyRuntimeConfigService.class);
+        BaselineModelConfigApplicationService service = new BaselineModelConfigApplicationService(properties, runtimeConfigService);
         UpdateBaselineModelConfigRequest request = new UpdateBaselineModelConfigRequest();
         request.setGrossEdgePriorWeight(new BigDecimal("1.30"));
 
@@ -44,5 +47,6 @@ class BaselineModelConfigApplicationServiceTest {
         assertEquals(new BigDecimal("2.20"), updated.getFollowProbability().getWalletScoreWeight());
         assertEquals(new BigDecimal("-0.20"), updated.getCalibration().getFollowProbabilityBias());
         assertEquals(new BigDecimal("2.20"), properties.getBaselineModel().getFollowProbability().getWalletScoreWeight());
+        verify(runtimeConfigService).persistBaselineConfig("baseline-model-api");
     }
 }

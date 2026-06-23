@@ -1,3 +1,12 @@
+---
+title: "Polymarket 跟单风控升级设计"
+type: design
+status: active
+tags: [polymarket, security]
+created: 2026-04-10
+updated: 2026-04-10
+---
+
 # Polymarket 跟单风控升级设计
 
 ## 1. 目标
@@ -96,7 +105,7 @@
 
 ## 4. 模型选择建议
 
-## 4.1 必须先做的基线
+### 4.1 必须先做的基线
 
 - Logistic Regression
 - Linear Regression
@@ -109,7 +118,7 @@
 - 可快速验证标签是否成立
 - 可作为 GBDT 的 sanity check
 
-## 4.2 主力模型
+### 4.2 主力模型
 
 - LightGBM
 - XGBoost
@@ -121,7 +130,7 @@
 - 对缺失值和不同尺度特征更稳
 - 训练与迭代成本低于序列模型
 
-## 4.3 第二阶段再考虑
+### 4.3 第二阶段再考虑
 
 - TCN
 - Transformer
@@ -138,31 +147,31 @@
 
 ## 5. Leader Admission 设计
 
-## 5.1 目标
+### 5.1 目标
 
 不是预测“这个地址历史上强不强”，而是预测：
 
 `该地址未来 7/14/30 天是否还能产出值得监听的可复制信号`
 
-## 5.2 标签定义
+### 5.2 标签定义
 
 建议定义三个标签。
 
-### 标签 A: future_followable_rate
+#### 标签 A: future_followable_rate
 
 未来窗口内，该 wallet 触发的 trade event 中，满足 EV > 0 的比例。
 
-### 标签 B: future_net_alpha
+#### 标签 B: future_net_alpha
 
 未来窗口内，若按固定规则 paper follow，该 wallet 的净收益。
 
-### 标签 C: future_consistency_flag
+#### 标签 C: future_consistency_flag
 
 未来窗口内，是否持续稳定而不是集中于少数极端收益事件。
 
-## 5.3 特征
+### 5.3 特征
 
-### 静态画像特征
+#### 静态画像特征
 
 - win_rate
 - realized_pnl_usdc
@@ -171,7 +180,7 @@
 - average_roi_rate
 - max_drawdown_rate
 
-### 稳定性特征
+#### 稳定性特征
 
 - 近 7/30/90 天活跃交易数
 - 交易频次方差
@@ -180,7 +189,7 @@
 - 单市场依赖度
 - 单事件依赖度
 
-### 可复制性特征
+#### 可复制性特征
 
 - 平均触发金额 / 市场深度
 - leader trade 后平均滑点
@@ -188,7 +197,7 @@
 - 低流动性市场占比
 - 临近结算市场占比
 
-### 行为风格特征
+#### 行为风格特征
 
 - 平均持有时长
 - 是否加仓
@@ -197,7 +206,7 @@
 - 是否偏好 YES/NO
 - 是否偏好事件类/体育类/政治类
 
-## 5.4 模型与输出
+### 5.4 模型与输出
 
 - 基线：Logistic Regression + calibration
 - 主模型：LightGBM
@@ -207,7 +216,7 @@
   - `capacity_score`
   - `leader_style`
 
-## 5.5 监听池准入逻辑
+### 5.5 监听池准入逻辑
 
 不建议继续使用单一阈值。
 
@@ -220,11 +229,11 @@
 
 ## 6. Leader 行为分析设计
 
-## 6.1 目标
+### 6.1 目标
 
 给每个 leader 打上行为风格标签，避免把本质不同的 leader 混在一起。
 
-## 6.2 推荐风格分类
+### 6.2 推荐风格分类
 
 - `INFORMATION_LEADING`
 - `MOMENTUM_CHASING`
@@ -233,7 +242,7 @@
 - `CONSENSUS_FOLLOWER`
 - `NOISE`
 
-## 6.3 建议指标
+### 6.3 建议指标
 
 - entry timing percentile
 - average hold duration
@@ -245,7 +254,7 @@
 - event category concentration
 - signed price impact after trade
 
-## 6.4 方法
+### 6.4 方法
 
 第一阶段：
 
@@ -262,13 +271,13 @@
 
 这是最关键的一层。
 
-## 7.1 目标
+### 7.1 目标
 
 对每笔 leader trade 估计：
 
 `expected_net_ev = gross_edge - expected_slippage - fees - adverse_move_risk - inventory_cost`
 
-## 7.2 标签定义
+### 7.2 标签定义
 
 建议至少生成三个 horizon。
 
@@ -288,9 +297,9 @@
 - `is_positive_ev_5m`
 - `is_positive_ev_exit_rule`
 
-## 7.3 特征
+### 7.3 特征
 
-### leader 特征
+#### leader 特征
 
 - wallet_score
 - admission_probability
@@ -298,7 +307,7 @@
 - recent signal hit rate
 - recent alpha decay speed
 
-### 当前 trade 特征
+#### 当前 trade 特征
 
 - side
 - price
@@ -308,7 +317,7 @@
 - time since previous trade by same leader
 - same market repeated trade count
 
-### market 状态特征
+#### market 状态特征
 
 - current mid
 - bid-ask spread
@@ -321,14 +330,14 @@
 - time to market end
 - market heat
 
-### 共识特征
+#### 共识特征
 
 - distinct wallets in window
 - weighted consensus score
 - consensus trigger notional
 - same direction event rate
 
-## 7.4 模型
+### 7.4 模型
 
 - 基线：
   - Logistic Regression
@@ -338,7 +347,7 @@
   - LightGBM regressor
 - 概率输出必须做 calibration
 
-## 7.5 线上使用方式
+### 7.5 线上使用方式
 
 将当前 `SignalRiskDecision` 扩展为：
 
@@ -356,7 +365,7 @@
 
 ## 8. 短期流动性 / 滑点模型设计
 
-## 8.1 目标
+### 8.1 目标
 
 预测 leader event 后短时间内：
 
@@ -364,14 +373,14 @@
 - depth 是否塌陷
 - 我们的真实成交滑点是否上升
 
-## 8.2 标签
+### 8.2 标签
 
 - `spread_widen_30s_flag`
 - `depth_drop_30s_flag`
 - `slippage_spike_flag`
 - `realized_slippage_bps`
 
-## 8.3 特征
+### 8.3 特征
 
 - 当前 spread
 - 各档深度
@@ -384,13 +393,13 @@
 - market age
 - time to market end
 
-## 8.4 模型建议
+### 8.4 模型建议
 
 - 基线：Logistic / Linear
 - 主模型：LightGBM
 - 输出：校准后的概率
 
-## 8.5 线上用途
+### 8.5 线上用途
 
 作为 execution gate，而不是替代 EV 模型。
 
@@ -402,13 +411,13 @@
 
 ## 9. 因果验证设计
 
-## 9.1 目标
+### 9.1 目标
 
 验证 leader trade 是否真的产生可复制的价格推动，而不是与市场热度共同发生。
 
-## 9.2 推荐方法顺序
+### 9.2 推荐方法顺序
 
-### 第一层：事件研究
+#### 第一层：事件研究
 
 围绕 event time 计算：
 
@@ -419,7 +428,7 @@
 
 按 leader、market category、market regime、size bucket 分层。
 
-### 第二层：匹配 + DiD
+#### 第二层：匹配 + DiD
 
 为 treatment trade 匹配近似同质对照：
 
@@ -431,14 +440,14 @@
 
 然后做 DiD，估计 leader trade 对后续价格路径的影响。
 
-### 第三层：DML
+#### 第三层：DML
 
 在高维协变量下估计 CATE：
 
 - 哪类 leader 有更强 treatment effect
 - 哪类 market regime treatment effect 为正
 
-## 9.3 合成控制的定位
+### 9.3 合成控制的定位
 
 适合更粗粒度场景：
 
@@ -451,7 +460,7 @@
 
 建议新增以下表。
 
-## 10.1 `smart_wallet_market_snapshot`
+### 10.1 `smart_wallet_market_snapshot`
 
 用途：
 
@@ -487,7 +496,7 @@
 
 - `(market_id, outcome, snapshot_at)`
 
-## 10.2 `smart_wallet_trade_effect_label`
+### 10.2 `smart_wallet_trade_effect_label`
 
 用途：
 
@@ -527,7 +536,7 @@
 - `(source_event_id)`
 - `(market_id, event_at)`
 
-## 10.3 `smart_wallet_wallet_feature_daily`
+### 10.3 `smart_wallet_wallet_feature_daily`
 
 用途：
 
@@ -555,7 +564,7 @@
 
 - `(wallet_address, feature_date)`
 
-## 10.4 `smart_wallet_treatment_control_sample`
+### 10.4 `smart_wallet_treatment_control_sample`
 
 用途：
 
@@ -573,7 +582,7 @@
 
 ## 11. 训练样本构造原则
 
-## 11.1 时间切分
+### 11.1 时间切分
 
 必须使用时间切分，不允许随机切分。
 
@@ -583,13 +592,13 @@
 - valid: T-30d ~ T-7d
 - test: T-7d ~ T
 
-## 11.2 泄漏控制
+### 11.2 泄漏控制
 
 - wallet 画像特征只能使用 event 发生前数据
 - market microstructure 只能使用 event 当下或更早数据
 - 不能把结算结果直接泄漏进短期 EV 模型
 
-## 11.3 样本权重
+### 11.3 样本权重
 
 可对高成交额或高容量 trade 提高权重，但需要防止少数大额样本主导训练。
 
@@ -646,7 +655,7 @@
 
 ## 14. 与当前代码的直接映射
 
-### 需要优先扩展的现有模块
+#### 需要优先扩展的现有模块
 
 - `PolymarketWalletDiscoveryService`
   - 从“排行榜导入”升级到“admission scoring + watchlist management”
@@ -659,7 +668,7 @@
 - `SmartWalletFollowTaskService`
   - 写入模型输出字段和最终 decision trace
 
-### 推荐新增的模块
+#### 推荐新增的模块
 
 - `LeaderAdmissionFeatureService`
 - `TradeEffectLabelService`
@@ -694,3 +703,8 @@
 `trade effect label + 交易级 EV 模型`
 
 因为这一步最直接决定“这笔单到底该不该跟”。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

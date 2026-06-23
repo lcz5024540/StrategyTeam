@@ -1,19 +1,93 @@
 # ============================================================
-# coin-strategy-job — PROD 生产环境
-# 启动方式: --spring.profiles.active=prod
-# 说明: 生产环境前后端部署在不同服务器上
-#       后端监听 0.0.0.0 以接收来自前端服务器 nginx 的反向代理请求
-#       数据库相关敏感信息通过环境变量注入
+# coin-strategy-job — PROD 生产环境（暂未上线）
+# ─────────────────────────────────────────────────────────────
+# Prod 环境暂时取消，仅保留模板。当前所有部署都走 test profile。
+# 恢复 prod 时请明确:
+#   - 部署在哪台机器（test job 占着 49.51.250.174 → prod job 用别的机器或别的端口）
+#   - DB 主机（如果与 test 共用一个 MySQL 实例，需要明确不同的 schema 或 user）
+#   - server.address 保持 127.0.0.1，job 永远不对外
 # ============================================================
 server:
   port: 8081
-  address: 0.0.0.0
+  address: 127.0.0.1
 
 spring:
   datasource:
-    # 通过环境变量注入，部署时在服务器 /etc/coinstrategy/smart-wallet.env 中设置
-    # DB_HOST / DB_USERNAME / DB_PASSWORD 均不提供代码默认值，必须由运维显式配置。
     url: "jdbc:mysql://${DB_HOST:127.0.0.1}:3306/coin_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai"
     username: "root"
     password: "${DB_PASSWORD:}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
+
+# ============================================================
+# 第十一批 (2026-05-16): W2-T6 + W2-T1.4 prod 启用预设
+# ─────────────────────────────────────────────────────────────
+# prod profile 启用 Leader 行为漂移门控 + 价差 P70 门, 阈值比 test profile
+# (灰度) 再保守一档:
+#   - test:  minSamples=15 / cosine=0.50 / severe=0.70   (积累数据用)
+#   - prod:  minSamples=20 / cosine=0.55 / severe=0.75   (上线后用稳定配置)
+#
+# 启用前提:
+#   1) LeaderDriftAggregationJob (08:00 daily) 已在 test 跑 >= 7 天无连续告警
+#   2) BehaviorProfileSnapshotJob 已稳定写 behavior_vector_json
+#   3) W1-T4 影子记账周报对比 enable vs disable 的胜率差 >= +1pp
+#
+# 上线路径:
+#   - 先在 test 灰度 1-2 周, 看 ShadowVsLive 周报与 LiveReplayDiff 历史
+#   - 灰度无异常 -> 部署 prod profile (本配置直接生效, 无需运维改动)
+#   - 异常 -> enable-*-gate 设 false, 一行配置零重启
+# ============================================================
+smart-wallet:
+  signal-risk:
+    # W2-T6 Leader 行为漂移门
+    enable-leader-drift-gate: true
+    leader-drift-min-samples: 20
+    leader-drift-cosine-threshold: 0.55
+    leader-drift-severe-cosine-threshold: 0.75
+    leader-drift-stake-multiplier: 0.25
+    manual-allowlist-bypass-leader-drift-gate: true
+    # W2-T1.4 价差 P70 门 (daily 表 spread_bps_p70 已在第十批写入)
+    enable-spread-p70-gate: true
+    spread-p70-min-samples: 8
+    spread-p70-downgrade-factor: 1.30
+    spread-p70-reject-factor: 2.00
+    spread-p70-downgrade-multiplier: 0.50
+    # 第十二批: W2-T1 流动性 P30 滚动门 prod 启用 (跨策略灰度)
+    # 前提:
+    #   - pm_market_liquidity_percentile_daily 表已有 >= 7 天数据 (W2-T1.2 第九批落地)
+    #   - test profile 实测的"政治高于硬阈值, 体育低于硬阈值"分布符合预期, 无开单率塌方
+    # 阈值比代码默认 (samples=6) 更保守一档, 避免品类样本少时误关
+    enable-liquidity-rolling-percentile: true
+    liquidity-rolling-min-samples: 10
+    # ──────────────────────────────────────────────────────────────────────
+    # 第十四批 (2026-05-16): MakerOnly / VWAP / Live refresh prod 灰度三件套
+    # 前提: test profile 已开启 ≥ 1 周, audit 告警与 LiveReplayDiff 无连续异常
+    # 详细 checklist: docs/polymarket/prod-deployment-checklist-w2-t6.md
+    # ──────────────────────────────────────────────────────────────────────
+    # #4 VWAP 逐档估算 prod 启用 (替代 profitabilityEstimate 代理算 bps)
+    # 启用后 SignalRiskService priceImpact 三段式优先用 VWAP, 失败时自动 fallback PROXY
+    enable-vwap-slippage-estimator: true
+    # #2 MAKER_ONLY 撤单 prod 启用 (10s 超时主动撤, 释放挂单占用资金)
+    # prod 仅跟踪 MAKER_ONLY, MAKER_FIRST 不撤 (与 test 一致)
+    maker-only-timeout-tracker-enabled: true
+    maker-only-scan-interval-ms: 3000   # prod 比 test 慢 1s 一档, 减少 CLOB 压力
+    maker-only-track-maker-first: false
+    # ──────────────────────────────────────────────────────────────────────
+    # 第十一轮 (2026-05-17): F-P1-1 W2-T2 Leader 滑动窗口胜率门 prod 灰度启用
+    # 前提:
+    #   - test profile 已开启 ≥ 14d, W1-T4 影子周报 cooling 比例 < 0.40 稳定
+    #   - LeaderRollingMonitorJob (上一批) 已稳定写 leader_rolling_window_summary
+    # prod 阈值与 test profile 一致 (10 samples / 0.40 winRate), 这是经验上"暴露
+    # leader 才进 COOLING" 的保守一档, 维持灰度阶段统一基线避免再做横向对比;
+    # 后续根据 W1-T4 周报数据再 fine-tune.
+    # 回退: enable-leader-rolling-gate=false 一行配置零重启
+    # ──────────────────────────────────────────────────────────────────────
+    enable-leader-rolling-gate: true
+    leader-rolling-min-samples: 10
+    leader-rolling-min-win-rate: 0.40
+    leader-rolling-cooling-stake-multiplier: 0.05
+    manual-allowlist-bypass-leader-rolling-gate: true
+  audit:
+    # #3 Gamma/UMA Live refresh prod 启用; max-per-run 比 test 更小一档 (15 vs 20),
+    # 减少对 Polymarket Gamma API 的并发压力
+    resolution-tridiff-live-refresh-enabled: true
+    resolution-tridiff-live-refresh-max-per-run: 15

@@ -1,6 +1,16 @@
+---
+title: "ORDER_SECURITY_FIX_PLAN"
+type: plan
+status: active
+tags: [polymarket, security, plan]
+created: 2026-04-13
+updated: 2026-04-13
+---
+
 ## 订单项目安全审计与修复计划（Polymarket）
 
 ### 1. 审计范围
+
 本轮审计覆盖：
 - coin-strategy-job：订单执行、撤单、结算、数据修复、策略触发接口
 - coin-strategy-web：对外查询与聚合接口暴露面
@@ -62,6 +72,7 @@
 ### 4. 分阶段修复计划
 
 #### Phase 0：紧急止血（当天完成）
+
 1. 下线/封禁高风险开放接口（网关或应用层临时开关）
 2. 立即移除响应中的 apiSecret/apiPassphrase/apiKey 明文返回
 3. 暂时关闭或限制以下能力到内网：
@@ -74,6 +85,7 @@
 - 封禁接口清单
 
 #### Phase 1：接入统一鉴权与权限（1~2 天）
+
 1. 引入 Spring Security（或统一网关鉴权）  
 2. 接口分级：
    - READ：只读查询
@@ -87,6 +99,7 @@
 - 鉴权配置与回归结果
 
 #### Phase 2：输入校验与错误处理收敛（1~2 天）
+
 1. Controller 统一启用 @Validated，DTO 添加约束注解
 2. limit/price/quantity/leverage/orderId 等参数统一边界
 3. 全局异常处理（ControllerAdvice）统一错误码
@@ -97,6 +110,7 @@
 - 错误码文档（内部）
 
 #### Phase 3：幂等与并发安全（1~2 天）
+
 1. execute-live / cancel 等高风险操作增加幂等键
 2. 任务状态更新改为条件更新（CAS）或乐观锁版本号
 3. 增加“执行中”状态与重入保护
@@ -107,6 +121,7 @@
 - 并发回归测试结果
 
 #### Phase 4：配置与暴露面治理（1 天）
+
 1. 生产默认关闭 Swagger / API docs
 2. CORS 按环境白名单严格控制，必要时关闭 credentials
 3. execution-wallet.enabled 默认 false，必须显式开启
@@ -117,6 +132,7 @@
 - 配置审计清单
 
 #### Phase 5：验证与持续化（1 天）
+
 1. 安全回归清单执行（鉴权、越权、重放、并发、异常脱敏）
 2. 增加最小安全测试用例（接口级）
 3. 建立上线前安全检查 Gate（CI）
@@ -128,14 +144,21 @@
 ---
 
 ### 5. 建议的修复顺序（执行优先级）
+
 P0-1 鉴权封禁与密钥脱敏 > P0-2 凭证轮换 > P0-3 并发幂等  
 > P1 参数校验与异常治理 > P2 暴露面与配置基线
 
 ---
 
 ### 6. 验收标准（Done Definition）
+
 - 未携带合法身份的请求无法访问任何 TRADE/ADMIN 接口  
 - 任一接口响应/日志中不出现 apiSecret/privateKey/passphrase 明文  
 - 同一 followTask 的并发 LIVE 执行不会产生重复下单  
 - 所有输入参数均有边界校验与统一错误码  
 - 生产环境 Swagger 关闭、CORS 白名单可审计、敏感配置零明文
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

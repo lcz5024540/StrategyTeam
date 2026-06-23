@@ -20,6 +20,11 @@ export function PolymarketSignalsPage() {
     queryFn: () => tasksApi.getOpportunities(30, 3),
   })
 
+  const { data: allowlistTasks = [], isLoading: allowlistLoading } = useQuery({
+    queryKey: ['polymarketSignals', 'allowlist', mode],
+    queryFn: () => tasksApi.getManualAllowlist(30, true),
+  })
+
   return (
     <>
       <section className="panel strategy-context-panel">
@@ -32,6 +37,14 @@ export function PolymarketSignalsPage() {
           <span className="badge accent">POLYMARKET_COPY</span>
           <span className="badge">{mode}</span>
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-head">
+          <h2>白名单任务</h2>
+          <span className="badge">{allowlistTasks.length} 条</span>
+        </div>
+        {allowlistLoading ? <div className="loading">白名单任务加载中...</div> : <TasksTable tasks={allowlistTasks} type="executable" />}
       </section>
 
       <div className="split-grid">

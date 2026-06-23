@@ -1,0 +1,58 @@
+package com.metaverse.coin.strategy.web.model.smartwallet;
+
+import java.math.BigDecimal;
+import java.util.Date;
+import java.util.List;
+
+public record SmartWalletTradeOrderView(
+        Long id,
+        Long positionId,
+        Long marketInfoId,
+        String executionAddress,
+        String walletAddress,
+        Long sourceFollowTaskId,
+        String marketId,
+        String marketSlug,
+        String marketUrl,
+        String externalMarketUrl,
+        String internalMarketUrl,
+        String marketLinkStatus,
+        String tokenId,
+        String question,
+        String outcome,
+        Long marketEndAt,
+        String marketEndAtBjt,
+        String marketLifecycle,
+        Boolean activeMarket,
+        Boolean closed,
+        Boolean acceptingOrders,
+        String normalizedCategory,
+        String sourceCategory,
+        BigDecimal entryQuantity,
+        BigDecimal entryAvgPrice,
+        BigDecimal entryCostUsdc,
+        BigDecimal entryFeeUsdc,
+        Date openedAt,
+        BigDecimal exitQuantity,
+        BigDecimal exitAvgPrice,
+        BigDecimal exitProceedsUsdc,
+        BigDecimal exitRealizedPnlUsdc,
+        BigDecimal exitFeeUsdc,
+        Date lastExitAt,
+        BigDecimal remainingQuantity,
+        BigDecimal remainingCostBasisUsdc,
+        BigDecimal lastMarkPrice,
+        BigDecimal unrealizedPnlUsdc,
+        BigDecimal settlementPrice,
+        BigDecimal settlementProceedsUsdc,
+        BigDecimal settlementPnlUsdc,
+        Date settledAt,
+        BigDecimal totalRealizedPnlUsdc,
+        BigDecimal totalPnlUsdc,
+        BigDecimal roiRate,
+        String status,
+        List<Long> entryOrderIds,
+        List<Long> exitOrderIds,
+        List<Long> fillIds
+) {
+}

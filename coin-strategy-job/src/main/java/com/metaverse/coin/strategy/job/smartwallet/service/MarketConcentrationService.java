@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -233,32 +234,6 @@ public class MarketConcentrationService {
      * @param topHolderAddresses  前5持仓者地址（用于鲸鱼身份检测）
      * @param capturedAt          数据采集时间戳（ms）
      */
-    public record ConcentrationSnapshot(
-            String conditionId,
-            String outcome,
-            int observedHolders,
-            BigDecimal top1Pct,
-            BigDecimal top3Pct,
-            BigDecimal top5Pct,
-            int hhi,
-            boolean isExtremelyConcentrated,
-            boolean isHighlyConcentrated,
-            List<String> topHolderAddresses,
-            long capturedAt
-    ) {
-        /** API 不可用或数据为空时的占位快照（fail-open：不触发集中度拒绝） */
-        public static final ConcentrationSnapshot UNKNOWN = new ConcentrationSnapshot(
-                null, "UNKNOWN", 0,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                0, false, false,
-                Collections.emptyList(),
-                0L
-        );
-
-        public boolean isDataAvailable() {
-            return observedHolders > 0 && capturedAt > 0;
-        }
-    }
 
     private record CachedSnapshot(ConcentrationSnapshot snapshot, long capturedAt) {}
 }

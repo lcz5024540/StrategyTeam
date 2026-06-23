@@ -1,3 +1,12 @@
+---
+title: "Polymarket 量化系统 — 规约编程计划文档"
+type: plan
+status: active
+tags: [polymarket, plan]
+created: 2026-04-12
+updated: 2026-04-19
+---
+
 # Polymarket 量化系统 — 规约编程计划文档
 
 > 版本：v1.1 | 日期：2026-04-12
@@ -8,7 +17,7 @@
 ## 进展入口
 
 - 本轮实体识别、候选重评、历史回放、测试修复的落地总结：
-  [POLYMARKET_INTELLIGENCE_PROGRESS_SUMMARY.md](/Users/jenniferni/jenifer/ray/CoinStrategy/polymarket/POLYMARKET_INTELLIGENCE_PROGRESS_SUMMARY.md)
+  [POLYMARKET_INTELLIGENCE_PROGRESS_SUMMARY.md](POLYMARKET_INTELLIGENCE_PROGRESS_SUMMARY.md)
 
 ---
 
@@ -91,7 +100,7 @@ consensusScore  = sum(wallet_scores) / count(wallets)
 
 将当前的二元结构（钱包地址 → 跟单任务）升级为三层结构：
 
-```
+```text
 当前：TradeEvent ──────────────────────────────────→ FollowTask
 升级：TradeEvent → [Intelligence Enrich] → SignalCandidate → [Approved] → FollowTask
                            ↑
@@ -100,7 +109,7 @@ consensusScore  = sum(wallet_scores) / count(wallets)
 
 #### 包结构规约
 
-```
+```text
 coin-strategy-job/src/main/java/com/metaverse/coin/strategy/job/
 └── smartwallet/
     └── intelligence/                          ← 新建领域包
@@ -235,13 +244,13 @@ public record EntityDedupedConsensus(
 #### 跟单链路改造规约
 
 **原链路（需修改）**：
-```
+```text
 SmartWalletFollowTaskService.recordTradeEvent(event)
   → createFollowTaskIfQualified(event)   // 直接评估 → 直接建 task
 ```
 
 **新链路（按规约实现）**：
-```
+```text
 SmartWalletFollowTaskService.recordTradeEvent(event)
   → intelligenceEnrichService.enrich(event)      // Step 1: 实体解析 + 聚类置信度
       → WalletEntityResolutionService.resolveEntity(walletAddress)
@@ -278,7 +287,7 @@ SmartWalletFollowTaskService.recordTradeEvent(event)
 
 **设计规约**：
 
-```
+```text
 FeatureEngineering
 ├── MarketFeatureCollector        // 汇总每个市场的实时特征
 │   ├── AVRCalculator             // AVR = volume(T-24h) / avg_volume(30d)
@@ -323,7 +332,7 @@ CREATE TABLE market_feature_snapshot (
 
 **设计规约**：
 
-```
+```text
 SignalScoring
 ├── RuleBasedSignalEngine         // 规则驱动的信号检测
 │   ├── AbnormalVolumeRule        // AVR > 95分位 → +3分
@@ -375,7 +384,7 @@ CREATE TABLE market_signal_record (
 
 **设计规约**：
 
-```
+```text
 MarketScanner
 ├── PolymarketMarketScanJob       // 定时任务，每15分钟全量扫描
 │   ├── fetchAllActiveMarkets()   // 从 Gamma API 拉取活跃市场
@@ -388,7 +397,7 @@ MarketScanner
 ```
 
 **API 新增端点**：
-```
+```text
 GET /market-scanner/anomalies          - 当前异常市场列表
 GET /market-scanner/anomalies/{id}     - 市场异常详情（含特征分解）
 GET /market-scanner/history            - 历史扫描结果
@@ -408,7 +417,7 @@ POST /market-scanner/trigger           - 手动触发扫描
 
 **设计规约**：
 
-```
+```text
 WashTradeFilter
 ├── SelfTradeDetector
 │   ├── detectSameAddress()       // 同地址买卖
@@ -447,7 +456,7 @@ CREATE TABLE wash_trade_flag (
 
 **设计规约**：
 
-```
+```text
 LiquidityGate
 ├── MinVolumeFilter               // 24h 成交量 < N USDC → 拒绝
 ├── MinDepthFilter                // 订单簿单侧深度 < N USDC → 拒绝
@@ -471,7 +480,7 @@ LiquidityGate
 
 **算法规约**：
 
-```
+```text
 WalletClusteringService（位于 smartwallet/intelligence/service/）
 ├── FundingSourceClusterer
 │   ├── 数据源：Polygon 链上入金记录（via Polygonscan API 或 Alchemy）
@@ -508,7 +517,7 @@ WalletClusteringService（位于 smartwallet/intelligence/service/）
 
 **设计规约**：
 
-```
+```text
 ResolutionRiskAnalyzer
 ├── MarketRuleParser
 │   └── extractResolutionConditions()  // NLP 提取结算条件
@@ -534,7 +543,7 @@ ResolutionRiskAnalyzer
 
 **设计规约**：
 
-```
+```text
 BacktestEngine
 ├── HistoricalDataLoader
 │   └── loadMarketSnapshots(startDate, endDate)
@@ -564,7 +573,7 @@ BacktestEngine
 
 **设计规约**：
 
-```
+```text
 AlertingSystem
 ├── AlertChannel
 │   ├── TelegramAlertSender
@@ -590,7 +599,7 @@ AlertingSystem
 
 **设计规约**：
 
-```
+```text
 前端新增页面
 ├── /market-scanner
 │   ├── AnomalyMarketTable         // 异常市场列表
@@ -964,3 +973,8 @@ ALTER TABLE smart_wallet_follow_task
 ---
 
 *文档版本 v1.1 — 下一步：按 Phase 1 任务清单逐项实现。每个阶段完成后更新各 Task 的状态标记。*
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

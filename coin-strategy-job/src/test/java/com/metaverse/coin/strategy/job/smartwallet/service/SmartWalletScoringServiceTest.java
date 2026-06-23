@@ -1,4 +1,5 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletScoringService;
 
 import org.junit.jupiter.api.Test;
 

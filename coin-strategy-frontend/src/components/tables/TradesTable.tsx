@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useState } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { walletApi } from '@/api'
 import { formatAmount, formatMoney, formatNumber, formatPercent, truncateText } from '@/utils/format'
 import { buildTableOptions, TABLE_PAGE_SIZE } from '@/utils/table'
@@ -47,28 +48,13 @@ function buildPolymarketMarketUrl(row: {
   internalMarketUrl?: string | null
   question?: string | null
 }): string {
-  if (row.externalMarketUrl || row.marketUrl || row.internalMarketUrl) {
-    return row.externalMarketUrl || row.marketUrl || row.internalMarketUrl || ''
+  if (row.internalMarketUrl) {
+    return row.internalMarketUrl
   }
-  const slug = (row.marketSlug || '').trim()
-  if (!slug) {
-    return row.marketId ? `/dashboard/polymarket/markets/${encodeURIComponent(row.marketId.trim())}` : ''
+  if (row.marketId) {
+    return `/dashboard/polymarket/markets/${encodeURIComponent(row.marketId.trim())}`
   }
-  const sportsUrl = buildPolymarketSportsUrl(slug)
-  if (sportsUrl) {
-    return sportsUrl
-  }
-  return `https://polymarket.com/event/${slug}`
-}
-
-function buildPolymarketSportsUrl(slug: string): string {
-  const sportsMarket = /^((?:nba|nfl|mlb|nhl|mls|epl|ucl|laliga|seriea|bundesliga|ligue1|ncaab|ncaaf|wnba|afl|f1|ufc|boxing|tennis|golf|cricket|nascar|pga)-[a-z0-9]+-[a-z0-9]+-\d{4}-\d{2}-\d{2})(?:-.+)?$/i.exec(slug)
-  const eventSlug = sportsMarket?.[1]
-  const league = sportsMarket?.[1]?.split('-')[0]
-  if (!eventSlug || !league) {
-    return ''
-  }
-  return `https://polymarket.com/sports/${league.toLowerCase()}/${eventSlug.toLowerCase()}`
+  return row.marketUrl || row.externalMarketUrl || ''
 }
 
 export function TradesTable({ mode, pnl = 'ALL', settlement = 'ALL' }: TradesTableProps) {
@@ -108,8 +94,10 @@ export function TradesTable({ mode, pnl = 'ALL', settlement = 'ALL' }: TradesTab
   }, [deferredKeyword, statusFilter, mode, pnl, settlement])
 
   useEffect(() => {
-    setPage((currentPage) => Math.min(currentPage, totalPages))
-  }, [totalPages])
+    if (!hasNextPage) {
+      setPage((currentPage) => Math.min(currentPage, totalPages))
+    }
+  }, [totalPages, hasNextPage])
 
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage || trades.length >= requiredItems) return
@@ -179,14 +167,12 @@ export function TradesTable({ mode, pnl = 'ALL', settlement = 'ALL' }: TradesTab
                     </td>
                     <td className="market-cell" title={marketLabel}>
                       {marketUrl ? (
-                        <a
+                        <Link
                           className="market-link"
-                          href={marketUrl}
-                          target={marketUrl.startsWith('http') ? '_blank' : undefined}
-                          rel={marketUrl.startsWith('http') ? 'noreferrer' : undefined}
+                          to={marketUrl}
                         >
                           {truncateText(marketLabel, 34)}
-                        </a>
+                        </Link>
                       ) : (
                         truncateText(marketLabel, 34)
                       )}

@@ -1,4 +1,15 @@
+---
+title: "Polymarket 量化交易系统设计文档"
+type: design
+status: archived
+tags: [polymarket, design]
+created: 2026-04-10
+updated: 2026-05-23
+---
+
 # Polymarket 量化交易系统设计文档
+
+> **【架构入口已迁移】** 架构统一权威入口现为 [polymarket-现行架构.md](polymarket-现行架构.md)。本文保留为历史设计稿 / 深度参考，不再作为架构入口。
 
 > 基于 Polymarket 官方 API 的完整量化交易系统规划，涵盖数据采集、策略计算、风控执行、监控收益全流程。
 
@@ -30,7 +41,7 @@
 
 Polymarket 采用层级结构组织市场：
 
-```
+```text
 Event（事件）
   └── Market A（市场 A）
         ├── Yes Token (ERC-1155)
@@ -63,7 +74,7 @@ Polymarket 使用 **CLOB（中央限价订单簿）** 撮合：
 
 量化系统分为五大模块：
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    外部数据源                            │
 │  Gamma API │ CLOB API │ Data API │ WebSocket │ Subgraph │
@@ -180,7 +191,7 @@ Polymarket 使用 **CLOB（中央限价订单簿）** 撮合：
 
 系统以固定间隔（建议 5-30 秒，视策略而定）执行以下循环：
 
-```
+```text
 ┌─ 主循环开始（每 N 秒）─────────────────────────────────┐
 │                                                          │
 │  步骤 1  扫描活跃市场                                    │
@@ -600,7 +611,7 @@ GET https://clob.polymarket.com/order/{orderID}
 
 **状态机**：
 
-```
+```text
 live → matched（完全成交）
      → partially_filled（部分成交）
      → canceled（已撤销）
@@ -729,7 +740,7 @@ unrealized_pnl = (current_price - avg_cost) * position_size
 
 ### 基础公式
 
-```
+```text
 总收益（获胜时）= 持仓数量 × $1.00
 总成本          = 买入均价 × 持仓数量 + 手续费
 净利润          = 总收益 - 总成本
@@ -747,7 +758,7 @@ ROI             = 净利润 / 总成本 × 100%
 
 ### 示例计算
 
-```
+```text
 场景：以 $0.40 买入 100 枚 Yes Token，最终获胜
 
 总成本  = 0.40 × 100 + 0.40（手续费约1%）= $40.40
@@ -762,7 +773,7 @@ ROI     = 59.60 / 40.40 ≈ 147.5%
 
 ### 7.1 数据消费：WS 优先，REST 降级
 
-```
+```text
 实时数据流：WebSocket（price_change / book delta）
               │ 断线时降级
               ▼
@@ -790,7 +801,7 @@ REST 补全：GET /book + GET /prices（一次性快照）
 
 所有 CLOB 写操作（POST /order）需要：
 
-```
+```text
 1. 构建 Order 结构体（tokenID, price, size, side, nonce, expiration）
 2. 用私钥生成 EIP-712 签名
 3. 将签名附在 POST body 中
@@ -855,4 +866,9 @@ monitor_thread.start()
 
 ---
 
-*文档生成时间：2026-04-09 | 基于 Polymarket 官方文档整理*
+*文档生成时间：2026-04-10 | 基于 Polymarket 官方文档整理*
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

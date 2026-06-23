@@ -1,3 +1,12 @@
+---
+title: "多交易所资金费率套利策略"
+type: strategy
+status: active
+tags: [funding-rate, arbitrage]
+created: 2026-04-13
+updated: 2026-04-13
+---
+
 # 多交易所资金费率套利策略
 
 ## 1. 策略定位
@@ -97,3 +106,8 @@
 当前仓库尚未真正实现多交易所套利执行链路，仍处于策略设计与实施规划阶段。
 
 实施进度详见：[多交易所套利实施进度](./FUNDING_RATE_ARBITRAGE_MULTI_EXCHANGE_SHARE.md)
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

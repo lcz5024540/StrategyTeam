@@ -51,11 +51,12 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
     private static final String AUTH_VERSION = "1";
     private static final String AUTH_MESSAGE = "This message attests that I control the given wallet";
     private static final String ORDER_DOMAIN_NAME = "Polymarket CTF Exchange";
-    private static final String ORDER_VERSION = "1";
+    private static final String ORDER_VERSION = "2";
     private static final byte[] AUTH_DOMAIN_TYPE_HASH = keccak("EIP712Domain(string name,string version,uint256 chainId)");
     private static final byte[] ORDER_DOMAIN_TYPE_HASH = keccak("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     private static final byte[] AUTH_TYPE_HASH = keccak("ClobAuth(address address,string timestamp,uint256 nonce,string message)");
-    private static final byte[] ORDER_TYPE_HASH = keccak("Order(uint256 salt,address maker,address signer,address taker,uint256 tokenId,uint256 makerAmount,uint256 takerAmount,uint256 expiration,uint256 nonce,uint256 feeRateBps,uint8 side,uint8 signatureType)");
+    private static final byte[] ORDER_TYPE_HASH = keccak("Order(uint256 salt,address maker,address signer,uint256 tokenId,uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,uint256 timestamp,bytes32 metadata,bytes32 builder)");
+    private static final String ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
     private static final ECDomainParameters CURVE;
     private static final BigInteger HALF_CURVE_ORDER;
     private static final BigInteger FIELD_PRIME;
@@ -117,11 +118,11 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
         ApiCreds creds = ensureApiCreds(context);
         SignedOrder signedOrder = signOrder(context, order);
 
+        // V2: owner = API key (not wallet address); postOnly removed from top-level
         LinkedHashMap<String, Object> body = new LinkedHashMap<>();
         body.put("order", signedOrder.payload());
-        body.put("owner", context.getAddress());
+        body.put("owner", creds.apiKey());
         body.put("orderType", normalizeOrderType(context.getOrderType()));
-        body.put("postOnly", false);
 
         String serializedBody = serialize(body);
         Map<String, String> headers = createLevel2Headers(context, creds, "POST", "/order", serializedBody);
@@ -203,61 +204,44 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
                 ? marketOrderAmounts(normalizedSide, order.getStakeUsdc(), order.getLimitPrice(), roundConfig)
                 : limitOrderAmounts(normalizedSide, order.getSize(), order.getLimitPrice(), roundConfig);
 
-        int feeRateBps = fetchFeeRate(context, order.getTokenId());
+        // V2: feeRateBps no longer signed into the order — fees determined at match time
         long salt = Math.abs(RANDOM.nextLong());
         String maker = StringUtils.hasText(context.getFunderAddress()) ? context.getFunderAddress() : context.getAddress();
         String signer = context.getAddress();
-        String taker = ZERO_ADDRESS;
-        String expiration = "0";
-        String nonce = "0";
+        long timestamp = Instant.now().toEpochMilli(); // V2: millisecond timestamp replaces nonce
         int sideValue = "SELL".equalsIgnoreCase(normalizedSide) ? 1 : 0;
         int signatureType = context.getSignatureType() == null ? 0 : context.getSignatureType();
 
+        // V2 order payload: removed taker, expiration, nonce, feeRateBps; added timestamp, metadata, builder
         LinkedHashMap<String, Object> orderPayload = new LinkedHashMap<>();
         orderPayload.put("salt", String.valueOf(salt));
         orderPayload.put("maker", checksumAddress(maker));
         orderPayload.put("signer", checksumAddress(signer));
-        orderPayload.put("taker", ZERO_ADDRESS);
         orderPayload.put("tokenId", order.getTokenId());
         orderPayload.put("makerAmount", amounts.makerAmount().toString());
         orderPayload.put("takerAmount", amounts.takerAmount().toString());
-        orderPayload.put("expiration", expiration);
-        orderPayload.put("nonce", nonce);
-        orderPayload.put("feeRateBps", String.valueOf(feeRateBps));
         orderPayload.put("side", normalizedSide);
         orderPayload.put("signatureType", signatureType);
+        orderPayload.put("timestamp", String.valueOf(timestamp));
+        orderPayload.put("metadata", ZERO_BYTES32);
+        orderPayload.put("builder", ZERO_BYTES32);
 
         byte[] orderHash = typedDataHash(
                 orderDomainSeparator(context.getChainId(), exchangeAddress(context.getChainId(), order.isNegRisk())),
-                orderStructHash(
+                orderStructHashV2(
                         salt,
                         checksumAddress(maker),
                         checksumAddress(signer),
-                        ZERO_ADDRESS,
                         new BigInteger(order.getTokenId()),
                         amounts.makerAmount(),
                         amounts.takerAmount(),
-                        BigInteger.ZERO,
-                        BigInteger.ZERO,
-                        BigInteger.valueOf(feeRateBps),
                         sideValue,
-                        signatureType
+                        signatureType,
+                        timestamp
                 )
         );
         orderPayload.put("signature", signHashHex(stripHexPrefix(context.getPrivateKey()), checksumAddress(signer), orderHash));
         return new SignedOrder(orderPayload);
-    }
-
-    private int fetchFeeRate(ExecutionWalletContextLoader.ExecutionWalletContext context, String tokenId) {
-        Map<String, Object> response = executeJson("GET", context, "/fee-rate",
-                Map.of("Accept", "application/json", "User-Agent", "CoinStrategy/1.0"),
-                null,
-                Map.of("token_id", tokenId));
-        Object baseFee = response.get("base_fee");
-        if (baseFee == null) {
-            return 0;
-        }
-        return new BigDecimal(String.valueOf(baseFee)).setScale(0, RoundingMode.DOWN).intValue();
     }
 
     private Map<String, Object> normalizeApiCreds(Map<String, Object> raw, boolean derived) {
@@ -430,18 +414,22 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
         return StringUtils.hasText(baseUrl) ? baseUrl.replaceAll("/+$", "") : "https://clob.polymarket.com";
     }
 
+    /**
+     * V2 exchange contract addresses (deployed April 28, 2026).
+     * V1 addresses are no longer valid for signing.
+     */
     private String exchangeAddress(Integer chainId, boolean negRisk) {
         int resolvedChainId = chainId == null ? 137 : chainId;
         if (negRisk) {
             if (resolvedChainId == 137) {
-                return "0xC5d563A36AE78145C45a50134d48A1215220f80a";
+                return "0xe2222d279d744050d28e00520010520000310F59";
             }
             if (resolvedChainId == 80002) {
                 return "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";
             }
         } else {
             if (resolvedChainId == 137) {
-                return "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+                return "0xE111180000d2663C0091e4f400237545B87B996B";
             }
             if (resolvedChainId == 80002) {
                 return "0xdFE02Eb6733538f8Ea35D585af8DE5958AD99E40";
@@ -495,32 +483,33 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
         ));
     }
 
-    private byte[] orderStructHash(long salt,
-                                   String maker,
-                                   String signer,
-                                   String taker,
-                                   BigInteger tokenId,
-                                   BigInteger makerAmount,
-                                   BigInteger takerAmount,
-                                   BigInteger expiration,
-                                   BigInteger nonce,
-                                   BigInteger feeRateBps,
-                                   int side,
-                                   int signatureType) {
+    /**
+     * V2 order struct hash — 11 fields.
+     * Removed: taker, expiration, nonce, feeRateBps
+     * Added: timestamp, metadata (bytes32), builder (bytes32)
+     */
+    private byte[] orderStructHashV2(long salt,
+                                     String maker,
+                                     String signer,
+                                     BigInteger tokenId,
+                                     BigInteger makerAmount,
+                                     BigInteger takerAmount,
+                                     int side,
+                                     int signatureType,
+                                     long timestamp) {
         return keccak(concat(
                 ORDER_TYPE_HASH,
                 uint256(BigInteger.valueOf(salt)),
                 address(maker),
                 address(signer),
-                address(taker),
                 uint256(tokenId),
                 uint256(makerAmount),
                 uint256(takerAmount),
-                uint256(expiration),
-                uint256(nonce),
-                uint256(feeRateBps),
                 uint8(side),
-                uint8(signatureType)
+                uint8(signatureType),
+                uint256(BigInteger.valueOf(timestamp)),
+                bytes32zero(),  // metadata
+                bytes32zero()   // builder
         ));
     }
 
@@ -661,6 +650,11 @@ public class PolymarketJavaClobClient implements PolymarketClobClient {
 
     private static byte[] address(String address) {
         return leftPad(hexToBytes(stripHexPrefix(address)), 32);
+    }
+
+    /** V2: zero-value bytes32 (for metadata and builder fields) */
+    private static byte[] bytes32zero() {
+        return new byte[32];
     }
 
     private static byte[] leftPad(byte[] value, int size) {

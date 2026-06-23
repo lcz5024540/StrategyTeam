@@ -54,3 +54,6 @@ logs/
 .gitignore
 .log
 /logs/
+
+### macOS ###
+.DS_Store

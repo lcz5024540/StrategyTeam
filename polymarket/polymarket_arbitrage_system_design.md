@@ -1,6 +1,18 @@
+---
+title: "Polymarket对冲套利量化系统设计文档"
+type: design
+status: archived
+tags: [polymarket, design]
+created: 2026-04-10
+updated: 2026-05-23
+---
+
 # Polymarket对冲套利量化系统设计文档
 
+> **【架构入口已迁移】** 架构统一权威入口现为 [polymarket-现行架构.md](polymarket-现行架构.md)。本文保留为历史设计稿 / 深度参考，不再作为架构入口。
+
 ## 目录
+
 - [1. 系统概述](#1-系统概述)
 - [2. 业务流程详解](#2-业务流程详解)
 - [3. 结算换仓位核心流程](#3-结算换仓位核心流程)
@@ -13,9 +25,11 @@
 ## 1. 系统概述
 
 ### 1.1 业务目标
+
 构建自动化Polymarket预测市场套利系统，通过对冲策略在Yes/No双边建仓，利用市场定价偏差获取无风险收益。
 
 ### 1.2 核心特性
+
 - 实时市场监控与套利机会识别
 - 自动化双边下单执行
 - 智能仓位管理与风险控制
@@ -27,7 +41,7 @@
 
 ### 2.1 完整套利流程
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    市场数据监控                              │
 │  - 实时获取Polymarket事件赔率                                │
@@ -99,6 +113,7 @@
 ### 2.2 各阶段详细说明
 
 #### 阶段1: 市场数据监控
+
 **数据源**
 - WebSocket订阅实时价格更新
 - REST API定期拉取订单簿深度
@@ -113,6 +128,7 @@ double totalProb = impliedProbYes + impliedProbNo;
 ```
 
 #### 阶段2: 套利机会识别
+
 **判断逻辑**
 ```java
 // 套利条件
@@ -123,8 +139,9 @@ boolean isArbitrageOpportunity =
 ```
 
 #### 阶段3: 风险评估
+
 **Kelly公式应用**
-```
+```text
 f* = (bp - q) / b
 其中:
 - b = 赔率-1
@@ -161,7 +178,7 @@ query GetMarketStatus($marketId: ID!) {
 ```
 
 **REST API端点**
-```
+```text
 GET /markets/{marketId}
 
 Response:
@@ -175,6 +192,7 @@ Response:
 ```
 
 #### 判断条件
+
 ```java
 public boolean canSettle(Market market) {
     return market.isClosed() &&          // 必须已关闭
@@ -186,6 +204,7 @@ public boolean canSettle(Market market) {
 ### 3.2 结算执行者
 
 #### 谁来领取结算
+
 **主体**: 持仓用户（系统账户）
 
 **方式**: 主动调用智能合约方法
@@ -216,23 +235,33 @@ public void checkAndClaim() {
 ### 3.3 结算后仓位释放
 
 #### 资金流转过程
-```
-结算前:
-- 锁定资金: Yes仓位 $500 + No仓位 $500 = $1000
+
+```text
+套利前提: 二元市场 YES + NO 成交价合计 < $1.00 时才存在套利空间。
+本例 YES @ $0.46、NO @ $0.49，合计 $0.95 < $1.00 → 每对份额锁定 $0.05 毛利差。
+
+结算前 (双边建仓，各买 1,000 份):
+- 锁定资金: Yes仓位 1,000 份 × $0.46 = $460
+            No仓位  1,000 份 × $0.49 = $490
+            合计 = $950
 - 可用资金: $0
 
 调用claimWinnings():
 - 智能合约验证结算结果
-- 赢家仓位按赔率返还资金
-- 输家仓位归零
+- 赢家仓位 1,000 份按 $1.00/份 兑付 = $1,000
+- 输家仓位归零 (无论 YES 或 NO 结算为真，结果对称)
 
 结算后:
 - 锁定资金: $0
-- 可用资金: $950 (扣除手续费后)
-- 盈利: $950 - $1000 = -$50 (本例中亏损，实际套利应盈利)
+- 结算毛回款: $1,000
+- 扣交易/结算手续费 $20 后可用资金: $980
+- 盈利: $980 - $950 = +$30 (正收益，且与结算方向无关 → 无风险套利)
 ```
 
+> 说明：套利净收益 = 份数 ×（$1.00 − YES价 − NO价）− 手续费。只要双边建仓价合计低于 $1.00 且毛利差大于手续费即为正收益；本例毛利差 $50 > 手续费 $20，故净赚 $30。原示例双边各花 $500（隐含建仓价合计 = $1.00）已无利差，叠加手续费必然为负，并非套利的正确建仓姿势。
+
 #### 仓位释放检查
+
 ```java
 public void onSettlementComplete(String marketId, BigDecimal claimedAmount) {
     // 1. 更新持仓状态
@@ -253,6 +282,7 @@ public void onSettlementComplete(String marketId, BigDecimal claimedAmount) {
 ### 3.4 开新单的条件
 
 #### 前置检查
+
 ```java
 public boolean canOpenNewOrder(BigDecimal requiredCapital) {
     // 1. 资金充足性
@@ -283,7 +313,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 
 ### 4.1 分层架构总览
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                    接入层 (Gateway Layer)                │
 │  ┌─────────────┐ ┌──────────────┐ ┌────────────────┐   │
@@ -344,6 +374,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 ### 4.2 核心模块职责
 
 #### 接入层 (Gateway Layer)
+
 | 组件 | 职责 | 技术栈 |
 |------|------|--------|
 | WebSocketClient | 实时行情推送订阅 | Netty, Reactor-Netty |
@@ -351,6 +382,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 | GraphQLClient | 市场元数据查询 | Apollo Client |
 
 #### 数据处理层 (Data Processing Layer)
+
 | 组件 | 职责 | 技术栈 |
 |------|------|--------|
 | MarketDataService | 多源数据聚合与标准化 | RxJava, Caffeine |
@@ -358,6 +390,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 | DataRepository | 历史数据存储与查询 | InfluxDB, Redis |
 
 #### 策略引擎层 (Strategy Engine Layer)
+
 | 组件 | 职责 | 技术栈 |
 |------|------|--------|
 | ArbitrageDetector | 套利机会识别算法 | 自定义算法 |
@@ -365,6 +398,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 | PositionCalculator | 仓位优化计算 | BigDecimal精度运算 |
 
 #### 交易执行层 (Trading Execution Layer)
+
 | 组件 | 职责 | 技术栈 |
 |------|------|--------|
 | OrderManager | 订单生命周期管理 | 状态机模式 |
@@ -372,6 +406,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 | BlockchainClient | 区块链交互 | Web3j |
 
 #### 结算与仓位层 (Settlement & Position Layer)
+
 | 组件 | 职责 | 技术栈 |
 |------|------|--------|
 | SettlementMonitor | 定时检查结算状态 | @Scheduled |
@@ -385,6 +420,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 ### 5.1 核心技术栈
 
 #### 高性能组件
+
 ```xml
 <!-- Disruptor: 无锁并发框架 -->
 <dependency>
@@ -409,6 +445,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 ```
 
 #### 区块链交互
+
 ```xml
 <!-- Web3j: 以太坊Java客户端 -->
 <dependency>
@@ -419,6 +456,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 ```
 
 #### 数据存储
+
 ```xml
 <!-- InfluxDB: 时序数据库 -->
 <dependency>
@@ -438,6 +476,7 @@ public boolean canOpenNewOrder(BigDecimal requiredCapital) {
 ### 5.2 设计模式应用
 
 #### 状态机模式 - 订单管理
+
 ```java
 public enum OrderState {
     CREATED,      // 已创建
@@ -467,6 +506,7 @@ public class OrderStateMachine {
 ```
 
 #### 策略模式 - 套利策略
+
 ```java
 public interface ArbitrageStrategy {
     boolean detectOpportunity(MarketData data);
@@ -493,6 +533,7 @@ public class ProbabilityArbitrageStrategy implements ArbitrageStrategy {
 ```
 
 #### 观察者模式 - 事件驱动
+
 ```java
 public class MarketEventPublisher {
     private final Disruptor<MarketEvent> disruptor;
@@ -951,16 +992,19 @@ groups:
 ## 8. 安全与合规
 
 ### 8.1 私钥管理
+
 - 使用硬件钱包或KMS服务存储私钥
 - 多签钱包降低单点风险
 - 定期轮换API密钥
 
 ### 8.2 资金安全
+
 - 设置每日最大损失限额
 - 异常交易自动熔断
 - 定期资金审计
 
 ### 8.3 合规要求
+
 - 遵守各地区法律法规
 - KYC/AML检查
 - 交易记录留存
@@ -970,16 +1014,19 @@ groups:
 ## 9. 性能优化
 
 ### 9.1 延迟优化
+
 - WebSocket长连接减少握手开销
 - Caffeine本地缓存减少网络请求
 - 批量处理降低API调用频率
 
 ### 9.2 并发优化
+
 - Disruptor无锁队列提升吞吐
 - CompletableFuture异步执行
 - 连接池复用TCP连接
 
 ### 9.3 资源优化
+
 - 定时清理过期缓存
 - 限制线程池大小
 - 数据库连接池配置
@@ -1056,5 +1103,10 @@ function balanceOf(
 ---
 
 **文档版本**: v1.0  
-**最后更新**: 2024-04-09  
+**最后更新**: 2026-04-10  
 **维护者**: Arbitrage Team
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)

@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.intelligence.service;
 
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.ClusterConfidence;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityDedupedConsensus;
 import com.metaverse.coin.strategy.job.smartwallet.intelligence.model.EntityResolutionResult;

@@ -7,8 +7,8 @@ import { getStrategyVisual, PRIME_NAV_ITEMS } from '@/utils/strategyVisuals'
 function getActiveNav(pathname: string) {
   if (pathname.startsWith('/dashboard/monitor')) return PRIME_NAV_ITEMS[1]
   if (pathname.startsWith('/dashboard/factors')) return PRIME_NAV_ITEMS[2]
-  if (pathname.startsWith('/dashboard/config')) return PRIME_NAV_ITEMS[3]
-  if (pathname.startsWith('/dashboard/logs')) return PRIME_NAV_ITEMS[4]
+  if (pathname.startsWith('/dashboard/config')) return { id: 'config', label: 'Config Disabled', icon: '⚙', route: '/dashboard/config' }
+  if (pathname.startsWith('/dashboard/logs')) return PRIME_NAV_ITEMS[3]
   return PRIME_NAV_ITEMS[0]
 }
 

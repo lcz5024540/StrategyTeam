@@ -1,4 +1,6 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletCashLedgerMapper;
@@ -8,6 +10,8 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
+import com.metaverse.coin.strategy.common.service.accounting.CapacitySnapshot;
+import com.metaverse.coin.strategy.common.service.accounting.PositionAccountingPort;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletCashLedgerEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletDailyReportEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFillEntity;
@@ -72,6 +76,24 @@ import java.util.function.Consumer;
 public class SmartWalletAccountingService {
 
     private static final String PAPER_BOOK_EXECUTION_ADDRESS = "paper-book";
+    /**
+     * 问题5 修复（2026-06-01）：本地权威结算最小持仓年龄。
+     * 仅当持仓已开仓超过该时长，才允许用本地 market_info.resolved_outcome 兜底结算，
+     * 避免对刚开仓的仓位因瞬时本地状态抖动而误结算。
+     */
+    private static final long LOCAL_AUTH_SETTLE_MIN_AGE_MS = 2L * 3600_000L;
+    /**
+     * 问题5 续修（2026-06-02）：过期/坍塌仓位强制按亏损结算的开关与阈值。
+     * 适用场景：市场已对该 outcome 定性为「亏损方」（报价坍塌到地板价、盘口无 bid、无法卖出），
+     * 但本地 {@code market_info.resolved_outcome} 因解析管道滞后 / Polymarket 名义 endAt 远期
+     * 仍未落地，导致仓位永久卡 OPEN。此时按 settlementPrice=0 结算为亏损并置终态。
+     * 仅对「报价已坍塌（mark ≤ ceil，确认是亏损方）」的老仓位生效；高报价（可能是赢方）绝不强平为 0。
+     */
+    private static final boolean ENABLE_EXPIRED_WORTHLESS_SETTLE = true;
+    /** 仓位开仓至少经过该时长才允许「坍塌即亏损」强制结算，避免对刚开仓的瞬时下探误判。 */
+    private static final long EXPIRED_WORTHLESS_MIN_AGE_MS = 6L * 3600_000L;
+    /** 报价坍塌地板价：mark ≤ 该值视为该 outcome 已被市场判负（无法卖出 / 价值归零）。 */
+    private static final BigDecimal EXPIRED_WORTHLESS_PRICE_CEIL = new BigDecimal("0.05");
     private static final String POSITION_STATUS_SETTLEMENT_PENDING_ORACLE = "SETTLEMENT_PENDING_ORACLE";
     private static final String POSITION_STATUS_WAIT_FINAL_PRICE = "WAIT_FINAL_PRICE";
     private static final String POSITION_STATUS_NEED_MANUAL_CHECK = "NEED_MANUAL_CHECK";
@@ -110,12 +132,32 @@ public class SmartWalletAccountingService {
     private final SmartWalletFollowTaskMapper followTaskMapper;
     private final PolymarketMarketMetadataService marketMetadataService;
     private final SmartWalletTimeFormatter timeFormatter;
-    private final com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties properties;
+    private final com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties properties;
     private final ObjectProvider<SmartWalletFollowTaskService> followTaskServiceProvider;
     private final SmartWalletMarketInfoService marketInfoService;
     private final SmartWalletMarketStateService marketStateService;
     private final SmartWalletMarketLinkService marketLinkService;
     private final ObjectProvider<SmartWalletTradeOrderService> tradeOrderServiceProvider;
+    private final PolymarketFeeScheduleService feeScheduleService;
+    private final PolymarketMarketDataCacheService marketDataCacheService;
+
+    // ---- PnL Summary / Performance 缓存（避免每次全表扫描）----
+    private static final long PNL_CACHE_TTL_MS = 60_000L;
+    private volatile SmartWalletPnlSummaryView cachedPnlSummary;
+    private volatile String cachedPnlSummaryMode;
+    private volatile long cachedPnlSummaryExpiresAt;
+
+    private volatile SmartWalletPerformanceView cachedPerformance;
+    private volatile String cachedPerformanceMode;
+    private volatile long cachedPerformanceExpiresAt;
+
+    // ---- 估值价（markPrice）防污染常量 ----
+    /** 二元预测市场单份额估值价的合法区间下端点（USDC/share）。 */
+    private static final BigDecimal MARK_PRICE_FLOOR = new BigDecimal("0.001");
+    /** 二元预测市场单份额估值价的合法区间上端点；未结算持仓估值价不得达到 $1.00 全额赔付。 */
+    private static final BigDecimal MARK_PRICE_CEIL = new BigDecimal("0.999");
+    /** trade_event 回退估值价相对上一次可信 mark 的最大允许跳变倍数。 */
+    private static final BigDecimal MARK_PRICE_MAX_JUMP_RATIO = new BigDecimal("3");
 
     public void recordExecution(SmartWalletFollowTaskEntity task, SmartWalletExecutionResult result) {
         marketInfoService.populate(task);
@@ -136,21 +178,12 @@ public class SmartWalletAccountingService {
         String status = StringUtils.hasText(result.getStatus()) ? result.getStatus() : (result.isSuccess() ? "FILLED" : "FAILED");
         Long marketEndAt = resolveTaskMarketEndAt(task);
 
-        // ── 防御性校验：阻止在市场已过期时开仓 ──
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
-            log.warn("[ORDER_BLOCKED_EXPIRED_MARKET] 市场已过期，拒绝创建订单。taskId={} marketId={} outcome={} marketEndAt={} now={} executionMode={}",
-                    task.getId(), task.getMarketId(), task.getOutcome(), marketEndAt, System.currentTimeMillis(), task.getExecutionMode());
-            throw new IllegalStateException("[ORDER_BLOCKED_EXPIRED_MARKET] Cannot create order for expired market."
-                    + " taskId=" + task.getId()
-                    + " marketId=" + task.getMarketId()
-                    + " marketEndAt=" + marketEndAt);
-        }
-
         boolean isFilledImmediately = "FILLED".equalsIgnoreCase(status) || "MATCHED".equalsIgnoreCase(status) || (result.isSuccess() && "PAPER".equalsIgnoreCase(task.getExecutionMode()));
 
         SmartWalletMarketInfoEntity mi = marketInfoService.getOrCreate(task.getMarketId(), task.getOutcome(), task.getQuestion(), result.getTokenId(), result.getIndexSet(), marketEndAt);
         SmartWalletOrderEntity order = new SmartWalletOrderEntity()
                 .setFollowTaskId(task.getId())
+                .setTraceId(task.getTraceId())  // W1-T3: 跟单链路 trace_id 从 follow_task 继承
                 .setWalletAddress(task.getWalletAddress())
                 .setExecutionMode(task.getExecutionMode())
                 .setExecutionAddress(executionAddress)
@@ -176,11 +209,25 @@ public class SmartWalletAccountingService {
                 .setUpdatedAt(new Date());
         orderMapper.insert(order);
 
+        // 回写真实手续费率到 FeeScheduleService，供后续同 market 查询时使用
+        if (isFilledImmediately && tradingFeeUsdc.compareTo(BigDecimal.ZERO) > 0
+                && notional.compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                feeScheduleService.recordObservedFeeRate(task.getMarketId(), tradingFeeUsdc, notional);
+            } catch (Exception ignored) {
+                // 非关键路径，不影响主流程
+            }
+        }
+
         if (!isFilledImmediately) {
             if (!result.isSuccess()) {
                 rebuildDailyReport(executionAddress, toLocalDate(now));
             }
-            return; // 暂不生成成交记录
+            // F-P0-6: 订单已经写入 smart_wallet_order（上面 orderMapper.insert(order)），
+            // 此处只是暂缓写 smart_wallet_fill —— 真正的 fill 由 SmartWalletOrderPollingService
+            // 在 LIVE 订单匹配时通过 processOrderFill(...) 回灌；
+            // PAPER/失败路径会触发 rebuildDailyReport，账本完整度不依赖此 return。
+            return;
         }
 
         executeFillAndAccounting(order, size, price, tradingFeeUsdc, gasFeeUsdc, marketEndAt, now);
@@ -248,6 +295,7 @@ public class SmartWalletAccountingService {
                 resolveStoredPositionMarketEndAt(position));
         SmartWalletOrderEntity order = new SmartWalletOrderEntity()
                 .setFollowTaskId(latestFill == null ? null : latestFill.getFollowTaskId())
+                .setTraceId(position.getOriginTraceId())  // W1-T3: 出场单与开仓共享 origin_trace_id
                 .setPositionId(position.getId())
                 .setWalletAddress(latestFill == null ? null : latestFill.getWalletAddress())
                 .setExecutionMode("LIVE")
@@ -338,6 +386,7 @@ public class SmartWalletAccountingService {
         }
         SmartWalletOrderEntity order = new SmartWalletOrderEntity()
                 .setFollowTaskId(latestFill == null ? null : latestFill.getFollowTaskId())
+                .setTraceId(position.getOriginTraceId())  // W1-T3: 纸交易出场亦继承 origin_trace_id
                 .setPositionId(position.getId())
                 .setWalletAddress(latestFill == null ? null : latestFill.getWalletAddress())
                 .setExecutionMode(isPaperExecutionAddress(position.getExecutionAddress()) ? "PAPER" : "LIVE")
@@ -401,12 +450,26 @@ public class SmartWalletAccountingService {
         if (orderId == null) {
             return BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP);
         }
-        List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
-                .eq(SmartWalletFillEntity::getOrderId, orderId));
         BigDecimal total = BigDecimal.ZERO;
-        if (fills != null) {
+        final int pageSize = 1000;
+        long lastId = 0L;
+        while (true) {
+            List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                    .eq(SmartWalletFillEntity::getOrderId, orderId)
+                    .gt(SmartWalletFillEntity::getId, lastId)
+                    .orderByAsc(SmartWalletFillEntity::getId)
+                    .last("limit " + pageSize));
+            if (fills == null || fills.isEmpty()) {
+                break;
+            }
             for (SmartWalletFillEntity fill : fills) {
                 total = total.add(safe(fill.getSize()));
+                if (fill.getId() != null && fill.getId() > lastId) {
+                    lastId = fill.getId();
+                }
+            }
+            if (fills.size() < pageSize) {
+                break;
             }
         }
         return total.setScale(8, RoundingMode.HALF_UP);
@@ -450,6 +513,11 @@ public class SmartWalletAccountingService {
         updateOrderRealizedPnl(order, realizedDelta, now);
         rebuildDailyReport(order.getExecutionAddress(), toLocalDate(now));
         syncTradeOrder(positionUpdate == null ? null : positionUpdate.position());
+        // 当 position 因 exit fill 关闭时，同步更新 follow_task 状态
+        if (positionUpdate != null && positionUpdate.position() != null
+                && "CLOSED".equalsIgnoreCase(positionUpdate.position().getStatus())) {
+            markFollowTaskSettled(positionUpdate.position().getId());
+        }
     }
 
     private SmartWalletFillEntity latestPositionFill(SmartWalletPositionEntity position) {
@@ -878,6 +946,7 @@ public class SmartWalletAccountingService {
             p.setStatus("CLAIMED");
         }, "claimResolvedPosition", 3);
         syncTradeOrder(position);
+        markFollowTaskSettled(position.getId());
 
         return SmartWalletClaimResultView.builder()
                 .positionId(position.getId())
@@ -898,38 +967,48 @@ public class SmartWalletAccountingService {
     }
 
     public SmartWalletPnlSummaryView summary(String mode) {
-        List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<>());
-        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
-        marketInfoService.populateFills(fills);
-        marketInfoService.populatePositions(positions);
-        BigDecimal volume = BigDecimal.ZERO;
+        long now = System.currentTimeMillis();
+        String normalizedMode = mode == null ? "" : mode;
+        if (cachedPnlSummary != null && now < cachedPnlSummaryExpiresAt
+                && normalizedMode.equals(cachedPnlSummaryMode == null ? "" : cachedPnlSummaryMode)) {
+            return cachedPnlSummary;
+        }
+        SmartWalletPnlSummaryView result = buildPnlSummary(mode);
+        cachedPnlSummary = result;
+        cachedPnlSummaryMode = normalizedMode;
+        cachedPnlSummaryExpiresAt = now + PNL_CACHE_TTL_MS;
+        return result;
+    }
+
+    private SmartWalletPnlSummaryView buildPnlSummary(String mode) {
+        // SQL aggregation for fills count, volume, fees, realized PnL
+        String normalizedMode = normalizeDashboardMode(mode);
+        int filledOrders = fillMapper.countByMode(normalizedMode);
+        BigDecimal volume = safe(fillMapper.sumVolumeByMode(normalizedMode));
         BigDecimal fee = totalFeeAmountByMode(mode, null, null);
-        int filledOrders = 0;
+        BigDecimal realized = sumLedgerSignedAmountByMode("REALIZED_PNL", mode, null, null);
+
+        // Positions still require Java-side iteration for markToMarket & pending settlement logic
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
+        marketInfoService.populatePositions(positions);
         int wins = 0;
         int completedPositions = 0;
         int openPositions = 0;
-        BigDecimal realized = sumLedgerSignedAmountByMode("REALIZED_PNL", mode, null, null);
         BigDecimal unrealized = BigDecimal.ZERO;
         BigDecimal pendingSettlement = BigDecimal.ZERO;
-        for (SmartWalletFillEntity fill : fills) {
-            if (!matchesDashboardMode(fill.getExecutionAddress(), mode)) {
-                continue;
-            }
-            filledOrders++;
-            volume = volume.add(safe(fill.getNotionalUsdc()));
-        }
         for (SmartWalletPositionEntity position : positions) {
             if (!matchesDashboardMode(position.getExecutionAddress(), mode)) {
                 continue;
             }
             markToMarket(position);
-            if (isPendingSettlementTracked(position)) {
+            boolean pendingTracked = isPendingSettlementTracked(position);
+            if (pendingTracked) {
                 pendingSettlement = pendingSettlement.add(pendingSettlementNetPnlForPosition(position));
             } else if (isActivePositionStatus(position.getStatus())) {
                 unrealized = unrealized.add(safe(position.getUnrealizedPnlUsdc()));
                 openPositions++;
             }
-            if (isClosedOrSettledStatus(position.getStatus())) {
+            if (!pendingTracked && isClosedOrSettledStatus(position.getStatus())) {
                 completedPositions++;
                 if (realizedPnlForPosition(position).compareTo(BigDecimal.ZERO) > 0) {
                     wins++;
@@ -996,6 +1075,43 @@ public class SmartWalletAccountingService {
                 .build();
     }
 
+    /**
+     * 第十九批 (2026-05-16): Tier B {@link PositionAccountingPort} 适配器.
+     *
+     * <p>把跟单专属的 {@link SmartWalletCapacitySummaryView} 投影到跨策略通用的
+     * {@link CapacitySnapshot} 三档 (available / locked / inFlight) + 仓位计数. 跟单
+     * 现有 hot path / web view 完全保留, 不动. 天气 / BTC 5min 策略可直接读端口.</p>
+     *
+     * <p><b>语义映射</b>:
+     * <ul>
+     *   <li>{@code available} = capacitySummary.availableCapitalUsdc (可立即开仓)</li>
+     *   <li>{@code locked}    = openCost (持仓占用) + lockedClaimProceeds (待 claim)</li>
+     *   <li>{@code inFlight}  = openCost (已成交未结算; 跟单不区分 maker pending → 用 openCost 兜底)</li>
+     *   <li>{@code openPositionCount / Limit} 透传</li>
+     * </ul></p>
+     *
+     * <p>对开单效率 / 资金使用率 / 是否会开单 / 盈亏点 / 胜率: ⚪ 全部无影响 — 纯只读快照,
+     * 不参与 SignalRisk 决策, 不修改资金状态. 删除本方法跟单系统行为完全等价.</p>
+     */
+    public CapacitySnapshot toCapacitySnapshot() {
+        return toCapacitySnapshot(null);
+    }
+
+    public CapacitySnapshot toCapacitySnapshot(String mode) {
+        SmartWalletCapacitySummaryView view = capacitySummary(mode);
+        BigDecimal available = view.getAvailableCapitalUsdc() == null ? BigDecimal.ZERO : view.getAvailableCapitalUsdc();
+        BigDecimal openCost = view.getTotalOpenCostUsdc() == null ? BigDecimal.ZERO : view.getTotalOpenCostUsdc();
+        BigDecimal lockedClaim = view.getLockedClaimProceedsUsdc() == null ? BigDecimal.ZERO : view.getLockedClaimProceedsUsdc();
+        BigDecimal locked = openCost.add(lockedClaim);
+        return CapacitySnapshot.builder()
+                .availableCapitalUsdc(available)
+                .lockedCapitalUsdc(locked)
+                .inFlightCapitalUsdc(openCost)
+                .openPositionCount(view.getOpenPositionCount() == null ? 0 : view.getOpenPositionCount())
+                .openPositionLimit(view.getOpenPositionLimit())
+                .build();
+    }
+
     public BigDecimal availableCapitalUsdc() {
         return availableCapitalUsdc(null);
     }
@@ -1015,7 +1131,55 @@ public class SmartWalletAccountingService {
             lockedClaimProceeds = lockedClaimProceeds.add(lockedClaimProceedsForPosition(position));
         }
         BigDecimal budget = safe(properties.getSignalRisk().getMaxTotalOpenCostUsdc());
-        return budget.add(realized).subtract(fees).subtract(openCost).subtract(lockedClaimProceeds).setScale(8, RoundingMode.HALF_UP);
+        // R4(2026-06-03 全盘风险审计)：扣减"在途已预留但尚未落为持仓成本"的资金（PENDING 跟单任务），
+        // 防同一笔 bankroll 被多个待执行信号重复定仓导致超额配置/透支。
+        BigDecimal inFlightReserved = inFlightReservedUsdc();
+        return budget.add(realized).subtract(fees).subtract(openCost)
+                .subtract(lockedClaimProceeds).subtract(inFlightReserved)
+                .setScale(8, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * R4(2026-06-03 全盘风险审计)：在途资金预留——已批准、已定 stake 但尚未执行成交的跟单任务(status=PENDING)。
+     * <p>这些任务尚未成交、还没有对应持仓成本；若不计入"已占用"，每个待执行信号都会看到全额 bankroll，
+     * N 个并发/同窗信号会各自对同一笔钱定仓 → 超额配置。FOLLOWED 任务已有持仓成本(已计入 openCost)，
+     * 故不在此统计，避免双计。bankroll 为全局口径，此处亦全局统计。失败返回 0(保守=不额外扣减)。</p>
+     */
+    /** R3(2026-06-03)：OPEN/PARTIALLY_CLOSED 持仓中，所在市场本地已有 resolved_outcome 却仍未结算(卡 OPEN)的笔数。 */
+    public long openInResolvedMarketCount() {
+        try {
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                    .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+            marketInfoService.populatePositions(positions);
+            long n = 0;
+            for (SmartWalletPositionEntity p : positions) {
+                if (StringUtils.hasText(p.getResolvedOutcome())) {
+                    n++;
+                }
+            }
+            return n;
+        } catch (Exception e) {
+            log.debug("[SETTLEMENT_BACKLOG] count failed: {}", e.toString());
+            return 0L;
+        }
+    }
+
+    public BigDecimal inFlightReservedUsdc() {
+        try {
+            List<SmartWalletFollowTaskEntity> pending = followTaskMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletFollowTaskEntity>()
+                            .eq(SmartWalletFollowTaskEntity::getStatus, "PENDING"));
+            BigDecimal sum = BigDecimal.ZERO;
+            if (pending != null) {
+                for (SmartWalletFollowTaskEntity t : pending) {
+                    sum = sum.add(safe(t.getRecommendedStakeUsdc()));
+                }
+            }
+            return sum.setScale(8, RoundingMode.HALF_UP);
+        } catch (Exception e) {
+            log.debug("[INFLIGHT_RESERVE] compute failed: {}", e.toString());
+            return BigDecimal.ZERO;
+        }
     }
 
     public BigDecimal lockedClaimProceedsUsdc() {
@@ -1075,6 +1239,28 @@ public class SmartWalletAccountingService {
     }
 
     public SmartWalletPerformanceView performance(String mode) {
+        long now = System.currentTimeMillis();
+        String normalizedMode = mode == null ? "" : mode;
+        if (cachedPerformance != null && now < cachedPerformanceExpiresAt
+                && normalizedMode.equals(cachedPerformanceMode == null ? "" : cachedPerformanceMode)) {
+            return cachedPerformance;
+        }
+        SmartWalletPerformanceView result = buildPerformance(mode);
+        cachedPerformance = result;
+        cachedPerformanceMode = normalizedMode;
+        cachedPerformanceExpiresAt = now + PNL_CACHE_TTL_MS;
+        return result;
+    }
+
+    private SmartWalletPerformanceView buildPerformance(String mode) {
+        String normalizedMode = normalizeDashboardMode(mode);
+        // SQL aggregation for fills count and volume
+        int filledOrders = fillMapper.countByMode(normalizedMode);
+        BigDecimal volume = safe(fillMapper.sumVolumeByMode(normalizedMode));
+        BigDecimal fee = totalFeeAmountByMode(mode, null, null);
+        BigDecimal realized = sumLedgerSignedAmountByMode("REALIZED_PNL", mode, null, null);
+
+        // Orders and fills still needed for exit order summary
         List<SmartWalletFillEntity> fills = fillMapper.selectList(new LambdaQueryWrapper<>());
         List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<>());
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<>());
@@ -1086,26 +1272,15 @@ public class SmartWalletAccountingService {
                 .toList();
         ConflictSummary conflictSummary = summarizeConflicts(filteredPositions, null);
         ExitOrderSummary exitOrderSummary = summarizeExitOrders(orders, fills, mode);
-        BigDecimal volume = BigDecimal.ZERO;
-        BigDecimal fee = totalFeeAmountByMode(mode, null, null);
-        int filledOrders = 0;
         int openPositions = 0;
         int pendingPositions = 0;
         int closedPositions = 0;
         int winningPositions = 0;
         int losingPositions = 0;
-        BigDecimal realized = sumLedgerSignedAmountByMode("REALIZED_PNL", mode, null, null);
         BigDecimal unrealized = BigDecimal.ZERO;
         BigDecimal pendingSettlement = BigDecimal.ZERO;
         BigDecimal totalWins = BigDecimal.ZERO;
         BigDecimal totalLosses = BigDecimal.ZERO;
-        for (SmartWalletFillEntity fill : fills) {
-            if (!matchesDashboardMode(fill.getExecutionAddress(), mode)) {
-                continue;
-            }
-            filledOrders++;
-            volume = volume.add(safe(fill.getNotionalUsdc()));
-        }
         for (SmartWalletPositionEntity position : filteredPositions) {
             markToMarket(position);
             BigDecimal positionRealized = realizedPnlForPosition(position);
@@ -1119,7 +1294,7 @@ public class SmartWalletAccountingService {
             } else if (isClosedOrSettledStatus(position.getStatus())) {
                 closedPositions++;
             }
-            if (pendingTracked || isClosedOrSettledStatus(position.getStatus())) {
+            if (!pendingTracked && isClosedOrSettledStatus(position.getStatus())) {
                 if (positionRealized.compareTo(BigDecimal.ZERO) > 0) {
                     winningPositions++;
                     totalWins = totalWins.add(positionRealized);
@@ -1287,10 +1462,11 @@ public class SmartWalletAccountingService {
         List<SmartWalletDailyReportEntity> selectedReports = filteredReports.subList(fromIndex, filteredReports.size());
         Map<LocalDate, DailyOutcomeBreakdown> outcomeBreakdowns = loadDailyOutcomeBreakdowns(selectedReports, mode);
         List<SmartWalletPnlTimelinePoint> points = new ArrayList<>();
-        BigDecimal cumulativeLoss = BigDecimal.ZERO;
-        BigDecimal cumulativeRealized = BigDecimal.ZERO;
-        BigDecimal cumulativeFee = BigDecimal.ZERO;
-        BigDecimal cumulative = BigDecimal.ZERO;
+        TimelineBaseline baseline = dailyTimelineBaseline(selectedReports, today, zoneId, mode);
+        BigDecimal cumulativeLoss = baseline.cumulativeLossPnlUsdc();
+        BigDecimal cumulativeRealized = baseline.cumulativeRealizedPnlUsdc();
+        BigDecimal cumulativeFee = baseline.cumulativeFeeUsdc();
+        BigDecimal cumulative = baseline.cumulativeNetPnlUsdc();
         BigDecimal previousFloatingPnl = BigDecimal.ZERO;
         boolean emittedToday = false;
         for (SmartWalletDailyReportEntity report : selectedReports) {
@@ -1601,7 +1777,9 @@ public class SmartWalletAccountingService {
                     .setLastMarkPrice(snapshot.lastPrice())
                     .setOpenedAt(snapshot.openedAt())
                     .setLastFilledAt(snapshot.lastFilledAt())
-                    .setClosedAt(snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null)
+                    .setClosedAt(SettlementTimeGuard.clamp(
+                            snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null,
+                            snapshot.openedAt(), "rebuildPositionFromFills"))
                     .setStatus(snapshot.status())
                     .setUpdatedAt(new Date());
             if (updatePositionChecked(position, "rebuildPositionFromFills")) {
@@ -2068,6 +2246,22 @@ public class SmartWalletAccountingService {
             }
         }
         for (SmartWalletPositionEntity position : positions) {
+            // 问题5 修复（2026-06-01）：本地权威结算优先。
+            // 当本地 market_info 已确认终局（resolved_outcome 非空 + closed + lifecycle=RESOLVED），
+            // 直接据此结算，绕过依赖在线 Gamma/UMA 二次确认的旧闸——后者对长尾 endAt（赛事 dispute
+            // 窗口设在数天后）或缺 winningTokenId 的纸面市场会把已结算市场误判为 future/oracle-pending，
+            // 导致仓位永久卡在 OPEN（巡检实测 17 笔，最早 5/28）。复用 resolvePosition 的全部记账逻辑，
+            // 胜负由 settlementPrice 的 outcome 名称对比路径判定，安全且与现有纸面结算口径一致。
+            if (tryLocalAuthoritativeSettle(position)) {
+                resolved++;
+                continue;
+            }
+            // 问题5 续修（2026-06-02）：坍塌/无法卖出的亏损仓位强制按 0 结算（详见 tryExpiredWorthlessSettle）。
+            // 解决「输了却一直 OPEN」——报价已归零、盘口无人接、但 resolved_outcome 尚未落地的仓位。
+            if (tryExpiredWorthlessSettle(position)) {
+                resolved++;
+                continue;
+            }
             PolymarketApiClient.MarketMetadata metadata = metadataByMarket.get(position.getMarketId());
             if (metadata == null) {
                 continue;
@@ -2325,10 +2519,22 @@ public class SmartWalletAccountingService {
         return ORDER_STATUS_SETTLEMENT_PENDING_ORACLE;
     }
 
-    private SettlementTerminalCheck settlementTerminalCheck(PolymarketApiClient.MarketMetadata metadata,
+    /**
+     * package-private 便于 SmartWalletAccountingServiceTest / 新增 SettlementGateTest 直接单测；
+     * 业务调用方仍在本类内。
+     */
+    SettlementTerminalCheck settlementTerminalCheck(PolymarketApiClient.MarketMetadata metadata,
                                                             boolean marketEnded) {
         if (metadata == null) {
             return new SettlementTerminalCheck(false, "metadata_null");
+        }
+        // ── A1 争议期禁止结算（2026-06-05 补充场景库：结算反转防线）─────────────────────
+        // UMA 仲裁争议中(umaDisputed=true) 的市场 outcome 可能翻盘；此时结算会按当前(可能错误)
+        // 结果记账并复利回可用资金，若随后反转则账面虚增且无冲正路径(R19 未闭环)。fail-closed：
+        // 争议期一律不结算、留待 dispute 清除后下一轮按最终 outcome 正确结算。只延迟、绝不误结算金额。
+        // 置于所有 canSettle=true 分支之前，确保争议市场永不放行。默认开启，可热回滚。
+        if (properties != null && properties.isBlockSettlementWhileDisputed() && metadata.isUmaDisputed()) {
+            return new SettlementTerminalCheck(false, "blocked_uma_disputed");
         }
         if (!StringUtils.hasText(metadata.getSlug())
                 && (metadata.getOutcomeTokenIds() == null || metadata.getOutcomeTokenIds().isEmpty())
@@ -2341,6 +2547,26 @@ public class SmartWalletAccountingService {
         }
         if (marketEnded && metadata.isClosed()) {
             return new SettlementTerminalCheck(true, "ended_and_closed");
+        }
+        // 2026-05-30 修复（见 docs/problem/订单未结算根因排查-2026-05-30.md）：
+        // 已 oracle 盖棺的市场（"四指标全终结"）允许在 endAt 之前结算。
+        // 体育/赛事类 market 的 Polymarket endAt 通常设在赛事后 ~1 周（resolution dispute window），
+        // 但赛事结束后 30min~1h 内 oracle 已 resolve，closed/acceptingOrders/winningTokenId 全部到位；
+        // 之前 d4302c90 引入的 !marketEnded 硬闸把这类合法终结状态误判为"提前结算"——
+        // 巡检实测 18 笔 OPEN 永久卡在 early_settlement_blocked_market_not_ended（resolved_positions=0/548 次 run）。
+        // 这里要求四指标"全部"满足（closed=true && !acceptingOrders && resolved=true && winningTokenId 非空）
+        // 才放行——任何 d4302c90 当年防的"单一抖动"场景（如 winningTokenId 闪现 / acceptingOrders 短暂 pause）
+        // 都不会同时满足全部四个指标，因此既保留 d4302c90 的防虚高初衷，又解开赛事市场的结算路径。
+        if (isOracleTerminalAllSignalsSet(metadata)) {
+            return new SettlementTerminalCheck(true, "oracle_terminal_all_signals_set");
+        }
+        // P2-2 收紧：所有"早结算"路径都必须先满足 marketEnded（已到 Polymarket 名义到期时间）。
+        // 此前 uma_resolved / winning_token / final_price_inference 三条路径只要 acceptingOrders=false
+        // 就放行，导致 metadata 抖动（如短暂 pause + winningTokenId 设置）即按 settlementPrice=1
+        // 误结算尚未到期的市场，realized_pnl 直接灌成虚高（参见用户 2026-05-26 反馈 / ROI 虚高
+        // 根因 路径 A）。这里强制要求 marketEnded 后才能走早结算分支，未到期一律打回 market_not_ended。
+        if (!marketEnded) {
+            return new SettlementTerminalCheck(false, "early_settlement_blocked_market_not_ended");
         }
         if (metadata.isResolved() && isUmaResolved(metadata) && !metadata.isAcceptingOrders()) {
             return new SettlementTerminalCheck(true, "uma_resolved_accepting_orders_false");
@@ -2355,13 +2581,27 @@ public class SmartWalletAccountingService {
                 && !metadata.isAcceptingOrders()) {
             return new SettlementTerminalCheck(true, "final_price_inference_accepting_orders_false");
         }
-        if (!marketEnded) {
-            return new SettlementTerminalCheck(false, "market_not_ended");
-        }
         if (!metadata.isClosed()) {
             return new SettlementTerminalCheck(false, "closed_flag_false_without_authoritative_resolution");
         }
         return new SettlementTerminalCheck(false, "not_terminal");
+    }
+
+    /**
+     * 2026-05-30 修复（见 docs/problem/订单未结算根因排查-2026-05-30.md）：
+     * "四指标全终结"——已 oracle 盖棺市场的统一判定，闸 1 (settlementTerminalCheck) 与
+     * 闸 2 (resolvePosition 顶部 SETTLEMENT_GATE_ENDAT) 必须用同一份逻辑，否则会出现
+     * "上游放行 + 下游拦截"的死锁（resolved++ 假涨但 DB 无写入）。
+     *
+     * <p>四指标 AND 关系：{@code closed=true && !acceptingOrders && resolved=true &&
+     * winningTokenId 非空}——任何 d4302c90 当年防的"单一抖动"场景都不会同时满足全部四个。
+     */
+    private boolean isOracleTerminalAllSignalsSet(PolymarketApiClient.MarketMetadata metadata) {
+        return metadata != null
+                && metadata.isClosed()
+                && !metadata.isAcceptingOrders()
+                && metadata.isResolved()
+                && StringUtils.hasText(metadata.getWinningTokenId());
     }
 
     private boolean isUmaResolved(PolymarketApiClient.MarketMetadata metadata) {
@@ -2374,7 +2614,8 @@ public class SmartWalletAccountingService {
                 || umaStatus.contains("final");
     }
 
-    private record SettlementTerminalCheck(boolean canSettle, String reason) {
+    /** package-private 便于单测直接断言 canSettle()/reason()。 */
+    record SettlementTerminalCheck(boolean canSettle, String reason) {
     }
 
     private String oraclePhaseSuffix(PolymarketApiClient.MarketMetadata metadata) {
@@ -2725,7 +2966,9 @@ public class SmartWalletAccountingService {
                 .setRealizedPnlUsdc(realized)
                 .setLastMarkPrice(fill.getPrice())
                 .setLastFilledAt(fill.getFilledAt())
-                .setClosedAt(quantity.compareTo(BigDecimal.ZERO) == 0 ? fill.getFilledAt() : null)
+                .setClosedAt(SettlementTimeGuard.clamp(
+                        quantity.compareTo(BigDecimal.ZERO) == 0 ? fill.getFilledAt() : null,
+                        position.getOpenedAt(), "appendFill.upsertPosition"))
                 .setStatus(lifecycleStatus)
                 .setUpdatedAt(new Date());
         markToMarket(position);
@@ -2791,6 +3034,15 @@ public class SmartWalletAccountingService {
     }
 
     private SmartWalletPositionEntity newPositionRound(SmartWalletFillEntity fill, Long marketEndAt) {
+        // W1-T3: 取首次开仓所在 follow_task 的 trace_id 作为仓位 origin_trace_id.
+        // 后续合并/平仓不再覆盖, 保留全链路根。fill.followTaskId 缺失时 originTraceId 留空.
+        String originTraceId = null;
+        if (fill != null && fill.getFollowTaskId() != null) {
+            SmartWalletFollowTaskEntity parentTask = followTaskMapper.selectById(fill.getFollowTaskId());
+            if (parentTask != null) {
+                originTraceId = parentTask.getTraceId();
+            }
+        }
         return new SmartWalletPositionEntity()
                 .setExecutionAddress(fill.getExecutionAddress())
                 .setMarketInfoId(fill.getMarketInfoId())
@@ -2806,6 +3058,7 @@ public class SmartWalletAccountingService {
                 .setLastMarkPrice(fill.getPrice())
                 .setOpenedAt(fill.getFilledAt())
                 .setStatus("OPEN")
+                .setOriginTraceId(originTraceId)
                 .setCreatedAt(new Date())
                 .setUpdatedAt(new Date());
     }
@@ -2842,15 +3095,49 @@ public class SmartWalletAccountingService {
         }
     }
 
+    /**
+     * 当 position 进入终态（CLOSED / RESOLVED_UNCLAIMED / CLAIMED）时，
+     * 同步把关联 follow_task 的 status 更新为 SETTLED，避免前端"open"列表残留。
+     */
+    private void markFollowTaskSettled(Long positionId) {
+        if (positionId == null) {
+            return;
+        }
+        try {
+            List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<SmartWalletOrderEntity>()
+                    .eq(SmartWalletOrderEntity::getPositionId, positionId)
+                    .isNotNull(SmartWalletOrderEntity::getFollowTaskId));
+            for (SmartWalletOrderEntity order : orders) {
+                if (order.getFollowTaskId() == null) continue;
+                SmartWalletFollowTaskEntity task = followTaskMapper.selectById(order.getFollowTaskId());
+                if (task != null && "FOLLOWED".equalsIgnoreCase(task.getStatus())) {
+                    task.setStatus("SETTLED");
+                    task.setUpdatedAt(new Date());
+                    followTaskMapper.updateById(task);
+                }
+            }
+        } catch (RuntimeException ex) {
+            log.warn("[markFollowTaskSettled] positionId={} failed: {}", positionId, ex.getMessage());
+        }
+    }
+
     private void appendCashLedger(SmartWalletOrderEntity order, SmartWalletFillEntity fill, PositionUpdateResult positionUpdate) {
+        // P2-1: 写入流水的同时回填 balance_after —— 以该账户已有全部流水的带符号累加值作为
+        // 本批写入前的余额锚点, 再逐条累加. 锚点直接取自 amount/direction, 不依赖历史
+        // balance_after, 因此对历史 balance_after 为 NULL 的旧数据天然自愈.
+        String executionAddress = fill.getExecutionAddress();
+        BigDecimal balance = safe(cashLedgerMapper.runningBalance(executionAddress));
+
         String direction = "SELL".equalsIgnoreCase(fill.getSide()) ? "IN" : "OUT";
         BigDecimal signedAmount = safe(fill.getNotionalUsdc());
+        balance = applyLedgerSign(balance, direction, signedAmount);
         cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                .setExecutionAddress(fill.getExecutionAddress())
+                .setExecutionAddress(executionAddress)
                 .setAsset(ASSET_USDC_E)
                 .setEntryType("ORDER_NOTIONAL")
                 .setDirection(direction)
                 .setAmount(signedAmount)
+                .setBalanceAfter(balance)
                 .setReferenceType("ORDER")
                 .setReferenceId(order.getId())
                 .setMarketId(fill.getMarketId())
@@ -2859,12 +3146,14 @@ public class SmartWalletAccountingService {
                 .setCreatedAt(new Date()));
         BigDecimal tradingFeeUsdc = safe(fill.getTradingFeeUsdc(), fill.getFeeUsdc());
         if (tradingFeeUsdc.compareTo(BigDecimal.ZERO) > 0) {
+            balance = applyLedgerSign(balance, "OUT", tradingFeeUsdc);
             cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                    .setExecutionAddress(fill.getExecutionAddress())
+                    .setExecutionAddress(executionAddress)
                     .setAsset(ASSET_USDC_E)
                     .setEntryType("FEE")
                     .setDirection("OUT")
                     .setAmount(tradingFeeUsdc)
+                    .setBalanceAfter(balance)
                     .setReferenceType("FILL")
                     .setReferenceId(fill.getId())
                     .setMarketId(fill.getMarketId())
@@ -2874,12 +3163,14 @@ public class SmartWalletAccountingService {
         }
         BigDecimal gasFeeUsdc = safe(fill.getGasFeeUsdc());
         if (gasFeeUsdc.compareTo(BigDecimal.ZERO) > 0) {
+            balance = applyLedgerSign(balance, "OUT", gasFeeUsdc);
             cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                    .setExecutionAddress(fill.getExecutionAddress())
+                    .setExecutionAddress(executionAddress)
                     .setAsset(ASSET_USDC_E)
                     .setEntryType("NETWORK_FEE")
                     .setDirection("OUT")
                     .setAmount(gasFeeUsdc)
+                    .setBalanceAfter(balance)
                     .setReferenceType("FILL")
                     .setReferenceId(fill.getId())
                     .setMarketId(fill.getMarketId())
@@ -2888,12 +3179,16 @@ public class SmartWalletAccountingService {
                     .setCreatedAt(new Date()));
         }
         if (positionUpdate != null && positionUpdate.realizedDelta().compareTo(BigDecimal.ZERO) != 0) {
+            String pnlDirection = positionUpdate.realizedDelta().compareTo(BigDecimal.ZERO) >= 0 ? "IN" : "OUT";
+            BigDecimal pnlAmount = positionUpdate.realizedDelta().abs();
+            balance = applyLedgerSign(balance, pnlDirection, pnlAmount);
             cashLedgerMapper.insert(new SmartWalletCashLedgerEntity()
-                    .setExecutionAddress(fill.getExecutionAddress())
+                    .setExecutionAddress(executionAddress)
                     .setAsset(ASSET_USDC_E)
                     .setEntryType("REALIZED_PNL")
-                    .setDirection(positionUpdate.realizedDelta().compareTo(BigDecimal.ZERO) >= 0 ? "IN" : "OUT")
-                    .setAmount(positionUpdate.realizedDelta().abs())
+                    .setDirection(pnlDirection)
+                    .setAmount(pnlAmount)
+                    .setBalanceAfter(balance)
                     .setReferenceType("POSITION")
                     .setReferenceId(positionUpdate.position().getId())
                     .setMarketId(fill.getMarketId())
@@ -2901,6 +3196,13 @@ public class SmartWalletAccountingService {
                     .setOccurredAt(fill.getFilledAt())
                     .setCreatedAt(new Date()));
         }
+    }
+
+    /** 按方向把流水金额累加到运行余额: IN → +amount, OUT → -amount. */
+    private static BigDecimal applyLedgerSign(BigDecimal balance, String direction, BigDecimal amount) {
+        BigDecimal base = balance == null ? BigDecimal.ZERO : balance;
+        BigDecimal delta = amount == null ? BigDecimal.ZERO : amount;
+        return "OUT".equalsIgnoreCase(direction) ? base.subtract(delta) : base.add(delta);
     }
 
     private void rebuildDailyReport(String executionAddress, LocalDate reportDate) {
@@ -2987,11 +3289,222 @@ public class SmartWalletAccountingService {
         }
     }
 
+    /**
+     * 问题5 修复（2026-06-01）：基于本地 market_info 的权威兜底结算。
+     *
+     * <p>仅在本地已确认市场终局时触发：{@code resolved_outcome} 非空 + {@code closed=true}
+     * + {@code market_lifecycle=RESOLVED}，且持仓已开仓超过 {@link #LOCAL_AUTH_SETTLE_MIN_AGE_MS}。
+     * 满足时用本地数据构造权威 {@link PolymarketApiClient.MarketMetadata}（resolved + closed +
+     * acceptingOrders=false + endAt=null），复用 {@link #resolvePosition} 与
+     * {@link #syncResolvedPaperOrderStatuses} 完成结算与订单状态回写，胜负由
+     * {@code settlementPrice} 的 outcome 名称对比路径判定。</p>
+     *
+     * <p>设计为<b>纯增量、严格门控</b>：不放宽任何既有安全闸（仍走 resolvePosition 顶部的
+     * acceptingOrders / endAt 防护），只为「本地已盖棺、在线元数据滞后」这一类卡死仓位补一条出路。</p>
+     *
+     * @return 已据本地权威完成结算返回 true；否则 false（交回原在线结算流程）。
+     */
+    private boolean tryLocalAuthoritativeSettle(SmartWalletPositionEntity position) {
+        if (position == null || safe(position.getQuantity()).compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        if (!StringUtils.hasText(position.getMarketId()) || position.getMarketInfoId() == null) {
+            return false;
+        }
+        SmartWalletMarketInfoEntity mi = marketInfoService.getById(position.getMarketInfoId());
+        if (mi == null) {
+            return false;
+        }
+        boolean closed = Boolean.TRUE.equals(mi.getClosed());
+        boolean resolvedLifecycle = "RESOLVED".equalsIgnoreCase(mi.getMarketLifecycle());
+        String resolvedOutcome = mi.getResolvedOutcome();
+        if (!StringUtils.hasText(resolvedOutcome) || !closed || !resolvedLifecycle) {
+            return false;
+        }
+        // 安全闸：仅结算已开仓足够久的仓位，避免刚开仓即被本地瞬时状态误结算。
+        if (position.getOpenedAt() != null
+                && System.currentTimeMillis() - position.getOpenedAt().getTime() < LOCAL_AUTH_SETTLE_MIN_AGE_MS) {
+            return false;
+        }
+        PolymarketApiClient.MarketMetadata authoritative = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId(position.getMarketId())
+                .marketId(position.getMarketId())
+                .question(StringUtils.hasText(position.getQuestion()) ? position.getQuestion() : mi.getQuestion())
+                .active(false)
+                .closed(true)
+                .acceptingOrders(false)
+                .resolvedOutcome(resolvedOutcome)
+                .winningTokenId(StringUtils.hasText(mi.getTokenId())
+                        && resolvedOutcome.equalsIgnoreCase(mi.getOutcome()) ? mi.getTokenId() : null)
+                .resolutionStatus(MarketResolutionResolver.STATUS_RESOLVED)
+                .resolutionSource("LOCAL_MARKET_INFO_AUTHORITATIVE")
+                .resolutionObservedAt(System.currentTimeMillis())
+                .endAt(null)
+                .build();
+        log.warn("[LOCAL_AUTH_SETTLE] 本地权威兜底结算 positionId={} marketId={} outcome={} resolvedOutcome={} lifecycle={} closed={}",
+                position.getId(), position.getMarketId(), position.getOutcome(),
+                resolvedOutcome, mi.getMarketLifecycle(), closed);
+        syncResolvedPaperOrderStatuses(position.getMarketId(), authoritative);
+        resolvePosition(position, authoritative);
+        return true;
+    }
+
+    /**
+     * 问题5 续修（2026-06-02）：「输了却一直 OPEN」的兜底结算。
+     *
+     * <p>场景：持有的 outcome 已被市场判负——报价坍塌到地板价、盘口无 bid、无法卖出，
+     * 但本地 {@code resolved_outcome} 因解析管道滞后 / Polymarket 名义 endAt 远期仍未落地，
+     * 现有两条结算路径（在线 Gamma/UMA、{@link #tryLocalAuthoritativeSettle}）都依赖
+     * 正式结算数据 → 仓位永久卡 OPEN。</p>
+     *
+     * <p>判定「已判负」用<b>报价坍塌</b>而非 endAt（赛事市场 endAt 常设在 dispute 窗口、远在未来，不可靠）：
+     * {@code last_mark_price ≤ EXPIRED_WORTHLESS_PRICE_CEIL}（来自已修复的实时盘口 bestBid 标记）。
+     * 同时要求仓位已开仓 ≥ {@link #EXPIRED_WORTHLESS_MIN_AGE_MS}，避免对刚开仓的瞬时下探误判。</p>
+     *
+     * <p><b>安全保证</b>：仅对「报价已坍塌（≤ ceil = 亏损方）」的仓位生效；报价偏高（可能是赢方）
+     * 的仓位一律不动，绝不会把赢单错判为亏损按 0 结算。结算价固定为 0 → 实现亏损 = -成本，
+     * 复用 {@link #resolvePosition} 的全部记账逻辑（现金流水 / 仓位置终态 / 日报重建 / 订单回写）。</p>
+     *
+     * @return 已强制按亏损结算返回 true；否则 false（交回原结算流程）。
+     */
+    private boolean tryExpiredWorthlessSettle(SmartWalletPositionEntity position) {
+        if (!ENABLE_EXPIRED_WORTHLESS_SETTLE) {
+            return false;
+        }
+        if (position == null || safe(position.getQuantity()).compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        if (!PAPER_BOOK_EXECUTION_ADDRESS.equals(position.getExecutionAddress())) {
+            return false;
+        }
+        // 开仓时长闸：太新的仓位不强制结算（瞬时下探 / 刚建仓盘口未稳）。
+        if (position.getOpenedAt() == null
+                || System.currentTimeMillis() - position.getOpenedAt().getTime() < EXPIRED_WORTHLESS_MIN_AGE_MS) {
+            return false;
+        }
+        // 用实时盘口刷新标记价（盘口已修复；市场不活跃时该调用早退、保留上次低价标记）。
+        try {
+            markToMarket(position);
+        } catch (Exception ignore) {
+            // 标记失败不阻断：用仓位已有 last_mark_price 判定。
+        }
+        BigDecimal mark = position.getLastMarkPrice();
+        // 仅当报价已坍塌到地板价（确认亏损方）才强制结算；缺标记价 / 报价偏高 → 不动，避免错判赢方。
+        if (mark == null || mark.compareTo(EXPIRED_WORTHLESS_PRICE_CEIL) > 0) {
+            return false;
+        }
+        // ── C4（2026-06-05 补充场景库）：坏 tick 防护 —— 低 mark 须经多源印证才归零结算 ──────
+        // 若近窗口内有成交价显著高于阈值，与「报价坍塌」矛盾 → 低 mark 疑似坏 tick/陈旧，跳过本轮，
+        // 留待真实结算或下轮（mark 持续低）再处理；只阻断、绝不误结算。默认开启，可热回滚。
+        if (properties != null && properties.isWorthlessSettleRequireCorroboration()) {
+            int windowHours = properties.getWorthlessSettleCorroborationWindowHours() == null
+                    ? 6 : Math.max(1, properties.getWorthlessSettleCorroborationWindowHours());
+            BigDecimal maxRecent = maxRecentTradePrice(position.getMarketId(), position.getOutcome(), windowHours);
+            if (isWorthlessSettleContradicted(maxRecent, properties.getWorthlessSettleContradictionPriceCeil())) {
+                log.warn("[EXPIRED_WORTHLESS_GUARD] 跳过归零结算: 近{}h成交最高价={} 与坍塌(mark={})矛盾, 疑似坏tick/陈旧 "
+                                + "positionId={} marketId={} outcome={}",
+                        windowHours, maxRecent, mark, position.getId(), position.getMarketId(), position.getOutcome());
+                return false;
+            }
+        }
+        // 构造「判负」元数据：winningTokenId / resolvedOutcome 用 sentinel（必不等于本仓位的
+        // token / outcome）→ settlementPrice 走 isWinningPosition=false 分支 → 结算价 0。
+        // endAt=null & acceptingOrders=false 以通过 resolvePosition 顶部的 GATE/GUARD。
+        PolymarketApiClient.MarketMetadata loserMeta = PolymarketApiClient.MarketMetadata.builder()
+                .conditionId(position.getMarketId())
+                .marketId(position.getMarketId())
+                .question(position.getQuestion())
+                .active(false)
+                .closed(true)
+                .acceptingOrders(false)
+                .resolutionStatus(MarketResolutionResolver.STATUS_RESOLVED)
+                .resolvedOutcome("__EXPIRED_WORTHLESS_LOSS__")
+                .winningTokenId("__EXPIRED_WORTHLESS_NO_WIN__")
+                .resolutionSource("EXPIRED_WORTHLESS_AUTO_LOSS")
+                .resolutionObservedAt(System.currentTimeMillis())
+                .endAt(null)
+                .build();
+        log.warn("[EXPIRED_WORTHLESS_SETTLE] outcome 已被市场判负(报价坍塌且无法卖出), 强制按0结算 "
+                        + "positionId={} marketId={} outcome={} mark={} costBasis={} openedAt={}",
+                position.getId(), position.getMarketId(), position.getOutcome(),
+                mark, position.getCostBasisUsdc(), position.getOpenedAt());
+        resolvePosition(position, loserMeta);
+        return true;
+    }
+
+    /**
+     * C4 纯函数：坍塌归零结算的坏 tick 矛盾判定。近窗口成交最高价显著高于 contradictionCeil 时返回 true
+     * （= 与「报价坍塌」矛盾，应跳过归零结算）。无近成交(null)或阈值非法 → false（不阻断，沿用既有语义）。
+     */
+    static boolean isWorthlessSettleContradicted(BigDecimal maxRecentTradePrice, BigDecimal contradictionCeil) {
+        if (maxRecentTradePrice == null) {
+            return false;
+        }
+        if (contradictionCeil == null || contradictionCeil.compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        return maxRecentTradePrice.compareTo(contradictionCeil) > 0;
+    }
+
+    /** C4: 近 windowHours 小时该 market+outcome 的 trade_event 最高有效成交价；mapper 缺失/无数据/异常返回 null。 */
+    private BigDecimal maxRecentTradePrice(String marketId, String outcome, int windowHours) {
+        if (tradeEventMapper == null || !StringUtils.hasText(marketId) || !StringUtils.hasText(outcome)) {
+            return null;
+        }
+        try {
+            long cutoff = System.currentTimeMillis() - (long) Math.max(1, windowHours) * 3600_000L;
+            List<SmartWalletTradeEventEntity> rows = tradeEventMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                            .eq(SmartWalletTradeEventEntity::getMarketId, marketId)
+                            .eq(SmartWalletTradeEventEntity::getOutcome, outcome)
+                            .ge(SmartWalletTradeEventEntity::getOpenedAt, new Date(cutoff)));
+            BigDecimal max = null;
+            if (rows != null) {
+                for (SmartWalletTradeEventEntity e : rows) {
+                    BigDecimal p = e.getPrice();
+                    if (p != null && p.compareTo(BigDecimal.ZERO) > 0 && (max == null || p.compareTo(max) > 0)) {
+                        max = p;
+                    }
+                }
+            }
+            return max;
+        } catch (Exception ex) {
+            log.debug("[WORTHLESS_GUARD] maxRecentTradePrice failed marketId={} error={}", marketId, ex.toString());
+            return null;
+        }
+    }
+
     private void resolvePosition(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {
         if (position == null || safe(position.getQuantity()).compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
+        // 结算前置兜底校验：市场仍在接受订单（仍在交易）时，绝不能按 $1.00 全额赔付入账。
+        // 调用方虽已有 settlementTerminalCheck，此处再兜一层，防止任何路径把"仅上涨 30% 的活跃市场"
+        // 误结算成数倍 ROI（参见 跟单ROI虚高根因分析-2026-05-24 路径 A）。
+        if (metadata != null && metadata.isAcceptingOrders()) {
+            log.warn("[SETTLEMENT_GUARD] 拒绝结算仍在交易的市场 positionId={} marketId={} closed={} resolved={} acceptingOrders=true",
+                    position.getId(), position.getMarketId(), metadata.isClosed(), metadata.isResolved());
+            return;
+        }
+        // P2-2 defense-in-depth：未到 Polymarket 名义到期时间 metadata.endAt 也绝不结算，
+        // 防止上游 settlementTerminalCheck 任一旁路把"未到期但 winningTokenId 已设/推断价已生成"
+        // 的市场放行进来（参见 2026-05-26 用户反馈"未到预计结算时间提前结算"）。
+        // 2026-05-30 修复（见 docs/problem/订单未结算根因排查-2026-05-30.md）：
+        // 闸 1 (settlementTerminalCheck) 已允许"已 oracle 盖棺"市场（四指标全终结）放行，
+        // 闸 2 这里必须保持一致，否则会 silent return 导致 resolved++ 假涨但 DB 无写入
+        // ——巡检实测：部署闸 1 修复后 run 769~772 resolved_positions=10 但 position.status
+        // 仍全部 OPEN，正是因为闸 2 拦下并 silent return（也未抛异常让上游计数仍 +1）。
+        long nowMs = System.currentTimeMillis();
+        if (metadata != null && metadata.getEndAt() != null && metadata.getEndAt() > 0
+                && metadata.getEndAt() > nowMs
+                && !isOracleTerminalAllSignalsSet(metadata)) {
+            log.warn("[SETTLEMENT_GATE_ENDAT] 拒绝结算未到期市场 positionId={} marketId={} endAt={} now={} closed={} resolved={} winningTokenId={}",
+                    position.getId(), position.getMarketId(), metadata.getEndAt(), nowMs,
+                    metadata.isClosed(), metadata.isResolved(), metadata.getWinningTokenId());
+            return;
+        }
         Date now = new Date();
+        Date settlementAt = settlementAt(metadata, now, position.getOpenedAt());
         String effectiveOutcome = resolveEffectiveOutcome(position.getTokenId(), position.getOutcome(), metadata);
         BigDecimal resolutionPrice = settlementPrice(position, metadata);
         BigDecimal settlementProceeds = safe(position.getQuantity()).multiply(resolutionPrice).setScale(8, RoundingMode.HALF_UP);
@@ -3021,12 +3534,13 @@ public class SmartWalletAccountingService {
                     .setReferenceId(position.getId())
                     .setMarketId(position.getMarketId())
                     .setQuestion(position.getQuestion())
-                    .setOccurredAt(now)
+                    .setOccurredAt(settlementAt)
                     .setCreatedAt(new Date()));
         }
 
         final BigDecimal finalResolutionPrice = resolutionPrice;
         final BigDecimal finalRealizedDelta = realizedDelta;
+        final Date finalSettlementAt = settlementAt;
         position = updatePositionWithRetry(position.getId(), p -> {
             p.setRealizedPnlUsdc(safe(p.getRealizedPnlUsdc()).add(finalRealizedDelta))
                     .setUnrealizedPnlUsdc(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
@@ -3037,11 +3551,45 @@ public class SmartWalletAccountingService {
                     .setAverageEntryPrice(BigDecimal.ZERO.setScale(8, RoundingMode.HALF_UP))
                     .setNetSide("FLAT")
                     .setStatus("RESOLVED_UNCLAIMED")
-                    .setClosedAt(now)
-                    .setLastFilledAt(now);
+                    .setClosedAt(SettlementTimeGuard.clamp(finalSettlementAt, p.getOpenedAt(), "resolvePosition"))
+                    .setLastFilledAt(finalSettlementAt);
         }, "resolvePosition", 3);
-        rebuildDailyReport(position.getExecutionAddress(), toLocalDate(now));
+        rebuildDailyReport(position.getExecutionAddress(), toLocalDate(settlementAt));
         syncTradeOrder(position);
+        markFollowTaskSettled(position.getId());
+    }
+
+    /**
+     * 计算仓位结算时刻，并 clamp 到 {@code [openedAt, now]} 闭区间。
+     *
+     * <p>默认用真实结算处理时刻 {@code now}；市场名义到期时间 {@code metadata.endAt}
+     * 仅作落在合理区间内时的候选估计：
+     * <ul>
+     *   <li>上界保护：名义到期晚于当前时刻 → 退回 {@code now}，杜绝"未来日期结算"；</li>
+     *   <li>下界保护：名义到期早于开仓时刻（在已到期市场补开仓）→ 退回 {@code openedAt}，
+     *       杜绝"结算早于开仓"。</li>
+     * </ul>
+     * 参见 docs/problem/问题排查修复方案-2026-05-25.md P2-2。
+     *
+     * <p>package-private 以便 {@code SmartWalletAccountingServiceTest} 直接单测。
+     */
+    Date settlementAt(PolymarketApiClient.MarketMetadata metadata, Date now, Date openedAt) {
+        Date upper = (now == null) ? new Date() : now;
+        // 下界 = 开仓时刻；缺失或晚于上界（异常）时退化为上界，区间收敛为 {now}。
+        Date lower = (openedAt != null && openedAt.before(upper)) ? openedAt : upper;
+        // 默认用真实结算处理时刻；名义到期时间仅作候选。
+        Date candidate = upper;
+        if (metadata != null && metadata.getEndAt() != null && metadata.getEndAt() > 0) {
+            candidate = new Date(metadata.getEndAt());
+        }
+        // clamp 到 [lower, upper]
+        if (candidate.before(lower)) {
+            return lower;
+        }
+        if (candidate.after(upper)) {
+            return upper;
+        }
+        return candidate;
     }
 
     private BigDecimal settlementPrice(SmartWalletPositionEntity position, PolymarketApiClient.MarketMetadata metadata) {
@@ -3090,19 +3638,54 @@ public class SmartWalletAccountingService {
         if (position == null || !StringUtils.hasText(position.getMarketId()) || !StringUtils.hasText(position.getOutcome())) {
             return;
         }
-        SmartWalletMarketStateService.MarketStateSnapshot marketState = resolvePositionMarketState(position);
+        MarketStateSnapshot marketState = resolvePositionMarketState(position);
         if (marketState == null) {
-            marketState = SmartWalletMarketStateService.MarketStateSnapshot.unknown(position.getMarketId());
+            marketState = MarketStateSnapshot.unknown(position.getMarketId());
         }
         if (!marketState.isActive()) {
             return;
         }
-        SmartWalletTradeEventEntity latestEvent = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
-                .eq(SmartWalletTradeEventEntity::getMarketId, position.getMarketId())
-                .eq(SmartWalletTradeEventEntity::getOutcome, position.getOutcome())
-                .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
-                .last("limit 1"));
-        BigDecimal markPrice = latestEvent == null ? safe(position.getLastMarkPrice()) : safe(latestEvent.getPrice());
+
+        // ── 优先使用 orderbook 实时价格，避免被 trade_event 中异常的 leader 交易价格污染 ──
+        BigDecimal markPrice = resolveRealtimeMarkPrice(position);
+        boolean markPriceTrusted = markPrice != null && markPrice.compareTo(BigDecimal.ZERO) > 0;
+
+        // ── fallback: trade_event 最新价格（leader 成交价可能被污染，须做区间 + 跳变校验）──
+        if (!markPriceTrusted) {
+            SmartWalletTradeEventEntity latestEvent = tradeEventMapper.selectOne(new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                    .eq(SmartWalletTradeEventEntity::getMarketId, position.getMarketId())
+                    .eq(SmartWalletTradeEventEntity::getOutcome, position.getOutcome())
+                    .orderByDesc(SmartWalletTradeEventEntity::getOpenedAt)
+                    .last("limit 1"));
+            BigDecimal eventPrice = latestEvent == null ? null : safe(latestEvent.getPrice());
+            if (isSaneMarkPrice(eventPrice) && withinMarkPriceJumpLimit(eventPrice, position.getLastMarkPrice())) {
+                markPrice = eventPrice;
+                markPriceTrusted = true;
+            } else if (eventPrice != null && eventPrice.compareTo(BigDecimal.ZERO) > 0) {
+                log.warn("[MARK_PRICE_POLLUTED] 丢弃异常 trade_event 回退价 positionId={} marketId={} outcome={} eventPrice={} lastMarkPrice={}",
+                        position.getId(), position.getMarketId(), position.getOutcome(), eventPrice, position.getLastMarkPrice());
+            }
+        }
+
+        // ── 最终 fallback: 使用仓位已有的 lastMarkPrice（同样要求落在合法区间）──
+        if (!markPriceTrusted) {
+            BigDecimal lastMark = safe(position.getLastMarkPrice());
+            if (isSaneMarkPrice(lastMark)) {
+                markPrice = lastMark;
+                markPriceTrusted = true;
+            }
+        }
+
+        // ── 无任何可信估值价：保留现状，不写入污染值，避免 ROI 虚高 ──
+        if (!markPriceTrusted) {
+            log.warn("[MARK_PRICE_UNAVAILABLE] 跳过本次 markToMarket，保留上次估值 positionId={} marketId={} outcome={} lastMarkPrice={}",
+                    position.getId(), position.getMarketId(), position.getOutcome(), position.getLastMarkPrice());
+            return;
+        }
+
+        // 可信源也做上限兜底：未结算持仓的估值价收敛进 [0.001, 0.999]，杜绝按 $1.00 全额赔付估值
+        markPrice = clampMarkPrice(markPrice);
+
         BigDecimal unrealized = markPrice.multiply(safe(position.getQuantity()))
                 .subtract(safe(position.getCostBasisUsdc()))
                 .setScale(8, RoundingMode.HALF_UP);
@@ -3114,11 +3697,43 @@ public class SmartWalletAccountingService {
         }
     }
 
+    /**
+     * 从 orderbook 获取实时标记价格。
+     * 优先级: bestBid > midpoint > null（交给 caller fallback）
+     */
+    private BigDecimal resolveRealtimeMarkPrice(SmartWalletPositionEntity position) {
+        String tokenId = position.getTokenId();
+        if (!StringUtils.hasText(tokenId)) {
+            return null;
+        }
+        try {
+            PolymarketApiClient.OrderBook orderBook = marketDataCacheService.getOrderBook(tokenId);
+            if (orderBook == null) {
+                return null;
+            }
+            // 优先使用 best bid（卖出方向的最优可成交价，对持仓标记最保守）
+            if (orderBook.getBids() != null && !orderBook.getBids().isEmpty()) {
+                BigDecimal bestBid = orderBook.getBids().get(0).getPrice();
+                if (bestBid != null && bestBid.compareTo(BigDecimal.ZERO) > 0) {
+                    return bestBid;
+                }
+            }
+            // fallback: midpoint
+            BigDecimal midpoint = orderBook.getMidpoint();
+            if (midpoint != null && midpoint.compareTo(BigDecimal.ZERO) > 0) {
+                return midpoint;
+            }
+        } catch (Exception ex) {
+            log.debug("resolveRealtimeMarkPrice failed for tokenId={}: {}", tokenId, ex.getMessage());
+        }
+        return null;
+    }
+
     private void refreshPositionMarketStates(List<SmartWalletPositionEntity> positions) {
         if (positions == null || positions.isEmpty()) {
             return;
         }
-        Map<String, SmartWalletMarketStateService.MarketStateSnapshot> statesByMarketId = marketStateService.refreshMarkets(
+        Map<String, MarketStateSnapshot> statesByMarketId = marketStateService.refreshMarkets(
                 positions.stream()
                         .map(SmartWalletPositionEntity::getMarketId)
                         .filter(StringUtils::hasText)
@@ -3129,7 +3744,7 @@ public class SmartWalletAccountingService {
             statesByMarketId = Map.of();
         }
         for (SmartWalletPositionEntity position : positions) {
-            SmartWalletMarketStateService.MarketStateSnapshot snapshot =
+            MarketStateSnapshot snapshot =
                     statesByMarketId.get(position == null ? null : position.getMarketId());
             if (snapshot == null) {
                 continue;
@@ -3144,13 +3759,13 @@ public class SmartWalletAccountingService {
         }
     }
 
-    private SmartWalletMarketStateService.MarketStateSnapshot resolvePositionMarketState(SmartWalletPositionEntity position) {
+    private MarketStateSnapshot resolvePositionMarketState(SmartWalletPositionEntity position) {
         marketInfoService.populate(position);
         if (position == null || !StringUtils.hasText(position.getMarketId())) {
-            return SmartWalletMarketStateService.MarketStateSnapshot.unknown(null);
+            return MarketStateSnapshot.unknown(null);
         }
         if (StringUtils.hasText(position.getMarketLifecycle())) {
-            return SmartWalletMarketStateService.MarketStateSnapshot.builder()
+            return MarketStateSnapshot.builder()
                     .marketId(position.getMarketId())
                     .question(position.getQuestion())
                     .marketEndAt(position.getMarketEndAt())
@@ -3162,20 +3777,20 @@ public class SmartWalletAccountingService {
                     .resolvedOutcome(position.getResolvedOutcome())
                     .build();
         }
-        SmartWalletMarketStateService.MarketStateSnapshot snapshot = marketStateService.refreshMarket(
+        MarketStateSnapshot snapshot = marketStateService.refreshMarket(
                 position.getMarketId(),
                 position.getQuestion(),
                 StringUtils.hasText(position.getOutcome()) ? List.of(position.getOutcome()) : List.of()
         );
         if (snapshot == null) {
-            snapshot = SmartWalletMarketStateService.MarketStateSnapshot.unknown(position.getMarketId());
+            snapshot = MarketStateSnapshot.unknown(position.getMarketId());
         }
         applySnapshotToPosition(position, snapshot);
         return snapshot;
     }
 
     private void applySnapshotToPosition(SmartWalletPositionEntity position,
-                                         SmartWalletMarketStateService.MarketStateSnapshot snapshot) {
+                                         MarketStateSnapshot snapshot) {
         if (position == null || position.getMarketInfo() == null || snapshot == null) {
             return;
         }
@@ -3247,7 +3862,9 @@ public class SmartWalletAccountingService {
                 .setLastMarkPrice(snapshot.lastPrice())
                 .setOpenedAt(snapshot.openedAt())
                 .setLastFilledAt(snapshot.lastFilledAt())
-                .setClosedAt(snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null)
+                .setClosedAt(SettlementTimeGuard.clamp(
+                        snapshot.quantity().compareTo(BigDecimal.ZERO) == 0 ? snapshot.lastFilledAt() : null,
+                        snapshot.openedAt(), "repairPrematureSettlement"))
                 .setStatus(snapshot.status())
                 .setUpdatedAt(new Date());
         if (!updatePositionChecked(position, "repairPrematureSettlement")) {
@@ -3533,6 +4150,21 @@ public class SmartWalletAccountingService {
         return floatingPnl.setScale(8, RoundingMode.HALF_UP);
     }
 
+    private TimelineBaseline dailyTimelineBaseline(List<SmartWalletDailyReportEntity> selectedReports,
+                                                   LocalDate today,
+                                                   ZoneId zoneId,
+                                                   String mode) {
+        LocalDate baselineDate = today;
+        if (selectedReports != null && !selectedReports.isEmpty()) {
+            LocalDate firstReportDate = toLocalDate(selectedReports.get(0).getReportDate());
+            if (firstReportDate != null) {
+                baselineDate = firstReportDate;
+            }
+        }
+        Date startDate = Date.from(baselineDate.atStartOfDay(zoneId).toInstant());
+        return timelineBaselineBefore(startDate, mode);
+    }
+
     private BigDecimal calculateMaxDrawdownFromDailyReports(String mode) {
         List<SmartWalletDailyReportEntity> reports = dailyReportMapper.selectList(new LambdaQueryWrapper<SmartWalletDailyReportEntity>()
                 .orderByAsc(SmartWalletDailyReportEntity::getReportDate));
@@ -3563,6 +4195,44 @@ public class SmartWalletAccountingService {
             return BigDecimal.ZERO;
         }
         return safe(notional).divide(price, 8, RoundingMode.DOWN);
+    }
+
+    /** 估值价是否落在二元市场合法区间 [MARK_PRICE_FLOOR, MARK_PRICE_CEIL] 内。 */
+    private boolean isSaneMarkPrice(BigDecimal price) {
+        return price != null
+                && price.compareTo(MARK_PRICE_FLOOR) >= 0
+                && price.compareTo(MARK_PRICE_CEIL) <= 0;
+    }
+
+    /**
+     * 把可信源估值价收敛进 [MARK_PRICE_FLOOR, MARK_PRICE_CEIL]，
+     * 杜绝出现 ≥ $1.00 的全额赔付价污染未结算持仓的浮动盈亏。
+     */
+    private BigDecimal clampMarkPrice(BigDecimal price) {
+        if (price == null || price.compareTo(MARK_PRICE_FLOOR) < 0) {
+            return MARK_PRICE_FLOOR;
+        }
+        if (price.compareTo(MARK_PRICE_CEIL) > 0) {
+            return MARK_PRICE_CEIL;
+        }
+        return price;
+    }
+
+    /**
+     * trade_event 回退估值价相对上一次可信 mark 的跳变是否在允许倍数内。
+     * 无历史参照时仅靠区间校验放行；用于拦截 leader 成交价被污染（如 ≈$1.00）导致的 ROI 虚高。
+     */
+    private boolean withinMarkPriceJumpLimit(BigDecimal candidate, BigDecimal reference) {
+        if (candidate == null) {
+            return false;
+        }
+        BigDecimal ref = safe(reference);
+        if (ref.compareTo(BigDecimal.ZERO) <= 0) {
+            return true;
+        }
+        BigDecimal upper = ref.multiply(MARK_PRICE_MAX_JUMP_RATIO);
+        BigDecimal lower = ref.divide(MARK_PRICE_MAX_JUMP_RATIO, 8, RoundingMode.HALF_UP);
+        return candidate.compareTo(lower) >= 0 && candidate.compareTo(upper) <= 0;
     }
 
     private boolean isSettledStatus(String status) {
@@ -4009,14 +4679,7 @@ public class SmartWalletAccountingService {
     }
 
     private int countOrdersByMode(String mode) {
-        int total = 0;
-        List<SmartWalletOrderEntity> orders = orderMapper.selectList(new LambdaQueryWrapper<>());
-        for (SmartWalletOrderEntity order : orders) {
-            if (matchesDashboardMode(order.getExecutionAddress(), mode)) {
-                total++;
-            }
-        }
-        return total;
+        return orderMapper.countByMode(normalizeDashboardMode(mode));
     }
 
     private BigDecimal availableCapitalUsdcByMode(String mode) {
@@ -4095,18 +4758,8 @@ public class SmartWalletAccountingService {
     }
 
     private BigDecimal sumLedgerAmountByMode(String entryType, String mode, String referenceType, Long referenceId) {
-        List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
-                .eq(StringUtils.hasText(entryType), SmartWalletCashLedgerEntity::getEntryType, entryType)
-                .eq(StringUtils.hasText(referenceType), SmartWalletCashLedgerEntity::getReferenceType, referenceType)
-                .eq(referenceId != null, SmartWalletCashLedgerEntity::getReferenceId, referenceId));
-        BigDecimal total = BigDecimal.ZERO;
-        for (SmartWalletCashLedgerEntity entry : entries) {
-            if (!matchesDashboardMode(entry.getExecutionAddress(), mode)) {
-                continue;
-            }
-            total = total.add(safe(entry.getAmount()));
-        }
-        return total.setScale(8, RoundingMode.HALF_UP);
+        return safe(cashLedgerMapper.sumAmountByMode(entryType, normalizeDashboardMode(mode), referenceType, referenceId))
+                .setScale(8, RoundingMode.HALF_UP);
     }
 
     private BigDecimal totalFeeAmountByMode(String mode, String referenceType, Long referenceId) {
@@ -4136,21 +4789,8 @@ public class SmartWalletAccountingService {
     }
 
     private BigDecimal sumLedgerSignedAmountByMode(String entryType, String mode, String referenceType, Long referenceId) {
-        List<SmartWalletCashLedgerEntity> entries = cashLedgerMapper.selectList(new LambdaQueryWrapper<SmartWalletCashLedgerEntity>()
-                .eq(StringUtils.hasText(entryType), SmartWalletCashLedgerEntity::getEntryType, entryType)
-                .eq(StringUtils.hasText(referenceType), SmartWalletCashLedgerEntity::getReferenceType, referenceType)
-                .eq(referenceId != null, SmartWalletCashLedgerEntity::getReferenceId, referenceId));
-        BigDecimal total = BigDecimal.ZERO;
-        for (SmartWalletCashLedgerEntity entry : entries) {
-            if (!matchesDashboardMode(entry.getExecutionAddress(), mode)) {
-                continue;
-            }
-            BigDecimal signed = "OUT".equalsIgnoreCase(entry.getDirection())
-                    ? safe(entry.getAmount()).negate()
-                    : safe(entry.getAmount());
-            total = total.add(signed);
-        }
-        return total.setScale(8, RoundingMode.HALF_UP);
+        return safe(cashLedgerMapper.sumSignedAmountByMode(entryType, normalizeDashboardMode(mode), referenceType, referenceId))
+                .setScale(8, RoundingMode.HALF_UP);
     }
 
     private SmartWalletOrderView toOrderView(SmartWalletOrderEntity order) {
@@ -4262,7 +4902,9 @@ public class SmartWalletAccountingService {
                     order.getOutcome(),
                     order.getMarketSlug());
         }
-        return marketLinkService.resolve(order.getMarketId(), order.getQuestion(), order.getOutcome());
+        // Cache-only: avoid HTTP calls in page-query hot path.
+        // resolve() triggers remote API calls and causes request timeouts.
+        return marketLinkService.resolveCacheOnly(order.getMarketId(), order.getQuestion(), order.getOutcome());
     }
 
     private String resolveOrderMarketLifecycle(SmartWalletOrderEntity order, Long marketEndAt) {
@@ -4274,9 +4916,6 @@ public class SmartWalletAccountingService {
             return SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED;
         }
         if (order != null && order.getAcceptingOrders() != null && !order.getAcceptingOrders()) {
-            return SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED;
-        }
-        if (marketEndAt != null && marketEndAt > 0 && marketEndAt <= System.currentTimeMillis()) {
             return SmartWalletMarketStateService.LIFECYCLE_CLOSED_UNRESOLVED;
         }
         return StringUtils.hasText(lifecycle) ? lifecycle : SmartWalletMarketStateService.LIFECYCLE_ACTIVE;
@@ -4292,7 +4931,7 @@ public class SmartWalletAccountingService {
         if (order != null && order.getAcceptingOrders() != null && !order.getAcceptingOrders()) {
             return false;
         }
-        return marketEndAt == null || marketEndAt <= 0 || marketEndAt > System.currentTimeMillis();
+        return true;
     }
 
     private String resolveDisplayOrderStatus(SmartWalletOrderEntity order, BigDecimal realizedPnlUsdc) {
@@ -4445,16 +5084,41 @@ public class SmartWalletAccountingService {
                 .filter(this::isEarlyExitOrder)
                 .filter(this::isCountableExitOrder)
                 .toList();
-        BigDecimal entryQuantity = entryOrders.stream()
-                .map(SmartWalletOrderEntity::getSize)
-                .map(this::safe)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(8, RoundingMode.HALF_UP);
-        BigDecimal entryCost = entryOrders.stream()
-                .map(SmartWalletOrderEntity::getNotionalUsdc)
-                .map(this::safe)
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .setScale(8, RoundingMode.HALF_UP);
+        // ROI 口径统一：与 SmartWalletTradeOrderService.buildTradeOrder 保持一致 ——
+        // 有 fill 时以 fill（实际成交）为准，无 fill 时回退 order 口径，
+        // 避免同一持仓因 order.notionalUsdc != fill.notionalUsdc 在不同页面 roiRate 打架。
+        List<SmartWalletFillEntity> entryFills = position == null || position.getId() == null
+                ? List.of()
+                : fillMapper.selectList(new LambdaQueryWrapper<SmartWalletFillEntity>()
+                                .eq(SmartWalletFillEntity::getPositionId, position.getId()))
+                        .stream()
+                        .filter(fill -> fill != null && "BUY".equalsIgnoreCase(fill.getSide()))
+                        .toList();
+        BigDecimal entryQuantity;
+        BigDecimal entryCost;
+        if (entryFills.isEmpty()) {
+            entryQuantity = entryOrders.stream()
+                    .map(SmartWalletOrderEntity::getSize)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+            entryCost = entryOrders.stream()
+                    .map(SmartWalletOrderEntity::getNotionalUsdc)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+        } else {
+            entryQuantity = entryFills.stream()
+                    .map(SmartWalletFillEntity::getSize)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+            entryCost = entryFills.stream()
+                    .map(SmartWalletFillEntity::getNotionalUsdc)
+                    .map(this::safe)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+        }
         BigDecimal exitQuantity = exitOrders.stream()
                 .map(SmartWalletOrderEntity::getSize)
                 .map(this::safe)
@@ -4559,6 +5223,21 @@ public class SmartWalletAccountingService {
                     + ", totalPnl=" + safe(totalPnl)
                     + ", entryAvgPrice=" + entryAvgPrice
                     + ", status=" + (position == null ? null : position.getStatus());
+        }
+        // 看门狗盲区补全：未结算持仓若被按 ≈$1.00 全额赔付价估值，roiRate 会恰好压在二元上限
+        // (1-p)/p 上、不超过它，因而上面的判据永远抓不到。改用 lastMarkPrice 直接判定：
+        // 未结算持仓的估值价达到 MARK_PRICE_CEIL，即 markPrice 被污染或市场被提前结算的指纹。
+        String status = position == null ? null : position.getStatus();
+        boolean unsettled = status == null
+                || isActivePositionStatus(status)
+                || isOraclePendingPositionStatus(status);
+        BigDecimal markPrice = position == null ? null : safe(position.getLastMarkPrice());
+        if (unsettled && markPrice != null && markPrice.compareTo(MARK_PRICE_CEIL) >= 0) {
+            return "unsettled position marked at full-payout price; lastMarkPrice=" + markPrice
+                    + ", roiRate=" + safe(roiRate)
+                    + ", entryAvgPrice=" + entryAvgPrice
+                    + ", status=" + status
+                    + " (markPrice suspected polluted / premature settlement)";
         }
         return null;
     }
@@ -4802,8 +5481,35 @@ public class SmartWalletAccountingService {
     }
 
     private int backfillTaskMarketEndAt(int limit, boolean refreshCache) {
-        log.debug("backfillTaskMarketEndAt is deprecated after market_info migration. Skipping.");
-        return 0;
+        // 2026-05-17 ray@cowork: 原来 market_info migration 后 3 个 backfill 都被改成 no-op,
+        // 但没人补 market_info 表本身 → 导致 76% 行 market_end_at=NULL, G6 占 56% 拒绝.
+        // 这里改回真活: 扫 lifecycle=ACTIVE 且 endAt 缺失/已过期的行, 强制重拉 Polymarket Gamma 后更新 endAt.
+        List<SmartWalletMarketInfoEntity> stale = marketInfoService.listActiveWithStaleEndAt(limit);
+        if (stale.isEmpty()) {
+            return 0;
+        }
+        int updated = 0;
+        long nowMs = System.currentTimeMillis();
+        for (SmartWalletMarketInfoEntity info : stale) {
+            try {
+                PolymarketApiClient.MarketMetadata metadata = marketMetadataService
+                        .getByConditionId(info.getMarketId(), refreshCache, info.getQuestion());
+                if (metadata == null) {
+                    continue;
+                }
+                Long endAt = metadata.getEndAt();
+                if (endAt != null && endAt > 0 && !endAt.equals(info.getMarketEndAt())) {
+                    info.setMarketEndAt(endAt);
+                    info.setUpdatedAt(new Date(nowMs));
+                    marketInfoService.update(info);
+                    updated++;
+                }
+            } catch (RuntimeException ex) {
+                log.debug("backfillTaskMarketEndAt skip marketId={} reason={}", info.getMarketId(), ex.getMessage());
+            }
+        }
+        log.info("backfillTaskMarketEndAt scanned={} updated={}", stale.size(), updated);
+        return updated;
     }
 
     private String resolveOutcomeTokenId(String marketId,

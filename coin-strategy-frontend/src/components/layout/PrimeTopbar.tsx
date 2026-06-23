@@ -11,16 +11,7 @@ import {
 import { getAmountClass } from '@/utils/format'
 import { TypeBadge, StatusPill } from '@/components/ui/PrimePrimitives'
 import { getStrategyVisual } from '@/utils/strategyVisuals'
-import { isEnterableStrategy, toDashboardMetrics, toRegistryItems } from '@/utils/strategyViewModels'
-
-function formatUnsignedMoney(value: number | null | undefined): string {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '--'
-  const abs = Math.abs(num)
-  if (abs >= 1_000_000) return `$${(abs / 1_000_000).toFixed(2)}M`
-  if (abs >= 1_000) return `$${(abs / 1_000).toFixed(1)}K`
-  return `$${abs.toFixed(0)}`
-}
+import { isEnterableStrategy, toRegistryItems } from '@/utils/strategyViewModels'
 
 function formatSignedMoneyOrDash(value: number | null | undefined): string {
   if (value === undefined || value === null) return '--'
@@ -57,16 +48,9 @@ export function PrimeTopbar() {
     queryFn: () => strategyApi.getOverview(mode),
   })
 
-  const { data: detail } = useQuery({
-    queryKey: ['strategyDetailTopbar', strategy, mode],
-    queryFn: () => strategyApi.getSummary(strategy, mode),
-  })
-
   const strategies = useMemo(() => toRegistryItems(overview?.strategies), [overview?.strategies])
   const activeSummary = strategies.find((item) => item.code === strategy)
   const activeVisual = getStrategyVisual(strategy)
-  const dashboardMetrics = useMemo(() => toDashboardMetrics(detail), [detail])
-  const capital = dashboardMetrics?.tvlUsdc ?? dashboardMetrics?.capitalUsdc
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date().toTimeString().slice(0, 8)), 1000)
@@ -171,14 +155,14 @@ export function PrimeTopbar() {
 
       <div className="ms-topbar-stats">
         <div>
-          <span>Today PnL</span>
-          <strong className={dashboardMetrics?.todayPnlUsdc == null ? '' : getAmountClass(dashboardMetrics.todayPnlUsdc)}>
-            {formatSignedMoneyOrDash(dashboardMetrics?.todayPnlUsdc)}
+          <span>Net PnL</span>
+          <strong className={activeSummary == null ? '' : getAmountClass(activeSummary.netPnlUsdc)}>
+            {formatSignedMoneyOrDash(activeSummary?.netPnlUsdc)}
           </strong>
         </div>
         <div>
-          <span>Capital</span>
-          <strong>{formatUnsignedMoney(capital)}</strong>
+          <span>Open</span>
+          <strong>{activeSummary?.openPositions ?? '--'}</strong>
         </div>
       </div>
 

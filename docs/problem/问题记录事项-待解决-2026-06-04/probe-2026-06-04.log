@@ -1,0 +1,16 @@
+## 巡检可达性探测原始输出 — 2026-06-04 09:10 CST（UTC 01:10）
+## 脚本：probe_connectivity.py    全部只读，未对服务器/数据库执行任何写操作。
+
+egress public IP: 172.96.141.154
+baseline github:443 -> OPEN (0.1s)
+baseline pypi:443   -> FAIL TimeoutError (6.0s)
+49.51.250.174:22 -> FAIL TimeoutError (6.0s)
+49.51.250.174:80 -> FAIL TimeoutError (6.0s)
+49.51.250.174:443 -> FAIL TimeoutError (6.0s)
+49.51.250.174:3306 -> FAIL TimeoutError (6.0s)
+49.51.250.174:8080 -> FAIL TimeoutError (6.0s)
+
+## pymysql 直连 3306：
+## DB CONNECT ERR: OperationalError(2003, "Can't connect to MySQL server on '49.51.250.174' (timed out)")
+
+## 备注：本期出网 IP 172.96.141.154 与 06-03 完全相同；连续两期对服务器全端口超时。

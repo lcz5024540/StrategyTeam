@@ -11,4 +11,59 @@
 
     <artifactId>common-service</artifactId>
 
+    <dependencies>
+        <!-- common-dao 提供 mybatis-plus + mapper -->
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-dao</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.metaverse</groupId>
+            <artifactId>common-model</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <!-- 为了让 common-service 能承载 @Service / @ConfigurationProperties / @Scheduled 等 Spring Bean 注解。
+             scope=provided 避免向下游 fat jar 传递 spring-boot 类:
+               - coin-strategy-web 自己引 spring-boot-starter-web:3.1.7 (Boot 3 / Spring 6)
+               - coin-strategy-job 自己引 spring-boot-starter-web:2.7.18 (Boot 2 / Spring 5)
+             两边各自决定 runtime 的 Boot 版本, common-service 字节码本身在 Boot 2/3 上都能跑.
+             如果未来 job 也升到 3.1.7, 这里依然不需要改. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+            <version>3.1.7</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Lombok 显式声明：根 pom 已 inherit，这里再写一遍保 IDE/CI 行为一致；scope=provided 保持与 web 模块写法一致 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- 显式声明 maven-compiler-plugin 的 annotationProcessorPaths，参照 coin-strategy-web / coin-strategy-job 的模板，
+         避免不同 IDE/Maven 版本下默认行为不一致导致 @Data 没生成 getter/setter -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>17</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>

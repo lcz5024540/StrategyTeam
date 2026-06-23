@@ -31,7 +31,7 @@ export function StrategyConfigPage() {
             </label>
           </div>
           <div className="ms-config-note">
-            当前页面按设计稿预留配置入口。本轮只做只读展示，暂不接入参数编辑、保存、启停或在线回测执行。
+            配置修改页面已临时禁用。当前系统还没有登录和管理员权限模块，为避免外部访问者修改策略参数，运行时配置 API 默认返回 403。
           </div>
         </PrimeCard>
 

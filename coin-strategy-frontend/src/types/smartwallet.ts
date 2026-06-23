@@ -50,6 +50,35 @@ export interface WalletScreenerView {
   fallbackUsed: boolean | null
 }
 
+export interface SmartWalletManualAllowlistView {
+  id: number
+  walletAddress: string
+  source: string
+  status: string
+  allowedExecutionModes: string
+  stakeMultiplier: number | null
+  maxLiveOrdersPerDay: number | null
+  maxLiveOrdersPerRun: number | null
+  expiresAt: string | null
+  reason: string | null
+  createdBy: string | null
+  active: boolean
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface SmartWalletManualBlocklistView {
+  id: number
+  walletAddress: string
+  source: string
+  status: string
+  reason: string | null
+  createdBy: string | null
+  active: boolean
+  createdAt: string | null
+  updatedAt: string | null
+}
+
 export interface WalletOrderAnalysisView {
   walletAddress: string
   marketId: string
@@ -129,6 +158,8 @@ export interface SmartWalletProfileOverrideRequest {
 export interface SmartWalletMarketMonitorItem {
   marketId: string
   question: string | null
+  marketSlug: string | null
+  outcomePrices: string | null
   marketEndAt: number | null
   marketEndAtBjt: string | null
   marketState: string

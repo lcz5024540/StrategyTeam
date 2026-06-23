@@ -10,8 +10,8 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrde
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletWalletFeatureDailyEntity;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -97,16 +97,35 @@ public class WalletBehaviorProfileService {
         BigDecimal followFit = archetypeView == null ? BigDecimal.ZERO : safe(archetypeView.followFitScore());
         BigDecimal stabilityScore = stabilityScore(profile, orderStats, recentWinRate, orderWinRate);
         BigDecimal qualityScore = qualityScore(profile, feature, orderWinRate, avgOrderRoiRate, medianOrderRoiRate);
+
+        // 冷启动中性化：sampleSize 不足时，followableRate / settlementCompletionRate
+        // 天然为 0 会把分数封顶在 70%，这里按样本置信度向中性值 0.5 收敛。
+        BigDecimal sampleConfidence = clamp(BigDecimal.valueOf(Math.min(orderStats.sampleSize, 20))
+                .divide(new BigDecimal("20"), 8, RoundingMode.HALF_UP));
+        BigDecimal neutral = new BigDecimal("0.50");
+        BigDecimal effectiveFollowable = sampleConfidence.multiply(safe(followableRate))
+                .add(BigDecimal.ONE.subtract(sampleConfidence).multiply(neutral));
+        BigDecimal effectiveSettlement = sampleConfidence.multiply(safe(orderStats.settlementCompletionRate))
+                .add(BigDecimal.ONE.subtract(sampleConfidence).multiply(neutral));
+
+        // 若 openedAt 覆盖率不足，medianInterTradeMinutes 不可信，paceScore 用中性值 0.5。
+        BigDecimal openedAtCoverage = safe(orderStats.openedAtCoverageRate);
+        BigDecimal effectivePace = openedAtCoverage.compareTo(new BigDecimal("0.50")) >= 0
+                ? paceScore(medianInterTradeMinutes)
+                : neutral;
+
+        // 新版 replicabilityScore 公式（移除 earlyExitPenalty；提前止盈是合理行为）：
+        // 主权重集中到 followFit / 盈利能力；执行友好性降权并冷启动中性化。
         BigDecimal replicabilityScore = clamp(
-                followFit.multiply(new BigDecimal("0.35"))
-                        .add(followableRate.multiply(new BigDecimal("0.15")))
-                        .add(orderStats.settlementCompletionRate.multiply(new BigDecimal("0.15")))
-                        .add(orderWinRate.multiply(new BigDecimal("0.10")))
+                followFit.multiply(new BigDecimal("0.40"))
+                        .add(effectiveFollowable.multiply(new BigDecimal("0.075")))
+                        .add(effectiveSettlement.multiply(new BigDecimal("0.075")))
+                        .add(safe(orderWinRate).multiply(new BigDecimal("0.15")))
+                        .add(qualityScore.multiply(new BigDecimal("0.15")))
                         .add(stabilityScore.multiply(new BigDecimal("0.10")))
-                        .add(qualityScore.multiply(new BigDecimal("0.10")))
-                        .add(paceScore(medianInterTradeMinutes).multiply(new BigDecimal("0.05")))
-                        .subtract(earlyExitPenalty(orderStats.earlyExitRate, highFrequency, medianInterTradeMinutes))
+                        .add(effectivePace.multiply(new BigDecimal("0.05")))
         );
+        BigDecimal scoreConfidence = sampleConfidence;
         BigDecimal behaviorComposite = behaviorComposite(replicabilityScore, qualityScore, stabilityScore);
         String winSourceType = determineWinSourceType(alphaStats, orderStats, profile);
 
@@ -149,6 +168,7 @@ public class WalletBehaviorProfileService {
                 .stabilityScore(scale(stabilityScore, 4))
                 .qualityScore(scale(qualityScore, 4))
                 .replicabilityScore(scale(replicabilityScore, 4))
+                .scoreConfidence(scale(scoreConfidence, 4))
                 .behaviorComposite(scale(behaviorComposite, 4))
                 .recommendedExitLane(recommendedExitLane)
                 .summary(buildSummary(archetypeDecision, orderStats, recommendedExitLane, profile.getManualRecommendedExitLane(),
@@ -411,11 +431,16 @@ public class WalletBehaviorProfileService {
             String dedupKey = uniqueOrderKey(order);
             allDedupKeys.add(dedupKey);
             Long orderTime = orderTimeMillis(order);
+            Long openedAtMs = order.getOpenedAt() == null ? null : order.getOpenedAt().getTime();
             if (order.getOpenedAt() != null) {
                 openedAtCount++;
             }
+            if (openedAtMs != null) {
+                // paceScore 使用 openedAt 计算下单间隔；closedAt 是市场结算时间，
+                // 同一场市场会在同一秒"集体关仓"，会严重扭曲 medianInterTradeMinutes。
+                orderTimes.add(openedAtMs);
+            }
             if (orderTime != null) {
-                orderTimes.add(orderTime);
                 if (orderTime >= cutoff7d) {
                     dedupKeys7d.add(dedupKey);
                     closedCount7d++;
@@ -750,20 +775,17 @@ public class WalletBehaviorProfileService {
                                     BigDecimal orderWinRate,
                                     BigDecimal avgOrderRoiRate,
                                     BigDecimal medianOrderRoiRate) {
+        // qualityScore 只回答"是否赚钱"：聚焦胜率 + ROI + 横向分位，
+        // 抗回撤 / 新鲜度已迁移到 stabilityScore，orderWinRate 已与 recentWinRate 高度相关不再重复。
         BigDecimal recentWinRate = safe(firstNonNull(profile == null ? null : profile.getRecentWinRate30d(),
                 profile == null ? null : profile.getWinRate()));
         BigDecimal pnlPercentile = pnlPercentile(firstNonNull(feature == null ? null : feature.getPnl30d(),
                 profile == null ? null : profile.getRealizedPnlUsdc()));
-        BigDecimal drawdownInverse = inverseDrawdown(profile == null ? null : profile.getMaxDrawdownRate());
-        BigDecimal freshness = freshnessScore(profile == null ? null : profile.getLastTradeAt());
         return clamp(
-                recentWinRate.multiply(new BigDecimal("0.30"))
-                        .add(safe(orderWinRate).multiply(new BigDecimal("0.20")))
-                        .add(roiScore(avgOrderRoiRate).multiply(new BigDecimal("0.15")))
-                        .add(roiScore(medianOrderRoiRate).multiply(new BigDecimal("0.10")))
-                        .add(pnlPercentile.multiply(new BigDecimal("0.10")))
-                        .add(drawdownInverse.multiply(new BigDecimal("0.10")))
-                        .add(freshness.multiply(new BigDecimal("0.05")))
+                recentWinRate.multiply(new BigDecimal("0.35"))
+                        .add(roiScore(avgOrderRoiRate).multiply(new BigDecimal("0.25")))
+                        .add(roiScore(medianOrderRoiRate).multiply(new BigDecimal("0.20")))
+                        .add(pnlPercentile.multiply(new BigDecimal("0.20")))
         );
     }
 
@@ -771,15 +793,17 @@ public class WalletBehaviorProfileService {
                                       OrderAnalysisStats orderStats,
                                       BigDecimal recentWinRate,
                                       BigDecimal orderWinRate) {
+        // stabilityScore 只回答"是否可持续/可信"：样本充分性 + 抗回撤 + 新鲜度 + 胜率口径一致性。
+        // 抗回撤 / 新鲜度从 qualityScore 迁入并提高权重；胜率一致性权重下降避免与 quality 双计。
         BigDecimal sampleConfidence = clamp(BigDecimal.valueOf(Math.min(orderStats.sampleSize, 40))
                 .divide(new BigDecimal("40"), 8, RoundingMode.HALF_UP));
         BigDecimal consistency = BigDecimal.ONE.subtract(safe(recentWinRate).subtract(safe(orderWinRate)).abs());
         BigDecimal drawdownInverse = inverseDrawdown(profile == null ? null : profile.getMaxDrawdownRate());
         BigDecimal freshness = freshnessScore(profile == null ? null : profile.getLastTradeAt());
-        return clamp(sampleConfidence.multiply(new BigDecimal("0.45"))
-                .add(clamp(consistency).multiply(new BigDecimal("0.35")))
-                .add(drawdownInverse.multiply(new BigDecimal("0.10")))
-                .add(freshness.multiply(new BigDecimal("0.10"))));
+        return clamp(sampleConfidence.multiply(new BigDecimal("0.35"))
+                .add(drawdownInverse.multiply(new BigDecimal("0.25")))
+                .add(freshness.multiply(new BigDecimal("0.20")))
+                .add(clamp(consistency).multiply(new BigDecimal("0.20"))));
     }
 
     private BigDecimal pnlPercentile(BigDecimal currentValue) {

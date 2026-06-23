@@ -1,6 +1,18 @@
+---
+title: "跨交易所资金费套利系统详细设计方案"
+type: design
+status: draft
+tags: [funding-rate, arbitrage, design]
+created: 2026-04-10
+updated: 2026-04-14
+---
+
 # 跨交易所资金费套利系统详细设计方案
 
+> **【文档状态：已完成】** 本文档目录规划 7 章，正文已完成第 1–7 章（系统概述 / 架构设计 / 核心模块设计 / 接口调用设计 / 风控逻辑设计 / 数据库设计 / 部署方案）。
+
 ## 目录
+
 1. [系统概述](#系统概述)
 2. [架构设计](#架构设计)
 3. [核心模块设计](#核心模块设计)
@@ -14,6 +26,7 @@
 ## 系统概述
 
 ### 设计目标
+
 构建一个高可用、低延迟、风险可控的跨交易所资金费套利系统,支持:
 - 多交易所实时监控(Binance, OKX, Bybit等)
 - 智能信号生成与去噪
@@ -22,6 +35,7 @@
 - 完整的对账与审计
 
 ### 技术栈选型
+
 - **后端**: Java 17 + Spring Boot 3.x
 - **数据库**: PostgreSQL (事务) + TimescaleDB (时序数据)
 - **缓存**: Redis (行情缓存 + 分布式锁)
@@ -35,80 +49,44 @@
 
 ### 总体架构图
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        外部系统层                                │
-├─────────────┬─────────────┬─────────────┬──────────────────────┤
-│ Binance API │  OKX API    │ Bybit API   │ On-chain Data        │
-└──────┬──────┴──────┬──────┴──────┬──────┴──────┬───────────────┘
-       │             │             │             │
-       └─────────────┴─────────────┴─────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │    数据接入层 (Gateway)       │
-         │  - REST/WebSocket 适配器      │
-         │  - 限频控制 & 重试策略        │
-         │  - 数据归一化                 │
-         └───────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │      数据总线 (Kafka)         │
-         │  - market.funding_rate        │
-         │  - market.orderbook           │
-         │  - market.trades              │
-         │  - system.events              │
-         └───────────────┬───────────────┘
-                         │
-        ┌────────────────┴────────────────┐
-        │                                 │
-┌───────▼───────┐              ┌─────────▼─────────┐
-│  数据存储层    │              │   实时处理层       │
-│  - PostgreSQL │              │  - 行情聚合        │
-│  - TimescaleDB│              │  - 信号计算        │
-│  - Redis      │              │  - 去噪/同步       │
-└───────┬───────┘              └─────────┬─────────┘
-        │                                │
-        └────────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │       策略引擎层               │
-         │  - 资金费差套利策略            │
-         │  - 现货期货套利策略            │
-         │  - 借贷利差策略                │
-         └───────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │       风控引擎层               │
-         │  - 入场风控检查                │
-         │  - 持仓风控监控                │
-         │  - 异常检测熔断                │
-         └───────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │       执行引擎层               │
-         │  - 订单拆分与路由              │
-         │  - 原子化对冲执行              │
-         │  - 成交确认与对账              │
-         └───────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │     资金管理层                 │
-         │  - 库存管理                    │
-         │  - 转账编排                    │
-         │  - 保证金监控                  │
-         └───────────────┬───────────────┘
-                         │
-         ┌───────────────▼───────────────┐
-         │   监控告警层                   │
-         │  - 指标采集 (Prometheus)      │
-         │  - 可视化 (Grafana)           │
-         │  - 告警通知 (钉钉/邮件/SMS)    │
-         └───────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph EXT["外部系统层"]
+        BINANCE["Binance API"]
+        OKX["OKX API"]
+        BYBIT["Bybit API"]
+        CHAIN["On-chain Data"]
+    end
+
+    GATEWAY["数据接入层 (Gateway)<br/>REST/WebSocket 适配器<br/>限频控制 & 重试策略<br/>数据归一化"]
+    BUS["数据总线 (Kafka)<br/>market.funding_rate<br/>market.orderbook<br/>market.trades<br/>system.events"]
+    STORAGE["数据存储层<br/>PostgreSQL / TimescaleDB / Redis"]
+    STREAM["实时处理层<br/>行情聚合 / 信号计算 / 去噪同步"]
+    STRATEGY["策略引擎层<br/>资金费差套利 / 现货期货套利 / 借贷利差"]
+    RISK["风控引擎层<br/>入场风控检查 / 持仓风控监控 / 异常检测熔断"]
+    EXEC["执行引擎层<br/>订单拆分与路由 / 原子化对冲执行 / 成交确认与对账"]
+    FUND["资金管理层<br/>库存管理 / 转账编排 / 保证金监控"]
+    MONITOR["监控告警层<br/>指标采集 (Prometheus) / 可视化 (Grafana) / 告警通知 (钉钉/邮件/SMS)"]
+
+    BINANCE --> GATEWAY
+    OKX --> GATEWAY
+    BYBIT --> GATEWAY
+    CHAIN --> GATEWAY
+    GATEWAY --> BUS
+    BUS --> STORAGE
+    BUS --> STREAM
+    STORAGE --> STRATEGY
+    STREAM --> STRATEGY
+    STRATEGY --> RISK
+    RISK --> EXEC
+    EXEC --> FUND
+    FUND --> MONITOR
 ```
 
 ### 分层职责说明
 
 #### 1. 数据接入层 (Gateway Layer)
+
 **职责**: 统一对接各交易所API,提供归一化数据流
 **核心组件**:
 - `ExchangeGatewayFactory`: 交易所网关工厂
@@ -117,6 +95,7 @@
 - `RetryPolicy`: 重试策略管理器
 
 #### 2. 实时处理层 (Stream Processing)
+
 **职责**: 实时数据清洗、去噪、同步与特征工程
 **核心组件**:
 - `DataSynchronizer`: 多交易所数据时间对齐
@@ -125,6 +104,7 @@
 - `AnomalyDetector`: 异常检测
 
 #### 3. 策略引擎层 (Strategy Engine)
+
 **职责**: 策略逻辑实现与信号生成
 **核心组件**:
 - `FundingRateArbitrageStrategy`: 资金费差套利
@@ -133,6 +113,7 @@
 - `StrategyOrchestrator`: 策略编排器
 
 #### 4. 风控引擎层 (Risk Management)
+
 **职责**: 多层级风控防护
 **核心组件**:
 - `PreTradeRiskChecker`: 入场前风控
@@ -141,6 +122,7 @@
 - `CircuitBreaker`: 熔断器
 
 #### 5. 执行引擎层 (Execution Engine)
+
 **职责**: 订单智能拆分与原子化对冲执行
 **核心组件**:
 - `OrderRouter`: 订单路由器
@@ -149,6 +131,7 @@
 - `ExecutionReporter`: 成交确认与对账
 
 #### 6. 资金管理层 (Fund Management)
+
 **职责**: 跨交易所资金调度与保证金管理
 **核心组件**:
 - `InventoryManager`: 库存管理器
@@ -815,7 +798,7 @@ public class FeatureEngine {
 public class FundingRateArbitrageStrategy implements Strategy {
     
     private final FeatureEngine featureEngine;
-    private final SingleExchangeRiskController riskController;
+    private final SingleExchangeRiskService riskController;
     private final ExecutionEngine executionEngine;
     private final StrategyConfig config;
     
@@ -869,11 +852,13 @@ public class FundingRateArbitrageStrategy implements Strategy {
         // 滑点成本
         double slippageCost = calculateSlippageCost(liquidityA, liquidityB);
         
-        // 借贷成本 (如适用)
-        double borrowCost = 0.0; // TODO: 从借贷利率计算
+        // 借贷成本 (如适用): 若某一腿采用现货杠杆借币, 借入腿按小时计提借贷利息;
+        // 若双腿均为永续合约则无借币需求, 借贷成本为 0
+        double borrowCost = calculateBorrowCost(config.getNotional(), config.getExpectedHoldingHours());
         
-        // 转账成本 (如需要跨链)
-        double transferCost = 0.0; // TODO: 根据转账需求估计
+        // 转账成本 (如需要跨交易所/跨链调拨): 仅当需在交易所间转移资金以再平衡保证金时产生,
+        // 估算 = 提现手续费 + 链上 gas, 并按本次套利周期摊销
+        double transferCost = estimateTransferCost(config.getNotional());
         
         // 价差风险 (预期价差变化的PnL)
         double spreadRisk = estimateSpreadRisk(spreadFeatures);
@@ -936,7 +921,21 @@ public class FundingRateArbitrageStrategy implements Strategy {
         }
         
         // 条件2: 资金费转负 (如果是做空高费率)
-        // TODO: 根据仓位方向判断
+        // 若当前持仓的空头腿是为收取正资金费而开, 而该腿资金费率已翻为负值
+        // (即持仓将转为支付资金费), 则触发平仓
+        ArbitragePosition currentPosition = positionStore.getCurrentPosition("BTCUSDT");
+        if (currentPosition != null && currentPosition.isOpen()) {
+            String shortExchange = currentPosition.getShortExchange();
+            double shortLegFundingRate = "binance".equals(shortExchange)
+                ? fundingFeatures.getBinanceFundingRate()
+                : fundingFeatures.getOkxFundingRate();
+            // 开仓时空头腿资金费为正 (收费), 现已翻负 (变为付费) -> 套利逻辑反转, 平仓
+            if (currentPosition.getOpenShortFundingRate() > 0 && shortLegFundingRate < 0) {
+                log.info("Short leg funding rate flipped negative ({} -> {}), closing position",
+                    currentPosition.getOpenShortFundingRate(), shortLegFundingRate);
+                return true;
+            }
+        }
         
         // 条件3: 价差止损
         if (Math.abs(spreadFeatures.getZScore()) > 4.0) {
@@ -1011,4 +1010,294 @@ public class FundingRateArbitrageStrategy implements Strategy {
 
 ---
 
-## 详细流程图见下一部分...
+## 第4章 接口调用设计
+
+本章描述 `BinanceGateway` / `OKXGateway` 在下单、撤单、查询场景下的接口调用时序、关键参数、限频与错误码处理，以及对冲双腿下单的时序编排与单腿失败回滚。
+
+### 4.1 交易接口对照
+
+两家交易所的核心交易端点差异如下，`ExchangeGateway` 在适配层屏蔽差异：
+
+| 能力 | Binance (USDⓈ-M Futures) | OKX (V5) |
+| --- | --- | --- |
+| 下单 | `POST /fapi/v1/order` | `POST /api/v5/trade/order` |
+| 撤单 | `DELETE /fapi/v1/order` | `POST /api/v5/trade/cancel-order` |
+| 查询订单 | `GET /fapi/v1/order` | `GET /api/v5/trade/order` |
+| 查询持仓 | `GET /fapi/v2/positionRisk` | `GET /api/v5/account/positions` |
+| 鉴权方式 | HMAC-SHA256，`X-MBX-APIKEY` + `signature` | HMAC-SHA256，`OK-ACCESS-SIGN` + `OK-ACCESS-TIMESTAMP` + `OK-ACCESS-PASSPHRASE` |
+| 客户端订单号 | `newClientOrderId` | `clOrdId` |
+
+### 4.2 下单调用时序
+
+单腿下单遵循「限频 → 构建签名请求 → 发送 → 解析响应 → 落库」流程，与第 3 章 `BinanceGateway.placeOrder` 一致：
+
+1. 通过 `RateLimiter.acquire` 获取该端点令牌，未获取到则抛出 `RateLimitExceededException`，交由上层退避；
+2. 由 `OrderRequest` 构建参数，强制写入幂等键 `clientOrderId`（见 4.4），生成签名；
+3. 发送 HTTP 请求，由 `retryTemplate` 包裹（重试策略见 4.4）；
+4. 解析为统一 `OrderResponse`，写入 `arb_order` 表（见第 6 章），状态置为 `SUBMITTED`。
+
+### 4.3 限频与错误码处理
+
+`RateLimiter` 已在客户端侧做软限频，但仍需识别交易所返回的硬限频与业务错误，区分「可重试」与「不可重试」：
+
+| 分类 | Binance | OKX | 处理策略 |
+| --- | --- | --- | --- |
+| 限频 | HTTP 429 / 418，`-1003` | `50011` | 退避后重试，读取 `Retry-After` |
+| 鉴权失败 | `-2014` / `-1022` | `50113` / `50114` | 不可重试，触发告警 |
+| 参数错误 | `-1100` / `-4003` | `51000` 系列 | 不可重试，丢弃信号 |
+| 余额/保证金不足 | `-2019` | `51008` | 不可重试，转资金管理层 |
+| 订单不存在 | `-2013` | `51603` | 撤单/查询时视为终态，幂等返回 |
+| 系统繁忙/超时 | `-1001` | `50001` / 网关 5xx | 可重试 |
+
+```java
+public boolean isRetryable(ExchangeApiException e) {
+    int code = e.getErrorCode();
+    // 限频、系统繁忙、网关超时可重试; 鉴权/参数/余额类错误不可重试
+    return RETRYABLE_CODES.contains(code) || e.isTimeout();
+}
+```
+
+### 4.4 幂等与重试策略
+
+- **幂等键**：每个 `OrderRequest` 在进入网关前生成全局唯一 `clientOrderId`（格式 `{strategyId}-{signalId}-{leg}`），映射到 Binance `newClientOrderId` / OKX `clOrdId`。重试时复用同一键，交易所对重复 `clientOrderId` 返回原订单，避免重复成交。
+- **重试策略**：`retryTemplate` 采用指数退避（初始 200ms，倍率 2，最多 3 次，上限 2s），仅对 4.3 中「可重试」分类生效。
+- **超时不确定态**：下单请求超时但未收到响应时，不直接重试，先以 `clientOrderId` 调用查询接口确认订单是否已存在，存在则视为成功，不存在再重试。
+
+### 4.5 对冲双腿下单时序与单腿回滚
+
+对冲开仓由 `ExecutionEngine.executeAtomicHedge(longOrder, shortOrder)` 编排，两腿均使用 `IOC` 限价单以控制滑点：
+
+```mermaid
+sequenceDiagram
+    participant S as FundingRateArbitrageStrategy
+    participant E as ExecutionEngine
+    participant A as 多头腿 Gateway
+    participant B as 空头腿 Gateway
+    S->>E: executeAtomicHedge(longOrder, shortOrder)
+    par 并行下单
+        E->>A: placeOrder(longOrder, IOC)
+        E->>B: placeOrder(shortOrder, IOC)
+    end
+    A-->>E: 多头成交结果
+    B-->>E: 空头成交结果
+    alt 双腿均成交
+        E-->>S: HedgeResult(success)
+    else 单腿失败/部分成交
+        E->>E: rollbackSingleLeg(HedgeResult)
+        Note over E: 对已成交腿反向市价平仓
+        E-->>S: HedgeResult(failed, error)
+    end
+```
+
+- **并行下单**：两腿并行提交以缩小敞口窗口；`IOC` 保证未即时成交部分自动取消，不留挂单。
+- **单腿失败回滚**：若一腿成功、另一腿失败或仅部分成交，`executeAtomicHedge` 返回失败，由策略调用 `executionEngine.rollbackSingleLeg(result)`，对已成交腿按成交量反向市价平仓，将净敞口收敛为 0。
+- **回滚兜底**：回滚下单本身失败时，写入 `system.events` 并升级为人工介入告警，同时由风控层熔断该标的（见第 5 章）。
+
+---
+
+## 第5章 风控逻辑设计
+
+风控贯穿入场前、持仓中、异常时三个阶段。入场前检查由 `SingleExchangeRiskService.checkPreTradeRisk` 承担，并被 `FundingRateArbitrageStrategy.openPosition` 直接调用。
+
+### 5.1 仓位限额
+
+限额分三个层级，任一超限即拒绝开仓：
+
+| 层级 | 限额维度 | 说明 |
+| --- | --- | --- |
+| 单标的 | `maxNotionalPerSymbol` | 单个交易对（BTCUSDT）双腿名义本金上限 |
+| 总敞口 | `maxTotalNotional` | 所有标的、所有策略合计名义本金上限 |
+| 单交易所 | `maxNotionalPerExchange` | 单一交易所持仓上限，防止单点风险与提现额度受限 |
+
+`checkPreTradeRisk` 在新增名义本金后做三层校验：
+
+```java
+public RiskCheckResult checkPreTradeRisk(String longExchange, String shortExchange, double notional) {
+    // 1. 单标的限额
+    if (positionStore.getSymbolNotional("BTCUSDT") + notional > config.getMaxNotionalPerSymbol()) {
+        return RiskCheckResult.reject("单标的名义本金超限");
+    }
+    // 2. 总敞口限额
+    if (positionStore.getTotalNotional() + notional > config.getMaxTotalNotional()) {
+        return RiskCheckResult.reject("总敞口超限");
+    }
+    // 3. 单交易所限额 (双腿各占一侧)
+    for (String ex : List.of(longExchange, shortExchange)) {
+        if (positionStore.getExchangeNotional(ex) + notional > config.getMaxNotionalPerExchange()) {
+            return RiskCheckResult.reject("单交易所名义本金超限: " + ex);
+        }
+    }
+    // 4. 滑点与保证金检查 (见 5.2 / 5.4)
+    return RiskCheckResult.pass();
+}
+```
+
+### 5.2 滑点保护
+
+下单前以 `FeatureEngine.calculateLiquidityFeatures` 估算双腿冲击成本（`buyImpact` / `sellImpact`，单位 bps）。`checkPreTradeRisk` 校验合计滑点不得超过 `maxSlippageBps`，并要求扣除滑点后的期望净收益仍为正；执行时双腿均使用 `IOC` 限价单，限价为最优价加 `slippageGuardBps` 容差，超出即放弃成交而非成交在劣价。
+
+### 5.3 敞口监控（双腿 delta 偏移）
+
+对冲应保持双腿数量对称、净 delta 接近 0。`PositionMonitor` 周期性比对两腿成交量：
+
+- `deltaOffset = |longFilledQty − shortFilledQty| / targetQty`；
+- `deltaOffset` 超过 `deltaWarnThreshold`（如 1%）告警；
+- 超过 `deltaHardThreshold`（如 3%）自动对偏多一侧补单或减仓，将敞口收敛。
+
+部分成交、回滚失败、单腿强平均会引入 delta 偏移，故敞口监控是回滚机制之外的持续兜底。
+
+### 5.4 熔断规则
+
+`CircuitBreaker` 在以下任一条件触发，触发后暂停该标的开仓并保留平仓能力：
+
+| 熔断条件 | 阈值示例 | 动作 |
+| --- | --- | --- |
+| 连续下单失败 | 连续 5 次 | 暂停开仓 5 分钟，告警 |
+| 异常价差 | `SpreadFeatures.zScore > 4` | 暂停开仓，已有持仓走价差止损 |
+| 接口不可用 | 单交易所连续超时/5xx ≥ 10 次 | 熔断该交易所相关策略 |
+| 敞口失控 | `deltaOffset > deltaHardThreshold` 且补单失败 | 熔断并升级人工介入 |
+
+熔断状态进入冷却期后做半开探测，探测成功才恢复。所有触发与恢复均写入审计/事件表（见第 6 章），并接入告警通道。
+
+---
+
+## 第6章 数据库设计
+
+事务性数据存于 PostgreSQL，时序行情存于 TimescaleDB。表名统一使用 snake_case，并以 `arb_` 前缀归类。
+
+### 6.1 套利信号表 `arb_signal`
+
+记录每次特征计算产出的信号及决策结果。
+
+```sql
+CREATE TABLE arb_signal (
+    id              BIGSERIAL    PRIMARY KEY,
+    signal_id       VARCHAR(64)  NOT NULL UNIQUE,        -- 全局信号ID
+    symbol          VARCHAR(32)  NOT NULL,               -- BTCUSDT
+    long_exchange   VARCHAR(16)  NOT NULL,               -- 多头腿交易所
+    short_exchange  VARCHAR(16)  NOT NULL,               -- 空头腿交易所
+    funding_diff    NUMERIC(18,10) NOT NULL,             -- 资金费差 rawDiff
+    funding_zscore  NUMERIC(12,6),                       -- 资金费差 Z-score
+    spread_zscore   NUMERIC(12,6),                       -- 价差 Z-score
+    expected_return NUMERIC(20,8),                       -- 期望净收益
+    decision        VARCHAR(16)  NOT NULL,               -- OPEN / CLOSE / SKIP
+    decision_reason VARCHAR(256),
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_arb_signal_symbol_time ON arb_signal (symbol, created_at DESC);
+```
+
+### 6.2 订单表 `arb_order`
+
+记录双腿每一笔订单，`client_order_id` 即第 4 章幂等键。
+
+```sql
+CREATE TABLE arb_order (
+    id               BIGSERIAL    PRIMARY KEY,
+    client_order_id  VARCHAR(64)  NOT NULL UNIQUE,       -- 幂等键
+    signal_id        VARCHAR(64)  NOT NULL REFERENCES arb_signal(signal_id),
+    exchange         VARCHAR(16)  NOT NULL,
+    exchange_order_id VARCHAR(64),                       -- 交易所返回订单ID
+    symbol           VARCHAR(32)  NOT NULL,
+    leg              VARCHAR(8)   NOT NULL,              -- LONG / SHORT
+    side             VARCHAR(8)   NOT NULL,              -- BUY / SELL
+    order_type       VARCHAR(16)  NOT NULL,             -- LIMIT / MARKET
+    price            NUMERIC(20,8),
+    quantity         NUMERIC(20,8) NOT NULL,
+    filled_quantity  NUMERIC(20,8) NOT NULL DEFAULT 0,
+    avg_fill_price   NUMERIC(20,8),
+    fee              NUMERIC(20,8) NOT NULL DEFAULT 0,
+    status           VARCHAR(16)  NOT NULL,             -- SUBMITTED/FILLED/PARTIAL/CANCELED/FAILED
+    error_code       VARCHAR(32),
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_arb_order_signal ON arb_order (signal_id);
+CREATE INDEX idx_arb_order_status ON arb_order (status);
+```
+
+### 6.3 对账表 `arb_reconciliation`
+
+每个对冲周期一行，由 `ExecutionReporter` 比对本地订单与交易所成交、持仓与资金费收支。
+
+```sql
+CREATE TABLE arb_reconciliation (
+    id                  BIGSERIAL    PRIMARY KEY,
+    signal_id           VARCHAR(64)  NOT NULL,
+    symbol              VARCHAR(32)  NOT NULL,
+    long_filled_qty     NUMERIC(20,8) NOT NULL,
+    short_filled_qty    NUMERIC(20,8) NOT NULL,
+    delta_offset        NUMERIC(12,8) NOT NULL,         -- 双腿 delta 偏移
+    realized_funding    NUMERIC(20,8) NOT NULL DEFAULT 0,-- 实收资金费
+    total_fee           NUMERIC(20,8) NOT NULL DEFAULT 0,
+    realized_pnl        NUMERIC(20,8),
+    recon_status        VARCHAR(16)  NOT NULL,          -- MATCHED / MISMATCH
+    mismatch_detail     VARCHAR(512),
+    reconciled_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_arb_recon_status ON arb_reconciliation (recon_status, reconciled_at DESC);
+```
+
+### 6.4 审计/事件表 `arb_event`
+
+记录风控触发、熔断、回滚、人工介入等系统事件，对应 Kafka `system.events`。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | BIGSERIAL | 主键 |
+| `event_id` | VARCHAR(64) | 事件唯一ID |
+| `event_type` | VARCHAR(32) | RISK_REJECT / CIRCUIT_BREAK / ROLLBACK / MANUAL_INTERVENE |
+| `severity` | VARCHAR(16) | INFO / WARN / CRITICAL |
+| `symbol` | VARCHAR(32) | 关联标的 |
+| `ref_id` | VARCHAR(64) | 关联 signal_id 或 order 的 client_order_id |
+| `payload` | JSONB | 事件上下文明细 |
+| `created_at` | TIMESTAMPTZ | 发生时间 |
+
+`arb_event` 按 `created_at` 做月度分区，并以 `(event_type, severity)` 建索引支撑告警查询与审计回溯。
+
+---
+
+## 第7章 部署方案
+
+### 7.1 服务拓扑
+
+系统按第 2 章分层拆分为独立可伸缩的服务，统一容器化并由 Kubernetes 编排：
+
+| 服务 | 职责 | 实例数 | 伸缩策略 |
+| --- | --- | --- | --- |
+| `gateway-service` | 数据接入层，对接 Binance/OKX | 2（主备） | 固定，按交易所分片 |
+| `stream-service` | 实时处理层，特征工程 | 2–4 | 按 Kafka 分区水平扩展 |
+| `strategy-service` | 策略引擎，运行 `FundingRateArbitrageStrategy` | 1（主）+1（热备） | 主备，单写防重复下单 |
+| `execution-service` | 执行引擎与风控，`ExecutionEngine` / `SingleExchangeRiskService` | 1（主）+1（热备） | 主备 |
+| `fund-service` | 资金管理层，转账与保证金监控 | 1 | 固定 |
+
+`strategy-service` 与 `execution-service` 通过 Redis 分布式锁保证同一时刻仅一个主实例下单；主实例失联后热备接管。中间件 Kafka、PostgreSQL/TimescaleDB、Redis 以集群方式部署。
+
+### 7.2 配置管理
+
+`StrategyConfig`（阈值 `openThreshold` / `closeThreshold`、限额 `maxNotionalPerSymbol` 等、`targetQty`、`notional`、`expectedHoldingHours`）集中由配置中心（Nacos / Apollo）下发：
+
+- **分环境**：dev / staging / prod 配置隔离，prod 配置变更需双人审批；
+- **热更新**：阈值类参数支持运行时刷新，`strategy-service` 监听变更并原子替换 `StrategyConfig`；
+- **密钥隔离**：交易所 API Key / Secret / Passphrase 不入配置中心明文，存于 Vault，容器启动时注入环境变量；
+- **审计**：每次配置变更记录操作人、时间、前后值，写入 `arb_event`。
+
+### 7.3 监控指标与告警
+
+各服务通过 Micrometer 暴露指标，由 Prometheus 采集、Grafana 可视化。核心指标：
+
+| 指标 | 类型 | 告警阈值 |
+| --- | --- | --- |
+| `arb_signal_count` | Counter | 信号长时间为 0 触发告警 |
+| `arb_order_fail_rate` | Gauge | > 5% 告警 |
+| `arb_hedge_latency_ms` | Histogram | P99 > 800ms 告警 |
+| `arb_delta_offset` | Gauge | > `deltaWarnThreshold` 告警 |
+| `arb_circuit_breaker_state` | Gauge | 进入熔断即告警 |
+| `exchange_api_error_total` | Counter | 单交易所错误激增告警 |
+
+告警经 Alertmanager 分级路由：CRITICAL（熔断、回滚失败、人工介入）走电话 + 短信，WARN（限频、delta 偏移、对账 MISMATCH）走钉钉 + 邮件。所有告警事件与 `arb_event` 关联，便于事后复盘。
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

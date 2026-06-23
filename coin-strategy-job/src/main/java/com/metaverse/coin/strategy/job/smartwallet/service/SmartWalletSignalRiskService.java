@@ -1,4 +1,9 @@
 package com.metaverse.coin.strategy.job.smartwallet.service;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.MarketStateSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualBlocklistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletManualAllowlistService;
+import com.metaverse.coin.strategy.common.service.smartwallet.service.SmartWalletMarketInfoService;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletFollowTaskMapper;
@@ -8,21 +13,22 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFollowTaskEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletManualAllowlistEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketInfoEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletMarketSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.metaverse.coin.strategy.job.smartwallet.model.ConsensusSignalView;
 import com.metaverse.coin.strategy.job.smartwallet.model.EntryTimingDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalRiskDecision;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalScoreModelResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyCheckResult;
 import com.metaverse.coin.strategy.job.smartwallet.model.SignalStrategyRouteResult;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletArchetypeView;
-import com.metaverse.coin.strategy.job.smartwallet.model.WalletBehaviorProfileView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletArchetypeView;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.WalletBehaviorProfileView;
 import com.metaverse.coin.strategy.job.strategy.application.StrategyFlowLogFormatter;
-import com.metaverse.coin.strategy.job.smartwallet.service.MarketConcentrationService.ConcentrationSnapshot;
+import com.metaverse.coin.strategy.common.service.smartwallet.model.ConcentrationSnapshot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -66,23 +72,55 @@ public class SmartWalletSignalRiskService {
     private final WalletArchetypeClassifierService walletArchetypeClassifierService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
     private final SmartWalletManualAllowlistService manualAllowlistService;
+    private final SmartWalletManualBlocklistService manualBlocklistService;
     private final EntryTimingRiskService entryTimingRiskService;
     private final SignalScoreModelService signalScoreModelService;
+    private final PolymarketFeeScheduleService feeScheduleService;
+    private final MarketSnapshotCollectorService marketSnapshotCollectorService;
+    private final AllowlistSignalAggregationService allowlistAggregationService;
+    private final FollowExposureLimitService followExposureLimitService;
+    private final FollowIntentAggregationService followIntentAggregationService;
+    private final LeaderRollingPerformanceService leaderRollingPerformanceService;
+    private final LeaderBehaviorDriftService leaderBehaviorDriftService;
+    /** W2-T1.4 (2026-05-16 第十一批): 价差 P70 hot path 门控所需的品类分位查询服务. */
+    private final MarketLiquidityPercentileService marketLiquidityPercentileService;
+
+    /**
+     * 第十三批 #1: VWAP 逐档估算器, 可选注入 (避免破坏既有 @RequiredArgsConstructor 测试构造器).
+     * 在 priceImpact 三段式 hot path 优先调用; 拿不到 estimate / estimator 为 null
+     * 时 fallback 到既有的 profitabilityEstimate.getEstimatedSlippageUsdc() 代理算法.
+     * 默认配置 enable-vwap-slippage-estimator=false, 启用前需 estimator 灰度验证.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MarketPriceImpactEstimator marketPriceImpactEstimator;
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile, SmartWalletTradeEventEntity event) {
-        return evaluate(profile, event, null, null);
+        return evaluate(profile, event, null, null, null);
     }
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
                                        SmartWalletTradeEventEntity event,
                                        SmartWalletProperties.SignalRisk overrideRisk) {
-        return evaluate(profile, event, overrideRisk, null);
+        return evaluate(profile, event, overrideRisk, null, null);
     }
 
     public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
                                        SmartWalletTradeEventEntity event,
                                        SmartWalletProperties.SignalRisk overrideRisk,
                                        Long currentFollowTaskId) {
+        return evaluate(profile, event, overrideRisk, currentFollowTaskId, null);
+    }
+
+    /**
+     * 修复六（6.6）：单事件市场状态上下文复用。
+     * {@code preResolvedMarketState} 非空时，G6 直接复用调用方（{@code createFollowTaskIfQualified}
+     * 的市场状态前移预检）已解析的快照，避免同一事件重复解析市场状态；为 null 时 G6 自行 refreshMarket。
+     */
+    public SignalRiskDecision evaluate(SmartWalletProfileEntity profile,
+                                       SmartWalletTradeEventEntity event,
+                                       SmartWalletProperties.SignalRisk overrideRisk,
+                                       Long currentFollowTaskId,
+                                       MarketStateSnapshot preResolvedMarketState) {
         List<String> reasons = new ArrayList<>();
         boolean accepted = true;
         boolean overrideApplied = false;
@@ -93,25 +131,43 @@ public class SmartWalletSignalRiskService {
                 .findActive(event == null ? null : event.getWalletAddress())
                 .orElse(null);
         boolean manualAllowlistApplied = manualAllowlist != null;
+        String signalWalletAddress = event != null && StringUtils.hasText(event.getWalletAddress())
+                ? event.getWalletAddress()
+                : profile == null ? null : profile.getWalletAddress();
+        boolean manualBlocklistApplied = manualBlocklistService.isBlocked(signalWalletAddress);
         boolean manualWatchDisabled = profile != null && Boolean.FALSE.equals(profile.getManualWatchEnabled());
         boolean addressAdmissionRejected = false;
+        // R11(2026-06-03 全盘风险审计)：记录 allowlist 是否绕过了风控门(观察冷却 / leader 当前持仓不盈利)。
+        // 绕过准入只是放行，但风险更高 → 后续对仓位再追加一道折扣(降仓)，而非"只打日志"。
+        boolean allowlistRiskBypassApplied = false;
         // ── Gate 1: 钱包准入（手动禁用 / 观察冷却 / 白名单 / 资质） ──
-        if (manualWatchDisabled) {
+        if (manualBlocklistApplied) {
+            accepted = false;
+            manualAllowlistApplied = false;
+            addressAdmissionRejected = true;
+            if (firstRejectGate == null) firstRejectGate = "G1_MANUAL_BLOCKLIST";
+            reasons.add("[" + manualBlocklistService.activeReason(signalWalletAddress) + "] Wallet is blocked by smart-wallet blocklist.");
+        } else if (manualWatchDisabled) {
             accepted = false;
             manualAllowlistApplied = false;
             addressAdmissionRejected = true;
             if (firstRejectGate == null) firstRejectGate = "G1_MANUAL_WATCH_DISABLED";
             reasons.add("[MANUAL_WATCH_DISABLED] Wallet is manually forced to observe-only; manual allowlist cannot override it.");
-        } else if (isObserveCooldownActive(profile)) {
+        } else if (isObserveCooldownActive(profile) && !manualAllowlistApplied) {
             accepted = false;
-            manualAllowlistApplied = false;
             addressAdmissionRejected = true;
             if (firstRejectGate == null) firstRejectGate = "G1_OBSERVE_COOLDOWN";
             reasons.add("[OBSERVE_COOLDOWN_BLOCK] Wallet is currently in recent-degradation observe cooldown until "
                     + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
         } else if (manualAllowlistApplied) {
+            if (isObserveCooldownActive(profile)) {
+                allowlistRiskBypassApplied = true; // R11：冷却期被 allowlist 绕过 → 后续降仓
+                reasons.add("[MANUAL_ALLOWLIST_COOLDOWN_BYPASS] Wallet is in observe cooldown until "
+                        + profile.getObserveCooldownUntil()
+                        + " but manual allowlist bypasses cooldown gate. Reason: " + profile.getObserveCooldownReason());
+            }
             reasons.add("[MANUAL_ALLOWLIST_PASS] Wallet matched active manual allowlist. Address-profile admission checks are bypassed only.");
-            if (profile == null) {
+            if (profile == null || profile.getId() == null) {
                 accepted = false;
                 if (firstRejectGate == null) firstRejectGate = "G1_ALLOWLIST_PROFILE_MISSING";
                 reasons.add("[MANUAL_ALLOWLIST_PROFILE_MISSING] Wallet has no profile yet. PAPER observation is allowed, but executable follow is blocked until profile metrics exist.");
@@ -126,6 +182,18 @@ public class SmartWalletSignalRiskService {
         if (accepted) gateStage = 1; // 通过钱包准入
 
         SmartWalletProperties.SignalRisk risk = overrideRisk == null ? properties.getSignalRisk() : overrideRisk;
+        // ── G0 组合级熔断总闸（R1, 2026-06-03 全盘风险审计）──────────────────────
+        // 人工 kill-switch / 当日已实现亏损超限 → 立即停止开"新仓"。fail-safe：仅拦截开仓评估路径，
+        // 平仓/止损/结算走独立链路不受影响。默认全关(不改变现有行为)，配 strategy_runtime_config 即热生效。
+        if (accepted) {
+            String riskHaltReason = resolveRiskHaltReason(risk);
+            if (riskHaltReason != null) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = riskHaltReason;
+                reasons.add("[RISK_HALT] 组合级熔断生效，停止开新仓: " + riskHaltReason
+                        + "；平仓/结算不受影响，解除请改 strategy_runtime_config。");
+            }
+        }
         boolean suspiciouslyPerfectWinRate = false;
         WalletArchetypeView archetype = walletArchetypeClassifierService.classify(
                 profile == null ? null : profile.getWalletAddress(),
@@ -164,6 +232,95 @@ public class SmartWalletSignalRiskService {
         }
         if (accepted) gateStage = 2; // 通过 Archetype/Behavior
 
+        // ── Gate 2b: Leader 滑动窗口胜率门（W2-T2） ──
+        // 数据驱动状态机：ACTIVE / COOLING / SUSPENDED
+        //   ACTIVE     正常下单
+        //   COOLING    不拒绝信号，但下方 stake 计算阶段强制 ×leaderRollingCoolingStakeMultiplier
+        //   SUSPENDED  直接拒绝（连续多个 canary 窗口仍未恢复的 leader）
+        // 配置开关：smart-wallet.signal-risk.enable-leader-rolling-gate（默认 false）
+        LeaderRollingPerformanceService.LeaderRollingState leaderRollingState =
+                leaderRollingPerformanceService.evaluate(signalWalletAddress);
+        boolean leaderRollingCooling = false;
+        if (leaderRollingState.isGateEnabled()) {
+            switch (leaderRollingState.getStatus()) {
+                case SUSPENDED:
+                    if (manualAllowlistApplied
+                            && risk.isManualAllowlistBypassLeaderRollingGate()) {
+                        reasons.add("[LEADER_ROLLING_SUSPEND_BYPASS] " + leaderRollingState.getReason()
+                                + " — bypassed by manual allowlist.");
+                    } else {
+                        accepted = false;
+                        if (firstRejectGate == null) firstRejectGate = "G2_LEADER_ROLLING_SUSPENDED";
+                        reasons.add("[LEADER_ROLLING_SUSPENDED] " + leaderRollingState.getReason());
+                    }
+                    break;
+                case COOLING:
+                    if (manualAllowlistApplied
+                            && risk.isManualAllowlistBypassLeaderRollingGate()) {
+                        reasons.add("[LEADER_ROLLING_COOLING_BYPASS] " + leaderRollingState.getReason()
+                                + " — bypassed by manual allowlist.");
+                    } else {
+                        leaderRollingCooling = true;
+                        reasons.add("[LEADER_ROLLING_COOLING] " + leaderRollingState.getReason()
+                                + " — stake will be reduced to canary level "
+                                + safe(risk.getLeaderRollingCoolingStakeMultiplier())
+                                .setScale(4, RoundingMode.HALF_UP) + "× Kelly.");
+                    }
+                    break;
+                case ACTIVE:
+                default:
+                    if (leaderRollingState.getMetrics() != null) {
+                        reasons.add("[LEADER_ROLLING_ACTIVE] " + leaderRollingState.getReason()
+                                + " samples=" + leaderRollingState.getMetrics().sampleCount()
+                                + " wins=" + leaderRollingState.getMetrics().wins()
+                                + " losses=" + leaderRollingState.getMetrics().losses());
+                    }
+                    break;
+            }
+        }
+
+        // ── Gate 2c: Leader 行为漂移门（W2-T6） ──
+        // 数据驱动：cosine 距离( current 特征向量, 历史 N 天 centroid ) > 阈值 → DRIFTED / DRIFTED_SEVERE
+        //   ACTIVE         正常下单
+        //   DRIFTED        不拒绝，但下方 stake 计算阶段强制 ×leaderDriftStakeMultiplier
+        //   DRIFTED_SEVERE 直接拒绝（与 W2-T2 SUSPENDED 等价）
+        // 配置开关：smart-wallet.signal-risk.enable-leader-drift-gate（默认 false）
+        LeaderBehaviorDriftService.LeaderDriftState leaderDriftState =
+                leaderBehaviorDriftService.evaluate(signalWalletAddress, event);
+        boolean leaderDriftCooling = false;
+        if (leaderDriftState.isGateEnabled()) {
+            switch (leaderDriftState.getStatus()) {
+                case DRIFTED_SEVERE:
+                    if (manualAllowlistApplied && risk.isManualAllowlistBypassLeaderDriftGate()) {
+                        reasons.add("[LEADER_DRIFT_SEVERE_BYPASS] " + leaderDriftState.getReason()
+                                + " — bypassed by manual allowlist.");
+                    } else {
+                        accepted = false;
+                        if (firstRejectGate == null) firstRejectGate = "G2c_LEADER_DRIFT_SEVERE";
+                        reasons.add("[LEADER_DRIFT_SEVERE] " + leaderDriftState.getReason());
+                    }
+                    break;
+                case DRIFTED:
+                    if (manualAllowlistApplied && risk.isManualAllowlistBypassLeaderDriftGate()) {
+                        reasons.add("[LEADER_DRIFT_BYPASS] " + leaderDriftState.getReason()
+                                + " — bypassed by manual allowlist.");
+                    } else {
+                        leaderDriftCooling = true;
+                        reasons.add("[LEADER_DRIFT_COOLING] " + leaderDriftState.getReason()
+                                + " — stake will be reduced to "
+                                + safe(risk.getLeaderDriftStakeMultiplier())
+                                .setScale(4, RoundingMode.HALF_UP) + "× normal Kelly.");
+                    }
+                    break;
+                case ACTIVE:
+                default:
+                    if (leaderDriftState.getMetrics() != null) {
+                        reasons.add("[LEADER_DRIFT_ACTIVE] " + leaderDriftState.getReason());
+                    }
+                    break;
+            }
+        }
+
         // Warn early when this wallet has a suspiciously perfect win rate (leaderboard survivorship bias).
         // Single-wallet override will be blocked for these wallets; consensus path still allowed but flagged.
         if (risk.isBlockUnreliableLeaderboardWinRate() && profile != null) {
@@ -177,33 +334,60 @@ public class SmartWalletSignalRiskService {
             }
         }
         // ── Gate 3: 触发金额 / 价格带 ──
-        BigDecimal triggerSize = safe(event.getSizeUsdc());
+        // 白名单地址：放宽价格/金额限制，使用更宽松的硬边界 [0.02, 0.98]，
+        // 如果原价超出常规范围则 clamp 到边界，并按比例缩放 stake。
+        BigDecimal allowlistMinPrice = new BigDecimal("0.02");
+        BigDecimal allowlistMaxPrice = new BigDecimal("0.98");
+        BigDecimal allowlistMinTriggerSizeUsdc = new BigDecimal("1");
+        boolean allowlistPriceClampApplied = false;
+
+        BigDecimal triggerSize = resolveAccumulatedTriggerSize(event);
         if (triggerSize.compareTo(safe(risk.getMinTriggerSizeUsdc())) < 0) {
-            accepted = false;
-            if (firstRejectGate == null) firstRejectGate = "G3_TRIGGER_SIZE_TOO_SMALL";
-            reasons.add("[TRIGGER_SIZE_TOO_SMALL] triggerNotionalUsdc=" + triggerSize
-                    + ", sizeShares=" + safe(event.getSizeShares())
-                    + ", price=" + safe(event.getPrice())
-                    + ", minTriggerSizeUsdc=" + safe(risk.getMinTriggerSizeUsdc())
-                    + ". Polymarket raw size is shares; risk gate uses normalized USDC notional.");
+            if (manualAllowlistApplied && triggerSize.compareTo(allowlistMinTriggerSizeUsdc) >= 0) {
+                reasons.add("[MANUAL_ALLOWLIST_TRIGGER_SIZE_BYPASS] triggerNotionalUsdc=" + triggerSize
+                        + " is below normal min=" + safe(risk.getMinTriggerSizeUsdc())
+                        + " but above allowlist floor=" + allowlistMinTriggerSizeUsdc + "; gate bypassed.");
+            } else {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G3_TRIGGER_SIZE_TOO_SMALL";
+                reasons.add("[TRIGGER_SIZE_TOO_SMALL] triggerNotionalUsdc=" + triggerSize
+                        + ", sizeShares=" + safe(event.getSizeShares())
+                        + ", price=" + safe(event.getPrice())
+                        + ", minTriggerSizeUsdc=" + (manualAllowlistApplied ? allowlistMinTriggerSizeUsdc : safe(risk.getMinTriggerSizeUsdc()))
+                        + ". Polymarket raw size is shares; risk gate uses normalized USDC notional.");
+            }
         }
 
         BigDecimal price = safe(event.getPrice());
-        if (price.compareTo(safe(risk.getMinFollowPrice())) < 0 || price.compareTo(safe(risk.getMaxFollowPrice())) > 0) {
+        BigDecimal effectiveMinPrice = manualAllowlistApplied ? allowlistMinPrice : safe(risk.getMinFollowPrice());
+        BigDecimal effectiveMaxPrice = manualAllowlistApplied ? allowlistMaxPrice : safe(risk.getMaxFollowPrice());
+        if (price.compareTo(effectiveMinPrice) < 0 || price.compareTo(effectiveMaxPrice) > 0) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G3_PRICE_OUT_OF_RANGE";
-            reasons.add("Trigger price is outside follow range.");
+            reasons.add("Trigger price " + price + " is outside follow range [" + effectiveMinPrice + ", " + effectiveMaxPrice + "].");
+        } else if (manualAllowlistApplied
+                && (price.compareTo(safe(risk.getMinFollowPrice())) < 0 || price.compareTo(safe(risk.getMaxFollowPrice())) > 0)) {
+            // 白名单地址在常规范围外但在宽松范围内 → clamp stake 比例
+            BigDecimal normalMin = safe(risk.getMinFollowPrice());
+            BigDecimal normalMax = safe(risk.getMaxFollowPrice());
+            BigDecimal midPoint = normalMin.add(normalMax).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+            BigDecimal distFromMid = price.subtract(midPoint).abs();
+            BigDecimal maxDist = effectiveMaxPrice.subtract(effectiveMinPrice).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+            BigDecimal normalMaxDist = normalMax.subtract(normalMin).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+            // 超出常规范围的距离比，用于缩放 stake（越远衰减越多，最低 30%）
+            BigDecimal overflowRatio = maxDist.compareTo(BigDecimal.ZERO) > 0
+                    ? BigDecimal.ONE.subtract(distFromMid.subtract(normalMaxDist).divide(maxDist, 4, RoundingMode.HALF_UP)).max(new BigDecimal("0.30"))
+                    : BigDecimal.ONE;
+            allowlistPriceClampApplied = true;
+            reasons.add("[MANUAL_ALLOWLIST_PRICE_CLAMP] Price " + price
+                    + " is outside normal range [" + normalMin + ", " + normalMax + "]"
+                    + " but within allowlist range [" + effectiveMinPrice + ", " + effectiveMaxPrice + "]."
+                    + " Stake will be scaled by " + overflowRatio.setScale(4, RoundingMode.HALF_UP) + ".");
         }
         if (accepted) gateStage = 3; // 通过触发金额/价格带
 
-        // ── Gate 4: 组合约束（持仓数 / 总成本 / 可用资金）──
-        Integer openPositions = countOpenPositions();
-        if (openPositions >= defaultInt(risk.getMaxOpenPositions(), Integer.MAX_VALUE)) {
-            accepted = false;
-            if (firstRejectGate == null) firstRejectGate = "G4_MAX_OPEN_POSITIONS";
-            reasons.add("Open position count has reached the portfolio limit.");
-        }
-
+        // ── Gate 4: 组合约束（总成本 / 可用资金）──
+        // G4_MAX_OPEN_POSITIONS 已硬移除：取消组合层「持仓数」上限拦截，由总成本 / 可用资金两道阀控制规模。
         BigDecimal totalOpenCost = totalOpenCostUsdc();
         if (totalOpenCost.compareTo(safe(risk.getMaxTotalOpenCostUsdc())) >= 0) {
             accepted = false;
@@ -217,6 +401,37 @@ public class SmartWalletSignalRiskService {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G4_CAPITAL_DEPLETED";
             reasons.add("Available capital is depleted. Strategy is paused to avoid bankroll penetration.");
+        }
+        // ── R6 集中度硬上限（2026-06-03 全盘风险审计）：持仓数 / 单品类成本 ──────────
+        // 在总成本/可用资金之外再加两道硬闸控尾部风险；值>0 启用，命中只拒新开仓(fail-safe)。
+        if (accepted) {
+            int posCap = risk.getMaxOpenPositionsHardCap() == null ? 0 : risk.getMaxOpenPositionsHardCap();
+            if (posCap > 0) {
+                Long openCount = positionMapper.selectCount(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+                long oc = openCount == null ? 0L : openCount;
+                if (oc >= posCap) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G4_MAX_OPEN_POSITIONS_CAP";
+                    reasons.add("[CONCENTRATION] Open position count " + oc + " reached hard cap " + posCap + ".");
+                }
+            }
+        }
+        if (accepted) {
+            BigDecimal catCap = safe(risk.getMaxPerCategoryOpenCostUsdc());
+            if (catCap.compareTo(BigDecimal.ZERO) > 0) {
+                String cat = resolveMarketCategory(event);
+                if (StringUtils.hasText(cat)) {
+                    BigDecimal catCost = categoryOpenCostUsdc(cat);
+                    if (catCost.compareTo(catCap) >= 0) {
+                        accepted = false;
+                        if (firstRejectGate == null) firstRejectGate = "G4_PER_CATEGORY_CAP(" + cat + ")";
+                        reasons.add("[CONCENTRATION] Category '" + cat + "' open cost "
+                                + catCost.setScale(2, RoundingMode.HALF_UP) + " reached cap "
+                                + catCap.setScale(2, RoundingMode.HALF_UP) + ".");
+                    }
+                }
+            }
         }
         if (accepted) gateStage = 4; // 通过组合约束
         if (capitalContext.liveWalletBalanceApplied()) {
@@ -247,11 +462,49 @@ public class SmartWalletSignalRiskService {
         if (accepted) gateStage = 5; // 通过信号新鲜度
 
         // ── Gate 6: 市场状态 / 时间窗口 ──
-        SmartWalletMarketStateService.MarketStateSnapshot marketState = marketStateService.refreshMarket(
-                event.getMarketId(),
-                event.getQuestion(),
-                StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
-        );
+        // 2026-05-29 ray@cowork (亏损根因 #3 修复)：品类黑名单门 (G6_CATEGORY_DISABLED)。
+        // 取 SmartWalletMarketInfo.normalizedCategory（fallback sourceCategory），
+        // 与 SignalRisk.disabledCategories（大小写不敏感）比对；命中即拒。
+        // 这一门置于 G6 块开头，先于 marketState 解析，避免无谓的 Polymarket Gamma 远程刷新。
+        if (accepted) {
+            String marketCategory = resolveMarketCategory(event);
+            java.util.Set<String> disabledCategories = risk.getDisabledCategories();
+            if (marketCategory != null && disabledCategories != null && !disabledCategories.isEmpty()) {
+                String catUpper = marketCategory.toUpperCase(java.util.Locale.ROOT);
+                boolean blocked = disabledCategories.stream()
+                        .filter(StringUtils::hasText)
+                        .map(s -> s.toUpperCase(java.util.Locale.ROOT))
+                        .anyMatch(catUpper::equals);
+                if (blocked) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G6_CATEGORY_DISABLED(" + catUpper + ")";
+                    reasons.add("[CATEGORY_BLOCKED] normalizedCategory=" + catUpper
+                            + " is on signal-risk.disabled-categories blocklist (亏损根因 #3 修复). "
+                            + "改 strategy_runtime_config 中 smart-wallet.signal-risk.disabled-categories 后可立即放行。");
+                }
+            }
+        }
+        // 修复六（6.6）：优先复用调用方已解析的市场状态快照，避免单事件重复解析。
+        MarketStateSnapshot marketState = preResolvedMarketState != null
+                ? preResolvedMarketState
+                : marketStateService.refreshMarket(
+                        event.getMarketId(),
+                        event.getQuestion(),
+                        StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of()
+                );
+        boolean marketResolved = marketState != null
+                && (StringUtils.hasText(marketState.resolvedOutcome())
+                || SmartWalletMarketStateService.LIFECYCLE_RESOLVED.equalsIgnoreCase(marketState.marketLifecycle()));
+        if (marketResolved) {
+            accepted = false;
+            if (firstRejectGate == null) {
+                firstRejectGate = "G6_MARKET_RESOLVED";
+            }
+            reasons.add("[MARKET_RESOLVED] Market is already resolved; new entry is blocked"
+                    + (StringUtils.hasText(marketState.resolvedOutcome())
+                    ? " (resolvedOutcome=" + marketState.resolvedOutcome() + ")."
+                    : "."));
+        }
         if (!marketState.isActive()) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G6_MARKET_NOT_ACTIVE";
@@ -261,9 +514,17 @@ public class SmartWalletSignalRiskService {
         if (endAt != null && endAt > 0) {
             long remainingMs = endAt - System.currentTimeMillis();
             if (remainingMs <= 0) {
-                accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED";
-                reasons.add("Market is already at or past expected end time.");
+                // 2026-05-18 ray@cowork: 修复 G6_MARKET_EXPIRED 误判 (占 56% 拒绝率)。
+                // Polymarket 长尾市场 endAt 经常陈旧, 但 lifecycle=ACTIVE+accepting_orders=true 仍可正常交易。
+                // 只有 marketState 同时确认非活跃或不接单时, 才视为真过期。
+                if (!marketState.isActive() || !marketState.acceptingOrders()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED";
+                    reasons.add("Market is already at or past expected end time.");
+                } else {
+                    reasons.add("[MARKET_END_AT_STALE_BUT_ACTIVE] endAt=" + endAt
+                            + " in past but lifecycle=ACTIVE & acceptingOrders=true; accepting follow.");
+                }
             } else {
                 long maxHours = defaultInt(risk.getMaxHoursToMarketEnd(), Integer.MAX_VALUE);
                 long obviousFutureMs = (long) risk.getObviouslyFutureMarketEndDays() * 24L * 3600_000L;
@@ -279,7 +540,7 @@ public class SmartWalletSignalRiskService {
             }
         } else if (accepted) {
             // marketEndAt 为空时，强制 forceRefresh 再次确认市场是否仍然活跃
-            SmartWalletMarketStateService.MarketStateSnapshot freshState = marketStateService.refreshMarket(
+            MarketStateSnapshot freshState = marketStateService.refreshMarket(
                     event.getMarketId(),
                     event.getQuestion(),
                     StringUtils.hasText(event.getOutcome()) ? List.of(event.getOutcome()) : List.of(),
@@ -292,15 +553,72 @@ public class SmartWalletSignalRiskService {
             }
             Long freshEndAt = freshState.marketEndAt();
             if (freshEndAt != null && freshEndAt > 0 && freshEndAt <= System.currentTimeMillis()) {
-                accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED_AFTER_FORCE_REFRESH";
-                reasons.add("[MARKET_END_AT_MISSING_FORCE_REFRESH] marketEndAt was null; forced refresh reveals market is already expired.");
+                // 2026-05-18 ray@cowork: 同上短路修复, force refresh 后 endAt 过期也要看 lifecycle/acceptingOrders。
+                if (!freshState.isActive() || !freshState.acceptingOrders()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G6_MARKET_EXPIRED_AFTER_FORCE_REFRESH";
+                    reasons.add("[MARKET_END_AT_MISSING_FORCE_REFRESH] marketEndAt was null; forced refresh reveals market is already expired.");
+                } else {
+                    reasons.add("[MARKET_END_AT_STALE_BUT_ACTIVE_AFTER_FORCE_REFRESH] endAt=" + freshEndAt
+                            + " past but market still lifecycle=ACTIVE & acceptingOrders=true; accepting follow.");
+                }
                 endAt = freshEndAt;
             } else if (freshEndAt != null && freshEndAt > 0) {
                 endAt = freshEndAt;
             }
         }
         if (accepted) gateStage = 6; // 通过市场状态
+
+        // ── Gate 6b: 临近赛事尾段 + 低概率方向 拒单门 ─────────────────────────────
+        // 体育 / 事件类市场剩余时间不长 (默认 ≤ 12h) 且 leader 跟的方向 implied prob 极低
+        // (默认 < 10%) 时, 跟单几乎注定亏损且无套利空间, 直接拒。
+        // 双条件 AND 才触发; 任一不满足都放行交给后续门控判定。endAt 取 G6 已解析的最终值。
+        if (accepted && risk.isEnableLatePoorOddsRejection()
+                && endAt != null && endAt > 0
+                && risk.getLatePoorOddsMaxHoursToEnd() != null
+                && risk.getLatePoorOddsMaxPrice() != null) {
+            long remainingMs = endAt - System.currentTimeMillis();
+            long thresholdMs = risk.getLatePoorOddsMaxHoursToEnd().longValue() * 3600_000L;
+            if (remainingMs > 0 && remainingMs <= thresholdMs
+                    && price.compareTo(safe(risk.getLatePoorOddsMaxPrice())) < 0) {
+                accepted = false;
+                if (firstRejectGate == null) {
+                    firstRejectGate = "G6b_LATE_LOW_PROB(remainingH=" + (remainingMs / 3600_000L)
+                            + ",price=" + price.setScale(4, RoundingMode.HALF_UP)
+                            + ",maxH=" + risk.getLatePoorOddsMaxHoursToEnd()
+                            + ",maxPrice=" + safe(risk.getLatePoorOddsMaxPrice()) + ")";
+                }
+                reasons.add("[LATE_LOW_PROB_BLOCK] Within "
+                        + risk.getLatePoorOddsMaxHoursToEnd() + "h of market end and price "
+                        + price.setScale(4, RoundingMode.HALF_UP) + " < "
+                        + safe(risk.getLatePoorOddsMaxPrice())
+                        + "; arbitrage window too narrow, skipping follow.");
+            }
+        }
+
+        // ── Gate 6c: 入口盘口护栏 (空 ask 硬闸) ─────────────────────────────────
+        // Fix 1: 当 enableDepthAwareSizing=false 时 G8c 不生效, 缺少"asks 完全为空"的硬保护。
+        // 这里独立判定: 用 snapshot 看 bestAsk, 空 → 拒。snapshot 陈旧 → 按 entryAskStaleStrategy 决策。
+        // 与 G8c 互补不冲突: G8c 看深度数量 (≥ minAcceptableDepthUsdc), G6c 看 bestAsk 存在性。
+        if (accepted && risk.isEnableEntryEmptyAskRejection()) {
+            G6cAskCheckOutcome askOutcome = evaluateEntryAskSanity(event, risk);
+            entryAskCheckCounters.merge(askOutcome, 1L, Long::sum);
+            if (askOutcome == G6cAskCheckOutcome.REJECT_EMPTY_ASK) {
+                accepted = false;
+                if (firstRejectGate == null) {
+                    firstRejectGate = "G6c_ENTRY_EMPTY_ASK";
+                }
+                reasons.add("[ENTRY_EMPTY_ASK] Target token's best ask is empty in latest snapshot; "
+                        + "buying here would rest indefinitely without a counterparty. Skipping.");
+            } else if (askOutcome == G6cAskCheckOutcome.REJECT_STALE_FAIL_CLOSED) {
+                accepted = false;
+                if (firstRejectGate == null) {
+                    firstRejectGate = "G6c_ENTRY_ASK_SNAPSHOT_STALE";
+                }
+                reasons.add("[ENTRY_ASK_SNAPSHOT_STALE] Ask snapshot age > "
+                        + risk.getEntryAskSnapshotMaxAgeMs() + "ms with FAIL_CLOSED policy; skipping.");
+            }
+        }
 
         boolean hasOppositeOpenPosition = hasOpenPositionOnSameMarketDifferentOutcome(event.getMarketId(), event.getOutcome());
         MarketRoutingContext marketRouting = classifyMarket(event, marketState, endAt, risk, hasOppositeOpenPosition);
@@ -309,6 +627,58 @@ public class SmartWalletSignalRiskService {
         String exitIntent = marketRouting.exitIntent();
         reasons.add("[MARKET_TYPE] marketType=" + marketType + ", entryLane=" + entryLane
                 + (StringUtils.hasText(exitIntent) ? ", exitIntent=" + exitIntent : "") + ".");
+
+        // ── Gate 15: 临近结算「高价低赔率」拒单门（2026-06-05 补充场景库 C2，G6b 的对称补充）──
+        // 距结算 ≤ maxHours 且 BUY 价 ≥ minPrice：上行已被价格吃尽、下行 -100%，跟单延迟放大尾部
+        // 不对称。仅拦真实新开仓（BUY 且非 DYNAMIC_FOLLOW_EXIT）。判定逻辑抽到纯静态 helper 便于单测。
+        if (accepted) {
+            String g15Reason = evaluateHighPriceLowReward(
+                    risk.isEnableHighPriceLowRewardRejection(),
+                    event.getSide(), entryLane, endAt, System.currentTimeMillis(),
+                    price, risk.getHighPriceLowRewardMaxHoursToEnd(), risk.getHighPriceLowRewardMinPrice());
+            if (g15Reason != null) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = g15Reason;
+                reasons.add("[HIGH_PRICE_LOW_REWARD_BLOCK] " + g15Reason
+                        + " upside≤" + BigDecimal.ONE.subtract(price).setScale(4, RoundingMode.HALF_UP)
+                        + " vs downside -100%; asymmetric payoff too poor for a lagged copy. Skipping.");
+            }
+        }
+
+        // ── Gate 16: 市场异常波动熔断（2026-06-05 补充场景库 C3：新闻冲击 / 突发重定价）──────
+        // 短窗口内该市场价格大幅摆动时复制延迟最致命，暂停新开仓（出场不受影响）。
+        // 仅在 enableVolatilityHalt=true 时查询 trade_event，默认关闭 → 零开销/零行为变化。
+        if (accepted && risk.isEnableVolatilityHalt()) {
+            List<BigDecimal> recentPrices = recentMarketPrices(event,
+                    defaultInt(risk.getVolatilityHaltWindowMinutes(), 5));
+            String g16Reason = evaluateVolatilityHalt(true, event.getSide(), entryLane, recentPrices,
+                    defaultInt(risk.getVolatilityHaltMinSamples(), 3), risk.getVolatilityHaltMaxMoveRate());
+            if (g16Reason != null) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = g16Reason;
+                reasons.add("[MARKET_VOLATILITY_HALT] " + g16Reason
+                        + "; short-window repricing too large, pausing new entry to avoid chasing a lagged signal.");
+            }
+        }
+
+        // ── B1 刷量/女巫 leader 检测（2026-06-05 补充场景库）：疑似刷量 → observe-only 拒单 ──────
+        // 无对手方数据时的保守 churn 启发：leader 在该市场窗口内 gross 大、净敞口近乎归零(对敲制造假量)。
+        // 仅在 enableWashSuspicionGate=true 时查询，默认关闭 → 零开销/零行为变化。出场不受影响。
+        if (accepted && risk.isEnableWashSuspicionGate()) {
+            BigDecimal[] flow = leaderMarketFlow(event, defaultInt(risk.getWashSuspicionWindowMinutes(), 120));
+            if (flow != null) {
+                String washReason = evaluateWashSuspicion(true, event.getSide(), entryLane,
+                        flow[0], flow[1], flow[2].intValue(),
+                        defaultInt(risk.getWashSuspicionMinTrades(), 8),
+                        risk.getWashSuspicionMinGrossUsdc(), risk.getWashSuspicionMaxNetToGrossRatio());
+                if (washReason != null) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = washReason;
+                    reasons.add("[SUSPECTED_WASH] " + washReason
+                            + "; leader churns high gross volume with near-flat net exposure — possible wash/sybil, observe-only.");
+                }
+            }
+        }
         // ── Gate 7: 方向 / 市场类型 / 重复持仓 ──
         if (!risk.isAllowSellSignal() && "SELL".equalsIgnoreCase(event.getSide())
                 && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
@@ -320,7 +690,8 @@ public class SmartWalletSignalRiskService {
                 && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G7_FAST_EVENT_BLOCKED";
-            reasons.add("[FAST_EVENT_ENTRY_BLOCK] Fast-event markets are blocked for new entry; only dynamic follow-exit signals are allowed.");
+            reasons.add("[FAST_EVENT_ENTRY_BLOCK] Fast-event markets are blocked for new entry; only dynamic follow-exit signals are allowed."
+                    + (manualAllowlistApplied ? " [MANUAL_ALLOWLIST_FAST_EVENT_NOTE] Allowlist wallet also blocked — API rate-limit constraints prevent fast-event tracking." : ""));
         }
 
         boolean hasDuplicatePosition = risk.isBlockDuplicateOpenPosition()
@@ -337,9 +708,27 @@ public class SmartWalletSignalRiskService {
         if (risk.isBlockDuplicatePendingTask()
                 && hasPendingFollowTask(event.getMarketId(), event.getOutcome(), currentFollowTaskId)
                 && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
-            accepted = false;
-            if (firstRejectGate == null) firstRejectGate = "G7_DUPLICATE_PENDING_TASK";
-            reasons.add("A pending follow task already exists for the same market and outcome.");
+            // P0-2: 如果意图聚合已启用且在同一聚合窗口内，不拦截（走聚合合并路径）
+            boolean withinIntentWindow = false;
+            try {
+                SmartWalletProperties.IntentAggregationConfig aggConfig = properties.getIntentAggregation();
+                if (aggConfig != null && aggConfig.isEnabled()) {
+                    Date eventTime = event.getOpenedAt() != null ? event.getOpenedAt() : new Date();
+                    withinIntentWindow = followIntentAggregationService.isWithinActiveIntentWindow(
+                            event.getMarketId(), event.getOutcome(), event.getSide(),
+                            event.getWalletAddress(), eventTime);
+                }
+            } catch (Exception e) {
+                log.debug("{} action=意图聚合窗口判定异常 eventId={} error={}", LOG_PREFIX, event.getId(), e.getMessage());
+            }
+
+            if (!withinIntentWindow) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G7_DUPLICATE_PENDING_TASK";
+                reasons.add("A pending follow task already exists for the same market and outcome.");
+            } else {
+                reasons.add("[INTENT_AGGREGATION_BYPASS] Duplicate pending task exists but within intent aggregation window — allowing merge.");
+            }
         }
 
         if (risk.isBlockOppositePendingTaskSameMarket()
@@ -370,6 +759,37 @@ public class SmartWalletSignalRiskService {
                         "firstRejectGate", "G7_MARKET_OUTCOME_ORDER_LIMIT",
                         "blockerCategories", "ORDER_LIMIT",
                         "reasonSummary", "同一 marketId + outcome 的入场订单/待执行任务数量已达到上限"));
+            }
+        }
+        if (risk.isRequireLeaderProfitableActivePosition()
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
+                && "BUY".equalsIgnoreCase(event.getSide())) {
+            if (manualAllowlistApplied) {
+                // Allowlist wallets: only check PnL on existing positions that have had time to accumulate profit data.
+                // New BUY entries (leader just opened or has no matched position) skip the PnL gate.
+                LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
+                boolean isNewEntry = leaderPositionCheck.reason() != null
+                        && leaderPositionCheck.reason().contains("no active position");
+                if (isNewEntry) {
+                    reasons.add("[MANUAL_ALLOWLIST_LEADER_PNL_BYPASS] Leader has no active position for this market/outcome — "
+                            + "treated as new entry, PnL gate skipped for allowlist wallet.");
+                } else if (!leaderPositionCheck.accepted()) {
+                    // Existing position with non-positive PnL — still allow but log a warning
+                    allowlistRiskBypassApplied = true; // R11：leader 当前持仓不盈利却被 allowlist 放行 → 后续降仓
+                    reasons.add("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] " + leaderPositionCheck.reason()
+                            + " — allowlist wallet bypasses rejection but leader position is not profitable.");
+                    log.warn("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] wallet={} marketId={} outcome={} leaderPnlCheck={}",
+                            event.getWalletAddress(), event.getMarketId(), event.getOutcome(), leaderPositionCheck.reason());
+                } else {
+                    reasons.add(leaderPositionCheck.reason());
+                }
+            } else {
+                LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
+                reasons.add(leaderPositionCheck.reason());
+                if (!leaderPositionCheck.accepted()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G7_LEADER_POSITION_NOT_PROFITABLE";
+                }
             }
         }
         if (accepted) gateStage = 7; // 通过方向/重复检查
@@ -453,12 +873,43 @@ public class SmartWalletSignalRiskService {
         preliminaryStake = applyArchetypeStakeAdjustments(preliminaryStake, archetype, event, reasons);
         preliminaryStake = applyBehaviorStakeAdjustments(preliminaryStake, behaviorProfile, reasons);
         preliminaryStake = applyDynamicCapitalScale(preliminaryStake, capitalContext);
+        BigDecimal capitalRatioCap = risk.getMaxSingleOrderCapitalRatio() == null
+                ? BigDecimal.ZERO
+                : safe(risk.getMaxSingleOrderCapitalRatio());
+        if (capitalRatioCap.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal capitalScaledCap = availableCapital.max(BigDecimal.ZERO)
+                    .multiply(capitalRatioCap)
+                    .setScale(2, RoundingMode.HALF_UP);
+            if (capitalScaledCap.compareTo(BigDecimal.ZERO) > 0 && preliminaryStake.compareTo(capitalScaledCap) > 0) {
+                reasons.add("[CAPITAL_RATIO_STAKE_CAP] Stake capped from " + preliminaryStake
+                        + " to " + capitalScaledCap
+                        + " by maxSingleOrderCapitalRatio=" + capitalRatioCap + ".");
+                preliminaryStake = capitalScaledCap;
+            }
+        }
+        BigDecimal triggerRatioCap = risk.getMaxStakeToTriggerNotionalRatio() == null
+                ? BigDecimal.ZERO
+                : safe(risk.getMaxStakeToTriggerNotionalRatio());
+        if (triggerRatioCap.compareTo(BigDecimal.ZERO) > 0 && triggerSize.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal triggerScaledCap = triggerSize.multiply(triggerRatioCap).setScale(2, RoundingMode.HALF_UP);
+            if (triggerScaledCap.compareTo(BigDecimal.ZERO) > 0 && preliminaryStake.compareTo(triggerScaledCap) > 0) {
+                reasons.add("[TRIGGER_RATIO_STAKE_CAP] Stake capped from " + preliminaryStake
+                        + " to " + triggerScaledCap
+                        + " by maxStakeToTriggerNotionalRatio=" + triggerRatioCap + ".");
+                preliminaryStake = triggerScaledCap;
+            }
+        }
+        // 2026-05-19 ray@cowork: LONG_HORIZON stake multiplier 之前在两处独立应用 (本块 + Kelly 块末),
+        // 当 Kelly 返回 null 或 negativeEV+allowlistBypass 走 fallback 时, recommendedStake = preliminaryStake,
+        // 紧接着又被乘一次 → 同一 multiplier 累积 0.50 × 0.50 = 0.25, 把好信号砍到 minOrder 以下.
+        // 现统一: 本块只对"legacy formula path (Kelly 未采用)"生效; Kelly 真正采用时跳过这次, 由
+        // 下面 Kelly 块末单点应用.
         if ("LONG_HORIZON".equals(marketType)) {
             BigDecimal multiplier = risk.getLongHorizonStakeMultiplier() == null
                     ? new BigDecimal("0.50")
                     : safe(risk.getLongHorizonStakeMultiplier());
             preliminaryStake = preliminaryStake.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
-            reasons.add("[LONG_HORIZON_STAKE] Long-horizon market stake multiplier applied: "
+            reasons.add("[LONG_HORIZON_STAKE] Long-horizon market stake multiplier applied (preliminary): "
                     + multiplier.setScale(2, RoundingMode.HALF_UP) + ".");
         }
         preliminaryStake = preliminaryStake.min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
@@ -475,11 +926,73 @@ public class SmartWalletSignalRiskService {
         }
         if (accepted) gateStage = 8; // 通过初步仓位检查
 
+        // ── Gate 8b: Taker Fee 预扣减 ──────────────────────────────────────────
+        SmartWalletProperties.FeeSchedule feeSchedule = properties.getFeeSchedule();
+        if (feeSchedule != null && feeSchedule.isEnablePreTradeFeeDeduction()) {
+            BigDecimal takerFeeRate = feeScheduleService.getTakerFeeRate(
+                    event.getMarketId(), resolveMarketCategory(event));
+            if (takerFeeRate.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal preFeStake = preliminaryStake;
+                preliminaryStake = feeScheduleService.adjustStakeForFee(
+                        preliminaryStake, event.getMarketId(), resolveMarketCategory(event));
+                BigDecimal estimatedFee = preFeStake.subtract(preliminaryStake);
+                reasons.add("[FEE_ADJUSTED] Stake adjusted from " + preFeStake
+                        + " to " + preliminaryStake
+                        + " after taker fee " + takerFeeRate.setScale(4, RoundingMode.HALF_UP)
+                        + " (estimated fee=" + estimatedFee.setScale(4, RoundingMode.HALF_UP) + " USDC).");
+            }
+        }
+
+        // ── Gate 8c: Orderbook 深度感知仓位调整 ──────────────────────────────────
+        if (risk.isEnableDepthAwareSizing() && accepted) {
+            BigDecimal depthUsdc = resolveAskDepth(event, risk);
+            if (depthUsdc != null && depthUsdc.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal minDepth = safe(risk.getMinAcceptableDepthUsdc());
+                if (depthUsdc.compareTo(minDepth) < 0) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G8c_DEPTH_INSUFFICIENT";
+                    reasons.add("[DEPTH_INSUFFICIENT] Orderbook ask depth=" + depthUsdc.setScale(2, RoundingMode.HALF_UP)
+                            + " USDC is below minimum acceptable depth=" + minDepth.setScale(2, RoundingMode.HALF_UP)
+                            + " USDC. Refusing entry to avoid sweeping thin book.");
+                } else {
+                    BigDecimal maxConsumption = safe(risk.getDepthConsumptionMaxRate());
+                    BigDecimal depthCap = depthUsdc.multiply(maxConsumption).setScale(2, RoundingMode.HALF_UP);
+                    if (preliminaryStake.compareTo(depthCap) > 0) {
+                        reasons.add("[DEPTH_DOWNSIZE] Stake reduced from " + preliminaryStake
+                                + " to " + depthCap
+                                + " (depth=" + depthUsdc.setScale(2, RoundingMode.HALF_UP)
+                                + " × maxConsumption=" + maxConsumption + ").");
+                        preliminaryStake = depthCap;
+                        if (preliminaryStake.compareTo(minOrderUsdc) < 0) {
+                            accepted = false;
+                            if (firstRejectGate == null) firstRejectGate = "G8c_DEPTH_DOWNSIZE_BELOW_MIN";
+                            reasons.add("[DEPTH_DOWNSIZE_BELOW_MIN] After depth-aware downsizing, stake="
+                                    + preliminaryStake + " is below minOrder=" + minOrderUsdc + ".");
+                        }
+                    } else {
+                        reasons.add("[DEPTH_OK] Orderbook depth=" + depthUsdc.setScale(2, RoundingMode.HALF_UP)
+                                + " USDC is sufficient for stake=" + preliminaryStake + ".");
+                    }
+                }
+            }
+            // depthUsdc == null → 快照不可用，不阻断（fail-open），留给 slippage gate 兜底
+        }
+
         // ── Gate 9: 集中度门控（防控盘）──────────────────────────────────────────
         // 在共识门控之后、风险分数估算之前运行，避免对最终被拒绝的信号做不必要的 API 调用
         if (risk.isEnableConcentrationGate()) {
             ConcentrationSnapshot snap = concentrationService.analyze(event.getMarketId(), event.getOutcome());
-            if (snap.isDataAvailable()) {
+            // F-P0-3: 数据不可用时按 enableConcentrationFailOpen 决定行为
+            //   false (默认/修复后) → fail-closed: 拒绝信号，避免集中度风控被静默绕过
+            //   true  (紧急回滚开关) → fail-open: 跳过本门控，保留旧行为
+            if (!snap.isDataAvailable() && !risk.isEnableConcentrationFailOpen()) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G9_CONCENTRATION_DATA_UNAVAILABLE";
+                reasons.add("[CONCENTRATION_DATA_UNAVAILABLE] Concentration snapshot is missing for market="
+                        + event.getMarketId() + " outcome=" + event.getOutcome()
+                        + " (API failure or empty data). G9 is fail-closed; set "
+                        + "smart-wallet.signal-risk.enable-concentration-fail-open=true to bypass.");
+            } else if (snap.isDataAvailable()) {
                 int minObservedHolders = risk.getConcentrationMinObservedHoldersForGate() == null
                         ? 0
                         : Math.max(0, risk.getConcentrationMinObservedHoldersForGate());
@@ -590,7 +1103,7 @@ public class SmartWalletSignalRiskService {
                     }
                 }
             }
-            // API 不可用时 fail-open：跳过集中度检查，不阻断信号
+            // F-P0-3: 数据可用分支结束。fail-open 紧急回滚开关打开时，跳过本门控（保留旧行为）。
         }
         if (accepted) gateStage = 9; // 通过集中度门控
 
@@ -599,6 +1112,9 @@ public class SmartWalletSignalRiskService {
 
         // ── Gate 10: Kelly 仓位计算 ─────────────────────────────────────────────
         BigDecimal recommendedStake;
+        // 2026-05-19 ray@cowork: 仅当 Kelly 真正返回 > 0 stake 时才置 true; null / 0 EV fallback 走 preliminaryStake
+        // 路径不应再二次应用 LONG_HORIZON multiplier (preliminaryStake 已经在上面乘过一次).
+        boolean kellyStakeAdopted = false;
         if (risk.isKellyStakeEnabled()) {
             BigDecimal kellyStake = kellyStakeCalculator.compute(
                     profitabilityEstimate.getCalibratedFollowProbability(),
@@ -615,12 +1131,24 @@ public class SmartWalletSignalRiskService {
                 reasons.add("Kelly stake: probability unknown, falling back to legacy formula.");
             } else if (kellyStake.compareTo(BigDecimal.ZERO) == 0) {
                 // EV 为负，Kelly 建议拒绝
-                accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G10_KELLY_NEGATIVE_EV(p=" + safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) + ",price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ")";
-                recommendedStake = BigDecimal.ZERO;
-                reasons.add("Kelly stake: negative EV, signal rejected.");
+                if (manualAllowlistApplied && risk.isManualAllowlistBypassKellyNegativeEv()) {
+                    recommendedStake = preliminaryStake;
+                    reasons.add("[MANUAL_ALLOWLIST_KELLY_NEGATIVE_EV_BYPASS] Kelly stake is negative EV; manual allowlist paper validation falls back to preliminary stake.");
+                } else {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G10_KELLY_NEGATIVE_EV(p=" + safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) + ",price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ")";
+                    recommendedStake = BigDecimal.ZERO;
+                    reasons.add("Kelly stake: negative EV, signal rejected.");
+                }
+                log.warn("[KELLY_NEGATIVE_EV] wallet={} marketId={} outcome={} price={} calibratedP={} side={} triggerSizeUsdc={} allowlisted={}",
+                        event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
+                        safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP),
+                        safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP),
+                        event.getSide(), safe(event.getSizeUsdc()).setScale(2, RoundingMode.HALF_UP),
+                        manualAllowlistApplied);
             } else {
                 recommendedStake = kellyStake;
+                kellyStakeAdopted = true;
                 reasons.add("Kelly stake=" + kellyStake + " (p=" +
                         safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) +
                         " price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ").");
@@ -628,7 +1156,9 @@ public class SmartWalletSignalRiskService {
         } else {
             recommendedStake = preliminaryStake;
         }
-        if ("LONG_HORIZON".equals(marketType) && risk.isKellyStakeEnabled()) {
+        // 2026-05-19 ray@cowork: 仅在"真正采用 Kelly stake"路径下应用一次; preliminaryStake fallback / Kelly 未启用
+        // 都不再二次乘 — preliminaryStake 已经在上方 LONG_HORIZON 块里乘过.
+        if ("LONG_HORIZON".equals(marketType) && kellyStakeAdopted) {
             BigDecimal multiplier = risk.getLongHorizonStakeMultiplier() == null
                     ? new BigDecimal("0.50")
                     : safe(risk.getLongHorizonStakeMultiplier());
@@ -637,15 +1167,82 @@ public class SmartWalletSignalRiskService {
                     + multiplier.setScale(2, RoundingMode.HALF_UP) + ".");
         }
         recommendedStake = applyAdvancedStakeAdjustments(recommendedStake, behaviorProfile, profitabilityEstimate, event, risk, reasons);
+
+        // ── E1 资金曲线自适应仓位（2026-06-05 补充场景库：组合层 anti-martingale）──────────
+        // 账户权益回撤越深、整体收量越多。仅在 enableEquityCurveThrottle=true 时计算（带 TTL 缓存），
+        // 默认关闭 → 零开销/零行为变化。乘子由纯函数 computeEquityCurveStakeMultiplier 决定。
+        if (risk.isEnableEquityCurveThrottle() && recommendedStake != null
+                && recommendedStake.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal ddRate = currentEquityDrawdownRate(risk);
+            BigDecimal throttle = computeEquityCurveStakeMultiplier(ddRate,
+                    risk.getEquityCurveThrottleStartDrawdown(),
+                    risk.getEquityCurveThrottleMaxDrawdown(),
+                    risk.getEquityCurveThrottleFloorMultiplier());
+            if (throttle.compareTo(BigDecimal.ONE) < 0) {
+                BigDecimal before = recommendedStake;
+                recommendedStake = recommendedStake.multiply(throttle).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[EQUITY_CURVE_THROTTLE] drawdownRate=" + ddRate.setScale(4, RoundingMode.HALF_UP)
+                        + " → stake ×" + throttle + " (" + before + "→" + recommendedStake + ").");
+            }
+        }
         recommendedStake = safe(recommendedStake).min(availableCapital.max(BigDecimal.ZERO)).setScale(2, RoundingMode.HALF_UP);
+        // ── Leader 滑动窗口 COOLING 期 stake 强制降级（W2-T2）──
+        if (leaderRollingCooling && recommendedStake.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal coolingMultiplier = safe(risk.getLeaderRollingCoolingStakeMultiplier());
+            if (coolingMultiplier.signum() > 0 && coolingMultiplier.compareTo(BigDecimal.ONE) < 0) {
+                BigDecimal before = recommendedStake;
+                recommendedStake = recommendedStake.multiply(coolingMultiplier).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[LEADER_ROLLING_COOLING_STAKE] stake reduced from " + before
+                        + " to " + recommendedStake
+                        + " (multiplier=" + coolingMultiplier.setScale(4, RoundingMode.HALF_UP) + ").");
+            }
+        }
+        // ── Leader 行为漂移门 DRIFTED 期 stake 降级（W2-T6）──
+        // 与 W2-T2 共享 cooling 语义；多门叠加时各自按比例累乘（与 W2-T4/W2-T5 一致）。
+        if (leaderDriftCooling && recommendedStake.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal driftMultiplier = safe(risk.getLeaderDriftStakeMultiplier());
+            if (driftMultiplier.signum() > 0 && driftMultiplier.compareTo(BigDecimal.ONE) < 0) {
+                BigDecimal before = recommendedStake;
+                recommendedStake = recommendedStake.multiply(driftMultiplier).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[LEADER_DRIFT_COOLING_STAKE] stake reduced from " + before
+                        + " to " + recommendedStake
+                        + " (multiplier=" + driftMultiplier.setScale(4, RoundingMode.HALF_UP) + ").");
+            }
+        }
         BigDecimal stakeMultiplierApplied = null;
         if (manualAllowlistApplied) {
             stakeMultiplierApplied = manualAllowlistService.stakeMultiplier(manualAllowlist);
             recommendedStake = recommendedStake.multiply(stakeMultiplierApplied).setScale(2, RoundingMode.HALF_UP);
             reasons.add("[MANUAL_ALLOWLIST_STAKE_MULTIPLIER] Applied manual allowlist stake multiplier="
                     + stakeMultiplierApplied.setScale(4, RoundingMode.HALF_UP) + ".");
+            // R11(2026-06-03)：若本信号绕过了风控门(观察冷却 / leader 当前持仓不盈利)，对仓位再追加 0.5 折扣，
+            // 以匹配"放行但风险更高"的事实——不再只打日志。最终仍受最小单/敞口门约束。
+            if (allowlistRiskBypassApplied) {
+                recommendedStake = recommendedStake.multiply(new BigDecimal("0.5")).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[ALLOWLIST_RISK_BYPASS_HAIRCUT] Risk gate bypassed (cooldown/leader-not-profitable); "
+                        + "stake additionally halved for higher risk.");
+            }
+            if (allowlistPriceClampApplied) {
+                BigDecimal normalMin = safe(risk.getMinFollowPrice());
+                BigDecimal normalMax = safe(risk.getMaxFollowPrice());
+                BigDecimal midPoint = normalMin.add(normalMax).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+                BigDecimal distFromMid = price.subtract(midPoint).abs();
+                BigDecimal maxDist = effectiveMaxPrice.subtract(effectiveMinPrice).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+                BigDecimal normalMaxDist = normalMax.subtract(normalMin).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+                BigDecimal overflowRatio = maxDist.compareTo(BigDecimal.ZERO) > 0
+                        ? BigDecimal.ONE.subtract(distFromMid.subtract(normalMaxDist).divide(maxDist, 4, RoundingMode.HALF_UP)).max(new BigDecimal("0.30"))
+                        : BigDecimal.ONE;
+                recommendedStake = recommendedStake.multiply(overflowRatio).setScale(2, RoundingMode.HALF_UP);
+                reasons.add("[MANUAL_ALLOWLIST_PRICE_CLAMP_STAKE] Stake scaled by " + overflowRatio.setScale(4, RoundingMode.HALF_UP)
+                        + " due to price " + price + " outside normal range.");
+            }
         }
         BigDecimal triggerStakeCapRatio = safe(risk.getMaxStakeToTriggerNotionalRatio());
+        if (manualAllowlistApplied) {
+            triggerStakeCapRatio = BigDecimal.ONE; // Allowlist wallets use 1.0 ratio
+            reasons.add("[MANUAL_ALLOWLIST_TRIGGER_RATIO_OVERRIDE] maxStakeToTriggerNotionalRatio overridden from "
+                    + safe(risk.getMaxStakeToTriggerNotionalRatio()) + " to 1.0 for allowlist wallet.");
+        }
         if (triggerStakeCapRatio.compareTo(BigDecimal.ZERO) > 0 && triggerSize.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal triggerStakeCap = triggerSize.multiply(triggerStakeCapRatio).setScale(2, RoundingMode.HALF_UP);
             if (recommendedStake.compareTo(triggerStakeCap) > 0) {
@@ -668,6 +1265,32 @@ public class SmartWalletSignalRiskService {
                         + recommendedStake + ".");
             }
         }
+        // ── Gate 10a: 白名单小额高频聚合 + 固定最低保底 ──
+        // 当白名单地址等比缩放后 stake < minOrder 时，尝试聚合或固定保底
+        if (accepted && manualAllowlistApplied && recommendedStake.compareTo(minOrderUsdc) < 0) {
+            SmartWalletProperties.AllowlistAggregationConfig aggConfig = properties.getAllowlistAggregation();
+            if (aggConfig != null && aggConfig.isEnabled()) {
+                AllowlistSignalAggregationService.AggregationResult aggResult =
+                        allowlistAggregationService.aggregate(
+                                event.getMarketId(), event.getOutcome(), event.getWalletAddress(),
+                                recommendedStake, triggerSize, price);
+                if (aggResult.getAction() == AllowlistSignalAggregationService.AggregationAction.EXECUTE_NOW) {
+                    recommendedStake = aggResult.getExecuteStake()
+                            .min(properties.getMaxStakeUsdc())
+                            .min(availableCapital.max(BigDecimal.ZERO))
+                            .setScale(2, RoundingMode.HALF_UP);
+                    reasons.add("[ALLOWLIST_AGGREGATION_EXECUTE] " + aggResult.getReason()
+                            + " executeStake=" + recommendedStake + ".");
+                } else if (aggResult.getAction() == AllowlistSignalAggregationService.AggregationAction.BUFFERED) {
+                    // 信号已缓冲，暂不下单，但不算拒绝（信号被"暂存"而非丢弃）
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G10a_ALLOWLIST_SIGNAL_BUFFERED";
+                    reasons.add("[ALLOWLIST_SIGNAL_BUFFERED] " + aggResult.getReason()
+                            + ". Signal accumulated, will execute when threshold reached.");
+                }
+            }
+        }
+        // ── Gate 10b: 常规最低下单额检查 ──
         if (accepted && recommendedStake.compareTo(minOrderUsdc) < 0) {
             BigDecimal flooredStake = minOrderUsdc
                     .min(properties.getMaxStakeUsdc())
@@ -679,11 +1302,43 @@ public class SmartWalletSignalRiskService {
                         + recommendedStake + ".");
             } else {
                 accepted = false;
-                if (firstRejectGate == null) firstRejectGate = "G10_FINAL_STAKE_BELOW_MIN(stake=" + recommendedStake + ")";
+                if (firstRejectGate == null) firstRejectGate = "G10b_FINAL_STAKE_BELOW_MIN(stake=" + recommendedStake + ")";
                 reasons.add("Recommended stake is below execution wallet minimum order after capital scaling.");
             }
         }
-        if (accepted) gateStage = 10; // 通过 Kelly / 仓位计算
+        // ── Gate 10c: 暴露上限检查 (单市场/单地址) ──
+        FollowExposureLimitService.ExposureCheckResult lastExposureResult = null;
+        if (accepted) {
+            SmartWalletProperties.ExposureLimitConfig exposureConfig = properties.getExposureLimit();
+            if (exposureConfig != null && exposureConfig.isEnabled()) {
+                FollowExposureLimitService.ExposureCheckResult exposureResult =
+                        followExposureLimitService.check(
+                                event.getMarketId(), event.getOutcome(), event.getWalletAddress(),
+                                recommendedStake);
+                lastExposureResult = exposureResult;
+                if (!exposureResult.isAllowed()) {
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G10c_EXPOSURE_LIMIT(" + exposureResult.getReason() + ")";
+                    reasons.add("[EXPOSURE_LIMIT_BLOCK] " + exposureResult.getReason()
+                            + " marketExposure=" + safe(exposureResult.getMarketExposure()).setScale(2, RoundingMode.HALF_UP)
+                            + " walletExposure=" + safe(exposureResult.getWalletExposure()).setScale(2, RoundingMode.HALF_UP)
+                            + " totalExposure=" + safe(exposureResult.getTotalExposure()).setScale(2, RoundingMode.HALF_UP));
+                } else if (exposureResult.isClipped()) {
+                    BigDecimal clippedStake = exposureResult.getClippedStake();
+                    if (clippedStake.compareTo(minOrderUsdc) >= 0) {
+                        recommendedStake = clippedStake;
+                        reasons.add("[EXPOSURE_CLIPPED] Stake reduced from " + recommendedStake
+                                + " to " + clippedStake + " by exposure limits.");
+                    } else {
+                        accepted = false;
+                        if (firstRejectGate == null) firstRejectGate = "G10c_EXPOSURE_CLIP_BELOW_MIN(stake=" + clippedStake + ")";
+                        reasons.add("[EXPOSURE_CLIP_BELOW_MIN] Clipped stake=" + clippedStake
+                                + " is below minOrder=" + minOrderUsdc + ".");
+                    }
+                }
+            }
+        }
+        if (accepted) gateStage = 10; // 通过 Kelly / 仓位计算 + 聚合 + 暴露上限
 
         if (profitabilityEstimate.getEstimateSampleSize() != null && profitabilityEstimate.getEstimateSampleSize() > 0) {
             reasons.add("Local risk estimate sample size=" + profitabilityEstimate.getEstimateSampleSize() + ".");
@@ -705,11 +1360,148 @@ public class SmartWalletSignalRiskService {
             if (firstRejectGate == null) firstRejectGate = "G11_PROBABILITY_BELOW_THRESHOLD(p=" + safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) + ",min=" + safe(risk.getMinCalibratedFollowProbability()) + ")";
             reasons.add("Calibrated follow probability is below threshold.");
         }
-        if (risk.isEnableSlippageGate()
+        // ── W2-T4 价格冲击三段式门控 ───────────────────────────────────────────
+        // 在 enablePriceImpactGate=true 时优先用 bps 三段式判定（避免一刀切拒绝），
+        // 否则回退到既有的 maxExpectedSlippageUsdc 硬阈值（向后兼容）。
+        // W2-T4.3: 同时导出 priceImpactExecutionMode 供 PolymarketOrderRequestFactory
+        // 真正路由 MAKER_FIRST / MAKER_ONLY，而不仅仅是日志标签。
+        boolean priceImpactGateApplied = false;
+        String priceImpactExecutionMode = null;
+        // 第十四批 #1: 把 bps source 提到 block 外, 让 Builder 段可访问;
+        // 当 priceImpactGate 未启用 / 未命中时保持 null, Shadow recorder 也按 null 落表.
+        String priceImpactBpsSource = null;
+        if (risk.isEnableSlippageGate() && risk.isEnablePriceImpactGate() && accepted) {
+            // 第十三批 #1: 优先走 VWAP 逐档估算 (基于 market_snapshot 的真实订单簿深度);
+            // estimator 缺失 / 关闭 / 失败 → fallback 到既有 profitabilityEstimate 代理算法.
+            int bps;
+            String bpsSource;
+            MarketPriceImpactEstimator.PriceImpactEstimate vwapEstimate = null;
+            if (marketPriceImpactEstimator != null && risk.isEnableVwapSlippageEstimator()) {
+                try {
+                    vwapEstimate = marketPriceImpactEstimator.estimate(event, recommendedStake);
+                } catch (RuntimeException ex) {
+                    log.warn("[SignalRiskService] VWAP estimator failed eventId={} reason={}",
+                            event == null ? null : event.getId(), ex.toString());
+                }
+            }
+            if (vwapEstimate != null && vwapEstimate.isOk() && vwapEstimate.getEstimatedSlippageBps() != null) {
+                long vwapBps = vwapEstimate.getEstimatedSlippageBps().longValue();
+                bps = vwapBps > Integer.MAX_VALUE ? Integer.MAX_VALUE
+                        : vwapBps < Integer.MIN_VALUE ? Integer.MIN_VALUE
+                        : (int) vwapBps;
+                bpsSource = "VWAP(" + vwapEstimate.getStatus() + ")";
+            } else {
+                BigDecimal estSlippage = safe(profitabilityEstimate.getEstimatedSlippageUsdc());
+                BigDecimal stakeForBps = recommendedStake == null || recommendedStake.compareTo(BigDecimal.ZERO) <= 0
+                        ? BigDecimal.ONE
+                        : recommendedStake;
+                // bps = (slippageUsdc / stakeUsdc) * 10000
+                long bpsLong = estSlippage.multiply(new BigDecimal("10000"))
+                        .divide(stakeForBps, 0, RoundingMode.HALF_UP)
+                        .longValue();
+                // 截断到 int 范围，避免极端值溢出
+                bps = bpsLong > Integer.MAX_VALUE ? Integer.MAX_VALUE
+                        : bpsLong < Integer.MIN_VALUE ? Integer.MIN_VALUE
+                        : (int) bpsLong;
+                bpsSource = vwapEstimate != null && vwapEstimate.getStatus() != null
+                        ? "PROXY(vwap=" + vwapEstimate.getStatus() + ")"
+                        : "PROXY";
+            }
+            reasons.add("[PRICE_IMPACT_SRC] bps=" + bps + " source=" + bpsSource);
+            int rejectBps = risk.getPriceImpactRejectBps();
+            int severeBps = risk.getPriceImpactSevereDowngradeBps();
+            int downBps = risk.getPriceImpactDowngradeBps();
+            if (bps >= rejectBps) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G11_PRICE_IMPACT_REJECT(bps=" + bps + ")";
+                reasons.add("[PRICE_IMPACT_REJECT] Estimated slippage=" + bps + "bps ≥ rejectBps="
+                        + rejectBps + ". Rejecting signal.");
+                priceImpactExecutionMode = "REJECTED";
+            } else if (bps >= severeBps) {
+                BigDecimal mult = safe(risk.getPriceImpactSevereDowngradeMultiplier()).max(new BigDecimal("0.05"));
+                BigDecimal before = recommendedStake;
+                recommendedStake = recommendedStake.multiply(mult).setScale(2, RoundingMode.HALF_UP);
+                // 防御性下限：降级后若低于 minOrderUsdc 则提升到 minOrder（避免被后续无价值地拒绝）
+                if (recommendedStake.compareTo(minOrderUsdc) < 0) {
+                    recommendedStake = minOrderUsdc.setScale(2, RoundingMode.HALF_UP);
+                    reasons.add("[PRICE_IMPACT_SEVERE_FLOOR] Severe-downgrade pushed stake below minOrder; raised to "
+                            + recommendedStake + ".");
+                }
+                reasons.add("[PRICE_IMPACT_SEVERE_DOWNGRADE] slippage=" + bps + "bps in [" + severeBps + "," + rejectBps
+                        + "). Stake " + before + " → " + recommendedStake + " (×" + mult + ", MAKER_ONLY, "
+                        + risk.getPriceImpactMakerOnlyTimeoutSeconds() + "s timeout).");
+                priceImpactExecutionMode = "MAKER_ONLY";
+            } else if (bps >= downBps) {
+                BigDecimal mult = safe(risk.getPriceImpactDowngradeMultiplier()).max(new BigDecimal("0.05"));
+                BigDecimal before = recommendedStake;
+                recommendedStake = recommendedStake.multiply(mult).setScale(2, RoundingMode.HALF_UP);
+                if (recommendedStake.compareTo(minOrderUsdc) < 0) {
+                    recommendedStake = minOrderUsdc.setScale(2, RoundingMode.HALF_UP);
+                    reasons.add("[PRICE_IMPACT_DOWNGRADE_FLOOR] Downgrade pushed stake below minOrder; raised to "
+                            + recommendedStake + ".");
+                }
+                reasons.add("[PRICE_IMPACT_DOWNGRADE] slippage=" + bps + "bps in [" + downBps + "," + severeBps
+                        + "). Stake " + before + " → " + recommendedStake + " (×" + mult + ", MAKER_FIRST).");
+                priceImpactExecutionMode = "MAKER_FIRST";
+            } else {
+                reasons.add("[PRICE_IMPACT_OK] slippage=" + bps + "bps < downgradeBps=" + downBps + "; full stake.");
+                priceImpactExecutionMode = "NORMAL";
+            }
+            priceImpactGateApplied = true;
+            // 第十四批 #1: 把 bpsSource 透到 decision (供 Shadow recorder 落表)
+            priceImpactBpsSource = bpsSource;
+        }
+        // 兼容路径：未启用 priceImpact 三段式时，沿用既有 USDC 硬阈值。
+        if (!priceImpactGateApplied
+                && risk.isEnableSlippageGate()
                 && safe(profitabilityEstimate.getEstimatedSlippageUsdc()).compareTo(safe(risk.getMaxExpectedSlippageUsdc())) > 0) {
             accepted = false;
             if (firstRejectGate == null) firstRejectGate = "G11_SLIPPAGE_COST_TOO_HIGH(slippage=" + safe(profitabilityEstimate.getEstimatedSlippageUsdc()).setScale(4, RoundingMode.HALF_UP) + ")";
             reasons.add("Predicted slippage cost is above threshold.");
+        }
+        // ── W2-T5 距结算时间门（time-to-expiry, 三段式）─────────────────────────
+        // 决议文档:
+        //   remainingMs < rejectMin        → 拒绝（高速结算 + 滑点风险叠加，弊大于利）
+        //   remainingMs in [reject, downgrade) → 仓位 ×downgradeMultiplier（默认 0.5）
+        //   remainingMs ≥ downgrade            → 全仓
+        // 与既有 G6 "maxHoursToMarketEnd 太远拒绝" 互补；本段处理"太近"侧。
+        // marketType 在豁免列表（如未来的 weather / btc_minute 等短期结构化市场）则跳过。
+        if (risk.isEnableTimeToExpiryGate() && accepted && endAt != null && endAt > 0) {
+            long remainingMs = endAt - System.currentTimeMillis();
+            long rejectMs = (long) Math.max(0, risk.getTimeToExpiryRejectMinutes()) * 60_000L;
+            long downgradeMs = (long) Math.max(0, risk.getTimeToExpiryDowngradeMinutes()) * 60_000L;
+            List<String> exempts = risk.getTimeToExpiryExemptMarketTypes();
+            boolean exempted = exempts != null && marketType != null
+                    && exempts.stream().anyMatch(t -> t != null && t.equalsIgnoreCase(marketType));
+            if (exempted) {
+                reasons.add("[TIME_TO_EXPIRY_EXEMPT] marketType=" + marketType
+                        + " 在豁免列表中, 跳过 W2-T5 距结算时间门.");
+            } else if (remainingMs > 0 && remainingMs < rejectMs) {
+                accepted = false;
+                if (firstRejectGate == null) {
+                    firstRejectGate = "G11_TIME_TO_EXPIRY_REJECT(remainingMin="
+                            + (remainingMs / 60_000L) + ")";
+                }
+                reasons.add("[TIME_TO_EXPIRY_REJECT] remainingMin=" + (remainingMs / 60_000L)
+                        + " < rejectMin=" + risk.getTimeToExpiryRejectMinutes()
+                        + ". Rejecting new entry near settlement.");
+            } else if (remainingMs > 0 && remainingMs < downgradeMs) {
+                BigDecimal mult = safe(risk.getTimeToExpiryDowngradeMultiplier()).max(new BigDecimal("0.05"));
+                BigDecimal before = recommendedStake;
+                recommendedStake = recommendedStake.multiply(mult).setScale(2, RoundingMode.HALF_UP);
+                if (recommendedStake.compareTo(minOrderUsdc) < 0) {
+                    recommendedStake = minOrderUsdc.setScale(2, RoundingMode.HALF_UP);
+                    reasons.add("[TIME_TO_EXPIRY_FLOOR] Downgrade pushed stake below minOrder; raised to "
+                            + recommendedStake + ".");
+                }
+                reasons.add("[TIME_TO_EXPIRY_DOWNGRADE] remainingMin=" + (remainingMs / 60_000L)
+                        + " in [" + risk.getTimeToExpiryRejectMinutes() + ","
+                        + risk.getTimeToExpiryDowngradeMinutes() + ") min. Stake "
+                        + before + " → " + recommendedStake + " (×" + mult + ").");
+            } else {
+                reasons.add("[TIME_TO_EXPIRY_OK] remainingMin=" + (remainingMs / 60_000L)
+                        + " ≥ downgradeMin=" + risk.getTimeToExpiryDowngradeMinutes() + "; full stake.");
+            }
         }
         if (risk.isEnableSlippageGate()
                 && safe(profitabilityEstimate.getSlippageSpikeProbability()).compareTo(safe(risk.getMaxSlippageSpikeProbability())) > 0) {
@@ -717,6 +1509,79 @@ public class SmartWalletSignalRiskService {
             if (firstRejectGate == null) firstRejectGate = "G11_SLIPPAGE_SPIKE_PROB_TOO_HIGH(prob=" + safe(profitabilityEstimate.getSlippageSpikeProbability()).setScale(4, RoundingMode.HALF_UP) + ")";
             reasons.add("Slippage spike probability is above threshold.");
         }
+        // ── W2-T1.4 价差 P70 hot path 门 (2026-05-16 第十一批) ─────────────────
+        // 决议: 单 leader 单市场 spread 超过该品类历史 P70 → 降级 / 拒绝。
+        //   spread ≤ P70                  → 全仓
+        //   spread ∈ (P70, P70*downFac]   → ×spreadP70DowngradeMultiplier
+        //   spread > P70*rejectFac        → 拒绝
+        // 与 W2-T1 流动性 P30 互补 (一个看深度, 一个看挂单价差); 与 W2-T4 priceImpact
+        // 独立 (前者用历史品类分位, 后者用 profitability 即时估算)。
+        // 数据源依赖 pm_market_liquidity_percentile_daily 的 spread_bps_p70 列, 由
+        // MarketLiquidityPercentileSnapshotService 在第十批已写入。
+        if (risk.isEnableSpreadP70Gate() && accepted && marketLiquidityPercentileService != null) {
+            String category = marketState == null ? null : marketState.normalizedCategory();
+            if (category == null || category.isBlank()) {
+                category = marketState == null ? null : marketState.sourceCategory();
+            }
+            BigDecimal p70 = marketLiquidityPercentileService.spreadP70ForCategory(category);
+            if (p70 != null && p70.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal currentSpread = resolveSpreadBps(event, risk);
+                if (currentSpread != null && currentSpread.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal downgradeFactor = safe(risk.getSpreadP70DowngradeFactor()).max(BigDecimal.ONE);
+                    BigDecimal rejectFactor = safe(risk.getSpreadP70RejectFactor()).max(downgradeFactor);
+                    BigDecimal downgradeCap = p70.multiply(downgradeFactor);
+                    BigDecimal rejectCap = p70.multiply(rejectFactor);
+                    if (currentSpread.compareTo(rejectCap) > 0) {
+                        accepted = false;
+                        if (firstRejectGate == null) {
+                            firstRejectGate = "G11_SPREAD_P70_REJECT(spread=" + currentSpread.setScale(2, RoundingMode.HALF_UP)
+                                    + "bps,p70=" + p70.setScale(2, RoundingMode.HALF_UP)
+                                    + ",rejectCap=" + rejectCap.setScale(2, RoundingMode.HALF_UP) + ")";
+                        }
+                        reasons.add("[SPREAD_P70_REJECT] category=" + category
+                                + " spread=" + currentSpread.setScale(2, RoundingMode.HALF_UP)
+                                + "bps > p70(" + p70.setScale(2, RoundingMode.HALF_UP)
+                                + ")×rejectFactor(" + rejectFactor + ")=" + rejectCap.setScale(2, RoundingMode.HALF_UP)
+                                + "bps. Rejecting wide-spread entry.");
+                    } else if (currentSpread.compareTo(downgradeCap) > 0) {
+                        BigDecimal mult = safe(risk.getSpreadP70DowngradeMultiplier()).max(new BigDecimal("0.05"));
+                        BigDecimal before = recommendedStake;
+                        recommendedStake = recommendedStake.multiply(mult).setScale(2, RoundingMode.HALF_UP);
+                        if (recommendedStake.compareTo(minOrderUsdc) < 0) {
+                            recommendedStake = minOrderUsdc.setScale(2, RoundingMode.HALF_UP);
+                            reasons.add("[SPREAD_P70_FLOOR] Downgrade pushed stake below minOrder; raised to "
+                                    + recommendedStake + ".");
+                        }
+                        reasons.add("[SPREAD_P70_DOWNGRADE] category=" + category
+                                + " spread=" + currentSpread.setScale(2, RoundingMode.HALF_UP)
+                                + "bps in (p70=" + p70.setScale(2, RoundingMode.HALF_UP)
+                                + ", p70×" + downgradeFactor + "=" + downgradeCap.setScale(2, RoundingMode.HALF_UP)
+                                + "]. Stake " + before + " → " + recommendedStake + " (×" + mult + ").");
+                    } else {
+                        reasons.add("[SPREAD_P70_OK] category=" + category
+                                + " spread=" + currentSpread.setScale(2, RoundingMode.HALF_UP)
+                                + "bps ≤ p70=" + p70.setScale(2, RoundingMode.HALF_UP) + "bps; full stake.");
+                    }
+                }
+            }
+        }
+        // ── Gate 17: 确定性净成本门（2026-06-05 补充场景库 D1：gas 尖峰 + 粉尘 + 双边手续费占比）──
+        // 在 stake 经全部降级门最终化后判定：已知确定成本（双边手续费 + 往返 gas）占 stake 比例过高，
+        // 或 gas 估算超绝对上限 → 拒。不依赖 p_win，纯下沿保护。判定抽到静态 helper 便于单测。
+        if (accepted) {
+            String g17Reason = evaluateNetOfCost(
+                    risk.isEnableNetOfCostGate(),
+                    event.getSide(), entryLane, recommendedStake,
+                    risk.getNetOfCostFeeRate(), risk.getNetOfCostRoundTripGasUsdc(),
+                    risk.getNetOfCostMaxGasUsdc(), risk.getNetOfCostMaxCostRatio());
+            if (g17Reason != null) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = g17Reason;
+                reasons.add("[NET_OF_COST_BLOCK] " + g17Reason
+                        + "; fixed costs (2×fee + gas) eat the edge, skipping.");
+            }
+        }
+
         if (accepted) gateStage = 11; // 通过模型门控
 
         SignalScoreModelResult signalScore = signalScoreModelService.score(
@@ -734,7 +1599,8 @@ public class SmartWalletSignalRiskService {
                 && risk.isEnableSignalScoreGate()
                 && signalScore != null
                 && safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) < 0
-                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
+                && !manualAllowlistApplied) {
             accepted = false;
             if (firstRejectGate == null) {
                 firstRejectGate = "G11_SIGNAL_SCORE_TOO_LOW(score=" + safe(signalScore.getSignalScore()) + ")";
@@ -742,10 +1608,20 @@ public class SmartWalletSignalRiskService {
             reasons.add("[SIGNAL_SCORE_BLOCK] signalScore=" + safe(signalScore.getSignalScore())
                     + " is below minLiveSignalScore=" + safe(risk.getMinLiveSignalScore()) + ".");
         }
+        if (manualAllowlistApplied
+                && risk.isEnableSignalScoreGate()
+                && signalScore != null
+                && safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) < 0
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
+            reasons.add("[MANUAL_ALLOWLIST_SIGNAL_SCORE_BYPASS] signalScore=" + safe(signalScore.getSignalScore())
+                    + " is below minLiveSignalScore=" + safe(risk.getMinLiveSignalScore())
+                    + " but allowlist wallet bypasses signal score gate.");
+        }
         if (signalScore != null) {
             boolean scoreAccepted = !risk.isEnableSignalScoreGate()
                     || safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) >= 0
-                    || "DYNAMIC_FOLLOW_EXIT".equals(entryLane);
+                    || "DYNAMIC_FOLLOW_EXIT".equals(entryLane)
+                    || manualAllowlistApplied;
             log.info("{}", flow("S5_RISK_EVALUATED", "信号评分模型",
                     scoreAccepted ? "通过" : "拒绝", event,
                     "entryLane", entryLane,
@@ -942,6 +1818,25 @@ public class SmartWalletSignalRiskService {
                 .strategyChecks(strategyChecks)
                 .scaleUpSignal(isScaleUpSignal)
                 .scaleUpAddOnStake(isScaleUpSignal ? scaleUpAddOnStake : null)
+                .grossMarketExposure(lastExposureResult != null ? lastExposureResult.getGrossMarketExposure() : null)
+                .netDirectionalExposure(lastExposureResult != null ? lastExposureResult.getNetDirectionalExposure() : null)
+                .reducesNetExposure(lastExposureResult != null && lastExposureResult.isReducesNetExposure())
+                .leaderRollingStatus(leaderRollingState.isGateEnabled()
+                        ? leaderRollingState.getStatus().name() : null)
+                .leaderRollingWinRate(leaderRollingState.getMetrics() == null
+                        ? null : leaderRollingState.getMetrics().winRate())
+                .leaderRollingSampleCount(leaderRollingState.getMetrics() == null
+                        ? null : leaderRollingState.getMetrics().sampleCount())
+                .leaderRollingTotalPnlUsdc(leaderRollingState.getMetrics() == null
+                        ? null : leaderRollingState.getMetrics().totalPnlUsdc())
+                .leaderDriftStatus(leaderDriftState.isGateEnabled()
+                        ? leaderDriftState.getStatus().name() : null)
+                .leaderDriftCosineDistance(leaderDriftState.getMetrics() == null
+                        ? null : leaderDriftState.getMetrics().cosineDistance())
+                .leaderDriftSampleCount(leaderDriftState.getMetrics() == null
+                        ? null : leaderDriftState.getMetrics().sampleCount())
+                .priceImpactExecutionMode(priceImpactExecutionMode) // W2-T4.3
+                .priceImpactBpsSource(priceImpactBpsSource) // 第十四批 #1
                 .reasons(reasons)
                 .build();
         // ── 门控阶段追踪汇总日志 ──
@@ -958,7 +1853,7 @@ public class SmartWalletSignalRiskService {
     }
 
     private MarketRoutingContext classifyMarket(SmartWalletTradeEventEntity event,
-                                                SmartWalletMarketStateService.MarketStateSnapshot marketState,
+                                                MarketStateSnapshot marketState,
                                                 Long marketEndAt,
                                                 SmartWalletProperties.SignalRisk risk,
                                                 boolean hasOppositeOpenPosition) {
@@ -970,10 +1865,16 @@ public class SmartWalletSignalRiskService {
     }
 
     private String resolveMarketType(SmartWalletTradeEventEntity event,
-                                     SmartWalletMarketStateService.MarketStateSnapshot marketState,
+                                     MarketStateSnapshot marketState,
                                      Long marketEndAt,
                                      SmartWalletProperties.SignalRisk risk) {
         long fastHours = defaultInt(risk.getFastEventMaxHours(), 24);
+        String text = ((event == null ? "" : nullToEmpty(event.getQuestion())) + " "
+                + (marketState == null ? "" : nullToEmpty(marketState.normalizedCategory())) + " "
+                + (marketState == null ? "" : nullToEmpty(marketState.sourceCategory()))).toLowerCase(Locale.ROOT);
+        if (isSpecificSportsEvent(text)) {
+            return "FAST_EVENT";
+        }
         if (marketEndAt != null && marketEndAt > 0) {
             long remainingMs = marketEndAt - System.currentTimeMillis();
             if (remainingMs > 0 && remainingMs <= fastHours * 3600_000L) {
@@ -989,9 +1890,6 @@ public class SmartWalletSignalRiskService {
                 return "LONG_HORIZON";
             }
         }
-        String text = ((event == null ? "" : nullToEmpty(event.getQuestion())) + " "
-                + (marketState == null ? "" : nullToEmpty(marketState.normalizedCategory())) + " "
-                + (marketState == null ? "" : nullToEmpty(marketState.sourceCategory()))).toLowerCase(Locale.ROOT);
         if (containsAny(text, List.of("sports", "sport", "nba", "nfl", "nhl", "mlb", "soccer", "football",
                 "tennis", "ufc", "boxing", "mma", "esports", "e-sports", "cs2", "counter-strike",
                 "league of legends", "dota", "fifa", "valorant", "overwatch", " vs "))) {
@@ -1002,6 +1900,16 @@ public class SmartWalletSignalRiskService {
             return "STANDARD_BINARY";
         }
         return "UNKNOWN";
+    }
+
+    private boolean isSpecificSportsEvent(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        boolean sports = containsAny(text, List.of("sports", "sport", "nba", "nfl", "nhl", "mlb", "soccer",
+                "football", "tennis", "ufc", "boxing", "mma", "esports", "e-sports", "cs2",
+                "counter-strike", "league of legends", "dota", "fifa", "valorant", "overwatch"));
+        return sports && containsAny(text, List.of(" vs ", " v ", " at "));
     }
 
     private boolean containsAny(String value, List<String> needles) {
@@ -1060,8 +1968,557 @@ public class SmartWalletSignalRiskService {
                 .collect(Collectors.joining(" | "));
     }
 
+    /**
+     * 解析累计 triggerSize：在意图聚合时间窗口内，将同一 wallet+market+outcome+side 的
+     * 所有 trade event 的 sizeUsdc 加总，作为"领单地址在本轮的累计开仓规模"。
+     *
+     * 目的：避免 triggerStakeCapRatio 按单笔碎片金额 cap，导致每笔跟单仅 1U。
+     * 当累计值 > 单笔值时，使用累计值可使 cap 更合理。
+     *
+     * @param event 当前触发事件
+     * @return max(累计sizeUsdc, 单笔sizeUsdc)
+     */
+    private BigDecimal resolveAccumulatedTriggerSize(SmartWalletTradeEventEntity event) {
+        BigDecimal singleSize = safe(event.getSizeUsdc());
+
+        // 仅在意图聚合启用时累计
+        SmartWalletProperties.IntentAggregationConfig config = properties.getIntentAggregation();
+        if (config == null || !config.isEnabled() || config.getWindowMinutes() <= 0) {
+            return singleSize;
+        }
+
+        String walletAddress = event.getWalletAddress();
+        String marketId = event.getMarketId();
+        String outcome = event.getOutcome();
+        String side = event.getSide();
+        if (!StringUtils.hasText(walletAddress) || !StringUtils.hasText(marketId)
+                || !StringUtils.hasText(outcome) || !StringUtils.hasText(side)) {
+            return singleSize;
+        }
+
+        try {
+            long windowMs = config.getWindowMinutes() * 60_000L;
+            Date eventTime = event.getCreatedAt() != null ? event.getCreatedAt() : new Date();
+            Date windowStart = new Date(eventTime.getTime() - windowMs);
+
+            // 查询窗口内同维度的所有 trade event
+            List<SmartWalletTradeEventEntity> windowEvents = tradeEventMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                            .eq(SmartWalletTradeEventEntity::getWalletAddress, walletAddress)
+                            .eq(SmartWalletTradeEventEntity::getMarketId, marketId)
+                            .eq(SmartWalletTradeEventEntity::getOutcome, outcome)
+                            .eq(SmartWalletTradeEventEntity::getSide, side)
+                            .ge(SmartWalletTradeEventEntity::getCreatedAt, windowStart)
+                            .le(SmartWalletTradeEventEntity::getCreatedAt, eventTime)
+            );
+
+            if (windowEvents == null || windowEvents.isEmpty()) {
+                return singleSize;
+            }
+
+            BigDecimal accumulated = windowEvents.stream()
+                    .map(e -> safe(e.getSizeUsdc()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            if (accumulated.compareTo(singleSize) > 0) {
+                log.info("{} action=累计triggerSize result=使用累计值 wallet={} market={} outcome={} side={} " +
+                                "singleSize={} accumulated={} windowEvents={}",
+                        LOG_PREFIX, walletAddress, marketId, outcome, side,
+                        singleSize.setScale(2, RoundingMode.HALF_UP),
+                        accumulated.setScale(2, RoundingMode.HALF_UP),
+                        windowEvents.size());
+            }
+
+            return accumulated.max(singleSize);
+        } catch (Exception ex) {
+            log.warn("{} resolveAccumulatedTriggerSize failed, fallback to single event size: {}",
+                    LOG_PREFIX, ex.getMessage());
+            return singleSize;
+        }
+    }
+
     private BigDecimal safe(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * 从 MarketInfo 或 event metadata 中解析 market 品类，用于 fee rate 查询。
+     * 当前简化实现：返回 null（走 defaultTakerFeeRate）。
+     * 后续可扩展为从 marketInfoService 读取 category/tags 字段。
+     */
+    private String resolveMarketCategory(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            return null;
+        }
+        try {
+            SmartWalletMarketInfoEntity info = marketInfoService.getByMarketIdAndOutcome(
+                    event.getMarketId(), event.getOutcome());
+            if (info != null) {
+                String cat = StringUtils.hasText(info.getNormalizedCategory())
+                        ? info.getNormalizedCategory()
+                        : info.getSourceCategory();
+                if (StringUtils.hasText(cat)) {
+                    return cat.toLowerCase(Locale.ROOT);
+                }
+            }
+        } catch (Exception ignored) {
+            // fail-open: 品类解析失败不影响下单
+        }
+        return null;
+    }
+
+    /**
+     * 从最近的 market snapshot 中读取对应深度（ask 侧）。
+     *
+     * @return ask depth USDC 金额，null 表示快照不可用
+     */
+    /**
+     * W2-T1.4 (2026-05-16 第十一批): 读取最近一笔 market snapshot 的 spread bps。
+     *
+     * <p>陈旧度超过 {@code spreadP70SnapshotMaxAgeMs} 的快照返回 null，让 W2-T1.4 门控
+     * 直接跳过, 避免"陈旧 spread + 高 P70" 造成的误降级 / 误拒绝。</p>
+     */
+    private BigDecimal resolveSpreadBps(SmartWalletTradeEventEntity event,
+                                        SmartWalletProperties.SignalRisk risk) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            return null;
+        }
+        try {
+            // F-P1-7: hot-path 走 findFreshSnapshot, 开关 enable-ws-hot-path-snapshot=true 时优先 WS,
+            // 开关关闭时与原 findLatestSnapshotAtOrBefore(..., now) 完全一致
+            SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService
+                    .findFreshSnapshot(event.getMarketId(), event.getOutcome());
+            if (snapshot == null || snapshot.getSpreadBps() == null) {
+                return null;
+            }
+            long maxAge = risk == null || risk.getSpreadP70SnapshotMaxAgeMs() <= 0
+                    ? 300_000L
+                    : risk.getSpreadP70SnapshotMaxAgeMs();
+            if (snapshot.getSnapshotAt() != null
+                    && System.currentTimeMillis() - snapshot.getSnapshotAt().getTime() > maxAge) {
+                return null;
+            }
+            return snapshot.getSpreadBps();
+        } catch (Exception e) {
+            log.debug("[SPREAD_P70] failed to resolve spread bps marketId={} reason={}",
+                    event.getMarketId(), e.toString());
+            return null;
+        }
+    }
+
+    /**
+     * G6c: 评估入口盘口的 bestAsk 是否可用。
+     *
+     * <p>Pure-ish: 仅依赖 snapshot 缓存查询, 不做实时 fetch (避免引入额外 CLOB API 调用)。
+     * snapshot 太老 → 按 {@code entryAskStaleStrategy} 配置决定 FAIL_OPEN / FAIL_CLOSED。</p>
+     */
+    G6cAskCheckOutcome evaluateEntryAskSanity(SmartWalletTradeEventEntity event,
+                                              SmartWalletProperties.SignalRisk risk) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            return G6cAskCheckOutcome.SKIP_NO_DATA;
+        }
+        SmartWalletMarketSnapshotEntity snapshot;
+        try {
+            snapshot = marketSnapshotCollectorService
+                    .findFreshSnapshot(event.getMarketId(), event.getOutcome());
+        } catch (Exception ex) {
+            log.debug("G6c snapshot lookup failed marketId={} err={}", event.getMarketId(), ex.toString());
+            return failOnStale(risk);
+        }
+        if (snapshot == null || snapshot.getSnapshotAt() == null) {
+            return failOnStale(risk);
+        }
+        long ageMs = System.currentTimeMillis() - snapshot.getSnapshotAt().getTime();
+        if (ageMs > risk.getEntryAskSnapshotMaxAgeMs()) {
+            return failOnStale(risk);
+        }
+        BigDecimal bestAsk = snapshot.getBestAsk();
+        if (bestAsk == null || bestAsk.compareTo(BigDecimal.ZERO) <= 0) {
+            return G6cAskCheckOutcome.REJECT_EMPTY_ASK;
+        }
+        return G6cAskCheckOutcome.OK;
+    }
+
+    private G6cAskCheckOutcome failOnStale(SmartWalletProperties.SignalRisk risk) {
+        String policy = risk.getEntryAskStaleStrategy() == null ? "FAIL_OPEN" : risk.getEntryAskStaleStrategy();
+        return "FAIL_CLOSED".equalsIgnoreCase(policy)
+                ? G6cAskCheckOutcome.REJECT_STALE_FAIL_CLOSED
+                : G6cAskCheckOutcome.SKIP_STALE_FAIL_OPEN;
+    }
+
+    // ── R1 组合级熔断（2026-06-03 全盘风险审计）：判定与缓存 ───────────────────────
+    private volatile long riskHaltComputedAtMs = 0L;
+    private volatile BigDecimal cachedTodayRealizedPnl = null;
+
+    /** 返回非空=应熔断停开新仓的原因；null=放行。人工 kill-switch 即时生效，当日亏损门带缓存。 */
+    private String resolveRiskHaltReason(SmartWalletProperties.SignalRisk risk) {
+        if (risk == null) {
+            return null;
+        }
+        if (risk.isTradingHalted()) {
+            return "G0_RISK_HALT(manual_kill_switch)";
+        }
+        BigDecimal maxDailyLoss = risk.getMaxDailyLossUsdc();
+        if (maxDailyLoss != null && maxDailyLoss.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal todayPnl = cachedTodayRealizedPnl(risk);
+            if (todayPnl != null && todayPnl.compareTo(maxDailyLoss.negate()) <= 0) {
+                return "G0_RISK_HALT(daily_loss=" + todayPnl.setScale(2, RoundingMode.HALF_UP)
+                        + ",limit=-" + maxDailyLoss.setScale(2, RoundingMode.HALF_UP) + ")";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * G15 临近结算「高价低赔率」拒单门 —— 纯函数, 便于单测。
+     * 命中条件(AND)：门启用 + side=BUY + entryLane≠DYNAMIC_FOLLOW_EXIT + 有效 endAt +
+     * 剩余时间 ≤ maxHours + price ≥ minPrice。命中返回 firstRejectGate token；否则返回 null(放行)。
+     */
+    static String evaluateHighPriceLowReward(boolean enabled, String side, String entryLane,
+                                             Long endAtEpochMs, long nowMs, BigDecimal price,
+                                             Integer maxHoursToEnd, BigDecimal minPrice) {
+        if (!enabled) return null;
+        if (!"BUY".equalsIgnoreCase(side)) return null;
+        if ("DYNAMIC_FOLLOW_EXIT".equals(entryLane)) return null;
+        if (endAtEpochMs == null || endAtEpochMs <= 0) return null;
+        if (maxHoursToEnd == null || minPrice == null || price == null) return null;
+        long remainingMs = endAtEpochMs - nowMs;
+        if (remainingMs <= 0) return null; // 已过期交给 G6 处理, 本门不重复拦
+        long thresholdMs = maxHoursToEnd.longValue() * 3600_000L;
+        if (remainingMs <= thresholdMs && price.compareTo(minPrice) >= 0) {
+            return "G15_HIGH_PRICE_LOW_REWARD(remainingH=" + (remainingMs / 3600_000L)
+                    + ",price=" + price.setScale(4, RoundingMode.HALF_UP)
+                    + ",maxH=" + maxHoursToEnd + ",minPrice=" + minPrice + ")";
+        }
+        return null;
+    }
+
+    /**
+     * G17 确定性净成本门 —— 纯函数, 便于单测。不依赖 p_win。
+     * knownCost = stake × feeRate × 2(双边) + 往返 gas。
+     * gas > maxGasUsdc → 返回 GAS_SPIKE token；否则 knownCost/stake > maxCostRatio → 返回 NET_OF_COST token；
+     * 均不命中返回 null(放行)。仅作用于 BUY 且 entryLane≠DYNAMIC_FOLLOW_EXIT、stake>0。
+     */
+    static String evaluateNetOfCost(boolean enabled, String side, String entryLane, BigDecimal stake,
+                                    BigDecimal feeRate, BigDecimal roundTripGasUsdc,
+                                    BigDecimal maxGasUsdc, BigDecimal maxCostRatio) {
+        if (!enabled) return null;
+        if (!"BUY".equalsIgnoreCase(side)) return null;
+        if ("DYNAMIC_FOLLOW_EXIT".equals(entryLane)) return null;
+        if (stake == null || stake.compareTo(BigDecimal.ZERO) <= 0) return null;
+        BigDecimal gas = roundTripGasUsdc == null ? BigDecimal.ZERO : roundTripGasUsdc;
+        BigDecimal fee = feeRate == null ? BigDecimal.ZERO : feeRate;
+        BigDecimal maxGas = maxGasUsdc == null ? BigDecimal.ZERO : maxGasUsdc;
+        BigDecimal maxRatio = maxCostRatio == null ? BigDecimal.ZERO : maxCostRatio;
+        if (maxGas.compareTo(BigDecimal.ZERO) > 0 && gas.compareTo(maxGas) > 0) {
+            return "G17_GAS_SPIKE(gas=" + gas.setScale(4, RoundingMode.HALF_UP)
+                    + ",max=" + maxGas.setScale(4, RoundingMode.HALF_UP) + ")";
+        }
+        BigDecimal knownCost = stake.multiply(fee).multiply(new BigDecimal("2")).add(gas);
+        BigDecimal costRatio = knownCost.divide(stake, 6, RoundingMode.HALF_UP);
+        if (maxRatio.compareTo(BigDecimal.ZERO) > 0 && costRatio.compareTo(maxRatio) > 0) {
+            return "G17_NET_OF_COST(costRatio=" + costRatio.setScale(4, RoundingMode.HALF_UP)
+                    + ",max=" + maxRatio.setScale(4, RoundingMode.HALF_UP)
+                    + ",stake=" + stake.setScale(2, RoundingMode.HALF_UP) + ")";
+        }
+        return null;
+    }
+
+    /**
+     * G16 市场异常波动熔断 —— 纯函数, 便于单测。不依赖任何实例状态。
+     * 窗口内有效价格(概率空间 0~1)的绝对极差 (max-min) 超过 maxAbsMove 即熔断；
+     * 仅作用于真实新开仓 (BUY 且 entryLane≠DYNAMIC_FOLLOW_EXIT)；样本不足/门关闭返回 null(放行)。
+     * 命中返回 firstRejectGate token；否则返回 null。
+     */
+    static String evaluateVolatilityHalt(boolean enabled, String side, String entryLane,
+                                         List<BigDecimal> recentPrices,
+                                         int minSamples, BigDecimal maxAbsMove) {
+        if (!enabled) return null;
+        if (!"BUY".equalsIgnoreCase(side)) return null;
+        if ("DYNAMIC_FOLLOW_EXIT".equals(entryLane)) return null;
+        if (maxAbsMove == null || maxAbsMove.compareTo(BigDecimal.ZERO) <= 0) return null;
+        if (recentPrices == null) return null;
+        int floor = Math.max(2, minSamples);
+        BigDecimal min = null;
+        BigDecimal max = null;
+        int valid = 0;
+        for (BigDecimal p : recentPrices) {
+            if (p == null || p.compareTo(BigDecimal.ZERO) <= 0) continue;
+            valid++;
+            if (min == null || p.compareTo(min) < 0) min = p;
+            if (max == null || p.compareTo(max) > 0) max = p;
+        }
+        if (valid < floor || min == null) return null;
+        BigDecimal absMove = max.subtract(min);
+        if (absMove.compareTo(maxAbsMove) > 0) {
+            return "G16_MARKET_VOLATILITY_HALT(absMove=" + absMove.setScale(4, RoundingMode.HALF_UP)
+                    + ",max=" + maxAbsMove.setScale(4, RoundingMode.HALF_UP)
+                    + ",samples=" + valid + ")";
+        }
+        return null;
+    }
+
+    /** 取该市场+outcome 最近 windowMinutes 内 trade_event 的有效价格列表；mapper 缺失/异常返回空表。 */
+    private List<BigDecimal> recentMarketPrices(SmartWalletTradeEventEntity event, int windowMinutes) {
+        if (tradeEventMapper == null || event == null
+                || !StringUtils.hasText(event.getMarketId()) || !StringUtils.hasText(event.getOutcome())) {
+            return java.util.Collections.emptyList();
+        }
+        try {
+            long cutoff = System.currentTimeMillis() - (long) Math.max(1, windowMinutes) * 60_000L;
+            List<SmartWalletTradeEventEntity> rows = tradeEventMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                            .eq(SmartWalletTradeEventEntity::getMarketId, event.getMarketId())
+                            .eq(SmartWalletTradeEventEntity::getOutcome, event.getOutcome())
+                            .ge(SmartWalletTradeEventEntity::getOpenedAt, new Date(cutoff)));
+            List<BigDecimal> prices = new ArrayList<>();
+            if (rows != null) {
+                for (SmartWalletTradeEventEntity e : rows) {
+                    BigDecimal p = e.getPrice();
+                    if (p != null && p.compareTo(BigDecimal.ZERO) > 0) {
+                        prices.add(p);
+                    }
+                }
+            }
+            return prices;
+        } catch (Exception ex) {
+            log.debug("[VOL_HALT] recentMarketPrices failed marketId={} error={}",
+                    event.getMarketId(), ex.toString());
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // E1 资金曲线自适应仓位（2026-06-05 补充场景库）
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * E1 纯函数：按权益回撤率线性收量。dd≤start→1.0；dd≥max→floor；之间线性插值。返回 [floor,1.0]。
+     * mult = 1 − (dd−start)/(max−start) × (1−floor)。配置退化(max≤start)时达到 start 即 floor。
+     */
+    static BigDecimal computeEquityCurveStakeMultiplier(BigDecimal drawdownRate, BigDecimal startDd,
+                                                        BigDecimal maxDd, BigDecimal floorMultiplier) {
+        if (drawdownRate == null) return BigDecimal.ONE;
+        BigDecimal start = startDd == null ? BigDecimal.ZERO : startDd;
+        BigDecimal max = maxDd == null ? BigDecimal.ZERO : maxDd;
+        BigDecimal floor = floorMultiplier == null ? BigDecimal.ONE : floorMultiplier;
+        if (floor.compareTo(BigDecimal.ZERO) < 0) floor = BigDecimal.ZERO;
+        if (floor.compareTo(BigDecimal.ONE) > 0) floor = BigDecimal.ONE;
+        if (drawdownRate.compareTo(start) <= 0) return BigDecimal.ONE;
+        if (max.compareTo(start) <= 0) return floor;
+        if (drawdownRate.compareTo(max) >= 0) return floor;
+        BigDecimal frac = drawdownRate.subtract(start).divide(max.subtract(start), 6, RoundingMode.HALF_UP);
+        BigDecimal span = BigDecimal.ONE.subtract(floor);
+        BigDecimal mult = BigDecimal.ONE.subtract(frac.multiply(span));
+        if (mult.compareTo(floor) < 0) mult = floor;
+        if (mult.compareTo(BigDecimal.ONE) > 0) mult = BigDecimal.ONE;
+        return mult.setScale(4, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * E1 纯函数：从按日期升序的每日已实现 PnL 序列算权益回撤率 = (峰值−当前)/资金基数。
+     * 起点权益 0 也作为峰值候选；无回撤/无数据/基数≤0 返回 0；结果钳 [0,1]。
+     */
+    static BigDecimal computeDrawdownRateFromDailyPnls(List<BigDecimal> dailyPnlsChrono, BigDecimal capitalBase) {
+        if (dailyPnlsChrono == null || dailyPnlsChrono.isEmpty()) return BigDecimal.ZERO;
+        if (capitalBase == null || capitalBase.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
+        BigDecimal cum = BigDecimal.ZERO;
+        BigDecimal peak = BigDecimal.ZERO;
+        BigDecimal current = BigDecimal.ZERO;
+        for (BigDecimal pnl : dailyPnlsChrono) {
+            cum = cum.add(pnl == null ? BigDecimal.ZERO : pnl);
+            if (cum.compareTo(peak) > 0) peak = cum;
+            current = cum;
+        }
+        BigDecimal ddAbs = peak.subtract(current);
+        if (ddAbs.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
+        BigDecimal rate = ddAbs.divide(capitalBase, 6, RoundingMode.HALF_UP);
+        return rate.compareTo(BigDecimal.ONE) > 0 ? BigDecimal.ONE : rate;
+    }
+
+    private volatile long equityDdComputedAtMs = 0L;
+    private volatile BigDecimal cachedEquityDrawdownRate = BigDecimal.ZERO;
+
+    /** E1: 近 lookback 日权益回撤率（带 TTL 缓存避免每信号查库）；失败/无数据返回上次值（默认 0=不收量）。 */
+    private BigDecimal currentEquityDrawdownRate(SmartWalletProperties.SignalRisk risk) {
+        long now = System.currentTimeMillis();
+        long ttl = risk.getRiskHaltCacheMs() > 0 ? risk.getRiskHaltCacheMs() : 30_000L;
+        if (now - equityDdComputedAtMs < ttl) {
+            return cachedEquityDrawdownRate;
+        }
+        try {
+            int days = Math.max(2, defaultInt(risk.getEquityCurveLookbackDays(), 14));
+            List<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView> reports =
+                    accountingService.listDailyReports(days);
+            List<com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView> sorted =
+                    new ArrayList<>();
+            if (reports != null) {
+                for (com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView r : reports) {
+                    if (r != null && r.getReportDate() != null) sorted.add(r);
+                }
+            }
+            sorted.sort(java.util.Comparator.comparing(
+                    com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView::getReportDate));
+            List<BigDecimal> pnls = new ArrayList<>();
+            for (com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView r : sorted) {
+                pnls.add(safe(r.getRealizedPnlUsdc()));
+            }
+            BigDecimal rate = computeDrawdownRateFromDailyPnls(pnls, safe(risk.getMaxTotalOpenCostUsdc()));
+            cachedEquityDrawdownRate = rate;
+            equityDdComputedAtMs = now;
+            return rate;
+        } catch (Exception e) {
+            log.debug("[EQUITY_CURVE] drawdown compute failed: {}", e.toString());
+            return cachedEquityDrawdownRate;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // B1 刷量 / 女巫 leader 检测（2026-06-05 补充场景库）
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * B1 纯函数：无对手方数据时的保守 churn 启发——窗口内 gross 成交额大、净敞口变化极小
+     * (|net|/gross < maxNetToGrossRatio) 且成交笔数 ≥ minTrades → 疑似刷量。命中返回 token；否则 null。
+     * 仅作用于真实新开仓 (BUY 且 entryLane≠DYNAMIC_FOLLOW_EXIT)。
+     */
+    static String evaluateWashSuspicion(boolean enabled, String side, String entryLane,
+                                        BigDecimal grossUsdc, BigDecimal netUsdc, int tradeCount,
+                                        int minTrades, BigDecimal minGrossUsdc, BigDecimal maxNetToGrossRatio) {
+        if (!enabled) return null;
+        if (!"BUY".equalsIgnoreCase(side)) return null;
+        if ("DYNAMIC_FOLLOW_EXIT".equals(entryLane)) return null;
+        if (grossUsdc == null || netUsdc == null) return null;
+        if (tradeCount < Math.max(2, minTrades)) return null;
+        if (grossUsdc.compareTo(BigDecimal.ZERO) <= 0) return null;
+        if (minGrossUsdc != null && grossUsdc.compareTo(minGrossUsdc) < 0) return null;
+        if (maxNetToGrossRatio == null || maxNetToGrossRatio.compareTo(BigDecimal.ZERO) <= 0) return null;
+        BigDecimal ratio = netUsdc.abs().divide(grossUsdc, 6, RoundingMode.HALF_UP);
+        if (ratio.compareTo(maxNetToGrossRatio) < 0) {
+            return "G2_SUSPECTED_WASH(net/gross=" + ratio.setScale(4, RoundingMode.HALF_UP)
+                    + ",max=" + maxNetToGrossRatio.setScale(4, RoundingMode.HALF_UP)
+                    + ",trades=" + tradeCount + ",gross=" + grossUsdc.setScale(2, RoundingMode.HALF_UP) + ")";
+        }
+        return null;
+    }
+
+    /** B1: leader 在某 market+outcome 窗口内成交流 [grossUsdc, netUsdc, tradeCount]；mapper缺失/无数据/异常返回 null。 */
+    private BigDecimal[] leaderMarketFlow(SmartWalletTradeEventEntity event, int windowMinutes) {
+        if (tradeEventMapper == null || event == null
+                || !StringUtils.hasText(event.getWalletAddress())
+                || !StringUtils.hasText(event.getMarketId()) || !StringUtils.hasText(event.getOutcome())) {
+            return null;
+        }
+        try {
+            long cutoff = System.currentTimeMillis() - (long) Math.max(1, windowMinutes) * 60_000L;
+            List<SmartWalletTradeEventEntity> rows = tradeEventMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletTradeEventEntity>()
+                            .eq(SmartWalletTradeEventEntity::getWalletAddress, event.getWalletAddress())
+                            .eq(SmartWalletTradeEventEntity::getMarketId, event.getMarketId())
+                            .eq(SmartWalletTradeEventEntity::getOutcome, event.getOutcome())
+                            .ge(SmartWalletTradeEventEntity::getOpenedAt, new Date(cutoff)));
+            if (rows == null || rows.isEmpty()) return null;
+            BigDecimal gross = BigDecimal.ZERO;
+            BigDecimal net = BigDecimal.ZERO;
+            int count = 0;
+            for (SmartWalletTradeEventEntity e : rows) {
+                BigDecimal usdc = safe(e.getSizeUsdc());
+                if (usdc.compareTo(BigDecimal.ZERO) <= 0) continue;
+                count++;
+                gross = gross.add(usdc);
+                if ("SELL".equalsIgnoreCase(e.getSide())) {
+                    net = net.subtract(usdc);
+                } else {
+                    net = net.add(usdc);
+                }
+            }
+            return new BigDecimal[]{gross, net, BigDecimal.valueOf(count)};
+        } catch (Exception ex) {
+            log.debug("[WASH] leaderMarketFlow failed marketId={} error={}",
+                    event.getMarketId(), ex.toString());
+            return null;
+        }
+    }
+
+    /** 当日(本地时区)已实现 PnL 合计，带 TTL 缓存避免每信号查库；失败时退回旧值(为 null 则当日亏损门不触发)。 */
+    private BigDecimal cachedTodayRealizedPnl(SmartWalletProperties.SignalRisk risk) {
+        long now = System.currentTimeMillis();
+        long ttl = risk.getRiskHaltCacheMs() > 0 ? risk.getRiskHaltCacheMs() : 30_000L;
+        BigDecimal cached = cachedTodayRealizedPnl;
+        if (cached != null && now - riskHaltComputedAtMs < ttl) {
+            return cached;
+        }
+        try {
+            java.time.LocalDate today = java.time.LocalDate.now();
+            BigDecimal sum = BigDecimal.ZERO;
+            for (com.metaverse.coin.strategy.job.smartwallet.model.SmartWalletDailyReportView r
+                    : accountingService.listDailyReports(20)) {
+                if (r == null || r.getReportDate() == null) {
+                    continue;
+                }
+                java.time.LocalDate d = r.getReportDate().toInstant()
+                        .atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                if (today.equals(d)) {
+                    sum = sum.add(safe(r.getRealizedPnlUsdc()));
+                }
+            }
+            cachedTodayRealizedPnl = sum;
+            riskHaltComputedAtMs = now;
+            return sum;
+        } catch (Exception e) {
+            log.debug("[RISK_HALT] today realized PnL compute failed: {}", e.toString());
+            return cached;
+        }
+    }
+
+    /** G6c 评估结果分类, 供门控判定 + 运维计数。 */
+    enum G6cAskCheckOutcome {
+        OK,
+        REJECT_EMPTY_ASK,
+        REJECT_STALE_FAIL_CLOSED,
+        SKIP_STALE_FAIL_OPEN,
+        SKIP_NO_DATA
+    }
+
+    /** 阶段 0 监控: G6c 各 outcome 累计计数, 暴露给 dashboard。 */
+    private final java.util.concurrent.ConcurrentHashMap<G6cAskCheckOutcome, Long> entryAskCheckCounters =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public java.util.Map<G6cAskCheckOutcome, Long> entryAskCheckCounters() {
+        return new java.util.EnumMap<>(entryAskCheckCounters);
+    }
+
+    private BigDecimal resolveAskDepth(SmartWalletTradeEventEntity event,
+                                       SmartWalletProperties.SignalRisk risk) {
+        if (event == null || !StringUtils.hasText(event.getMarketId())
+                || !StringUtils.hasText(event.getOutcome())) {
+            return null;
+        }
+        try {
+            // F-P1-7: hot-path 走 findFreshSnapshot
+            SmartWalletMarketSnapshotEntity snapshot = marketSnapshotCollectorService
+                    .findFreshSnapshot(event.getMarketId(), event.getOutcome());
+            if (snapshot == null) {
+                return null;
+            }
+            // 快照超过 5 分钟视为过期，不使用
+            if (snapshot.getSnapshotAt() != null
+                    && System.currentTimeMillis() - snapshot.getSnapshotAt().getTime() > 300_000L) {
+                return null;
+            }
+            String range = risk.getDepthCheckRange() == null ? "3c" : risk.getDepthCheckRange().toLowerCase();
+            return switch (range) {
+                case "1c" -> snapshot.getAskDepth1c();
+                case "5c" -> snapshot.getAskDepth5c();
+                default -> snapshot.getAskDepth3c(); // 3c
+            };
+        } catch (Exception e) {
+            log.debug("Failed to resolve ask depth for marketId={}: {}", event.getMarketId(), e.getMessage());
+            return null;
+        }
     }
 
     private boolean isExecutableProfile(SmartWalletProfileEntity profile) {
@@ -1400,17 +2857,34 @@ public class SmartWalletSignalRiskService {
                                                                   boolean consensusScoreFailed,
                                                                   String marketType) {
         List<String> reasons = new ArrayList<>();
-        boolean accepted = !risk.isEnableConsensusGate() || (!consensusEntityCountFailed && !consensusScoreFailed);
+        // W2-T3 落实调整 1：BOOST_ONLY 模式下共识不足不作为门槛，仅作为加分项。
+        // HARD_GATE 模式保留原硬门控行为（监控地址 ≥ 100 高质量 leader 后启用）。
+        String gateMode = risk.getConsensusGateMode() == null
+                ? "BOOST_ONLY"
+                : risk.getConsensusGateMode().trim().toUpperCase(Locale.ROOT);
+        boolean hardGate = "HARD_GATE".equals(gateMode);
+        // 修复（回归）：CONSENSUS 策略是否"匹配"只取决于共识本身是否充分，与 gateMode 无关。
+        // 此前 BOOST_ONLY（默认）下无条件 accepted=true，经 EntryStrategyRouter(ANY) 后
+        // CONSENSUS 永远算"已匹配策略" → 整个信号永久放行，使
+        // HIGH_QUALITY_SINGLE_WALLET 行为门 / SINGLE_WALLET_PAPER_CANARY canary 门彻底失效。
+        // gateMode（BOOST_ONLY vs HARD_GATE）只决定 reason 文案/是否硬拒绝，
+        // 绝不能让 CONSENSUS 在 router 里伪装成已匹配策略。
+        // 共识门关闭时 *Failed 标志恒为 false → CONSENSUS 仍匹配（保持"不校验即放行"语义）；
+        // 共识不足时 CONSENSUS 不匹配，但不是硬 blocker —— 能否进场交给其它 fallback 策略。
+        boolean accepted = !consensusEntityCountFailed && !consensusScoreFailed;
         if (consensusEntityCountFailed) {
             int effectiveWindow = risk.getConsensusWindowSeconds() == null ? 180 : risk.getConsensusWindowSeconds();
-            reasons.add("Consensus wallet count (deduped=" + consensus.getDedupedEntityCount()
+            String prefix = hardGate ? "" : "[CONSENSUS_BOOST_ONLY_NOTICE] ";
+            reasons.add(prefix + "Consensus wallet count (deduped=" + consensus.getDedupedEntityCount()
                     + ", raw wallets=" + consensus.getDistinctWallets()
                     + ", window=" + effectiveWindow + "s) is below threshold="
-                    + resolveMinConsensusEntities(risk) + ".");
+                    + resolveMinConsensusEntities(risk) + (hardGate ? "." : " — boost-only mode, not blocking."));
         }
         if (consensusScoreFailed) {
-            reasons.add("Consensus score (" + safe(consensus.getConsensusScore()).setScale(3, RoundingMode.HALF_UP)
-                    + ") is below threshold (" + safe(risk.getMinConsensusScore()).setScale(3, RoundingMode.HALF_UP) + ").");
+            String prefix = hardGate ? "" : "[CONSENSUS_BOOST_ONLY_NOTICE] ";
+            reasons.add(prefix + "Consensus score (" + safe(consensus.getConsensusScore()).setScale(3, RoundingMode.HALF_UP)
+                    + ") is below threshold (" + safe(risk.getMinConsensusScore()).setScale(3, RoundingMode.HALF_UP) + ")"
+                    + (hardGate ? "." : " — boost-only mode, not blocking."));
         }
         return SignalStrategyCheckResult.builder()
                 .strategyKey("CONSENSUS")
@@ -1522,22 +2996,37 @@ public class SmartWalletSignalRiskService {
         if (event == null || !StringUtils.hasText(event.getQuestion())) {
             return 0;
         }
-        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
-                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
-        marketInfoService.populatePositions(positions);
         Set<String> currentTokens = themeTokens(event.getQuestion());
         if (currentTokens.isEmpty()) {
             return 0;
         }
         int count = 0;
-        for (SmartWalletPositionEntity position : positions) {
-            if (!StringUtils.hasText(position.getQuestion())) {
-                continue;
+        long lastId = 0L;
+        final int pageSize = 1000;
+        while (true) {
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                    .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED"))
+                    .gt(SmartWalletPositionEntity::getId, lastId)
+                    .orderByAsc(SmartWalletPositionEntity::getId)
+                    .last("limit " + pageSize));
+            if (positions == null || positions.isEmpty()) {
+                break;
             }
-            Set<String> overlap = themeTokens(position.getQuestion());
-            overlap.retainAll(currentTokens);
-            if (overlap.size() >= 2) {
-                count++;
+            marketInfoService.populatePositions(positions);
+            for (SmartWalletPositionEntity position : positions) {
+                if (StringUtils.hasText(position.getQuestion())) {
+                    Set<String> overlap = themeTokens(position.getQuestion());
+                    overlap.retainAll(currentTokens);
+                    if (overlap.size() >= 2) {
+                        count++;
+                    }
+                }
+                if (position.getId() != null && position.getId() > lastId) {
+                    lastId = position.getId();
+               }
+            }
+            if (positions.size() < pageSize) {
+                break;
             }
         }
         return count;
@@ -1597,6 +3086,24 @@ public class SmartWalletSignalRiskService {
         return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : fallback;
     }
 
+    /** R6(2026-06-03)：某一品类(normalizedCategory，fallback sourceCategory) 的累计未结算持仓成本(USDC)。 */
+    private BigDecimal categoryOpenCostUsdc(String categoryLower) {
+        if (!StringUtils.hasText(categoryLower)) {
+            return BigDecimal.ZERO;
+        }
+        List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
+        marketInfoService.populatePositions(positions);
+        BigDecimal sum = BigDecimal.ZERO;
+        for (SmartWalletPositionEntity p : positions) {
+            String c = StringUtils.hasText(p.getNormalizedCategory()) ? p.getNormalizedCategory() : p.getSourceCategory();
+            if (c != null && categoryLower.equalsIgnoreCase(c)) {
+                sum = sum.add(safe(p.getCostBasisUsdc()));
+            }
+        }
+        return sum;
+    }
+
     private BigDecimal totalOpenCostUsdc() {
         List<SmartWalletPositionEntity> positions = positionMapper.selectList(new LambdaQueryWrapper<SmartWalletPositionEntity>()
                 .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED")));
@@ -1604,6 +3111,9 @@ public class SmartWalletSignalRiskService {
         for (SmartWalletPositionEntity position : positions) {
             total = total.add(safe(position.getCostBasisUsdc()));
         }
+        // R4(2026-06-03 全盘风险审计)：把"在途已预留但尚未成交"的 PENDING 任务也计入组合占用，
+        // 使 G4_MAX_TOTAL_OPEN_COST 不会被多个待执行信号绕过而突破 maxTotalOpenCostUsdc。
+        total = total.add(safe(accountingService.inFlightReservedUsdc()));
         return total;
     }
 
@@ -1895,6 +3405,42 @@ public class SmartWalletSignalRiskService {
         return count != null && count > 0;
     }
 
+    private LeaderPositionCheck checkLeaderProfitableActivePosition(SmartWalletTradeEventEntity event) {
+        if (event == null || !StringUtils.hasText(event.getWalletAddress())
+                || !StringUtils.hasText(event.getMarketId()) || !StringUtils.hasText(event.getOutcome())) {
+            return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Missing leader wallet/market/outcome for profitability validation.");
+        }
+        try {
+            List<PolymarketApiClient.ActivePosition> positions = polymarketApiClient.fetchActivePositions(event.getWalletAddress());
+            PolymarketApiClient.ActivePosition matched = positions.stream()
+                    .filter(position -> sameText(position.getMarketId(), event.getMarketId()))
+                    .filter(position -> sameText(position.getOutcome(), event.getOutcome()))
+                    .findFirst()
+                    .orElse(null);
+            if (matched == null) {
+                return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Leader has no active position for the same market/outcome.");
+            }
+            BigDecimal pnl = safe(matched.getUnrealizedPnlUsdc());
+            if (pnl.compareTo(BigDecimal.ZERO) <= 0) {
+                return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Leader active position is not profitable. unrealizedPnlUsdc="
+                        + pnl.setScale(2, RoundingMode.HALF_UP) + ".");
+            }
+            return new LeaderPositionCheck(true, "[LEADER_POSITION_PROFITABLE] Leader active position is profitable. unrealizedPnlUsdc="
+                    + pnl.setScale(2, RoundingMode.HALF_UP) + ".");
+        } catch (Exception ex) {
+            log.warn("{} action=leader持仓盈利校验 result=失败 wallet={} marketId={} outcome={} error={}",
+                    LOG_PREFIX, event.getWalletAddress(), event.getMarketId(), event.getOutcome(), ex.getMessage());
+            return new LeaderPositionCheck(false, "[LEADER_POSITION_NOT_PROFITABLE] Unable to validate leader active position profitability: "
+                    + ex.getMessage());
+        }
+    }
+
+    private boolean sameText(String left, String right) {
+        return StringUtils.hasText(left)
+                && StringUtils.hasText(right)
+                && left.trim().equalsIgnoreCase(right.trim());
+    }
+
     private BigDecimal scaleUpMarketOutcomeBudget(SmartWalletProperties.SignalRisk risk,
                                                   ExecutionWalletContextLoader.ExecutionWalletContext wallet) {
         BigDecimal configured = risk.getScaleUpMaxMarketOutcomeCostUsdc() == null
@@ -1909,6 +3455,9 @@ public class SmartWalletSignalRiskService {
     }
 
     private record MarketRoutingContext(String marketType, String entryLane, String exitIntent) {
+    }
+
+    private record LeaderPositionCheck(boolean accepted, String reason) {
     }
 
     private record ExistingPositionStats(List<Long> positionIds,

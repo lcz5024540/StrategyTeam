@@ -1,3 +1,12 @@
+---
+title: "单交易所资金费率套利策略链路执行文档"
+type: design
+status: active
+tags: [funding-rate, arbitrage, design]
+created: 2026-04-26
+updated: 2026-04-26
+---
+
 # 单交易所资金费率套利策略链路执行文档
 
 ## 1. 文档范围
@@ -522,3 +531,8 @@
 4. `SingleExchangeDepthMonitor`
 5. `SingleExchangeArbitrageRebalanceService`
 6. `StrategyProductQueryService`
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[交易策略 知识地图](../docs/MOC-交易策略.md) ｜ [知识库首页](../docs/知识库首页.md)

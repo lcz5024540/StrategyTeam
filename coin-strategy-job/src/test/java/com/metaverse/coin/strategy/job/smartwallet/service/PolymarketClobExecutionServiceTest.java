@@ -169,7 +169,9 @@ class PolymarketClobExecutionServiceTest {
                         .minimumTickSize(new BigDecimal("0.01"))
                         .build());
         when(marketDataStreamService.getSnapshot("token-live")).thenReturn(snapshot);
-        when(orderRequestFactory.prepareExit(eq(position), eq(new BigDecimal("0.61")), eq(wallet))).thenReturn(prepared);
+        // F-P0-1: PolymarketClobExecutionService now always calls the 4-arg prepareExit overload
+        // (overrideQuantity=null for full exit, > 0 for partial). Stub the 4-arg form.
+        when(orderRequestFactory.prepareExit(eq(position), eq(new BigDecimal("0.61")), eq(wallet), eq((BigDecimal) null))).thenReturn(prepared);
         when(clobClientRouter.placeOrder(eq(wallet), eq(prepared))).thenReturn(Map.of(
                 "success", true,
                 "orderID", "order-live-1",

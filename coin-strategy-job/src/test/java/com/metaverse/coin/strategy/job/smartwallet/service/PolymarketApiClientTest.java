@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.job.smartwallet.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.metaverse.coin.strategy.job.smartwallet.config.SmartWalletProperties;
+import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +39,88 @@ class PolymarketApiClientTest {
                 PolymarketApiClient.MAX_USER_TRADE_HISTORY_OFFSET + 30);
 
         assertTrue(trades.isEmpty());
+    }
+
+    @Test
+    void shouldRequestRecentUserTradesByTimestampDescAndSortResponseDefensively() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        List<Map<String, String>> requests = new ArrayList<>();
+        server.createContext("/trades", exchange -> {
+            requests.add(parseQuery(exchange.getRequestURI().getRawQuery()));
+            byte[] bytes = """
+                    [
+                      {"id":"old","conditionId":"market-1","outcome":"Yes","side":"BUY","price":"0.40","size":"10","timestamp":1700000000000,"status":"CONFIRMED"},
+                      {"id":"new","conditionId":"market-2","outcome":"No","side":"SELL","price":"0.60","size":"20","timestamp":1700000020000,"status":"CONFIRMED"},
+                      {"id":"mid","conditionId":"market-3","outcome":"Yes","side":"BUY","price":"0.50","size":"15","timestamp":1700000010000,"status":"CONFIRMED"}
+                    ]
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            SmartWalletProperties properties = new SmartWalletProperties();
+            properties.getPolymarket().setDataApiBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            PolymarketApiClient client = new PolymarketApiClient(properties, new ObjectMapper());
+
+            List<PolymarketApiClient.UserTrade> trades = client.fetchUserTrades("0xwallet", 3, 0);
+
+            assertEquals(List.of("new", "mid", "old"), trades.stream().map(PolymarketApiClient.UserTrade::getTradeId).toList());
+            assertEquals("TIMESTAMP", requests.get(0).get("sortBy"));
+            assertEquals("DESC", requests.get(0).get("sortDirection"));
+            assertEquals("true", requests.get(0).get("takerOnly"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldKeepRecentUserTradeHistorySortedChronologicallyAndStopAtLookbackCutoff() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        List<Integer> offsets = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        long recent = now - java.util.concurrent.TimeUnit.DAYS.toMillis(5);
+        long mid = now - java.util.concurrent.TimeUnit.DAYS.toMillis(10);
+        long stale = now - java.util.concurrent.TimeUnit.DAYS.toMillis(91);
+        server.createContext("/trades", exchange -> {
+            Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
+            offsets.add(Integer.parseInt(query.get("offset")));
+            String response = switch (query.get("offset")) {
+                case "0" -> """
+                        [
+                          {"id":"new","conditionId":"market-2","outcome":"No","side":"SELL","price":"0.60","size":"20","timestamp":%d,"status":"CONFIRMED"},
+                          {"id":"mid","conditionId":"market-3","outcome":"Yes","side":"BUY","price":"0.50","size":"15","timestamp":%d,"status":"CONFIRMED"}
+                        ]
+                        """.formatted(recent, mid);
+                case "2" -> """
+                        [
+                          {"id":"stale","conditionId":"market-1","outcome":"Yes","side":"BUY","price":"0.40","size":"10","timestamp":%d,"status":"CONFIRMED"},
+                          {"id":"older","conditionId":"market-0","outcome":"Yes","side":"BUY","price":"0.30","size":"8","timestamp":%d,"status":"CONFIRMED"}
+                        ]
+                        """.formatted(stale, stale - 1_000L);
+                default -> "[]";
+            };
+            byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        server.start();
+        try {
+            SmartWalletProperties properties = new SmartWalletProperties();
+            properties.getPolymarket().setDataApiBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            PolymarketApiClient client = new PolymarketApiClient(properties, new ObjectMapper());
+
+            List<PolymarketApiClient.UserTrade> trades = client.fetchAllUserTrades("0xwallet", 2);
+
+            assertEquals(List.of("mid", "new"), trades.stream().map(PolymarketApiClient.UserTrade::getTradeId).toList());
+            assertEquals(List.of(0, 2), offsets);
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
@@ -336,5 +418,21 @@ class PolymarketApiClientTest {
 
         assertTrue(parsed.isArray());
         assertEquals("condition-4", parsed.get(0).get("conditionId").asText());
+    }
+
+    private Map<String, String> parseQuery(String rawQuery) {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return result;
+        }
+        for (String part : rawQuery.split("&")) {
+            String[] pieces = part.split("=", 2);
+            if (pieces.length == 2) {
+                result.put(
+                        URLDecoder.decode(pieces[0], StandardCharsets.UTF_8),
+                        URLDecoder.decode(pieces[1], StandardCharsets.UTF_8));
+            }
+        }
+        return result;
     }
 }

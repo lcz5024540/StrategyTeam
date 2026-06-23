@@ -1,3 +1,12 @@
+---
+title: "Polymarket 市场持仓集中度风控计划"
+type: plan
+status: active
+tags: [polymarket, plan]
+created: 2026-04-13
+updated: 2026-04-25
+---
+
 # Polymarket 市场持仓集中度风控计划
 
 ## 背景与问题
@@ -19,7 +28,8 @@
 ## 核心指标定义
 
 ### 1. Top-N 集中度 (CR_N)
-```
+
+```text
 CR_N = (前N名持仓量之和) / (所有观测持仓量之和)
 ```
 - `CR_1 > 0.35`：单一鲸鱼控盘风险高
@@ -27,7 +37,8 @@ CR_N = (前N名持仓量之和) / (所有观测持仓量之和)
 - `CR_5 > 0.75`：市场流动性被少数人把持
 
 ### 2. 赫芬达尔-赫希曼指数 (HHI)
-```
+
+```text
 HHI = Σ(每个持仓者市场份额²) × 10000
 ```
 - HHI < 1500：竞争性市场（安全）
@@ -35,7 +46,8 @@ HHI = Σ(每个持仓者市场份额²) × 10000
 - HHI ≥ 2500：高度集中（拒绝或缩仓）
 
 ### 3. 信号源是否为鲸鱼 (isWhaleSignalSource)
-```
+
+```text
 触发信号的钱包 ∈ 当前市场 Top-5 持仓者 → true
 ```
 - 鲸鱼自己触发信号 → 出货风险极高
@@ -49,11 +61,12 @@ HHI = Σ(每个持仓者市场份额²) × 10000
 ### P0：核心检测门控（必须实现，阻断高风险信号）
 
 #### P0-1：PolymarketApiClient 新增 `fetchMarketTopPositions()`
+
 **文件**：`PolymarketApiClient.java`
 
 调用 Polymarket Data API `/v1/market-positions?market={conditionId}` 获取市场持仓分布。
 
-```
+```text
 GET {dataApiBaseUrl}/v1/market-positions?market={conditionId}&status=OPEN&sortBy=TOKENS&sortDirection=DESC&limit=50
 ```
 
@@ -74,6 +87,7 @@ public static class MarketPositionEntry {
 ---
 
 #### P0-2：新建 `MarketConcentrationService`
+
 **文件**：`service/MarketConcentrationService.java`
 
 职责：
@@ -102,6 +116,7 @@ public record ConcentrationSnapshot(
 ---
 
 #### P0-3：`SmartWalletSignalRiskService` 接入集中度门控
+
 **文件**：`SmartWalletSignalRiskService.java`
 
 在共识门控之后、EV门控之前，新增集中度检查块：
@@ -133,6 +148,7 @@ if (risk.isEnableConcentrationGate()) {
 ---
 
 #### P0-4：`SmartWalletProperties.SignalRisk` 新增集中度配置
+
 **文件**：`SmartWalletProperties.java`
 
 ```java
@@ -164,11 +180,12 @@ private int concentrationTopN = 50;
 ### P1：精细化风险响应（降低误杀，差异化处理）
 
 #### P1-1：集中度加权仓位缩减
+
 **文件**：`SmartWalletSignalRiskService.java`
 
 当集中度"达到警戒但未到拒绝阈值"时，不是直接拒绝，而是对 recommendedStake 打折：
 
-```
+```text
 concentrationPenalty = max(0, CR_3 - safeThreshold) / (blockThreshold - safeThreshold)
 adjustedStake = recommendedStake × (1 - concentrationPenalty × maxPenaltyRate)
 ```
@@ -182,6 +199,7 @@ concentration-stake-safe-top3-pct: 0.40      # CR_3 低于此值不惩罚
 ---
 
 #### P1-2：鲸鱼信号降级而非硬拒绝（可配置）
+
 **文件**：`SmartWalletProperties.SignalRisk`
 
 新增 `whaleSignalSourceMode`：
@@ -194,15 +212,17 @@ concentration-stake-safe-top3-pct: 0.40      # CR_3 低于此值不惩罚
 ### P2：监控与可观测性
 
 #### P2-1：Dashboard API 端点
+
 **文件**：`SmartWalletController.java`
 
-```
+```text
 GET /api/smart-wallet/concentration/{conditionId}?outcome=YES
 ```
 
 返回 `ConcentrationSnapshot` JSON，可在 Swagger UI 手动查询任意市场集中度。
 
 #### P2-2：开仓后持续监控（后台扫描 Job）
+
 **文件**：新建 `MarketConcentrationMonitorJob.java`
 
 `@Scheduled(fixedDelayString = "...")` 定期扫描所有 OPEN 状态持仓：
@@ -214,10 +234,11 @@ GET /api/smart-wallet/concentration/{conditionId}?outcome=YES
 
 ## 实施顺序
 
-```
-P0-4（Config）→ P0-1（API）→ P0-2（Service）→ P0-3（Risk Gate）
-→ P1-1（Penalty）→ P1-2（Mode）
-→ P2-1（API）→ P2-2（Monitor Job）
+```mermaid
+flowchart LR
+    P04["P0-4 Config"] --> P01["P0-1 API"] --> P02["P0-2 Service"] --> P03["P0-3 Risk Gate"]
+    P03 --> P11["P1-1 Penalty"] --> P12["P1-2 Mode"]
+    P12 --> P21["P2-1 API"] --> P22["P2-2 Monitor Job"]
 ```
 
 ---
@@ -250,3 +271,8 @@ smart-wallet:
 | 集中度快照过期导致误判 | 60s TTL + `capturedAt` 透出给 API 调用方 |
 | 正常大市场也可能 CR_3 较高（机构参与） | HHI 双重验证；可按市场 volume 动态调整阈值 |
 | 额外 API 调用增加延迟 | 缓存 60s；异常时降级跳过检查（fail-open） |
+
+---
+
+<!-- kb-backlink -->
+> 本文归属：[Polymarket 知识地图](../docs/MOC-Polymarket.md) ｜ [知识库首页](../docs/知识库首页.md)
