@@ -35,6 +35,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SmartWalletPositionSyncService {
 
+    private static final List<String> AUTO_EXIT_TRADABLE_POSITION_STATUSES =
+            List.of("OPEN", "PARTIALLY_CLOSED");
+
     private final SmartWalletProperties properties;
     private final PolymarketApiClient polymarketApiClient;
     private final ExecutionWalletContextLoader walletContextLoader;
@@ -296,7 +299,8 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
         openPositions = filterOutAllowlistPositions(openPositions);
         // Populate positions with market info to enable delegate getters
         marketInfoService.populatePositions(openPositions);
@@ -357,7 +361,8 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
         openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
@@ -460,7 +465,8 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, "paper-book")
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
         openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
 
@@ -541,7 +547,8 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
         openPositions = filterOutAllowlistPositions(openPositions);
         // Populate positions with market info to enable delegate getters
         marketInfoService.populatePositions(openPositions);
@@ -620,7 +627,8 @@ public class SmartWalletPositionSyncService {
         List<SmartWalletPositionEntity> openPositions = positionMapper.selectList(
                 new LambdaQueryWrapper<SmartWalletPositionEntity>()
                         .eq(SmartWalletPositionEntity::getExecutionAddress, wallet.getAddress())
-                        .in(SmartWalletPositionEntity::getStatus, List.of("OPEN", "PARTIALLY_CLOSED", "SETTLEMENT_PENDING_ORACLE")));
+                        .in(SmartWalletPositionEntity::getStatus, AUTO_EXIT_TRADABLE_POSITION_STATUSES));
+        openPositions = filterAutoExitTradablePositions(openPositions);
         openPositions = filterOutAllowlistPositions(openPositions);
         marketInfoService.populatePositions(openPositions);
         for (SmartWalletPositionEntity position : openPositions) {
@@ -735,6 +743,23 @@ public class SmartWalletPositionSyncService {
             return configured;
         }
         return configured.min(reachableThreshold);
+    }
+
+    private List<SmartWalletPositionEntity> filterAutoExitTradablePositions(List<SmartWalletPositionEntity> positions) {
+        if (positions == null || positions.isEmpty()) {
+            return List.of();
+        }
+        return positions.stream()
+                .filter(this::isAutoExitTradablePosition)
+                .collect(Collectors.toList());
+    }
+
+    private boolean isAutoExitTradablePosition(SmartWalletPositionEntity position) {
+        if (position == null || !StringUtils.hasText(position.getStatus())) {
+            return false;
+        }
+        return AUTO_EXIT_TRADABLE_POSITION_STATUSES.stream()
+                .anyMatch(status -> status.equalsIgnoreCase(position.getStatus()));
     }
 
     /**

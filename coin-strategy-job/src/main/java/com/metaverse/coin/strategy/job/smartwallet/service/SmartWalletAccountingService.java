@@ -1001,13 +1001,14 @@ public class SmartWalletAccountingService {
                 continue;
             }
             markToMarket(position);
-            if (isPendingSettlementTracked(position)) {
+            boolean pendingTracked = isPendingSettlementTracked(position);
+            if (pendingTracked) {
                 pendingSettlement = pendingSettlement.add(pendingSettlementNetPnlForPosition(position));
             } else if (isActivePositionStatus(position.getStatus())) {
                 unrealized = unrealized.add(safe(position.getUnrealizedPnlUsdc()));
                 openPositions++;
             }
-            if (isClosedOrSettledStatus(position.getStatus())) {
+            if (!pendingTracked && isClosedOrSettledStatus(position.getStatus())) {
                 completedPositions++;
                 if (realizedPnlForPosition(position).compareTo(BigDecimal.ZERO) > 0) {
                     wins++;
@@ -1293,7 +1294,7 @@ public class SmartWalletAccountingService {
             } else if (isClosedOrSettledStatus(position.getStatus())) {
                 closedPositions++;
             }
-            if (pendingTracked || isClosedOrSettledStatus(position.getStatus())) {
+            if (!pendingTracked && isClosedOrSettledStatus(position.getStatus())) {
                 if (positionRealized.compareTo(BigDecimal.ZERO) > 0) {
                     winningPositions++;
                     totalWins = totalWins.add(positionRealized);
