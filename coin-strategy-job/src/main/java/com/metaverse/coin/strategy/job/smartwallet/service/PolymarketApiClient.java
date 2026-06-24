@@ -1241,7 +1241,13 @@ public class PolymarketApiClient {
             ).start();
             byte[] stdout = readAll(process.getInputStream());
             byte[] stderr = readAll(process.getErrorStream());
-            int exitCode = process.waitFor();
+            boolean finished = process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("Polymarket API curl fallback timed out after 30s for {}, force-killed", uri);
+                return null;
+            }
+            int exitCode = process.exitValue();
             if (exitCode != 0) {
                 log.warn("Polymarket API curl fallback failed for {} with exitCode={} stderr={}",
                         uri, exitCode, new String(stderr, StandardCharsets.UTF_8));

@@ -3318,8 +3318,16 @@ public class SmartWalletAccountingService {
         boolean closed = Boolean.TRUE.equals(mi.getClosed());
         boolean resolvedLifecycle = "RESOLVED".equalsIgnoreCase(mi.getMarketLifecycle());
         String resolvedOutcome = mi.getResolvedOutcome();
-        if (!StringUtils.hasText(resolvedOutcome) || !closed || !resolvedLifecycle) {
+        if (!StringUtils.hasText(resolvedOutcome) || !resolvedLifecycle) {
             return false;
+        }
+        // closed 不再作为必要前置条件：lifecycle=RESOLVED + resolvedOutcome 非空已是最终确认态，
+        // Polymarket API 偶发 closed=false 与 lifecycle=RESOLVED 不一致（如 position #81 案例），
+        // 此处仅记录日志以便追踪。
+        if (!closed) {
+            log.info("[LOCAL_AUTH_SETTLE] market closed=false but lifecycle=RESOLVED, proceeding. "
+                    + "positionId={} marketInfoId={} resolvedOutcome={}",
+                    position.getId(), mi.getId(), resolvedOutcome);
         }
         // 安全闸：仅结算已开仓足够久的仓位，避免刚开仓即被本地瞬时状态误结算。
         if (position.getOpenedAt() != null
