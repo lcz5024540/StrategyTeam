@@ -45,6 +45,8 @@ class SmartWalletProfileTruthRefreshServiceTest {
     private SmartWalletScoringService scoringService;
     @Mock
     private SmartWalletProfileStoreService profileStoreService;
+    @Mock
+    private SmartWalletFeatureSnapshotService featureSnapshotService;
 
     private SmartWalletProfileTruthRefreshService service;
 
@@ -58,7 +60,8 @@ class SmartWalletProfileTruthRefreshServiceTest {
                 marketInfoService,
                 scoringService,
                 profileStoreService,
-                new com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties()
+                new com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties(),
+                featureSnapshotService
         );
     }
 

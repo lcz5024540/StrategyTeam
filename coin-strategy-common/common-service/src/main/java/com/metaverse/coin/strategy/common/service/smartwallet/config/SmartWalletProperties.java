@@ -520,10 +520,17 @@ public class SmartWalletProperties {
         // 全部默认关闭/0 = 不改变现有行为；运营在 strategy_runtime_config 配阈值即可热生效，无需发版。
         /** 人工紧急熔断开关：true → 立即停止一切新开仓（kill switch）。 */
         private boolean tradingHalted = false;
-        /** 当日已实现亏损达到该值(USDC, 正数)即停开新仓；0 或负 = 不启用。 */
+        /** 当日已实现亏损达到该值(USDC, 正数)即停开新仓；正值优先于比例阈值。 */
         private BigDecimal maxDailyLossUsdc = BigDecimal.ZERO;
-        /** 账户权益滚动回撤达到该比率(0~1)即停开新仓；0 = 不启用。 */
-        private BigDecimal maxAccountDrawdownRate = BigDecimal.ZERO;
+        /** 未设置绝对金额时，按策略风险资金的 1% 计算日损上限。 */
+        private BigDecimal maxDailyLossRate = new BigDecimal("0.01");
+        /** 账户权益滚动回撤达到 3% 即停开新仓。 */
+        private BigDecimal maxAccountDrawdownRate = new BigDecimal("0.03");
+        /** 连续亏损达到 5 笔后进入 cooling，仓位降到 25%。 */
+        private Integer consecutiveLossCoolingThreshold = 5;
+        private BigDecimal consecutiveLossCoolingStakeMultiplier = new BigDecimal("0.25");
+        /** 连续亏损达到 8 笔后停开新仓。 */
+        private Integer consecutiveLossHaltThreshold = 8;
         /** 熔断状态缓存毫秒数，避免每个信号都查库；默认 30s。 */
         private long riskHaltCacheMs = 30_000L;
 

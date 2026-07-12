@@ -137,9 +137,6 @@ public class SmartWalletSignalRiskService {
         boolean manualBlocklistApplied = manualBlocklistService.isBlocked(signalWalletAddress);
         boolean manualWatchDisabled = profile != null && Boolean.FALSE.equals(profile.getManualWatchEnabled());
         boolean addressAdmissionRejected = false;
-        // R11(2026-06-03 全盘风险审计)：记录 allowlist 是否绕过了风控门(观察冷却 / leader 当前持仓不盈利)。
-        // 绕过准入只是放行，但风险更高 → 后续对仓位再追加一道折扣(降仓)，而非"只打日志"。
-        boolean allowlistRiskBypassApplied = false;
         // ── Gate 1: 钱包准入（手动禁用 / 观察冷却 / 白名单 / 资质） ──
         if (manualBlocklistApplied) {
             accepted = false;
@@ -153,19 +150,14 @@ public class SmartWalletSignalRiskService {
             addressAdmissionRejected = true;
             if (firstRejectGate == null) firstRejectGate = "G1_MANUAL_WATCH_DISABLED";
             reasons.add("[MANUAL_WATCH_DISABLED] Wallet is manually forced to observe-only; manual allowlist cannot override it.");
-        } else if (isObserveCooldownActive(profile) && !manualAllowlistApplied) {
+        } else if (isObserveCooldownActive(profile)) {
             accepted = false;
             addressAdmissionRejected = true;
             if (firstRejectGate == null) firstRejectGate = "G1_OBSERVE_COOLDOWN";
             reasons.add("[OBSERVE_COOLDOWN_BLOCK] Wallet is currently in recent-degradation observe cooldown until "
-                    + profile.getObserveCooldownUntil() + ". " + profile.getObserveCooldownReason());
+                    + profile.getObserveCooldownUntil() + "; manual allowlist cannot bypass data-quality cooldown. "
+                    + profile.getObserveCooldownReason());
         } else if (manualAllowlistApplied) {
-            if (isObserveCooldownActive(profile)) {
-                allowlistRiskBypassApplied = true; // R11：冷却期被 allowlist 绕过 → 后续降仓
-                reasons.add("[MANUAL_ALLOWLIST_COOLDOWN_BYPASS] Wallet is in observe cooldown until "
-                        + profile.getObserveCooldownUntil()
-                        + " but manual allowlist bypasses cooldown gate. Reason: " + profile.getObserveCooldownReason());
-            }
             reasons.add("[MANUAL_ALLOWLIST_PASS] Wallet matched active manual allowlist. Address-profile admission checks are bypassed only.");
             if (profile == null || profile.getId() == null) {
                 accepted = false;
@@ -206,7 +198,7 @@ public class SmartWalletSignalRiskService {
         boolean paperCanaryAdmissionCandidate = isSingleWalletPaperCanaryAdmissionCandidate(profile, event, risk);
         boolean paperCanaryGateSoftened = false;
         // ── Gate 2: Archetype / Behavior 分类 ──
-        if (!manualAllowlistApplied && "OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
+        if ("OBSERVE_ONLY".equalsIgnoreCase(archetype.followLane())) {
             if (paperCanaryAdmissionCandidate) {
                 paperCanaryGateSoftened = true;
                 reasons.add("[PAPER_CANARY_ARCHETYPE_SOFTENED] OBSERVE_ONLY archetype is allowed to proceed only for the paper canary strategy.");
@@ -224,7 +216,7 @@ public class SmartWalletSignalRiskService {
                     + ", replicability=" + behaviorProfile.replicabilityScore()
                     + ", earlyExitRate=" + behaviorProfile.earlyExitRate()
                     + ", settlementCompletionRate=" + behaviorProfile.settlementCompletionRate() + ".");
-            if (!manualAllowlistApplied && "FAST_EXIT_OR_SKIP".equalsIgnoreCase(behaviorProfile.recommendedExitLane())) {
+            if ("FAST_EXIT_OR_SKIP".equalsIgnoreCase(behaviorProfile.recommendedExitLane())) {
                 accepted = false;
                 if (firstRejectGate == null) firstRejectGate = "G2_BEHAVIOR_FAST_EXIT";
                 reasons.add("[BEHAVIOR_BLOCK] Wallet relies on very fast exits or low-replicability timing. Skip follow entry.");
@@ -244,28 +236,17 @@ public class SmartWalletSignalRiskService {
         if (leaderRollingState.isGateEnabled()) {
             switch (leaderRollingState.getStatus()) {
                 case SUSPENDED:
-                    if (manualAllowlistApplied
-                            && risk.isManualAllowlistBypassLeaderRollingGate()) {
-                        reasons.add("[LEADER_ROLLING_SUSPEND_BYPASS] " + leaderRollingState.getReason()
-                                + " — bypassed by manual allowlist.");
-                    } else {
-                        accepted = false;
-                        if (firstRejectGate == null) firstRejectGate = "G2_LEADER_ROLLING_SUSPENDED";
-                        reasons.add("[LEADER_ROLLING_SUSPENDED] " + leaderRollingState.getReason());
-                    }
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G2_LEADER_ROLLING_SUSPENDED";
+                    reasons.add("[LEADER_ROLLING_SUSPENDED] " + leaderRollingState.getReason()
+                            + " Manual allowlist cannot bypass leader stability gates.");
                     break;
                 case COOLING:
-                    if (manualAllowlistApplied
-                            && risk.isManualAllowlistBypassLeaderRollingGate()) {
-                        reasons.add("[LEADER_ROLLING_COOLING_BYPASS] " + leaderRollingState.getReason()
-                                + " — bypassed by manual allowlist.");
-                    } else {
-                        leaderRollingCooling = true;
-                        reasons.add("[LEADER_ROLLING_COOLING] " + leaderRollingState.getReason()
-                                + " — stake will be reduced to canary level "
-                                + safe(risk.getLeaderRollingCoolingStakeMultiplier())
-                                .setScale(4, RoundingMode.HALF_UP) + "× Kelly.");
-                    }
+                    leaderRollingCooling = true;
+                    reasons.add("[LEADER_ROLLING_COOLING] " + leaderRollingState.getReason()
+                            + " — stake will be reduced to canary level "
+                            + safe(risk.getLeaderRollingCoolingStakeMultiplier())
+                            .setScale(4, RoundingMode.HALF_UP) + "× Kelly.");
                     break;
                 case ACTIVE:
                 default:
@@ -291,26 +272,17 @@ public class SmartWalletSignalRiskService {
         if (leaderDriftState.isGateEnabled()) {
             switch (leaderDriftState.getStatus()) {
                 case DRIFTED_SEVERE:
-                    if (manualAllowlistApplied && risk.isManualAllowlistBypassLeaderDriftGate()) {
-                        reasons.add("[LEADER_DRIFT_SEVERE_BYPASS] " + leaderDriftState.getReason()
-                                + " — bypassed by manual allowlist.");
-                    } else {
-                        accepted = false;
-                        if (firstRejectGate == null) firstRejectGate = "G2c_LEADER_DRIFT_SEVERE";
-                        reasons.add("[LEADER_DRIFT_SEVERE] " + leaderDriftState.getReason());
-                    }
+                    accepted = false;
+                    if (firstRejectGate == null) firstRejectGate = "G2c_LEADER_DRIFT_SEVERE";
+                    reasons.add("[LEADER_DRIFT_SEVERE] " + leaderDriftState.getReason()
+                            + " Manual allowlist cannot bypass leader stability gates.");
                     break;
                 case DRIFTED:
-                    if (manualAllowlistApplied && risk.isManualAllowlistBypassLeaderDriftGate()) {
-                        reasons.add("[LEADER_DRIFT_BYPASS] " + leaderDriftState.getReason()
-                                + " — bypassed by manual allowlist.");
-                    } else {
-                        leaderDriftCooling = true;
-                        reasons.add("[LEADER_DRIFT_COOLING] " + leaderDriftState.getReason()
-                                + " — stake will be reduced to "
-                                + safe(risk.getLeaderDriftStakeMultiplier())
-                                .setScale(4, RoundingMode.HALF_UP) + "× normal Kelly.");
-                    }
+                    leaderDriftCooling = true;
+                    reasons.add("[LEADER_DRIFT_COOLING] " + leaderDriftState.getReason()
+                            + " — stake will be reduced to "
+                            + safe(risk.getLeaderDriftStakeMultiplier())
+                            .setScale(4, RoundingMode.HALF_UP) + "× normal Kelly.");
                     break;
                 case ACTIVE:
                 default:
@@ -764,32 +736,11 @@ public class SmartWalletSignalRiskService {
         if (risk.isRequireLeaderProfitableActivePosition()
                 && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
                 && "BUY".equalsIgnoreCase(event.getSide())) {
-            if (manualAllowlistApplied) {
-                // Allowlist wallets: only check PnL on existing positions that have had time to accumulate profit data.
-                // New BUY entries (leader just opened or has no matched position) skip the PnL gate.
-                LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
-                boolean isNewEntry = leaderPositionCheck.reason() != null
-                        && leaderPositionCheck.reason().contains("no active position");
-                if (isNewEntry) {
-                    reasons.add("[MANUAL_ALLOWLIST_LEADER_PNL_BYPASS] Leader has no active position for this market/outcome — "
-                            + "treated as new entry, PnL gate skipped for allowlist wallet.");
-                } else if (!leaderPositionCheck.accepted()) {
-                    // Existing position with non-positive PnL — still allow but log a warning
-                    allowlistRiskBypassApplied = true; // R11：leader 当前持仓不盈利却被 allowlist 放行 → 后续降仓
-                    reasons.add("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] " + leaderPositionCheck.reason()
-                            + " — allowlist wallet bypasses rejection but leader position is not profitable.");
-                    log.warn("[MANUAL_ALLOWLIST_LEADER_PNL_WARN] wallet={} marketId={} outcome={} leaderPnlCheck={}",
-                            event.getWalletAddress(), event.getMarketId(), event.getOutcome(), leaderPositionCheck.reason());
-                } else {
-                    reasons.add(leaderPositionCheck.reason());
-                }
-            } else {
-                LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
-                reasons.add(leaderPositionCheck.reason());
-                if (!leaderPositionCheck.accepted()) {
-                    accepted = false;
-                    if (firstRejectGate == null) firstRejectGate = "G7_LEADER_POSITION_NOT_PROFITABLE";
-                }
+            LeaderPositionCheck leaderPositionCheck = checkLeaderProfitableActivePosition(event);
+            reasons.add(leaderPositionCheck.reason());
+            if (!leaderPositionCheck.accepted()) {
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G7_LEADER_POSITION_NOT_PROFITABLE";
             }
         }
         if (accepted) gateStage = 7; // 通过方向/重复检查
@@ -1131,15 +1082,10 @@ public class SmartWalletSignalRiskService {
                 reasons.add("Kelly stake: probability unknown, falling back to legacy formula.");
             } else if (kellyStake.compareTo(BigDecimal.ZERO) == 0) {
                 // EV 为负，Kelly 建议拒绝
-                if (manualAllowlistApplied && risk.isManualAllowlistBypassKellyNegativeEv()) {
-                    recommendedStake = preliminaryStake;
-                    reasons.add("[MANUAL_ALLOWLIST_KELLY_NEGATIVE_EV_BYPASS] Kelly stake is negative EV; manual allowlist paper validation falls back to preliminary stake.");
-                } else {
-                    accepted = false;
-                    if (firstRejectGate == null) firstRejectGate = "G10_KELLY_NEGATIVE_EV(p=" + safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) + ",price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ")";
-                    recommendedStake = BigDecimal.ZERO;
-                    reasons.add("Kelly stake: negative EV, signal rejected.");
-                }
+                accepted = false;
+                if (firstRejectGate == null) firstRejectGate = "G10_KELLY_NEGATIVE_EV(p=" + safe(profitabilityEstimate.getCalibratedFollowProbability()).setScale(4, RoundingMode.HALF_UP) + ",price=" + safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP) + ")";
+                recommendedStake = BigDecimal.ZERO;
+                reasons.add("Kelly stake: negative EV, signal rejected; manual allowlist cannot bypass net EV.");
                 log.warn("[KELLY_NEGATIVE_EV] wallet={} marketId={} outcome={} price={} calibratedP={} side={} triggerSizeUsdc={} allowlisted={}",
                         event.getWalletAddress(), event.getMarketId(), event.getOutcome(),
                         safe(event.getPrice()).setScale(4, RoundingMode.HALF_UP),
@@ -1209,19 +1155,25 @@ public class SmartWalletSignalRiskService {
                         + " (multiplier=" + driftMultiplier.setScale(4, RoundingMode.HALF_UP) + ").");
             }
         }
+        int portfolioLossStreak = currentPortfolioConsecutiveLosses(risk);
+        int coolingThreshold = Math.max(1, defaultInt(risk.getConsecutiveLossCoolingThreshold(), 5));
+        int haltThreshold = Math.max(coolingThreshold + 1, defaultInt(risk.getConsecutiveLossHaltThreshold(), 8));
+        if (portfolioLossStreak >= coolingThreshold && portfolioLossStreak < haltThreshold
+                && recommendedStake.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal multiplier = safe(risk.getConsecutiveLossCoolingStakeMultiplier())
+                    .max(BigDecimal.ZERO).min(BigDecimal.ONE);
+            BigDecimal before = recommendedStake;
+            recommendedStake = recommendedStake.multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
+            reasons.add("[PORTFOLIO_LOSS_STREAK_COOLING] consecutiveLosses=" + portfolioLossStreak
+                    + ", stake reduced from " + before + " to " + recommendedStake
+                    + " using multiplier=" + multiplier + ".");
+        }
         BigDecimal stakeMultiplierApplied = null;
         if (manualAllowlistApplied) {
             stakeMultiplierApplied = manualAllowlistService.stakeMultiplier(manualAllowlist);
             recommendedStake = recommendedStake.multiply(stakeMultiplierApplied).setScale(2, RoundingMode.HALF_UP);
             reasons.add("[MANUAL_ALLOWLIST_STAKE_MULTIPLIER] Applied manual allowlist stake multiplier="
                     + stakeMultiplierApplied.setScale(4, RoundingMode.HALF_UP) + ".");
-            // R11(2026-06-03)：若本信号绕过了风控门(观察冷却 / leader 当前持仓不盈利)，对仓位再追加 0.5 折扣，
-            // 以匹配"放行但风险更高"的事实——不再只打日志。最终仍受最小单/敞口门约束。
-            if (allowlistRiskBypassApplied) {
-                recommendedStake = recommendedStake.multiply(new BigDecimal("0.5")).setScale(2, RoundingMode.HALF_UP);
-                reasons.add("[ALLOWLIST_RISK_BYPASS_HAIRCUT] Risk gate bypassed (cooldown/leader-not-profitable); "
-                        + "stake additionally halved for higher risk.");
-            }
             if (allowlistPriceClampApplied) {
                 BigDecimal normalMin = safe(risk.getMinFollowPrice());
                 BigDecimal normalMax = safe(risk.getMaxFollowPrice());
@@ -1599,8 +1551,7 @@ public class SmartWalletSignalRiskService {
                 && risk.isEnableSignalScoreGate()
                 && signalScore != null
                 && safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) < 0
-                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)
-                && !manualAllowlistApplied) {
+                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
             accepted = false;
             if (firstRejectGate == null) {
                 firstRejectGate = "G11_SIGNAL_SCORE_TOO_LOW(score=" + safe(signalScore.getSignalScore()) + ")";
@@ -1608,20 +1559,10 @@ public class SmartWalletSignalRiskService {
             reasons.add("[SIGNAL_SCORE_BLOCK] signalScore=" + safe(signalScore.getSignalScore())
                     + " is below minLiveSignalScore=" + safe(risk.getMinLiveSignalScore()) + ".");
         }
-        if (manualAllowlistApplied
-                && risk.isEnableSignalScoreGate()
-                && signalScore != null
-                && safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) < 0
-                && !"DYNAMIC_FOLLOW_EXIT".equals(entryLane)) {
-            reasons.add("[MANUAL_ALLOWLIST_SIGNAL_SCORE_BYPASS] signalScore=" + safe(signalScore.getSignalScore())
-                    + " is below minLiveSignalScore=" + safe(risk.getMinLiveSignalScore())
-                    + " but allowlist wallet bypasses signal score gate.");
-        }
         if (signalScore != null) {
             boolean scoreAccepted = !risk.isEnableSignalScoreGate()
                     || safe(signalScore.getSignalScore()).compareTo(safe(risk.getMinLiveSignalScore())) >= 0
-                    || "DYNAMIC_FOLLOW_EXIT".equals(entryLane)
-                    || manualAllowlistApplied;
+                    || "DYNAMIC_FOLLOW_EXIT".equals(entryLane);
             log.info("{}", flow("S5_RISK_EVALUATED", "信号评分模型",
                     scoreAccepted ? "通过" : "拒绝", event,
                     "entryLane", entryLane,
@@ -2152,6 +2093,8 @@ public class SmartWalletSignalRiskService {
     // ── R1 组合级熔断（2026-06-03 全盘风险审计）：判定与缓存 ───────────────────────
     private volatile long riskHaltComputedAtMs = 0L;
     private volatile BigDecimal cachedTodayRealizedPnl = null;
+    private volatile long lossStreakComputedAtMs = 0L;
+    private volatile int cachedPortfolioConsecutiveLosses = 0;
 
     /** 返回非空=应熔断停开新仓的原因；null=放行。人工 kill-switch 即时生效，当日亏损门带缓存。 */
     private String resolveRiskHaltReason(SmartWalletProperties.SignalRisk risk) {
@@ -2161,7 +2104,18 @@ public class SmartWalletSignalRiskService {
         if (risk.isTradingHalted()) {
             return "G0_RISK_HALT(manual_kill_switch)";
         }
-        BigDecimal maxDailyLoss = risk.getMaxDailyLossUsdc();
+        int lossStreak = currentPortfolioConsecutiveLosses(risk);
+        int haltThreshold = Math.max(1, defaultInt(risk.getConsecutiveLossHaltThreshold(), 8));
+        if (lossStreak >= haltThreshold) {
+            return "G0_RISK_HALT(consecutive_losses=" + lossStreak + ",limit=" + haltThreshold + ")";
+        }
+        BigDecimal maxDailyLoss = safe(risk.getMaxDailyLossUsdc());
+        if (maxDailyLoss.compareTo(BigDecimal.ZERO) <= 0
+                && safe(risk.getMaxDailyLossRate()).compareTo(BigDecimal.ZERO) > 0) {
+            maxDailyLoss = safe(risk.getMaxTotalOpenCostUsdc())
+                    .multiply(safe(risk.getMaxDailyLossRate()))
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
         if (maxDailyLoss != null && maxDailyLoss.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal todayPnl = cachedTodayRealizedPnl(risk);
             if (todayPnl != null && todayPnl.compareTo(maxDailyLoss.negate()) <= 0) {
@@ -2169,7 +2123,50 @@ public class SmartWalletSignalRiskService {
                         + ",limit=-" + maxDailyLoss.setScale(2, RoundingMode.HALF_UP) + ")";
             }
         }
+        BigDecimal maxDrawdownRate = safe(risk.getMaxAccountDrawdownRate());
+        if (maxDrawdownRate.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal drawdownRate = currentEquityDrawdownRate(risk);
+            if (drawdownRate.compareTo(maxDrawdownRate) >= 0) {
+                return "G0_RISK_HALT(account_drawdown=" + drawdownRate.setScale(4, RoundingMode.HALF_UP)
+                        + ",limit=" + maxDrawdownRate.setScale(4, RoundingMode.HALF_UP) + ")";
+            }
+        }
         return null;
+    }
+
+    private int currentPortfolioConsecutiveLosses(SmartWalletProperties.SignalRisk risk) {
+        long now = System.currentTimeMillis();
+        long ttl = risk.getRiskHaltCacheMs() > 0 ? risk.getRiskHaltCacheMs() : 30_000L;
+        if (now - lossStreakComputedAtMs < ttl) {
+            return cachedPortfolioConsecutiveLosses;
+        }
+        try {
+            int limit = Math.max(1, defaultInt(risk.getConsecutiveLossHaltThreshold(), 8));
+            List<SmartWalletPositionEntity> positions = positionMapper.selectList(
+                    new LambdaQueryWrapper<SmartWalletPositionEntity>()
+                            .eq(SmartWalletPositionEntity::getSource, "FOLLOW_TRADE")
+                            .isNotNull(SmartWalletPositionEntity::getClosedAt)
+                            .isNotNull(SmartWalletPositionEntity::getRealizedPnlUsdc)
+                            .orderByDesc(SmartWalletPositionEntity::getClosedAt)
+                            .orderByDesc(SmartWalletPositionEntity::getId)
+                            .last("limit " + limit));
+            int streak = 0;
+            if (positions != null) {
+                for (SmartWalletPositionEntity position : positions) {
+                    if (safe(position.getRealizedPnlUsdc()).compareTo(BigDecimal.ZERO) < 0) {
+                        streak++;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            cachedPortfolioConsecutiveLosses = streak;
+            lossStreakComputedAtMs = now;
+            return streak;
+        } catch (Exception e) {
+            log.debug("[RISK_HALT] consecutive loss compute failed: {}", e.toString());
+            return cachedPortfolioConsecutiveLosses;
+        }
     }
 
     /**

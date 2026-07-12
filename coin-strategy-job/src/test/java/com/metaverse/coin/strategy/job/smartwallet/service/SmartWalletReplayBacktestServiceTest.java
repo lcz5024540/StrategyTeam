@@ -44,6 +44,8 @@ class SmartWalletReplayBacktestServiceTest {
     private SmartWalletSignalRiskService signalRiskService;
     @Mock
     private WalletBehaviorProfileService walletBehaviorProfileService;
+    @Mock
+    private SmartWalletFeatureSnapshotService featureSnapshotService;
 
     @Test
     void shouldCompareBaselineAndCandidateMetricsAcrossReplayWindow() {
@@ -122,11 +124,13 @@ class SmartWalletReplayBacktestServiceTest {
                 new SmartWalletScoringService(),
                 profileStoreService,
                 signalRiskService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                featureSnapshotService
         );
         SmartWalletReplayBacktestRequest request = new SmartWalletReplayBacktestRequest();
         request.setWindowDays(List.of(30));
         request.setMaxEventsPerWindow(100);
+        request.setStrictPointInTime(false);
 
         SmartWalletReplayBacktestResult result = service.replay(request);
 
@@ -152,7 +156,8 @@ class SmartWalletReplayBacktestServiceTest {
                 new SmartWalletScoringService(),
                 profileStoreService,
                 signalRiskService,
-                walletBehaviorProfileService
+                walletBehaviorProfileService,
+                featureSnapshotService
         );
 
         SmartWalletReplayBacktestResult replayResult = SmartWalletReplayBacktestResult.builder()
