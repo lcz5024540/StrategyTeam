@@ -24,11 +24,6 @@ public class SmartWalletReplayStrategyMetrics {
     private Integer extremeConcentrationBlockedCount;
     private Integer concentrationDownsizedAcceptedCount;
     private BigDecimal winRate;
-    private BigDecimal winRateLowerBound;
-    private BigDecimal winRateUpperBound;
-    private BigDecimal grossProfitUsdc;
-    private BigDecimal grossLossUsdc;
-    private BigDecimal profitFactor;
     private BigDecimal realizedPnlUsdc;
     private BigDecimal settlementProxyPnlUsdc;
     private BigDecimal maxDrawdownUsdc;

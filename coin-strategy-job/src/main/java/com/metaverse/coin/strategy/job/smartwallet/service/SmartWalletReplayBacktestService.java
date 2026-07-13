@@ -6,7 +6,6 @@ import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletProfileMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEffectLabelMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SmartWalletTradeEventMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletProfileEntity;
-import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletFeatureSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEffectLabelEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SmartWalletTradeEventEntity;
 import com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties;
@@ -52,30 +51,12 @@ public class SmartWalletReplayBacktestService {
     private final SmartWalletProfileStoreService profileStoreService;
     private final SmartWalletSignalRiskService signalRiskService;
     private final WalletBehaviorProfileService walletBehaviorProfileService;
-    private final SmartWalletFeatureSnapshotService featureSnapshotService;
 
     public SmartWalletReplayBacktestResult replay(SmartWalletReplayBacktestRequest request) {
         SmartWalletReplayBacktestRequest applied = normalizeRequest(request);
-        return replayWithPolicies(applied, baselineRisk(), candidateRisk());
-    }
-
-    public SmartWalletReplayBacktestResult replayWithPolicies(SmartWalletReplayBacktestRequest request,
-                                                               SmartWalletProperties.SignalRisk championPolicy,
-                                                               SmartWalletProperties.SignalRisk candidatePolicy) {
-        return replayWithPolicies(request, championPolicy, candidatePolicy, DecisionAuditSink.NOOP);
-    }
-
-    public SmartWalletReplayBacktestResult replayWithPolicies(SmartWalletReplayBacktestRequest request,
-                                                               SmartWalletProperties.SignalRisk championPolicy,
-                                                               SmartWalletProperties.SignalRisk candidatePolicy,
-                                                               DecisionAuditSink auditSink) {
-        SmartWalletReplayBacktestRequest applied = normalizeRequest(request);
-        if (championPolicy == null || candidatePolicy == null) {
-            throw new IllegalArgumentException("championPolicy and candidatePolicy are required");
-        }
         List<SmartWalletReplayWindowResult> windows = new ArrayList<>();
         for (Integer windowDays : applied.getWindowDays()) {
-            windows.add(replayWindow(windowDays, applied, championPolicy, candidatePolicy, auditSink));
+            windows.add(replayWindow(windowDays, applied.getMaxEventsPerWindow()));
         }
         return SmartWalletReplayBacktestResult.builder()
                 .generatedAt(new Date())
@@ -227,82 +208,39 @@ public class SmartWalletReplayBacktestService {
                   .collect(Collectors.toList());
     }
 
-    private SmartWalletReplayWindowResult replayWindow(Integer windowDays,
-                                                        SmartWalletReplayBacktestRequest request,
-                                                        SmartWalletProperties.SignalRisk championPolicy,
-                                                        SmartWalletProperties.SignalRisk challengerPolicy,
-                                                        DecisionAuditSink auditSink) {
+    private SmartWalletReplayWindowResult replayWindow(Integer windowDays, Integer maxEventsPerWindow) {
         int safeWindowDays = windowDays == null ? 30 : Math.max(windowDays, 1);
-        int safeLimit = request.getMaxEventsPerWindow() == null ? 2000 : Math.max(1, Math.min(request.getMaxEventsPerWindow(), 10000));
-        Date asOf = request.getAsOf();
-        Date since = Date.from(asOf.toInstant().minus(safeWindowDays, ChronoUnit.DAYS));
-        List<SmartWalletTradeEventEntity> events = loadTradeEvents(since, asOf, safeLimit);
+        int safeLimit = maxEventsPerWindow == null ? 2000 : Math.max(1, Math.min(maxEventsPerWindow, 10000));
+        Date since = Date.from(Instant.now().minus(safeWindowDays, ChronoUnit.DAYS));
+        List<SmartWalletTradeEventEntity> events = loadTradeEvents(since, safeLimit);
         Map<Long, SmartWalletTradeEffectLabelEntity> labelsByEventId = loadLabels(events);
-        boolean strictPointInTime = !Boolean.FALSE.equals(request.getStrictPointInTime());
-        Map<String, SmartWalletProfileEntity> profilesByWallet = strictPointInTime ? Map.of() : loadProfiles(events);
-        Map<String, WalletBehaviorProfileView> behaviorsByWallet = strictPointInTime ? Map.of() : loadBehaviorProfiles(events);
-        Map<String, List<SmartWalletFeatureSnapshotEntity>> featureTimeline = strictPointInTime
-                ? loadFeatureTimeline(request.getDatasetVersion(), events)
-                : Map.of();
+        Map<String, SmartWalletProfileEntity> profilesByWallet = loadProfiles(events);
+        Map<String, WalletBehaviorProfileView> behaviorsByWallet = loadBehaviorProfiles(events);
 
-        SmartWalletProperties.SignalRisk baselineRisk = championPolicy;
-        SmartWalletProperties.SignalRisk candidateRisk = challengerPolicy;
+        SmartWalletProperties.SignalRisk baselineRisk = baselineRisk();
+        SmartWalletProperties.SignalRisk candidateRisk = candidateRisk();
         StrategyAccumulator baseline = new StrategyAccumulator("baseline", baselineRisk.getPolicyTag(), baselineRisk.getExitSignalProviderMode());
         StrategyAccumulator candidate = new StrategyAccumulator("candidate", candidateRisk.getPolicyTag(), candidateRisk.getExitSignalProviderMode());
 
-        int missingPointInTimeSnapshots = 0;
         for (SmartWalletTradeEventEntity event : events) {
             if (event == null || event.getWalletAddress() == null || event.getWalletAddress().isBlank()) {
                 continue;
             }
             String walletKey = normalizeWallet(event.getWalletAddress());
-            SmartWalletFeatureSnapshotEntity featureSnapshot = strictPointInTime
-                    ? featureSnapshotService.resolveAt(featureTimeline.get(walletKey), event.getOpenedAt())
-                    : null;
-            if (strictPointInTime && featureSnapshot == null) {
-                missingPointInTimeSnapshots++;
-                continue;
-            }
-            SmartWalletProfileEntity profile = strictPointInTime
-                    ? featureSnapshotService.toProfile(featureSnapshot)
-                    : profilesByWallet.get(walletKey);
-            WalletBehaviorProfileView behaviorProfile = strictPointInTime
-                    ? featureSnapshotService.toBehavior(featureSnapshot)
-                    : behaviorsByWallet.get(walletKey);
+            SmartWalletProfileEntity profile = profilesByWallet.get(walletKey);
+            WalletBehaviorProfileView behaviorProfile = behaviorsByWallet.get(walletKey);
             SmartWalletTradeEffectLabelEntity label = labelsByEventId.get(event.getId());
 
-            SignalRiskDecision championDecision = evaluateScenario(
-                    event, profile, behaviorProfile, label, baselineRisk, false, baseline);
-            SignalRiskDecision challengerDecision = evaluateScenario(
-                    event, profile, behaviorProfile, label, candidateRisk, true, candidate);
-            auditSink.record(event, featureSnapshot, "CHAMPION", championDecision);
-            auditSink.record(event, featureSnapshot, "CHALLENGER", challengerDecision);
+            evaluateScenario(event, profile, behaviorProfile, label, baselineRisk, false, baseline);
+            evaluateScenario(event, profile, behaviorProfile, label, candidateRisk, true, candidate);
         }
 
         return SmartWalletReplayWindowResult.builder()
                 .windowDays(safeWindowDays)
                 .scannedEvents(events.size())
-                .missingPointInTimeSnapshotEvents(missingPointInTimeSnapshots)
-                .pointInTimeSnapshotCoverageRate(ratio(events.size() - missingPointInTimeSnapshots, events.size()))
-                .strictPointInTime(strictPointInTime)
                 .baseline(baseline.toMetrics())
                 .candidate(candidate.toMetrics())
                 .build();
-    }
-
-    private Map<String, List<SmartWalletFeatureSnapshotEntity>> loadFeatureTimeline(
-            String datasetVersion,
-            List<SmartWalletTradeEventEntity> events) {
-        Date upperBound = events.stream()
-                .map(SmartWalletTradeEventEntity::getOpenedAt)
-                .filter(Objects::nonNull)
-                .max(Date::compareTo)
-                .orElse(null);
-        List<String> wallets = events.stream()
-                .map(SmartWalletTradeEventEntity::getWalletAddress)
-                .filter(Objects::nonNull)
-                .toList();
-        return featureSnapshotService.loadTimeline(datasetVersion, wallets, upperBound);
     }
 
     private SmartWalletReplayConcentrationWindowSummary toConcentrationSummaryWindow(SmartWalletReplayWindowResult window) {
@@ -355,13 +293,13 @@ public class SmartWalletReplayBacktestService {
                 .build();
     }
 
-    private SignalRiskDecision evaluateScenario(SmartWalletTradeEventEntity event,
-                                                SmartWalletProfileEntity sourceProfile,
-                                                WalletBehaviorProfileView behaviorProfile,
-                                                SmartWalletTradeEffectLabelEntity label,
-                                                SmartWalletProperties.SignalRisk risk,
-                                                boolean includeObserveCooldown,
-                                                StrategyAccumulator accumulator) {
+    private void evaluateScenario(SmartWalletTradeEventEntity event,
+                                  SmartWalletProfileEntity sourceProfile,
+                                  WalletBehaviorProfileView behaviorProfile,
+                                  SmartWalletTradeEffectLabelEntity label,
+                                  SmartWalletProperties.SignalRisk risk,
+                                  boolean includeObserveCooldown,
+                                  StrategyAccumulator accumulator) {
         accumulator.scannedEvents++;
         SmartWalletProfileEntity replayProfile = cloneProfile(sourceProfile);
         if (replayProfile != null) {
@@ -398,10 +336,6 @@ public class SmartWalletReplayBacktestService {
                 accumulator.acceptedWithLabels++;
                 if (scaledPnl.compareTo(BigDecimal.ZERO) > 0) {
                     accumulator.positivePnlCount++;
-                    accumulator.grossProfit = accumulator.grossProfit.add(scaledPnl);
-                } else if (scaledPnl.compareTo(BigDecimal.ZERO) < 0) {
-                    accumulator.negativePnlCount++;
-                    accumulator.grossLoss = accumulator.grossLoss.add(scaledPnl.abs());
                 }
                 accumulator.realizedPnl = accumulator.realizedPnl.add(scaledPnl);
                 if (settlementProxyPnl != null) {
@@ -412,7 +346,7 @@ public class SmartWalletReplayBacktestService {
                 accumulator.maxDrawdown = accumulator.maxDrawdown.max(accumulator.cumulativePeak.subtract(accumulator.cumulativePnl));
                 accumulator.totalHoldMinutes = accumulator.totalHoldMinutes.add(resolveHoldMinutes(risk, label));
             }
-            return decision;
+            return;
         }
 
         if (decision.getReasons() != null && decision.getReasons().stream().anyMatch(reason -> reason.contains("[OBSERVE_COOLDOWN_BLOCK]"))) {
@@ -424,29 +358,17 @@ public class SmartWalletReplayBacktestService {
                 accumulator.skipReasonDistribution.merge(classifyReason(reason), 1, Integer::sum);
             }
         }
-        return decision;
     }
 
-    @FunctionalInterface
-    public interface DecisionAuditSink {
-        DecisionAuditSink NOOP = (event, snapshot, lane, decision) -> { };
-
-        void record(SmartWalletTradeEventEntity event,
-                    SmartWalletFeatureSnapshotEntity snapshot,
-                    String lane,
-                    SignalRiskDecision decision);
-    }
-
-    private List<SmartWalletTradeEventEntity> loadTradeEvents(Date since, Date until, int limit) {
+    private List<SmartWalletTradeEventEntity> loadTradeEvents(Date since, int limit) {
         final int pageSize = 1000;
         List<SmartWalletTradeEventEntity> all = new ArrayList<>();
         Long lastId = null;
         
         while (true) {
-                LambdaQueryWrapper<SmartWalletTradeEventEntity> wrapper = new LambdaQueryWrapper<>();
-                wrapper.eq(SmartWalletTradeEventEntity::getSource, SOURCE)
-                   .ge(SmartWalletTradeEventEntity::getOpenedAt, since)
-                   .lt(SmartWalletTradeEventEntity::getOpenedAt, until);
+            LambdaQueryWrapper<SmartWalletTradeEventEntity> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(SmartWalletTradeEventEntity::getSource, SOURCE)
+                   .ge(SmartWalletTradeEventEntity::getOpenedAt, since);
             
             if (lastId != null) {
                 wrapper.lt(SmartWalletTradeEventEntity::getId, lastId);
@@ -554,14 +476,6 @@ public class SmartWalletReplayBacktestService {
 
     private SmartWalletProperties.SignalRisk copyRisk(SmartWalletProperties.SignalRisk source) {
         SmartWalletProperties.SignalRisk target = new SmartWalletProperties.SignalRisk();
-        target.setTradingHalted(source.isTradingHalted());
-        target.setMaxDailyLossUsdc(source.getMaxDailyLossUsdc());
-        target.setMaxDailyLossRate(source.getMaxDailyLossRate());
-        target.setMaxAccountDrawdownRate(source.getMaxAccountDrawdownRate());
-        target.setConsecutiveLossCoolingThreshold(source.getConsecutiveLossCoolingThreshold());
-        target.setConsecutiveLossCoolingStakeMultiplier(source.getConsecutiveLossCoolingStakeMultiplier());
-        target.setConsecutiveLossHaltThreshold(source.getConsecutiveLossHaltThreshold());
-        target.setRiskHaltCacheMs(source.getRiskHaltCacheMs());
         target.setAllowSellSignal(source.isAllowSellSignal());
         target.setEnableAutoStopLoss(source.isEnableAutoStopLoss());
         target.setAutoStopLossThresholdRate(source.getAutoStopLossThresholdRate());
@@ -780,18 +694,6 @@ public class SmartWalletReplayBacktestService {
                 .toList();
         applied.setWindowDays(windows.isEmpty() ? DEFAULT_WINDOWS : windows);
         applied.setMaxEventsPerWindow(applied.getMaxEventsPerWindow() == null ? 2000 : Math.max(1, Math.min(applied.getMaxEventsPerWindow(), 10000)));
-        if (!org.springframework.util.StringUtils.hasText(applied.getDatasetVersion())) {
-            applied.setDatasetVersion(SmartWalletFeatureSnapshotService.LIVE_DATASET_VERSION);
-        }
-        if (applied.getStrictPointInTime() == null) {
-            applied.setStrictPointInTime(Boolean.TRUE);
-        }
-        if (applied.getRandomSeed() == null) {
-            applied.setRandomSeed(20260712L);
-        }
-        if (applied.getAsOf() == null) {
-            applied.setAsOf(new Date());
-        }
         return applied;
     }
 
@@ -876,15 +778,12 @@ public class SmartWalletReplayBacktestService {
         private int acceptedEvents;
         private int acceptedWithLabels;
         private int positivePnlCount;
-        private int negativePnlCount;
         private int overrideCount;
         private int recentDegradationBlockCount;
         private int concentrationBlockedCount;
         private int extremeConcentrationBlockedCount;
         private int concentrationDownsizedAcceptedCount;
         private BigDecimal realizedPnl = BigDecimal.ZERO;
-        private BigDecimal grossProfit = BigDecimal.ZERO;
-        private BigDecimal grossLoss = BigDecimal.ZERO;
         private BigDecimal settlementProxyPnl = BigDecimal.ZERO;
         private BigDecimal cumulativePnl = BigDecimal.ZERO;
         private BigDecimal cumulativePeak = BigDecimal.ZERO;
@@ -909,17 +808,6 @@ public class SmartWalletReplayBacktestService {
         private SmartWalletReplayStrategyMetrics toMetrics() {
             BigDecimal scanned = BigDecimal.valueOf(Math.max(scannedEvents, 1));
             BigDecimal labeledAccepted = BigDecimal.valueOf(Math.max(acceptedWithLabels, 1));
-            BigDecimal winRate = BigDecimal.valueOf(positivePnlCount).divide(labeledAccepted, 4, RoundingMode.HALF_UP);
-            BigDecimal winRateLowerBound = com.metaverse.coin.strategy.common.service.stats.WinRateStatistics
-                    .wilsonLowerBound(positivePnlCount, negativePnlCount);
-            BigDecimal lossRateLowerBound = com.metaverse.coin.strategy.common.service.stats.WinRateStatistics
-                    .wilsonLowerBound(negativePnlCount, positivePnlCount);
-            BigDecimal winRateUpperBound = lossRateLowerBound == null
-                    ? null
-                    : BigDecimal.ONE.subtract(lossRateLowerBound).setScale(4, RoundingMode.HALF_UP);
-            BigDecimal profitFactor = grossLoss.compareTo(BigDecimal.ZERO) == 0
-                    ? (grossProfit.compareTo(BigDecimal.ZERO) > 0 ? null : BigDecimal.ZERO)
-                    : grossProfit.divide(grossLoss, 4, RoundingMode.HALF_UP);
             return SmartWalletReplayStrategyMetrics.builder()
                     .strategyKey(strategyKey)
                     .policyTag(policyTag)
@@ -934,12 +822,7 @@ public class SmartWalletReplayBacktestService {
                     .concentrationBlockedCount(concentrationBlockedCount)
                     .extremeConcentrationBlockedCount(extremeConcentrationBlockedCount)
                     .concentrationDownsizedAcceptedCount(concentrationDownsizedAcceptedCount)
-                    .winRate(winRate)
-                    .winRateLowerBound(winRateLowerBound)
-                    .winRateUpperBound(winRateUpperBound)
-                    .grossProfitUsdc(grossProfit.setScale(4, RoundingMode.HALF_UP))
-                    .grossLossUsdc(grossLoss.setScale(4, RoundingMode.HALF_UP))
-                    .profitFactor(profitFactor)
+                    .winRate(BigDecimal.valueOf(positivePnlCount).divide(labeledAccepted, 4, RoundingMode.HALF_UP))
                     .realizedPnlUsdc(realizedPnl.setScale(4, RoundingMode.HALF_UP))
                     .settlementProxyPnlUsdc(settlementProxyPnl.setScale(4, RoundingMode.HALF_UP))
                     .maxDrawdownUsdc(maxDrawdown.setScale(4, RoundingMode.HALF_UP))

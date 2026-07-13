@@ -10,10 +10,10 @@ This project is governed by the ray-agent harness at `../../../Agent.md`.
 
 ## Current Harness Location
 
-CoinStrategy is managed as an independent Git worktree under:
+CoinStrategy is managed as an external project worktree under:
 
 ```text
-docs/projects/CoinStrategy/
+docs/projects/coin-strategy/worktree/
 ```
 
 Do not treat the ray-agent repository root as the CoinStrategy project root.

@@ -46,7 +46,6 @@ public class SmartWalletProfileTruthRefreshService {
     private final SmartWalletScoringService scoringService;
     private final SmartWalletProfileStoreService profileStoreService;
     private final com.metaverse.coin.strategy.common.service.smartwallet.config.SmartWalletProperties properties;
-    private final SmartWalletFeatureSnapshotService featureSnapshotService;
 
     public PolymarketWalletMetricsRequest buildTruthMetrics(String walletAddress,
                                                             String alias,
@@ -122,7 +121,6 @@ public class SmartWalletProfileTruthRefreshService {
             profile.setUpdatedAt(new Date());
             profileStoreService.applyQualificationState(profile);
             profileMapper.updateById(profile);
-            featureSnapshotService.capture(profile);
             return new SmartWalletProfileTruthRefreshResult(profile.getWalletAddress(), false, DATA_QUALITY_INSUFFICIENT,
                     0, lowConfidence, unresolved, missingLoss, BigDecimal.ZERO, BigDecimal.ZERO, profile.getWalletScore());
         }
@@ -136,7 +134,6 @@ public class SmartWalletProfileTruthRefreshService {
         profile.setUpdatedAt(new Date());
         profileStoreService.applyQualificationState(profile);
         profileMapper.updateById(profile);
-        featureSnapshotService.capture(profile);
         return new SmartWalletProfileTruthRefreshResult(profile.getWalletAddress(), true, DATA_QUALITY_TRUTH,
                 metrics.getTotalTrades(), lowConfidence, unresolved, missingLoss,
                 metrics.getWinRate(), metrics.getRealizedPnlUsdc(), profile.getWalletScore());
