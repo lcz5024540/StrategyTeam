@@ -10,6 +10,12 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnExpression("'${binance.api.api-key:}' != '' && '${binance.api.secret-key:}' != ''")
 public class BinanceConfig {
 
+    private final SecretDecryptor secretDecryptor;
+
+    public BinanceConfig(SecretDecryptor secretDecryptor) {
+        this.secretDecryptor = secretDecryptor;
+    }
+
     @Value("${binance.api.api-key}")
     private String apiKey;
 
@@ -40,15 +46,15 @@ public class BinanceConfig {
     @Bean
     public BinanceApiService binanceApiService() {
         return new BinanceApiService(
-                apiKey,
-                secretKey,
+                secretDecryptor.decryptIfEncrypted(apiKey),
+                secretDecryptor.decryptIfEncrypted(secretKey),
                 spotUrl,
                 futuresUrl,
                 proxyHost,
                 proxyPort,
                 proxyType,
-                proxyUsername,
-                proxyPassword
+                secretDecryptor.decryptIfEncrypted(proxyUsername),
+                secretDecryptor.decryptIfEncrypted(proxyPassword)
         );
     }
 }

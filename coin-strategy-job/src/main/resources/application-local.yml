@@ -22,3 +22,109 @@ spring:
     username: "${DB_USERNAME:devuser}"
     password: "${DB_PASSWORD:}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
+
+smart-wallet:
+  signal-risk:
+    # EV gate is not part of runtime config yet; keep the test-only override here.
+    enable-ev-gate: false
+    # ──────────────────────────────────────────────────────────────────────
+    # W2-T6 灰度启用配置 (2026-05-16 第十批)
+    # 仅 test profile 默认开启用于积累数据, prod profile 保持默认 false (代码默认值).
+    # 启用前提:
+    #   1) LeaderDriftAggregationJob (08:00 daily) 已跑 ≥ 7 天, 无 AUDIT_LEADER_DRIFT
+    #      连续告警, 即漂移率在可接受范围;
+    #   2) BehaviorProfileSnapshotJob (10min) 已稳定写入 behavior_vector_json
+    #      (方案 B 落地后), Drift hot path 命中率 ~ 100%;
+    #   3) W1-T4 影子记账周报已积累 ≥ 1 周, 可对比 "启用 DRIFTED 拒绝" vs "未启用" 的
+    #      胜率差异是否符合预期 (≥ +1pp).
+    # 回退路径: 把 enable-leader-drift-gate 改回 false, 一行配置零重启.
+    # 初灰度阈值比文档默认更保守: minSamples=15 (vs 10), cosine=0.50 (vs 0.40).
+    enable-leader-drift-gate: true
+    leader-drift-min-samples: 15
+    leader-drift-cosine-threshold: 0.50
+    leader-drift-severe-cosine-threshold: 0.70
+    leader-drift-stake-multiplier: 0.25
+    manual-allowlist-bypass-leader-drift-gate: true
+    # ──────────────────────────────────────────────────────────────────────
+    # 第十三批 #2 + #3 灰度: VWAP estimator + MAKER_ONLY 撤单 + Live refresh
+    # 仅 test profile 默认开启 (积累 1-2 周数据, prod 待量化结果再开)
+    # 配套基础设施: MarketPriceImpactEstimator / MakerOnlyOrderTimeoutTracker / ResolutionLiveRefreshService
+    # 回退路径: 把对应 enable-*** 设 false, 一行配置零重启
+    # ──────────────────────────────────────────────────────────────────────
+    # #1 (基础设施已就位; 第十三批已接入 SignalRiskService hot path, 见下方 G11 段说明)
+    enable-vwap-slippage-estimator: true
+    # #2 MAKER_ONLY 超时撤单 (10s 内未成交主动撤)
+    maker-only-timeout-tracker-enabled: true
+    maker-only-scan-interval-ms: 2000
+    maker-only-track-maker-first: false   # 灰度阶段只跟踪 MAKER_ONLY, MAKER_FIRST 不撤
+    # ──────────────────────────────────────────────────────────────────────
+    # 第十五批 #3: W2-T2 Leader 滑动窗口胜率门 test 灰度启用
+    # 前提:
+    #   - W1-T4 影子记账已积累 ≥ 2 周数据
+    #   - smart_wallet_signal_shadow.entry_estimator_source 分桶 (第十四批) 已稳定
+    # 比代码默认更保守一档:
+    #   - minSamples=10 (vs 默认 8)        — 防止小样本误判
+    #   - minWinRate=0.40 (vs 默认 0.45)   — 比文档默认更保守, 暴露 leader 才进 COOLING
+    # 回退: enable-leader-rolling-gate=false 一行零重启
+    # ──────────────────────────────────────────────────────────────────────
+    enable-leader-rolling-gate: true
+    leader-rolling-min-samples: 10
+    leader-rolling-min-win-rate: 0.40
+    leader-rolling-cooling-stake-multiplier: 0.05
+    manual-allowlist-bypass-leader-rolling-gate: true
+  audit:
+    # #3 Gamma/UMA Live API refresh: ResolutionTriDiff Job 末尾对 top conflictedMarkets
+    # 拉取 Polymarket Gamma metadata + UMA 状态, 重新解析后写新 audit 记录
+    # 单次最多 20 markets (限频), 实际 fetch 数受上游 metadata cooldown 约束
+    resolution-tridiff-live-refresh-enabled: true
+    resolution-tridiff-live-refresh-max-per-run: 20
+    enable-single-wallet-override-canary: false
+    single-wallet-override-canary-rate: 1
+    single-wallet-override-min-wallet-score: 0.35
+    single-wallet-override-min-win-rate: 0.55
+    single-wallet-override-min-trades: 10
+    single-wallet-override-min-recent-trades-7d: 0
+    single-wallet-override-min-recent-win-rate-7d: 0
+    single-wallet-override-min-replicability-score: 0.30
+    single-wallet-override-min-quality-score: 0.30
+    single-wallet-override-min-trigger-size-usdc: 1
+    single-wallet-override-min-recommended-stake-usdc: 1
+    manual-allowlist-bypass-fast-event-block: true
+    manual-allowlist-bypass-kelly-negative-ev: true
+  market-monitoring:
+    # Keep monitoring candidates longer than the execution freshness window to absorb scan/sync latency.
+    active-task-max-age-seconds: 10800
+
+  polymarket:
+    leaderboard-queries:
+      - category: "OVERALL"
+        time-period: "ALL"
+        order-by: "PNL"
+        limit: 100
+      # 2026-05-19 ray@cowork: 偏向"本周活跃高 PnL" leader 入库, 给 WeeklyTopLeaderAutoAllowlistJob 喂料
+      - category: "OVERALL"
+        time-period: "WEEK"
+        order-by: "PNL"
+        limit: 100
+
+  # 2026-05-19 ray@cowork: 每日 06:00 自动从 profile 表挑"本周活跃 + 高 PnL + 高胜率" leader
+  # 入 manual_allowlist (PAPER, 30d 过期). 详见 WeeklyTopLeaderAutoAllowlistJob.
+  auto-allowlist:
+    enabled: true
+    cron: "0 0 6 * * *"
+    zone: "Asia/Shanghai"
+    top-n: 10
+    min-lifetime-trades: 30
+    min-recent-7d-trades: 1
+    active-within-days: 7
+    min-pnl-usdc: 10000
+    min-win-rate: 0.55
+    max-drawdown: 0.30
+    stake-multiplier: 0.50
+    default-mode: "PAPER"
+    expiration-days: 30
+    max-live-orders-per-day: 5
+    max-live-orders-per-run: 2
+    overwrite-existing: false
+    reason-prefix: "AUTO_WEEKLY_TOP_LEADER"
+    created-by: "WeeklyTopLeaderAutoAllowlistJob"
