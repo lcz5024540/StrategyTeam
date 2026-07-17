@@ -40,6 +40,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Spot-Futures Arbitrage Strategy (Single Exchange)
+ *
+ * <p>单交易所现货-合约套利策略。当前实现默认围绕 Binance 单一交易对运行:
+ * 当资金费率、基差、流动性和账户风险均满足条件时，同时买入现货并开合约空单;
+ * 持仓期间持续记录资金费结算，并在收益吸引力下降或风险恶化时同时平掉两条腿。
+ *
  * Strategy Logic:
  * 1. Build a real trade plan from current spot/futures prices.
  * 2. Open only when funding, basis and settlement timing all pass filters.
@@ -109,6 +114,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         boolean wasRunning = running.get();
         if (!wasRunning) {
             running.set(true);
+            // 手动 run-once 可能绕过 start()，这里同样先恢复未完成仓位，避免重启后误判为空仓而重复开仓。
+            restorePersistedPositions();
         }
         try {
             executeLogic();
@@ -129,12 +136,14 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
             String symbol = properties.getSymbol();
             log.info("Checking arbitrage opportunities for {}", symbol);
 
+            // 1. 读取合约资金费率。资金费率是本策略的收益来源，缺失时不做任何交易决策。
             BinanceFuturesPremiumIndex premiumIndex = fundingRateMonitor.getBinanceFundingRate(symbol);
             if (premiumIndex == null || premiumIndex.getLastFundingRate() == null) {
                 log.warn("Funding data unavailable for {}", symbol);
                 return;
             }
 
+            // 2. 基于当前现货/合约价格构建一份可执行计划，后续所有风控和下单都使用同一份快照。
             BigDecimal currentRate = premiumIndex.getLastFundingRate();
             SingleExchangeSpotFuturesOrderPlan marketPlan = orderExecutor.createSpotFuturesPlan(
                     symbol,
@@ -152,13 +161,16 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     premiumIndex.getNextFundingTime()
             );
 
+            //注意：理论上一个 symbol 只会有一个未完成仓位
             ActivePosition activePosition = activePositions.get(symbol);
             if (activePosition == null) {
+                // 3. 无持仓时进入开仓路径。先检查盘口深度/滑点，避免收益被成交冲击吞掉。
                 SingleExchangeLiquidityAssessment liquidityAssessment = riskService.evaluateLiquidityRisk(
                         marketPlan,
                         SingleExchangeRiskService.PHASE_OPEN
                 );
-                if (!liquidityAssessment.isPassed()) {
+
+                if (!liquidityAssessment.isPassed()) {//流动性检查未通过时，持久化风险快照
                     persistRiskSnapshot(
                             null,
                             null,
@@ -171,6 +183,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     return;
                 }
 
+                // 4. 再检查策略阈值: 资金费率、结算保护窗口、基差上下限、预估净收益。
                 String openBlockReason = getOpenBlockReason(
                         premiumIndex,
                         marketPlan,
@@ -181,8 +194,9 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     return;
                 }
 
+                // 5. 账户级风控放在真正下单前，包括余额、保证金、杠杆缓冲等硬约束。
                 SingleExchangeTradeRiskAssessment tradeRiskAssessment = riskService.evaluateTradeRisk(marketPlan);
-                if (!tradeRiskAssessment.isPassed()) {
+                if (!tradeRiskAssessment.isPassed()) {//账户级风控未通过，持久化风险快照
                     persistRiskSnapshot(
                             null,
                             null,
@@ -195,6 +209,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     return;
                 }
 
+                // 6. 先落库 OPENING 状态，再发真实/测试订单。这样即使进程中断，也能靠数据库恢复现场。
                 SingleExchangeArbitragePosition persistedPosition = createOpeningPosition(marketPlan, premiumIndex);
                 if (persistedPosition == null) {
                     log.warn("Skip open for {} because position state could not be persisted", symbol);
@@ -220,6 +235,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 SingleExchangeArbitrageExecutionResult result = orderExecutor.openArbitragePosition(marketPlan);
                 persistOrderRecords(persistedPosition.getId(), persistedPosition.getPositionCode(), result.getOrderRecords());
                 if (result.isSuccess()) {
+                    // 7. 开仓成功后更新为 OPENED，并写入内存 activePositions，下一轮开始走持仓管理路径。
                     SingleExchangeArbitragePosition openedPosition = markPositionOpened(persistedPosition, marketPlan, premiumIndex, result);
                     activePositions.put(symbol, ActivePosition.fromEntity(openedPosition));
                 } else {
@@ -229,12 +245,14 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 return;
             }
 
+            // 8. 有持仓时先补记已跨过的资金费结算，再判断是否需要退出。
             activePosition = reconcileFundingSettlement(activePosition, premiumIndex, marketPlan);
             CloseDecision closeDecision = getCloseDecision(premiumIndex, marketPlan, activePosition);
             if (closeDecision == null) {
                 return;
             }
 
+            // 9. 平仓使用当前价格重建计划，但数量/杠杆沿用开仓持仓，确保两侧按原仓位对称退出。
             SingleExchangeSpotFuturesOrderPlan closePlan = SingleExchangeSpotFuturesOrderPlan.builder()
                     .symbol(symbol)
                     .spotSymbol(symbol)
@@ -250,6 +268,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                     closePlan,
                     SingleExchangeRiskService.PHASE_CLOSE
             );
+            // 10. 平仓流动性检查只记录告警，不阻断退出。风险触发后继续持仓通常比带滑点退出更危险。
             persistRiskSnapshot(
                     activePosition.positionId(),
                     activePosition.positionCode(),
@@ -280,9 +299,11 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
             SingleExchangeArbitrageExecutionResult closeResult = orderExecutor.closeArbitragePosition(closePlan);
             persistOrderRecords(activePosition.positionId(), activePosition.positionCode(), closeResult.getOrderRecords());
             if (closeResult.isSuccess()) {
+                // 11. 平仓成功后标记 CLOSED 并移除内存持仓，下一轮才允许重新寻找开仓机会。
                 markPositionClosed(activePosition, marketPlan, currentRate, closeResult);
                 activePositions.remove(symbol);
             } else {
+                // 平仓失败时恢复为 OPENED，避免数据库长期停留在 CLOSING，后续轮次可继续尝试退出。
                 revertPositionToOpened(activePosition);
                 log.warn("Failed to close arbitrage position for {} after trigger: {}", symbol, closeDecision.reason());
             }
@@ -293,6 +314,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
 
     private void restorePersistedPositions() {
         try {
+            // 启动恢复只关心未完成仓位，防止服务重启后忘记已有风险敞口而重复开仓。
             List<SingleExchangeArbitragePosition> persistedPositions = positionMapper.selectList(
                     new LambdaQueryWrapper<SingleExchangeArbitragePosition>()
                             .eq(SingleExchangeArbitragePosition::getStrategyType, getStrategyId())
@@ -306,6 +328,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 return;
             }
 
+            // 多条活跃记录属于异常状态，这里选择最新一条恢复，避免同时管理多组同 symbol 仓位。
             SingleExchangeArbitragePosition recovered = persistedPositions.stream()
                     .filter(position -> position.getQuantity() != null && position.getQuantity().compareTo(BigDecimal.ZERO) > 0)
                     .max(Comparator.comparing(SingleExchangeArbitragePosition::getId))
@@ -461,6 +484,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         }
         Long lastRecordedFundingTime = activePosition.nextFundingTime();
         Long latestNextFundingTime = premiumIndex.getNextFundingTime();
+        // Binance 返回的 nextFundingTime 前进，且当前时间已经跨过旧结算点，才认为产生了一次资金费结算。
         if (lastRecordedFundingTime == null
                 || latestNextFundingTime == null
                 || latestNextFundingTime <= lastRecordedFundingTime
@@ -495,6 +519,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         return updatedPosition;
     }
 
+    /**
+     * 根据持仓名义价值和当前资金费率估算本次资金费收入/支出。
+     * 正数表示收取资金费，负数表示支付资金费。
+     */
     private SingleExchangeArbitrageFundingSettlement buildFundingSettlement(ActivePosition activePosition,
                                                                             BinanceFuturesPremiumIndex premiumIndex,
                                                                             SingleExchangeSpotFuturesOrderPlan marketPlan,
@@ -521,6 +549,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
 
     private FundingSettlementPersistResult persistFundingSettlement(SingleExchangeArbitrageFundingSettlement settlement) {
         try {
+            // 以 positionId + fundingTime 做幂等保护，避免重启或重复轮询导致同一结算点重复入账。
             Long existingCount = fundingSettlementMapper.selectCount(
                     new LambdaQueryWrapper<SingleExchangeArbitrageFundingSettlement>()
                             .eq(SingleExchangeArbitrageFundingSettlement::getPositionId, settlement.getPositionId())
@@ -574,6 +603,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private String getOpenBlockReason(BinanceFuturesPremiumIndex premiumIndex,
                                       SingleExchangeSpotFuturesOrderPlan marketPlan,
                                       BigDecimal estimatedSlippageRate) {
+        // 开仓过滤按“收益来源 -> 时间风险 -> 基差质量 -> 扣费后净收益”的顺序短路判断。
         BigDecimal currentRate = defaultValue(premiumIndex.getLastFundingRate());
         if (currentRate.compareTo(properties.getOpenThreshold()) <= 0) {
             return "funding rate " + currentRate + " is not above open threshold " + properties.getOpenThreshold();
@@ -597,9 +627,17 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         return null;
     }
 
+    /**
+     * 获取关闭决策
+     * @param premiumIndex
+     * @param marketPlan
+     * @param activePosition
+     * @return
+     */
     private CloseDecision getCloseDecision(BinanceFuturesPremiumIndex premiumIndex,
                                            SingleExchangeSpotFuturesOrderPlan marketPlan,
                                            ActivePosition activePosition) {
+        // 平仓触发分为收益衰减、基差恶化、保证金风险三类; 保证金风险会标记为 emergency。
         BigDecimal currentRate = defaultValue(premiumIndex.getLastFundingRate());
         if (currentRate.compareTo(BigDecimal.ZERO) <= 0) {
             return new CloseDecision("funding rate turned non-positive", false);
@@ -630,6 +668,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private BigDecimal estimateExpectedNetYield(BigDecimal currentRate, BigDecimal estimatedSlippageRate) {
         Integer minFundingPeriods = properties.getMinFundingPeriods();
         int fundingPeriods = minFundingPeriods == null || minFundingPeriods <= 0 ? 1 : minFundingPeriods;
+        // 预估净收益 = 预期资金费收益 - 双边交易手续费 - 开仓滑点; 用于过滤纸面收益很薄的机会。
         return currentRate.multiply(BigDecimal.valueOf(fundingPeriods))
                 .subtract(properties.getEstimatedRoundTripFeeRate())
                 .subtract(defaultValue(estimatedSlippageRate))

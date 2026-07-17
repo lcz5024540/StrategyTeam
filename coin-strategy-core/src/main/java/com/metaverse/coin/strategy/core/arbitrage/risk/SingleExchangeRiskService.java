@@ -24,6 +24,13 @@ import java.util.Optional;
 
 /**
  * Risk Service
+ *
+ * <p>单交易所现货-合约套利的风控服务，负责两类检查:
+ * <ul>
+ *   <li>交易账户风控: 检查现货 USDT、合约可用余额、所需保证金和保证金健康度。</li>
+ *   <li>盘口流动性风控: 基于现货/合约 depth 估算计划数量的 VWAP 和组合滑点。</li>
+ * </ul>
+ *
  * Handles pre-trade risk checks and account health monitoring.
  */
 @Service
@@ -43,6 +50,9 @@ public class SingleExchangeRiskService {
 
     /**
      * Check if a new trade is allowed.
+     *
+     * <p>兼容旧调用方的简化入口: 用同一个价格构造现货腿和合约腿计划，
+     * 然后复用完整的 {@link #evaluateTradeRisk(SingleExchangeSpotFuturesOrderPlan)} 风控逻辑。
      */
     public boolean checkTradeRisk(String symbol, BigDecimal quantity, BigDecimal price) {
         SingleExchangeSpotFuturesOrderPlan plan = SingleExchangeSpotFuturesOrderPlan.builder()
@@ -63,6 +73,12 @@ public class SingleExchangeRiskService {
         return evaluateTradeRisk(plan).isPassed();
     }
 
+    /**
+     * 开仓前账户级硬风控。
+     *
+     * <p>这里不判断行情是否值得做，只判断“这笔交易能不能安全下出去”:
+     * 单笔名义价值是否超限、现货余额是否足够、合约保证金是否足够、合约账户健康度是否达标。
+     */
     public SingleExchangeTradeRiskAssessment evaluateTradeRisk(SingleExchangeSpotFuturesOrderPlan plan) {
         if (plan == null || plan.getQuantity() == null || plan.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             log.warn("Risk Alert: invalid trade plan");
@@ -76,9 +92,11 @@ public class SingleExchangeRiskService {
         BigDecimal tradeValue = plan.getSpotNotional() != null
                 ? plan.getSpotNotional()
                 : plan.getQuantity().multiply(plan.getSpotPrice());
+        // 统一加载账户快照，后续即使某个检查失败，也能把当时的余额/保证金状态写入风险快照。
         RiskMetrics metrics = loadRiskMetrics(plan);
         SingleExchangeRiskSnapshotData snapshotData = toSnapshotData(metrics);
 
+        // 单笔仓位名义价值上限，防止配置错误或价格异常导致超预期下大单。
         if (tradeValue.compareTo(properties.getMaxPositionValueUsdt()) > 0) {
             log.warn("Risk Alert: Trade value {} exceeds max allowed {}", tradeValue, properties.getMaxPositionValueUsdt());
             return buildTradeRiskAssessment(false,
@@ -86,6 +104,7 @@ public class SingleExchangeRiskService {
                     snapshotData);
         }
 
+        // 现货腿需要先买入标的资产，因此现货账户 USDT 必须覆盖现货名义金额。
         if (!metrics.spotAccountLoaded()) {
             return buildTradeRiskAssessment(false, "failed to fetch spot account info", snapshotData);
         }
@@ -96,6 +115,7 @@ public class SingleExchangeRiskService {
                     snapshotData);
         }
 
+        // 合约腿开空需要占用初始保证金，并额外乘以安全缓冲，避免刚开仓就贴近风险边界。
         if (!metrics.futuresAccountLoaded()) {
             return buildTradeRiskAssessment(false, "failed to fetch futures account info", snapshotData);
         }
@@ -108,6 +128,7 @@ public class SingleExchangeRiskService {
                     snapshotData);
         }
 
+        // 保证金率过低表示合约账户整体风险偏高，即使当前这笔保证金够，也不允许继续加风险敞口。
         if (metrics.marginRatio() == null || metrics.marginRatio().compareTo(properties.getMinMarginRatio()) < 0) {
             log.warn("Risk Alert: Futures Account Health is poor. marginRatio={}", metrics.marginRatio());
             return buildTradeRiskAssessment(false,
@@ -118,10 +139,22 @@ public class SingleExchangeRiskService {
         return buildTradeRiskAssessment(true, null, snapshotData);
     }
 
+    /**
+     * 捕获当前账户风险快照。
+     *
+     * <p>策略在流动性拒绝、交易风控拒绝、平仓前检查等场景会调用它，
+     * 用于把当时账户余额/保证金状态持久化，方便事后排查。
+     */
     public SingleExchangeRiskSnapshotData captureRiskSnapshotData(SingleExchangeSpotFuturesOrderPlan plan) {
         return toSnapshotData(loadRiskMetrics(plan));
     }
 
+    /**
+     * 盘口流动性和滑点检查。
+     *
+     * <p>开仓阶段会阻断交易; 平仓阶段由策略侧决定通常只告警不阻断退出。
+     * 检查逻辑是: 获取 depth 快照 -> 按交易方向选择盘口侧 -> 估算 VWAP -> 判断深度是否足够 -> 判断滑点是否超阈值。
+     */
     public SingleExchangeLiquidityAssessment evaluateLiquidityRisk(SingleExchangeSpotFuturesOrderPlan plan, String phase) {
         BigDecimal configuredSlippageRate = defaultValue(properties.getEstimatedSlippageRate());
         SingleExchangeLiquidityAssessment.SingleExchangeLiquidityAssessmentBuilder builder = SingleExchangeLiquidityAssessment.builder()
@@ -130,10 +163,12 @@ public class SingleExchangeRiskService {
                 .spotTopLevelEnough(true)
                 .futuresTopLevelEnough(true);
 
+        // 配置关闭流动性检查时直接放行，但仍保留配置滑点作为后续收益估算的保守输入。
         if (!Boolean.TRUE.equals(properties.getLiquidityCheckEnabled())) {
             return builder.passed(true).build();
         }
 
+        // 没有合法数量就无法估算订单簿吃单路径，直接拒绝。
         if (plan == null || plan.getQuantity() == null || plan.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             return builder
                     .passed(false)
@@ -143,6 +178,7 @@ public class SingleExchangeRiskService {
                     .build();
         }
 
+        // depthMonitor 内部负责重试/缓存/HTTP 回补; 这里拿到 fallback 表示深度数据仍不可可靠使用。
         String tradeSymbol = plan.getSymbol() != null ? plan.getSymbol() : plan.getSpotSymbol();
         SingleExchangeDepthSnapshot snapshot = depthMonitor.getDepthSnapshot(tradeSymbol);
         if (snapshot == null || snapshot.isFallbackUsed()) {
@@ -157,11 +193,14 @@ public class SingleExchangeRiskService {
         BinanceFuturesOrderBook futuresOrderBook = snapshot.getFuturesOrderBook();
         BigDecimal quantity = plan.getQuantity();
 
+        // 按阶段选择盘口方向并估算 VWAP:
+        // 开仓 = 买现货吃 asks + 开合约空吃 bids; 平仓 = 卖现货吃 bids + 买回合约空吃 asks。
         VwapEstimate spotEstimate = estimateVwap(resolveSpotLevels(phase, spotOrderBook), quantity);
         VwapEstimate futuresEstimate = estimateVwap(resolveFuturesLevels(phase, futuresOrderBook), quantity);
         builder.spotExpectedPrice(spotEstimate.vwap())
                 .futuresExpectedPrice(futuresEstimate.vwap());
 
+        // 如果某一侧订单簿累计数量不足以覆盖计划数量，滑点估算不完整，直接拒绝/告警。
         builder.spotTopLevelEnough(spotEstimate.sufficient())
                 .futuresTopLevelEnough(futuresEstimate.sufficient());
         if (!spotEstimate.sufficient() || !futuresEstimate.sufficient()) {
@@ -176,6 +215,7 @@ public class SingleExchangeRiskService {
                     .build();
         }
 
+        // 用一档买卖价中点作为“无冲击价格”，VWAP 与 mid 的偏离视为吃单滑点。
         BigDecimal spotMid = calculateMidPrice(
                 extractLevelPrice(spotOrderBook.getBids(), 0),
                 extractLevelPrice(spotOrderBook.getAsks(), 0)
@@ -191,6 +231,7 @@ public class SingleExchangeRiskService {
                     .build();
         }
 
+        // 组合滑点 = 现货腿滑点 + 合约腿滑点。套利要求两条腿同时成交，所以这里按总冲击评估。
         BigDecimal spotLegSlippageRate = spotEstimate.vwap().subtract(spotMid).abs()
                 .divide(spotMid, 8, RoundingMode.HALF_UP);
         BigDecimal futuresLegSlippageRate = futuresEstimate.vwap().subtract(futuresMid).abs()
@@ -211,6 +252,8 @@ public class SingleExchangeRiskService {
     /**
      * Check account health (e.g., Margin Ratio).
      * Margin Ratio = Margin Balance / Maintenance Margin
+     *
+     * <p>该方法用于独立健康检查或持仓期间风险判断，不绑定某一笔交易计划。
      */
     public boolean checkAccountHealth() {
         BigDecimal marginRatio = getMarginRatio();
@@ -226,6 +269,7 @@ public class SingleExchangeRiskService {
 
     public BigDecimal getMarginRatio() {
         try {
+            // 优先通过可替换的数据提供者获取合约账户，便于 WebSocket/HTTP 或测试替身复用同一套风控逻辑。
             BinanceFuturesAccount futuresAccount = getQueryDataProvider().getFuturesAccount();
             BigDecimal marginRatio = calculateMarginRatio(futuresAccount);
             log.info("Current Futures Margin Ratio: {}", marginRatio);
@@ -240,6 +284,7 @@ public class SingleExchangeRiskService {
         if (orderBook == null) {
             return null;
         }
+        // 现货开仓是买入，吃卖盘 asks; 平仓是卖出，吃买盘 bids。
         return PHASE_CLOSE.equalsIgnoreCase(phase) ? orderBook.getBids() : orderBook.getAsks();
     }
 
@@ -247,9 +292,15 @@ public class SingleExchangeRiskService {
         if (orderBook == null) {
             return null;
         }
+        // 合约开仓是开空，吃买盘 bids; 平仓是买回空单，吃卖盘 asks。
         return PHASE_CLOSE.equalsIgnoreCase(phase) ? orderBook.getAsks() : orderBook.getBids();
     }
 
+    /**
+     * 按订单簿档位估算指定数量的成交均价。
+     *
+     * <p>逐档吃单直到满足计划数量，返回 VWAP、盘口累计可用数量以及是否足量。
+     */
     private VwapEstimate estimateVwap(List<List<String>> levels, BigDecimal quantity) {
         if (levels == null || levels.isEmpty() || quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
             return new VwapEstimate(null, BigDecimal.ZERO, false);
@@ -270,6 +321,7 @@ public class SingleExchangeRiskService {
                 continue;
             }
 
+            // availableQty 统计该侧盘口总可用量; filledQty/totalQuote 只统计计划数量实际会吃到的部分。
             availableQty = availableQty.add(levelQty);
             if (remainingQty.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
@@ -303,6 +355,7 @@ public class SingleExchangeRiskService {
         if (!isPositive(bidPrice) || !isPositive(askPrice)) {
             return null;
         }
+        // mid price 只用于估算滑点基准，不作为真实成交价。
         return bidPrice.add(askPrice).divide(new BigDecimal("2"), 8, RoundingMode.HALF_UP);
     }
 
@@ -346,6 +399,7 @@ public class SingleExchangeRiskService {
     }
 
     private SingleExchangeRiskSnapshotData toSnapshotData(RiskMetrics metrics) {
+        // 对外持久化只暴露风控快照字段，隐藏内部加载成功标记等运行细节。
         return SingleExchangeRiskSnapshotData.builder()
                 .spotUsdtBalance(metrics.spotUsdtBalance())
                 .futuresAvailableBalance(metrics.futuresAvailableBalance())
@@ -356,6 +410,7 @@ public class SingleExchangeRiskService {
     }
 
     private RiskMetrics loadRiskMetrics(SingleExchangeSpotFuturesOrderPlan plan) {
+        // requiredMargin 来自下单计划; bufferedRequiredMargin 在配置缓冲上再保守一层，给价格波动和手续费留余量。
         BigDecimal requiredMargin = plan == null ? BigDecimal.ZERO : defaultValue(plan.getRequiredFuturesMargin());
         BigDecimal bufferedRequiredMargin = requiredMargin.multiply(properties.getRequiredMarginBufferRate());
         BigDecimal spotUsdtBalance = BigDecimal.ZERO;
@@ -365,6 +420,7 @@ public class SingleExchangeRiskService {
         boolean futuresAccountLoaded = false;
 
         try {
+            // 查询现货账户 USDT free 余额，用于判断现货买入腿是否有足够现金。
             BinanceAccountInfo spotAccount = binanceApiService.account();
             Optional<BinanceBalance> usdtBalance = Optional.ofNullable(spotAccount.getBalances())
                     .orElse(List.of())
@@ -378,6 +434,7 @@ public class SingleExchangeRiskService {
         }
 
         try {
+            // 查询 U 本位合约账户可用 USDT 和保证金健康度，用于判断合约空单腿是否可安全开仓。
             BinanceFuturesAccount futuresAccount = getQueryDataProvider().getFuturesAccount();
             futuresAvailableBalance = Optional.ofNullable(futuresAccount.getAssets())
                     .orElse(List.of())
@@ -410,6 +467,7 @@ public class SingleExchangeRiskService {
         BigDecimal marginBalance = defaultValue(futuresAccount.getTotalMarginBalance());
         BigDecimal maintMargin = defaultValue(futuresAccount.getTotalMaintMargin());
         if (maintMargin.compareTo(BigDecimal.ZERO) == 0) {
+            // 没有维持保证金通常表示没有风险仓位，返回一个极高健康值，避免被误判为不健康。
             return new BigDecimal("999");
         }
         return marginBalance.divide(maintMargin, 2, RoundingMode.HALF_DOWN);
@@ -419,6 +477,7 @@ public class SingleExchangeRiskService {
         if (queryDataProvider != null) {
             return queryDataProvider;
         }
+        // 默认回退到 HTTP 查询实现; 测试或运行时可注入替代 provider，降低对具体数据源的耦合。
         return new com.metaverse.coin.strategy.core.arbitrage.market.HttpBinanceQueryDataProvider(binanceApiService);
     }
 
