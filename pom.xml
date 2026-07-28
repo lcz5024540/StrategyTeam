@@ -18,6 +18,7 @@
         <module>coin-strategy-common</module>
         <module>coin-strategy-core</module>
         <module>coin-strategy-job</module>
+        <module>coin-strategy-htx</module>
 <!--        <module>coin-strategy-evm</module>-->
         <module>coin-strategy-web</module>
     </modules>
