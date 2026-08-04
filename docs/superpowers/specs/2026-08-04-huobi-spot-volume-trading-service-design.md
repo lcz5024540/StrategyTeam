@@ -112,7 +112,7 @@ CoinStrategy 现有交易所客户端仅覆盖 OKX / Binance / Gate,且只有 **
 | `max-retries` | 单腿失败重试次数 | 小值 |
 | `net-position-tolerance` | 净持仓容忍阈值,超即强平+报警 | 极小值 |
 | `breaker-consecutive-failures` | 连续失败触发熔断阈值 | 小值 |
-| `dry-run` | 只算不真正下单 | 依赖 `enabled`;可单独打开做冒烟 |
+| `dry-run` | 走完整 cycle 逻辑但不发真实下单请求(仅日志) | `false`;`enabled=true` 且 `dry-run=true` 时可做无风险冒烟 |
 | `reconcile-whitelist` | 启动 reconcile 允许强平的基础币白名单 | 空(默认只报警) |
 
 - 时区固定 `Asia/Shanghai`,按北京时间跨日重置「当日累计成交额 / 循环次数」。
