@@ -9,6 +9,15 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:local}
   main:
     banner-mode: off
+  datasource:
+    url: "jdbc:mysql://${HTX_DB_HOST:127.0.0.1}:${HTX_DB_PORT:3306}/htx_trade_strategy?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true"
+    username: "${HTX_DB_USERNAME:root}"
+    password: "${HTX_DB_PASSWORD:}"
+    driver-class-name: "com.mysql.cj.jdbc.Driver"
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
 
 logging:
   config: classpath:logback-spring.xml
@@ -32,3 +41,7 @@ htx:
     top-n: 10
     safety-ratio: 3.0
     min-quote-notional: 20
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true

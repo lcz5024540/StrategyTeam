@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx;
 
 import lombok.extern.slf4j.Slf4j;
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -18,6 +19,7 @@ import java.util.TimeZone;
  * only; no MySQL / no Kafka / no other exchange clients loaded.
  */
 @SpringBootApplication(scanBasePackages = "com.metaverse.coin.strategy.htx")
+@MapperScan("com.metaverse.coin.strategy.htx.persistence.mapper")
 @Slf4j
 public class CoinStrategyHtxApplication {
 

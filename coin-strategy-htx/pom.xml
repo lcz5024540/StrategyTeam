@@ -84,6 +84,22 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--
+                      Parent pom declares org.slf4j:slf4j-simple (test scope) for all modules,
+                      which competes with the compile-scope logback-classic binding. SLF4J then
+                      binds to SimpleLoggerFactory and Spring Boot's LogbackLoggingSystem fails
+                      its assertion at context startup, breaking every @SpringBootTest here.
+                      Keep slf4j-simple off the test classpath so logback is the sole binding.
+                    -->
+                    <classpathDependencyExcludes>
+                        <classpathDependencyExclude>org.slf4j:slf4j-simple</classpathDependencyExclude>
+                    </classpathDependencyExcludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
