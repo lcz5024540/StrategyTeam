@@ -25,6 +25,18 @@ public class HtxTradeProperties {
     private Trade trade = new Trade();
     private DepthGuard depthGuard = new DepthGuard();
 
+    private Reconciler reconciler = new Reconciler();
+
+    @Data
+    public static class Reconciler {
+        /** 是否启用定时对账器（裸露自动市价平仓）。默认 true。 */
+        private boolean enabled = true;
+        /** 对账扫描间隔（ms）。默认 30s。 */
+        private long intervalMs = 30_000;
+        /** 单条裸露自动平仓的最大重试次数，超限转 MANUAL 并告警。 */
+        private int maxFlattenRetries = 3;
+    }
+
     @Data
     public static class Api {
         private String accessKey;
@@ -51,6 +63,11 @@ public class HtxTradeProperties {
          * is returning 5xx or timing out.
          */
         private int queryFailureThreshold = 5;
+        /**
+         * enabled=true 时，启动即校验 spot-account-id 非空。缺失则视为配置错误。
+         * 默认 true（实盘必须有账户 id）。
+         */
+        private boolean requireSpotAccountIdWhenEnabled = true;
     }
 
     @Data

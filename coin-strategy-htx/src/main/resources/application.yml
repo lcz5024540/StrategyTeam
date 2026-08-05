@@ -37,10 +37,15 @@ htx:
     enabled: ${HTX_TRADE_ENABLED:false}
     fill-poll-interval-ms: 200
     fill-timeout-ms: 5000
+    require-spot-account-id-when-enabled: true
   depth-guard:
     top-n: 10
     safety-ratio: 3.0
     min-quote-notional: 20
+  reconciler:
+    enabled: true
+    interval-ms: 30000
+    max-flatten-retries: 3
 
 mybatis-plus:
   configuration:
