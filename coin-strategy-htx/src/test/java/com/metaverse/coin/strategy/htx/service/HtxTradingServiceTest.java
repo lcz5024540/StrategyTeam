@@ -79,6 +79,17 @@ class HtxTradingServiceTest {
     }
 
     @Test
+    void buyLegPersistFailure_failsClosed_returnsPersistWriteFailed() {
+        when(recorder.createPair(any(), eq(false))).thenReturn(42L);
+        when(executor.execute(any(), eq(42L)))
+                .thenThrow(new HtxPersistenceException("buy-leg intent write failed", null));
+
+        HtxLockedPairResult r = service.submitLockedPair(req());
+
+        assertEquals(HtxLockedPairResult.Code.PERSIST_WRITE_FAILED, r.getCode());
+    }
+
+    @Test
     void preflight_enabledButNoSpotAccountId_rejects() {
         props.getApi().setSpotAccountId("");
 

@@ -130,7 +130,16 @@ public class HtxTradingService {
                     .message("db write-ahead failed: " + e.getMessage())
                     .build();
         }
-        return executor.execute(req, pairId);
+        // ── 买腿 write-ahead 同样 fail-closed：executor 落库失败在发 REST 前抛出，映射为 PERSIST_WRITE_FAILED ──
+        try {
+            return executor.execute(req, pairId);
+        } catch (HtxPersistenceException e) {
+            log.error("HTX fail-closed: cannot persist buy-leg intent, refuse to trade: {}", e.getMessage());
+            return HtxLockedPairResult.builder()
+                    .code(HtxLockedPairResult.Code.PERSIST_WRITE_FAILED)
+                    .message("db write-ahead failed: " + e.getMessage())
+                    .build();
+        }
     }
 
     private HtxLockedPairResult validate(HtxLockedPairRequest req) {
