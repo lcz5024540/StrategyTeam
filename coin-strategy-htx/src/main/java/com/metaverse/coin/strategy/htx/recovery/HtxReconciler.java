@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxExposureEntity;
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -15,9 +16,13 @@ import java.util.List;
 /**
  * 定时对账器：检测 htx_exposure 中 OPEN 裸露头寸，市价平回中性。
  * base 多头 → sell-market；平仓单 write-ahead；超过重试上限转 MANUAL + 告警。
+ * <p>
+ * 仅当 {@link HtxApiService} bean 存在（AK/SK 已配置）时装配，与 {@code HtxTradingService} 同模式；
+ * 无凭证时（如集成测试上下文）不创建本 bean，避免上下文加载失败。
  */
 @Slf4j
 @Component
+@ConditionalOnBean(HtxApiService.class)
 public class HtxReconciler {
 
     private final HtxTradeRecorder recorder;

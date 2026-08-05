@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -18,9 +19,13 @@ import java.util.List;
 /**
  * 崩溃恢复：启动后扫描 write-ahead 未确认发出的订单意图，据 HTX 实况回填或标记失败。
  * 仅实盘（trade.enabled=true）执行。
+ * <p>
+ * 仅当 {@link HtxApiService} bean 存在（AK/SK 已配置）时装配，与 {@code HtxTradingService} 同模式；
+ * 无凭证时（如集成测试上下文）不创建本 bean，避免上下文加载失败。
  */
 @Slf4j
 @Component
+@ConditionalOnBean(HtxApiService.class)
 public class HtxStartupRecovery {
 
     private final HtxOrderMapper orderMapper;
