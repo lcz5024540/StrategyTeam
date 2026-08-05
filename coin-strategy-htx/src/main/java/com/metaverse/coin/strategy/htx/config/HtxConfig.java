@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.config;
 
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
+import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
 import com.metaverse.coin.strategy.htx.service.HtxLockedPairExecutor;
 import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,8 @@ public class HtxConfig {
     }
 
     @Bean
-    public HtxLockedPairExecutor htxLockedPairExecutor(HtxApiService htxApiService) {
-        return new HtxLockedPairExecutor(htxApiService, props);
+    public HtxLockedPairExecutor htxLockedPairExecutor(HtxApiService htxApiService,
+                                                       HtxTradeRecorder recorder) {
+        return new HtxLockedPairExecutor(htxApiService, props, recorder);
     }
 }
