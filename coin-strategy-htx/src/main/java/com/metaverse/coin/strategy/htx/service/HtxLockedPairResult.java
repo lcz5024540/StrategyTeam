@@ -30,6 +30,8 @@ public class HtxLockedPairResult {
         REJECT_DEPTH_BOTH,
         REJECT_MIN_NOTIONAL,
         REJECT_INVALID_INPUT,
+        /** 实盘预检失败：enabled=true 但 spot-account-id 为空，拒绝下单。 */
+        REJECT_PREFLIGHT,
         /** 写前落库失败 → fail-closed，未发任何真实订单。 */
         PERSIST_WRITE_FAILED,
         BUY_ORDER_REJECTED,

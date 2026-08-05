@@ -3,6 +3,8 @@ package com.metaverse.coin.strategy.htx.service;
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
+import com.metaverse.coin.strategy.htx.persistence.HtxPersistenceException;
+import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -30,6 +32,7 @@ public class HtxTradingService {
     private final HtxDepthGuard depthGuard;
     private final HtxLockedPairExecutor executor;
     private final HtxTradeProperties props;
+    private final HtxTradeRecorder recorder;
 
     /**
      * Submit a locked-pair (buy + sell) intent. See design doc §4 for the state machine.
@@ -90,15 +93,44 @@ public class HtxTradingService {
                     .build();
         }
 
-        if (!props.getTrade().isEnabled()) {
+        boolean dryRun = !props.getTrade().isEnabled();
+        if (dryRun) {
             log.info("[HTX-DRY-RUN] would place BUY-LIMIT symbol={} qty={} price={} then SELL-LIMIT price={}",
                     req.getSymbol(), req.getQuantity(), req.getBuyPrice(), req.getSellPrice());
+            // dry-run 也留审计轨迹；best-effort，绝不因写库失败中断
+            try {
+                recorder.createPair(req, true);
+            } catch (RuntimeException e) {
+                log.warn("dry-run pair persist failed (ignored): {}", e.getMessage());
+            }
             return HtxLockedPairResult.builder()
                     .code(HtxLockedPairResult.Code.DRY_RUN_OK)
                     .message("dry-run")
                     .build();
         }
-        return executor.execute(req);
+
+        // ── 实盘预检：enabled=true 时 spot-account-id 必须非空 ──
+        String acct = props.getApi().getSpotAccountId();
+        if (acct == null || acct.trim().isEmpty()) {
+            log.error("HTX preflight failed: trade.enabled=true but api.spot-account-id is empty; refuse to trade");
+            return HtxLockedPairResult.builder()
+                    .code(HtxLockedPairResult.Code.REJECT_PREFLIGHT)
+                    .message("preflight: spot-account-id empty while enabled")
+                    .build();
+        }
+
+        // ── 实盘 write-ahead fail-closed：写不进库就拒单，不发任何真实订单 ──
+        long pairId;
+        try {
+            pairId = recorder.createPair(req, false);
+        } catch (HtxPersistenceException e) {
+            log.error("HTX fail-closed: cannot persist pair intent, refuse to trade: {}", e.getMessage());
+            return HtxLockedPairResult.builder()
+                    .code(HtxLockedPairResult.Code.PERSIST_WRITE_FAILED)
+                    .message("db write-ahead failed: " + e.getMessage())
+                    .build();
+        }
+        return executor.execute(req, pairId);
     }
 
     private HtxLockedPairResult validate(HtxLockedPairRequest req) {
