@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.TimeZone;
 
@@ -20,6 +21,7 @@ import java.util.TimeZone;
  */
 @SpringBootApplication(scanBasePackages = "com.metaverse.coin.strategy.htx")
 @MapperScan("com.metaverse.coin.strategy.htx.persistence.mapper")
+@EnableScheduling
 @Slf4j
 public class CoinStrategyHtxApplication {
 
