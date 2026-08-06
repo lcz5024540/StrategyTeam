@@ -63,6 +63,11 @@ public final class MarketMakerMath {
         return notional.divide(buyPrice, QTY_SCALE, RoundingMode.HALF_DOWN);
     }
 
+    /** 做市白名单标的的 HTX 现货数量精度；卖出时按该精度向下截断，避免手续费后超卖。 */
+    public static int quantityScale(String symbol) {
+        return "btcusdt".equalsIgnoreCase(symbol) ? 6 : 4;
+    }
+
     /** 不亏闸门：(1−f)²·sellPrice ≥ buyPrice。 */
     public static boolean isNoLoss(BigDecimal buyPrice, BigDecimal sellPrice, BigDecimal feeRatePerSide) {
         BigDecimal oneMinusF = ONE.subtract(feeRatePerSide);

@@ -111,7 +111,7 @@ class MarketMakerServiceAdvanceTest {
         when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60058.20"), eq("mm-btcusdt-1-SELL")))
                 .thenReturn(placeOk("777"));
         svc.advanceCell(buyCell(555L, LocalDateTime.now()));
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60058.20"), eq("mm-btcusdt-1-SELL"));
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), eq("0.000299"), eq("60058.20"), eq("mm-btcusdt-1-SELL"));
         verify(recorder).markMmSellPending(eq(100L), any(), any(), eq(new BigDecimal("60058.20")));
         verify(recorder).markMmSellResting(100L, 777L);
     }
@@ -129,6 +129,24 @@ class MarketMakerServiceAdvanceTest {
                 eq(new BigDecimal("0.0000006")), eq(new BigDecimal("60058.20")));
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"),
                 anyString(), eq("60058.20"), eq("mm-btcusdt-1-SELL"));
+    }
+
+    @Test void ethSellAmountIsAlwaysRoundedDownAfterBaseFee() {
+        MarketMakerCell cell = MarketMakerCell.builder()
+                .pairId(101L).clientId("mm-ethusdt-1").symbol("ethusdt")
+                .buyPrice(new BigDecimal("1896.09")).sellPrice(new BigDecimal("1907.47"))
+                .qty(new BigDecimal("0.0105")).state(HtxStatus.MM_RESTING_BUY)
+                .buyOrderId(556L).createdAt(LocalDateTime.now()).build();
+        when(spot.queryOrder(556L)).thenReturn(orderOkWithCash(
+                "filled", "0.0105", "0.000021", null, "19.908945"));
+        when(spot.placeOrder(eq("acc-1"), eq("ethusdt"), eq("sell-limit"),
+                eq("0.0104"), anyString(), eq("mm-ethusdt-1-SELL")))
+                .thenReturn(placeOk("778"));
+
+        svc.advanceCell(cell);
+
+        verify(spot).placeOrder(eq("acc-1"), eq("ethusdt"), eq("sell-limit"),
+                eq("0.0104"), anyString(), eq("mm-ethusdt-1-SELL"));
     }
 
     @Test void resting_buy_still_open_under_ttl_is_noop() {

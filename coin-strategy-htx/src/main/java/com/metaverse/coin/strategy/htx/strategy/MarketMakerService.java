@@ -344,7 +344,7 @@ public class MarketMakerService {
     private void submitSellLeg(long pairId, String clientId, String symbol, BigDecimal filledBase,
                                BigDecimal buyFeeBase, BigDecimal sellPrice) {
         BigDecimal sellable = HtxFeeMath.sellableBase(filledBase, buyFeeBase)
-                .setScale(MarketMakerMath.QTY_SCALE, RoundingMode.HALF_DOWN);
+                .setScale(MarketMakerMath.quantityScale(symbol), RoundingMode.DOWN);
         if (sellable.signum() <= 0) {
             log.error("MM sellable amount is zero pairId={} filled={} fee={}", pairId, filledBase, buyFeeBase);
             return;

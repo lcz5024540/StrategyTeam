@@ -117,4 +117,9 @@ class MarketMakerMathTest {
         assertTrue(MarketMakerMath.shouldReprice(
                 new BigDecimal("59000"), new BigDecimal("60000"), new BigDecimal("0.001")));
     }
+
+    @Test void uses_symbol_specific_quantity_scale() {
+        assertEquals(6, MarketMakerMath.quantityScale("btcusdt"));
+        assertEquals(4, MarketMakerMath.quantityScale("ethusdt"));
+    }
 }
