@@ -52,6 +52,19 @@ htx:
     enabled: true
     interval-ms: 30000
     max-flatten-retries: 3
+  market-maker:
+    # 自主做市策略。总开关默认关（急停=false 重启则调度器 bean 不加载，已挂单冻结靠 TTL/人工）。
+    # 权威值在此配置文件，env 可覆盖；Java 端仅兜底默认。见 spec 2026-08-06-htx-market-maker-design.md §5。
+    enabled: ${HTX_MM_ENABLED:false}
+    symbols: ${HTX_MM_SYMBOLS:btcusdt,ethusdt}          # 白名单，非白名单一律拒
+    poll-interval-ms: ${HTX_MM_POLL_INTERVAL_MS:10000}
+    spread-pct: ${HTX_MM_SPREAD_PCT:0.005}              # δ=0.5%
+    fee-rate-per-side: ${HTX_MM_FEE_RATE_PER_SIDE:0.002} # 保守单边费率 f，用于不亏闸门(宁高勿低)
+    per-cell-quote-notional: ${HTX_MM_PER_CELL_QUOTE_NOTIONAL:20}  # 应 < risk.max-single-quote-notional(50)
+    max-concurrent-cells-per-symbol: ${HTX_MM_MAX_CELLS:3}         # K：单标的最大并行 open cell
+    min-gap-pct: ${HTX_MM_MIN_GAP_PCT:0.003}           # 新买价与已挂买价最小间距（去重防同价堆单）
+    buy-ttl-ms: ${HTX_MM_BUY_TTL_MS:3600000}           # 买单 1h 未成交则撤
+    sell-ttl-ms: ${HTX_MM_SELL_TTL_MS:0}               # 0=卖单不设 TTL，一直挂到成交
 
 mybatis-plus:
   configuration:
