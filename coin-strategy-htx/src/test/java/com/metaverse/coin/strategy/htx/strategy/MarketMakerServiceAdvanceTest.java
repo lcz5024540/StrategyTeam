@@ -1,0 +1,158 @@
+package com.metaverse.coin.strategy.htx.strategy;
+
+import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
+import com.metaverse.coin.strategy.common.client.htx.rest.HtxSpotService;
+import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
+import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
+import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
+import com.metaverse.coin.strategy.htx.service.HtxDepthGuard;
+import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+import static org.mockito.Mockito.*;
+
+class MarketMakerServiceAdvanceTest {
+
+    HtxApiService api;
+    HtxSpotService spot;
+    HtxTradeProperties tradeProps;
+    HtxMarketMakerProperties mmProps;
+    HtxTradeRecorder recorder;
+    MarketMakerService svc;
+
+    @BeforeEach void setup() {
+        api = mock(HtxApiService.class);
+        spot = mock(HtxSpotService.class);
+        when(api.getSpotService()).thenReturn(spot);
+        tradeProps = new HtxTradeProperties();
+        tradeProps.getApi().setSpotAccountId("acc-1");
+        mmProps = new HtxMarketMakerProperties();
+        recorder = mock(HtxTradeRecorder.class);
+        svc = new MarketMakerService(api, mock(HtxDepthGuard.class), tradeProps, mmProps, recorder);
+    }
+
+    private MarketMakerCell buyCell(Long buyId, LocalDateTime created) {
+        return MarketMakerCell.builder()
+                .pairId(100L).clientId("mm-btcusdt-1").symbol("btcusdt")
+                .buyPrice(new BigDecimal("59700.00")).sellPrice(new BigDecimal("60300.00"))
+                .qty(new BigDecimal("0.0003")).state(HtxStatus.MM_RESTING_BUY)
+                .buyOrderId(buyId).createdAt(created).build();
+    }
+
+    private MarketMakerCell sellCell(Long sellId) {
+        return MarketMakerCell.builder()
+                .pairId(100L).clientId("mm-btcusdt-1").symbol("btcusdt")
+                .buyPrice(new BigDecimal("59700.00")).sellPrice(new BigDecimal("60300.00"))
+                .qty(new BigDecimal("0.0003")).state(HtxStatus.MM_RESTING_SELL)
+                .buyOrderId(555L).sellOrderId(sellId).createdAt(LocalDateTime.now()).build();
+    }
+
+    private HtxRestResponse<HtxOrder> orderOk(String state, String filled, String fees, String amount) {
+        HtxOrder o = new HtxOrder();
+        o.setState(state);
+        if (filled != null) o.setFilledAmount(new BigDecimal(filled));
+        if (fees != null) o.setFilledFees(new BigDecimal(fees));
+        if (amount != null) o.setAmount(new BigDecimal(amount));
+        HtxRestResponse<HtxOrder> r = new HtxRestResponse<>();
+        r.setStatus("ok");
+        r.setData(o);
+        return r;
+    }
+
+    private HtxRestResponse<String> placeOk(String id) {
+        HtxRestResponse<String> r = new HtxRestResponse<>();
+        r.setStatus("ok");
+        r.setData(id);
+        return r;
+    }
+
+    @Test void resting_buy_filled_places_sell_and_marks_resting() {
+        when(spot.queryOrder(555L)).thenReturn(orderOk("filled", "0.0003", "0.0000006", null));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60300.00"), eq("mm-btcusdt-1-SELL")))
+                .thenReturn(placeOk("777"));
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60300.00"), eq("mm-btcusdt-1-SELL"));
+        verify(recorder).markMmSellResting(eq(100L), eq(777L), any());
+    }
+
+    @Test void resting_buy_still_open_under_ttl_is_noop() {
+        mmProps.setBuyTtlMs(3_600_000L);
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null));
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test void resting_buy_over_ttl_cancels_and_marks_cancelled_buy() {
+        mmProps.setBuyTtlMs(1L);
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
+                .thenReturn(orderOk("canceled", "0", null, null)); // post-cancel query
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        svc.advanceCell(buyCell(555L, LocalDateTime.now().minusHours(2)));
+        verify(spot).cancelOrder(555L);
+        verify(recorder).markMmCancelledBuy(100L);
+    }
+
+    @Test void resting_buy_over_ttl_cancel_race_filled_opens_sell() {
+        mmProps.setBuyTtlMs(1L);
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
+                .thenReturn(orderOk("canceled", "0.0003", "0.0000006", null)); // 撤单竞态：已成交
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+                .thenReturn(placeOk("777"));
+        svc.advanceCell(buyCell(555L, LocalDateTime.now().minusHours(2)));
+        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(recorder).markMmSellResting(eq(100L), eq(777L), any());
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
+    }
+
+    @Test void resting_buy_query_not_ok_is_noop() {
+        HtxRestResponse<HtxOrder> bad = new HtxRestResponse<>();
+        bad.setStatus("error");
+        when(spot.queryOrder(555L)).thenReturn(bad);
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test void sell_rejected_after_buy_fill_records_exposure_and_closes_cell() {
+        when(spot.queryOrder(555L)).thenReturn(orderOk("filled", "0.0003", "0.0000006", null));
+        HtxRestResponse<String> err = new HtxRestResponse<>();
+        err.setStatus("error");
+        err.setErrMsg("sell-rejected");
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+                .thenReturn(err);
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+        verify(recorder).recordExposure(eq(100L), eq("btcusdt"), eq("base-long"), any(), anyString());
+        verify(recorder).markMmCancelledBuy(100L);
+        verify(recorder, never()).markMmSellResting(anyLong(), anyLong(), any());
+    }
+
+    @Test void resting_sell_filled_marks_done() {
+        when(spot.queryOrder(777L)).thenReturn(orderOk("filled", "0.0003", null, "0.0003"));
+        svc.advanceCell(sellCell(777L));
+        verify(recorder).markMmDone(eq(100L), any());
+    }
+
+    @Test void resting_sell_still_open_is_noop() {
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"));
+        svc.advanceCell(sellCell(777L));
+        verify(recorder, never()).markMmDone(anyLong(), any());
+        verify(recorder, never()).recordExposure(anyLong(), anyString(), anyString(), any(), anyString());
+    }
+
+    @Test void resting_sell_external_cancel_records_exposure_and_done() {
+        when(spot.queryOrder(777L)).thenReturn(orderOk("canceled", "0.0001", null, "0.0003"));
+        svc.advanceCell(sellCell(777L));
+        verify(recorder).recordExposure(eq(100L), eq("btcusdt"), eq("base-long"), any(), anyString());
+        verify(recorder).markMmDone(eq(100L), any());
+    }
+}
