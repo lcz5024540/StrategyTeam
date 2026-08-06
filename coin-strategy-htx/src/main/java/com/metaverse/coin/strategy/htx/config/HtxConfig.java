@@ -20,7 +20,7 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @ConditionalOnExpression("'${htx.api.access-key:}' != '' && '${htx.api.secret-key:}' != ''")
-@EnableConfigurationProperties(HtxTradeProperties.class)
+@EnableConfigurationProperties({HtxTradeProperties.class, HtxMarketMakerProperties.class})
 @RequiredArgsConstructor
 public class HtxConfig {
 
