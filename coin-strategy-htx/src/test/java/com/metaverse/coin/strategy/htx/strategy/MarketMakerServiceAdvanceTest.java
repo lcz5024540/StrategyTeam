@@ -174,6 +174,7 @@ class MarketMakerServiceAdvanceTest {
     }
 
     @Test void resting_buy_drift_over_threshold_cancels_and_reprices_in_place() {
+        mmProps.setEnabled(true);
         mmProps.setBuyTtlMs(3_600_000L);
         mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
         mmProps.setSpreadPct(new BigDecimal("0.003"));
@@ -193,6 +194,7 @@ class MarketMakerServiceAdvanceTest {
     }
 
     @Test void resting_buy_drift_within_threshold_is_noop() {
+        mmProps.setEnabled(true);
         mmProps.setBuyTtlMs(3_600_000L);
         mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
         when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null));
@@ -206,6 +208,7 @@ class MarketMakerServiceAdvanceTest {
     }
 
     @Test void resting_buy_reprice_cancel_race_filled_opens_sell_instead() {
+        mmProps.setEnabled(true);
         mmProps.setBuyTtlMs(3_600_000L);
         mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
         when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
@@ -224,6 +227,7 @@ class MarketMakerServiceAdvanceTest {
     }
 
     @Test void resting_buy_reprice_cancel_not_settled_defers() {
+        mmProps.setEnabled(true);
         mmProps.setBuyTtlMs(3_600_000L);
         mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
         mmProps.setSpreadPct(new BigDecimal("0.003"));
@@ -241,6 +245,7 @@ class MarketMakerServiceAdvanceTest {
     }
 
     @Test void resting_buy_reprice_rejected_marks_cancelled_buy() {
+        mmProps.setEnabled(true);
         mmProps.setBuyTtlMs(3_600_000L);
         mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
         mmProps.setSpreadPct(new BigDecimal("0.003"));
@@ -258,6 +263,20 @@ class MarketMakerServiceAdvanceTest {
 
         verify(recorder).markMmCancelledBuy(100L);
         verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+    }
+
+    @Test void reprice_skipped_when_disabled_converges_via_ttl() {
+        // 急停：enabled=false，即使漂移超阈值也不重挂；买单靠 TTL 收敛（此处 TTL 未到→noop）
+        mmProps.setEnabled(false);
+        mmProps.setBuyTtlMs(3_600_000L);
+        mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null));
+        // depth 会漂移超阈值，但 disabled 下不应被查询/触发
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+        verify(md, never()).depth(anyString(), anyInt()); // disabled 下连深度都不取（短路）
     }
 
     @Test void resting_buy_no_bestbid_is_noop() {
