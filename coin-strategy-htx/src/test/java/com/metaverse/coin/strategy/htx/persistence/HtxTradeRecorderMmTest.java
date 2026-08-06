@@ -105,4 +105,17 @@ class HtxTradeRecorderMmTest {
         recorder.findAllOpenMmCells();
         verify(pairMapper).selectList(any(QueryWrapper.class));
     }
+
+    @Test void markMmReprice_updates_buy_order_price_and_resets_created_at_keeps_status_unset() {
+        recorder.markMmReprice(100L, 888L, new BigDecimal("60000.00"), new BigDecimal("60360.00"));
+        ArgumentCaptor<HtxLockedPairEntity> cap = ArgumentCaptor.forClass(HtxLockedPairEntity.class);
+        verify(pairMapper).updateById(cap.capture());
+        HtxLockedPairEntity e = cap.getValue();
+        assertEquals(100L, e.getId());
+        assertEquals(888L, e.getBuyOrderId());
+        assertEquals(0, new BigDecimal("60000.00").compareTo(e.getBuyPrice()));
+        assertEquals(0, new BigDecimal("60360.00").compareTo(e.getSellPrice()));
+        assertNotNull(e.getCreatedAt());                 // 重置 TTL
+        assertNull(e.getStatus());                       // 状态不改（updateById 只更非空字段，仍 MM_RESTING_BUY）
+    }
 }

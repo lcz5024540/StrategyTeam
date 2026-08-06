@@ -261,6 +261,25 @@ public class HtxTradeRecorder {
         }
     }
 
+    /**
+     * 跟价重挂：撤旧买单后原地换新买单（同 pairId，状态仍 MM_RESTING_BUY），
+     * 更新 buyOrderId/buyPrice/sellPrice 并重置 createdAt 以重启 TTL（best-effort）。
+     */
+    public void markMmReprice(long pairId, Long newBuyOrderId, BigDecimal newBuyPrice, BigDecimal newSellPrice) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setBuyOrderId(newBuyOrderId);
+            e.setBuyPrice(newBuyPrice);
+            e.setSellPrice(newSellPrice);
+            e.setCreatedAt(LocalDateTime.now()); // 重置 TTL 起点
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("markMmReprice failed pairId={}", pairId, ex);
+        }
+    }
+
     /** 某标的的 open cell（RESTING_BUY / RESTING_SELL）。 */
     public List<HtxLockedPairEntity> findOpenMmCells(String symbol) {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
