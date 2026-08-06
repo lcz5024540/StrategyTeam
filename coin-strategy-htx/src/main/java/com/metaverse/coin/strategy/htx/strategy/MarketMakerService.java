@@ -221,21 +221,22 @@ public class MarketMakerService {
         }
         // 仍挂着（submitted/partial-filled）→ TTL 撤单
         if (isBuyExpired(cell)) {
-            htxApiService.getSpotService().cancelOrder(buyId);
-            HtxRestResponse<HtxOrder> post = htxApiService.getSpotService().queryOrder(buyId);
-            BigDecimal postFilled = BigDecimal.ZERO;
-            BigDecimal postFee = null;
-            if (post != null && post.ok() && post.getData() != null) {
-                postFilled = nz(post.getData().getFilledAmount());
-                postFee = post.getData().getFilledFees();
-            }
+            HtxOrder post = cancelAndQuery(buyId);
+            BigDecimal postFilled = post == null ? BigDecimal.ZERO : nz(post.getFilledAmount());
             if (postFilled.signum() > 0) {
-                openSellLeg(cell, postFilled, postFee); // 撤单竞态：有成交则转挂卖
+                openSellLeg(cell, postFilled, post.getFilledFees()); // 撤单竞态：有成交则转挂卖
             } else {
                 recorder.markMmCancelledBuy(cell.getPairId());
                 log.info("MM buy expired & cancelled pairId={} buyId={}", cell.getPairId(), buyId);
             }
         }
+    }
+
+    /** 撤旧买单并复查；返回复查到的订单（可能因竞态已成交），查询失败返回 null。 */
+    private HtxOrder cancelAndQuery(Long buyId) {
+        htxApiService.getSpotService().cancelOrder(buyId);
+        HtxRestResponse<HtxOrder> post = htxApiService.getSpotService().queryOrder(buyId);
+        return (post != null && post.ok()) ? post.getData() : null;
     }
 
     /** 取当前最优买价；深度不可用/异常返回 null（本 tick 不重挂）。 */
@@ -257,20 +258,25 @@ public class MarketMakerService {
      */
     private void repriceBuy(MarketMakerCell cell, BigDecimal newBidRaw) {
         Long buyId = cell.getBuyOrderId();
-        htxApiService.getSpotService().cancelOrder(buyId);
-        HtxRestResponse<HtxOrder> post = htxApiService.getSpotService().queryOrder(buyId);
-        BigDecimal postFilled = BigDecimal.ZERO;
-        BigDecimal postFee = null;
-        if (post != null && post.ok() && post.getData() != null) {
-            postFilled = nz(post.getData().getFilledAmount());
-            postFee = post.getData().getFilledFees();
-        }
+        HtxOrder post = cancelAndQuery(buyId);
+        BigDecimal postFilled = post == null ? BigDecimal.ZERO : nz(post.getFilledAmount());
         if (postFilled.signum() > 0) {
-            openSellLeg(cell, postFilled, postFee); // 撤单竞态：有成交则转挂卖，不重挂
+            openSellLeg(cell, postFilled, post.getFilledFees()); // 撤单竞态：有成交则转挂卖，不重挂
+            return;
+        }
+        // 安全：撤单未确认为终态（仍 submitted/canceling）→ 本 tick 放弃重挂，避免旧单未死即重下造成双买/裸多；下一 tick 再评估
+        if (post == null || !isTerminal(post.getState())) {
+            log.info("MM reprice deferred: cancel not settled pairId={} buyId={} state={}",
+                    cell.getPairId(), buyId, post == null ? "null" : post.getState());
             return;
         }
         BigDecimal newBuy = newBidRaw.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
         BigDecimal newSell = MarketMakerMath.sellFromBuy(newBuy, mmProps.getSpreadPct());
+        if (!MarketMakerMath.isNoLoss(newBuy, newSell, mmProps.getFeeRatePerSide())) {
+            log.warn("MM reprice no-loss guard blocked pairId={} newBuy={} newSell={}",
+                    cell.getPairId(), newBuy, newSell);
+            return;
+        }
         String buyClientId = cell.getClientId() + "-BUY-R" + System.currentTimeMillis();
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
                 tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",

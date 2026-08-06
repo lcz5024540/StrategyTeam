@@ -1,8 +1,11 @@
 package com.metaverse.coin.strategy.htx.strategy;
 
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
+import com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxSpotService;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.mockito.Mockito.*;
 
@@ -21,7 +25,7 @@ class MarketMakerServiceAdvanceTest {
 
     HtxApiService api;
     HtxSpotService spot;
-    com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService md;
+    HtxMarketDataService md;
     HtxTradeProperties tradeProps;
     HtxMarketMakerProperties mmProps;
     HtxTradeRecorder recorder;
@@ -30,7 +34,7 @@ class MarketMakerServiceAdvanceTest {
     @BeforeEach void setup() {
         api = mock(HtxApiService.class);
         spot = mock(HtxSpotService.class);
-        md = mock(com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService.class);
+        md = mock(HtxMarketDataService.class);
         when(api.getSpotService()).thenReturn(spot);
         when(api.getMarketDataService()).thenReturn(md);
         tradeProps = new HtxTradeProperties();
@@ -159,14 +163,11 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder).markMmDone(eq(100L), any());
     }
 
-    private HtxRestResponse<com.metaverse.coin.strategy.common.client.htx.model.HtxDepth> depthWithBid(String bid) {
-        com.metaverse.coin.strategy.common.client.htx.model.HtxDepth d =
-                new com.metaverse.coin.strategy.common.client.htx.model.HtxDepth();
-        d.setBids(java.util.List.of(new com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel(
-                new BigDecimal(bid), new BigDecimal("10"))));
-        d.setAsks(java.util.List.of(new com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel(
-                new BigDecimal(bid).add(new BigDecimal("20")), new BigDecimal("10"))));
-        HtxRestResponse<com.metaverse.coin.strategy.common.client.htx.model.HtxDepth> r = new HtxRestResponse<>();
+    private HtxRestResponse<HtxDepth> depthWithBid(String bid) {
+        HtxDepth d = new HtxDepth();
+        d.setBids(List.of(new HtxPriceLevel(new BigDecimal(bid), new BigDecimal("10"))));
+        d.setAsks(List.of(new HtxPriceLevel(new BigDecimal(bid).add(new BigDecimal("20")), new BigDecimal("10"))));
+        HtxRestResponse<HtxDepth> r = new HtxRestResponse<>();
         r.setStatus("ok");
         r.setTick(d);
         return r;
@@ -220,5 +221,57 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder).markMmSellResting(eq(100L), eq(777L), any());
         verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
         verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
+    }
+
+    @Test void resting_buy_reprice_cancel_not_settled_defers() {
+        mmProps.setBuyTtlMs(3_600_000L);
+        mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
+        mmProps.setSpreadPct(new BigDecimal("0.003"));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
+                .thenReturn(orderOk("canceling", "0", null, null)); // post-cancel 未终态、无成交
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("60000"));
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(spot).cancelOrder(555L);
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
+    }
+
+    @Test void resting_buy_reprice_rejected_marks_cancelled_buy() {
+        mmProps.setBuyTtlMs(3_600_000L);
+        mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
+        mmProps.setSpreadPct(new BigDecimal("0.003"));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
+                .thenReturn(orderOk("canceled", "0", null, null)); // post-cancel 终态、无成交
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("60000"));
+        HtxRestResponse<String> err = new HtxRestResponse<>();
+        err.setStatus("error");
+        err.setErrMsg("reprice-rejected");
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), anyString(), anyString(), anyString()))
+                .thenReturn(err);
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(recorder).markMmCancelledBuy(100L);
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+    }
+
+    @Test void resting_buy_no_bestbid_is_noop() {
+        mmProps.setBuyTtlMs(3_600_000L);
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null));
+        HtxRestResponse<HtxDepth> bad = new HtxRestResponse<>();
+        bad.setStatus("error");
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(bad);
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
     }
 }
