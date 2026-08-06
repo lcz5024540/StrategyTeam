@@ -19,11 +19,25 @@
 | 下单节奏 | **多笔并行**：允许同一标的同时有多个未完成 cell |
 | 开仓闸门 | **最大并行数 K + 价差去重**：open cell 数 < K 且新买价与已挂买价间距 ≥ min-gap 才开新 cell |
 | 单笔金额 | **每 cell 固定 quote 名义**（如 20U），qty = notional / buyPrice |
+| 不亏保证 | **硬不变量**：允许手续费磨损，但每笔 round-trip 必须非负。开仓前用保守配置费率 f 校验 `(1−f)²·sellPrice ≥ buyPrice`，不满足则拒开该 cell（不查真实费率） |
 | 急停语义 | **只停开仓、挂单保留**：`HTX_MM_ENABLED=false` 重启后停止开新 cell，已 resting 单不自动撤（不砸盘），靠 TTL 或人工了结 |
 
 ### 2.1 为什么不是「抓盘口现有价差」
 
 用户初选「抓盘口 (ask−bid) 价差」，但存在经济性硬伤：BTC/USDT、ETH/USDT 主流对自然盘口价差常年仅约 0.01%~0.02%，而 HTX 现货双边手续费约 0.4%（买卖各约 0.2%）。抓天然价差无法覆盖手续费，主流对上几乎永不触发且 round-trip 亏损。且 locked-pair 是「先买成交再挂卖」，下单瞬间看到的 ask 在买腿成交后可能已消失，「现有价差」在成交时并不锁定。因此改为**自设价差**：价差由策略设定得足够宽以覆盖手续费，靠市场在买/卖价之间震荡赚差，δ 默认 0.5%（gross 1% 名义 − 约 0.4% 手续费 ≈ 净 0.6%）。
+
+### 2.2 不亏保证（硬不变量）
+
+用户明确：**允许手续费磨损，但每笔买入-卖出 round-trip 不能亏损**，且不必查账户真实费率。
+
+按 HTX 费用语义（买手续费扣 base、卖手续费扣 quote，每边费率 f）：
+- 买：花 `qty·buyPrice` quote，实收 base = `qty·(1−f)`；
+- 卖：卖出实收 base 于 sellPrice，实收 quote = `qty·(1−f)·sellPrice·(1−f)` = `qty·(1−f)²·sellPrice`。
+- 净收益（quote）= `qty·[(1−f)²·sellPrice − buyPrice]`。
+
+**不亏 ⟺ `(1−f)²·sellPrice ≥ buyPrice`**。该条件只依赖锁定的 buy/sell 价与 f，**与成交量无关**，故部分成交同样成立。
+
+落地为**开仓前硬闸门**：用保守配置费率 `fee-rate-per-side`（默认 0.002，可 env 覆盖，宁高勿低）校验上式；不满足则拒开该 cell。这使「不亏」成为不可能被 δ 配错破坏的不变量。启动时若 `spread-pct` 相对配置费率过小（几乎必被闸门拒），记 WARN 提示调大 δ。
 
 ## 3. 一个「做市 cell」的状态机
 
@@ -55,6 +69,7 @@
 2. **判断是否开新 cell**：
    - 查盘口 depth，算 P0=(bid+ask)/2、buyPrice、sellPrice、qty；
    - 闸门：本 symbol open cell 数 < K **且** 新 buyPrice 与所有已挂买单价差 ≥ min-gap-pct（去重防同价堆单）；
+   - **不亏闸门**：校验 `(1−f)²·sellPrice ≥ buyPrice`（f=fee-rate-per-side），不满足则拒开；
    - 过 `HtxDepthGuard`（top-N 深度足够）；
    - 过现有风控上限（单笔 max-single ≤ 50U、日累计 max-daily ≤ 100000U，读库失败 fail-closed 拒开）；
    - 全过 → 写库(MM_RESTING_BUY) → placeOrder(BUY-LIMIT)，clientOrderId 幂等。
@@ -70,6 +85,7 @@ htx:
     symbols: ${HTX_MM_SYMBOLS:btcusdt,ethusdt}  # 白名单
     poll-interval-ms: ${HTX_MM_POLL_INTERVAL_MS:10000}
     spread-pct: ${HTX_MM_SPREAD_PCT:0.005}      # δ=0.5%
+    fee-rate-per-side: ${HTX_MM_FEE_RATE_PER_SIDE:0.002}  # 保守单边费率 f，用于不亏闸门(宁高勿低)
     per-cell-quote-notional: ${HTX_MM_PER_CELL_QUOTE_NOTIONAL:20}
     max-concurrent-cells-per-symbol: ${HTX_MM_MAX_CELLS:3}   # K
     min-gap-pct: ${HTX_MM_MIN_GAP_PCT:0.003}    # 新买价与已挂买价最小间距
@@ -77,7 +93,7 @@ htx:
     sell-ttl-ms: ${HTX_MM_SELL_TTL_MS:0}        # 0=卖单不设 TTL，一直挂
 ```
 
-约束：per-cell-quote-notional 天然应 < max-single-quote-notional(50)。spread-pct 应 ≥ 手续费覆盖线（约 0.4%）；低于时给出启动告警（不阻断，但记 WARN）。
+约束：per-cell-quote-notional 天然应 < max-single-quote-notional(50)。spread-pct 应满足不亏闸门 `(1−f)²·(1+δ) ≥ (1−δ)`；低于时开仓被拒并记 WARN。
 
 ## 6. 持久化与重启恢复
 
@@ -120,6 +136,7 @@ htx:
 - **纯单测**：
   - 价格计算：由 P0+δ+notional 推出 buyPrice/sellPrice/qty 正确（含精度/四舍五入）。
   - 开仓闸门：K 上限拦截；min-gap 去重（新买价太近被拒）。
+  - **不亏闸门**：`(1−f)²·sellPrice ≥ buyPrice` 边界——恰好相等应放行、略低应拒开；δ 相对 f 过小时全部被拒。
   - 状态机推进：买成交→挂卖；买超 buy-ttl→撤单；卖成交→DONE。
   - 白名单过滤：非白名单 symbol 不开 cell。
   - 风控闸集成：单笔超 50U / 日累计超 100000U → 拒开；读库失败 fail-closed。
