@@ -180,9 +180,113 @@ public class HtxTradeRecorder {
         }
     }
 
-    public void recordCancel(long orderRowId, Long htxOrderId, String reason,
-                             Boolean ok, String postState, BigDecimal postFilled) {
+    // ---- 做市（market-maker）专用 ----
+
+    /**
+     * 写前建 cell（fail-closed）：status=MM_RESTING_BUY，strategy=MARKET_MAKER，dry_run=0。
+     * clientOrderId 幂等键。返回生成主键 id。
+     */
+    public long createMmCell(String symbol, BigDecimal qty, BigDecimal buyPrice,
+                             BigDecimal sellPrice, String clientId) {
         try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setClientOrderId(clientId);
+            e.setSymbol(symbol);
+            e.setReqQuantity(qty);
+            e.setBuyPrice(buyPrice);
+            e.setSellPrice(sellPrice);
+            e.setStatus(HtxStatus.MM_RESTING_BUY);
+            e.setStrategy(HtxStatus.STRATEGY_MARKET_MAKER);
+            e.setDryRun(false);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.insert(e);
+            return e.getId();
+        } catch (Exception ex) {
+            throw new HtxPersistenceException("createMmCell failed", ex);
+        }
+    }
+
+    /** 买单已发，回填 buyOrderId（best-effort）。 */
+    public void markMmBuySent(long pairId, Long buyOrderId) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setBuyOrderId(buyOrderId);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("markMmBuySent failed pairId={}", pairId, ex);
+        }
+    }
+
+    /** 买腿成交、卖单已挂：→ MM_RESTING_SELL，记 sellOrderId 与买腿成交量（best-effort）。 */
+    public void markMmSellResting(long pairId, Long sellOrderId, BigDecimal buyFilled) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setSellOrderId(sellOrderId);
+            e.setBuyFilledAmount(buyFilled);
+            e.setStatus(HtxStatus.MM_RESTING_SELL);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("markMmSellResting failed pairId={}", pairId, ex);
+        }
+    }
+
+    /** 卖腿成交、round-trip 完成：→ MM_DONE（best-effort）。 */
+    public void markMmDone(long pairId, BigDecimal sellFilled) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setSellFilledAmount(sellFilled);
+            e.setStatus(HtxStatus.MM_DONE);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("markMmDone failed pairId={}", pairId, ex);
+        }
+    }
+
+    /** 买单超 TTL 已撤、cell 关闭：→ MM_CANCELLED_BUY（best-effort）。 */
+    public void markMmCancelledBuy(long pairId) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setStatus(HtxStatus.MM_CANCELLED_BUY);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("markMmCancelledBuy failed pairId={}", pairId, ex);
+        }
+    }
+
+    /** 某标的的 open cell（RESTING_BUY / RESTING_SELL）。 */
+    public List<HtxLockedPairEntity> findOpenMmCells(String symbol) {
+        return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
+                .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
+                .eq("symbol", symbol)
+                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL));
+    }
+
+    /** 全部标的的 open cell（用于重启恢复）。 */
+    public List<HtxLockedPairEntity> findAllOpenMmCells() {
+        return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
+                .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
+                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL));
+    }
+
+    /** 某标的 open cell 数（开仓 K 闸用）。 */
+    public int countOpenMmCells(String symbol) {
+        Long n = pairMapper.selectCount(new QueryWrapper<HtxLockedPairEntity>()
+                .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
+                .eq("symbol", symbol)
+                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL));
+        return n == null ? 0 : n.intValue();
+    }
+
+    public void recordCancel(long orderRowId, Long htxOrderId, String reason,
+                             Boolean ok, String postState, BigDecimal postFilled) {        try {
             HtxCancelEntity e = new HtxCancelEntity();
             e.setOrderId(orderRowId);
             e.setHtxOrderId(htxOrderId);
