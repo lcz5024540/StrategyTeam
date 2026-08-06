@@ -27,6 +27,26 @@ public class HtxTradeProperties {
 
     private Reconciler reconciler = new Reconciler();
 
+    private Risk risk = new Risk();
+
+    /**
+     * 交易额度风控（上限）。权威值来自配置文件 {@code application.yml} 的 {@code htx.risk.*}，
+     * 可用环境变量覆盖，后续可平滑迁移到数据库。此处字段仅声明与兜底默认，不含业务硬编码语义。
+     */
+    @Data
+    public static class Risk {
+        /**
+         * 单笔交易 quote 名义上限（USDT）。校验时取买/卖两腿名义的较大者。
+         * {@code <= 0} 表示不限制。默认 50。
+         */
+        private BigDecimal maxSingleQuoteNotional = new BigDecimal("50");
+        /**
+         * 当日累计 quote 名义上限（USDT）。累计口径 = 当日非 dry-run 已提交对的买腿名义之和 + 本单买腿名义。
+         * {@code <= 0} 表示不限制。默认 100000。
+         */
+        private BigDecimal maxDailyQuoteNotional = new BigDecimal("100000");
+    }
+
     @Data
     public static class Reconciler {
         /** 是否启用定时对账器（裸露自动市价平仓）。默认 true。 */

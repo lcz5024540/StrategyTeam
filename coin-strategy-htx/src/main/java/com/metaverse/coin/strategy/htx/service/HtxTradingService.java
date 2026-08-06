@@ -119,6 +119,44 @@ public class HtxTradingService {
                     .build();
         }
 
+        // ── 风控：单笔交易额上限（quote 名义）。取买/卖两腿较大者，确保任一腿都不超限 ──
+        BigDecimal maxSingle = props.getRisk().getMaxSingleQuoteNotional();
+        BigDecimal strongerLeg = buyNotional.max(sellNotional);
+        if (maxSingle != null && maxSingle.signum() > 0 && strongerLeg.compareTo(maxSingle) > 0) {
+            log.warn("HTX pair rejected — single-trade notional {} (buy={} sell={}) exceeds cap {}",
+                    strongerLeg, buyNotional, sellNotional, maxSingle);
+            return HtxLockedPairResult.builder()
+                    .code(HtxLockedPairResult.Code.REJECT_MAX_SINGLE_NOTIONAL)
+                    .message("single-notional-above-cap:stronger=" + strongerLeg + " cap=" + maxSingle)
+                    .build();
+        }
+
+        // ── 风控：当日累计交易额上限（quote 名义）。已用 + 本单买腿名义 > 上限则拒单 ──
+        // 读取失败 fail-closed（无法确认未超限，宁拒单不冒险）。累计与本单口径均用买腿名义（=投入资金）。
+        BigDecimal maxDaily = props.getRisk().getMaxDailyQuoteNotional();
+        if (maxDaily != null && maxDaily.signum() > 0) {
+            BigDecimal usedToday;
+            try {
+                usedToday = recorder.sumTodayLiveQuoteNotional();
+            } catch (HtxPersistenceException e) {
+                log.error("HTX fail-closed: cannot read today's cumulative notional, refuse to trade: {}",
+                        e.getMessage());
+                return HtxLockedPairResult.builder()
+                        .code(HtxLockedPairResult.Code.REJECT_MAX_DAILY_NOTIONAL)
+                        .message("daily-notional-read-failed (fail-closed): " + e.getMessage())
+                        .build();
+            }
+            BigDecimal projected = usedToday.add(buyNotional);
+            if (projected.compareTo(maxDaily) > 0) {
+                log.warn("HTX pair rejected — daily cumulative notional {} (used={} + this={}) exceeds cap {}",
+                        projected, usedToday, buyNotional, maxDaily);
+                return HtxLockedPairResult.builder()
+                        .code(HtxLockedPairResult.Code.REJECT_MAX_DAILY_NOTIONAL)
+                        .message("daily-notional-above-cap:projected=" + projected + " cap=" + maxDaily)
+                        .build();
+            }
+        }
+
         // ── 实盘 write-ahead fail-closed：写不进库就拒单，不发任何真实订单 ──
         long pairId;
         try {

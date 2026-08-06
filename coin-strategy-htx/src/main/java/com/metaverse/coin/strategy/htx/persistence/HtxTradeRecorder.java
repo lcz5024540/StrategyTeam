@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -215,6 +216,23 @@ public class HtxTradeRecorder {
     }
 
     // ---- 查询（恢复 / 对账器） ----
+
+    /**
+     * 当日累计实盘买腿名义之和（USDT），用于每日交易额上限风控。
+     * 口径：非 dry-run、created_at 落在当日（系统默认时区起始）的对，其 req_quantity × buy_price 之和。
+     * <p>
+     * 属于下单前的风控读取：读失败即抛 {@link HtxPersistenceException}，由上层 fail-closed 拒单——
+     * 无法确认是否超限时，宁可拒单也不冒超额风险。
+     */
+    public BigDecimal sumTodayLiveQuoteNotional() {
+        try {
+            LocalDateTime start = LocalDate.now().atStartOfDay();
+            BigDecimal sum = pairMapper.sumLiveQuoteNotionalSince(start);
+            return sum == null ? BigDecimal.ZERO : sum;
+        } catch (Exception ex) {
+            throw new HtxPersistenceException("sumTodayLiveQuoteNotional failed", ex);
+        }
+    }
 
     public List<HtxLockedPairEntity> findNonTerminalPairs() {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()

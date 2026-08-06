@@ -29,6 +29,13 @@ public class HtxLockedPairResult {
         REJECT_DEPTH_SELL,
         REJECT_DEPTH_BOTH,
         REJECT_MIN_NOTIONAL,
+        /** 单笔交易 quote 名义超过 {@code htx.risk.max-single-quote-notional} 上限。 */
+        REJECT_MAX_SINGLE_NOTIONAL,
+        /**
+         * 当日累计 quote 名义（含本单）超过 {@code htx.risk.max-daily-quote-notional} 上限；
+         * 或当日累计读取失败（无法确认未超限）→ fail-closed 拒单。
+         */
+        REJECT_MAX_DAILY_NOTIONAL,
         REJECT_INVALID_INPUT,
         /** 实盘预检失败：enabled=true 但 spot-account-id 为空，拒绝下单。 */
         REJECT_PREFLIGHT,

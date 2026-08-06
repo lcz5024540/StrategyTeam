@@ -42,6 +42,12 @@ htx:
     top-n: 10
     safety-ratio: 3.0
     min-quote-notional: 20
+  risk:
+    # 交易额度上限（quote/USDT 名义）。权威值在此配置文件，环境变量可覆盖。
+    # 单笔上限：买/卖两腿较大者不得超过此值。<=0 表示不限制。
+    max-single-quote-notional: ${HTX_MAX_SINGLE_QUOTE_NOTIONAL:50}
+    # 当日累计上限：当日非 dry-run 已提交买腿名义之和 + 本单买腿名义不得超过此值。<=0 表示不限制。
+    max-daily-quote-notional: ${HTX_MAX_DAILY_QUOTE_NOTIONAL:100000}
   reconciler:
     enabled: true
     interval-ms: 30000
