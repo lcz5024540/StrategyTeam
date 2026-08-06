@@ -24,12 +24,13 @@ class HtxMarketMakerPropertiesTest {
         assertFalse(p.isEnabled());                                   // 默认关（急停语义）
         assertEquals(List.of("btcusdt", "ethusdt"), p.getSymbols());  // 白名单
         assertEquals(10_000L, p.getPollIntervalMs());
-        assertEquals(0, new BigDecimal("0.005").compareTo(p.getSpreadPct()));
+        assertEquals(0, new BigDecimal("0.003").compareTo(p.getSpreadPct()));
         assertEquals(0, new BigDecimal("0.002").compareTo(p.getFeeRatePerSide()));
         assertEquals(0, new BigDecimal("20").compareTo(p.getPerCellQuoteNotional()));
         assertEquals(3, p.getMaxConcurrentCellsPerSymbol());
         assertEquals(0, new BigDecimal("0.003").compareTo(p.getMinGapPct()));
-        assertEquals(3_600_000L, p.getBuyTtlMs());
+        assertEquals(900_000L, p.getBuyTtlMs());
+        assertEquals(0, new BigDecimal("0.001").compareTo(p.getRepriceThresholdPct()));
         assertEquals(0L, p.getSellTtlMs());
     }
 

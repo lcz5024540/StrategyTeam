@@ -25,7 +25,7 @@ public class HtxMarketMakerProperties {
     private long pollIntervalMs = 10_000L;
 
     /** 价差 δ：buyPrice=P0(1−δ)，sellPrice=P0(1+δ)。 */
-    private BigDecimal spreadPct = new BigDecimal("0.005");
+    private BigDecimal spreadPct = new BigDecimal("0.003");
 
     /** 保守单边费率 f，用于不亏闸门（宁高勿低），不查账户真实费率。 */
     private BigDecimal feeRatePerSide = new BigDecimal("0.002");
@@ -40,8 +40,11 @@ public class HtxMarketMakerProperties {
     private BigDecimal minGapPct = new BigDecimal("0.003");
 
     /** 买单未成交超时撤单（ms）。 */
-    private long buyTtlMs = 3_600_000L;
+    private long buyTtlMs = 900_000L;
 
     /** 卖单 TTL（ms）；0 = 不设 TTL，一直挂到成交。 */
     private long sellTtlMs = 0L;
+
+    /** 买价漂移超此相对比例（|bestBid−buyPrice|/bestBid）即撤旧买单、在新 bestBid 重挂（跟价）。 */
+    private BigDecimal repriceThresholdPct = new BigDecimal("0.001");
 }
