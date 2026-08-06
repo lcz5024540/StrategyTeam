@@ -201,6 +201,13 @@ public class MarketMakerService {
             }
             return;
         }
+        // 仍挂着（submitted/partial-filled）：先看是否需跟价重挂，再看 TTL
+        BigDecimal bestBid = currentBestBid(cell.getSymbol());
+        if (bestBid != null
+                && MarketMakerMath.shouldReprice(bestBid, cell.getBuyPrice(), mmProps.getRepriceThresholdPct())) {
+            repriceBuy(cell, bestBid);
+            return;
+        }
         // 仍挂着（submitted/partial-filled）→ TTL 撤单
         if (isBuyExpired(cell)) {
             htxApiService.getSpotService().cancelOrder(buyId);
@@ -218,6 +225,55 @@ public class MarketMakerService {
                 log.info("MM buy expired & cancelled pairId={} buyId={}", cell.getPairId(), buyId);
             }
         }
+    }
+
+    /** 取当前最优买价；深度不可用/异常返回 null（本 tick 不重挂）。 */
+    private BigDecimal currentBestBid(String symbol) {
+        HtxRestResponse<HtxDepth> depthResp = htxApiService.getMarketDataService().depth(symbol, DEPTH_LEVELS);
+        if (depthResp == null || !depthResp.ok() || depthResp.payload() == null) {
+            return null;
+        }
+        if (isEmpty(depthResp.payload().getBids())) {
+            return null;
+        }
+        BigDecimal bid = depthResp.payload().getBids().get(0).getPrice();
+        return (bid == null || bid.signum() <= 0) ? null : bid;
+    }
+
+    /**
+     * 跟价重挂：撤旧买单→复查竞态（撤单期间成交则转卖腿）→在新 bestBid 重下买单→原地更新 cell。
+     * 重挂失败（新单被拒）关闭 cell（此时无库存、无敞口）。
+     */
+    private void repriceBuy(MarketMakerCell cell, BigDecimal newBidRaw) {
+        Long buyId = cell.getBuyOrderId();
+        htxApiService.getSpotService().cancelOrder(buyId);
+        HtxRestResponse<HtxOrder> post = htxApiService.getSpotService().queryOrder(buyId);
+        BigDecimal postFilled = BigDecimal.ZERO;
+        BigDecimal postFee = null;
+        if (post != null && post.ok() && post.getData() != null) {
+            postFilled = nz(post.getData().getFilledAmount());
+            postFee = post.getData().getFilledFees();
+        }
+        if (postFilled.signum() > 0) {
+            openSellLeg(cell, postFilled, postFee); // 撤单竞态：有成交则转挂卖，不重挂
+            return;
+        }
+        BigDecimal newBuy = newBidRaw.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
+        BigDecimal newSell = MarketMakerMath.sellFromBuy(newBuy, mmProps.getSpreadPct());
+        String buyClientId = cell.getClientId() + "-BUY-R" + System.currentTimeMillis();
+        HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
+                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",
+                cell.getQty().toPlainString(), newBuy.toPlainString(), buyClientId);
+        Long newBuyId = parseOrderId(resp);
+        if (newBuyId == null) {
+            recorder.markMmCancelledBuy(cell.getPairId());
+            log.warn("MM reprice buy rejected pairId={} newBuy={} err={}",
+                    cell.getPairId(), newBuy, resp == null ? "null" : resp.getErrMsg());
+            return;
+        }
+        recorder.markMmReprice(cell.getPairId(), newBuyId, newBuy, newSell);
+        log.info("MM buy repriced pairId={} oldBuy={} newBuy={} newSell={} newBuyId={}",
+                cell.getPairId(), cell.getBuyPrice(), newBuy, newSell, newBuyId);
     }
 
     private void openSellLeg(MarketMakerCell cell, BigDecimal filledBase, BigDecimal buyFeeBase) {

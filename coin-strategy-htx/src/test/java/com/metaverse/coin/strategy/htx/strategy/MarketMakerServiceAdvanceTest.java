@@ -21,6 +21,7 @@ class MarketMakerServiceAdvanceTest {
 
     HtxApiService api;
     HtxSpotService spot;
+    com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService md;
     HtxTradeProperties tradeProps;
     HtxMarketMakerProperties mmProps;
     HtxTradeRecorder recorder;
@@ -29,7 +30,9 @@ class MarketMakerServiceAdvanceTest {
     @BeforeEach void setup() {
         api = mock(HtxApiService.class);
         spot = mock(HtxSpotService.class);
+        md = mock(com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService.class);
         when(api.getSpotService()).thenReturn(spot);
+        when(api.getMarketDataService()).thenReturn(md);
         tradeProps = new HtxTradeProperties();
         tradeProps.getApi().setSpotAccountId("acc-1");
         mmProps = new HtxMarketMakerProperties();
@@ -154,5 +157,68 @@ class MarketMakerServiceAdvanceTest {
         svc.advanceCell(sellCell(777L));
         verify(recorder).recordExposure(eq(100L), eq("btcusdt"), eq("base-long"), any(), anyString());
         verify(recorder).markMmDone(eq(100L), any());
+    }
+
+    private HtxRestResponse<com.metaverse.coin.strategy.common.client.htx.model.HtxDepth> depthWithBid(String bid) {
+        com.metaverse.coin.strategy.common.client.htx.model.HtxDepth d =
+                new com.metaverse.coin.strategy.common.client.htx.model.HtxDepth();
+        d.setBids(java.util.List.of(new com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel(
+                new BigDecimal(bid), new BigDecimal("10"))));
+        d.setAsks(java.util.List.of(new com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel(
+                new BigDecimal(bid).add(new BigDecimal("20")), new BigDecimal("10"))));
+        HtxRestResponse<com.metaverse.coin.strategy.common.client.htx.model.HtxDepth> r = new HtxRestResponse<>();
+        r.setStatus("ok");
+        r.setTick(d);
+        return r;
+    }
+
+    @Test void resting_buy_drift_over_threshold_cancels_and_reprices_in_place() {
+        mmProps.setBuyTtlMs(3_600_000L);
+        mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
+        mmProps.setSpreadPct(new BigDecimal("0.003"));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
+                .thenReturn(orderOk("canceled", "0", null, null));
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("60000"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), anyString(), eq("60000.00"), anyString()))
+                .thenReturn(placeOk("999"));
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(spot).cancelOrder(555L);
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), anyString(), eq("60000.00"), anyString());
+        verify(recorder).markMmReprice(eq(100L), eq(999L), eq(new BigDecimal("60000.00")), eq(new BigDecimal("60360.00")));
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
+    }
+
+    @Test void resting_buy_drift_within_threshold_is_noop() {
+        mmProps.setBuyTtlMs(3_600_000L);
+        mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("59750"));
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test void resting_buy_reprice_cancel_race_filled_opens_sell_instead() {
+        mmProps.setBuyTtlMs(3_600_000L);
+        mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
+                .thenReturn(orderOk("canceled", "0.0003", "0.0000006", null));
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("60000"));
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+                .thenReturn(placeOk("777"));
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(recorder).markMmSellResting(eq(100L), eq(777L), any());
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
     }
 }
