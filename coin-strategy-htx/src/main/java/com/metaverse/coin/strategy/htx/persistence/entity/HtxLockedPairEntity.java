@@ -28,6 +28,7 @@ public class HtxLockedPairEntity {
     private BigDecimal totalFeeQuote;
     private BigDecimal netQuoteCost;
     private Boolean dryRun;
+    private String strategy;
     private String message;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

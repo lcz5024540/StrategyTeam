@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS htx_locked_pair (
     total_fee_quote     DECIMAL(36,18) DEFAULT 0,
     net_quote_cost      DECIMAL(36,18) DEFAULT 0,
     dry_run             TINYINT(1)   NOT NULL DEFAULT 0,
+    strategy            VARCHAR(16),
     message             VARCHAR(512),
     created_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
