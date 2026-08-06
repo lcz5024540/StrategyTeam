@@ -39,11 +39,13 @@ CREATE TABLE IF NOT EXISTS htx_order (
     intent_status       VARCHAR(16)  NOT NULL,
     raw_response        TEXT,
     created_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    updated_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+    updated_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    -- 索引内联在建表语句里：MySQL 8 不支持 CREATE INDEX IF NOT EXISTS，
+    -- 而 CREATE TABLE IF NOT EXISTS 已保证幂等；H2(测试) 与 MySQL 8(生产) 均兼容 INDEX 语法。
+    INDEX idx_order_pair   (pair_id),
+    INDEX idx_order_htxid  (htx_order_id),
+    INDEX idx_order_intent (intent_status)
 );
-CREATE INDEX IF NOT EXISTS idx_order_pair    ON htx_order(pair_id);
-CREATE INDEX IF NOT EXISTS idx_order_htxid   ON htx_order(htx_order_id);
-CREATE INDEX IF NOT EXISTS idx_order_intent  ON htx_order(intent_status);
 
 CREATE TABLE IF NOT EXISTS htx_cancel (
     id                  BIGINT       PRIMARY KEY AUTO_INCREMENT,
