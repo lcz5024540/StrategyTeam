@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
@@ -41,6 +42,16 @@ public class MarketMakerService {
     private final HtxTradeRecorder recorder;
 
     private static final int DEPTH_LEVELS = 5;
+
+    /** 启动校验：δ < 单边费率则成交必亏，拒绝启动。见 spec §1 不亏下限。 */
+    @PostConstruct
+    void validateConfig() {
+        if (mmProps.getSpreadPct().compareTo(mmProps.getFeeRatePerSide()) < 0) {
+            throw new IllegalStateException("MM spread-pct (" + mmProps.getSpreadPct()
+                    + ") must be >= fee-rate-per-side (" + mmProps.getFeeRatePerSide()
+                    + "): filling would lose money");
+        }
+    }
 
     // ---- 编排（D3） ----
 
