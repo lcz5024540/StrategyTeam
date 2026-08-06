@@ -41,7 +41,6 @@ public class MarketMakerService {
     private final HtxTradeRecorder recorder;
 
     private static final int DEPTH_LEVELS = 5;
-    private static final BigDecimal TWO = BigDecimal.valueOf(2);
 
     // ---- 编排（D3） ----
 
@@ -106,9 +105,8 @@ public class MarketMakerService {
         if (bestBid == null || bestAsk == null || bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
             return -1;
         }
-        BigDecimal p0 = bestBid.add(bestAsk).divide(TWO, 8, RoundingMode.HALF_UP);
-        BigDecimal buyPrice = MarketMakerMath.buyPrice(p0, mmProps.getSpreadPct());
-        BigDecimal sellPrice = MarketMakerMath.sellPrice(p0, mmProps.getSpreadPct());
+        BigDecimal buyPrice = bestBid.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
+        BigDecimal sellPrice = MarketMakerMath.sellFromBuy(buyPrice, mmProps.getSpreadPct());
         BigDecimal qty = MarketMakerMath.qtyFor(mmProps.getPerCellQuoteNotional(), buyPrice);
         if (qty.signum() <= 0) {
             return -1;
