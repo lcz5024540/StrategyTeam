@@ -11,7 +11,7 @@
     </parent>
 
     <artifactId>coin-strategy-htx</artifactId>
-    <description>Standalone HTX (Huobi) spot execution service. Isolated from coin-strategy-job so HTX incidents cannot impact polymarket / arbitrage strategies.</description>
+    <description>Standalone HTX spot and guarded USDT-margined perpetual execution service. Isolated from coin-strategy-job so HTX incidents cannot impact polymarket / arbitrage strategies.</description>
 
     <dependencies>
         <!-- Only pull the HTX REST/WS client + shared utils. No DB, no Kafka, no other exchanges. -->

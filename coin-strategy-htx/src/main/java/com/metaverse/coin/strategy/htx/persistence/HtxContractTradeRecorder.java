@@ -1,0 +1,85 @@
+package com.metaverse.coin.strategy.htx.persistence;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
+import com.metaverse.coin.strategy.htx.service.HtxContractCycleRequest;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+/** Write-ahead persistence for leveraged contract cycles. */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class HtxContractTradeRecorder {
+
+    public static final String INTENT = "INTENT";
+    public static final String OPEN_SENT = "OPEN_SENT";
+    public static final String OPEN_FILLED = "OPEN_FILLED";
+    public static final String OPEN_UNKNOWN = "OPEN_UNKNOWN";
+    public static final String OPEN_CANCELLED = "OPEN_CANCELLED";
+    public static final String OPEN_REJECTED = "OPEN_REJECTED";
+    public static final String CLOSE_PENDING = "CLOSE_PENDING";
+    public static final String EXPOSURE = "EXPOSURE";
+    public static final String DONE = "DONE";
+
+    private static final List<String> ACTIVE_STATUSES = List.of(
+            INTENT, OPEN_SENT, OPEN_FILLED, OPEN_UNKNOWN, CLOSE_PENDING, EXPOSURE);
+
+    private final HtxContractCycleMapper mapper;
+
+    /** A stale or exposed cycle blocks another cycle for the same contract until reconciled. */
+    public boolean hasActiveCycle(String contractCode) {
+        try {
+            Long count = mapper.selectCount(new QueryWrapper<HtxContractCycleEntity>()
+                    .eq("contract_code", contractCode)
+                    .in("status", ACTIVE_STATUSES));
+            return count != null && count > 0;
+        } catch (Exception e) {
+            throw new HtxPersistenceException("contract active-cycle query failed", e);
+        }
+    }
+
+    /** Insert must commit before the first live open instruction is sent. */
+    public long createIntent(HtxContractCycleRequest request, String contractCode, int leverage) {
+        try {
+            HtxContractCycleEntity entity = new HtxContractCycleEntity();
+            entity.setClientOrderId(request.getClientOrderId());
+            entity.setContractCode(contractCode);
+            entity.setReqVolume(request.getVolume());
+            entity.setOpenPrice(request.getOpenPrice());
+            entity.setClosePrice(request.getClosePrice());
+            entity.setLeverage(leverage);
+            entity.setStatus(INTENT);
+            entity.setUpdatedAt(LocalDateTime.now());
+            mapper.insert(entity);
+            return entity.getId();
+        } catch (Exception e) {
+            throw new HtxPersistenceException("contract intent insert failed", e);
+        }
+    }
+
+    /** Post-send updates are best effort: the write-ahead INTENT remains blocking if an update fails. */
+    public void update(long cycleId, String status, Long openOrderId, Long closeOrderId,
+                       BigDecimal openFilled, BigDecimal closeFilled, String message) {
+        try {
+            HtxContractCycleEntity entity = new HtxContractCycleEntity();
+            entity.setId(cycleId);
+            entity.setStatus(status);
+            entity.setOpenOrderId(openOrderId);
+            entity.setCloseOrderId(closeOrderId);
+            entity.setOpenFilledVolume(openFilled);
+            entity.setCloseFilledVolume(closeFilled);
+            entity.setMessage(message);
+            entity.setUpdatedAt(LocalDateTime.now());
+            mapper.updateById(entity);
+        } catch (Exception e) {
+            log.error("contract cycle update failed cycleId={} status={}", cycleId, status, e);
+        }
+    }
+}

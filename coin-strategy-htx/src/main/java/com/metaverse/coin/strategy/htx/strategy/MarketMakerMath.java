@@ -12,7 +12,7 @@ public final class MarketMakerMath {
 
     private MarketMakerMath() {}
 
-    /** btcusdt/ethusdt quote 报价精度。 */
+    /** 当前现货白名单均使用 2 位 USDT 报价精度。 */
     public static final int PRICE_SCALE = 2;
     /** 下单数量精度（保守取 btc(6)/eth(4) 交集）。 */
     public static final int QTY_SCALE = 4;
@@ -65,7 +65,10 @@ public final class MarketMakerMath {
 
     /** 做市白名单标的的 HTX 现货数量精度；卖出时按该精度向下截断，避免手续费后超卖。 */
     public static int quantityScale(String symbol) {
-        return "btcusdt".equalsIgnoreCase(symbol) ? 6 : 4;
+        if ("btcusdt".equalsIgnoreCase(symbol) || "xautusdt".equalsIgnoreCase(symbol)) {
+            return 6;
+        }
+        return 4;
     }
 
     /** 不亏闸门：(1−f)²·sellPrice ≥ buyPrice。 */

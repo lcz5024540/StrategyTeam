@@ -72,3 +72,23 @@ CREATE TABLE IF NOT EXISTS htx_exposure (
     created_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
+
+-- USDT-margined perpetual cycles are isolated from spot rows because volume is contracts, not base quantity.
+CREATE TABLE IF NOT EXISTS htx_contract_cycle (
+    id                    BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    client_order_id       BIGINT         NOT NULL UNIQUE,
+    contract_code         VARCHAR(32)    NOT NULL,
+    req_volume            BIGINT         NOT NULL,
+    open_price            DECIMAL(36,18) NOT NULL,
+    close_price           DECIMAL(36,18) NOT NULL,
+    leverage              INT            NOT NULL,
+    status                VARCHAR(24)    NOT NULL,
+    open_order_id         BIGINT,
+    close_order_id        BIGINT,
+    open_filled_volume    DECIMAL(36,18) DEFAULT 0,
+    close_filled_volume   DECIMAL(36,18) DEFAULT 0,
+    message               VARCHAR(512),
+    created_at            DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at            DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_contract_cycle_active (contract_code, status)
+);

@@ -121,5 +121,6 @@ class MarketMakerMathTest {
     @Test void uses_symbol_specific_quantity_scale() {
         assertEquals(6, MarketMakerMath.quantityScale("btcusdt"));
         assertEquals(4, MarketMakerMath.quantityScale("ethusdt"));
+        assertEquals(6, MarketMakerMath.quantityScale("xautusdt"));
     }
 }

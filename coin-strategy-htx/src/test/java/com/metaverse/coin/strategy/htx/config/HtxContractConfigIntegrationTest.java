@@ -1,0 +1,36 @@
+package com.metaverse.coin.strategy.htx.config;
+
+import com.metaverse.coin.strategy.common.client.htx.HtxUsdtSwapApiService;
+import com.metaverse.coin.strategy.htx.controller.HtxContractController;
+import com.metaverse.coin.strategy.htx.service.HtxContractTradingService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@SpringBootTest(properties = {
+        "htx.api.access-key=test-access",
+        "htx.api.secret-key=test-secret",
+        "htx.contract.enabled=true",
+        "htx.contract.dry-run=true"
+})
+class HtxContractConfigIntegrationTest {
+
+    @Autowired HtxUsdtSwapApiService api;
+    @Autowired HtxContractTradingService tradingService;
+    @Autowired HtxContractController controller;
+    @Autowired HtxContractProperties properties;
+
+    @Test
+    void enabledDryRunModeWiresContractRuntimeWithXautDefault() {
+        assertNotNull(api);
+        assertNotNull(tradingService);
+        assertNotNull(controller);
+        assertTrue(properties.isDryRun());
+        assertEquals("https://api.hbdm.com", properties.getBaseUrl());
+        assertTrue(properties.getContractCodes().contains("XAUT-USDT"));
+    }
+}

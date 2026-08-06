@@ -13,7 +13,7 @@
 
 | 维度 | 决策 |
 |---|---|
-| 标的 | 白名单，仅 `btcusdt` / `ethusdt`，非白名单一律拒 |
+| 标的 | 白名单：`btcusdt` / `ethusdt` / `xautusdt`，非白名单一律拒 |
 | 定价模型 | **自设价差做市**：以参考价 P0 为中心，buyPrice=P0·(1−δ)、sellPrice=P0·(1+δ)，δ 可配且需 ≥ 手续费覆盖线 |
 | 挂单生命周期 | **长期挂单（resting）**：买单挂在市价下方长期等成交（可配 TTL）；成交后挂卖单也长期等 |
 | 下单节奏 | **多笔并行**：允许同一标的同时有多个未完成 cell |
@@ -86,7 +86,7 @@
 htx:
   market-maker:
     enabled: ${HTX_MM_ENABLED:false}            # 总开关，默认关（急停=false 重启）
-    symbols: ${HTX_MM_SYMBOLS:btcusdt,ethusdt}  # 白名单
+    symbols: ${HTX_MM_SYMBOLS:btcusdt,ethusdt,xautusdt}  # 白名单
     poll-interval-ms: ${HTX_MM_POLL_INTERVAL_MS:10000}
     spread-pct: ${HTX_MM_SPREAD_PCT:0.005}      # δ=0.5%
     fee-rate-per-side: ${HTX_MM_FEE_RATE_PER_SIDE:0.002}  # 保守单边费率 f，用于不亏闸门(宁高勿低)

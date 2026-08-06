@@ -9,7 +9,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import java.util.TimeZone;
 
 /**
- * Standalone HTX (Huobi) spot execution service.
+ * Standalone HTX (Huobi) spot and guarded USDT-margined contract execution service.
  * <p>
  * Isolated from {@code coin-strategy-job} on purpose (see harness activeContext v2.8.2):
  * polymarket / funding-rate strategies live in job; HTX spot execution runs here so that
@@ -17,7 +17,7 @@ import java.util.TimeZone;
  * into the other.
  * <p>
  * Port defaults to {@code 8082} (job = 8081, web = 8080). Downstream of {@code common-client}
- * only; no MySQL / no Kafka / no other exchange clients loaded.
+ * only; its own MySQL audit store is loaded, while Kafka and other exchange clients are absent.
  */
 @SpringBootApplication(scanBasePackages = "com.metaverse.coin.strategy.htx")
 @MapperScan("com.metaverse.coin.strategy.htx.persistence.mapper")

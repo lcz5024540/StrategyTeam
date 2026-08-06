@@ -1,5 +1,6 @@
 package com.metaverse.coin.strategy.common.client.htx.model;
 
+import com.alibaba.fastjson2.annotation.JSONField;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,7 +20,9 @@ public class HtxRestResponse<T> {
     private T data;
     /** For market data endpoints (GET /market/depth etc). Server returns "tick"; we normalize to data upstream. */
     private T tick;
+    @JSONField(name = "err-code", alternateNames = {"err_code", "errCode"})
     private String errCode;
+    @JSONField(name = "err-msg", alternateNames = {"err_msg", "errMsg"})
     private String errMsg;
 
     public HtxRestResponse() {

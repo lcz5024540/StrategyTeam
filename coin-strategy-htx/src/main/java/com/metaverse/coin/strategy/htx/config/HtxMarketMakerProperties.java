@@ -19,7 +19,7 @@ public class HtxMarketMakerProperties {
     private boolean enabled = false;
 
     /** 标的白名单，非白名单一律拒开。 */
-    private List<String> symbols = List.of("btcusdt", "ethusdt");
+    private List<String> symbols = List.of("btcusdt", "ethusdt", "xautusdt");
 
     /** 主循环轮询间隔（ms）。 */
     private long pollIntervalMs = 10_000L;

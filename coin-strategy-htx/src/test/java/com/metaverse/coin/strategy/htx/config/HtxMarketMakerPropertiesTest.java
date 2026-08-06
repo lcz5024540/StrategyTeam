@@ -22,7 +22,7 @@ class HtxMarketMakerPropertiesTest {
     @Test void defaults_are_conservative() {
         HtxMarketMakerProperties p = new HtxMarketMakerProperties();
         assertFalse(p.isEnabled());                                   // 默认关（急停语义）
-        assertEquals(List.of("btcusdt", "ethusdt"), p.getSymbols());  // 白名单
+        assertEquals(List.of("btcusdt", "ethusdt", "xautusdt"), p.getSymbols());  // 白名单
         assertEquals(10_000L, p.getPollIntervalMs());
         assertEquals(0, new BigDecimal("0.003").compareTo(p.getSpreadPct()));
         assertEquals(0, new BigDecimal("0.002").compareTo(p.getFeeRatePerSide()));

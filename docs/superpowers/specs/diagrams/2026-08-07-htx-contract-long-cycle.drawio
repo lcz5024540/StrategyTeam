@@ -1,0 +1,27 @@
+<mxfile host="app.diagrams.net" modified="2026-08-07T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="htx-contract-cycle" name="HTX Contract Long Cycle">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="preflight" value="Preflight&#xa;whitelist / metadata / depth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="40" y="180" width="190" height="70" as="geometry"/></mxCell>
+        <mxCell id="gates" value="Live gates + account&#xa;leverage / position / margin" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1"><mxGeometry x="280" y="165" width="210" height="100" as="geometry"/></mxCell>
+        <mxCell id="intent" value="Persist INTENT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="540" y="180" width="150" height="70" as="geometry"/></mxCell>
+        <mxCell id="open" value="BUY / OPEN / LIMIT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="740" y="180" width="170" height="70" as="geometry"/></mxCell>
+        <mxCell id="fill" value="Actual filled&#xa;contracts &gt; 0?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1"><mxGeometry x="960" y="165" width="170" height="100" as="geometry"/></mxCell>
+        <mxCell id="close" value="SELL / CLOSE / LIMIT&#xa;actual fill only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1180" y="180" width="190" height="70" as="geometry"/></mxCell>
+        <mxCell id="done" value="DONE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="1420" y="100" width="120" height="55" as="geometry"/></mxCell>
+        <mxCell id="pending" value="CLOSE_PENDING&#xa;or EXPOSURE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="1420" y="275" width="140" height="65" as="geometry"/></mxCell>
+        <mxCell id="cancel" value="Cancel + final query&#xa;OPEN_CANCELLED / UNKNOWN" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="940" y="360" width="210" height="70" as="geometry"/></mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="preflight" target="gates"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="gates" target="intent"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="intent" target="open"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="open" target="fill"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="fill" target="close"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" value="no / timeout" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="fill" target="cancel"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" value="fully closed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="close" target="done"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" value="not flat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="close" target="pending"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
