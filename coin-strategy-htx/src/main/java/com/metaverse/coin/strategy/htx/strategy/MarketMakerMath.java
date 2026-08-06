@@ -18,6 +18,7 @@ public final class MarketMakerMath {
     public static final int QTY_SCALE = 4;
 
     private static final BigDecimal ONE = BigDecimal.ONE;
+    private static final BigDecimal TWO = BigDecimal.valueOf(2);
 
     /** buyPrice = P0·(1−δ)，含入到 PRICE_SCALE（HALF_UP）。 */
     public static BigDecimal buyPrice(BigDecimal p0, BigDecimal spreadPct) {
@@ -27,6 +28,24 @@ public final class MarketMakerMath {
     /** sellPrice = P0·(1+δ)，含入到 PRICE_SCALE（HALF_UP）。 */
     public static BigDecimal sellPrice(BigDecimal p0, BigDecimal spreadPct) {
         return p0.multiply(ONE.add(spreadPct)).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 从买价推卖价：sellPrice = buyPrice·(1 + 2·δ)，含入到 PRICE_SCALE（HALF_UP）。
+     * 买腿贴 bestBid 后，卖腿相对买价上抬 2δ 以维持总利差并满足不亏损。
+     */
+    public static BigDecimal sellFromBuy(BigDecimal buyPrice, BigDecimal spreadPct) {
+        return buyPrice.multiply(ONE.add(TWO.multiply(spreadPct)))
+                .setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 跟价重挂闸门：买价相对最优买价漂移 |bestBid − currentBuy| / bestBid ≥ thresholdPct 即需重挂。
+     */
+    public static boolean shouldReprice(BigDecimal bestBid, BigDecimal currentBuy, BigDecimal thresholdPct) {
+        BigDecimal rel = bestBid.subtract(currentBuy).abs()
+                .divide(bestBid, 10, RoundingMode.HALF_UP);
+        return rel.compareTo(thresholdPct) >= 0;
     }
 
     /** qty = notional / buyPrice，含入到 QTY_SCALE（HALF_DOWN，宁小勿大不超名义）。 */

@@ -70,4 +70,43 @@ class MarketMakerMathTest {
                 List.of(new BigDecimal("101"), new BigDecimal("98")),
                 new BigDecimal("0.003")));
     }
+
+    @Test void sellFromBuy_is_buy_times_one_plus_two_spread_scale2() {
+        // 60000 * (1 + 2*0.003) = 60000 * 1.006 = 60360.00
+        assertEquals(0, new BigDecimal("60360.00")
+                .compareTo(MarketMakerMath.sellFromBuy(new BigDecimal("60000.00"), new BigDecimal("0.003"))));
+    }
+
+    @Test void sellFromBuy_no_loss_holds_at_default_spread() {
+        BigDecimal buy = new BigDecimal("60000.00");
+        BigDecimal sell = MarketMakerMath.sellFromBuy(buy, new BigDecimal("0.003"));
+        assertTrue(MarketMakerMath.isNoLoss(buy, sell, new BigDecimal("0.002")));
+    }
+
+    @Test void sellFromBuy_no_loss_breaks_when_spread_below_fee_floor() {
+        BigDecimal buy = new BigDecimal("60000.00");
+        BigDecimal sell = MarketMakerMath.sellFromBuy(buy, new BigDecimal("0.001")); // 2δ=0.002 < 2f 磨损
+        assertFalse(MarketMakerMath.isNoLoss(buy, sell, new BigDecimal("0.002")));
+    }
+
+    @Test void shouldReprice_true_when_drift_at_or_above_threshold() {
+        // |60000-59940|/60000 = 0.001 == 阈值 → true（含等号）
+        assertTrue(MarketMakerMath.shouldReprice(
+                new BigDecimal("60000"), new BigDecimal("59940"), new BigDecimal("0.001")));
+        // 漂移更大也 true
+        assertTrue(MarketMakerMath.shouldReprice(
+                new BigDecimal("60000"), new BigDecimal("59700"), new BigDecimal("0.001")));
+    }
+
+    @Test void shouldReprice_false_when_drift_below_threshold() {
+        // |60000-59950|/60000 = 0.000833 < 0.001 → false
+        assertFalse(MarketMakerMath.shouldReprice(
+                new BigDecimal("60000"), new BigDecimal("59950"), new BigDecimal("0.001")));
+    }
+
+    @Test void shouldReprice_true_when_bestbid_drops_below_current_buy() {
+        // 反向漂移（bestBid 低于挂单价）也应触发：|59000-60000|/59000 大
+        assertTrue(MarketMakerMath.shouldReprice(
+                new BigDecimal("59000"), new BigDecimal("60000"), new BigDecimal("0.001")));
+    }
 }
