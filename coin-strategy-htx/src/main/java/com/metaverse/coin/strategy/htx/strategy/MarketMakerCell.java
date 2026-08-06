@@ -23,6 +23,8 @@ public class MarketMakerCell {
     private String state;
     private Long buyOrderId;
     private Long sellOrderId;
+    private BigDecimal buyFilledAmount;
+    private BigDecimal totalFeeBase;
     private LocalDateTime createdAt;
 
     public static MarketMakerCell fromEntity(HtxLockedPairEntity e) {
@@ -36,6 +38,8 @@ public class MarketMakerCell {
                 .state(e.getStatus())
                 .buyOrderId(e.getBuyOrderId())
                 .sellOrderId(e.getSellOrderId())
+                .buyFilledAmount(e.getBuyFilledAmount())
+                .totalFeeBase(e.getTotalFeeBase())
                 .createdAt(e.getCreatedAt())
                 .build();
     }

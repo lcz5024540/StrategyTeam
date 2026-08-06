@@ -39,6 +39,16 @@ public final class MarketMakerMath {
                 .setScale(PRICE_SCALE, RoundingMode.HALF_UP);
     }
 
+    /** HTX 实际成交均价 = filled-cash-amount / filled-amount；字段缺失时回退原买单限价。 */
+    public static BigDecimal actualBuyPrice(BigDecimal filledCashAmount, BigDecimal filledAmount,
+                                            BigDecimal fallbackBuyPrice) {
+        if (filledCashAmount == null || filledAmount == null
+                || filledCashAmount.signum() <= 0 || filledAmount.signum() <= 0) {
+            return fallbackBuyPrice.setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+        }
+        return filledCashAmount.divide(filledAmount, PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
     /**
      * 跟价重挂闸门：买价相对最优买价漂移 |bestBid − currentBuy| / bestBid ≥ thresholdPct 即需重挂。
      */

@@ -65,6 +65,7 @@ htx:
     min-gap-pct: ${HTX_MM_MIN_GAP_PCT:0.003}           # 新买价与已挂买价最小间距（去重防同价堆单）
     buy-ttl-ms: ${HTX_MM_BUY_TTL_MS:900000}            # 买单 15min 兜底 TTL（跟价为主）
     reprice-threshold-pct: ${HTX_MM_REPRICE_THRESHOLD_PCT:0.001}  # 买价漂移≥0.1%即撤旧单在新bestBid重挂
+    insufficient-balance-backoff-ms: ${HTX_MM_INSUFFICIENT_BALANCE_BACKOFF_MS:300000} # USDT不足后5min只查恢复，不重复下单
     sell-ttl-ms: ${HTX_MM_SELL_TTL_MS:0}               # 0=卖单不设 TTL，一直挂到成交
 
 mybatis-plus:

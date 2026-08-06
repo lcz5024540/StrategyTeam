@@ -47,4 +47,7 @@ public class HtxMarketMakerProperties {
 
     /** 买价漂移超此相对比例（|bestBid−buyPrice|/bestBid）即撤旧买单、在新 bestBid 重挂（跟价）。 */
     private BigDecimal repriceThresholdPct = new BigDecimal("0.001");
+
+    /** 可用 USDT 不足时暂停所有新买单的时长（ms），到期后重新查余额自动恢复。 */
+    private long insufficientBalanceBackoffMs = 300_000L;
 }

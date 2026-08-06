@@ -9,6 +9,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class MarketMakerMathTest {
 
+    @Test
+    void actualBuyPrice_usesFilledCashAndFallsBackToLimit() {
+        assertEquals(new BigDecimal("59700.00"), MarketMakerMath.actualBuyPrice(
+                new BigDecimal("17.91"), new BigDecimal("0.0003"), new BigDecimal("60000")));
+        assertEquals(new BigDecimal("60000.00"), MarketMakerMath.actualBuyPrice(
+                null, new BigDecimal("0.0003"), new BigDecimal("60000")));
+    }
+
     private static final BigDecimal F = new BigDecimal("0.002");
 
     @Test void buyPrice_is_p0_times_one_minus_spread_scale2() {

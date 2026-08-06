@@ -219,13 +219,32 @@ public class HtxTradeRecorder {
         }
     }
 
-    /** 买腿成交、卖单已挂：→ MM_RESTING_SELL，记 sellOrderId 与买腿成交量（best-effort）。 */
-    public void markMmSellResting(long pairId, Long sellOrderId, BigDecimal buyFilled) {
+    /**
+     * 买腿已成交、待挂限价卖：先持久化真实成交量/费用/成本卖价。
+     * 即使卖单 REST 失败或进程崩溃，下一 tick/重启仍会继续挂同一个幂等 SELL client id。
+     */
+    public void markMmSellPending(long pairId, BigDecimal buyFilled, BigDecimal buyFeeBase,
+                                  BigDecimal sellPrice) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setBuyFilledAmount(buyFilled);
+            e.setTotalFeeBase(buyFeeBase);
+            e.setSellPrice(sellPrice);
+            e.setStatus(HtxStatus.MM_RESTING_SELL);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("markMmSellPending failed pairId={}", pairId, ex);
+        }
+    }
+
+    /** 卖单已被 HTX 接受：回填 sellOrderId（best-effort）。 */
+    public void markMmSellResting(long pairId, Long sellOrderId) {
         try {
             HtxLockedPairEntity e = new HtxLockedPairEntity();
             e.setId(pairId);
             e.setSellOrderId(sellOrderId);
-            e.setBuyFilledAmount(buyFilled);
             e.setStatus(HtxStatus.MM_RESTING_SELL);
             e.setUpdatedAt(LocalDateTime.now());
             pairMapper.updateById(e);
@@ -293,6 +312,19 @@ public class HtxTradeRecorder {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
                 .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
                 .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL));
+    }
+
+    /**
+     * 启动补偿候选：DB 已标记取消、但买单曾真实提交到 HTX 的最近 500 个 cell。
+     * 重新查 HTX 后只有 filledAmount &gt; 0 的记录才会转入限价卖出。
+     */
+    public List<HtxLockedPairEntity> findRecoverableCancelledMmCells() {
+        return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
+                .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
+                .eq("status", HtxStatus.MM_CANCELLED_BUY)
+                .isNotNull("buy_order_id")
+                .orderByDesc("id")
+                .last("LIMIT 500"));
     }
 
     /** 某标的 open cell 数（开仓 K 闸用）。 */

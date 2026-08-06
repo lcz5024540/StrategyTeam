@@ -31,6 +31,7 @@ class HtxMarketMakerPropertiesTest {
         assertEquals(0, new BigDecimal("0.003").compareTo(p.getMinGapPct()));
         assertEquals(900_000L, p.getBuyTtlMs());
         assertEquals(0, new BigDecimal("0.001").compareTo(p.getRepriceThresholdPct()));
+        assertEquals(300_000L, p.getInsufficientBalanceBackoffMs());
         assertEquals(0L, p.getSellTtlMs());
     }
 
@@ -40,10 +41,12 @@ class HtxMarketMakerPropertiesTest {
         env.setProperty("htx.market-maker.symbols", "btcusdt");
         env.setProperty("htx.market-maker.spread-pct", "0.008");
         env.setProperty("htx.market-maker.max-concurrent-cells-per-symbol", "5");
+        env.setProperty("htx.market-maker.insufficient-balance-backoff-ms", "60000");
         HtxMarketMakerProperties p = bind(env);
         assertTrue(p.isEnabled());
         assertEquals(List.of("btcusdt"), p.getSymbols());
         assertEquals(0, new BigDecimal("0.008").compareTo(p.getSpreadPct()));
         assertEquals(5, p.getMaxConcurrentCellsPerSymbol());
+        assertEquals(60_000L, p.getInsufficientBalanceBackoffMs());
     }
 }

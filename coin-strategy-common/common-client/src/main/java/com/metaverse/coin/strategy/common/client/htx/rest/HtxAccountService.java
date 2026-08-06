@@ -23,4 +23,13 @@ public class HtxAccountService {
         return rest.signedGet("/v1/account/accounts", Collections.emptyMap(),
                 new TypeReference<HtxRestResponse<List<HtxAccount>>>() {});
     }
+
+    /**
+     * Query balances for one account. Available spot funds are entries whose
+     * {@code type=trade}; {@code type=frozen} is already reserved by open orders.
+     */
+    public HtxRestResponse<HtxAccount> getAccountBalance(String accountId) {
+        return rest.signedGet("/v1/account/accounts/" + accountId + "/balance", Collections.emptyMap(),
+                new TypeReference<HtxRestResponse<HtxAccount>>() {});
+    }
 }

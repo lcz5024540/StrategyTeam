@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.htx.strategy;
 
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxAccount;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxBalance;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
@@ -42,6 +44,7 @@ public class MarketMakerService {
     private final HtxTradeRecorder recorder;
 
     private static final int DEPTH_LEVELS = 5;
+    private volatile long buyBlockedUntilEpochMs;
 
     /** 启动校验：δ < 单边费率则成交必亏，拒绝启动。见 spec §1 不亏下限。 */
     @PostConstruct
@@ -85,6 +88,13 @@ public class MarketMakerService {
                 log.error("MM recover advanceCell failed pairId={}", cell.getPairId(), ex);
             }
         }
+        for (HtxLockedPairEntity entity : recorder.findRecoverableCancelledMmCells()) {
+            try {
+                recoverCancelledBuy(entity);
+            } catch (RuntimeException ex) {
+                log.error("MM recover cancelled buy failed pairId={}", entity.getId(), ex);
+            }
+        }
     }
 
     private List<MarketMakerCell> loadOpenCells() {
@@ -97,6 +107,9 @@ public class MarketMakerService {
 
     /** 通过所有闸门则开一个新 cell 并发买单，返回 pairId；任一闸门不过返回 -1。 */
     public long openNewCellIfEligible(String symbol) {
+        if (isBuyBalanceBackoffActive()) {
+            return -1;
+        }
         if (!mmProps.getSymbols().contains(symbol)) {
             return -1;
         }
@@ -158,6 +171,9 @@ public class MarketMakerService {
                 tradeProps.getDepthGuard().getTopN()).allOk()) {
             return -1;
         }
+        if (!hasSufficientQuoteBalance(buyNotional)) {
+            return -1;
+        }
 
         String base = "mm-" + symbol + "-" + System.currentTimeMillis();
         long pairId = recorder.createMmCell(symbol, qty, buyPrice, sellPrice, base); // fail-closed
@@ -168,7 +184,12 @@ public class MarketMakerService {
         Long buyId = parseOrderId(resp);
         if (buyId == null) {
             recorder.markMmCancelledBuy(pairId);
-            log.warn("MM buy rejected symbol={} err={}", symbol, resp == null ? "null" : resp.getErrMsg());
+            if (isInsufficientBalanceError(resp)) {
+                blockNewBuysForInsufficientBalance(null, buyNotional);
+            }
+            log.warn("MM buy rejected symbol={} errCode={} errMsg={}", symbol,
+                    resp == null ? "null" : resp.getErrCode(),
+                    resp == null ? "null" : resp.getErrMsg());
             return -1;
         }
         recorder.markMmBuySent(pairId, buyId);
@@ -201,12 +222,12 @@ public class MarketMakerService {
         String state = o.getState();
         BigDecimal filled = nz(o.getFilledAmount());
         if ("filled".equalsIgnoreCase(state)) {
-            openSellLeg(cell, filled, o.getFilledFees());
+            openSellLeg(cell, filled, o.getFilledFees(), o.getFilledCashAmount());
             return;
         }
         if (isTerminal(state)) { // 外部撤/拒
             if (filled.signum() > 0) {
-                openSellLeg(cell, filled, o.getFilledFees());
+                openSellLeg(cell, filled, o.getFilledFees(), o.getFilledCashAmount());
             } else {
                 recorder.markMmCancelledBuy(cell.getPairId());
             }
@@ -214,7 +235,7 @@ public class MarketMakerService {
         }
         // 仍挂着（submitted/partial-filled）：先看是否需跟价重挂，再看 TTL
         // 急停（enabled=false）时不重挂：短路，连深度都不取；买单靠 TTL/人工收敛
-        if (mmProps.isEnabled()) {
+        if (mmProps.isEnabled() && !isBuyBalanceBackoffActive()) {
             BigDecimal bestBid = currentBestBid(cell.getSymbol());
             if (bestBid != null
                     && MarketMakerMath.shouldReprice(bestBid, cell.getBuyPrice(), mmProps.getRepriceThresholdPct())) {
@@ -227,7 +248,7 @@ public class MarketMakerService {
             HtxOrder post = cancelAndQuery(buyId);
             BigDecimal postFilled = post == null ? BigDecimal.ZERO : nz(post.getFilledAmount());
             if (postFilled.signum() > 0) {
-                openSellLeg(cell, postFilled, post.getFilledFees()); // 撤单竞态：有成交则转挂卖
+                openSellLeg(cell, postFilled, post.getFilledFees(), post.getFilledCashAmount()); // 撤单竞态：有成交则转挂卖
             } else {
                 recorder.markMmCancelledBuy(cell.getPairId());
                 log.info("MM buy expired & cancelled pairId={} buyId={}", cell.getPairId(), buyId);
@@ -264,7 +285,7 @@ public class MarketMakerService {
         HtxOrder post = cancelAndQuery(buyId);
         BigDecimal postFilled = post == null ? BigDecimal.ZERO : nz(post.getFilledAmount());
         if (postFilled.signum() > 0) {
-            openSellLeg(cell, postFilled, post.getFilledFees()); // 撤单竞态：有成交则转挂卖，不重挂
+            openSellLeg(cell, postFilled, post.getFilledFees(), post.getFilledCashAmount()); // 撤单竞态：有成交则转挂卖，不重挂
             return;
         }
         // 安全：撤单未确认为终态（仍 submitted/canceling）→ 本 tick 放弃重挂，避免旧单未死即重下造成双买/裸多；下一 tick 再评估
@@ -280,6 +301,10 @@ public class MarketMakerService {
                     cell.getPairId(), newBuy, newSell);
             return;
         }
+        if (!hasSufficientQuoteBalance(cell.getQty().multiply(newBuy))) {
+            recorder.markMmCancelledBuy(cell.getPairId());
+            return;
+        }
         String buyClientId = cell.getClientId() + "-BUY-R" + System.currentTimeMillis();
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
                 tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",
@@ -287,8 +312,13 @@ public class MarketMakerService {
         Long newBuyId = parseOrderId(resp);
         if (newBuyId == null) {
             recorder.markMmCancelledBuy(cell.getPairId());
-            log.warn("MM reprice buy rejected pairId={} newBuy={} err={}",
-                    cell.getPairId(), newBuy, resp == null ? "null" : resp.getErrMsg());
+            if (isInsufficientBalanceError(resp)) {
+                blockNewBuysForInsufficientBalance(null, cell.getQty().multiply(newBuy));
+            }
+            log.warn("MM reprice buy rejected pairId={} newBuy={} errCode={} errMsg={}",
+                    cell.getPairId(), newBuy,
+                    resp == null ? "null" : resp.getErrCode(),
+                    resp == null ? "null" : resp.getErrMsg());
             return;
         }
         recorder.markMmReprice(cell.getPairId(), newBuyId, newBuy, newSell);
@@ -296,32 +326,50 @@ public class MarketMakerService {
                 cell.getPairId(), cell.getBuyPrice(), newBuy, newSell, newBuyId);
     }
 
-    private void openSellLeg(MarketMakerCell cell, BigDecimal filledBase, BigDecimal buyFeeBase) {
+    private void openSellLeg(MarketMakerCell cell, BigDecimal filledBase, BigDecimal buyFeeBase,
+                             BigDecimal filledCashAmount) {
+        BigDecimal actualBuyPrice = MarketMakerMath.actualBuyPrice(
+                filledCashAmount, filledBase, cell.getBuyPrice());
+        BigDecimal sellPrice = MarketMakerMath.sellFromBuy(actualBuyPrice, mmProps.getSpreadPct());
+        if (!MarketMakerMath.isNoLoss(actualBuyPrice, sellPrice, mmProps.getFeeRatePerSide())) {
+            log.error("MM actual-fill no-loss gate blocked pairId={} actualBuy={} sell={}",
+                    cell.getPairId(), actualBuyPrice, sellPrice);
+            return;
+        }
+        recorder.markMmSellPending(cell.getPairId(), filledBase, nz(buyFeeBase), sellPrice);
+        submitSellLeg(cell.getPairId(), cell.getClientId(), cell.getSymbol(),
+                filledBase, nz(buyFeeBase), sellPrice);
+    }
+
+    private void submitSellLeg(long pairId, String clientId, String symbol, BigDecimal filledBase,
+                               BigDecimal buyFeeBase, BigDecimal sellPrice) {
         BigDecimal sellable = HtxFeeMath.sellableBase(filledBase, buyFeeBase)
                 .setScale(MarketMakerMath.QTY_SCALE, RoundingMode.HALF_DOWN);
         if (sellable.signum() <= 0) {
-            recorder.markMmCancelledBuy(cell.getPairId());
+            log.error("MM sellable amount is zero pairId={} filled={} fee={}", pairId, filledBase, buyFeeBase);
             return;
         }
-        String sellClientId = cell.getClientId() + "-SELL";
+        String sellClientId = clientId + "-SELL";
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
-                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "sell-limit",
-                sellable.toPlainString(), cell.getSellPrice().toPlainString(), sellClientId);
+                tradeProps.getApi().getSpotAccountId(), symbol, "sell-limit",
+                sellable.toPlainString(), sellPrice.toPlainString(), sellClientId);
         Long sellId = parseOrderId(resp);
         if (sellId == null) {
-            recorder.recordExposure(cell.getPairId(), cell.getSymbol(), "base-long", sellable,
-                    "mm-sell-rejected:" + (resp == null ? "null" : resp.getErrMsg()));
-            recorder.markMmCancelledBuy(cell.getPairId());
-            log.error("MM sell rejected after buy fill pairId={} sellable={}", cell.getPairId(), sellable);
+            log.error("MM limit sell rejected; keep pending pairId={} symbol={} sellable={} price={} errCode={} errMsg={}",
+                    pairId, symbol, sellable, sellPrice,
+                    resp == null ? "null" : resp.getErrCode(),
+                    resp == null ? "null" : resp.getErrMsg());
             return;
         }
-        recorder.markMmSellResting(cell.getPairId(), sellId, filledBase);
-        log.info("MM sell resting pairId={} sellId={} sellable={}", cell.getPairId(), sellId, sellable);
+        recorder.markMmSellResting(pairId, sellId);
+        log.info("MM sell resting pairId={} sellId={} sellable={} price={}", pairId, sellId, sellable, sellPrice);
     }
 
     private void advanceRestingSell(MarketMakerCell cell) {
         Long sellId = cell.getSellOrderId();
         if (sellId == null) {
+            submitSellLeg(cell.getPairId(), cell.getClientId(), cell.getSymbol(),
+                    nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()), cell.getSellPrice());
             return;
         }
         HtxRestResponse<HtxOrder> resp = htxApiService.getSpotService().queryOrder(sellId);
@@ -347,6 +395,22 @@ public class MarketMakerService {
         // 仍挂着：卖单 TTL 默认 0 = 不撤，挂到成交
     }
 
+    private void recoverCancelledBuy(HtxLockedPairEntity entity) {
+        HtxRestResponse<HtxOrder> resp = htxApiService.getSpotService().queryOrder(entity.getBuyOrderId());
+        if (resp == null || !resp.ok() || resp.getData() == null) {
+            return;
+        }
+        HtxOrder order = resp.getData();
+        BigDecimal filled = nz(order.getFilledAmount());
+        if (filled.signum() <= 0) {
+            return;
+        }
+        log.warn("MM recovered filled base from cancelled cell pairId={} buyId={} filled={}",
+                entity.getId(), entity.getBuyOrderId(), filled);
+        openSellLeg(MarketMakerCell.fromEntity(entity), filled,
+                order.getFilledFees(), order.getFilledCashAmount());
+    }
+
     // ---- helpers ----
 
     private boolean isBuyExpired(MarketMakerCell cell) {
@@ -354,6 +418,47 @@ public class MarketMakerService {
             return false;
         }
         return Duration.between(cell.getCreatedAt(), LocalDateTime.now()).toMillis() > mmProps.getBuyTtlMs();
+    }
+
+    private boolean isBuyBalanceBackoffActive() {
+        return System.currentTimeMillis() < buyBlockedUntilEpochMs;
+    }
+
+    private boolean hasSufficientQuoteBalance(BigDecimal requiredUsdt) {
+        HtxRestResponse<HtxAccount> resp = htxApiService.getAccountService()
+                .getAccountBalance(tradeProps.getApi().getSpotAccountId());
+        if (resp == null || !resp.ok() || resp.getData() == null || resp.getData().getList() == null) {
+            log.warn("MM balance preflight unavailable; fail-closed errCode={} errMsg={}",
+                    resp == null ? "null" : resp.getErrCode(),
+                    resp == null ? "null" : resp.getErrMsg());
+            return false;
+        }
+        BigDecimal available = resp.getData().getList().stream()
+                .filter(b -> b != null && "usdt".equalsIgnoreCase(b.getCurrency())
+                        && "trade".equalsIgnoreCase(b.getType()))
+                .map(HtxBalance::getBalance)
+                .filter(v -> v != null)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (available.compareTo(requiredUsdt) < 0) {
+            blockNewBuysForInsufficientBalance(available, requiredUsdt);
+            return false;
+        }
+        return true;
+    }
+
+    private void blockNewBuysForInsufficientBalance(BigDecimal available, BigDecimal required) {
+        long backoffMs = Math.max(0L, mmProps.getInsufficientBalanceBackoffMs());
+        buyBlockedUntilEpochMs = System.currentTimeMillis() + backoffMs;
+        log.warn("MM insufficient USDT: available={} required={} pauseNewBuysMs={}",
+                available == null ? "unknown" : available, required, backoffMs);
+    }
+
+    private static boolean isInsufficientBalanceError(HtxRestResponse<?> resp) {
+        if (resp == null) {
+            return false;
+        }
+        String text = (String.valueOf(resp.getErrCode()) + " " + String.valueOf(resp.getErrMsg())).toLowerCase();
+        return text.contains("insufficient") || text.contains("balance");
     }
 
     private static boolean isTerminal(String state) {

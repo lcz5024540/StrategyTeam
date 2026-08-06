@@ -20,6 +20,8 @@
 | 开仓闸门 | **最大并行数 K + 价差去重**：open cell 数 < K 且新买价与已挂买价间距 ≥ min-gap 才开新 cell |
 | 单笔金额 | **每 cell 固定 quote 名义**（如 20U），qty = notional / buyPrice |
 | 不亏保证 | **硬不变量**：允许手续费磨损，但每笔 round-trip 必须非负。开仓前用保守配置费率 f 校验 `(1−f)²·sellPrice ≥ buyPrice`，不满足则拒开该 cell（不查真实费率） |
+| 余额不足 | 下单前查现货账户 `trade` USDT；不足或 HTX 返回余额不足时暂停全部新买单，默认 5 分钟后重新查余额，不按 10 秒轮询频繁重试 |
+| 成交后卖出 | 用 HTX 实际成交金额/成交量重算买入均价，在该成本附近加配置价差挂 `SELL-LIMIT`；提交失败保持待卖状态并使用固定 client id 重试，不转市价卖 |
 | 急停语义 | **只停开仓、挂单保留**：`HTX_MM_ENABLED=false` 重启后停止开新 cell，已 resting 单不自动撤（不砸盘），靠 TTL 或人工了结 |
 
 ### 2.1 为什么不是「抓盘口现有价差」
@@ -41,13 +43,13 @@
 
 ## 3. 一个「做市 cell」的状态机
 
-一笔 pair = 一个 cell。开仓瞬间取一次参考价 P0=(bid+ask)/2，该 cell 的买卖价此后**锁定不动**（真正的网格 cell）。
+一笔 pair = 一个 cell。开仓瞬间取一次参考价 P0=(bid+ask)/2 并锁定买单限价；买单成交后用 HTX `filled-cash-amount / filled-amount` 得到实际买入均价，再以 `actualBuyPrice·(1+δ)` 计算卖单限价。HTX 未返回成交金额时才回退原买单限价。
 
 ```
 开仓：P0 → buyPrice=P0(1−δ), sellPrice=P0(1+δ), qty=notional/buyPrice
       挂 BUY-LIMIT(buyPrice)
           │
-   ┌── MM_RESTING_BUY ──(买单成交)──→ MM_RESTING_SELL ──(卖单成交)──→ MM_DONE(记净盈亏)
+   ┌── MM_RESTING_BUY ──(买单成交)──→ MM_RESTING_SELL(按实际成本限价挂卖) ──(卖单成交)──→ MM_DONE(记净盈亏)
    │        │                             │
    │  (买单超 buy-ttl 未成交)         (sell-ttl=0 默认不撤，一直挂等涨)
    │        ↓
@@ -55,7 +57,7 @@
 ```
 
 - **MM_RESTING_BUY**：买单挂着，仅占挂单额度，无持仓。买腿成交前若超 buy-ttl → 撤单 → MM_CANCELLED_BUY。
-- **MM_RESTING_SELL**：买腿成交，持有 base，挂卖单等涨。**这是故意的中间态，不是裸露异常**。sell-ttl=0（默认）表示卖单一直挂到成交。
+- **MM_RESTING_SELL**：买腿成交，持有 base，按实际成交成本加价挂卖单等涨。卖单 REST 暂时失败时仍保持该状态，下一 tick 用固定 `$clientId-SELL` 重试。**这是故意的中间态，不是裸露异常**。sell-ttl=0（默认）表示卖单一直挂到成交。
 - **MM_DONE**：卖腿成交，完整 round-trip，记录 qty·(sellPrice−buyPrice) − 手续费。
 
 ## 4. 调度器主循环
@@ -67,10 +69,12 @@
    - RESTING_BUY 且超 buy-ttl → cancelOrder → CANCELLED_BUY；
    - RESTING_SELL 且卖单已成交 → MM_DONE。
 2. **判断是否开新 cell**：
+   - 若处于余额不足退避窗口，跳过全部新买单；窗口到期后重新查询账户余额；
    - 查盘口 depth，算 P0=(bid+ask)/2、buyPrice、sellPrice、qty；
    - 闸门：本 symbol open cell 数 < K **且** 新 buyPrice 与所有已挂买单价差 ≥ min-gap-pct（去重防同价堆单）；
    - **不亏闸门**：校验 `(1−f)²·sellPrice ≥ buyPrice`（f=fee-rate-per-side），不满足则拒开；
    - 过 `HtxDepthGuard`（top-N 深度足够）；
+   - 查现货账户余额，`trade` USDT 必须覆盖本单名义；查询失败 fail-closed；
    - 过现有风控上限（单笔 max-single ≤ 50U、日累计 max-daily ≤ 100000U，读库失败 fail-closed 拒开）；
    - 全过 → 写库(MM_RESTING_BUY) → placeOrder(BUY-LIMIT)，clientOrderId 幂等。
 
@@ -90,6 +94,7 @@ htx:
     max-concurrent-cells-per-symbol: ${HTX_MM_MAX_CELLS:3}   # K
     min-gap-pct: ${HTX_MM_MIN_GAP_PCT:0.003}    # 新买价与已挂买价最小间距
     buy-ttl-ms: ${HTX_MM_BUY_TTL_MS:3600000}    # 买单 1h 未成交则撤
+    insufficient-balance-backoff-ms: ${HTX_MM_INSUFFICIENT_BALANCE_BACKOFF_MS:300000} # USDT 不足暂停新买 5min
     sell-ttl-ms: ${HTX_MM_SELL_TTL_MS:0}        # 0=卖单不设 TTL，一直挂
 ```
 
@@ -102,7 +107,7 @@ htx:
 - 状态值：`MM_RESTING_BUY / MM_RESTING_SELL / MM_DONE / MM_CANCELLED_BUY`（写入现有 `status` 列）。
 - 新列 `strategy VARCHAR(16)`：做市单写 `MARKET_MAKER`，执行 SDK 单为 `NULL`。用于区分两类单，并驱动对账器豁免。
 
-**重启恢复**：调度器启动先扫库 `WHERE strategy='MARKET_MAKER' AND status IN ('MM_RESTING_BUY','MM_RESTING_SELL')` → 逐个 `queryOrder` 对齐真实状态 → 重建内存 cell 状态机。绝不重复下单（clientOrderId 幂等：`$id-BUY` / `$id-SELL`）。
+**重启恢复**：调度器启动先扫库 `WHERE strategy='MARKET_MAKER' AND status IN ('MM_RESTING_BUY','MM_RESTING_SELL')` → 逐个 `queryOrder` 对齐真实状态 → 重建内存 cell 状态机；同时复查最近 500 条带 `buy_order_id` 的 `MM_CANCELLED_BUY`，若 HTX 显示实际成交量大于 0，则按真实成本恢复为 `MM_RESTING_SELL` 并补挂限价卖单。绝不重复下单（clientOrderId 幂等：`$id-BUY` / `$id-SELL`）。
 
 ## 7. 与现有组件的冲突解决：对账器豁免
 
@@ -138,6 +143,8 @@ htx:
   - 开仓闸门：K 上限拦截；min-gap 去重（新买价太近被拒）。
   - **不亏闸门**：`(1−f)²·sellPrice ≥ buyPrice` 边界——恰好相等应放行、略低应拒开；δ 相对 f 过小时全部被拒。
   - 状态机推进：买成交→挂卖；买超 buy-ttl→撤单；卖成交→DONE。
+  - 余额闸门：USDT 不足不创建 DB cell，并在退避窗口内不重复查行情/下买单；余额查询失败 fail-closed。
+  - 恢复补偿：已标记取消但 HTX 实际成交的买单，启动时按实际成本补挂限价卖单。
   - 白名单过滤：非白名单 symbol 不开 cell。
   - 风控闸集成：单笔超 50U / 日累计超 100000U → 拒开；读库失败 fail-closed。
 - **Mock HTX 客户端**：placeOrder/queryOrder/cancelOrder 打桩，验证主循环与重启恢复逻辑不真下单也能跑通。
