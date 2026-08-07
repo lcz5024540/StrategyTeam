@@ -73,6 +73,8 @@ htx:
     sell-linger-exit-enabled: ${HTX_MM_SELL_LINGER_EXIT_ENABLED:true}
     sell-linger-timeout-ms: ${HTX_MM_SELL_LINGER_TIMEOUT_MS:120000}
     sell-linger-loss-tolerance-pct: ${HTX_MM_SELL_LINGER_LOSS_TOLERANCE_PCT:0.002}
+    buy-taker-escalation-enabled: ${HTX_MM_BUY_TAKER_ESCALATION_ENABLED:true}   # 买腿超时穿价 taker 入场总开关；false=退回现状撤单重开
+    buy-taker-max-cross-pct: ${HTX_MM_BUY_TAKER_MAX_CROSS_PCT:0.001}            # 价差闸门：ask≤bid·(1+此值) 才吃单（btc/eth 可吃、xautusdt 被挡）
   contract:
     # USDT 本位永续合约模式。默认整模块关闭；启用后仍默认 dry-run。
     enabled: ${HTX_CONTRACT_ENABLED:false}

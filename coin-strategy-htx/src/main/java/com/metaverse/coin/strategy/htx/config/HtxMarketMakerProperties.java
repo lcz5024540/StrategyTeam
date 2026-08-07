@@ -68,4 +68,10 @@ public class HtxMarketMakerProperties {
 
     /** linger 退出容忍亏损比例：(1−f)²·bestBid ≥ buy·(1−此值) 即可吃单。 */
     private BigDecimal sellLingerLossTolerancePct = new BigDecimal("0.002");
+
+    /** 买单挂满 buyTtlMs 仍未成交 → 穿价吃 bestAsk 以 taker 入场 总开关；false=完全关闭本功能（config-only 回退）。 */
+    private boolean buyTakerEscalationEnabled = true;
+
+    /** taker 买价差闸门：仅当 bestAsk ≤ bestBid·(1+此值) 才穿价吃单；太宽退回现状撤单重开。 */
+    private BigDecimal buyTakerMaxCrossPct = new BigDecimal("0.001");
 }
