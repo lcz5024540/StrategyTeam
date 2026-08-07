@@ -116,4 +116,17 @@ public final class MarketMakerMath {
         BigDecimal line = buyPrice.multiply(ONE.subtract(stopLossPct));
         return bestBid.compareTo(line) <= 0;
     }
+
+    /**
+     * taker 保本(容忍微亏)退出闸门：(1−f)²·bestBid ≥ buyPrice·(1 − lossTolerancePct)。
+     * bestBid 扣双边手续费后的净回款 ≥ 买入成本打 (1−容忍) 折即可吃单退出。
+     * lossTolerancePct=0 退化为严格保本（比 isNoLoss 更紧，因用 bestBid 而非挂单卖价）。
+     */
+    public static boolean isTakerExitAcceptable(BigDecimal buyPrice, BigDecimal bestBid,
+                                                BigDecimal feeRatePerSide, BigDecimal lossTolerancePct) {
+        BigDecimal oneMinusF = ONE.subtract(feeRatePerSide);
+        BigDecimal lhs = oneMinusF.multiply(oneMinusF).multiply(bestBid);
+        BigDecimal rhs = buyPrice.multiply(ONE.subtract(lossTolerancePct));
+        return lhs.compareTo(rhs) >= 0;
+    }
 }

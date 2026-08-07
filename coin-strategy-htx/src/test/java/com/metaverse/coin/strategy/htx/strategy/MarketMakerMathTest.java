@@ -186,4 +186,27 @@ class MarketMakerMathTest {
         assertTrue(MarketMakerMath.shouldStopLoss(
                 new BigDecimal("64000"), new BigDecimal("64515"), new BigDecimal("0.005")));
     }
+
+    private static BigDecimal bd(String s) { return new BigDecimal(s); }
+
+    @Test void takerExit_noFee_noTolerance_isBreakEvenAtBuyPrice() {
+        assertTrue(MarketMakerMath.isTakerExitAcceptable(bd("100"), bd("100"), bd("0"), bd("0")));
+        assertFalse(MarketMakerMath.isTakerExitAcceptable(bd("100"), bd("99.99"), bd("0"), bd("0")));
+    }
+
+    @Test void takerExit_withFee_noTolerance_needsPriceAboveBuyToCoverBothFees() {
+        assertFalse(MarketMakerMath.isTakerExitAcceptable(bd("100"), bd("100"), bd("0.002"), bd("0")));
+        assertTrue(MarketMakerMath.isTakerExitAcceptable(bd("100"), bd("100.5"), bd("0.002"), bd("0")));
+    }
+
+    @Test void takerExit_withFee_andTolerance_loosensThreshold() {
+        assertFalse(MarketMakerMath.isTakerExitAcceptable(bd("100"), bd("100"), bd("0.002"), bd("0.002")));
+        assertTrue(MarketMakerMath.isTakerExitAcceptable(bd("100"), bd("100.3"), bd("0.002"), bd("0.002")));
+        assertFalse(MarketMakerMath.isTakerExitAcceptable(bd("100"), bd("100.1"), bd("0.002"), bd("0.002")));
+    }
+
+    @Test void takerExit_toleranceEqualityBoundaryInclusive() {
+        assertTrue(MarketMakerMath.isTakerExitAcceptable(bd("1000"), bd("998"), bd("0"), bd("0.002")));
+        assertFalse(MarketMakerMath.isTakerExitAcceptable(bd("1000"), bd("997.99"), bd("0"), bd("0.002")));
+    }
 }
