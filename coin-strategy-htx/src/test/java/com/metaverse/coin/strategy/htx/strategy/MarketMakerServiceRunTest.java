@@ -151,6 +151,7 @@ class MarketMakerServiceRunTest {
     }
 
     @Test void recoverOpenCellsRechecksCancelledSubmittedBuyAndPlacesCostBasedSell() {
+        mmProps.setSellFollowEnabled(false);   // 本用例锁 legacy 成本卖价路径（follow 新行为在专门用例覆盖）
         when(recorder.findAllOpenMmCells()).thenReturn(List.of());
         HtxLockedPairEntity cancelled = new HtxLockedPairEntity();
         cancelled.setId(15L);
