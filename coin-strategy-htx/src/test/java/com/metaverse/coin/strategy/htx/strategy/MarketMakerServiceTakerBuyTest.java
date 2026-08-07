@@ -214,6 +214,42 @@ class MarketMakerServiceTakerBuyTest {
         verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
     }
 
+    @Test void ttlExpired_noLossGuardBlocks_noOrderNoReprice() {
+        // 费率异常高(0.05)使 (1−f)²·sell < buy → 防御闸门拦截：不下单、不 reprice、不 markMmCancelledBuy（镜像 repriceBuy）
+        mmProps.setFeeRatePerSide(new BigDecimal("0.05"));
+        when(spot.queryOrder(555L)).thenReturn(order("submitted", "0", "0.0003"))
+                .thenReturn(order("canceled", "0", "0.0003"));
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60000", "60030"));
+
+        svc.advanceCell(expiredBuyCell(555L));
+
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
+    }
+
+    @Test void ttlExpired_takerBuyRejectedBalanceClass_startsBackoffBlockingNewBuys() {
+        // taker 下单被余额类错误拒 → markMmCancelledBuy + 启动 backoff；随后 openNewCellIfEligible 被短路返回 -1
+        mmProps.setInsufficientBalanceBackoffMs(60_000L);
+        when(spot.queryOrder(555L)).thenReturn(order("submitted", "0", "0.0003"))
+                .thenReturn(order("canceled", "0", "0.0003"));
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60000", "60030"));
+        HtxRestResponse<String> err = new HtxRestResponse<>();
+        err.setStatus("error");
+        err.setErrCode("account-frozen-balance-insufficient-error");
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), anyString(), anyString(), anyString()))
+                .thenReturn(err);
+
+        svc.advanceCell(expiredBuyCell(555L));
+        verify(recorder).markMmCancelledBuy(100L);
+
+        // backoff 已启动：新买尝试被短路，不查深度/不建 cell
+        org.junit.jupiter.api.Assertions.assertEquals(-1L, svc.openNewCellIfEligible("btcusdt"));
+        verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString());
+    }
+
     @Test void escalatedBuy_onceFilled_nextTickOpensSellLegViaExistingMachinery() {
         MarketMakerCell escalated = MarketMakerCell.builder()
                 .pairId(100L).clientId("mm-btcusdt-1").symbol("btcusdt")

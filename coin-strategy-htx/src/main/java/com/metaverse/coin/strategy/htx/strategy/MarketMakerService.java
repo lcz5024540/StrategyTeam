@@ -280,6 +280,12 @@ public class MarketMakerService {
     private void takerBuyEscalate(MarketMakerCell cell, BigDecimal askRaw) {
         BigDecimal newBuy = askRaw.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
         BigDecimal newSell = MarketMakerMath.sellFromBuy(newBuy, mmProps.getSpreadPct());
+        // 防御闸门（不变量 δ≥f 下恒真，仅防配置异常）：(1−f)²·sell ≥ buy 不成立则放弃穿价，不下单
+        if (!MarketMakerMath.isNoLoss(newBuy, newSell, mmProps.getFeeRatePerSide())) {
+            log.warn("MM taker-buy no-loss guard blocked pairId={} newBuy={} newSell={}",
+                    cell.getPairId(), newBuy, newSell);
+            return;
+        }
         String buyClientId = cell.getClientId() + "-BUY-T" + System.currentTimeMillis();
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
                 tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",
