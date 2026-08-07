@@ -299,6 +299,19 @@ public class HtxTradeRecorder {
         }
     }
 
+    public void markMmSellReprice(long pairId, Long newSellId, BigDecimal newSellPrice) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setSellOrderId(newSellId);
+            e.setSellPrice(newSellPrice);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("markMmSellReprice failed pairId={}", pairId, ex);
+        }
+    }
+
     /** 某标的的 open cell（RESTING_BUY / RESTING_SELL）。 */
     public List<HtxLockedPairEntity> findOpenMmCells(String symbol) {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()

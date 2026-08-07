@@ -129,4 +129,15 @@ class HtxTradeRecorderMmTest {
         assertNotNull(e.getCreatedAt());                 // 重置 TTL
         assertNull(e.getStatus());                       // 状态不改（updateById 只更非空字段，仍 MM_RESTING_BUY）
     }
+
+    @Test void markMmSellReprice_updates_sell_order_and_price_keeps_status_unset() {
+        recorder.markMmSellReprice(100L, 888L, new BigDecimal("64515.00"));
+        ArgumentCaptor<HtxLockedPairEntity> cap = ArgumentCaptor.forClass(HtxLockedPairEntity.class);
+        verify(pairMapper).updateById(cap.capture());
+        HtxLockedPairEntity e = cap.getValue();
+        assertEquals(100L, e.getId());
+        assertEquals(888L, e.getSellOrderId());
+        assertEquals(0, new BigDecimal("64515.00").compareTo(e.getSellPrice()));
+        assertNull(e.getStatus());   // updateById 只更非空字段，仍 MM_RESTING_SELL
+    }
 }
