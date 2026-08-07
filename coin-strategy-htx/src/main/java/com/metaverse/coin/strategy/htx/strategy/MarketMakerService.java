@@ -421,8 +421,43 @@ public class MarketMakerService {
                         "mm-sell-terminal:" + state);
             }
             recorder.markMmDone(cell.getPairId(), filled);
+            return;
         }
-        // 仍挂着：卖单 TTL 默认 0 = 不撤，挂到成交
+        // —— 卖腿跟价（maker）——
+        if (!mmProps.isSellFollowEnabled()) return;                 // 关：退回旧「挂到成交」
+        TopOfBook top = currentTopOfBook(cell.getSymbol());
+        if (top == null) return;                                    // 盘口不可用，本 tick 不动
+        BigDecimal desiredSell = MarketMakerMath.desiredSellPrice(cell.getBuyPrice(), top.ask());
+        if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
+            repriceSell(cell, desiredSell);
+        }
+    }
+
+    /** 卖腿跟价重挂（maker）：撤旧卖单→复查竞态（全成交则完成；未终态则 defer 杜绝双卖）→新价重挂限价卖。 */
+    private void repriceSell(MarketMakerCell cell, BigDecimal desiredSell) {
+        HtxOrder post = cancelAndQuery(cell.getSellOrderId());
+        BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
+        BigDecimal amount = nz(post != null ? post.getAmount() : null);
+        if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
+            recorder.markMmDone(cell.getPairId(), filled);          // 撤单竞态：已全部成交
+            return;
+        }
+        if (post == null || !isTerminal(post.getState())) return;   // 未确认终态 → defer，杜绝双卖
+
+        BigDecimal sellable = HtxFeeMath.sellableBase(nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()))
+                .setScale(MarketMakerMath.quantityScale(cell.getSymbol()), RoundingMode.DOWN);
+        if (sellable.signum() <= 0) return;
+
+        String clientId = cell.getClientId() + "-SELL-R" + System.currentTimeMillis();
+        HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
+                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "sell-limit",
+                sellable.toPlainString(), desiredSell.toPlainString(), clientId);
+        if (resp == null || !resp.ok()) {
+            log.warn("repriceSell place failed pairId={} keep RESTING_SELL resp={}", cell.getPairId(), resp);
+            return;                                                 // 旧单已撤、库存在，下 tick 兜底
+        }
+        Long newSellId = parseOrderId(resp);
+        recorder.markMmSellReprice(cell.getPairId(), newSellId, desiredSell);
     }
 
     private void recoverCancelledBuy(HtxLockedPairEntity entity) {

@@ -370,4 +370,116 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
         verify(recorder, never()).markMmCancelledBuy(anyLong());
     }
+
+    private HtxRestResponse<HtxDepth> depthBidAsk(String bid, String ask) {
+        HtxDepth d = new HtxDepth();
+        d.setBids(List.of(new HtxPriceLevel(new BigDecimal(bid), new BigDecimal("10"))));
+        d.setAsks(List.of(new HtxPriceLevel(new BigDecimal(ask), new BigDecimal("10"))));
+        HtxRestResponse<HtxDepth> r = new HtxRestResponse<>();
+        r.setStatus("ok");
+        r.setTick(d);
+        return r;
+    }
+
+    private MarketMakerCell restingSellCell(Long sellId, String buy, String sell) {
+        MarketMakerCell c = MarketMakerCell.builder()
+                .pairId(100L).clientId("mm-btcusdt-1").symbol("btcusdt")
+                .buyPrice(new BigDecimal(buy)).sellPrice(new BigDecimal(sell))
+                .qty(new BigDecimal("0.0003")).state(HtxStatus.MM_RESTING_SELL)
+                .buyOrderId(555L).sellOrderId(sellId).createdAt(LocalDateTime.now()).build();
+        c.setBuyFilledAmount(new BigDecimal("0.0003"));
+        c.setTotalFeeBase(new BigDecimal("0.0000006"));
+        return c;
+    }
+
+    @Test void sellFollow_up_reprices_to_new_ask_maker() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.001"));
+        // 当前挂卖 60300；盘口 ask=60800 > buy=59700 → desiredSell=60800.00，漂移超阈值 → 重挂
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("canceled", "0", null, "0.0003")); // 撤单复查终态无成交
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60780", "60800"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60800.00"), anyString()))
+                .thenReturn(placeOk("888"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot).cancelOrder(777L);
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60800.00"), anyString());
+        verify(recorder).markMmSellReprice(eq(100L), eq(888L), eq(new BigDecimal("60800.00")));
+    }
+
+    @Test void sellFollow_milddown_reprices_to_break_even_floor() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.001"));
+        // ask=59600 < buy=59700 → desiredSell=保本地板 59700.00；当前挂 60300 → 漂移超阈值 → 重挂到 59700
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("canceled", "0", null, "0.0003"));
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("59650", "59600"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("59700.00"), anyString()))
+                .thenReturn(placeOk("888"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("59700.00"), anyString());
+        verify(recorder).markMmSellReprice(eq(100L), eq(888L), eq(new BigDecimal("59700.00")));
+    }
+
+    @Test void sellFollow_within_threshold_is_noop() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.001"));
+        // 当前挂 60300；ask=60310 → desiredSell=60310，|60310-60300|/60300=0.000166 < 0.001 → noop
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60290", "60310"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmSellReprice(anyLong(), anyLong(), any());
+    }
+
+    @Test void sellFollow_reprice_cancel_race_filled_marks_done() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.001"));
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("filled", "0.0003", null, "0.0003")); // 撤单竞态：已成交
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60780", "60800"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(recorder).markMmDone(eq(100L), any());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmSellReprice(anyLong(), anyLong(), any());
+    }
+
+    @Test void sellFollow_reprice_cancel_not_settled_defers() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.001"));
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("canceling", "0", null, "0.0003")); // 未终态、无成交 → defer
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60780", "60800"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot).cancelOrder(777L);
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmSellReprice(anyLong(), anyLong(), any());
+        verify(recorder, never()).markMmDone(anyLong(), any());
+    }
+
+    @Test void sellFollow_disabled_holds_to_fill_no_depth_fetch() {
+        mmProps.setSellFollowEnabled(false);
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(md, never()).depth(anyString(), anyInt());   // 关闭时连深度都不取
+    }
 }
