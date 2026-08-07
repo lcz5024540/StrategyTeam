@@ -464,8 +464,16 @@ public class MarketMakerService {
         recorder.markMmSellReprice(cell.getPairId(), newSellId, desiredSell);
     }
 
-    /** 止损割肉（taker）：bestBid ≤ 止损线 → 撤旧卖单→复查竞态（全成交则完成；未终态则 defer 杜绝双卖）→ sell-market 吃单清库存。 */
+    /** 止损割肉（taker）：bestBid ≤ 止损线 → taker 吃单清库存，resultCode=MM_STOP_LOSS。 */
     private void stopLossFlatten(MarketMakerCell cell) {
+        takerFlatten(cell, "MM_STOP_LOSS", "stop-loss market flatten");
+    }
+
+    /**
+     * taker 吃单平仓：撤旧卖单→复查竞态（全成交则完成；未终态则 defer 杜绝双卖）→ sell-market 吃单清库存。
+     * resultCode/reason 由调用方给（止损=MM_STOP_LOSS，linger=MM_LINGER_EXIT）。
+     */
+    private void takerFlatten(MarketMakerCell cell, String resultCode, String reason) {
         HtxOrder post = cancelAndQuery(cell.getSellOrderId());
         BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
         BigDecimal amount = nz(post != null ? post.getAmount() : null);
@@ -487,12 +495,13 @@ public class MarketMakerService {
                 tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "sell-market",
                 sellable.toPlainString(), null, clientId);
         if (resp == null || !resp.ok()) {
-            log.error("stopLossFlatten place failed pairId={} keep RESTING_SELL resp={}", cell.getPairId(), resp);
+            log.error("takerFlatten place failed pairId={} resultCode={} keep RESTING_SELL resp={}",
+                    cell.getPairId(), resultCode, resp);
             return;                                                 // 旧单已撤、库存在，下 tick 兜底
         }
         recorder.markMmDone(cell.getPairId(), sellable);
-        recorder.updatePairStatus(cell.getPairId(), HtxStatus.MM_DONE, "MM_STOP_LOSS",
-                "stop-loss market flatten sellable=" + sellable.toPlainString());
+        recorder.updatePairStatus(cell.getPairId(), HtxStatus.MM_DONE, resultCode,
+                reason + " sellable=" + sellable.toPlainString());
     }
 
     private void recoverCancelledBuy(HtxLockedPairEntity entity) {
