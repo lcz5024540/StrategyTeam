@@ -289,7 +289,7 @@ public class MarketMakerService {
         String buyClientId = cell.getClientId() + "-BUY-T" + System.currentTimeMillis();
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
                 tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",
-                cell.getQty().toPlainString(), newBuy.toPlainString(), buyClientId);
+                MarketMakerMath.normalizeQty(cell.getQty(), cell.getSymbol()).toPlainString(), newBuy.toPlainString(), buyClientId);
         Long newBuyId = parseOrderId(resp);
         if (newBuyId == null) {
             recorder.markMmCancelledBuy(cell.getPairId());
@@ -380,7 +380,7 @@ public class MarketMakerService {
         String buyClientId = cell.getClientId() + "-BUY-R" + System.currentTimeMillis();
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
                 tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",
-                cell.getQty().toPlainString(), newBuy.toPlainString(), buyClientId);
+                MarketMakerMath.normalizeQty(cell.getQty(), cell.getSymbol()).toPlainString(), newBuy.toPlainString(), buyClientId);
         Long newBuyId = parseOrderId(resp);
         if (newBuyId == null) {
             recorder.markMmCancelledBuy(cell.getPairId());

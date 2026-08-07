@@ -72,6 +72,15 @@ class MarketMakerServiceTakerBuyTest {
                 .buyOrderId(buyId).createdAt(LocalDateTime.now().minusHours(2)).build();
     }
 
+    private MarketMakerCell expiredBuyCellRawQty(Long buyId) {
+        // 复刻生产：cell 由 DB 加载，req_quantity decimal(36,18) → qty scale=18
+        return MarketMakerCell.builder()
+                .pairId(100L).clientId("mm-btcusdt-1").symbol("btcusdt")
+                .buyPrice(new BigDecimal("60000.00")).sellPrice(new BigDecimal("60360.00"))
+                .qty(new BigDecimal("0.000300000000000000")).state(HtxStatus.MM_RESTING_BUY)
+                .buyOrderId(buyId).createdAt(LocalDateTime.now().minusHours(2)).build();
+    }
+
     private HtxRestResponse<HtxOrder> order(String state, String filled, String amount) {
         HtxOrder o = new HtxOrder();
         o.setState(state);
@@ -248,6 +257,21 @@ class MarketMakerServiceTakerBuyTest {
         // backoff 已启动：新买尝试被短路，不查深度/不建 cell
         org.junit.jupiter.api.Assertions.assertEquals(-1L, svc.openNewCellIfEligible("btcusdt"));
         verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString());
+    }
+
+    @Test void ttlExpired_dbScale18Qty_escalatesTakerBuyWithNormalizedQty() {
+        // 生产复现：DB scale-18 qty 经 normalizeQty 归一后应发 "0.0003"（btc 精度 6，strip 尾零）
+        when(spot.queryOrder(555L)).thenReturn(order("submitted", "0", "0.0003"))
+                .thenReturn(order("canceled", "0", "0.0003"));
+        when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60000", "60030"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), eq("0.0003"), eq("60030.00"), anyString()))
+                .thenReturn(placeOk("888"));
+
+        svc.advanceCell(expiredBuyCellRawQty(555L));
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), eq("0.0003"), eq("60030.00"), anyString());
+        verify(recorder, never()).markMmCancelledBuy(anyLong());
     }
 
     @Test void escalatedBuy_onceFilled_nextTickOpensSellLegViaExistingMachinery() {
