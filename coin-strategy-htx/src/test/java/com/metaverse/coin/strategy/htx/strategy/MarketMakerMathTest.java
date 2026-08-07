@@ -226,7 +226,7 @@ class MarketMakerMathTest {
     }
 
     @Test void normalizeQty_scale18_btc_capsAt6_stripsTrailingZeros() {
-        // DB 读回 scale-18；btc 精度上限 6；HALF_DOWN 截断 + strip 尾零 → "0.0003"
+        // DB 读回 scale-18；btc 精度上限 6；DOWN 截断 + strip 尾零 → "0.0003"
         assertEquals("0.0003", MarketMakerMath.normalizeQty(
                 new BigDecimal("0.000300000000000000"), "btcusdt").toPlainString());
     }
@@ -244,7 +244,7 @@ class MarketMakerMathTest {
     }
 
     @Test void normalizeQty_halfDown_truncatesNotRoundsUp() {
-        // 第 7 位为 9，HALF_DOWN 向下：btc 截到 6 位 → "0.000399"（宁小勿超）
+        // 第 7 位为 9，DOWN 截断向零：btc 截到 6 位 → "0.000399"（宁小勿超，绝不进位）
         assertEquals("0.000399", MarketMakerMath.normalizeQty(
                 new BigDecimal("0.0003999"), "btcusdt").toPlainString());
     }
