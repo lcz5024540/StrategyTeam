@@ -123,4 +123,67 @@ class MarketMakerMathTest {
         assertEquals(4, MarketMakerMath.quantityScale("ethusdt"));
         assertEquals(6, MarketMakerMath.quantityScale("xautusdt"));
     }
+
+    @Test void sellFloor_equals_buyPrice_scale2() {
+        assertEquals(0, new BigDecimal("64515.00")
+                .compareTo(MarketMakerMath.sellFloor(new BigDecimal("64515"))));
+    }
+
+    @Test void desiredSell_up_follows_ask_when_ask_above_buy() {
+        // 涨：ask=64800 > buy=64515 → desiredSell=64800
+        assertEquals(0, new BigDecimal("64800.00").compareTo(
+                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64800"))));
+    }
+
+    @Test void desiredSell_flat_rests_at_ask_ge_buy() {
+        // 平：ask=64520 ≈ buy=64515，ask≥buy → 取 ask
+        assertEquals(0, new BigDecimal("64520.00").compareTo(
+                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64520"))));
+    }
+
+    @Test void desiredSell_milddown_rests_at_buy_floor() {
+        // 微跌：ask=64400 < buy=64515 → 取保本地板 buy=64515
+        assertEquals(0, new BigDecimal("64515.00").compareTo(
+                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64400"))));
+    }
+
+    @Test void desiredSell_is_never_below_ask() {
+        BigDecimal d = MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64800"));
+        assertTrue(d.compareTo(new BigDecimal("64800")) >= 0);
+    }
+
+    @Test void shouldRepriceSell_true_at_threshold_boundary() {
+        // |64580-64515|/64515 = 0.001007 ≥ 0.001 → true
+        assertTrue(MarketMakerMath.shouldRepriceSell(
+                new BigDecimal("64580"), new BigDecimal("64515"), new BigDecimal("0.001")));
+    }
+
+    @Test void shouldRepriceSell_false_below_threshold() {
+        // |64550-64515|/64515 = 0.000542 < 0.001 → false
+        assertFalse(MarketMakerMath.shouldRepriceSell(
+                new BigDecimal("64550"), new BigDecimal("64515"), new BigDecimal("0.001")));
+    }
+
+    @Test void shouldRepriceSell_true_when_desired_drops_below_current() {
+        // 反向漂移（desired 低于当前挂价）也触发：|64000-64515|/64000 大
+        assertTrue(MarketMakerMath.shouldRepriceSell(
+                new BigDecimal("64000"), new BigDecimal("64515"), new BigDecimal("0.001")));
+    }
+
+    @Test void shouldStopLoss_true_when_bestbid_exactly_on_line() {
+        // 止损线 = 64515*(1-0.005) = 64192.425；bestBid 恰好等于 → true
+        assertTrue(MarketMakerMath.shouldStopLoss(
+                new BigDecimal("64192.425"), new BigDecimal("64515"), new BigDecimal("0.005")));
+    }
+
+    @Test void shouldStopLoss_false_when_bestbid_above_line() {
+        // bestBid=64200 > 64192.425 → false
+        assertFalse(MarketMakerMath.shouldStopLoss(
+                new BigDecimal("64200"), new BigDecimal("64515"), new BigDecimal("0.005")));
+    }
+
+    @Test void shouldStopLoss_true_on_deep_drop() {
+        assertTrue(MarketMakerMath.shouldStopLoss(
+                new BigDecimal("64000"), new BigDecimal("64515"), new BigDecimal("0.005")));
+    }
 }

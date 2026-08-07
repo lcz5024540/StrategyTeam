@@ -93,4 +93,27 @@ public final class MarketMakerMath {
         }
         return true;
     }
+
+    /** 保本卖价地板 = 买入价（scale=PRICE_SCALE）。 */
+    public static BigDecimal sellFloor(BigDecimal buyPrice) {
+        return buyPrice.setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /** 常态目标卖价 = max(保本地板, bestAsk)，恒 ≥ bestAsk（maker）。 */
+    public static BigDecimal desiredSellPrice(BigDecimal buyPrice, BigDecimal bestAsk) {
+        return buyPrice.max(bestAsk).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /** 卖腿跟价闸门：|desiredSell − currentSell| / currentSell ≥ thresholdPct（含等号）。 */
+    public static boolean shouldRepriceSell(BigDecimal desiredSell, BigDecimal currentSell, BigDecimal thresholdPct) {
+        BigDecimal rel = desiredSell.subtract(currentSell).abs()
+                .divide(currentSell, 10, RoundingMode.HALF_UP);
+        return rel.compareTo(thresholdPct) >= 0;
+    }
+
+    /** 止损闸门：bestBid ≤ buyPrice·(1 − stopLossPct)。 */
+    public static boolean shouldStopLoss(BigDecimal bestBid, BigDecimal buyPrice, BigDecimal stopLossPct) {
+        BigDecimal line = buyPrice.multiply(ONE.subtract(stopLossPct));
+        return bestBid.compareTo(line) <= 0;
+    }
 }
