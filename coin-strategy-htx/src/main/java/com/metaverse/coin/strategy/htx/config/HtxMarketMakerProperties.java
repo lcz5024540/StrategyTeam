@@ -59,4 +59,13 @@ public class HtxMarketMakerProperties {
 
     /** 卖价漂移超此比例才重挂（防抖、省撤单费）。 */
     private BigDecimal sellRepriceThresholdPct = new BigDecimal("0.001");
+
+    /** 卖单挂太久 → 保本(容忍微亏)吃单退出 总开关；false=完全关闭本功能（config-only 回退）。 */
+    private boolean sellLingerExitEnabled = true;
+
+    /** 卖单在 RESTING_SELL 挂满此时长（ms）才触发 linger taker 退出。 */
+    private long sellLingerTimeoutMs = 120_000L;
+
+    /** linger 退出容忍亏损比例：(1−f)²·bestBid ≥ buy·(1−此值) 即可吃单。 */
+    private BigDecimal sellLingerLossTolerancePct = new BigDecimal("0.002");
 }

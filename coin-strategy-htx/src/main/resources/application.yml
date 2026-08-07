@@ -70,6 +70,9 @@ htx:
     sell-follow-enabled: ${HTX_MM_SELL_FOLLOW_ENABLED:true}   # 卖腿跟价+止损总开关；false=退回旧固定价挂到成交
     stop-loss-pct: ${HTX_MM_STOP_LOSS_PCT:0.005}             # 跌破 buy·(1−此值) 触发 taker 割肉
     sell-reprice-threshold-pct: ${HTX_MM_SELL_REPRICE_THRESHOLD_PCT:0.001}  # 卖价漂移超此比例才重挂
+    sell-linger-exit-enabled: ${HTX_MM_SELL_LINGER_EXIT_ENABLED:true}
+    sell-linger-timeout-ms: ${HTX_MM_SELL_LINGER_TIMEOUT_MS:120000}
+    sell-linger-loss-tolerance-pct: ${HTX_MM_SELL_LINGER_LOSS_TOLERANCE_PCT:0.002}
   contract:
     # USDT 本位永续合约模式。默认整模块关闭；启用后仍默认 dry-run。
     enabled: ${HTX_CONTRACT_ENABLED:false}
