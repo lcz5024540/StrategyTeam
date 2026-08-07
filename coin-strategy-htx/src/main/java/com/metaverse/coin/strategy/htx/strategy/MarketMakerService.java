@@ -431,6 +431,14 @@ public class MarketMakerService {
             stopLossFlatten(cell);                                  // bestBid 跌破止损线 → 吃单割肉
             return;
         }
+        // —— 卖腿挂太久 → 保本(容忍微亏) taker 退出 ——（止损优先，已在上面拦截）
+        if (mmProps.isSellLingerExitEnabled()
+                && isSellLingerExpired(cell)
+                && MarketMakerMath.isTakerExitAcceptable(cell.getBuyPrice(), top.bid(),
+                        mmProps.getFeeRatePerSide(), mmProps.getSellLingerLossTolerancePct())) {
+            lingerExitFlatten(cell);
+            return;
+        }
         BigDecimal desiredSell = MarketMakerMath.desiredSellPrice(cell.getBuyPrice(), top.ask());
         if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
             repriceSell(cell, desiredSell);
@@ -467,6 +475,11 @@ public class MarketMakerService {
     /** 止损割肉（taker）：bestBid ≤ 止损线 → taker 吃单清库存，resultCode=MM_STOP_LOSS。 */
     private void stopLossFlatten(MarketMakerCell cell) {
         takerFlatten(cell, "MM_STOP_LOSS", "stop-loss market flatten");
+    }
+
+    /** 卖单挂太久（linger 超时）且 taker 仍容忍保本 → taker 吃单退出，resultCode=MM_LINGER_EXIT。 */
+    private void lingerExitFlatten(MarketMakerCell cell) {
+        takerFlatten(cell, "MM_LINGER_EXIT", "linger taker exit");
     }
 
     /**
@@ -527,6 +540,15 @@ public class MarketMakerService {
             return false;
         }
         return Duration.between(cell.getCreatedAt(), LocalDateTime.now()).toMillis() > mmProps.getBuyTtlMs();
+    }
+
+    /** 卖腿 linger 超时判定：RESTING_SELL 起（updatedAt）挂满 sellLingerTimeoutMs 即超时。timeout≤0 或 updatedAt=null 视为未超时。 */
+    private boolean isSellLingerExpired(MarketMakerCell cell) {
+        if (mmProps.getSellLingerTimeoutMs() <= 0 || cell.getUpdatedAt() == null) {
+            return false;
+        }
+        return Duration.between(cell.getUpdatedAt(), LocalDateTime.now()).toMillis()
+                > mmProps.getSellLingerTimeoutMs();
     }
 
     private boolean isBuyBalanceBackoffActive() {
