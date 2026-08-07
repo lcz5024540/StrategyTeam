@@ -276,6 +276,27 @@ public class MarketMakerService {
         return (bid == null || bid.signum() <= 0) ? null : bid;
     }
 
+    /** 盘口最优买卖价快照。 */
+    private record TopOfBook(BigDecimal bid, BigDecimal ask) {}
+
+    /** 取当前盘口最优买/卖价；任一不可用（深度异常/为空/≤0）返回 null（本 tick 不跟价）。 */
+    private TopOfBook currentTopOfBook(String symbol) {
+        HtxRestResponse<HtxDepth> depthResp = htxApiService.getMarketDataService().depth(symbol, DEPTH_LEVELS);
+        if (depthResp == null || !depthResp.ok() || depthResp.payload() == null) {
+            return null;
+        }
+        HtxDepth depth = depthResp.payload();
+        if (isEmpty(depth.getBids()) || isEmpty(depth.getAsks())) {
+            return null;
+        }
+        BigDecimal bid = depth.getBids().get(0).getPrice();
+        BigDecimal ask = depth.getAsks().get(0).getPrice();
+        if (bid == null || ask == null || bid.signum() <= 0 || ask.signum() <= 0) {
+            return null;
+        }
+        return new TopOfBook(bid, ask);
+    }
+
     /**
      * 跟价重挂：撤旧买单→复查竞态（撤单期间成交则转卖腿）→在新 bestBid 重下买单→原地更新 cell。
      * 重挂失败（新单被拒）关闭 cell（此时无库存、无敞口）。
@@ -330,11 +351,20 @@ public class MarketMakerService {
                              BigDecimal filledCashAmount) {
         BigDecimal actualBuyPrice = MarketMakerMath.actualBuyPrice(
                 filledCashAmount, filledBase, cell.getBuyPrice());
-        BigDecimal sellPrice = MarketMakerMath.sellFromBuy(actualBuyPrice, mmProps.getSpreadPct());
-        if (!MarketMakerMath.isNoLoss(actualBuyPrice, sellPrice, mmProps.getFeeRatePerSide())) {
-            log.error("MM actual-fill no-loss gate blocked pairId={} actualBuy={} sell={}",
-                    cell.getPairId(), actualBuyPrice, sellPrice);
-            return;
+        BigDecimal sellPrice;
+        if (mmProps.isSellFollowEnabled()) {
+            // follow：初始卖价取 max(保本地板 buy, bestAsk)。盘口不可用则退回保本地板 buy。
+            TopOfBook top = currentTopOfBook(cell.getSymbol());
+            BigDecimal ask = (top != null) ? top.ask() : actualBuyPrice;
+            sellPrice = MarketMakerMath.desiredSellPrice(actualBuyPrice, ask);
+        } else {
+            // legacy：固定高价挂到成交，保留不亏闸门。
+            sellPrice = MarketMakerMath.sellFromBuy(actualBuyPrice, mmProps.getSpreadPct());
+            if (!MarketMakerMath.isNoLoss(actualBuyPrice, sellPrice, mmProps.getFeeRatePerSide())) {
+                log.error("MM actual-fill no-loss gate blocked pairId={} actualBuy={} sell={}",
+                        cell.getPairId(), actualBuyPrice, sellPrice);
+                return;
+            }
         }
         recorder.markMmSellPending(cell.getPairId(), filledBase, nz(buyFeeBase), sellPrice);
         submitSellLeg(cell.getPairId(), cell.getClientId(), cell.getSymbol(),
