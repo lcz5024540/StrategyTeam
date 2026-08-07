@@ -49,4 +49,11 @@ class HtxMarketMakerPropertiesTest {
         assertEquals(5, p.getMaxConcurrentCellsPerSymbol());
         assertEquals(60_000L, p.getInsufficientBalanceBackoffMs());
     }
+
+    @Test void sellFollowDefaultsEnabledWithStopLossAndThreshold() {
+        HtxMarketMakerProperties p = new HtxMarketMakerProperties();
+        assertTrue(p.isSellFollowEnabled());
+        assertEquals(0, new BigDecimal("0.005").compareTo(p.getStopLossPct()));
+        assertEquals(0, new BigDecimal("0.001").compareTo(p.getSellRepriceThresholdPct()));
+    }
 }

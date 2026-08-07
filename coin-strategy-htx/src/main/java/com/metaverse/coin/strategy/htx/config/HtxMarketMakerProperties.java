@@ -50,4 +50,13 @@ public class HtxMarketMakerProperties {
 
     /** 可用 USDT 不足时暂停所有新买单的时长（ms），到期后重新查余额自动恢复。 */
     private long insufficientBalanceBackoffMs = 300_000L;
+
+    /** 卖腿跟价+止损总开关；false=退回旧「固定价挂到成交」（config-only 回退）。 */
+    private boolean sellFollowEnabled = true;
+
+    /** 跌破 buy·(1−此值) 触发 taker 割肉。 */
+    private BigDecimal stopLossPct = new BigDecimal("0.005");
+
+    /** 卖价漂移超此比例才重挂（防抖、省撤单费）。 */
+    private BigDecimal sellRepriceThresholdPct = new BigDecimal("0.001");
 }

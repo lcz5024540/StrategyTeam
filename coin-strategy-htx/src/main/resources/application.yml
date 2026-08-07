@@ -67,6 +67,9 @@ htx:
     reprice-threshold-pct: ${HTX_MM_REPRICE_THRESHOLD_PCT:0.001}  # 买价漂移≥0.1%即撤旧单在新bestBid重挂
     insufficient-balance-backoff-ms: ${HTX_MM_INSUFFICIENT_BALANCE_BACKOFF_MS:300000} # USDT不足后5min只查恢复，不重复下单
     sell-ttl-ms: ${HTX_MM_SELL_TTL_MS:0}               # 0=卖单不设 TTL，一直挂到成交
+    sell-follow-enabled: ${HTX_MM_SELL_FOLLOW_ENABLED:true}   # 卖腿跟价+止损总开关；false=退回旧固定价挂到成交
+    stop-loss-pct: ${HTX_MM_STOP_LOSS_PCT:0.005}             # 跌破 buy·(1−此值) 触发 taker 割肉
+    sell-reprice-threshold-pct: ${HTX_MM_SELL_REPRICE_THRESHOLD_PCT:0.001}  # 卖价漂移超此比例才重挂
   contract:
     # USDT 本位永续合约模式。默认整模块关闭；启用后仍默认 dry-run。
     enabled: ${HTX_CONTRACT_ENABLED:false}
