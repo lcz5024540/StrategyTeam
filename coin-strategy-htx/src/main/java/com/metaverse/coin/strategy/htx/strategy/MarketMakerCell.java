@@ -26,6 +26,7 @@ public class MarketMakerCell {
     private BigDecimal buyFilledAmount;
     private BigDecimal totalFeeBase;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     public static MarketMakerCell fromEntity(HtxLockedPairEntity e) {
         return MarketMakerCell.builder()
@@ -41,6 +42,7 @@ public class MarketMakerCell {
                 .buyFilledAmount(e.getBuyFilledAmount())
                 .totalFeeBase(e.getTotalFeeBase())
                 .createdAt(e.getCreatedAt())
+                .updatedAt(e.getUpdatedAt())
                 .build();
     }
 }
