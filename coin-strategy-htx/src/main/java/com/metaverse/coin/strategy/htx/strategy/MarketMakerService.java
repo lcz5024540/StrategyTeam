@@ -249,11 +249,56 @@ public class MarketMakerService {
             BigDecimal postFilled = post == null ? BigDecimal.ZERO : nz(post.getFilledAmount());
             if (postFilled.signum() > 0) {
                 openSellLeg(cell, postFilled, post.getFilledFees(), post.getFilledCashAmount()); // 撤单竞态：有成交则转挂卖
-            } else {
-                recorder.markMmCancelledBuy(cell.getPairId());
-                log.info("MM buy expired & cancelled pairId={} buyId={}", cell.getPairId(), buyId);
+                return;
             }
+            // —— taker 升级：TTL 到点仍未成交 + 价差达标 → 穿价吃 ask 立即入场（镜像卖腿 linger 退出） ——
+            if (mmProps.isBuyTakerEscalationEnabled()) {
+                // 安全：撤单未确认终态（仍 submitted/canceling）→ defer，杜绝旧单未死即重下造成双买/裸多；下一 tick 再评估
+                if (post == null || !isTerminal(post.getState())) {
+                    log.info("MM taker-buy escalate deferred: cancel not settled pairId={} buyId={} state={}",
+                            cell.getPairId(), buyId, post == null ? "null" : post.getState());
+                    return;
+                }
+                TopOfBook top = currentTopOfBook(cell.getSymbol());
+                if (top != null
+                        && MarketMakerMath.isTakerBuyAcceptable(top.bid(), top.ask(), mmProps.getBuyTakerMaxCrossPct())
+                        && hasSufficientQuoteBalance(cell.getQty().multiply(top.ask()))) {
+                    takerBuyEscalate(cell, top.ask());
+                    return;
+                }
+            }
+            recorder.markMmCancelledBuy(cell.getPairId()); // 价差太宽/关闭/余额不足 → 退回现状撤单重开
+            log.info("MM buy expired & cancelled pairId={} buyId={}", cell.getPairId(), buyId);
         }
+    }
+
+    /**
+     * taker 买腿升级：TTL 到点仍未成交且价差达标时，在 bestAsk 重下「可成交限价买单」立即以 taker 入场。
+     * 仿 repriceBuy 结构但跳过撤单（进入前 post 已确认终态、旧单已死），下新单 + markMmReprice 保活 cell。
+     * 成交后由下一 tick 既有成交检测（advanceRestingBuy 顶部）自动推进到 openSellLeg。
+     */
+    private void takerBuyEscalate(MarketMakerCell cell, BigDecimal askRaw) {
+        BigDecimal newBuy = askRaw.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
+        BigDecimal newSell = MarketMakerMath.sellFromBuy(newBuy, mmProps.getSpreadPct());
+        String buyClientId = cell.getClientId() + "-BUY-T" + System.currentTimeMillis();
+        HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
+                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",
+                cell.getQty().toPlainString(), newBuy.toPlainString(), buyClientId);
+        Long newBuyId = parseOrderId(resp);
+        if (newBuyId == null) {
+            recorder.markMmCancelledBuy(cell.getPairId());
+            if (isInsufficientBalanceError(resp)) {
+                blockNewBuysForInsufficientBalance(null, cell.getQty().multiply(newBuy));
+            }
+            log.warn("MM taker-buy escalate rejected pairId={} ask={} errCode={} errMsg={}",
+                    cell.getPairId(), newBuy,
+                    resp == null ? "null" : resp.getErrCode(),
+                    resp == null ? "null" : resp.getErrMsg());
+            return;
+        }
+        recorder.markMmReprice(cell.getPairId(), newBuyId, newBuy, newSell);
+        log.info("MM taker-buy escalate pairId={} ask={} newSell={} newBuyId={}",
+                cell.getPairId(), newBuy, newSell, newBuyId);
     }
 
     /** 撤旧买单并复查；返回复查到的订单（可能因竞态已成交），查询失败返回 null。 */
