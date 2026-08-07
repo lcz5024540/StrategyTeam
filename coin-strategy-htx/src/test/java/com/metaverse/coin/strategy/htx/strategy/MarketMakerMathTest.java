@@ -224,4 +224,28 @@ class MarketMakerMathTest {
         // btc 窄价差 bid 64000 / ask 64010（~0.016%）在 x=0.001 下 → true（可吃）
         assertTrue(MarketMakerMath.isTakerBuyAcceptable(bd("64000"), bd("64010"), bd("0.001")));
     }
+
+    @Test void normalizeQty_scale18_btc_capsAt6_stripsTrailingZeros() {
+        // DB 读回 scale-18；btc 精度上限 6；HALF_DOWN 截断 + strip 尾零 → "0.0003"
+        assertEquals("0.0003", MarketMakerMath.normalizeQty(
+                new BigDecimal("0.000300000000000000"), "btcusdt").toPlainString());
+    }
+
+    @Test void normalizeQty_scale18_eth_capsAt4() {
+        // eth 精度上限 4；0.0105... scale-18 → "0.0105"
+        assertEquals("0.0105", MarketMakerMath.normalizeQty(
+                new BigDecimal("0.010500000000000000"), "ethusdt").toPlainString());
+    }
+
+    @Test void normalizeQty_scale4_input_isIdempotent() {
+        // open 路径 qtyFor 产出的 scale-4 值，归一后仍 "0.0003"（既有服务层断言依赖此不变）
+        assertEquals("0.0003", MarketMakerMath.normalizeQty(
+                new BigDecimal("0.0003"), "btcusdt").toPlainString());
+    }
+
+    @Test void normalizeQty_halfDown_truncatesNotRoundsUp() {
+        // 第 7 位为 9，HALF_DOWN 向下：btc 截到 6 位 → "0.000399"（宁小勿超）
+        assertEquals("0.000399", MarketMakerMath.normalizeQty(
+                new BigDecimal("0.0003999"), "btcusdt").toPlainString());
+    }
 }

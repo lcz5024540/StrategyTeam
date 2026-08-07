@@ -71,6 +71,15 @@ public final class MarketMakerMath {
         return 4;
     }
 
+    /**
+     * 下单数量归一：按标的精度上限截断（DOWN 宁小勿超），再剥尾零使输出为最小精确表示。
+     * 修复 P1：DB 读回的 req_quantity 为 decimal(36,18)（scale 18），直发超 HTX per-symbol
+     * amount-precision 上限被拒。归一后与 open 路径 qtyFor 的 scale-4 输出（如 "0.0003"）一致。
+     */
+    public static BigDecimal normalizeQty(BigDecimal qty, String symbol) {
+        return qty.setScale(quantityScale(symbol), RoundingMode.DOWN).stripTrailingZeros();
+    }
+
     /** 不亏闸门：(1−f)²·sellPrice ≥ buyPrice。 */
     public static boolean isNoLoss(BigDecimal buyPrice, BigDecimal sellPrice, BigDecimal feeRatePerSide) {
         BigDecimal oneMinusF = ONE.subtract(feeRatePerSide);
