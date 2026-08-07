@@ -209,4 +209,19 @@ class MarketMakerMathTest {
         assertTrue(MarketMakerMath.isTakerExitAcceptable(bd("1000"), bd("998"), bd("0"), bd("0.002")));
         assertFalse(MarketMakerMath.isTakerExitAcceptable(bd("1000"), bd("997.99"), bd("0"), bd("0.002")));
     }
+
+    @Test void takerBuy_acceptable_atBoundaryInclusive() {
+        // 恰在边界 ask == bid·(1+x)：bid=60000, x=0.001 → 线=60060，ask=60060 → true（含等号）
+        assertTrue(MarketMakerMath.isTakerBuyAcceptable(bd("60000"), bd("60060"), bd("0.001")));
+        // 略窄 → true；略宽 → false
+        assertTrue(MarketMakerMath.isTakerBuyAcceptable(bd("60000"), bd("60059.99"), bd("0.001")));
+        assertFalse(MarketMakerMath.isTakerBuyAcceptable(bd("60000"), bd("60060.01"), bd("0.001")));
+    }
+
+    @Test void takerBuy_wideSpread_xaut_blocked_narrowSpread_btc_passes() {
+        // xautusdt 宽价差 bid 4265 / ask 4291（~0.6%）在 x=0.001 下 → false（被挡）
+        assertFalse(MarketMakerMath.isTakerBuyAcceptable(bd("4265"), bd("4291"), bd("0.001")));
+        // btc 窄价差 bid 64000 / ask 64010（~0.016%）在 x=0.001 下 → true（可吃）
+        assertTrue(MarketMakerMath.isTakerBuyAcceptable(bd("64000"), bd("64010"), bd("0.001")));
+    }
 }

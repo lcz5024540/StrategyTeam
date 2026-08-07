@@ -129,4 +129,15 @@ public final class MarketMakerMath {
         BigDecimal rhs = buyPrice.multiply(ONE.subtract(lossTolerancePct));
         return lhs.compareTo(rhs) >= 0;
     }
+
+    /**
+     * taker 买入价差闸门：bestAsk ≤ bestBid·(1 + maxCrossPct)。
+     * 盘口价差（ask 相对 bid）在容忍范围内才穿价吃单，防止在宽价差稀薄币上被宰。
+     * bestBid/bestAsk/maxCrossPct 的合法性（≤0 过滤）由调用方 currentTopOfBook 保证。
+     */
+    public static boolean isTakerBuyAcceptable(BigDecimal bestBid, BigDecimal bestAsk,
+                                               BigDecimal maxCrossPct) {
+        BigDecimal ceiling = bestBid.multiply(ONE.add(maxCrossPct));
+        return bestAsk.compareTo(ceiling) <= 0;
+    }
 }
