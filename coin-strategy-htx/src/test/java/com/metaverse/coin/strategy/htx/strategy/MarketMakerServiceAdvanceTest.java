@@ -482,4 +482,56 @@ class MarketMakerServiceAdvanceTest {
         verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
         verify(md, never()).depth(anyString(), anyInt());   // 关闭时连深度都不取
     }
+
+    @Test void sellFollow_stopLoss_flattens_via_market_taker() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setStopLossPct(new BigDecimal("0.005"));
+        // 止损线=59700*(1-0.005)=59401.5；bestBid=59300 ≤ 线 → 割肉
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("canceled", "0", null, "0.0003")); // 撤单终态无成交
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("59300", "59320"));
+        // sellable = 0.0003 - 0.0000006 = 0.0002994 → btc scale6 DOWN = 0.000299
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-market"), eq("0.000299"), isNull(), anyString()))
+                .thenReturn(placeOk("999"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot).cancelOrder(777L);
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-market"), eq("0.000299"), isNull(), anyString());
+        verify(recorder).markMmDone(eq(100L), any());
+        verify(recorder).updatePairStatus(eq(100L), eq(HtxStatus.MM_DONE), eq("MM_STOP_LOSS"), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+    }
+
+    @Test void sellFollow_stopLoss_cancel_race_filled_marks_done_no_market_sell() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setStopLossPct(new BigDecimal("0.005"));
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("filled", "0.0003", null, "0.0003")); // 撤单竞态：已成交
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("59300", "59320"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(recorder).markMmDone(eq(100L), any());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-market"), anyString(), any(), anyString());
+        verify(recorder, never()).updatePairStatus(anyLong(), any(), eq("MM_STOP_LOSS"), anyString());
+    }
+
+    @Test void sellFollow_stopLoss_cancel_not_settled_defers_no_market_sell() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setStopLossPct(new BigDecimal("0.005"));
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("canceling", "0", null, "0.0003")); // 未终态 → defer
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("59300", "59320"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot).cancelOrder(777L);
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-market"), anyString(), any(), anyString());
+        verify(recorder, never()).markMmDone(anyLong(), any());
+        verify(recorder, never()).updatePairStatus(anyLong(), any(), eq("MM_STOP_LOSS"), anyString());
+    }
 }

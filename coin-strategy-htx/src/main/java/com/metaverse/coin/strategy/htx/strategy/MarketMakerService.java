@@ -427,6 +427,10 @@ public class MarketMakerService {
         if (!mmProps.isSellFollowEnabled()) return;                 // 关：退回旧「挂到成交」
         TopOfBook top = currentTopOfBook(cell.getSymbol());
         if (top == null) return;                                    // 盘口不可用，本 tick 不动
+        if (MarketMakerMath.shouldStopLoss(top.bid(), cell.getBuyPrice(), mmProps.getStopLossPct())) {
+            stopLossFlatten(cell);                                  // bestBid 跌破止损线 → 吃单割肉
+            return;
+        }
         BigDecimal desiredSell = MarketMakerMath.desiredSellPrice(cell.getBuyPrice(), top.ask());
         if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
             repriceSell(cell, desiredSell);
@@ -458,6 +462,37 @@ public class MarketMakerService {
         }
         Long newSellId = parseOrderId(resp);
         recorder.markMmSellReprice(cell.getPairId(), newSellId, desiredSell);
+    }
+
+    /** 止损割肉（taker）：bestBid ≤ 止损线 → 撤旧卖单→复查竞态（全成交则完成；未终态则 defer 杜绝双卖）→ sell-market 吃单清库存。 */
+    private void stopLossFlatten(MarketMakerCell cell) {
+        HtxOrder post = cancelAndQuery(cell.getSellOrderId());
+        BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
+        BigDecimal amount = nz(post != null ? post.getAmount() : null);
+        if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
+            recorder.markMmDone(cell.getPairId(), filled);          // 撤单竞态：已全部成交
+            return;
+        }
+        if (post == null || !isTerminal(post.getState())) return;   // 未确认终态 → defer，杜绝双卖
+
+        BigDecimal sellable = HtxFeeMath.sellableBase(nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()))
+                .setScale(MarketMakerMath.quantityScale(cell.getSymbol()), RoundingMode.DOWN);
+        if (sellable.signum() <= 0) {
+            recorder.markMmDone(cell.getPairId(), BigDecimal.ZERO);  // 无可卖库存，直接收敛
+            return;
+        }
+
+        String clientId = cell.getClientId() + "-SELL-SL" + System.currentTimeMillis();
+        HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
+                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "sell-market",
+                sellable.toPlainString(), null, clientId);
+        if (resp == null || !resp.ok()) {
+            log.error("stopLossFlatten place failed pairId={} keep RESTING_SELL resp={}", cell.getPairId(), resp);
+            return;                                                 // 旧单已撤、库存在，下 tick 兜底
+        }
+        recorder.markMmDone(cell.getPairId(), sellable);
+        recorder.updatePairStatus(cell.getPairId(), HtxStatus.MM_DONE, "MM_STOP_LOSS",
+                "stop-loss market flatten sellable=" + sellable.toPlainString());
     }
 
     private void recoverCancelledBuy(HtxLockedPairEntity entity) {
