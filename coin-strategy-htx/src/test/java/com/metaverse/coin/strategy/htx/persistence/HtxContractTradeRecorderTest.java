@@ -62,4 +62,26 @@ class HtxContractTradeRecorderTest {
         assertEquals(2L, captor.getValue().getReqVolume());
         assertEquals(4, captor.getValue().getLeverage());
     }
+
+    @Test
+    void recordDryRunPersistsCompletedSimulation() {
+        when(mapper.insert(any())).thenAnswer(invocation -> {
+            ((HtxContractCycleEntity) invocation.getArgument(0)).setId(43L);
+            return 1;
+        });
+        HtxContractCycleRequest request = HtxContractCycleRequest.builder()
+                .clientOrderId(101L).volume(2L)
+                .openPrice(new BigDecimal("4333.34")).closePrice(new BigDecimal("4359.35")).build();
+
+        long id = recorder.recordDryRun(request, "XAUT-USDT", 50, "dry-run");
+
+        assertEquals(43L, id);
+        ArgumentCaptor<HtxContractCycleEntity> captor = ArgumentCaptor.forClass(HtxContractCycleEntity.class);
+        verify(mapper).insert(captor.capture());
+        assertEquals(HtxContractTradeRecorder.DRY_RUN_DONE, captor.getValue().getStatus());
+        assertEquals("XAUT-USDT", captor.getValue().getContractCode());
+        assertEquals(50, captor.getValue().getLeverage());
+        assertEquals(BigDecimal.ZERO, captor.getValue().getOpenFilledVolume());
+        assertEquals(BigDecimal.ZERO, captor.getValue().getCloseFilledVolume());
+    }
 }

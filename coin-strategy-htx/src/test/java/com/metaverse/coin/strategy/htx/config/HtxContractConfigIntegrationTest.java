@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,5 +33,7 @@ class HtxContractConfigIntegrationTest {
         assertTrue(properties.isDryRun());
         assertEquals("https://api.hbdm.com", properties.getBaseUrl());
         assertTrue(properties.getContractCodes().contains("XAUT-USDT"));
+        assertFalse(properties.isAutoTestEnabled());
+        assertEquals(2L, properties.getAutoTestVolume());
     }
 }

@@ -32,4 +32,13 @@ public class HtxContractProperties {
     private long fillPollIntervalMs = 500L;
     private long fillTimeoutMs = 10_000L;
     private int queryFailureThreshold = 5;
+
+    /** Periodic simulation only. The scheduler refuses to run outside dry-run mode. */
+    private boolean autoTestEnabled = false;
+    private long autoTestInitialDelayMs = 20_000L;
+    private long autoTestIntervalMs = 60_000L;
+    /** Number of contracts, not XAUT quantity. */
+    private long autoTestVolume = 2L;
+    /** Simulated close target above the current best ask. */
+    private BigDecimal autoTestTargetReturnPct = new BigDecimal("0.006");
 }

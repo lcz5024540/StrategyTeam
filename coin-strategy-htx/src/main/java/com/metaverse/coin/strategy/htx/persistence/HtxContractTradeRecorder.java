@@ -27,6 +27,7 @@ public class HtxContractTradeRecorder {
     public static final String CLOSE_PENDING = "CLOSE_PENDING";
     public static final String EXPOSURE = "EXPOSURE";
     public static final String DONE = "DONE";
+    public static final String DRY_RUN_DONE = "DRY_RUN_DONE";
 
     private static final List<String> ACTIVE_STATUSES = List.of(
             INTENT, OPEN_SENT, OPEN_FILLED, OPEN_UNKNOWN, CLOSE_PENDING, EXPOSURE);
@@ -61,6 +62,28 @@ public class HtxContractTradeRecorder {
             return entity.getId();
         } catch (Exception e) {
             throw new HtxPersistenceException("contract intent insert failed", e);
+        }
+    }
+
+    /** Persist one completed simulated open/close cycle for DB/log cross-checking. */
+    public long recordDryRun(HtxContractCycleRequest request, String contractCode, int leverage, String message) {
+        try {
+            HtxContractCycleEntity entity = new HtxContractCycleEntity();
+            entity.setClientOrderId(request.getClientOrderId());
+            entity.setContractCode(contractCode);
+            entity.setReqVolume(request.getVolume());
+            entity.setOpenPrice(request.getOpenPrice());
+            entity.setClosePrice(request.getClosePrice());
+            entity.setLeverage(leverage);
+            entity.setStatus(DRY_RUN_DONE);
+            entity.setOpenFilledVolume(BigDecimal.ZERO);
+            entity.setCloseFilledVolume(BigDecimal.ZERO);
+            entity.setMessage(message);
+            entity.setUpdatedAt(LocalDateTime.now());
+            mapper.insert(entity);
+            return entity.getId();
+        } catch (Exception e) {
+            throw new HtxPersistenceException("contract dry-run insert failed", e);
         }
     }
 

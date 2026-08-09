@@ -100,6 +100,12 @@ htx:
     fill-poll-interval-ms: 500
     fill-timeout-ms: 10000
     query-failure-threshold: 5
+    # 自动往返仅用于 dry-run；代码会在 dry-run=false 时拒绝执行。
+    auto-test-enabled: ${HTX_CONTRACT_AUTO_TEST_ENABLED:false}
+    auto-test-initial-delay-ms: ${HTX_CONTRACT_AUTO_TEST_INITIAL_DELAY_MS:20000}
+    auto-test-interval-ms: ${HTX_CONTRACT_AUTO_TEST_INTERVAL_MS:60000}
+    auto-test-volume: ${HTX_CONTRACT_AUTO_TEST_VOLUME:2}
+    auto-test-target-return-pct: ${HTX_CONTRACT_AUTO_TEST_TARGET_RETURN_PCT:0.006}
 
 mybatis-plus:
   configuration:

@@ -110,3 +110,15 @@ HTX_CONTRACT_MAX_SINGLE_NOTIONAL=50
 
 - [HTX USDT Margined Contracts API Reference](https://huobiapi.github.io/docs/usdt_swap/v1/en/)
 - [HTX XAUT-USDT contract metadata](https://api.hbdm.com/linear-swap-api/v1/swap_contract_info?contract_code=XAUT-USDT&business_type=swap)
+
+## 8. v2：XAUT 50x 自动 dry-run 周期（2026-08-09）
+
+为替代现货做市测试，新增 `HtxContractAutoTestScheduler`：仅当
+`HTX_CONTRACT_AUTO_TEST_ENABLED=true` 且 `dry-run=true/live-enabled=false` 时运行。
+每轮只接受配置中唯一的合约代码，从当前 best ask 生成模拟开多价，并按
+`auto-test-target-return-pct` 向上对齐 `price_tick` 生成限价平多价；调用既有公共元数据、
+双边深度、名义额和本地杠杆门禁后，将成功周期记为 `DRY_RUN_DONE`。
+
+本模式不调用账户、持仓、切杠杆或下单私有接口，不代表账户已具备 50x 实盘能力。
+切换实盘前仍必须由 `swap_available_level_rate` 明确返回 50，且 TD-021/TD-023 的恢复、
+账户/API 兼容和单实例约束全部验收通过。自动测试调度器在非 dry-run 配置下硬拒绝运行。
