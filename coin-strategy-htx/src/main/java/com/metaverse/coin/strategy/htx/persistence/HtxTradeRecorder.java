@@ -224,12 +224,13 @@ public class HtxTradeRecorder {
      * 即使卖单 REST 失败或进程崩溃，下一 tick/重启仍会继续挂同一个幂等 SELL client id。
      */
     public void markMmSellPending(long pairId, BigDecimal buyFilled, BigDecimal buyFeeBase,
-                                  BigDecimal sellPrice) {
+                                  BigDecimal actualBuyPrice, BigDecimal sellPrice) {
         try {
             HtxLockedPairEntity e = new HtxLockedPairEntity();
             e.setId(pairId);
             e.setBuyFilledAmount(buyFilled);
             e.setTotalFeeBase(buyFeeBase);
+            e.setBuyPrice(actualBuyPrice);
             e.setSellPrice(sellPrice);
             e.setStatus(HtxStatus.MM_RESTING_SELL);
             e.setUpdatedAt(LocalDateTime.now());
@@ -299,12 +300,14 @@ public class HtxTradeRecorder {
         }
     }
 
-    public void markMmSellReprice(long pairId, Long newSellId, BigDecimal newSellPrice) {
+    public void markMmSellReprice(long pairId, Long newSellId, BigDecimal newSellPrice,
+                                  BigDecimal cumulativeSellFilled) {
         try {
             HtxLockedPairEntity e = new HtxLockedPairEntity();
             e.setId(pairId);
             e.setSellOrderId(newSellId);
             e.setSellPrice(newSellPrice);
+            e.setSellFilledAmount(cumulativeSellFilled);
             e.setUpdatedAt(LocalDateTime.now());
             pairMapper.updateById(e);
         } catch (Exception ex) {

@@ -103,14 +103,17 @@ public final class MarketMakerMath {
         return true;
     }
 
-    /** 保本卖价地板 = 买入价（scale=PRICE_SCALE）。 */
-    public static BigDecimal sellFloor(BigDecimal buyPrice) {
-        return buyPrice.setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+    /** 含双边手续费的保本卖价地板：sell >= buy/(1-f)^2，正数价格一律向上取整。 */
+    public static BigDecimal sellFloor(BigDecimal buyPrice, BigDecimal feeRatePerSide) {
+        BigDecimal oneMinusF = ONE.subtract(feeRatePerSide);
+        return buyPrice.divide(oneMinusF.multiply(oneMinusF), PRICE_SCALE, RoundingMode.CEILING);
     }
 
-    /** 常态目标卖价 = max(保本地板, bestAsk)，恒 ≥ bestAsk（maker）。 */
-    public static BigDecimal desiredSellPrice(BigDecimal buyPrice, BigDecimal bestAsk) {
-        return buyPrice.max(bestAsk).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+    /** 常态目标卖价 = max(含费保本地板, bestAsk)，恒 ≥ bestAsk（maker）且不亏手续费。 */
+    public static BigDecimal desiredSellPrice(BigDecimal buyPrice, BigDecimal bestAsk,
+                                              BigDecimal feeRatePerSide) {
+        return sellFloor(buyPrice, feeRatePerSide).max(bestAsk)
+                .setScale(PRICE_SCALE, RoundingMode.CEILING);
     }
 
     /** 卖腿跟价闸门：|desiredSell − currentSell| / currentSell ≥ thresholdPct（含等号）。 */

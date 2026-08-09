@@ -59,7 +59,7 @@ htx:
     # 自主做市策略。总开关默认关（急停=false 重启则调度器 bean 不加载，已挂单冻结靠 TTL/人工）。
     # 权威值在此配置文件，env 可覆盖；Java 端仅兜底默认。见 spec 2026-08-06-htx-market-maker-design.md §5。
     enabled: ${HTX_MM_ENABLED:false}
-    symbols: ${HTX_MM_SYMBOLS:btcusdt,ethusdt,xautusdt} # 白名单，非白名单一律拒
+    symbols: ${HTX_MM_SYMBOLS:xautusdt} # 仅开黄金；历史 BTC/ETH open cell 仍由状态机推进至退出
     poll-interval-ms: ${HTX_MM_POLL_INTERVAL_MS:10000}
     spread-pct: ${HTX_MM_SPREAD_PCT:0.003}              # δ=0.3%（买腿贴 bestBid，sell=buy·(1+2δ)）
     fee-rate-per-side: ${HTX_MM_FEE_RATE_PER_SIDE:0.002} # 保守单边费率 f，用于不亏闸门(宁高勿低)
@@ -71,9 +71,10 @@ htx:
     insufficient-balance-backoff-ms: ${HTX_MM_INSUFFICIENT_BALANCE_BACKOFF_MS:300000} # USDT不足后5min只查恢复，不重复下单
     sell-ttl-ms: ${HTX_MM_SELL_TTL_MS:0}               # 0=卖单不设 TTL，一直挂到成交
     sell-follow-enabled: ${HTX_MM_SELL_FOLLOW_ENABLED:true}   # 卖腿跟价+止损总开关；false=退回旧固定价挂到成交
+    stop-loss-enabled: ${HTX_MM_STOP_LOSS_ENABLED:false}      # 保本模式默认禁止低于成本的市价止损
     stop-loss-pct: ${HTX_MM_STOP_LOSS_PCT:0.005}             # 跌破 buy·(1−此值) 触发 taker 割肉
     sell-reprice-threshold-pct: ${HTX_MM_SELL_REPRICE_THRESHOLD_PCT:0.001}  # 卖价漂移超此比例才重挂
-    sell-linger-exit-enabled: ${HTX_MM_SELL_LINGER_EXIT_ENABLED:true}
+    sell-linger-exit-enabled: ${HTX_MM_SELL_LINGER_EXIT_ENABLED:false}
     sell-linger-timeout-ms: ${HTX_MM_SELL_LINGER_TIMEOUT_MS:120000}
     sell-linger-loss-tolerance-pct: ${HTX_MM_SELL_LINGER_LOSS_TOLERANCE_PCT:0.002}
     buy-taker-escalation-enabled: ${HTX_MM_BUY_TAKER_ESCALATION_ENABLED:true}   # 买腿超时穿价 taker 入场总开关；false=退回现状撤单重开

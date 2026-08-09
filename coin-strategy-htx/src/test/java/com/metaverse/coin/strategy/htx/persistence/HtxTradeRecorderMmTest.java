@@ -66,13 +66,15 @@ class HtxTradeRecorderMmTest {
 
     @Test void markMmSellPending_persistsFillFeeAndActualSellPrice() {
         recorder.markMmSellPending(100L, new BigDecimal("0.0003"),
-                new BigDecimal("0.0000006"), new BigDecimal("60058.20"));
+                new BigDecimal("0.0000006"), new BigDecimal("59700.00"),
+                new BigDecimal("60058.20"));
         ArgumentCaptor<HtxLockedPairEntity> cap = ArgumentCaptor.forClass(HtxLockedPairEntity.class);
         verify(pairMapper).updateById(cap.capture());
         HtxLockedPairEntity e = cap.getValue();
         assertEquals(HtxStatus.MM_RESTING_SELL, e.getStatus());
         assertEquals(0, new BigDecimal("0.0003").compareTo(e.getBuyFilledAmount()));
         assertEquals(0, new BigDecimal("0.0000006").compareTo(e.getTotalFeeBase()));
+        assertEquals(0, new BigDecimal("59700.00").compareTo(e.getBuyPrice()));
         assertEquals(0, new BigDecimal("60058.20").compareTo(e.getSellPrice()));
     }
 
@@ -131,13 +133,15 @@ class HtxTradeRecorderMmTest {
     }
 
     @Test void markMmSellReprice_updates_sell_order_and_price_keeps_status_unset() {
-        recorder.markMmSellReprice(100L, 888L, new BigDecimal("64515.00"));
+        recorder.markMmSellReprice(100L, 888L, new BigDecimal("64515.00"),
+                new BigDecimal("0.0001"));
         ArgumentCaptor<HtxLockedPairEntity> cap = ArgumentCaptor.forClass(HtxLockedPairEntity.class);
         verify(pairMapper).updateById(cap.capture());
         HtxLockedPairEntity e = cap.getValue();
         assertEquals(100L, e.getId());
         assertEquals(888L, e.getSellOrderId());
         assertEquals(0, new BigDecimal("64515.00").compareTo(e.getSellPrice()));
+        assertEquals(0, new BigDecimal("0.0001").compareTo(e.getSellFilledAmount()));
         assertNull(e.getStatus());   // updateById 只更非空字段，仍 MM_RESTING_SELL
     }
 }

@@ -49,6 +49,10 @@ public class MarketMakerService {
     /** 启动校验：δ < 单边费率则成交必亏，拒绝启动。见 spec §1 不亏下限。 */
     @PostConstruct
     void validateConfig() {
+        if (mmProps.getFeeRatePerSide().signum() < 0
+                || mmProps.getFeeRatePerSide().compareTo(BigDecimal.ONE) >= 0) {
+            throw new IllegalStateException("MM fee-rate-per-side must be in [0, 1)");
+        }
         if (mmProps.getSpreadPct().compareTo(mmProps.getFeeRatePerSide()) < 0) {
             throw new IllegalStateException("MM spread-pct (" + mmProps.getSpreadPct()
                     + ") must be >= fee-rate-per-side (" + mmProps.getFeeRatePerSide()
@@ -140,6 +144,7 @@ public class MarketMakerService {
             return -1;
         }
         List<BigDecimal> existingBuys = recorder.findOpenMmCells(symbol).stream()
+                .filter(cell -> HtxStatus.MM_RESTING_BUY.equals(cell.getStatus()))
                 .map(HtxLockedPairEntity::getBuyPrice)
                 .collect(Collectors.toList());
         if (!MarketMakerMath.farEnough(buyPrice, existingBuys, mmProps.getMinGapPct())) {
@@ -404,10 +409,11 @@ public class MarketMakerService {
                 filledCashAmount, filledBase, cell.getBuyPrice());
         BigDecimal sellPrice;
         if (mmProps.isSellFollowEnabled()) {
-            // follow：初始卖价取 max(保本地板 buy, bestAsk)。盘口不可用则退回保本地板 buy。
+            // follow：初始卖价取 max(含费保本地板, bestAsk)。盘口不可用则退回含费保本地板。
             TopOfBook top = currentTopOfBook(cell.getSymbol());
             BigDecimal ask = (top != null) ? top.ask() : actualBuyPrice;
-            sellPrice = MarketMakerMath.desiredSellPrice(actualBuyPrice, ask);
+            sellPrice = MarketMakerMath.desiredSellPrice(
+                    actualBuyPrice, ask, mmProps.getFeeRatePerSide());
         } else {
             // legacy：固定高价挂到成交，保留不亏闸门。
             sellPrice = MarketMakerMath.sellFromBuy(actualBuyPrice, mmProps.getSpreadPct());
@@ -417,7 +423,8 @@ public class MarketMakerService {
                 return;
             }
         }
-        recorder.markMmSellPending(cell.getPairId(), filledBase, nz(buyFeeBase), sellPrice);
+        recorder.markMmSellPending(
+                cell.getPairId(), filledBase, nz(buyFeeBase), actualBuyPrice, sellPrice);
         submitSellLeg(cell.getPairId(), cell.getClientId(), cell.getSymbol(),
                 filledBase, nz(buyFeeBase), sellPrice);
     }
@@ -449,8 +456,12 @@ public class MarketMakerService {
     private void advanceRestingSell(MarketMakerCell cell) {
         Long sellId = cell.getSellOrderId();
         if (sellId == null) {
+            BigDecimal protectedSellPrice = MarketMakerMath.desiredSellPrice(
+                    cell.getBuyPrice(), cell.getSellPrice(), mmProps.getFeeRatePerSide());
+            recorder.markMmSellPending(cell.getPairId(), nz(cell.getBuyFilledAmount()),
+                    nz(cell.getTotalFeeBase()), cell.getBuyPrice(), protectedSellPrice);
             submitSellLeg(cell.getPairId(), cell.getClientId(), cell.getSymbol(),
-                    nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()), cell.getSellPrice());
+                    nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()), protectedSellPrice);
             return;
         }
         HtxRestResponse<HtxOrder> resp = htxApiService.getSpotService().queryOrder(sellId);
@@ -461,7 +472,7 @@ public class MarketMakerService {
         String state = o.getState();
         BigDecimal filled = nz(o.getFilledAmount());
         if ("filled".equalsIgnoreCase(state)) {
-            recorder.markMmDone(cell.getPairId(), filled);
+            recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
             log.info("MM done pairId={} sellId={} sellFilled={}", cell.getPairId(), sellId, filled);
             return;
         }
@@ -471,14 +482,16 @@ public class MarketMakerService {
                 recorder.recordExposure(cell.getPairId(), cell.getSymbol(), "base-long", unsold,
                         "mm-sell-terminal:" + state);
             }
-            recorder.markMmDone(cell.getPairId(), filled);
+            recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
             return;
         }
         // —— 卖腿跟价（maker）——
         if (!mmProps.isSellFollowEnabled()) return;                 // 关：退回旧「挂到成交」
         TopOfBook top = currentTopOfBook(cell.getSymbol());
         if (top == null) return;                                    // 盘口不可用，本 tick 不动
-        if (MarketMakerMath.shouldStopLoss(top.bid(), cell.getBuyPrice(), mmProps.getStopLossPct())) {
+        if (mmProps.isStopLossEnabled()
+                && MarketMakerMath.shouldStopLoss(
+                top.bid(), cell.getBuyPrice(), mmProps.getStopLossPct())) {
             stopLossFlatten(cell);                                  // bestBid 跌破止损线 → 吃单割肉
             return;
         }
@@ -490,7 +503,8 @@ public class MarketMakerService {
             lingerExitFlatten(cell);
             return;
         }
-        BigDecimal desiredSell = MarketMakerMath.desiredSellPrice(cell.getBuyPrice(), top.ask());
+        BigDecimal desiredSell = MarketMakerMath.desiredSellPrice(
+                cell.getBuyPrice(), top.ask(), mmProps.getFeeRatePerSide());
         if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
             repriceSell(cell, desiredSell);
         }
@@ -502,13 +516,12 @@ public class MarketMakerService {
         BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
         BigDecimal amount = nz(post != null ? post.getAmount() : null);
         if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
-            recorder.markMmDone(cell.getPairId(), filled);          // 撤单竞态：已全部成交
+            recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
             return;
         }
         if (post == null || !isTerminal(post.getState())) return;   // 未确认终态 → defer，杜绝双卖
 
-        BigDecimal sellable = HtxFeeMath.sellableBase(nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()))
-                .setScale(MarketMakerMath.quantityScale(cell.getSymbol()), RoundingMode.DOWN);
+        BigDecimal sellable = remainingSellable(cell, post);
         if (sellable.signum() <= 0) return;
 
         String clientId = cell.getClientId() + "-SELL-R" + System.currentTimeMillis();
@@ -520,7 +533,9 @@ public class MarketMakerService {
             return;                                                 // 旧单已撤、库存在，下 tick 兜底
         }
         Long newSellId = parseOrderId(resp);
-        recorder.markMmSellReprice(cell.getPairId(), newSellId, desiredSell);
+        if (newSellId == null) return;
+        recorder.markMmSellReprice(cell.getPairId(), newSellId, desiredSell,
+                cumulativeSellFilled(cell, filled));
     }
 
     /** 止损割肉（taker）：bestBid ≤ 止损线 → taker 吃单清库存，resultCode=MM_STOP_LOSS。 */
@@ -542,15 +557,14 @@ public class MarketMakerService {
         BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
         BigDecimal amount = nz(post != null ? post.getAmount() : null);
         if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
-            recorder.markMmDone(cell.getPairId(), filled);          // 撤单竞态：已全部成交
+            recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
             return;
         }
         if (post == null || !isTerminal(post.getState())) return;   // 未确认终态 → defer，杜绝双卖
 
-        BigDecimal sellable = HtxFeeMath.sellableBase(nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()))
-                .setScale(MarketMakerMath.quantityScale(cell.getSymbol()), RoundingMode.DOWN);
+        BigDecimal sellable = remainingSellable(cell, post);
         if (sellable.signum() <= 0) {
-            recorder.markMmDone(cell.getPairId(), BigDecimal.ZERO);  // 无可卖库存，直接收敛
+            recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
             return;
         }
 
@@ -563,9 +577,28 @@ public class MarketMakerService {
                     cell.getPairId(), resultCode, resp);
             return;                                                 // 旧单已撤、库存在，下 tick 兜底
         }
-        recorder.markMmDone(cell.getPairId(), sellable);
-        recorder.updatePairStatus(cell.getPairId(), HtxStatus.MM_DONE, resultCode,
-                reason + " sellable=" + sellable.toPlainString());
+        Long marketSellId = parseOrderId(resp);
+        if (marketSellId == null) return;
+        recorder.markMmSellReprice(cell.getPairId(), marketSellId, cell.getSellPrice(),
+                cumulativeSellFilled(cell, filled));
+        recorder.updatePairStatus(cell.getPairId(), HtxStatus.MM_RESTING_SELL, resultCode,
+                reason + " submitted orderId=" + marketSellId + " sellable=" + sellable.toPlainString());
+    }
+
+    private BigDecimal remainingSellable(MarketMakerCell cell, HtxOrder post) {
+        BigDecimal orderAmount = nz(post != null ? post.getAmount() : null);
+        BigDecimal cellSellable = HtxFeeMath.sellableBase(
+                nz(cell.getBuyFilledAmount()), nz(cell.getTotalFeeBase()));
+        BigDecimal totalForCurrentOrder = orderAmount.signum() > 0
+                ? orderAmount.min(cellSellable)
+                : cellSellable;
+        return totalForCurrentOrder.subtract(nz(post != null ? post.getFilledAmount() : null))
+                .max(BigDecimal.ZERO)
+                .setScale(MarketMakerMath.quantityScale(cell.getSymbol()), RoundingMode.DOWN);
+    }
+
+    private BigDecimal cumulativeSellFilled(MarketMakerCell cell, BigDecimal latestFilled) {
+        return nz(cell.getSellFilledAmount()).add(nz(latestFilled));
     }
 
     private void recoverCancelledBuy(HtxLockedPairEntity entity) {

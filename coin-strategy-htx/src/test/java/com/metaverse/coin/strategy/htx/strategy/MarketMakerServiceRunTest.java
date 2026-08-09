@@ -178,7 +178,8 @@ class MarketMakerServiceRunTest {
 
         svc.recoverOpenCells();
 
-        verify(recorder).markMmSellPending(eq(15L), any(), any(), eq(new BigDecimal("60058.20")));
+        verify(recorder).markMmSellPending(eq(15L), any(), any(),
+                eq(new BigDecimal("59700.00")), eq(new BigDecimal("60058.20")));
         verify(recorder).markMmSellResting(15L, 777L);
     }
 }

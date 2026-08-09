@@ -19,7 +19,7 @@ public class HtxMarketMakerProperties {
     private boolean enabled = false;
 
     /** 标的白名单，非白名单一律拒开。 */
-    private List<String> symbols = List.of("btcusdt", "ethusdt", "xautusdt");
+    private List<String> symbols = List.of("xautusdt");
 
     /** 主循环轮询间隔（ms）。 */
     private long pollIntervalMs = 10_000L;
@@ -54,14 +54,17 @@ public class HtxMarketMakerProperties {
     /** 卖腿跟价+止损总开关；false=退回旧「固定价挂到成交」（config-only 回退）。 */
     private boolean sellFollowEnabled = true;
 
-    /** 跌破 buy·(1−此值) 触发 taker 割肉。 */
+    /** 止损总开关；默认关闭，避免卖价跌破含费买入成本。 */
+    private boolean stopLossEnabled = false;
+
+    /** 跌破 buy·(1−此值) 触发 taker 割肉；仅 stopLossEnabled=true 时生效。 */
     private BigDecimal stopLossPct = new BigDecimal("0.005");
 
     /** 卖价漂移超此比例才重挂（防抖、省撤单费）。 */
     private BigDecimal sellRepriceThresholdPct = new BigDecimal("0.001");
 
     /** 卖单挂太久 → 保本(容忍微亏)吃单退出 总开关；false=完全关闭本功能（config-only 回退）。 */
-    private boolean sellLingerExitEnabled = true;
+    private boolean sellLingerExitEnabled = false;
 
     /** 卖单在 RESTING_SELL 挂满此时长（ms）才触发 linger taker 退出。 */
     private long sellLingerTimeoutMs = 120_000L;

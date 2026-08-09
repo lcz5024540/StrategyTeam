@@ -24,6 +24,7 @@ public class MarketMakerCell {
     private Long buyOrderId;
     private Long sellOrderId;
     private BigDecimal buyFilledAmount;
+    private BigDecimal sellFilledAmount;
     private BigDecimal totalFeeBase;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -40,6 +41,7 @@ public class MarketMakerCell {
                 .buyOrderId(e.getBuyOrderId())
                 .sellOrderId(e.getSellOrderId())
                 .buyFilledAmount(e.getBuyFilledAmount())
+                .sellFilledAmount(e.getSellFilledAmount())
                 .totalFeeBase(e.getTotalFeeBase())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())

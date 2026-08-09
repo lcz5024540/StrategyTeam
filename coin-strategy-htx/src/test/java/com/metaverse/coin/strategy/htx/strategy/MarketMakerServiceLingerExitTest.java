@@ -125,7 +125,10 @@ class MarketMakerServiceLingerExitTest {
         svc.advanceCell(restingSellCell(LocalDateTime.now().minusMinutes(5)));
 
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-market"), anyString(), any(), anyString());
-        verify(recorder).updatePairStatus(eq(200L), eq(HtxStatus.MM_DONE), eq("MM_LINGER_EXIT"), anyString());
+        verify(recorder).markMmSellReprice(eq(200L), eq(999L), eq(new BigDecimal("60000.00")),
+                eq(BigDecimal.ZERO));
+        verify(recorder).updatePairStatus(eq(200L), eq(HtxStatus.MM_RESTING_SELL),
+                eq("MM_LINGER_EXIT"), anyString());
     }
 
     @Test void lingerNotExpired_doesNotTakerExit() {
@@ -151,6 +154,7 @@ class MarketMakerServiceLingerExitTest {
     }
 
     @Test void stopLossTakesPriorityOverLinger() {
+        mmProps.setStopLossEnabled(true);
         // 超时 + bestBid=59600 < 止损线 59700 → 走止损 MM_STOP_LOSS，绝不写 MM_LINGER_EXIT
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depth("59600"));
         when(spot.queryOrder(777L))
@@ -159,7 +163,8 @@ class MarketMakerServiceLingerExitTest {
 
         svc.advanceCell(restingSellCell(LocalDateTime.now().minusMinutes(5)));
 
-        verify(recorder).updatePairStatus(eq(200L), eq(HtxStatus.MM_DONE), eq("MM_STOP_LOSS"), anyString());
+        verify(recorder).updatePairStatus(eq(200L), eq(HtxStatus.MM_RESTING_SELL),
+                eq("MM_STOP_LOSS"), anyString());
         verify(recorder, never()).updatePairStatus(anyLong(), any(), eq("MM_LINGER_EXIT"), any());
     }
 

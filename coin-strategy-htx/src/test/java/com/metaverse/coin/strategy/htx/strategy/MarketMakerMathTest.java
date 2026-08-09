@@ -124,31 +124,31 @@ class MarketMakerMathTest {
         assertEquals(6, MarketMakerMath.quantityScale("xautusdt"));
     }
 
-    @Test void sellFloor_equals_buyPrice_scale2() {
-        assertEquals(0, new BigDecimal("64515.00")
-                .compareTo(MarketMakerMath.sellFloor(new BigDecimal("64515"))));
+    @Test void sellFloor_covers_both_fees_and_rounds_up() {
+        BigDecimal floor = MarketMakerMath.sellFloor(new BigDecimal("64515"), F);
+        assertEquals(0, new BigDecimal("64773.84").compareTo(floor));
+        assertTrue(MarketMakerMath.isNoLoss(new BigDecimal("64515"), floor, F));
     }
 
     @Test void desiredSell_up_follows_ask_when_ask_above_buy() {
         // 涨：ask=64800 > buy=64515 → desiredSell=64800
         assertEquals(0, new BigDecimal("64800.00").compareTo(
-                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64800"))));
+                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64800"), F)));
     }
 
-    @Test void desiredSell_flat_rests_at_ask_ge_buy() {
-        // 平：ask=64520 ≈ buy=64515，ask≥buy → 取 ask
-        assertEquals(0, new BigDecimal("64520.00").compareTo(
-                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64520"))));
+    @Test void desiredSell_flat_rests_at_fee_adjusted_floor() {
+        assertEquals(0, new BigDecimal("64773.84").compareTo(
+                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64520"), F)));
     }
 
-    @Test void desiredSell_milddown_rests_at_buy_floor() {
-        // 微跌：ask=64400 < buy=64515 → 取保本地板 buy=64515
-        assertEquals(0, new BigDecimal("64515.00").compareTo(
-                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64400"))));
+    @Test void desiredSell_milddown_rests_at_fee_adjusted_floor() {
+        assertEquals(0, new BigDecimal("64773.84").compareTo(
+                MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64400"), F)));
     }
 
     @Test void desiredSell_is_never_below_ask() {
-        BigDecimal d = MarketMakerMath.desiredSellPrice(new BigDecimal("64515"), new BigDecimal("64800"));
+        BigDecimal d = MarketMakerMath.desiredSellPrice(
+                new BigDecimal("64515"), new BigDecimal("64800"), F);
         assertTrue(d.compareTo(new BigDecimal("64800")) >= 0);
     }
 
