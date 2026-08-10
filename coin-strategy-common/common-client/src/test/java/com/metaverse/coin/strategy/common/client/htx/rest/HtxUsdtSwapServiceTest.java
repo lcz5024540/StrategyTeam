@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -89,6 +90,24 @@ class HtxUsdtSwapServiceTest {
         HtxRestResponse<?> error = service.switchLeverage("BTC-USDT", 3);
         assertEquals("1048", error.getErrCode());
         assertEquals("Insufficient margin", error.getErrMsg());
+    }
+
+    @Test
+    void openOrders_usesIsolatedEndpointAndParsesOrders() throws InterruptedException {
+        server.enqueue(json("{\"status\":\"ok\",\"data\":{\"orders\":[{\"order_id\":123,"
+                + "\"contract_code\":\"XAUT-USDT\",\"status\":3}],\"total_size\":1}}"));
+
+        HtxRestResponse<HtxSwapOpenOrders> response = service.openOrders("XAUT-USDT");
+
+        assertTrue(response.ok());
+        assertEquals(1, response.getData().getOrders().size());
+        assertEquals(123L, response.getData().getOrders().get(0).getOrderId());
+        RecordedRequest request = server.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertEquals("/linear-swap-api/v1/swap_openorders", request.getRequestUrl().encodedPath());
+        JSONObject body = JSON.parseObject(request.getBody().readUtf8());
+        assertEquals("XAUT-USDT", body.getString("contract_code"));
+        assertEquals(50, body.getIntValue("page_size"));
     }
 
     private static MockResponse json(String body) {

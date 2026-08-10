@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import lombok.RequiredArgsConstructor;
 
@@ -53,6 +54,16 @@ public class HtxUsdtSwapService {
         return rest.signedPost("/linear-swap-api/v1/swap_position_info", Collections.emptyMap(),
                 singletonBody("contract_code", contractCode),
                 new TypeReference<HtxRestResponse<List<HtxSwapPosition>>>() {});
+    }
+
+    public HtxRestResponse<HtxSwapOpenOrders> openOrders(String contractCode) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("contract_code", contractCode);
+        body.put("page_index", 1);
+        body.put("page_size", 50);
+        body.put("sort_by", "update_time");
+        return rest.signedPost("/linear-swap-api/v1/swap_openorders", Collections.emptyMap(), body,
+                new TypeReference<HtxRestResponse<HtxSwapOpenOrders>>() {});
     }
 
     public HtxRestResponse<List<HtxSwapAvailableLeverage>> availableLeverage(String contractCode) {

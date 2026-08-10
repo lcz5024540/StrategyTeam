@@ -89,7 +89,7 @@ htx:
     margin-mode: isolated
     position-mode: dual_side
     contract-codes: ${HTX_CONTRACT_CODES:BTC-USDT,ETH-USDT,XAUT-USDT}
-    leverage: ${HTX_CONTRACT_LEVERAGE:3}
+    leverage: ${HTX_CONTRACT_LEVERAGE:5}
     max-leverage: ${HTX_CONTRACT_MAX_LEVERAGE:5}
     depth-step: 6
     depth-top-n: 10
@@ -100,8 +100,9 @@ htx:
     fill-poll-interval-ms: 500
     fill-timeout-ms: 10000
     query-failure-threshold: 5
-    # 自动往返仅用于 dry-run；代码会在 dry-run=false 时拒绝执行。
+    # 自动往返默认仅用于 dry-run；实盘还必须显式打开 auto-live-enabled。
     auto-test-enabled: ${HTX_CONTRACT_AUTO_TEST_ENABLED:false}
+    auto-live-enabled: ${HTX_CONTRACT_AUTO_LIVE_ENABLED:false}
     auto-test-initial-delay-ms: ${HTX_CONTRACT_AUTO_TEST_INITIAL_DELAY_MS:20000}
     auto-test-interval-ms: ${HTX_CONTRACT_AUTO_TEST_INTERVAL_MS:60000}
     auto-test-volume: ${HTX_CONTRACT_AUTO_TEST_VOLUME:2}

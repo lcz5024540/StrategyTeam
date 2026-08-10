@@ -21,7 +21,7 @@ public class HtxContractProperties {
     private String marginMode = "isolated";
     private String positionMode = "dual_side";
     private List<String> contractCodes = List.of("BTC-USDT", "ETH-USDT", "XAUT-USDT");
-    private int leverage = 3;
+    private int leverage = 5;
     private int maxLeverage = 5;
     private int depthStep = 6;
     private int depthTopN = 10;
@@ -35,6 +35,8 @@ public class HtxContractProperties {
 
     /** Periodic simulation only. The scheduler refuses to run outside dry-run mode. */
     private boolean autoTestEnabled = false;
+    /** Additional opt-in required before the scheduler may submit real contract orders. */
+    private boolean autoLiveEnabled = false;
     private long autoTestInitialDelayMs = 20_000L;
     private long autoTestIntervalMs = 60_000L;
     /** Number of contracts, not XAUT quantity. */

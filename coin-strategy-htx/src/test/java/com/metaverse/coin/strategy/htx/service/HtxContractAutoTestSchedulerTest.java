@@ -40,15 +40,16 @@ class HtxContractAutoTestSchedulerTest {
         recorder = mock(HtxContractTradeRecorder.class);
         props = new HtxContractProperties();
         props.setContractCodes(List.of("XAUT-USDT"));
-        props.setLeverage(50);
-        props.setMaxLeverage(50);
+        props.setLeverage(5);
+        props.setMaxLeverage(5);
+        props.setAutoTestEnabled(true);
         props.setAutoTestVolume(2L);
         when(api.getSwapService()).thenReturn(swap);
         scheduler = new HtxContractAutoTestScheduler(api, tradingService, recorder, props);
     }
 
     @Test
-    void simulatesXautOpenCloseAt50xAndPersistsAudit() {
+    void simulatesXautOpenCloseAt5xAndPersistsAudit() {
         HtxSwapContractInfo contract = new HtxSwapContractInfo();
         contract.setContractCode("XAUT-USDT");
         contract.setPriceTick(new BigDecimal("0.01"));
@@ -68,10 +69,10 @@ class HtxContractAutoTestSchedulerTest {
         verify(tradingService).submitLongCycle(request.capture());
         assertEquals("XAUT-USDT", request.getValue().getContractCode());
         assertEquals(2L, request.getValue().getVolume());
-        assertEquals(50, request.getValue().getLeverage());
+        assertEquals(5, request.getValue().getLeverage());
         assertEquals(new BigDecimal("4333.34"), request.getValue().getOpenPrice());
         assertEquals(new BigDecimal("4359.35"), request.getValue().getClosePrice());
-        verify(recorder).recordDryRun(request.getValue(), "XAUT-USDT", 50, "dry-run");
+        verify(recorder).recordDryRun(request.getValue(), "XAUT-USDT", 5, "dry-run");
     }
 
     @Test
@@ -82,6 +83,29 @@ class HtxContractAutoTestSchedulerTest {
 
         verify(swap, never()).contractInfo(anyString());
         verify(tradingService, never()).submitLongCycle(any());
+        verify(recorder, never()).recordDryRun(any(), anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    void liveAutoRequiresExplicitAutoLiveGateAndDoesNotWriteDryRunAudit() {
+        props.setAutoTestEnabled(false);
+        props.setAutoLiveEnabled(true);
+        props.setDryRun(false);
+        props.setLiveEnabled(true);
+        HtxSwapContractInfo contract = new HtxSwapContractInfo();
+        contract.setContractCode("XAUT-USDT");
+        contract.setPriceTick(new BigDecimal("0.01"));
+        HtxDepth depth = new HtxDepth();
+        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal("4333.34"), new BigDecimal("100"))));
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract)));
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth));
+        when(tradingService.submitLongCycle(any())).thenReturn(HtxContractTradeResult.builder()
+                .code(HtxContractTradeResult.Code.OK).cycleId(99L).build());
+
+        scheduler.runOnce();
+
+        verify(tradingService, never()).configureLeverage(any());
+        verify(tradingService).submitLongCycle(any());
         verify(recorder, never()).recordDryRun(any(), anyString(), anyInt(), anyString());
     }
 

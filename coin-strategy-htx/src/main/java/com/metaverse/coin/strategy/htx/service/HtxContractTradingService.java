@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAvailableLever
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
@@ -171,6 +172,18 @@ public class HtxContractTradingService {
             }
         } catch (HtxPersistenceException e) {
             return result(HtxContractTradeResult.Code.REJECT_PERSISTENCE, contractCode, leverage, e.getMessage());
+        }
+
+        HtxRestResponse<HtxSwapOpenOrders> openOrdersResponse = swap().openOrders(contractCode);
+        HtxSwapOpenOrders openOrders = openOrdersResponse == null || !openOrdersResponse.ok()
+                ? null : openOrdersResponse.getData();
+        if (openOrders == null || openOrders.getOrders() == null) {
+            return result(HtxContractTradeResult.Code.REJECT_PREFLIGHT, contractCode, leverage,
+                    "open orders query failed: " + error(openOrdersResponse));
+        }
+        if (!openOrders.getOrders().isEmpty()) {
+            return result(HtxContractTradeResult.Code.REJECT_EXISTING_ORDER, contractCode, leverage,
+                    "existing contract orders must be reconciled before starting a managed cycle");
         }
 
         HtxContractTradeResult leverageCheck = checkAvailableLeverage(contractCode, leverage);

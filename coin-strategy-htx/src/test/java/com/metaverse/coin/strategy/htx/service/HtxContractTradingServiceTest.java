@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
@@ -128,6 +129,7 @@ class HtxContractTradingServiceTest {
     void failedPositionQueryFailsClosed() {
         enableLive();
         stubPublicPreflight();
+        stubNoOpenOrders();
         stubAvailableLeverage();
         when(swap.positionInfo("BTC-USDT")).thenReturn(error("io", "timeout"));
 
@@ -140,9 +142,28 @@ class HtxContractTradingServiceTest {
     }
 
     @Test
+    void existingExchangeOrderPreventsAnotherOpen() {
+        enableLive();
+        stubPublicPreflight();
+        HtxSwapOrder order = new HtxSwapOrder();
+        order.setOrderId(42L);
+        HtxSwapOpenOrders openOrders = new HtxSwapOpenOrders();
+        openOrders.setOrders(List.of(order));
+        when(swap.openOrders("BTC-USDT")).thenReturn(ok(openOrders));
+
+        HtxContractTradeResult result = service.submitLongCycle(request());
+
+        assertEquals(HtxContractTradeResult.Code.REJECT_EXISTING_ORDER, result.getCode());
+        verify(swap, never()).availableLeverage(anyString());
+        verify(swap, never()).placeOrder(anyString(), anyLong(), anyLong(), anyString(), anyString(),
+                anyInt(), anyString(), anyString());
+    }
+
+    @Test
     void existingPositionPreventsManagedCycle() {
         enableLive();
         stubPublicPreflight();
+        stubNoOpenOrders();
         stubAvailableLeverage();
         HtxSwapPosition position = new HtxSwapPosition();
         position.setVolume(BigDecimal.ONE);
@@ -265,6 +286,7 @@ class HtxContractTradingServiceTest {
 
     private void stubFullPrivatePreflight() {
         stubPublicPreflight();
+        stubNoOpenOrders();
         stubAvailableLeverage();
         when(swap.positionInfo("BTC-USDT")).thenReturn(ok(Collections.emptyList()));
         HtxSwapAccount account = new HtxSwapAccount();
@@ -277,6 +299,12 @@ class HtxContractTradingServiceTest {
         HtxSwapLeverageResult leverage = new HtxSwapLeverageResult();
         leverage.setLeverage(4);
         when(swap.switchLeverage("BTC-USDT", 4)).thenReturn(ok(leverage));
+    }
+
+    private void stubNoOpenOrders() {
+        HtxSwapOpenOrders openOrders = new HtxSwapOpenOrders();
+        openOrders.setOrders(Collections.emptyList());
+        when(swap.openOrders("BTC-USDT")).thenReturn(ok(openOrders));
     }
 
     private static HtxContractCycleRequest request() {

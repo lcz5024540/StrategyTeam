@@ -10,7 +10,7 @@ import com.metaverse.coin.strategy.htx.persistence.HtxContractTradeRecorder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,11 +19,11 @@ import java.math.RoundingMode;
 import java.util.List;
 import java.util.Locale;
 
-/** Periodically simulates one isolated long open/close cycle and writes an audit row. */
+/** Periodically runs one guarded isolated long open/close cycle. */
 @Slf4j
 @Component
 @ConditionalOnBean(HtxUsdtSwapApiService.class)
-@ConditionalOnProperty(prefix = "htx.contract", name = "auto-test-enabled", havingValue = "true")
+@ConditionalOnExpression("${htx.contract.auto-test-enabled:false} or ${htx.contract.auto-live-enabled:false}")
 @RequiredArgsConstructor
 public class HtxContractAutoTestScheduler {
 
@@ -39,17 +39,19 @@ public class HtxContractAutoTestScheduler {
         try {
             runOnce();
         } catch (RuntimeException e) {
-            log.error("[HTX-CONTRACT-AUTO-TEST] cycle failed", e);
+            log.error("[HTX-CONTRACT-AUTO] cycle failed", e);
         }
     }
 
     void runOnce() {
-        if (!props.isDryRun() || props.isLiveEnabled()) {
-            log.error("[HTX-CONTRACT-AUTO-TEST] refused because dry-run safety gate is not active");
+        boolean dryRunMode = props.isAutoTestEnabled() && props.isDryRun() && !props.isLiveEnabled();
+        boolean liveMode = props.isAutoLiveEnabled() && !props.isDryRun() && props.isLiveEnabled();
+        if (!dryRunMode && !liveMode) {
+            log.error("[HTX-CONTRACT-AUTO] refused because auto mode and trading safety gates disagree");
             return;
         }
         if (props.getContractCodes() == null || props.getContractCodes().size() != 1) {
-            log.error("[HTX-CONTRACT-AUTO-TEST] exactly one contract code is required");
+            log.error("[HTX-CONTRACT-AUTO] exactly one contract code is required");
             return;
         }
         String contractCode = props.getContractCodes().get(0).trim().toUpperCase(Locale.ROOT);
@@ -57,7 +59,7 @@ public class HtxContractAutoTestScheduler {
         HtxPriceLevel bestAsk = loadBestAsk(contractCode);
         if (contract == null || contract.getPriceTick() == null || contract.getPriceTick().signum() <= 0
                 || bestAsk == null || bestAsk.getPrice() == null || bestAsk.getPrice().signum() <= 0) {
-            log.warn("[HTX-CONTRACT-AUTO-TEST] public market data unavailable contract={}", contractCode);
+            log.warn("[HTX-CONTRACT-AUTO] public market data unavailable contract={}", contractCode);
             return;
         }
 
@@ -75,22 +77,27 @@ public class HtxContractAutoTestScheduler {
                 .waitFillTimeoutMs(props.getFillTimeoutMs())
                 .build();
 
-        HtxContractTradeResult leverage = tradingService.configureLeverage(
-                new HtxContractLeverageRequest(contractCode, props.getLeverage()));
-        if (!leverage.success()) {
-            log.warn("[HTX-CONTRACT-AUTO-TEST] leverage simulation rejected contract={} result={}",
-                    contractCode, leverage);
-            return;
+        if (dryRunMode) {
+            HtxContractTradeResult leverage = tradingService.configureLeverage(
+                    new HtxContractLeverageRequest(contractCode, props.getLeverage()));
+            if (!leverage.success()) {
+                log.warn("[HTX-CONTRACT-AUTO] leverage simulation rejected contract={} result={}",
+                        contractCode, leverage);
+                return;
+            }
         }
         HtxContractTradeResult result = tradingService.submitLongCycle(request);
         if (!result.success()) {
-            log.warn("[HTX-CONTRACT-AUTO-TEST] cycle rejected contract={} result={}", contractCode, result);
+            log.warn("[HTX-CONTRACT-AUTO] cycle rejected contract={} result={}", contractCode, result);
             return;
         }
-        long cycleId = recorder.recordDryRun(request, contractCode, props.getLeverage(), result.getMessage());
-        result.setCycleId(cycleId);
-        log.info("[HTX-CONTRACT-AUTO-TEST] completed cycleId={} contract={} volume={} leverage={}x open={} close={}",
-                cycleId, contractCode, props.getAutoTestVolume(), props.getLeverage(), openPrice, closePrice);
+        if (dryRunMode) {
+            long cycleId = recorder.recordDryRun(request, contractCode, props.getLeverage(), result.getMessage());
+            result.setCycleId(cycleId);
+        }
+        log.info("[HTX-CONTRACT-AUTO] completed mode={} cycleId={} contract={} volume={} leverage={}x open={} close={}",
+                dryRunMode ? "dry-run" : "live", result.getCycleId(), contractCode,
+                props.getAutoTestVolume(), props.getLeverage(), openPrice, closePrice);
     }
 
     private HtxSwapContractInfo loadContract(String contractCode) {
