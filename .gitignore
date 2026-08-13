@@ -45,6 +45,9 @@ scripts/keys/
 deploy/linux/env/smart-wallet-prod.env
 deploy/linux/env/smart-wallet-test.env
 deploy/linux/env/htx.env
+# 共享密钥文件（含 DB 密码密文 + Polymarket 私钥密文），只留 .example 模板
+deploy/linux/env/shared/secrets.env
+deploy/linux/env/**/secrets.env
 
 ### Local Maven Cache ###
 .m2/
@@ -55,6 +58,10 @@ logs/
 .gitignore
 .log
 /logs/
+
+### RSA 私钥 —— 绝不进 git（真钥从旧机拷来，仅本地/服务器持有；泄漏=现网密文全裸）###
+*.pem
+app-private.REAL.pem
 
 ### macOS ###
 .DS_Store
