@@ -116,6 +116,81 @@ class HtxContractDualTradingServiceTest {
     }
 
     @Test
+    void fastIocCycleUsesIndependentDepthBackedPricesForAllFourLegs() {
+        enableLive();
+        stubPrivatePreflight();
+        HtxDepth precheckDepth = depth("4334.00", "4332.00");
+        HtxDepth openDepth = depth("4334.10", "4331.90");
+        HtxDepth closeDepth = depth("4334.20", "4331.80");
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(
+                ok(precheckDepth), ok(openDepth), ok(closeDepth));
+        when(swap.batchOrders(any())).thenReturn(
+                ok(List.of(accepted(51L, 100L), accepted(52L, 101L))),
+                ok(List.of(accepted(53L, 102L), accepted(54L, 103L))));
+        when(swap.queryOrder("XAUT-USDT", 51L)).thenReturn(filled(51L, "2", "0.10", "0"));
+        when(swap.queryOrder("XAUT-USDT", 52L)).thenReturn(filled(52L, "2", "0.10", "0"));
+        when(swap.queryOrder("XAUT-USDT", 53L)).thenReturn(filled(53L, "2", "0.10", "-0.01"));
+        when(swap.queryOrder("XAUT-USDT", 54L)).thenReturn(filled(54L, "2", "0.10", "-0.01"));
+        HtxContractCycleRequest request = request();
+        request.setFastIoc(true);
+
+        HtxContractTradeResult result = service.submitDualCycle(request);
+
+        assertEquals(HtxContractTradeResult.Code.OK, result.getCode());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<HtxSwapOrderRequest>> batches = ArgumentCaptor.forClass(List.class);
+        verify(swap, times(2)).batchOrders(batches.capture());
+        List<HtxSwapOrderRequest> opens = batches.getAllValues().get(0);
+        List<HtxSwapOrderRequest> closes = batches.getAllValues().get(1);
+        assertEquals(List.of("4334.10", "4331.90"),
+                opens.stream().map(HtxSwapOrderRequest::getPrice).toList());
+        assertEquals(List.of("4331.80", "4334.20"),
+                closes.stream().map(HtxSwapOrderRequest::getPrice).toList());
+        assertTrue(opens.stream().allMatch(order -> "ioc".equals(order.getTimeInForce())));
+        assertTrue(closes.stream().allMatch(order -> "ioc".equals(order.getTimeInForce())));
+    }
+
+    @Test
+    void fastIocRetriesRemainingReduceOnlyCloseAfterTerminalCancellation() {
+        enableLive();
+        stubPrivatePreflight();
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(
+                ok(depth("4334.00", "4332.00")),
+                ok(depth("4334.10", "4331.90")),
+                ok(depth("4334.20", "4331.80")),
+                ok(depth("4334.30", "4331.70")));
+        when(swap.batchOrders(any())).thenReturn(
+                ok(List.of(accepted(61L, 100L), accepted(62L, 101L))),
+                ok(List.of(accepted(63L, 102L), accepted(64L, 103L))),
+                ok(List.of(accepted(65L, 105L))));
+        when(swap.queryOrder("XAUT-USDT", 61L)).thenReturn(filled(61L, "2", "0.10", "0"));
+        when(swap.queryOrder("XAUT-USDT", 62L)).thenReturn(filled(62L, "2", "0.10", "0"));
+        when(swap.queryOrder("XAUT-USDT", 63L)).thenReturn(filled(63L, "2", "0.10", "-0.01"));
+        when(swap.queryOrder("XAUT-USDT", 64L)).thenReturn(canceled(64L));
+        when(swap.queryOrder("XAUT-USDT", 65L)).thenReturn(filled(65L, "2", "0.10", "-0.02"));
+        HtxContractCycleRequest request = request();
+        request.setFastIoc(true);
+
+        HtxContractTradeResult result = service.submitDualCycle(request);
+
+        assertEquals(HtxContractTradeResult.Code.OK, result.getCode());
+        assertEquals(65L, result.getShortCloseOrderId());
+        assertEquals(new BigDecimal("2"), result.getShortCloseFilledVolume());
+        assertEquals(new BigDecimal("0.40"), result.getTotalFee());
+        assertEquals(new BigDecimal("-0.03"), result.getRealizedProfit());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<HtxSwapOrderRequest>> batches = ArgumentCaptor.forClass(List.class);
+        verify(swap, times(3)).batchOrders(batches.capture());
+        List<HtxSwapOrderRequest> retry = batches.getAllValues().get(2);
+        assertEquals(1, retry.size());
+        assertEquals("short", retry.get(0).getPositionSide());
+        assertEquals("4334.30", retry.get(0).getPrice());
+        assertEquals("ioc", retry.get(0).getTimeInForce());
+        verify(recorder).createLegIntent(77L, "SHORT_CLOSE_R1", 105L,
+                "buy", "short", true, 2L, new BigDecimal("4334.30"));
+    }
+
+    @Test
     void closeDepthFailureLeavesExposureAndDoesNotSendCloseBatch() {
         enableLive();
         stubPrivatePreflight();
@@ -273,6 +348,16 @@ class HtxContractDualTradingServiceTest {
         return ok(List.of(order));
     }
 
+    private static HtxRestResponse<List<HtxSwapOrder>> canceled(long orderId) {
+        HtxSwapOrder order = new HtxSwapOrder();
+        order.setOrderId(orderId);
+        order.setState("canceled");
+        order.setTradeVolume(BigDecimal.ZERO);
+        order.setFee(BigDecimal.ZERO);
+        order.setProfit(BigDecimal.ZERO);
+        return ok(List.of(order));
+    }
+
     private static HtxDepthGuard.Verdict depthOk() {
         return new HtxDepthGuard.Verdict(true, true,
                 new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("6"));
@@ -281,6 +366,15 @@ class HtxContractDualTradingServiceTest {
     private static HtxDepthGuard.Verdict depthRejected() {
         return new HtxDepthGuard.Verdict(false, false,
                 BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("6"));
+    }
+
+    private static HtxDepth depth(String ask, String bid) {
+        HtxDepth depth = new HtxDepth();
+        depth.setAsks(List.of(new com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel(
+                new BigDecimal(ask), new BigDecimal("100"))));
+        depth.setBids(List.of(new com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel(
+                new BigDecimal(bid), new BigDecimal("100"))));
+        return depth;
     }
 
     private static <T> HtxRestResponse<T> ok(T data) {

@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
-/** One isolated cycle. Dual mode uses one open price and one close price for both position sides. */
+/** One isolated cycle. */
 @Data
 @Builder
 @NoArgsConstructor
@@ -24,4 +24,6 @@ public class HtxContractCycleRequest {
     private Long clientOrderId;
     /** Optional; falls back to htx.contract.fill-timeout-ms. */
     private Long waitFillTimeoutMs;
+    /** Auto mode only: use depth-backed IOC prices independently for each side. */
+    private Boolean fastIoc;
 }

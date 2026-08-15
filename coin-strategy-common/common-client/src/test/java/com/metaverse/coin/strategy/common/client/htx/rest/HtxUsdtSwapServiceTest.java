@@ -97,6 +97,8 @@ class HtxUsdtSwapServiceTest {
         assertEquals("4333.40", body.getJSONObject(1).getString("price"));
         assertEquals("long", body.getJSONObject(0).getString("position_side"));
         assertEquals("short", body.getJSONObject(1).getString("position_side"));
+        assertEquals(0, body.getJSONObject(0).get("reduce_only"));
+        assertEquals(0, body.getJSONObject(1).get("reduce_only"));
         assertEquals("cancel_both", body.getJSONObject(0).getString("self_match_prevent"));
     }
 

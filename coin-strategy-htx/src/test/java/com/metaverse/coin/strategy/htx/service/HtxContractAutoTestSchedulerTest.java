@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,9 +50,10 @@ class HtxContractAutoTestSchedulerTest {
     }
 
     @Test
-    void simulatesXautOpenCloseAt5xAndPersistsAudit() {
+    void sizesFastIocCycleFromPerSideQuoteNotionalAndPersistsAudit() {
         HtxSwapContractInfo contract = new HtxSwapContractInfo();
         contract.setContractCode("XAUT-USDT");
+        contract.setContractSize(new BigDecimal("0.001"));
         contract.setPriceTick(new BigDecimal("0.01"));
         HtxDepth depth = new HtxDepth();
         depth.setBids(List.of(new HtxPriceLevel(new BigDecimal("4333.32"), new BigDecimal("100"))));
@@ -69,10 +71,11 @@ class HtxContractAutoTestSchedulerTest {
         ArgumentCaptor<HtxContractCycleRequest> request = ArgumentCaptor.forClass(HtxContractCycleRequest.class);
         verify(tradingService).submitDualCycle(request.capture());
         assertEquals("XAUT-USDT", request.getValue().getContractCode());
-        assertEquals(2L, request.getValue().getVolume());
+        assertEquals(115L, request.getValue().getVolume());
         assertEquals(5, request.getValue().getLeverage());
         assertEquals(new BigDecimal("4333.33"), request.getValue().getOpenPrice());
-        assertEquals(new BigDecimal("4359.33"), request.getValue().getClosePrice());
+        assertEquals(new BigDecimal("4333.33"), request.getValue().getClosePrice());
+        assertEquals(Boolean.TRUE, request.getValue().getFastIoc());
         verify(recorder).recordDryRun(request.getValue(), "XAUT-USDT", 5, "dry-run");
     }
 
@@ -95,6 +98,7 @@ class HtxContractAutoTestSchedulerTest {
         props.setLiveEnabled(true);
         HtxSwapContractInfo contract = new HtxSwapContractInfo();
         contract.setContractCode("XAUT-USDT");
+        contract.setContractSize(new BigDecimal("0.001"));
         contract.setPriceTick(new BigDecimal("0.01"));
         HtxDepth depth = new HtxDepth();
         depth.setBids(List.of(new HtxPriceLevel(new BigDecimal("4333.32"), new BigDecimal("100"))));
@@ -109,6 +113,32 @@ class HtxContractAutoTestSchedulerTest {
         verify(tradingService, never()).configureLeverage(any());
         verify(tradingService).submitDualCycle(any());
         verify(recorder, never()).recordDryRun(any(), anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    void insufficientMarginBackoffSkipsImmediateRetry() {
+        props.setAutoTestEnabled(false);
+        props.setAutoLiveEnabled(true);
+        props.setDryRun(false);
+        props.setLiveEnabled(true);
+        props.setInsufficientMarginBackoffMs(300_000L);
+        HtxSwapContractInfo contract = new HtxSwapContractInfo();
+        contract.setContractCode("XAUT-USDT");
+        contract.setContractSize(new BigDecimal("0.001"));
+        contract.setPriceTick(new BigDecimal("0.01"));
+        HtxDepth depth = new HtxDepth();
+        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal("4333.32"), new BigDecimal("100"))));
+        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal("4333.34"), new BigDecimal("100"))));
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract)));
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth));
+        when(tradingService.submitDualCycle(any())).thenReturn(HtxContractTradeResult.builder()
+                .code(HtxContractTradeResult.Code.REJECT_INSUFFICIENT_MARGIN).build());
+
+        scheduler.runOnce();
+        scheduler.runOnce();
+
+        verify(tradingService, times(1)).submitDualCycle(any());
+        verify(swap, times(1)).contractInfo("XAUT-USDT");
     }
 
     @Test

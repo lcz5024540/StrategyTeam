@@ -167,8 +167,11 @@ public class HtxUsdtSwapService {
 
     public HtxRestResponse<List<HtxSwapOrderResult>> batchOrders(List<HtxSwapOrderRequest> requests) {
         rateLimiter.acquire(HtxUidRateLimiter.RequestType.TRADE);
+        List<Map<String, Object>> body = requests.stream()
+                .map(HtxUsdtSwapService::singleOrderBody)
+                .collect(Collectors.toList());
         HtxRestResponse<List<HtxV5OrderResult>> response = rest.signedPost(
-                "/v5/trade/batch_orders", Collections.emptyMap(), requests,
+                "/v5/trade/batch_orders", Collections.emptyMap(), body,
                 new TypeReference<HtxRestResponse<List<HtxV5OrderResult>>>() { });
         return mapResponse(response, values -> values == null ? Collections.emptyList()
                 : values.stream().map(HtxUsdtSwapService::mapOrderResult).collect(Collectors.toList()));

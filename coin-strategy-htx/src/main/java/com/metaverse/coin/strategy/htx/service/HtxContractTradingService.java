@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.htx.service;
 
 import com.metaverse.coin.strategy.common.client.htx.HtxUsdtSwapApiService;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAvailableLeverage;
@@ -132,13 +133,17 @@ public class HtxContractTradingService {
         String contractCode = normalize(request == null ? null : request.getContractCode());
         int leverage = request != null && request.getLeverage() != null
                 ? request.getLeverage() : props.getLeverage();
+        boolean fastIoc = request != null && Boolean.TRUE.equals(request.getFastIoc());
         HtxContractTradeResult rejected = validateCycle(request, contractCode, leverage);
         if (rejected != null) {
             return rejected;
         }
-        if (request.getClientOrderId() != null && request.getClientOrderId() > Long.MAX_VALUE - 3L) {
+        long maxClientOrderOffset = 3L + (fastIoc
+                ? Math.max(0L, (long) props.getFastIocCloseRetryAttempts()) * 2L : 0L);
+        if (request.getClientOrderId() != null
+                && request.getClientOrderId() > Long.MAX_VALUE - maxClientOrderOffset) {
             return result(HtxContractTradeResult.Code.REJECT_INVALID_INPUT, contractCode, leverage,
-                    "dual cycle requires four consecutive client order ids");
+                    "dual cycle client order id range would overflow");
         }
 
         HtxSwapContractInfo contract = loadContract(contractCode);
@@ -169,8 +174,9 @@ public class HtxContractTradingService {
         }
         if (props.isDryRun()) {
             log.info("[HTX-CONTRACT-DRY-RUN] would batch open long+short contract={} volume={} leverage={}x "
-                            + "openPrice={} then reduce both at closePrice={}",
-                    contractCode, request.getVolume(), leverage, request.getOpenPrice(), request.getClosePrice());
+                            + "openPrice={} then reduce both at closePrice={} fastIoc={}",
+                    contractCode, request.getVolume(), leverage, request.getOpenPrice(), request.getClosePrice(),
+                    fastIoc);
             return result(HtxContractTradeResult.Code.DRY_RUN_OK, contractCode, leverage,
                     "dual dry-run per-leg notional=" + legNotional.toPlainString());
         }
@@ -189,6 +195,14 @@ public class HtxContractTradingService {
             return privatePreflight;
         }
 
+        ExecutablePrices openPrices = fastIoc
+                ? executablePrices(contractCode, request.getVolume(), request.getVolume(), contract.getPriceTick())
+                : ExecutablePrices.ok(request.getOpenPrice(), request.getOpenPrice());
+        if (!openPrices.available()) {
+            return result(HtxContractTradeResult.Code.REJECT_DEPTH, contractCode, leverage,
+                    "open " + openPrices.error());
+        }
+
         long cycleId;
         try {
             cycleId = recorder.createIntent(request, contractCode, leverage);
@@ -198,10 +212,10 @@ public class HtxContractTradingService {
 
         LegExecution longOpen = leg(HtxContractTradeRecorder.LONG_OPEN,
                 request.getClientOrderId(), "buy", "long", false,
-                request.getVolume(), request.getOpenPrice(), contractCode);
+                request.getVolume(), openPrices.buyPrice(), contractCode, fastIoc);
         LegExecution shortOpen = leg(HtxContractTradeRecorder.SHORT_OPEN,
                 request.getClientOrderId() + 1L, "sell", "short", false,
-                request.getVolume(), request.getOpenPrice(), contractCode);
+                request.getVolume(), openPrices.sellPrice(), contractCode, fastIoc);
         List<LegExecution> openLegs = List.of(longOpen, shortOpen);
         try {
             persistLegIntents(cycleId, openLegs);
@@ -250,12 +264,35 @@ public class HtxContractTradingService {
         recorder.update(cycleId, HtxContractTradeRecorder.OPEN_FILLED,
                 longOpen.orderId, null, longVolume.add(shortVolume), null,
                 "long=" + longVolume + " short=" + shortVolume);
-        depthRejection = checkDepth(contractCode, leverage, shortVolume, longVolume, "close");
-        if (depthRejection != null) {
+        long longCloseVolume;
+        long shortCloseVolume;
+        try {
+            longCloseVolume = longVolume.longValueExact();
+            shortCloseVolume = shortVolume.longValueExact();
+        } catch (ArithmeticException e) {
             return recordedDualResult(cycleId, HtxContractTradeResult.Code.EXPOSURE,
                     HtxContractTradeRecorder.EXPOSURE, contractCode, leverage,
-                    longOpen, shortOpen, null, null,
-                    "close depth rejected after open: " + depthRejection.getMessage());
+                    longOpen, shortOpen, null, null, "HTX returned non-integer contract fill");
+        }
+        ExecutablePrices closePrices;
+        if (fastIoc) {
+            closePrices = executablePrices(contractCode, shortCloseVolume, longCloseVolume,
+                    contract.getPriceTick());
+            if (!closePrices.available()) {
+                return recordedDualResult(cycleId, HtxContractTradeResult.Code.EXPOSURE,
+                        HtxContractTradeRecorder.EXPOSURE, contractCode, leverage,
+                        longOpen, shortOpen, null, null,
+                        "close depth rejected after open: " + closePrices.error());
+            }
+        } else {
+            depthRejection = checkDepth(contractCode, leverage, shortVolume, longVolume, "close");
+            if (depthRejection != null) {
+                return recordedDualResult(cycleId, HtxContractTradeResult.Code.EXPOSURE,
+                        HtxContractTradeRecorder.EXPOSURE, contractCode, leverage,
+                        longOpen, shortOpen, null, null,
+                        "close depth rejected after open: " + depthRejection.getMessage());
+            }
+            closePrices = ExecutablePrices.ok(request.getClosePrice(), request.getClosePrice());
         }
 
         List<LegExecution> closeLegs = new ArrayList<>(2);
@@ -265,13 +302,13 @@ public class HtxContractTradingService {
             if (longVolume.signum() > 0) {
                 longClose = leg(HtxContractTradeRecorder.LONG_CLOSE,
                         request.getClientOrderId() + 2L, "sell", "long", true,
-                        longVolume.longValueExact(), request.getClosePrice(), contractCode);
+                        longCloseVolume, closePrices.sellPrice(), contractCode, fastIoc);
                 closeLegs.add(longClose);
             }
             if (shortVolume.signum() > 0) {
                 shortClose = leg(HtxContractTradeRecorder.SHORT_CLOSE,
                         request.getClientOrderId() + 3L, "buy", "short", true,
-                        shortVolume.longValueExact(), request.getClosePrice(), contractCode);
+                        shortCloseVolume, closePrices.buyPrice(), contractCode, fastIoc);
                 closeLegs.add(shortClose);
             }
             persistLegIntents(cycleId, closeLegs);
@@ -289,7 +326,7 @@ public class HtxContractTradingService {
                     longOpen, shortOpen, longClose, shortClose,
                     "close batch acknowledgement is unknown; reconcile by client order id");
         }
-        if (closeAccepted == 0) {
+        if (closeAccepted == 0 && !fastIoc) {
             return recordedDualResult(cycleId, HtxContractTradeResult.Code.CLOSE_ORDER_REJECTED,
                     HtxContractTradeRecorder.EXPOSURE, contractCode, leverage,
                     longOpen, shortOpen, longClose, shortClose, "all close legs were rejected");
@@ -300,6 +337,10 @@ public class HtxContractTradingService {
                 "dual reduce-only close batch accepted=" + closeAccepted);
         settleCloseLeg(cycleId, contractCode, longClose, timeout);
         settleCloseLeg(cycleId, contractCode, shortClose, timeout);
+        if (fastIoc && (!closed(longOpen, longClose) || !closed(shortOpen, shortClose))) {
+            retryFastIocCloses(cycleId, request, contractCode, contract.getPriceTick(), timeout,
+                    longOpen, shortOpen, longClose, shortClose);
+        }
 
         boolean longClosed = closed(longOpen, longClose);
         boolean shortClosed = closed(shortOpen, shortClose);
@@ -642,11 +683,59 @@ public class HtxContractTradingService {
                 && contract.getPriceTick() != null && contract.getPriceTick().signum() > 0;
     }
 
+    private ExecutablePrices executablePrices(String contractCode, long buyVolume, long sellVolume,
+                                               BigDecimal tick) {
+        HtxRestResponse<HtxDepth> response = swap().depth(contractCode, props.getDepthStep());
+        if (response == null || !response.ok() || response.payload() == null) {
+            return ExecutablePrices.error("depth query failed: " + error(response));
+        }
+        BigDecimal buyQty = BigDecimal.valueOf(buyVolume);
+        BigDecimal sellQty = BigDecimal.valueOf(sellVolume);
+        HtxDepthGuard.Verdict verdict = depthGuard.checkSides(response.payload(), buyQty, sellQty,
+                props.getDepthSafetyRatio(), props.getDepthTopN());
+        if (!verdict.allOk()) {
+            return ExecutablePrices.error("depth insufficient required=" + verdict.getRequiredAmount()
+                    + " asks=" + verdict.getCumulativeAskAmount()
+                    + " bids=" + verdict.getCumulativeBidAmount());
+        }
+        BigDecimal buyPrice = executableLimit(response.payload().getAsks(), buyQty, tick, true);
+        BigDecimal sellPrice = executableLimit(response.payload().getBids(), sellQty, tick, false);
+        if ((buyVolume > 0 && buyPrice == null) || (sellVolume > 0 && sellPrice == null)) {
+            return ExecutablePrices.error("top-of-book levels cannot support IOC safety quantity");
+        }
+        return ExecutablePrices.ok(buyPrice, sellPrice);
+    }
+
+    private BigDecimal executableLimit(List<HtxPriceLevel> levels, BigDecimal volume,
+                                       BigDecimal tick, boolean buy) {
+        if (volume.signum() == 0) {
+            return null;
+        }
+        BigDecimal required = volume.multiply(props.getDepthSafetyRatio());
+        BigDecimal cumulative = BigDecimal.ZERO;
+        int limit = Math.min(props.getDepthTopN(), levels == null ? 0 : levels.size());
+        for (int i = 0; i < limit; i++) {
+            HtxPriceLevel level = levels.get(i);
+            if (level.getAmount() != null) {
+                cumulative = cumulative.add(level.getAmount());
+            }
+            if (cumulative.compareTo(required) >= 0 && level.getPrice() != null) {
+                RoundingMode rounding = buy ? RoundingMode.CEILING : RoundingMode.FLOOR;
+                return level.getPrice().divide(tick, 0, rounding).multiply(tick);
+            }
+        }
+        return null;
+    }
+
     private LegExecution leg(String legType, long clientOrderId, String side, String positionSide,
-                             boolean reduceOnly, long volume, BigDecimal price, String contractCode) {
+                             boolean reduceOnly, long volume, BigDecimal price, String contractCode,
+                             boolean fastIoc) {
         HtxSwapOrderRequest instruction = HtxUsdtSwapService.orderRequest(
                 contractCode, clientOrderId, volume, side, positionSide, reduceOnly,
                 price.toPlainString(), "limit");
+        if (fastIoc) {
+            instruction.setTimeInForce("ioc");
+        }
         return new LegExecution(legType, clientOrderId, instruction, volume, price);
     }
 
@@ -664,7 +753,7 @@ public class HtxContractTradingService {
         if (response == null || !response.ok() || response.getData() == null) {
             for (LegExecution leg : legs) {
                 leg.outcome = FillOutcome.unknown();
-                recorder.updateLeg(cycleId, leg.legType, null, "UNKNOWN",
+                recorder.updateLeg(cycleId, leg.clientOrderId, null, "UNKNOWN",
                         BigDecimal.ZERO, null, BigDecimal.ZERO, null, BigDecimal.ZERO, error(response));
             }
             return 0;
@@ -688,16 +777,130 @@ public class HtxContractTradingService {
             if (itemAccepted) {
                 leg.orderId = item.getOrderId();
                 accepted++;
-                recorder.updateLeg(cycleId, leg.legType, leg.orderId, "SENT",
+                recorder.updateLeg(cycleId, leg.clientOrderId, leg.orderId, "SENT",
                         BigDecimal.ZERO, null, BigDecimal.ZERO, null, BigDecimal.ZERO, "batch accepted");
             } else {
                 leg.outcome = FillOutcome.rejected();
-                recorder.updateLeg(cycleId, leg.legType, null, "REJECTED",
+                recorder.updateLeg(cycleId, leg.clientOrderId, null, "REJECTED",
                         BigDecimal.ZERO, null, BigDecimal.ZERO, null, BigDecimal.ZERO,
                         item == null ? "missing batch result" : item.getMessage());
             }
         }
         return accepted;
+    }
+
+    private void retryFastIocCloses(long cycleId, HtxContractCycleRequest request,
+                                    String contractCode, BigDecimal priceTick, long timeout,
+                                    LegExecution longOpen, LegExecution shortOpen,
+                                    LegExecution longClose, LegExecution shortClose) {
+        int maxAttempts = Math.max(0, props.getFastIocCloseRetryAttempts());
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            long remainingLong = remainingContracts(longOpen, longClose);
+            long remainingShort = remainingContracts(shortOpen, shortClose);
+            if (remainingLong < 0L || remainingShort < 0L) {
+                log.error("[HTX-CONTRACT] close retry has non-integer remaining volume cycleId={}", cycleId);
+                return;
+            }
+            if (remainingLong == 0L && remainingShort == 0L) {
+                return;
+            }
+
+            ExecutablePrices prices = executablePrices(
+                    contractCode, remainingShort, remainingLong, priceTick);
+            if (!prices.available()) {
+                log.error("[HTX-CONTRACT] close retry depth unavailable cycleId={} attempt={} error={}",
+                        cycleId, attempt, prices.error());
+                return;
+            }
+
+            List<LegExecution> retries = new ArrayList<>(2);
+            LegExecution longRetry = null;
+            LegExecution shortRetry = null;
+            if (remainingLong > 0L) {
+                longRetry = leg(HtxContractTradeRecorder.LONG_CLOSE + "_R" + attempt,
+                        request.getClientOrderId() + 2L + attempt * 2L,
+                        "sell", "long", true, remainingLong, prices.sellPrice(), contractCode, true);
+                retries.add(longRetry);
+            }
+            if (remainingShort > 0L) {
+                shortRetry = leg(HtxContractTradeRecorder.SHORT_CLOSE + "_R" + attempt,
+                        request.getClientOrderId() + 3L + attempt * 2L,
+                        "buy", "short", true, remainingShort, prices.buyPrice(), contractCode, true);
+                retries.add(shortRetry);
+            }
+
+            try {
+                persistLegIntents(cycleId, retries);
+            } catch (HtxPersistenceException e) {
+                log.error("[HTX-CONTRACT] close retry persistence failed cycleId={} attempt={}",
+                        cycleId, attempt, e);
+                return;
+            }
+            sendBatch(cycleId, retries);
+            if (retries.stream().anyMatch(leg -> leg.outcome.infraFailure)) {
+                log.error("[HTX-CONTRACT] close retry acknowledgement unknown cycleId={} attempt={}",
+                        cycleId, attempt);
+                return;
+            }
+            settleCloseLeg(cycleId, contractCode, longRetry, timeout);
+            settleCloseLeg(cycleId, contractCode, shortRetry, timeout);
+            mergeCloseOutcome(longClose, longRetry, filled(longOpen));
+            mergeCloseOutcome(shortClose, shortRetry, filled(shortOpen));
+            recorder.update(cycleId, HtxContractTradeRecorder.CLOSE_PENDING,
+                    orderId(longOpen), orderId(longClose),
+                    filled(longOpen).add(filled(shortOpen)),
+                    filled(longClose).add(filled(shortClose)),
+                    "reduce-only IOC close retry attempt=" + attempt);
+        }
+    }
+
+    private static long remainingContracts(LegExecution open, LegExecution close) {
+        BigDecimal remaining = filled(open).subtract(filled(close)).max(BigDecimal.ZERO);
+        try {
+            return remaining.longValueExact();
+        } catch (ArithmeticException e) {
+            return -1L;
+        }
+    }
+
+    private static void mergeCloseOutcome(LegExecution summary, LegExecution retry, BigDecimal targetVolume) {
+        if (summary == null || retry == null || retry.outcome == null) {
+            return;
+        }
+        FillOutcome previous = summary.outcome == null ? new FillOutcome() : summary.outcome;
+        FillOutcome current = retry.outcome;
+        BigDecimal previousVolume = previous.tradeVolume;
+        BigDecimal totalVolume = previousVolume.add(current.tradeVolume);
+        FillOutcome merged = new FillOutcome();
+        merged.tradeVolume = totalVolume;
+        merged.averagePrice = weightedAverage(previous.averagePrice, previousVolume,
+                current.averagePrice, current.tradeVolume);
+        merged.fee = previous.fee.add(current.fee);
+        merged.feeCurrency = current.feeCurrency == null ? previous.feeCurrency : current.feeCurrency;
+        merged.realizedProfit = previous.realizedProfit.add(current.realizedProfit);
+        merged.fullyFilled = totalVolume.compareTo(targetVolume) >= 0;
+        merged.terminal = current.terminal;
+        merged.terminalRejected = current.terminalRejected;
+        merged.infraFailure = current.infraFailure;
+        merged.state = merged.fullyFilled ? "filled" : current.state;
+        summary.orderId = retry.orderId == null ? summary.orderId : retry.orderId;
+        summary.outcome = merged;
+    }
+
+    private static BigDecimal weightedAverage(BigDecimal leftPrice, BigDecimal leftVolume,
+                                              BigDecimal rightPrice, BigDecimal rightVolume) {
+        BigDecimal total = leftVolume.add(rightVolume);
+        if (total.signum() == 0) {
+            return null;
+        }
+        BigDecimal weighted = BigDecimal.ZERO;
+        if (leftPrice != null) {
+            weighted = weighted.add(leftPrice.multiply(leftVolume));
+        }
+        if (rightPrice != null) {
+            weighted = weighted.add(rightPrice.multiply(rightVolume));
+        }
+        return weighted.divide(total, 18, RoundingMode.HALF_UP);
     }
 
     private void settleOpenLeg(long cycleId, String contractCode, LegExecution leg, long timeout) {
@@ -735,7 +938,7 @@ public class HtxContractTradingService {
 
     private void updateLeg(long cycleId, LegExecution leg, String state) {
         FillOutcome outcome = leg.outcome;
-        recorder.updateLeg(cycleId, leg.legType, leg.orderId, state,
+        recorder.updateLeg(cycleId, leg.clientOrderId, leg.orderId, state,
                 outcome.tradeVolume, outcome.averagePrice, outcome.fee,
                 outcome.feeCurrency, outcome.realizedProfit, state);
     }
@@ -976,6 +1179,20 @@ public class HtxContractTradingService {
             this.instruction = instruction;
             this.requestedVolume = requestedVolume;
             this.price = price;
+        }
+    }
+
+    private record ExecutablePrices(BigDecimal buyPrice, BigDecimal sellPrice, String error) {
+        private static ExecutablePrices ok(BigDecimal buyPrice, BigDecimal sellPrice) {
+            return new ExecutablePrices(buyPrice, sellPrice, null);
+        }
+
+        private static ExecutablePrices error(String message) {
+            return new ExecutablePrices(null, null, message);
+        }
+
+        private boolean available() {
+            return error == null;
         }
     }
 

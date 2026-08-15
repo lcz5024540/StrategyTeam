@@ -88,14 +88,14 @@ htx:
     base-url: ${HTX_CONTRACT_BASE_URL:https://api.hbdm.com}
     margin-mode: isolated
     position-mode: dual_side
-    contract-codes: ${HTX_CONTRACT_CODES:BTC-USDT,ETH-USDT,XAUT-USDT}
-    leverage: ${HTX_CONTRACT_LEVERAGE:5}
-    max-leverage: ${HTX_CONTRACT_MAX_LEVERAGE:5}
+    contract-codes: ${HTX_CONTRACT_CODES:XAUT-USDT}
+    leverage: ${HTX_CONTRACT_LEVERAGE:75}
+    max-leverage: ${HTX_CONTRACT_MAX_LEVERAGE:75}
     depth-step: 6
     depth-top-n: 10
     depth-safety-ratio: 3.0
     min-quote-notional: ${HTX_CONTRACT_MIN_NOTIONAL:5}
-    max-single-quote-notional: ${HTX_CONTRACT_MAX_SINGLE_NOTIONAL:50}
+    max-single-quote-notional: ${HTX_CONTRACT_MAX_SINGLE_NOTIONAL:1100}
     margin-safety-ratio: 1.20
     fill-poll-interval-ms: 500
     fill-timeout-ms: 10000
@@ -109,6 +109,10 @@ htx:
     auto-test-initial-delay-ms: ${HTX_CONTRACT_AUTO_TEST_INITIAL_DELAY_MS:20000}
     auto-test-interval-ms: ${HTX_CONTRACT_AUTO_TEST_INTERVAL_MS:500}
     auto-test-volume: ${HTX_CONTRACT_AUTO_TEST_VOLUME:2}
+    auto-test-quote-notional: ${HTX_CONTRACT_AUTO_TEST_QUOTE_NOTIONAL:500}
+    auto-fast-ioc-enabled: ${HTX_CONTRACT_AUTO_FAST_IOC_ENABLED:true}
+    fast-ioc-close-retry-attempts: ${HTX_CONTRACT_FAST_IOC_CLOSE_RETRY_ATTEMPTS:3}
+    insufficient-margin-backoff-ms: ${HTX_CONTRACT_INSUFFICIENT_MARGIN_BACKOFF_MS:300000}
     auto-test-target-return-pct: ${HTX_CONTRACT_AUTO_TEST_TARGET_RETURN_PCT:0.006}
 
 mybatis-plus:

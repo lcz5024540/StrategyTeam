@@ -101,7 +101,7 @@ public class HtxContractTradeRecorder {
     }
 
     /** Post-send leg updates are best effort; an unchanged INTENT remains visible for reconciliation. */
-    public void updateLeg(long cycleId, String legType, Long orderId, String state,
+    public void updateLeg(long cycleId, long clientOrderId, Long orderId, String state,
                           BigDecimal filledVolume, BigDecimal averagePrice, BigDecimal fee,
                           String feeCurrency, BigDecimal realizedProfit, String message) {
         try {
@@ -116,10 +116,10 @@ public class HtxContractTradeRecorder {
             entity.setMessage(message);
             entity.setUpdatedAt(LocalDateTime.now());
             legMapper.update(entity, new UpdateWrapper<HtxContractLegEntity>()
-                    .eq("cycle_id", cycleId).eq("leg_type", legType));
+                    .eq("cycle_id", cycleId).eq("client_order_id", clientOrderId));
         } catch (Exception e) {
-            log.error("contract leg update failed cycleId={} legType={} state={}",
-                    cycleId, legType, state, e);
+            log.error("contract leg update failed cycleId={} clientOrderId={} state={}",
+                    cycleId, clientOrderId, state, e);
         }
     }
 

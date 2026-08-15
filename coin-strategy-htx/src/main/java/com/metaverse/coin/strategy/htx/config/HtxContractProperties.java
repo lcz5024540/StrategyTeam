@@ -21,13 +21,13 @@ public class HtxContractProperties {
     private String marginMode = "isolated";
     private String positionMode = "dual_side";
     private List<String> contractCodes = List.of("BTC-USDT", "ETH-USDT", "XAUT-USDT");
-    private int leverage = 5;
-    private int maxLeverage = 5;
+    private int leverage = 75;
+    private int maxLeverage = 75;
     private int depthStep = 6;
     private int depthTopN = 10;
     private BigDecimal depthSafetyRatio = new BigDecimal("3.0");
     private BigDecimal minQuoteNotional = new BigDecimal("5");
-    private BigDecimal maxSingleQuoteNotional = new BigDecimal("50");
+    private BigDecimal maxSingleQuoteNotional = new BigDecimal("1100");
     private BigDecimal marginSafetyRatio = new BigDecimal("1.20");
     private long fillPollIntervalMs = 500L;
     private long fillTimeoutMs = 10_000L;
@@ -46,6 +46,14 @@ public class HtxContractProperties {
     private long autoTestIntervalMs = 500L;
     /** Number of contracts, not XAUT quantity. */
     private long autoTestVolume = 2L;
+    /** Per-side target quote notional. Positive values override autoTestVolume. */
+    private BigDecimal autoTestQuoteNotional = new BigDecimal("500");
+    /** Consume external depth with independent IOC prices instead of equal-price resting orders. */
+    private boolean autoFastIocEnabled = true;
+    /** Refresh depth and retry remaining reduce-only IOC close volume before declaring exposure. */
+    private int fastIocCloseRetryAttempts = 3;
+    /** Avoid hammering private APIs after the account can no longer support both legs. */
+    private long insufficientMarginBackoffMs = 300_000L;
     /** Simulated close target above the current best ask. */
     private BigDecimal autoTestTargetReturnPct = new BigDecimal("0.006");
 }

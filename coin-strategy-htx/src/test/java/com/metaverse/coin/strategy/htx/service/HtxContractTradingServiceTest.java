@@ -73,7 +73,7 @@ class HtxContractTradingServiceTest {
     @Test
     void leverageAboveConfiguredMaximumIsRejected() {
         HtxContractCycleRequest request = request();
-        request.setLeverage(6);
+        request.setLeverage(76);
 
         HtxContractTradeResult result = service.submitLongCycle(request);
 

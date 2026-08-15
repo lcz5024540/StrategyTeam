@@ -31,6 +31,7 @@ public class HtxContractAutoTestScheduler {
     private final HtxContractTradingService tradingService;
     private final HtxContractTradeRecorder recorder;
     private final HtxContractProperties props;
+    private volatile long nextMarginRetryAtMs;
 
     @Scheduled(
             fixedDelayString = "${htx.contract.auto-test-interval-ms:500}",
@@ -44,6 +45,9 @@ public class HtxContractAutoTestScheduler {
     }
 
     void runOnce() {
+        if (System.currentTimeMillis() < nextMarginRetryAtMs) {
+            return;
+        }
         boolean dryRunMode = props.isAutoTestEnabled() && props.isDryRun() && !props.isLiveEnabled();
         boolean liveMode = props.isAutoLiveEnabled() && !props.isDryRun() && props.isLiveEnabled();
         if (!dryRunMode && !liveMode) {
@@ -57,7 +61,8 @@ public class HtxContractAutoTestScheduler {
         String contractCode = props.getContractCodes().get(0).trim().toUpperCase(Locale.ROOT);
         HtxSwapContractInfo contract = loadContract(contractCode);
         HtxDepth depth = loadDepth(contractCode);
-        if (contract == null || contract.getPriceTick() == null || contract.getPriceTick().signum() <= 0
+        if (contract == null || contract.getContractSize() == null || contract.getContractSize().signum() <= 0
+                || contract.getPriceTick() == null || contract.getPriceTick().signum() <= 0
                 || depth == null || depth.getAsks() == null || depth.getAsks().isEmpty()
                 || depth.getBids() == null || depth.getBids().isEmpty()) {
             log.warn("[HTX-CONTRACT-AUTO] public market data unavailable contract={}", contractCode);
@@ -72,21 +77,22 @@ public class HtxContractAutoTestScheduler {
             log.warn("[HTX-CONTRACT-AUTO] invalid top of book contract={}", contractCode);
             return;
         }
-        BigDecimal openPrice = roundToTick(
-                bestBid.getPrice().add(bestAsk.getPrice()).divide(BigDecimal.valueOf(2),
-                        contract.getPriceTick().scale() + 4, RoundingMode.HALF_UP),
-                contract.getPriceTick());
-        BigDecimal closePrice = roundUpToTick(openPrice.multiply(
+        BigDecimal referencePrice = bestBid.getPrice().add(bestAsk.getPrice()).divide(BigDecimal.valueOf(2),
+                contract.getPriceTick().scale() + 4, RoundingMode.HALF_UP);
+        BigDecimal openPrice = roundToTick(referencePrice, contract.getPriceTick());
+        BigDecimal closePrice = props.isAutoFastIocEnabled() ? openPrice : roundUpToTick(openPrice.multiply(
                 BigDecimal.ONE.add(props.getAutoTestTargetReturnPct())), contract.getPriceTick());
+        long volume = targetVolume(contract, referencePrice);
         long clientOrderId = System.currentTimeMillis() * 10L;
         HtxContractCycleRequest request = HtxContractCycleRequest.builder()
                 .contractCode(contractCode)
-                .volume(props.getAutoTestVolume())
+                .volume(volume)
                 .openPrice(openPrice)
                 .closePrice(closePrice)
                 .leverage(props.getLeverage())
                 .clientOrderId(clientOrderId)
                 .waitFillTimeoutMs(props.getFillTimeoutMs())
+                .fastIoc(props.isAutoFastIocEnabled())
                 .build();
 
         if (dryRunMode) {
@@ -100,16 +106,24 @@ public class HtxContractAutoTestScheduler {
         }
         HtxContractTradeResult result = tradingService.submitDualCycle(request);
         if (!result.success()) {
+            if (HtxContractTradeResult.Code.REJECT_INSUFFICIENT_MARGIN.equals(result.getCode())) {
+                nextMarginRetryAtMs = System.currentTimeMillis() + props.getInsufficientMarginBackoffMs();
+                log.warn("[HTX-CONTRACT-AUTO] insufficient margin; pause new cycles for {}ms",
+                        props.getInsufficientMarginBackoffMs());
+            }
             log.warn("[HTX-CONTRACT-AUTO] cycle rejected contract={} result={}", contractCode, result);
             return;
         }
+        nextMarginRetryAtMs = 0L;
         if (dryRunMode) {
             long cycleId = recorder.recordDryRun(request, contractCode, props.getLeverage(), result.getMessage());
             result.setCycleId(cycleId);
         }
-        log.info("[HTX-CONTRACT-AUTO] completed mode={} cycleId={} contract={} volume={} leverage={}x open={} close={}",
+        log.info("[HTX-CONTRACT-AUTO] completed mode={} cycleId={} contract={} volume={} targetNotional={} "
+                        + "leverage={}x referencePrice={} fastIoc={}",
                 dryRunMode ? "dry-run" : "live", result.getCycleId(), contractCode,
-                props.getAutoTestVolume(), props.getLeverage(), openPrice, closePrice);
+                volume, props.getAutoTestQuoteNotional(), props.getLeverage(), openPrice,
+                props.isAutoFastIocEnabled());
     }
 
     private HtxSwapContractInfo loadContract(String contractCode) {
@@ -133,5 +147,15 @@ public class HtxContractAutoTestScheduler {
 
     static BigDecimal roundToTick(BigDecimal price, BigDecimal tick) {
         return price.divide(tick, 0, RoundingMode.HALF_UP).multiply(tick);
+    }
+
+    private long targetVolume(HtxSwapContractInfo contract, BigDecimal referencePrice) {
+        BigDecimal target = props.getAutoTestQuoteNotional();
+        if (target == null || target.signum() <= 0) {
+            return props.getAutoTestVolume();
+        }
+        BigDecimal notionalPerContract = contract.getContractSize().multiply(referencePrice);
+        return target.divide(notionalPerContract, 0, RoundingMode.HALF_UP)
+                .max(BigDecimal.ONE).longValueExact();
     }
 }

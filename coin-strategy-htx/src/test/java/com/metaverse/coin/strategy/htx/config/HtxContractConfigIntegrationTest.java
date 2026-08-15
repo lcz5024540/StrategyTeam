@@ -1,5 +1,7 @@
 package com.metaverse.coin.strategy.htx.config;
 
+import java.math.BigDecimal;
+
 import com.metaverse.coin.strategy.common.client.htx.HtxUsdtSwapApiService;
 import com.metaverse.coin.strategy.htx.controller.HtxContractController;
 import com.metaverse.coin.strategy.htx.service.HtxContractTradingService;
@@ -33,6 +35,11 @@ class HtxContractConfigIntegrationTest {
         assertTrue(properties.isDryRun());
         assertEquals("https://api.hbdm.com", properties.getBaseUrl());
         assertTrue(properties.getContractCodes().contains("XAUT-USDT"));
+        assertEquals(75, properties.getLeverage());
+        assertEquals(75, properties.getMaxLeverage());
+        assertEquals(new BigDecimal("500"), properties.getAutoTestQuoteNotional());
+        assertTrue(properties.isAutoFastIocEnabled());
+        assertEquals(3, properties.getFastIocCloseRetryAttempts());
         assertFalse(properties.isAutoTestEnabled());
         assertEquals(2L, properties.getAutoTestVolume());
         assertEquals(500L, properties.getAutoTestIntervalMs());
