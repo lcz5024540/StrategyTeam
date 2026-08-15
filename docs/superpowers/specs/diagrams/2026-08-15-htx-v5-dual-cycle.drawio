@@ -1,0 +1,58 @@
+<mxfile host="app.diagrams.net" modified="2026-08-15T15:40:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="htx-v5-dual" name="V5 dual contract cycle">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="start" value="500ms fixed-delay tick&#xa;(live gates default off)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="170" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="market" value="One market snapshot&#xa;common openPrice + common closePrice" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="250" y="60" width="210" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="preflight" value="Fail-closed preflight&#xa;depth + no orders/positions + balance + long/short 5x" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="500" y="50" width="230" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="intent" value="Persist cycle + LONG_OPEN / SHORT_OPEN intents" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="770" y="60" width="210" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="open" value="POST /v5/trade/batch_orders&#xa;buy+long / sell+short&#xa;same price, cancel_both" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="770" y="180" width="210" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="openPoll" value="Poll both legs&#xa;cancel unfilled opens&#xa;persist fill/fee/profit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="500" y="180" width="190" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="closeDepth" value="Re-read depth for actual&#xa;long and short fill volumes" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="260" y="170" width="180" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="closeIntent" value="Persist LONG_CLOSE / SHORT_CLOSE intents" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="close" value="POST /v5/trade/batch_orders&#xa;sell+long / buy+short&#xa;same price, reduce_only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="330" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="closePoll" value="Poll both close legs&#xa;persist volume/avg/fee/profit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="280" y="330" width="190" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="done" value="DONE&#xa;both sides flattened" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="340" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="exposure" value="EXPOSURE / CLOSE_PENDING&#xa;block next cycle; reconcile before new open" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="330" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="start" target="market"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="market" target="preflight"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="preflight" target="intent"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="intent" target="open"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="open" target="openPoll"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="openPoll" target="closeDepth"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" value="enough" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="closeDepth" target="closeIntent"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="closeIntent" target="close"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="close" target="closePoll"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e10" value="all filled" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="closePoll" target="done"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e11" value="thin / unknown / partial" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;" edge="1" parent="1" source="closeDepth" target="exposure"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e12" value="not flat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#b85450;" edge="1" parent="1" source="closePoll" target="exposure"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

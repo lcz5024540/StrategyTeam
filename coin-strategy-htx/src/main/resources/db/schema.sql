@@ -92,3 +92,28 @@ CREATE TABLE IF NOT EXISTS htx_contract_cycle (
     updated_at            DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX idx_contract_cycle_active (contract_code, status)
 );
+
+-- Four durable legs for one dual-position cycle. Existing long-only cycle columns remain for compatibility.
+CREATE TABLE IF NOT EXISTS htx_contract_leg (
+    id                    BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    cycle_id              BIGINT         NOT NULL,
+    leg_type              VARCHAR(16)    NOT NULL,
+    client_order_id       BIGINT         NOT NULL UNIQUE,
+    order_id              BIGINT,
+    side                  VARCHAR(8)     NOT NULL,
+    position_side         VARCHAR(8)     NOT NULL,
+    reduce_only           TINYINT(1)     NOT NULL,
+    req_volume            BIGINT         NOT NULL,
+    price                 DECIMAL(36,18) NOT NULL,
+    state                 VARCHAR(32)    NOT NULL,
+    filled_volume         DECIMAL(36,18) DEFAULT 0,
+    average_price         DECIMAL(36,18),
+    fee                   DECIMAL(36,18) DEFAULT 0,
+    fee_currency          VARCHAR(16),
+    realized_profit       DECIMAL(36,18) DEFAULT 0,
+    message               VARCHAR(512),
+    created_at            DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at            DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_contract_leg_cycle_type (cycle_id, leg_type),
+    INDEX idx_contract_leg_order (order_id)
+);

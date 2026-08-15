@@ -54,24 +54,25 @@ class HtxContractAutoTestSchedulerTest {
         contract.setContractCode("XAUT-USDT");
         contract.setPriceTick(new BigDecimal("0.01"));
         HtxDepth depth = new HtxDepth();
+        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal("4333.32"), new BigDecimal("100"))));
         depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal("4333.34"), new BigDecimal("100"))));
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract)));
         when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth));
         when(tradingService.configureLeverage(any())).thenReturn(HtxContractTradeResult.builder()
                 .code(HtxContractTradeResult.Code.LEVERAGE_DRY_RUN_OK).build());
-        when(tradingService.submitLongCycle(any())).thenReturn(HtxContractTradeResult.builder()
+        when(tradingService.submitDualCycle(any())).thenReturn(HtxContractTradeResult.builder()
                 .code(HtxContractTradeResult.Code.DRY_RUN_OK).message("dry-run").build());
         when(recorder.recordDryRun(any(), anyString(), anyInt(), anyString())).thenReturn(88L);
 
         scheduler.runOnce();
 
         ArgumentCaptor<HtxContractCycleRequest> request = ArgumentCaptor.forClass(HtxContractCycleRequest.class);
-        verify(tradingService).submitLongCycle(request.capture());
+        verify(tradingService).submitDualCycle(request.capture());
         assertEquals("XAUT-USDT", request.getValue().getContractCode());
         assertEquals(2L, request.getValue().getVolume());
         assertEquals(5, request.getValue().getLeverage());
-        assertEquals(new BigDecimal("4333.34"), request.getValue().getOpenPrice());
-        assertEquals(new BigDecimal("4359.35"), request.getValue().getClosePrice());
+        assertEquals(new BigDecimal("4333.33"), request.getValue().getOpenPrice());
+        assertEquals(new BigDecimal("4359.33"), request.getValue().getClosePrice());
         verify(recorder).recordDryRun(request.getValue(), "XAUT-USDT", 5, "dry-run");
     }
 
@@ -82,7 +83,7 @@ class HtxContractAutoTestSchedulerTest {
         scheduler.runOnce();
 
         verify(swap, never()).contractInfo(anyString());
-        verify(tradingService, never()).submitLongCycle(any());
+        verify(tradingService, never()).submitDualCycle(any());
         verify(recorder, never()).recordDryRun(any(), anyString(), anyInt(), anyString());
     }
 
@@ -96,16 +97,17 @@ class HtxContractAutoTestSchedulerTest {
         contract.setContractCode("XAUT-USDT");
         contract.setPriceTick(new BigDecimal("0.01"));
         HtxDepth depth = new HtxDepth();
+        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal("4333.32"), new BigDecimal("100"))));
         depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal("4333.34"), new BigDecimal("100"))));
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract)));
         when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth));
-        when(tradingService.submitLongCycle(any())).thenReturn(HtxContractTradeResult.builder()
+        when(tradingService.submitDualCycle(any())).thenReturn(HtxContractTradeResult.builder()
                 .code(HtxContractTradeResult.Code.OK).cycleId(99L).build());
 
         scheduler.runOnce();
 
         verify(tradingService, never()).configureLeverage(any());
-        verify(tradingService).submitLongCycle(any());
+        verify(tradingService).submitDualCycle(any());
         verify(recorder, never()).recordDryRun(any(), anyString(), anyInt(), anyString());
     }
 

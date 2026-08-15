@@ -43,7 +43,15 @@ public class HtxDepthGuard {
     }
 
     public Verdict check(HtxDepth depth, BigDecimal qty, BigDecimal safetyRatio, int topN) {
-        if (depth == null || qty == null || qty.signum() <= 0) {
+        return checkSides(depth, qty, qty, safetyRatio, topN);
+    }
+
+    /** Buy quantity consumes asks; sell quantity consumes bids. Useful when two close legs differ. */
+    public Verdict checkSides(HtxDepth depth, BigDecimal buyQty, BigDecimal sellQty,
+                              BigDecimal safetyRatio, int topN) {
+        if (depth == null || buyQty == null || sellQty == null
+                || buyQty.signum() < 0 || sellQty.signum() < 0
+                || (buyQty.signum() == 0 && sellQty.signum() == 0)) {
             return new Verdict(false, false, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         }
         // v1.0.2 hotfix #10: verify book ordering. HTX's step0 book must be asks ascending /
@@ -51,17 +59,21 @@ public class HtxDepthGuard {
         // our sumTopN would silently pass while operating on the wrong levels.
         if (!isMonotonic(depth.getAsks(), true) || !isMonotonic(depth.getBids(), false)) {
             log.warn("HTX depth ordering violation for {}; refusing to trade", depth.getSymbol());
-            return new Verdict(false, false, BigDecimal.ZERO, BigDecimal.ZERO, qty.multiply(safetyRatio));
+            return new Verdict(false, false, BigDecimal.ZERO, BigDecimal.ZERO,
+                    buyQty.max(sellQty).multiply(safetyRatio));
         }
-        BigDecimal required = qty.multiply(safetyRatio);
+        BigDecimal requiredBuy = buyQty.multiply(safetyRatio);
+        BigDecimal requiredSell = sellQty.multiply(safetyRatio);
         BigDecimal askSum = sumTopN(depth.getAsks(), topN);
         BigDecimal bidSum = sumTopN(depth.getBids(), topN);
-        boolean buyOk = askSum.compareTo(required) >= 0;
-        boolean sellOk = bidSum.compareTo(required) >= 0;
-        Verdict v = new Verdict(buyOk, sellOk, askSum, bidSum, required);
+        boolean buyOk = buyQty.signum() == 0 || askSum.compareTo(requiredBuy) >= 0;
+        boolean sellOk = sellQty.signum() == 0 || bidSum.compareTo(requiredSell) >= 0;
+        Verdict v = new Verdict(buyOk, sellOk, askSum, bidSum, requiredBuy.max(requiredSell));
         if (!v.allOk()) {
-            log.warn("HTX depth insufficient: symbol={} qty={} required={} asksTop{}={} bidsTop{}={}",
-                    depth.getSymbol(), qty, required, topN, askSum, topN, bidSum);
+            log.warn("HTX depth insufficient: symbol={} buyQty={} sellQty={} requiredBuy={} requiredSell={} "
+                            + "asksTop{}={} bidsTop{}={}",
+                    depth.getSymbol(), buyQty, sellQty, requiredBuy, requiredSell,
+                    topN, askSum, topN, bidSum);
         }
         return v;
     }

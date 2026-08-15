@@ -12,4 +12,6 @@ public class HtxSwapAvailableLeverage {
     private String availableLevelRate;
     @JSONField(name = "margin_mode")
     private String marginMode;
+    @JSONField(name = "position_side")
+    private String positionSide;
 }

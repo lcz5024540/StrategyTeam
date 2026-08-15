@@ -291,6 +291,7 @@ class HtxContractTradingServiceTest {
         when(swap.positionInfo("BTC-USDT")).thenReturn(ok(Collections.emptyList()));
         HtxSwapAccount account = new HtxSwapAccount();
         account.setContractCode("BTC-USDT");
+        account.setState("normal");
         account.setMarginAvailable(new BigDecimal("1000"));
         account.setMarginMode("isolated");
         account.setPositionMode("dual_side");

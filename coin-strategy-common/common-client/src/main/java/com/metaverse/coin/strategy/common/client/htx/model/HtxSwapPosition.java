@@ -11,6 +11,10 @@ public class HtxSwapPosition {
     @JSONField(name = "contract_code")
     private String contractCode;
     private String direction;
+    @JSONField(name = "position_side")
+    private String positionSide;
+    @JSONField(name = "margin_mode")
+    private String marginMode;
     private BigDecimal volume;
     private BigDecimal available;
     @JSONField(name = "cost_open")
@@ -19,4 +23,6 @@ public class HtxSwapPosition {
     private Integer leverage;
     @JSONField(name = "position_mode")
     private String positionMode;
+    @JSONField(name = "profit_unreal")
+    private BigDecimal unrealizedProfit;
 }

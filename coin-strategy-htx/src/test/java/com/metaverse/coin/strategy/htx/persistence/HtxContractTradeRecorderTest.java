@@ -2,7 +2,9 @@ package com.metaverse.coin.strategy.htx.persistence;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractLegEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.service.HtxContractCycleRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,12 +23,14 @@ import static org.mockito.Mockito.when;
 class HtxContractTradeRecorderTest {
 
     private HtxContractCycleMapper mapper;
+    private HtxContractLegMapper legMapper;
     private HtxContractTradeRecorder recorder;
 
     @BeforeEach
     void setUp() {
         mapper = mock(HtxContractCycleMapper.class);
-        recorder = new HtxContractTradeRecorder(mapper);
+        legMapper = mock(HtxContractLegMapper.class);
+        recorder = new HtxContractTradeRecorder(mapper, legMapper);
     }
 
     @Test
@@ -83,5 +87,21 @@ class HtxContractTradeRecorderTest {
         assertEquals(50, captor.getValue().getLeverage());
         assertEquals(BigDecimal.ZERO, captor.getValue().getOpenFilledVolume());
         assertEquals(BigDecimal.ZERO, captor.getValue().getCloseFilledVolume());
+    }
+
+    @Test
+    void createLegIntentPersistsPositionSideReduceOnlyAndPriceBeforeBatchSend() {
+        recorder.createLegIntent(42L, HtxContractTradeRecorder.SHORT_CLOSE, 103L,
+                "buy", "short", true, 2L, new BigDecimal("4359.33"));
+
+        ArgumentCaptor<HtxContractLegEntity> captor = ArgumentCaptor.forClass(HtxContractLegEntity.class);
+        verify(legMapper).insert(captor.capture());
+        HtxContractLegEntity leg = captor.getValue();
+        assertEquals(42L, leg.getCycleId());
+        assertEquals(HtxContractTradeRecorder.SHORT_CLOSE, leg.getLegType());
+        assertEquals("short", leg.getPositionSide());
+        assertTrue(leg.getReduceOnly());
+        assertEquals(new BigDecimal("4359.33"), leg.getPrice());
+        assertEquals(HtxContractTradeRecorder.LEG_INTENT, leg.getState());
     }
 }

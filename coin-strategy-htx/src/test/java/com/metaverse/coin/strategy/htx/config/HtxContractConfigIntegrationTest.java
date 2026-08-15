@@ -35,5 +35,9 @@ class HtxContractConfigIntegrationTest {
         assertTrue(properties.getContractCodes().contains("XAUT-USDT"));
         assertFalse(properties.isAutoTestEnabled());
         assertEquals(2L, properties.getAutoTestVolume());
+        assertEquals(500L, properties.getAutoTestIntervalMs());
+        assertEquals(68, properties.getUidQueryLimit());
+        assertEquals(68, properties.getUidTradeLimit());
+        assertEquals(3_000L, properties.getUidRateWindowMs());
     }
 }

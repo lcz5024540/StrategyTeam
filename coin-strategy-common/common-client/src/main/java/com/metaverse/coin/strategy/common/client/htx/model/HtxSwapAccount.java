@@ -20,4 +20,7 @@ public class HtxSwapAccount {
     private String marginMode;
     @JSONField(name = "position_mode")
     private String positionMode;
+    /** V5 global account state, for example normal or liquidating. */
+    private String state;
+    private String currency;
 }

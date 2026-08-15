@@ -32,13 +32,18 @@ public class HtxContractProperties {
     private long fillPollIntervalMs = 500L;
     private long fillTimeoutMs = 10_000L;
     private int queryFailureThreshold = 5;
+    /** Conservative headroom below HTX's documented 72 query requests per UID per 3 seconds. */
+    private int uidQueryLimit = 68;
+    /** Conservative headroom below HTX's documented 72 trade requests per UID per 3 seconds. */
+    private int uidTradeLimit = 68;
+    private long uidRateWindowMs = 3_000L;
 
     /** Periodic simulation only. The scheduler refuses to run outside dry-run mode. */
     private boolean autoTestEnabled = false;
     /** Additional opt-in required before the scheduler may submit real contract orders. */
     private boolean autoLiveEnabled = false;
     private long autoTestInitialDelayMs = 20_000L;
-    private long autoTestIntervalMs = 60_000L;
+    private long autoTestIntervalMs = 500L;
     /** Number of contracts, not XAUT quantity. */
     private long autoTestVolume = 2L;
     /** Simulated close target above the current best ask. */

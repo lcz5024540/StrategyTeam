@@ -41,4 +41,9 @@ public class HtxContractController {
     public HtxContractTradeResult submitLongCycle(@RequestBody HtxContractCycleRequest request) {
         return tradingService.submitLongCycle(request);
     }
+
+    @PostMapping("/dual-cycle")
+    public HtxContractTradeResult submitDualCycle(@RequestBody HtxContractCycleRequest request) {
+        return tradingService.submitDualCycle(request);
+    }
 }

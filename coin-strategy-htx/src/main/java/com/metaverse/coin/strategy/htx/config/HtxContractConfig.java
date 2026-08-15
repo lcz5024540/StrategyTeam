@@ -21,6 +21,9 @@ public class HtxContractConfig {
         return new HtxUsdtSwapApiService(
                 tradeProperties.getApi().getAccessKey(),
                 tradeProperties.getApi().getSecretKey(),
-                contractProperties.getBaseUrl());
+                contractProperties.getBaseUrl(),
+                contractProperties.getUidQueryLimit(),
+                contractProperties.getUidTradeLimit(),
+                contractProperties.getUidRateWindowMs());
     }
 }

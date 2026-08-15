@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
-/** Result of a leverage change or isolated long open/close cycle. */
+/** Result of a leverage change or isolated long/short open/close cycle. */
 @Data
 @Builder
 @NoArgsConstructor
@@ -46,8 +46,18 @@ public class HtxContractTradeResult {
     private Long cycleId;
     private Long openOrderId;
     private Long closeOrderId;
+    private Long longOpenOrderId;
+    private Long shortOpenOrderId;
+    private Long longCloseOrderId;
+    private Long shortCloseOrderId;
     private BigDecimal openFilledVolume;
     private BigDecimal closeFilledVolume;
+    private BigDecimal longOpenFilledVolume;
+    private BigDecimal shortOpenFilledVolume;
+    private BigDecimal longCloseFilledVolume;
+    private BigDecimal shortCloseFilledVolume;
+    private BigDecimal totalFee;
+    private BigDecimal realizedProfit;
     private String message;
 
     public boolean success() {

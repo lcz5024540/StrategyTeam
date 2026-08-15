@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.common.client.htx;
 
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxRestClient;
+import com.metaverse.coin.strategy.common.client.htx.rest.HtxUidRateLimiter;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import lombok.Getter;
 
@@ -18,6 +19,13 @@ public class HtxUsdtSwapApiService {
 
     public HtxUsdtSwapApiService(String accessKey, String secretKey, String baseUrl) {
         this(new HtxRestClient(accessKey, secretKey, baseUrl));
+    }
+
+    public HtxUsdtSwapApiService(String accessKey, String secretKey, String baseUrl,
+                                 int queryLimit, int tradeLimit, long rateWindowMs) {
+        this.rest = new HtxRestClient(accessKey, secretKey, baseUrl);
+        this.swapService = new HtxUsdtSwapService(
+                rest, new HtxUidRateLimiter(queryLimit, tradeLimit, rateWindowMs));
     }
 
     public HtxUsdtSwapApiService(HtxRestClient rest) {

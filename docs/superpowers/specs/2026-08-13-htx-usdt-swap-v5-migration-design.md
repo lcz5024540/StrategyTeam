@@ -1,8 +1,9 @@
 # HTX USDT 永续合约私有接口 v1→V5 迁移设计
 
-> 状态：设计已确认（2026-08-13），待 writing-plans 拆任务
+> 状态：已实现并完成离线验证（2026-08-15），实施记录见 `../plans/2026-08-15-htx-v5-dual-contract-cycle.md`
 > 模块：`coin-strategy-common/common-client`、`coin-strategy-htx`
 > 关联：`2026-08-07-htx-usdt-swap-contract-mode-design.md`（原始合约模式设计）
+> 状态流图：`diagrams/2026-08-15-htx-v5-dual-cycle.drawio`
 
 ## 1. 背景与根因（客服确认）
 
@@ -21,7 +22,9 @@
 
 - **迁移全部 8 个私有接口**（一次迁完，接口层无残留 v1 私有调用）：`accountInfo`、`positionInfo`、`openOrders`、`availableLeverage`、`switchLeverage`、`placeOrder`、`cancelOrder`、`queryOrder`。
 - **公共接口不动**：`contractInfo`（`swap_contract_info`）、`depth`（`market/depth`）保持 v1 公共路径不变。
-- **本 spec 只做测试 + dry-run 回归，不含真实账号调用**。实盘只读实探、小额往返验证均**另行单独授权**，不在本 spec 范围。
+- **本 spec 只做代码 + 测试 + dry-run 回归，不含真实账号调用**。实盘只读实探、小额往返验证均**另行单独授权**，不在本 spec 范围。
+- 在 8 个私有接口之外增加 `/v5/trade/batch_orders`，用于在一个请求中提交同价开多/开空或同价平多/平空，减少两腿发送时差。
+- 同账户双向订单强制 `self_match_prevent=cancel_both`；“双向”表示分别持有 long/short 仓位，不允许两条自有订单彼此成交。
 
 ## 3. 新 API 事实基线
 
@@ -33,7 +36,7 @@
 
 ## 4. 架构与分层
 
-三层，改动集中在 Service 层与新增 V5 wire 模型，**传输层与签名零改动**。
+三层，改动集中在 Service 层、新增 V5 wire 模型和响应信封兼容；签名算法不变。
 
 ```
 调用方(MarketMakerService / 合约调度器)   ← 零改动
@@ -42,12 +45,12 @@
 HtxUsdtSwapService  ← 改 8 方法：路径 + HTTP 方法 + 请求参数 + 响应解析 + V5wire→domain 转换
         │  复用 signedGet / signedPost
         ▼
-HtxRestClient  ← 零改动（signedGet L77-81 / signedPost 已支持）
+HtxRestClient  ← 增加 V5 code/message 信封识别，signedGet / signedPost 复用
 HtxSignUtils   ← 零改动（signedQuery 已支持 GET/POST）
 ```
 
 **关键决策**：
-- **对外 domain 模型保持稳定**（`HtxSwapAccount`/`HtxSwapPosition`/`HtxSwapOrderResult`/`HtxSwapAvailableLeverage`/`HtxSwapLeverageResult`/`HtxSwapOpenOrders`）。上游调用方不感知 V5 迁移。
+- **对外 domain 类型和既有字段保持兼容**；为 V5 增量增加 state、positionSide、fee、profit 等字段，旧调用方无需改签名。
 - **新建 V5 wire 模型**只承接 V5 线上报文（字段名/层级与 domain 不同）；Service 内做 `V5wire → domain` 转换。这是「新建 V5 专用模型类」的落地方式，避免用 v1 字段语义硬套 V5 造成污染/兼容风险。
 - **`signedGet` 已存在**（早前「需新增」判断错误，读源码已纠正）；GET 业务参数进签名 query string，POST 业务参数走 body，两者 `HtxSignUtils` 均已支持。
 
@@ -79,30 +82,30 @@ v1 与 V5 的下单语义模型不同，须逐字段核对：
 | 保证金模式 | 靠选接口区分逐仓/全仓 | **新增必填 `margin_mode`** = isolated/cross |
 | 杠杆 | `lever_rate`(数值) | `lever_rate`(**String**) |
 
-**语义锚点（本服务只做逐仓、只做多周期）**：
+**语义锚点（逐仓、双向持仓）**：
 - **开多** = `side:buy` + `position_side:long` + `margin_mode:isolated` + `type:limit`
 - **平多** = `side:sell` + `position_side:long` + `margin_mode:isolated` + `type:limit`
+- **开空** = `side:sell` + `position_side:short` + `margin_mode:isolated` + `type:limit`
+- **平空** = `side:buy` + `position_side:short` + `margin_mode:isolated` + `type:limit`
+- 平多和平空均显式 `reduce_only=true`；全部四腿显式 `self_match_prevent=cancel_both`。
 
 价格仍须整除 `price_tick`；`volume` 单位为「张」；不使用市价单兜底（沿用原 spec 安全不变量）。
 
-## 7. 新建 V5 wire 模型（响应字段实现阶段落定）
+## 7. V5 wire 模型
 
-按 V5 真实响应字段建类（字段名/层级 ⚠️ 需在 writing-plans / 实现阶段逐个从 V5 文档 detail 的 response 段抓取核对，本 spec 只锁定「新建独立 wire 类」的策略，不硬编字段）：
+按 V5 官方 detail 的请求/响应示例核对后实现：
 
 - `HtxV5Balance`（← `/v5/account/balance`）
 - `HtxV5Position`（← `/v5/trade/position/opens`）
-- `HtxV5OpenOrders`（← `/v5/trade/order/opens`）
-- `HtxV5LeverInfo`（← GET `/v5/position/lever`）
-- `HtxV5LeverResult`（← POST `/v5/position/lever`）
+- `HtxV5Order`（← `/v5/trade/order/opens` 与 GET `/v5/trade/order`）
+- `HtxV5Leverage`（← GET/POST `/v5/position/lever`）
 - `HtxV5OrderResult`（← POST `/v5/trade/order`）
-- `HtxV5OrderInfo`（← GET `/v5/trade/order` 查单）
-- `HtxV5CancelResult`（← POST `/v5/trade/cancel_order`）
 
-Service 层负责 `V5wire → 现有 domain` 转换；domain 类不改字段。
+Service 层负责 `V5wire → domain` 转换；domain 只做向后兼容的字段增量。
 
 ## 8. 错误处理
 
-- V5 私有接口错误码 6001-6005（无 6023），沿用 `HtxRestClient.execute()` 现有 `status/data` 信封解析与 `errCode` 包装（HTTP 错误 `http-<code>`、I/O `io`）。
+- V5 使用 `code/message/data` 信封；`HtxRestClient.execute()` 将非 200 code 统一映射到 `errCode/errMsg`，并保留 HTTP 错误 `http-<code>` 与 I/O `io`。
 - 迁移后 6023 消失即验证根因解除。
 - 保留原 spec 全部 fail-closed 语义：写前落库失败不发单、发单后 DB 更新失败保留阻塞性 `INTENT`、查单基础设施连续失败以 `OPEN_UNKNOWN`/`EXPOSURE` 留人工核对、只限价不市价兜底。
 

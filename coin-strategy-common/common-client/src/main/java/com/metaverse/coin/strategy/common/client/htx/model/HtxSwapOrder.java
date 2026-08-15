@@ -5,7 +5,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 
-/** HTX USDT-margined swap order snapshot. Status 6 means fully filled. */
+/** HTX USDT-margined swap order snapshot, normalized across legacy and V5 envelopes. */
 @Data
 public class HtxSwapOrder {
     @JSONField(name = "order_id")
@@ -20,13 +20,25 @@ public class HtxSwapOrder {
     private Integer leverage;
     private String direction;
     private String offset;
+    private String side;
+    @JSONField(name = "position_side")
+    private String positionSide;
+    @JSONField(name = "margin_mode")
+    private String marginMode;
+    @JSONField(name = "reduce_only")
+    private Boolean reduceOnly;
     private BigDecimal volume;
     @JSONField(name = "trade_volume")
     private BigDecimal tradeVolume;
     @JSONField(name = "trade_avg_price")
     private BigDecimal tradeAveragePrice;
     private Integer status;
+    /** V5 state: new, partially_filled, filled, partially_canceled, canceled or rejected. */
+    private String state;
     private BigDecimal fee;
+    @JSONField(name = "fee_currency")
+    private String feeCurrency;
+    private BigDecimal profit;
     @JSONField(name = "real_profit")
     private BigDecimal realProfit;
 }

@@ -12,4 +12,6 @@ public class HtxSwapLeverageResult {
     private String marginMode;
     @JSONField(name = "lever_rate")
     private Integer leverage;
+    @JSONField(name = "position_side")
+    private String positionSide;
 }

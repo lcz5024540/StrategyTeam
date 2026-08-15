@@ -106,8 +106,18 @@ public class HtxRestClient {
             JSONObject json = JSON.parseObject(bodyStr);
             String status = json.getString("status");
             if (status == null) {
+                Integer code = json.getInteger("code");
+                if (code != null && code != 200) {
+                    HtxRestResponse<T> err = new HtxRestResponse<>();
+                    err.setCode(code);
+                    err.setMessage(json.getString("message"));
+                    err.setStatus("error");
+                    err.setErrCode(Integer.toString(code));
+                    err.setErrMsg(json.getString("message"));
+                    return err;
+                }
                 // Market data endpoints omit "status" when server returns success; treat as ok if "tick"/"data" present.
-                if (json.containsKey("tick") || json.containsKey("data")) {
+                if (Integer.valueOf(200).equals(code) || json.containsKey("tick") || json.containsKey("data")) {
                     json.put("status", "ok");
                 } else {
                     HtxRestResponse<T> err = new HtxRestResponse<>();

@@ -19,7 +19,7 @@ import java.math.RoundingMode;
 import java.util.List;
 import java.util.Locale;
 
-/** Periodically runs one guarded isolated long open/close cycle. */
+/** Periodically runs one guarded isolated long+short open/close cycle. */
 @Slf4j
 @Component
 @ConditionalOnBean(HtxUsdtSwapApiService.class)
@@ -33,7 +33,7 @@ public class HtxContractAutoTestScheduler {
     private final HtxContractProperties props;
 
     @Scheduled(
-            fixedDelayString = "${htx.contract.auto-test-interval-ms:60000}",
+            fixedDelayString = "${htx.contract.auto-test-interval-ms:500}",
             initialDelayString = "${htx.contract.auto-test-initial-delay-ms:20000}")
     public void scheduled() {
         try {
@@ -56,14 +56,26 @@ public class HtxContractAutoTestScheduler {
         }
         String contractCode = props.getContractCodes().get(0).trim().toUpperCase(Locale.ROOT);
         HtxSwapContractInfo contract = loadContract(contractCode);
-        HtxPriceLevel bestAsk = loadBestAsk(contractCode);
+        HtxDepth depth = loadDepth(contractCode);
         if (contract == null || contract.getPriceTick() == null || contract.getPriceTick().signum() <= 0
-                || bestAsk == null || bestAsk.getPrice() == null || bestAsk.getPrice().signum() <= 0) {
+                || depth == null || depth.getAsks() == null || depth.getAsks().isEmpty()
+                || depth.getBids() == null || depth.getBids().isEmpty()) {
             log.warn("[HTX-CONTRACT-AUTO] public market data unavailable contract={}", contractCode);
             return;
         }
 
-        BigDecimal openPrice = bestAsk.getPrice();
+        HtxPriceLevel bestAsk = depth.getAsks().get(0);
+        HtxPriceLevel bestBid = depth.getBids().get(0);
+        if (bestAsk.getPrice() == null || bestBid.getPrice() == null
+                || bestAsk.getPrice().signum() <= 0 || bestBid.getPrice().signum() <= 0
+                || bestBid.getPrice().compareTo(bestAsk.getPrice()) > 0) {
+            log.warn("[HTX-CONTRACT-AUTO] invalid top of book contract={}", contractCode);
+            return;
+        }
+        BigDecimal openPrice = roundToTick(
+                bestBid.getPrice().add(bestAsk.getPrice()).divide(BigDecimal.valueOf(2),
+                        contract.getPriceTick().scale() + 4, RoundingMode.HALF_UP),
+                contract.getPriceTick());
         BigDecimal closePrice = roundUpToTick(openPrice.multiply(
                 BigDecimal.ONE.add(props.getAutoTestTargetReturnPct())), contract.getPriceTick());
         long clientOrderId = System.currentTimeMillis() * 10L;
@@ -86,7 +98,7 @@ public class HtxContractAutoTestScheduler {
                 return;
             }
         }
-        HtxContractTradeResult result = tradingService.submitLongCycle(request);
+        HtxContractTradeResult result = tradingService.submitDualCycle(request);
         if (!result.success()) {
             log.warn("[HTX-CONTRACT-AUTO] cycle rejected contract={} result={}", contractCode, result);
             return;
@@ -110,14 +122,16 @@ public class HtxContractAutoTestScheduler {
                 .findFirst().orElse(null);
     }
 
-    private HtxPriceLevel loadBestAsk(String contractCode) {
+    private HtxDepth loadDepth(String contractCode) {
         HtxRestResponse<HtxDepth> response = api.getSwapService().depth(contractCode, props.getDepthStep());
-        HtxDepth depth = response == null ? null : response.payload();
-        return depth == null || depth.getAsks() == null || depth.getAsks().isEmpty()
-                ? null : depth.getAsks().get(0);
+        return response == null || !response.ok() ? null : response.payload();
     }
 
     static BigDecimal roundUpToTick(BigDecimal price, BigDecimal tick) {
         return price.divide(tick, 0, RoundingMode.CEILING).multiply(tick);
+    }
+
+    static BigDecimal roundToTick(BigDecimal price, BigDecimal tick) {
+        return price.divide(tick, 0, RoundingMode.HALF_UP).multiply(tick);
     }
 }

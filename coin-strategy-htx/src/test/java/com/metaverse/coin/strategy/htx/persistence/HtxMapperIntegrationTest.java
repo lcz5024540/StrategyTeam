@@ -2,6 +2,8 @@ package com.metaverse.coin.strategy.htx.persistence;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractLegEntity;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxLockedPairMapper;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,7 @@ class HtxMapperIntegrationTest {
 
     @Autowired HtxLockedPairMapper pairMapper;
     @Autowired HtxContractCycleMapper contractCycleMapper;
+    @Autowired HtxContractLegMapper contractLegMapper;
 
     @Test void insert_and_read_pair() {
         HtxLockedPairEntity p = new HtxLockedPairEntity();
@@ -47,5 +50,23 @@ class HtxMapperIntegrationTest {
         HtxContractCycleEntity stored = contractCycleMapper.selectById(cycle.getId());
         assertEquals("XAUT-USDT", stored.getContractCode());
         assertEquals(3, stored.getLeverage());
+    }
+
+    @Test void insert_and_read_contract_leg() {
+        HtxContractLegEntity leg = new HtxContractLegEntity();
+        leg.setCycleId(System.nanoTime());
+        leg.setLegType(HtxContractTradeRecorder.LONG_OPEN);
+        leg.setClientOrderId(System.nanoTime());
+        leg.setSide("buy");
+        leg.setPositionSide("long");
+        leg.setReduceOnly(false);
+        leg.setReqVolume(2L);
+        leg.setPrice(new BigDecimal("4333.33"));
+        leg.setState(HtxContractTradeRecorder.LEG_INTENT);
+
+        assertEquals(1, contractLegMapper.insert(leg));
+        HtxContractLegEntity stored = contractLegMapper.selectById(leg.getId());
+        assertEquals("long", stored.getPositionSide());
+        assertFalse(stored.getReduceOnly());
     }
 }

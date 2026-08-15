@@ -6,13 +6,16 @@ import lombok.Builder;
 import lombok.Data;
 
 /**
- * Uniform envelope for HTX REST responses ({@code {"status":"ok","data":...}} or {@code {"status":"error","err-code":...,"err-msg":...}}).
- * We fold both spot-trade shape (status/data) and market-data shape (status/tick) into one type for simplicity.
+ * Uniform envelope for legacy status/data, public tick and V5 code/message/data HTX responses.
  */
 @Data
 @Builder
 @AllArgsConstructor
 public class HtxRestResponse<T> {
+    /** V5 envelope success code. Legacy endpoints leave it null. */
+    private Integer code;
+    /** V5 envelope message. Legacy endpoints use errMsg for failures. */
+    private String message;
     private String status;
     private String ch;
     private Long ts;
@@ -29,7 +32,7 @@ public class HtxRestResponse<T> {
     }
 
     public boolean ok() {
-        return "ok".equalsIgnoreCase(status);
+        return "ok".equalsIgnoreCase(status) || Integer.valueOf(200).equals(code);
     }
 
     public T payload() {

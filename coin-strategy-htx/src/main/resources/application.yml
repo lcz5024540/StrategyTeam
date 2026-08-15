@@ -100,11 +100,14 @@ htx:
     fill-poll-interval-ms: 500
     fill-timeout-ms: 10000
     query-failure-threshold: 5
+    uid-query-limit: ${HTX_CONTRACT_UID_QUERY_LIMIT:68}
+    uid-trade-limit: ${HTX_CONTRACT_UID_TRADE_LIMIT:68}
+    uid-rate-window-ms: ${HTX_CONTRACT_UID_RATE_WINDOW_MS:3000}
     # 自动往返默认仅用于 dry-run；实盘还必须显式打开 auto-live-enabled。
     auto-test-enabled: ${HTX_CONTRACT_AUTO_TEST_ENABLED:false}
     auto-live-enabled: ${HTX_CONTRACT_AUTO_LIVE_ENABLED:false}
     auto-test-initial-delay-ms: ${HTX_CONTRACT_AUTO_TEST_INITIAL_DELAY_MS:20000}
-    auto-test-interval-ms: ${HTX_CONTRACT_AUTO_TEST_INTERVAL_MS:60000}
+    auto-test-interval-ms: ${HTX_CONTRACT_AUTO_TEST_INTERVAL_MS:500}
     auto-test-volume: ${HTX_CONTRACT_AUTO_TEST_VOLUME:2}
     auto-test-target-return-pct: ${HTX_CONTRACT_AUTO_TEST_TARGET_RETURN_PCT:0.006}
 

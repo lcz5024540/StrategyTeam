@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
-/** One isolated long cycle: open a long position, then place a limit close for the actual fill. */
+/** One isolated cycle. Dual mode uses one open price and one close price for both position sides. */
 @Data
 @Builder
 @NoArgsConstructor
@@ -20,7 +20,7 @@ public class HtxContractCycleRequest {
     private BigDecimal closePrice;
     /** Optional; falls back to htx.contract.leverage. */
     private Integer leverage;
-    /** Required for live trading. Close order uses this id + 1. */
+    /** Required for live trading. Dual legs reserve this id through id + 3. */
     private Long clientOrderId;
     /** Optional; falls back to htx.contract.fill-timeout-ms. */
     private Long waitFillTimeoutMs;
