@@ -27,7 +27,7 @@ public class HtxMarketMakerProperties {
     /** 价差 δ：buyPrice=P0(1−δ)，sellPrice=P0(1+δ)。 */
     private BigDecimal spreadPct = new BigDecimal("0.003");
 
-    /** 保守单边费率 f，用于不亏闸门（宁高勿低），不查账户真实费率。 */
+    /** 保守单边费率下限；运行时与 HTX V2 返回的 maker/taker 实际费率取最大值。 */
     private BigDecimal feeRatePerSide = new BigDecimal("0.002");
 
     /** 每 cell 固定 quote 名义（USDT）；qty = notional / buyPrice。 */

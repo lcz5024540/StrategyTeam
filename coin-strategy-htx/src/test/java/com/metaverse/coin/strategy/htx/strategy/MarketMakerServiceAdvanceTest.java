@@ -109,10 +109,10 @@ class MarketMakerServiceAdvanceTest {
 
     @Test void resting_buy_filled_places_sell_and_marks_resting() {
         when(spot.queryOrder(555L)).thenReturn(orderOk("filled", "0.0003", "0.0000006", null));
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60058.20"), eq("mm-btcusdt-1-SELL")))
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), anyString(), eq("60058.20"), eq("mm-btcusdt-1-SELL")))
                 .thenReturn(placeOk("777"));
         svc.advanceCell(buyCell(555L, LocalDateTime.now()));
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), eq("0.000299"), eq("60058.20"), eq("mm-btcusdt-1-SELL"));
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), eq("0.000299"), eq("60058.20"), eq("mm-btcusdt-1-SELL"));
         verify(recorder).markMmSellPending(eq(100L), any(), any(),
                 eq(new BigDecimal("59700.00")), eq(new BigDecimal("60058.20")));
         verify(recorder).markMmSellResting(100L, 777L);
@@ -121,7 +121,7 @@ class MarketMakerServiceAdvanceTest {
     @Test void restingBuyFilledPricesSellFromActualAverageCost() {
         when(spot.queryOrder(555L)).thenReturn(orderOkWithCash(
                 "filled", "0.0003", "0.0000006", null, "17.91"));
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"),
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
                 anyString(), eq("60058.20"), eq("mm-btcusdt-1-SELL")))
                 .thenReturn(placeOk("777"));
 
@@ -130,7 +130,7 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder).markMmSellPending(eq(100L), eq(new BigDecimal("0.0003")),
                 eq(new BigDecimal("0.0000006")), eq(new BigDecimal("59700.00")),
                 eq(new BigDecimal("60058.20")));
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"),
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
                 anyString(), eq("60058.20"), eq("mm-btcusdt-1-SELL"));
     }
 
@@ -142,13 +142,13 @@ class MarketMakerServiceAdvanceTest {
                 .buyOrderId(556L).createdAt(LocalDateTime.now()).build();
         when(spot.queryOrder(556L)).thenReturn(orderOkWithCash(
                 "filled", "0.0105", "0.000021", null, "19.908945"));
-        when(spot.placeOrder(eq("acc-1"), eq("ethusdt"), eq("sell-limit"),
+        when(spot.placeOrder(eq("acc-1"), eq("ethusdt"), eq("sell-limit-maker"),
                 eq("0.0104"), anyString(), eq("mm-ethusdt-1-SELL")))
                 .thenReturn(placeOk("778"));
 
         svc.advanceCell(cell);
 
-        verify(spot).placeOrder(eq("acc-1"), eq("ethusdt"), eq("sell-limit"),
+        verify(spot).placeOrder(eq("acc-1"), eq("ethusdt"), eq("sell-limit-maker"),
                 eq("0.0104"), anyString(), eq("mm-ethusdt-1-SELL"));
     }
 
@@ -176,10 +176,10 @@ class MarketMakerServiceAdvanceTest {
         when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null))
                 .thenReturn(orderOk("canceled", "0.0003", "0.0000006", null)); // 撤单竞态：已成交
         when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
-        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString()))
                 .thenReturn(placeOk("777"));
         svc.advanceCell(buyCell(555L, LocalDateTime.now().minusHours(2)));
-        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString());
         verify(recorder).markMmSellResting(100L, 777L);
         verify(recorder, never()).markMmCancelledBuy(anyLong());
     }
@@ -199,7 +199,7 @@ class MarketMakerServiceAdvanceTest {
         HtxRestResponse<String> err = new HtxRestResponse<>();
         err.setStatus("error");
         err.setErrMsg("sell-rejected");
-        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString()))
                 .thenReturn(err);
         svc.advanceCell(buyCell(555L, LocalDateTime.now()));
         verify(recorder).markMmSellPending(eq(100L), any(), any(),
@@ -213,7 +213,7 @@ class MarketMakerServiceAdvanceTest {
         MarketMakerCell pending = sellCell(null);
         pending.setBuyFilledAmount(new BigDecimal("0.0003"));
         pending.setTotalFeeBase(new BigDecimal("0.0000006"));
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"),
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
                 anyString(), eq("60300.00"), eq("mm-btcusdt-1-SELL")))
                 .thenReturn(placeOk("777"));
 
@@ -262,13 +262,13 @@ class MarketMakerServiceAdvanceTest {
                 .thenReturn(orderOk("canceled", "0", null, null));
         when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("60000"));
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), anyString(), eq("60000.00"), anyString()))
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("60000.00"), anyString()))
                 .thenReturn(placeOk("999"));
 
         svc.advanceCell(buyCell(555L, LocalDateTime.now()));
 
         verify(spot).cancelOrder(555L);
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), anyString(), eq("60000.00"), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("60000.00"), anyString());
         verify(recorder).markMmReprice(eq(100L), eq(999L), eq(new BigDecimal("60000.00")), eq(new BigDecimal("60360.00")));
         verify(recorder, never()).markMmCancelledBuy(anyLong());
     }
@@ -295,15 +295,15 @@ class MarketMakerServiceAdvanceTest {
                 .thenReturn(orderOk("canceled", "0.0003", "0.0000006", null));
         when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("60000"));
-        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString()))
                 .thenReturn(placeOk("777"));
 
         svc.advanceCell(buyCell(555L, LocalDateTime.now()));
 
-        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString());
         verify(recorder).markMmSellResting(100L, 777L);
         verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
-        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
     }
 
     @Test void resting_buy_reprice_cancel_not_settled_defers() {
@@ -319,7 +319,7 @@ class MarketMakerServiceAdvanceTest {
         svc.advanceCell(buyCell(555L, LocalDateTime.now()));
 
         verify(spot).cancelOrder(555L);
-        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
         verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
         verify(recorder, never()).markMmCancelledBuy(anyLong());
     }
@@ -336,7 +336,7 @@ class MarketMakerServiceAdvanceTest {
         HtxRestResponse<String> err = new HtxRestResponse<>();
         err.setStatus("error");
         err.setErrMsg("reprice-rejected");
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"), anyString(), anyString(), anyString()))
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), anyString(), anyString()))
                 .thenReturn(err);
 
         svc.advanceCell(buyCell(555L, LocalDateTime.now()));
@@ -403,13 +403,13 @@ class MarketMakerServiceAdvanceTest {
                 .thenReturn(orderOk("canceled", "0", null, "0.0003")); // 撤单复查终态无成交
         when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60780", "60800"));
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60800.00"), anyString()))
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), anyString(), eq("60800.00"), anyString()))
                 .thenReturn(placeOk("888"));
 
         svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
 
         verify(spot).cancelOrder(777L);
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("60800.00"), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), anyString(), eq("60800.00"), anyString());
         verify(recorder).markMmSellReprice(eq(100L), eq(888L),
                 eq(new BigDecimal("60800.00")), eq(BigDecimal.ZERO));
     }
@@ -421,12 +421,12 @@ class MarketMakerServiceAdvanceTest {
                 .thenReturn(orderOk("canceled", "0.000100", null, "0.000299"));
         when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60780", "60800"));
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"),
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
                 eq("0.000199"), eq("60800.00"), anyString())).thenReturn(placeOk("888"));
 
         svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
 
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"),
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
                 eq("0.000199"), eq("60800.00"), anyString());
         verify(recorder).markMmSellReprice(eq(100L), eq(888L),
                 eq(new BigDecimal("60800.00")), eq(new BigDecimal("0.000100")));
@@ -440,12 +440,12 @@ class MarketMakerServiceAdvanceTest {
                 .thenReturn(orderOk("canceled", "0", null, "0.0003"));
         when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("59650", "59600"));
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("59939.52"), anyString()))
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), anyString(), eq("59939.52"), anyString()))
                 .thenReturn(placeOk("888"));
 
         svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
 
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"), anyString(), eq("59939.52"), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), anyString(), eq("59939.52"), anyString());
         verify(recorder).markMmSellReprice(eq(100L), eq(888L),
                 eq(new BigDecimal("59939.52")), eq(BigDecimal.ZERO));
     }
@@ -475,7 +475,7 @@ class MarketMakerServiceAdvanceTest {
         svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
 
         verify(recorder).markMmDone(eq(100L), any());
-        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString());
         verify(recorder, never()).markMmSellReprice(anyLong(), anyLong(), any(), any());
     }
 
@@ -490,7 +490,7 @@ class MarketMakerServiceAdvanceTest {
         svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
 
         verify(spot).cancelOrder(777L);
-        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString());
         verify(recorder, never()).markMmSellReprice(anyLong(), anyLong(), any(), any());
         verify(recorder, never()).markMmDone(anyLong(), any());
     }
@@ -528,7 +528,7 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder).updatePairStatus(eq(100L), eq(HtxStatus.MM_RESTING_SELL),
                 eq("MM_STOP_LOSS"), anyString());
         verify(recorder, never()).markMmDone(anyLong(), any());
-        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString());
     }
 
     @Test void sellFollow_stopLoss_cancel_race_filled_marks_done_no_market_sell() {

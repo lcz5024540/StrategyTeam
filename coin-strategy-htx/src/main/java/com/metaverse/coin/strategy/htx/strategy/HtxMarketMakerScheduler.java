@@ -30,7 +30,7 @@ public class HtxMarketMakerScheduler {
 
     private final MarketMakerService marketMakerService;
 
-    /** 启动就绪后对齐库里所有 open cell 一次（幂等，clientOrderId 幂等防重复下单）。 */
+    /** 启动就绪后对齐库里所有 open cell 一次；恢复流程先查订单状态，不依赖 clientOrderId 唯一性。 */
     @EventListener(ApplicationReadyEvent.class)
     public void onReady() {
         try {

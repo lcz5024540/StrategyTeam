@@ -3,10 +3,12 @@ package com.metaverse.coin.strategy.common.client.htx.rest;
 import com.alibaba.fastjson2.TypeReference;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSpotFeeRate;
 import lombok.RequiredArgsConstructor;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,6 +28,17 @@ public class HtxSpotService {
     private final HtxRestClient rest;
 
     /**
+     * Query the current account-specific spot fee rates.
+     * HTX keeps spot order operations under /v1/order, while its current fee reference API is V2.
+     */
+    public HtxRestResponse<List<HtxSpotFeeRate>> queryFeeRates(String symbols) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("symbols", symbols);
+        return rest.signedGet("/v2/reference/transact-fee-rate", params,
+                new TypeReference<HtxRestResponse<List<HtxSpotFeeRate>>>() {});
+    }
+
+    /**
      * Place a spot order.
      * <p>
      * HTX returns the order id as a JSON <b>string</b>, not a number (docs example:
@@ -39,8 +52,8 @@ public class HtxSpotService {
      * @param type      buy-limit / sell-limit / buy-market / sell-market / buy-limit-maker / sell-limit-maker / ioc / fok variants
      * @param amount    order amount (see class-level docs for semantics)
      * @param price     limit price; may be null for market orders
-     * @param clientOrderId optional client-side idempotency key (<= 64 chars). Passing the same id twice
-     *                      returns the original order — HTX handles idempotency server-side.
+     * @param clientOrderId optional client-side correlation key (<= 64 chars). HTX no longer enforces
+     *                      uniqueness, so callers must not treat it as an exchange-side idempotency key.
      */
     public HtxRestResponse<String> placeOrder(String accountId,
                                               String symbol,

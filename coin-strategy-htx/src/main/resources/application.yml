@@ -62,7 +62,7 @@ htx:
     symbols: ${HTX_MM_SYMBOLS:xautusdt} # 仅开黄金；历史 BTC/ETH open cell 仍由状态机推进至退出
     poll-interval-ms: ${HTX_MM_POLL_INTERVAL_MS:10000}
     spread-pct: ${HTX_MM_SPREAD_PCT:0.003}              # δ=0.3%（买腿贴 bestBid，sell=buy·(1+2δ)）
-    fee-rate-per-side: ${HTX_MM_FEE_RATE_PER_SIDE:0.002} # 保守单边费率 f，用于不亏闸门(宁高勿低)
+    fee-rate-per-side: ${HTX_MM_FEE_RATE_PER_SIDE:0.002} # 保守费率下限；与 HTX V2 账户 maker/taker 实际费率取最大值
     per-cell-quote-notional: ${HTX_MM_PER_CELL_QUOTE_NOTIONAL:20}  # 应 < risk.max-single-quote-notional(50)
     max-concurrent-cells-per-symbol: ${HTX_MM_MAX_CELLS:3}         # K：单标的最大并行 open cell
     min-gap-pct: ${HTX_MM_MIN_GAP_PCT:0.003}           # 新买价与已挂买价最小间距（去重防同价堆单）

@@ -116,7 +116,7 @@ class MarketMakerServiceRunTest {
         when(spot.queryOrder(777L)).thenReturn(sellFilled());
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk());
         when(recorder.createMmCell(anyString(), any(), any(), any(), anyString())).thenReturn(101L);
-        when(spot.placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString()))
+        when(spot.placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString()))
                 .thenReturn(placeOk("888"));
         mmProps.setEnabled(true);
 
@@ -172,7 +172,7 @@ class MarketMakerServiceRunTest {
         query.setStatus("ok");
         query.setData(filled);
         when(spot.queryOrder(555L)).thenReturn(query);
-        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit"),
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
                 anyString(), eq("60058.20"), eq("mm-btcusdt-old-SELL")))
                 .thenReturn(placeOk("777"));
 

@@ -169,12 +169,12 @@ class MarketMakerServiceTakerBuyTest {
         when(spot.queryOrder(555L)).thenReturn(order("submitted", "0", "0.0003"))
                 .thenReturn(order("canceled", "0.0003", "0.0003"));
         when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
-        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString()))
                 .thenReturn(placeOk("777"));
 
         svc.advanceCell(expiredBuyCell(555L));
 
-        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString());
         verify(recorder).markMmSellResting(100L, 777L);
         verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
         verify(recorder, never()).markMmCancelledBuy(anyLong());
@@ -223,19 +223,19 @@ class MarketMakerServiceTakerBuyTest {
         verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
     }
 
-    @Test void ttlExpired_noLossGuardBlocks_noOrderNoReprice() {
-        // 费率异常高(0.05)使 (1−f)²·sell < buy → 防御闸门拦截：不下单、不 reprice、不 markMmCancelledBuy（镜像 repriceBuy）
+    @Test void ttlExpired_highFeeRaisesSellFloorBeforeTakerBuy() {
         mmProps.setFeeRatePerSide(new BigDecimal("0.05"));
         when(spot.queryOrder(555L)).thenReturn(order("submitted", "0", "0.0003"))
                 .thenReturn(order("canceled", "0", "0.0003"));
         when(spot.cancelOrder(555L)).thenReturn(placeOk("555"));
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60000", "60030"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit"),
+                eq("0.0003"), eq("60030.00"), anyString())).thenReturn(placeOk("999"));
 
         svc.advanceCell(expiredBuyCell(555L));
 
-        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit"), anyString(), anyString(), anyString());
-        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
-        verify(recorder, never()).markMmCancelledBuy(anyLong());
+        verify(recorder).markMmReprice(100L, 999L,
+                new BigDecimal("60030.00"), new BigDecimal("66515.24"));
     }
 
     @Test void ttlExpired_takerBuyRejectedBalanceClass_startsBackoffBlockingNewBuys() {
@@ -281,12 +281,12 @@ class MarketMakerServiceTakerBuyTest {
                 .qty(new BigDecimal("0.0003")).state(HtxStatus.MM_RESTING_BUY)
                 .buyOrderId(888L).createdAt(LocalDateTime.now()).build();
         when(spot.queryOrder(888L)).thenReturn(order("filled", "0.0003", "0.0003"));
-        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString()))
+        when(spot.placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString()))
                 .thenReturn(placeOk("777"));
 
         svc.advanceCell(escalated);
 
-        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit"), anyString(), anyString(), anyString());
+        verify(spot).placeOrder(anyString(), anyString(), eq("sell-limit-maker"), anyString(), anyString(), anyString());
         verify(recorder).markMmSellResting(100L, 777L);
     }
 }

@@ -13,9 +13,11 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.service.HtxDepthGuard;
 import com.metaverse.coin.strategy.htx.service.HtxFeeMath;
 import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
-import lombok.RequiredArgsConstructor;
+import com.metaverse.coin.strategy.htx.strategy.grid.FeeAwareSpotGridStrategy;
+import com.metaverse.coin.strategy.htx.strategy.grid.SpotGridStrategy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
@@ -34,7 +36,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @ConditionalOnBean(HtxApiService.class)
-@RequiredArgsConstructor
 public class MarketMakerService {
 
     private final HtxApiService htxApiService;
@@ -42,21 +43,48 @@ public class MarketMakerService {
     private final HtxTradeProperties tradeProps;
     private final HtxMarketMakerProperties mmProps;
     private final HtxTradeRecorder recorder;
+    private final HtxSpotFeeRateProvider feeRateProvider;
+    private final SpotGridStrategy gridStrategy;
 
     private static final int DEPTH_LEVELS = 5;
     private volatile long buyBlockedUntilEpochMs;
 
-    /** 启动校验：δ < 单边费率则成交必亏，拒绝启动。见 spec §1 不亏下限。 */
+    @Autowired
+    public MarketMakerService(HtxApiService htxApiService,
+                              HtxDepthGuard depthGuard,
+                              HtxTradeProperties tradeProps,
+                              HtxMarketMakerProperties mmProps,
+                              HtxTradeRecorder recorder,
+                              HtxSpotFeeRateProvider feeRateProvider,
+                              SpotGridStrategy gridStrategy) {
+        this.htxApiService = htxApiService;
+        this.depthGuard = depthGuard;
+        this.tradeProps = tradeProps;
+        this.mmProps = mmProps;
+        this.recorder = recorder;
+        this.feeRateProvider = feeRateProvider;
+        this.gridStrategy = gridStrategy;
+    }
+
+    MarketMakerService(HtxApiService htxApiService,
+                       HtxDepthGuard depthGuard,
+                       HtxTradeProperties tradeProps,
+                       HtxMarketMakerProperties mmProps,
+                       HtxTradeRecorder recorder) {
+        this(htxApiService, depthGuard, tradeProps, mmProps, recorder,
+                new HtxSpotFeeRateProvider(htxApiService, mmProps),
+                new FeeAwareSpotGridStrategy());
+    }
+
+    /** 启动校验：策略会自动抬高卖价覆盖手续费，这里只校验配置定义域。 */
     @PostConstruct
     void validateConfig() {
         if (mmProps.getFeeRatePerSide().signum() < 0
                 || mmProps.getFeeRatePerSide().compareTo(BigDecimal.ONE) >= 0) {
             throw new IllegalStateException("MM fee-rate-per-side must be in [0, 1)");
         }
-        if (mmProps.getSpreadPct().compareTo(mmProps.getFeeRatePerSide()) < 0) {
-            throw new IllegalStateException("MM spread-pct (" + mmProps.getSpreadPct()
-                    + ") must be >= fee-rate-per-side (" + mmProps.getFeeRatePerSide()
-                    + "): filling would lose money");
+        if (mmProps.getSpreadPct() == null || mmProps.getSpreadPct().signum() < 0) {
+            throw new IllegalStateException("MM spread-pct must be non-negative");
         }
     }
 
@@ -133,13 +161,16 @@ public class MarketMakerService {
         if (bestBid == null || bestAsk == null || bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
             return -1;
         }
-        BigDecimal buyPrice = bestBid.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
-        BigDecimal sellPrice = MarketMakerMath.sellFromBuy(buyPrice, mmProps.getSpreadPct());
+        BigDecimal feeRate = feeRateProvider.effectiveRate(symbol);
+        SpotGridStrategy.GridQuote quote = gridStrategy.quote(bestBid, mmProps.getSpreadPct(),
+                feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+        BigDecimal buyPrice = quote.buyPrice();
+        BigDecimal sellPrice = quote.sellPrice();
         BigDecimal qty = MarketMakerMath.qtyFor(mmProps.getPerCellQuoteNotional(), buyPrice);
         if (qty.signum() <= 0) {
             return -1;
         }
-        if (!MarketMakerMath.isNoLoss(buyPrice, sellPrice, mmProps.getFeeRatePerSide())) {
+        if (!gridStrategy.coversFees(buyPrice, sellPrice, feeRate, feeRate)) {
             log.warn("MM no-loss gate blocked symbol={} buy={} sell={}", symbol, buyPrice, sellPrice);
             return -1;
         }
@@ -184,7 +215,7 @@ public class MarketMakerService {
         long pairId = recorder.createMmCell(symbol, qty, buyPrice, sellPrice, base); // fail-closed
         String buyClientId = base + "-BUY";
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
-                tradeProps.getApi().getSpotAccountId(), symbol, "buy-limit",
+                tradeProps.getApi().getSpotAccountId(), symbol, "buy-limit-maker",
                 qty.toPlainString(), buyPrice.toPlainString(), buyClientId);
         Long buyId = parseOrderId(resp);
         if (buyId == null) {
@@ -283,10 +314,12 @@ public class MarketMakerService {
      * 成交后由下一 tick 既有成交检测（advanceRestingBuy 顶部）自动推进到 openSellLeg。
      */
     private void takerBuyEscalate(MarketMakerCell cell, BigDecimal askRaw) {
-        BigDecimal newBuy = askRaw.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
-        BigDecimal newSell = MarketMakerMath.sellFromBuy(newBuy, mmProps.getSpreadPct());
-        // 防御闸门（不变量 δ≥f 下恒真，仅防配置异常）：(1−f)²·sell ≥ buy 不成立则放弃穿价，不下单
-        if (!MarketMakerMath.isNoLoss(newBuy, newSell, mmProps.getFeeRatePerSide())) {
+        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
+        SpotGridStrategy.GridQuote quote = gridStrategy.quote(askRaw, mmProps.getSpreadPct(),
+                feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+        BigDecimal newBuy = quote.buyPrice();
+        BigDecimal newSell = quote.sellPrice();
+        if (!gridStrategy.coversFees(newBuy, newSell, feeRate, feeRate)) {
             log.warn("MM taker-buy no-loss guard blocked pairId={} newBuy={} newSell={}",
                     cell.getPairId(), newBuy, newSell);
             return;
@@ -371,9 +404,12 @@ public class MarketMakerService {
                     cell.getPairId(), buyId, post == null ? "null" : post.getState());
             return;
         }
-        BigDecimal newBuy = newBidRaw.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.HALF_UP);
-        BigDecimal newSell = MarketMakerMath.sellFromBuy(newBuy, mmProps.getSpreadPct());
-        if (!MarketMakerMath.isNoLoss(newBuy, newSell, mmProps.getFeeRatePerSide())) {
+        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
+        SpotGridStrategy.GridQuote quote = gridStrategy.quote(newBidRaw, mmProps.getSpreadPct(),
+                feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+        BigDecimal newBuy = quote.buyPrice();
+        BigDecimal newSell = quote.sellPrice();
+        if (!gridStrategy.coversFees(newBuy, newSell, feeRate, feeRate)) {
             log.warn("MM reprice no-loss guard blocked pairId={} newBuy={} newSell={}",
                     cell.getPairId(), newBuy, newSell);
             return;
@@ -384,7 +420,7 @@ public class MarketMakerService {
         }
         String buyClientId = cell.getClientId() + "-BUY-R" + System.currentTimeMillis();
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
-                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit",
+                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "buy-limit-maker",
                 MarketMakerMath.normalizeQty(cell.getQty(), cell.getSymbol()).toPlainString(), newBuy.toPlainString(), buyClientId);
         Long newBuyId = parseOrderId(resp);
         if (newBuyId == null) {
@@ -407,17 +443,18 @@ public class MarketMakerService {
                              BigDecimal filledCashAmount) {
         BigDecimal actualBuyPrice = MarketMakerMath.actualBuyPrice(
                 filledCashAmount, filledBase, cell.getBuyPrice());
+        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
         BigDecimal sellPrice;
         if (mmProps.isSellFollowEnabled()) {
             // follow：初始卖价取 max(含费保本地板, bestAsk)。盘口不可用则退回含费保本地板。
             TopOfBook top = currentTopOfBook(cell.getSymbol());
             BigDecimal ask = (top != null) ? top.ask() : actualBuyPrice;
-            sellPrice = MarketMakerMath.desiredSellPrice(
-                    actualBuyPrice, ask, mmProps.getFeeRatePerSide());
+            sellPrice = gridStrategy.sellPriceAfterFill(filledCashAmount, filledBase, buyFeeBase,
+                    actualBuyPrice, ask, feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
         } else {
-            // legacy：固定高价挂到成交，保留不亏闸门。
-            sellPrice = MarketMakerMath.sellFromBuy(actualBuyPrice, mmProps.getSpreadPct());
-            if (!MarketMakerMath.isNoLoss(actualBuyPrice, sellPrice, mmProps.getFeeRatePerSide())) {
+            sellPrice = gridStrategy.quote(actualBuyPrice, mmProps.getSpreadPct(),
+                    feeRate, feeRate, MarketMakerMath.PRICE_SCALE).sellPrice();
+            if (!gridStrategy.coversFees(actualBuyPrice, sellPrice, feeRate, feeRate)) {
                 log.error("MM actual-fill no-loss gate blocked pairId={} actualBuy={} sell={}",
                         cell.getPairId(), actualBuyPrice, sellPrice);
                 return;
@@ -439,7 +476,7 @@ public class MarketMakerService {
         }
         String sellClientId = clientId + "-SELL";
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
-                tradeProps.getApi().getSpotAccountId(), symbol, "sell-limit",
+                tradeProps.getApi().getSpotAccountId(), symbol, "sell-limit-maker",
                 sellable.toPlainString(), sellPrice.toPlainString(), sellClientId);
         Long sellId = parseOrderId(resp);
         if (sellId == null) {
@@ -456,8 +493,7 @@ public class MarketMakerService {
     private void advanceRestingSell(MarketMakerCell cell) {
         Long sellId = cell.getSellOrderId();
         if (sellId == null) {
-            BigDecimal protectedSellPrice = MarketMakerMath.desiredSellPrice(
-                    cell.getBuyPrice(), cell.getSellPrice(), mmProps.getFeeRatePerSide());
+            BigDecimal protectedSellPrice = protectedSellPrice(cell, cell.getSellPrice());
             recorder.markMmSellPending(cell.getPairId(), nz(cell.getBuyFilledAmount()),
                     nz(cell.getTotalFeeBase()), cell.getBuyPrice(), protectedSellPrice);
             submitSellLeg(cell.getPairId(), cell.getClientId(), cell.getSymbol(),
@@ -503,8 +539,7 @@ public class MarketMakerService {
             lingerExitFlatten(cell);
             return;
         }
-        BigDecimal desiredSell = MarketMakerMath.desiredSellPrice(
-                cell.getBuyPrice(), top.ask(), mmProps.getFeeRatePerSide());
+        BigDecimal desiredSell = protectedSellPrice(cell, top.ask());
         if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
             repriceSell(cell, desiredSell);
         }
@@ -526,7 +561,7 @@ public class MarketMakerService {
 
         String clientId = cell.getClientId() + "-SELL-R" + System.currentTimeMillis();
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
-                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "sell-limit",
+                tradeProps.getApi().getSpotAccountId(), cell.getSymbol(), "sell-limit-maker",
                 sellable.toPlainString(), desiredSell.toPlainString(), clientId);
         if (resp == null || !resp.ok()) {
             log.warn("repriceSell place failed pairId={} keep RESTING_SELL resp={}", cell.getPairId(), resp);
@@ -595,6 +630,17 @@ public class MarketMakerService {
         return totalForCurrentOrder.subtract(nz(post != null ? post.getFilledAmount() : null))
                 .max(BigDecimal.ZERO)
                 .setScale(MarketMakerMath.quantityScale(cell.getSymbol()), RoundingMode.DOWN);
+    }
+
+    private BigDecimal protectedSellPrice(MarketMakerCell cell, BigDecimal bestAsk) {
+        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
+        BigDecimal filledBase = nz(cell.getBuyFilledAmount());
+        BigDecimal quoteCost = filledBase.signum() > 0
+                ? filledBase.multiply(cell.getBuyPrice())
+                : cell.getQty().multiply(cell.getBuyPrice());
+        BigDecimal grossBase = filledBase.signum() > 0 ? filledBase : cell.getQty();
+        return gridStrategy.sellPriceAfterFill(quoteCost, grossBase, nz(cell.getTotalFeeBase()),
+                cell.getBuyPrice(), bestAsk, feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
     }
 
     private BigDecimal cumulativeSellFilled(MarketMakerCell cell, BigDecimal latestFilled) {
