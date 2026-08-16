@@ -21,8 +21,8 @@ public class HtxContractProperties {
     private String marginMode = "isolated";
     private String positionMode = "dual_side";
     private List<String> contractCodes = List.of("BTC-USDT", "ETH-USDT", "XAUT-USDT");
-    private int leverage = 75;
-    private int maxLeverage = 75;
+    private int leverage = 5;
+    private int maxLeverage = 5;
     private int depthStep = 6;
     private int depthTopN = 10;
     private BigDecimal depthSafetyRatio = new BigDecimal("3.0");
@@ -43,13 +43,30 @@ public class HtxContractProperties {
     /** Additional opt-in required before the scheduler may submit real contract orders. */
     private boolean autoLiveEnabled = false;
     private long autoTestInitialDelayMs = 20_000L;
-    private long autoTestIntervalMs = 500L;
+    private long autoTestIntervalMs = 5_000L;
     /** Number of contracts, not XAUT quantity. */
     private long autoTestVolume = 2L;
     /** Per-side target quote notional. Positive values override autoTestVolume. */
-    private BigDecimal autoTestQuoteNotional = new BigDecimal("500");
+    private BigDecimal autoTestQuoteNotional = new BigDecimal("20");
     /** Consume external depth with independent IOC prices instead of equal-price resting orders. */
-    private boolean autoFastIocEnabled = true;
+    private boolean autoFastIocEnabled = false;
+    /** Profit-first mode: maker entries and fee-aware reduce-only maker exits. */
+    private boolean autoProfitGridEnabled = true;
+    /** Conservative maker fee floor per order leg. */
+    private BigDecimal makerFeeRatePerSide = new BigDecimal("0.0004");
+    /** Net profit retained after both fees, funding and safety buffers. */
+    private BigDecimal minNetProfitRate = new BigDecimal("0.0010");
+    private BigDecimal fundingBufferRate = new BigDecimal("0.0002");
+    private BigDecimal safetyBufferRate = new BigDecimal("0.0005");
+    /** Skip new maker grids when the top-of-book spread is wider than this rate. */
+    private BigDecimal maxEntrySpreadRate = new BigDecimal("0.0010");
+    /** Maximum age of resting maker exits before emergency reduce-only IOC reconciliation. */
+    private long profitGridExitTtlMs = 3_600_000L;
+    /** IOC emergency exits refuse prices outside this distance from the current best quote. */
+    private BigDecimal maxEmergencySlippageRate = new BigDecimal("0.0010");
+    /** Stop opening new grids after this realized daily loss; <=0 disables only this numeric cap. */
+    private BigDecimal maxDailyRealizedLossUsdt = new BigDecimal("1.0");
+    private int maxConsecutiveLosses = 3;
     /** Refresh depth and retry remaining reduce-only IOC close volume before declaring exposure. */
     private int fastIocCloseRetryAttempts = 3;
     /** Avoid hammering private APIs after the account can no longer support both legs. */

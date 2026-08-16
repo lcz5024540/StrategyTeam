@@ -26,4 +26,8 @@ public class HtxContractCycleRequest {
     private Long waitFillTimeoutMs;
     /** Auto mode only: use depth-backed IOC prices independently for each side. */
     private Boolean fastIoc;
+    /** Profit-first mode: distinct post-only entry prices and fee-aware reduce-only exits. */
+    private Boolean makerGrid;
+    private BigDecimal longOpenPrice;
+    private BigDecimal shortOpenPrice;
 }

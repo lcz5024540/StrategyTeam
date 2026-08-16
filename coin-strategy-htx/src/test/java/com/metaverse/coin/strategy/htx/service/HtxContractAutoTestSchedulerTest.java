@@ -50,7 +50,7 @@ class HtxContractAutoTestSchedulerTest {
     }
 
     @Test
-    void sizesFastIocCycleFromPerSideQuoteNotionalAndPersistsAudit() {
+    void sizesProfitGridFromPerSideQuoteNotionalAndPersistsAudit() {
         HtxSwapContractInfo contract = new HtxSwapContractInfo();
         contract.setContractCode("XAUT-USDT");
         contract.setContractSize(new BigDecimal("0.001"));
@@ -71,11 +71,12 @@ class HtxContractAutoTestSchedulerTest {
         ArgumentCaptor<HtxContractCycleRequest> request = ArgumentCaptor.forClass(HtxContractCycleRequest.class);
         verify(tradingService).submitDualCycle(request.capture());
         assertEquals("XAUT-USDT", request.getValue().getContractCode());
-        assertEquals(115L, request.getValue().getVolume());
+        assertEquals(5L, request.getValue().getVolume());
         assertEquals(5, request.getValue().getLeverage());
-        assertEquals(new BigDecimal("4333.33"), request.getValue().getOpenPrice());
-        assertEquals(new BigDecimal("4333.33"), request.getValue().getClosePrice());
-        assertEquals(Boolean.TRUE, request.getValue().getFastIoc());
+        assertEquals(new BigDecimal("4333.32"), request.getValue().getLongOpenPrice());
+        assertEquals(new BigDecimal("4333.34"), request.getValue().getShortOpenPrice());
+        assertEquals(Boolean.FALSE, request.getValue().getFastIoc());
+        assertEquals(Boolean.TRUE, request.getValue().getMakerGrid());
         verify(recorder).recordDryRun(request.getValue(), "XAUT-USDT", 5, "dry-run");
     }
 
@@ -139,6 +140,57 @@ class HtxContractAutoTestSchedulerTest {
 
         verify(tradingService, times(1)).submitDualCycle(any());
         verify(swap, times(1)).contractInfo("XAUT-USDT");
+    }
+
+    @Test
+    void activeMakerGridIsReconciledWithoutOpeningAnotherCycle() {
+        when(recorder.hasActiveMakerGridCycle("XAUT-USDT")).thenReturn(true);
+        when(tradingService.reconcileMakerGridCycle("XAUT-USDT"))
+                .thenReturn(HtxContractTradeResult.builder()
+                        .code(HtxContractTradeResult.Code.CLOSE_PENDING).cycleId(77L).build());
+
+        scheduler.runOnce();
+
+        verify(tradingService).reconcileMakerGridCycle("XAUT-USDT");
+        verify(tradingService, never()).submitDualCycle(any());
+        verify(swap, never()).contractInfo(anyString());
+    }
+
+    @Test
+    void dailyLossCircuitBlocksLiveEntryBeforeMarketDataQueries() {
+        props.setAutoTestEnabled(false);
+        props.setAutoLiveEnabled(true);
+        props.setDryRun(false);
+        props.setLiveEnabled(true);
+        when(recorder.sumTodayMakerGridNet()).thenReturn(new BigDecimal("-1.00"));
+
+        scheduler.runOnce();
+
+        verify(tradingService, never()).submitDualCycle(any());
+        verify(swap, never()).contractInfo(anyString());
+    }
+
+    @Test
+    void restingMakerExitsDoNotTriggerMarginBackoff() {
+        props.setAutoTestEnabled(false);
+        props.setAutoLiveEnabled(true);
+        props.setDryRun(false);
+        props.setLiveEnabled(true);
+        HtxSwapContractInfo contract = new HtxSwapContractInfo();
+        contract.setContractCode("XAUT-USDT");
+        contract.setContractSize(new BigDecimal("0.001"));
+        contract.setPriceTick(new BigDecimal("0.01"));
+        HtxDepth depth = new HtxDepth();
+        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal("4333.32"), new BigDecimal("100"))));
+        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal("4333.34"), new BigDecimal("100"))));
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract)));
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth));
+        when(tradingService.submitDualCycle(any())).thenReturn(HtxContractTradeResult.builder()
+                .code(HtxContractTradeResult.Code.CLOSE_PENDING).cycleId(99L).build());
+
+        scheduler.runOnce();
+
+        verify(tradingService).submitDualCycle(any());
     }
 
     @Test

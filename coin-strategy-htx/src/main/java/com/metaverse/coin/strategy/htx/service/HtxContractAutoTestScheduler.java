@@ -7,8 +7,11 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxContractTradeRecorder;
-import lombok.RequiredArgsConstructor;
+import com.metaverse.coin.strategy.htx.persistence.HtxPersistenceException;
+import com.metaverse.coin.strategy.htx.strategy.contract.ContractGridStrategy;
+import com.metaverse.coin.strategy.htx.strategy.contract.FeeAwareContractGridStrategy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,17 +27,37 @@ import java.util.Locale;
 @Component
 @ConditionalOnBean(HtxUsdtSwapApiService.class)
 @ConditionalOnExpression("${htx.contract.auto-test-enabled:false} or ${htx.contract.auto-live-enabled:false}")
-@RequiredArgsConstructor
 public class HtxContractAutoTestScheduler {
 
     private final HtxUsdtSwapApiService api;
     private final HtxContractTradingService tradingService;
     private final HtxContractTradeRecorder recorder;
     private final HtxContractProperties props;
+    private final ContractGridStrategy gridStrategy;
     private volatile long nextMarginRetryAtMs;
 
+    @Autowired
+    public HtxContractAutoTestScheduler(HtxUsdtSwapApiService api,
+                                        HtxContractTradingService tradingService,
+                                        HtxContractTradeRecorder recorder,
+                                        HtxContractProperties props,
+                                        ContractGridStrategy gridStrategy) {
+        this.api = api;
+        this.tradingService = tradingService;
+        this.recorder = recorder;
+        this.props = props;
+        this.gridStrategy = gridStrategy;
+    }
+
+    HtxContractAutoTestScheduler(HtxUsdtSwapApiService api,
+                                 HtxContractTradingService tradingService,
+                                 HtxContractTradeRecorder recorder,
+                                 HtxContractProperties props) {
+        this(api, tradingService, recorder, props, new FeeAwareContractGridStrategy());
+    }
+
     @Scheduled(
-            fixedDelayString = "${htx.contract.auto-test-interval-ms:500}",
+            fixedDelayString = "${htx.contract.auto-test-interval-ms:5000}",
             initialDelayString = "${htx.contract.auto-test-initial-delay-ms:20000}")
     public void scheduled() {
         try {
@@ -59,6 +82,18 @@ public class HtxContractAutoTestScheduler {
             return;
         }
         String contractCode = props.getContractCodes().get(0).trim().toUpperCase(Locale.ROOT);
+        if (!props.isAutoProfitGridEnabled() || props.isAutoFastIocEnabled()) {
+            log.error("[HTX-CONTRACT-AUTO] refused: profit grid must be enabled and fast IOC disabled");
+            return;
+        }
+        if (recorder.hasActiveMakerGridCycle(contractCode)) {
+            HtxContractTradeResult reconcile = tradingService.reconcileMakerGridCycle(contractCode);
+            log.info("[HTX-CONTRACT-GRID] reconcile contract={} result={}", contractCode, reconcile);
+            return;
+        }
+        if (liveMode && lossCircuitOpen(contractCode)) {
+            return;
+        }
         HtxSwapContractInfo contract = loadContract(contractCode);
         HtxDepth depth = loadDepth(contractCode);
         if (contract == null || contract.getContractSize() == null || contract.getContractSize().signum() <= 0
@@ -79,20 +114,28 @@ public class HtxContractAutoTestScheduler {
         }
         BigDecimal referencePrice = bestBid.getPrice().add(bestAsk.getPrice()).divide(BigDecimal.valueOf(2),
                 contract.getPriceTick().scale() + 4, RoundingMode.HALF_UP);
-        BigDecimal openPrice = roundToTick(referencePrice, contract.getPriceTick());
-        BigDecimal closePrice = props.isAutoFastIocEnabled() ? openPrice : roundUpToTick(openPrice.multiply(
-                BigDecimal.ONE.add(props.getAutoTestTargetReturnPct())), contract.getPriceTick());
+        if (!gridStrategy.entrySpreadAllowed(bestBid.getPrice(), bestAsk.getPrice(),
+                props.getMaxEntrySpreadRate())) {
+            log.info("[HTX-CONTRACT-GRID] entry spread blocked contract={} bid={} ask={} maxRate={}",
+                    contractCode, bestBid.getPrice(), bestAsk.getPrice(), props.getMaxEntrySpreadRate());
+            return;
+        }
+        BigDecimal longOpenPrice = roundToTick(bestBid.getPrice(), contract.getPriceTick());
+        BigDecimal shortOpenPrice = roundUpToTick(bestAsk.getPrice(), contract.getPriceTick());
         long volume = targetVolume(contract, referencePrice);
         long clientOrderId = System.currentTimeMillis() * 10L;
         HtxContractCycleRequest request = HtxContractCycleRequest.builder()
                 .contractCode(contractCode)
                 .volume(volume)
-                .openPrice(openPrice)
-                .closePrice(closePrice)
+                .openPrice(longOpenPrice)
+                .closePrice(shortOpenPrice)
+                .longOpenPrice(longOpenPrice)
+                .shortOpenPrice(shortOpenPrice)
                 .leverage(props.getLeverage())
                 .clientOrderId(clientOrderId)
                 .waitFillTimeoutMs(props.getFillTimeoutMs())
-                .fastIoc(props.isAutoFastIocEnabled())
+                .fastIoc(false)
+                .makerGrid(true)
                 .build();
 
         if (dryRunMode) {
@@ -105,6 +148,12 @@ public class HtxContractAutoTestScheduler {
             }
         }
         HtxContractTradeResult result = tradingService.submitDualCycle(request);
+        if (HtxContractTradeResult.Code.CLOSE_PENDING.equals(result.getCode())) {
+            nextMarginRetryAtMs = 0L;
+            log.info("[HTX-CONTRACT-GRID] maker exits resting contract={} cycleId={} result={}",
+                    contractCode, result.getCycleId(), result);
+            return;
+        }
         if (!result.success()) {
             if (HtxContractTradeResult.Code.REJECT_INSUFFICIENT_MARGIN.equals(result.getCode())) {
                 nextMarginRetryAtMs = System.currentTimeMillis() + props.getInsufficientMarginBackoffMs();
@@ -120,10 +169,9 @@ public class HtxContractAutoTestScheduler {
             result.setCycleId(cycleId);
         }
         log.info("[HTX-CONTRACT-AUTO] completed mode={} cycleId={} contract={} volume={} targetNotional={} "
-                        + "leverage={}x referencePrice={} fastIoc={}",
+                        + "leverage={}x longOpen={} shortOpen={} makerGrid=true",
                 dryRunMode ? "dry-run" : "live", result.getCycleId(), contractCode,
-                volume, props.getAutoTestQuoteNotional(), props.getLeverage(), openPrice,
-                props.isAutoFastIocEnabled());
+                volume, props.getAutoTestQuoteNotional(), props.getLeverage(), longOpenPrice, shortOpenPrice);
     }
 
     private HtxSwapContractInfo loadContract(String contractCode) {
@@ -139,6 +187,30 @@ public class HtxContractAutoTestScheduler {
     private HtxDepth loadDepth(String contractCode) {
         HtxRestResponse<HtxDepth> response = api.getSwapService().depth(contractCode, props.getDepthStep());
         return response == null || !response.ok() ? null : response.payload();
+    }
+
+    private boolean lossCircuitOpen(String contractCode) {
+        try {
+            BigDecimal dailyNet = recorder.sumTodayMakerGridNet();
+            dailyNet = dailyNet == null ? BigDecimal.ZERO : dailyNet;
+            BigDecimal dailyLossCap = props.getMaxDailyRealizedLossUsdt();
+            if (dailyLossCap != null && dailyLossCap.signum() > 0
+                    && dailyNet.compareTo(dailyLossCap.negate()) <= 0) {
+                log.error("[HTX-CONTRACT-GRID] daily loss circuit open contract={} net={} cap={}",
+                        contractCode, dailyNet, dailyLossCap);
+                return true;
+            }
+            if (recorder.reachedConsecutiveMakerGridLosses(props.getMaxConsecutiveLosses())) {
+                log.error("[HTX-CONTRACT-GRID] consecutive loss circuit open contract={} limit={}",
+                        contractCode, props.getMaxConsecutiveLosses());
+                return true;
+            }
+            return false;
+        } catch (HtxPersistenceException e) {
+            log.error("[HTX-CONTRACT-GRID] loss circuit query failed; refuse new entry contract={}",
+                    contractCode, e);
+            return true;
+        }
     }
 
     static BigDecimal roundUpToTick(BigDecimal price, BigDecimal tick) {

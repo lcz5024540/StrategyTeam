@@ -14,13 +14,17 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxContractTradeRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractLegEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -113,6 +117,150 @@ class HtxContractDualTradingServiceTest {
                 anyString(), anyString(), any(Boolean.class), any(Long.class), any(BigDecimal.class));
         verify(swap).switchLeverage("XAUT-USDT", "long", 5);
         verify(swap).switchLeverage("XAUT-USDT", "short", 5);
+    }
+
+    @Test
+    void makerGridUsesDistinctPostOnlyEntriesAndFeeProtectedExits() {
+        enableLive();
+        stubPrivatePreflight();
+        when(swap.batchOrders(any())).thenReturn(
+                ok(List.of(accepted(71L, 100L), accepted(72L, 101L))),
+                ok(List.of(accepted(73L, 102L), accepted(74L, 103L))));
+        when(swap.queryOrder("XAUT-USDT", 71L)).thenReturn(filledAt(71L, "2", "4333.32", "0.0035", "0"));
+        when(swap.queryOrder("XAUT-USDT", 72L)).thenReturn(filledAt(72L, "2", "4333.34", "0.0035", "0"));
+        when(swap.queryOrder("XAUT-USDT", 73L)).thenReturn(filledAt(73L, "2", "4344", "0.0035", "0.01"));
+        when(swap.queryOrder("XAUT-USDT", 74L)).thenReturn(filledAt(74L, "2", "4323", "0.0035", "0.01"));
+        HtxContractCycleRequest request = request();
+        request.setOpenPrice(new BigDecimal("4333.32"));
+        request.setClosePrice(new BigDecimal("4333.34"));
+        request.setLongOpenPrice(new BigDecimal("4333.32"));
+        request.setShortOpenPrice(new BigDecimal("4333.34"));
+        request.setMakerGrid(true);
+        request.setFastIoc(false);
+
+        HtxContractTradeResult result = service.submitDualCycle(request);
+
+        assertEquals(HtxContractTradeResult.Code.OK, result.getCode());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<HtxSwapOrderRequest>> batches = ArgumentCaptor.forClass(List.class);
+        verify(swap, times(2)).batchOrders(batches.capture());
+        List<HtxSwapOrderRequest> opens = batches.getAllValues().get(0);
+        List<HtxSwapOrderRequest> closes = batches.getAllValues().get(1);
+        assertEquals(List.of("4333.32", "4333.34"),
+                opens.stream().map(HtxSwapOrderRequest::getPrice).toList());
+        assertTrue(opens.stream().allMatch(order -> "post_only".equals(order.getType())));
+        assertTrue(closes.stream().allMatch(order -> "post_only".equals(order.getType())));
+        assertTrue(new BigDecimal(closes.get(0).getPrice()).compareTo(new BigDecimal("4333.32")) > 0);
+        assertTrue(new BigDecimal(closes.get(1).getPrice()).compareTo(new BigDecimal("4333.34")) < 0);
+        assertTrue(closes.stream().allMatch(order -> Boolean.TRUE.equals(order.getReduceOnly())));
+    }
+
+    @Test
+    void makerGridRejectsInvalidFeeConfigurationBeforeSendingOrders() {
+        props.setMakerFeeRatePerSide(BigDecimal.ONE);
+        HtxContractCycleRequest request = request();
+        request.setOpenPrice(new BigDecimal("4333.32"));
+        request.setClosePrice(new BigDecimal("4333.34"));
+        request.setLongOpenPrice(new BigDecimal("4333.32"));
+        request.setShortOpenPrice(new BigDecimal("4333.34"));
+        request.setMakerGrid(true);
+
+        HtxContractTradeResult result = service.submitDualCycle(request);
+
+        assertEquals(HtxContractTradeResult.Code.REJECT_INVALID_INPUT, result.getCode());
+        verify(swap, never()).contractInfo(anyString());
+        verify(swap, never()).batchOrders(any());
+    }
+
+    @Test
+    void makerGridReconciliationRequiresLiveGate() {
+        HtxContractTradeResult result = service.reconcileMakerGridCycle("XAUT-USDT");
+
+        assertEquals(HtxContractTradeResult.Code.REJECT_LIVE_GATE, result.getCode());
+        verify(recorder, never()).findActiveMakerGridCycle(anyString());
+        verify(swap, never()).batchOrders(any());
+    }
+
+    @Test
+    void makerGridReconciliationMarksCycleDoneAfterBothPersistedClosesFill() {
+        enableLive();
+        HtxContractCycleEntity cycle = makerGridCycle(LocalDateTime.now());
+        List<HtxContractLegEntity> legs = List.of(
+                persistedLeg(HtxContractTradeRecorder.LONG_OPEN, 71L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.SHORT_OPEN, 72L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.LONG_CLOSE, 73L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.SHORT_CLOSE, 74L, "filled", "2"));
+        when(recorder.findActiveMakerGridCycle("XAUT-USDT")).thenReturn(Optional.of(cycle));
+        when(recorder.findLegs(77L)).thenReturn(legs);
+        when(swap.queryOrder("XAUT-USDT", 73L)).thenReturn(filledAt(73L, "2", "4344", "0.01", "0.02"));
+        when(swap.queryOrder("XAUT-USDT", 74L)).thenReturn(filledAt(74L, "2", "4323", "0.01", "0.02"));
+
+        HtxContractTradeResult result = service.reconcileMakerGridCycle("XAUT-USDT");
+
+        assertEquals(HtxContractTradeResult.Code.OK, result.getCode());
+        verify(recorder).update(eq(77L), eq(HtxContractTradeRecorder.DONE), any(), any(),
+                eq(new BigDecimal("4")), eq(new BigDecimal("4")), anyString());
+        verify(swap, never()).batchOrders(any());
+    }
+
+    @Test
+    void makerGridReconciliationCompletesSafelyFlattenedSingleSideFill() {
+        enableLive();
+        HtxContractCycleEntity cycle = makerGridCycle(LocalDateTime.now());
+        List<HtxContractLegEntity> legs = List.of(
+                persistedLeg(HtxContractTradeRecorder.LONG_OPEN, 71L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.SHORT_OPEN, 72L, "canceled", "0"),
+                persistedLeg(HtxContractTradeRecorder.LONG_CLOSE, 73L, "filled", "2"));
+        when(recorder.findActiveMakerGridCycle("XAUT-USDT")).thenReturn(Optional.of(cycle));
+        when(recorder.findLegs(77L)).thenReturn(legs);
+        when(swap.queryOrder("XAUT-USDT", 73L)).thenReturn(filledAt(73L, "2", "4333", "0.01", "-0.02"));
+
+        HtxContractTradeResult result = service.reconcileMakerGridCycle("XAUT-USDT");
+
+        assertEquals(HtxContractTradeResult.Code.OK, result.getCode());
+        verify(recorder).update(eq(77L), eq(HtxContractTradeRecorder.DONE), any(), any(),
+                eq(new BigDecimal("2")), eq(new BigDecimal("2")), anyString());
+    }
+
+    @Test
+    void makerGridReconciliationLeavesFreshExitOrdersResting() {
+        enableLive();
+        HtxContractCycleEntity cycle = makerGridCycle(LocalDateTime.now());
+        List<HtxContractLegEntity> legs = List.of(
+                persistedLeg(HtxContractTradeRecorder.LONG_OPEN, 71L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.SHORT_OPEN, 72L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.LONG_CLOSE, 73L, "new", "0"),
+                persistedLeg(HtxContractTradeRecorder.SHORT_CLOSE, 74L, "new", "0"));
+        when(recorder.findActiveMakerGridCycle("XAUT-USDT")).thenReturn(Optional.of(cycle));
+        when(recorder.findLegs(77L)).thenReturn(legs);
+        when(swap.queryOrder("XAUT-USDT", 73L)).thenReturn(openOrder());
+        when(swap.queryOrder("XAUT-USDT", 74L)).thenReturn(openOrder());
+
+        HtxContractTradeResult result = service.reconcileMakerGridCycle("XAUT-USDT");
+
+        assertEquals(HtxContractTradeResult.Code.CLOSE_PENDING, result.getCode());
+        verify(swap, never()).cancelOrder(anyString(), any(Long.class));
+        verify(swap, never()).batchOrders(any());
+    }
+
+    @Test
+    void makerGridReconciliationFailsClosedWhenCloseStateCannotBeRead() {
+        enableLive();
+        HtxContractCycleEntity cycle = makerGridCycle(LocalDateTime.now());
+        List<HtxContractLegEntity> legs = List.of(
+                persistedLeg(HtxContractTradeRecorder.LONG_OPEN, 71L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.SHORT_OPEN, 72L, "filled", "2"),
+                persistedLeg(HtxContractTradeRecorder.LONG_CLOSE, 73L, "new", "0"));
+        when(recorder.findActiveMakerGridCycle("XAUT-USDT")).thenReturn(Optional.of(cycle));
+        when(recorder.findLegs(77L)).thenReturn(legs);
+        when(swap.queryOrder("XAUT-USDT", 73L)).thenReturn(HtxRestResponse.<List<HtxSwapOrder>>builder()
+                .status("error").errCode("io").errMsg("timeout").build());
+
+        HtxContractTradeResult result = service.reconcileMakerGridCycle("XAUT-USDT");
+
+        assertEquals(HtxContractTradeResult.Code.QUERY_INFRA_ERROR, result.getCode());
+        verify(swap, never()).cancelOrder(anyString(), any(Long.class));
+        verify(swap, never()).batchOrders(any());
     }
 
     @Test
@@ -330,11 +478,16 @@ class HtxContractDualTradingServiceTest {
 
     private static HtxRestResponse<List<HtxSwapOrder>> filled(
             long orderId, String volume, String fee, String profit) {
+        return filledAt(orderId, volume, "4333.33", fee, profit);
+    }
+
+    private static HtxRestResponse<List<HtxSwapOrder>> filledAt(
+            long orderId, String volume, String averagePrice, String fee, String profit) {
         HtxSwapOrder order = new HtxSwapOrder();
         order.setOrderId(orderId);
         order.setState("filled");
         order.setTradeVolume(new BigDecimal(volume));
-        order.setTradeAveragePrice(new BigDecimal("4333.33"));
+        order.setTradeAveragePrice(new BigDecimal(averagePrice));
         order.setFee(new BigDecimal(fee));
         order.setFeeCurrency("USDT");
         order.setProfit(new BigDecimal(profit));
@@ -366,6 +519,28 @@ class HtxContractDualTradingServiceTest {
     private static HtxDepthGuard.Verdict depthRejected() {
         return new HtxDepthGuard.Verdict(false, false,
                 BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("6"));
+    }
+
+    private static HtxContractCycleEntity makerGridCycle(LocalDateTime updatedAt) {
+        HtxContractCycleEntity cycle = new HtxContractCycleEntity();
+        cycle.setId(77L);
+        cycle.setClientOrderId(100L);
+        cycle.setContractCode("XAUT-USDT");
+        cycle.setLeverage(5);
+        cycle.setStatus(HtxContractTradeRecorder.CLOSE_PENDING);
+        cycle.setUpdatedAt(updatedAt);
+        return cycle;
+    }
+
+    private static HtxContractLegEntity persistedLeg(String type, long orderId, String state, String filled) {
+        HtxContractLegEntity leg = new HtxContractLegEntity();
+        leg.setCycleId(77L);
+        leg.setLegType(type);
+        leg.setClientOrderId(100L + orderId);
+        leg.setOrderId(orderId);
+        leg.setState(state);
+        leg.setFilledVolume(new BigDecimal(filled));
+        return leg;
     }
 
     private static HtxDepth depth(String ask, String bid) {

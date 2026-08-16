@@ -12,8 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /** Write-ahead persistence for leveraged contract cycles. */
 @Slf4j
@@ -56,6 +58,55 @@ public class HtxContractTradeRecorder {
         }
     }
 
+    public boolean hasActiveMakerGridCycle(String contractCode) {
+        return findActiveMakerGridCycle(contractCode).isPresent();
+    }
+
+    public Optional<HtxContractCycleEntity> findActiveMakerGridCycle(String contractCode) {
+        try {
+            List<HtxContractCycleEntity> cycles = mapper.selectList(new QueryWrapper<HtxContractCycleEntity>()
+                    .eq("contract_code", contractCode)
+                    .in("status", ACTIVE_STATUSES)
+                    .likeRight("message", "MAKER_GRID:")
+                    .orderByAsc("id")
+                    .last("LIMIT 1"));
+            return cycles == null || cycles.isEmpty() ? Optional.empty() : Optional.of(cycles.get(0));
+        } catch (Exception e) {
+            throw new HtxPersistenceException("maker-grid active-cycle query failed", e);
+        }
+    }
+
+    public List<HtxContractLegEntity> findLegs(long cycleId) {
+        try {
+            return legMapper.selectList(new QueryWrapper<HtxContractLegEntity>()
+                    .eq("cycle_id", cycleId).orderByAsc("id"));
+        } catch (Exception e) {
+            throw new HtxPersistenceException("contract leg query failed cycleId=" + cycleId, e);
+        }
+    }
+
+    public BigDecimal sumTodayMakerGridNet() {
+        try {
+            BigDecimal net = legMapper.sumMakerGridNetSince(LocalDate.now().atStartOfDay());
+            return net == null ? BigDecimal.ZERO : net;
+        } catch (Exception e) {
+            throw new HtxPersistenceException("maker-grid daily PnL query failed", e);
+        }
+    }
+
+    public boolean reachedConsecutiveMakerGridLosses(int limit) {
+        if (limit <= 0) {
+            return false;
+        }
+        try {
+            List<BigDecimal> recent = legMapper.findRecentMakerGridNet(limit);
+            return recent != null && recent.size() >= limit
+                    && recent.stream().allMatch(value -> value != null && value.signum() < 0);
+        } catch (Exception e) {
+            throw new HtxPersistenceException("maker-grid consecutive-loss query failed", e);
+        }
+    }
+
     /** Insert must commit before the first live open instruction is sent. */
     public long createIntent(HtxContractCycleRequest request, String contractCode, int leverage) {
         try {
@@ -67,6 +118,9 @@ public class HtxContractTradeRecorder {
             entity.setClosePrice(request.getClosePrice());
             entity.setLeverage(leverage);
             entity.setStatus(INTENT);
+            if (Boolean.TRUE.equals(request.getMakerGrid())) {
+                entity.setMessage("MAKER_GRID:intent");
+            }
             entity.setUpdatedAt(LocalDateTime.now());
             mapper.insert(entity);
             return entity.getId();
@@ -149,6 +203,7 @@ public class HtxContractTradeRecorder {
     public void update(long cycleId, String status, Long openOrderId, Long closeOrderId,
                        BigDecimal openFilled, BigDecimal closeFilled, String message) {
         try {
+            HtxContractCycleEntity current = mapper.selectById(cycleId);
             HtxContractCycleEntity entity = new HtxContractCycleEntity();
             entity.setId(cycleId);
             entity.setStatus(status);
@@ -156,7 +211,10 @@ public class HtxContractTradeRecorder {
             entity.setCloseOrderId(closeOrderId);
             entity.setOpenFilledVolume(openFilled);
             entity.setCloseFilledVolume(closeFilled);
-            entity.setMessage(message);
+            boolean makerGrid = current != null && current.getMessage() != null
+                    && current.getMessage().startsWith("MAKER_GRID:");
+            entity.setMessage(makerGrid && (message == null || !message.startsWith("MAKER_GRID:"))
+                    ? "MAKER_GRID:" + message : message);
             entity.setUpdatedAt(LocalDateTime.now());
             mapper.updateById(entity);
         } catch (Exception e) {

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -103,5 +104,32 @@ class HtxContractTradeRecorderTest {
         assertTrue(leg.getReduceOnly());
         assertEquals(new BigDecimal("4359.33"), leg.getPrice());
         assertEquals(HtxContractTradeRecorder.LEG_INTENT, leg.getState());
+    }
+
+    @Test
+    void dailyMakerGridNetDefaultsToZeroAndDetectsLossStreak() {
+        when(legMapper.sumMakerGridNetSince(any())).thenReturn(null);
+        when(legMapper.findRecentMakerGridNet(3))
+                .thenReturn(List.of(new BigDecimal("-0.1"), new BigDecimal("-0.2"), new BigDecimal("-0.3")));
+
+        assertEquals(BigDecimal.ZERO, recorder.sumTodayMakerGridNet());
+        assertTrue(recorder.reachedConsecutiveMakerGridLosses(3));
+    }
+
+    @Test
+    void makerGridIntentCarriesRecoveryMarker() {
+        when(mapper.insert(any())).thenAnswer(invocation -> {
+            ((HtxContractCycleEntity) invocation.getArgument(0)).setId(44L);
+            return 1;
+        });
+        HtxContractCycleRequest request = HtxContractCycleRequest.builder()
+                .clientOrderId(102L).volume(2L).makerGrid(true)
+                .openPrice(new BigDecimal("4333.32")).closePrice(new BigDecimal("4333.34")).build();
+
+        recorder.createIntent(request, "XAUT-USDT", 5);
+
+        ArgumentCaptor<HtxContractCycleEntity> captor = ArgumentCaptor.forClass(HtxContractCycleEntity.class);
+        verify(mapper).insert(captor.capture());
+        assertEquals("MAKER_GRID:intent", captor.getValue().getMessage());
     }
 }

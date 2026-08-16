@@ -89,8 +89,8 @@ htx:
     margin-mode: isolated
     position-mode: dual_side
     contract-codes: ${HTX_CONTRACT_CODES:XAUT-USDT}
-    leverage: ${HTX_CONTRACT_LEVERAGE:75}
-    max-leverage: ${HTX_CONTRACT_MAX_LEVERAGE:75}
+    leverage: ${HTX_CONTRACT_LEVERAGE:5}
+    max-leverage: ${HTX_CONTRACT_MAX_LEVERAGE:5}
     depth-step: 6
     depth-top-n: 10
     depth-safety-ratio: 3.0
@@ -107,10 +107,20 @@ htx:
     auto-test-enabled: ${HTX_CONTRACT_AUTO_TEST_ENABLED:false}
     auto-live-enabled: ${HTX_CONTRACT_AUTO_LIVE_ENABLED:false}
     auto-test-initial-delay-ms: ${HTX_CONTRACT_AUTO_TEST_INITIAL_DELAY_MS:20000}
-    auto-test-interval-ms: ${HTX_CONTRACT_AUTO_TEST_INTERVAL_MS:500}
+    auto-test-interval-ms: ${HTX_CONTRACT_AUTO_TEST_INTERVAL_MS:5000}
     auto-test-volume: ${HTX_CONTRACT_AUTO_TEST_VOLUME:2}
-    auto-test-quote-notional: ${HTX_CONTRACT_AUTO_TEST_QUOTE_NOTIONAL:500}
-    auto-fast-ioc-enabled: ${HTX_CONTRACT_AUTO_FAST_IOC_ENABLED:true}
+    auto-test-quote-notional: ${HTX_CONTRACT_AUTO_TEST_QUOTE_NOTIONAL:20}
+    auto-fast-ioc-enabled: ${HTX_CONTRACT_AUTO_FAST_IOC_ENABLED:false}
+    auto-profit-grid-enabled: ${HTX_CONTRACT_AUTO_PROFIT_GRID_ENABLED:true}
+    maker-fee-rate-per-side: ${HTX_CONTRACT_MAKER_FEE_RATE_PER_SIDE:0.0004}
+    min-net-profit-rate: ${HTX_CONTRACT_MIN_NET_PROFIT_RATE:0.0010}
+    funding-buffer-rate: ${HTX_CONTRACT_FUNDING_BUFFER_RATE:0.0002}
+    safety-buffer-rate: ${HTX_CONTRACT_SAFETY_BUFFER_RATE:0.0005}
+    max-entry-spread-rate: ${HTX_CONTRACT_MAX_ENTRY_SPREAD_RATE:0.0010}
+    profit-grid-exit-ttl-ms: ${HTX_CONTRACT_PROFIT_GRID_EXIT_TTL_MS:3600000}
+    max-emergency-slippage-rate: ${HTX_CONTRACT_MAX_EMERGENCY_SLIPPAGE_RATE:0.0010}
+    max-daily-realized-loss-usdt: ${HTX_CONTRACT_MAX_DAILY_REALIZED_LOSS_USDT:1.0}
+    max-consecutive-losses: ${HTX_CONTRACT_MAX_CONSECUTIVE_LOSSES:3}
     fast-ioc-close-retry-attempts: ${HTX_CONTRACT_FAST_IOC_CLOSE_RETRY_ATTEMPTS:3}
     insufficient-margin-backoff-ms: ${HTX_CONTRACT_INSUFFICIENT_MARGIN_BACKOFF_MS:300000}
     auto-test-target-return-pct: ${HTX_CONTRACT_AUTO_TEST_TARGET_RETURN_PCT:0.006}

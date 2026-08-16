@@ -17,8 +17,12 @@ import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxContractTradeRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxPersistenceException;
-import lombok.RequiredArgsConstructor;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractLegEntity;
+import com.metaverse.coin.strategy.htx.strategy.contract.ContractGridStrategy;
+import com.metaverse.coin.strategy.htx.strategy.contract.FeeAwareContractGridStrategy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +34,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -42,14 +47,34 @@ import java.util.concurrent.locks.ReentrantLock;
 @Slf4j
 @Service
 @ConditionalOnBean(HtxUsdtSwapApiService.class)
-@RequiredArgsConstructor
 public class HtxContractTradingService {
 
     private final HtxUsdtSwapApiService api;
     private final HtxDepthGuard depthGuard;
     private final HtxContractProperties props;
     private final HtxContractTradeRecorder recorder;
+    private final ContractGridStrategy gridStrategy;
     private final Map<String, ReentrantLock> contractLocks = new ConcurrentHashMap<>();
+
+    @Autowired
+    public HtxContractTradingService(HtxUsdtSwapApiService api,
+                                     HtxDepthGuard depthGuard,
+                                     HtxContractProperties props,
+                                     HtxContractTradeRecorder recorder,
+                                     ContractGridStrategy gridStrategy) {
+        this.api = api;
+        this.depthGuard = depthGuard;
+        this.props = props;
+        this.recorder = recorder;
+        this.gridStrategy = gridStrategy;
+    }
+
+    HtxContractTradingService(HtxUsdtSwapApiService api,
+                              HtxDepthGuard depthGuard,
+                              HtxContractProperties props,
+                              HtxContractTradeRecorder recorder) {
+        this(api, depthGuard, props, recorder, new FeeAwareContractGridStrategy());
+    }
 
     public HtxContractTradeResult configureLeverage(HtxContractLeverageRequest request) {
         String requestedCode = normalize(request == null ? null : request.getContractCode());
@@ -129,17 +154,148 @@ public class HtxContractTradingService {
         }
     }
 
+    /** Advance one persisted maker-grid exit without opening another cycle. */
+    public HtxContractTradeResult reconcileMakerGridCycle(String requestedCode) {
+        String contractCode = normalize(requestedCode);
+        if (props.isDryRun() || !props.isLiveEnabled()) {
+            return result(HtxContractTradeResult.Code.REJECT_LIVE_GATE, contractCode, props.getLeverage(),
+                    "maker-grid reconciliation requires dry-run=false and live-enabled=true");
+        }
+        HtxContractTradeResult rejected = validateContractAndLeverage(contractCode, props.getLeverage());
+        if (rejected != null) {
+            return rejected;
+        }
+        ReentrantLock lock = contractLocks.computeIfAbsent(lockKey(contractCode), ignored -> new ReentrantLock());
+        if (!lock.tryLock()) {
+            return result(HtxContractTradeResult.Code.REJECT_PREFLIGHT, contractCode, props.getLeverage(),
+                    "another operation is running for this contract");
+        }
+        try {
+            return executeMakerGridReconciliation(contractCode);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private HtxContractTradeResult executeMakerGridReconciliation(String contractCode) {
+        Optional<HtxContractCycleEntity> active = recorder.findActiveMakerGridCycle(contractCode);
+        if (active.isEmpty()) {
+            return result(HtxContractTradeResult.Code.REJECT_PREFLIGHT, contractCode, props.getLeverage(),
+                    "no active maker-grid cycle");
+        }
+        HtxContractCycleEntity cycle = active.get();
+        if (!HtxContractTradeRecorder.CLOSE_PENDING.equals(cycle.getStatus())
+                && !HtxContractTradeRecorder.EXPOSURE.equals(cycle.getStatus())) {
+            return gridResult(cycle, HtxContractTradeResult.Code.EXPOSURE,
+                    "maker-grid entry requires manual reconciliation before exits can advance");
+        }
+        List<HtxContractLegEntity> legs = recorder.findLegs(cycle.getId());
+        if (!refreshPersistedCloseLegs(cycle.getId(), contractCode, legs)) {
+            return gridResult(cycle, HtxContractTradeResult.Code.QUERY_INFRA_ERROR,
+                    "maker-grid close query failed; no new order sent");
+        }
+        legs = recorder.findLegs(cycle.getId());
+        GridVolumes volumes = gridVolumes(legs);
+        if (volumes.closed()) {
+            recorder.update(cycle.getId(), HtxContractTradeRecorder.DONE, cycle.getOpenOrderId(),
+                    cycle.getCloseOrderId(), volumes.totalOpen(), volumes.totalClose(),
+                    "maker grid flattened at fee-protected prices");
+            return gridResult(cycle, HtxContractTradeResult.Code.OK, "maker grid flattened");
+        }
+        long ageMs = cycle.getUpdatedAt() == null ? Long.MAX_VALUE
+                : java.time.Duration.between(cycle.getUpdatedAt(), java.time.LocalDateTime.now()).toMillis();
+        if (HtxContractTradeRecorder.CLOSE_PENDING.equals(cycle.getStatus())
+                && ageMs < props.getProfitGridExitTtlMs()) {
+            return gridResult(cycle, HtxContractTradeResult.Code.CLOSE_PENDING,
+                    "maker exits remain inside profit-grid TTL");
+        }
+        if (!cancelActiveCloseLegs(cycle.getId(), contractCode, legs)) {
+            recorder.update(cycle.getId(), HtxContractTradeRecorder.EXPOSURE, cycle.getOpenOrderId(),
+                    cycle.getCloseOrderId(), volumes.totalOpen(), volumes.totalClose(),
+                    "maker exit cancellation not terminal; manual reconciliation required");
+            return gridResult(cycle, HtxContractTradeResult.Code.EXPOSURE,
+                    "maker exit cancellation not terminal");
+        }
+
+        legs = recorder.findLegs(cycle.getId());
+        volumes = gridVolumes(legs);
+        if (volumes.closed()) {
+            recorder.update(cycle.getId(), HtxContractTradeRecorder.DONE, cycle.getOpenOrderId(),
+                    cycle.getCloseOrderId(), volumes.totalOpen(), volumes.totalClose(),
+                    "maker grid flattened during cancellation race");
+            return gridResult(cycle, HtxContractTradeResult.Code.OK, "maker grid flattened");
+        }
+        int retry = nextGridRetry(legs);
+        if (retry > props.getFastIocCloseRetryAttempts()) {
+            recorder.update(cycle.getId(), HtxContractTradeRecorder.EXPOSURE, cycle.getOpenOrderId(),
+                    cycle.getCloseOrderId(), volumes.totalOpen(), volumes.totalClose(),
+                    "maker-grid emergency close retries exhausted");
+            return gridResult(cycle, HtxContractTradeResult.Code.EXPOSURE,
+                    "maker-grid emergency close retries exhausted");
+        }
+        HtxSwapContractInfo contract = loadContract(contractCode);
+        if (!contractAvailable(contract)) {
+            return gridResult(cycle, HtxContractTradeResult.Code.EXPOSURE, "contract unavailable during exit");
+        }
+        ExecutablePrices prices = executablePrices(contractCode, volumes.remainingShort(),
+                volumes.remainingLong(), contract.getPriceTick());
+        if (!prices.available()) {
+            return gridResult(cycle, HtxContractTradeResult.Code.EXPOSURE,
+                    "emergency close blocked: " + prices.error());
+        }
+        List<LegExecution> emergency = new ArrayList<>(2);
+        long idBase = cycle.getClientOrderId() + 100L + retry * 2L;
+        if (volumes.remainingLong() > 0L) {
+            emergency.add(leg(HtxContractTradeRecorder.LONG_CLOSE + "_R" + retry, idBase,
+                    "sell", "long", true, volumes.remainingLong(), prices.sellPrice(), contractCode,
+                    ExecutionMode.IOC));
+        }
+        if (volumes.remainingShort() > 0L) {
+            emergency.add(leg(HtxContractTradeRecorder.SHORT_CLOSE + "_R" + retry, idBase + 1L,
+                    "buy", "short", true, volumes.remainingShort(), prices.buyPrice(), contractCode,
+                    ExecutionMode.IOC));
+        }
+        try {
+            persistLegIntents(cycle.getId(), emergency);
+        } catch (HtxPersistenceException e) {
+            return gridResult(cycle, HtxContractTradeResult.Code.EXPOSURE, e.getMessage());
+        }
+        recorder.update(cycle.getId(), HtxContractTradeRecorder.EXPOSURE, cycle.getOpenOrderId(),
+                cycle.getCloseOrderId(), volumes.totalOpen(), volumes.totalClose(),
+                "maker-grid emergency reduce-only IOC retry=" + retry);
+        sendBatch(cycle.getId(), emergency);
+        for (LegExecution execution : emergency) {
+            settleCloseLeg(cycle.getId(), contractCode, execution, props.getFillTimeoutMs());
+        }
+        GridVolumes after = gridVolumes(recorder.findLegs(cycle.getId()));
+        if (after.closed()) {
+            recorder.update(cycle.getId(), HtxContractTradeRecorder.DONE, cycle.getOpenOrderId(),
+                    cycle.getCloseOrderId(), after.totalOpen(), after.totalClose(),
+                    "maker grid flattened by emergency reduce-only IOC");
+            return gridResult(cycle, HtxContractTradeResult.Code.OK, "maker grid emergency-flattened");
+        }
+        return gridResult(cycle, HtxContractTradeResult.Code.EXPOSURE,
+                "maker-grid emergency close remains incomplete");
+    }
+
     private HtxContractTradeResult executeDualCycle(HtxContractCycleRequest request) {
         String contractCode = normalize(request == null ? null : request.getContractCode());
         int leverage = request != null && request.getLeverage() != null
                 ? request.getLeverage() : props.getLeverage();
         boolean fastIoc = request != null && Boolean.TRUE.equals(request.getFastIoc());
+        boolean makerGrid = request != null && Boolean.TRUE.equals(request.getMakerGrid());
         HtxContractTradeResult rejected = validateCycle(request, contractCode, leverage);
         if (rejected != null) {
             return rejected;
         }
-        long maxClientOrderOffset = 3L + (fastIoc
-                ? Math.max(0L, (long) props.getFastIocCloseRetryAttempts()) * 2L : 0L);
+        if (makerGrid && (!validMakerGridConfiguration()
+                || requestedMakerPricesInvalid(request))) {
+            return result(HtxContractTradeResult.Code.REJECT_INVALID_INPUT, contractCode, leverage,
+                    "maker-grid prices, fee rates, buffers, TTL and retry limits are invalid");
+        }
+        long retries = Math.max(0L, (long) props.getFastIocCloseRetryAttempts());
+        long maxClientOrderOffset = makerGrid ? 101L + retries * 2L
+                : 3L + (fastIoc ? retries * 2L : 0L);
         if (request.getClientOrderId() != null
                 && request.getClientOrderId() > Long.MAX_VALUE - maxClientOrderOffset) {
             return result(HtxContractTradeResult.Code.REJECT_INVALID_INPUT, contractCode, leverage,
@@ -151,15 +307,19 @@ public class HtxContractTradingService {
             return result(HtxContractTradeResult.Code.REJECT_CONTRACT_UNAVAILABLE, contractCode, leverage,
                     "contract unavailable or isolated margin unsupported");
         }
+        BigDecimal requestedLongOpen = makerGrid ? request.getLongOpenPrice() : request.getOpenPrice();
+        BigDecimal requestedShortOpen = makerGrid ? request.getShortOpenPrice() : request.getOpenPrice();
         if (!aligned(request.getOpenPrice(), contract.getPriceTick())
-                || !aligned(request.getClosePrice(), contract.getPriceTick())) {
+                || !aligned(request.getClosePrice(), contract.getPriceTick())
+                || !aligned(requestedLongOpen, contract.getPriceTick())
+                || !aligned(requestedShortOpen, contract.getPriceTick())) {
             return result(HtxContractTradeResult.Code.REJECT_PRICE_TICK, contractCode, leverage,
                     "price must align to tick=" + contract.getPriceTick());
         }
 
         BigDecimal legNotional = contract.getContractSize()
                 .multiply(BigDecimal.valueOf(request.getVolume()))
-                .multiply(request.getOpenPrice());
+                .multiply(requestedLongOpen.max(requestedShortOpen));
         if (legNotional.compareTo(props.getMinQuoteNotional()) < 0
                 || (props.getMaxSingleQuoteNotional().signum() > 0
                 && legNotional.compareTo(props.getMaxSingleQuoteNotional()) > 0)) {
@@ -174,9 +334,9 @@ public class HtxContractTradingService {
         }
         if (props.isDryRun()) {
             log.info("[HTX-CONTRACT-DRY-RUN] would batch open long+short contract={} volume={} leverage={}x "
-                            + "openPrice={} then reduce both at closePrice={} fastIoc={}",
-                    contractCode, request.getVolume(), leverage, request.getOpenPrice(), request.getClosePrice(),
-                    fastIoc);
+                            + "longOpen={} shortOpen={} makerGrid={} fastIoc={}",
+                    contractCode, request.getVolume(), leverage, requestedLongOpen, requestedShortOpen,
+                    makerGrid, fastIoc);
             return result(HtxContractTradeResult.Code.DRY_RUN_OK, contractCode, leverage,
                     "dual dry-run per-leg notional=" + legNotional.toPlainString());
         }
@@ -197,7 +357,7 @@ public class HtxContractTradingService {
 
         ExecutablePrices openPrices = fastIoc
                 ? executablePrices(contractCode, request.getVolume(), request.getVolume(), contract.getPriceTick())
-                : ExecutablePrices.ok(request.getOpenPrice(), request.getOpenPrice());
+                : ExecutablePrices.ok(requestedLongOpen, requestedShortOpen);
         if (!openPrices.available()) {
             return result(HtxContractTradeResult.Code.REJECT_DEPTH, contractCode, leverage,
                     "open " + openPrices.error());
@@ -210,12 +370,14 @@ public class HtxContractTradingService {
             return result(HtxContractTradeResult.Code.REJECT_PERSISTENCE, contractCode, leverage, e.getMessage());
         }
 
+        ExecutionMode openMode = makerGrid ? ExecutionMode.POST_ONLY
+                : fastIoc ? ExecutionMode.IOC : ExecutionMode.LIMIT;
         LegExecution longOpen = leg(HtxContractTradeRecorder.LONG_OPEN,
                 request.getClientOrderId(), "buy", "long", false,
-                request.getVolume(), openPrices.buyPrice(), contractCode, fastIoc);
+                request.getVolume(), openPrices.buyPrice(), contractCode, openMode);
         LegExecution shortOpen = leg(HtxContractTradeRecorder.SHORT_OPEN,
                 request.getClientOrderId() + 1L, "sell", "short", false,
-                request.getVolume(), openPrices.sellPrice(), contractCode, fastIoc);
+                request.getVolume(), openPrices.sellPrice(), contractCode, openMode);
         List<LegExecution> openLegs = List.of(longOpen, shortOpen);
         try {
             persistLegIntents(cycleId, openLegs);
@@ -274,8 +436,25 @@ public class HtxContractTradingService {
                     HtxContractTradeRecorder.EXPOSURE, contractCode, leverage,
                     longOpen, shortOpen, null, null, "HTX returned non-integer contract fill");
         }
+        boolean symmetricOpen = longVolume.signum() > 0 && longVolume.compareTo(shortVolume) == 0;
         ExecutablePrices closePrices;
-        if (fastIoc) {
+        ExecutionMode closeMode;
+        if (makerGrid && symmetricOpen) {
+            ContractGridStrategy.ExitQuote quote;
+            try {
+                quote = gridStrategy.exitQuote(
+                        positionCost(longOpen, contract, longCloseVolume),
+                        positionCost(shortOpen, contract, shortCloseVolume),
+                        props.getMakerFeeRatePerSide(), props.getFundingBufferRate(),
+                        props.getSafetyBufferRate(), props.getMinNetProfitRate(), contract.getPriceTick());
+            } catch (IllegalArgumentException e) {
+                return recordedDualResult(cycleId, HtxContractTradeResult.Code.EXPOSURE,
+                        HtxContractTradeRecorder.EXPOSURE, contractCode, leverage,
+                        longOpen, shortOpen, null, null, "maker-grid exit pricing failed: " + e.getMessage());
+            }
+            closePrices = ExecutablePrices.ok(quote.shortClosePrice(), quote.longClosePrice());
+            closeMode = ExecutionMode.POST_ONLY;
+        } else if (fastIoc || makerGrid) {
             closePrices = executablePrices(contractCode, shortCloseVolume, longCloseVolume,
                     contract.getPriceTick());
             if (!closePrices.available()) {
@@ -284,6 +463,7 @@ public class HtxContractTradingService {
                         longOpen, shortOpen, null, null,
                         "close depth rejected after open: " + closePrices.error());
             }
+            closeMode = ExecutionMode.IOC;
         } else {
             depthRejection = checkDepth(contractCode, leverage, shortVolume, longVolume, "close");
             if (depthRejection != null) {
@@ -293,6 +473,7 @@ public class HtxContractTradingService {
                         "close depth rejected after open: " + depthRejection.getMessage());
             }
             closePrices = ExecutablePrices.ok(request.getClosePrice(), request.getClosePrice());
+            closeMode = ExecutionMode.LIMIT;
         }
 
         List<LegExecution> closeLegs = new ArrayList<>(2);
@@ -302,13 +483,13 @@ public class HtxContractTradingService {
             if (longVolume.signum() > 0) {
                 longClose = leg(HtxContractTradeRecorder.LONG_CLOSE,
                         request.getClientOrderId() + 2L, "sell", "long", true,
-                        longCloseVolume, closePrices.sellPrice(), contractCode, fastIoc);
+                        longCloseVolume, closePrices.sellPrice(), contractCode, closeMode);
                 closeLegs.add(longClose);
             }
             if (shortVolume.signum() > 0) {
                 shortClose = leg(HtxContractTradeRecorder.SHORT_CLOSE,
                         request.getClientOrderId() + 3L, "buy", "short", true,
-                        shortCloseVolume, closePrices.buyPrice(), contractCode, fastIoc);
+                        shortCloseVolume, closePrices.buyPrice(), contractCode, closeMode);
                 closeLegs.add(shortClose);
             }
             persistLegIntents(cycleId, closeLegs);
@@ -345,7 +526,6 @@ public class HtxContractTradingService {
         boolean longClosed = closed(longOpen, longClose);
         boolean shortClosed = closed(shortOpen, shortClose);
         if (longClosed && shortClosed) {
-            boolean symmetricOpen = longVolume.signum() > 0 && longVolume.compareTo(shortVolume) == 0;
             return recordedDualResult(cycleId, symmetricOpen
                             ? HtxContractTradeResult.Code.OK : HtxContractTradeResult.Code.OPEN_ORDER_REJECTED,
                     HtxContractTradeRecorder.DONE, contractCode, leverage,
@@ -711,15 +891,23 @@ public class HtxContractTradingService {
         if (volume.signum() == 0) {
             return null;
         }
-        BigDecimal required = volume.multiply(props.getDepthSafetyRatio());
         BigDecimal cumulative = BigDecimal.ZERO;
+        BigDecimal bestPrice = levels == null || levels.isEmpty() ? null : levels.get(0).getPrice();
         int limit = Math.min(props.getDepthTopN(), levels == null ? 0 : levels.size());
         for (int i = 0; i < limit; i++) {
             HtxPriceLevel level = levels.get(i);
             if (level.getAmount() != null) {
                 cumulative = cumulative.add(level.getAmount());
             }
-            if (cumulative.compareTo(required) >= 0 && level.getPrice() != null) {
+            if (cumulative.compareTo(volume) >= 0 && level.getPrice() != null && bestPrice != null) {
+                BigDecimal maxSlippage = props.getMaxEmergencySlippageRate();
+                BigDecimal boundary = buy
+                        ? bestPrice.multiply(BigDecimal.ONE.add(maxSlippage))
+                        : bestPrice.multiply(BigDecimal.ONE.subtract(maxSlippage));
+                if ((buy && level.getPrice().compareTo(boundary) > 0)
+                        || (!buy && level.getPrice().compareTo(boundary) < 0)) {
+                    return null;
+                }
                 RoundingMode rounding = buy ? RoundingMode.CEILING : RoundingMode.FLOOR;
                 return level.getPrice().divide(tick, 0, rounding).multiply(tick);
             }
@@ -729,11 +917,12 @@ public class HtxContractTradingService {
 
     private LegExecution leg(String legType, long clientOrderId, String side, String positionSide,
                              boolean reduceOnly, long volume, BigDecimal price, String contractCode,
-                             boolean fastIoc) {
+                             ExecutionMode mode) {
+        String type = ExecutionMode.POST_ONLY.equals(mode) ? "post_only" : "limit";
         HtxSwapOrderRequest instruction = HtxUsdtSwapService.orderRequest(
                 contractCode, clientOrderId, volume, side, positionSide, reduceOnly,
-                price.toPlainString(), "limit");
-        if (fastIoc) {
+                price.toPlainString(), type);
+        if (ExecutionMode.IOC.equals(mode)) {
             instruction.setTimeInForce("ioc");
         }
         return new LegExecution(legType, clientOrderId, instruction, volume, price);
@@ -819,13 +1008,13 @@ public class HtxContractTradingService {
             if (remainingLong > 0L) {
                 longRetry = leg(HtxContractTradeRecorder.LONG_CLOSE + "_R" + attempt,
                         request.getClientOrderId() + 2L + attempt * 2L,
-                        "sell", "long", true, remainingLong, prices.sellPrice(), contractCode, true);
+                        "sell", "long", true, remainingLong, prices.sellPrice(), contractCode, ExecutionMode.IOC);
                 retries.add(longRetry);
             }
             if (remainingShort > 0L) {
                 shortRetry = leg(HtxContractTradeRecorder.SHORT_CLOSE + "_R" + attempt,
                         request.getClientOrderId() + 3L + attempt * 2L,
-                        "buy", "short", true, remainingShort, prices.buyPrice(), contractCode, true);
+                        "buy", "short", true, remainingShort, prices.buyPrice(), contractCode, ExecutionMode.IOC);
                 retries.add(shortRetry);
             }
 
@@ -1004,6 +1193,107 @@ public class HtxContractTradingService {
         return leg == null || leg.outcome == null ? BigDecimal.ZERO : leg.outcome.realizedProfit;
     }
 
+    private static ContractGridStrategy.PositionCost positionCost(
+            LegExecution open, HtxSwapContractInfo contract, long volume) {
+        BigDecimal averagePrice = open.outcome.averagePrice == null ? open.price : open.outcome.averagePrice;
+        return new ContractGridStrategy.PositionCost(
+                averagePrice, contract.getContractSize(), volume, open.outcome.fee);
+    }
+
+    private boolean refreshPersistedCloseLegs(long cycleId, String contractCode,
+                                              List<HtxContractLegEntity> legs) {
+        for (HtxContractLegEntity leg : legs) {
+            if (!isCloseLeg(leg) || leg.getOrderId() == null) {
+                continue;
+            }
+            HtxRestResponse<List<HtxSwapOrder>> response = swap().queryOrder(contractCode, leg.getOrderId());
+            if (response == null || !response.ok() || response.getData() == null
+                    || response.getData().isEmpty()) {
+                return false;
+            }
+            FillOutcome outcome = FillOutcome.from(response.getData().get(0));
+            recorder.updateLeg(cycleId, leg.getClientOrderId(), leg.getOrderId(), outcome.state,
+                    outcome.tradeVolume, outcome.averagePrice, outcome.fee,
+                    outcome.feeCurrency, outcome.realizedProfit, outcome.state);
+        }
+        return true;
+    }
+
+    private boolean cancelActiveCloseLegs(long cycleId, String contractCode,
+                                          List<HtxContractLegEntity> legs) {
+        for (HtxContractLegEntity leg : legs) {
+            if (!isCloseLeg(leg) || leg.getOrderId() == null || terminalState(leg.getState())) {
+                continue;
+            }
+            HtxRestResponse<Map<String, Object>> cancel = swap().cancelOrder(contractCode, leg.getOrderId());
+            if (cancel == null || !cancel.ok()) {
+                return false;
+            }
+        }
+        return refreshPersistedCloseLegs(cycleId, contractCode, legs)
+                && recorder.findLegs(cycleId).stream()
+                .filter(HtxContractTradingService::isCloseLeg)
+                .allMatch(leg -> leg.getOrderId() == null || terminalState(leg.getState()));
+    }
+
+    private static GridVolumes gridVolumes(List<HtxContractLegEntity> legs) {
+        BigDecimal longOpen = sumFilled(legs, HtxContractTradeRecorder.LONG_OPEN, false);
+        BigDecimal shortOpen = sumFilled(legs, HtxContractTradeRecorder.SHORT_OPEN, false);
+        BigDecimal longClose = sumFilled(legs, HtxContractTradeRecorder.LONG_CLOSE, true);
+        BigDecimal shortClose = sumFilled(legs, HtxContractTradeRecorder.SHORT_CLOSE, true);
+        return new GridVolumes(longOpen, shortOpen, longClose, shortClose);
+    }
+
+    private static BigDecimal sumFilled(List<HtxContractLegEntity> legs, String type, boolean prefix) {
+        return legs.stream()
+                .filter(leg -> prefix ? leg.getLegType().startsWith(type) : type.equals(leg.getLegType()))
+                .map(HtxContractLegEntity::getFilledVolume)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static int nextGridRetry(List<HtxContractLegEntity> legs) {
+        return legs.stream()
+                .map(HtxContractLegEntity::getLegType)
+                .filter(java.util.Objects::nonNull)
+                .mapToInt(HtxContractTradingService::retrySuffix)
+                .max().orElse(0) + 1;
+    }
+
+    private static int retrySuffix(String legType) {
+        int marker = legType.lastIndexOf("_R");
+        if (marker < 0 || marker + 2 >= legType.length()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(legType.substring(marker + 2));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private static boolean isCloseLeg(HtxContractLegEntity leg) {
+        return leg.getLegType() != null && (leg.getLegType().startsWith(HtxContractTradeRecorder.LONG_CLOSE)
+                || leg.getLegType().startsWith(HtxContractTradeRecorder.SHORT_CLOSE));
+    }
+
+    private static boolean terminalState(String state) {
+        return "filled".equalsIgnoreCase(state) || "partially_canceled".equalsIgnoreCase(state)
+                || "canceled".equalsIgnoreCase(state) || "rejected".equalsIgnoreCase(state);
+    }
+
+    private HtxContractTradeResult gridResult(HtxContractCycleEntity cycle,
+                                              HtxContractTradeResult.Code code,
+                                              String message) {
+        return HtxContractTradeResult.builder()
+                .code(code)
+                .contractCode(cycle.getContractCode())
+                .leverage(cycle.getLeverage())
+                .cycleId(cycle.getId())
+                .message(message)
+                .build();
+    }
+
     private HtxContractTradeResult validateContractAndLeverage(String contractCode, Integer leverage) {
         if (contractCode == null || leverage == null || leverage <= 0) {
             return result(HtxContractTradeResult.Code.REJECT_INVALID_INPUT, contractCode, leverage,
@@ -1021,6 +1311,28 @@ public class HtxContractTradingService {
                     "leverage exceeds configured max=" + props.getMaxLeverage());
         }
         return null;
+    }
+
+    private boolean validMakerGridConfiguration() {
+        return validRate(props.getMakerFeeRatePerSide())
+                && validRate(props.getMinNetProfitRate())
+                && validRate(props.getFundingBufferRate())
+                && validRate(props.getSafetyBufferRate())
+                && validRate(props.getMaxEntrySpreadRate())
+                && validRate(props.getMaxEmergencySlippageRate())
+                && props.getProfitGridExitTtlMs() > 0L
+                && props.getFastIocCloseRetryAttempts() >= 0;
+    }
+
+    private static boolean requestedMakerPricesInvalid(HtxContractCycleRequest request) {
+        return request.getLongOpenPrice() == null || request.getLongOpenPrice().signum() <= 0
+                || request.getShortOpenPrice() == null || request.getShortOpenPrice().signum() <= 0
+                || request.getLongOpenPrice().compareTo(request.getShortOpenPrice()) >= 0
+                || Boolean.TRUE.equals(request.getFastIoc());
+    }
+
+    private static boolean validRate(BigDecimal rate) {
+        return rate != null && rate.signum() >= 0 && rate.compareTo(BigDecimal.ONE) < 0;
     }
 
     private HtxContractTradeResult checkAvailableLeverage(
@@ -1160,6 +1472,43 @@ public class HtxContractTradingService {
             Thread.sleep(millis);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private enum ExecutionMode {
+        LIMIT,
+        IOC,
+        POST_ONLY
+    }
+
+    private record GridVolumes(BigDecimal longOpen,
+                               BigDecimal shortOpen,
+                               BigDecimal longClose,
+                               BigDecimal shortClose) {
+        private boolean closed() {
+            return totalOpen().signum() > 0
+                    && (longOpen.signum() == 0 || longClose.compareTo(longOpen) >= 0)
+                    && (shortOpen.signum() == 0 || shortClose.compareTo(shortOpen) >= 0);
+        }
+
+        private BigDecimal totalOpen() {
+            return longOpen.add(shortOpen);
+        }
+
+        private BigDecimal totalClose() {
+            return longClose.add(shortClose);
+        }
+
+        private long remainingLong() {
+            return positiveRemaining(longOpen, longClose);
+        }
+
+        private long remainingShort() {
+            return positiveRemaining(shortOpen, shortClose);
+        }
+
+        private static long positiveRemaining(BigDecimal opened, BigDecimal closed) {
+            return opened.subtract(closed).max(BigDecimal.ZERO).longValueExact();
         }
     }
 
