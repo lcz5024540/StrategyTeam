@@ -2,9 +2,11 @@ package com.metaverse.coin.strategy.core.arbitrage.risk;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesCommissionRate;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrderBook;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceOrderBook;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo;
+import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceCommissionResponse;
 import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceAccountInfo.BinanceBalance;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
@@ -376,6 +378,42 @@ public class SingleExchangeRiskService {
         try {
             return new BigDecimal(value);
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 解析账户真实双边往返手续费率（P0-1 保本闸真实费率来源）。
+     *
+     * <p>往返手续费 = (现货 taker + 合约 taker) × 2（开+平各一次、两腿 taker 成交）。现货档取
+     * {@code standardCommission.taker}，合约档取 {@code takerCommissionRate}；两腿按 symbol 查账户实际佣金档，
+     * 而非用成交回执（保本闸在开仓前判定，此时尚无成交）。
+     *
+     * <p>fail-open：任一档查询失败或缺失即返回 {@code null}，由调用方回落到静态兜底费率
+     * （不因暂时取不到真实费率而误拒开仓；真实费率高于静态时才会收紧闸门）。
+     *
+     * @param symbol 交易对（现货与合约同名，如 BTCUSDT）
+     * @return 真实往返手续费率；无法解析时返回 {@code null}
+     */
+    public BigDecimal resolveRoundTripFeeRate(String symbol) {
+        try {
+            BinanceCommissionResponse spotCommission = binanceApiService.getSpotService().getCommissionRate(symbol);
+            BinanceFuturesCommissionRate futuresCommission = binanceApiService.getFuturesService().getCommissionRate(symbol);
+            if (spotCommission == null || spotCommission.getStandardCommission() == null || futuresCommission == null) {
+                log.warn("Round-trip fee rate unavailable for {}: missing spot/futures commission data", symbol);
+                return null;
+            }
+            BigDecimal spotTaker = spotCommission.getStandardCommission().getTaker();
+            BigDecimal futuresTaker = futuresCommission.getTakerCommissionRate();
+            if (spotTaker == null || futuresTaker == null) {
+                log.warn("Round-trip fee rate unavailable for {}: missing taker rate (spot={}, futures={})",
+                        symbol, spotTaker, futuresTaker);
+                return null;
+            }
+            // 开+平各两腿 taker 成交，故往返费 = 单边两腿 taker 之和 × 2。
+            return spotTaker.add(futuresTaker).multiply(BigDecimal.valueOf(2));
+        } catch (Exception e) {
+            log.warn("Failed to resolve account real round-trip fee rate for {}, fallback to static floor", symbol, e);
             return null;
         }
     }

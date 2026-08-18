@@ -1,8 +1,12 @@
 package com.metaverse.coin.strategy.core.arbitrage.risk;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
+import com.metaverse.coin.strategy.common.client.binance.service.BinanceFuturesService;
+import com.metaverse.coin.strategy.common.client.binance.service.BinanceSpotService;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesCommissionRate;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrderBook;
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceOrderBook;
+import com.metaverse.coin.strategy.common.model.binance.entity.spot.BinanceCommissionResponse;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeDepthMonitor;
@@ -20,7 +24,9 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -112,6 +118,37 @@ class SingleExchangeRiskServiceTest {
         assertFalse(assessment.isPassed());
         assertTrue(assessment.isFallbackUsed());
         assertTrue(assessment.getRejectionReason().contains("depth data unavailable"));
+    }
+
+    @Test
+    void testResolveRoundTripFeeRateSumsBothLegTakerTimesTwo() {
+        // 往返手续费 = (现货 taker 0.0004 + 合约 taker 0.0006) × 2 = 0.0020。
+        BinanceSpotService spotService = mock(BinanceSpotService.class);
+        BinanceFuturesService futuresService = mock(BinanceFuturesService.class);
+        when(binanceApiService.getSpotService()).thenReturn(spotService);
+        when(binanceApiService.getFuturesService()).thenReturn(futuresService);
+        BinanceCommissionResponse spotCommission = BinanceCommissionResponse.builder()
+                .symbol("BTCUSDT")
+                .standardCommission(new BinanceCommissionResponse.Commission(
+                        new BigDecimal("0.0002"), new BigDecimal("0.0004"), null, null))
+                .build();
+        BinanceFuturesCommissionRate futuresCommission = new BinanceFuturesCommissionRate();
+        futuresCommission.setSymbol("BTCUSDT");
+        futuresCommission.setTakerCommissionRate(new BigDecimal("0.0006"));
+        when(spotService.getCommissionRate("BTCUSDT")).thenReturn(spotCommission);
+        when(futuresService.getCommissionRate("BTCUSDT")).thenReturn(futuresCommission);
+
+        BigDecimal roundTripFee = riskService.resolveRoundTripFeeRate("BTCUSDT");
+
+        assertEquals(0, new BigDecimal("0.0020").compareTo(roundTripFee));
+    }
+
+    @Test
+    void testResolveRoundTripFeeRateFailOpenReturnsNullOnException() {
+        // fail-open: 佣金档查询抛异常时返回 null，由调用方回落静态兜底费率(不误拒开仓)。
+        when(binanceApiService.getSpotService()).thenThrow(new RuntimeException("commission query failed"));
+
+        assertNull(riskService.resolveRoundTripFeeRate("BTCUSDT"));
     }
 
     private SingleExchangeSpotFuturesOrderPlan buildPlan() {

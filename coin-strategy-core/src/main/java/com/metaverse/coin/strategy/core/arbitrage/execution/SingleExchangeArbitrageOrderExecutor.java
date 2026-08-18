@@ -175,6 +175,7 @@ public class SingleExchangeArbitrageOrderExecutor {
                         .futuresOrderId(String.valueOf(futuresAttempt.getOrder().getOrderId()))
                         .message("Success")
                         .orderRecords(orderRecords)
+                        .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
                         .build();
             }
 
@@ -189,6 +190,7 @@ public class SingleExchangeArbitrageOrderExecutor {
                         .quantity(quantity.toPlainString())
                         .message("Legging Risk: Spot Success, Futures Failed. Rolled back Spot.")
                         .orderRecords(orderRecords)
+                        .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
                         .build();
             }
 
@@ -203,6 +205,7 @@ public class SingleExchangeArbitrageOrderExecutor {
                         .quantity(quantity.toPlainString())
                         .message("Legging Risk: Spot Failed, Futures Success. Rolled back Futures.")
                         .orderRecords(orderRecords)
+                        .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
                         .build();
             }
 
@@ -212,6 +215,7 @@ public class SingleExchangeArbitrageOrderExecutor {
                     .quantity(quantity.toPlainString())
                     .message("Both orders failed.")
                     .orderRecords(orderRecords)
+                    .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
                     .build();
 
         } catch (Exception e) {
@@ -294,6 +298,7 @@ public class SingleExchangeArbitrageOrderExecutor {
                         .futuresOrderId(String.valueOf(futuresAttempt.getOrder().getOrderId()))
                         .message("Success")
                         .orderRecords(orderRecords)
+                        .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
                         .build();
             }
             if (spotAttempt.isSuccess()) {
@@ -314,6 +319,7 @@ public class SingleExchangeArbitrageOrderExecutor {
                     .quantity(quantity.toPlainString())
                     .message("Close arbitrage position failed.")
                     .orderRecords(orderRecords)
+                    .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
                     .build();
         } catch (Exception e) {
             log.error("Error closing dual-side order", e);
@@ -486,6 +492,72 @@ public class SingleExchangeArbitrageOrderExecutor {
     private String decorateRawResponse(Object order) {
         String raw = String.valueOf(order);
         return isBinanceTestMode() ? "BINANCE_TEST simulated fill after /order/test validation: " + raw : raw;
+    }
+
+    /**
+     * 成交后真实滑点回填 + 超阈告警收集（P0-3）。
+     *
+     * <p>遍历已构建的订单记录，对每条已成交腿用真实成交均价与计划参考价计算实际滑点，
+     * 超过配置阈值时产出告警记录并落结构化日志；参考价按对冲腿区分现货/合约。
+     */
+    private List<SingleExchangeSlippageAlert> collectSlippageAlerts(SingleExchangeSpotFuturesOrderPlan plan,
+                                                                    List<SingleExchangeArbitrageOrder> orderRecords) {
+        List<SingleExchangeSlippageAlert> alerts = new ArrayList<>();
+        if (orderRecords == null) {
+            return alerts;
+        }
+        for (SingleExchangeArbitrageOrder record : orderRecords) {
+            BigDecimal referencePrice = HEDGE_SIDE_FUTURES.equals(record.getHedgeSide())
+                    ? plan.getFuturesPrice()
+                    : plan.getSpotPrice();
+            SingleExchangeSlippageAlert alert = evaluateFillSlippage(record, referencePrice);
+            if (alert != null) {
+                alerts.add(alert);
+            }
+        }
+        return alerts;
+    }
+
+    /**
+     * 单腿成交后实际滑点评估。
+     *
+     * <p>实际滑点 = |avgPrice − referencePrice| / referencePrice；仅当超过配置阈值
+     * {@code estimatedSlippageRate} 时返回告警并落结构化 WARN 日志，否则返回 null。
+     *
+     * <p>Fail-open（有意）：非已成交、成交均价或参考价缺失/非正、阈值未配置时不产出告警——
+     * 简化构造入口（openArbitragePosition(symbol, futuresSymbol, quantity)）不回填参考价，
+     * 此时无可靠基准，产出告警会制造假阳性，故跳过并留 debug 日志，而非 fail-closed 阻断。
+     */
+    private SingleExchangeSlippageAlert evaluateFillSlippage(SingleExchangeArbitrageOrder record, BigDecimal referencePrice) {
+        if (record == null || !STATUS_FILLED.equals(record.getStatus())) {
+            return null;
+        }
+        BigDecimal avgPrice = record.getAvgPrice();
+        if (avgPrice == null || avgPrice.compareTo(BigDecimal.ZERO) <= 0
+                || referencePrice == null || referencePrice.compareTo(BigDecimal.ZERO) <= 0) {
+            log.debug("Slippage check skipped (missing reference/avgPrice): symbol={}, hedgeSide={}, phase={}, referencePrice={}, avgPrice={}",
+                    record.getSymbol(), record.getHedgeSide(), record.getTradePhase(), referencePrice, avgPrice);
+            return null;
+        }
+        BigDecimal threshold = properties.getEstimatedSlippageRate();
+        BigDecimal actualSlippageRate = avgPrice.subtract(referencePrice).abs()
+                .divide(referencePrice, INTERNAL_SCALE, RoundingMode.HALF_UP);
+        if (threshold == null || actualSlippageRate.compareTo(threshold) <= 0) {
+            return null;
+        }
+        log.warn("Slippage Alert: {} {} leg {} phase actual slippage {} exceeds threshold {} (referencePrice={}, avgPrice={})",
+                record.getSymbol(), record.getHedgeSide(), record.getTradePhase(),
+                actualSlippageRate, threshold, referencePrice, avgPrice);
+        return SingleExchangeSlippageAlert.builder()
+                .symbol(record.getSymbol())
+                .hedgeSide(record.getHedgeSide())
+                .tradePhase(record.getTradePhase())
+                .side(record.getSide())
+                .referencePrice(referencePrice)
+                .avgPrice(avgPrice)
+                .actualSlippageRate(actualSlippageRate)
+                .thresholdRate(threshold)
+                .build();
     }
 
     private BigDecimal extractSpotAvgPrice(BinanceOrder order) {

@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.core.arbitrage.market;
 
 import com.metaverse.coin.strategy.common.client.binance.BinanceApiService;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesAccount;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesIncome;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrder;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesOrderBook;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPositionRisk;
@@ -72,5 +73,12 @@ public class HttpBinanceQueryDataProvider implements BinanceQueryDataProvider {
     @Override
     public List<BinanceFuturesPositionRisk> getPositionRisk(String symbol) {
         return binanceApiService.getFuturesService().getPositionRisk(symbol);
+    }
+
+    @Override
+    public List<BinanceFuturesIncome> getFundingFeeIncome(String symbol, Long startTime, Long endTime) {
+        // 资金费实际入账属账户 user-data，无 websocket 推送，直查 REST /fapi/v1/income，incomeType 固定 FUNDING_FEE。
+        return binanceApiService.getFuturesService()
+                .getIncomeHistory(symbol, INCOME_TYPE_FUNDING_FEE, startTime, endTime, null);
     }
 }

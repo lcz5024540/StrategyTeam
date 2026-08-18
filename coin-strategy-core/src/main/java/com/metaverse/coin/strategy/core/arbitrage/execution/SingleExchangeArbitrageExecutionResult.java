@@ -18,7 +18,9 @@ public class SingleExchangeArbitrageExecutionResult {
     private String message;
     @Builder.Default
     private List<SingleExchangeArbitrageOrder> orderRecords = Collections.emptyList();
-    
+    @Builder.Default
+    private List<SingleExchangeSlippageAlert> slippageAlerts = Collections.emptyList();
+
     public static SingleExchangeArbitrageExecutionResult success(String spotOrderId, String futuresOrderId) {
         return SingleExchangeArbitrageExecutionResult.builder()
                 .success(true)

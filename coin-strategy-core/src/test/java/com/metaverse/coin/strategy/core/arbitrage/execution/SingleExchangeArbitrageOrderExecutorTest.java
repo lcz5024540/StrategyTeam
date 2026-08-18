@@ -109,6 +109,42 @@ class SingleExchangeArbitrageOrderExecutorTest {
         verify(binanceApiService, never()).testFuturesOrder(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
+    @Test
+    void openArbitragePositionEmitsSlippageAlertWhenSpotFillExceedsThreshold() {
+        when(properties.getOrderExecutionMode()).thenReturn("BINANCE_LIVE");
+        when(properties.getEstimatedSlippageRate()).thenReturn(new BigDecimal("0.0005"));
+        // Spot BUY 实际成交 50100（参考价 spotPrice=50000）→ 实际滑点 100/50000 = 0.002 > 0.0005 阈值。
+        when(binanceApiService.placeSpotOrder("BTCUSDT", "BUY", "MARKET", null, "0.001", null))
+                .thenReturn(BinanceOrder.builder()
+                        .symbol("BTCUSDT")
+                        .orderId(1L)
+                        .status("FILLED")
+                        .executedQty(new BigDecimal("0.001"))
+                        .cummulativeQuoteQty(new BigDecimal("50.1"))
+                        .build());
+        // 合约 SELL 实际成交 avgPrice=50010（参考价 futuresPrice=50010）→ 滑点 0，不告警。
+        when(binanceApiService.openShort("BTCUSDT", "MARKET", "0.001", null, null))
+                .thenReturn(BinanceFuturesOrder.builder()
+                        .symbol("BTCUSDT")
+                        .orderId(2L)
+                        .status("FILLED")
+                        .executedQty(new BigDecimal("0.001"))
+                        .avgPrice(new BigDecimal("50010"))
+                        .cumQuote(new BigDecimal("50.01"))
+                        .build());
+
+        SingleExchangeArbitrageExecutionResult result = executor.openArbitragePosition(plan());
+
+        assertTrue(result.isSuccess());
+        assertEquals(1, result.getSlippageAlerts().size());
+        SingleExchangeSlippageAlert alert = result.getSlippageAlerts().get(0);
+        assertEquals("SPOT", alert.getHedgeSide());
+        assertEquals("OPEN", alert.getTradePhase());
+        assertEquals("BUY", alert.getSide());
+        assertEquals(0, alert.getActualSlippageRate().compareTo(new BigDecimal("0.002")));
+        assertEquals(0, alert.getThresholdRate().compareTo(new BigDecimal("0.0005")));
+    }
+
     private SingleExchangeSpotFuturesOrderPlan plan() {
         return SingleExchangeSpotFuturesOrderPlan.builder()
                 .symbol("BTCUSDT")

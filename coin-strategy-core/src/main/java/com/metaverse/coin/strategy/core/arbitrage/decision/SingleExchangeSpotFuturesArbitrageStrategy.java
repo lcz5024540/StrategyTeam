@@ -9,12 +9,14 @@ import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeA
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageRiskSnapshot;
+import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesIncome;
 import com.metaverse.coin.strategy.common.model.binance.entity.futures.BinanceFuturesPremiumIndex;
 import com.metaverse.coin.strategy.core.Strategy;
 import com.metaverse.coin.strategy.core.arbitrage.config.SingleExchangeSpotFuturesProperties;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageExecutionResult;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeArbitrageOrderExecutor;
 import com.metaverse.coin.strategy.core.arbitrage.execution.SingleExchangeSpotFuturesOrderPlan;
+import com.metaverse.coin.strategy.core.arbitrage.market.BinanceQueryDataProvider;
 import com.metaverse.coin.strategy.core.arbitrage.monitor.SingleExchangeFundingRateMonitor;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeLiquidityAssessment;
 import com.metaverse.coin.strategy.core.arbitrage.risk.SingleExchangeRiskService;
@@ -31,6 +33,7 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -64,6 +67,7 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private final SingleExchangeArbitragePositionMapper positionMapper;
     private final SingleExchangeArbitrageRiskSnapshotMapper riskSnapshotMapper;
     private final SingleExchangeSpotFuturesProperties properties;
+    private final BinanceQueryDataProvider queryDataProvider;
 
     private static final String EXCHANGE_NAME = "BINANCE";
     private static final String STATUS_OPENING = "OPENING";
@@ -78,6 +82,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     private static final String LOG_LIQUIDITY_WARN_EMERGENCY_CLOSE = "LIQUIDITY_WARN_EMERGENCY_CLOSE";
     private static final String FUNDING_DIRECTION_RECEIVED = "RECEIVED";
     private static final String FUNDING_DIRECTION_PAID = "PAID";
+    // 资金费实际入账(FUNDING_FEE income)按结算点前后各留 5 分钟窗口拉取，覆盖交易所入账时间抖动。
+    private static final long FUNDING_INCOME_WINDOW_MILLIS = TimeUnit.MINUTES.toMillis(5);
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -520,8 +526,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     }
 
     /**
-     * 根据持仓名义价值和当前资金费率估算本次资金费收入/支出。
-     * 正数表示收取资金费，负数表示支付资金费。
+     * 计算本次资金费收入/支出：优先以交易所实际入账(FUNDING_FEE income)对账，取不到时兜底回落到
+     * 按持仓名义价值 × 资金费率的估算。正数表示收取资金费，负数表示支付资金费。
      */
     private SingleExchangeArbitrageFundingSettlement buildFundingSettlement(ActivePosition activePosition,
                                                                             BinanceFuturesPremiumIndex premiumIndex,
@@ -531,7 +537,10 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
         BigDecimal fundingRate = defaultValue(premiumIndex.getLastFundingRate());
         BigDecimal positionQty = defaultValue(activePosition.quantity());
         BigDecimal notionalValue = positionQty.multiply(defaultValue(markPrice)).setScale(8, RoundingMode.HALF_UP);
-        BigDecimal settlementAmount = notionalValue.multiply(fundingRate).setScale(8, RoundingMode.HALF_UP);
+        BigDecimal estimatedSettlementAmount = notionalValue.multiply(fundingRate).setScale(8, RoundingMode.HALF_UP);
+        // P0-2：以交易所实际资金费入账为准；取不到实际入账时 fail-closed 回落估算并已告警（见 resolveActualFundingIncome）。
+        BigDecimal actualSettlementAmount = resolveActualFundingIncome(properties.getSymbol(), fundingTime, estimatedSettlementAmount);
+        BigDecimal settlementAmount = actualSettlementAmount != null ? actualSettlementAmount : estimatedSettlementAmount;
         return new SingleExchangeArbitrageFundingSettlement()
                 .setPositionId(activePosition.positionId())
                 .setPositionCode(activePosition.positionCode())
@@ -545,6 +554,40 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
                 .setSettlementAmount(settlementAmount)
                 .setDirection(settlementAmount.signum() >= 0 ? FUNDING_DIRECTION_RECEIVED : FUNDING_DIRECTION_PAID)
                 .setCreatedAt(new Date());
+    }
+
+    /**
+     * 拉取结算点附近的交易所实际 FUNDING_FEE 入账并求和作为实际结算额。
+     * 取不到或异常时返回 null（fail-closed：由调用方回落估算并告警），不静默改数。
+     */
+    private BigDecimal resolveActualFundingIncome(String symbol, Long fundingTime, BigDecimal estimatedAmount) {
+        if (fundingTime == null) {
+            return null;
+        }
+        try {
+            long windowStart = fundingTime - FUNDING_INCOME_WINDOW_MILLIS;
+            long windowEnd = fundingTime + FUNDING_INCOME_WINDOW_MILLIS;
+            List<BinanceFuturesIncome> incomes = queryDataProvider.getFundingFeeIncome(symbol, windowStart, windowEnd);
+            if (incomes == null || incomes.isEmpty()) {
+                log.warn("No actual FUNDING_FEE income for {} around fundingTime={}, fallback to estimated settlement {}",
+                        symbol, fundingTime, estimatedAmount);
+                return null;
+            }
+            BigDecimal actual = incomes.stream()
+                    .map(BinanceFuturesIncome::getIncome)
+                    .filter(Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(8, RoundingMode.HALF_UP);
+            if (actual.compareTo(defaultValue(estimatedAmount)) != 0) {
+                log.info("Funding settlement reconciled by actual income for {}: estimated={}, actual={}",
+                        symbol, estimatedAmount, actual);
+            }
+            return actual;
+        } catch (Exception e) {
+            log.warn("Failed to query actual FUNDING_FEE income for {} at fundingTime={}, fallback to estimated settlement {}",
+                    symbol, fundingTime, estimatedAmount, e);
+            return null;
+        }
     }
 
     private FundingSettlementPersistResult persistFundingSettlement(SingleExchangeArbitrageFundingSettlement settlement) {
@@ -620,7 +663,8 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
             return "basis rate " + basisRate + " is above maximum " + properties.getMaxBasisRate();
         }
 
-        BigDecimal expectedNetYield = estimateExpectedNetYield(currentRate, estimatedSlippageRate);
+        BigDecimal realRoundTripFeeRate = riskService.resolveRoundTripFeeRate(marketPlan.getSymbol());
+        BigDecimal expectedNetYield = estimateExpectedNetYield(currentRate, estimatedSlippageRate, realRoundTripFeeRate);
         if (expectedNetYield.compareTo(properties.getMinNetYieldRate()) < 0) {
             return "expected net yield " + expectedNetYield + " is below minimum " + properties.getMinNetYieldRate();
         }
@@ -666,11 +710,23 @@ public class SingleExchangeSpotFuturesArbitrageStrategy implements Strategy {
     }
 
     private BigDecimal estimateExpectedNetYield(BigDecimal currentRate, BigDecimal estimatedSlippageRate) {
+        // 兼容旧的两参入口: 无真实费率时以 null 委派，扣费回落静态兜底费率。
+        return estimateExpectedNetYield(currentRate, estimatedSlippageRate, null);
+    }
+
+    private BigDecimal estimateExpectedNetYield(BigDecimal currentRate,
+                                                BigDecimal estimatedSlippageRate,
+                                                BigDecimal realRoundTripFeeRate) {
         Integer minFundingPeriods = properties.getMinFundingPeriods();
         int fundingPeriods = minFundingPeriods == null || minFundingPeriods <= 0 ? 1 : minFundingPeriods;
+        // 往返手续费取账户真实费率与静态兜底的较大值(max)：真实费率更高时收紧闸门；取不到(null)时不低于静态下限。
+        BigDecimal effectiveFeeRate = properties.getEstimatedRoundTripFeeRate();
+        if (realRoundTripFeeRate != null && realRoundTripFeeRate.compareTo(effectiveFeeRate) > 0) {
+            effectiveFeeRate = realRoundTripFeeRate;
+        }
         // 预估净收益 = 预期资金费收益 - 双边交易手续费 - 开仓滑点; 用于过滤纸面收益很薄的机会。
         return currentRate.multiply(BigDecimal.valueOf(fundingPeriods))
-                .subtract(properties.getEstimatedRoundTripFeeRate())
+                .subtract(effectiveFeeRate)
                 .subtract(defaultValue(estimatedSlippageRate))
                 .setScale(8, RoundingMode.HALF_UP);
     }
