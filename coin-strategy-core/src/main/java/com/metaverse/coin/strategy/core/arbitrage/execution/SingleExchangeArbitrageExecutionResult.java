@@ -20,6 +20,8 @@ public class SingleExchangeArbitrageExecutionResult {
     private List<SingleExchangeArbitrageOrder> orderRecords = Collections.emptyList();
     @Builder.Default
     private List<SingleExchangeSlippageAlert> slippageAlerts = Collections.emptyList();
+    @Builder.Default
+    private List<SingleExchangeNakedPositionAlert> nakedPositionAlerts = Collections.emptyList();
 
     public static SingleExchangeArbitrageExecutionResult success(String spotOrderId, String futuresOrderId) {
         return SingleExchangeArbitrageExecutionResult.builder()
