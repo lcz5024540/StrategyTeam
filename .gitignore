@@ -44,6 +44,9 @@ scripts/keys/
 # 部署环境变量文件（含真实密码），只保留 .example 模板进 git
 deploy/linux/env/smart-wallet-prod.env
 deploy/linux/env/smart-wallet-test.env
+deploy/linux/env/htx.env
+# 私钥文件（PEM），绝不提交 git
+*.pem
 
 ### Local Maven Cache ###
 .m2/
