@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.htx.strategy;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -23,6 +24,28 @@ public final class MarketMakerMath {
     /** buyPrice = P0·(1−δ)，含入到 PRICE_SCALE（HALF_UP）。 */
     public static BigDecimal buyPrice(BigDecimal p0, BigDecimal spreadPct) {
         return p0.multiply(ONE.subtract(spreadPct)).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 等比买价梯：L_k = anchor·(1−stepPct)^k，k=1..levels，每档含入到 scale（HALF_UP，与 buyPrice 同构）。
+     * 截断掉 &lt; floorPrice 的档位（绝对价地板），返回自高到低的买价列表；anchor 自身(k=0)不入列
+     * （刷量买档一律挂在 anchor 之下，maker 不越 bestBid）。floorPrice 传 null 或 ≤0 视为不设地板。
+     */
+    public static List<BigDecimal> gridBuyLevels(BigDecimal anchor, BigDecimal stepPct,
+                                                 int levels, BigDecimal floorPrice, int scale) {
+        List<BigDecimal> result = new ArrayList<>();
+        boolean hasFloor = floorPrice != null && floorPrice.signum() > 0;
+        BigDecimal factor = ONE.subtract(stepPct);
+        BigDecimal power = ONE;
+        for (int k = 1; k <= levels; k++) {
+            power = power.multiply(factor);
+            BigDecimal level = anchor.multiply(power).setScale(scale, RoundingMode.HALF_UP);
+            if (hasFloor && level.compareTo(floorPrice) < 0) {
+                continue;
+            }
+            result.add(level);
+        }
+        return result;
     }
 
     /** sellPrice = P0·(1+δ)，含入到 PRICE_SCALE（HALF_UP）。 */

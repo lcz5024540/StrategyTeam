@@ -26,6 +26,8 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -48,6 +50,11 @@ public class MarketMakerService {
 
     private static final int DEPTH_LEVELS = 5;
     private volatile long buyBlockedUntilEpochMs;
+
+    /** 网格熔断内存态：连续亏损退出的 round-trip 数（盈利退出清零）；重启清零，保守偏安全。 */
+    private volatile int consecutiveLossCycles;
+    /** 曾走 taker 割肉/linger 亏损退出的 cell pairId 集合，供 round-trip 完成时判定连亏。 */
+    private final Set<Long> lossExitPairIds = ConcurrentHashMap.newKeySet();
 
     @Autowired
     public MarketMakerService(HtxApiService htxApiService,
@@ -104,7 +111,11 @@ public class MarketMakerService {
         }
         for (String symbol : mmProps.getSymbols()) {
             try {
-                openNewCellIfEligible(symbol);
+                if (mmProps.isGridModeEnabled()) {
+                    fillGridLadder(symbol);
+                } else {
+                    openNewCellIfEligible(symbol);
+                }
             } catch (RuntimeException ex) {
                 log.error("MM openNewCell failed symbol={}", symbol, ex);
             }
@@ -161,8 +172,17 @@ public class MarketMakerService {
         if (bestBid == null || bestAsk == null || bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
             return -1;
         }
+        return tryOpenCellAtAnchor(symbol, bestBid, depth);
+    }
+
+    /**
+     * 在给定锚点价开一个 cell：feeRate→定价(quote anchor)→qty→不亏/去重/单笔/当日额/深度/余额闸→createMmCell→买单。
+     * 由单格 open（anchor=bestBid）与网格全梯补齐（anchor=各价梯档）共用；anchor=bestBid 时与原单格逻辑逐字节等价。
+     * 通过所有闸门返回 pairId；任一闸门不过返回 -1。
+     */
+    private long tryOpenCellAtAnchor(String symbol, BigDecimal anchor, HtxDepth depth) {
         BigDecimal feeRate = feeRateProvider.effectiveRate(symbol);
-        SpotGridStrategy.GridQuote quote = gridStrategy.quote(bestBid, mmProps.getSpreadPct(),
+        SpotGridStrategy.GridQuote quote = gridStrategy.quote(anchor, mmProps.getSpreadPct(),
                 feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
         BigDecimal buyPrice = quote.buyPrice();
         BigDecimal sellPrice = quote.sellPrice();
@@ -232,6 +252,112 @@ public class MarketMakerService {
         log.info("MM opened pairId={} symbol={} buyId={} buy={} sell={} qty={}",
                 pairId, symbol, buyId, buyPrice, sellPrice, qty);
         return pairId;
+    }
+
+    // ---- 网格化刷量：全梯补齐 + 熔断/敞口/地板三闸（spec 2026-08-18 §3/§4） ----
+
+    /**
+     * 网格全梯补齐：一 tick 内为单标的在等比价梯上补齐缺失档位，直至并行度预算耗尽。
+     * 闸门链（spec §3.2）：余额 backoff → 白名单 → 熔断（当日净亏损/连亏，fail-closed）
+     * → K 并行度预算 → 深度 → 逐档【总敞口闸 → tryOpenCellAtAnchor（含地板已在价梯生成时截断 + 现有全部闸门）】。
+     * gridModeEnabled=false 时本方法不被调用（runOnce 分流），行为与原单格路径逐字节等价。
+     */
+    public void fillGridLadder(String symbol) {
+        if (isBuyBalanceBackoffActive()) {
+            return;
+        }
+        if (!mmProps.getSymbols().contains(symbol)) {
+            return;
+        }
+        if (isCircuitBreakerTripped()) {
+            return; // 熔断：当日净亏损超预算或连亏达上限（读失败 fail-closed）
+        }
+        int budget = mmProps.getMaxConcurrentCellsPerSymbol() - recorder.countOpenMmCells(symbol);
+        if (budget <= 0) {
+            return;
+        }
+        HtxRestResponse<HtxDepth> depthResp = htxApiService.getMarketDataService().depth(symbol, DEPTH_LEVELS);
+        if (depthResp == null || !depthResp.ok() || depthResp.payload() == null) {
+            return;
+        }
+        HtxDepth depth = depthResp.payload();
+        if (isEmpty(depth.getBids()) || isEmpty(depth.getAsks())) {
+            return;
+        }
+        BigDecimal bestBid = depth.getBids().get(0).getPrice();
+        BigDecimal bestAsk = depth.getAsks().get(0).getPrice();
+        if (bestBid == null || bestAsk == null || bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
+            return;
+        }
+        // 等比价梯（低于绝对地板的档位已在此截断）
+        List<BigDecimal> levels = MarketMakerMath.gridBuyLevels(bestBid, mmProps.getGridStepPct(),
+                mmProps.getGridLevels(), mmProps.getGridFloorPrice(), MarketMakerMath.PRICE_SCALE);
+        BigDecimal maxTotal = mmProps.getMaxTotalExposureQuoteNotional();
+        BigDecimal perCell = mmProps.getPerCellQuoteNotional();
+        BigDecimal running = currentOpenBuyNotional(symbol); // 已挂 open cell 买入名义之和
+        int opened = 0;
+        for (BigDecimal level : levels) {
+            if (opened >= budget) {
+                break; // 并行度预算耗尽
+            }
+            if (maxTotal != null && maxTotal.signum() > 0
+                    && running.add(perCell).compareTo(maxTotal) > 0) {
+                break; // 总敞口闸：再开一档即超上限 → 停更深档（同 perCell，越深只会更超）
+            }
+            long pairId = tryOpenCellAtAnchor(symbol, level, depth);
+            if (pairId > 0) {
+                opened++;
+                running = running.add(perCell);
+            }
+        }
+    }
+
+    /**
+     * 熔断闸（fail-closed）：连续亏损退出 cell 数达上限，或当日已实现净亏损超预算 → 停开新单。
+     * 净额读取失败即视为熔断（无法确认盈亏时宁停勿冒险）。
+     */
+    private boolean isCircuitBreakerTripped() {
+        if (mmProps.getMaxConsecutiveLossCycles() > 0
+                && consecutiveLossCycles >= mmProps.getMaxConsecutiveLossCycles()) {
+            log.warn("MM circuit-breaker: consecutive loss cycles {} >= {}",
+                    consecutiveLossCycles, mmProps.getMaxConsecutiveLossCycles());
+            return true;
+        }
+        BigDecimal budget = mmProps.getDailyNetLossBudget();
+        if (budget == null || budget.signum() <= 0) {
+            return false; // 未设净亏损预算
+        }
+        BigDecimal net;
+        try {
+            net = recorder.sumTodayMmRealizedNetQuote();
+        } catch (RuntimeException ex) {
+            log.error("MM circuit-breaker net-loss read failed; fail-closed", ex);
+            return true;
+        }
+        if (net.negate().compareTo(budget) > 0) { // net<0 为亏损；亏损额 = −net
+            log.warn("MM circuit-breaker: daily net loss {} exceeds budget {}", net.negate(), budget);
+            return true;
+        }
+        return false;
+    }
+
+    /** 单标的所有 open cell 的买入名义之和（Σ reqQuantity×buyPrice），用于总敞口闸初值。 */
+    private BigDecimal currentOpenBuyNotional(String symbol) {
+        return recorder.findOpenMmCells(symbol).stream()
+                .map(cell -> nz(cell.getReqQuantity()).multiply(nz(cell.getBuyPrice())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * round-trip 完成时记连亏计数：该 cell 曾走 taker 割肉/linger 退出（在 lossExitPairIds 中）→ 连亏 +1；
+     * 否则视为正常盈利退出 → 连亏清零。内存态，重启清零（保守偏安全）。
+     */
+    private void recordCycleOutcome(long pairId) {
+        if (lossExitPairIds.remove(pairId)) {
+            consecutiveLossCycles++;
+        } else {
+            consecutiveLossCycles = 0;
+        }
     }
 
     // ---- 状态机（D2） ----
@@ -509,6 +635,7 @@ public class MarketMakerService {
         BigDecimal filled = nz(o.getFilledAmount());
         if ("filled".equalsIgnoreCase(state)) {
             recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
+            recordCycleOutcome(cell.getPairId());
             log.info("MM done pairId={} sellId={} sellFilled={}", cell.getPairId(), sellId, filled);
             return;
         }
@@ -519,6 +646,7 @@ public class MarketMakerService {
                         "mm-sell-terminal:" + state);
             }
             recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
+            recordCycleOutcome(cell.getPairId());
             return;
         }
         // —— 卖腿跟价（maker）——
@@ -552,6 +680,7 @@ public class MarketMakerService {
         BigDecimal amount = nz(post != null ? post.getAmount() : null);
         if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
             recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
+            recordCycleOutcome(cell.getPairId());
             return;
         }
         if (post == null || !isTerminal(post.getState())) return;   // 未确认终态 → defer，杜绝双卖
@@ -588,11 +717,13 @@ public class MarketMakerService {
      * resultCode/reason 由调用方给（止损=MM_STOP_LOSS，linger=MM_LINGER_EXIT）。
      */
     private void takerFlatten(MarketMakerCell cell, String resultCode, String reason) {
+        lossExitPairIds.add(cell.getPairId()); // 割肉/linger 退出：本 round-trip 记为亏损（连亏计数用）
         HtxOrder post = cancelAndQuery(cell.getSellOrderId());
         BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
         BigDecimal amount = nz(post != null ? post.getAmount() : null);
         if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
             recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
+            recordCycleOutcome(cell.getPairId());
             return;
         }
         if (post == null || !isTerminal(post.getState())) return;   // 未确认终态 → defer，杜绝双卖
@@ -600,6 +731,7 @@ public class MarketMakerService {
         BigDecimal sellable = remainingSellable(cell, post);
         if (sellable.signum() <= 0) {
             recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));
+            recordCycleOutcome(cell.getPairId());
             return;
         }
 

@@ -77,4 +77,25 @@ public class HtxMarketMakerProperties {
 
     /** taker 买价差闸门：仅当 bestAsk ≤ bestBid·(1+此值) 才穿价吃单；太宽退回现状撤单重开。 */
     private BigDecimal buyTakerMaxCrossPct = new BigDecimal("0.001");
+
+    /** 网格全梯补齐总开关；false=完全回退现状单格逻辑（config-only 回退），行为逐字节等价。 */
+    private boolean gridModeEnabled = false;
+
+    /** 等比步长（每档下移比例）：L_k=anchor·(1−此值)^k；与 spreadPct 同量级，保证每格卖腿仍满足不亏。 */
+    private BigDecimal gridStepPct = new BigDecimal("0.003");
+
+    /** 理想价梯档数上限（实际受 maxConcurrentCellsPerSymbol / 敞口 / 地板裁剪）。 */
+    private int gridLevels = 5;
+
+    /** 绝对价格地板（per-symbol）：低于此价一律不开买单；0 或负数视为不设地板。深跌硬止接盘。 */
+    private BigDecimal gridFloorPrice = BigDecimal.ZERO;
+
+    /** 单 symbol 所有未平 cell 买入名义之和上限（USDT）：Σ(open buy notional)+perCell ≤ 此值才开新档。 */
+    private BigDecimal maxTotalExposureQuoteNotional = new BigDecimal("100");
+
+    /** 当日已实现净亏损预算（USDT）：当日累计净亏损超过此值即停开新单（熔断）。 */
+    private BigDecimal dailyNetLossBudget = new BigDecimal("5");
+
+    /** 连续亏损退出 cell 数上限：达到即停开新单（内存态，重启清零，保守偏安全）。 */
+    private int maxConsecutiveLossCycles = 3;
 }

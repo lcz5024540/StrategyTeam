@@ -405,6 +405,20 @@ public class HtxTradeRecorder {
         }
     }
 
+    /**
+     * 当日做市已实现净额（USDT）：正数=盈利，负数=亏损。用于网格熔断的当日净亏损预算闸。
+     * 属下单前风控读取：读失败即抛 {@link HtxPersistenceException}，由上层 fail-closed 拒开新单。
+     */
+    public BigDecimal sumTodayMmRealizedNetQuote() {
+        try {
+            LocalDateTime start = LocalDate.now().atStartOfDay();
+            BigDecimal sum = pairMapper.sumMmRealizedNetQuoteSince(start);
+            return sum == null ? BigDecimal.ZERO : sum;
+        } catch (Exception ex) {
+            throw new HtxPersistenceException("sumTodayMmRealizedNetQuote failed", ex);
+        }
+    }
+
     public List<HtxLockedPairEntity> findNonTerminalPairs() {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
                 .in("status", HtxStatus.BUY_SENT, HtxStatus.BUY_FILLED,

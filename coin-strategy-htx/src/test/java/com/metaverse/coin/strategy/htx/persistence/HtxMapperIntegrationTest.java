@@ -69,4 +69,57 @@ class HtxMapperIntegrationTest {
         assertEquals("long", stored.getPositionSide());
         assertFalse(stored.getReduceOnly());
     }
+
+    @Test void sumMmRealizedNetQuoteSince_sums_done_cells_profit_minus_loss() {
+        java.time.LocalDateTime start = java.time.LocalDate.now().atStartOfDay();
+        BigDecimal before = pairMapper.sumMmRealizedNetQuoteSince(start);
+        // 盈利 cell：买 0.001@100=0.1，卖 0.001@101=0.101 → net +0.001
+        insertMmDone("mm-p-" + System.nanoTime(), "0.001", "100", "0.001", "101");
+        // 亏损 cell：买 0.001@100=0.1，卖 0.001@98=0.098 → net -0.002
+        insertMmDone("mm-l-" + System.nanoTime(), "0.001", "100", "0.001", "98");
+        BigDecimal after = pairMapper.sumMmRealizedNetQuoteSince(start);
+        // 增量 = +0.001 + (-0.002) = -0.001
+        assertEquals(0, new BigDecimal("-0.001").compareTo(after.subtract(before)));
+    }
+
+    @Test void sumMmRealizedNetQuoteSince_excludes_dryrun_and_non_done() {
+        java.time.LocalDateTime start = java.time.LocalDate.now().atStartOfDay();
+        BigDecimal before = pairMapper.sumMmRealizedNetQuoteSince(start);
+        // dry_run cell 不计入
+        HtxLockedPairEntity dry = mmCell("mm-dry-" + System.nanoTime(),
+                "0.001", "100", "0.001", "50");
+        dry.setStatus(HtxStatus.MM_DONE);
+        dry.setDryRun(true);
+        pairMapper.insert(dry);
+        // 未完成 cell（RESTING_SELL）不计入
+        HtxLockedPairEntity resting = mmCell("mm-rest-" + System.nanoTime(),
+                "0.001", "100", "0.001", "50");
+        resting.setStatus(HtxStatus.MM_RESTING_SELL);
+        resting.setDryRun(false);
+        pairMapper.insert(resting);
+        BigDecimal after = pairMapper.sumMmRealizedNetQuoteSince(start);
+        assertEquals(0, before.compareTo(after));
+    }
+
+    private void insertMmDone(String cid, String buyQty, String buyPrice,
+                              String sellQty, String sellPrice) {
+        HtxLockedPairEntity e = mmCell(cid, buyQty, buyPrice, sellQty, sellPrice);
+        e.setStatus(HtxStatus.MM_DONE);
+        e.setDryRun(false);
+        pairMapper.insert(e);
+    }
+
+    private HtxLockedPairEntity mmCell(String cid, String buyQty, String buyPrice,
+                                       String sellQty, String sellPrice) {
+        HtxLockedPairEntity e = new HtxLockedPairEntity();
+        e.setClientOrderId(cid);
+        e.setSymbol("xautusdt");
+        e.setReqQuantity(new BigDecimal(buyQty));
+        e.setBuyFilledAmount(new BigDecimal(buyQty));
+        e.setBuyPrice(new BigDecimal(buyPrice));
+        e.setSellFilledAmount(new BigDecimal(sellQty));
+        e.setSellPrice(new BigDecimal(sellPrice));
+        e.setStrategy(HtxStatus.STRATEGY_MARKET_MAKER);
+        return e;
+    }
 }
