@@ -18,6 +18,15 @@ spring:
 logging:
   config: classpath:logback-spring.xml
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
 springdoc:
   # [FIXED-ONCE] Swagger UI entry path for local API inspection.
   swagger-ui:
@@ -66,6 +75,42 @@ binance:
     symbols: ""
 
 arbitrage:
+  multi-exchange:
+    # V1 强制模拟盘；这些开关只启用公共行情扫描、Paper 持仓监控和模拟资金费结算。
+    exchanges: BINANCE,OKX,HTX,BITGET
+    scan-enabled: false
+    monitor-enabled: false
+    settlement-enabled: false
+    contract-sync-enabled: false
+    health-check-enabled: false
+    recovery-enabled: false
+    scan-delay-ms: 30000
+    monitor-delay-ms: 30000
+    settlement-delay-ms: 60000
+    contract-sync-delay-ms: 86400000
+    health-check-delay-ms: 60000
+    recovery-delay-ms: 60000
+    min-net-yield-rate: 0.0002
+    round-trip-fee-rate: 0.0010
+    slippage-rate: 0.0005
+    allow-mixed-funding-signs: false
+    target-notional: 100
+    minimum-notional: 20
+    basis-risk-buffer: 0.0002
+    max-mark-price-deviation: 0.01
+    max-symbol-notional: 1000
+    max-exchange-notional: 5000
+    exit-net-yield: 0.00001
+    maximum-quote-age-ms: 30000
+    maximum-settlement-skew-ms: 300000
+    stability-window-ms: 180000
+    maximum-naked-duration-ms: 10000
+    maximum-holding-duration-ms: 604800000
+    costs:
+      binance: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      okx: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      htx: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      bitget: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
   spot-futures:
     # [TUNE] 单交易所期现套利策略的主交易对。
     symbol: "BTCUSDT"

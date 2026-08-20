@@ -1,0 +1,6 @@
+package com.metaverse.coin.strategy.job.funding.config;
+import com.metaverse.coin.strategy.core.arbitrage.multi.*; import com.metaverse.coin.strategy.core.arbitrage.config.MultiExchangeFundingRateProperties; import org.junit.jupiter.api.Test; import org.springframework.boot.test.context.runner.ApplicationContextRunner; import static org.assertj.core.api.Assertions.assertThat; import static org.mockito.Mockito.mock;
+class CrossExchangePaperConfigurationTest {
+ private final ApplicationContextRunner runner=new ApplicationContextRunner().withUserConfiguration(CrossExchangePaperConfiguration.class,MultiExchangeFundingRateProperties.class,BinanceFundingRateGateway.class,OkxFundingRateGateway.class,HtxFundingRateGateway.class,BitgetFundingRateGateway.class).withBean(CrossExchangeArbitragePersistenceService.class,()->mock(CrossExchangeArbitragePersistenceService.class)).withPropertyValues("arbitrage.multi-exchange.min-net-yield-rate=0.0003","arbitrage.multi-exchange.costs.binance.taker-fee-rate=0.0004");
+ @Test void startsInPaperModeWithFourProviders(){runner.run(ctx->{assertThat(ctx).hasNotFailed();assertThat(ctx.getBeansOfType(CrossExchangeMarketDataProvider.class)).hasSize(4);assertThat(ctx).hasSingleBean(CrossExchangePaperTradingService.class);assertThat(ctx).hasSingleBean(CrossExchangeOpportunityScanService.class);});}
+}

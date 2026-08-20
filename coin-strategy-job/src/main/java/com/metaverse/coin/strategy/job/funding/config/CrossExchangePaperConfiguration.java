@@ -1,0 +1,15 @@
+package com.metaverse.coin.strategy.job.funding.config;
+import com.metaverse.coin.strategy.core.arbitrage.multi.*; import org.springframework.context.annotation.*;
+import java.math.BigDecimal; import java.time.Duration;
+import java.util.*; import com.metaverse.coin.strategy.core.arbitrage.config.MultiExchangeFundingRateProperties;
+@Configuration
+public class CrossExchangePaperConfiguration {
+ @Bean public PaperPerpetualGateway paperPerpetualGateway(){return new PaperPerpetualGateway();}
+ @Bean public PaperAtomicHedgeExecutor paperAtomicHedgeExecutor(PaperPerpetualGateway g){return new PaperAtomicHedgeExecutor(g);}
+ @Bean public CrossExchangeRiskService crossExchangeRiskService(MultiExchangeFundingRateProperties properties){return new CrossExchangeRiskService(new CrossExchangeRiskService.Limits(properties.getMaxSymbolNotional(),properties.getMaxExchangeNotional(),properties.getMaximumNakedDuration(),properties.getMaximumHoldingDuration(),properties.getExitNetYield(),properties.getMaxMarkPriceDeviation()));}
+ @Bean public CrossExchangePaperTradingService crossExchangePaperTradingService(PaperAtomicHedgeExecutor e,CrossExchangeRiskService r,CrossExchangeArbitragePersistenceService p){return new CrossExchangePaperTradingService(e,r,p);}
+ @Bean public ExchangeHealthRegistry exchangeHealthRegistry(){return new ExchangeHealthRegistry();}
+ @Bean public PerpetualContractCatalog perpetualContractCatalog(List<PerpetualExchangeGateway> gateways,ExchangeHealthRegistry health,MultiExchangeFundingRateProperties properties){return new PerpetualContractCatalog(gateways.stream().filter(gateway->properties.getExchanges().contains(gateway.exchange())).toList(),health);}
+ @Bean public CrossExchangeOpportunityScanService crossExchangeOpportunityScanService(List<CrossExchangeMarketDataProvider> providers,MultiExchangeFundingRateProperties properties,ExchangeHealthRegistry health,PerpetualContractCatalog catalog){return new CrossExchangeOpportunityScanService(providers.stream().filter(provider->properties.getExchanges().contains(provider.exchange())).toList(),new CrossExchangeOpportunitySelector(),new CrossExchangeOpportunityStabilityGate(properties.getStabilityWindow()),new CrossExchangeOpportunitySelector.Limits(properties.getMaximumQuoteAge(),properties.getMaximumSettlementSkew(),properties.getMaxMarkPriceDeviation(),properties.getMinimumNotional(),properties.getMinNetYieldRate(),properties.getBasisRiskBuffer(),properties.isAllowMixedFundingSigns()),properties.getCosts(),properties.getTargetNotional(),health,catalog);}
+ @Bean public CrossExchangePositionMonitorService crossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,CrossExchangeRiskService risk,CrossExchangePaperTradingService paper,CrossExchangeArbitragePersistenceService persistence){return new CrossExchangePositionMonitorService(providers,risk,paper,persistence);}
+}
