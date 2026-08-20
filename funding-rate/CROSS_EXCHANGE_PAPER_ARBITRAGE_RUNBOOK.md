@@ -50,6 +50,8 @@ arbitrage:
    - `funding_arb_rollbacks_total`、`funding_arb_manual_interventions_total`
    - `funding_arb_exchange_healthy{exchange="..."}`
    - `funding_arb_exchange_request_success_ratio{exchange="..."}`
+   - `funding_arb_exchange_last_latency_ms{exchange="..."}`
+   - `funding_arb_exchange_rate_limits_total{exchange="..."}`
 
 ## 4. 数据核验
 

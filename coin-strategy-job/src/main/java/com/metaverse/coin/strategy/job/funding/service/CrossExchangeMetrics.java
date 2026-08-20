@@ -28,6 +28,8 @@ public class CrossExchangeMetrics {
     private final Set<String> countedManualInterventions = ConcurrentHashMap.newKeySet();
     private final Map<Exchange, AtomicInteger> exchangeHealthy = new EnumMap<>(Exchange.class);
     private final Map<Exchange, AtomicReference<Double>> exchangeSuccessRate = new EnumMap<>(Exchange.class);
+    private final Map<Exchange, AtomicReference<Double>> exchangeLatencyMs = new EnumMap<>(Exchange.class);
+    private final Map<Exchange, AtomicReference<Double>> exchangeRateLimits = new EnumMap<>(Exchange.class);
 
     public CrossExchangeMetrics(MeterRegistry registry) {
         scans = registry.counter("funding_arb_scans_total");
@@ -41,11 +43,19 @@ public class CrossExchangeMetrics {
         for (Exchange exchange : Exchange.values()) {
             AtomicInteger healthy = new AtomicInteger();
             AtomicReference<Double> successRate = new AtomicReference<>(0D);
+            AtomicReference<Double> latencyMs = new AtomicReference<>(0D);
+            AtomicReference<Double> rateLimits = new AtomicReference<>(0D);
             exchangeHealthy.put(exchange, healthy);
             exchangeSuccessRate.put(exchange, successRate);
+            exchangeLatencyMs.put(exchange, latencyMs);
+            exchangeRateLimits.put(exchange, rateLimits);
             Gauge.builder("funding_arb_exchange_healthy", healthy, AtomicInteger::get)
                     .tag("exchange", exchange.name()).register(registry);
             Gauge.builder("funding_arb_exchange_request_success_ratio", successRate, AtomicReference::get)
+                    .tag("exchange", exchange.name()).register(registry);
+            Gauge.builder("funding_arb_exchange_last_latency_ms", latencyMs, AtomicReference::get)
+                    .tag("exchange", exchange.name()).register(registry);
+            Gauge.builder("funding_arb_exchange_rate_limits_total", rateLimits, AtomicReference::get)
                     .tag("exchange", exchange.name()).register(registry);
         }
     }
@@ -84,12 +94,16 @@ public class CrossExchangeMetrics {
             if (snapshot == null) {
                 exchangeHealthy.get(exchange).set(0);
                 exchangeSuccessRate.get(exchange).set(0D);
+                exchangeLatencyMs.get(exchange).set(0D);
+                exchangeRateLimits.get(exchange).set(0D);
                 continue;
             }
             exchangeHealthy.get(exchange).set(snapshot.healthy() ? 1 : 0);
             long total = snapshot.successCount() + snapshot.failureCount();
             double ratio = total == 0 ? 0D : (double) snapshot.successCount() / total;
             exchangeSuccessRate.get(exchange).set(ratio);
+            exchangeLatencyMs.get(exchange).set((double) snapshot.lastLatencyMs());
+            exchangeRateLimits.get(exchange).set((double) snapshot.rateLimitCount());
         }
     }
 }

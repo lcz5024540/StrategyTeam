@@ -32,11 +32,14 @@ public class CrossExchangeGatewayHealthJob {
     public void check() {
         Instant now = Instant.now();
         for (CrossExchangeMarketDataProvider provider : providers) {
+            Instant startedAt = Instant.now();
             try {
                 provider.supportedUsdtPerpetualSymbols();
-                health.success(provider.exchange(), now);
+                health.success(provider.exchange(), now,
+                        java.time.Duration.between(startedAt, Instant.now()).toMillis());
             } catch (RuntimeException exception) {
-                health.failure(provider.exchange(), now, exception);
+                health.failure(provider.exchange(), now, exception,
+                        java.time.Duration.between(startedAt, Instant.now()).toMillis());
             }
         }
         metrics.exchangeHealth(health.snapshot());

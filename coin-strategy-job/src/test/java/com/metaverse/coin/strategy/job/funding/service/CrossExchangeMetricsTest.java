@@ -49,7 +49,7 @@ class CrossExchangeMetricsTest {
         Instant now = Instant.now();
         Map<Exchange, ExchangeHealthRegistry.Health> health = Map.of(
                 Exchange.BINANCE, new ExchangeHealthRegistry.Health(Exchange.BINANCE, true,
-                        3, 1, now, now.minusSeconds(1), null));
+                        3, 1, 2, 125, now, now.minusSeconds(1), null));
 
         metrics.exchangeHealth(health);
 
@@ -59,6 +59,10 @@ class CrossExchangeMetricsTest {
                 .tag("exchange", "BINANCE").gauge().value());
         assertEquals(0D, registry.get("funding_arb_exchange_healthy")
                 .tag("exchange", "OKX").gauge().value());
+        assertEquals(125D, registry.get("funding_arb_exchange_last_latency_ms")
+                .tag("exchange", "BINANCE").gauge().value());
+        assertEquals(2D, registry.get("funding_arb_exchange_rate_limits_total")
+                .tag("exchange", "BINANCE").gauge().value());
     }
 
     private PaperHedgePosition position(String id, CrossExchangeOpportunity opportunity,

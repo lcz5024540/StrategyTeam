@@ -12,6 +12,12 @@ import java.time.Duration;
 
 /** Shared unauthenticated JSON transport for exchange public market-data adapters. */
 public class PublicJsonHttpClient {
+    public static class RateLimitException extends IllegalStateException {
+        public RateLimitException(String message) {
+            super(message);
+        }
+    }
+
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(8);
 
@@ -36,6 +42,9 @@ public class PublicJsonHttpClient {
                     .build();
             HttpResponse<String> response = httpClient.send(request,
                     HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 429) {
+                throw new RateLimitException("HTTP 429 from " + uri.getHost());
+            }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("HTTP " + response.statusCode()
                         + " from " + uri.getHost());
