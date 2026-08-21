@@ -33,4 +33,11 @@ public interface PerpetualMarketDataClient {
     static PerpetualMarketDataClient forVenue(Venue venue) {
         return new PerpetualPublicClient(venue);
     }
+
+    static PerpetualMarketDataClient forVenue(Venue venue, String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("perpetual public base URL is required");
+        }
+        return new PerpetualPublicClient(venue, java.net.URI.create(baseUrl));
+    }
 }

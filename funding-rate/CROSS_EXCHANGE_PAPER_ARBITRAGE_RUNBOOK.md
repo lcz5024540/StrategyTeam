@@ -43,6 +43,12 @@ arbitrage:
     capture-symbols: "BTCUSDT,ETHUSDT"
     capture-order-book-depth: 20
     capture-delay-ms: 60000
+    # 可选：部署网络需经代理或区域域名访问时覆盖；留空使用官方默认域名。
+    base-urls:
+      binance: ""
+      okx: ""
+      htx: ""
+      bitget: ""
 ```
 
 采集文件按 UTC 日期追加，包含 `schemaVersion`、`capturedAt`、`source=PUBLIC_REST`、交易所、资金费率、结算周期、下一结算时间、mark/index price、盘口价格及名义深度。单一交易所失败会写 `ERROR` 行而不会中断其他交易所；`CrossExchangeMarketSnapshotReplayReader` 可将成功行按 `capturedAt + symbol` 还原为统一资金费率和盘口快照，并单独保留失败记录。`CrossExchangeFundingReplayService` 会按时间排序后复用生产机会选择器、成本模型和稳定窗口输出评估统计。生成目录已加入 `.gitignore`，原始采集数据须经脱敏和来源核验后才能选择性入库。
@@ -85,7 +91,7 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 
 ## 5. 已知环境差异
 
-当前开发环境可直连 Binance、Bitget；OKX 请求出现超时，HTX 域名连接失败。扫描器按交易所隔离失败并记录健康状态，部署环境需确认四所域名均可访问，才能验证四所共同币种集合。
+2026-08-21 本机只读实测：Binance、Bitget 返回 HTTP 200；OKX、HTX 在 12 秒内连接超时。扫描器按交易所隔离失败并记录健康状态；四所公共 base URL 已支持按部署环境覆盖，默认仍使用官方域名。部署环境需确认四所域名或代理均可访问，才能验证四所共同币种集合。
 
 数据库迁移必须由验收环境负责人执行。本地未配置 `DB_PASSWORD`，且默认地址可能指向共享环境，开发验证不会自动执行 SQL。
 
@@ -95,7 +101,7 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 
 | 阶段 | 交付项 | 状态 | 证据或边界 |
 |---|---|---|---|
-| Phase 0 | JDK 17 构建约束及四所公共 HTTP Connector | ✅ 已完成 | URL、响应解析和统一公共行情 DTO 已下沉 `common-client`；`coin-strategy-core` Gateway 只做接口 DTO 映射，HTTP 200/429 及四所解析有测试 |
+| Phase 0 | JDK 17 构建约束及四所公共 HTTP Connector | ✅ 已完成 | URL、响应解析和统一公共行情 DTO 已下沉 `common-client`；默认官方域名及按环境覆盖的公共 base URL 均已支持，HTTP 200/429 及四所解析有测试 |
 | Phase 0 | 删除伪造 mark/last price 与缺失结算时间兜底 | ✅ 已完成 | 关键行情字段缺失时 fail-closed，不形成可交易报价 |
 | Phase 0 | 每交易所手续费、滑点和账户成本配置 | ✅ 已完成 | 四所独立 maker/taker/slippage 配置；V1 默认按 taker 保守估算 |
 | Phase 1 | Binance、OKX、HTX、Bitget 公共行情 Gateway | ✅ 已完成 | 已实现合约目录、资金费率、mark/index price 和盘口；不含部署环境连通性验收 |
@@ -114,7 +120,7 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 | Phase 5 | 真实历史数据、告警环境演练和 7 天长稳 | ⏳ 未完成 | 见第 7 节 |
 | V1 边界 | 真实交易、自动划转、异号自动开仓 | 🚫 非本期 | 代码不得通过配置开启 LIVE |
 
-当前代码验证：显式 JDK 17 跨所专项测试 `45 tests / 0 failure / 0 error`，Maven package 成功。项目全量 Job 测试为 `570 tests / 22 failures / 0 errors / 11 skipped`，失败仍属于非跨所模块，详见第 7.2 节。
+当前代码验证：显式 JDK 17 跨所专项测试全绿，Maven package 成功。项目全量 Job 测试为 `571 tests / 22 failures / 0 errors / 11 skipped`，失败仍属于非跨所模块，详见第 7.2 节。
 
 ## 7. 未完成任务
 

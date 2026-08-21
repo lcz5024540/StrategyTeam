@@ -96,6 +96,12 @@ arbitrage:
     capture-output-directory: "./data/funding-replay"
     capture-symbols: "BTCUSDT"
     capture-order-book-depth: 20
+    # 可按部署网络覆盖公共行情域名或内部代理；未配置时使用各交易所官方域名。
+    base-urls:
+      binance: ""
+      okx: ""
+      htx: ""
+      bitget: ""
     min-net-yield-rate: 0.0002
     round-trip-fee-rate: 0.0010
     slippage-rate: 0.0005

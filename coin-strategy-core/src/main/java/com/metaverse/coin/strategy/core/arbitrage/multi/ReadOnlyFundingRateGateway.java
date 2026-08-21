@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.core.arbitrage.multi;
 
 import com.metaverse.coin.strategy.common.client.perpetual.PerpetualMarketDataClient;
+import org.springframework.core.env.Environment;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -14,6 +15,16 @@ public abstract class ReadOnlyFundingRateGateway
     protected ReadOnlyFundingRateGateway(Exchange exchange, PerpetualMarketDataClient client) {
         this.exchange = exchange;
         this.client = client;
+    }
+
+    protected static PerpetualMarketDataClient configuredClient(Exchange exchange,
+            PerpetualMarketDataClient.Venue venue, Environment environment) {
+        String key = "arbitrage.multi-exchange.base-urls."
+                + exchange.name().toLowerCase(java.util.Locale.ROOT);
+        String configured = environment.getProperty(key);
+        return configured == null || configured.isBlank()
+                ? PerpetualMarketDataClient.forVenue(venue)
+                : PerpetualMarketDataClient.forVenue(venue, configured.trim());
     }
 
     @Override

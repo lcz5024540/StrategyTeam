@@ -29,7 +29,7 @@ class PerpetualPublicClientTest {
                 + "\"markPrice\":\"100\",\"indexPrice\":\"99.9\"}");
         enqueue("{\"bids\":[[\"99\",\"2\"]],\"asks\":[[\"101\",\"3\"]]}");
 
-        PerpetualPublicClient client = client(PerpetualPublicClient.Venue.BINANCE);
+        PerpetualMarketDataClient client = client(PerpetualPublicClient.Venue.BINANCE);
 
         assertEquals("BTCUSDT", client.contracts().get(0).canonicalSymbol());
         assertEquals("0.0001", client.funding("BTCUSDT").rawRate().toPlainString());
@@ -49,7 +49,7 @@ class PerpetualPublicClientTest {
         enqueue("{\"data\":[{\"bids\":[[\"99\",\"2\"]],"
                 + "\"asks\":[[\"101\",\"3\"]]}]}");
 
-        PerpetualPublicClient client = client(PerpetualPublicClient.Venue.OKX);
+        PerpetualMarketDataClient client = client(PerpetualPublicClient.Venue.OKX);
 
         assertEquals("BTCUSDT", client.contracts().get(0).canonicalSymbol());
         assertEquals(8, client.funding("BTCUSDT").intervalHours());
@@ -68,7 +68,7 @@ class PerpetualPublicClientTest {
         enqueue("{\"data\":[{\"index_price\":\"99.7\"}]}");
         enqueue("{\"tick\":{\"bids\":[[99,2]],\"asks\":[[101,3]]}}");
 
-        PerpetualPublicClient client = client(PerpetualPublicClient.Venue.HTX);
+        PerpetualMarketDataClient client = client(PerpetualPublicClient.Venue.HTX);
 
         assertEquals("BTC-USDT", client.contracts().get(0).exchangeSymbol());
         assertEquals("99.7", client.funding("BTCUSDT").indexPrice().toPlainString());
@@ -85,7 +85,7 @@ class PerpetualPublicClientTest {
         enqueue("{\"data\":{\"bids\":[[\"99\",\"2\"]],"
                 + "\"asks\":[[\"101\",\"3\"]]}}");
 
-        PerpetualPublicClient client = client(PerpetualPublicClient.Venue.BITGET);
+        PerpetualMarketDataClient client = client(PerpetualPublicClient.Venue.BITGET);
 
         assertEquals(3, client.contracts().get(0).quantityScale());
         assertEquals("0.0004", client.funding("BTCUSDT").rawRate().toPlainString());
@@ -97,7 +97,7 @@ class PerpetualPublicClientTest {
         enqueue("{\"data\":[{\"fundingRate\":\"0.0004\",\"fundingRateInterval\":8}]}");
         enqueue("{\"data\":[{\"markPrice\":\"100\",\"indexPrice\":\"99.6\"}]}");
 
-        PerpetualPublicClient client = client(PerpetualPublicClient.Venue.BITGET);
+        PerpetualMarketDataClient client = client(PerpetualPublicClient.Venue.BITGET);
 
         assertThrows(IllegalStateException.class, () -> client.funding("BTCUSDT"));
     }
@@ -105,13 +105,13 @@ class PerpetualPublicClientTest {
     @Test
     void translatesTransportRateLimitToConnectorException() {
         server.enqueue(new MockResponse().setResponseCode(429).setBody("rate limited"));
-        PerpetualPublicClient client = client(PerpetualPublicClient.Venue.BINANCE);
+        PerpetualMarketDataClient client = client(PerpetualPublicClient.Venue.BINANCE);
 
         assertThrows(PerpetualMarketDataClient.RateLimitException.class, client::contracts);
     }
 
-    private PerpetualPublicClient client(PerpetualPublicClient.Venue venue) {
-        return new PerpetualPublicClient(venue, server.url("/").uri());
+    private PerpetualMarketDataClient client(PerpetualPublicClient.Venue venue) {
+        return PerpetualMarketDataClient.forVenue(venue, server.url("/").toString());
     }
 
     private void enqueue(String json) {
