@@ -65,6 +65,17 @@ class CrossExchangeMetricsTest {
                 .tag("exchange", "BINANCE").gauge().value());
     }
 
+    @Test
+    void exposesCircuitAndPauseState() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        CrossExchangeMetrics metrics = new CrossExchangeMetrics(registry);
+
+        metrics.strategyState(true, false);
+
+        assertEquals(1D, registry.get("funding_arb_circuit_open").gauge().value());
+        assertEquals(0D, registry.get("funding_arb_paused").gauge().value());
+    }
+
     private PaperHedgePosition position(String id, CrossExchangeOpportunity opportunity,
             PaperHedgePosition.Status status, BigDecimal quantity, Instant now) {
         return new PaperHedgePosition(id, opportunity, null, null, quantity, status, now, now, null);

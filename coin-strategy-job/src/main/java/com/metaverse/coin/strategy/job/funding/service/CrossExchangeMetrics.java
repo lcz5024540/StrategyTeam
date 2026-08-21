@@ -23,6 +23,8 @@ public class CrossExchangeMetrics {
     private final Counter rollbacks;
     private final Counter manualInterventions;
     private final AtomicInteger activePositions = new AtomicInteger();
+    private final AtomicInteger circuitOpen = new AtomicInteger();
+    private final AtomicInteger paused = new AtomicInteger();
     private final AtomicReference<Double> unhedgedNotional = new AtomicReference<>(0D);
     private final Set<String> countedRollbacks = ConcurrentHashMap.newKeySet();
     private final Set<String> countedManualInterventions = ConcurrentHashMap.newKeySet();
@@ -37,6 +39,10 @@ public class CrossExchangeMetrics {
         rollbacks = registry.counter("funding_arb_rollbacks_total");
         manualInterventions = registry.counter("funding_arb_manual_interventions_total");
         Gauge.builder("funding_arb_active_positions", activePositions, AtomicInteger::get)
+                .register(registry);
+        Gauge.builder("funding_arb_circuit_open", circuitOpen, AtomicInteger::get)
+                .register(registry);
+        Gauge.builder("funding_arb_paused", paused, AtomicInteger::get)
                 .register(registry);
         Gauge.builder("funding_arb_unhedged_notional", unhedgedNotional, AtomicReference::get)
                 .register(registry);
@@ -105,5 +111,10 @@ public class CrossExchangeMetrics {
             exchangeLatencyMs.get(exchange).set((double) snapshot.lastLatencyMs());
             exchangeRateLimits.get(exchange).set((double) snapshot.rateLimitCount());
         }
+    }
+
+    public void strategyState(boolean circuitOpen, boolean paused) {
+        this.circuitOpen.set(circuitOpen ? 1 : 0);
+        this.paused.set(paused ? 1 : 0);
     }
 }

@@ -1,0 +1,52 @@
+groups:
+  - name: cross-exchange-funding-arbitrage
+    rules:
+      - alert: FundingArbExchangeUnhealthy
+        expr: max_over_time(funding_arb_exchange_healthy[5m]) < 1
+        for: 5m
+        labels:
+          severity: critical
+          strategy: cross_exchange_funding
+        annotations:
+          summary: "Exchange market-data gateway remains unhealthy"
+          description: "{{ $labels.exchange }} has not reported a healthy funding gateway state for 5 minutes."
+
+      - alert: FundingArbRateLimitSpike
+        expr: increase(funding_arb_exchange_rate_limits_total[5m]) >= 5
+        for: 1m
+        labels:
+          severity: warning
+          strategy: cross_exchange_funding
+        annotations:
+          summary: "Exchange public API rate limits increased"
+          description: "{{ $labels.exchange }} returned at least 5 HTTP 429 responses in 5 minutes."
+
+      - alert: FundingArbUnhedgedExposure
+        expr: funding_arb_unhedged_notional > 0
+        for: 15s
+        labels:
+          severity: critical
+          strategy: cross_exchange_funding
+        annotations:
+          summary: "Paper hedge has unhedged exposure"
+          description: "Unhedged Paper notional has remained above zero for 15 seconds."
+
+      - alert: FundingArbManualIntervention
+        expr: increase(funding_arb_manual_interventions_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          strategy: cross_exchange_funding
+        annotations:
+          summary: "Paper hedge requires manual intervention"
+          description: "At least one Paper position entered MANUAL_INTERVENTION in the last 5 minutes."
+
+      - alert: FundingArbCircuitOpen
+        expr: funding_arb_circuit_open > 0
+        for: 0m
+        labels:
+          severity: critical
+          strategy: cross_exchange_funding
+        annotations:
+          summary: "Funding arbitrage circuit breaker is open"
+          description: "New Paper positions are blocked until the circuit breaker is reviewed and reset."

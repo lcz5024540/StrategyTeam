@@ -94,11 +94,11 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 | Phase 3 | 五张套利表、实体和 Mapper | ✅ 已完成 | SQL、实体、Mapper 及机会/仓位/订单/结算/风险持久化已提交 |
 | Phase 4 | 持仓监控、退出、模拟平仓和失败恢复 | ✅ 已完成 | 净收益、方向、价格偏离、最长持仓、暂停及交易所异常退出已实现 |
 | Phase 4 | 裸仓超时熔断、重启恢复和结算幂等 | ✅ 已完成 | 单元测试已通过；隔离数据库运行验收仍为未完成项 |
-| Phase 5 | 管理 API、指标和运行手册 | ✅ 已完成 | 机会、仓位、健康、扫描、Paper 开平仓、暂停接口已实现 |
-| Phase 5 | 历史回放、告警规则和 7 天长稳 | ⏳ 未完成 | 见第 7 节 |
+| Phase 5 | 管理 API、指标、告警规则和运行手册 | ✅ 已完成 | 机会、仓位、健康、扫描、Paper 开平仓、暂停接口已实现；仓库内已交付 5 条 Prometheus 告警规则 |
+| Phase 5 | 历史回放、告警环境演练和 7 天长稳 | ⏳ 未完成 | 见第 7 节 |
 | V1 边界 | 真实交易、自动划转、异号自动开仓 | 🚫 非本期 | 代码不得通过配置开启 LIVE |
 
-当前代码验证：显式 JDK 17 定向测试 `41 tests / 0 failure / 0 error`，Maven package 成功。项目全量 Job 测试仍有非跨所模块的既有失败，详见第 7.2 节。
+当前代码验证：显式 JDK 17 定向测试 `44 tests / 0 failure / 0 error`，Maven package 成功。项目全量 Job 测试仍有非跨所模块的既有失败，详见第 7.2 节。
 
 ## 7. 未完成任务
 
@@ -110,7 +110,9 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 | P0 | 验证部署环境四所公共 API 连通性 | 本机仅确认 Binance、Bitget 可访问 | Binance、OKX、HTX、Bitget 的合约目录、资金费率、mark/index price、盘口均能持续返回，健康指标无持续失败 |
 | P0 | 完成 Paper 连续运行 7 天 | 尚未开始 | 无未记录裸仓、重复订单或无法解释的状态；统计机会数、回滚率、人工干预次数及预期/模拟收益偏差 |
 | P0 | 重启恢复与结算幂等实库验收 | 单元测试已覆盖，尚未做隔离库运行验证 | 持有 Paper 仓位时重启应用，仓位只恢复一次；相同交易所/仓位/结算时间不产生重复结算记录 |
-| P1 | 配置 Prometheus 告警规则 | 已提供指标，尚无环境告警规则 | 对交易所持续不健康、限频激增、未对冲名义金额、人工干预和熔断建立告警并完成触发演练 |
+| P1 | 在验收环境加载并演练 Prometheus 告警规则 | 代码已完成，环境演练未完成 | 加载 `coin-strategy-job/src/main/resources/prometheus/cross-exchange-funding-alerts.yml`，逐项触发并确认路由、恢复通知和标签正确 |
+
+仓库内告警规则已覆盖 `FundingArbExchangeUnhealthy`、`FundingArbRateLimitSpike`、`FundingArbUnhedgedExposure`、`FundingArbManualIntervention` 和 `FundingArbCircuitOpen`。暂停及熔断状态由持仓监控任务持续刷新 Gauge；规则文件 YAML 解析和关键指标引用均有自动化测试。生产或共享 Prometheus 配置未在开发阶段直接修改。
 
 ### 7.2 工程收尾
 
