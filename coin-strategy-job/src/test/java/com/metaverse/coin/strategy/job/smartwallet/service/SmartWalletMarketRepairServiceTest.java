@@ -30,6 +30,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -119,7 +120,7 @@ class SmartWalletMarketRepairServiceTest {
         )).thenReturn(canonicalMarketInfo);
         when(orderMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(order));
         when(fillMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(fill));
-        when(followTaskMapper.selectBatchIds(List.of(6676L))).thenReturn(List.of(followTask));
+        when(followTaskMapper.selectBatchIds(anyCollection())).thenReturn(List.of(followTask));
         when(tradeEventMapper.selectBatchIds(List.of(70L))).thenReturn(List.of(tradeEvent));
         when(tradeEffectLabelMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(effectLabel));
         when(claimRetryMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(claimRetry));

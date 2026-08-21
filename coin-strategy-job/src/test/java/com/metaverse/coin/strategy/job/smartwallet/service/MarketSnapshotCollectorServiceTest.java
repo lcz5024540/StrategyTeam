@@ -85,13 +85,14 @@ class MarketSnapshotCollectorServiceTest {
     void shouldFallbackToRestOrderBookWhenWsSnapshotMissing() {
         when(marketMetadataService.getByConditionId("market-1")).thenReturn(metadata("token-yes"));
         when(marketDataStreamService.getSnapshot("token-yes")).thenReturn(null);
-        when(polymarketApiClient.fetchOrderBook("token-yes")).thenReturn(orderBook("token-yes", "0.40", "0.50"));
+        when(marketDataCacheService.getOrderBook("token-yes"))
+                .thenReturn(orderBook("token-yes", "0.40", "0.50"));
         when(polymarketApiClient.fetchMarketTrades(eq("market-1"), eq(50), any()))
                 .thenReturn(List.of(trade("0.41", "7")));
 
         service.collectSnapshot("market-1", "YES");
 
-        verify(polymarketApiClient).fetchOrderBook("token-yes");
+        verify(marketDataCacheService).getOrderBook("token-yes");
         ArgumentCaptor<SmartWalletMarketSnapshotEntity> captor = ArgumentCaptor.forClass(SmartWalletMarketSnapshotEntity.class);
         verify(marketSnapshotMapper).insert(captor.capture());
         assertEquals(new BigDecimal("0.45"), captor.getValue().getMidPrice());

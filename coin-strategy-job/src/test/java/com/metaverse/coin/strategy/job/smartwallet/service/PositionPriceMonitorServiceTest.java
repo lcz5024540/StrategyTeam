@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -671,7 +672,7 @@ class PositionPriceMonitorServiceTest {
                 .asks(List.of(PolymarketApiClient.OrderBookLevel.builder()
                         .price(new BigDecimal("0.99")).size(new BigDecimal("5")).build()))
                 .build();
-        when(marketDataCacheService.getOrderBook(tokenId)).thenReturn(book);
+        doReturn(book).when(marketDataCacheService).getOrderBook(tokenId);
     }
 
     private void stubBookWithBids(String tokenId, BigDecimal topBid, BigDecimal topAsk) {

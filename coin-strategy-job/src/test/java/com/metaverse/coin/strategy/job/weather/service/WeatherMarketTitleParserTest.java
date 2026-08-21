@@ -60,7 +60,7 @@ class WeatherMarketTitleParserTest {
     void parse_unrecognizedCity_returnsEmpty() {
         Optional<WeatherMarketSpec> result = parser.parse(
                 "mkt-004", "tok-004",
-                "Will Tokyo high exceed 80°F tomorrow?",
+                "Will Atlantis high exceed 80°F tomorrow?",
                 new BigDecimal("0.05"), new BigDecimal("0.95"),
                 new BigDecimal("100"), System.currentTimeMillis() / 1000 + 3600 * 20);
 

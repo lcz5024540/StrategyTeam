@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,7 +30,8 @@ public class WeatherMarketTitleParser {
             "(?:low|below|under|at most)[^0-9]*([0-9]+(?:\\.[0-9]+)?)[^a-z]*(?:°f|degrees|°)",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern DATE_PATTERN = Pattern.compile(
-            "(?:on\\s+)?([A-Z][a-z]+\\s+\\d{1,2})",
+            "(?:on\\s+)?((?:January|February|March|April|May|June|July|August|September|"
+                    + "October|November|December)\\s+\\d{1,2})",
             Pattern.CASE_INSENSITIVE);
 
     private final WeatherArbitrageProperties properties;
@@ -118,7 +120,8 @@ public class WeatherMarketTitleParser {
         Matcher matcher = DATE_PATTERN.matcher(question);
         if (matcher.find()) {
             try {
-                java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("MMMM d yyyy");
+                java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter
+                        .ofPattern("MMMM d yyyy", Locale.ENGLISH);
                 return LocalDate.parse(matcher.group(1) + " " + cityNow(city).getYear(), formatter);
             } catch (Exception ignored) {
                 // fall through

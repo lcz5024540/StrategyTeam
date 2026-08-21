@@ -82,7 +82,8 @@ public class WeatherModelCalibrationService {
 
     public int normalizeLeadHourBucket(int leadHours) {
         return properties.getAllowedLeadHourBuckets().stream()
-                .min(Comparator.comparingInt(bucket -> Math.abs(bucket - leadHours)))
+                .min(Comparator.<Integer>comparingInt(bucket -> Math.abs(bucket - leadHours))
+                        .thenComparing(Comparator.reverseOrder()))
                 .orElse(24);
     }
 

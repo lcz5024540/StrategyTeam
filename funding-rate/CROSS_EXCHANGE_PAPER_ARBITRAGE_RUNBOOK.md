@@ -113,7 +113,7 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 | Phase 5 | 真实历史数据、告警环境演练和 7 天长稳 | ⏳ 未完成 | 见第 7 节 |
 | V1 边界 | 真实交易、自动划转、异号自动开仓 | 🚫 非本期 | 代码不得通过配置开启 LIVE |
 
-当前代码验证：显式 JDK 17 定向测试 `53 tests / 0 failure / 0 error`，Maven package 成功。项目全量 Job 测试仍有非跨所模块的既有失败，详见第 7.2 节。
+当前代码验证：显式 JDK 17 跨所与本轮回归测试 `76 tests / 0 failure / 0 error`，Maven package 成功。项目全量 Job 测试仍有非跨所模块的既有失败，详见第 7.2 节。
 
 ## 7. 未完成任务
 
@@ -135,7 +135,7 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 |---|---|---|---|
 | P1 | 建立真实交易所历史资金费率与盘口数据集 | 确定性合成回放、真实公共行情采集器及 CSV 回放读取器已完成，四所长期数据尚未采集 | `capture-enabled` 默认关闭；启用后按 UTC 日生成带 `PUBLIC_REST` 来源、采集时间和成功/失败状态的 CSV，读取器按时间和币种还原统一快照。仍需在四所均可访问的隔离环境持续采集并完成来源核验 |
 | P1 | 将四所 HTTP Connector 实现完整下沉至 `common-client` | ✅ 已完成 | `PerpetualMarketDataClient` 统一合约、资金费率和盘口 DTO；四所 URL 与 JSON 解析均位于 `common-client`，`coin-strategy-core` 不再承载相关 URL 或响应解析 |
-| P1 | 清理项目全量测试既有失败 | 当前 Job 全量测试存在 29 failures、4 errors，集中于 SmartWallet、Weather 等非跨所模块 | `mvn -pl coin-strategy-job -am test` 全绿；不得用忽略或跳过方式掩盖失败 |
+| P1 | 清理项目全量测试既有失败 | 已从 29 failures / 4 errors 收敛至 22 failures / 0 errors；剩余集中于 SmartWallet 的 Controller 契约及交易/退出策略语义差异 | `mvn -pl coin-strategy-job -am test` 全绿；不得用忽略或跳过方式掩盖失败 |
 | P2 | 动态同步账户手续费等级 | V1 使用每交易所配置的保守 taker 成本 | 私有账户能力开放后，从账户等级接口刷新实际 maker/taker 成本，并保留配置兜底与变更审计 |
 
 ### 7.3 明确不在本期
