@@ -63,9 +63,10 @@ arbitrage:
 4. 从扫描结果取得服务端生成的 `opportunityId`，调用 `POST /strategy/api/arbitrage/funding/paper/open`，请求体为 `{ "opportunityId": "<id>", "notional": 100 }`。接口不接受客户端拼装机会，过期、未批准的 ID 或非正数 `notional` 会被拒绝。
 5. `GET /strategy/api/arbitrage/funding/positions`，确认状态为 `OPENED`，双腿数量相同。
 6. `POST /strategy/api/arbitrage/funding/paper/close?positionId=<id>`，确认接口先读取两侧最新公共 mark price，再以带 attempt 标识的幂等 client order ID 模拟平仓并转为 `CLOSED`；行情不可用时不得按开仓价伪成交。
-7. `POST /strategy/api/arbitrage/funding/pause?paused=true`，确认新 Paper 开仓被拒绝；传 `false` 恢复。
-8. 对采集目录中的 CSV 调用 `POST /strategy/api/arbitrage/funding/replay?fileName=<文件名.csv>`，确认返回帧数、采集失败数、候选/稳定批准数量及按原因聚合的拒绝计数。接口只接受采集目录下的单个 `.csv` 文件名，拒绝绝对路径与目录穿越。
-9. 访问 `/strategy/api/actuator/prometheus`，确认以下指标可见：
+7. `GET /strategy/api/arbitrage/funding/paper/pnl?positionId=<id>`，核对价差 PnL、模拟资金费、估算执行成本和总收益；`source=PAPER_PUBLIC_ESTIMATE` 明确表示非私有账户账单。
+8. `POST /strategy/api/arbitrage/funding/pause?paused=true`，确认新 Paper 开仓被拒绝；传 `false` 恢复。
+9. 对采集目录中的 CSV 调用 `POST /strategy/api/arbitrage/funding/replay?fileName=<文件名.csv>`，确认返回帧数、采集失败数、候选/稳定批准数量及按原因聚合的拒绝计数。接口只接受采集目录下的单个 `.csv` 文件名，拒绝绝对路径与目录穿越。
+10. 访问 `/strategy/api/actuator/prometheus`，确认以下指标可见：
    - `funding_arb_scans_total`、`funding_arb_opportunities_total`
    - `funding_arb_active_positions`、`funding_arb_unhedged_notional`
    - `funding_arb_rollbacks_total`、`funding_arb_manual_interventions_total`
@@ -115,12 +116,13 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 | Phase 3 | 五张套利表、实体和 Mapper | ✅ 已完成 | SQL、实体、Mapper 及机会/仓位/订单/结算/风险持久化已提交 |
 | Phase 4 | 持仓监控、退出、模拟平仓和失败恢复 | ✅ 已完成 | 退出净收益按最新费率差扣除两侧剩余平仓 taker/滑点成本及基差缓冲；自动/手工平仓均使用最新公共 mark price；行情缺失时熔断且不伪成交 |
 | Phase 4 | 裸仓超时熔断、重启恢复和结算幂等 | ✅ 已完成 | 结算按两侧最新公共快照独立估值，单所失败隔离；停机跨多周期不拿单个当前报价伪回填历史；隔离数据库运行验收仍为未完成项 |
+| Phase 4 | Paper 仓位收益归因 | ✅ 已完成 | 按仓位汇总双腿成交现金流、模拟资金费、按交易所配置估算的 taker/滑点成本及总收益，来源明确标记为 `PAPER_PUBLIC_ESTIMATE` |
 | Phase 5 | 管理 API、指标、告警规则和运行手册 | ✅ 已完成 | 机会、仓位、健康、扫描、Paper 开平仓、暂停接口已实现；仓库内已交付 5 条 Prometheus 告警规则 |
 | Phase 5 | 确定性场景与采集文件回放 | ✅ 已完成 | 四所参与的 8 类固定快照场景可重复运行；CSV 可经管理接口复用生产选择器、成本模型与稳定窗口并汇总拒绝原因；真实交易所历史数据集仍见第 7 节 |
 | Phase 5 | 真实历史数据、告警环境演练和 7 天长稳 | ⏳ 未完成 | 见第 7 节 |
 | V1 边界 | 真实交易、自动划转、异号自动开仓 | 🚫 非本期 | 代码不得通过配置开启 LIVE |
 
-当前代码验证：显式 JDK 17 跨所核心专项 `33 tests / 0 failures / 0 errors`，Maven package 成功。项目全量 Job 测试为 `575 tests / 22 failures / 0 errors / 11 skipped`，失败仍属于非跨所模块，详见第 7.2 节。
+当前代码验证：显式 JDK 17 跨所核心专项 `35 tests / 0 failures / 0 errors`，Maven package 成功。项目全量 Job 测试为 `577 tests / 22 failures / 0 errors / 11 skipped`，失败仍属于非跨所模块，详见第 7.2 节。
 
 Paper 结算的 `actualAmount` 是“结算任务运行时最新可得公共资金费率 × 最新 mark price”的模拟估值，不是交易所私有账户资金流水。真实实盘收益核对仍需未来开放私有账户能力后，以交易所 funding ledger 为权威来源。
 
@@ -146,7 +148,6 @@ Paper 结算的 `actualAmount` 是“结算任务运行时最新可得公共资�
 | P1 | 将四所 HTTP Connector 实现完整下沉至 `common-client` | ✅ 已完成 | `PerpetualMarketDataClient` 统一合约、资金费率和盘口 DTO；四所 URL 与 JSON 解析均位于 `common-client`，`coin-strategy-core` 不再承载相关 URL 或响应解析 |
 | P1 | 清理项目全量测试既有失败 | 已从 29 failures / 4 errors 收敛至 22 failures / 0 errors；剩余集中于 SmartWallet 的 Controller 契约及交易/退出策略语义差异 | `mvn -pl coin-strategy-job -am test` 全绿；不得用忽略或跳过方式掩盖失败 |
 | P2 | 动态同步账户手续费等级 | V1 使用每交易所配置的保守 taker 成本 | 私有账户能力开放后，从账户等级接口刷新实际 maker/taker 成本，并保留配置兜底与变更审计 |
-| P2 | 提供独立的仓位收益归因查询 | 订单与结算明细已可审计，尚未提供聚合 DTO/API | 按仓位输出多腿价差 PnL、手续费、滑点、资金费及总收益；Paper 与未来 LIVE 数据来源必须明确区分 |
 
 ### 7.3 明确不在本期
 

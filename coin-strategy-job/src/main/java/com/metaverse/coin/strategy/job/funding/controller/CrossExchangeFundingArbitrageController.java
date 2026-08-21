@@ -13,6 +13,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePositionMon
 import com.metaverse.coin.strategy.core.arbitrage.multi.ExchangeHealthRegistry;
 import com.metaverse.coin.strategy.core.arbitrage.multi.PaperHedgePosition;
 import com.metaverse.coin.strategy.job.funding.service.CrossExchangeFundingReplayService;
+import com.metaverse.coin.strategy.job.funding.service.CrossExchangePaperPnlService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -36,13 +37,15 @@ public class CrossExchangeFundingArbitrageController {
     private final CrossExchangeArbitragePersistenceService persistence;
     private final CrossExchangeFundingReplayService replay;
     private final CrossExchangePositionMonitorService positionMonitor;
+    private final CrossExchangePaperPnlService pnlService;
 
     public CrossExchangeFundingArbitrageController(CrossExchangeArbOpportunityMapper opportunities,
             CrossExchangeArbPositionMapper positions, CrossExchangePaperTradingService paper,
             CrossExchangeOpportunityScanService scanner, ExchangeHealthRegistry exchangeHealth,
             CrossExchangeArbitragePersistenceService persistence,
             CrossExchangeFundingReplayService replay,
-            CrossExchangePositionMonitorService positionMonitor) {
+            CrossExchangePositionMonitorService positionMonitor,
+            CrossExchangePaperPnlService pnlService) {
         this.opportunities = opportunities;
         this.positions = positions;
         this.paper = paper;
@@ -51,6 +54,7 @@ public class CrossExchangeFundingArbitrageController {
         this.persistence = persistence;
         this.replay = replay;
         this.positionMonitor = positionMonitor;
+        this.pnlService = pnlService;
     }
 
     @GetMapping("/opportunities")
@@ -97,6 +101,11 @@ public class CrossExchangeFundingArbitrageController {
     @PostMapping("/paper/close")
     public PaperHedgePosition paperClose(@RequestParam String positionId) {
         return positionMonitor.closeAtLatest(positionId, Instant.now());
+    }
+
+    @GetMapping("/paper/pnl")
+    public CrossExchangePaperPnlService.PaperPnlSummary paperPnl(@RequestParam String positionId) {
+        return pnlService.summarize(positionId);
     }
 
     @PostMapping("/scan")

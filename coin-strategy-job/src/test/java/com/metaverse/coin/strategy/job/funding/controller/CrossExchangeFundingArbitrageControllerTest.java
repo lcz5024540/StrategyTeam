@@ -12,6 +12,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.Exchange;
 import com.metaverse.coin.strategy.core.arbitrage.multi.NormalizedFundingRateSnapshot;
 import com.metaverse.coin.strategy.core.arbitrage.multi.PaperHedgePosition;
 import com.metaverse.coin.strategy.job.funding.service.CrossExchangeFundingReplayService;
+import com.metaverse.coin.strategy.job.funding.service.CrossExchangePaperPnlService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -36,8 +37,9 @@ class CrossExchangeFundingArbitrageControllerTest {
     private final CrossExchangeArbitragePersistenceService persistence = mock(CrossExchangeArbitragePersistenceService.class);
     private final CrossExchangeFundingReplayService replay = mock(CrossExchangeFundingReplayService.class);
     private final CrossExchangePositionMonitorService positionMonitor = mock(CrossExchangePositionMonitorService.class);
+    private final CrossExchangePaperPnlService pnlService = mock(CrossExchangePaperPnlService.class);
     private final CrossExchangeFundingArbitrageController controller = new CrossExchangeFundingArbitrageController(
-            opportunities, positions, paper, scanner, health, persistence, replay, positionMonitor);
+            opportunities, positions, paper, scanner, health, persistence, replay, positionMonitor, pnlService);
 
     @Test
     void opensOnlyServerApprovedOpportunity() {
@@ -97,6 +99,16 @@ class CrossExchangeFundingArbitrageControllerTest {
 
         assertEquals(expected, controller.paperClose("position"));
         verify(paper, never()).close(any(), any(Instant.class));
+    }
+
+    @Test
+    void returnsPaperPnlAttribution() {
+        CrossExchangePaperPnlService.PaperPnlSummary expected =
+                new CrossExchangePaperPnlService.PaperPnlSummary("position", "PAPER_PUBLIC_ESTIMATE",
+                        BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, 4, 2);
+        when(pnlService.summarize("position")).thenReturn(expected);
+
+        assertEquals(expected, controller.paperPnl("position"));
     }
 
     private CrossExchangeOpportunity opportunity(String id, CrossExchangeOpportunity.Status status) {
