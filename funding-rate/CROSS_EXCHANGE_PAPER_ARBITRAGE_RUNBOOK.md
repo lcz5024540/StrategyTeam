@@ -95,10 +95,11 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 | Phase 4 | 持仓监控、退出、模拟平仓和失败恢复 | ✅ 已完成 | 净收益、方向、价格偏离、最长持仓、暂停及交易所异常退出已实现 |
 | Phase 4 | 裸仓超时熔断、重启恢复和结算幂等 | ✅ 已完成 | 单元测试已通过；隔离数据库运行验收仍为未完成项 |
 | Phase 5 | 管理 API、指标、告警规则和运行手册 | ✅ 已完成 | 机会、仓位、健康、扫描、Paper 开平仓、暂停接口已实现；仓库内已交付 5 条 Prometheus 告警规则 |
-| Phase 5 | 历史回放、告警环境演练和 7 天长稳 | ⏳ 未完成 | 见第 7 节 |
+| Phase 5 | 确定性场景回放 | ✅ 已完成 | 四所参与的 8 类固定快照场景可重复运行；真实交易所历史数据集仍见第 7 节 |
+| Phase 5 | 真实历史数据、告警环境演练和 7 天长稳 | ⏳ 未完成 | 见第 7 节 |
 | V1 边界 | 真实交易、自动划转、异号自动开仓 | 🚫 非本期 | 代码不得通过配置开启 LIVE |
 
-当前代码验证：显式 JDK 17 定向测试 `44 tests / 0 failure / 0 error`，Maven package 成功。项目全量 Job 测试仍有非跨所模块的既有失败，详见第 7.2 节。
+当前代码验证：显式 JDK 17 定向测试 `45 tests / 0 failure / 0 error`，Maven package 成功。项目全量 Job 测试仍有非跨所模块的既有失败，详见第 7.2 节。
 
 ## 7. 未完成任务
 
@@ -118,7 +119,7 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 
 | 优先级 | 任务 | 当前状态 | 完成标准 |
 |---|---|---|---|
-| P1 | 建立历史资金费率与盘口回放数据集 | 未实现 | 覆盖同号正费率、同号负费率、异号、结算错位、费率尖峰、陈旧行情和价格异常，并可重复执行 |
+| P1 | 建立真实交易所历史资金费率与盘口数据集 | 确定性合成回放已完成，真实历史数据未采集 | 当前 `coin-strategy-core/src/test/resources/funding-replay/cross-exchange-funding-v1.csv` 已覆盖同号正/负费率、异号、结算错位、费率尖峰、资金费率陈旧、盘口陈旧和价格异常，并验证 3 分钟稳定窗口；后续数据必须附四所公开来源、采集时间和原始字段，不得将合成数据标为真实历史数据 |
 | P1 | 将四所 HTTP Connector 实现完整下沉至 `common-client` | 公共 JSON 传输层已下沉，Gateway 适配器仍在 `coin-strategy-core` | `coin-strategy-core` 只依赖统一 Connector 接口，不再承载交易所 HTTP URL 与响应解析 |
 | P1 | 清理项目全量测试既有失败 | 当前 Job 全量测试存在 29 failures、4 errors，集中于 SmartWallet、Weather 等非跨所模块 | `mvn -pl coin-strategy-job -am test` 全绿；不得用忽略或跳过方式掩盖失败 |
 | P2 | 动态同步账户手续费等级 | V1 使用每交易所配置的保守 taker 成本 | 私有账户能力开放后，从账户等级接口刷新实际 maker/taker 成本，并保留配置兜底与变更审计 |
