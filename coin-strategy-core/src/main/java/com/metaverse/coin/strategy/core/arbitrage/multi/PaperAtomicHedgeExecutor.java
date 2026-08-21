@@ -94,28 +94,43 @@ public class PaperAtomicHedgeExecutor {
 
     public PaperHedgePosition close(String positionId, Instant now) {
         PaperHedgePosition current = positions.get(positionId);
+        if (current == null) throw new IllegalStateException("position is not open");
+        return close(positionId, current.opportunity().longQuote().markPrice(),
+                current.opportunity().shortQuote().markPrice(), now);
+    }
+
+    public PaperHedgePosition close(String positionId, BigDecimal longClosePrice,
+            BigDecimal shortClosePrice, Instant now) {
+        PaperHedgePosition current = positions.get(positionId);
         if (current == null || current.status() != PaperHedgePosition.Status.OPENED) throw new IllegalStateException("position is not open");
+        if (longClosePrice == null || shortClosePrice == null
+                || longClosePrice.signum() <= 0 || shortClosePrice.signum() <= 0) {
+            throw new IllegalArgumentException("positive close prices are required");
+        }
         record(positionId, current.opportunity(), PaperHedgePosition.Status.CLOSING, now, null);
+        long attemptId = Math.max(now.toEpochMilli(), current.updatedAt().toEpochMilli() + 1L);
         BigDecimal quantity = current.hedgedQuantity();
         HedgeLeg closeLong = new HedgeLeg(current.opportunity().longQuote().exchange(),
                 current.opportunity().symbol(), HedgeSide.SHORT, quantity);
         HedgeLeg closeShort = new HedgeLeg(current.opportunity().shortQuote().exchange(),
                 current.opportunity().symbol(), HedgeSide.LONG, quantity);
         PaperOrder longCloseOrder = gateway.fill(closeLong,
-                positionId + "-CLOSE-L", current.opportunity().longQuote().markPrice(), BigDecimal.ONE, true, now);
+                closeOrderId(positionId, attemptId, "L"), longClosePrice, BigDecimal.ONE, true, now);
         PaperOrder shortCloseOrder = gateway.fill(closeShort,
-                positionId + "-CLOSE-S", current.opportunity().shortQuote().markPrice(), BigDecimal.ONE, true, now);
+                closeOrderId(positionId, attemptId, "S"), shortClosePrice, BigDecimal.ONE, true, now);
         boolean longClosed = longCloseOrder.status() == PaperOrder.Status.FILLED;
         boolean shortClosed = shortCloseOrder.status() == PaperOrder.Status.FILLED;
         if (!longClosed || !shortClosed) {
-            return recoverFailedClose(current, longClosed, shortClosed, now);
+            return recoverFailedClose(current, longClosed, shortClosed, longClosePrice,
+                    shortClosePrice, attemptId, now);
         }
         return finish(new PaperHedgePosition(positionId, current.opportunity(), current.longOrder(), current.shortOrder(), quantity,
                 PaperHedgePosition.Status.CLOSED, current.openedAt(), now, null));
     }
 
     private PaperHedgePosition recoverFailedClose(PaperHedgePosition current, boolean longClosed,
-            boolean shortClosed, Instant now) {
+            boolean shortClosed, BigDecimal longClosePrice, BigDecimal shortClosePrice,
+            long attemptId, Instant now) {
         if (!longClosed && !shortClosed) {
             return finish(new PaperHedgePosition(current.positionId(), current.opportunity(), current.longOrder(),
                     current.shortOrder(), current.hedgedQuantity(), PaperHedgePosition.Status.OPENED,
@@ -126,9 +141,9 @@ public class PaperAtomicHedgeExecutor {
                         HedgeSide.LONG, current.hedgedQuantity())
                 : new HedgeLeg(current.opportunity().shortQuote().exchange(), current.opportunity().symbol(),
                         HedgeSide.SHORT, current.hedgedQuantity());
-        BigDecimal recoveryPrice = longClosed ? current.opportunity().longQuote().markPrice()
-                : current.opportunity().shortQuote().markPrice();
-        PaperOrder recovery = gateway.fill(recoveryLeg, current.positionId() + "-CLOSE-RECOVER",
+        BigDecimal recoveryPrice = longClosed ? longClosePrice : shortClosePrice;
+        PaperOrder recovery = gateway.fill(recoveryLeg,
+                closeOrderId(current.positionId(), attemptId, "RECOVER"),
                 recoveryPrice, BigDecimal.ONE, false, now);
         PaperHedgePosition.Status status = recovery.status() == PaperOrder.Status.FILLED
                 ? PaperHedgePosition.Status.OPENED : PaperHedgePosition.Status.MANUAL_INTERVENTION;
@@ -140,6 +155,10 @@ public class PaperAtomicHedgeExecutor {
     }
 
     public Map<String, PaperHedgePosition> positions() { return Map.copyOf(positions); }
+
+    private String closeOrderId(String positionId, long attemptId, String leg) {
+        return positionId + "-ATTEMPT-" + attemptId + "-CLOSE-" + leg;
+    }
     public PaperHedgePosition restore(PaperHedgePosition position) {
         if (position == null || position.status() != PaperHedgePosition.Status.OPENED) {
             throw new IllegalArgumentException("only an opened paper position can be restored");

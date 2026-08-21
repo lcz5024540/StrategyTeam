@@ -28,7 +28,26 @@ public class CrossExchangePaperTradingService {
         if (persistence != null) { persistence.saveOpportunity(opportunity); persistence.saveRisk(position.positionId(),opportunity.opportunityId(),"PRE_OPEN",true,null); saveExecutionEvents(position.positionId()); persistence.savePosition(position); persistence.saveOrders(position.positionId(),executor.orders()); }
         return position;
     }
-    public PaperHedgePosition close(String positionId, Instant now) { PaperHedgePosition p=executor.close(positionId, now); if(persistence!=null){saveExecutionEvents(positionId);persistence.savePosition(p);persistence.saveOrders(positionId,executor.orders());persistence.saveRisk(positionId,p.opportunity().opportunityId(),"POST_CLOSE",true,null);} return p; }
+    public PaperHedgePosition close(String positionId, Instant now) {
+        return persistClose(positionId, executor.close(positionId, now));
+    }
+
+    public PaperHedgePosition close(String positionId, BigDecimal longClosePrice,
+            BigDecimal shortClosePrice, Instant now) {
+        return persistClose(positionId,
+                executor.close(positionId, longClosePrice, shortClosePrice, now));
+    }
+
+    private PaperHedgePosition persistClose(String positionId, PaperHedgePosition position) {
+        if (persistence != null) {
+            saveExecutionEvents(positionId);
+            persistence.savePosition(position);
+            persistence.saveOrders(positionId, executor.orders());
+            persistence.saveRisk(positionId, position.opportunity().opportunityId(), "POST_CLOSE",
+                    true, null);
+        }
+        return position;
+    }
     public Collection<PaperHedgePosition> positions() { return executor.positions().values(); }
     public PaperHedgePosition restore(PaperHedgePosition position) { return executor.restore(position); }
     public boolean pause() { paused.set(true); return true; }

@@ -11,6 +11,10 @@ public record ExchangeCost(BigDecimal makerFeeRate, BigDecimal takerFeeRate, Big
         }
     }
     public BigDecimal roundTripTakerCost() {
-        return takerFeeRate.multiply(BigDecimal.valueOf(2)).add(slippageRate.multiply(BigDecimal.valueOf(2)));
+        return oneWayTakerCost().multiply(BigDecimal.valueOf(2));
+    }
+
+    public BigDecimal oneWayTakerCost() {
+        return takerFeeRate.add(slippageRate);
     }
 }

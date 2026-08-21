@@ -34,6 +34,20 @@ class PaperAtomicHedgeExecutorTest {
         assertTrue(gateway.orders().stream().filter(order -> order.clientOrderId().contains("-OPEN-"))
                 .noneMatch(PaperOrder::reduceOnly));
     }
+    @Test void closeOrdersUseLatestMarketPrices() {
+        var gateway = new PaperPerpetualGateway();
+        var executor = new PaperAtomicHedgeExecutor(gateway);
+        var opened = executor.open(opportunity(), new BigDecimal("100"), BigDecimal.ONE,
+                BigDecimal.ONE, Instant.now());
+
+        executor.close(opened.positionId(), new BigDecimal("95"),
+                new BigDecimal("106"), Instant.now());
+
+        assertEquals(0, new BigDecimal("95").compareTo(
+                closeOrder(gateway, opened.positionId(), "L").averagePrice()));
+        assertEquals(0, new BigDecimal("106").compareTo(
+                closeOrder(gateway, opened.positionId(), "S").averagePrice()));
+    }
     @Test void timeoutOnSecondLegAndFailedRollbackRequiresManualIntervention() {
         var gateway = new PaperPerpetualGateway();
         gateway.scriptNext("-OPEN-S", PaperOrder.Status.TIMED_OUT, BigDecimal.ZERO);
@@ -56,7 +70,7 @@ class PaperAtomicHedgeExecutorTest {
         var recovered = executor.close(position.positionId(), Instant.now());
 
         assertEquals(PaperHedgePosition.Status.OPENED, recovered.status());
-        assertNotNull(gateway.get(position.positionId() + "-CLOSE-RECOVER"));
+        assertNotNull(closeOrder(gateway, position.positionId(), "RECOVER"));
     }
     @Test void failedCloseRecoveryRequiresManualIntervention() {
         var gateway = new PaperPerpetualGateway();
@@ -69,6 +83,24 @@ class PaperAtomicHedgeExecutorTest {
         var recovered = executor.close(position.positionId(), Instant.now());
 
         assertEquals(PaperHedgePosition.Status.MANUAL_INTERVENTION, recovered.status());
+    }
+    @Test void failedCloseCanRetryWithANewIdempotencyKey() {
+        Instant openedAt = Instant.parse("2026-08-21T00:00:00Z");
+        var gateway = new PaperPerpetualGateway();
+        var executor = new PaperAtomicHedgeExecutor(gateway);
+        var position = executor.open(opportunity(), new BigDecimal("100"), BigDecimal.ONE,
+                BigDecimal.ONE, openedAt);
+        gateway.scriptNext("-CLOSE-L", PaperOrder.Status.REJECTED, BigDecimal.ZERO);
+        gateway.scriptNext("-CLOSE-S", PaperOrder.Status.REJECTED, BigDecimal.ZERO);
+
+        PaperHedgePosition firstAttempt = executor.close(position.positionId(), openedAt.plusSeconds(1));
+        PaperHedgePosition secondAttempt = executor.close(position.positionId(), openedAt.plusSeconds(2));
+
+        assertEquals(PaperHedgePosition.Status.OPENED, firstAttempt.status());
+        assertEquals(PaperHedgePosition.Status.CLOSED, secondAttempt.status());
+        assertEquals(4, gateway.orders().stream()
+                .filter(order -> order.clientOrderId().contains("-CLOSE-"))
+                .count());
     }
     @Test void shortLegCanExecuteFirstAndLongLegUsesActualFill() {
         var gateway = new PaperPerpetualGateway();
@@ -99,6 +131,13 @@ class PaperAtomicHedgeExecutorTest {
                 executor.drainEvents(position.positionId()).stream()
                         .map(PaperAtomicHedgeExecutor.ExecutionEvent::status).toList());
         assertTrue(executor.drainEvents(position.positionId()).isEmpty());
+    }
+    private PaperOrder closeOrder(PaperPerpetualGateway gateway, String positionId, String leg) {
+        return gateway.orders().stream()
+                .filter(order -> order.clientOrderId().startsWith(positionId + "-ATTEMPT-"))
+                .filter(order -> order.clientOrderId().contains("-CLOSE-"))
+                .filter(order -> order.clientOrderId().endsWith("-" + leg))
+                .findFirst().orElse(null);
     }
     private CrossExchangeOpportunity opportunity(){Instant n=Instant.now();var l=new NormalizedFundingRateSnapshot(Exchange.BINANCE,"BTCUSDT",new BigDecimal("-0.001"),8,n.plusSeconds(3600),new BigDecimal("100"),new BigDecimal("100"),n);var s=new NormalizedFundingRateSnapshot(Exchange.OKX,"BTCUSDT",new BigDecimal("-0.0001"),8,n.plusSeconds(3600),new BigDecimal("100"),new BigDecimal("100"),n);return new CrossExchangeOpportunity("x","BTCUSDT",l,s,new BigDecimal("0.0001"),new BigDecimal("0.0001"),new BigDecimal("100"),CrossExchangeOpportunity.Status.QUALIFIED,null,n);}
 }

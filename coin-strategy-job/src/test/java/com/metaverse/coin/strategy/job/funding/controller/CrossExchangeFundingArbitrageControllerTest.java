@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeArbitragePe
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunity;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunityScanService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePaperTradingService;
+import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePositionMonitorService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.ExchangeHealthRegistry;
 import com.metaverse.coin.strategy.core.arbitrage.multi.Exchange;
 import com.metaverse.coin.strategy.core.arbitrage.multi.NormalizedFundingRateSnapshot;
@@ -34,8 +35,9 @@ class CrossExchangeFundingArbitrageControllerTest {
     private final ExchangeHealthRegistry health = new ExchangeHealthRegistry();
     private final CrossExchangeArbitragePersistenceService persistence = mock(CrossExchangeArbitragePersistenceService.class);
     private final CrossExchangeFundingReplayService replay = mock(CrossExchangeFundingReplayService.class);
+    private final CrossExchangePositionMonitorService positionMonitor = mock(CrossExchangePositionMonitorService.class);
     private final CrossExchangeFundingArbitrageController controller = new CrossExchangeFundingArbitrageController(
-            opportunities, positions, paper, scanner, health, persistence, replay);
+            opportunities, positions, paper, scanner, health, persistence, replay, positionMonitor);
 
     @Test
     void opensOnlyServerApprovedOpportunity() {
@@ -83,6 +85,18 @@ class CrossExchangeFundingArbitrageControllerTest {
 
         assertEquals(report, controller.replay("sample.csv"));
         verify(paper, never()).open(any(), any(), any());
+    }
+
+    @Test
+    void manualCloseDelegatesToLatestPublicQuotes() {
+        PaperHedgePosition expected = new PaperHedgePosition("position",
+                opportunity("approved-id", CrossExchangeOpportunity.Status.APPROVED), null, null,
+                BigDecimal.ONE, PaperHedgePosition.Status.CLOSED, Instant.now(), Instant.now(), null);
+        when(positionMonitor.closeAtLatest(org.mockito.ArgumentMatchers.eq("position"), any(Instant.class)))
+                .thenReturn(expected);
+
+        assertEquals(expected, controller.paperClose("position"));
+        verify(paper, never()).close(any(), any(Instant.class));
     }
 
     private CrossExchangeOpportunity opportunity(String id, CrossExchangeOpportunity.Status status) {

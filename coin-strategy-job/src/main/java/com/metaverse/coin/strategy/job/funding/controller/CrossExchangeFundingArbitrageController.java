@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeArbitragePe
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunity;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunityScanService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePaperTradingService;
+import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePositionMonitorService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.ExchangeHealthRegistry;
 import com.metaverse.coin.strategy.core.arbitrage.multi.PaperHedgePosition;
 import com.metaverse.coin.strategy.job.funding.service.CrossExchangeFundingReplayService;
@@ -34,12 +35,14 @@ public class CrossExchangeFundingArbitrageController {
     private final ExchangeHealthRegistry exchangeHealth;
     private final CrossExchangeArbitragePersistenceService persistence;
     private final CrossExchangeFundingReplayService replay;
+    private final CrossExchangePositionMonitorService positionMonitor;
 
     public CrossExchangeFundingArbitrageController(CrossExchangeArbOpportunityMapper opportunities,
             CrossExchangeArbPositionMapper positions, CrossExchangePaperTradingService paper,
             CrossExchangeOpportunityScanService scanner, ExchangeHealthRegistry exchangeHealth,
             CrossExchangeArbitragePersistenceService persistence,
-            CrossExchangeFundingReplayService replay) {
+            CrossExchangeFundingReplayService replay,
+            CrossExchangePositionMonitorService positionMonitor) {
         this.opportunities = opportunities;
         this.positions = positions;
         this.paper = paper;
@@ -47,6 +50,7 @@ public class CrossExchangeFundingArbitrageController {
         this.exchangeHealth = exchangeHealth;
         this.persistence = persistence;
         this.replay = replay;
+        this.positionMonitor = positionMonitor;
     }
 
     @GetMapping("/opportunities")
@@ -92,7 +96,7 @@ public class CrossExchangeFundingArbitrageController {
 
     @PostMapping("/paper/close")
     public PaperHedgePosition paperClose(@RequestParam String positionId) {
-        return paper.close(positionId, Instant.now());
+        return positionMonitor.closeAtLatest(positionId, Instant.now());
     }
 
     @PostMapping("/scan")
