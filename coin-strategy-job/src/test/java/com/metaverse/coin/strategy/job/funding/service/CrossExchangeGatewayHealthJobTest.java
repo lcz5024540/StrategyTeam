@@ -1,6 +1,6 @@
 package com.metaverse.coin.strategy.job.funding.service;
 
-import com.metaverse.coin.strategy.common.client.market.PublicJsonHttpClient;
+import com.metaverse.coin.strategy.common.client.perpetual.PerpetualMarketDataClient;
 import com.metaverse.coin.strategy.core.arbitrage.config.MultiExchangeFundingRateProperties;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeMarketDataProvider;
 import com.metaverse.coin.strategy.core.arbitrage.multi.Exchange;
@@ -24,7 +24,8 @@ class CrossExchangeGatewayHealthJobTest {
         when(binance.supportedUsdtPerpetualSymbols()).thenReturn(List.of("BTCUSDT"));
         when(okx.supportedUsdtPerpetualSymbols()).thenThrow(
                 new IllegalStateException("wrapped",
-                        new PublicJsonHttpClient.RateLimitException("HTTP 429")));
+                        new PerpetualMarketDataClient.RateLimitException(
+                                new IllegalStateException("HTTP 429"))));
         ExchangeHealthRegistry health = new ExchangeHealthRegistry();
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         CrossExchangeMetrics metrics = new CrossExchangeMetrics(meterRegistry);

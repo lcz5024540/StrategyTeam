@@ -1,16 +1,12 @@
 package com.metaverse.coin.strategy.core.arbitrage.multi;
-import com.fasterxml.jackson.databind.JsonNode; import java.math.BigDecimal; import java.net.URI; import java.time.*; import java.util.*; import org.springframework.stereotype.Component;
-@Component public final class OkxFundingRateGateway extends ReadOnlyFundingRateGateway implements PerpetualExchangeGateway {
- public Exchange exchange(){return Exchange.OKX;}
- protected URI fundingUri(String s){return URI.create("https://www.okx.com/api/v5/public/funding-rate?instId="+s.replace("USDT","-USDT-SWAP"));}
- protected URI markPriceUri(String s){return URI.create("https://www.okx.com/api/v5/public/mark-price?instType=SWAP&instId="+s.replace("USDT","-USDT-SWAP"));}
- protected BigDecimal fundingRate(JsonNode n){return n.path("data").path(0).path("fundingRate").decimalValue();}
- protected BigDecimal markPrice(JsonNode n){return n.path("data").path(0).path("markPx").decimalValue();}
- private String inst(String s){return s.substring(0,s.length()-4)+"-USDT-SWAP";} private String indexInst(String s){return s.substring(0,s.length()-4)+"-USDT";}
- public List<String> supportedUsdtPerpetualSymbols(){List<String>r=new ArrayList<>();for(JsonNode n:getJson(URI.create("https://www.okx.com/api/v5/public/instruments?instType=SWAP")).path("data"))if("USDT".equals(n.path("settleCcy").asText())&&"live".equals(n.path("state").asText()))r.add(n.path("ctValCcy").asText()+"USDT");return r;}
- public List<PerpetualContract> listContracts(){Map<String,BigDecimal>prices=new HashMap<>();for(JsonNode t:getJson(URI.create("https://www.okx.com/api/v5/market/tickers?instType=SWAP")).path("data"))prices.put(t.path("instId").asText(),new BigDecimal(t.path("last").asText("0")));List<PerpetualContract>r=new ArrayList<>();for(JsonNode n:getJson(URI.create("https://www.okx.com/api/v5/public/instruments?instType=SWAP")).path("data")){if(!"USDT".equals(n.path("settleCcy").asText())||!"live".equals(n.path("state").asText()))continue;String exchangeSymbol=n.path("instId").asText();BigDecimal tick=new BigDecimal(n.path("tickSz").asText("0"));BigDecimal lot=new BigDecimal(n.path("lotSz").asText("0"));BigDecimal minSize=new BigDecimal(n.path("minSz").asText("0"));BigDecimal contractValue=new BigDecimal(n.path("ctVal").asText("0"));BigDecimal price=prices.getOrDefault(exchangeSymbol,BigDecimal.ZERO);BigDecimal minimum=minSize.multiply(contractValue).multiply(price);if(tick.signum()>0&&lot.signum()>0&&minimum.signum()>0)r.add(new PerpetualContract(n.path("ctValCcy").asText()+"USDT",exchangeSymbol,scale(lot),scale(tick),minimum));}return r;}
- public NormalizedFundingRateSnapshot fundingRate(String s){JsonNode f=getJson(URI.create("https://www.okx.com/api/v5/public/funding-rate?instId="+inst(s))).path("data").path(0);JsonNode m=getJson(URI.create("https://www.okx.com/api/v5/public/mark-price?instType=SWAP&instId="+inst(s))).path("data").path(0);JsonNode i=getJson(URI.create("https://www.okx.com/api/v5/market/index-tickers?instId="+indexInst(s))).path("data").path(0);long current=f.path("fundingTime").asLong(),next=f.path("nextFundingTime").asLong();int hours=(int)Math.max(1,Duration.ofMillis(Math.max(1,next-current)).toHours());return new NormalizedFundingRateSnapshot(exchange(),s,f.path("fundingRate").decimalValue(),hours,Instant.ofEpochMilli(next),m.path("markPx").decimalValue(),i.path("idxPx").decimalValue(),Instant.now());}
- public NormalizedOrderBookSnapshot orderBook(String s,int depth){JsonNode n=getJson(URI.create("https://www.okx.com/api/v5/market/books?instId="+inst(s)+"&sz="+Math.min(100,Math.max(1,depth)))).path("data").path(0);return new NormalizedOrderBookSnapshot(exchange(),s,price(n,"bids"),price(n,"asks"),sum(n.path("bids")),sum(n.path("asks")),Instant.now());}
- private BigDecimal price(JsonNode n,String side){return new BigDecimal(n.path(side).path(0).path(0).asText());}private BigDecimal sum(JsonNode a){BigDecimal x=BigDecimal.ZERO;for(JsonNode l:a)x=x.add(new BigDecimal(l.path(0).asText()).multiply(new BigDecimal(l.path(1).asText())));return x;}
- private int scale(BigDecimal step){return Math.max(0,step.stripTrailingZeros().scale());}
+
+import com.metaverse.coin.strategy.common.client.perpetual.PerpetualMarketDataClient;
+import org.springframework.stereotype.Component;
+
+@Component
+public final class OkxFundingRateGateway extends ReadOnlyFundingRateGateway {
+    public OkxFundingRateGateway() {
+        super(Exchange.OKX,
+                PerpetualMarketDataClient.forVenue(PerpetualMarketDataClient.Venue.OKX));
+    }
 }

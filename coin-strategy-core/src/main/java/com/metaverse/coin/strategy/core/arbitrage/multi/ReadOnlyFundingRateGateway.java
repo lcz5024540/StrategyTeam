@@ -1,47 +1,83 @@
 package com.metaverse.coin.strategy.core.arbitrage.multi;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.metaverse.coin.strategy.common.client.market.PublicJsonHttpClient;
+import com.metaverse.coin.strategy.common.client.perpetual.PerpetualMarketDataClient;
 
 import java.math.BigDecimal;
-import java.net.URI;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 
-/** Public funding-rate adapter. Order methods deliberately fail until a signed private client is supplied. */
-public abstract class ReadOnlyFundingRateGateway implements ExchangeFundingGateway {
-    private final PublicJsonHttpClient httpClient = new PublicJsonHttpClient();
-    protected abstract URI fundingUri(String symbol);
-    protected URI markPriceUri(String symbol) { return fundingUri(symbol); }
-    protected abstract BigDecimal fundingRate(JsonNode root);
-    protected abstract BigDecimal markPrice(JsonNode root);
-    protected JsonNode getJson(URI uri) {
-        return httpClient.get(uri);
+/** Maps public connector data to core models; signed private operations remain unavailable. */
+public abstract class ReadOnlyFundingRateGateway
+        implements PerpetualExchangeGateway, ExchangeFundingGateway {
+    private final Exchange exchange;
+    private final PerpetualMarketDataClient client;
+
+    protected ReadOnlyFundingRateGateway(Exchange exchange, PerpetualMarketDataClient client) {
+        this.exchange = exchange;
+        this.client = client;
     }
 
-    @Override public List<FundingRateQuote> fundingRates(List<String> symbols) {
-        List<FundingRateQuote> result = new ArrayList<>();
-        for (String symbol : symbols) {
-            try {
-                JsonNode root = getJson(fundingUri(symbol));
-                JsonNode priceRoot = root;
-                if (!markPriceUri(symbol).equals(fundingUri(symbol))) {
-                    priceRoot = getJson(markPriceUri(symbol));
-                }
-                BigDecimal rate = fundingRate(root);
-                BigDecimal price = markPrice(priceRoot);
-                if (rate == null || price == null || price.signum() <= 0) throw new IllegalStateException("incomplete funding response");
-                result.add(new FundingRateQuote(exchange(), symbol, rate, price, Instant.now()));
-            } catch (RuntimeException e) {
-                throw new IllegalStateException("funding query failed for " + exchange() + "/" + symbol, e);
-            }
-        }
-        return result;
+    @Override
+    public Exchange exchange() {
+        return exchange;
     }
-    @Override public void openHedge(FundingRateSpread spread, String symbol, BigDecimal quantity) { throw unsupported(); }
-    @Override public void closeHedge(FundingRateSpread spread, String symbol, BigDecimal quantity) { throw unsupported(); }
-    @Override public void openLeg(HedgeLeg leg, String clientOrderId) { throw unsupported(); }
-    @Override public void closeLeg(HedgeLeg leg, String clientOrderId) { throw unsupported(); }
-    private UnsupportedOperationException unsupported() { return new UnsupportedOperationException("signed private order client is not configured for " + exchange()); }
+
+    @Override
+    public List<String> supportedUsdtPerpetualSymbols() {
+        return client.contracts().stream().map(PerpetualMarketDataClient.Contract::canonicalSymbol)
+                .toList();
+    }
+
+    @Override
+    public List<PerpetualContract> listContracts() {
+        return client.contracts().stream().map(contract -> new PerpetualContract(
+                contract.canonicalSymbol(), contract.exchangeSymbol(), contract.quantityScale(),
+                contract.priceScale(), contract.minimumNotional())).toList();
+    }
+
+    @Override
+    public NormalizedFundingRateSnapshot fundingRate(String symbol) {
+        PerpetualMarketDataClient.Funding funding = client.funding(symbol);
+        return new NormalizedFundingRateSnapshot(exchange, funding.canonicalSymbol(),
+                funding.rawRate(), funding.intervalHours(), funding.nextFundingTime(),
+                funding.markPrice(), funding.indexPrice(), funding.receivedAt());
+    }
+
+    @Override
+    public NormalizedOrderBookSnapshot orderBook(String symbol, int depth) {
+        PerpetualMarketDataClient.OrderBook book = client.orderBook(symbol, depth);
+        return new NormalizedOrderBookSnapshot(exchange, book.canonicalSymbol(), book.bestBid(),
+                book.bestAsk(), book.bidNotional(), book.askNotional(), book.receivedAt());
+    }
+
+    @Override
+    public List<FundingRateQuote> fundingRates(List<String> symbols) {
+        return symbols.stream().map(this::fundingRate).map(snapshot -> new FundingRateQuote(
+                exchange, snapshot.canonicalSymbol(), snapshot.rawFundingRate(),
+                snapshot.markPrice(), snapshot.receivedAt())).toList();
+    }
+
+    @Override
+    public void openHedge(FundingRateSpread spread, String symbol, BigDecimal quantity) {
+        throw unsupported();
+    }
+
+    @Override
+    public void closeHedge(FundingRateSpread spread, String symbol, BigDecimal quantity) {
+        throw unsupported();
+    }
+
+    @Override
+    public void openLeg(HedgeLeg leg, String clientOrderId) {
+        throw unsupported();
+    }
+
+    @Override
+    public void closeLeg(HedgeLeg leg, String clientOrderId) {
+        throw unsupported();
+    }
+
+    private UnsupportedOperationException unsupported() {
+        return new UnsupportedOperationException(
+                "signed private order client is not configured for " + exchange);
+    }
 }

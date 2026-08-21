@@ -1,14 +1,12 @@
 package com.metaverse.coin.strategy.core.arbitrage.multi;
-import com.fasterxml.jackson.databind.JsonNode; import java.math.BigDecimal; import java.net.URI; import java.time.*; import java.util.*; import org.springframework.stereotype.Component;
-@Component public final class BitgetFundingRateGateway extends ReadOnlyFundingRateGateway implements PerpetualExchangeGateway {
- public Exchange exchange(){return Exchange.BITGET;}
- protected URI fundingUri(String s){return URI.create("https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol="+s+"&productType=USDT-FUTURES");}
- protected URI markPriceUri(String s){return URI.create("https://api.bitget.com/api/v2/mix/market/ticker?symbol="+s+"&productType=USDT-FUTURES");}
- protected BigDecimal fundingRate(JsonNode n){return n.path("data").path(0).path("fundingRate").decimalValue();}
- protected BigDecimal markPrice(JsonNode n){return n.path("data").path(0).path("markPrice").decimalValue();}
- public List<String> supportedUsdtPerpetualSymbols(){List<String>r=new ArrayList<>();for(JsonNode n:getJson(URI.create("https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES")).path("data"))if("normal".equalsIgnoreCase(n.path("symbolStatus").asText("normal")))r.add(n.path("symbol").asText());return r;}
- public List<PerpetualContract> listContracts(){List<PerpetualContract>r=new ArrayList<>();for(JsonNode n:getJson(URI.create("https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES")).path("data")){if(!"normal".equalsIgnoreCase(n.path("symbolStatus").asText("normal")))continue;BigDecimal minimum=new BigDecimal(n.path("minTradeUSDT").asText("0"));int quantityScale=n.path("volumePlace").asInt(-1);int priceScale=n.path("pricePlace").asInt(-1);if(minimum.signum()>0&&quantityScale>=0&&priceScale>=0)r.add(new PerpetualContract(n.path("symbol").asText(),n.path("symbol").asText(),quantityScale,priceScale,minimum));}return r;}
- public NormalizedFundingRateSnapshot fundingRate(String s){JsonNode f=getJson(fundingUri(s)).path("data").path(0);JsonNode t=getJson(markPriceUri(s)).path("data").path(0);int interval=Math.max(1,f.path("fundingRateInterval").asInt(8));long next=f.path("nextUpdate").asLong(f.path("nextFundingTime").asLong());if(next<=0)throw new IllegalStateException("Bitget next funding time is missing");return new NormalizedFundingRateSnapshot(exchange(),s,f.path("fundingRate").decimalValue(),interval,Instant.ofEpochMilli(next),t.path("markPrice").decimalValue(),t.path("indexPrice").decimalValue(),Instant.now());}
- public NormalizedOrderBookSnapshot orderBook(String s,int depth){JsonNode n=getJson(URI.create("https://api.bitget.com/api/v2/mix/market/merge-depth?symbol="+s+"&productType=USDT-FUTURES&precision=scale0&limit="+Math.min(100,Math.max(5,depth)))).path("data");return new NormalizedOrderBookSnapshot(exchange(),s,price(n,"bids"),price(n,"asks"),sum(n.path("bids")),sum(n.path("asks")),Instant.now());}
- private BigDecimal price(JsonNode n,String x){return new BigDecimal(n.path(x).path(0).path(0).asText());}private BigDecimal sum(JsonNode a){BigDecimal x=BigDecimal.ZERO;for(JsonNode l:a)x=x.add(new BigDecimal(l.path(0).asText()).multiply(new BigDecimal(l.path(1).asText())));return x;}
+
+import com.metaverse.coin.strategy.common.client.perpetual.PerpetualMarketDataClient;
+import org.springframework.stereotype.Component;
+
+@Component
+public final class BitgetFundingRateGateway extends ReadOnlyFundingRateGateway {
+    public BitgetFundingRateGateway() {
+        super(Exchange.BITGET,
+                PerpetualMarketDataClient.forVenue(PerpetualMarketDataClient.Venue.BITGET));
+    }
 }
