@@ -1,0 +1,27 @@
+strategy:
+  # Dedicated deployment boundary: Polymarket, SmartWallet and BTC-minute
+  # components are excluded during component scanning.
+  deployment-mode: FUNDING_ONLY
+
+smart-wallet:
+  enabled: false
+  scan-enabled: false
+  polymarket:
+    enabled: false
+  execution-wallet:
+    enabled: false
+    ws-enabled: false
+
+btc-minute:
+  enabled: false
+  mode: OFF
+
+arbitrage:
+  multi-exchange:
+    scan-enabled: true
+    monitor-enabled: true
+    settlement-enabled: true
+    contract-sync-enabled: true
+    health-check-enabled: true
+    recovery-enabled: true
+    capture-enabled: false

@@ -5,6 +5,7 @@
 - 仅支持 `DRY_RUN`，代码中不存在 `LIVE` 模式切换。
 - 四个交易所 Connector 只调用公共行情 API，私有下单方法固定抛出异常。
 - 自动扫描、合约同步、健康检查、行情采集、持仓恢复、持仓监控和模拟结算默认全部关闭。
+- 部署 Job 时必须启用 Spring `funding` profile；该 profile 设置 `strategy.deployment-mode=FUNDING_ONLY`，在组件扫描阶段排除 SmartWallet、Polymarket、BTC-minute 及预测市场执行/行情组件，不能只依赖 `smart-wallet.enabled=false`。
 
 ## 2. 初始化
 
@@ -13,6 +14,14 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 17)
 export PATH="$JAVA_HOME/bin:$PATH"
 mvn -pl coin-strategy-job -am package -DskipTests
 ```
+
+Job 启动必须显式使用资金费率专用 profile：
+
+```bash
+java -jar coin-strategy-job/target/coin-strategy-job-*.jar --spring.profiles.active=test,funding
+```
+
+`funding` 是功能隔离 overlay，必须与实际环境 profile（如 `test` 或 `prod`）一起启用。启动日志必须包含 `deploymentMode=FUNDING_ONLY`。部署后检查进程出口流量和日志，确认没有访问 `polymarket.com`、`gamma-api.polymarket.com`、`data-api.polymarket.com` 或 `clob.polymarket.com`。
 
 数据库迁移必须先确认目标验收库，再由环境负责人执行：
 
