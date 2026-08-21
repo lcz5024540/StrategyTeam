@@ -10,6 +10,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.ExchangeHealthRegistry;
 import com.metaverse.coin.strategy.core.arbitrage.multi.Exchange;
 import com.metaverse.coin.strategy.core.arbitrage.multi.NormalizedFundingRateSnapshot;
 import com.metaverse.coin.strategy.core.arbitrage.multi.PaperHedgePosition;
+import com.metaverse.coin.strategy.job.funding.service.CrossExchangeFundingReplayService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -32,8 +33,9 @@ class CrossExchangeFundingArbitrageControllerTest {
     private final CrossExchangeOpportunityScanService scanner = mock(CrossExchangeOpportunityScanService.class);
     private final ExchangeHealthRegistry health = new ExchangeHealthRegistry();
     private final CrossExchangeArbitragePersistenceService persistence = mock(CrossExchangeArbitragePersistenceService.class);
+    private final CrossExchangeFundingReplayService replay = mock(CrossExchangeFundingReplayService.class);
     private final CrossExchangeFundingArbitrageController controller = new CrossExchangeFundingArbitrageController(
-            opportunities, positions, paper, scanner, health, persistence);
+            opportunities, positions, paper, scanner, health, persistence, replay);
 
     @Test
     void opensOnlyServerApprovedOpportunity() {
@@ -70,6 +72,17 @@ class CrossExchangeFundingArbitrageControllerTest {
         assertEquals(List.of(approved), controller.scan("BTCUSDT"));
         verify(persistence).saveOpportunity(approved);
         verify(persistence).saveOpportunity(rejected);
+    }
+
+    @Test
+    void delegatesOfflineReplayWithoutOpeningPaperPositions() {
+        CrossExchangeFundingReplayService.ReplayReport report =
+                new CrossExchangeFundingReplayService.ReplayReport("sample.csv", 2, 0,
+                        2, 2, 1, java.util.Map.of(), List.of());
+        when(replay.replay("sample.csv")).thenReturn(report);
+
+        assertEquals(report, controller.replay("sample.csv"));
+        verify(paper, never()).open(any(), any(), any());
     }
 
     private CrossExchangeOpportunity opportunity(String id, CrossExchangeOpportunity.Status status) {

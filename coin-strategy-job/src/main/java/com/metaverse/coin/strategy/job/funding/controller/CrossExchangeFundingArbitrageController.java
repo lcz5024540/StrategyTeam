@@ -11,6 +11,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunity
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePaperTradingService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.ExchangeHealthRegistry;
 import com.metaverse.coin.strategy.core.arbitrage.multi.PaperHedgePosition;
+import com.metaverse.coin.strategy.job.funding.service.CrossExchangeFundingReplayService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,17 +33,20 @@ public class CrossExchangeFundingArbitrageController {
     private final CrossExchangeOpportunityScanService scanner;
     private final ExchangeHealthRegistry exchangeHealth;
     private final CrossExchangeArbitragePersistenceService persistence;
+    private final CrossExchangeFundingReplayService replay;
 
     public CrossExchangeFundingArbitrageController(CrossExchangeArbOpportunityMapper opportunities,
             CrossExchangeArbPositionMapper positions, CrossExchangePaperTradingService paper,
             CrossExchangeOpportunityScanService scanner, ExchangeHealthRegistry exchangeHealth,
-            CrossExchangeArbitragePersistenceService persistence) {
+            CrossExchangeArbitragePersistenceService persistence,
+            CrossExchangeFundingReplayService replay) {
         this.opportunities = opportunities;
         this.positions = positions;
         this.paper = paper;
         this.scanner = scanner;
         this.exchangeHealth = exchangeHealth;
         this.persistence = persistence;
+        this.replay = replay;
     }
 
     @GetMapping("/opportunities")
@@ -96,6 +100,11 @@ public class CrossExchangeFundingArbitrageController {
         List<CrossExchangeOpportunity> approved = scanner.scan(symbol, Instant.now());
         scanner.lastEvaluated().forEach(persistence::saveOpportunity);
         return approved;
+    }
+
+    @PostMapping("/replay")
+    public CrossExchangeFundingReplayService.ReplayReport replay(@RequestParam String fileName) {
+        return replay.replay(fileName);
     }
 
     public record PaperOpenRequest(String opportunityId, BigDecimal notional) {
