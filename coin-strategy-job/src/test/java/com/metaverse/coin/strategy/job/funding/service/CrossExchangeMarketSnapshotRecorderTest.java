@@ -41,6 +41,15 @@ class CrossExchangeMarketSnapshotRecorderTest {
         assertTrue(lines.get(1).endsWith("OK,"));
         assertTrue(lines.get(2).contains("PUBLIC_REST,OKX,\"BTCUSDT\""));
         assertTrue(lines.get(2).contains("ERROR,\"IllegalStateException: unavailable\""));
+
+        CrossExchangeMarketSnapshotReplayReader.ReplayDataset dataset =
+                new CrossExchangeMarketSnapshotReplayReader().read(first.output());
+        assertEquals(2, dataset.frames().size());
+        assertEquals(2, dataset.failures().size());
+        assertEquals(new BigDecimal("0.0001"), dataset.frames().get(0).funding()
+                .get(Exchange.BINANCE).rawFundingRate());
+        assertEquals(new BigDecimal("900"), dataset.frames().get(0).books()
+                .get(Exchange.BINANCE).askNotional());
     }
 
     @Test
