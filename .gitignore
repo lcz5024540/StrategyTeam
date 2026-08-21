@@ -57,6 +57,7 @@ logs/
 .gitignore
 .log
 /logs/
+/data/funding-replay/
 
 ### macOS ###
 .DS_Store

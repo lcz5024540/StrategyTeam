@@ -84,12 +84,18 @@ arbitrage:
     contract-sync-enabled: false
     health-check-enabled: false
     recovery-enabled: false
+    # 默认关闭；启用后只采集公共 REST 行情到本地 CSV，不访问私有 API 或数据库。
+    capture-enabled: false
     scan-delay-ms: 30000
     monitor-delay-ms: 30000
     settlement-delay-ms: 60000
     contract-sync-delay-ms: 86400000
     health-check-delay-ms: 60000
     recovery-delay-ms: 60000
+    capture-delay-ms: 60000
+    capture-output-directory: "./data/funding-replay"
+    capture-symbols: "BTCUSDT"
+    capture-order-book-depth: 20
     min-net-yield-rate: 0.0002
     round-trip-fee-rate: 0.0010
     slippage-rate: 0.0005
