@@ -450,7 +450,7 @@ public class MarketMakerService {
         }
         // 仍挂着（submitted/partial-filled）：先看是否需跟价重挂，再看 TTL
         // 急停（enabled=false）时不重挂：短路，连深度都不取；买单靠 TTL/人工收敛
-        if (mmProps.isEnabled() && !isBuyBalanceBackoffActive()) {
+        if (!mmProps.isGridModeEnabled() && mmProps.isEnabled() && !isBuyBalanceBackoffActive()) {
             BigDecimal bestBid = currentBestBid(cell.getSymbol());
             if (bestBid != null
                     && MarketMakerMath.shouldReprice(bestBid, cell.getBuyPrice(), mmProps.getRepriceThresholdPct())) {

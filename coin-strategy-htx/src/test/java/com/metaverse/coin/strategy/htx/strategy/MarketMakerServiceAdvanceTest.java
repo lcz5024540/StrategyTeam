@@ -306,6 +306,23 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder, never()).markMmCancelledBuy(anyLong());
     }
 
+    @Test void gridModeRestingBuyKeepsItsPriceBeforeTtl() {
+        mmProps.setEnabled(true);
+        mmProps.setGridModeEnabled(true);
+        mmProps.setBuyTtlMs(3_600_000L);
+        mmProps.setRepriceThresholdPct(new BigDecimal("0.001"));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("submitted", "0", null, null));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthWithBid("60000"));
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(spot, never()).cancelOrder(anyLong());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit-maker"),
+                anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmReprice(anyLong(), anyLong(), any(), any());
+        verify(md, never()).depth(anyString(), anyInt());
+    }
+
     @Test void resting_buy_drift_within_threshold_is_noop() {
         mmProps.setEnabled(true);
         mmProps.setBuyTtlMs(3_600_000L);
