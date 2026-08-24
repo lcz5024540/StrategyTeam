@@ -250,21 +250,22 @@ class MarketMakerMathTest {
     }
 
     @Test void gridBuyLevels_geometric_scale2_noFloor() {
-        // anchor=100, step=0.003, levels=3：L_k=100·(1-0.003)^k → 99.70 / 99.40 / 99.10（HALF_UP scale2）
+        // anchor=100, step=0.003, levels=3：L_k=100·(1-0.003)^k → 100.00 / 99.70 / 99.40（HALF_UP scale2）
         List<BigDecimal> levels = MarketMakerMath.gridBuyLevels(
                 new BigDecimal("100"), new BigDecimal("0.003"), 3, null, 2);
         assertEquals(3, levels.size());
-        assertEquals(0, new BigDecimal("99.70").compareTo(levels.get(0)));
-        assertEquals(0, new BigDecimal("99.40").compareTo(levels.get(1)));
-        assertEquals(0, new BigDecimal("99.10").compareTo(levels.get(2)));
+        assertEquals(0, new BigDecimal("100.00").compareTo(levels.get(0)));
+        assertEquals(0, new BigDecimal("99.70").compareTo(levels.get(1)));
+        assertEquals(0, new BigDecimal("99.40").compareTo(levels.get(2)));
     }
 
     @Test void gridBuyLevels_truncatesBelowFloor() {
-        // floorPrice=99.5：仅 99.70 ≥ 99.5，99.40/99.10 被地板截断
+        // floorPrice=99.5：100.00/99.70 ≥ 99.5，99.40 被地板截断
         List<BigDecimal> levels = MarketMakerMath.gridBuyLevels(
                 new BigDecimal("100"), new BigDecimal("0.003"), 3, new BigDecimal("99.5"), 2);
-        assertEquals(1, levels.size());
-        assertEquals(0, new BigDecimal("99.70").compareTo(levels.get(0)));
+        assertEquals(2, levels.size());
+        assertEquals(0, new BigDecimal("100.00").compareTo(levels.get(0)));
+        assertEquals(0, new BigDecimal("99.70").compareTo(levels.get(1)));
     }
 
     @Test void gridBuyLevels_zeroLevels_empty() {
@@ -272,10 +273,11 @@ class MarketMakerMathTest {
                 new BigDecimal("100"), new BigDecimal("0.003"), 0, null, 2).isEmpty());
     }
 
-    @Test void gridBuyLevels_floorAtOrAboveAnchor_empty() {
-        // floorPrice=anchor=100：所有档位均 < anchor 之下且 < floor → 全截断为空
-        assertTrue(MarketMakerMath.gridBuyLevels(
-                new BigDecimal("100"), new BigDecimal("0.003"), 3, new BigDecimal("100"), 2).isEmpty());
+    @Test void gridBuyLevels_floorAtAnchor_keepsAnchorOnly() {
+        List<BigDecimal> levels = MarketMakerMath.gridBuyLevels(
+                new BigDecimal("100"), new BigDecimal("0.003"), 3, new BigDecimal("100"), 2);
+        assertEquals(1, levels.size());
+        assertEquals(0, new BigDecimal("100.00").compareTo(levels.get(0)));
     }
 
     @Test void gridBuyLevels_zeroFloor_treatedAsNoFloor() {

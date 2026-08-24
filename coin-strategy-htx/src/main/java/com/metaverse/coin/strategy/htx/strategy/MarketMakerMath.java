@@ -27,9 +27,9 @@ public final class MarketMakerMath {
     }
 
     /**
-     * 等比买价梯：L_k = anchor·(1−stepPct)^k，k=1..levels，每档含入到 scale（HALF_UP，与 buyPrice 同构）。
-     * 截断掉 &lt; floorPrice 的档位（绝对价地板），返回自高到低的买价列表；anchor 自身(k=0)不入列
-     * （刷量买档一律挂在 anchor 之下，maker 不越 bestBid）。floorPrice 传 null 或 ≤0 视为不设地板。
+     * 等比买价梯：L_k = anchor·(1−stepPct)^k，k=0..levels−1，每档含入到 scale（HALF_UP，与 buyPrice 同构）。
+     * 截断掉 &lt; floorPrice 的档位（绝对价地板），返回自高到低的买价列表；首档锚定 bestBid，
+     * 后续档位逐级向下。floorPrice 传 null 或 ≤0 视为不设地板。
      */
     public static List<BigDecimal> gridBuyLevels(BigDecimal anchor, BigDecimal stepPct,
                                                  int levels, BigDecimal floorPrice, int scale) {
@@ -37,13 +37,13 @@ public final class MarketMakerMath {
         boolean hasFloor = floorPrice != null && floorPrice.signum() > 0;
         BigDecimal factor = ONE.subtract(stepPct);
         BigDecimal power = ONE;
-        for (int k = 1; k <= levels; k++) {
-            power = power.multiply(factor);
+        for (int k = 0; k < levels; k++) {
             BigDecimal level = anchor.multiply(power).setScale(scale, RoundingMode.HALF_UP);
             if (hasFloor && level.compareTo(floorPrice) < 0) {
-                continue;
+                break;
             }
             result.add(level);
+            power = power.multiply(factor);
         }
         return result;
     }

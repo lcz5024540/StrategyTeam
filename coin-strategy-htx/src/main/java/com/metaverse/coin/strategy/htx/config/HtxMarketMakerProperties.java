@@ -31,16 +31,16 @@ public class HtxMarketMakerProperties {
     private BigDecimal feeRatePerSide = new BigDecimal("0.002");
 
     /** 每 cell 固定 quote 名义（USDT）；qty = notional / buyPrice。 */
-    private BigDecimal perCellQuoteNotional = new BigDecimal("20");
+    private BigDecimal perCellQuoteNotional = new BigDecimal("12");
 
     /** HTX 现货卖单最低名义金额（USDT）；低于该值的残量记为 dust，禁止无限重试。 */
     private BigDecimal minSellOrderQuoteNotional = new BigDecimal("1.1");
 
     /** 单标的最大并行 open cell 数 K。 */
-    private int maxConcurrentCellsPerSymbol = 3;
+    private int maxConcurrentCellsPerSymbol = 20;
 
     /** 新买价与已挂买价的最小相对间距（去重防同价堆单）。 */
-    private BigDecimal minGapPct = new BigDecimal("0.003");
+    private BigDecimal minGapPct = new BigDecimal("0.0009");
 
     /** 买单未成交超时撤单（ms）。 */
     private long buyTtlMs = 900_000L;
@@ -85,16 +85,16 @@ public class HtxMarketMakerProperties {
     private boolean gridModeEnabled = false;
 
     /** 等比步长（每档下移比例）：L_k=anchor·(1−此值)^k；与 spreadPct 同量级，保证每格卖腿仍满足不亏。 */
-    private BigDecimal gridStepPct = new BigDecimal("0.003");
+    private BigDecimal gridStepPct = new BigDecimal("0.001");
 
     /** 理想价梯档数上限（实际受 maxConcurrentCellsPerSymbol / 敞口 / 地板裁剪）。 */
-    private int gridLevels = 5;
+    private int gridLevels = 20;
 
     /** 绝对价格地板（per-symbol）：低于此价一律不开买单；0 或负数视为不设地板。深跌硬止接盘。 */
     private BigDecimal gridFloorPrice = BigDecimal.ZERO;
 
     /** 单 symbol 所有未平 cell 买入名义之和上限（USDT）：Σ(open buy notional)+perCell ≤ 此值才开新档。 */
-    private BigDecimal maxTotalExposureQuoteNotional = new BigDecimal("100");
+    private BigDecimal maxTotalExposureQuoteNotional = new BigDecimal("240");
 
     /** 当日已实现净亏损预算（USDT）：当日累计净亏损超过此值即停开新单（熔断）。 */
     private BigDecimal dailyNetLossBudget = new BigDecimal("5");

@@ -26,13 +26,16 @@ class HtxMarketMakerPropertiesTest {
         assertEquals(10_000L, p.getPollIntervalMs());
         assertEquals(0, new BigDecimal("0.003").compareTo(p.getSpreadPct()));
         assertEquals(0, new BigDecimal("0.002").compareTo(p.getFeeRatePerSide()));
-        assertEquals(0, new BigDecimal("20").compareTo(p.getPerCellQuoteNotional()));
-        assertEquals(3, p.getMaxConcurrentCellsPerSymbol());
-        assertEquals(0, new BigDecimal("0.003").compareTo(p.getMinGapPct()));
+        assertEquals(0, new BigDecimal("12").compareTo(p.getPerCellQuoteNotional()));
+        assertEquals(20, p.getMaxConcurrentCellsPerSymbol());
+        assertEquals(0, new BigDecimal("0.0009").compareTo(p.getMinGapPct()));
         assertEquals(900_000L, p.getBuyTtlMs());
         assertEquals(0, new BigDecimal("0.001").compareTo(p.getRepriceThresholdPct()));
         assertEquals(300_000L, p.getInsufficientBalanceBackoffMs());
         assertEquals(0L, p.getSellTtlMs());
+        assertEquals(0, new BigDecimal("0.001").compareTo(p.getGridStepPct()));
+        assertEquals(20, p.getGridLevels());
+        assertEquals(0, new BigDecimal("240").compareTo(p.getMaxTotalExposureQuoteNotional()));
     }
 
     @Test void binds_overrides_from_environment() {

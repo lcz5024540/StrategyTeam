@@ -18,7 +18,7 @@ import static org.mockito.Mockito.when;
 class HtxSpotFeeRateProviderTest {
 
     @Test
-    void usesHighestOfConfiguredAndCurrentMakerTakerRatesAndCachesIt() {
+    void usesCurrentAccountMakerAndTakerRatesAndCachesThem() {
         HtxApiService api = mock(HtxApiService.class);
         HtxSpotService spot = mock(HtxSpotService.class);
         when(api.getSpotService()).thenReturn(spot);
@@ -27,8 +27,8 @@ class HtxSpotFeeRateProviderTest {
 
         HtxSpotFeeRate fee = new HtxSpotFeeRate();
         fee.setSymbol("xautusdt");
-        fee.setActualMakerRate(new BigDecimal("0.0018"));
-        fee.setActualTakerRate(new BigDecimal("0.0025"));
+        fee.setActualMakerRate(new BigDecimal("0.0006"));
+        fee.setActualTakerRate(new BigDecimal("0.00075"));
         HtxRestResponse<List<HtxSpotFeeRate>> response = new HtxRestResponse<>();
         response.setCode(200);
         response.setData(List.of(fee));
@@ -36,8 +36,28 @@ class HtxSpotFeeRateProviderTest {
 
         HtxSpotFeeRateProvider provider = new HtxSpotFeeRateProvider(api, properties);
 
-        assertEquals(new BigDecimal("0.0025"), provider.effectiveRate("xautusdt"));
-        assertEquals(new BigDecimal("0.0025"), provider.effectiveRate("xautusdt"));
+        HtxSpotFeeRateProvider.FeeRates rates = provider.rates("xautusdt");
+        assertEquals(new BigDecimal("0.0006"), rates.maker());
+        assertEquals(new BigDecimal("0.00075"), rates.taker());
+        assertEquals(new BigDecimal("0.00075"), provider.effectiveRate("xautusdt"));
         verify(spot).queryFeeRates("xautusdt");
+    }
+
+    @Test
+    void fallsBackToConfiguredRateWhenAccountFeeQueryFails() {
+        HtxApiService api = mock(HtxApiService.class);
+        HtxSpotService spot = mock(HtxSpotService.class);
+        when(api.getSpotService()).thenReturn(spot);
+        HtxMarketMakerProperties properties = new HtxMarketMakerProperties();
+        properties.setFeeRatePerSide(new BigDecimal("0.002"));
+        HtxRestResponse<List<HtxSpotFeeRate>> response = new HtxRestResponse<>();
+        response.setCode(500);
+        when(spot.queryFeeRates("xautusdt")).thenReturn(response);
+
+        HtxSpotFeeRateProvider.FeeRates rates =
+                new HtxSpotFeeRateProvider(api, properties).rates("xautusdt");
+
+        assertEquals(new BigDecimal("0.002"), rates.maker());
+        assertEquals(new BigDecimal("0.002"), rates.taker());
     }
 }

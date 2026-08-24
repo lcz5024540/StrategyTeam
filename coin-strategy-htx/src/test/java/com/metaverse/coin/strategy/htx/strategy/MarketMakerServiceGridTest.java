@@ -120,32 +120,32 @@ class MarketMakerServiceGridTest {
     }
 
     @Test void empty_inventory_fills_ladder_up_to_concurrency_budget() {
-        // bestBid=100, step=0.003, levels=5 → [99.70, 99.40, 99.10, 98.81, 98.51]
+        // bestBid=100, step=0.003, levels=5 → [100.00, 99.70, 99.40, 99.10, 98.81]
         // maxConcurrent=3, open=0 → budget=3 → 只补最上三档
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
 
         svc.fillGridLadder("btcusdt");
 
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("100.00"), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.70"), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.40"), anyString());
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.10"), anyString());
         verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), eq("98.81"), anyString());
         verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), eq("98.51"), anyString());
         verify(spot, times(3)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
     }
 
     @Test void partial_ladder_only_opens_missing_levels() {
-        // 已挂两档（99.70 / 99.40），open=2 → budget=1 → 仅补下一缺口 99.10
+        // 已挂两档（100.00 / 99.70），open=2 → budget=1 → 仅补下一缺口 99.40
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
         when(recorder.countOpenMmCells("btcusdt")).thenReturn(2);
         when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(
-                restingBuy("99.70", "0.2006"), restingBuy("99.40", "0.2012")));
+                restingBuy("100.00", "0.2000"), restingBuy("99.70", "0.2006")));
 
         svc.fillGridLadder("btcusdt");
 
-        // budget=1：只开一档，且是首个与已挂档拉开 min-gap 的价位（99.10）
+        // budget=1：只开一档，且是首个与已挂档拉开 min-gap 的价位（99.40）
         verify(spot, times(1)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.10"), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.40"), anyString());
     }
 
     @Test void circuit_breaker_daily_net_loss_blocks_all_opens() {
@@ -176,19 +176,20 @@ class MarketMakerServiceGridTest {
         svc.fillGridLadder("btcusdt");
 
         verify(spot, times(2)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("100.00"), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.70"), anyString());
-        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.40"), anyString());
-        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), eq("99.10"), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), eq("99.40"), anyString());
     }
 
     @Test void absolute_price_floor_skips_below_floor_levels() {
-        // 地板 99.5：ladder [99.70,99.40,99.10,...] 中 <99.5 的全部不开，仅 99.70 合格
+        // 地板 99.5：ladder [100.00,99.70,99.40,...] 中 <99.5 的全部不开，前两档合格
         mmProps.setGridFloorPrice(new BigDecimal("99.5"));
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
 
         svc.fillGridLadder("btcusdt");
 
-        verify(spot, times(1)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
+        verify(spot, times(2)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("100.00"), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.70"), anyString());
     }
 }

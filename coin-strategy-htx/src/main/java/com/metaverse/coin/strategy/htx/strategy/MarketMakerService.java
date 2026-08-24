@@ -224,16 +224,16 @@ public class MarketMakerService {
      * 通过所有闸门返回 pairId；任一闸门不过返回 -1。
      */
     private long tryOpenCellAtAnchor(String symbol, BigDecimal anchor, HtxDepth depth) {
-        BigDecimal feeRate = feeRateProvider.effectiveRate(symbol);
+        HtxSpotFeeRateProvider.FeeRates feeRates = feeRateProvider.rates(symbol);
         SpotGridStrategy.GridQuote quote = gridStrategy.quote(anchor, mmProps.getSpreadPct(),
-                feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+                feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
         BigDecimal buyPrice = quote.buyPrice();
         BigDecimal sellPrice = quote.sellPrice();
         BigDecimal qty = MarketMakerMath.qtyFor(mmProps.getPerCellQuoteNotional(), buyPrice);
         if (qty.signum() <= 0) {
             return -1;
         }
-        if (!gridStrategy.coversFees(buyPrice, sellPrice, feeRate, feeRate)) {
+        if (!gridStrategy.coversFees(buyPrice, sellPrice, feeRates.maker(), feeRates.maker())) {
             log.warn("MM no-loss gate blocked symbol={} buy={} sell={}", symbol, buyPrice, sellPrice);
             return -1;
         }
@@ -493,12 +493,12 @@ public class MarketMakerService {
      * 成交后由下一 tick 既有成交检测（advanceRestingBuy 顶部）自动推进到 openSellLeg。
      */
     private void takerBuyEscalate(MarketMakerCell cell, BigDecimal askRaw) {
-        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
+        HtxSpotFeeRateProvider.FeeRates feeRates = feeRateProvider.rates(cell.getSymbol());
         SpotGridStrategy.GridQuote quote = gridStrategy.quote(askRaw, mmProps.getSpreadPct(),
-                feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+                feeRates.taker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
         BigDecimal newBuy = quote.buyPrice();
         BigDecimal newSell = quote.sellPrice();
-        if (!gridStrategy.coversFees(newBuy, newSell, feeRate, feeRate)) {
+        if (!gridStrategy.coversFees(newBuy, newSell, feeRates.taker(), feeRates.maker())) {
             log.warn("MM taker-buy no-loss guard blocked pairId={} newBuy={} newSell={}",
                     cell.getPairId(), newBuy, newSell);
             return;
@@ -583,12 +583,12 @@ public class MarketMakerService {
                     cell.getPairId(), buyId, post == null ? "null" : post.getState());
             return;
         }
-        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
+        HtxSpotFeeRateProvider.FeeRates feeRates = feeRateProvider.rates(cell.getSymbol());
         SpotGridStrategy.GridQuote quote = gridStrategy.quote(newBidRaw, mmProps.getSpreadPct(),
-                feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+                feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
         BigDecimal newBuy = quote.buyPrice();
         BigDecimal newSell = quote.sellPrice();
-        if (!gridStrategy.coversFees(newBuy, newSell, feeRate, feeRate)) {
+        if (!gridStrategy.coversFees(newBuy, newSell, feeRates.maker(), feeRates.maker())) {
             log.warn("MM reprice no-loss guard blocked pairId={} newBuy={} newSell={}",
                     cell.getPairId(), newBuy, newSell);
             return;
@@ -622,18 +622,18 @@ public class MarketMakerService {
                              BigDecimal filledCashAmount) {
         BigDecimal actualBuyPrice = MarketMakerMath.actualBuyPrice(
                 filledCashAmount, filledBase, cell.getBuyPrice());
-        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
+        HtxSpotFeeRateProvider.FeeRates feeRates = feeRateProvider.rates(cell.getSymbol());
         BigDecimal sellPrice;
         if (mmProps.isSellFollowEnabled()) {
             // follow：初始卖价取 max(含费保本地板, bestAsk)。盘口不可用则退回含费保本地板。
             TopOfBook top = currentTopOfBook(cell.getSymbol());
             BigDecimal ask = (top != null) ? top.ask() : actualBuyPrice;
             sellPrice = gridStrategy.sellPriceAfterFill(filledCashAmount, filledBase, buyFeeBase,
-                    actualBuyPrice, ask, feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+                    actualBuyPrice, ask, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
         } else {
             sellPrice = gridStrategy.quote(actualBuyPrice, mmProps.getSpreadPct(),
-                    feeRate, feeRate, MarketMakerMath.PRICE_SCALE).sellPrice();
-            if (!gridStrategy.coversFees(actualBuyPrice, sellPrice, feeRate, feeRate)) {
+                    feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE).sellPrice();
+            if (!gridStrategy.coversFees(actualBuyPrice, sellPrice, feeRates.maker(), feeRates.maker())) {
                 log.error("MM actual-fill no-loss gate blocked pairId={} actualBuy={} sell={}",
                         cell.getPairId(), actualBuyPrice, sellPrice);
                 return;
@@ -826,14 +826,14 @@ public class MarketMakerService {
     }
 
     private BigDecimal protectedSellPrice(MarketMakerCell cell, BigDecimal bestAsk) {
-        BigDecimal feeRate = feeRateProvider.effectiveRate(cell.getSymbol());
+        HtxSpotFeeRateProvider.FeeRates feeRates = feeRateProvider.rates(cell.getSymbol());
         BigDecimal filledBase = nz(cell.getBuyFilledAmount());
         BigDecimal quoteCost = filledBase.signum() > 0
                 ? filledBase.multiply(cell.getBuyPrice())
                 : cell.getQty().multiply(cell.getBuyPrice());
         BigDecimal grossBase = filledBase.signum() > 0 ? filledBase : cell.getQty();
         return gridStrategy.sellPriceAfterFill(quoteCost, grossBase, nz(cell.getTotalFeeBase()),
-                cell.getBuyPrice(), bestAsk, feeRate, feeRate, MarketMakerMath.PRICE_SCALE);
+                cell.getBuyPrice(), bestAsk, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
     }
 
     private BigDecimal cumulativeSellFilled(MarketMakerCell cell, BigDecimal latestFilled) {
