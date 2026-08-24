@@ -17,6 +17,8 @@ class HtxMarketMakerPropertiesBindingTest {
         String yaml = Files.readString(testClasses.resolveSibling("classes/application.yml"), StandardCharsets.UTF_8);
 
         assertAll(
+                () -> assertTrue(yaml.contains("base-url: \"${HTX_BASE_URL:https://api.huobi.pro}\"")),
+                () -> assertTrue(yaml.contains("ws-url: \"${HTX_WS_URL:wss://api.huobi.pro/ws}\"")),
                 () -> assertTrue(yaml.contains("grid-mode-enabled: ${HTX_MM_GRID_MODE_ENABLED:false}")),
                 () -> assertTrue(yaml.contains("grid-step-pct: ${HTX_MM_GRID_STEP_PCT:0.003}")),
                 () -> assertTrue(yaml.contains("grid-levels: ${HTX_MM_GRID_LEVELS:5}")),

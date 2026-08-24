@@ -31,8 +31,8 @@ htx:
     # controller is not mounted, service refuses to start with a clear "no HtxApiService bean" error.
     access-key: "${HTX_ACCESS_KEY:}"
     secret-key: "${HTX_SECRET_KEY:}"
-    base-url: "https://api.huobi.pro"
-    ws-url: "wss://api.huobi.pro/ws"
+    base-url: "${HTX_BASE_URL:https://api.huobi.pro}"
+    ws-url: "${HTX_WS_URL:wss://api.huobi.pro/ws}"
     # First-run: leave blank, call GET /htx/api/htx/accounts, write the returned id back here.
     spot-account-id: "${HTX_SPOT_ACCOUNT_ID:}"
   trade:

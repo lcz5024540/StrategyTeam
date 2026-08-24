@@ -86,12 +86,40 @@ public class MarketMakerService {
     /** 启动校验：策略会自动抬高卖价覆盖手续费，这里只校验配置定义域。 */
     @PostConstruct
     void validateConfig() {
-        if (mmProps.getFeeRatePerSide().signum() < 0
+        if (mmProps.getFeeRatePerSide() == null
+                || mmProps.getFeeRatePerSide().signum() < 0
                 || mmProps.getFeeRatePerSide().compareTo(BigDecimal.ONE) >= 0) {
             throw new IllegalStateException("MM fee-rate-per-side must be in [0, 1)");
         }
         if (mmProps.getSpreadPct() == null || mmProps.getSpreadPct().signum() < 0) {
             throw new IllegalStateException("MM spread-pct must be non-negative");
+        }
+        if (mmProps.getGridStepPct() == null
+                || mmProps.getGridStepPct().signum() <= 0
+                || mmProps.getGridStepPct().compareTo(BigDecimal.ONE) >= 0) {
+            throw new IllegalStateException("MM grid-step-pct must be in (0, 1)");
+        }
+        if (mmProps.getGridLevels() <= 0) {
+            throw new IllegalStateException("MM grid-levels must be positive");
+        }
+        if (mmProps.getPerCellQuoteNotional() == null
+                || mmProps.getPerCellQuoteNotional().signum() <= 0) {
+            throw new IllegalStateException("MM per-cell-quote-notional must be positive");
+        }
+        if (mmProps.getMaxConcurrentCellsPerSymbol() <= 0) {
+            throw new IllegalStateException("MM max-concurrent-cells-per-symbol must be positive");
+        }
+        if (mmProps.getMaxTotalExposureQuoteNotional() == null
+                || mmProps.getMaxTotalExposureQuoteNotional()
+                .compareTo(mmProps.getPerCellQuoteNotional()) < 0) {
+            throw new IllegalStateException("MM max-total-exposure-quote-notional must cover one cell");
+        }
+        if (mmProps.getDailyNetLossBudget() == null
+                || mmProps.getDailyNetLossBudget().signum() < 0) {
+            throw new IllegalStateException("MM daily-net-loss-budget must be non-negative");
+        }
+        if (mmProps.getMaxConsecutiveLossCycles() < 0) {
+            throw new IllegalStateException("MM max-consecutive-loss-cycles must be non-negative");
         }
     }
 
