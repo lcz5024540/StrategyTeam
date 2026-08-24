@@ -45,7 +45,9 @@ class MarketMakerServiceRunTest {
                 .thenReturn(new HtxDepthGuard.Verdict(true, true, new BigDecimal("999"), new BigDecimal("999"), BigDecimal.ONE));
         tradeProps = new HtxTradeProperties();
         tradeProps.getApi().setSpotAccountId("acc-1");
+        tradeProps.getTrade().setEnabled(true);
         mmProps = new HtxMarketMakerProperties();
+        mmProps.setEnabled(true);
         mmProps.setSymbols(List.of("btcusdt"));
         recorder = mock(HtxTradeRecorder.class);
         when(recorder.countOpenMmCells(anyString())).thenReturn(0);
@@ -127,16 +129,28 @@ class MarketMakerServiceRunTest {
         verify(recorder).markMmBuySent(101L, 888L);
     }
 
-    @Test void runOnce_when_disabled_advances_but_does_not_open() {
+    @Test void runOnce_when_marketMakerDisabled_callsNoPrivateApi() {
         when(recorder.findAllOpenMmCells()).thenReturn(List.of(restingSellEntity()));
         when(spot.queryOrder(777L)).thenReturn(sellFilled());
         mmProps.setEnabled(false);
 
         svc.runOnce();
 
-        verify(recorder).markMmDone(eq(100L), any());           // 仍推进
+        verify(spot, never()).queryOrder(anyLong());
+        verify(recorder, never()).markMmDone(anyLong(), any());
         verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString()); // 不开新
         verify(md, never()).depth(anyString(), anyInt());
+    }
+
+    @Test void runOnce_whenTradeDisabled_callsNoPrivateApi() {
+        tradeProps.getTrade().setEnabled(false);
+        when(recorder.findAllOpenMmCells()).thenReturn(List.of(restingSellEntity()));
+
+        svc.runOnce();
+
+        verifyNoInteractions(spot);
+        verify(recorder, never()).findAllOpenMmCells();
+        verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString());
     }
 
     @Test void recoverOpenCells_advances_all() {

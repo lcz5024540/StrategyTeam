@@ -22,7 +22,7 @@
 | 不亏保证 | **硬不变量**：允许手续费磨损，但每笔 round-trip 必须非负。开仓前用保守配置费率 f 校验 `(1−f)²·sellPrice ≥ buyPrice`，不满足则拒开该 cell（不查真实费率） |
 | 余额不足 | 下单前查现货账户 `trade` USDT；不足或 HTX 返回余额不足时暂停全部新买单，默认 5 分钟后重新查余额，不按 10 秒轮询频繁重试 |
 | 成交后卖出 | 用 HTX 实际成交金额/成交量重算买入均价，在该成本附近加配置价差挂 `SELL-LIMIT`；提交失败保持待卖状态并使用固定 client id 重试，不转市价卖 |
-| 急停语义 | **只停开仓、挂单保留**：`HTX_MM_ENABLED=false` 重启后停止开新 cell，已 resting 单不自动撤（不砸盘），靠 TTL 或人工了结 |
+| 急停语义 | **冻结自动交易、挂单保留**：`HTX_TRADE_ENABLED=false` 或 `HTX_MM_ENABLED=false` 后重启不装配调度器，不查询、不撤改、不新开；已有 resting 单由人工处置 |
 
 ### 2.1 为什么不是「抓盘口现有价差」
 
@@ -119,7 +119,7 @@ htx:
 
 - 现有 `htx.risk.max-single-quote-notional`(50) / `max-daily-quote-notional`(100000) **继续强制**：每开一个 cell 的买腿名义都过两道闸，日累计读库失败 fail-closed 拒开。
 - `HtxDepthGuard` 继续用：开 cell 前查盘口，深度不足则跳过本轮。
-- **急停**（`HTX_MM_ENABLED=false` 重启）：停止开新 cell；已 resting 单保留（不自动撤，避免砸盘），靠 buy-ttl 或人工了结。调度器 bean 通过 `@ConditionalOnProperty(prefix="htx.market-maker", name="enabled", havingValue="true")` 在关闭时不加载。
+- **急停**（任一门禁关闭后重启）：停止全部自动查询与订单动作，已有 resting 单保留并由人工处置。调度器仅在 `htx.trade.enabled=true` 且 `htx.market-maker.enabled=true` 时装配；服务层入口重复校验两项开关，防止绕过调度器直接调用。
 
 ## 9. 文件结构
 

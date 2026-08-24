@@ -45,7 +45,9 @@ class MarketMakerServiceAdvanceTest {
         when(api.getAccountService()).thenReturn(account);
         tradeProps = new HtxTradeProperties();
         tradeProps.getApi().setSpotAccountId("acc-1");
+        tradeProps.getTrade().setEnabled(true);
         mmProps = new HtxMarketMakerProperties();
+        mmProps.setEnabled(true);
         mmProps.setSellFollowEnabled(false);   // 本类既有卖腿用例锁 legacy；follow 新行为在 Task5/6 新测显式开启
         recorder = mock(HtxTradeRecorder.class);
         when(account.getAccountBalance("acc-1")).thenReturn(balanceOk("1000"));

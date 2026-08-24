@@ -99,6 +99,10 @@ public class MarketMakerService {
 
     /** 主循环一次：先推进所有 open cell，再（若未急停）按白名单各尝试开一个新 cell。 */
     public void runOnce() {
+        if (!isLiveTradingEnabled()) {
+            log.warn("MM run skipped: both htx.trade.enabled and htx.market-maker.enabled must be true");
+            return;
+        }
         for (MarketMakerCell cell : loadOpenCells()) {
             try {
                 advanceCell(cell);
@@ -124,6 +128,10 @@ public class MarketMakerService {
 
     /** 重启恢复：库里所有 open cell 拉回并对齐一次（幂等）。 */
     public void recoverOpenCells() {
+        if (!isLiveTradingEnabled()) {
+            log.warn("MM recovery skipped: both htx.trade.enabled and htx.market-maker.enabled must be true");
+            return;
+        }
         for (MarketMakerCell cell : loadOpenCells()) {
             try {
                 advanceCell(cell);
@@ -150,6 +158,9 @@ public class MarketMakerService {
 
     /** 通过所有闸门则开一个新 cell 并发买单，返回 pairId；任一闸门不过返回 -1。 */
     public long openNewCellIfEligible(String symbol) {
+        if (!isLiveTradingEnabled()) {
+            return -1;
+        }
         if (isBuyBalanceBackoffActive()) {
             return -1;
         }
@@ -263,6 +274,9 @@ public class MarketMakerService {
      * gridModeEnabled=false 时本方法不被调用（runOnce 分流），行为与原单格路径逐字节等价。
      */
     public void fillGridLadder(String symbol) {
+        if (!isLiveTradingEnabled()) {
+            return;
+        }
         if (isBuyBalanceBackoffActive()) {
             return;
         }
@@ -364,11 +378,18 @@ public class MarketMakerService {
 
     /** 按 cell 当前状态推进一步。 */
     public void advanceCell(MarketMakerCell cell) {
+        if (!isLiveTradingEnabled()) {
+            return;
+        }
         if (HtxStatus.MM_RESTING_BUY.equals(cell.getState())) {
             advanceRestingBuy(cell);
         } else if (HtxStatus.MM_RESTING_SELL.equals(cell.getState())) {
             advanceRestingSell(cell);
         }
+    }
+
+    private boolean isLiveTradingEnabled() {
+        return tradeProps.getTrade().isEnabled() && mmProps.isEnabled();
     }
 
     private void advanceRestingBuy(MarketMakerCell cell) {

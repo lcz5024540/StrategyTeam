@@ -50,7 +50,9 @@ class MarketMakerServiceTakerBuyTest {
         when(api.getAccountService()).thenReturn(account);
         tradeProps = new HtxTradeProperties();
         tradeProps.getApi().setSpotAccountId("acc-1");
+        tradeProps.getTrade().setEnabled(true);
         mmProps = new HtxMarketMakerProperties();
+        mmProps.setEnabled(true);
         mmProps.setSymbols(List.of("btcusdt"));
         mmProps.setSpreadPct(new BigDecimal("0.003"));
         mmProps.setBuyTtlMs(1L);                                  // TTL=1ms，配合 createdAt=now-2h 必过期

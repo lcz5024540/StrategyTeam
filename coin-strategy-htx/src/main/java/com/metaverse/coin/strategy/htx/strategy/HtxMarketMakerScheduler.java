@@ -16,15 +16,15 @@ import org.springframework.stereotype.Component;
  * 装配条件（两道并存）：
  * <ul>
  *   <li>{@code @ConditionalOnBean(HtxApiService.class)}——无凭证（如集成测试上下文）不装配，避免上下文加载失败；</li>
- *   <li>{@code @ConditionalOnProperty(...enabled=true)}——急停语义：{@code HTX_MM_ENABLED=false} 重启则本 bean 不加载，
- *       已 resting 挂单冻结不动（不砸盘），靠 buy-ttl 或人工了结（§8）。</li>
+ *   <li>{@code @ConditionalOnProperty(...)}——仅 {@code HTX_TRADE_ENABLED=true} 与 {@code HTX_MM_ENABLED=true}
+ *       同时成立才装配；任一关闭后重启，本 bean 不加载，已 resting 挂单冻结不动并交人工处置。</li>
  * </ul>
  * 循环与恢复均吞 RuntimeException 只记日志：单轮/单 cell 失败不拖垮调度线程与启动流程。
  */
 @Slf4j
 @Component
 @ConditionalOnBean(HtxApiService.class)
-@ConditionalOnProperty(prefix = "htx.market-maker", name = "enabled", havingValue = "true")
+@ConditionalOnProperty(prefix = "htx", name = {"trade.enabled", "market-maker.enabled"}, havingValue = "true")
 @RequiredArgsConstructor
 public class HtxMarketMakerScheduler {
 

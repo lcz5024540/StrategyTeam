@@ -50,7 +50,9 @@ class MarketMakerServiceLingerExitTest {
         depthGuard = mock(HtxDepthGuard.class);
         tradeProps = new HtxTradeProperties();
         tradeProps.getApi().setSpotAccountId("acc-1");
+        tradeProps.getTrade().setEnabled(true);
         mmProps = new HtxMarketMakerProperties();
+        mmProps.setEnabled(true);
         mmProps.setSymbols(List.of("btcusdt"));
         mmProps.setSellFollowEnabled(true);
         mmProps.setSellLingerExitEnabled(true);

@@ -266,10 +266,17 @@ export HTX_SECRET_KEY="<你的HTX_SK>"
 # 现货账户 id：首启可留空，调 GET http://127.0.0.1:8082/htx/api/htx/accounts 拿到后回填
 export HTX_SPOT_ACCOUNT_ID="73741966"
 
-# 安全开关（先全关，验证后再逐个打开）
+# 安全开关（先全关；现货网格仅在两项都为 true 时才装配和交易）
 export HTX_TRADE_ENABLED="false"
 export HTX_MM_ENABLED="false"
 export HTX_MM_SYMBOLS="xautusdt"
+export HTX_MM_GRID_MODE_ENABLED="false"
+export HTX_MM_GRID_STEP_PCT="0.003"
+export HTX_MM_GRID_LEVELS="5"
+export HTX_MM_GRID_FLOOR_PRICE="0"
+export HTX_MM_MAX_TOTAL_EXPOSURE_QUOTE_NOTIONAL="100"
+export HTX_MM_DAILY_NET_LOSS_BUDGET="5"
+export HTX_MM_MAX_CONSECUTIVE_LOSS_CYCLES="3"
 
 # profile + DB（单机本机直连；HTX 用明文密码，不走 RSA）
 export SPRING_PROFILES_ACTIVE="test"

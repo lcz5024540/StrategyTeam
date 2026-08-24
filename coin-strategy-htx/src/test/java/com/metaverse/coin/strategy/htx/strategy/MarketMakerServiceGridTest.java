@@ -48,6 +48,7 @@ class MarketMakerServiceGridTest {
         depthGuard = mock(HtxDepthGuard.class);
         tradeProps = new HtxTradeProperties();
         tradeProps.getApi().setSpotAccountId("acc-1");
+        tradeProps.getTrade().setEnabled(true);
         mmProps = new HtxMarketMakerProperties();
         mmProps.setSymbols(List.of("btcusdt", "xautusdt"));
         mmProps.setEnabled(true);
