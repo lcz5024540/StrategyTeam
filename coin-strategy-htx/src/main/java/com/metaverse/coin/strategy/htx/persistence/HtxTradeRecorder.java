@@ -268,6 +268,18 @@ public class HtxTradeRecorder {
         }
     }
 
+    /**
+     * 卖出残量低于交易所最低名义金额：转为不可自动成交的 dust 终态，并保留残量审计。
+     * 先关闭 cell，避免 exposure 记录瞬时失败时下一 tick 继续向交易所提交无效订单。
+     */
+    public void markMmDust(long pairId, String symbol, BigDecimal residualBase,
+                           BigDecimal quoteNotional, BigDecimal minimumQuoteNotional) {
+        String detail = "mm-sell-dust:notional=" + quoteNotional.toPlainString()
+                + ",minimum=" + minimumQuoteNotional.toPlainString();
+        updatePairStatus(pairId, HtxStatus.MM_DUST, "BELOW_MIN_SELL_NOTIONAL", detail);
+        recordExposure(pairId, symbol, HtxStatus.EXPOSED_SIDE_BASE_LONG, residualBase, detail);
+    }
+
     /** 买单超 TTL 已撤、cell 关闭：→ MM_CANCELLED_BUY（best-effort）。 */
     public void markMmCancelledBuy(long pairId) {
         try {

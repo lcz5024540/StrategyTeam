@@ -5,6 +5,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxSpotService;
 import com.metaverse.coin.strategy.htx.persistence.HtxPersistenceException;
+import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
 import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -93,6 +94,6 @@ class HtxLockedPairExecutorTest {
         HtxLockedPairResult res = executor.execute(req("0.01"), 1L);
 
         assertEquals(HtxLockedPairResult.Code.FAIL_AFTER_BUY_FILL, res.getCode());
-        verify(recorder).recordExposure(eq(1L), eq("btcusdt"), eq("base-long"), any(), anyString());
+        verify(recorder).recordExposure(eq(1L), eq("btcusdt"), eq(HtxStatus.EXPOSED_SIDE_BASE_LONG), any(), anyString());
     }
 }

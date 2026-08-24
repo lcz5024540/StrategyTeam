@@ -29,7 +29,7 @@ class HtxReconcilerTest {
         ex.setId(7L);
         ex.setPairId(3L);
         ex.setSymbol("btcusdt");
-        ex.setExposedSide("base-long");
+        ex.setExposedSide(HtxStatus.EXPOSED_SIDE_BASE_LONG);
         ex.setExposedAmount(new BigDecimal("0.00998"));
         ex.setStatus(HtxStatus.EXP_OPEN);
         return ex;

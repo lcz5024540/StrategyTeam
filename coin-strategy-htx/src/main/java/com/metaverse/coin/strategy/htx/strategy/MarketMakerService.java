@@ -106,6 +106,10 @@ public class MarketMakerService {
                 || mmProps.getPerCellQuoteNotional().signum() <= 0) {
             throw new IllegalStateException("MM per-cell-quote-notional must be positive");
         }
+        if (mmProps.getMinSellOrderQuoteNotional() == null
+                || mmProps.getMinSellOrderQuoteNotional().signum() <= 0) {
+            throw new IllegalStateException("MM min-sell-order-quote-notional must be positive");
+        }
         if (mmProps.getMaxConcurrentCellsPerSymbol() <= 0) {
             throw new IllegalStateException("MM max-concurrent-cells-per-symbol must be positive");
         }
@@ -649,6 +653,14 @@ public class MarketMakerService {
             log.error("MM sellable amount is zero pairId={} filled={} fee={}", pairId, filledBase, buyFeeBase);
             return;
         }
+        BigDecimal sellNotional = sellable.multiply(sellPrice);
+        BigDecimal minimumSellNotional = mmProps.getMinSellOrderQuoteNotional();
+        if (sellNotional.compareTo(minimumSellNotional) < 0) {
+            recorder.markMmDust(pairId, symbol, sellable, sellNotional, minimumSellNotional);
+            log.warn("MM sell residual moved to dust pairId={} symbol={} sellable={} price={} notional={} minimum={}",
+                    pairId, symbol, sellable, sellPrice, sellNotional, minimumSellNotional);
+            return;
+        }
         String sellClientId = clientId + "-SELL";
         HtxRestResponse<String> resp = htxApiService.getSpotService().placeOrder(
                 tradeProps.getApi().getSpotAccountId(), symbol, "sell-limit-maker",
@@ -691,7 +703,7 @@ public class MarketMakerService {
         if (isTerminal(state)) { // 卖单被外部撤/拒，仍持 base → 记敞口，关闭 cell
             BigDecimal unsold = nz(o.getAmount()).subtract(filled);
             if (unsold.signum() > 0) {
-                recorder.recordExposure(cell.getPairId(), cell.getSymbol(), "base-long", unsold,
+                recorder.recordExposure(cell.getPairId(), cell.getSymbol(), HtxStatus.EXPOSED_SIDE_BASE_LONG, unsold,
                         "mm-sell-terminal:" + state);
             }
             recorder.markMmDone(cell.getPairId(), cumulativeSellFilled(cell, filled));

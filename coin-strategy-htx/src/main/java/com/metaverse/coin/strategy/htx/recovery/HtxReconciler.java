@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.recovery;
 
 import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
+import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
 import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxExposureEntity;
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
@@ -65,7 +66,7 @@ public class HtxReconciler {
             recorder.markExposureManual(ex.getId(), "flatten retries exhausted: " + retries);
             return;
         }
-        if (!"base-long".equals(ex.getExposedSide())) {
+        if (!HtxStatus.EXPOSED_SIDE_BASE_LONG.equals(ex.getExposedSide())) {
             log.error("HTX reconciler: unsupported exposed_side={} on id={}; MANUAL",
                     ex.getExposedSide(), ex.getId());
             recorder.markExposureManual(ex.getId(), "unsupported exposed_side: " + ex.getExposedSide());

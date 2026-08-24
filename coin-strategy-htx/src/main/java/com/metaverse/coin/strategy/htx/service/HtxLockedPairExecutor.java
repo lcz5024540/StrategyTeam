@@ -118,7 +118,7 @@ public class HtxLockedPairExecutor {
         try {
             sellRow = recorder.insertOrderIntent(pairId, sellClientId, "sell", "sell-limit", req.getSellPrice(), sellable);
         } catch (RuntimeException persistEx) {
-            recorder.recordExposure(pairId, symbol, "base-long", sellable, "sell-write-ahead-failed:" + persistEx.getMessage());
+            recorder.recordExposure(pairId, symbol, HtxStatus.EXPOSED_SIDE_BASE_LONG, sellable, "sell-write-ahead-failed:" + persistEx.getMessage());
             recorder.updatePairStatus(pairId, HtxStatus.EXPOSED, "FAIL_AFTER_BUY_FILL", "sell-persist-failed");
             log.error("HTX SELL write-ahead failed after buy filled={}; exposure recorded. buyId={}", sellable, buyId, persistEx);
             return HtxLockedPairResult.builder().code(HtxLockedPairResult.Code.FAIL_AFTER_BUY_FILL)
@@ -130,7 +130,7 @@ public class HtxLockedPairExecutor {
         Long sellId = parseOrderId(sellResp);
         if (sellId == null) {
             recorder.markOrderSendFailed(sellRow, sellResp.getErrMsg());
-            recorder.recordExposure(pairId, symbol, "base-long", sellable, "sell-rejected:" + sellResp.getErrMsg());
+            recorder.recordExposure(pairId, symbol, HtxStatus.EXPOSED_SIDE_BASE_LONG, sellable, "sell-rejected:" + sellResp.getErrMsg());
             recorder.updatePairStatus(pairId, HtxStatus.EXPOSED, "FAIL_AFTER_BUY_FILL", "sell-rejected");
             log.error("HTX SELL rejected after buy filled={} — exposure recorded. buyId={} err={}", sellable, buyId, sellResp.getErrMsg());
             return HtxLockedPairResult.builder().code(HtxLockedPairResult.Code.FAIL_AFTER_BUY_FILL)
@@ -158,7 +158,7 @@ public class HtxLockedPairExecutor {
                     .message("sell-query-infra-fail:" + sellOutcome.consecutiveFailures).build();
         }
         if (sellOutcome.terminalRejected) {
-            recorder.recordExposure(pairId, symbol, "base-long", sellable.subtract(sellFilled), "sell-terminal:" + sellOutcome.finalState);
+            recorder.recordExposure(pairId, symbol, HtxStatus.EXPOSED_SIDE_BASE_LONG, sellable.subtract(sellFilled), "sell-terminal:" + sellOutcome.finalState);
             recorder.updatePairStatus(pairId, HtxStatus.EXPOSED, "FAIL_AFTER_BUY_FILL", "sell-terminal:" + sellOutcome.finalState);
             log.error("HTX SELL {} rejected after placement — exposure recorded. buyId={}", sellId, buyId);
             return HtxLockedPairResult.builder().code(HtxLockedPairResult.Code.FAIL_AFTER_BUY_FILL)
@@ -168,7 +168,7 @@ public class HtxLockedPairExecutor {
         if (!sellOutcome.filled) {
             BigDecimal unsold = sellable.subtract(sellFilled);
             if (unsold.signum() > 0) {
-                recorder.recordExposure(pairId, symbol, "base-long", unsold, "sell-still-open");
+                recorder.recordExposure(pairId, symbol, HtxStatus.EXPOSED_SIDE_BASE_LONG, unsold, "sell-still-open");
             }
             recorder.updatePairStatus(pairId, HtxStatus.SELL_PENDING,
                     partial ? "BUY_PARTIAL_FILL_RECOVERED" : "SELL_PENDING", partial ? "buy-partial-sell-open" : "sell-open");

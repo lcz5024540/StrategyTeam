@@ -33,6 +33,9 @@ public class HtxMarketMakerProperties {
     /** 每 cell 固定 quote 名义（USDT）；qty = notional / buyPrice。 */
     private BigDecimal perCellQuoteNotional = new BigDecimal("20");
 
+    /** HTX 现货卖单最低名义金额（USDT）；低于该值的残量记为 dust，禁止无限重试。 */
+    private BigDecimal minSellOrderQuoteNotional = new BigDecimal("1.1");
+
     /** 单标的最大并行 open cell 数 K。 */
     private int maxConcurrentCellsPerSymbol = 3;
 

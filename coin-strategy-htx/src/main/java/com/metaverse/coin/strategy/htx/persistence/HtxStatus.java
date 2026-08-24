@@ -18,6 +18,7 @@ public final class HtxStatus {
     public static final String MM_RESTING_BUY = "MM_RESTING_BUY";
     public static final String MM_RESTING_SELL = "MM_RESTING_SELL";
     public static final String MM_DONE = "MM_DONE";
+    public static final String MM_DUST = "MM_DUST";
     public static final String MM_CANCELLED_BUY = "MM_CANCELLED_BUY";
     /** htx_locked_pair.strategy 取值：做市单。执行 SDK 单为 NULL。 */
     public static final String STRATEGY_MARKET_MAKER = "MARKET_MAKER";
@@ -31,4 +32,6 @@ public final class HtxStatus {
     public static final String EXP_FLATTENING = "FLATTENING";
     public static final String EXP_FLATTENED = "FLATTENED";
     public static final String EXP_MANUAL = "MANUAL";
+    /** htx_exposure.exposed_side（VARCHAR(8)）中的现货 base 多头敞口。 */
+    public static final String EXPOSED_SIDE_BASE_LONG = "LONG";
 }

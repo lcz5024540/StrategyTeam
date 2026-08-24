@@ -225,6 +225,37 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder, never()).recordExposure(anyLong(), anyString(), anyString(), any(), anyString());
     }
 
+    @Test void pendingSellBelowMinimumNotionalBecomesDustWithoutOrder() {
+        MarketMakerCell pending = sellCell(null);
+        pending.setBuyFilledAmount(new BigDecimal("0.000010"));
+        pending.setTotalFeeBase(BigDecimal.ZERO);
+
+        svc.advanceCell(pending);
+
+        verify(recorder).markMmDust(eq(100L), eq("btcusdt"), eq(new BigDecimal("0.000010")),
+                eq(new BigDecimal("0.60300000")), eq(new BigDecimal("1.1")));
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(recorder, never()).markMmSellResting(anyLong(), anyLong());
+    }
+
+    @Test void pendingSellAtMinimumNotionalPlacesOrder() {
+        mmProps.setMinSellOrderQuoteNotional(new BigDecimal("5.9939520000"));
+        MarketMakerCell pending = sellCell(null);
+        pending.setBuyFilledAmount(new BigDecimal("0.0001"));
+        pending.setTotalFeeBase(BigDecimal.ZERO);
+        pending.setSellPrice(new BigDecimal("10000"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000100"), eq("59939.52"), eq("mm-btcusdt-1-SELL")))
+                .thenReturn(placeOk("779"));
+
+        svc.advanceCell(pending);
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000100"), eq("59939.52"), eq("mm-btcusdt-1-SELL"));
+        verify(recorder).markMmSellResting(100L, 779L);
+        verify(recorder, never()).markMmDust(anyLong(), anyString(), any(), any(), any());
+    }
+
     @Test void resting_sell_filled_marks_done() {
         when(spot.queryOrder(777L)).thenReturn(orderOk("filled", "0.0003", null, "0.0003"));
         svc.advanceCell(sellCell(777L));
@@ -241,7 +272,7 @@ class MarketMakerServiceAdvanceTest {
     @Test void resting_sell_external_cancel_records_exposure_and_done() {
         when(spot.queryOrder(777L)).thenReturn(orderOk("canceled", "0.0001", null, "0.0003"));
         svc.advanceCell(sellCell(777L));
-        verify(recorder).recordExposure(eq(100L), eq("btcusdt"), eq("base-long"), any(), anyString());
+        verify(recorder).recordExposure(eq(100L), eq("btcusdt"), eq(HtxStatus.EXPOSED_SIDE_BASE_LONG), any(), anyString());
         verify(recorder).markMmDone(eq(100L), any());
     }
 
