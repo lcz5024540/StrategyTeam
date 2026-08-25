@@ -1,0 +1,622 @@
+{
+  "captured_at_utc": "2026-08-11T16:56:54.674998+00:00",
+  "credential": "server child-account API key (redacted)",
+  "contract": "XAUT-USDT",
+  "hosts": {
+    "api.hbdm.com": {
+      "public_contract_info": {
+        "http_status": 200,
+        "elapsed_ms": 169.03,
+        "response": {
+          "status": "ok",
+          "data": [
+            {
+              "symbol": "XAUT",
+              "contract_code": "XAUT-USDT",
+              "contract_size": 0.001,
+              "price_tick": 0.01,
+              "delivery_date": "",
+              "delivery_time": "",
+              "create_date": "20260122",
+              "contract_status": 1,
+              "adjust": [],
+              "price_estimated": [],
+              "settlement_date": "1786478400000",
+              "support_margin_mode": "all",
+              "open_type": 0,
+              "settlement_period": "4",
+              "labels": [
+                "tradfi",
+                "common"
+              ],
+              "tradfi_labels": [
+                "Metals"
+              ],
+              "business_type": "swap",
+              "pair": "XAUT-USDT",
+              "contract_type": "swap",
+              "trade_partition": "USDT"
+            }
+          ],
+          "ts": 1786467401396
+        }
+      },
+      "api_trading_status": {
+        "http_status": 200,
+        "elapsed_ms": 128.05,
+        "response": {
+          "status": "ok",
+          "data": {
+            "is_disable": 0,
+            "order_price_types": "",
+            "disable_reason": "",
+            "disable_interval": 0,
+            "recovery_time": 0,
+            "COR": {
+              "orders_threshold": 30000,
+              "orders": 0,
+              "invalid_cancel_orders": 0,
+              "cancel_ratio_threshold": 0.99999999,
+              "cancel_ratio": 0,
+              "is_trigger": 0,
+              "is_active": 1
+            },
+            "TDN": {
+              "disables_threshold": 5,
+              "disables": 0,
+              "is_trigger": 0,
+              "is_active": 1
+            }
+          },
+          "ts": 1786467401522
+        }
+      },
+      "account_type": {
+        "http_status": 200,
+        "elapsed_ms": 130.58,
+        "response": {
+          "code": 200,
+          "msg": "ok",
+          "data": {
+            "account_type": 1
+          },
+          "ts": 1786467401733
+        }
+      },
+      "balance_valuation": {
+        "http_status": 200,
+        "elapsed_ms": 127.01,
+        "response": {
+          "status": "ok",
+          "data": [
+            {
+              "valuation_asset": "USDT",
+              "balance": "93.6519895034"
+            }
+          ],
+          "ts": 1786467401942
+        }
+      },
+      "isolated_available_leverage": {
+        "http_status": 200,
+        "elapsed_ms": 135.58,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467402156
+        }
+      },
+      "isolated_account": {
+        "http_status": 200,
+        "elapsed_ms": 136.97,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467402379
+        }
+      },
+      "isolated_position": {
+        "http_status": 200,
+        "elapsed_ms": 125.81,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467402585
+        }
+      },
+      "isolated_openorders": {
+        "http_status": 200,
+        "elapsed_ms": 130.33,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467402792
+        }
+      },
+      "cross_available_leverage": {
+        "http_status": 200,
+        "elapsed_ms": 127.39,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467403004
+        }
+      },
+      "cross_account": {
+        "http_status": 200,
+        "elapsed_ms": 134.26,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467403217
+        }
+      },
+      "cross_position": {
+        "http_status": 200,
+        "elapsed_ms": 125.06,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467403424
+        }
+      },
+      "cross_openorders": {
+        "http_status": 200,
+        "elapsed_ms": 138.0,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467403641
+        }
+      },
+      "unified_assets": {
+        "http_status": 200,
+        "elapsed_ms": 127.14,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467403846
+        }
+      },
+      "isolated_history": {
+        "http_status": 200,
+        "elapsed_ms": 136.0,
+        "response": {
+          "code": 200,
+          "msg": "ok",
+          "data": [],
+          "ts": 1786467404061
+        }
+      },
+      "cross_history": {
+        "http_status": 200,
+        "elapsed_ms": 123.68,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467404266
+        }
+      }
+    },
+    "api.btcgateway.pro": {
+      "public_contract_info": {
+        "http_status": 200,
+        "elapsed_ms": 478.13,
+        "response": {
+          "status": "ok",
+          "data": [
+            {
+              "symbol": "XAUT",
+              "contract_code": "XAUT-USDT",
+              "contract_size": 0.001,
+              "price_tick": 0.01,
+              "delivery_date": "",
+              "delivery_time": "",
+              "create_date": "20260122",
+              "contract_status": 1,
+              "adjust": [],
+              "price_estimated": [],
+              "settlement_date": "1786478400000",
+              "support_margin_mode": "all",
+              "open_type": 0,
+              "settlement_period": "4",
+              "labels": [
+                "tradfi",
+                "common"
+              ],
+              "tradfi_labels": [
+                "Metals"
+              ],
+              "business_type": "swap",
+              "pair": "XAUT-USDT",
+              "contract_type": "swap",
+              "trade_partition": "USDT"
+            }
+          ],
+          "ts": 1786467404824
+        }
+      },
+      "api_trading_status": {
+        "http_status": 200,
+        "elapsed_ms": 474.77,
+        "response": {
+          "status": "ok",
+          "data": {
+            "is_disable": 0,
+            "order_price_types": "",
+            "disable_reason": "",
+            "disable_interval": 0,
+            "recovery_time": 0,
+            "COR": {
+              "orders_threshold": 30000,
+              "orders": 0,
+              "invalid_cancel_orders": 0,
+              "cancel_ratio_threshold": 0.99999999,
+              "cancel_ratio": 0,
+              "is_trigger": 0,
+              "is_active": 1
+            },
+            "TDN": {
+              "disables_threshold": 5,
+              "disables": 0,
+              "is_trigger": 0,
+              "is_active": 1
+            }
+          },
+          "ts": 1786467405302
+        }
+      },
+      "account_type": {
+        "http_status": 200,
+        "elapsed_ms": 475.37,
+        "response": {
+          "code": 200,
+          "msg": "ok",
+          "data": {
+            "account_type": 1
+          },
+          "ts": 1786467405857
+        }
+      },
+      "balance_valuation": {
+        "http_status": 200,
+        "elapsed_ms": 139.08,
+        "response": {
+          "status": "ok",
+          "data": [
+            {
+              "valuation_asset": "USDT",
+              "balance": "93.6519895034"
+            }
+          ],
+          "ts": 1786467406078
+        }
+      },
+      "isolated_available_leverage": {
+        "http_status": 200,
+        "elapsed_ms": 128.35,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467406287
+        }
+      },
+      "isolated_account": {
+        "http_status": 200,
+        "elapsed_ms": 443.99,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467406811
+        }
+      },
+      "isolated_position": {
+        "http_status": 200,
+        "elapsed_ms": 459.3,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467407347
+        }
+      },
+      "isolated_openorders": {
+        "http_status": 200,
+        "elapsed_ms": 136.08,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467407564
+        }
+      },
+      "cross_available_leverage": {
+        "http_status": 200,
+        "elapsed_ms": 129.36,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467407774
+        }
+      },
+      "cross_account": {
+        "http_status": 200,
+        "elapsed_ms": 129.83,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467407988
+        }
+      },
+      "cross_position": {
+        "http_status": 200,
+        "elapsed_ms": 141.1,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467408205
+        }
+      },
+      "cross_openorders": {
+        "http_status": 200,
+        "elapsed_ms": 136.18,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467408420
+        }
+      },
+      "unified_assets": {
+        "http_status": 200,
+        "elapsed_ms": 133.02,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467408635
+        }
+      },
+      "isolated_history": {
+        "http_status": 200,
+        "elapsed_ms": 143.82,
+        "response": {
+          "code": 200,
+          "msg": "ok",
+          "data": [],
+          "ts": 1786467408862
+        }
+      },
+      "cross_history": {
+        "http_status": 200,
+        "elapsed_ms": 154.86,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467409098
+        }
+      }
+    },
+    "api.hbdm.vn": {
+      "public_contract_info": {
+        "http_status": 200,
+        "elapsed_ms": 292.06,
+        "response": {
+          "status": "ok",
+          "data": [
+            {
+              "symbol": "XAUT",
+              "contract_code": "XAUT-USDT",
+              "contract_size": 0.001,
+              "price_tick": 0.01,
+              "delivery_date": "",
+              "delivery_time": "",
+              "create_date": "20260122",
+              "contract_status": 1,
+              "adjust": [],
+              "price_estimated": [],
+              "settlement_date": "1786478400000",
+              "support_margin_mode": "all",
+              "open_type": 0,
+              "settlement_period": "4",
+              "labels": [
+                "tradfi",
+                "common"
+              ],
+              "tradfi_labels": [
+                "Metals"
+              ],
+              "business_type": "swap",
+              "pair": "XAUT-USDT",
+              "contract_type": "swap",
+              "trade_partition": "USDT"
+            }
+          ],
+          "ts": 1786467409399
+        }
+      },
+      "api_trading_status": {
+        "http_status": 200,
+        "elapsed_ms": 280.53,
+        "response": {
+          "status": "ok",
+          "data": {
+            "is_disable": 0,
+            "order_price_types": "",
+            "disable_reason": "",
+            "disable_interval": 0,
+            "recovery_time": 0,
+            "COR": {
+              "orders_threshold": 30000,
+              "orders": 0,
+              "invalid_cancel_orders": 0,
+              "cancel_ratio_threshold": 0.99999999,
+              "cancel_ratio": 0,
+              "is_trigger": 0,
+              "is_active": 1
+            },
+            "TDN": {
+              "disables_threshold": 5,
+              "disables": 0,
+              "is_trigger": 0,
+              "is_active": 1
+            }
+          },
+          "ts": 1786467409680
+        }
+      },
+      "account_type": {
+        "http_status": 200,
+        "elapsed_ms": 293.85,
+        "response": {
+          "code": 200,
+          "msg": "ok",
+          "data": {
+            "account_type": 1
+          },
+          "ts": 1786467410053
+        }
+      },
+      "balance_valuation": {
+        "http_status": 200,
+        "elapsed_ms": 288.31,
+        "response": {
+          "status": "ok",
+          "data": [
+            {
+              "valuation_asset": "USDT",
+              "balance": "93.6519895034"
+            }
+          ],
+          "ts": 1786467410419
+        }
+      },
+      "isolated_available_leverage": {
+        "http_status": 200,
+        "elapsed_ms": 299.21,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467410798
+        }
+      },
+      "isolated_account": {
+        "http_status": 200,
+        "elapsed_ms": 288.2,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467411170
+        }
+      },
+      "isolated_position": {
+        "http_status": 200,
+        "elapsed_ms": 286.22,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467411534
+        }
+      },
+      "isolated_openorders": {
+        "http_status": 200,
+        "elapsed_ms": 294.26,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467411904
+        }
+      },
+      "cross_available_leverage": {
+        "http_status": 200,
+        "elapsed_ms": 286.45,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467412272
+        }
+      },
+      "cross_account": {
+        "http_status": 200,
+        "elapsed_ms": 292.72,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467412645
+        }
+      },
+      "cross_position": {
+        "http_status": 200,
+        "elapsed_ms": 279.15,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467413012
+        }
+      },
+      "cross_openorders": {
+        "http_status": 200,
+        "elapsed_ms": 284.67,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467413369
+        }
+      },
+      "unified_assets": {
+        "http_status": 200,
+        "elapsed_ms": 286.12,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467413736
+        }
+      },
+      "isolated_history": {
+        "http_status": 200,
+        "elapsed_ms": 289.93,
+        "response": {
+          "code": 200,
+          "msg": "ok",
+          "data": [],
+          "ts": 1786467414114
+        }
+      },
+      "cross_history": {
+        "http_status": 200,
+        "elapsed_ms": 275.97,
+        "response": {
+          "status": "error",
+          "err_code": 6023,
+          "err_msg": "The new feature is temporarily unavailable.",
+          "ts": 1786467414472
+        }
+      }
+    }
+  }
+}

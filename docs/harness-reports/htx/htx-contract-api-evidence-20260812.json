@@ -1,0 +1,286 @@
+{
+  "host": "api.hbdm.com",
+  "credential": "server child-account API key (redacted)",
+  "contract": "XAUT-USDT",
+  "checks": {
+    "api_trading_status": {
+      "captured_at_utc": "2026-08-11T16:58:01.582064+00:00",
+      "method": "GET",
+      "path": "/linear-swap-api/v1/swap_api_trading_status",
+      "request_query": null,
+      "request_body": null,
+      "safe_curl_template": "curl -sS -X GET 'https://api.hbdm.com/linear-swap-api/v1/swap_api_trading_status?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>'",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "data": {
+          "is_disable": 0,
+          "order_price_types": "",
+          "disable_reason": "",
+          "disable_interval": 0,
+          "recovery_time": 0,
+          "COR": {
+            "orders_threshold": 30000,
+            "orders": 0,
+            "invalid_cancel_orders": 0,
+            "cancel_ratio_threshold": 0.99999999,
+            "cancel_ratio": 0,
+            "is_trigger": 0,
+            "is_active": 1
+          },
+          "TDN": {
+            "disables_threshold": 5,
+            "disables": 0,
+            "is_trigger": 0,
+            "is_active": 1
+          }
+        },
+        "ts": 1786467481527
+      }
+    },
+    "account_type": {
+      "captured_at_utc": "2026-08-11T16:58:01.829905+00:00",
+      "method": "GET",
+      "path": "/linear-swap-api/v3/swap_unified_account_type",
+      "request_query": null,
+      "request_body": null,
+      "safe_curl_template": "curl -sS -X GET 'https://api.hbdm.com/linear-swap-api/v3/swap_unified_account_type?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>'",
+      "http_status": 200,
+      "response": {
+        "code": 200,
+        "msg": "ok",
+        "data": {
+          "account_type": 1
+        },
+        "ts": 1786467481774
+      }
+    },
+    "isolated_available_leverage": {
+      "captured_at_utc": "2026-08-11T16:58:02.079366+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_available_level_rate",
+      "request_query": null,
+      "request_body": {
+        "contract_code": "XAUT-USDT"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_available_level_rate?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract_code\":\"XAUT-USDT\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467482026
+      }
+    },
+    "isolated_account": {
+      "captured_at_utc": "2026-08-11T16:58:02.328726+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_account_info",
+      "request_query": null,
+      "request_body": {
+        "contract_code": "XAUT-USDT"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_account_info?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract_code\":\"XAUT-USDT\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467482271
+      }
+    },
+    "isolated_position": {
+      "captured_at_utc": "2026-08-11T16:58:02.568891+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_position_info",
+      "request_query": null,
+      "request_body": {
+        "contract_code": "XAUT-USDT"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_position_info?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract_code\":\"XAUT-USDT\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467482516
+      }
+    },
+    "isolated_openorders": {
+      "captured_at_utc": "2026-08-11T16:58:02.820333+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_openorders",
+      "request_query": null,
+      "request_body": {
+        "contract_code": "XAUT-USDT",
+        "page_index": 1,
+        "page_size": 50,
+        "sort_by": "update_time"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_openorders?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract_code\":\"XAUT-USDT\",\"page_index\":1,\"page_size\":50,\"sort_by\":\"update_time\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467482762
+      }
+    },
+    "cross_available_leverage": {
+      "captured_at_utc": "2026-08-11T16:58:03.065794+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_cross_available_level_rate",
+      "request_query": null,
+      "request_body": {
+        "contract_code": "XAUT-USDT",
+        "business_type": "swap"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_cross_available_level_rate?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract_code\":\"XAUT-USDT\",\"business_type\":\"swap\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467483008
+      }
+    },
+    "cross_account": {
+      "captured_at_utc": "2026-08-11T16:58:03.315234+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_cross_account_info",
+      "request_query": null,
+      "request_body": {
+        "margin_account": "USDT"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_cross_account_info?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"margin_account\":\"USDT\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467483257
+      }
+    },
+    "cross_position": {
+      "captured_at_utc": "2026-08-11T16:58:03.562003+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_cross_position_info",
+      "request_query": null,
+      "request_body": {
+        "contract_code": "XAUT-USDT"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_cross_position_info?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract_code\":\"XAUT-USDT\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467483507
+      }
+    },
+    "cross_openorders": {
+      "captured_at_utc": "2026-08-11T16:58:03.803728+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_cross_openorders",
+      "request_query": null,
+      "request_body": {
+        "contract_code": "XAUT-USDT",
+        "page_index": 1,
+        "page_size": 50,
+        "sort_by": "update_time"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_cross_openorders?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract_code\":\"XAUT-USDT\",\"page_index\":1,\"page_size\":50,\"sort_by\":\"update_time\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467483750
+      }
+    },
+    "unified_assets": {
+      "captured_at_utc": "2026-08-11T16:58:04.045350+00:00",
+      "method": "GET",
+      "path": "/linear-swap-api/v3/unified_account_info",
+      "request_query": {
+        "contract_code": "XAUT-USDT"
+      },
+      "request_body": null,
+      "safe_curl_template": "curl -sS -X GET 'https://api.hbdm.com/linear-swap-api/v3/unified_account_info?contract_code=XAUT-USDT&AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467483992
+      }
+    },
+    "balance_valuation": {
+      "captured_at_utc": "2026-08-11T16:58:04.286003+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v1/swap_balance_valuation",
+      "request_query": null,
+      "request_body": {
+        "valuation_asset": "USDT"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v1/swap_balance_valuation?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"valuation_asset\":\"USDT\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "ok",
+        "data": [
+          {
+            "valuation_asset": "USDT",
+            "balance": "93.6519895034"
+          }
+        ],
+        "ts": 1786467484233
+      }
+    },
+    "isolated_history": {
+      "captured_at_utc": "2026-08-11T16:58:04.543606+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v3/swap_hisorders",
+      "request_query": null,
+      "request_body": {
+        "contract": "XAUT-USDT",
+        "trade_type": 0,
+        "start_time": 1786381081394,
+        "end_time": 1786467481394,
+        "direct": "prev",
+        "type": 1,
+        "status": "0"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v3/swap_hisorders?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract\":\"XAUT-USDT\",\"trade_type\":0,\"start_time\":1786381081394,\"end_time\":1786467481394,\"direct\":\"prev\",\"type\":1,\"status\":\"0\"}'",
+      "http_status": 200,
+      "response": {
+        "code": 200,
+        "msg": "ok",
+        "data": [],
+        "ts": 1786467484490
+      }
+    },
+    "cross_history": {
+      "captured_at_utc": "2026-08-11T16:58:04.793122+00:00",
+      "method": "POST",
+      "path": "/linear-swap-api/v3/swap_cross_hisorders",
+      "request_query": null,
+      "request_body": {
+        "contract": "XAUT-USDT",
+        "trade_type": 0,
+        "start_time": 1786381081394,
+        "end_time": 1786467481394,
+        "direct": "prev",
+        "type": 1,
+        "status": "0"
+      },
+      "safe_curl_template": "curl -sS -X POST 'https://api.hbdm.com/linear-swap-api/v3/swap_cross_hisorders?AccessKeyId=<REDACTED>&SignatureMethod=HmacSHA256&SignatureVersion=2&Timestamp=<UTC_TIMESTAMP>&Signature=<REDACTED>' -H 'Content-Type: application/json' --data '{\"contract\":\"XAUT-USDT\",\"trade_type\":0,\"start_time\":1786381081394,\"end_time\":1786467481394,\"direct\":\"prev\",\"type\":1,\"status\":\"0\"}'",
+      "http_status": 200,
+      "response": {
+        "status": "error",
+        "err_code": 6023,
+        "err_msg": "The new feature is temporarily unavailable.",
+        "ts": 1786467484734
+      }
+    }
+  }
+}
