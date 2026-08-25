@@ -53,7 +53,7 @@ class PerpetualPublicClientTest {
 
         assertEquals("BTCUSDT", client.contracts().get(0).canonicalSymbol());
         assertEquals(8, client.funding("BTCUSDT").intervalHours());
-        assertEquals("198", client.orderBook("BTCUSDT", 5).bidNotional().toPlainString());
+        assertEquals("1.98", client.orderBook("BTCUSDT", 5).bidNotional().toPlainString());
     }
 
     @Test
@@ -72,7 +72,7 @@ class PerpetualPublicClientTest {
 
         assertEquals("BTC-USDT", client.contracts().get(0).exchangeSymbol());
         assertEquals("99.7", client.funding("BTCUSDT").indexPrice().toPlainString());
-        assertEquals("303", client.orderBook("BTCUSDT", 5).askNotional().toPlainString());
+        assertEquals("3.03", client.orderBook("BTCUSDT", 5).askNotional().toPlainString());
     }
 
     @Test

@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Public-only USDT perpetual market-data client. It contains no signed trading operations. */
 final class PerpetualPublicClient implements PerpetualMarketDataClient {
@@ -18,6 +19,7 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
     private final Venue venue;
     private final URI baseUri;
     private final PublicJsonHttpClient http;
+    private final Map<String, BigDecimal> contractMultipliers = new ConcurrentHashMap<>();
 
     PerpetualPublicClient(Venue venue) {
         this(venue, URI.create(defaultBaseUrl(venue)), new PublicJsonHttpClient());
@@ -113,8 +115,9 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
             BigDecimal lot = decimal(node, "lotSz");
             BigDecimal minimum = decimal(node, "minSz").multiply(decimal(node, "ctVal"))
                     .multiply(prices.getOrDefault(exchangeSymbol, BigDecimal.ZERO));
-            addContract(result, node.path("ctValCcy").asText() + "USDT", exchangeSymbol,
-                    lot, tick, minimum);
+            String canonicalSymbol = node.path("ctValCcy").asText() + "USDT";
+            addContract(result, canonicalSymbol, exchangeSymbol, lot, tick, minimum);
+            rememberContractMultiplier(canonicalSymbol, decimal(node, "ctVal"));
         }
         return result;
     }
@@ -137,7 +140,8 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
     private OrderBook okxBook(String symbol, int depth, Instant receivedAt) {
         JsonNode node = get("/api/v5/market/books?instId=" + okxSwap(symbol)
                 + "&sz=" + clamp(depth, 1)).path("data").path(0);
-        return book(symbol, node.path("bids"), node.path("asks"), Integer.MAX_VALUE, receivedAt);
+        return book(symbol, node.path("bids"), node.path("asks"), Integer.MAX_VALUE,
+                contractMultiplier(symbol), receivedAt);
     }
 
     private List<Contract> htxContracts() {
@@ -157,8 +161,10 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
             BigDecimal minimum = contractSize.multiply(
                     prices.getOrDefault(exchangeSymbol, BigDecimal.ZERO));
             if (tick.signum() > 0 && minimum.signum() > 0) {
-                result.add(new Contract(node.path("symbol").asText() + "USDT", exchangeSymbol,
+                String canonicalSymbol = node.path("symbol").asText() + "USDT";
+                result.add(new Contract(canonicalSymbol, exchangeSymbol,
                         0, scale(tick), minimum));
+                rememberContractMultiplier(canonicalSymbol, contractSize);
             }
         }
         return result;
@@ -181,7 +187,8 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
     private OrderBook htxBook(String symbol, int depth, Instant receivedAt) {
         JsonNode node = get("/linear-swap-ex/market/depth?contract_code=" + htxContract(symbol)
                 + "&type=step0").path("tick");
-        return book(symbol, node.path("bids"), node.path("asks"), Math.max(1, depth), receivedAt);
+        return book(symbol, node.path("bids"), node.path("asks"), Math.max(1, depth),
+                contractMultiplier(symbol), receivedAt);
     }
 
     private List<Contract> bitgetContracts() {
@@ -235,13 +242,18 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
 
     private OrderBook book(String symbol, JsonNode bids, JsonNode asks, int maximumLevels,
             Instant receivedAt) {
+        return book(symbol, bids, asks, maximumLevels, BigDecimal.ONE, receivedAt);
+    }
+
+    private OrderBook book(String symbol, JsonNode bids, JsonNode asks, int maximumLevels,
+            BigDecimal contractMultiplier, Instant receivedAt) {
         BigDecimal bestBid = levelValue(bids, 0, 0);
         BigDecimal bestAsk = levelValue(asks, 0, 0);
         if (bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
             throw new IllegalStateException("incomplete order book for " + venue + "/" + symbol);
         }
-        return new OrderBook(symbol, bestBid, bestAsk, notional(bids, maximumLevels),
-                notional(asks, maximumLevels), receivedAt);
+        return new OrderBook(symbol, bestBid, bestAsk, notional(bids, maximumLevels,
+                contractMultiplier), notional(asks, maximumLevels, contractMultiplier), receivedAt);
     }
 
     private void addContract(List<Contract> result, String canonical, String exchangeSymbol,
@@ -269,7 +281,7 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
         return BigDecimal.ZERO;
     }
 
-    private BigDecimal notional(JsonNode levels, int maximumLevels) {
+    private BigDecimal notional(JsonNode levels, int maximumLevels, BigDecimal contractMultiplier) {
         BigDecimal result = BigDecimal.ZERO;
         int count = 0;
         for (JsonNode level : levels) {
@@ -277,9 +289,29 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
                 break;
             }
             result = result.add(levelValue(levels, count - 1, 0)
-                    .multiply(levelValue(levels, count - 1, 1)));
+                    .multiply(levelValue(levels, count - 1, 1))
+                    .multiply(contractMultiplier));
         }
         return result;
+    }
+
+    private void rememberContractMultiplier(String symbol, BigDecimal multiplier) {
+        if (multiplier.signum() > 0) {
+            contractMultipliers.put(symbol, multiplier);
+        }
+    }
+
+    private BigDecimal contractMultiplier(String symbol) {
+        BigDecimal multiplier = contractMultipliers.get(symbol);
+        if (multiplier != null) {
+            return multiplier;
+        }
+        contracts();
+        multiplier = contractMultipliers.get(symbol);
+        if (multiplier == null) {
+            throw new IllegalStateException("contract multiplier is missing for " + venue + "/" + symbol);
+        }
+        return multiplier;
     }
 
     private BigDecimal levelValue(JsonNode levels, int level, int field) {

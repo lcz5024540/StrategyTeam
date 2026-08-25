@@ -32,6 +32,23 @@ class CrossExchangeRiskServiceTest {
     }
 
     @Test
+    void capsPaperOpenNotionalAtApprovedOpportunityCapacity() {
+        var risk = new CrossExchangeRiskService(new CrossExchangeRiskService.Limits(
+                new BigDecimal("200"), Duration.ofSeconds(5), Duration.ofDays(1),
+                BigDecimal.ZERO));
+        Instant now = Instant.now();
+        CrossExchangeOpportunity opportunity = opportunity("BTCUSDT", now);
+
+        assertTrue(risk.approveOpen(opportunity, new BigDecimal("100"), List.of(),
+                false, false).passed());
+        var assessment = risk.approveOpen(opportunity, new BigDecimal("100.01"), List.of(),
+                false, false);
+
+        assertFalse(assessment.passed());
+        assertEquals("OPPORTUNITY_NOTIONAL_LIMIT", assessment.reason());
+    }
+
+    @Test
     void exitsWhenCrossExchangeMarkPriceDeviationIsTooLarge() {
         var risk = new CrossExchangeRiskService(new CrossExchangeRiskService.Limits(
                 new BigDecimal("100"), Duration.ofSeconds(5), Duration.ofDays(1),

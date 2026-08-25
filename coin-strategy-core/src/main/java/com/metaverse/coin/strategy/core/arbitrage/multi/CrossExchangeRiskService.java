@@ -32,6 +32,10 @@ public class CrossExchangeRiskService {
         if (opportunity == null) return new Assessment(false, "OPPORTUNITY_REQUIRED");
         if (notional == null) return new Assessment(false, "NOTIONAL_REQUIRED");
         if (!opportunity.executable()) return new Assessment(false, "OPPORTUNITY_NOT_EXECUTABLE");
+        if (opportunity.executableNotional() == null
+                || notional.compareTo(opportunity.executableNotional()) > 0) {
+            return new Assessment(false, "OPPORTUNITY_NOTIONAL_LIMIT");
+        }
         if (notional.signum() <= 0 || notional.compareTo(limits.maxSymbolNotional()) > 0) return new Assessment(false, "SYMBOL_NOTIONAL_LIMIT");
         BigDecimal longExchangeExposure = exchangeExposure(positions,
                 opportunity.longQuote().exchange());

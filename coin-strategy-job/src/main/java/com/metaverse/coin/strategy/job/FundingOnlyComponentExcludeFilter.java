@@ -21,19 +21,23 @@ public final class FundingOnlyComponentExcludeFilter implements TypeFilter {
     static final String DEPLOYMENT_MODE_PROPERTY = "strategy.deployment-mode";
     static final String FUNDING_ONLY_MODE = "FUNDING_ONLY";
 
-    private static final List<String> EXCLUDED_PACKAGE_PREFIXES = List.of(
-            "com.metaverse.coin.strategy.job.smartwallet.",
-            "com.metaverse.coin.strategy.job.btcminute.",
-            "com.metaverse.coin.strategy.job.execution.",
-            "com.metaverse.coin.strategy.job.marketdata.",
-            "com.metaverse.coin.strategy.job.engine.control.",
-            "com.metaverse.coin.strategy.job.grid.",
-            "com.metaverse.coin.strategy.job.analytics.",
-            "com.metaverse.coin.strategy.job.follow.",
-            "com.metaverse.coin.strategy.job.settlement.",
-            "com.metaverse.coin.strategy.job.risk.",
-            "com.metaverse.coin.strategy.job.weather.",
-            "com.metaverse.coin.strategy.common.service.smartwallet."
+    private static final List<String> FUNDING_ONLY_ALLOWED_CLASS_NAMES = List.of(
+            "com.metaverse.coin.strategy.job.CoinStrategyJobApplication",
+            "com.metaverse.coin.strategy.job.config.DataSourceConfig",
+            "com.metaverse.coin.strategy.job.config.SecretDecryptor",
+            "com.metaverse.coin.strategy.job.config.JacksonConfig",
+            "com.metaverse.coin.strategy.job.config.MybatisPlusConfig",
+            "com.metaverse.coin.strategy.job.config.OpenApiConfig",
+            "com.metaverse.coin.strategy.job.config.SchedulingConfig",
+            "com.metaverse.coin.strategy.job.funding.config.CrossExchangePaperConfiguration",
+            "com.metaverse.coin.strategy.job.funding.controller.CrossExchangeFundingArbitrageController",
+            "com.metaverse.coin.strategy.core.arbitrage.config.MultiExchangeFundingRateProperties"
+    );
+
+    private static final List<String> FUNDING_ONLY_ALLOWED_PACKAGE_PREFIXES = List.of(
+            "com.metaverse.coin.strategy.job.funding.service.CrossExchange",
+            "com.metaverse.coin.strategy.job.funding.service.FundingArb",
+            "com.metaverse.coin.strategy.core.arbitrage.multi."
     );
 
     private final boolean fundingOnly;
@@ -50,6 +54,11 @@ public final class FundingOnlyComponentExcludeFilter implements TypeFilter {
             return false;
         }
         String className = metadataReader.getClassMetadata().getClassName();
-        return EXCLUDED_PACKAGE_PREFIXES.stream().anyMatch(className::startsWith);
+        return !isFundingOnlyComponentAllowed(className);
+    }
+
+    private boolean isFundingOnlyComponentAllowed(String className) {
+        return FUNDING_ONLY_ALLOWED_CLASS_NAMES.contains(className)
+                || FUNDING_ONLY_ALLOWED_PACKAGE_PREFIXES.stream().anyMatch(className::startsWith);
     }
 }

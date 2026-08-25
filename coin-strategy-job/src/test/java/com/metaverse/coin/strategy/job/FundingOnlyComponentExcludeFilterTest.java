@@ -39,11 +39,38 @@ class FundingOnlyComponentExcludeFilterTest {
     }
 
     @Test
+    void excludesEveryPrivateTradingEntryPointInFundingOnlyMode() throws Exception {
+        FundingOnlyComponentExcludeFilter filter = filterFor("FUNDING_ONLY");
+
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.controller.BinanceController"))
+                .isTrue();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.hedge.controller.BinanceHedgeController"))
+                .isTrue();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.service.BinanceTradingService"))
+                .isTrue();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.config.BinanceConfig"))
+                .isTrue();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.funding.controller.BinanceSingleExchangeArbitrageRuntimeController"))
+                .isTrue();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.funding.service.BinanceWebSocketStreamService"))
+                .isTrue();
+    }
+
+    @Test
     void keepsFundingArbitrageComponentsInFundingOnlyMode() throws Exception {
         FundingOnlyComponentExcludeFilter filter = filterFor("FUNDING_ONLY");
 
         assertThat(matches(filter,
                 "com.metaverse.coin.strategy.job.funding.service.CrossExchangeFundingScanJob"))
+                .isFalse();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.config.DataSourceConfig"))
                 .isFalse();
     }
 
