@@ -101,17 +101,6 @@ h1 {
   border-color: rgba(31, 122, 77, 0.24);
 }
 
-.scanner-link {
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.scanner-link:hover {
-  text-decoration: underline;
-}
-
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);

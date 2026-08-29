@@ -244,7 +244,7 @@ Web 与 Job 继续保持无 HTTP 依赖。Web 通过已有数据库连接读取�
 
 ## 6. Web API 契约
 
-Web 服务存在 context path `/strategy/api`；Controller 以 `/strategy-platform/arbitrage-dashboard` 为前缀，因此以下为对外完整只读 API：
+**前端归属**：页面源码和构建产物只放在 `docs/projects/CoinStrategy/coin-strategy-frontend`（React/Vite）；`coin-strategy-web` 只提供下列只读交互 API，不再托管套利扫描器静态页面。Web 服务存在 context path `/strategy/api`；Controller 以 `/strategy-platform/arbitrage-dashboard` 为前缀，因此以下为对外完整只读 API：
 
 | API | 说明 |
 |---|---|
