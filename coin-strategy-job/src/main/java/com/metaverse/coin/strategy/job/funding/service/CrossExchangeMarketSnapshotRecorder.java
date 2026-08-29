@@ -19,13 +19,15 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /** Appends public market snapshots to a source-attributed CSV dataset for offline replay. */
 @Component
 public class CrossExchangeMarketSnapshotRecorder {
     private static final String HEADER = "schemaVersion,capturedAt,source,exchange,symbol,"
             + "rawFundingRate,fundingIntervalHours,nextFundingTime,markPrice,indexPrice,"
-            + "bestBid,bestAsk,bidNotional,askNotional,fundingReceivedAt,bookReceivedAt,status,error";
+            + "bestBid,bestAsk,bidNotional,askNotional,bidLevels,askLevels,"
+            + "fundingReceivedAt,bookReceivedAt,status,error";
     private static final DateTimeFormatter FILE_DATE = DateTimeFormatter.ofPattern("uuuu-MM-dd")
             .withZone(ZoneOffset.UTC);
 
@@ -60,7 +62,8 @@ public class CrossExchangeMarketSnapshotRecorder {
     }
 
     public synchronized CaptureResult capture(Instant capturedAt) {
-        Path output = outputDirectory.resolve("cross-exchange-funding-"
+        // A separate filename prevents appending v2 rows below an existing v1 header.
+        Path output = outputDirectory.resolve("cross-exchange-funding-v2-"
                 + FILE_DATE.format(capturedAt) + ".csv");
         int succeeded = 0;
         int failed = 0;
@@ -96,22 +99,28 @@ public class CrossExchangeMarketSnapshotRecorder {
 
     private String successRow(Instant capturedAt, CrossExchangeMarketDataProvider provider,
             NormalizedFundingRateSnapshot funding, NormalizedOrderBookSnapshot book) {
-        return String.join(",", "1", capturedAt.toString(), "PUBLIC_REST",
+        return String.join(",", "2", capturedAt.toString(), "PUBLIC_REST",
                 provider.exchange().name(), csv(funding.canonicalSymbol()),
                 funding.rawFundingRate().toPlainString(),
                 String.valueOf(funding.fundingIntervalHours()), funding.nextFundingTime().toString(),
                 funding.markPrice().toPlainString(), funding.indexPrice().toPlainString(),
                 book.bestBid().toPlainString(), book.bestAsk().toPlainString(),
                 book.bidNotional().toPlainString(), book.askNotional().toPlainString(),
+                csv(levels(book.bidLevels())), csv(levels(book.askLevels())),
                 funding.receivedAt().toString(), book.receivedAt().toString(), "OK", "");
     }
 
     private String failureRow(Instant capturedAt, CrossExchangeMarketDataProvider provider,
             String symbol, RuntimeException exception) {
-        return String.join(",", "1", capturedAt.toString(), "PUBLIC_REST",
+        return String.join(",", "2", capturedAt.toString(), "PUBLIC_REST",
                 provider.exchange().name(), csv(symbol), "", "", "", "", "", "", "", "", "",
-                "", "", "ERROR", csv(exception.getClass().getSimpleName() + ": "
+                "", "", "", "", "ERROR", csv(exception.getClass().getSimpleName() + ": "
                         + String.valueOf(exception.getMessage())));
+    }
+
+    private String levels(List<NormalizedOrderBookSnapshot.Level> levels) {
+        return levels.stream().map(level -> level.price().toPlainString() + ":"
+                + level.notional().toPlainString()).collect(Collectors.joining(";"));
     }
 
     private String csv(String value) {

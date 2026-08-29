@@ -4,6 +4,7 @@ import java.time.*; import java.util.*; import java.util.concurrent.ConcurrentHa
 public class CrossExchangeOpportunityStabilityGate {
  private final Duration duration; private final Map<String,Instant> firstSeen=new ConcurrentHashMap<>();
  public CrossExchangeOpportunityStabilityGate(Duration duration){this.duration=duration;}
+ public Duration duration(){return duration;}
  public boolean stable(CrossExchangeOpportunity o,Instant now){if(!o.executable()){firstSeen.remove(key(o));return false;}Instant first=firstSeen.computeIfAbsent(key(o),k->now);return !first.plus(duration).isAfter(now);}
  public void completeScan(String symbol,Collection<CrossExchangeOpportunity> opportunities){Set<String> qualified=new HashSet<>();for(CrossExchangeOpportunity opportunity:opportunities){String key=key(opportunity);if(opportunity.executable())qualified.add(key);else firstSeen.remove(key);}firstSeen.keySet().removeIf(key->key.startsWith(symbol+":")&&!qualified.contains(key));}
  private String key(CrossExchangeOpportunity o){return o.symbol()+":"+o.longQuote().exchange()+":"+o.shortQuote().exchange();}

@@ -48,10 +48,11 @@ arbitrage:
 arbitrage:
   multi-exchange:
     capture-enabled: true
-    capture-output-directory: "./data/funding-replay"
-    capture-symbols: "BTCUSDT,ETHUSDT"
+    # 部署时必须覆盖为持久化卷路径；不要使用容器临时目录。
+    capture-output-directory: "/data/coinstrategy/funding-replay"
+    capture-symbols: "BTCUSDT,ETHUSDT,SOLUSDT"
     capture-order-book-depth: 20
-    capture-delay-ms: 60000
+    capture-delay-ms: 30000
     # 可选：部署网络需经代理或区域域名访问时覆盖；留空使用官方默认域名。
     base-urls:
       binance: ""
@@ -60,7 +61,9 @@ arbitrage:
       bitget: ""
 ```
 
-采集文件按 UTC 日期追加，包含 `schemaVersion`、`capturedAt`、`source=PUBLIC_REST`、交易所、资金费率、结算周期、下一结算时间、mark/index price、盘口价格及名义深度。单一交易所失败会写 `ERROR` 行而不会中断其他交易所；`CrossExchangeMarketSnapshotReplayReader` 可将成功行按 `capturedAt + symbol` 还原为统一资金费率和盘口快照，并单独保留失败记录。`CrossExchangeFundingReplayService` 会按时间排序后复用生产机会选择器、成本模型和稳定窗口输出评估统计。生成目录已加入 `.gitignore`，原始采集数据须经脱敏和来源核验后才能选择性入库。
+采集文件按 UTC 日期追加，当前以 `cross-exchange-funding-v2-<UTC 日期>.csv` 命名，包含 `schemaVersion`、`capturedAt`、`source=PUBLIC_REST`、交易所、资金费率、结算周期、下一结算时间、mark/index price、最优价、聚合名义深度及逐档价格/名义金额。逐档名义金额已按合约乘数归一为 USDT。单一交易所失败会写 `ERROR` 行而不会中断其他交易所；回放读取器同时兼容旧版 v1 文件（其逐档字段为空），并将成功行按 `capturedAt + symbol` 还原为统一资金费率和盘口快照，单独保留失败记录。`CrossExchangeFundingReplayService` 会按时间排序后复用生产机会选择器、成本模型和稳定窗口输出评估统计。生成目录已加入 `.gitignore`，原始采集数据须经脱敏和来源核验后才能选择性入库。
+
+首轮采集至少连续运行 7 天，建议 14 天；每日确认四所成功行、错误行比例和输出目录磁盘余量。完成后回放全部 UTC 日文件，按币对/交易所对统计费率差、可成交 basis、结算时间偏差、通过率和拒绝原因，并基于逐档盘口校准各下单档位的 VWAP/滑点、手续费与 basis 阈值。
 
 启动 `coin-strategy-job` 后，接口前缀为 `/strategy/api`。
 

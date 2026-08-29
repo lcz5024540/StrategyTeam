@@ -18,6 +18,7 @@ public class CrossExchangePositionMonitorService {
     private final Map<Exchange, ExchangeCost> costs;
     private final BigDecimal basisRiskBuffer;
     private final Duration maximumQuoteAge;
+    private final Duration maximumSettlementSkew;
 
     public CrossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,
             CrossExchangeRiskService risk, CrossExchangePaperTradingService paper) {
@@ -41,6 +42,14 @@ public class CrossExchangePositionMonitorService {
             CrossExchangeRiskService risk, CrossExchangePaperTradingService paper,
             CrossExchangeArbitragePersistenceService persistence, Map<Exchange, ExchangeCost> costs,
             BigDecimal basisRiskBuffer, Duration maximumQuoteAge) {
+        this(providers, risk, paper, persistence, costs, basisRiskBuffer, maximumQuoteAge,
+                Duration.ofMinutes(5));
+    }
+
+    public CrossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,
+            CrossExchangeRiskService risk, CrossExchangePaperTradingService paper,
+            CrossExchangeArbitragePersistenceService persistence, Map<Exchange, ExchangeCost> costs,
+            BigDecimal basisRiskBuffer, Duration maximumQuoteAge, Duration maximumSettlementSkew) {
         this.providers = providers.stream().collect(Collectors.toMap(
                 CrossExchangeMarketDataProvider::exchange, Function.identity()));
         this.risk = risk;
@@ -49,6 +58,7 @@ public class CrossExchangePositionMonitorService {
         this.costs = costs == null ? Map.of() : Map.copyOf(costs);
         this.basisRiskBuffer = basisRiskBuffer == null ? BigDecimal.ZERO : basisRiskBuffer;
         this.maximumQuoteAge = maximumQuoteAge;
+        this.maximumSettlementSkew = maximumSettlementSkew;
     }
 
     public List<PaperHedgePosition> monitor(Instant now) {
@@ -73,8 +83,9 @@ public class CrossExchangePositionMonitorService {
                     .subtract(quotes.longQuote().markPrice()).abs()
                     .divide(quotes.longQuote().markPrice(), 12, RoundingMode.HALF_UP);
             CrossExchangeRiskService.Assessment exit = risk.shouldExit(position, latestNetYield,
-                    deviation, now, true, paper.isPaused());
+                    deviation, now, true, paper.isPaused(), settlementAligned(quotes));
             if (exit.passed()) {
+                recordExit(position, exit.reason());
                 closed.add(paper.close(position.positionId(), quotes.longQuote().markPrice(),
                         quotes.shortQuote().markPrice(), now));
             }
@@ -131,6 +142,18 @@ public class CrossExchangePositionMonitorService {
                 .subtract(oneWayCost(longQuote.exchange()))
                 .subtract(oneWayCost(shortQuote.exchange()))
                 .subtract(basisRiskBuffer);
+    }
+
+    private boolean settlementAligned(LatestQuotes quotes) {
+        return Duration.between(quotes.longQuote().nextFundingTime(),
+                quotes.shortQuote().nextFundingTime()).abs().compareTo(maximumSettlementSkew) <= 0;
+    }
+
+    private void recordExit(PaperHedgePosition position, String reason) {
+        if (persistence != null) {
+            persistence.saveRisk(position.positionId(), position.opportunity().opportunityId(),
+                    "POSITION_MONITOR", false, reason);
+        }
     }
 
     private BigDecimal oneWayCost(Exchange exchange) {

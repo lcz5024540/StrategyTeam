@@ -57,7 +57,12 @@ public abstract class ReadOnlyFundingRateGateway
     public NormalizedOrderBookSnapshot orderBook(String symbol, int depth) {
         PerpetualMarketDataClient.OrderBook book = client.orderBook(symbol, depth);
         return new NormalizedOrderBookSnapshot(exchange, book.canonicalSymbol(), book.bestBid(),
-                book.bestAsk(), book.bidNotional(), book.askNotional(), book.receivedAt());
+                book.bestAsk(), book.bidNotional(), book.askNotional(),
+                book.bidLevels().stream().map(level -> new NormalizedOrderBookSnapshot.Level(
+                        level.price(), level.notional())).toList(),
+                book.askLevels().stream().map(level -> new NormalizedOrderBookSnapshot.Level(
+                        level.price(), level.notional())).toList(),
+                book.receivedAt());
     }
 
     @Override

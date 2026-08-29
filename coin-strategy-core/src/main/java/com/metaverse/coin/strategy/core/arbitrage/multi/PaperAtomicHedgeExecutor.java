@@ -27,9 +27,11 @@ public class PaperAtomicHedgeExecutor {
         String id = UUID.randomUUID().toString();
         record(id, opportunity, PaperHedgePosition.Status.CREATED, now, null);
         boolean longFirst = opportunity.firstLegExchange() == opportunity.longQuote().exchange();
-        BigDecimal firstPrice = longFirst ? opportunity.longQuote().markPrice()
-                : opportunity.shortQuote().markPrice();
-        BigDecimal plannedQty = notional.divide(firstPrice, 12, RoundingMode.DOWN);
+        BigDecimal firstPrice = longFirst ? opportunity.longEntryPrice()
+                : opportunity.shortEntryPrice();
+        // The approved notional is expressed on the long leg. Use it for both leg quantities,
+        // regardless of which exchange is submitted first, to keep the hedge delta-neutral.
+        BigDecimal plannedQty = notional.divide(opportunity.longEntryPrice(), 12, RoundingMode.DOWN);
         HedgeLeg longLeg = new HedgeLeg(opportunity.longQuote().exchange(), opportunity.symbol(), HedgeSide.LONG, plannedQty);
         HedgeLeg shortLeg = new HedgeLeg(opportunity.shortQuote().exchange(), opportunity.symbol(), HedgeSide.SHORT, plannedQty);
         HedgeLeg firstLeg = longFirst ? longLeg : shortLeg;
@@ -49,8 +51,8 @@ public class PaperAtomicHedgeExecutor {
         String secondOrderId = id + (longFirst ? "-OPEN-S" : "-OPEN-L");
         record(id, opportunity, longFirst ? PaperHedgePosition.Status.OPENING_SHORT
                 : PaperHedgePosition.Status.OPENING_LONG, now, null);
-        BigDecimal secondPrice = longFirst ? opportunity.shortQuote().markPrice()
-                : opportunity.longQuote().markPrice();
+        BigDecimal secondPrice = longFirst ? opportunity.shortEntryPrice()
+                : opportunity.longEntryPrice();
         PaperOrder secondOrder = gateway.fill(secondLeg, secondOrderId, secondPrice,
                 secondLegFillRatio, now);
         PaperOrder longOrder = longFirst ? firstOrder : secondOrder;

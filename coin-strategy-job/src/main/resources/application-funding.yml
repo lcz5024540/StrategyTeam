@@ -22,6 +22,15 @@ arbitrage:
     monitor-enabled: true
     settlement-enabled: true
     contract-sync-enabled: true
+    # 合约元数据低频变更；目录使用内存缓存，定时刷新以发现上架/下架。
+    contract-sync-delay-ms: 43200000
+    # 以可成交买卖价而非 Mark Price 限制跨所 basis；收益须覆盖一次开平成本的 1.25 倍。
+    max-executable-basis: 0.003
+    minimum-cost-coverage-ratio: 1.25
     health-check-enabled: true
     recovery-enabled: true
-    capture-enabled: false
+    # 第一阶段 Paper 数据集：仅采集四所公共行情，不下单、不访问私有账户。
+    capture-enabled: true
+    capture-symbols: "BTCUSDT,ETHUSDT,SOLUSDT"
+    capture-delay-ms: 30000
+    capture-order-book-depth: 20

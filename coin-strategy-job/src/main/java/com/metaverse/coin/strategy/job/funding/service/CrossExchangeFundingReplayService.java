@@ -50,7 +50,8 @@ public class CrossExchangeFundingReplayService {
                 properties.getMaximumQuoteAge(), properties.getMaximumSettlementSkew(),
                 properties.getMaxMarkPriceDeviation(), properties.getMinimumNotional(),
                 properties.getMinNetYieldRate(), properties.getBasisRiskBuffer(),
-                properties.isAllowMixedFundingSigns());
+                properties.isAllowMixedFundingSigns(), properties.getMinimumCostCoverageRatio(),
+                properties.getMaxExecutableBasis());
 
         int evaluatedPairs = 0;
         int qualifiedPairs = 0;

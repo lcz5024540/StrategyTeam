@@ -37,6 +37,28 @@ class CrossExchangeOpportunitySelectorTest {
 
         assertEquals("STALE_ORDER_BOOK", opportunities.get(0).rejectionReason());
     }
+    @Test void usesNextSettlementFundingRatherThanHourlySpreadForNetYield() {
+        var result = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BINANCE, "-0.0008", 8), rate(Exchange.OKX, "-0.0002", 4)),
+                books(), costs(), new BigDecimal("100"), defaultLimits(), now);
+
+        assertEquals(0, new BigDecimal("0.0006").compareTo(result.get(0).estimatedNetYield()));
+        assertEquals(0, new BigDecimal("0.00005").compareTo(result.get(0).hourlyFundingSpread()));
+    }
+    @Test void rejectsWhenExecutableBidAskBasisExceedsLimit() {
+        Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = books();
+        orderBooks.put(Exchange.OKX, new NormalizedOrderBookSnapshot(Exchange.OKX, "BTCUSDT",
+                new BigDecimal("110"), new BigDecimal("111"), new BigDecimal("1000"),
+                new BigDecimal("1000"), now));
+        var limits = new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1), Duration.ofMinutes(2),
+                new BigDecimal("0.20"), BigDecimal.ONE, new BigDecimal("-1"), BigDecimal.ZERO,
+                false, BigDecimal.ONE, new BigDecimal("0.003"));
+        var result = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BINANCE, "-0.001", 8), rate(Exchange.OKX, "-0.0001", 8)),
+                orderBooks, costs(), BigDecimal.TEN, limits, now);
+
+        assertEquals("EXECUTABLE_BASIS_DEVIATION", result.get(0).rejectionReason());
+    }
     @Test void rejectsMixedSignsByDefault() {
         var limits = new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1), Duration.ofMinutes(2),
                 new BigDecimal("0.01"), BigDecimal.ONE, new BigDecimal("-1"), BigDecimal.ZERO, false);
@@ -54,9 +76,32 @@ class CrossExchangeOpportunitySelectorTest {
                 orderBooks,costs(),new BigDecimal("100"),defaultLimits(),now);
         assertEquals(Exchange.OKX,result.get(0).firstLegExchange());
     }
+    @Test void usesL2VwapAndCommonBaseQuantityWhenBothBooksProvideDepth() {
+        Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);
+        orderBooks.put(Exchange.BINANCE, book(Exchange.BINANCE, "100", "101",
+                List.of(level("100", "100")), List.of(level("101", "101"), level("103", "206"))));
+        orderBooks.put(Exchange.OKX, book(Exchange.OKX, "102", "103",
+                List.of(level("102", "102"), level("100", "100")), List.of(level("103", "103"))));
+
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BINANCE, "-0.001", 8), rate(Exchange.OKX, "-0.0001", 8)),
+                orderBooks, costs(), new BigDecimal("250"), defaultLimits(), now).get(0);
+
+        assertEquals(0, new BigDecimal("102").compareTo(opportunity.longEntryPrice()));
+        assertEquals(0, new BigDecimal("101").compareTo(opportunity.shortEntryPrice()));
+        assertEquals(0, new BigDecimal("204").compareTo(opportunity.executableNotional()));
+    }
     private NormalizedFundingRateSnapshot rate(Exchange e,String r,int h){return new NormalizedFundingRateSnapshot(e,"BTCUSDT",new BigDecimal(r),h,now.plusSeconds(3600),new BigDecimal("100"),new BigDecimal("100"),now);}
     private Map<Exchange,NormalizedOrderBookSnapshot> books(){Map<Exchange,NormalizedOrderBookSnapshot> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new NormalizedOrderBookSnapshot(e,"BTCUSDT",new BigDecimal("99"),new BigDecimal("101"),new BigDecimal("1000"),new BigDecimal("1000"),now));return m;}
     private Map<Exchange,NormalizedOrderBookSnapshot> books(Instant receivedAt){Map<Exchange,NormalizedOrderBookSnapshot> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new NormalizedOrderBookSnapshot(e,"BTCUSDT",new BigDecimal("99"),new BigDecimal("101"),new BigDecimal("1000"),new BigDecimal("1000"),receivedAt));return m;}
     private Map<Exchange,ExchangeCost> costs(){Map<Exchange,ExchangeCost> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new ExchangeCost(BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO));return m;}
     private CrossExchangeOpportunitySelector.Limits defaultLimits(){return new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1),Duration.ofMinutes(2),new BigDecimal("0.01"),BigDecimal.ONE,new BigDecimal("-1"),BigDecimal.ZERO,false);}
+    private NormalizedOrderBookSnapshot book(Exchange exchange, String bid, String ask,
+            List<NormalizedOrderBookSnapshot.Level> bids, List<NormalizedOrderBookSnapshot.Level> asks) {
+        return new NormalizedOrderBookSnapshot(exchange, "BTCUSDT", new BigDecimal(bid),
+                new BigDecimal(ask), new BigDecimal("1000"), new BigDecimal("1000"), bids, asks, now);
+    }
+    private NormalizedOrderBookSnapshot.Level level(String price, String notional) {
+        return new NormalizedOrderBookSnapshot.Level(new BigDecimal(price), new BigDecimal(notional));
+    }
 }

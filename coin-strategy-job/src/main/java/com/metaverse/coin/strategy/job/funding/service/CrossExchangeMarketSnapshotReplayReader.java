@@ -35,27 +35,37 @@ public class CrossExchangeMarketSnapshotReplayReader {
                     continue;
                 }
                 List<String> value = parseCsv(line);
-                if (value.size() != 18 || !"1".equals(value.get(0))
+                String schema = value.get(0);
+                if (("1".equals(schema) && value.size() != 18)
+                        || ("2".equals(schema) && value.size() != 20)
+                        || (!"1".equals(schema) && !"2".equals(schema))
                         || !"PUBLIC_REST".equals(value.get(2))) {
                     throw new IllegalArgumentException("invalid replay row at line " + lineNumber);
                 }
+                int fundingReceivedAt = "1".equals(schema) ? 14 : 16;
+                int bookReceivedAt = "1".equals(schema) ? 15 : 17;
+                int status = "1".equals(schema) ? 16 : 18;
+                int error = "1".equals(schema) ? 17 : 19;
                 Instant capturedAt = Instant.parse(value.get(1));
                 Exchange exchange = Exchange.parse(value.get(3));
                 String symbol = value.get(4);
-                if ("ERROR".equals(value.get(16))) {
-                    failures.add(new CaptureFailure(capturedAt, exchange, symbol, value.get(17)));
+                if ("ERROR".equals(value.get(status))) {
+                    failures.add(new CaptureFailure(capturedAt, exchange, symbol, value.get(error)));
                     continue;
                 }
-                if (!"OK".equals(value.get(16))) {
+                if (!"OK".equals(value.get(status))) {
                     throw new IllegalArgumentException("unknown replay status at line " + lineNumber);
                 }
                 NormalizedFundingRateSnapshot funding = new NormalizedFundingRateSnapshot(
                         exchange, symbol, decimal(value, 5), Integer.parseInt(value.get(6)),
                         Instant.parse(value.get(7)), decimal(value, 8), decimal(value, 9),
-                        Instant.parse(value.get(14)));
+                        Instant.parse(value.get(fundingReceivedAt)));
                 NormalizedOrderBookSnapshot book = new NormalizedOrderBookSnapshot(
                         exchange, symbol, decimal(value, 10), decimal(value, 11),
-                        decimal(value, 12), decimal(value, 13), Instant.parse(value.get(15)));
+                        decimal(value, 12), decimal(value, 13),
+                        "1".equals(schema) ? List.of() : levels(value.get(14)),
+                        "1".equals(schema) ? List.of() : levels(value.get(15)),
+                        Instant.parse(value.get(bookReceivedAt)));
                 MutableFrame frame = frames.computeIfAbsent(new FrameKey(capturedAt, symbol),
                         ignored -> new MutableFrame(capturedAt, symbol));
                 frame.add(exchange, funding, book);
@@ -69,6 +79,22 @@ public class CrossExchangeMarketSnapshotReplayReader {
 
     private BigDecimal decimal(List<String> values, int index) {
         return new BigDecimal(values.get(index));
+    }
+
+    private List<NormalizedOrderBookSnapshot.Level> levels(String encoded) {
+        if (encoded == null || encoded.isBlank()) {
+            return List.of();
+        }
+        List<NormalizedOrderBookSnapshot.Level> levels = new ArrayList<>();
+        for (String encodedLevel : encoded.split(";", -1)) {
+            String[] parts = encodedLevel.split(":", -1);
+            if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+                throw new IllegalArgumentException("invalid encoded order book level");
+            }
+            levels.add(new NormalizedOrderBookSnapshot.Level(new BigDecimal(parts[0]),
+                    new BigDecimal(parts[1])));
+        }
+        return List.copyOf(levels);
     }
 
     private List<String> parseCsv(String line) {

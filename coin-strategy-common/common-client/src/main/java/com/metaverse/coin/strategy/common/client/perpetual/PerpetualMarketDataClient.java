@@ -15,8 +15,30 @@ public interface PerpetualMarketDataClient {
             Instant nextFundingTime, BigDecimal markPrice, BigDecimal indexPrice,
             Instant receivedAt) { }
 
+    /** A price level whose notional is normalized to USDT, including any contract multiplier. */
+    record BookLevel(BigDecimal price, BigDecimal notional) {
+        public BookLevel {
+            if (price == null || notional == null || price.signum() <= 0 || notional.signum() <= 0) {
+                throw new IllegalArgumentException("price and notional must be positive");
+            }
+        }
+    }
+
     record OrderBook(String canonicalSymbol, BigDecimal bestBid, BigDecimal bestAsk,
-            BigDecimal bidNotional, BigDecimal askNotional, Instant receivedAt) { }
+            BigDecimal bidNotional, BigDecimal askNotional, List<BookLevel> bidLevels,
+            List<BookLevel> askLevels, Instant receivedAt) {
+        public OrderBook {
+            bidLevels = List.copyOf(bidLevels);
+            askLevels = List.copyOf(askLevels);
+        }
+
+        /** Compatibility constructor for consumers that only provide aggregate depth. */
+        public OrderBook(String canonicalSymbol, BigDecimal bestBid, BigDecimal bestAsk,
+                BigDecimal bidNotional, BigDecimal askNotional, Instant receivedAt) {
+            this(canonicalSymbol, bestBid, bestAsk, bidNotional, askNotional,
+                    List.of(), List.of(), receivedAt);
+        }
+    }
 
     List<Contract> contracts();
 

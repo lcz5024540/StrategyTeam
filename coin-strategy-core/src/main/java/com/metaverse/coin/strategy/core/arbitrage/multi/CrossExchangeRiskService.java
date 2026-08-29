@@ -69,8 +69,16 @@ public class CrossExchangeRiskService {
 
     public Assessment shouldExit(PaperHedgePosition position, BigDecimal latestNetYield,
             BigDecimal markPriceDeviation, Instant now, boolean exchangeHealthy, boolean paused) {
+        return shouldExit(position, latestNetYield, markPriceDeviation, now, exchangeHealthy,
+                paused, true);
+    }
+
+    public Assessment shouldExit(PaperHedgePosition position, BigDecimal latestNetYield,
+            BigDecimal markPriceDeviation, Instant now, boolean exchangeHealthy, boolean paused,
+            boolean settlementAligned) {
         if (paused) return new Assessment(true, "STRATEGY_PAUSED");
         if (!exchangeHealthy) return new Assessment(true, "EXCHANGE_UNHEALTHY");
+        if (!settlementAligned) return new Assessment(true, "SETTLEMENT_TIME_SKEW");
         if (markPriceDeviation.compareTo(limits.maxMarkPriceDeviation()) > 0) {
             return new Assessment(true, "MARK_PRICE_DEVIATION");
         }

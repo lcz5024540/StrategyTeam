@@ -39,6 +39,7 @@ class CrossExchangeMarketSnapshotRecorderTest {
         assertEquals(1, lines.stream().filter(line -> line.startsWith("schemaVersion,")).count());
         assertTrue(lines.get(1).contains("PUBLIC_REST,BINANCE,\"BTCUSDT\""));
         assertTrue(lines.get(1).endsWith("OK,"));
+        assertTrue(lines.get(1).contains("\"99:495;98:490\",\"101:303;102:204\""));
         assertTrue(lines.get(2).contains("PUBLIC_REST,OKX,\"BTCUSDT\""));
         assertTrue(lines.get(2).contains("ERROR,\"IllegalStateException: unavailable\""));
 
@@ -50,6 +51,8 @@ class CrossExchangeMarketSnapshotRecorderTest {
                 .get(Exchange.BINANCE).rawFundingRate());
         assertEquals(new BigDecimal("900"), dataset.frames().get(0).books()
                 .get(Exchange.BINANCE).askNotional());
+        assertEquals(new BigDecimal("102"), dataset.frames().get(0).books()
+                .get(Exchange.BINANCE).askLevels().get(1).price());
     }
 
     @Test
@@ -90,7 +93,16 @@ class CrossExchangeMarketSnapshotRecorderTest {
             public NormalizedOrderBookSnapshot orderBook(String symbol, int depth) {
                 return new NormalizedOrderBookSnapshot(exchange, symbol,
                         new BigDecimal("99"), new BigDecimal("101"),
-                        new BigDecimal("1000"), new BigDecimal("900"), receivedAt);
+                        new BigDecimal("1000"), new BigDecimal("900"),
+                        List.of(new NormalizedOrderBookSnapshot.Level(new BigDecimal("99"),
+                                        new BigDecimal("495")),
+                                new NormalizedOrderBookSnapshot.Level(new BigDecimal("98"),
+                                        new BigDecimal("490"))),
+                        List.of(new NormalizedOrderBookSnapshot.Level(new BigDecimal("101"),
+                                        new BigDecimal("303")),
+                                new NormalizedOrderBookSnapshot.Level(new BigDecimal("102"),
+                                        new BigDecimal("204"))),
+                        receivedAt);
             }
         };
     }

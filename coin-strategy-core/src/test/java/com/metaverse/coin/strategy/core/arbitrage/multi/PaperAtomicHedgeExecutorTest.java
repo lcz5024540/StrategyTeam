@@ -119,6 +119,25 @@ class PaperAtomicHedgeExecutorTest {
         assertTrue(position.shortOrder().clientOrderId().endsWith("-OPEN-S"));
         assertEquals(PaperHedgePosition.Status.OPENED, position.status());
     }
+    @Test void shortFirstStillSizesBothLegsFromLongVwap() {
+        Instant time = Instant.now();
+        NormalizedFundingRateSnapshot longQuote = new NormalizedFundingRateSnapshot(Exchange.BINANCE,
+                "BTCUSDT", new BigDecimal("-0.001"), 8, time.plusSeconds(3600),
+                new BigDecimal("100"), new BigDecimal("100"), time);
+        NormalizedFundingRateSnapshot shortQuote = new NormalizedFundingRateSnapshot(Exchange.OKX,
+                "BTCUSDT", new BigDecimal("-0.0001"), 8, time.plusSeconds(3600),
+                new BigDecimal("110"), new BigDecimal("110"), time);
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunity("vwap", "BTCUSDT",
+                longQuote, shortQuote, new BigDecimal("0.0001"), new BigDecimal("0.0001"),
+                new BigDecimal("100"), new BigDecimal("110"), new BigDecimal("100"),
+                Exchange.OKX, CrossExchangeOpportunity.Status.QUALIFIED, null, time);
+
+        PaperHedgePosition position = new PaperAtomicHedgeExecutor(new PaperPerpetualGateway()).open(
+                opportunity, new BigDecimal("100"), BigDecimal.ONE, BigDecimal.ONE, time);
+
+        assertEquals(0, BigDecimal.ONE.compareTo(position.longOrder().requestedQuantity()));
+        assertEquals(0, BigDecimal.ONE.compareTo(position.shortOrder().requestedQuantity()));
+    }
     @Test void recordsEveryOpeningStateTransitionForAudit() {
         var executor = new PaperAtomicHedgeExecutor(new PaperPerpetualGateway());
         var position = executor.open(opportunity(), new BigDecimal("100"), BigDecimal.ONE,

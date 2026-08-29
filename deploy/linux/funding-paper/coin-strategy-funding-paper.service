@@ -1,0 +1,19 @@
+[Unit]
+Description=CoinStrategy Cross-Exchange Funding Paper Service
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/coinstrategy/funding-paper
+ExecStart=/opt/coinstrategy/funding-paper/bin/start-funding-paper.sh
+Restart=on-failure
+RestartSec=10
+SuccessExitStatus=143
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -252,8 +252,10 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
         if (bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
             throw new IllegalStateException("incomplete order book for " + venue + "/" + symbol);
         }
-        return new OrderBook(symbol, bestBid, bestAsk, notional(bids, maximumLevels,
-                contractMultiplier), notional(asks, maximumLevels, contractMultiplier), receivedAt);
+        List<BookLevel> bidLevels = levels(bids, maximumLevels, contractMultiplier);
+        List<BookLevel> askLevels = levels(asks, maximumLevels, contractMultiplier);
+        return new OrderBook(symbol, bestBid, bestAsk, notional(bidLevels), notional(askLevels),
+                bidLevels, askLevels, receivedAt);
     }
 
     private void addContract(List<Contract> result, String canonical, String exchangeSymbol,
@@ -281,16 +283,29 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
         return BigDecimal.ZERO;
     }
 
-    private BigDecimal notional(JsonNode levels, int maximumLevels, BigDecimal contractMultiplier) {
-        BigDecimal result = BigDecimal.ZERO;
+    private List<BookLevel> levels(JsonNode rawLevels, int maximumLevels,
+            BigDecimal contractMultiplier) {
+        List<BookLevel> levels = new ArrayList<>();
         int count = 0;
-        for (JsonNode level : levels) {
-            if (count++ >= maximumLevels) {
+        for (JsonNode ignored : rawLevels) {
+            if (count >= maximumLevels) {
                 break;
             }
-            result = result.add(levelValue(levels, count - 1, 0)
-                    .multiply(levelValue(levels, count - 1, 1))
-                    .multiply(contractMultiplier));
+            BigDecimal price = levelValue(rawLevels, count, 0);
+            BigDecimal quantity = levelValue(rawLevels, count, 1);
+            if (price.signum() <= 0 || quantity.signum() <= 0) {
+                throw new IllegalStateException("invalid order book level for " + venue);
+            }
+            levels.add(new BookLevel(price, price.multiply(quantity).multiply(contractMultiplier)));
+            count++;
+        }
+        return List.copyOf(levels);
+    }
+
+    private BigDecimal notional(List<BookLevel> levels) {
+        BigDecimal result = BigDecimal.ZERO;
+        for (BookLevel level : levels) {
+            result = result.add(level.notional());
         }
         return result;
     }

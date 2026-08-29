@@ -29,6 +29,8 @@ public class MultiExchangeFundingRateProperties {
     private final BigDecimal minimumNotional;
     private final BigDecimal basisRiskBuffer;
     private final BigDecimal maxMarkPriceDeviation;
+    private final BigDecimal maxExecutableBasis;
+    private final BigDecimal minimumCostCoverageRatio;
     private final BigDecimal maxSymbolNotional;
     private final BigDecimal maxExchangeNotional;
     private final BigDecimal exitNetYield;
@@ -49,6 +51,8 @@ public class MultiExchangeFundingRateProperties {
         this.minimumNotional = new BigDecimal("20");
         this.basisRiskBuffer = new BigDecimal("0.0002");
         this.maxMarkPriceDeviation = new BigDecimal("0.01");
+        this.maxExecutableBasis = new BigDecimal("0.003");
+        this.minimumCostCoverageRatio = new BigDecimal("1.25");
         this.maxSymbolNotional = new BigDecimal("1000");
         this.maxExchangeNotional = new BigDecimal("5000");
         this.exitNetYield = new BigDecimal("0.00001");
@@ -73,6 +77,8 @@ public class MultiExchangeFundingRateProperties {
         this.minimumNotional = decimal(env, "arbitrage.multi-exchange.minimum-notional", "20");
         this.basisRiskBuffer = decimal(env, "arbitrage.multi-exchange.basis-risk-buffer", "0.0002");
         this.maxMarkPriceDeviation = decimal(env, "arbitrage.multi-exchange.max-mark-price-deviation", "0.01");
+        this.maxExecutableBasis = decimal(env, "arbitrage.multi-exchange.max-executable-basis", "0.003");
+        this.minimumCostCoverageRatio = decimal(env, "arbitrage.multi-exchange.minimum-cost-coverage-ratio", "1.25");
         this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional", "1000");
         this.maxExchangeNotional = decimal(env, "arbitrage.multi-exchange.max-exchange-notional", "5000");
         this.exitNetYield = decimal(env, "arbitrage.multi-exchange.exit-net-yield", "0.00001");
@@ -95,6 +101,8 @@ public class MultiExchangeFundingRateProperties {
     public BigDecimal getMinimumNotional() { return minimumNotional; }
     public BigDecimal getBasisRiskBuffer() { return basisRiskBuffer; }
     public BigDecimal getMaxMarkPriceDeviation() { return maxMarkPriceDeviation; }
+    public BigDecimal getMaxExecutableBasis() { return maxExecutableBasis; }
+    public BigDecimal getMinimumCostCoverageRatio() { return minimumCostCoverageRatio; }
     public BigDecimal getMaxSymbolNotional() { return maxSymbolNotional; }
     public BigDecimal getMaxExchangeNotional() { return maxExchangeNotional; }
     public BigDecimal getExitNetYield() { return exitNetYield; }
