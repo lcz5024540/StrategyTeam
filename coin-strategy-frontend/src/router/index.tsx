@@ -13,6 +13,7 @@ import { MultiStrategyMonitorPage } from '../pages/MultiStrategyMonitorPage'
 import { StrategyConfigPage } from '../pages/StrategyConfigPage'
 import { StrategyLogsPage } from '../pages/StrategyLogsPage'
 import { PolymarketOrdersPage } from '../pages/PolymarketOrdersPage'
+import { ArbitrageScannerPage } from '../pages/ArbitrageScannerPage'
 
 export const router = createBrowserRouter([
   {
@@ -86,6 +87,10 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard/funding-arb/settlement',
         element: <FundingArbPage />,
+      },
+      {
+        path: 'dashboard/arbitrage',
+        element: <ArbitrageScannerPage />,
       },
     ],
   },
