@@ -84,7 +84,11 @@ export const router = createBrowserRouter([
         element: <FundingArbPage />,
       },
       {
-        path: 'dashboard/funding-arb/settlement',
+        path: 'dashboard/funding-arb/overview',
+        element: <FundingArbPage />,
+      },
+      {
+        path: 'dashboard/funding-arb/quality',
         element: <FundingArbPage />,
       },
     ],
