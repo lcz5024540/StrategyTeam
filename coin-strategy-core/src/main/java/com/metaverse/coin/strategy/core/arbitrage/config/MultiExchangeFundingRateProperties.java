@@ -31,6 +31,15 @@ public class MultiExchangeFundingRateProperties {
     private final BigDecimal minimumOrderBookCoverageRatio;
     private final BigDecimal maximumLegVwapImpact;
     private final int captureOrderBookDepth;
+    private final BigDecimal paperCapitalPerExchange;
+    private final BigDecimal maximumPaperLeverage;
+    private final BigDecimal maintenanceMarginRate;
+    private final BigDecimal minimumLiquidationDistance;
+    private final BigDecimal unknownSymbolLiquidationDistance;
+    private final BigDecimal maximumLiquidationDistance;
+    private final BigDecimal volatilityMultiplier;
+    private final BigDecimal jumpMultiplier;
+    private final Duration minimumRiskHistory;
     private final BigDecimal basisRiskBuffer;
     private final BigDecimal maxMarkPriceDeviation;
     private final BigDecimal maxExecutableBasis;
@@ -58,12 +67,21 @@ public class MultiExchangeFundingRateProperties {
         this.minimumOrderBookCoverageRatio = new BigDecimal("3");
         this.maximumLegVwapImpact = new BigDecimal("0.0005");
         this.captureOrderBookDepth = 100;
+        this.paperCapitalPerExchange = new BigDecimal("2000");
+        this.maximumPaperLeverage = new BigDecimal("25");
+        this.maintenanceMarginRate = new BigDecimal("0.005");
+        this.minimumLiquidationDistance = new BigDecimal("0.15");
+        this.unknownSymbolLiquidationDistance = new BigDecimal("0.30");
+        this.maximumLiquidationDistance = new BigDecimal("0.40");
+        this.volatilityMultiplier = new BigDecimal("4");
+        this.jumpMultiplier = new BigDecimal("3");
+        this.minimumRiskHistory = Duration.ofHours(1);
         this.basisRiskBuffer = new BigDecimal("0.0002");
         this.maxMarkPriceDeviation = new BigDecimal("0.01");
         this.maxExecutableBasis = new BigDecimal("0.003");
         this.minimumCostCoverageRatio = new BigDecimal("1.25");
-        this.maxSymbolNotional = new BigDecimal("1000");
-        this.maxExchangeNotional = new BigDecimal("5000");
+        this.maxSymbolNotional = new BigDecimal("50000");
+        this.maxExchangeNotional = new BigDecimal("50000");
         this.exitNetYield = new BigDecimal("0.00001");
         this.maximumQuoteAge = Duration.ofSeconds(30);
         this.maximumSettlementSkew = Duration.ofMinutes(5);
@@ -92,12 +110,21 @@ public class MultiExchangeFundingRateProperties {
                 "arbitrage.multi-exchange.maximum-leg-vwap-impact", "0.0005");
         this.captureOrderBookDepth = positiveInt(env,
                 "arbitrage.multi-exchange.capture-order-book-depth", 100);
+        this.paperCapitalPerExchange = decimal(env, "arbitrage.multi-exchange.paper-capital-per-exchange", "2000");
+        this.maximumPaperLeverage = decimal(env, "arbitrage.multi-exchange.maximum-paper-leverage", "25");
+        this.maintenanceMarginRate = decimal(env, "arbitrage.multi-exchange.maintenance-margin-rate", "0.005");
+        this.minimumLiquidationDistance = decimal(env, "arbitrage.multi-exchange.minimum-liquidation-distance", "0.15");
+        this.unknownSymbolLiquidationDistance = decimal(env, "arbitrage.multi-exchange.unknown-symbol-liquidation-distance", "0.30");
+        this.maximumLiquidationDistance = decimal(env, "arbitrage.multi-exchange.maximum-liquidation-distance", "0.40");
+        this.volatilityMultiplier = decimal(env, "arbitrage.multi-exchange.volatility-multiplier", "4");
+        this.jumpMultiplier = decimal(env, "arbitrage.multi-exchange.jump-multiplier", "3");
+        this.minimumRiskHistory = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.minimum-risk-history-ms", 3600000L));
         this.basisRiskBuffer = decimal(env, "arbitrage.multi-exchange.basis-risk-buffer", "0.0002");
         this.maxMarkPriceDeviation = decimal(env, "arbitrage.multi-exchange.max-mark-price-deviation", "0.01");
         this.maxExecutableBasis = decimal(env, "arbitrage.multi-exchange.max-executable-basis", "0.003");
         this.minimumCostCoverageRatio = decimal(env, "arbitrage.multi-exchange.minimum-cost-coverage-ratio", "1.25");
-        this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional", "1000");
-        this.maxExchangeNotional = decimal(env, "arbitrage.multi-exchange.max-exchange-notional", "5000");
+        this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional", "50000");
+        this.maxExchangeNotional = decimal(env, "arbitrage.multi-exchange.max-exchange-notional", "50000");
         this.exitNetYield = decimal(env, "arbitrage.multi-exchange.exit-net-yield", "0.00001");
         this.maximumQuoteAge = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-quote-age-ms", 30000L));
         this.maximumSettlementSkew = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-settlement-skew-ms", 300000L));
@@ -120,6 +147,15 @@ public class MultiExchangeFundingRateProperties {
     public BigDecimal getMinimumOrderBookCoverageRatio() { return minimumOrderBookCoverageRatio; }
     public BigDecimal getMaximumLegVwapImpact() { return maximumLegVwapImpact; }
     public int getCaptureOrderBookDepth() { return captureOrderBookDepth; }
+    public BigDecimal getPaperCapitalPerExchange() { return paperCapitalPerExchange; }
+    public BigDecimal getMaximumPaperLeverage() { return maximumPaperLeverage; }
+    public BigDecimal getMaintenanceMarginRate() { return maintenanceMarginRate; }
+    public BigDecimal getMinimumLiquidationDistance() { return minimumLiquidationDistance; }
+    public BigDecimal getUnknownSymbolLiquidationDistance() { return unknownSymbolLiquidationDistance; }
+    public BigDecimal getMaximumLiquidationDistance() { return maximumLiquidationDistance; }
+    public BigDecimal getVolatilityMultiplier() { return volatilityMultiplier; }
+    public BigDecimal getJumpMultiplier() { return jumpMultiplier; }
+    public Duration getMinimumRiskHistory() { return minimumRiskHistory; }
     public BigDecimal getBasisRiskBuffer() { return basisRiskBuffer; }
     public BigDecimal getMaxMarkPriceDeviation() { return maxMarkPriceDeviation; }
     public BigDecimal getMaxExecutableBasis() { return maxExecutableBasis; }

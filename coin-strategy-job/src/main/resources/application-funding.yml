@@ -35,5 +35,14 @@ arbitrage:
     capture-delay-ms: 30000
     capture-order-book-depth: 100
     minimum-order-book-notional: 300
-    minimum-order-book-coverage-ratio: 3
+    minimum-order-book-coverage-ratio: 1.5
     maximum-leg-vwap-impact: 0.0005
+    paper-capital-per-exchange: 2000
+    maximum-paper-leverage: 25
+    maintenance-margin-rate: 0.005
+    minimum-liquidation-distance: 0.15
+    unknown-symbol-liquidation-distance: 0.30
+    maximum-liquidation-distance: 0.40
+    volatility-multiplier: 4
+    jump-multiplier: 3
+    minimum-risk-history-ms: 3600000

@@ -23,6 +23,7 @@ public class CrossExchangeOpportunityScanService {
     private final ExchangeHealthRegistry health;
     private final PerpetualContractCatalog catalog;
     private final int orderBookDepth;
+    private final FundingPairRiskSizer riskSizer;
     private final Map<String, CrossExchangeOpportunity> approved = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile List<CrossExchangeOpportunity> lastEvaluated = List.of();
 
@@ -30,14 +31,14 @@ public class CrossExchangeOpportunityScanService {
             CrossExchangeOpportunitySelector selector, CrossExchangeOpportunityStabilityGate gate,
             CrossExchangeOpportunitySelector.Limits limits, Map<Exchange, ExchangeCost> costs,
             BigDecimal targetNotional, ExchangeHealthRegistry health) {
-        this(providers, selector, gate, limits, costs, targetNotional, health, null, 20);
+        this(providers, selector, gate, limits, costs, targetNotional, health, null, 20, null);
     }
 
     public CrossExchangeOpportunityScanService(List<CrossExchangeMarketDataProvider> providers,
             CrossExchangeOpportunitySelector selector, CrossExchangeOpportunityStabilityGate gate,
             CrossExchangeOpportunitySelector.Limits limits, Map<Exchange, ExchangeCost> costs,
             BigDecimal targetNotional, ExchangeHealthRegistry health, PerpetualContractCatalog catalog) {
-        this(providers, selector, gate, limits, costs, targetNotional, health, catalog, 20);
+        this(providers, selector, gate, limits, costs, targetNotional, health, catalog, 20, null);
     }
 
     public CrossExchangeOpportunityScanService(List<CrossExchangeMarketDataProvider> providers,
@@ -45,6 +46,15 @@ public class CrossExchangeOpportunityScanService {
             CrossExchangeOpportunitySelector.Limits limits, Map<Exchange, ExchangeCost> costs,
             BigDecimal targetNotional, ExchangeHealthRegistry health, PerpetualContractCatalog catalog,
             int orderBookDepth) {
+        this(providers, selector, gate, limits, costs, targetNotional, health, catalog,
+                orderBookDepth, null);
+    }
+
+    public CrossExchangeOpportunityScanService(List<CrossExchangeMarketDataProvider> providers,
+            CrossExchangeOpportunitySelector selector, CrossExchangeOpportunityStabilityGate gate,
+            CrossExchangeOpportunitySelector.Limits limits, Map<Exchange, ExchangeCost> costs,
+            BigDecimal targetNotional, ExchangeHealthRegistry health, PerpetualContractCatalog catalog,
+            int orderBookDepth, FundingPairRiskSizer riskSizer) {
         if (orderBookDepth <= 0) {
             throw new IllegalArgumentException("order book depth must be positive");
         }
@@ -57,6 +67,7 @@ public class CrossExchangeOpportunityScanService {
         this.health = health;
         this.catalog = catalog;
         this.orderBookDepth = orderBookDepth;
+        this.riskSizer = riskSizer;
     }
 
     public List<CrossExchangeOpportunity> scan(String symbol, Instant now) {
@@ -180,7 +191,31 @@ public class CrossExchangeOpportunityScanService {
                         Duration.between(requestStarted, Instant.now()).toMillis());
             }
         }
-        return new ArrayList<>(selector.evaluate(rates, books, costs, targetNotional, limits, now));
+        if (riskSizer == null) {
+            return new ArrayList<>(selector.evaluate(rates, books, costs, targetNotional, limits, now));
+        }
+        riskSizer.record(rates, now);
+        List<CrossExchangeOpportunity> result = new ArrayList<>();
+        for (int i = 0; i < rates.size(); i++) {
+            for (int j = i + 1; j < rates.size(); j++) {
+                NormalizedFundingRateSnapshot a = rates.get(i);
+                NormalizedFundingRateSnapshot b = rates.get(j);
+                if (!a.canonicalSymbol().equals(b.canonicalSymbol()) || a.exchange() == b.exchange()
+                        || !books.containsKey(a.exchange()) || !books.containsKey(b.exchange())) {
+                    continue;
+                }
+                NormalizedFundingRateSnapshot low = a.hourlyFundingRate().compareTo(b.hourlyFundingRate()) <= 0 ? a : b;
+                NormalizedFundingRateSnapshot high = low == a ? b : a;
+                BigDecimal projected = FundingRateYieldProjection.projectedSpread(low, high)
+                        .subtract(costs.get(low.exchange()).roundTripTakerCost())
+                        .subtract(costs.get(high.exchange()).roundTripTakerCost())
+                        .subtract(limits.basisRiskBuffer());
+                FundingPairRiskSizer.Sizing sizing = riskSizer.size(low, high, books, costs, projected);
+                result.addAll(selector.evaluate(List.of(a, b), books, costs, sizing.targetNotional(), limits, now));
+            }
+        }
+        result.sort(java.util.Comparator.comparing(riskSizer::riskAdjustedYield).reversed());
+        return result;
     }
 
     private CrossExchangeOpportunity withStableId(CrossExchangeOpportunity opportunity, Instant now) {

@@ -115,12 +115,21 @@ arbitrage:
     # Both entry sides must cover max(absolute floor, target-notional x coverage ratio) within
     # the allowed price impact; this is independent from the smaller minimum order size gate.
     minimum-order-book-notional: 300
-    minimum-order-book-coverage-ratio: 3
+    minimum-order-book-coverage-ratio: 1.5
     maximum-leg-vwap-impact: 0.0005
+    paper-capital-per-exchange: 2000
+    maximum-paper-leverage: 25
+    maintenance-margin-rate: 0.005
+    minimum-liquidation-distance: 0.15
+    unknown-symbol-liquidation-distance: 0.30
+    maximum-liquidation-distance: 0.40
+    volatility-multiplier: 4
+    jump-multiplier: 3
+    minimum-risk-history-ms: 3600000
     basis-risk-buffer: 0.0002
     max-mark-price-deviation: 0.01
-    max-symbol-notional: 1000
-    max-exchange-notional: 5000
+    max-symbol-notional: 50000
+    max-exchange-notional: 50000
     exit-net-yield: 0.00001
     maximum-quote-age-ms: 30000
     maximum-settlement-skew-ms: 300000
