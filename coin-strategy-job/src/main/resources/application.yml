@@ -95,7 +95,10 @@ arbitrage:
     capture-delay-ms: 60000
     capture-output-directory: "./data/funding-replay"
     capture-symbols: "BTCUSDT"
-    capture-order-book-depth: 20
+    # CEX snapshot capture and opportunity scans request 100 levels for reliable VWAP/capacity
+    # checks. Hyperliquid's public L2 response currently supplies 20 levels and is deliberately
+    # capped by its adapter.
+    capture-order-book-depth: 100
     # 可按部署网络覆盖公共行情域名或内部代理；未配置时使用各交易所官方域名。
     base-urls:
       binance: ""
@@ -109,6 +112,11 @@ arbitrage:
     allow-mixed-funding-signs: false
     target-notional: 100
     minimum-notional: 20
+    # Both entry sides must cover max(absolute floor, target-notional x coverage ratio) within
+    # the allowed price impact; this is independent from the smaller minimum order size gate.
+    minimum-order-book-notional: 300
+    minimum-order-book-coverage-ratio: 3
+    maximum-leg-vwap-impact: 0.0005
     basis-risk-buffer: 0.0002
     max-mark-price-deviation: 0.01
     max-symbol-notional: 1000

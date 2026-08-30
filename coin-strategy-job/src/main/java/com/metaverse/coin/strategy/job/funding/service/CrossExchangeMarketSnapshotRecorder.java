@@ -46,8 +46,7 @@ public class CrossExchangeMarketSnapshotRecorder {
                         "./data/funding-replay")),
                 symbols(environment.getProperty("arbitrage.multi-exchange.capture-symbols",
                         "BTCUSDT")),
-                Integer.parseInt(environment.getProperty(
-                        "arbitrage.multi-exchange.capture-order-book-depth", "20")));
+                properties.getCaptureOrderBookDepth());
     }
 
     CrossExchangeMarketSnapshotRecorder(List<CrossExchangeMarketDataProvider> providers,

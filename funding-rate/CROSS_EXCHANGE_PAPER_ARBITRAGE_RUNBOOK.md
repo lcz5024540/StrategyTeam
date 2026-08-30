@@ -51,7 +51,10 @@ arbitrage:
     # 部署时必须覆盖为持久化卷路径；不要使用容器临时目录。
     capture-output-directory: "/data/coinstrategy/funding-replay"
     capture-symbols: "BTCUSDT,ETHUSDT,SOLUSDT"
-    capture-order-book-depth: 20
+    capture-order-book-depth: 100 # CEX captures and scans; Hyperliquid public L2 is capped at 20
+    minimum-order-book-notional: 300
+    minimum-order-book-coverage-ratio: 3
+    maximum-leg-vwap-impact: 0.0005 # 5 bps per leg
     capture-delay-ms: 30000
     # 可选：部署网络需经代理或区域域名访问时覆盖；留空使用官方默认域名。
     base-urls:

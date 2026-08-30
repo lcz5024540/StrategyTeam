@@ -22,6 +22,7 @@ public class CrossExchangeOpportunityScanService {
     private final BigDecimal targetNotional;
     private final ExchangeHealthRegistry health;
     private final PerpetualContractCatalog catalog;
+    private final int orderBookDepth;
     private final Map<String, CrossExchangeOpportunity> approved = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile List<CrossExchangeOpportunity> lastEvaluated = List.of();
 
@@ -29,13 +30,24 @@ public class CrossExchangeOpportunityScanService {
             CrossExchangeOpportunitySelector selector, CrossExchangeOpportunityStabilityGate gate,
             CrossExchangeOpportunitySelector.Limits limits, Map<Exchange, ExchangeCost> costs,
             BigDecimal targetNotional, ExchangeHealthRegistry health) {
-        this(providers, selector, gate, limits, costs, targetNotional, health, null);
+        this(providers, selector, gate, limits, costs, targetNotional, health, null, 20);
     }
 
     public CrossExchangeOpportunityScanService(List<CrossExchangeMarketDataProvider> providers,
             CrossExchangeOpportunitySelector selector, CrossExchangeOpportunityStabilityGate gate,
             CrossExchangeOpportunitySelector.Limits limits, Map<Exchange, ExchangeCost> costs,
             BigDecimal targetNotional, ExchangeHealthRegistry health, PerpetualContractCatalog catalog) {
+        this(providers, selector, gate, limits, costs, targetNotional, health, catalog, 20);
+    }
+
+    public CrossExchangeOpportunityScanService(List<CrossExchangeMarketDataProvider> providers,
+            CrossExchangeOpportunitySelector selector, CrossExchangeOpportunityStabilityGate gate,
+            CrossExchangeOpportunitySelector.Limits limits, Map<Exchange, ExchangeCost> costs,
+            BigDecimal targetNotional, ExchangeHealthRegistry health, PerpetualContractCatalog catalog,
+            int orderBookDepth) {
+        if (orderBookDepth <= 0) {
+            throw new IllegalArgumentException("order book depth must be positive");
+        }
         this.providers = List.copyOf(providers);
         this.selector = selector;
         this.gate = gate;
@@ -44,6 +56,7 @@ public class CrossExchangeOpportunityScanService {
         this.targetNotional = targetNotional;
         this.health = health;
         this.catalog = catalog;
+        this.orderBookDepth = orderBookDepth;
     }
 
     public List<CrossExchangeOpportunity> scan(String symbol, Instant now) {
@@ -153,7 +166,7 @@ public class CrossExchangeOpportunityScanService {
             Instant requestStarted = Instant.now();
             try {
                 NormalizedFundingRateSnapshot rate = provider.fundingRate(symbol);
-                NormalizedOrderBookSnapshot book = provider.orderBook(symbol, 20);
+                NormalizedOrderBookSnapshot book = provider.orderBook(symbol, orderBookDepth);
                 Instant completedAt = Instant.now();
                 long latencyMs = Duration.between(requestStarted, completedAt).toMillis();
                 if (Duration.ofMillis(latencyMs).compareTo(limits.maxQuoteAge()) > 0) {

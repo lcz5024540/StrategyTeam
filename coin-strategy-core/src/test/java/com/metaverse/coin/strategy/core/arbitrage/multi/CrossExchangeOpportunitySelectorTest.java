@@ -120,11 +120,44 @@ class CrossExchangeOpportunitySelectorTest {
         assertEquals(0, new BigDecimal("101").compareTo(opportunity.shortEntryPrice()));
         assertEquals(0, new BigDecimal("204").compareTo(opportunity.executableNotional()));
     }
+    @Test void rejectsWhenLongLegCannotCoverRequiredDepthWithinFiveBps() {
+        Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);
+        orderBooks.put(Exchange.BINANCE, book(Exchange.BINANCE, "99", "100",
+                List.of(level("99", "1000")), List.of(level("100", "299"))));
+        orderBooks.put(Exchange.OKX, book(Exchange.OKX, "101", "102",
+                List.of(level("101", "1000")), List.of(level("102", "1000"))));
+
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BINANCE, "-0.001", 8), rate(Exchange.OKX, "-0.0001", 8)),
+                orderBooks, costs(), new BigDecimal("100"), strictDepthLimits(), now).get(0);
+
+        assertEquals("INSUFFICIENT_LONG_DEPTH_COVERAGE", opportunity.rejectionReason());
+    }
+    @Test void qualifiesWhenBothLegsCoverThreeTimesTargetWithinFiveBps() {
+        Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);
+        orderBooks.put(Exchange.BINANCE, book(Exchange.BINANCE, "99", "100",
+                List.of(level("99", "1000")), List.of(level("100", "300"))));
+        orderBooks.put(Exchange.OKX, book(Exchange.OKX, "101", "102",
+                List.of(level("101", "300")), List.of(level("102", "1000"))));
+
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BINANCE, "-0.001", 8), rate(Exchange.OKX, "-0.0001", 8)),
+                orderBooks, costs(), new BigDecimal("100"), strictDepthLimits(), now).get(0);
+
+        assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
+        assertEquals(0, new BigDecimal("100").compareTo(opportunity.executableNotional()));
+    }
     private NormalizedFundingRateSnapshot rate(Exchange e,String r,int h){return new NormalizedFundingRateSnapshot(e,"BTCUSDT",new BigDecimal(r),h,now.plusSeconds(3600),new BigDecimal("100"),new BigDecimal("100"),now);}
     private Map<Exchange,NormalizedOrderBookSnapshot> books(){Map<Exchange,NormalizedOrderBookSnapshot> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new NormalizedOrderBookSnapshot(e,"BTCUSDT",new BigDecimal("99"),new BigDecimal("101"),new BigDecimal("1000"),new BigDecimal("1000"),now));return m;}
     private Map<Exchange,NormalizedOrderBookSnapshot> books(Instant receivedAt){Map<Exchange,NormalizedOrderBookSnapshot> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new NormalizedOrderBookSnapshot(e,"BTCUSDT",new BigDecimal("99"),new BigDecimal("101"),new BigDecimal("1000"),new BigDecimal("1000"),receivedAt));return m;}
     private Map<Exchange,ExchangeCost> costs(){Map<Exchange,ExchangeCost> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new ExchangeCost(BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO));return m;}
     private CrossExchangeOpportunitySelector.Limits defaultLimits(){return new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1),Duration.ofMinutes(2),new BigDecimal("0.01"),BigDecimal.ONE,new BigDecimal("-1"),BigDecimal.ZERO,false);}
+    private CrossExchangeOpportunitySelector.Limits strictDepthLimits() {
+        return new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1), Duration.ofMinutes(2),
+                new BigDecimal("0.01"), BigDecimal.ONE, new BigDecimal("-1"), BigDecimal.ZERO,
+                false, BigDecimal.ONE, new BigDecimal("0.03"), new BigDecimal("300"),
+                new BigDecimal("3"), new BigDecimal("0.0005"));
+    }
     private NormalizedOrderBookSnapshot book(Exchange exchange, String bid, String ask,
             List<NormalizedOrderBookSnapshot.Level> bids, List<NormalizedOrderBookSnapshot.Level> asks) {
         return new NormalizedOrderBookSnapshot(exchange, "BTCUSDT", new BigDecimal(bid),

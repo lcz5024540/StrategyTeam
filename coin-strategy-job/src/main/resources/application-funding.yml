@@ -33,4 +33,7 @@ arbitrage:
     capture-enabled: true
     capture-symbols: "BTCUSDT,ETHUSDT,SOLUSDT"
     capture-delay-ms: 30000
-    capture-order-book-depth: 20
+    capture-order-book-depth: 100
+    minimum-order-book-notional: 300
+    minimum-order-book-coverage-ratio: 3
+    maximum-leg-vwap-impact: 0.0005

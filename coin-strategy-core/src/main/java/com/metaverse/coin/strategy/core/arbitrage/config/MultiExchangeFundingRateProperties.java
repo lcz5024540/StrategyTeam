@@ -27,6 +27,10 @@ public class MultiExchangeFundingRateProperties {
     private final Map<Exchange, ExchangeCost> costs;
     private final BigDecimal targetNotional;
     private final BigDecimal minimumNotional;
+    private final BigDecimal minimumOrderBookNotional;
+    private final BigDecimal minimumOrderBookCoverageRatio;
+    private final BigDecimal maximumLegVwapImpact;
+    private final int captureOrderBookDepth;
     private final BigDecimal basisRiskBuffer;
     private final BigDecimal maxMarkPriceDeviation;
     private final BigDecimal maxExecutableBasis;
@@ -50,6 +54,10 @@ public class MultiExchangeFundingRateProperties {
         this.costs = defaultCosts();
         this.targetNotional = new BigDecimal("100");
         this.minimumNotional = new BigDecimal("20");
+        this.minimumOrderBookNotional = new BigDecimal("300");
+        this.minimumOrderBookCoverageRatio = new BigDecimal("3");
+        this.maximumLegVwapImpact = new BigDecimal("0.0005");
+        this.captureOrderBookDepth = 100;
         this.basisRiskBuffer = new BigDecimal("0.0002");
         this.maxMarkPriceDeviation = new BigDecimal("0.01");
         this.maxExecutableBasis = new BigDecimal("0.003");
@@ -76,6 +84,14 @@ public class MultiExchangeFundingRateProperties {
         this.costs = configuredCosts(env);
         this.targetNotional = decimal(env, "arbitrage.multi-exchange.target-notional", "100");
         this.minimumNotional = decimal(env, "arbitrage.multi-exchange.minimum-notional", "20");
+        this.minimumOrderBookNotional = decimal(env,
+                "arbitrage.multi-exchange.minimum-order-book-notional", "300");
+        this.minimumOrderBookCoverageRatio = decimal(env,
+                "arbitrage.multi-exchange.minimum-order-book-coverage-ratio", "3");
+        this.maximumLegVwapImpact = decimal(env,
+                "arbitrage.multi-exchange.maximum-leg-vwap-impact", "0.0005");
+        this.captureOrderBookDepth = positiveInt(env,
+                "arbitrage.multi-exchange.capture-order-book-depth", 100);
         this.basisRiskBuffer = decimal(env, "arbitrage.multi-exchange.basis-risk-buffer", "0.0002");
         this.maxMarkPriceDeviation = decimal(env, "arbitrage.multi-exchange.max-mark-price-deviation", "0.01");
         this.maxExecutableBasis = decimal(env, "arbitrage.multi-exchange.max-executable-basis", "0.003");
@@ -100,6 +116,10 @@ public class MultiExchangeFundingRateProperties {
     public Map<Exchange, ExchangeCost> getCosts() { return Collections.unmodifiableMap(costs); }
     public BigDecimal getTargetNotional() { return targetNotional; }
     public BigDecimal getMinimumNotional() { return minimumNotional; }
+    public BigDecimal getMinimumOrderBookNotional() { return minimumOrderBookNotional; }
+    public BigDecimal getMinimumOrderBookCoverageRatio() { return minimumOrderBookCoverageRatio; }
+    public BigDecimal getMaximumLegVwapImpact() { return maximumLegVwapImpact; }
+    public int getCaptureOrderBookDepth() { return captureOrderBookDepth; }
     public BigDecimal getBasisRiskBuffer() { return basisRiskBuffer; }
     public BigDecimal getMaxMarkPriceDeviation() { return maxMarkPriceDeviation; }
     public BigDecimal getMaxExecutableBasis() { return maxExecutableBasis; }
@@ -114,6 +134,13 @@ public class MultiExchangeFundingRateProperties {
     public Duration getMaximumHoldingDuration() { return maximumHoldingDuration; }
     private static long longValue(Environment environment, String key, long fallback) {
         return Long.parseLong(environment.getProperty(key, String.valueOf(fallback)));
+    }
+    private static int positiveInt(Environment environment, String key, int fallback) {
+        int value = Integer.parseInt(environment.getProperty(key, String.valueOf(fallback)));
+        if (value <= 0) {
+            throw new IllegalArgumentException(key + " must be positive");
+        }
+        return value;
     }
     private static Map<Exchange, ExchangeCost> defaultCosts() {
         Map<Exchange, ExchangeCost> result = new EnumMap<>(Exchange.class);
