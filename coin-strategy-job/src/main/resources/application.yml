@@ -77,7 +77,7 @@ binance:
 arbitrage:
   multi-exchange:
     # V1 强制模拟盘；这些开关只启用公共行情扫描、Paper 持仓监控和模拟资金费结算。
-    exchanges: BINANCE,OKX,HTX,BITGET
+    exchanges: BINANCE,OKX,HTX,BITGET,HYPERLIQUID
     scan-enabled: false
     monitor-enabled: false
     settlement-enabled: false
@@ -102,6 +102,7 @@ arbitrage:
       okx: ""
       htx: ""
       bitget: ""
+      hyperliquid: ""
     min-net-yield-rate: 0.0002
     round-trip-fee-rate: 0.0010
     slippage-rate: 0.0005
@@ -123,6 +124,8 @@ arbitrage:
       okx: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
       htx: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
       bitget: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      # Public-data Paper default. Set the transfer cost only after measuring the actual funding route.
+      hyperliquid: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005, capital-transfer-cost-rate: 0 }
   spot-futures:
     # [TUNE] 单交易所期现套利策略的主交易对。
     symbol: "BTCUSDT"

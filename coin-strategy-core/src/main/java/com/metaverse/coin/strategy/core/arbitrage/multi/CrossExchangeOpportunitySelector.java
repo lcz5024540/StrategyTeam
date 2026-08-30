@@ -33,13 +33,17 @@ public final class CrossExchangeOpportunitySelector {
             ExecutionPlan execution = executionPlan(low, high, books, targetNotional);
             String reason = rejection(low, high, books, costs, execution, limits, now);
             BigDecimal hourlySpread = high.hourlyFundingRate().subtract(low.hourlyFundingRate());
-            BigDecimal nextSettlementSpread = high.rawFundingRate().subtract(low.rawFundingRate());
+            BigDecimal projectedFundingYield = FundingRateYieldProjection.projectedSpread(low, high);
             BigDecimal cost = costs.containsKey(low.exchange()) && costs.containsKey(high.exchange())
-                    ? costs.get(low.exchange()).roundTripTakerCost().add(costs.get(high.exchange()).roundTripTakerCost()).add(limits.basisRiskBuffer())
+                    ? costs.get(low.exchange()).roundTripTakerCost()
+                            .add(costs.get(low.exchange()).amortizedCapitalTransferCost())
+                            .add(costs.get(high.exchange()).roundTripTakerCost())
+                            .add(costs.get(high.exchange()).amortizedCapitalTransferCost())
+                            .add(limits.basisRiskBuffer())
                     : BigDecimal.ZERO;
-            BigDecimal net = nextSettlementSpread.subtract(cost);
+            BigDecimal net = projectedFundingYield.subtract(cost);
             if (reason == null && cost.signum() > 0
-                    && nextSettlementSpread.compareTo(cost.multiply(limits.minimumCostCoverageRatio())) < 0) {
+                    && projectedFundingYield.compareTo(cost.multiply(limits.minimumCostCoverageRatio())) < 0) {
                 reason = "COST_COVERAGE_BELOW_THRESHOLD";
             }
             if (reason == null && net.compareTo(limits.minNetYield()) < 0) reason = "NET_YIELD_BELOW_THRESHOLD";

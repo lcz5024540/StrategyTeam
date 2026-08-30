@@ -69,7 +69,7 @@ public abstract class ReadOnlyFundingRateGateway
     public List<FundingRateQuote> fundingRates(List<String> symbols) {
         return symbols.stream().map(this::fundingRate).map(snapshot -> new FundingRateQuote(
                 exchange, snapshot.canonicalSymbol(), snapshot.rawFundingRate(),
-                snapshot.markPrice(), snapshot.receivedAt())).toList();
+                snapshot.fundingIntervalHours(), snapshot.markPrice(), snapshot.nextFundingTime())).toList();
     }
 
     @Override

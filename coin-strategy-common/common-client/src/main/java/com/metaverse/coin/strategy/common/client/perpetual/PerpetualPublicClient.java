@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -15,11 +16,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** Public-only USDT perpetual market-data client. It contains no signed trading operations. */
 final class PerpetualPublicClient implements PerpetualMarketDataClient {
+    private static final int HYPERLIQUID_SIGNATURE_FIGURES = 5;
 
     private final Venue venue;
     private final URI baseUri;
     private final PublicJsonHttpClient http;
     private final Map<String, BigDecimal> contractMultipliers = new ConcurrentHashMap<>();
+    private volatile HyperliquidMeta hyperliquidMeta;
+    private volatile Instant hyperliquidMetaReceivedAt;
 
     PerpetualPublicClient(Venue venue) {
         this(venue, URI.create(defaultBaseUrl(venue)), new PublicJsonHttpClient());
@@ -45,6 +49,7 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
             case OKX -> okxContracts();
             case HTX -> htxContracts();
             case BITGET -> bitgetContracts();
+            case HYPERLIQUID -> hyperliquidContracts();
         };
     }
 
@@ -56,6 +61,7 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
             case OKX -> okxFunding(symbol, receivedAt);
             case HTX -> htxFunding(symbol, receivedAt);
             case BITGET -> bitgetFunding(symbol, receivedAt);
+            case HYPERLIQUID -> hyperliquidFunding(symbol, receivedAt);
         };
     }
 
@@ -67,6 +73,7 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
             case OKX -> okxBook(symbol, depth, receivedAt);
             case HTX -> htxBook(symbol, depth, receivedAt);
             case BITGET -> bitgetBook(symbol, depth, receivedAt);
+            case HYPERLIQUID -> hyperliquidBook(symbol, depth, receivedAt);
         };
     }
 
@@ -231,6 +238,84 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
         return book(symbol, node.path("bids"), node.path("asks"), Integer.MAX_VALUE, receivedAt);
     }
 
+    private List<Contract> hyperliquidContracts() {
+        List<Contract> contracts = new ArrayList<>();
+        for (JsonNode asset : hyperliquidMeta().universe()) {
+            if (asset.path("isDelisted").asBoolean(false)) {
+                continue;
+            }
+            String coin = asset.path("name").asText();
+            int quantityScale = asset.path("szDecimals").asInt(-1);
+            if (!isHyperliquidCoin(coin) || quantityScale < 0) {
+                continue;
+            }
+            contracts.add(new Contract(coin + "USDT", coin, quantityScale, 8,
+                    BigDecimal.TEN));
+        }
+        return contracts;
+    }
+
+    private Funding hyperliquidFunding(String symbol, Instant receivedAt) {
+        JsonNode context = hyperliquidMeta().context(hyperliquidCoin(symbol));
+        Instant nextFundingTime = receivedAt.truncatedTo(ChronoUnit.HOURS).plus(1, ChronoUnit.HOURS);
+        return funding(symbol, decimal(context, "funding"), 1, nextFundingTime.toEpochMilli(),
+                decimal(context, "markPx"), decimal(context, "oraclePx"), receivedAt);
+    }
+
+    private OrderBook hyperliquidBook(String symbol, int depth, Instant receivedAt) {
+        JsonNode levels = postInfo("{\"type\":\"l2Book\",\"coin\":\""
+                + hyperliquidCoin(symbol) + "\",\"nSigFigs\":"
+                + HYPERLIQUID_SIGNATURE_FIGURES + "}").path("levels");
+        List<BookLevel> bids = hyperliquidLevels(levels.path(0), depth);
+        List<BookLevel> asks = hyperliquidLevels(levels.path(1), depth);
+        if (bids.isEmpty() || asks.isEmpty()) {
+            throw new IllegalStateException("incomplete order book for " + venue + "/" + symbol);
+        }
+        return new OrderBook(symbol, bids.get(0).price(), asks.get(0).price(),
+                notional(bids), notional(asks), bids, asks, receivedAt);
+    }
+
+    private HyperliquidMeta hyperliquidMeta() {
+        Instant now = Instant.now();
+        HyperliquidMeta cached = hyperliquidMeta;
+        if (cached != null && hyperliquidMetaReceivedAt != null
+                && hyperliquidMetaReceivedAt.plusSeconds(10).isAfter(now)) {
+            return cached;
+        }
+        synchronized (this) {
+            if (hyperliquidMeta != null && hyperliquidMetaReceivedAt != null
+                    && hyperliquidMetaReceivedAt.plusSeconds(10).isAfter(now)) {
+                return hyperliquidMeta;
+            }
+            JsonNode response = postInfo("{\"type\":\"metaAndAssetCtxs\"}");
+            if (!response.isArray() || response.size() < 2) {
+                throw new IllegalStateException("incomplete metaAndAssetCtxs response from Hyperliquid");
+            }
+            hyperliquidMeta = new HyperliquidMeta(response.path(0).path("universe"), response.path(1));
+            hyperliquidMetaReceivedAt = now;
+            return hyperliquidMeta;
+        }
+    }
+
+    private JsonNode postInfo(String body) {
+        return http.post(baseUri.resolve("/info"), body);
+    }
+
+    private String hyperliquidCoin(String symbol) {
+        if (symbol == null || !symbol.endsWith("USDT")) {
+            throw new IllegalArgumentException("Hyperliquid symbol must end in USDT: " + symbol);
+        }
+        String coin = symbol.substring(0, symbol.length() - 4);
+        if (!isHyperliquidCoin(coin)) {
+            throw new IllegalArgumentException("invalid Hyperliquid coin: " + symbol);
+        }
+        return coin;
+    }
+
+    private boolean isHyperliquidCoin(String coin) {
+        return coin != null && coin.matches("[A-Za-z0-9_-]+");
+    }
+
     private Funding funding(String symbol, BigDecimal rate, int interval, long next,
             BigDecimal mark, BigDecimal index, Instant receivedAt) {
         if (rate == null || mark == null || index == null || next <= 0
@@ -243,6 +328,17 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
     private OrderBook book(String symbol, JsonNode bids, JsonNode asks, int maximumLevels,
             Instant receivedAt) {
         return book(symbol, bids, asks, maximumLevels, BigDecimal.ONE, receivedAt);
+    }
+
+    private record HyperliquidMeta(JsonNode universe, JsonNode contexts) {
+        private JsonNode context(String coin) {
+            for (int index = 0; index < universe.size(); index++) {
+                if (coin.equals(universe.path(index).path("name").asText())) {
+                    return contexts.path(index);
+                }
+            }
+            throw new IllegalArgumentException("Hyperliquid contract is unavailable: " + coin);
+        }
     }
 
     private OrderBook book(String symbol, JsonNode bids, JsonNode asks, int maximumLevels,
@@ -300,6 +396,22 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
             count++;
         }
         return List.copyOf(levels);
+    }
+
+    private List<BookLevel> hyperliquidLevels(JsonNode rawLevels, int maximumLevels) {
+        List<BookLevel> result = new ArrayList<>();
+        for (JsonNode level : rawLevels) {
+            if (result.size() >= maximumLevels) {
+                break;
+            }
+            BigDecimal price = decimal(level, "px");
+            BigDecimal quantity = decimal(level, "sz");
+            if (price.signum() <= 0 || quantity.signum() <= 0) {
+                throw new IllegalStateException("invalid Hyperliquid order book level");
+            }
+            result.add(new BookLevel(price, price.multiply(quantity)));
+        }
+        return List.copyOf(result);
     }
 
     private BigDecimal notional(List<BookLevel> levels) {
@@ -365,6 +477,7 @@ final class PerpetualPublicClient implements PerpetualMarketDataClient {
             case OKX -> "https://www.okx.com";
             case HTX -> "https://api.hbdm.com";
             case BITGET -> "https://api.bitget.com";
+            case HYPERLIQUID -> "https://api.hyperliquid.xyz";
         };
     }
 }

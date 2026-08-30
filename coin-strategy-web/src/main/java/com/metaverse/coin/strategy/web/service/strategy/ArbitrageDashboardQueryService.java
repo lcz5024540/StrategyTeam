@@ -154,7 +154,7 @@ public class ArbitrageDashboardQueryService {
     }
 
     public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.MarketHealth>> marketHealth() {
-        List<String> exchanges = List.of("BINANCE", "OKX", "BYBIT", "HTX");
+        List<String> exchanges = List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID");
         List<ArbitrageDashboardViews.MarketHealth> health = exchanges.stream()
                 .map(exchange -> new ArbitrageDashboardViews.MarketHealth(exchange, "UNKNOWN", null, null,
                         null, null, null, "market health snapshot not persisted"))

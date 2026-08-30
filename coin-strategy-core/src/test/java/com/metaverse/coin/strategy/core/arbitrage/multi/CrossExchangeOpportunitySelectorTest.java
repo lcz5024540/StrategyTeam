@@ -37,13 +37,42 @@ class CrossExchangeOpportunitySelectorTest {
 
         assertEquals("STALE_ORDER_BOOK", opportunities.get(0).rejectionReason());
     }
-    @Test void usesNextSettlementFundingRatherThanHourlySpreadForNetYield() {
+    @Test void projectsHourlyFundingSpreadOverTheLongestSettlementInterval() {
         var result = new CrossExchangeOpportunitySelector().evaluate(
                 List.of(rate(Exchange.BINANCE, "-0.0008", 8), rate(Exchange.OKX, "-0.0002", 4)),
                 books(), costs(), new BigDecimal("100"), defaultLimits(), now);
 
-        assertEquals(0, new BigDecimal("0.0006").compareTo(result.get(0).estimatedNetYield()));
+        assertEquals(0, new BigDecimal("0.0004").compareTo(result.get(0).estimatedNetYield()));
         assertEquals(0, new BigDecimal("0.00005").compareTo(result.get(0).hourlyFundingSpread()));
+    }
+    @Test void projectsHyperliquidHourlyRateAcrossCexSettlementInterval() {
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.OKX, "0.0008", 8),
+                        rate(Exchange.HYPERLIQUID, "0.00015", 1)),
+                books(), costs(), new BigDecimal("100"), defaultLimits(), now).get(0);
+
+        assertEquals(Exchange.OKX, opportunity.longQuote().exchange());
+        assertEquals(Exchange.HYPERLIQUID, opportunity.shortQuote().exchange());
+        assertEquals(0, new BigDecimal("0.00005").compareTo(opportunity.hourlyFundingSpread()));
+        assertEquals(0, new BigDecimal("0.0004").compareTo(opportunity.estimatedNetYield()));
+    }
+    @Test void rejectsWhenAmortizedCapitalTransferCostEliminatesNetYield() {
+        Map<Exchange, ExchangeCost> costs = costs();
+        costs.put(Exchange.BINANCE, new ExchangeCost(BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, new BigDecimal("0.00025")));
+        costs.put(Exchange.HYPERLIQUID, new ExchangeCost(BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, new BigDecimal("0.00025")));
+        CrossExchangeOpportunitySelector.Limits limits = new CrossExchangeOpportunitySelector.Limits(
+                Duration.ofMinutes(1), Duration.ofMinutes(2), new BigDecimal("0.01"),
+                BigDecimal.ONE, new BigDecimal("0.0003"), BigDecimal.ZERO, false);
+
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BINANCE, "0.0001", 8),
+                        rate(Exchange.HYPERLIQUID, "0.0006", 8)),
+                books(), costs, new BigDecimal("100"), limits, now).get(0);
+
+        assertEquals(0, BigDecimal.ZERO.compareTo(opportunity.estimatedNetYield()));
+        assertEquals("COST_COVERAGE_BELOW_THRESHOLD", opportunity.rejectionReason());
     }
     @Test void rejectsWhenExecutableBidAskBasisExceedsLimit() {
         Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = books();

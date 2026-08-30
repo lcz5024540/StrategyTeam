@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.common.client.perpetual;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -94,6 +95,30 @@ class PerpetualPublicClientTest {
         assertEquals(3, client.contracts().get(0).quantityScale());
         assertEquals("0.0004", client.funding("BTCUSDT").rawRate().toPlainString());
         assertEquals("198", client.orderBook("BTCUSDT", 5).bidNotional().toPlainString());
+    }
+
+    @Test
+    void parsesHyperliquidContractsFundingAndBookThroughPublicPosts() throws InterruptedException {
+        enqueue("[{\"universe\":[{\"name\":\"BTC\",\"szDecimals\":5}]},"
+                + "[{\"funding\":\"0.00001\",\"markPx\":\"100\",\"oraclePx\":\"99.9\"}]]");
+        enqueue("{\"levels\":[[{\"px\":\"99\",\"sz\":\"2\"}],"
+                + "[{\"px\":\"101\",\"sz\":\"3\"}]]}");
+
+        PerpetualMarketDataClient client = client(PerpetualPublicClient.Venue.HYPERLIQUID);
+
+        assertEquals("BTCUSDT", client.contracts().get(0).canonicalSymbol());
+        assertEquals(1, client.funding("BTCUSDT").intervalHours());
+        PerpetualMarketDataClient.OrderBook book = client.orderBook("BTCUSDT", 5);
+        assertEquals("303", book.askNotional().toPlainString());
+        assertEquals("99", book.bestBid().toPlainString());
+
+        RecordedRequest metadataRequest = server.takeRequest();
+        RecordedRequest bookRequest = server.takeRequest();
+        assertEquals("/info", metadataRequest.getPath());
+        assertEquals("{\"type\":\"metaAndAssetCtxs\"}", metadataRequest.getBody().readUtf8());
+        assertEquals("/info", bookRequest.getPath());
+        assertEquals("{\"type\":\"l2Book\",\"coin\":\"BTC\",\"nSigFigs\":5}",
+                bookRequest.getBody().readUtf8());
     }
 
     @Test

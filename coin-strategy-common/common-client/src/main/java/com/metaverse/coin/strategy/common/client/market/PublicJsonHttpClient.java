@@ -34,12 +34,28 @@ public class PublicJsonHttpClient {
     }
 
     public JsonNode get(URI uri) {
+        return execute(HttpRequest.newBuilder(uri)
+                .timeout(REQUEST_TIMEOUT)
+                .header("User-Agent", "CoinStrategy/1.0")
+                .GET()
+                .build(), uri);
+    }
+
+    /** Sends a public JSON POST request without any signing or account credentials. */
+    public JsonNode post(URI uri, String body) {
+        if (body == null || body.isBlank()) {
+            throw new IllegalArgumentException("public JSON request body is required");
+        }
+        return execute(HttpRequest.newBuilder(uri)
+                .timeout(REQUEST_TIMEOUT)
+                .header("User-Agent", "CoinStrategy/1.0")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build(), uri);
+    }
+
+    private JsonNode execute(HttpRequest request, URI uri) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(REQUEST_TIMEOUT)
-                    .header("User-Agent", "CoinStrategy/1.0")
-                    .GET()
-                    .build();
             HttpResponse<String> response = httpClient.send(request,
                     HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 429) {

@@ -47,9 +47,9 @@ public final class FundingRateSpreadCalculator {
 
     public static FundingRateSpread candidate(FundingRateQuote a, FundingRateQuote b,
                                               BigDecimal fee, BigDecimal slippage) {
-        FundingRateQuote low = a.fundingRate().compareTo(b.fundingRate()) <= 0 ? a : b;
+        FundingRateQuote low = a.hourlyFundingRate().compareTo(b.hourlyFundingRate()) <= 0 ? a : b;
         FundingRateQuote high = low == a ? b : a;
-        BigDecimal spread = high.fundingRate().subtract(low.fundingRate());
+        BigDecimal spread = FundingRateYieldProjection.projectedSpread(low, high);
         BigDecimal priceSpread = high.markPrice().subtract(low.markPrice())
                 .divide(low.markPrice(), 12, RoundingMode.HALF_UP).abs();
         BigDecimal net = spread.subtract(fee == null ? BigDecimal.ZERO : fee)
@@ -59,6 +59,9 @@ public final class FundingRateSpreadCalculator {
 
     public static FundingRateSpread candidate(FundingRateQuote a, FundingRateQuote b,
                                               ExchangeCost longCost, ExchangeCost shortCost) {
-        return candidate(a, b, longCost.roundTripTakerCost().add(shortCost.roundTripTakerCost()), BigDecimal.ZERO);
+        return candidate(a, b, longCost.roundTripTakerCost()
+                .add(longCost.amortizedCapitalTransferCost())
+                .add(shortCost.roundTripTakerCost())
+                .add(shortCost.amortizedCapitalTransferCost()), BigDecimal.ZERO);
     }
 }

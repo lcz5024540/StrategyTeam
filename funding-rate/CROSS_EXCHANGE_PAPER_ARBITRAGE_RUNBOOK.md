@@ -3,7 +3,7 @@
 ## 1. 安全边界
 
 - 仅支持 `DRY_RUN`，代码中不存在 `LIVE` 模式切换。
-- 四个交易所 Connector 只调用公共行情 API，私有下单方法固定抛出异常。
+- 五个场所 Connector（Binance、OKX、HTX、Bitget、Hyperliquid）只调用公共行情 API，私有下单、钱包和资金调拨方法固定不可用。
 - 自动扫描、合约同步、健康检查、行情采集、持仓恢复、持仓监控和模拟结算默认全部关闭。
 - 部署 Job 时必须启用 Spring `funding` profile；该 profile 设置 `strategy.deployment-mode=FUNDING_ONLY`，在组件扫描阶段排除 SmartWallet、Polymarket、BTC-minute 及预测市场执行/行情组件，不能只依赖 `smart-wallet.enabled=false`。
 
@@ -59,11 +59,20 @@ arbitrage:
       okx: ""
       htx: ""
       bitget: ""
+      hyperliquid: ""
 ```
 
-采集文件按 UTC 日期追加，当前以 `cross-exchange-funding-v2-<UTC 日期>.csv` 命名，包含 `schemaVersion`、`capturedAt`、`source=PUBLIC_REST`、交易所、资金费率、结算周期、下一结算时间、mark/index price、最优价、聚合名义深度及逐档价格/名义金额。逐档名义金额已按合约乘数归一为 USDT。单一交易所失败会写 `ERROR` 行而不会中断其他交易所；回放读取器同时兼容旧版 v1 文件（其逐档字段为空），并将成功行按 `capturedAt + symbol` 还原为统一资金费率和盘口快照，单独保留失败记录。`CrossExchangeFundingReplayService` 会按时间排序后复用生产机会选择器、成本模型和稳定窗口输出评估统计。生成目录已加入 `.gitignore`，原始采集数据须经脱敏和来源核验后才能选择性入库。
+采集文件按 UTC 日期追加，当前以 `cross-exchange-funding-v2-<UTC 日期>.csv` 命名，包含 `schemaVersion`、`capturedAt`、`source=PUBLIC_REST`、交易所、资金费率、结算周期、下一结算时间、mark/index price、最优价、聚合名义深度及逐档价格/名义金额。逐档名义金额已按合约乘数归一为 USD/USDT 计价的名义值。单一交易所失败会写 `ERROR` 行而不会中断其他交易所；回放读取器同时兼容旧版 v1 文件（其逐档字段为空），并将成功行按 `capturedAt + symbol` 还原为统一资金费率和盘口快照，单独保留失败记录。`CrossExchangeFundingReplayService` 会按时间排序后复用生产机会选择器、成本模型和稳定窗口输出评估统计。生成目录已加入 `.gitignore`，原始采集数据须经脱敏和来源核验后才能选择性入库。
 
-首轮采集至少连续运行 7 天，建议 14 天；每日确认四所成功行、错误行比例和输出目录磁盘余量。完成后回放全部 UTC 日文件，按币对/交易所对统计费率差、可成交 basis、结算时间偏差、通过率和拒绝原因，并基于逐档盘口校准各下单档位的 VWAP/滑点、手续费与 basis 阈值。
+## 2.1 Hyperliquid + CEX 的 Paper 边界
+
+- Hyperliquid 仅使用无鉴权 `POST https://api.hyperliquid.xyz/info`：`metaAndAssetCtxs` 获取目录、小时资金费率和 mark/oracle price，`l2Book` 获取盘口。代码不保存 API key、私钥或钱包地址。
+- Hyperliquid 合约币种会映射为现有的价格归一化键，例如 `BTC` 映射为 `BTCUSDT`。这是 USD 价格比较键，不代表 Hyperliquid 的抵押品是 USDT；该平台使用 USDC 保证金。Paper 结果因此假设 USDC/USDT 近似 1:1，发生明显脱锚时必须暂停该场所。
+- Hyperliquid 资金费率周期为 1 小时。选择器仍要求两腿的下一次结算时间偏差不超过 `maximum-settlement-skew-ms`，所以只在 CEX 下一次结算时间与整点小时窗口对齐时考虑配对。净收益先统一为小时费率，再投影到两腿中较长的结算周期：例如 CEX 8 小时费率 `0.08%` 与 Hyperliquid 小时费率 `0.015%`，比较的是 `0.08%` 和 `0.015% × 8`，而不是直接用 `0.08% - 0.015%`。
+- `costs.<exchange>.capital-transfer-cost-rate` 是每腿一次性资金调拨成本的 Paper 摊销假设，会和两侧 taker、滑点、基差缓冲一起从预估净收益扣除。默认值为 `0`；只有完成真实路径测量并由运营负责人批准后才可修改，且修改不意味着启用自动调拨。
+- 回滚方式：从 `arbitrage.multi-exchange.exchanges` 中移除 `HYPERLIQUID`，并重启 Funding-only Job。无需删除历史机会或改变数据库结构。
+
+首轮采集至少连续运行 7 天，建议 14 天；每日确认五所成功行、错误行比例和输出目录磁盘余量。完成后回放全部 UTC 日文件，按币对/交易所对统计费率差、可成交 basis、结算时间偏差、通过率和拒绝原因，并基于逐档盘口校准各下单档位的 VWAP/滑点、手续费与 basis 阈值。
 
 启动 `coin-strategy-job` 后，接口前缀为 `/strategy/api`。
 
@@ -104,7 +113,7 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 
 ## 5. 已知环境差异
 
-2026-08-21 本机只读实测：Binance、Bitget 返回 HTTP 200；OKX、HTX 在 12 秒内连接超时。扫描器按交易所隔离失败并记录健康状态；四所公共 base URL 已支持按部署环境覆盖，默认仍使用官方域名。部署环境需确认四所域名或代理均可访问，才能验证四所共同币种集合。
+2026-08-21 本机只读实测：Binance、Bitget 返回 HTTP 200；OKX、HTX 在 12 秒内连接超时。2026-08-30 本机只读实测：Hyperliquid `metaAndAssetCtxs` 和 BTC `l2Book` 返回有效数据。扫描器按交易所隔离失败并记录健康状态；五所公共 base URL 已支持按部署环境覆盖，默认仍使用官方域名。部署环境需确认五所域名或代理均可访问，才能验证共同币种集合。
 
 数据库迁移必须由验收环境负责人执行。本地未配置 `DB_PASSWORD`，且默认地址可能指向共享环境，开发验证不会自动执行 SQL。
 
@@ -114,10 +123,10 @@ SELECT * FROM cross_exchange_risk_snapshot ORDER BY id DESC LIMIT 20;
 
 | 阶段 | 交付项 | 状态 | 证据或边界 |
 |---|---|---|---|
-| Phase 0 | JDK 17 构建约束及四所公共 HTTP Connector | ✅ 已完成 | URL、响应解析和统一公共行情 DTO 已下沉 `common-client`；默认官方域名及按环境覆盖的公共 base URL 均已支持，HTTP 200/429 及四所解析有测试 |
+| Phase 0 | JDK 17 构建约束及五所公共 HTTP Connector | ✅ 已完成 | URL、响应解析和统一公共行情 DTO 已下沉 `common-client`；默认官方域名及按环境覆盖的公共 base URL 均已支持，HTTP 200/429 及五所解析有测试 |
 | Phase 0 | 删除伪造 mark/last price 与缺失结算时间兜底 | ✅ 已完成 | 关键行情字段缺失时 fail-closed，不形成可交易报价 |
-| Phase 0 | 每交易所手续费、滑点和账户成本配置 | ✅ 已完成 | 四所独立 maker/taker/slippage 配置；V1 默认按 taker 保守估算 |
-| Phase 1 | Binance、OKX、HTX、Bitget 公共行情 Gateway | ✅ 已完成 | 已实现合约目录、资金费率、mark/index price 和盘口；不含部署环境连通性验收 |
+| Phase 0 | 每交易所手续费、滑点和账户成本配置 | ✅ 已完成 | 五所独立 maker/taker/slippage 配置；Hyperliquid 额外支持每腿资金调拨成本的 Paper 摊销，V1 默认按 taker 保守估算 |
+| Phase 1 | Binance、OKX、HTX、Bitget、Hyperliquid 公共行情 Gateway | ✅ 已完成 | 已实现合约目录、资金费率、mark/index price 和盘口；不含部署环境连通性验收 |
 | Phase 1 | symbol、结算周期、精度、最小名义价值归一化 | ✅ 已完成 | 合约目录同步及缺失字段 fail-closed 已实现 |
 | Phase 1 | 网关健康、延迟、成功率和限频监控 | ✅ 已完成 | 健康接口及 4 组带 `exchange` 标签的 Prometheus 指标已实现 |
 | Phase 2 | 全交易所组合枚举与多空方向选择 | ✅ 已完成 | 同号正/负费率方向、不同周期归一化和第一腿选择已有单元测试 |
@@ -156,8 +165,8 @@ Paper 结算的 `actualAmount` 是“结算任务运行时最新可得公共资�
 
 | 优先级 | 任务 | 当前状态 | 完成标准 |
 |---|---|---|---|
-| P1 | 建立真实交易所历史资金费率与盘口数据集 | 确定性合成回放、真实公共行情采集器、CSV 读取器及生产选择规则回放接口已完成，四所长期数据尚未采集 | `capture-enabled` 默认关闭；启用后按 UTC 日生成带 `PUBLIC_REST` 来源、采集时间和成功/失败状态的 CSV，回放接口按时间和币种还原快照并统计候选、稳定批准及拒绝原因。仍需在四所均可访问的隔离环境持续采集并完成来源核验 |
-| P1 | 将四所 HTTP Connector 实现完整下沉至 `common-client` | ✅ 已完成 | `PerpetualMarketDataClient` 统一合约、资金费率和盘口 DTO；四所 URL 与 JSON 解析均位于 `common-client`，`coin-strategy-core` 不再承载相关 URL 或响应解析 |
+| P1 | 建立真实交易所历史资金费率与盘口数据集 | 确定性合成回放、真实公共行情采集器、CSV 读取器及生产选择规则回放接口已完成，五所长期数据尚未采集 | `capture-enabled` 默认关闭；启用后按 UTC 日生成带 `PUBLIC_REST` 来源、采集时间和成功/失败状态的 CSV，回放接口按时间和币种还原快照并统计候选、稳定批准及拒绝原因。仍需在五所均可访问的隔离环境持续采集并完成来源核验 |
+| P1 | 将五所 HTTP Connector 实现完整下沉至 `common-client` | ✅ 已完成 | `PerpetualMarketDataClient` 统一合约、资金费率和盘口 DTO；五所 URL 与 JSON 解析均位于 `common-client`，`coin-strategy-core` 不再承载相关 URL 或响应解析 |
 | P1 | 清理项目全量测试既有失败 | 已从 29 failures / 4 errors 收敛至 22 failures / 0 errors；剩余集中于 SmartWallet 的 Controller 契约及交易/退出策略语义差异 | `mvn -pl coin-strategy-job -am test` 全绿；不得用忽略或跳过方式掩盖失败 |
 | P2 | 动态同步账户手续费等级 | V1 使用每交易所配置的保守 taker 成本 | 私有账户能力开放后，从账户等级接口刷新实际 maker/taker 成本，并保留配置兜底与变更审计 |
 

@@ -138,7 +138,7 @@ public class CrossExchangePositionMonitorService {
 
     private BigDecimal remainingNetYield(NormalizedFundingRateSnapshot longQuote,
             NormalizedFundingRateSnapshot shortQuote) {
-        return shortQuote.hourlyFundingRate().subtract(longQuote.hourlyFundingRate())
+        return FundingRateYieldProjection.projectedSpread(longQuote, shortQuote)
                 .subtract(oneWayCost(longQuote.exchange()))
                 .subtract(oneWayCost(shortQuote.exchange()))
                 .subtract(basisRiskBuffer);

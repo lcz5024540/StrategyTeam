@@ -41,7 +41,8 @@ public class MultiExchangeFundingRateProperties {
     private final Duration maximumHoldingDuration;
 
     public MultiExchangeFundingRateProperties() {
-        this.exchanges = EnumSet.of(Exchange.BINANCE, Exchange.OKX, Exchange.HTX, Exchange.BITGET);
+        this.exchanges = EnumSet.of(Exchange.BINANCE, Exchange.OKX, Exchange.HTX, Exchange.BITGET,
+                Exchange.HYPERLIQUID);
         this.minNetYieldRate = new BigDecimal("0.0002");
         this.roundTripFeeRate = new BigDecimal("0.0010");
         this.slippageRate = new BigDecimal("0.0005");
@@ -65,7 +66,7 @@ public class MultiExchangeFundingRateProperties {
 
     @Autowired
     public MultiExchangeFundingRateProperties(Environment env) {
-        String configured = env.getProperty("arbitrage.multi-exchange.exchanges", "BINANCE,OKX,HTX,BITGET");
+        String configured = env.getProperty("arbitrage.multi-exchange.exchanges", "BINANCE,OKX,HTX,BITGET,HYPERLIQUID");
         this.exchanges = configured.isBlank() ? Collections.emptySet() : Arrays.stream(configured.split(","))
                 .map(Exchange::parse).collect(Collectors.toCollection(() -> EnumSet.noneOf(Exchange.class)));
         this.minNetYieldRate = decimal(env, "arbitrage.multi-exchange.min-net-yield-rate", "0.0002");
@@ -125,7 +126,9 @@ public class MultiExchangeFundingRateProperties {
         for (Exchange exchange : Exchange.values()) {
             String prefix = "arbitrage.multi-exchange.costs." + exchange.name().toLowerCase() + ".";
             result.put(exchange, new ExchangeCost(decimal(env, prefix + "maker-fee-rate", "0.0002"),
-                    decimal(env, prefix + "taker-fee-rate", "0.0005"), decimal(env, prefix + "slippage-rate", "0.0005")));
+                    decimal(env, prefix + "taker-fee-rate", "0.0005"),
+                    decimal(env, prefix + "slippage-rate", "0.0005"),
+                    decimal(env, prefix + "capital-transfer-cost-rate", "0")));
         }
         return result;
     }

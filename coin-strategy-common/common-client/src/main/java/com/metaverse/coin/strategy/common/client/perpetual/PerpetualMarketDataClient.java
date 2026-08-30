@@ -6,7 +6,7 @@ import java.util.List;
 
 /** Exchange-neutral boundary for public USDT perpetual market data. */
 public interface PerpetualMarketDataClient {
-    enum Venue { BINANCE, OKX, HTX, BITGET }
+    enum Venue { BINANCE, OKX, HTX, BITGET, HYPERLIQUID }
 
     record Contract(String canonicalSymbol, String exchangeSymbol, int quantityScale,
             int priceScale, BigDecimal minimumNotional) { }
