@@ -96,7 +96,15 @@ class HtxMapperIntegrationTest {
                 "0.001", "100", "0.001", "50");
         resting.setStatus(HtxStatus.MM_RESTING_SELL);
         resting.setDryRun(false);
+        resting.setNetQuoteCost(new BigDecimal("-0.1"));
         pairMapper.insert(resting);
+        // 卖单零成交取消后仍负担库存责任，不得把买入现金流当成已实现亏损。
+        HtxLockedPairEntity retryable = mmCell("mm-retry-" + System.nanoTime(),
+                "0.001", "100", "0", "101");
+        retryable.setStatus(HtxStatus.MM_SELL_RETRYABLE);
+        retryable.setDryRun(false);
+        retryable.setNetQuoteCost(new BigDecimal("-0.1"));
+        pairMapper.insert(retryable);
         BigDecimal after = pairMapper.sumMmRealizedNetQuoteSince(start);
         assertEquals(0, before.compareTo(after));
     }
@@ -106,6 +114,8 @@ class HtxMapperIntegrationTest {
         HtxLockedPairEntity e = mmCell(cid, buyQty, buyPrice, sellQty, sellPrice);
         e.setStatus(HtxStatus.MM_DONE);
         e.setDryRun(false);
+        e.setNetQuoteCost(new BigDecimal(sellQty).multiply(new BigDecimal(sellPrice))
+                .subtract(new BigDecimal(buyQty).multiply(new BigDecimal(buyPrice))));
         pairMapper.insert(e);
     }
 

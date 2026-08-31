@@ -67,7 +67,11 @@ class MarketMakerServiceAdvanceTest {
                 .pairId(100L).clientId("mm-btcusdt-1").symbol("btcusdt")
                 .buyPrice(new BigDecimal("59700.00")).sellPrice(new BigDecimal("60300.00"))
                 .qty(new BigDecimal("0.0003")).state(HtxStatus.MM_RESTING_SELL)
-                .buyOrderId(555L).sellOrderId(sellId).createdAt(LocalDateTime.now()).build();
+                .buyOrderId(555L).sellOrderId(sellId)
+                .buyFilledAmount(new BigDecimal("0.0003"))
+                .totalFeeBase(BigDecimal.ZERO)
+                .netQuoteCost(new BigDecimal("-17.910000"))
+                .createdAt(LocalDateTime.now()).build();
     }
 
     private HtxRestResponse<HtxOrder> orderOk(String state, String filled, String fees, String amount) {
@@ -269,11 +273,30 @@ class MarketMakerServiceAdvanceTest {
         verify(recorder, never()).recordExposure(anyLong(), anyString(), anyString(), any(), anyString());
     }
 
-    @Test void resting_sell_external_cancel_records_exposure_and_done() {
-        when(spot.queryOrder(777L)).thenReturn(orderOk("canceled", "0.0001", null, "0.0003"));
+    @Test void resting_sell_external_cancel_retains_inventory_for_retry() {
+        when(spot.queryOrder(777L)).thenReturn(orderOkWithCash(
+                "canceled", "0.0001", "0.00603", "0.0003", "6.03"));
         svc.advanceCell(sellCell(777L));
-        verify(recorder).recordExposure(eq(100L), eq("btcusdt"), eq(HtxStatus.EXPOSED_SIDE_BASE_LONG), any(), anyString());
-        verify(recorder).markMmDone(eq(100L), any());
+        verify(recorder).markMmSellRetryable(eq(100L), eq(new BigDecimal("0.0001")),
+                eq(new BigDecimal("-11.886030")), eq(new BigDecimal("0.00603")), eq("canceled"));
+        verify(recorder, never()).recordExposure(anyLong(), anyString(), anyString(), any(), anyString());
+        verify(recorder, never()).markMmDone(anyLong(), any());
+    }
+
+    @Test void retryable_sell_only_submits_remaining_inventory() {
+        MarketMakerCell retryable = sellCell(null);
+        retryable.setState(HtxStatus.MM_SELL_RETRYABLE);
+        retryable.setSellFilledAmount(new BigDecimal("0.0001"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000200"), eq("60300.00"), contains("-SELL-REC-")))
+                .thenReturn(placeOk("778"));
+
+        svc.advanceCell(retryable);
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000200"), eq("60300.00"), contains("-SELL-REC-"));
+        verify(recorder).markMmSellReprice(100L, 778L, new BigDecimal("60300.00"),
+                new BigDecimal("0.0001"));
     }
 
     private HtxRestResponse<HtxDepth> depthWithBid(String bid) {

@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.persistence;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
 import com.metaverse.coin.strategy.htx.persistence.entity.*;
 import com.metaverse.coin.strategy.htx.persistence.mapper.*;
@@ -232,6 +233,7 @@ public class HtxTradeRecorder {
             e.setTotalFeeBase(buyFeeBase);
             e.setBuyPrice(actualBuyPrice);
             e.setSellPrice(sellPrice);
+            e.setNetQuoteCost(buyFilled.multiply(actualBuyPrice).negate());
             e.setStatus(HtxStatus.MM_RESTING_SELL);
             e.setUpdatedAt(LocalDateTime.now());
             pairMapper.updateById(e);
@@ -265,6 +267,48 @@ public class HtxTradeRecorder {
             pairMapper.updateById(e);
         } catch (Exception ex) {
             log.error("markMmDone failed pairId={}", pairId, ex);
+        }
+    }
+
+    /**
+     * 把当前卖单的真实累计成交现金流写回 cell。该值只在订单进入终态时累加一次，
+     * 避免轮询 partial-filled 快照时重复记账。
+     */
+    public void recordMmSellProgress(long pairId, BigDecimal cumulativeSellFilled,
+                                     BigDecimal cumulativeNetQuote, BigDecimal cumulativeFeeQuote) {
+        try {
+            HtxLockedPairEntity e = new HtxLockedPairEntity();
+            e.setId(pairId);
+            e.setSellFilledAmount(cumulativeSellFilled);
+            e.setNetQuoteCost(cumulativeNetQuote);
+            e.setTotalFeeQuote(cumulativeFeeQuote);
+            e.setUpdatedAt(LocalDateTime.now());
+            pairMapper.updateById(e);
+        } catch (Exception ex) {
+            log.error("recordMmSellProgress failed pairId={}", pairId, ex);
+        }
+    }
+
+    /**
+     * 当前卖单已取消/拒绝但库存尚未售完：清除失效 orderId 并保留库存与累计现金流，
+     * 使下一 tick/重启继续卖出，而不是错误进入 MM_DONE。
+     */
+    public void markMmSellRetryable(long pairId, BigDecimal cumulativeSellFilled,
+                                    BigDecimal cumulativeNetQuote, BigDecimal cumulativeFeeQuote,
+                                    String terminalState) {
+        try {
+            pairMapper.update(null, new UpdateWrapper<HtxLockedPairEntity>()
+                    .eq("id", pairId)
+                    .set("sell_order_id", null)
+                    .set("sell_filled_amount", cumulativeSellFilled)
+                    .set("net_quote_cost", cumulativeNetQuote)
+                    .set("total_fee_quote", cumulativeFeeQuote)
+                    .set("status", HtxStatus.MM_SELL_RETRYABLE)
+                    .set("result_code", "MM_SELL_ORDER_TERMINAL")
+                    .set("message", "sell order terminal with inventory remaining: " + terminalState)
+                    .set("updated_at", LocalDateTime.now()));
+        } catch (Exception ex) {
+            log.error("markMmSellRetryable failed pairId={} state={}", pairId, terminalState, ex);
         }
     }
 
@@ -332,14 +376,16 @@ public class HtxTradeRecorder {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
                 .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
                 .eq("symbol", symbol)
-                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL));
+                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL,
+                        HtxStatus.MM_SELL_RETRYABLE));
     }
 
     /** 全部标的的 open cell（用于重启恢复）。 */
     public List<HtxLockedPairEntity> findAllOpenMmCells() {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
                 .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
-                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL));
+                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL,
+                        HtxStatus.MM_SELL_RETRYABLE));
     }
 
     /**
@@ -360,7 +406,8 @@ public class HtxTradeRecorder {
         Long n = pairMapper.selectCount(new QueryWrapper<HtxLockedPairEntity>()
                 .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
                 .eq("symbol", symbol)
-                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL));
+                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL,
+                        HtxStatus.MM_SELL_RETRYABLE));
         return n == null ? 0 : n.intValue();
     }
 

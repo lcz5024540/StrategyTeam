@@ -21,14 +21,14 @@ public interface HtxLockedPairMapper extends BaseMapper<HtxLockedPairEntity> {
     BigDecimal sumLiveQuoteNotionalSince(@Param("start") LocalDateTime start);
 
     /**
-     * 当日做市已实现净额（USDT）：MM_DONE cell 的 sell_filled_amount×sell_price − buy_filled_amount×buy_price 求和。
+     * 当日做市已实现净额（USDT）：MM_DONE cell 的真实累计 quote 现金流求和。
      * 正数=盈利，负数=亏损；口径为跨 symbol 全量（当日熔断按全局净亏损裁定）。
      * <p>
      * 仅统计 strategy=MARKET_MAKER、status=MM_DONE、非 dry-run、updated_at &gt;= start 的对；无匹配行 COALESCE 返回 0。
-     * 说明：MM cell 的 net_quote_cost 列不被做市路径写入（恒为默认 0），故按成交列近似（不含 quote 侧费，
-     * 属保守代理——真正的紧亏损闸靠内存态连续亏损计数兜底）。不改表结构。
+     * net_quote_cost 在买腿成交时记负的真实买入 cash，在每张卖单终态时累加真实卖出 cash 与 quote 手续费；
+     * 未售完库存不会进入 MM_DONE，因此取消且零成交的卖单对已实现盈亏贡献为 0。
      */
-    @Select("SELECT COALESCE(SUM(sell_filled_amount * sell_price - buy_filled_amount * buy_price), 0) "
+    @Select("SELECT COALESCE(SUM(net_quote_cost), 0) "
             + "FROM htx_locked_pair "
             + "WHERE strategy = 'MARKET_MAKER' AND status = 'MM_DONE' AND dry_run = 0 AND updated_at >= #{start}")
     BigDecimal sumMmRealizedNetQuoteSince(@Param("start") LocalDateTime start);

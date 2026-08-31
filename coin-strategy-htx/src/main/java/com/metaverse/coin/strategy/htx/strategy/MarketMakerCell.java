@@ -26,6 +26,9 @@ public class MarketMakerCell {
     private BigDecimal buyFilledAmount;
     private BigDecimal sellFilledAmount;
     private BigDecimal totalFeeBase;
+    private BigDecimal totalFeeQuote;
+    /** 做市 cell 的累计真实 quote 现金流：买入为负、卖出及 quote 手续费净额为正。 */
+    private BigDecimal netQuoteCost;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -43,6 +46,8 @@ public class MarketMakerCell {
                 .buyFilledAmount(e.getBuyFilledAmount())
                 .sellFilledAmount(e.getSellFilledAmount())
                 .totalFeeBase(e.getTotalFeeBase())
+                .totalFeeQuote(e.getTotalFeeQuote())
+                .netQuoteCost(e.getNetQuoteCost())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())
                 .build();

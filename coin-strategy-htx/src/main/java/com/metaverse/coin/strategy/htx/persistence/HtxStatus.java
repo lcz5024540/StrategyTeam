@@ -17,6 +17,8 @@ public final class HtxStatus {
     // market-maker（做市）状态
     public static final String MM_RESTING_BUY = "MM_RESTING_BUY";
     public static final String MM_RESTING_SELL = "MM_RESTING_SELL";
+    /** 当前卖单已终止但仍有未售库存；下一轮必须继续挂卖，不能按闭环计盈亏。 */
+    public static final String MM_SELL_RETRYABLE = "MM_SELL_RETRYABLE";
     public static final String MM_DONE = "MM_DONE";
     public static final String MM_DUST = "MM_DUST";
     public static final String MM_CANCELLED_BUY = "MM_CANCELLED_BUY";
