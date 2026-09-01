@@ -8,14 +8,15 @@ import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTic
 import com.metaverse.coin.strategy.common.model.binance.entity.market.BinanceTrade;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @Slf4j
+@EnabledIfSystemProperty(named = "binance.debug.tests", matches = "true")
 public class BinanceFuturesMarketDataTest {
 
     private BinanceFuturesService futuresService;
