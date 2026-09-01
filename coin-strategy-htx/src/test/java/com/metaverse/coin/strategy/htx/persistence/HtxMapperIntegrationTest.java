@@ -140,6 +140,16 @@ class HtxMapperIntegrationTest {
         assertEquals(1, deltaHedgeLedgerMapper.insert(hedge));
         assertEquals(hedge.getId(), deltaHedgeLedgerMapper
                 .findByHedgeKey("it-hedge-" + nonce).getId());
+        assertEquals(hedge.getId(), deltaHedgeLedgerMapper
+                .findByStatus(HtxHedgeRecycleRecorder.STATUS_INTENT, 1).get(0).getId());
+        assertEquals(1, deltaHedgeLedgerMapper.updateStatusIfCurrent(hedge.getId(),
+                HtxHedgeRecycleRecorder.STATUS_INTENT, HtxHedgeRecycleRecorder.STATUS_SENDING,
+                "claim"));
+        assertEquals(0, deltaHedgeLedgerMapper.updateStatusIfCurrent(hedge.getId(),
+                HtxHedgeRecycleRecorder.STATUS_INTENT, HtxHedgeRecycleRecorder.STATUS_SENT,
+                "stale"));
+        assertEquals(HtxHedgeRecycleRecorder.STATUS_SENDING,
+                deltaHedgeLedgerMapper.findById(hedge.getId()).getStatus());
 
         HtxInventoryRecycleSagaEntity saga = new HtxInventoryRecycleSagaEntity();
         saga.setSagaKey("it-recycle-" + nonce);
@@ -156,6 +166,16 @@ class HtxMapperIntegrationTest {
         assertEquals(1, inventoryRecycleSagaMapper.insert(saga));
         assertEquals(saga.getId(), inventoryRecycleSagaMapper
                 .findBySagaKey("it-recycle-" + nonce).getId());
+        assertEquals(saga.getId(), inventoryRecycleSagaMapper
+                .findByStatus(HtxHedgeRecycleRecorder.STATUS_CLOSE_SHORT_PENDING, 1).get(0).getId());
+        assertEquals(1, inventoryRecycleSagaMapper.updateStatusIfCurrent(saga.getId(),
+                HtxHedgeRecycleRecorder.STATUS_CLOSE_SHORT_PENDING,
+                HtxHedgeRecycleRecorder.STATUS_SENDING, "claim"));
+        assertEquals(0, inventoryRecycleSagaMapper.updateStatusIfCurrent(saga.getId(),
+                HtxHedgeRecycleRecorder.STATUS_CLOSE_SHORT_PENDING,
+                HtxHedgeRecycleRecorder.STATUS_SENT, "stale"));
+        assertEquals(HtxHedgeRecycleRecorder.STATUS_SENDING,
+                inventoryRecycleSagaMapper.findById(saga.getId()).getStatus());
     }
 
     @Test void sumMmRealizedNetQuoteSince_sums_done_cells_profit_minus_loss() {
