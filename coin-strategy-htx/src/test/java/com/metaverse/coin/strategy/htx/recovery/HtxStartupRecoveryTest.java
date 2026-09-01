@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.htx.recovery;
 
 import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
+import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxOrderMapper;
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
@@ -53,6 +54,38 @@ class HtxStartupRecoveryTest {
 
         verify(orderMapper).updateById(argThat(u ->
                 Long.valueOf(9001L).equals(u.getHtxOrderId())
+                        && HtxStatus.INTENT_SENT.equals(u.getIntentStatus())));
+    }
+
+    @Test
+    void pendingSend_htxHasFilledOrder_recordsExchangeFirstLedgerSnapshot() {
+        HtxSpotLedgerRecorder ledger = mock(HtxSpotLedgerRecorder.class);
+        recovery = new HtxStartupRecovery(orderMapper, api, props, ledger);
+        HtxOrderEntity e = new HtxOrderEntity();
+        e.setId(3L);
+        e.setPairId(77L);
+        e.setClientOrderId("key-3-BUY");
+        e.setSide("buy");
+        e.setIntentStatus(HtxStatus.INTENT_PENDING_SEND);
+        when(orderMapper.selectList(any())).thenReturn(List.of(e));
+
+        HtxOrder o = new HtxOrder();
+        o.setOrderId(9003L);
+        o.setSymbol("xautusdt");
+        o.setType("buy-limit");
+        o.setState("filled");
+        o.setFilledAmount(new java.math.BigDecimal("0.01"));
+        o.setFilledCashAmount(new java.math.BigDecimal("25"));
+        o.setFilledFees(new java.math.BigDecimal("0.00002"));
+        when(spot.queryOrderByClientId("key-3-BUY"))
+                .thenReturn(HtxRestResponse.<HtxOrder>builder().status("ok").data(o).build());
+
+        recovery.recover();
+
+        verify(ledger).recordOrderSnapshot(eq(77L), eq(3L), eq("xautusdt"), eq("buy"),
+                eq(9003L), eq("key-3-BUY"), same(o), eq(HtxSpotLedgerRecorder.SOURCE_STARTUP_RECOVERY));
+        verify(orderMapper).updateById(argThat(u ->
+                Long.valueOf(9003L).equals(u.getHtxOrderId())
                         && HtxStatus.INTENT_SENT.equals(u.getIntentStatus())));
     }
 

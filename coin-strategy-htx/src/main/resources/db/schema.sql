@@ -91,6 +91,52 @@ CREATE TABLE IF NOT EXISTS htx_grid_window (
     updated_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
 
+-- Append-only spot fill ledger. HTX order query exposes cumulative filled fields; each new
+-- cumulative snapshot is converted to a delta row and de-duplicated by ledger_key.
+CREATE TABLE IF NOT EXISTS htx_spot_fill_ledger (
+    id                              BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    ledger_key                      VARCHAR(128)   NOT NULL UNIQUE,
+    symbol                          VARCHAR(32)    NOT NULL,
+    pair_id                         BIGINT,
+    order_row_id                    BIGINT,
+    htx_order_id                    BIGINT,
+    client_order_id                 VARCHAR(64),
+    side                            VARCHAR(8)     NOT NULL,
+    order_state                     VARCHAR(32),
+    delta_base                      DECIMAL(36,18) NOT NULL DEFAULT 0,
+    delta_quote                     DECIMAL(36,18) NOT NULL DEFAULT 0,
+    fee_amount                      DECIMAL(36,18) NOT NULL DEFAULT 0,
+    fee_currency                    VARCHAR(16),
+    cumulative_filled_amount        DECIMAL(36,18) NOT NULL DEFAULT 0,
+    cumulative_filled_cash_amount   DECIMAL(36,18) NOT NULL DEFAULT 0,
+    cumulative_filled_fees          DECIMAL(36,18) NOT NULL DEFAULT 0,
+    source                          VARCHAR(32)    NOT NULL,
+    observed_at                     DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    created_at                      DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_spot_fill_order       (symbol, side, htx_order_id),
+    INDEX idx_spot_fill_client      (symbol, side, client_order_id),
+    INDEX idx_spot_fill_pair        (pair_id)
+);
+
+-- FIFO inventory lots sourced from buy fills. Sell fills consume remaining_base from the oldest
+-- open lot first; unmatched sells remain visible via the ledger result and must not create debt rows.
+CREATE TABLE IF NOT EXISTS htx_inventory_lot (
+    id                  BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    symbol              VARCHAR(32)    NOT NULL,
+    source_pair_id      BIGINT,
+    buy_order_id        BIGINT,
+    buy_fill_ledger_id  BIGINT,
+    acquired_base       DECIMAL(36,18) NOT NULL,
+    remaining_base      DECIMAL(36,18) NOT NULL,
+    cost_quote          DECIMAL(36,18) NOT NULL DEFAULT 0,
+    fee_base            DECIMAL(36,18) NOT NULL DEFAULT 0,
+    status              VARCHAR(16)    NOT NULL,
+    created_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_inventory_symbol_open (symbol, status, id),
+    INDEX idx_inventory_pair        (source_pair_id)
+);
+
 -- USDT-margined perpetual cycles are isolated from spot rows because volume is contracts, not base quantity.
 CREATE TABLE IF NOT EXISTS htx_contract_cycle (
     id                    BIGINT         PRIMARY KEY AUTO_INCREMENT,

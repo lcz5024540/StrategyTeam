@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
+import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.service.HtxDepthGuard;
@@ -46,6 +47,7 @@ public class MarketMakerService {
     private final HtxTradeProperties tradeProps;
     private final HtxMarketMakerProperties mmProps;
     private final HtxTradeRecorder recorder;
+    private final HtxSpotLedgerRecorder spotLedgerRecorder;
     private final HtxSpotFeeRateProvider feeRateProvider;
     private final SpotGridStrategy gridStrategy;
     private final HtxGridWindowStore gridWindowStore;
@@ -66,6 +68,7 @@ public class MarketMakerService {
                               HtxTradeProperties tradeProps,
                               HtxMarketMakerProperties mmProps,
                               HtxTradeRecorder recorder,
+                              HtxSpotLedgerRecorder spotLedgerRecorder,
                               HtxSpotFeeRateProvider feeRateProvider,
                               SpotGridStrategy gridStrategy,
                               HtxGridWindowStore gridWindowStore) {
@@ -74,6 +77,7 @@ public class MarketMakerService {
         this.tradeProps = tradeProps;
         this.mmProps = mmProps;
         this.recorder = recorder;
+        this.spotLedgerRecorder = spotLedgerRecorder;
         this.feeRateProvider = feeRateProvider;
         this.gridStrategy = gridStrategy;
         this.gridWindowStore = gridWindowStore;
@@ -94,7 +98,7 @@ public class MarketMakerService {
                        HtxTradeRecorder recorder,
                        HtxGridWindowStore gridWindowStore) {
         this(htxApiService, depthGuard, tradeProps, mmProps, recorder,
-                new HtxSpotFeeRateProvider(htxApiService, mmProps),
+                HtxSpotLedgerRecorder.noop(), new HtxSpotFeeRateProvider(htxApiService, mmProps),
                 new FeeAwareSpotGridStrategy(), gridWindowStore);
     }
 
@@ -477,6 +481,8 @@ public class MarketMakerService {
                 continue;
             }
             HtxOrder post = cancelAndQuery(buyOrderId);
+            recordSpotFillSnapshot(MarketMakerCell.fromEntity(entity), "buy", buyOrderId, post,
+                    HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
             if (post == null || !isTerminal(post.getState())) {
                 continue;
             }
@@ -567,6 +573,7 @@ public class MarketMakerService {
             return; // 瞬时故障，下 tick 重试
         }
         HtxOrder o = resp.getData();
+        recordSpotFillSnapshot(cell, "buy", buyId, o, HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
         String state = o.getState();
         BigDecimal filled = nz(o.getFilledAmount());
         if ("filled".equalsIgnoreCase(state)) {
@@ -594,6 +601,7 @@ public class MarketMakerService {
         // 仍挂着（submitted/partial-filled）→ TTL 撤单
         if (isBuyExpired(cell)) {
             HtxOrder post = cancelAndQuery(buyId);
+            recordSpotFillSnapshot(cell, "buy", buyId, post, HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
             BigDecimal postFilled = post == null ? BigDecimal.ZERO : nz(post.getFilledAmount());
             if (postFilled.signum() > 0) {
                 openSellLeg(cell, postFilled, post.getFilledFees(), post.getFilledCashAmount()); // 撤单竞态：有成交则转挂卖
@@ -705,6 +713,7 @@ public class MarketMakerService {
     private void repriceBuy(MarketMakerCell cell, BigDecimal newBidRaw) {
         Long buyId = cell.getBuyOrderId();
         HtxOrder post = cancelAndQuery(buyId);
+        recordSpotFillSnapshot(cell, "buy", buyId, post, HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
         BigDecimal postFilled = post == null ? BigDecimal.ZERO : nz(post.getFilledAmount());
         if (postFilled.signum() > 0) {
             openSellLeg(cell, postFilled, post.getFilledFees(), post.getFilledCashAmount()); // 撤单竞态：有成交则转挂卖，不重挂
@@ -826,6 +835,7 @@ public class MarketMakerService {
             return;
         }
         HtxOrder o = resp.getData();
+        recordSpotFillSnapshot(cell, "sell", sellId, o, HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
         String state = o.getState();
         BigDecimal filled = nz(o.getFilledAmount());
         if ("filled".equalsIgnoreCase(state) || isTerminal(state)) {
@@ -859,6 +869,8 @@ public class MarketMakerService {
     /** 卖腿跟价重挂（maker）：撤旧卖单→复查竞态（全成交则完成；未终态则 defer 杜绝双卖）→新价重挂限价卖。 */
     private void repriceSell(MarketMakerCell cell, BigDecimal desiredSell) {
         HtxOrder post = cancelAndQuery(cell.getSellOrderId());
+        recordSpotFillSnapshot(cell, "sell", cell.getSellOrderId(), post,
+                HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
         BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
         BigDecimal amount = nz(post != null ? post.getAmount() : null);
         if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
@@ -905,6 +917,8 @@ public class MarketMakerService {
     private void takerFlatten(MarketMakerCell cell, String resultCode, String reason) {
         lossExitPairIds.add(cell.getPairId()); // 割肉/linger 退出：本 round-trip 记为亏损（连亏计数用）
         HtxOrder post = cancelAndQuery(cell.getSellOrderId());
+        recordSpotFillSnapshot(cell, "sell", cell.getSellOrderId(), post,
+                HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
         BigDecimal filled = (post != null) ? nz(post.getFilledAmount()) : BigDecimal.ZERO;
         BigDecimal amount = nz(post != null ? post.getAmount() : null);
         if (post != null && filled.signum() > 0 && amount.signum() > 0 && filled.compareTo(amount) >= 0) {
@@ -1044,6 +1058,8 @@ public class MarketMakerService {
             return;
         }
         HtxOrder order = resp.getData();
+        recordSpotFillSnapshot(MarketMakerCell.fromEntity(entity), "buy", entity.getBuyOrderId(), order,
+                HtxSpotLedgerRecorder.SOURCE_STARTUP_RECOVERY);
         BigDecimal filled = nz(order.getFilledAmount());
         if (filled.signum() <= 0) {
             return;
@@ -1130,6 +1146,25 @@ public class MarketMakerService {
         }
         String text = (String.valueOf(resp.getErrCode()) + " " + String.valueOf(resp.getErrMsg())).toLowerCase();
         return text.contains("insufficient") || text.contains("balance");
+    }
+
+    private void recordSpotFillSnapshot(MarketMakerCell cell, String side, Long htxOrderId,
+                                        HtxOrder order, String source) {
+        if (order == null) {
+            return;
+        }
+        try {
+            HtxSpotLedgerRecorder.LedgerAppendResult result = spotLedgerRecorder.recordOrderSnapshot(
+                    cell.getPairId(), null, cell.getSymbol(), side, htxOrderId,
+                    order.getClientOrderId(), order, source);
+            if (result.unmatchedSellBase().signum() > 0) {
+                log.error("MM ledger has unmatched sell inventory pairId={} symbol={} unmatched={}",
+                        cell.getPairId(), cell.getSymbol(), result.unmatchedSellBase());
+            }
+        } catch (RuntimeException ex) {
+            log.error("MM ledger snapshot failed pairId={} side={} htxOrderId={}; state machine continues",
+                    cell.getPairId(), side, htxOrderId, ex);
+        }
     }
 
     private static boolean isTerminal(String state) {

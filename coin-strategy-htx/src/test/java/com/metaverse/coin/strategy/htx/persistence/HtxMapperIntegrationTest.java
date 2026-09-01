@@ -3,9 +3,13 @@ package com.metaverse.coin.strategy.htx.persistence;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractLegEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryLotEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxSpotFillLedgerEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxInventoryLotMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxLockedPairMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxSpotFillLedgerMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +23,8 @@ class HtxMapperIntegrationTest {
     @Autowired HtxLockedPairMapper pairMapper;
     @Autowired HtxContractCycleMapper contractCycleMapper;
     @Autowired HtxContractLegMapper contractLegMapper;
+    @Autowired HtxSpotFillLedgerMapper spotFillLedgerMapper;
+    @Autowired HtxInventoryLotMapper inventoryLotMapper;
 
     @Test void insert_and_read_pair() {
         HtxLockedPairEntity p = new HtxLockedPairEntity();
@@ -68,6 +74,45 @@ class HtxMapperIntegrationTest {
         HtxContractLegEntity stored = contractLegMapper.selectById(leg.getId());
         assertEquals("long", stored.getPositionSide());
         assertFalse(stored.getReduceOnly());
+    }
+
+    @Test void insert_and_read_spot_fill_ledger_and_inventory_lot() {
+        long nonce = System.nanoTime();
+        HtxSpotFillLedgerEntity fill = new HtxSpotFillLedgerEntity();
+        fill.setLedgerKey("it-fill-" + nonce);
+        fill.setSymbol("xautusdt");
+        fill.setPairId(nonce);
+        fill.setHtxOrderId(nonce);
+        fill.setClientOrderId("it-client-" + nonce);
+        fill.setSide("BUY");
+        fill.setOrderState("filled");
+        fill.setDeltaBase(new BigDecimal("0.01"));
+        fill.setDeltaQuote(new BigDecimal("-25.00"));
+        fill.setFeeAmount(new BigDecimal("0.00002"));
+        fill.setFeeCurrency("xaut");
+        fill.setCumulativeFilledAmount(new BigDecimal("0.01"));
+        fill.setCumulativeFilledCashAmount(new BigDecimal("25.00"));
+        fill.setCumulativeFilledFees(new BigDecimal("0.00002"));
+        fill.setSource(HtxSpotLedgerRecorder.SOURCE_MARKET_MAKER);
+        assertEquals(1, spotFillLedgerMapper.insert(fill));
+        assertNotNull(fill.getId());
+
+        HtxInventoryLotEntity lot = new HtxInventoryLotEntity();
+        lot.setSymbol("xautusdt");
+        lot.setSourcePairId(nonce);
+        lot.setBuyOrderId(nonce);
+        lot.setBuyFillLedgerId(fill.getId());
+        lot.setAcquiredBase(new BigDecimal("0.00998"));
+        lot.setRemainingBase(new BigDecimal("0.00998"));
+        lot.setCostQuote(new BigDecimal("25.00"));
+        lot.setFeeBase(new BigDecimal("0.00002"));
+        lot.setStatus(HtxSpotLedgerRecorder.LOT_OPEN);
+        assertEquals(1, inventoryLotMapper.insert(lot));
+
+        assertEquals(0, new BigDecimal("0.00998")
+                .compareTo(inventoryLotMapper.sumOpenRemainingBase("xautusdt")));
+        assertEquals(fill.getId(), spotFillLedgerMapper
+                .findLatestSnapshot("xautusdt", "BUY", nonce, "ignored").getId());
     }
 
     @Test void sumMmRealizedNetQuoteSince_sums_done_cells_profit_minus_loss() {

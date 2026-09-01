@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.htx.recovery;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
+import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxOrderMapper;
 import com.metaverse.coin.strategy.common.client.htx.HtxApiService;
@@ -11,6 +12,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -31,11 +33,19 @@ public class HtxStartupRecovery {
     private final HtxOrderMapper orderMapper;
     private final HtxApiService htxApiService;
     private final HtxTradeProperties props;
+    private final HtxSpotLedgerRecorder ledgerRecorder;
 
     public HtxStartupRecovery(HtxOrderMapper orderMapper, HtxApiService htxApiService, HtxTradeProperties props) {
+        this(orderMapper, htxApiService, props, HtxSpotLedgerRecorder.noop());
+    }
+
+    @Autowired
+    public HtxStartupRecovery(HtxOrderMapper orderMapper, HtxApiService htxApiService,
+                              HtxTradeProperties props, HtxSpotLedgerRecorder ledgerRecorder) {
         this.orderMapper = orderMapper;
         this.htxApiService = htxApiService;
         this.props = props;
+        this.ledgerRecorder = ledgerRecorder;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -70,6 +80,7 @@ public class HtxStartupRecovery {
                 upd.setHtxOrderId(resp.getData().getOrderId());
                 upd.setState(resp.getData().getState());
                 upd.setIntentStatus(HtxStatus.INTENT_SENT);
+                recordLedgerSnapshot(e, resp.getData());
                 log.warn("recovery: order id={} clientId={} was actually SENT (htxId={})",
                         e.getId(), e.getClientOrderId(), resp.getData().getOrderId());
             } else {
@@ -81,6 +92,17 @@ public class HtxStartupRecovery {
         } catch (RuntimeException ex) {
             log.error("recovery failed for order id={} clientId={}: {}",
                     e.getId(), e.getClientOrderId(), ex.getMessage());
+        }
+    }
+
+    private void recordLedgerSnapshot(HtxOrderEntity e, HtxOrder order) {
+        try {
+            ledgerRecorder.recordOrderSnapshot(e.getPairId(), e.getId(), order.getSymbol(),
+                    e.getSide(), order.getOrderId(), e.getClientOrderId(), order,
+                    HtxSpotLedgerRecorder.SOURCE_STARTUP_RECOVERY);
+        } catch (RuntimeException ex) {
+            log.error("startup recovery ledger snapshot failed order id={} clientId={}; recovery continues",
+                    e.getId(), e.getClientOrderId(), ex);
         }
     }
 }
