@@ -7,14 +7,17 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Mapper
 public interface HtxDeltaHedgeLedgerMapper extends BaseMapper<HtxDeltaHedgeLedgerEntity> {
 
     String COLUMNS = "id, hedge_key, symbol, contract_code, epoch, action, target_short_base, "
-            + "contract_volume, side, position_side, reduce_only, client_order_id, planner_state, "
-            + "status, reason, created_at, updated_at";
+            + "contract_volume, side, position_side, reduce_only, client_order_id, "
+            + "exchange_order_id, exchange_client_order_id, exchange_state, filled_contracts, "
+            + "trade_avg_price, fee, fee_currency, realized_profit, planner_state, status, reason, "
+            + "created_at, updated_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_delta_hedge_ledger WHERE hedge_key = #{hedgeKey} LIMIT 1")
     HtxDeltaHedgeLedgerEntity findByHedgeKey(@Param("hedgeKey") String hedgeKey);
@@ -32,4 +35,34 @@ public interface HtxDeltaHedgeLedgerMapper extends BaseMapper<HtxDeltaHedgeLedge
                               @Param("expectedStatus") String expectedStatus,
                               @Param("nextStatus") String nextStatus,
                               @Param("reason") String reason);
+
+    @Update("UPDATE htx_delta_hedge_ledger SET status = #{nextStatus}, "
+            + "exchange_order_id = #{exchangeOrderId}, exchange_client_order_id = #{exchangeClientOrderId}, "
+            + "reason = #{reason}, updated_at = CURRENT_TIMESTAMP(3) "
+            + "WHERE id = #{id} AND status = #{expectedStatus}")
+    int updateAcceptedIfCurrent(@Param("id") long id,
+                                @Param("expectedStatus") String expectedStatus,
+                                @Param("nextStatus") String nextStatus,
+                                @Param("exchangeOrderId") Long exchangeOrderId,
+                                @Param("exchangeClientOrderId") String exchangeClientOrderId,
+                                @Param("reason") String reason);
+
+    @Update("UPDATE htx_delta_hedge_ledger SET status = #{nextStatus}, "
+            + "exchange_order_id = #{exchangeOrderId}, exchange_client_order_id = #{exchangeClientOrderId}, "
+            + "exchange_state = #{exchangeState}, filled_contracts = #{filledContracts}, "
+            + "trade_avg_price = #{tradeAvgPrice}, fee = #{fee}, fee_currency = #{feeCurrency}, "
+            + "realized_profit = #{realizedProfit}, reason = #{reason}, updated_at = CURRENT_TIMESTAMP(3) "
+            + "WHERE id = #{id} AND status = #{expectedStatus}")
+    int updateReconciliationIfCurrent(@Param("id") long id,
+                                      @Param("expectedStatus") String expectedStatus,
+                                      @Param("nextStatus") String nextStatus,
+                                      @Param("exchangeOrderId") Long exchangeOrderId,
+                                      @Param("exchangeClientOrderId") String exchangeClientOrderId,
+                                      @Param("exchangeState") String exchangeState,
+                                      @Param("filledContracts") BigDecimal filledContracts,
+                                      @Param("tradeAvgPrice") BigDecimal tradeAvgPrice,
+                                      @Param("fee") BigDecimal fee,
+                                      @Param("feeCurrency") String feeCurrency,
+                                      @Param("realizedProfit") BigDecimal realizedProfit,
+                                      @Param("reason") String reason);
 }

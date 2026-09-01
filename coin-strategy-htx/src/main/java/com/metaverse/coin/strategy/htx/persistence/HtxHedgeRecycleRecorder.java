@@ -29,8 +29,10 @@ public class HtxHedgeRecycleRecorder {
     public static final String STATUS_CLOSE_SHORT_PENDING = "CLOSE_SHORT_PENDING";
     public static final String STATUS_SENDING = "SENDING";
     public static final String STATUS_SENT = "SENT";
+    public static final String STATUS_FILLED = "FILLED";
     public static final String STATUS_REJECTED = "REJECTED";
     public static final String STATUS_UNKNOWN = "UNKNOWN";
+    public static final String STATUS_HEDGE_DEGRADED = "HEDGE_DEGRADED";
     public static final String STATUS_INVALID_INTENT = "INVALID_INTENT";
     public static final String STATUS_SKIPPED_DRY_RUN = "SKIPPED_DRY_RUN";
     public static final String STATUS_SKIPPED_LIVE_GATE = "SKIPPED_LIVE_GATE";

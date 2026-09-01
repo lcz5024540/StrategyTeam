@@ -23,6 +23,14 @@ public class HtxInventoryRecycleSagaEntity {
     private BigDecimal availableShortBase;
     private Long closeContracts;
     private String closeClientOrderId;
+    private Long closeExchangeOrderId;
+    private String closeExchangeClientOrderId;
+    private String closeExchangeState;
+    private BigDecimal closeFilledContracts;
+    private BigDecimal closeTradeAvgPrice;
+    private BigDecimal closeFee;
+    private String closeFeeCurrency;
+    private BigDecimal closeRealizedProfit;
     private String plannerState;
     private String status;
     private String reason;

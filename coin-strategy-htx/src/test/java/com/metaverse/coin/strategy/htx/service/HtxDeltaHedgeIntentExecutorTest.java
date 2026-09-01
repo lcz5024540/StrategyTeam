@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.service;
 
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
@@ -106,8 +107,9 @@ class HtxDeltaHedgeIntentExecutorTest {
         HtxDeltaHedgeLedgerEntity row = openShortRow(15L);
         when(hedgeMapper.updateStatusIfCurrent(eq(15L), eq(HtxHedgeRecycleRecorder.STATUS_INTENT),
                 eq(HtxHedgeRecycleRecorder.STATUS_SENDING), anyString())).thenReturn(1);
-        when(hedgeMapper.updateStatusIfCurrent(eq(15L), eq(HtxHedgeRecycleRecorder.STATUS_SENDING),
-                eq(HtxHedgeRecycleRecorder.STATUS_SENT), anyString())).thenReturn(1);
+        when(hedgeMapper.updateAcceptedIfCurrent(eq(15L), eq(HtxHedgeRecycleRecorder.STATUS_SENDING),
+                eq(HtxHedgeRecycleRecorder.STATUS_SENT), eq(9001L), eq("9002"), anyString()))
+                .thenReturn(1);
         when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(okOrder(9001L));
 
         HtxDeltaHedgeIntentExecutor.ExecutionResult result = executor.executeHedgeIntent(row);
@@ -167,8 +169,9 @@ class HtxDeltaHedgeIntentExecutorTest {
         when(recycleMapper.updateStatusIfCurrent(eq(18L),
                 eq(HtxHedgeRecycleRecorder.STATUS_CLOSE_SHORT_PENDING),
                 eq(HtxHedgeRecycleRecorder.STATUS_SENDING), anyString())).thenReturn(1);
-        when(recycleMapper.updateStatusIfCurrent(eq(18L), eq(HtxHedgeRecycleRecorder.STATUS_SENDING),
-                eq(HtxHedgeRecycleRecorder.STATUS_SENT), anyString())).thenReturn(1);
+        when(recycleMapper.updateAcceptedIfCurrent(eq(18L), eq(HtxHedgeRecycleRecorder.STATUS_SENDING),
+                eq(HtxHedgeRecycleRecorder.STATUS_SENT), eq(9002L), eq("9003"), anyString()))
+                .thenReturn(1);
         when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(okOrder(9002L));
 
         HtxDeltaHedgeIntentExecutor.ExecutionResult result = executor.executeRecycleCloseIntent(row);
@@ -180,6 +183,64 @@ class HtxDeltaHedgeIntentExecutorTest {
         assertEquals("short", cap.getValue().getPositionSide());
         assertEquals(Boolean.TRUE, cap.getValue().getReduceOnly());
         assertEquals("15", cap.getValue().getVolume());
+    }
+
+    @Test
+    void sentHedgeReconcilesFilledExchangeSnapshot() {
+        HtxDeltaHedgeLedgerEntity row = openShortRow(19L);
+        row.setStatus(HtxHedgeRecycleRecorder.STATUS_SENT);
+        row.setExchangeOrderId(9019L);
+        when(swap.queryOrder("XAUT-USDT", 9019L))
+                .thenReturn(orderResponse(filledOrder(9019L, "500", "4321.10")));
+        when(hedgeMapper.updateReconciliationIfCurrent(eq(19L),
+                eq(HtxHedgeRecycleRecorder.STATUS_SENT), eq(HtxHedgeRecycleRecorder.STATUS_FILLED),
+                eq(9019L), eq("9020"), eq("filled"), any(BigDecimal.class), any(BigDecimal.class),
+                any(BigDecimal.class), eq("USDT"), any(BigDecimal.class), anyString())).thenReturn(1);
+
+        HtxDeltaHedgeIntentExecutor.ExecutionResult result = executor.reconcileHedgeIntent(row);
+
+        assertEquals(HtxDeltaHedgeIntentExecutor.ExecutionCode.FILLED, result.code());
+        assertEquals(HtxHedgeRecycleRecorder.STATUS_FILLED, result.status());
+    }
+
+    @Test
+    void sentRecyclePartialTerminalMovesToHedgeDegraded() {
+        HtxInventoryRecycleSagaEntity row = recycleRow(20L);
+        row.setStatus(HtxHedgeRecycleRecorder.STATUS_SENT);
+        row.setCloseExchangeOrderId(9020L);
+        when(swap.queryOrder("XAUT-USDT", 9020L))
+                .thenReturn(orderResponse(partialCanceledOrder(9020L, "3", "4310.50")));
+        when(recycleMapper.updateReconciliationIfCurrent(eq(20L),
+                eq(HtxHedgeRecycleRecorder.STATUS_SENT),
+                eq(HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED), eq(9020L), eq("9021"),
+                eq("partially_canceled"), any(BigDecimal.class), any(BigDecimal.class),
+                any(BigDecimal.class), eq("USDT"), any(BigDecimal.class), anyString()))
+                .thenReturn(1);
+
+        HtxDeltaHedgeIntentExecutor.ExecutionResult result = executor.reconcileRecycleCloseIntent(row);
+
+        assertEquals(HtxDeltaHedgeIntentExecutor.ExecutionCode.HEDGE_DEGRADED, result.code());
+        assertEquals(HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED, result.status());
+        assertTrue(result.reason().contains("partial fill"));
+    }
+
+    @Test
+    void sentHedgeWithoutExchangeOrderIdReconcilesByClientOrderId() {
+        HtxDeltaHedgeLedgerEntity row = openShortRow(23L);
+        row.setStatus(HtxHedgeRecycleRecorder.STATUS_SENT);
+        when(swap.queryOrderByClientOrderId("XAUT-USDT", "CS-MM-HEDGE-XAUTUSDT-23"))
+                .thenReturn(orderResponse(filledOrder(9023L, "500", "4320.00")));
+        when(hedgeMapper.updateReconciliationIfCurrent(eq(23L),
+                eq(HtxHedgeRecycleRecorder.STATUS_SENT),
+                eq(HtxHedgeRecycleRecorder.STATUS_FILLED), eq(9023L), eq("9024"),
+                eq("filled"), any(BigDecimal.class), any(BigDecimal.class),
+                any(BigDecimal.class), eq("USDT"), any(BigDecimal.class), anyString()))
+                .thenReturn(1);
+
+        HtxDeltaHedgeIntentExecutor.ExecutionResult result = executor.reconcileHedgeIntent(row);
+
+        assertEquals(HtxDeltaHedgeIntentExecutor.ExecutionCode.FILLED, result.code());
+        verify(swap).queryOrderByClientOrderId("XAUT-USDT", "CS-MM-HEDGE-XAUTUSDT-23");
     }
 
     @Test
@@ -251,6 +312,39 @@ class HtxDeltaHedgeIntentExecutorTest {
         result.setOrderId(orderId);
         result.setClientOrderId(orderId + 1L);
         return response(200, result);
+    }
+
+    private static HtxRestResponse<List<HtxSwapOrder>> orderResponse(HtxSwapOrder order) {
+        HtxRestResponse<List<HtxSwapOrder>> response = new HtxRestResponse<>();
+        response.setCode(200);
+        response.setData(List.of(order));
+        return response;
+    }
+
+    private static HtxSwapOrder filledOrder(long orderId, String filled, String avgPrice) {
+        HtxSwapOrder order = order(orderId, "filled", filled, avgPrice);
+        order.setStatus(6);
+        return order;
+    }
+
+    private static HtxSwapOrder partialCanceledOrder(long orderId, String filled, String avgPrice) {
+        HtxSwapOrder order = order(orderId, "partially_canceled", filled, avgPrice);
+        order.setStatus(5);
+        return order;
+    }
+
+    private static HtxSwapOrder order(long orderId, String state, String filled, String avgPrice) {
+        HtxSwapOrder order = new HtxSwapOrder();
+        order.setOrderId(orderId);
+        order.setClientOrderId(orderId + 1L);
+        order.setContractCode("XAUT-USDT");
+        order.setState(state);
+        order.setTradeVolume(new BigDecimal(filled));
+        order.setTradeAveragePrice(new BigDecimal(avgPrice));
+        order.setFee(new BigDecimal("0.01"));
+        order.setFeeCurrency("USDT");
+        order.setRealProfit(new BigDecimal("0.02"));
+        return order;
     }
 
     private static HtxRestResponse<HtxSwapOrderResult> response(Integer code, HtxSwapOrderResult result) {

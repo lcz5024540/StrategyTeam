@@ -206,6 +206,20 @@ public class HtxUsdtSwapService {
                 ? Collections.emptyList() : List.of(mapOrder(order)));
     }
 
+    public HtxRestResponse<List<HtxSwapOrder>> queryOrderByClientOrderId(String contractCode,
+                                                                         String clientOrderId) {
+        rateLimiter.acquire(HtxUidRateLimiter.RequestType.QUERY);
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("contract_code", contractCode);
+        params.put("margin_mode", MARGIN_MODE);
+        params.put("client_order_id", clientOrderId);
+        HtxRestResponse<HtxV5Order> response = rest.signedGet(
+                "/v5/trade/order", params,
+                new TypeReference<HtxRestResponse<HtxV5Order>>() { });
+        return mapResponse(response, order -> order == null
+                ? Collections.emptyList() : List.of(mapOrder(order)));
+    }
+
     public static HtxSwapOrderRequest orderRequest(String contractCode, long clientOrderId, long volume,
                                                     String side, String positionSide, boolean reduceOnly,
                                                     String price, String type) {

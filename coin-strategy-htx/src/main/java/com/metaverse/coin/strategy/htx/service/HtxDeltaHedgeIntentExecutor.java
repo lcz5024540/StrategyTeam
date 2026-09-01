@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.htx.service;
 
 import com.metaverse.coin.strategy.common.client.htx.HtxUsdtSwapApiService;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
@@ -16,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,6 +41,7 @@ public class HtxDeltaHedgeIntentExecutor {
     private static final String POSITION_SIDE_SHORT = "short";
     private static final String MARKET_TYPE = "market";
     private static final String IOC = "ioc";
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final int MAX_REASON_LENGTH = 512;
 
     private final HtxUsdtSwapService swap;
@@ -102,6 +105,44 @@ public class HtxDeltaHedgeIntentExecutor {
         return executeRecycleCloseIntent(row);
     }
 
+    public List<ExecutionResult> reconcileSentHedgeIntents(int limit) {
+        int safeLimit = Math.max(1, limit);
+        List<HtxDeltaHedgeLedgerEntity> rows =
+                hedgeMapper.findByStatus(HtxHedgeRecycleRecorder.STATUS_SENT, safeLimit);
+        List<ExecutionResult> results = new ArrayList<>(rows.size());
+        for (HtxDeltaHedgeLedgerEntity row : rows) {
+            results.add(reconcileHedgeIntent(row));
+        }
+        return results;
+    }
+
+    public ExecutionResult reconcileHedgeIntent(long id) {
+        HtxDeltaHedgeLedgerEntity row = hedgeMapper.findById(id);
+        if (row == null) {
+            return ExecutionResult.notFound(ExecutionKind.HEDGE, id);
+        }
+        return reconcileHedgeIntent(row);
+    }
+
+    public List<ExecutionResult> reconcileSentRecycleIntents(int limit) {
+        int safeLimit = Math.max(1, limit);
+        List<HtxInventoryRecycleSagaEntity> rows =
+                recycleMapper.findByStatus(HtxHedgeRecycleRecorder.STATUS_SENT, safeLimit);
+        List<ExecutionResult> results = new ArrayList<>(rows.size());
+        for (HtxInventoryRecycleSagaEntity row : rows) {
+            results.add(reconcileRecycleCloseIntent(row));
+        }
+        return results;
+    }
+
+    public ExecutionResult reconcileRecycleCloseIntent(long id) {
+        HtxInventoryRecycleSagaEntity row = recycleMapper.findById(id);
+        if (row == null) {
+            return ExecutionResult.notFound(ExecutionKind.RECYCLE_CLOSE, id);
+        }
+        return reconcileRecycleCloseIntent(row);
+    }
+
     public ExecutionResult executeHedgeIntent(HtxDeltaHedgeLedgerEntity row) {
         if (row == null || row.getId() == null) {
             return ExecutionResult.notFound(ExecutionKind.HEDGE, null);
@@ -125,6 +166,37 @@ public class HtxDeltaHedgeIntentExecutor {
         }
         HtxSwapOrderRequest request = hedgeRequest(row);
         return sendHedge(row.getId(), request);
+    }
+
+    public ExecutionResult reconcileHedgeIntent(HtxDeltaHedgeLedgerEntity row) {
+        if (row == null || row.getId() == null) {
+            return ExecutionResult.notFound(ExecutionKind.HEDGE, null);
+        }
+        if (!HtxHedgeRecycleRecorder.STATUS_SENT.equals(row.getStatus())) {
+            return ExecutionResult.stale(ExecutionKind.HEDGE, row.getId(), "status=" + row.getStatus());
+        }
+        if (row.getExchangeOrderId() == null && blank(row.getClientOrderId())) {
+            return reconcileHedge(row, null, HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED,
+                    "sent hedge missing exchange and client order id; manual reconciliation required",
+                    ExecutionCode.HEDGE_DEGRADED);
+        }
+        HtxSwapOrder order;
+        try {
+            QueryResult queried = queryOrder(row.getContractCode(), row.getExchangeOrderId(),
+                    row.getClientOrderId());
+            if (!queried.ok()) {
+                return reconcileHedge(row, null, HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
+                        queried.reason(), ExecutionCode.UNKNOWN);
+            }
+            order = queried.order();
+        } catch (Exception ex) {
+            log.error("hedge intent reconcile failed id={} contract={} orderId={}",
+                    row.getId(), row.getContractCode(), row.getExchangeOrderId(), ex);
+            return reconcileHedge(row, null, HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
+                    "query exception: " + ex.getMessage(), ExecutionCode.UNKNOWN);
+        }
+        return reconcileHedge(row, order, terminalStatus(row.getContractVolume(), order),
+                terminalReason(row.getContractVolume(), order), terminalCode(row.getContractVolume(), order));
     }
 
     public ExecutionResult executeRecycleCloseIntent(HtxInventoryRecycleSagaEntity row) {
@@ -152,6 +224,38 @@ public class HtxDeltaHedgeIntentExecutor {
         }
         HtxSwapOrderRequest request = recycleRequest(row);
         return sendRecycle(row.getId(), request);
+    }
+
+    public ExecutionResult reconcileRecycleCloseIntent(HtxInventoryRecycleSagaEntity row) {
+        if (row == null || row.getId() == null) {
+            return ExecutionResult.notFound(ExecutionKind.RECYCLE_CLOSE, null);
+        }
+        if (!HtxHedgeRecycleRecorder.STATUS_SENT.equals(row.getStatus())) {
+            return ExecutionResult.stale(ExecutionKind.RECYCLE_CLOSE, row.getId(),
+                    "status=" + row.getStatus());
+        }
+        if (row.getCloseExchangeOrderId() == null && blank(row.getCloseClientOrderId())) {
+            return reconcileRecycle(row, null, HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED,
+                    "sent recycle close missing exchange and client order id; manual reconciliation required",
+                    ExecutionCode.HEDGE_DEGRADED);
+        }
+        HtxSwapOrder order;
+        try {
+            QueryResult queried = queryOrder(row.getContractCode(), row.getCloseExchangeOrderId(),
+                    row.getCloseClientOrderId());
+            if (!queried.ok()) {
+                return reconcileRecycle(row, null, HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
+                        queried.reason(), ExecutionCode.UNKNOWN);
+            }
+            order = queried.order();
+        } catch (Exception ex) {
+            log.error("recycle close reconcile failed id={} contract={} orderId={}",
+                    row.getId(), row.getContractCode(), row.getCloseExchangeOrderId(), ex);
+            return reconcileRecycle(row, null, HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
+                    "query exception: " + ex.getMessage(), ExecutionCode.UNKNOWN);
+        }
+        return reconcileRecycle(row, order, terminalStatus(row.getCloseContracts(), order),
+                terminalReason(row.getCloseContracts(), order), terminalCode(row.getCloseContracts(), order));
     }
 
     private ExecutionResult closeByLiveGate(ExecutionKind kind, long id, String expectedStatus) {
@@ -206,8 +310,7 @@ public class HtxDeltaHedgeIntentExecutor {
         boolean accepted = response != null && response.ok() && item != null && item.getOrderId() != null
                 && (item.getCode() == null || Integer.valueOf(200).equals(item.getCode()));
         if (accepted) {
-            return finish(kind, id, HtxHedgeRecycleRecorder.STATUS_SENDING,
-                    HtxHedgeRecycleRecorder.STATUS_SENT, acceptedReason(item), ExecutionCode.SENT);
+            return finishAccepted(kind, id, item, acceptedReason(item));
         }
         String reason = exchangeReason(response, item);
         boolean explicitReject = response != null && response.ok() && item != null && item.getCode() != null
@@ -215,6 +318,68 @@ public class HtxDeltaHedgeIntentExecutor {
         return finish(kind, id, HtxHedgeRecycleRecorder.STATUS_SENDING,
                 explicitReject ? HtxHedgeRecycleRecorder.STATUS_REJECTED : HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
                 reason, explicitReject ? ExecutionCode.REJECTED : ExecutionCode.UNKNOWN);
+    }
+
+    private ExecutionResult finishAccepted(ExecutionKind kind, long id, HtxSwapOrderResult item,
+                                           String reason) {
+        String exchangeClientOrderId = item.getClientOrderId() == null
+                ? null : item.getClientOrderId().toString();
+        int updated;
+        if (ExecutionKind.HEDGE.equals(kind)) {
+            updated = hedgeMapper.updateAcceptedIfCurrent(id, HtxHedgeRecycleRecorder.STATUS_SENDING,
+                    HtxHedgeRecycleRecorder.STATUS_SENT, item.getOrderId(), exchangeClientOrderId,
+                    clip(reason));
+        } else {
+            updated = recycleMapper.updateAcceptedIfCurrent(id, HtxHedgeRecycleRecorder.STATUS_SENDING,
+                    HtxHedgeRecycleRecorder.STATUS_SENT, item.getOrderId(), exchangeClientOrderId,
+                    clip(reason));
+        }
+        if (updated != 1) {
+            return ExecutionResult.stale(kind, id, "status changed before SENT");
+        }
+        return new ExecutionResult(kind, ExecutionCode.SENT, id,
+                HtxHedgeRecycleRecorder.STATUS_SENT, reason);
+    }
+
+    private ExecutionResult reconcileHedge(HtxDeltaHedgeLedgerEntity row, HtxSwapOrder order,
+                                           String nextStatus, String reason, ExecutionCode code) {
+        Long exchangeOrderId = order == null ? row.getExchangeOrderId() : firstNonNull(
+                order.getOrderId(), row.getExchangeOrderId());
+        String exchangeClientOrderId = order == null ? row.getExchangeClientOrderId()
+                : firstNonBlank(order.getClientOrderId() == null ? null : order.getClientOrderId().toString(),
+                row.getExchangeClientOrderId(), null);
+        BigDecimal filledContracts = order == null ? nz(row.getFilledContracts()) : nz(order.getTradeVolume());
+        int updated = hedgeMapper.updateReconciliationIfCurrent(row.getId(),
+                HtxHedgeRecycleRecorder.STATUS_SENT, nextStatus, exchangeOrderId, exchangeClientOrderId,
+                exchangeState(order), filledContracts, order == null ? null : order.getTradeAveragePrice(),
+                order == null ? null : order.getFee(), order == null ? null : order.getFeeCurrency(),
+                realizedProfit(order), clip(reason));
+        if (updated != 1) {
+            return ExecutionResult.stale(ExecutionKind.HEDGE, row.getId(),
+                    "status changed before " + nextStatus);
+        }
+        return new ExecutionResult(ExecutionKind.HEDGE, code, row.getId(), nextStatus, reason);
+    }
+
+    private ExecutionResult reconcileRecycle(HtxInventoryRecycleSagaEntity row, HtxSwapOrder order,
+                                             String nextStatus, String reason, ExecutionCode code) {
+        Long exchangeOrderId = order == null ? row.getCloseExchangeOrderId() : firstNonNull(
+                order.getOrderId(), row.getCloseExchangeOrderId());
+        String exchangeClientOrderId = order == null ? row.getCloseExchangeClientOrderId()
+                : firstNonBlank(order.getClientOrderId() == null ? null : order.getClientOrderId().toString(),
+                row.getCloseExchangeClientOrderId(), null);
+        BigDecimal filledContracts = order == null ? nz(row.getCloseFilledContracts())
+                : nz(order.getTradeVolume());
+        int updated = recycleMapper.updateReconciliationIfCurrent(row.getId(),
+                HtxHedgeRecycleRecorder.STATUS_SENT, nextStatus, exchangeOrderId, exchangeClientOrderId,
+                exchangeState(order), filledContracts, order == null ? null : order.getTradeAveragePrice(),
+                order == null ? null : order.getFee(), order == null ? null : order.getFeeCurrency(),
+                realizedProfit(order), clip(reason));
+        if (updated != 1) {
+            return ExecutionResult.stale(ExecutionKind.RECYCLE_CLOSE, row.getId(),
+                    "status changed before " + nextStatus);
+        }
+        return new ExecutionResult(ExecutionKind.RECYCLE_CLOSE, code, row.getId(), nextStatus, reason);
     }
 
     private ExecutionResult finish(ExecutionKind kind, long id, String expectedStatus,
@@ -270,6 +435,108 @@ public class HtxDeltaHedgeIntentExecutor {
                 .reduceOnly(true)
                 .timeInForce(IOC)
                 .build();
+    }
+
+    private QueryResult queryOrder(String contractCode, Long orderId, String clientOrderId) {
+        HtxRestResponse<List<HtxSwapOrder>> response = orderId != null
+                ? swap.queryOrder(contractCode, orderId)
+                : swap.queryOrderByClientOrderId(contractCode, clientOrderId);
+        if (response == null) {
+            return QueryResult.failed("exchange query response missing");
+        }
+        if (!response.ok()) {
+            return QueryResult.failed("exchange query not ok: " + firstNonBlank(
+                    response.getMessage(), response.getErrMsg(), response.getErrCode()));
+        }
+        List<HtxSwapOrder> orders = response.getData();
+        if (orders == null || orders.isEmpty() || orders.get(0) == null) {
+            return QueryResult.failed("exchange order snapshot missing orderId=" + orderId
+                    + " clientOrderId=" + clientOrderId);
+        }
+        return QueryResult.found(orders.get(0));
+    }
+
+    private static String terminalStatus(Long requestedContracts, HtxSwapOrder order) {
+        if (fullyFilled(requestedContracts, order)) {
+            return HtxHedgeRecycleRecorder.STATUS_FILLED;
+        }
+        if (nz(order.getTradeVolume()).signum() > 0 || terminal(order)) {
+            return HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED;
+        }
+        return HtxHedgeRecycleRecorder.STATUS_SENT;
+    }
+
+    private static ExecutionCode terminalCode(Long requestedContracts, HtxSwapOrder order) {
+        if (fullyFilled(requestedContracts, order)) {
+            return ExecutionCode.FILLED;
+        }
+        if (nz(order.getTradeVolume()).signum() > 0 || terminal(order)) {
+            return ExecutionCode.HEDGE_DEGRADED;
+        }
+        return ExecutionCode.STILL_OPEN;
+    }
+
+    private static String terminalReason(Long requestedContracts, HtxSwapOrder order) {
+        String base = "exchange state=" + exchangeState(order)
+                + " orderId=" + order.getOrderId()
+                + " filled=" + nz(order.getTradeVolume()).toPlainString()
+                + " requested=" + (requestedContracts == null ? "0" : requestedContracts);
+        if (fullyFilled(requestedContracts, order)) {
+            return base + " confirmed filled";
+        }
+        if (nz(order.getTradeVolume()).signum() > 0) {
+            return base + " partial fill; hedge degraded until planner rechecks real position";
+        }
+        if (terminal(order)) {
+            return base + " terminal without fill; hedge degraded";
+        }
+        return base + " still open";
+    }
+
+    private static boolean fullyFilled(Long requestedContracts, HtxSwapOrder order) {
+        if ("filled".equalsIgnoreCase(exchangeState(order)) || Integer.valueOf(6).equals(order.getStatus())) {
+            return true;
+        }
+        BigDecimal requested = requestedContracts == null ? ZERO : BigDecimal.valueOf(requestedContracts);
+        return requested.signum() > 0 && nz(order.getTradeVolume()).compareTo(requested) >= 0;
+    }
+
+    private static boolean terminal(HtxSwapOrder order) {
+        String state = exchangeState(order);
+        return "partially_canceled".equalsIgnoreCase(state)
+                || "canceled".equalsIgnoreCase(state)
+                || "rejected".equalsIgnoreCase(state)
+                || Integer.valueOf(5).equals(order.getStatus())
+                || Integer.valueOf(7).equals(order.getStatus());
+    }
+
+    private static String exchangeState(HtxSwapOrder order) {
+        if (order == null) {
+            return null;
+        }
+        if (!blank(order.getState())) {
+            return order.getState();
+        }
+        if (Integer.valueOf(6).equals(order.getStatus())) {
+            return "filled";
+        }
+        if (Integer.valueOf(5).equals(order.getStatus())) {
+            return "canceled";
+        }
+        if (Integer.valueOf(7).equals(order.getStatus())) {
+            return "rejected";
+        }
+        if (Integer.valueOf(4).equals(order.getStatus())) {
+            return "partially_filled";
+        }
+        return "new";
+    }
+
+    private static BigDecimal realizedProfit(HtxSwapOrder order) {
+        if (order == null) {
+            return null;
+        }
+        return order.getRealProfit() != null ? order.getRealProfit() : order.getProfit();
     }
 
     private static String validateHedge(HtxDeltaHedgeLedgerEntity row) {
@@ -350,6 +617,14 @@ public class HtxDeltaHedgeIntentExecutor {
         return blank(third) ? "unknown" : third;
     }
 
+    private static BigDecimal nz(BigDecimal value) {
+        return value == null ? ZERO : value;
+    }
+
+    private static Long firstNonNull(Long first, Long second) {
+        return first != null ? first : second;
+    }
+
     private static String clip(String value) {
         if (value == null || value.length() <= MAX_REASON_LENGTH) {
             return value;
@@ -369,8 +644,21 @@ public class HtxDeltaHedgeIntentExecutor {
         SKIPPED_LIVE_GATE,
         INVALID_INTENT,
         SENT,
+        STILL_OPEN,
+        FILLED,
+        HEDGE_DEGRADED,
         REJECTED,
         UNKNOWN
+    }
+
+    private record QueryResult(boolean ok, HtxSwapOrder order, String reason) {
+        static QueryResult found(HtxSwapOrder order) {
+            return new QueryResult(true, order, null);
+        }
+
+        static QueryResult failed(String reason) {
+            return new QueryResult(false, null, reason);
+        }
     }
 
     public record ExecutionResult(ExecutionKind kind, ExecutionCode code, Long id,

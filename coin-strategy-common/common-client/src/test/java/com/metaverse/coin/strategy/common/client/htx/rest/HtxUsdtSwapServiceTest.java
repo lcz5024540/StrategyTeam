@@ -141,6 +141,26 @@ class HtxUsdtSwapServiceTest {
     }
 
     @Test
+    void queryOrderByClientOrderIdUsesV5ClientOrderParameter() throws InterruptedException {
+        server.enqueue(json("{\"code\":200,\"message\":\"Success\",\"data\":{"
+                + "\"order_id\":\"124\",\"client_order_id\":\"456\",\"state\":\"filled\","
+                + "\"trade_volume\":\"3\",\"trade_avg_price\":\"59999.5\"}}"));
+
+        HtxRestResponse<List<HtxSwapOrder>> response =
+                service.queryOrderByClientOrderId("BTC-USDT", "456");
+
+        HtxSwapOrder order = response.getData().get(0);
+        assertEquals(124L, order.getOrderId());
+        assertEquals(456L, order.getClientOrderId());
+        assertEquals(new BigDecimal("3"), order.getTradeVolume());
+        RecordedRequest request = takeRequest();
+        assertEquals("GET", request.getMethod());
+        assertEquals("/v5/trade/order", request.getRequestUrl().encodedPath());
+        assertEquals("456", request.getRequestUrl().queryParameter("client_order_id"));
+        assertEquals("isolated", request.getRequestUrl().queryParameter("margin_mode"));
+    }
+
+    @Test
     void accountBalanceMapsQuoteCurrencyAndNormalState() {
         server.enqueue(json("{\"code\":200,\"message\":\"Success\",\"data\":{"
                 + "\"state\":\"normal\",\"details\":[{\"currency\":\"USDT\","

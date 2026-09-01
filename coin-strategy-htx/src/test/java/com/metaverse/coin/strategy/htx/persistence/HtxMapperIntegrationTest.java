@@ -150,6 +150,18 @@ class HtxMapperIntegrationTest {
                 "stale"));
         assertEquals(HtxHedgeRecycleRecorder.STATUS_SENDING,
                 deltaHedgeLedgerMapper.findById(hedge.getId()).getStatus());
+        assertEquals(1, deltaHedgeLedgerMapper.updateAcceptedIfCurrent(hedge.getId(),
+                HtxHedgeRecycleRecorder.STATUS_SENDING, HtxHedgeRecycleRecorder.STATUS_SENT,
+                900001L, "900002", "accepted"));
+        assertEquals(1, deltaHedgeLedgerMapper.updateReconciliationIfCurrent(hedge.getId(),
+                HtxHedgeRecycleRecorder.STATUS_SENT, HtxHedgeRecycleRecorder.STATUS_FILLED,
+                900001L, "900002", "filled", new BigDecimal("500"),
+                new BigDecimal("4311.25"), new BigDecimal("0.01"), "USDT",
+                new BigDecimal("0.02"), "filled"));
+        HtxDeltaHedgeLedgerEntity filledHedge = deltaHedgeLedgerMapper.findById(hedge.getId());
+        assertEquals(HtxHedgeRecycleRecorder.STATUS_FILLED, filledHedge.getStatus());
+        assertEquals(900001L, filledHedge.getExchangeOrderId());
+        assertEquals(0, new BigDecimal("500").compareTo(filledHedge.getFilledContracts()));
 
         HtxInventoryRecycleSagaEntity saga = new HtxInventoryRecycleSagaEntity();
         saga.setSagaKey("it-recycle-" + nonce);
@@ -176,6 +188,18 @@ class HtxMapperIntegrationTest {
                 HtxHedgeRecycleRecorder.STATUS_SENT, "stale"));
         assertEquals(HtxHedgeRecycleRecorder.STATUS_SENDING,
                 inventoryRecycleSagaMapper.findById(saga.getId()).getStatus());
+        assertEquals(1, inventoryRecycleSagaMapper.updateAcceptedIfCurrent(saga.getId(),
+                HtxHedgeRecycleRecorder.STATUS_SENDING, HtxHedgeRecycleRecorder.STATUS_SENT,
+                900003L, "900004", "accepted"));
+        assertEquals(1, inventoryRecycleSagaMapper.updateReconciliationIfCurrent(saga.getId(),
+                HtxHedgeRecycleRecorder.STATUS_SENT, HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED,
+                900003L, "900004", "partially_canceled", new BigDecimal("3"),
+                new BigDecimal("4309.50"), new BigDecimal("0.01"), "USDT",
+                BigDecimal.ZERO, "partial"));
+        HtxInventoryRecycleSagaEntity degradedSaga = inventoryRecycleSagaMapper.findById(saga.getId());
+        assertEquals(HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED, degradedSaga.getStatus());
+        assertEquals(900003L, degradedSaga.getCloseExchangeOrderId());
+        assertEquals(0, new BigDecimal("3").compareTo(degradedSaga.getCloseFilledContracts()));
     }
 
     @Test void sumMmRealizedNetQuoteSince_sums_done_cells_profit_minus_loss() {

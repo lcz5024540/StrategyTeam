@@ -25,6 +25,14 @@ public class HtxDeltaHedgeLedgerEntity {
     private String positionSide;
     private Boolean reduceOnly;
     private String clientOrderId;
+    private Long exchangeOrderId;
+    private String exchangeClientOrderId;
+    private String exchangeState;
+    private BigDecimal filledContracts;
+    private BigDecimal tradeAvgPrice;
+    private BigDecimal fee;
+    private String feeCurrency;
+    private BigDecimal realizedProfit;
     private String plannerState;
     private String status;
     private String reason;
