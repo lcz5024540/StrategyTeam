@@ -108,6 +108,12 @@ public class HtxMarketMakerProperties {
     /** 单 symbol 所有未平 cell 买入名义之和上限（USDT）：Σ(open buy notional)+perCell ≤ 此值才开新档。 */
     private BigDecimal maxTotalExposureQuoteNotional = new BigDecimal("240");
 
+    /** 新增买单后仍必须保留的可用 quote 余额；0 = 不启用储备闸。 */
+    private BigDecimal minQuoteReserve = BigDecimal.ZERO;
+
+    /** 新增买单后允许持有的最大 base 库存；0 = 不启用库存闸。 */
+    private BigDecimal maxBaseInventory = BigDecimal.ZERO;
+
     /** 当日已实现净亏损预算（USDT）：当日累计净亏损超过此值即停开新单（熔断）。 */
     private BigDecimal dailyNetLossBudget = new BigDecimal("5");
 

@@ -15,6 +15,7 @@ import com.metaverse.coin.strategy.htx.service.HtxFeeMath;
 import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
 import com.metaverse.coin.strategy.htx.strategy.grid.FeeAwareSpotGridStrategy;
 import com.metaverse.coin.strategy.htx.strategy.grid.SpotGridStrategy;
+import com.metaverse.coin.strategy.htx.util.HtxSymbolUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +50,7 @@ public class MarketMakerService {
     private final SpotGridStrategy gridStrategy;
     private final HtxGridWindowStore gridWindowStore;
     private final MovingGridEngine movingGridEngine = new MovingGridEngine();
+    private final MarketMakerRiskCoordinator riskCoordinator = new MarketMakerRiskCoordinator();
 
     private static final int DEPTH_LEVELS = 5;
     private volatile long buyBlockedUntilEpochMs;
@@ -143,6 +145,12 @@ public class MarketMakerService {
                 || mmProps.getMaxTotalExposureQuoteNotional()
                 .compareTo(mmProps.getPerCellQuoteNotional()) < 0) {
             throw new IllegalStateException("MM max-total-exposure-quote-notional must cover one cell");
+        }
+        if (mmProps.getMinQuoteReserve() == null || mmProps.getMinQuoteReserve().signum() < 0) {
+            throw new IllegalStateException("MM min-quote-reserve must be non-negative");
+        }
+        if (mmProps.getMaxBaseInventory() == null || mmProps.getMaxBaseInventory().signum() < 0) {
+            throw new IllegalStateException("MM max-base-inventory must be non-negative");
         }
         if (mmProps.getDailyNetLossBudget() == null
                 || mmProps.getDailyNetLossBudget().signum() < 0) {
@@ -240,6 +248,15 @@ public class MarketMakerService {
         BigDecimal bestAsk = depth.getAsks().get(0).getPrice();
         if (bestBid == null || bestAsk == null || bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
             return -1;
+        }
+        if (spotRiskThresholdsEnabled()) {
+            MarketMakerRiskCoordinator.SpotBalanceSnapshot balances = spotBalances(symbol);
+            MarketMakerRiskCoordinator.RiskDecision risk = evaluateSpotRisk(symbol, bestBid, balances);
+            if (!risk.allowNewRisk()) {
+                log.warn("MM spot risk blocks new cell symbol={} state={} reason={}",
+                        symbol, risk.state(), risk.reason());
+                return -1;
+            }
         }
         return tryOpenCellAtAnchor(symbol, bestBid, depth);
     }
@@ -377,6 +394,15 @@ public class MarketMakerService {
                     decision.window().getAnchorPrice(), decision.window().getLowerPrice(),
                     decision.window().getUpperPrice());
         }
+        MarketMakerRiskCoordinator.SpotBalanceSnapshot balances = null;
+        if (spotRiskThresholdsEnabled()) {
+            balances = spotBalances(symbol);
+            MarketMakerRiskCoordinator.RiskDecision firstRisk = evaluateSpotRisk(symbol, bestBid, balances);
+            if (!firstRisk.allowNewRisk()) {
+                persistGridRiskState(decision.window(), firstRisk);
+                return;
+            }
+        }
         int budget = mmProps.getMaxConcurrentCellsPerSymbol() - recorder.countOpenMmBuyCells(symbol);
         if (budget <= 0) {
             return;
@@ -384,6 +410,8 @@ public class MarketMakerService {
         BigDecimal maxTotal = mmProps.getMaxTotalExposureQuoteNotional();
         BigDecimal perCell = mmProps.getPerCellQuoteNotional();
         BigDecimal running = currentOpenBuyNotional(symbol); // 已挂 open cell 买入名义之和
+        BigDecimal projectedQuote = balances == null ? BigDecimal.ZERO : nz(balances.availableQuote());
+        BigDecimal projectedBase = balances == null ? BigDecimal.ZERO : nz(balances.baseInventory());
         int opened = 0;
         for (BigDecimal level : levels) {
             if (opened >= budget) {
@@ -393,12 +421,48 @@ public class MarketMakerService {
                     && running.add(perCell).compareTo(maxTotal) > 0) {
                 break; // 总敞口闸：再开一档即超上限 → 停更深档（同 perCell，越深只会更超）
             }
+            BigDecimal pendingBuyBase = MarketMakerMath.qtyFor(perCell, level);
+            if (spotRiskThresholdsEnabled()) {
+                MarketMakerRiskCoordinator.RiskDecision loopRisk = riskCoordinator.evaluate(
+                        new MarketMakerRiskCoordinator.SpotBalanceSnapshot(true, projectedQuote, projectedBase),
+                        perCell, mmProps.getMinQuoteReserve(), projectedBase, pendingBuyBase,
+                        mmProps.getMaxBaseInventory());
+                if (!loopRisk.allowNewRisk()) {
+                    persistGridRiskState(decision.window(), loopRisk);
+                    break;
+                }
+            }
             long pairId = tryOpenCellAtAnchor(symbol, level, depth);
             if (pairId > 0) {
                 opened++;
                 running = running.add(perCell);
+                projectedQuote = projectedQuote.subtract(perCell).max(BigDecimal.ZERO);
+                projectedBase = projectedBase.add(pendingBuyBase);
             }
         }
+    }
+
+    private boolean spotRiskThresholdsEnabled() {
+        return positive(mmProps.getMinQuoteReserve()).signum() > 0
+                || positive(mmProps.getMaxBaseInventory()).signum() > 0;
+    }
+
+    private MarketMakerRiskCoordinator.RiskDecision evaluateSpotRisk(
+            String symbol, BigDecimal anchor, MarketMakerRiskCoordinator.SpotBalanceSnapshot balances) {
+        BigDecimal pendingBuyBase = MarketMakerMath.qtyFor(mmProps.getPerCellQuoteNotional(), anchor);
+        return riskCoordinator.evaluate(balances, mmProps.getPerCellQuoteNotional(), mmProps.getMinQuoteReserve(),
+                balances == null ? BigDecimal.ZERO : balances.baseInventory(), pendingBuyBase,
+                mmProps.getMaxBaseInventory());
+    }
+
+    private void persistGridRiskState(
+            com.metaverse.coin.strategy.htx.persistence.entity.HtxGridWindowEntity window,
+            MarketMakerRiskCoordinator.RiskDecision risk) {
+        window.setState(risk.state());
+        window.setUpdatedAt(LocalDateTime.now());
+        gridWindowStore.save(window);
+        log.warn("MM grid risk paused symbol={} state={} reason={}",
+                window.getSymbol(), risk.state(), risk.reason());
     }
 
     /** 两阶段迁移的撤旧阶段：只撤窗口外未成交买单，卖单与库存义务始终保留。 */
@@ -1013,25 +1077,44 @@ public class MarketMakerService {
     }
 
     private boolean hasSufficientQuoteBalance(BigDecimal requiredUsdt) {
+        MarketMakerRiskCoordinator.SpotBalanceSnapshot balances = spotBalances(null);
+        if (!balances.available()) {
+            return false;
+        }
+        BigDecimal required = nz(requiredUsdt).add(nz(mmProps.getMinQuoteReserve()));
+        if (balances.availableQuote().compareTo(required) < 0) {
+            blockNewBuysForInsufficientBalance(balances.availableQuote(), required);
+            return false;
+        }
+        return true;
+    }
+
+    private MarketMakerRiskCoordinator.SpotBalanceSnapshot spotBalances(String symbol) {
         HtxRestResponse<HtxAccount> resp = htxApiService.getAccountService()
                 .getAccountBalance(tradeProps.getApi().getSpotAccountId());
         if (resp == null || !resp.ok() || resp.getData() == null || resp.getData().getList() == null) {
             log.warn("MM balance preflight unavailable; fail-closed errCode={} errMsg={}",
                     resp == null ? "null" : resp.getErrCode(),
                     resp == null ? "null" : resp.getErrMsg());
-            return false;
+            return MarketMakerRiskCoordinator.SpotBalanceSnapshot.unavailable();
         }
-        BigDecimal available = resp.getData().getList().stream()
-                .filter(b -> b != null && "usdt".equalsIgnoreCase(b.getCurrency())
-                        && "trade".equalsIgnoreCase(b.getType()))
-                .map(HtxBalance::getBalance)
-                .filter(v -> v != null)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (available.compareTo(requiredUsdt) < 0) {
-            blockNewBuysForInsufficientBalance(available, requiredUsdt);
-            return false;
+        String base = symbol == null ? "" : HtxSymbolUtil.base(symbol);
+        BigDecimal availableQuote = BigDecimal.ZERO;
+        BigDecimal baseInventory = BigDecimal.ZERO;
+        for (HtxBalance balance : resp.getData().getList()) {
+            if (balance == null || balance.getCurrency() == null || balance.getBalance() == null) {
+                continue;
+            }
+            if ("usdt".equalsIgnoreCase(balance.getCurrency())
+                    && "trade".equalsIgnoreCase(balance.getType())) {
+                availableQuote = availableQuote.add(balance.getBalance());
+            }
+            if (!base.isEmpty() && base.equalsIgnoreCase(balance.getCurrency())
+                    && ("trade".equalsIgnoreCase(balance.getType()) || "frozen".equalsIgnoreCase(balance.getType()))) {
+                baseInventory = baseInventory.add(balance.getBalance());
+            }
         }
-        return true;
+        return new MarketMakerRiskCoordinator.SpotBalanceSnapshot(true, availableQuote, baseInventory);
     }
 
     private void blockNewBuysForInsufficientBalance(BigDecimal available, BigDecimal required) {
@@ -1068,6 +1151,10 @@ public class MarketMakerService {
 
     private static BigDecimal nz(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    private static BigDecimal positive(BigDecimal v) {
+        return v == null || v.signum() <= 0 ? BigDecimal.ZERO : v;
     }
 
     private static boolean isEmpty(List<?> l) {

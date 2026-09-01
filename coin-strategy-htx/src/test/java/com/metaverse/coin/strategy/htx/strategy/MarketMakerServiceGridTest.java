@@ -104,12 +104,20 @@ class MarketMakerServiceGridTest {
     }
 
     private HtxRestResponse<HtxAccount> balanceOk(String availableUsdt) {
+        return balanceOk(availableUsdt, "0");
+    }
+
+    private HtxRestResponse<HtxAccount> balanceOk(String availableUsdt, String baseInventory) {
         HtxBalance balance = new HtxBalance();
         balance.setCurrency("usdt");
         balance.setType("trade");
         balance.setBalance(new BigDecimal(availableUsdt));
+        HtxBalance base = new HtxBalance();
+        base.setCurrency("btc");
+        base.setType("trade");
+        base.setBalance(new BigDecimal(baseInventory));
         HtxAccount data = new HtxAccount();
-        data.setList(List.of(balance));
+        data.setList(List.of(balance, base));
         HtxRestResponse<HtxAccount> response = new HtxRestResponse<>();
         response.setStatus("ok");
         response.setData(data);
@@ -205,6 +213,45 @@ class MarketMakerServiceGridTest {
         verify(spot, times(2)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("100.00"), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.70"), anyString());
+    }
+
+    @Test void quoteReserveRiskPausesGridWithoutOpeningNewBuy() {
+        mmProps.setMinQuoteReserve(new BigDecimal("90"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
+        when(account.getAccountBalance("acc-1")).thenReturn(balanceOk("100"));
+
+        svc.fillGridLadder("btcusdt");
+
+        assertEquals(MarketMakerRiskCoordinator.PAUSED_RISK, windowStore.find("btcusdt").getState());
+        verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test void baseInventoryCapRiskPausesGridWithoutOpeningNewBuy() {
+        mmProps.setMaxBaseInventory(new BigDecimal("0.10"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
+        when(account.getAccountBalance("acc-1")).thenReturn(balanceOk("100000", "0.09"));
+
+        svc.fillGridLadder("btcusdt");
+
+        assertEquals(MarketMakerRiskCoordinator.PAUSED_RISK, windowStore.find("btcusdt").getState());
+        verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test void balanceReadFailureEntersRecoveringWithoutOpeningNewBuy() {
+        mmProps.setMinQuoteReserve(BigDecimal.ONE);
+        HtxRestResponse<HtxAccount> failed = new HtxRestResponse<>();
+        failed.setStatus("error");
+        failed.setErrCode("timeout");
+        when(account.getAccountBalance("acc-1")).thenReturn(failed);
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
+
+        svc.fillGridLadder("btcusdt");
+
+        assertEquals(MarketMakerRiskCoordinator.RECOVERING, windowStore.find("btcusdt").getState());
+        verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test void confirmedLowerBreachMovesWindowDownWithoutStopping() {

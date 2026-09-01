@@ -89,6 +89,8 @@ htx:
     grid-max-shift-steps-per-tick: ${HTX_MM_GRID_MAX_SHIFT_STEPS_PER_TICK:20}
     grid-floor-price: ${HTX_MM_GRID_FLOOR_PRICE:0}
     max-total-exposure-quote-notional: ${HTX_MM_MAX_TOTAL_EXPOSURE_QUOTE_NOTIONAL:240}
+    min-quote-reserve: ${HTX_MM_MIN_QUOTE_RESERVE:0}
+    max-base-inventory: ${HTX_MM_MAX_BASE_INVENTORY:0}
     daily-net-loss-budget: ${HTX_MM_DAILY_NET_LOSS_BUDGET:5}
     max-consecutive-loss-cycles: ${HTX_MM_MAX_CONSECUTIVE_LOSS_CYCLES:3}
   contract:
