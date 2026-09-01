@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAvailableLeverage;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
@@ -63,6 +64,12 @@ public class HtxUsdtSwapService {
             response.setData(response.getTick());
         }
         return response;
+    }
+
+    public HtxRestResponse<HtxSwapFundingRate> fundingRate(String contractCode) {
+        Map<String, String> params = singletonQuery("contract_code", contractCode);
+        return rest.publicGet("/linear-swap-api/v1/swap_funding_rate", params,
+                new TypeReference<HtxRestResponse<HtxSwapFundingRate>>() { });
     }
 
     public HtxRestResponse<List<HtxSwapAccount>> accountInfo(String contractCode) {
@@ -262,6 +269,9 @@ public class HtxUsdtSwapService {
         target.setVolume(source.getVolume());
         target.setAvailable(source.getAvailable());
         target.setOpenCost(source.getOpenAveragePrice());
+        target.setLiquidationPrice(source.getLiquidationPrice());
+        target.setLastPrice(source.getLastPrice());
+        target.setMarkPrice(source.getMarkPrice());
         target.setLeverage(source.getLeverage());
         target.setUnrealizedProfit(source.getUnrealizedProfit());
         return target;

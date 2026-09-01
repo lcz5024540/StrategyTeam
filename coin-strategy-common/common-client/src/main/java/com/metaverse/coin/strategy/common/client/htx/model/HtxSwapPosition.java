@@ -19,6 +19,12 @@ public class HtxSwapPosition {
     private BigDecimal available;
     @JSONField(name = "cost_open")
     private BigDecimal openCost;
+    @JSONField(name = "liquidation_price")
+    private BigDecimal liquidationPrice;
+    @JSONField(name = "last_price")
+    private BigDecimal lastPrice;
+    @JSONField(name = "mark_price")
+    private BigDecimal markPrice;
     @JSONField(name = "lever_rate")
     private Integer leverage;
     @JSONField(name = "position_mode")

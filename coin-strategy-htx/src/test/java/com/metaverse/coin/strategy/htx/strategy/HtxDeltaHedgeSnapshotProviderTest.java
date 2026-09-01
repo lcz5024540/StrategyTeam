@@ -1,9 +1,13 @@
 package com.metaverse.coin.strategy.htx.strategy;
 
+import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
+import com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,14 +29,16 @@ import static org.mockito.Mockito.when;
 class HtxDeltaHedgeSnapshotProviderTest {
 
     private HtxUsdtSwapService swap;
+    private HtxMarketDataService spotMarketData;
     private HtxSpotLedgerRecorder spotLedgerRecorder;
     private HtxDeltaHedgeSnapshotProvider provider;
 
     @BeforeEach
     void setUp() {
         swap = mock(HtxUsdtSwapService.class);
+        spotMarketData = mock(HtxMarketDataService.class);
         spotLedgerRecorder = mock(HtxSpotLedgerRecorder.class);
-        provider = new HtxDeltaHedgeSnapshotProvider(swap, spotLedgerRecorder);
+        provider = new HtxDeltaHedgeSnapshotProvider(swap, spotMarketData, spotLedgerRecorder);
     }
 
     @Test
@@ -40,6 +46,7 @@ class HtxDeltaHedgeSnapshotProviderTest {
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(position("short", null, "123"))));
         when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        givenHealthyFundingAndBasis();
         when(spotLedgerRecorder.openInventory("xautusdt")).thenReturn(new BigDecimal("1.200"));
 
         HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(null));
@@ -92,6 +99,7 @@ class HtxDeltaHedgeSnapshotProviderTest {
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(position("short", null, "50"))));
         when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "3"))));
+        givenHealthyFundingAndBasis();
 
         HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(new BigDecimal("1")));
         DeltaHedgeManager.HedgeDecision decision = new DeltaHedgeManager().plan(snapshot.input());
@@ -123,6 +131,7 @@ class HtxDeltaHedgeSnapshotProviderTest {
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
         when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        givenHealthyFundingAndBasis();
         when(spotLedgerRecorder.openInventory("xautusdt")).thenThrow(new RuntimeException("db down"));
 
         HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(null));
@@ -134,11 +143,74 @@ class HtxDeltaHedgeSnapshotProviderTest {
         assertNull(decision.orderRequest());
     }
 
+    @Test
+    void fundingRateAboveThresholdFailsClosedWithoutOpeningNewShort() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding("0.0050")));
+        givenHealthyBasis();
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(new BigDecimal("1")));
+        DeltaHedgeManager.HedgeDecision decision = new DeltaHedgeManager().plan(snapshot.input());
+
+        assertFalse(snapshot.available());
+        assertEquals("funding gate blocked", snapshot.reason());
+        assertEquals(MarketMakerRiskCoordinator.HEDGE_DEGRADED, decision.state());
+        assertNull(decision.orderRequest());
+    }
+
+    @Test
+    void wideSpotSwapBasisFailsClosedWithoutOpeningNewShort() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding("0.0001")));
+        when(spotMarketData.depth("xautusdt", 1)).thenReturn(ok(depth("4200", "4202")));
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth("4240", "4242")));
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(new BigDecimal("1")));
+        DeltaHedgeManager.HedgeDecision decision = new DeltaHedgeManager().plan(snapshot.input());
+
+        assertFalse(snapshot.available());
+        assertEquals("basis gate blocked", snapshot.reason());
+        assertEquals(MarketMakerRiskCoordinator.HEDGE_DEGRADED, decision.state());
+        assertNull(decision.orderRequest());
+    }
+
+    @Test
+    void closeLiquidationDistanceAllowsReduceOnlyShortReductionOnly() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(position("short", null, "50", "4210"))));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding("0.0001")));
+        givenHealthyBasis();
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(new BigDecimal("1")));
+        DeltaHedgeManager.HedgeDecision decision = new DeltaHedgeManager().plan(snapshot.input());
+
+        assertFalse(snapshot.available());
+        assertEquals("liquidation distance gate blocked", snapshot.reason());
+        assertEquals(DeltaHedgeManager.Action.CLOSE_SHORT, decision.action());
+        assertTrue(decision.orderRequest().getReduceOnly());
+    }
+
     private static HtxDeltaHedgeSnapshotProvider.HedgeSourceRequest request(BigDecimal inventory) {
         return new HtxDeltaHedgeSnapshotProvider.HedgeSourceRequest(
                 true, "xautusdt", null, inventory, new BigDecimal("0.5"),
                 new BigDecimal("2"), true, true, new BigDecimal("10"),
+                new BigDecimal("0.0010"), new BigDecimal("0.0020"), new BigDecimal("0.1000"),
                 "CS-MM-HEDGE-XAUTUSDT", 7L);
+    }
+
+    private void givenHealthyFundingAndBasis() {
+        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding("0.0001")));
+        givenHealthyBasis();
+    }
+
+    private void givenHealthyBasis() {
+        when(spotMarketData.depth("xautusdt", 1)).thenReturn(ok(depth("4200", "4202")));
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth("4201", "4203")));
     }
 
     private static HtxSwapContractInfo contract(String contractSize) {
@@ -154,12 +226,34 @@ class HtxDeltaHedgeSnapshotProviderTest {
     }
 
     private static HtxSwapPosition position(String side, String direction, String volume) {
+        return position(side, direction, volume, "5000");
+    }
+
+    private static HtxSwapPosition position(String side, String direction, String volume,
+                                            String liquidationPrice) {
         HtxSwapPosition position = new HtxSwapPosition();
         position.setContractCode("XAUT-USDT");
         position.setPositionSide(side);
         position.setDirection(direction);
         position.setVolume(new BigDecimal(volume));
+        if (liquidationPrice != null) {
+            position.setLiquidationPrice(new BigDecimal(liquidationPrice));
+        }
         return position;
+    }
+
+    private static HtxSwapFundingRate funding(String rate) {
+        HtxSwapFundingRate funding = new HtxSwapFundingRate();
+        funding.setContractCode("XAUT-USDT");
+        funding.setFundingRate(new BigDecimal(rate));
+        return funding;
+    }
+
+    private static HtxDepth depth(String bid, String ask) {
+        HtxDepth depth = new HtxDepth();
+        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal(bid), BigDecimal.ONE)));
+        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal(ask), BigDecimal.ONE)));
+        return depth;
     }
 
     private static HtxSwapAccount account(String state, String marginAvailable) {

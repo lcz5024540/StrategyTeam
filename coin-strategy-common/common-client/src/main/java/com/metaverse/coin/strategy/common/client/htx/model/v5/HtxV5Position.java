@@ -19,6 +19,12 @@ public class HtxV5Position {
     private BigDecimal available;
     @JSONField(name = "open_avg_price")
     private BigDecimal openAveragePrice;
+    @JSONField(name = "liquidation_price")
+    private BigDecimal liquidationPrice;
+    @JSONField(name = "last_price")
+    private BigDecimal lastPrice;
+    @JSONField(name = "mark_price")
+    private BigDecimal markPrice;
     @JSONField(name = "lever_rate")
     private Integer leverage;
     @JSONField(name = "profit_unreal")

@@ -7,10 +7,12 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAvailableLeverage;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -151,6 +153,39 @@ class HtxUsdtSwapServiceTest {
         assertEquals("USDT", account.getCurrency());
         assertEquals("normal", account.getState());
         assertEquals(new BigDecimal("93.64"), account.getMarginAvailable());
+    }
+
+    @Test
+    void fundingRateUsesLegacyPublicEndpoint() throws InterruptedException {
+        server.enqueue(json("{\"status\":\"ok\",\"data\":{"
+                + "\"contract_code\":\"XAUT-USDT\",\"funding_rate\":\"0.0001\","
+                + "\"estimated_rate\":\"0.0002\",\"fee_asset\":\"USDT\","
+                + "\"funding_time\":\"1788268800000\",\"next_funding_time\":\"1788297600000\"}}"));
+
+        HtxRestResponse<HtxSwapFundingRate> response = service.fundingRate("XAUT-USDT");
+
+        assertTrue(response.ok());
+        assertEquals("XAUT-USDT", response.getData().getContractCode());
+        assertEquals(new BigDecimal("0.0001"), response.getData().getFundingRate());
+        RecordedRequest request = takeRequest();
+        assertEquals("GET", request.getMethod());
+        assertEquals("/linear-swap-api/v1/swap_funding_rate", request.getRequestUrl().encodedPath());
+        assertEquals("XAUT-USDT", request.getRequestUrl().queryParameter("contract_code"));
+    }
+
+    @Test
+    void positionInfoMapsLiquidationAndReferencePrices() {
+        server.enqueue(json("{\"code\":200,\"message\":\"Success\",\"data\":[{"
+                + "\"contract_code\":\"XAUT-USDT\",\"position_side\":\"short\","
+                + "\"volume\":\"2\",\"liquidation_price\":\"5000\","
+                + "\"last_price\":\"4202\",\"mark_price\":\"4201.5\"}]}"));
+
+        HtxRestResponse<List<HtxSwapPosition>> response = service.positionInfo("XAUT-USDT");
+
+        HtxSwapPosition position = response.getData().get(0);
+        assertEquals(new BigDecimal("5000"), position.getLiquidationPrice());
+        assertEquals(new BigDecimal("4202"), position.getLastPrice());
+        assertEquals(new BigDecimal("4201.5"), position.getMarkPrice());
     }
 
     @Test
