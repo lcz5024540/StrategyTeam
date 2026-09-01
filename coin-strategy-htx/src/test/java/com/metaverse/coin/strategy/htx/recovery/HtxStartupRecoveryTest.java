@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.*;
 
 class HtxStartupRecoveryTest {
@@ -87,6 +89,62 @@ class HtxStartupRecoveryTest {
         verify(orderMapper).updateById(argThat(u ->
                 Long.valueOf(9003L).equals(u.getHtxOrderId())
                         && HtxStatus.INTENT_SENT.equals(u.getIntentStatus())));
+    }
+
+    @Test
+    void submittedOrderAtStartup_recordsExchangeFirstLedgerSnapshot() {
+        HtxSpotLedgerRecorder ledger = mock(HtxSpotLedgerRecorder.class);
+        recovery = new HtxStartupRecovery(orderMapper, api, props, ledger);
+        HtxOrderEntity e = new HtxOrderEntity();
+        e.setId(4L);
+        e.setPairId(88L);
+        e.setHtxOrderId(9004L);
+        e.setClientOrderId("key-4-SELL");
+        e.setSide("sell");
+        e.setIntentStatus(HtxStatus.INTENT_SENT);
+        when(orderMapper.selectList(any())).thenReturn(List.of(), List.of(e));
+
+        HtxOrder o = new HtxOrder();
+        o.setOrderId(9004L);
+        o.setSymbol("xautusdt");
+        o.setType("sell-limit-maker");
+        o.setState("partial-filled");
+        o.setFilledAmount(new java.math.BigDecimal("0.006"));
+        o.setFilledCashAmount(new java.math.BigDecimal("15"));
+        o.setFilledFees(new java.math.BigDecimal("0.009"));
+        when(spot.queryOrder(9004L))
+                .thenReturn(HtxRestResponse.<HtxOrder>builder().status("ok").data(o).build());
+
+        recovery.recover();
+
+        verify(ledger).recordOrderSnapshot(eq(88L), eq(4L), eq("xautusdt"), eq("sell"),
+                eq(9004L), eq("key-4-SELL"), same(o), eq(HtxSpotLedgerRecorder.SOURCE_STARTUP_RECOVERY));
+        verify(orderMapper).updateById(argThat(u ->
+                Long.valueOf(9004L).equals(u.getHtxOrderId())
+                        && "partial-filled".equals(u.getState())
+                        && HtxStatus.INTENT_SENT.equals(u.getIntentStatus())
+                        && new java.math.BigDecimal("0.006").compareTo(u.getFilledAmount()) == 0
+                        && "usdt".equals(u.getFeeCurrency())));
+    }
+
+    @Test
+    void submittedOrderMissingOnExchange_keepsLocalStateForManualReconciliation() {
+        HtxSpotLedgerRecorder ledger = mock(HtxSpotLedgerRecorder.class);
+        recovery = new HtxStartupRecovery(orderMapper, api, props, ledger);
+        HtxOrderEntity e = new HtxOrderEntity();
+        e.setId(5L);
+        e.setPairId(89L);
+        e.setClientOrderId("key-5-BUY");
+        e.setSide("buy");
+        e.setIntentStatus(HtxStatus.INTENT_SENT);
+        when(orderMapper.selectList(any())).thenReturn(List.of(), List.of(e));
+        when(spot.queryOrderByClientId("key-5-BUY"))
+                .thenReturn(HtxRestResponse.<HtxOrder>builder().status("error").errMsg("not-found").build());
+
+        recovery.recover();
+
+        verify(orderMapper, never()).updateById(any(HtxOrderEntity.class));
+        verifyNoInteractions(ledger);
     }
 
     @Test
