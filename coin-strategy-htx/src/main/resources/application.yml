@@ -117,6 +117,15 @@ htx:
     uid-query-limit: ${HTX_CONTRACT_UID_QUERY_LIMIT:68}
     uid-trade-limit: ${HTX_CONTRACT_UID_TRADE_LIMIT:68}
     uid-rate-window-ms: ${HTX_CONTRACT_UID_RATE_WINDOW_MS:3000}
+    # Moving-grid hedge/recycle supervisor. Default off; when enabled, shadow mode only reconciles
+    # SENT rows and reports degraded/unknown rows. It does not submit pending hedge intents.
+    hedge-supervisor-enabled: ${HTX_CONTRACT_HEDGE_SUPERVISOR_ENABLED:false}
+    hedge-supervisor-shadow-only: ${HTX_CONTRACT_HEDGE_SUPERVISOR_SHADOW_ONLY:true}
+    # Future live-send gate. Requires shadow-only=false plus dry-run=false plus live-enabled=true.
+    hedge-auto-send-enabled: ${HTX_CONTRACT_HEDGE_AUTO_SEND_ENABLED:false}
+    hedge-supervisor-initial-delay-ms: ${HTX_CONTRACT_HEDGE_SUPERVISOR_INITIAL_DELAY_MS:30000}
+    hedge-supervisor-interval-ms: ${HTX_CONTRACT_HEDGE_SUPERVISOR_INTERVAL_MS:60000}
+    hedge-supervisor-batch-size: ${HTX_CONTRACT_HEDGE_SUPERVISOR_BATCH_SIZE:20}
     # 自动往返默认仅用于 dry-run；实盘还必须显式打开 auto-live-enabled。
     auto-test-enabled: ${HTX_CONTRACT_AUTO_TEST_ENABLED:false}
     auto-live-enabled: ${HTX_CONTRACT_AUTO_LIVE_ENABLED:false}

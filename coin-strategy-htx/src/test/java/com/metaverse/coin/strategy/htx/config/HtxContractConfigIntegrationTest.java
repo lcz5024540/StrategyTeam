@@ -52,5 +52,11 @@ class HtxContractConfigIntegrationTest {
         assertEquals(68, properties.getUidQueryLimit());
         assertEquals(68, properties.getUidTradeLimit());
         assertEquals(3_000L, properties.getUidRateWindowMs());
+        assertFalse(properties.isHedgeSupervisorEnabled());
+        assertTrue(properties.isHedgeSupervisorShadowOnly());
+        assertFalse(properties.isHedgeAutoSendEnabled());
+        assertEquals(30_000L, properties.getHedgeSupervisorInitialDelayMs());
+        assertEquals(60_000L, properties.getHedgeSupervisorIntervalMs());
+        assertEquals(20, properties.getHedgeSupervisorBatchSize());
     }
 }

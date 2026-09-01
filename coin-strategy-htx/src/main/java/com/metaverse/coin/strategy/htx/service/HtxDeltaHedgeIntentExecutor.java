@@ -143,6 +143,14 @@ public class HtxDeltaHedgeIntentExecutor {
         return reconcileRecycleCloseIntent(row);
     }
 
+    public RecoveryBacklog recoveryBacklog() {
+        return new RecoveryBacklog(
+                hedgeMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED),
+                recycleMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED),
+                hedgeMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_UNKNOWN),
+                recycleMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_UNKNOWN));
+    }
+
     public ExecutionResult executeHedgeIntent(HtxDeltaHedgeLedgerEntity row) {
         if (row == null || row.getId() == null) {
             return ExecutionResult.notFound(ExecutionKind.HEDGE, null);
@@ -669,6 +677,19 @@ public class HtxDeltaHedgeIntentExecutor {
 
         static ExecutionResult stale(ExecutionKind kind, Long id, String reason) {
             return new ExecutionResult(kind, ExecutionCode.STALE, id, null, reason);
+        }
+    }
+
+    public record RecoveryBacklog(int degradedHedgeIntents, int degradedRecycleSagas,
+                                  int unknownHedgeIntents, int unknownRecycleSagas) {
+        public boolean blocksAutoSend() {
+            return degradedHedgeIntents > 0 || degradedRecycleSagas > 0
+                    || unknownHedgeIntents > 0 || unknownRecycleSagas > 0;
+        }
+
+        public int totalBlockingRows() {
+            return degradedHedgeIntents + degradedRecycleSagas
+                    + unknownHedgeIntents + unknownRecycleSagas;
         }
     }
 }

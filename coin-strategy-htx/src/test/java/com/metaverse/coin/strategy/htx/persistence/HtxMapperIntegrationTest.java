@@ -162,6 +162,7 @@ class HtxMapperIntegrationTest {
         assertEquals(HtxHedgeRecycleRecorder.STATUS_FILLED, filledHedge.getStatus());
         assertEquals(900001L, filledHedge.getExchangeOrderId());
         assertEquals(0, new BigDecimal("500").compareTo(filledHedge.getFilledContracts()));
+        assertEquals(1, deltaHedgeLedgerMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_FILLED));
 
         HtxInventoryRecycleSagaEntity saga = new HtxInventoryRecycleSagaEntity();
         saga.setSagaKey("it-recycle-" + nonce);
@@ -200,6 +201,8 @@ class HtxMapperIntegrationTest {
         assertEquals(HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED, degradedSaga.getStatus());
         assertEquals(900003L, degradedSaga.getCloseExchangeOrderId());
         assertEquals(0, new BigDecimal("3").compareTo(degradedSaga.getCloseFilledContracts()));
+        assertEquals(1, inventoryRecycleSagaMapper.countByStatus(
+                HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED));
     }
 
     @Test void sumMmRealizedNetQuoteSince_sums_done_cells_profit_minus_loss() {

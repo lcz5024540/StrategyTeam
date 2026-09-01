@@ -42,6 +42,15 @@ public class HtxContractProperties {
     private boolean autoTestEnabled = false;
     /** Additional opt-in required before the scheduler may submit real contract orders. */
     private boolean autoLiveEnabled = false;
+    /** Shadow supervisor for moving-grid hedge/recycle reconciliation. Default off. */
+    private boolean hedgeSupervisorEnabled = false;
+    /** Shadow mode reconciles and reports only; it never submits pending hedge intents. */
+    private boolean hedgeSupervisorShadowOnly = true;
+    /** Future live-send gate for pending hedge/recycle intents. Default false. */
+    private boolean hedgeAutoSendEnabled = false;
+    private long hedgeSupervisorInitialDelayMs = 30_000L;
+    private long hedgeSupervisorIntervalMs = 60_000L;
+    private int hedgeSupervisorBatchSize = 20;
     private long autoTestInitialDelayMs = 20_000L;
     private long autoTestIntervalMs = 5_000L;
     /** Number of contracts, not XAUT quantity. */

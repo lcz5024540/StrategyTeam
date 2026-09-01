@@ -10,5 +10,6 @@
 - `htx-contract-api-evidence-20260812.json`：脱敏 API 请求与响应证据。
 - `htx-contract-host-matrix-20260812.json`：合约 API 多域名验证矩阵。
 - `htx-xaut-contract-trading-volume-report-20260816.md`：XAUT 合约成交量与损耗报告。
+- `htx-moving-grid-hedge-degraded-runbook.md`：双向移动网格 `HEDGE_DEGRADED` 人工介入与影子盘开关 runbook。
 
 业务源码根目录为 `docs/projects/CoinStrategy/`；ray-agent 不再维护大小写不同的 `docs/projects/coin-strategy/` 管理目录。

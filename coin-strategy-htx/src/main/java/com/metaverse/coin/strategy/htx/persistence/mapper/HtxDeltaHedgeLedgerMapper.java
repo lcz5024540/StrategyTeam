@@ -26,6 +26,9 @@ public interface HtxDeltaHedgeLedgerMapper extends BaseMapper<HtxDeltaHedgeLedge
             + "WHERE status = #{status} ORDER BY id LIMIT #{limit}")
     List<HtxDeltaHedgeLedgerEntity> findByStatus(@Param("status") String status, @Param("limit") int limit);
 
+    @Select("SELECT COUNT(*) FROM htx_delta_hedge_ledger WHERE status = #{status}")
+    int countByStatus(@Param("status") String status);
+
     @Select("SELECT " + COLUMNS + " FROM htx_delta_hedge_ledger WHERE id = #{id} LIMIT 1")
     HtxDeltaHedgeLedgerEntity findById(@Param("id") long id);
 

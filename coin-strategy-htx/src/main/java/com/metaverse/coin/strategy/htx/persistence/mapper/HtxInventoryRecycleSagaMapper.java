@@ -26,6 +26,9 @@ public interface HtxInventoryRecycleSagaMapper extends BaseMapper<HtxInventoryRe
             + "WHERE status = #{status} ORDER BY id LIMIT #{limit}")
     List<HtxInventoryRecycleSagaEntity> findByStatus(@Param("status") String status, @Param("limit") int limit);
 
+    @Select("SELECT COUNT(*) FROM htx_inventory_recycle_saga WHERE status = #{status}")
+    int countByStatus(@Param("status") String status);
+
     @Select("SELECT " + COLUMNS + " FROM htx_inventory_recycle_saga WHERE id = #{id} LIMIT 1")
     HtxInventoryRecycleSagaEntity findById(@Param("id") long id);
 
