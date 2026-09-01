@@ -832,6 +832,14 @@ public class MarketMakerService {
         }
         HtxRestResponse<HtxOrder> resp = htxApiService.getSpotService().queryOrder(sellId);
         if (resp == null || !resp.ok() || resp.getData() == null) {
+            if (isBaseRecordInvalid(resp)) {
+                recorder.markMmReconcileRequired(cell.getPairId(), "HTX_ORDER_NOT_FOUND",
+                        "sell order not found on exchange; manual reconciliation required orderId=" + sellId);
+                log.error("MM sell order missing on exchange pairId={} sellOrderId={} symbol={} errCode={} errMsg={}",
+                        cell.getPairId(), sellId, cell.getSymbol(),
+                        resp == null ? "null" : resp.getErrCode(),
+                        resp == null ? "null" : resp.getErrMsg());
+            }
             return;
         }
         HtxOrder o = resp.getData();
@@ -1146,6 +1154,13 @@ public class MarketMakerService {
         }
         String text = (String.valueOf(resp.getErrCode()) + " " + String.valueOf(resp.getErrMsg())).toLowerCase();
         return text.contains("insufficient") || text.contains("balance");
+    }
+
+    private static boolean isBaseRecordInvalid(HtxRestResponse<?> resp) {
+        if (resp == null) {
+            return false;
+        }
+        return "base-record-invalid".equalsIgnoreCase(resp.getErrCode());
     }
 
     private void recordSpotFillSnapshot(MarketMakerCell cell, String side, Long htxOrderId,

@@ -19,6 +19,8 @@ public final class HtxStatus {
     public static final String MM_RESTING_SELL = "MM_RESTING_SELL";
     /** 当前卖单已终止但仍有未售库存；下一轮必须继续挂卖，不能按闭环计盈亏。 */
     public static final String MM_SELL_RETRYABLE = "MM_SELL_RETRYABLE";
+    /** 交易所无法确认订单真相；退出自动 open 集合，等待人工/账本对账，不计入已实现盈亏。 */
+    public static final String MM_RECONCILE_REQUIRED = "MM_RECONCILE_REQUIRED";
     public static final String MM_DONE = "MM_DONE";
     public static final String MM_DUST = "MM_DUST";
     public static final String MM_CANCELLED_BUY = "MM_CANCELLED_BUY";

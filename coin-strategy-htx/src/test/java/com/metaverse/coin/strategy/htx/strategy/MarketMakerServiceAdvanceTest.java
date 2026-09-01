@@ -93,6 +93,14 @@ class MarketMakerServiceAdvanceTest {
         return response;
     }
 
+    private HtxRestResponse<HtxOrder> orderError(String errCode, String errMsg) {
+        HtxRestResponse<HtxOrder> response = new HtxRestResponse<>();
+        response.setStatus("error");
+        response.setErrCode(errCode);
+        response.setErrMsg(errMsg);
+        return response;
+    }
+
     private HtxRestResponse<String> placeOk(String id) {
         HtxRestResponse<String> r = new HtxRestResponse<>();
         r.setStatus("ok");
@@ -271,6 +279,18 @@ class MarketMakerServiceAdvanceTest {
         svc.advanceCell(sellCell(777L));
         verify(recorder, never()).markMmDone(anyLong(), any());
         verify(recorder, never()).recordExposure(anyLong(), anyString(), anyString(), any(), anyString());
+    }
+
+    @Test void resting_sell_missing_on_exchange_moves_to_manual_reconcile_without_realized_pnl() {
+        when(spot.queryOrder(777L)).thenReturn(orderError("base-record-invalid", "record invalid"));
+
+        svc.advanceCell(sellCell(777L));
+
+        verify(recorder).markMmReconcileRequired(eq(100L), eq("HTX_ORDER_NOT_FOUND"),
+                contains("orderId=777"));
+        verify(recorder, never()).markMmDone(anyLong(), any());
+        verify(recorder, never()).recordExposure(anyLong(), anyString(), anyString(), any(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), any(), anyString());
     }
 
     @Test void resting_sell_external_cancel_retains_inventory_for_retry() {

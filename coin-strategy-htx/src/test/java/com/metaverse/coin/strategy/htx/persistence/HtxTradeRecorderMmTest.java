@@ -108,6 +108,16 @@ class HtxTradeRecorderMmTest {
         verify(pairMapper).selectList(any(QueryWrapper.class));
     }
 
+    @Test void findOpenMmCells_excludes_manual_reconcile_status_from_open_exposure() {
+        when(pairMapper.selectList(any())).thenReturn(List.of());
+
+        recorder.findOpenMmCells("btcusdt");
+
+        ArgumentCaptor<QueryWrapper<HtxLockedPairEntity>> cap = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(pairMapper).selectList(cap.capture());
+        assertFalse(cap.getValue().getParamNameValuePairs().containsValue(HtxStatus.MM_RECONCILE_REQUIRED));
+    }
+
     @Test void countOpenMmCells_uses_selectCount() {
         when(pairMapper.selectCount(any())).thenReturn(2L);
         assertEquals(2, recorder.countOpenMmCells("btcusdt"));

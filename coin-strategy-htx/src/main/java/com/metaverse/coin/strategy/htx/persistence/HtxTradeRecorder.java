@@ -313,6 +313,14 @@ public class HtxTradeRecorder {
     }
 
     /**
+     * 交易所返回订单不存在/记录无效时，不能把 cell 当作已闭环，也不能继续永久占用 open-grid 敞口。
+     * 转人工收敛态，保留 buy/sell 累计字段，等待 exchange balance / ledger 对账确认后再人工处置。
+     */
+    public void markMmReconcileRequired(long pairId, String resultCode, String detail) {
+        updatePairStatus(pairId, HtxStatus.MM_RECONCILE_REQUIRED, resultCode, detail);
+    }
+
+    /**
      * 卖出残量低于交易所最低名义金额：转为不可自动成交的 dust 终态，并保留残量审计。
      * 先关闭 cell，避免 exposure 记录瞬时失败时下一 tick 继续向交易所提交无效订单。
      */
