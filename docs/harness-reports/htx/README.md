@@ -11,5 +11,7 @@
 - `htx-contract-host-matrix-20260812.json`：合约 API 多域名验证矩阵。
 - `htx-xaut-contract-trading-volume-report-20260816.md`：XAUT 合约成交量与损耗报告。
 - `htx-moving-grid-hedge-degraded-runbook.md`：双向移动网格 `HEDGE_DEGRADED` 人工介入与影子盘开关 runbook。
+- `htx-moving-grid-shadow-m8-1-runbook.md`：方案 C M8.1 影子盘第 1-3 天启动、日报、停止门与验收 runbook。
+- `htx-moving-grid-shadow-m8-1-gates.drawio`：M8.1 授权、影子配置、观察、停机与进入 M8.2 的门禁流程图。
 
 业务源码根目录为 `docs/projects/CoinStrategy/`；ray-agent 不再维护大小写不同的 `docs/projects/coin-strategy/` 管理目录。
