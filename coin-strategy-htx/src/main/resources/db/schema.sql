@@ -137,6 +137,53 @@ CREATE TABLE IF NOT EXISTS htx_inventory_lot (
     INDEX idx_inventory_pair        (source_pair_id)
 );
 
+-- Durable intent ledger for one logical aggregate short per moving-grid symbol.
+-- The row is created before any future contract order send path, so restart recovery can
+-- distinguish "planned" from "actually sent" without inferring from logs.
+CREATE TABLE IF NOT EXISTS htx_delta_hedge_ledger (
+    id                  BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    hedge_key           VARCHAR(128)   NOT NULL UNIQUE,
+    symbol              VARCHAR(32)    NOT NULL,
+    contract_code       VARCHAR(32)    NOT NULL,
+    epoch               BIGINT         NOT NULL,
+    action              VARCHAR(16)    NOT NULL,
+    target_short_base   DECIMAL(36,18) NOT NULL DEFAULT 0,
+    contract_volume     BIGINT         NOT NULL,
+    side                VARCHAR(8)     NOT NULL,
+    position_side       VARCHAR(8)     NOT NULL,
+    reduce_only         TINYINT(1)     NOT NULL,
+    client_order_id     VARCHAR(64)    NOT NULL,
+    planner_state       VARCHAR(24)    NOT NULL,
+    status              VARCHAR(24)    NOT NULL,
+    reason              VARCHAR(512),
+    created_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_delta_hedge_symbol    (symbol, epoch, status),
+    INDEX idx_delta_hedge_client    (client_order_id)
+);
+
+-- Paired recycle saga: confirmed spot sell fill drives reduce-only short close.
+-- It intentionally stores the spot-fill ledger id that triggered the close intent.
+CREATE TABLE IF NOT EXISTS htx_inventory_recycle_saga (
+    id                    BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    saga_key              VARCHAR(128)   NOT NULL UNIQUE,
+    symbol                VARCHAR(32)    NOT NULL,
+    contract_code         VARCHAR(32)    NOT NULL,
+    epoch                 BIGINT         NOT NULL,
+    spot_fill_ledger_id   BIGINT         NOT NULL,
+    spot_sold_base        DECIMAL(36,18) NOT NULL,
+    available_short_base  DECIMAL(36,18) NOT NULL,
+    close_contracts       BIGINT         NOT NULL,
+    close_client_order_id VARCHAR(64)    NOT NULL,
+    planner_state         VARCHAR(24)    NOT NULL,
+    status                VARCHAR(24)    NOT NULL,
+    reason                VARCHAR(512),
+    created_at            DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at            DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_recycle_symbol         (symbol, epoch, status),
+    INDEX idx_recycle_spot_fill      (spot_fill_ledger_id)
+);
+
 -- USDT-margined perpetual cycles are isolated from spot rows because volume is contracts, not base quantity.
 CREATE TABLE IF NOT EXISTS htx_contract_cycle (
     id                    BIGINT         PRIMARY KEY AUTO_INCREMENT,

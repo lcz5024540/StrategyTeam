@@ -3,11 +3,15 @@ package com.metaverse.coin.strategy.htx.persistence;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractLegEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxDeltaHedgeLedgerEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryLotEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryRecycleSagaEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxSpotFillLedgerEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxDeltaHedgeLedgerMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxInventoryLotMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxInventoryRecycleSagaMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxLockedPairMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxSpotFillLedgerMapper;
 import org.junit.jupiter.api.Test;
@@ -25,6 +29,8 @@ class HtxMapperIntegrationTest {
     @Autowired HtxContractLegMapper contractLegMapper;
     @Autowired HtxSpotFillLedgerMapper spotFillLedgerMapper;
     @Autowired HtxInventoryLotMapper inventoryLotMapper;
+    @Autowired HtxDeltaHedgeLedgerMapper deltaHedgeLedgerMapper;
+    @Autowired HtxInventoryRecycleSagaMapper inventoryRecycleSagaMapper;
 
     @Test void insert_and_read_pair() {
         HtxLockedPairEntity p = new HtxLockedPairEntity();
@@ -113,6 +119,43 @@ class HtxMapperIntegrationTest {
                 .compareTo(inventoryLotMapper.sumOpenRemainingBase("xautusdt")));
         assertEquals(fill.getId(), spotFillLedgerMapper
                 .findLatestSnapshot("xautusdt", "BUY", nonce, "ignored").getId());
+    }
+
+    @Test void insert_and_read_delta_hedge_ledger_and_recycle_saga() {
+        long nonce = System.nanoTime();
+        HtxDeltaHedgeLedgerEntity hedge = new HtxDeltaHedgeLedgerEntity();
+        hedge.setHedgeKey("it-hedge-" + nonce);
+        hedge.setSymbol("xautusdt");
+        hedge.setContractCode("XAUT-USDT");
+        hedge.setEpoch(7L);
+        hedge.setAction("OPEN_SHORT");
+        hedge.setTargetShortBase(new BigDecimal("0.500"));
+        hedge.setContractVolume(500L);
+        hedge.setSide("sell");
+        hedge.setPositionSide("short");
+        hedge.setReduceOnly(false);
+        hedge.setClientOrderId("CS-MM-HEDGE-XAUTUSDT-OPEN-" + nonce);
+        hedge.setPlannerState("RUNNING");
+        hedge.setStatus(HtxHedgeRecycleRecorder.STATUS_INTENT);
+        assertEquals(1, deltaHedgeLedgerMapper.insert(hedge));
+        assertEquals(hedge.getId(), deltaHedgeLedgerMapper
+                .findByHedgeKey("it-hedge-" + nonce).getId());
+
+        HtxInventoryRecycleSagaEntity saga = new HtxInventoryRecycleSagaEntity();
+        saga.setSagaKey("it-recycle-" + nonce);
+        saga.setSymbol("xautusdt");
+        saga.setContractCode("XAUT-USDT");
+        saga.setEpoch(8L);
+        saga.setSpotFillLedgerId(nonce);
+        saga.setSpotSoldBase(new BigDecimal("0.015"));
+        saga.setAvailableShortBase(new BigDecimal("0.020"));
+        saga.setCloseContracts(15L);
+        saga.setCloseClientOrderId("CS-MM-RECYCLE-XAUTUSDT-CLOSE-" + nonce);
+        saga.setPlannerState("RUNNING");
+        saga.setStatus(HtxHedgeRecycleRecorder.STATUS_CLOSE_SHORT_PENDING);
+        assertEquals(1, inventoryRecycleSagaMapper.insert(saga));
+        assertEquals(saga.getId(), inventoryRecycleSagaMapper
+                .findBySagaKey("it-recycle-" + nonce).getId());
     }
 
     @Test void sumMmRealizedNetQuoteSince_sums_done_cells_profit_minus_loss() {
