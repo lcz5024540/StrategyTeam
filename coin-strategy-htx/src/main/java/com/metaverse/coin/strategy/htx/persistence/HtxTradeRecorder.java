@@ -411,6 +411,15 @@ public class HtxTradeRecorder {
         return n == null ? 0 : n.intValue();
     }
 
+    /** 网格买槽仅统计未成交买单；持有库存的卖 cell 不再挤占补充买档的槽位。 */
+    public int countOpenMmBuyCells(String symbol) {
+        Long n = pairMapper.selectCount(new QueryWrapper<HtxLockedPairEntity>()
+                .eq("strategy", HtxStatus.STRATEGY_MARKET_MAKER)
+                .eq("symbol", symbol)
+                .eq("status", HtxStatus.MM_RESTING_BUY));
+        return n == null ? 0 : n.intValue();
+    }
+
     public void recordCancel(long orderRowId, Long htxOrderId, String reason,
                              Boolean ok, String postState, BigDecimal postFilled) {        try {
             HtxCancelEntity e = new HtxCancelEntity();

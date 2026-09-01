@@ -47,6 +47,8 @@ public class MarketMakerService {
     private final HtxTradeRecorder recorder;
     private final HtxSpotFeeRateProvider feeRateProvider;
     private final SpotGridStrategy gridStrategy;
+    private final HtxGridWindowStore gridWindowStore;
+    private final MovingGridEngine movingGridEngine = new MovingGridEngine();
 
     private static final int DEPTH_LEVELS = 5;
     private volatile long buyBlockedUntilEpochMs;
@@ -63,7 +65,8 @@ public class MarketMakerService {
                               HtxMarketMakerProperties mmProps,
                               HtxTradeRecorder recorder,
                               HtxSpotFeeRateProvider feeRateProvider,
-                              SpotGridStrategy gridStrategy) {
+                              SpotGridStrategy gridStrategy,
+                              HtxGridWindowStore gridWindowStore) {
         this.htxApiService = htxApiService;
         this.depthGuard = depthGuard;
         this.tradeProps = tradeProps;
@@ -71,6 +74,7 @@ public class MarketMakerService {
         this.recorder = recorder;
         this.feeRateProvider = feeRateProvider;
         this.gridStrategy = gridStrategy;
+        this.gridWindowStore = gridWindowStore;
     }
 
     MarketMakerService(HtxApiService htxApiService,
@@ -78,9 +82,18 @@ public class MarketMakerService {
                        HtxTradeProperties tradeProps,
                        HtxMarketMakerProperties mmProps,
                        HtxTradeRecorder recorder) {
+        this(htxApiService, depthGuard, tradeProps, mmProps, recorder, new HtxGridWindowStore(null));
+    }
+
+    MarketMakerService(HtxApiService htxApiService,
+                       HtxDepthGuard depthGuard,
+                       HtxTradeProperties tradeProps,
+                       HtxMarketMakerProperties mmProps,
+                       HtxTradeRecorder recorder,
+                       HtxGridWindowStore gridWindowStore) {
         this(htxApiService, depthGuard, tradeProps, mmProps, recorder,
                 new HtxSpotFeeRateProvider(htxApiService, mmProps),
-                new FeeAwareSpotGridStrategy());
+                new FeeAwareSpotGridStrategy(), gridWindowStore);
     }
 
     /** 启动校验：策略会自动抬高卖价覆盖手续费，这里只校验配置定义域。 */
@@ -101,6 +114,19 @@ public class MarketMakerService {
         }
         if (mmProps.getGridLevels() <= 0) {
             throw new IllegalStateException("MM grid-levels must be positive");
+        }
+        if (mmProps.getGridMigrationHysteresisPct() == null
+                || mmProps.getGridMigrationHysteresisPct().signum() < 0) {
+            throw new IllegalStateException("MM grid-migration-hysteresis-pct must be non-negative");
+        }
+        if (mmProps.getGridMigrationConfirmations() <= 0) {
+            throw new IllegalStateException("MM grid-migration-confirmations must be positive");
+        }
+        if (mmProps.getGridMigrationCooldownMs() < 0) {
+            throw new IllegalStateException("MM grid-migration-cooldown-ms must be non-negative");
+        }
+        if (mmProps.getGridMaxShiftStepsPerTick() <= 0) {
+            throw new IllegalStateException("MM grid-max-shift-steps-per-tick must be positive");
         }
         if (mmProps.getPerCellQuoteNotional() == null
                 || mmProps.getPerCellQuoteNotional().signum() <= 0) {
@@ -318,10 +344,6 @@ public class MarketMakerService {
         if (isCircuitBreakerTripped()) {
             return; // 熔断：当日净亏损超预算或连亏达上限（读失败 fail-closed）
         }
-        int budget = mmProps.getMaxConcurrentCellsPerSymbol() - recorder.countOpenMmCells(symbol);
-        if (budget <= 0) {
-            return;
-        }
         HtxRestResponse<HtxDepth> depthResp = htxApiService.getMarketDataService().depth(symbol, DEPTH_LEVELS);
         if (depthResp == null || !depthResp.ok() || depthResp.payload() == null) {
             return;
@@ -335,9 +357,30 @@ public class MarketMakerService {
         if (bestBid == null || bestAsk == null || bestBid.signum() <= 0 || bestAsk.signum() <= 0) {
             return;
         }
-        // 等比价梯（低于绝对地板的档位已在此截断）
-        List<BigDecimal> levels = MarketMakerMath.gridBuyLevels(bestBid, mmProps.getGridStepPct(),
-                mmProps.getGridLevels(), mmProps.getGridFloorPrice(), MarketMakerMath.PRICE_SCALE);
+        LocalDateTime now = LocalDateTime.now();
+        com.metaverse.coin.strategy.htx.persistence.entity.HtxGridWindowEntity window =
+                gridWindowStore.loadOrCreate(symbol, bestBid, mmProps.getGridStepPct(),
+                        mmProps.getGridLevels(), movingGridEngine, now);
+        MovingGridEngine.Decision decision = movingGridEngine.observe(window, bestBid,
+                mmProps.getGridMigrationHysteresisPct(), mmProps.getGridMigrationConfirmations(),
+                mmProps.getGridMigrationCooldownMs(), mmProps.getGridMaxShiftStepsPerTick(), now);
+        gridWindowStore.save(decision.window());
+
+        // 始终从持久化 anchor 生成稳定价格晶格；只有确认越界才移动，不随每 tick 的 bestBid 漂移。
+        List<BigDecimal> levels = MarketMakerMath.gridBuyLevels(decision.window().getAnchorPrice(),
+                decision.window().getStepPct(), decision.window().getLevels(),
+                mmProps.getGridFloorPrice(), MarketMakerMath.PRICE_SCALE);
+        if (decision.migrated()) {
+            retireBuysOutsideWindow(symbol, levels);
+            log.info("MM grid migrated symbol={} state={} steps={} epoch={} anchor={} lower={} upper={}",
+                    symbol, decision.window().getState(), decision.signedSteps(), decision.window().getEpoch(),
+                    decision.window().getAnchorPrice(), decision.window().getLowerPrice(),
+                    decision.window().getUpperPrice());
+        }
+        int budget = mmProps.getMaxConcurrentCellsPerSymbol() - recorder.countOpenMmBuyCells(symbol);
+        if (budget <= 0) {
+            return;
+        }
         BigDecimal maxTotal = mmProps.getMaxTotalExposureQuoteNotional();
         BigDecimal perCell = mmProps.getPerCellQuoteNotional();
         BigDecimal running = currentOpenBuyNotional(symbol); // 已挂 open cell 买入名义之和
@@ -354,6 +397,31 @@ public class MarketMakerService {
             if (pairId > 0) {
                 opened++;
                 running = running.add(perCell);
+            }
+        }
+    }
+
+    /** 两阶段迁移的撤旧阶段：只撤窗口外未成交买单，卖单与库存义务始终保留。 */
+    private void retireBuysOutsideWindow(String symbol, List<BigDecimal> desiredLevels) {
+        for (HtxLockedPairEntity entity : recorder.findOpenMmCells(symbol)) {
+            if (!HtxStatus.MM_RESTING_BUY.equals(entity.getStatus())
+                    || !MarketMakerMath.farEnough(entity.getBuyPrice(), desiredLevels, mmProps.getMinGapPct())) {
+                continue;
+            }
+            Long buyOrderId = entity.getBuyOrderId();
+            if (buyOrderId == null) {
+                continue;
+            }
+            HtxOrder post = cancelAndQuery(buyOrderId);
+            if (post == null || !isTerminal(post.getState())) {
+                continue;
+            }
+            BigDecimal filled = nz(post.getFilledAmount());
+            if (filled.signum() > 0) {
+                openSellLeg(MarketMakerCell.fromEntity(entity), filled,
+                        post.getFilledFees(), post.getFilledCashAmount());
+            } else {
+                recorder.markMmCancelledBuy(entity.getId());
             }
         }
     }

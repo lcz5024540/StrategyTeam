@@ -113,6 +113,11 @@ class HtxTradeRecorderMmTest {
         assertEquals(2, recorder.countOpenMmCells("btcusdt"));
     }
 
+    @Test void countOpenMmBuyCells_uses_independent_buy_slot_count() {
+        when(pairMapper.selectCount(any())).thenReturn(3L);
+        assertEquals(3, recorder.countOpenMmBuyCells("btcusdt"));
+    }
+
     @Test void findAllOpenMmCells_queries_strategy_and_resting_statuses() {
         when(pairMapper.selectList(any())).thenReturn(List.of());
         recorder.findAllOpenMmCells();

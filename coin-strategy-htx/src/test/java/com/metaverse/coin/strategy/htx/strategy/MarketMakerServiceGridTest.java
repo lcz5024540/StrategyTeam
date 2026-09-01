@@ -16,8 +16,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 /**
@@ -36,6 +39,7 @@ class MarketMakerServiceGridTest {
     HtxMarketMakerProperties mmProps;
     HtxTradeRecorder recorder;
     MarketMakerService svc;
+    HtxGridWindowStore windowStore;
 
     @BeforeEach void setup() {
         api = mock(HtxApiService.class);
@@ -62,9 +66,10 @@ class MarketMakerServiceGridTest {
         mmProps.setDailyNetLossBudget(new BigDecimal("5"));
         mmProps.setMaxConsecutiveLossCycles(3);
         recorder = mock(HtxTradeRecorder.class);
-        svc = new MarketMakerService(api, depthGuard, tradeProps, mmProps, recorder);
+        windowStore = new HtxGridWindowStore(null);
+        svc = new MarketMakerService(api, depthGuard, tradeProps, mmProps, recorder, windowStore);
         // 默认：K 未满、无已挂 cell、当日名义 0、当日净额 0、余额充足、深度闸放行
-        when(recorder.countOpenMmCells(anyString())).thenReturn(0);
+        when(recorder.countOpenMmBuyCells(anyString())).thenReturn(0);
         when(recorder.findOpenMmCells(anyString())).thenReturn(List.of());
         when(recorder.sumTodayLiveQuoteNotional()).thenReturn(BigDecimal.ZERO);
         when(recorder.sumTodayMmRealizedNetQuote()).thenReturn(BigDecimal.ZERO);
@@ -119,6 +124,15 @@ class MarketMakerServiceGridTest {
         return e;
     }
 
+    private HtxLockedPairEntity restingBuy(long id, long orderId, String buyPrice, String qty) {
+        HtxLockedPairEntity entity = restingBuy(buyPrice, qty);
+        entity.setId(id);
+        entity.setSymbol("btcusdt");
+        entity.setClientOrderId("mm-btcusdt-" + id);
+        entity.setBuyOrderId(orderId);
+        return entity;
+    }
+
     @Test void empty_inventory_fills_ladder_up_to_concurrency_budget() {
         // bestBid=100, step=0.003, levels=5 → [100.00, 99.70, 99.40, 99.10, 98.81]
         // maxConcurrent=3, open=0 → budget=3 → 只补最上三档
@@ -137,7 +151,7 @@ class MarketMakerServiceGridTest {
     @Test void partial_ladder_only_opens_missing_levels() {
         // 已挂两档（100.00 / 99.70），open=2 → budget=1 → 仅补下一缺口 99.40
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
-        when(recorder.countOpenMmCells("btcusdt")).thenReturn(2);
+        when(recorder.countOpenMmBuyCells("btcusdt")).thenReturn(2);
         when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(
                 restingBuy("100.00", "0.2000"), restingBuy("99.70", "0.2006")));
 
@@ -191,5 +205,55 @@ class MarketMakerServiceGridTest {
         verify(spot, times(2)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("100.00"), anyString());
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.70"), anyString());
+    }
+
+    @Test void confirmedLowerBreachMovesWindowDownWithoutStopping() {
+        mmProps.setGridMigrationConfirmations(1);
+        mmProps.setGridMigrationCooldownMs(0);
+        when(md.depth(eq("btcusdt"), anyInt()))
+                .thenReturn(depthOk(depth("100", "100.05")))
+                .thenReturn(depthOk(depth("95", "95.05")));
+
+        svc.fillGridLadder("btcusdt");
+        long firstEpoch = windowStore.find("btcusdt").getEpoch();
+        svc.fillGridLadder("btcusdt");
+
+        assertTrue(windowStore.find("btcusdt").getEpoch() > firstEpoch);
+        assertEquals(MovingGridEngine.MIGRATING_DOWN, windowStore.find("btcusdt").getState());
+        BigDecimal lowerTrigger = windowStore.find("btcusdt").getLowerPrice()
+                .multiply(BigDecimal.ONE.subtract(mmProps.getGridMigrationHysteresisPct()));
+        assertTrue(lowerTrigger.compareTo(new BigDecimal("95")) <= 0);
+    }
+
+    @Test void migrationCancelsOnlyOutOfWindowBuyAndPreservesSellInventory() {
+        mmProps.setGridMigrationConfirmations(1);
+        mmProps.setGridMigrationCooldownMs(0);
+        MovingGridEngine engine = new MovingGridEngine();
+        windowStore.save(engine.initial("btcusdt", new BigDecimal("100"),
+                mmProps.getGridStepPct(), mmProps.getGridLevels(), LocalDateTime.now()));
+        HtxLockedPairEntity oldBuy = restingBuy(21L, 501L, "90.00", "0.2");
+        HtxLockedPairEntity sellInventory = restingBuy(22L, 502L, "90.00", "0.2");
+        sellInventory.setStatus(HtxStatus.MM_RESTING_SELL);
+        sellInventory.setSellOrderId(601L);
+        when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(oldBuy, sellInventory));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("110", "110.05")));
+        when(spot.cancelOrder(501L)).thenReturn(placeOk("501"));
+        when(spot.queryOrder(501L)).thenReturn(order("canceled", "0"));
+
+        svc.fillGridLadder("btcusdt");
+
+        verify(spot).cancelOrder(501L);
+        verify(spot, never()).cancelOrder(601L);
+        verify(recorder).markMmCancelledBuy(21L);
+    }
+
+    private HtxRestResponse<HtxOrder> order(String state, String filled) {
+        HtxOrder order = new HtxOrder();
+        order.setState(state);
+        order.setFilledAmount(new BigDecimal(filled));
+        HtxRestResponse<HtxOrder> response = new HtxRestResponse<>();
+        response.setStatus("ok");
+        response.setData(order);
+        return response;
     }
 }

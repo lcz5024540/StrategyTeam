@@ -90,6 +90,18 @@ public class HtxMarketMakerProperties {
     /** 理想价梯档数上限（实际受 maxConcurrentCellsPerSymbol / 敞口 / 地板裁剪）。 */
     private int gridLevels = 20;
 
+    /** 价格越过窗口边界后还需多走的比例，避免边界附近来回迁移。 */
+    private BigDecimal gridMigrationHysteresisPct = new BigDecimal("0.0005");
+
+    /** 同方向连续越界达到该次数后才迁移。 */
+    private int gridMigrationConfirmations = 2;
+
+    /** 两次窗口迁移的最短间隔（ms）。 */
+    private long gridMigrationCooldownMs = 30_000L;
+
+    /** 单 tick 最多迁移档数，限制跳空时的撤挂规模。 */
+    private int gridMaxShiftStepsPerTick = 20;
+
     /** 绝对价格地板（per-symbol）：低于此价一律不开买单；0 或负数视为不设地板。深跌硬止接盘。 */
     private BigDecimal gridFloorPrice = BigDecimal.ZERO;
 

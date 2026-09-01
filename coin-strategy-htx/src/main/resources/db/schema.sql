@@ -73,6 +73,24 @@ CREATE TABLE IF NOT EXISTS htx_exposure (
     updated_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
 
+-- 每个 symbol 一行的持久化移动网格窗口；价格越界只推进 epoch，不结束策略。
+CREATE TABLE IF NOT EXISTS htx_grid_window (
+    id                  BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    symbol              VARCHAR(32)    NOT NULL UNIQUE,
+    anchor_price        DECIMAL(36,18) NOT NULL,
+    lower_price         DECIMAL(36,18) NOT NULL,
+    upper_price         DECIMAL(36,18) NOT NULL,
+    step_pct            DECIMAL(36,18) NOT NULL,
+    levels              INT            NOT NULL,
+    epoch               BIGINT         NOT NULL,
+    state               VARCHAR(24)    NOT NULL,
+    breach_direction    VARCHAR(8),
+    breach_count        INT            NOT NULL DEFAULT 0,
+    last_migrated_at    DATETIME(3),
+    created_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+);
+
 -- USDT-margined perpetual cycles are isolated from spot rows because volume is contracts, not base quantity.
 CREATE TABLE IF NOT EXISTS htx_contract_cycle (
     id                    BIGINT         PRIMARY KEY AUTO_INCREMENT,
