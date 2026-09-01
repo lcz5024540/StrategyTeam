@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import com.metaverse.coin.strategy.common.client.htx.HtxUsdtSwapApiService;
 import com.metaverse.coin.strategy.htx.controller.HtxContractController;
 import com.metaverse.coin.strategy.htx.service.HtxContractTradingService;
+import com.metaverse.coin.strategy.htx.strategy.HtxDeltaHedgeSnapshotProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -25,6 +26,7 @@ class HtxContractConfigIntegrationTest {
     @Autowired HtxUsdtSwapApiService api;
     @Autowired HtxContractTradingService tradingService;
     @Autowired HtxContractController controller;
+    @Autowired HtxDeltaHedgeSnapshotProvider hedgeSnapshotProvider;
     @Autowired HtxContractProperties properties;
 
     @Test
@@ -32,6 +34,7 @@ class HtxContractConfigIntegrationTest {
         assertNotNull(api);
         assertNotNull(tradingService);
         assertNotNull(controller);
+        assertNotNull(hedgeSnapshotProvider);
         assertTrue(properties.isDryRun());
         assertEquals("https://api.hbdm.com", properties.getBaseUrl());
         assertTrue(properties.getContractCodes().contains("XAUT-USDT"));
