@@ -31,6 +31,7 @@ public class DeltaHedgeManager {
         if (!input.fundingAllowed() || !input.basisAllowed() || !input.marginSafe()) {
             if (currentShort.signum() > 0) {
                 return closeShort(input, contractSize, currentShort, BigDecimal.ZERO,
+                        MarketMakerRiskCoordinator.HEDGE_DEGRADED,
                         "hedge data or margin gate blocked; reduce existing short");
             }
             return HedgeDecision.none(MarketMakerRiskCoordinator.HEDGE_DEGRADED,
@@ -45,7 +46,7 @@ public class DeltaHedgeManager {
         }
         if (cmp > 0) {
             return closeShort(input, contractSize, currentShort.subtract(target), target,
-                    "reduce excess short");
+                    MovingGridEngine.RUNNING, "reduce excess short");
         }
         return HedgeDecision.none(MovingGridEngine.RUNNING, target, "hedge already aligned");
     }
@@ -62,12 +63,13 @@ public class DeltaHedgeManager {
     }
 
     private HedgeDecision closeShort(HedgeInput input, BigDecimal contractSize,
-                                     BigDecimal deltaBase, BigDecimal targetBase, String reason) {
+                                     BigDecimal deltaBase, BigDecimal targetBase, String state,
+                                     String reason) {
         long contracts = contracts(deltaBase, contractSize);
         if (contracts <= 0) {
             return HedgeDecision.none(MovingGridEngine.RUNNING, targetBase, "delta below contract step");
         }
-        return new HedgeDecision(Action.CLOSE_SHORT, MovingGridEngine.RUNNING, targetBase,
+        return new HedgeDecision(Action.CLOSE_SHORT, state, targetBase,
                 order(input.contractCode(), input.clientOrderIdPrefix(), input.epoch(), "CLOSE",
                         contracts, CLOSE_SHORT_SIDE, true), reason);
     }
