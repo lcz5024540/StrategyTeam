@@ -22,7 +22,9 @@ public class CrossExchangeArbOpportunityEntity {
     private String longExchange;
     private String shortExchange;
     private BigDecimal longFundingRate;
+    private Integer longFundingIntervalHours;
     private BigDecimal shortFundingRate;
+    private Integer shortFundingIntervalHours;
     private BigDecimal hourlyFundingSpread;
     private BigDecimal estimatedNetYield;
     private BigDecimal executableNotional;

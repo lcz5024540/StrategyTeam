@@ -32,9 +32,9 @@ const demoSnapshot: ArbitrageDashboardSnapshot = {
 const demoFundingMatrix: { exchanges: string[]; items: FundingRateMatrixRow[] } = {
   exchanges: ['BINANCE', 'OKX', 'HTX', 'BITGET', 'HYPERLIQUID'],
   items: [
-    { symbol: 'ETHUSDT', ratesByExchange: { BINANCE: null, OKX: 0.000248, HTX: -0.000072, BITGET: 0.00011, HYPERLIQUID: null }, longExchange: 'HTX', shortExchange: 'OKX', hourlyFundingSpread: 0.00004, estimatedNetYield: 0.00012, executableNotional: 12800, status: 'QUALIFIED', rejectionReason: null, sampledAt: 'DEMO 快照' },
-    { symbol: 'SOLUSDT', ratesByExchange: { BINANCE: null, OKX: 0.00018, HTX: null, BITGET: -0.00005, HYPERLIQUID: 0.00002 }, longExchange: 'BITGET', shortExchange: 'OKX', hourlyFundingSpread: 0.000029, estimatedNetYield: 0.00003, executableNotional: 6200, status: 'REJECTED', rejectionReason: 'COST_COVERAGE_BELOW_THRESHOLD', sampledAt: 'DEMO 快照' },
-    { symbol: 'BTCUSDT', ratesByExchange: { BINANCE: null, OKX: 0.00014, HTX: 0.00009, BITGET: null, HYPERLIQUID: 0.00001 }, longExchange: 'HYPERLIQUID', shortExchange: 'OKX', hourlyFundingSpread: 0.000016, estimatedNetYield: -0.00002, executableNotional: 2000, status: 'REJECTED', rejectionReason: 'SETTLEMENT_TIME_SKEW', sampledAt: 'DEMO 快照' },
+    { symbol: 'ETHUSDT', ratesByExchange: { BINANCE: null, OKX: 0.000248, HTX: -0.000072, BITGET: 0.00011, HYPERLIQUID: null }, intervalHoursByExchange: { BINANCE: null, OKX: 8, HTX: 8, BITGET: 8, HYPERLIQUID: null }, longExchange: 'HTX', shortExchange: 'OKX', hourlyFundingSpread: 0.00004, estimatedNetYield: 0.00012, executableNotional: 12800, status: 'QUALIFIED', rejectionReason: null, sampledAt: 'DEMO 快照' },
+    { symbol: 'SOLUSDT', ratesByExchange: { BINANCE: null, OKX: 0.00018, HTX: null, BITGET: -0.00005, HYPERLIQUID: 0.00002 }, intervalHoursByExchange: { BINANCE: null, OKX: 8, HTX: null, BITGET: 8, HYPERLIQUID: 1 }, longExchange: 'BITGET', shortExchange: 'OKX', hourlyFundingSpread: 0.000029, estimatedNetYield: 0.00003, executableNotional: 6200, status: 'REJECTED', rejectionReason: 'COST_COVERAGE_BELOW_THRESHOLD', sampledAt: 'DEMO 快照' },
+    { symbol: 'BTCUSDT', ratesByExchange: { BINANCE: null, OKX: 0.00014, HTX: 0.00009, BITGET: null, HYPERLIQUID: 0.00001 }, intervalHoursByExchange: { BINANCE: null, OKX: 8, HTX: 8, BITGET: null, HYPERLIQUID: 1 }, longExchange: 'HYPERLIQUID', shortExchange: 'OKX', hourlyFundingSpread: 0.000016, estimatedNetYield: -0.00002, executableNotional: 2000, status: 'REJECTED', rejectionReason: 'SETTLEMENT_TIME_SKEW', sampledAt: 'DEMO 快照' },
   ],
 }
 
@@ -114,6 +114,11 @@ export function ArbitrageScannerPage() {
 function Metric({ label, value, detail, tone = 'neutral' }: { label: string; value: string; detail: string; tone?: string }) { return <article className={`arb-metric ${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article> }
 function isExecutableStatus(status: string) { return ['QUALIFIED', 'APPROVED', 'PAPER_READY'].includes(status.toUpperCase()) }
 function formatPercent(value: number | null | undefined) { return value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(4)}%` }
+function formatFundingRate(value: number | null | undefined, intervalHours: number | null | undefined) {
+  if (value == null) return '—'
+  const period = intervalHours != null && intervalHours > 0 && intervalHours !== 8 ? ` · ${intervalHours}h` : ''
+  return `${formatPercent(value)}${period}`
+}
 function formatNotional(value: number | null | undefined) { return value == null ? '—' : value >= 1000 ? `$${(value / 1000).toFixed(1)}K` : `$${value.toFixed(0)}` }
 function fundingTableHeaders(exchanges: string[]) { return ['币对', ...exchanges.map((exchange) => `${exchange} 资金费`), '最佳套利机会 · 费差 ↓', '可执行容量', '策略状态'] }
 function compareFundingSpreadDescending(left: FundingRateMatrixRow, right: FundingRateMatrixRow) {
@@ -126,8 +131,8 @@ function FundingRateMatrixTableRow({ row, exchanges }: { row: FundingRateMatrixR
   const direction = row.longExchange && row.shortExchange ? `多 ${row.longExchange} / 空 ${row.shortExchange}` : '—'
   return <tr>
     <td><b>{row.symbol}</b><small>{row.sampledAt || '—'}</small></td>
-    {exchanges.map((exchange) => <td key={exchange} className={valueTone(row.ratesByExchange[exchange] || 0)}>{formatPercent(row.ratesByExchange[exchange])}</td>)}
-    <td><b>{direction}</b><small>Δ {formatPercent(row.hourlyFundingSpread)} / 小时标准化</small></td>
+    {exchanges.map((exchange) => <td key={exchange} className={`arb-rate-cell ${valueTone(row.ratesByExchange[exchange] || 0)}`}><b>{formatFundingRate(row.ratesByExchange[exchange], row.intervalHoursByExchange?.[exchange])}</b></td>)}
+    <td className="arb-best-opportunity"><b>{direction}</b><span className="arb-best-spread"><strong>Δ {formatPercent(row.hourlyFundingSpread)}</strong><small>每小时标准化费差</small></span></td>
     <td>{formatNotional(row.executableNotional)}<small>净收益 {formatPercent(row.estimatedNetYield)}</small></td>
     <td><Status status={isExecutableStatus(row.status) ? 'QUALIFIED' : row.status === 'OBSERVING' ? 'OBSERVING' : 'REJECTED'} />{row.rejectionReason ? <small>{row.rejectionReason}</small> : null}</td>
   </tr>

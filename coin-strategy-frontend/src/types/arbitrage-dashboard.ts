@@ -55,6 +55,7 @@ export interface ArbitrageDashboardSnapshot {
 export interface FundingRateMatrixRow {
   symbol: string
   ratesByExchange: Record<string, number | null>
+  intervalHoursByExchange?: Record<string, number | null>
   longExchange: string | null
   shortExchange: string | null
   hourlyFundingSpread: number | null

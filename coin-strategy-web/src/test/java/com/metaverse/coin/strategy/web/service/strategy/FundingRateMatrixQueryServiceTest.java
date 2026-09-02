@@ -34,6 +34,8 @@ class FundingRateMatrixQueryServiceTest {
         assertEquals(new BigDecimal("0.0024"), btc.ratesByExchange().get("OKX"));
         assertEquals(new BigDecimal("0.0048"), btc.ratesByExchange().get("HTX"));
         assertEquals(new BigDecimal("0.0080"), btc.ratesByExchange().get("BITGET"));
+        assertEquals(8, btc.intervalHoursByExchange().get("OKX"));
+        assertEquals(4, btc.intervalHoursByExchange().get("HTX"));
         assertNull(btc.ratesByExchange().get("BINANCE"));
         assertEquals("OKX", btc.longExchange());
         assertEquals("BITGET", btc.shortExchange());
@@ -63,7 +65,8 @@ class FundingRateMatrixQueryServiceTest {
             String shortExchange, String longRate, String shortRate, String hourlySpread, Date sampledAt) {
         return new CrossExchangeArbOpportunityEntity().setSymbol(symbol).setLongExchange(longExchange)
                 .setShortExchange(shortExchange).setLongFundingRate(new BigDecimal(longRate))
-                .setShortFundingRate(new BigDecimal(shortRate))
+                .setLongFundingIntervalHours("HTX".equals(longExchange) ? 4 : 8)
+                .setShortFundingRate(new BigDecimal(shortRate)).setShortFundingIntervalHours("HTX".equals(shortExchange) ? 4 : 8)
                 .setHourlyFundingSpread(hourlySpread == null ? null : new BigDecimal(hourlySpread))
                 .setEstimatedNetYield(BigDecimal.ZERO).setExecutableNotional(new BigDecimal("2000"))
                 .setStatus("QUALIFIED").setDiscoveredAt(sampledAt).setUpdatedAt(sampledAt);

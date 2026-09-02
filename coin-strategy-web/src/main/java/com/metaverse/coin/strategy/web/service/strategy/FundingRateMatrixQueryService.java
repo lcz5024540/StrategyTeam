@@ -88,11 +88,14 @@ public class FundingRateMatrixQueryService {
             return Optional.empty();
         }
         Map<String, BigDecimal> rates = new LinkedHashMap<>();
+        Map<String, Integer> intervals = new LinkedHashMap<>();
         current.forEach(item -> {
-            putRate(rates, item.getLongExchange(), item.getLongFundingRate());
-            putRate(rates, item.getShortExchange(), item.getShortFundingRate());
+            putRate(rates, intervals, item.getLongExchange(), item.getLongFundingRate(),
+                    item.getLongFundingIntervalHours());
+            putRate(rates, intervals, item.getShortExchange(), item.getShortFundingRate(),
+                    item.getShortFundingIntervalHours());
         });
-        return Optional.of(new FundingRateMatrixViews.Row(symbol, rates, best.getLongExchange(),
+        return Optional.of(new FundingRateMatrixViews.Row(symbol, rates, intervals, best.getLongExchange(),
                 best.getShortExchange(), best.getHourlyFundingSpread(), best.getEstimatedNetYield(),
                 best.getExecutableNotional(), best.getStatus(), best.getRejectionReason(), format(sampledAt)));
     }
@@ -101,9 +104,13 @@ public class FundingRateMatrixQueryService {
         return expected == null ? value == null : expected.equals(value);
     }
 
-    private void putRate(Map<String, BigDecimal> rates, String exchange, BigDecimal rate) {
+    private void putRate(Map<String, BigDecimal> rates, Map<String, Integer> intervals,
+            String exchange, BigDecimal rate, Integer intervalHours) {
         if (exchange != null && rate != null) {
             rates.putIfAbsent(exchange, rate);
+            if (intervalHours != null && intervalHours > 0) {
+                intervals.putIfAbsent(exchange, intervalHours);
+            }
         }
     }
 

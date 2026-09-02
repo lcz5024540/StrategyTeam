@@ -17,6 +17,7 @@ public final class FundingRateMatrixViews {
     }
 
     public record Row(String symbol, Map<String, BigDecimal> ratesByExchange,
+                      Map<String, Integer> intervalHoursByExchange,
                       String longExchange, String shortExchange, BigDecimal hourlyFundingSpread,
                       BigDecimal estimatedNetYield, BigDecimal executableNotional, String status,
                       String rejectionReason, String sampledAt) {
