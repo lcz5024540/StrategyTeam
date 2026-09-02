@@ -51,3 +51,28 @@ export interface ArbitrageDashboardSnapshot {
   health: ArbitrageMarketHealth[]
   opportunities: ArbitrageOpportunity[]
 }
+
+export interface FundingRateMatrixRow {
+  symbol: string
+  ratesByExchange: Record<string, number | null>
+  longExchange: string | null
+  shortExchange: string | null
+  hourlyFundingSpread: number | null
+  estimatedNetYield: number | null
+  executableNotional: number | null
+  status: string
+  rejectionReason: string | null
+  sampledAt: string | null
+}
+
+export interface FundingRateMatrixResponse {
+  asOf: string
+  timezone: string
+  source: string
+  partial: boolean
+  missingExchanges: string[]
+  data: {
+    exchanges: string[]
+    items: FundingRateMatrixRow[]
+  }
+}

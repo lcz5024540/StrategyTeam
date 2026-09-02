@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { arbitrageDashboardApi } from '@/api'
-import type { ArbitrageDashboardSnapshot, ArbitrageMode, ArbitrageOpportunity } from '@/types/arbitrage-dashboard'
+import type { ArbitrageDashboardSnapshot, ArbitrageMode, ArbitrageOpportunity, FundingRateMatrixRow } from '@/types/arbitrage-dashboard'
 
 const REFRESH_MS = 10_000
 const MODES: Array<{ value: ArbitrageMode; label: string; tag: string }> = [
@@ -29,6 +29,15 @@ const demoSnapshot: ArbitrageDashboardSnapshot = {
   ],
 }
 
+const demoFundingMatrix: { exchanges: string[]; items: FundingRateMatrixRow[] } = {
+  exchanges: ['BINANCE', 'OKX', 'HTX', 'BITGET', 'HYPERLIQUID'],
+  items: [
+    { symbol: 'ETHUSDT', ratesByExchange: { BINANCE: null, OKX: 0.000248, HTX: -0.000072, BITGET: 0.00011, HYPERLIQUID: null }, longExchange: 'HTX', shortExchange: 'OKX', hourlyFundingSpread: 0.00004, estimatedNetYield: 0.00012, executableNotional: 12800, status: 'QUALIFIED', rejectionReason: null, sampledAt: 'DEMO 快照' },
+    { symbol: 'SOLUSDT', ratesByExchange: { BINANCE: null, OKX: 0.00018, HTX: null, BITGET: -0.00005, HYPERLIQUID: 0.00002 }, longExchange: 'BITGET', shortExchange: 'OKX', hourlyFundingSpread: 0.000029, estimatedNetYield: 0.00003, executableNotional: 6200, status: 'REJECTED', rejectionReason: 'COST_COVERAGE_BELOW_THRESHOLD', sampledAt: 'DEMO 快照' },
+    { symbol: 'BTCUSDT', ratesByExchange: { BINANCE: null, OKX: 0.00014, HTX: 0.00009, BITGET: null, HYPERLIQUID: 0.00001 }, longExchange: 'HYPERLIQUID', shortExchange: 'OKX', hourlyFundingSpread: 0.000016, estimatedNetYield: -0.00002, executableNotional: 2000, status: 'REJECTED', rejectionReason: 'SETTLEMENT_TIME_SKEW', sampledAt: 'DEMO 快照' },
+  ],
+}
+
 function valueTone(value: number) { return value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral' }
 function parseMode(value: string | null): ArbitrageMode { return MODES.some((mode) => mode.value === value) ? value as ArbitrageMode : 'CROSS_PRICE' }
 function legRole(row: ArbitrageOpportunity, side: 'a' | 'b') {
@@ -45,13 +54,26 @@ export function ArbitrageScannerPage() {
   const [minYield, setMinYield] = useState(Number(params.get('minYield') || 0))
   const [qualifiedOnly, setQualifiedOnly] = useState(params.get('qualified') === '1')
   const [selected, setSelected] = useState<ArbitrageOpportunity | null>(null)
-  const { data, isError, refetch, isFetching } = useQuery({ queryKey: ['arbitrageDashboard'], queryFn: arbitrageDashboardApi.getOverview, refetchInterval: REFRESH_MS, retry: false })
-  const snapshot = data || demoSnapshot
+  const { data: matrixResponse, isError, refetch, isFetching } = useQuery({ queryKey: ['fundingRateMatrix'], queryFn: arbitrageDashboardApi.getFundingRateMatrix, refetchInterval: REFRESH_MS, retry: false })
+  const snapshot = demoSnapshot
+  const fundingMatrix = matrixResponse?.data || demoFundingMatrix
   const exchanges = useMemo(() => Array.from(new Set(snapshot.opportunities.flatMap((row) => [row.a.exchange, row.b.exchange]))).sort(), [snapshot])
   const rows = useMemo(() => snapshot.opportunities.filter((row) => row.kind === mode && (!symbol || row.symbol.includes(symbol.toUpperCase())) && (exchange === 'ALL' || row.a.exchange === exchange || row.b.exchange === exchange) && row.capacity >= minCapacity && (mode === 'CROSS_PRICE' || row.net >= minYield) && (!qualifiedOnly || row.status === 'QUALIFIED')).sort((a, b) => b.net * b.capacity - a.net * a.capacity), [exchange, minCapacity, minYield, mode, qualifiedOnly, snapshot.opportunities, symbol])
+  const fundingRows = useMemo(() => fundingMatrix.items
+    .filter((row) => (!symbol || row.symbol.includes(symbol.toUpperCase()))
+      && (exchange === 'ALL' || row.ratesByExchange[exchange] != null)
+      && (row.executableNotional || 0) >= minCapacity
+      && (minYield <= 0 || (row.estimatedNetYield || 0) >= minYield / 100)
+      && (!qualifiedOnly || isExecutableStatus(row.status)))
+    .sort((a, b) => (b.hourlyFundingSpread || 0) - (a.hourlyFundingSpread || 0)),
+  [exchange, fundingMatrix.items, minCapacity, minYield, qualifiedOnly, symbol])
+  const displayedExchanges = mode === 'CROSS_FUNDING' ? fundingMatrix.exchanges : exchanges
   const qualified = rows.filter((row) => row.status === 'QUALIFIED')
+  const executableFundingRows = fundingRows.filter((row) => isExecutableStatus(row.status))
   const best = qualified[0] || rows[0]
+  const bestFunding = executableFundingRows[0] || fundingRows[0]
   const largest = rows.reduce<ArbitrageOpportunity | undefined>((current, row) => !current || row.capacity > current.capacity ? row : current, undefined)
+  const largestFunding = fundingRows.reduce<FundingRateMatrixRow | undefined>((current, row) => !current || (row.executableNotional || 0) > (current.executableNotional || 0) ? row : current, undefined)
   const coverageRate = Math.round(snapshot.coverage.displayed / snapshot.coverage.total * 100)
 
   const updateMode = (next: ArbitrageMode) => { setMode(next); setParams((current) => { current.set('mode', next); return current }, { replace: true }) }
@@ -60,27 +82,27 @@ export function ArbitrageScannerPage() {
 
   return <div className="ms-page arb-page">
     <section className="arb-hero">
-      <div><p className="arb-eyebrow">MARKET INTELLIGENCE · PAPER ONLY</p><h1>发现真实可成交的套利机会</h1><p>用相同基础币数量、L2 VWAP、费用和结算同步性，筛掉“看起来有价差、实际不可做”的组合。</p></div>
-      <div className="arb-source"><span>数据来源</span><strong>{data ? '看板读模型 · 在线' : '演示数据 · API 待读模型接入'}</strong><small>{snapshot.source}{snapshot.partial ? ` · 部分数据：${snapshot.missingExchanges.join('、')}` : ''}</small></div>
+      <div><p className="arb-eyebrow">MARKET INTELLIGENCE · PAPER ONLY</p><h1>发现真实可成交的套利机会</h1><p>跨所资金费按标准币对聚合：一行展示各交易所费率，最后只给出最佳方向与小时标准化差值。</p></div>
+      <div className="arb-source"><span>数据来源</span><strong>{matrixResponse ? '看板读模型 · 在线' : '演示数据 · API 待读模型接入'}</strong><small>{matrixResponse?.source || 'DEMO · 等待读模型 API'}{(matrixResponse?.partial ?? true) ? ` · 部分数据：${(matrixResponse?.missingExchanges || ['BINANCE']).join('、')}` : ''}</small></div>
     </section>
     <section className="arb-metrics">
-      <Metric label="可执行机会" value={String(qualified.length)} detail="满足 L2、成本和同步结算条件" tone="positive" />
-      <Metric label="最佳单次净收益" value={best?.netText || '—'} detail="下一次同步结算，已扣除成本" tone={best ? valueTone(best.net) : 'neutral'} />
-      <Metric label="最大可成交容量" value={largest?.capacityText || '—'} detail="共同基础币数量对应的长腿名义金额" />
-      <Metric label="数据完整度" value={`${coverageRate}%`} detail={`${snapshot.coverage.displayed}/${snapshot.coverage.total} 组合可展示 · 缺 L2 ${snapshot.coverage.missingL2}`} tone="warn" />
+      <Metric label="可执行机会" value={mode === 'CROSS_FUNDING' ? String(executableFundingRows.length) : String(qualified.length)} detail="满足 L2、成本和同步结算条件" tone="positive" />
+      <Metric label={mode === 'CROSS_FUNDING' ? '最大资金费差' : '最佳单次净收益'} value={mode === 'CROSS_FUNDING' ? formatPercent(bestFunding?.hourlyFundingSpread) : best?.netText || '—'} detail={mode === 'CROSS_FUNDING' ? '每小时标准化，避免混淆结算周期' : '下一次同步结算，已扣除成本'} tone={mode === 'CROSS_FUNDING' ? 'positive' : best ? valueTone(best.net) : 'neutral'} />
+      <Metric label="最大可成交容量" value={mode === 'CROSS_FUNDING' ? formatNotional(largestFunding?.executableNotional) : largest?.capacityText || '—'} detail="共同基础币数量对应的单腿名义金额" />
+      <Metric label={mode === 'CROSS_FUNDING' ? '覆盖币对' : '数据完整度'} value={mode === 'CROSS_FUNDING' ? String(fundingRows.length) : `${coverageRate}%`} detail={mode === 'CROSS_FUNDING' ? `${fundingMatrix.exchanges.length} 个交易所横向比对 · 缺失以 — 显示` : `${snapshot.coverage.displayed}/${snapshot.coverage.total} 组合可展示 · 缺 L2 ${snapshot.coverage.missingL2}`} tone="warn" />
     </section>
     <section className="arb-card">
       <div className="arb-tabs" role="tablist">{MODES.map((item) => <button key={item.value} type="button" role="tab" aria-selected={mode === item.value} className={mode === item.value ? 'active' : ''} onClick={() => updateMode(item.value)}>{item.label}<span>{item.tag}</span></button>)}</div>
       <div className="arb-filters">
         <label>⌕ <input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="筛选币种，例如 BTC、ETH" /></label>
-        <label>交易所<select value={exchange} onChange={(event) => setExchange(event.target.value)}><option value="ALL">全部交易所</option>{exchanges.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label>交易所<select value={exchange} onChange={(event) => setExchange(event.target.value)}><option value="ALL">全部交易所</option>{displayedExchanges.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <label>最小容量<input type="number" min="0" value={minCapacity || ''} onChange={(event) => setMinCapacity(Number(event.target.value) || 0)} placeholder="USDT" /></label>
         {mode !== 'CROSS_PRICE' ? <label>最小净收益<input type="number" min="0" step="0.01" value={minYield || ''} onChange={(event) => setMinYield(Number(event.target.value) || 0)} placeholder="%" /></label> : null}
         <label className="arb-toggle"><input type="checkbox" checked={qualifiedOnly} onChange={(event) => setQualifiedOnly(event.target.checked)} /><span />仅可执行</label>
         <button className="arb-text-button" type="button" onClick={resetFilters}>重置</button><button className="arb-text-button" type="button" onClick={() => void refetch()}>{isFetching ? '刷新中' : '刷新'}</button><button className="arb-text-button" type="button" onClick={() => void copyView()}>复制视图</button>
       </div>
-      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · 当前显示 {rows.length} 个组合，其中可执行 {qualified.length} 个</span><span>总组合 {snapshot.coverage.total} · 缺 L2 {snapshot.coverage.missingL2} · 过期 {snapshot.coverage.stale} · 不可用 {snapshot.coverage.unavailable}</span></div>
-      <div className="arb-table-wrap"><table><thead><tr>{tableHeaders(mode).map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row) => <OpportunityRow key={row.id} row={row} mode={mode} onOpen={() => setSelected(row)} />) : <tr><td className="arb-empty" colSpan={10}>没有满足当前筛选条件的组合</td></tr>}</tbody></table></div>
+      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · {mode === 'CROSS_FUNDING' ? `当前显示 ${fundingRows.length} 个币对，其中可执行 ${executableFundingRows.length} 个` : `当前显示 ${rows.length} 个组合，其中可执行 ${qualified.length} 个`}</span><span>{mode === 'CROSS_FUNDING' ? '各所列为原始结算周期费率；最后一列的 Δ 为小时标准化费差' : `总组合 ${snapshot.coverage.total} · 缺 L2 ${snapshot.coverage.missingL2} · 过期 ${snapshot.coverage.stale} · 不可用 ${snapshot.coverage.unavailable}`}</span></div>
+      <div className="arb-table-wrap"><table><thead><tr>{(mode === 'CROSS_FUNDING' ? fundingTableHeaders(fundingMatrix.exchanges) : tableHeaders(mode)).map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{mode === 'CROSS_FUNDING' ? (fundingRows.length ? fundingRows.map((row) => <FundingRateMatrixTableRow key={row.symbol} row={row} exchanges={fundingMatrix.exchanges} />) : <tr><td className="arb-empty" colSpan={fundingMatrix.exchanges.length + 5}>没有满足当前筛选条件的币对</td></tr>) : (rows.length ? rows.map((row) => <OpportunityRow key={row.id} row={row} mode={mode} onOpen={() => setSelected(row)} />) : <tr><td className="arb-empty" colSpan={10}>没有满足当前筛选条件的组合</td></tr>)}</tbody></table></div>
     </section>
     <section className="arb-bottom-grid"><article className="arb-card arb-health"><header><div><p className="arb-eyebrow">MARKET HEALTH</p><h2>交易所与数据质量</h2></div><span>最近 60 秒</span></header>{snapshot.health.map((item) => <div className="arb-health-row" key={item.exchange}><strong className={item.healthy ? 'good' : 'bad'}>● {item.exchange}</strong><i><b style={{ width: `${item.success}%` }} /></i><span>{item.latency ? `${item.latency}ms` : '—'}</span><small>{item.note}</small></div>)}</article>
       <article className="arb-card arb-ranking"><p className="arb-eyebrow">WHY THIS RANKING</p><h2>排序口径</h2><ol><li>先排除缺 L2、报价过期、结算不同步和成本覆盖不足的组合。</li><li>跨所资金费按“下一次同步结算净收益 × 可成交容量”排序。</li><li>跨所价格仅研究可成交 VWAP 价差，不会触发 Paper 开仓。</li><li>年化仅作为研究辅助，永远不替代下一次结算的实际收益。</li></ol></article></section>
@@ -90,7 +112,21 @@ export function ArbitrageScannerPage() {
 }
 
 function Metric({ label, value, detail, tone = 'neutral' }: { label: string; value: string; detail: string; tone?: string }) { return <article className={`arb-metric ${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article> }
+function isExecutableStatus(status: string) { return ['QUALIFIED', 'APPROVED', 'PAPER_READY'].includes(status.toUpperCase()) }
+function formatPercent(value: number | null | undefined) { return value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(4)}%` }
+function formatNotional(value: number | null | undefined) { return value == null ? '—' : value >= 1000 ? `$${(value / 1000).toFixed(1)}K` : `$${value.toFixed(0)}` }
+function fundingTableHeaders(exchanges: string[]) { return ['币对', ...exchanges.map((exchange) => `${exchange} 资金费`), '最佳套利机会', '可执行容量', '策略状态'] }
 function tableHeaders(mode: ArbitrageMode) { return mode === 'CROSS_PRICE' ? ['币种', '高价腿 · 卖出', '低价腿 · 买入', '报价 / VWAP', '开仓价差', '费用后价差', '容量', '24h · 7d · 30d', '状态', ''] : mode === 'SINGLE_EXCHANGE' ? ['币种', '现货腿 · 买入', '永续腿 · 卖出', '资金费 / 下次结算', '当前基差', '单次净收益', '可用额度', '24h · 7d · 30d', '状态', ''] : ['币种', '低资金费腿 · 多', '高资金费腿 · 空', '资金费 / 下次结算', '毛收益 / 成本', '单次净收益', 'L2 容量', '24h · 7d · 30d', '状态', ''] }
+function FundingRateMatrixTableRow({ row, exchanges }: { row: FundingRateMatrixRow; exchanges: string[] }) {
+  const direction = row.longExchange && row.shortExchange ? `多 ${row.longExchange} / 空 ${row.shortExchange}` : '—'
+  return <tr>
+    <td><b>{row.symbol}</b><small>{row.sampledAt || '—'}</small></td>
+    {exchanges.map((exchange) => <td key={exchange} className={valueTone(row.ratesByExchange[exchange] || 0)}>{formatPercent(row.ratesByExchange[exchange])}</td>)}
+    <td><b>{direction}</b><small>Δ {formatPercent(row.hourlyFundingSpread)} / 小时标准化</small></td>
+    <td>{formatNotional(row.executableNotional)}<small>净收益 {formatPercent(row.estimatedNetYield)}</small></td>
+    <td><Status status={isExecutableStatus(row.status) ? 'QUALIFIED' : row.status === 'OBSERVING' ? 'OBSERVING' : 'REJECTED'} />{row.rejectionReason ? <small>{row.rejectionReason}</small> : null}</td>
+  </tr>
+}
 function OpportunityRow({ row, mode, onOpen }: { row: ArbitrageOpportunity; mode: ArbitrageMode; onOpen: () => void }) { const funding = <><b>{row.a.funding} / {row.b.funding}</b><small>{row.a.interval} · {row.a.countdown} | {row.b.interval} · {row.b.countdown}</small></>; const mid = mode === 'CROSS_PRICE' ? <><td>{row.a.vwap} / {row.b.vwap}<small>VWAP · 同一基础币数量</small></td><td className="positive">{row.gross}</td><td className={valueTone(row.net)}>{row.netText}</td></> : mode === 'SINGLE_EXCHANGE' ? <><td>{funding}</td><td className={valueTone(row.net)}>{row.basis}</td><td className={valueTone(row.net)}>{row.netText}</td></> : <><td>{funding}</td><td><b className="positive">{row.gross}</b><small>成本 {row.cost}</small></td><td className={valueTone(row.net)}>{row.netText}</td></>; return <tr onClick={onOpen}><td><b>{row.symbol}</b><small>{row.annualized}</small></td><Leg leg={row.a} /><Leg leg={row.b} />{mid}<td>{row.capacityText}<small>basis {row.basis}</small></td><td className={valueTone(Number.parseFloat(row.historical[0]))}>{row.historical[0]}<small>{row.historical[1]} / {row.historical[2]}</small></td><td><Status status={row.status} /></td><td>›</td></tr> }
 function Leg({ leg }: { leg: ArbitrageOpportunity['a'] }) { return <td><b>{leg.exchange}</b><small>{leg.contract}<br />Vol {leg.volume} · OI {leg.oi}</small></td> }
 function Status({ status }: { status: ArbitrageOpportunity['status'] }) { const label = status === 'QUALIFIED' ? '可执行' : status === 'OBSERVING' ? '观察中' : '已拒绝'; return <span className={`arb-status ${status.toLowerCase()}`}>● {label}</span> }
