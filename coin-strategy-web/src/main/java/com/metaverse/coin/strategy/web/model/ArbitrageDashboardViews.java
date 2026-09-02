@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.web.model;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 public final class ArbitrageDashboardViews {
 
@@ -33,6 +34,21 @@ public final class ArbitrageDashboardViews {
 
     public record OpportunityPage(List<Opportunity> items, long total, int page, int size,
                                   long qualified, long rejected, long stale) {
+    }
+
+    /**
+     * A single canonical contract, with its latest funding rate shown once per exchange.
+     * Rates are the exchange-native settlement rates. The best spread is hourly-normalized,
+     * which is the unit used by the execution policy when settlement intervals differ.
+     */
+    public record FundingRateMatrix(List<String> exchanges, List<FundingRateMatrixRow> items) {
+    }
+
+    public record FundingRateMatrixRow(String symbol, Map<String, BigDecimal> ratesByExchange,
+                                       String longExchange, String shortExchange,
+                                       BigDecimal hourlyFundingSpread, BigDecimal estimatedNetYield,
+                                       BigDecimal executableNotional, String status,
+                                       String rejectionReason, String sampledAt) {
     }
 
     public record Position(String positionCode, String kind, String symbol, String longExchange,

@@ -35,6 +35,11 @@ public class ArbitrageDashboardController {
         return queryService.opportunities(kind, symbol, status, minNetYield, minNotional, page, size);
     }
 
+    @GetMapping("/funding-rate-matrix")
+    public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.FundingRateMatrix> fundingRateMatrix() {
+        return queryService.fundingRateMatrix();
+    }
+
     @GetMapping("/opportunities/{id}")
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.Opportunity> opportunity(@PathVariable long id) {
         return queryService.opportunity(id);
