@@ -303,7 +303,7 @@ public class MarketMakerService {
         if (maxDaily != null && maxDaily.signum() > 0) {
             BigDecimal usedToday;
             try {
-                usedToday = recorder.sumTodayLiveQuoteNotional();
+                usedToday = recorder.sumTodayMmRiskQuoteNotional();
             } catch (RuntimeException ex) {
                 log.error("MM daily-cap read failed; fail-closed skip open symbol={}", symbol, ex);
                 return -1;

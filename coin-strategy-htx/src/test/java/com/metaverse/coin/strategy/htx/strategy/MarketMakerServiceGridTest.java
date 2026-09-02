@@ -71,7 +71,7 @@ class MarketMakerServiceGridTest {
         // 默认：K 未满、无已挂 cell、当日名义 0、当日净额 0、余额充足、深度闸放行
         when(recorder.countOpenMmBuyCells(anyString())).thenReturn(0);
         when(recorder.findOpenMmCells(anyString())).thenReturn(List.of());
-        when(recorder.sumTodayLiveQuoteNotional()).thenReturn(BigDecimal.ZERO);
+        when(recorder.sumTodayMmRiskQuoteNotional()).thenReturn(BigDecimal.ZERO);
         when(recorder.sumTodayMmRealizedNetQuote()).thenReturn(BigDecimal.ZERO);
         when(account.getAccountBalance("acc-1")).thenReturn(balanceOk("100000"));
         when(depthGuard.check(any(), any(), any(), anyInt()))

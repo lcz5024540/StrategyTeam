@@ -52,7 +52,7 @@ class MarketMakerServiceRunTest {
         recorder = mock(HtxTradeRecorder.class);
         when(recorder.countOpenMmCells(anyString())).thenReturn(0);
         when(recorder.findOpenMmCells(anyString())).thenReturn(List.of());
-        when(recorder.sumTodayLiveQuoteNotional()).thenReturn(BigDecimal.ZERO);
+        when(recorder.sumTodayMmRiskQuoteNotional()).thenReturn(BigDecimal.ZERO);
         when(account.getAccountBalance("acc-1")).thenReturn(balanceOk("1000"));
         svc = new MarketMakerService(api, depthGuard, tradeProps, mmProps, recorder);
     }

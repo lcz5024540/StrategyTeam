@@ -244,6 +244,37 @@ class HtxMapperIntegrationTest {
         assertEquals(0, before.compareTo(after));
     }
 
+    @Test void sumMmRiskQuoteNotionalSince_excludes_cancelled_buy_churn_but_counts_risk_states() {
+        java.time.LocalDateTime start = java.time.LocalDate.now().atStartOfDay();
+        BigDecimal before = pairMapper.sumMmRiskQuoteNotionalSince(start);
+
+        insertMmRiskCell("mm-risk-buy-" + System.nanoTime(),
+                HtxStatus.MM_RESTING_BUY, "0.010", null, "1000");
+        insertMmRiskCell("mm-risk-sell-" + System.nanoTime(),
+                HtxStatus.MM_RESTING_SELL, "0.010", "0.008", "1000");
+        insertMmRiskCell("mm-risk-retry-" + System.nanoTime(),
+                HtxStatus.MM_SELL_RETRYABLE, "0.010", "0.007", "1000");
+        insertMmRiskCell("mm-risk-done-" + System.nanoTime(),
+                HtxStatus.MM_DONE, "0.010", "0.006", "1000");
+        insertMmRiskCell("mm-risk-reconcile-" + System.nanoTime(),
+                HtxStatus.MM_RECONCILE_REQUIRED, "0.010", "0.005", "1000");
+        insertMmRiskCell("mm-risk-dust-" + System.nanoTime(),
+                HtxStatus.MM_DUST, "0.010", "0.004", "1000");
+
+        // 下移/重挂时产生的大量零成交撤单不应继续消耗 daily-cap。
+        insertMmRiskCell("mm-risk-cancelled-" + System.nanoTime(),
+                HtxStatus.MM_CANCELLED_BUY, "99.000", null, "1000");
+
+        HtxLockedPairEntity dry = mmCell("mm-risk-dry-" + System.nanoTime(),
+                "88.000", "1000", "0", "1001");
+        dry.setStatus(HtxStatus.MM_RESTING_BUY);
+        dry.setDryRun(true);
+        pairMapper.insert(dry);
+
+        BigDecimal after = pairMapper.sumMmRiskQuoteNotionalSince(start);
+        assertEquals(0, new BigDecimal("40.000").compareTo(after.subtract(before)));
+    }
+
     private void insertMmDone(String cid, String buyQty, String buyPrice,
                               String sellQty, String sellPrice) {
         HtxLockedPairEntity e = mmCell(cid, buyQty, buyPrice, sellQty, sellPrice);
@@ -266,5 +297,14 @@ class HtxMapperIntegrationTest {
         e.setSellPrice(new BigDecimal(sellPrice));
         e.setStrategy(HtxStatus.STRATEGY_MARKET_MAKER);
         return e;
+    }
+
+    private void insertMmRiskCell(String cid, String status, String reqQty,
+                                  String buyFilledQty, String buyPrice) {
+        HtxLockedPairEntity e = mmCell(cid, reqQty, buyPrice, "0", "1001");
+        e.setStatus(status);
+        e.setDryRun(false);
+        e.setBuyFilledAmount(buyFilledQty == null ? null : new BigDecimal(buyFilledQty));
+        pairMapper.insert(e);
     }
 }

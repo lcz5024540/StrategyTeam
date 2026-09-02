@@ -128,6 +128,21 @@ class HtxTradeRecorderMmTest {
         assertEquals(3, recorder.countOpenMmBuyCells("btcusdt"));
     }
 
+    @Test void sumTodayMmRiskQuoteNotional_delegates_to_mapper() {
+        when(pairMapper.sumMmRiskQuoteNotionalSince(any())).thenReturn(new BigDecimal("123.45"));
+
+        assertEquals(0, new BigDecimal("123.45")
+                .compareTo(recorder.sumTodayMmRiskQuoteNotional()));
+    }
+
+    @Test void sumTodayMmRiskQuoteNotional_fail_closed_on_mapper_error() {
+        when(pairMapper.sumMmRiskQuoteNotionalSince(any())).thenThrow(new RuntimeException("db down"));
+
+        HtxPersistenceException ex = assertThrows(HtxPersistenceException.class,
+                () -> recorder.sumTodayMmRiskQuoteNotional());
+        assertTrue(ex.getMessage().contains("sumTodayMmRiskQuoteNotional failed"));
+    }
+
     @Test void findAllOpenMmCells_queries_strategy_and_resting_statuses() {
         when(pairMapper.selectList(any())).thenReturn(List.of());
         recorder.findAllOpenMmCells();

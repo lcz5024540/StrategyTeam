@@ -482,6 +482,21 @@ public class HtxTradeRecorder {
     }
 
     /**
+     * 当日做市风险名义之和（USDT），用于移动网格开新格的 daily-cap。
+     * 该口径排除零成交撤单 churn，避免价格下移/重挂时把日额度消耗到无法继续补格；
+     * 但仍统计挂买、已买待卖、待重卖、已闭环、人工对账和粉尘库存态。
+     */
+    public BigDecimal sumTodayMmRiskQuoteNotional() {
+        try {
+            LocalDateTime start = LocalDate.now().atStartOfDay();
+            BigDecimal sum = pairMapper.sumMmRiskQuoteNotionalSince(start);
+            return sum == null ? BigDecimal.ZERO : sum;
+        } catch (Exception ex) {
+            throw new HtxPersistenceException("sumTodayMmRiskQuoteNotional failed", ex);
+        }
+    }
+
+    /**
      * 当日做市已实现净额（USDT）：正数=盈利，负数=亏损。用于网格熔断的当日净亏损预算闸。
      * 属下单前风控读取：读失败即抛 {@link HtxPersistenceException}，由上层 fail-closed 拒开新单。
      */

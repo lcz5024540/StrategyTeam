@@ -21,6 +21,27 @@ public interface HtxLockedPairMapper extends BaseMapper<HtxLockedPairEntity> {
     BigDecimal sumLiveQuoteNotionalSince(@Param("start") LocalDateTime start);
 
     /**
+     * 当日做市风险名义之和（USDT）：只统计仍代表真实资金占用/成交风险的做市 cell。
+     * <p>
+     * 移动网格下移时会产生大量零成交 {@code MM_CANCELLED_BUY}，这些撤单不应继续消耗
+     * daily-cap；否则窗口仍在 RUNNING，却因为历史撤单 churn 无法补新买档。
+     * 对已买入/待卖/已完成/人工对账/粉尘态，优先使用真实买入数量 {@code buy_filled_amount}，
+     * 缺失时回退请求数量，保持 fail-safe。
+     */
+    @Select("SELECT COALESCE(SUM("
+            + "CASE WHEN status = 'MM_RESTING_BUY' "
+            + "THEN req_quantity "
+            + "ELSE COALESCE(NULLIF(buy_filled_amount, 0), req_quantity) END "
+            + "* buy_price), 0) "
+            + "FROM htx_locked_pair "
+            + "WHERE dry_run = 0 "
+            + "AND strategy = 'MARKET_MAKER' "
+            + "AND created_at >= #{start} "
+            + "AND status IN ('MM_RESTING_BUY', 'MM_RESTING_SELL', 'MM_SELL_RETRYABLE', "
+            + "'MM_RECONCILE_REQUIRED', 'MM_DONE', 'MM_DUST')")
+    BigDecimal sumMmRiskQuoteNotionalSince(@Param("start") LocalDateTime start);
+
+    /**
      * 当日做市已实现净额（USDT）：MM_DONE cell 的真实累计 quote 现金流求和。
      * 正数=盈利，负数=亏损；口径为跨 symbol 全量（当日熔断按全局净亏损裁定）。
      * <p>
