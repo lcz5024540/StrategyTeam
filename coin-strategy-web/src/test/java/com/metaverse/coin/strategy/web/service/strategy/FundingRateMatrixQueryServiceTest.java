@@ -40,11 +40,31 @@ class FundingRateMatrixQueryServiceTest {
         assertEquals(new BigDecimal("0.000700"), btc.hourlyFundingSpread());
     }
 
+    @Test
+    void sortsRowsByMaximumHourlySpreadDescendingAndKeepsMissingSpreadLast() {
+        CrossExchangeArbOpportunityMapper mapper = mock(CrossExchangeArbOpportunityMapper.class);
+        Date latest = new Date(2_000L);
+        when(mapper.selectList(any())).thenReturn(List.of(
+                opportunity("ETHUSDT", "OKX", "HTX", "0.0010", "0.0020", "0.000200", latest),
+                opportunity("BTCUSDT", "OKX", "HTX", "0.0010", "0.0040", "0.000500", latest),
+                opportunity("BTCUSDT", "OKX", "BITGET", "0.0010", "0.0030", null, latest),
+                opportunity("SOLUSDT", "OKX", "BITGET", "0.0010", "0.0010", null, latest)));
+
+        var rows = new FundingRateMatrixQueryService(mapper).fundingRateMatrix().data().items();
+
+        assertEquals(List.of("BTCUSDT", "ETHUSDT", "SOLUSDT"),
+                rows.stream().map(row -> row.symbol()).toList());
+        assertEquals("HTX", rows.get(0).shortExchange());
+        assertEquals(new BigDecimal("0.000500"), rows.get(0).hourlyFundingSpread());
+        assertNull(rows.get(2).hourlyFundingSpread());
+    }
+
     private CrossExchangeArbOpportunityEntity opportunity(String symbol, String longExchange,
             String shortExchange, String longRate, String shortRate, String hourlySpread, Date sampledAt) {
         return new CrossExchangeArbOpportunityEntity().setSymbol(symbol).setLongExchange(longExchange)
                 .setShortExchange(shortExchange).setLongFundingRate(new BigDecimal(longRate))
-                .setShortFundingRate(new BigDecimal(shortRate)).setHourlyFundingSpread(new BigDecimal(hourlySpread))
+                .setShortFundingRate(new BigDecimal(shortRate))
+                .setHourlyFundingSpread(hourlySpread == null ? null : new BigDecimal(hourlySpread))
                 .setEstimatedNetYield(BigDecimal.ZERO).setExecutableNotional(new BigDecimal("2000"))
                 .setStatus("QUALIFIED").setDiscoveredAt(sampledAt).setUpdatedAt(sampledAt);
     }

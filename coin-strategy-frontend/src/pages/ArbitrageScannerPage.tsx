@@ -65,7 +65,7 @@ export function ArbitrageScannerPage() {
       && (row.executableNotional || 0) >= minCapacity
       && (minYield <= 0 || (row.estimatedNetYield || 0) >= minYield / 100)
       && (!qualifiedOnly || isExecutableStatus(row.status)))
-    .sort((a, b) => (b.hourlyFundingSpread || 0) - (a.hourlyFundingSpread || 0)),
+    .sort(compareFundingSpreadDescending),
   [exchange, fundingMatrix.items, minCapacity, minYield, qualifiedOnly, symbol])
   const displayedExchanges = mode === 'CROSS_FUNDING' ? fundingMatrix.exchanges : exchanges
   const qualified = rows.filter((row) => row.status === 'QUALIFIED')
@@ -101,11 +101,11 @@ export function ArbitrageScannerPage() {
         <label className="arb-toggle"><input type="checkbox" checked={qualifiedOnly} onChange={(event) => setQualifiedOnly(event.target.checked)} /><span />仅可执行</label>
         <button className="arb-text-button" type="button" onClick={resetFilters}>重置</button><button className="arb-text-button" type="button" onClick={() => void refetch()}>{isFetching ? '刷新中' : '刷新'}</button><button className="arb-text-button" type="button" onClick={() => void copyView()}>复制视图</button>
       </div>
-      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · {mode === 'CROSS_FUNDING' ? `当前显示 ${fundingRows.length} 个币对，其中可执行 ${executableFundingRows.length} 个` : `当前显示 ${rows.length} 个组合，其中可执行 ${qualified.length} 个`}</span><span>{mode === 'CROSS_FUNDING' ? '各所列为原始结算周期费率；最后一列的 Δ 为小时标准化费差' : `总组合 ${snapshot.coverage.total} · 缺 L2 ${snapshot.coverage.missingL2} · 过期 ${snapshot.coverage.stale} · 不可用 ${snapshot.coverage.unavailable}`}</span></div>
+      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · {mode === 'CROSS_FUNDING' ? `当前显示 ${fundingRows.length} 个币对，其中可执行 ${executableFundingRows.length} 个` : `当前显示 ${rows.length} 个组合，其中可执行 ${qualified.length} 个`}</span><span>{mode === 'CROSS_FUNDING' ? '默认按最佳小时标准化费率差 Δ 从大到小排序；各所列保留原始结算周期费率' : `总组合 ${snapshot.coverage.total} · 缺 L2 ${snapshot.coverage.missingL2} · 过期 ${snapshot.coverage.stale} · 不可用 ${snapshot.coverage.unavailable}`}</span></div>
       <div className="arb-table-wrap"><table><thead><tr>{(mode === 'CROSS_FUNDING' ? fundingTableHeaders(fundingMatrix.exchanges) : tableHeaders(mode)).map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{mode === 'CROSS_FUNDING' ? (fundingRows.length ? fundingRows.map((row) => <FundingRateMatrixTableRow key={row.symbol} row={row} exchanges={fundingMatrix.exchanges} />) : <tr><td className="arb-empty" colSpan={fundingMatrix.exchanges.length + 5}>没有满足当前筛选条件的币对</td></tr>) : (rows.length ? rows.map((row) => <OpportunityRow key={row.id} row={row} mode={mode} onOpen={() => setSelected(row)} />) : <tr><td className="arb-empty" colSpan={10}>没有满足当前筛选条件的组合</td></tr>)}</tbody></table></div>
     </section>
     <section className="arb-bottom-grid"><article className="arb-card arb-health"><header><div><p className="arb-eyebrow">MARKET HEALTH</p><h2>交易所与数据质量</h2></div><span>最近 60 秒</span></header>{snapshot.health.map((item) => <div className="arb-health-row" key={item.exchange}><strong className={item.healthy ? 'good' : 'bad'}>● {item.exchange}</strong><i><b style={{ width: `${item.success}%` }} /></i><span>{item.latency ? `${item.latency}ms` : '—'}</span><small>{item.note}</small></div>)}</article>
-      <article className="arb-card arb-ranking"><p className="arb-eyebrow">WHY THIS RANKING</p><h2>排序口径</h2><ol><li>先排除缺 L2、报价过期、结算不同步和成本覆盖不足的组合。</li><li>跨所资金费按“下一次同步结算净收益 × 可成交容量”排序。</li><li>跨所价格仅研究可成交 VWAP 价差，不会触发 Paper 开仓。</li><li>年化仅作为研究辅助，永远不替代下一次结算的实际收益。</li></ol></article></section>
+      <article className="arb-card arb-ranking"><p className="arb-eyebrow">WHY THIS RANKING</p><h2>排序口径</h2><ol><li>跨所资金费按每个币对的最佳小时标准化费率差 Δ 降序，最大费差优先。</li><li>相同费差按币对名称排序；缺失费差固定置底。</li><li>策略状态、净收益和可执行容量继续单独展示，不把高费差直接等同于可开仓。</li><li>跨所价格仅研究可成交 VWAP 价差，不会触发 Paper 开仓。</li></ol></article></section>
     {isError ? <div className="arb-notice">读模型接口暂不可用，正在显示明确标记的 Demo 数据。</div> : null}
     {selected ? <DetailDrawer row={selected} onClose={() => setSelected(null)} /> : null}
   </div>
@@ -115,7 +115,12 @@ function Metric({ label, value, detail, tone = 'neutral' }: { label: string; val
 function isExecutableStatus(status: string) { return ['QUALIFIED', 'APPROVED', 'PAPER_READY'].includes(status.toUpperCase()) }
 function formatPercent(value: number | null | undefined) { return value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(4)}%` }
 function formatNotional(value: number | null | undefined) { return value == null ? '—' : value >= 1000 ? `$${(value / 1000).toFixed(1)}K` : `$${value.toFixed(0)}` }
-function fundingTableHeaders(exchanges: string[]) { return ['币对', ...exchanges.map((exchange) => `${exchange} 资金费`), '最佳套利机会', '可执行容量', '策略状态'] }
+function fundingTableHeaders(exchanges: string[]) { return ['币对', ...exchanges.map((exchange) => `${exchange} 资金费`), '最佳套利机会 · 费差 ↓', '可执行容量', '策略状态'] }
+function compareFundingSpreadDescending(left: FundingRateMatrixRow, right: FundingRateMatrixRow) {
+  if (left.hourlyFundingSpread == null) return right.hourlyFundingSpread == null ? left.symbol.localeCompare(right.symbol) : 1
+  if (right.hourlyFundingSpread == null) return -1
+  return right.hourlyFundingSpread - left.hourlyFundingSpread || left.symbol.localeCompare(right.symbol)
+}
 function tableHeaders(mode: ArbitrageMode) { return mode === 'CROSS_PRICE' ? ['币种', '高价腿 · 卖出', '低价腿 · 买入', '报价 / VWAP', '开仓价差', '费用后价差', '容量', '24h · 7d · 30d', '状态', ''] : mode === 'SINGLE_EXCHANGE' ? ['币种', '现货腿 · 买入', '永续腿 · 卖出', '资金费 / 下次结算', '当前基差', '单次净收益', '可用额度', '24h · 7d · 30d', '状态', ''] : ['币种', '低资金费腿 · 多', '高资金费腿 · 空', '资金费 / 下次结算', '毛收益 / 成本', '单次净收益', 'L2 容量', '24h · 7d · 30d', '状态', ''] }
 function FundingRateMatrixTableRow({ row, exchanges }: { row: FundingRateMatrixRow; exchanges: string[] }) {
   const direction = row.longExchange && row.shortExchange ? `多 ${row.longExchange} / 空 ${row.shortExchange}` : '—'

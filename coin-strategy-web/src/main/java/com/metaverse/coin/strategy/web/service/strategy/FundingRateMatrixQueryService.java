@@ -65,7 +65,7 @@ public class FundingRateMatrixQueryService {
                 .map(entry -> toRow(entry.getKey(), entry.getValue()))
                 .flatMap(Optional::stream)
                 .sorted(Comparator.comparing(FundingRateMatrixViews.Row::hourlyFundingSpread,
-                                Comparator.nullsLast(BigDecimal::compareTo)).reversed()
+                                Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(FundingRateMatrixViews.Row::symbol))
                 .toList();
         return new FundingRateMatrixViews.Matrix(EXCHANGES, items);
@@ -82,7 +82,7 @@ public class FundingRateMatrixQueryService {
                 .toList();
         CrossExchangeArbOpportunityEntity best = current.stream()
                 .max(Comparator.comparing(CrossExchangeArbOpportunityEntity::getHourlyFundingSpread,
-                        Comparator.nullsLast(BigDecimal::compareTo)))
+                        Comparator.nullsFirst(BigDecimal::compareTo)))
                 .orElse(null);
         if (best == null) {
             return Optional.empty();
