@@ -10,6 +10,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -31,6 +32,7 @@ public class FundingRateMatrixQueryService {
     private static final String TIMEZONE = "Asia/Shanghai";
     private static final String SOURCE = "PAPER_PUBLIC_ESTIMATE";
     private static final List<String> EXCHANGES = List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID");
+    private static final Duration MAX_SNAPSHOT_AGE = Duration.ofMinutes(30);
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.SIMPLIFIED_CHINESE)
             .withZone(ZoneId.of(TIMEZONE));
@@ -44,7 +46,9 @@ public class FundingRateMatrixQueryService {
     public FundingRateMatrixViews.Envelope<FundingRateMatrixViews.Matrix> fundingRateMatrix() {
         try {
             List<CrossExchangeArbOpportunityEntity> opportunities = opportunityMapper.selectList(
-                    new LambdaQueryWrapper<>());
+                    new LambdaQueryWrapper<CrossExchangeArbOpportunityEntity>().ge(
+                            CrossExchangeArbOpportunityEntity::getDiscoveredAt,
+                            Date.from(Instant.now().minus(MAX_SNAPSHOT_AGE))));
             return envelope(toMatrix(opportunities), false, List.of());
         } catch (DataAccessException exception) {
             LOGGER.warn("Funding-rate matrix is unavailable; returning an empty partial projection: {}",
