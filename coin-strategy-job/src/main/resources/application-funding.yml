@@ -29,8 +29,8 @@ arbitrage:
     minimum-cost-coverage-ratio: 1.25
     health-check-enabled: true
     recovery-enabled: true
-    # 第一阶段 Paper 数据集：仅采集四所公共行情，不下单、不访问私有账户。
-    capture-enabled: true
+    # Paper 观测以 cross_exchange_arb_opportunity 数据库记录为准；关闭本地 CSV replay 文件采集。
+    capture-enabled: false
     capture-symbols: "BTCUSDT,ETHUSDT,SOLUSDT"
     capture-delay-ms: 30000
     capture-order-book-depth: 100
