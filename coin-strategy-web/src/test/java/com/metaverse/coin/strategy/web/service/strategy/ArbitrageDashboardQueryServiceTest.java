@@ -88,6 +88,8 @@ class ArbitrageDashboardQueryServiceTest {
         assertEquals(new BigDecimal("0.0024"), btc.ratesByExchange().get("OKX"));
         assertEquals(new BigDecimal("0.0048"), btc.ratesByExchange().get("HTX"));
         assertEquals(new BigDecimal("0.0080"), btc.ratesByExchange().get("BITGET"));
+        assertEquals(8, btc.intervalHoursByExchange().get("OKX"));
+        assertEquals(4, btc.intervalHoursByExchange().get("HTX"));
         assertNull(btc.ratesByExchange().get("BINANCE"));
         assertEquals("OKX", btc.longExchange());
         assertEquals("BITGET", btc.shortExchange());
@@ -128,7 +130,8 @@ class ArbitrageDashboardQueryServiceTest {
             String status, String rejectionReason) {
         return new CrossExchangeArbOpportunityEntity().setOpportunityCode(code).setSymbol(symbol)
                 .setLongExchange(longExchange).setShortExchange(shortExchange)
-                .setLongFundingRate(new BigDecimal(longRate)).setShortFundingRate(new BigDecimal(shortRate))
+                .setLongFundingRate(new BigDecimal(longRate)).setLongFundingIntervalHours("HTX".equals(longExchange) ? 4 : 8)
+                .setShortFundingRate(new BigDecimal(shortRate)).setShortFundingIntervalHours("HTX".equals(shortExchange) ? 4 : 8)
                 .setHourlyFundingSpread(new BigDecimal(hourlySpread)).setEstimatedNetYield(BigDecimal.ZERO)
                 .setExecutableNotional(new BigDecimal("2000")).setStatus(status).setRejectionReason(rejectionReason)
                 .setDiscoveredAt(sampledAt).setUpdatedAt(sampledAt);
