@@ -3,10 +3,12 @@ package com.metaverse.coin.strategy.web.service.strategy;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOpportunityMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOpportunityEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeFundingSettlementEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -26,6 +29,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.function.Supplier;
 
@@ -37,20 +41,25 @@ public class ArbitrageDashboardQueryService {
     private static final String TIMEZONE = "Asia/Shanghai";
     private static final String SOURCE = "PAPER_PUBLIC_ESTIMATE";
     private static final int MAX_PAGE_SIZE = 100;
+    private static final BigDecimal PAPER_CAPITAL_PER_EXCHANGE = new BigDecimal("2000");
+    private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("3");
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.SIMPLIFIED_CHINESE).withZone(ZoneId.of(TIMEZONE));
 
     private final CrossExchangeArbOpportunityMapper opportunityMapper;
     private final CrossExchangeArbPositionMapper crossPositionMapper;
+    private final CrossExchangeArbOrderMapper crossOrderMapper;
     private final CrossExchangeFundingSettlementMapper crossSettlementMapper;
     private final SingleExchangeArbitragePositionMapper singlePositionMapper;
 
     public ArbitrageDashboardQueryService(CrossExchangeArbOpportunityMapper opportunityMapper,
                                           CrossExchangeArbPositionMapper crossPositionMapper,
+                                          CrossExchangeArbOrderMapper crossOrderMapper,
                                           CrossExchangeFundingSettlementMapper crossSettlementMapper,
                                           SingleExchangeArbitragePositionMapper singlePositionMapper) {
         this.opportunityMapper = opportunityMapper;
         this.crossPositionMapper = crossPositionMapper;
+        this.crossOrderMapper = crossOrderMapper;
         this.crossSettlementMapper = crossSettlementMapper;
         this.singlePositionMapper = singlePositionMapper;
     }
@@ -75,7 +84,9 @@ public class ArbitrageDashboardQueryService {
                 .map(CrossExchangeFundingSettlementEntity::getActualAmount).filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return envelope(new ArbitrageDashboardViews.Overview(executable, positions.size(), notional,
-                expectedYield, fundingPnl, BigDecimal.ZERO, "UNKNOWN", opportunities.size(), rejected));
+                expectedYield, fundingPnl, BigDecimal.ZERO, "UNKNOWN", opportunities.size(), rejected,
+                PAPER_CAPITAL_PER_EXCHANGE, MAXIMUM_PAPER_LEVERAGE,
+                PAPER_CAPITAL_PER_EXCHANGE.multiply(MAXIMUM_PAPER_LEVERAGE)));
     }
 
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.OpportunityPage> opportunities(
@@ -144,13 +155,53 @@ public class ArbitrageDashboardQueryService {
     }
 
     public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.TimePoint>> timeseries() {
-        List<ArbitrageDashboardViews.TimePoint> points = readOrDefault("funding timeseries",
+        Map<LocalDate, DailyPnl> daily = new TreeMap<>();
+        readOrDefault("funding timeseries",
                 List::<CrossExchangeFundingSettlementEntity>of,
                 () -> crossSettlementMapper.selectList(new LambdaQueryWrapper<CrossExchangeFundingSettlementEntity>()
                         .orderByAsc(CrossExchangeFundingSettlementEntity::getSettlementTime)))
-                .stream().map(item -> new ArbitrageDashboardViews.TimePoint(format(item.getSettlementTime()),
-                        zero(item.getActualAmount()), BigDecimal.ZERO, BigDecimal.ZERO, zero(item.getActualAmount()))).toList();
+                .forEach(item -> daily.computeIfAbsent(toDate(item.getSettlementTime()), ignored -> new DailyPnl())
+                        .addFunding(zero(item.getActualAmount())));
+        readOrDefault("paper orders", List::<CrossExchangeArbOrderEntity>of,
+                () -> crossOrderMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
+                        .gt(CrossExchangeArbOrderEntity::getFilledQuantity, BigDecimal.ZERO)
+                        .orderByAsc(CrossExchangeArbOrderEntity::getCreatedAt)))
+                .forEach(item -> {
+                    BigDecimal notional = zero(item.getFilledQuantity()).multiply(zero(item.getAveragePrice()));
+                    BigDecimal signedCashflow = "SHORT".equalsIgnoreCase(item.getLegSide())
+                            ? notional : notional.negate();
+                    daily.computeIfAbsent(toDate(item.getCreatedAt()), ignored -> new DailyPnl())
+                            .addTradingCashflow(signedCashflow);
+                });
+        BigDecimal cumulative = BigDecimal.ZERO;
+        List<ArbitrageDashboardViews.TimePoint> points = new ArrayList<>(daily.size());
+        for (Map.Entry<LocalDate, DailyPnl> entry : daily.entrySet()) {
+            DailyPnl value = entry.getValue();
+            BigDecimal netPnl = value.fundingPnl.add(value.tradingCashflowPnl).subtract(value.fee);
+            cumulative = cumulative.add(netPnl);
+            points.add(new ArbitrageDashboardViews.TimePoint(entry.getKey().toString(), value.fundingPnl,
+                    value.tradingCashflowPnl, value.fee, netPnl, cumulative));
+        }
         return envelope(points);
+    }
+
+    private LocalDate toDate(Date value) {
+        Instant instant = value == null ? Instant.EPOCH : value.toInstant();
+        return instant.atZone(ZoneId.of(TIMEZONE)).toLocalDate();
+    }
+
+    private static final class DailyPnl {
+        private BigDecimal fundingPnl = BigDecimal.ZERO;
+        private BigDecimal tradingCashflowPnl = BigDecimal.ZERO;
+        private BigDecimal fee = BigDecimal.ZERO;
+
+        private void addFunding(BigDecimal amount) {
+            fundingPnl = fundingPnl.add(amount);
+        }
+
+        private void addTradingCashflow(BigDecimal amount) {
+            tradingCashflowPnl = tradingCashflowPnl.add(amount);
+        }
     }
 
     public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.MarketHealth>> marketHealth() {

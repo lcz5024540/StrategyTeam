@@ -17,6 +17,9 @@ export interface ArbitrageOverview {
   riskState: string
   evaluatedDirections: number
   rejectedDirections: number
+  paperCapitalPerExchange: number
+  maximumPaperLeverage: number
+  maximumNotionalPerExchange: number
 }
 
 export interface ArbitrageOpportunity {
@@ -96,4 +99,13 @@ export interface DataQuality {
   staleQuotes: number
   unavailableExchangeDirections: number
   exclusionReasons: Array<{ reason: string; count: number }>
+}
+
+export interface ArbitragePnlTimePoint {
+  bucketAt: string
+  fundingPnl: number
+  tradingCashflowPnl: number
+  fee: number
+  netPnl: number
+  cumulativeNetPnl: number
 }

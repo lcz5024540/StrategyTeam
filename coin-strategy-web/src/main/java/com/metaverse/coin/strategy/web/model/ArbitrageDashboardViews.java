@@ -14,7 +14,9 @@ public final class ArbitrageDashboardViews {
 
     public record Overview(long executableOpportunities, long openPositions, BigDecimal executableNotional,
                            BigDecimal expectedNetYield, BigDecimal fundingPnl, BigDecimal netDelta,
-                           String riskState, long evaluatedDirections, long rejectedDirections) {
+                           String riskState, long evaluatedDirections, long rejectedDirections,
+                           BigDecimal paperCapitalPerExchange, BigDecimal maximumPaperLeverage,
+                           BigDecimal maximumNotionalPerExchange) {
     }
 
     public record Opportunity(Long id, String opportunityCode, String kind, String symbol,
@@ -40,8 +42,8 @@ public final class ArbitrageDashboardViews {
                            String openedAt, String message) {
     }
 
-    public record TimePoint(String bucketAt, BigDecimal fundingPnl, BigDecimal basisPnl,
-                            BigDecimal fee, BigDecimal netPnl) {
+    public record TimePoint(String bucketAt, BigDecimal fundingPnl, BigDecimal tradingCashflowPnl,
+                            BigDecimal fee, BigDecimal netPnl, BigDecimal cumulativeNetPnl) {
     }
 
     public record MarketHealth(String exchange, String status, BigDecimal successRate,

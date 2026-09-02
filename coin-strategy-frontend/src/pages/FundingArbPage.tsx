@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import { arbitrageDashboardApi } from '@/api'
+import { ArbitragePnlCharts } from '@/components/charts/ArbitragePnlCharts'
 import { useStrategyStore } from '@/store/useStrategyStore'
 import { formatMoney, formatNumber, formatPercent } from '@/utils/format'
 import type { ArbitrageOpportunity } from '@/types/arbitrage-dashboard'
@@ -29,8 +30,9 @@ function Scanner() {
 
 function Overview() {
   const query = useQuery({ queryKey: ['arb-dashboard', 'overview'], queryFn: arbitrageDashboardApi.overview, refetchInterval: TEN_SECONDS }); const data = query.data?.data
-  const cards = [['可执行机会', formatNumber(data?.executableOpportunities || 0, 0), `评估 ${data?.evaluatedDirections || 0} 个方向`], ['当前 Paper 持仓', formatNumber(data?.openPositions || 0, 0), `容量 ${formatMoney(data?.executableNotional || 0)}`], ['最佳估算净收益', value(data?.expectedNetYield, '%'), '下一同步结算口径'], ['累计资金费', formatMoney(data?.fundingPnl || 0), '已落库结算金额'], ['净 Delta', formatMoney(data?.netDelta || 0), '缺实时价格时为估算'], ['风控状态', data?.riskState || 'UNKNOWN', `拒绝 ${data?.rejectedDirections || 0}`]]
-  return <><div className="arb-head"><div><h1>套利总览</h1><p>机会、持仓、收益与风险的统一入口。</p></div><Meta partial={query.data?.partial} missing={query.data?.missingExchanges} asOf={query.data?.asOf}/></div><div className="arb-kpis">{cards.map(([label, metric, hint]) => <article className="arb-panel" key={label}><span>{label}</span><strong>{metric}</strong><small>{hint}</small></article>)}</div><section className="arb-panel arb-explain"><h2>运行边界</h2><p>页面只读数据库中的 Paper 读模型，不访问 Funding Job 内网端口，也没有开仓、暂停或资金划转按钮。实时 L2、OI 和市场健康快照未落库时，页面保持 partial 并显式显示缺失值。</p></section></>
+  const pnl = useQuery({ queryKey: ['arb-dashboard', 'timeseries'], queryFn: arbitrageDashboardApi.timeseries, refetchInterval: TEN_SECONDS })
+  const cards = [['每账户 Paper 资金', formatMoney(data?.paperCapitalPerExchange || 0), '每个交易所独立 2,000U'], ['最大杠杆', `${formatNumber(data?.maximumPaperLeverage || 0, 0)}x`, `单账户名义上限 ${formatMoney(data?.maximumNotionalPerExchange || 0)}`], ['可执行机会', formatNumber(data?.executableOpportunities || 0, 0), `评估 ${data?.evaluatedDirections || 0} 个方向`], ['当前 Paper 持仓', formatNumber(data?.openPositions || 0, 0), `机会容量 ${formatMoney(data?.executableNotional || 0)}`], ['累计资金费', formatMoney(data?.fundingPnl || 0), '已落库结算金额'], ['风控状态', data?.riskState || 'UNKNOWN', `拒绝 ${data?.rejectedDirections || 0}`]]
+  return <><div className="arb-head"><div><h1>套利总览</h1><p>按实际成交现金流汇总每日盈亏，账户资金与杠杆上限透明可见。</p></div><Meta partial={query.data?.partial || pnl.data?.partial} missing={query.data?.missingExchanges} asOf={query.data?.asOf}/></div><div className="arb-kpis">{cards.map(([label, metric, hint]) => <article className="arb-panel" key={label}><span>{label}</span><strong>{metric}</strong><small>{hint}</small></article>)}</div><ArbitragePnlCharts data={pnl.data?.data || []}/><section className="arb-panel arb-explain"><h2>收益口径</h2><p>每日净盈亏按 Asia/Shanghai 自然日聚合交易现金流与资金费。滑点已经反映在成交均价中，不会重复扣减；尚未落库的手续费保持为 0 并通过 PARTIAL 标识提示，不能伪造成已知成本。</p></section></>
 }
 
 function Positions() {
