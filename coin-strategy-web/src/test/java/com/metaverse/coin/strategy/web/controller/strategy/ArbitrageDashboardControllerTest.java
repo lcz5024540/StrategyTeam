@@ -14,12 +14,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 class ArbitrageDashboardControllerTest {
 
     @Test
-    void exposesOnlyEightReadOnlyEndpoints() {
+    void exposesOnlyNineReadOnlyEndpoints() {
         Method[] methods = ArbitrageDashboardController.class.getDeclaredMethods();
         long getEndpoints = Arrays.stream(methods).filter(method -> method.isAnnotationPresent(GetMapping.class)).count();
         boolean hasPostEndpoint = Arrays.stream(methods).anyMatch(method -> method.isAnnotationPresent(PostMapping.class));
 
-        assertEquals(8, getEndpoints);
+        assertEquals(9, getEndpoints);
         assertFalse(hasPostEndpoint);
     }
 

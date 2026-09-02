@@ -24,11 +24,14 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.function.Supplier;
@@ -43,6 +46,7 @@ public class ArbitrageDashboardQueryService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final BigDecimal PAPER_CAPITAL_PER_EXCHANGE = new BigDecimal("2000");
     private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("3");
+    private static final List<String> FUNDING_EXCHANGES = List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID");
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.SIMPLIFIED_CHINESE).withZone(ZoneId.of(TIMEZONE));
 
@@ -119,6 +123,27 @@ public class ArbitrageDashboardQueryService {
         long rejected = items.stream().filter(item -> !isQualified(item.status())).count();
         return envelope(new ArbitrageDashboardViews.OpportunityPage(items, result.getTotal(), safePage, safeSize,
                 qualified, rejected, 0));
+    }
+
+    /**
+     * Projects pairwise scan records into one current row per canonical contract. Each symbol is
+     * limited to its latest discoveredAt value before rates are combined, so a row never mixes
+     * a fresh rate from one scan with a historic rate from another scan.
+     */
+    public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.FundingRateMatrix> fundingRateMatrix() {
+        List<CrossExchangeArbOpportunityEntity> opportunities = readOrDefault("funding-rate matrix", List::of,
+                () -> opportunityMapper.selectList(new LambdaQueryWrapper<>()));
+        Map<String, List<CrossExchangeArbOpportunityEntity>> bySymbol = opportunities.stream()
+                .filter(item -> item.getSymbol() != null && !item.getSymbol().isBlank())
+                .collect(Collectors.groupingBy(CrossExchangeArbOpportunityEntity::getSymbol));
+        List<ArbitrageDashboardViews.FundingRateMatrixRow> items = bySymbol.entrySet().stream()
+                .map(entry -> toFundingRateMatrixRow(entry.getKey(), entry.getValue()))
+                .flatMap(Optional::stream)
+                .sorted(Comparator.comparing(ArbitrageDashboardViews.FundingRateMatrixRow::hourlyFundingSpread,
+                                Comparator.nullsLast(BigDecimal::compareTo)).reversed()
+                        .thenComparing(ArbitrageDashboardViews.FundingRateMatrixRow::symbol))
+                .toList();
+        return envelope(new ArbitrageDashboardViews.FundingRateMatrix(FUNDING_EXCHANGES, items));
     }
 
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.Opportunity> opportunity(long id) {
@@ -240,6 +265,42 @@ public class ArbitrageDashboardQueryService {
                 item.getEstimatedNetYield(), item.getExecutableNotional(), item.getStatus(), item.getRejectionReason(),
                 format(item.getDiscoveredAt()), format(item.getUpdatedAt()), null, null, null, null,
                 null, null, null, null, null, null, null);
+    }
+
+    private Optional<ArbitrageDashboardViews.FundingRateMatrixRow> toFundingRateMatrixRow(String symbol,
+            List<CrossExchangeArbOpportunityEntity> symbolOpportunities) {
+        Date sampledAt = symbolOpportunities.stream().map(CrossExchangeArbOpportunityEntity::getDiscoveredAt)
+                .filter(Objects::nonNull).max(Date::compareTo).orElse(null);
+        List<CrossExchangeArbOpportunityEntity> current = symbolOpportunities.stream()
+                .filter(item -> sameTimestamp(item.getDiscoveredAt(), sampledAt)).toList();
+        CrossExchangeArbOpportunityEntity best = current.stream()
+                .max(Comparator.comparing(CrossExchangeArbOpportunityEntity::getHourlyFundingSpread,
+                        Comparator.nullsLast(BigDecimal::compareTo))
+                        .thenComparing(CrossExchangeArbOpportunityEntity::getUpdatedAt,
+                                Comparator.nullsLast(Date::compareTo)))
+                .orElse(null);
+        if (best == null) {
+            return Optional.empty();
+        }
+        Map<String, BigDecimal> rates = new LinkedHashMap<>();
+        current.forEach(item -> {
+            putRate(rates, item.getLongExchange(), item.getLongFundingRate());
+            putRate(rates, item.getShortExchange(), item.getShortFundingRate());
+        });
+        return Optional.of(new ArbitrageDashboardViews.FundingRateMatrixRow(symbol, rates,
+                best.getLongExchange(), best.getShortExchange(), best.getHourlyFundingSpread(),
+                best.getEstimatedNetYield(), best.getExecutableNotional(), best.getStatus(),
+                best.getRejectionReason(), format(sampledAt)));
+    }
+
+    private boolean sameTimestamp(Date value, Date expected) {
+        return expected == null ? value == null : expected.equals(value);
+    }
+
+    private void putRate(Map<String, BigDecimal> rates, String exchange, BigDecimal rate) {
+        if (exchange != null && rate != null) {
+            rates.putIfAbsent(exchange, rate);
+        }
     }
 
     private ArbitrageDashboardViews.Position toCrossPosition(CrossExchangeArbPositionEntity item) {
