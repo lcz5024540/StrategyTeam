@@ -247,7 +247,8 @@ class ArbitrageDashboardQueryServiceTest {
             String status, String rejectionReason) {
         return new CrossExchangeArbOpportunityEntity().setOpportunityCode(code).setSymbol(symbol)
                 .setLongExchange(longExchange).setShortExchange(shortExchange)
-                .setLongFundingRate(new BigDecimal(longRate)).setShortFundingRate(new BigDecimal(shortRate))
+                .setLongFundingRate(new BigDecimal(longRate)).setLongFundingIntervalHours("HTX".equals(longExchange) ? 4 : 8)
+                .setShortFundingRate(new BigDecimal(shortRate)).setShortFundingIntervalHours("HTX".equals(shortExchange) ? 4 : 8)
                 .setHourlyFundingSpread(new BigDecimal(hourlySpread)).setEstimatedNetYield(BigDecimal.ZERO)
                 .setExecutableNotional(new BigDecimal("2000")).setStatus(status).setRejectionReason(rejectionReason)
                 .setDiscoveredAt(sampledAt).setUpdatedAt(sampledAt);
