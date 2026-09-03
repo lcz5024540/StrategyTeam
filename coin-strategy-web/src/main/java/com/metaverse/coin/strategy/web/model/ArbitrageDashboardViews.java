@@ -46,6 +46,17 @@ public final class ArbitrageDashboardViews {
                             BigDecimal fee, BigDecimal netPnl, BigDecimal cumulativeNetPnl) {
     }
 
+    public record ExecutionOrder(String clientOrderId, String exchange, String symbol, String side,
+                                 boolean reduceOnly, BigDecimal filledQuantity, BigDecimal averagePrice,
+                                 BigDecimal bestPrice, BigDecimal worstPrice, BigDecimal impactBps,
+                                 BigDecimal slippageAmount, BigDecimal feeAmount, Integer levelsConsumed,
+                                 String bookReceivedAt, List<ExecutionFill> fills) {
+    }
+
+    public record ExecutionFill(Integer level, BigDecimal price, BigDecimal quantity,
+                                BigDecimal notional) {
+    }
+
     public record MarketHealth(String exchange, String status, BigDecimal successRate,
                                Long p50LatencyMs, Long p95LatencyMs, Long quoteAgeMs,
                                BigDecimal l2Completeness, String lastError) {

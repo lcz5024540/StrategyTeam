@@ -25,7 +25,7 @@ public class CrossExchangePaperTradingService {
         var assessment = risk.approveOpen(opportunity, notional, executor.positions().values(), paused.get(), circuitOpen.get());
         if (!assessment.passed()) { if(persistence!=null)persistence.saveRisk(null,opportunity.opportunityId(),"PRE_OPEN",false,assessment.reason()); throw new IllegalStateException(assessment.reason()); }
         PaperHedgePosition position = executor.open(opportunity, notional, BigDecimal.ONE, BigDecimal.ONE, now);
-        if (persistence != null) { persistence.saveOpportunity(opportunity); persistence.saveRisk(position.positionId(),opportunity.opportunityId(),"PRE_OPEN",true,null); saveExecutionEvents(position.positionId()); persistence.savePosition(position); persistence.saveOrders(position.positionId(),executor.orders()); }
+        if (persistence != null) { persistence.saveOpportunity(opportunity); persistence.saveRisk(position.positionId(),opportunity.opportunityId(),"PRE_OPEN",true,null); saveExecutionEvents(position.positionId()); persistence.savePosition(position); persistence.saveOrders(position.positionId(),executor.orders()); persistence.saveExecutionEvidence(position.positionId(),executor.drainExecutionEvidence(position.positionId())); }
         return position;
     }
     public PaperHedgePosition close(String positionId, Instant now) {
@@ -43,6 +43,7 @@ public class CrossExchangePaperTradingService {
             saveExecutionEvents(positionId);
             persistence.savePosition(position);
             persistence.saveOrders(positionId, executor.orders());
+            persistence.saveExecutionEvidence(positionId, executor.drainExecutionEvidence(positionId));
             persistence.saveRisk(positionId, position.opportunity().opportunityId(), "POST_CLOSE",
                     true, null);
         }

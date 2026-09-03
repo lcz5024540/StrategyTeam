@@ -6,11 +6,13 @@ import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOpportunity
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeFundingSettlementMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeExecutionFillMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOpportunityEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeFundingSettlementEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeExecutionFillEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.web.model.ArbitrageDashboardViews;
 import org.slf4j.Logger;
@@ -50,17 +52,20 @@ public class ArbitrageDashboardQueryService {
     private final CrossExchangeArbPositionMapper crossPositionMapper;
     private final CrossExchangeArbOrderMapper crossOrderMapper;
     private final CrossExchangeFundingSettlementMapper crossSettlementMapper;
+    private final CrossExchangeExecutionFillMapper executionFillMapper;
     private final SingleExchangeArbitragePositionMapper singlePositionMapper;
 
     public ArbitrageDashboardQueryService(CrossExchangeArbOpportunityMapper opportunityMapper,
                                           CrossExchangeArbPositionMapper crossPositionMapper,
                                           CrossExchangeArbOrderMapper crossOrderMapper,
                                           CrossExchangeFundingSettlementMapper crossSettlementMapper,
+                                          CrossExchangeExecutionFillMapper executionFillMapper,
                                           SingleExchangeArbitragePositionMapper singlePositionMapper) {
         this.opportunityMapper = opportunityMapper;
         this.crossPositionMapper = crossPositionMapper;
         this.crossOrderMapper = crossOrderMapper;
         this.crossSettlementMapper = crossSettlementMapper;
+        this.executionFillMapper = executionFillMapper;
         this.singlePositionMapper = singlePositionMapper;
     }
 
@@ -184,6 +189,32 @@ public class ArbitrageDashboardQueryService {
                     value.tradingCashflowPnl, value.fee, netPnl, cumulative));
         }
         return envelope(points);
+    }
+
+    public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.ExecutionOrder>> executions(
+            String positionCode) {
+        List<CrossExchangeArbOrderEntity> positionOrders = readOrDefault("position orders", List::of,
+                () -> crossOrderMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
+                        .eq(CrossExchangeArbOrderEntity::getPositionCode, positionCode)
+                        .orderByAsc(CrossExchangeArbOrderEntity::getCreatedAt)));
+        List<CrossExchangeExecutionFillEntity> fills = readOrDefault("execution fills", List::of,
+                () -> executionFillMapper.selectList(new LambdaQueryWrapper<CrossExchangeExecutionFillEntity>()
+                        .eq(CrossExchangeExecutionFillEntity::getPositionCode, positionCode)
+                        .orderByAsc(CrossExchangeExecutionFillEntity::getClientOrderId)
+                        .orderByAsc(CrossExchangeExecutionFillEntity::getLevelNo)));
+        Map<String, List<CrossExchangeExecutionFillEntity>> byOrder = fills.stream()
+                .collect(Collectors.groupingBy(CrossExchangeExecutionFillEntity::getClientOrderId));
+        List<ArbitrageDashboardViews.ExecutionOrder> result = positionOrders.stream().map(order ->
+                new ArbitrageDashboardViews.ExecutionOrder(order.getClientOrderId(), order.getExchangeName(),
+                        order.getSymbol(), order.getLegSide(), Boolean.TRUE.equals(order.getReduceOnly()),
+                        order.getFilledQuantity(), order.getAveragePrice(), order.getBestPrice(),
+                        order.getWorstPrice(), order.getImpactBps(), order.getSlippageAmount(),
+                        order.getFeeAmount(), order.getLevelsConsumed(), format(order.getBookReceivedAt()),
+                        byOrder.getOrDefault(order.getClientOrderId(), List.of()).stream()
+                                .map(fill -> new ArbitrageDashboardViews.ExecutionFill(fill.getLevelNo(),
+                                        fill.getPrice(), fill.getFilledQuantity(), fill.getFilledNotional()))
+                                .toList())).toList();
+        return envelope(result);
     }
 
     private LocalDate toDate(Date value) {

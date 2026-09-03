@@ -56,6 +56,12 @@ public class ArbitrageDashboardController {
         return queryService.timeseries();
     }
 
+    @GetMapping("/positions/{positionCode}/executions")
+    public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.ExecutionOrder>> executions(
+            @PathVariable String positionCode) {
+        return queryService.executions(positionCode);
+    }
+
     @GetMapping("/market-health")
     public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.MarketHealth>> marketHealth() {
         return queryService.marketHealth();

@@ -4,6 +4,7 @@ import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOpportunity
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeFundingSettlementMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeExecutionFillMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeFundingSettlementEntity;
@@ -29,6 +30,7 @@ class ArbitrageDashboardQueryServiceTest {
         CrossExchangeArbPositionMapper positionMapper = mock(CrossExchangeArbPositionMapper.class);
         CrossExchangeArbOrderMapper orderMapper = mock(CrossExchangeArbOrderMapper.class);
         CrossExchangeFundingSettlementMapper settlementMapper = mock(CrossExchangeFundingSettlementMapper.class);
+        CrossExchangeExecutionFillMapper executionFillMapper = mock(CrossExchangeExecutionFillMapper.class);
         SingleExchangeArbitragePositionMapper singlePositionMapper = mock(SingleExchangeArbitragePositionMapper.class);
         Date occurredAt = Date.from(Instant.parse("2026-09-01T16:30:00Z"));
         CrossExchangeArbOrderEntity longOrder = new CrossExchangeArbOrderEntity().setLegSide("LONG")
@@ -42,7 +44,8 @@ class ArbitrageDashboardQueryServiceTest {
         when(orderMapper.selectList(any())).thenReturn(List.of(longOrder, shortOrder));
         when(settlementMapper.selectList(any())).thenReturn(List.of(funding));
         ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
-                opportunityMapper, positionMapper, orderMapper, settlementMapper, singlePositionMapper);
+                opportunityMapper, positionMapper, orderMapper, settlementMapper, executionFillMapper,
+                singlePositionMapper);
 
         var points = service.timeseries().data();
 
@@ -61,6 +64,7 @@ class ArbitrageDashboardQueryServiceTest {
         CrossExchangeArbPositionMapper positionMapper = mock(CrossExchangeArbPositionMapper.class);
         CrossExchangeArbOrderMapper orderMapper = mock(CrossExchangeArbOrderMapper.class);
         CrossExchangeFundingSettlementMapper settlementMapper = mock(CrossExchangeFundingSettlementMapper.class);
+        CrossExchangeExecutionFillMapper executionFillMapper = mock(CrossExchangeExecutionFillMapper.class);
         SingleExchangeArbitragePositionMapper singlePositionMapper = mock(SingleExchangeArbitragePositionMapper.class);
         DataAccessResourceFailureException unavailable = new DataAccessResourceFailureException("table unavailable");
 
@@ -69,7 +73,8 @@ class ArbitrageDashboardQueryServiceTest {
         when(settlementMapper.selectList(any())).thenThrow(unavailable);
 
         ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
-                opportunityMapper, positionMapper, orderMapper, settlementMapper, singlePositionMapper);
+                opportunityMapper, positionMapper, orderMapper, settlementMapper, executionFillMapper,
+                singlePositionMapper);
 
         var response = service.overview();
 

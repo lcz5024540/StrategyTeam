@@ -109,3 +109,28 @@ export interface ArbitragePnlTimePoint {
   netPnl: number
   cumulativeNetPnl: number
 }
+
+export interface ArbitrageExecutionFill {
+  level: number
+  price: number
+  quantity: number
+  notional: number
+}
+
+export interface ArbitrageExecutionOrder {
+  clientOrderId: string
+  exchange: string
+  symbol: string
+  side: string
+  reduceOnly: boolean
+  filledQuantity: number
+  averagePrice: number
+  bestPrice?: number | null
+  worstPrice?: number | null
+  impactBps?: number | null
+  slippageAmount?: number | null
+  feeAmount?: number | null
+  levelsConsumed?: number | null
+  bookReceivedAt?: string | null
+  fills: ArbitrageExecutionFill[]
+}

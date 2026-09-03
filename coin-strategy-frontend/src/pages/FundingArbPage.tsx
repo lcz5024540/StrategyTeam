@@ -5,8 +5,9 @@ import { arbitrageDashboardApi } from '@/api'
 import { ArbitragePnlCharts } from '@/components/charts/ArbitragePnlCharts'
 import { useStrategyStore } from '@/store/useStrategyStore'
 import { formatMoney, formatNumber, formatPercent } from '@/utils/format'
-import type { ArbitrageOpportunity } from '@/types/arbitrage-dashboard'
+import type { ArbitrageExecutionOrder, ArbitrageOpportunity } from '@/types/arbitrage-dashboard'
 import '@/styles/arbitrage-dashboard.css'
+import '@/styles/arbitrage-execution.css'
 
 const TEN_SECONDS = 10_000
 const value = (input?: number | null, suffix = '') => input == null ? '—' : `${formatNumber(input, 4)}${suffix}`
@@ -36,8 +37,15 @@ function Overview() {
 }
 
 function Positions() {
+  const [selected, setSelected] = useState<string | null>(null)
   const query = useQuery({ queryKey: ['arb-dashboard', 'positions'], queryFn: () => arbitrageDashboardApi.positions(), refetchInterval: TEN_SECONDS })
-  return <><div className="arb-head"><div><h1>Paper 持仓</h1><p>跨所与同所持仓的双腿完整性及收益归因。</p></div><Meta partial={query.data?.partial} missing={query.data?.missingExchanges} asOf={query.data?.asOf}/></div><section className="arb-panel"><div className="arb-table-wrap"><table className="arb-table"><thead><tr><th>组合</th><th>策略</th><th>Long 腿</th><th>Short 腿</th><th>数量差 / Delta</th><th>资金费</th><th>Basis PnL</th><th>下一结算</th><th>状态</th></tr></thead><tbody>{query.data?.data.map(item => <tr key={item.positionCode}><td><b>{item.positionCode}</b><small>{item.symbol} · {item.openedAt || '—'}</small></td><td>{item.kind}</td><td>{item.longExchange}<small>{value(item.longQuantity)}</small></td><td>{item.shortExchange}<small>{value(item.shortQuantity)}</small></td><td>{value((item.longQuantity ?? 0) - (item.shortQuantity ?? 0))}<small>{formatMoney(item.netDelta || 0)}</small></td><td className="positive">{formatMoney(item.fundingPnl || 0)}</td><td>{formatMoney(item.basisPnl || 0)}</td><td>{item.nextSettlementAt || '—'}</td><td><span className={`arb-badge ${statusClass(item.status)}`}>{item.status}</span></td></tr>)}{!query.isLoading && !query.data?.data.length ? <tr><td colSpan={9} className="arb-empty">当前没有持仓</td></tr> : null}</tbody></table></div></section></>
+  return <><div className="arb-head"><div><h1>Paper 持仓</h1><p>跨所与同所持仓的双腿完整性及收益归因。</p></div><Meta partial={query.data?.partial} missing={query.data?.missingExchanges} asOf={query.data?.asOf}/></div><section className="arb-panel"><div className="arb-table-wrap"><table className="arb-table"><thead><tr><th>组合</th><th>策略</th><th>Long 腿</th><th>Short 腿</th><th>数量差 / Delta</th><th>资金费</th><th>Basis PnL</th><th>下一结算</th><th>状态</th><th></th></tr></thead><tbody>{query.data?.data.map(item => <tr key={item.positionCode}><td><b>{item.positionCode}</b><small>{item.symbol} · {item.openedAt || '—'}</small></td><td>{item.kind}</td><td>{item.longExchange}<small>{value(item.longQuantity)}</small></td><td>{item.shortExchange}<small>{value(item.shortQuantity)}</small></td><td>{value((item.longQuantity ?? 0) - (item.shortQuantity ?? 0))}<small>{formatMoney(item.netDelta || 0)}</small></td><td className="positive">{formatMoney(item.fundingPnl || 0)}</td><td>{formatMoney(item.basisPnl || 0)}</td><td>{item.nextSettlementAt || '—'}</td><td><span className={`arb-badge ${statusClass(item.status)}`}>{item.status}</span></td><td><button className="arb-link" onClick={() => setSelected(item.positionCode)}>成交明细</button></td></tr>)}{!query.isLoading && !query.data?.data.length ? <tr><td colSpan={10} className="arb-empty">当前没有持仓</td></tr> : null}</tbody></table></div></section>{selected ? <ExecutionDrawer positionCode={selected} onClose={() => setSelected(null)}/> : null}</>
+}
+
+function ExecutionDrawer({ positionCode, onClose }: { positionCode: string; onClose: () => void }) {
+  const query = useQuery({ queryKey: ['arb-dashboard', 'executions', positionCode], queryFn: () => arbitrageDashboardApi.executions(positionCode) })
+  useEffect(() => { const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose(); document.addEventListener('keydown', close); return () => document.removeEventListener('keydown', close) }, [onClose])
+  return <div className="arb-drawer-mask" onMouseDown={event => event.target === event.currentTarget && onClose()}><aside className="arb-drawer" role="dialog" aria-modal="true" aria-label="成交明细"><header><div><h2>成交明细</h2><p>{positionCode} · 原始 L2 逐档回放</p></div><button onClick={onClose} aria-label="关闭">×</button></header><section>{query.data?.data.map((order: ArbitrageExecutionOrder) => <article className="arb-execution" key={order.clientOrderId}><header><b>{order.exchange} · {order.side}{order.reduceOnly ? ' · 平仓/补偿' : ''}</b><span>{order.levelsConsumed || 0} 档</span></header><div className="arb-execution-metrics"><span>Best <b>{value(order.bestPrice)}</b></span><span>VWAP <b>{value(order.averagePrice)}</b></span><span>Worst <b>{value(order.worstPrice)}</b></span><span>Impact <b>{value(order.impactBps, ' bps')}</b></span><span>滑点 <b>{formatMoney(order.slippageAmount || 0)}</b></span><span>手续费 <b>{formatMoney(order.feeAmount || 0)}</b></span></div><table><thead><tr><th>档位</th><th>价格</th><th>数量</th><th>成交额</th></tr></thead><tbody>{order.fills.map(fill => <tr key={fill.level}><td>{fill.level}</td><td>{value(fill.price)}</td><td>{value(fill.quantity)}</td><td>{formatMoney(fill.notional)}</td></tr>)}</tbody></table></article>)}{!query.isLoading && !query.data?.data.length ? <p className="arb-empty">暂无成交证据</p> : null}</section></aside></div>
 }
 
 function Quality() {

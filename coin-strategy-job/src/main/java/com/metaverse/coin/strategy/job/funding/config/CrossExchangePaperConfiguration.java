@@ -5,7 +5,8 @@ import java.util.*; import com.metaverse.coin.strategy.core.arbitrage.config.Mul
 @Configuration
 public class CrossExchangePaperConfiguration {
  @Bean public PaperPerpetualGateway paperPerpetualGateway(){return new PaperPerpetualGateway();}
- @Bean public PaperAtomicHedgeExecutor paperAtomicHedgeExecutor(PaperPerpetualGateway g){return new PaperAtomicHedgeExecutor(g);}
+ @Bean public PaperExecutionQuoteProvider paperExecutionQuoteProvider(List<CrossExchangeMarketDataProvider> providers,MultiExchangeFundingRateProperties properties){return new L2PaperExecutionQuoteProvider(providers.stream().filter(provider->properties.getExchanges().contains(provider.exchange())).toList(),properties.getCosts(),properties.getMaximumQuoteAge(),properties.getCaptureOrderBookDepth());}
+ @Bean public PaperAtomicHedgeExecutor paperAtomicHedgeExecutor(PaperPerpetualGateway g,PaperExecutionQuoteProvider quoteProvider){return new PaperAtomicHedgeExecutor(g,quoteProvider);}
  @Bean public CrossExchangeRiskService crossExchangeRiskService(MultiExchangeFundingRateProperties properties){return new CrossExchangeRiskService(new CrossExchangeRiskService.Limits(properties.getMaxSymbolNotional(),properties.getMaxExchangeNotional(),properties.getMaximumNakedDuration(),properties.getMaximumHoldingDuration(),properties.getExitNetYield(),properties.getMaxMarkPriceDeviation()));}
  @Bean public CrossExchangePaperTradingService crossExchangePaperTradingService(PaperAtomicHedgeExecutor e,CrossExchangeRiskService r,CrossExchangeArbitragePersistenceService p){return new CrossExchangePaperTradingService(e,r,p);}
  @Bean public ExchangeHealthRegistry exchangeHealthRegistry(){return new ExchangeHealthRegistry();}

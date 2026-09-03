@@ -1,6 +1,7 @@
 import { apiClient } from './client'
 import type {
   ArbitrageOpportunity,
+  ArbitrageExecutionOrder,
   ArbitrageOverview,
   ArbitragePnlTimePoint,
   ArbitragePosition,
@@ -20,6 +21,8 @@ export const arbitrageDashboardApi = {
     apiClient.get(`${base}/opportunities/${id}`),
   positions: (params: Record<string, string | undefined> = {}): Promise<DashboardEnvelope<ArbitragePosition[]>> =>
     apiClient.get(`${base}/positions`, { params }),
+  executions: (positionCode: string): Promise<DashboardEnvelope<ArbitrageExecutionOrder[]>> =>
+    apiClient.get(`${base}/positions/${encodeURIComponent(positionCode)}/executions`),
   timeseries: (): Promise<DashboardEnvelope<ArbitragePnlTimePoint[]>> => apiClient.get(`${base}/timeseries`),
   marketHealth: (): Promise<DashboardEnvelope<MarketHealth[]>> => apiClient.get(`${base}/market-health`),
   dataQuality: (): Promise<DashboardEnvelope<DataQuality>> => apiClient.get(`${base}/data-quality`),

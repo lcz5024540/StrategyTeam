@@ -15,11 +15,29 @@ public class PaperAtomicHedgeExecutor {
             PaperHedgePosition.Status status, Instant occurredAt, String detail) {
     }
 
+    public record ExecutionEvidence(String clientOrderId, Exchange exchange, String symbol,
+            HedgeSide side, boolean reduceOnly, Instant bookReceivedAt, String bookFingerprint,
+            BigDecimal requestedQuantity, BigDecimal filledQuantity, BigDecimal bestPrice,
+            BigDecimal vwap, BigDecimal worstPrice, BigDecimal impactBps,
+            BigDecimal slippageAmount, BigDecimal feeAmount,
+            List<OrderBookSweep.Slice> slices) {
+    }
+
     private final PaperPerpetualGateway gateway;
+    private final PaperExecutionQuoteProvider quoteProvider;
     private final Map<String, PaperHedgePosition> positions = new ConcurrentHashMap<>();
     private final Map<String, List<ExecutionEvent>> events = new ConcurrentHashMap<>();
+    private final Map<String, List<ExecutionEvidence>> executionEvidence = new ConcurrentHashMap<>();
 
-    public PaperAtomicHedgeExecutor(PaperPerpetualGateway gateway) { this.gateway = gateway; }
+    public PaperAtomicHedgeExecutor(PaperPerpetualGateway gateway) {
+        this(gateway, null);
+    }
+
+    public PaperAtomicHedgeExecutor(PaperPerpetualGateway gateway,
+            PaperExecutionQuoteProvider quoteProvider) {
+        this.gateway = gateway;
+        this.quoteProvider = quoteProvider;
+    }
 
     public PaperHedgePosition open(CrossExchangeOpportunity opportunity, BigDecimal notional,
             BigDecimal firstLegFillRatio, BigDecimal secondLegFillRatio, Instant now) {
@@ -38,7 +56,7 @@ public class PaperAtomicHedgeExecutor {
         record(id, opportunity, longFirst ? PaperHedgePosition.Status.OPENING_LONG
                 : PaperHedgePosition.Status.OPENING_SHORT, now, null);
         String firstOrderId = id + (longFirst ? "-OPEN-L" : "-OPEN-S");
-        PaperOrder firstOrder = gateway.fill(firstLeg, firstOrderId, firstPrice, firstLegFillRatio, now);
+        PaperOrder firstOrder = fill(firstLeg, firstOrderId, firstPrice, firstLegFillRatio, false, now);
         if (firstOrder.filledQuantity().signum() == 0) {
             return finish(new PaperHedgePosition(id, opportunity, longFirst ? firstOrder : null,
                     longFirst ? null : firstOrder, BigDecimal.ZERO,
@@ -53,8 +71,38 @@ public class PaperAtomicHedgeExecutor {
                 : PaperHedgePosition.Status.OPENING_LONG, now, null);
         BigDecimal secondPrice = longFirst ? opportunity.shortEntryPrice()
                 : opportunity.longEntryPrice();
-        PaperOrder secondOrder = gateway.fill(secondLeg, secondOrderId, secondPrice,
-                secondLegFillRatio, now);
+        PaperOrder secondOrder;
+        try {
+            secondOrder = fill(secondLeg, secondOrderId, secondPrice,
+                    secondLegFillRatio, false, now);
+        } catch (RuntimeException quoteFailure) {
+            record(id, opportunity, PaperHedgePosition.Status.PARTIALLY_FILLED, now,
+                    "second leg quote failed: " + quoteFailure.getMessage());
+            HedgeSide compensationSide = firstLeg.side() == HedgeSide.LONG ? HedgeSide.SHORT : HedgeSide.LONG;
+            HedgeLeg compensation = new HedgeLeg(firstLeg.exchange(), firstLeg.symbol(),
+                    compensationSide, firstOrder.filledQuantity());
+            record(id, opportunity, PaperHedgePosition.Status.COMPENSATING, now, null);
+            try {
+                PaperOrder rollback = fill(compensation,
+                        id + (longFirst ? "-COMPENSATE-L" : "-COMPENSATE-S"),
+                        firstPrice, BigDecimal.ONE, true, now);
+                PaperHedgePosition.Status status = rollback.status() == PaperOrder.Status.FILLED
+                        ? PaperHedgePosition.Status.ROLLED_BACK
+                        : PaperHedgePosition.Status.MANUAL_INTERVENTION;
+                return finish(new PaperHedgePosition(id, opportunity,
+                        longFirst ? firstOrder : null, longFirst ? null : firstOrder,
+                        status == PaperHedgePosition.Status.ROLLED_BACK ? BigDecimal.ZERO
+                                : firstOrder.filledQuantity(), status, null, now,
+                        status == PaperHedgePosition.Status.ROLLED_BACK
+                                ? "second leg quote failed; first leg rolled back"
+                                : "second leg quote failed and compensation failed"));
+            } catch (RuntimeException compensationFailure) {
+                return finish(new PaperHedgePosition(id, opportunity,
+                        longFirst ? firstOrder : null, longFirst ? null : firstOrder,
+                        firstOrder.filledQuantity(), PaperHedgePosition.Status.MANUAL_INTERVENTION,
+                        null, now, "second leg quote failed and compensation quote failed"));
+            }
+        }
         PaperOrder longOrder = longFirst ? firstOrder : secondOrder;
         PaperOrder shortOrder = longFirst ? secondOrder : firstOrder;
         if (secondOrder.filledQuantity().compareTo(firstOrder.filledQuantity()) < 0) {
@@ -64,7 +112,7 @@ public class PaperAtomicHedgeExecutor {
             HedgeSide compensationSide = firstLeg.side() == HedgeSide.LONG ? HedgeSide.SHORT : HedgeSide.LONG;
             HedgeLeg compensation = new HedgeLeg(firstLeg.exchange(), firstLeg.symbol(), compensationSide, naked);
             record(id, opportunity, PaperHedgePosition.Status.COMPENSATING, now, null);
-            PaperOrder rollback = gateway.fill(compensation, id + (longFirst ? "-COMPENSATE-L" : "-COMPENSATE-S"),
+            PaperOrder rollback = fill(compensation, id + (longFirst ? "-COMPENSATE-L" : "-COMPENSATE-S"),
                     firstPrice, BigDecimal.ONE, true, now);
             if (rollback.status() != PaperOrder.Status.FILLED) {
                 return finish(new PaperHedgePosition(id, opportunity, longOrder, shortOrder, naked,
@@ -73,10 +121,10 @@ public class PaperAtomicHedgeExecutor {
             }
             BigDecimal matched = secondOrder.filledQuantity();
             if (matched.signum() > 0) {
-                PaperOrder unwindLong = gateway.fill(
+                PaperOrder unwindLong = fill(
                         new HedgeLeg(longLeg.exchange(), longLeg.symbol(), HedgeSide.SHORT, matched),
                         id + "-ROLLBACK-L", opportunity.longQuote().markPrice(), BigDecimal.ONE, true, now);
-                PaperOrder unwindShort = gateway.fill(
+                PaperOrder unwindShort = fill(
                         new HedgeLeg(shortLeg.exchange(), shortLeg.symbol(), HedgeSide.LONG, matched),
                         id + "-ROLLBACK-S", opportunity.shortQuote().markPrice(), BigDecimal.ONE, true, now);
                 if (unwindLong.status() != PaperOrder.Status.FILLED
@@ -116,9 +164,9 @@ public class PaperAtomicHedgeExecutor {
                 current.opportunity().symbol(), HedgeSide.SHORT, quantity);
         HedgeLeg closeShort = new HedgeLeg(current.opportunity().shortQuote().exchange(),
                 current.opportunity().symbol(), HedgeSide.LONG, quantity);
-        PaperOrder longCloseOrder = gateway.fill(closeLong,
+        PaperOrder longCloseOrder = fill(closeLong,
                 closeOrderId(positionId, attemptId, "L"), longClosePrice, BigDecimal.ONE, true, now);
-        PaperOrder shortCloseOrder = gateway.fill(closeShort,
+        PaperOrder shortCloseOrder = fill(closeShort,
                 closeOrderId(positionId, attemptId, "S"), shortClosePrice, BigDecimal.ONE, true, now);
         boolean longClosed = longCloseOrder.status() == PaperOrder.Status.FILLED;
         boolean shortClosed = shortCloseOrder.status() == PaperOrder.Status.FILLED;
@@ -144,7 +192,7 @@ public class PaperAtomicHedgeExecutor {
                 : new HedgeLeg(current.opportunity().shortQuote().exchange(), current.opportunity().symbol(),
                         HedgeSide.SHORT, current.hedgedQuantity());
         BigDecimal recoveryPrice = longClosed ? longClosePrice : shortClosePrice;
-        PaperOrder recovery = gateway.fill(recoveryLeg,
+        PaperOrder recovery = fill(recoveryLeg,
                 closeOrderId(current.positionId(), attemptId, "RECOVER"),
                 recoveryPrice, BigDecimal.ONE, false, now);
         PaperHedgePosition.Status status = recovery.status() == PaperOrder.Status.FILLED
@@ -171,6 +219,50 @@ public class PaperAtomicHedgeExecutor {
     public List<ExecutionEvent> drainEvents(String positionId) {
         List<ExecutionEvent> recorded = events.remove(positionId);
         return recorded == null ? List.of() : List.copyOf(recorded);
+    }
+
+    public List<ExecutionEvidence> drainExecutionEvidence(String positionId) {
+        List<ExecutionEvidence> recorded = executionEvidence.remove(positionId);
+        return recorded == null ? List.of() : List.copyOf(recorded);
+    }
+
+    private PaperOrder fill(HedgeLeg leg, String clientOrderId, BigDecimal fallbackPrice,
+            BigDecimal fillRatio, boolean reduceOnly, Instant now) {
+        if (quoteProvider == null) {
+            return gateway.fill(leg, clientOrderId, fallbackPrice, fillRatio, reduceOnly, now);
+        }
+        PaperExecutionQuoteProvider.ExecutionQuote quote = quoteProvider.quote(
+                leg.exchange(), leg.symbol(), leg.side(), leg.quantity(), now);
+        PaperOrder order = gateway.fill(leg, clientOrderId, quote.sweep().vwap(), fillRatio,
+                reduceOnly, now);
+        BigDecimal filledQuantity = order.filledQuantity();
+        if (filledQuantity.signum() == 0) {
+            return order;
+        }
+        List<NormalizedOrderBookSnapshot.Level> quotedLevels = quote.sweep().slices().stream()
+                .map(slice -> new NormalizedOrderBookSnapshot.Level(slice.price(), slice.notional()))
+                .toList();
+        OrderBookSweep.Result actualSweep = OrderBookSweep.forQuantity(
+                quotedLevels, filledQuantity, quote.sweep().bestPrice());
+        BigDecimal slippage = actualSweep.vwap().subtract(actualSweep.bestPrice())
+                .abs().multiply(filledQuantity);
+        BigDecimal fee = actualSweep.vwap().multiply(filledQuantity).multiply(quote.feeRate());
+        executionEvidence.computeIfAbsent(positionId(clientOrderId),
+                ignored -> java.util.Collections.synchronizedList(new ArrayList<>())).add(
+                        new ExecutionEvidence(clientOrderId, leg.exchange(), leg.symbol(), leg.side(),
+                                reduceOnly, quote.bookReceivedAt(), quote.bookFingerprint(),
+                                leg.quantity(), filledQuantity, actualSweep.bestPrice(),
+                                actualSweep.vwap(), actualSweep.worstPrice(),
+                                actualSweep.impactBps(), slippage, fee, actualSweep.slices()));
+        return order;
+    }
+
+    private String positionId(String clientOrderId) {
+        int marker = clientOrderId.indexOf("-OPEN-");
+        if (marker < 0) marker = clientOrderId.indexOf("-COMPENSATE-");
+        if (marker < 0) marker = clientOrderId.indexOf("-ROLLBACK-");
+        if (marker < 0) marker = clientOrderId.indexOf("-ATTEMPT-");
+        return marker < 0 ? clientOrderId : clientOrderId.substring(0, marker);
     }
 
     private PaperHedgePosition finish(PaperHedgePosition position) {
