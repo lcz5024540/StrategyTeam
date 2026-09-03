@@ -69,7 +69,7 @@ export function ArbitrageScannerPage() {
 
   return <div className="ms-page arb-page">
     <section className="arb-hero">
-      <div><p className="arb-eyebrow">MARKET INTELLIGENCE · PAPER ONLY</p><h1>套利机会看板</h1><p>{isFundingMode ? '跨所资金费按标准币对聚合：一行展示各交易所原始周期费率，最佳方向同时给出原始差和小时化差，避免把不同结算周期混在一起看。' : UNSUPPORTED_MODES[mode].description}</p></div>
+      <div><p className="arb-eyebrow">MARKET INTELLIGENCE · PAPER ONLY</p><h1>套利机会看板</h1><p>{isFundingMode ? '跨所资金费按标准币对聚合：一行展示各交易所原始周期费率，最佳方向同时给出原始差和小时化差；若周期不同导致方向反转，会单独标红提示。' : UNSUPPORTED_MODES[mode].description}</p></div>
       <div className="arb-source"><span>数据来源</span><strong>{sourceStatus}</strong><small>{sourceDetail}</small></div>
     </section>
     <section className="arb-metrics">
@@ -88,11 +88,11 @@ export function ArbitrageScannerPage() {
         <label className="arb-toggle"><input type="checkbox" checked={qualifiedOnly} onChange={(event) => setQualifiedOnly(event.target.checked)} /><span />仅可执行</label>
         <button className="arb-text-button" type="button" onClick={resetFilters}>重置</button><button className="arb-text-button" type="button" onClick={() => void refetch()}>{isFetching ? '刷新中' : '刷新'}</button><button className="arb-text-button" type="button" onClick={() => void copyView()}>复制视图</button>
       </div> : null}
-      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · {isFundingMode ? `当前显示 ${fundingRows.length} 个币对，其中可执行 ${executableFundingRows.length} 个` : '真实读模型未接入'}</span><span>{isFundingMode ? '默认按最佳小时化费差 Δ/h 从大到小排序；各所列保留原始结算周期费率' : '已隐藏历史 demo 组合，避免误判为真实机会'}</span></div>
+      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · {isFundingMode ? `当前显示 ${fundingRows.length} 个币对，其中可执行 ${executableFundingRows.length} 个` : '真实读模型未接入'}</span><span>{isFundingMode ? '排序公式：空头费率/空头周期 - 多头费率/多头周期；各所列保留原始周期费率' : '已隐藏历史 demo 组合，避免误判为真实机会'}</span></div>
       {isFundingMode ? <div className="arb-table-wrap"><table><thead><tr>{fundingTableHeaders(fundingMatrix.exchanges).map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{fundingRows.length ? fundingRows.map((row) => <FundingRateMatrixTableRow key={row.symbol} row={row} exchanges={fundingMatrix.exchanges} />) : <tr><td className="arb-empty" colSpan={fundingMatrix.exchanges.length + 5}>没有满足当前筛选条件的币对</td></tr>}</tbody></table></div> : <UnsupportedModePanel mode={mode} />}
     </section>
     <section className="arb-bottom-grid"><article className="arb-card arb-health"><header><div><p className="arb-eyebrow">DATA COVERAGE</p><h2>资金费矩阵覆盖</h2></div><span>{matrixResponse?.asOf || '等待接口'}</span></header>{exchangeCoverage.map((item) => <div className="arb-health-row" key={item.name}><strong className={item.count > 0 ? 'good' : 'bad'}>● {item.name}</strong><i><b style={{ width: `${fundingMatrix.items.length ? Math.round(item.count / fundingMatrix.items.length * 100) : 0}%` }} /></i><span>{item.count || '—'}</span><small>{item.count ? '有资金费样本' : '当前矩阵无样本'}</small></div>)}</article>
-      <article className="arb-card arb-ranking"><p className="arb-eyebrow">WHY THIS RANKING</p><h2>排序口径</h2><ol><li>跨所资金费按每个币对的最佳小时化费差 Δ/h 降序，解决 8h、4h、2h、1h 结算周期不可直接相减的问题。</li><li>最佳方向单元格第一行展示原始差：即表格中空头交易所费率 - 多头交易所费率，方便肉眼核对。</li><li>策略状态、净收益和可执行容量继续单独展示，不把高费差直接等同于可开仓。</li><li>跨所价格仅研究可成交 VWAP 价差，不会触发 Paper 开仓。</li></ol></article></section>
+      <article className="arb-card arb-ranking"><p className="arb-eyebrow">WHY THIS RANKING</p><h2>排序口径</h2><ol><li>跨所资金费按每个币对的最佳小时化费差 Δ/h 降序：空头费率/空头周期 - 多头费率/多头周期。</li><li>最佳方向单元格第一行展示原始差：即表格中空头交易所费率 - 多头交易所费率，方便肉眼核对。</li><li>当 1h/2h/4h/8h 周期混算导致原始差和小时化差方向相反时，页面会标记“方向反转”，策略判断以小时化为准。</li><li>策略状态、净收益和可执行容量继续单独展示，不把高费差直接等同于可开仓。</li></ol></article></section>
     {isError ? <div className="arb-notice">读模型接口暂不可用；为避免误导，当前不展示 Demo 数据。</div> : null}
   </div>
 }
@@ -119,6 +119,11 @@ function bestRawFundingSpread(row: FundingRateMatrixRow) {
   const shortRate = row.ratesByExchange[row.shortExchange]
   return longRate == null || shortRate == null ? null : shortRate - longRate
 }
+function hasFundingSpreadSignFlip(row: FundingRateMatrixRow) {
+  const rawSpread = bestRawFundingSpread(row)
+  if (rawSpread == null || row.hourlyFundingSpread == null || rawSpread === 0 || row.hourlyFundingSpread === 0) return false
+  return Math.sign(rawSpread) !== Math.sign(row.hourlyFundingSpread)
+}
 function bestIntervalHint(row: FundingRateMatrixRow) {
   if (!row.longExchange || !row.shortExchange) return null
   const longInterval = row.intervalHoursByExchange?.[row.longExchange]
@@ -130,10 +135,11 @@ function FundingRateMatrixTableRow({ row, exchanges }: { row: FundingRateMatrixR
   const direction = row.longExchange && row.shortExchange ? `多 ${row.longExchange} / 空 ${row.shortExchange}` : '—'
   const rawSpread = bestRawFundingSpread(row)
   const intervalHint = bestIntervalHint(row)
+  const signFlip = hasFundingSpreadSignFlip(row)
   return <tr>
     <td><b>{row.symbol}</b><small>{row.sampledAt || '—'}</small></td>
     {exchanges.map((exchange) => <td key={exchange} className={`arb-rate-cell ${valueTone(row.ratesByExchange[exchange] || 0)}`}><b>{formatFundingRate(row.ratesByExchange[exchange], row.intervalHoursByExchange?.[exchange])}</b></td>)}
-    <td className="arb-best-opportunity"><b>{direction}</b><span className="arb-best-spread"><strong>原始差 {formatPercent(rawSpread)}</strong><small>{intervalHint ? '周期不同，仅作肉眼核对' : '按上方费率直接相减'}</small></span><small className="arb-hourly-spread">小时化 {formatPercentPerHour(row.hourlyFundingSpread)}{intervalHint ? ` · ${intervalHint}` : ''}</small></td>
+    <td className="arb-best-opportunity"><b>{direction}</b><span className={`arb-best-spread ${signFlip ? 'mismatch' : ''}`}><strong>原始差 {formatPercent(rawSpread)}</strong><small>{signFlip ? '方向反转，按小时化判断' : intervalHint ? '周期不同，仅作肉眼核对' : '按上方费率直接相减'}</small></span><small className="arb-hourly-spread">小时化 {formatPercentPerHour(row.hourlyFundingSpread)}{intervalHint ? ` · ${intervalHint}` : ''}</small>{signFlip ? <span className="arb-spread-warning">⚠ 周期归一化后方向相反</span> : null}</td>
     <td>{formatNotional(row.executableNotional)}<small>净收益 {formatPercent(row.estimatedNetYield)}</small></td>
     <td><Status status={isExecutableStatus(row.status) ? 'QUALIFIED' : row.status === 'OBSERVING' ? 'OBSERVING' : 'REJECTED'} />{row.rejectionReason ? <small>{row.rejectionReason}</small> : null}</td>
   </tr>
