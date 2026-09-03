@@ -93,7 +93,8 @@ public class CrossExchangeFundingArbitrageController {
             throw new IllegalArgumentException("opportunityId and positive notional are required");
         }
         Instant now = Instant.now();
-        CrossExchangeOpportunity opportunity = scanner.revalidateApprovedOpportunity(request.opportunityId(), now)
+        CrossExchangeOpportunity opportunity = scanner.revalidateApprovedOpportunity(
+                request.opportunityId(), request.notional(), now)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "approved opportunity is missing, expired or failed pre-trade revalidation"));
         return paper.open(opportunity, request.notional(), now);

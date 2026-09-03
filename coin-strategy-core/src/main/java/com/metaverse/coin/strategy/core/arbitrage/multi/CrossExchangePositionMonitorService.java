@@ -19,6 +19,7 @@ public class CrossExchangePositionMonitorService {
     private final BigDecimal basisRiskBuffer;
     private final Duration maximumQuoteAge;
     private final Duration maximumSettlementSkew;
+    private final int orderBookDepth;
 
     public CrossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,
             CrossExchangeRiskService risk, CrossExchangePaperTradingService paper) {
@@ -50,6 +51,15 @@ public class CrossExchangePositionMonitorService {
             CrossExchangeRiskService risk, CrossExchangePaperTradingService paper,
             CrossExchangeArbitragePersistenceService persistence, Map<Exchange, ExchangeCost> costs,
             BigDecimal basisRiskBuffer, Duration maximumQuoteAge, Duration maximumSettlementSkew) {
+        this(providers, risk, paper, persistence, costs, basisRiskBuffer, maximumQuoteAge,
+                maximumSettlementSkew, 100);
+    }
+
+    public CrossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,
+            CrossExchangeRiskService risk, CrossExchangePaperTradingService paper,
+            CrossExchangeArbitragePersistenceService persistence, Map<Exchange, ExchangeCost> costs,
+            BigDecimal basisRiskBuffer, Duration maximumQuoteAge, Duration maximumSettlementSkew,
+            int orderBookDepth) {
         this.providers = providers.stream().collect(Collectors.toMap(
                 CrossExchangeMarketDataProvider::exchange, Function.identity()));
         this.risk = risk;
@@ -59,6 +69,10 @@ public class CrossExchangePositionMonitorService {
         this.basisRiskBuffer = basisRiskBuffer == null ? BigDecimal.ZERO : basisRiskBuffer;
         this.maximumQuoteAge = maximumQuoteAge;
         this.maximumSettlementSkew = maximumSettlementSkew;
+        if (orderBookDepth <= 0) {
+            throw new IllegalArgumentException("order book depth must be positive");
+        }
+        this.orderBookDepth = orderBookDepth;
     }
 
     public List<PaperHedgePosition> monitor(Instant now) {
@@ -86,8 +100,7 @@ public class CrossExchangePositionMonitorService {
                     deviation, now, true, paper.isPaused(), settlementAligned(quotes));
             if (exit.passed()) {
                 recordExit(position, exit.reason());
-                closed.add(paper.close(position.positionId(), quotes.longQuote().markPrice(),
-                        quotes.shortQuote().markPrice(), now));
+                closed.add(closeWithDepth(position, quotes, now));
             }
         }
         return closed;
@@ -99,8 +112,7 @@ public class CrossExchangePositionMonitorService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("position is not open"));
         LatestQuotes quotes = latestQuotes(position, now);
-        return paper.close(positionId, quotes.longQuote().markPrice(),
-                quotes.shortQuote().markPrice(), now);
+        return closeWithDepth(position, quotes, now);
     }
 
     private LatestQuotes latestQuotes(PaperHedgePosition position, Instant now) {
@@ -110,10 +122,28 @@ public class CrossExchangePositionMonitorService {
         NormalizedFundingRateSnapshot shortQuote = provider(
                 position.opportunity().shortQuote().exchange())
                 .fundingRate(position.opportunity().symbol());
+        NormalizedOrderBookSnapshot longBook = provider(position.opportunity().longQuote().exchange())
+                .orderBook(position.opportunity().symbol(), orderBookDepth);
+        NormalizedOrderBookSnapshot shortBook = provider(position.opportunity().shortQuote().exchange())
+                .orderBook(position.opportunity().symbol(), orderBookDepth);
         if (longQuote.isStale(now, maximumQuoteAge) || shortQuote.isStale(now, maximumQuoteAge)) {
             throw new IllegalStateException("latest funding quote is stale");
         }
-        return new LatestQuotes(longQuote, shortQuote);
+        if (longBook == null || shortBook == null
+                || longBook.receivedAt().plus(maximumQuoteAge).isBefore(now)
+                || shortBook.receivedAt().plus(maximumQuoteAge).isBefore(now)) {
+            throw new IllegalStateException("latest order book is missing or stale");
+        }
+        return new LatestQuotes(longQuote, shortQuote, longBook, shortBook);
+    }
+
+    private PaperHedgePosition closeWithDepth(PaperHedgePosition position, LatestQuotes quotes, Instant now) {
+        BigDecimal quantity = position.hedgedQuantity();
+        OrderBookSweep.Result longExit = OrderBookSweep.forQuantity(
+                quotes.longBook().bidLevels(), quantity, quotes.longBook().bestBid());
+        OrderBookSweep.Result shortExit = OrderBookSweep.forQuantity(
+                quotes.shortBook().askLevels(), quantity, quotes.shortBook().bestAsk());
+        return paper.close(position.positionId(), longExit.vwap(), shortExit.vwap(), now);
     }
 
     private void monitorNakedExposure(PaperHedgePosition position, Instant now) {
@@ -170,6 +200,7 @@ public class CrossExchangePositionMonitorService {
     }
 
     private record LatestQuotes(NormalizedFundingRateSnapshot longQuote,
-            NormalizedFundingRateSnapshot shortQuote) {
+            NormalizedFundingRateSnapshot shortQuote, NormalizedOrderBookSnapshot longBook,
+            NormalizedOrderBookSnapshot shortBook) {
     }
 }

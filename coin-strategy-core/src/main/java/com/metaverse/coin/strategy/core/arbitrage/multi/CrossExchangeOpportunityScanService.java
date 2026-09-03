@@ -91,11 +91,20 @@ public class CrossExchangeOpportunityScanService {
     /** Requotes an approved opportunity immediately before opening it. */
     public Optional<CrossExchangeOpportunity> revalidateApprovedOpportunity(String opportunityId,
             Instant now) {
+        return revalidateApprovedOpportunity(opportunityId, targetNotional, now);
+    }
+
+    /** Requotes an approved opportunity for the caller's exact requested long-leg notional. */
+    public Optional<CrossExchangeOpportunity> revalidateApprovedOpportunity(String opportunityId,
+            BigDecimal requestedNotional, Instant now) {
+        if (requestedNotional == null || requestedNotional.signum() <= 0) {
+            throw new IllegalArgumentException("requested notional must be positive");
+        }
         CrossExchangeOpportunity existing = approvedOpportunity(opportunityId, now).orElse(null);
         if (existing == null) {
             return Optional.empty();
         }
-        return evaluate(existing.symbol(), now).stream()
+        return evaluate(existing.symbol(), now, requestedNotional).stream()
                 .filter(CrossExchangeOpportunity::executable)
                 .filter(candidate -> candidate.longQuote().exchange() == existing.longQuote().exchange()
                         && candidate.shortQuote().exchange() == existing.shortQuote().exchange())
@@ -165,6 +174,11 @@ public class CrossExchangeOpportunityScanService {
     }
 
     private List<CrossExchangeOpportunity> evaluate(String symbol, Instant now) {
+        return evaluate(symbol, now, null);
+    }
+
+    private List<CrossExchangeOpportunity> evaluate(String symbol, Instant now,
+            BigDecimal requestedNotional) {
         if (catalog != null) {
             catalog.ensureInitialized(now);
         }
@@ -190,6 +204,9 @@ public class CrossExchangeOpportunityScanService {
                 health.failure(provider.exchange(), now, exception,
                         Duration.between(requestStarted, Instant.now()).toMillis());
             }
+        }
+        if (requestedNotional != null) {
+            return new ArrayList<>(selector.evaluate(rates, books, costs, requestedNotional, limits, now));
         }
         if (riskSizer == null) {
             return new ArrayList<>(selector.evaluate(rates, books, costs, targetNotional, limits, now));

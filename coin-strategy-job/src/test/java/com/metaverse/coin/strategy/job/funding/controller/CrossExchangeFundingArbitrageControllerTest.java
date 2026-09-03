@@ -46,7 +46,8 @@ class CrossExchangeFundingArbitrageControllerTest {
         CrossExchangeOpportunity opportunity = opportunity("approved-id", CrossExchangeOpportunity.Status.APPROVED);
         PaperHedgePosition expected = new PaperHedgePosition("position", opportunity, null, null,
                 BigDecimal.ONE, PaperHedgePosition.Status.OPENED, Instant.now(), Instant.now(), null);
-        when(scanner.revalidateApprovedOpportunity(org.mockito.ArgumentMatchers.eq("approved-id"), any(Instant.class)))
+        when(scanner.revalidateApprovedOpportunity(org.mockito.ArgumentMatchers.eq("approved-id"),
+                org.mockito.ArgumentMatchers.eq(new BigDecimal("100")), any(Instant.class)))
                 .thenReturn(Optional.of(opportunity));
         when(paper.open(org.mockito.ArgumentMatchers.eq(opportunity),
                 org.mockito.ArgumentMatchers.eq(new BigDecimal("100")), any(Instant.class)))
@@ -62,7 +63,7 @@ class CrossExchangeFundingArbitrageControllerTest {
     void rejectsNonPositiveNotionalBeforeLookingUpOpportunity() {
         assertThrows(IllegalArgumentException.class, () -> controller.paperOpen(
                 new CrossExchangeFundingArbitrageController.PaperOpenRequest("approved-id", BigDecimal.ZERO)));
-        verify(scanner, never()).revalidateApprovedOpportunity(any(), any());
+        verify(scanner, never()).revalidateApprovedOpportunity(any(), any(BigDecimal.class), any());
     }
 
     @Test
