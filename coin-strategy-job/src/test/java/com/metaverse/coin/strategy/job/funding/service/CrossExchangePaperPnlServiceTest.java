@@ -18,7 +18,7 @@ import static org.mockito.Mockito.when;
 
 class CrossExchangePaperPnlServiceTest {
     @Test
-    void attributesBasisFundingAndEstimatedExecutionCosts() {
+    void attributesBasisFundingAndPersistedTradingFees() {
         CrossExchangeArbPositionMapper positions = mock(CrossExchangeArbPositionMapper.class);
         CrossExchangeArbOrderMapper orders = mock(CrossExchangeArbOrderMapper.class);
         CrossExchangeFundingSettlementMapper settlements = mock(CrossExchangeFundingSettlementMapper.class);
@@ -38,8 +38,8 @@ class CrossExchangePaperPnlServiceTest {
 
         assertEquals(0, new BigDecimal("3").compareTo(result.basisPnl()));
         assertEquals(0, new BigDecimal("1.0").compareTo(result.fundingIncome()));
-        assertEquals(0, new BigDecimal("0.409").compareTo(result.estimatedExecutionCost()));
-        assertEquals(0, new BigDecimal("3.591").compareTo(result.totalPnl()));
+        assertEquals(0, new BigDecimal("0.4").compareTo(result.estimatedExecutionCost()));
+        assertEquals(0, new BigDecimal("3.6").compareTo(result.totalPnl()));
         assertEquals("PAPER_PUBLIC_ESTIMATE", result.source());
     }
 
@@ -49,6 +49,7 @@ class CrossExchangePaperPnlServiceTest {
                 .setExchangeName(exchange)
                 .setLegSide(side)
                 .setFilledQuantity(new BigDecimal(quantity))
-                .setAveragePrice(new BigDecimal(price));
+                .setAveragePrice(new BigDecimal(price))
+                .setFeeAmount(new BigDecimal("0.1"));
     }
 }

@@ -58,10 +58,7 @@ public class CrossExchangePaperPnlService {
             } else if ("LONG".equals(order.getLegSide())) {
                 basisPnl = basisPnl.subtract(notional);
             }
-            ExchangeCost exchangeCost = costs.get(Exchange.parse(order.getExchangeName()));
-            if (exchangeCost != null) {
-                executionCost = executionCost.add(notional.multiply(exchangeCost.oneWayTakerCost()));
-            }
+            executionCost = executionCost.add(value(order.getFeeAmount()));
         }
         BigDecimal fundingIncome = positionSettlements.stream()
                 .map(CrossExchangeFundingSettlementEntity::getActualAmount)

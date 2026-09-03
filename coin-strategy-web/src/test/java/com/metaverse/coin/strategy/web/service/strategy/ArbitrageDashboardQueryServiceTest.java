@@ -32,9 +32,11 @@ class ArbitrageDashboardQueryServiceTest {
         SingleExchangeArbitragePositionMapper singlePositionMapper = mock(SingleExchangeArbitragePositionMapper.class);
         Date occurredAt = Date.from(Instant.parse("2026-09-01T16:30:00Z"));
         CrossExchangeArbOrderEntity longOrder = new CrossExchangeArbOrderEntity().setLegSide("LONG")
-                .setFilledQuantity(new BigDecimal("2")).setAveragePrice(new BigDecimal("100")).setCreatedAt(occurredAt);
+                .setFilledQuantity(new BigDecimal("2")).setAveragePrice(new BigDecimal("100"))
+                .setFeeAmount(new BigDecimal("0.10")).setCreatedAt(occurredAt);
         CrossExchangeArbOrderEntity shortOrder = new CrossExchangeArbOrderEntity().setLegSide("SHORT")
-                .setFilledQuantity(new BigDecimal("2")).setAveragePrice(new BigDecimal("101")).setCreatedAt(occurredAt);
+                .setFilledQuantity(new BigDecimal("2")).setAveragePrice(new BigDecimal("101"))
+                .setFeeAmount(new BigDecimal("0.10")).setCreatedAt(occurredAt);
         CrossExchangeFundingSettlementEntity funding = new CrossExchangeFundingSettlementEntity()
                 .setActualAmount(new BigDecimal("0.50")).setSettlementTime(occurredAt);
         when(orderMapper.selectList(any())).thenReturn(List.of(longOrder, shortOrder));
@@ -48,8 +50,9 @@ class ArbitrageDashboardQueryServiceTest {
         assertEquals("2026-09-02", points.get(0).bucketAt());
         assertEquals("2", points.get(0).tradingCashflowPnl().toPlainString());
         assertEquals("0.50", points.get(0).fundingPnl().toPlainString());
-        assertEquals("2.50", points.get(0).netPnl().toPlainString());
-        assertEquals("2.50", points.get(0).cumulativeNetPnl().toPlainString());
+        assertEquals("0.20", points.get(0).fee().toPlainString());
+        assertEquals("2.30", points.get(0).netPnl().toPlainString());
+        assertEquals("2.30", points.get(0).cumulativeNetPnl().toPlainString());
     }
 
     @Test

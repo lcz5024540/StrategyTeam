@@ -170,8 +170,9 @@ public class ArbitrageDashboardQueryService {
                     BigDecimal notional = zero(item.getFilledQuantity()).multiply(zero(item.getAveragePrice()));
                     BigDecimal signedCashflow = "SHORT".equalsIgnoreCase(item.getLegSide())
                             ? notional : notional.negate();
-                    daily.computeIfAbsent(toDate(item.getCreatedAt()), ignored -> new DailyPnl())
-                            .addTradingCashflow(signedCashflow);
+                    DailyPnl pnl = daily.computeIfAbsent(toDate(item.getCreatedAt()), ignored -> new DailyPnl());
+                    pnl.addTradingCashflow(signedCashflow);
+                    pnl.addFee(zero(item.getFeeAmount()));
                 });
         BigDecimal cumulative = BigDecimal.ZERO;
         List<ArbitrageDashboardViews.TimePoint> points = new ArrayList<>(daily.size());
@@ -201,6 +202,10 @@ public class ArbitrageDashboardQueryService {
 
         private void addTradingCashflow(BigDecimal amount) {
             tradingCashflowPnl = tradingCashflowPnl.add(amount);
+        }
+
+        private void addFee(BigDecimal amount) {
+            fee = fee.add(amount);
         }
     }
 
