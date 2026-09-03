@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.job.funding.service;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeArbitragePersistenceService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunity;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunityScanService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,7 @@ public class CrossExchangeFundingScanJob {
     private final CrossExchangeMetrics metrics;
     private final Clock clock;
 
+    @Autowired
     public CrossExchangeFundingScanJob(CrossExchangeOpportunityScanService scanner,
             CrossExchangeArbitragePersistenceService persistence, CrossExchangeMetrics metrics) {
         this(scanner, persistence, metrics, Clock.systemUTC());
