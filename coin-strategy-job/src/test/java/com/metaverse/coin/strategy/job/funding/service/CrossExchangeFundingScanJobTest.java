@@ -8,11 +8,18 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.NormalizedFundingRateSna
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,6 +42,43 @@ class CrossExchangeFundingScanJobTest {
         verify(persistence).saveOpportunity(approved);
         verify(persistence).saveOpportunity(rejected);
         verify(metrics).scan(1);
+    }
+
+    @Test
+    void timestampsEachSymbolAtItsOwnScanStart() {
+        CrossExchangeOpportunityScanService scanner = mock(CrossExchangeOpportunityScanService.class);
+        CrossExchangeArbitragePersistenceService persistence = mock(CrossExchangeArbitragePersistenceService.class);
+        CrossExchangeMetrics metrics = mock(CrossExchangeMetrics.class);
+        when(scanner.commonSymbols()).thenReturn(new LinkedHashSet<>(List.of("BTCUSDT", "ETHUSDT")));
+        when(scanner.scan(any(String.class), any(Instant.class))).thenReturn(List.of());
+        when(scanner.lastEvaluated()).thenReturn(List.of());
+        Instant first = Instant.parse("2026-09-01T10:00:00Z");
+
+        new CrossExchangeFundingScanJob(scanner, persistence, metrics, advancingClock(first)).scan();
+
+        var firstScanTime = forClass(Instant.class);
+        var secondScanTime = forClass(Instant.class);
+        verify(scanner).scan(eq("BTCUSDT"), firstScanTime.capture());
+        verify(scanner).scan(eq("ETHUSDT"), secondScanTime.capture());
+        assertEquals(first, firstScanTime.getValue());
+        assertEquals(first.plusSeconds(1), secondScanTime.getValue());
+    }
+
+    private Clock advancingClock(Instant first) {
+        AtomicLong seconds = new AtomicLong();
+        return new Clock() {
+            @Override public ZoneId getZone() {
+                return ZoneId.of("UTC");
+            }
+
+            @Override public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override public Instant instant() {
+                return first.plusSeconds(seconds.getAndIncrement());
+            }
+        };
     }
 
     private CrossExchangeOpportunity opportunity(String id, CrossExchangeOpportunity.Status status) {
