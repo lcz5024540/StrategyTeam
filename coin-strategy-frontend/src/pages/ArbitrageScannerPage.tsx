@@ -82,12 +82,12 @@ export function ArbitrageScannerPage() {
 
   return <div className="ms-page arb-page">
     <section className="arb-hero">
-      <div><p className="arb-eyebrow">MARKET INTELLIGENCE · PAPER ONLY</p><h1>发现真实可成交的套利机会</h1><p>跨所资金费按标准币对聚合：一行展示各交易所费率，最后只给出最佳方向与小时标准化差值。</p></div>
+      <div><p className="arb-eyebrow">MARKET INTELLIGENCE · PAPER ONLY</p><h1>发现真实可成交的套利机会</h1><p>跨所资金费按标准币对聚合：一行展示各交易所原始周期费率，最佳方向同时给出原始差和小时化差，避免把不同结算周期混在一起看。</p></div>
       <div className="arb-source"><span>数据来源</span><strong>{matrixResponse ? '看板读模型 · 在线' : '演示数据 · API 待读模型接入'}</strong><small>{matrixResponse?.source || 'DEMO · 等待读模型 API'}{(matrixResponse?.partial ?? true) ? ` · 部分数据：${(matrixResponse?.missingExchanges || ['BINANCE']).join('、')}` : ''}</small></div>
     </section>
     <section className="arb-metrics">
       <Metric label="可执行机会" value={mode === 'CROSS_FUNDING' ? String(executableFundingRows.length) : String(qualified.length)} detail="满足 L2、成本和同步结算条件" tone="positive" />
-      <Metric label={mode === 'CROSS_FUNDING' ? '最大资金费差' : '最佳单次净收益'} value={mode === 'CROSS_FUNDING' ? formatPercent(bestFunding?.hourlyFundingSpread) : best?.netText || '—'} detail={mode === 'CROSS_FUNDING' ? '每小时标准化，避免混淆结算周期' : '下一次同步结算，已扣除成本'} tone={mode === 'CROSS_FUNDING' ? 'positive' : best ? valueTone(best.net) : 'neutral'} />
+      <Metric label={mode === 'CROSS_FUNDING' ? '最大小时化费差' : '最佳单次净收益'} value={mode === 'CROSS_FUNDING' ? formatPercentPerHour(bestFunding?.hourlyFundingSpread) : best?.netText || '—'} detail={mode === 'CROSS_FUNDING' ? '排序用统一口径；行内另显示原始差' : '下一次同步结算，已扣除成本'} tone={mode === 'CROSS_FUNDING' ? 'positive' : best ? valueTone(best.net) : 'neutral'} />
       <Metric label="最大可成交容量" value={mode === 'CROSS_FUNDING' ? formatNotional(largestFunding?.executableNotional) : largest?.capacityText || '—'} detail="共同基础币数量对应的单腿名义金额" />
       <Metric label={mode === 'CROSS_FUNDING' ? '覆盖币对' : '数据完整度'} value={mode === 'CROSS_FUNDING' ? String(fundingRows.length) : `${coverageRate}%`} detail={mode === 'CROSS_FUNDING' ? `${fundingMatrix.exchanges.length} 个交易所横向比对 · 缺失以 — 显示` : `${snapshot.coverage.displayed}/${snapshot.coverage.total} 组合可展示 · 缺 L2 ${snapshot.coverage.missingL2}`} tone="warn" />
     </section>
@@ -101,11 +101,11 @@ export function ArbitrageScannerPage() {
         <label className="arb-toggle"><input type="checkbox" checked={qualifiedOnly} onChange={(event) => setQualifiedOnly(event.target.checked)} /><span />仅可执行</label>
         <button className="arb-text-button" type="button" onClick={resetFilters}>重置</button><button className="arb-text-button" type="button" onClick={() => void refetch()}>{isFetching ? '刷新中' : '刷新'}</button><button className="arb-text-button" type="button" onClick={() => void copyView()}>复制视图</button>
       </div>
-      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · {mode === 'CROSS_FUNDING' ? `当前显示 ${fundingRows.length} 个币对，其中可执行 ${executableFundingRows.length} 个` : `当前显示 ${rows.length} 个组合，其中可执行 ${qualified.length} 个`}</span><span>{mode === 'CROSS_FUNDING' ? '默认按最佳小时标准化费率差 Δ 从大到小排序；各所列保留原始结算周期费率' : `总组合 ${snapshot.coverage.total} · 缺 L2 ${snapshot.coverage.missingL2} · 过期 ${snapshot.coverage.stale} · 不可用 ${snapshot.coverage.unavailable}`}</span></div>
+      <div className="arb-meta"><span>{MODES.find((item) => item.value === mode)?.label}扫描 · {mode === 'CROSS_FUNDING' ? `当前显示 ${fundingRows.length} 个币对，其中可执行 ${executableFundingRows.length} 个` : `当前显示 ${rows.length} 个组合，其中可执行 ${qualified.length} 个`}</span><span>{mode === 'CROSS_FUNDING' ? '默认按最佳小时化费差 Δ/h 从大到小排序；各所列保留原始结算周期费率' : `总组合 ${snapshot.coverage.total} · 缺 L2 ${snapshot.coverage.missingL2} · 过期 ${snapshot.coverage.stale} · 不可用 ${snapshot.coverage.unavailable}`}</span></div>
       <div className="arb-table-wrap"><table><thead><tr>{(mode === 'CROSS_FUNDING' ? fundingTableHeaders(fundingMatrix.exchanges) : tableHeaders(mode)).map((item) => <th key={item}>{item}</th>)}</tr></thead><tbody>{mode === 'CROSS_FUNDING' ? (fundingRows.length ? fundingRows.map((row) => <FundingRateMatrixTableRow key={row.symbol} row={row} exchanges={fundingMatrix.exchanges} />) : <tr><td className="arb-empty" colSpan={fundingMatrix.exchanges.length + 5}>没有满足当前筛选条件的币对</td></tr>) : (rows.length ? rows.map((row) => <OpportunityRow key={row.id} row={row} mode={mode} onOpen={() => setSelected(row)} />) : <tr><td className="arb-empty" colSpan={10}>没有满足当前筛选条件的组合</td></tr>)}</tbody></table></div>
     </section>
     <section className="arb-bottom-grid"><article className="arb-card arb-health"><header><div><p className="arb-eyebrow">MARKET HEALTH</p><h2>交易所与数据质量</h2></div><span>最近 60 秒</span></header>{snapshot.health.map((item) => <div className="arb-health-row" key={item.exchange}><strong className={item.healthy ? 'good' : 'bad'}>● {item.exchange}</strong><i><b style={{ width: `${item.success}%` }} /></i><span>{item.latency ? `${item.latency}ms` : '—'}</span><small>{item.note}</small></div>)}</article>
-      <article className="arb-card arb-ranking"><p className="arb-eyebrow">WHY THIS RANKING</p><h2>排序口径</h2><ol><li>跨所资金费按每个币对的最佳小时标准化费率差 Δ 降序，最大费差优先。</li><li>相同费差按币对名称排序；缺失费差固定置底。</li><li>策略状态、净收益和可执行容量继续单独展示，不把高费差直接等同于可开仓。</li><li>跨所价格仅研究可成交 VWAP 价差，不会触发 Paper 开仓。</li></ol></article></section>
+      <article className="arb-card arb-ranking"><p className="arb-eyebrow">WHY THIS RANKING</p><h2>排序口径</h2><ol><li>跨所资金费按每个币对的最佳小时化费差 Δ/h 降序，解决 8h、4h、2h、1h 结算周期不可直接相减的问题。</li><li>最佳方向单元格第一行展示原始差：即表格中空头交易所费率 - 多头交易所费率，方便肉眼核对。</li><li>策略状态、净收益和可执行容量继续单独展示，不把高费差直接等同于可开仓。</li><li>跨所价格仅研究可成交 VWAP 价差，不会触发 Paper 开仓。</li></ol></article></section>
     {isError ? <div className="arb-notice">读模型接口暂不可用，正在显示明确标记的 Demo 数据。</div> : null}
     {selected ? <DetailDrawer row={selected} onClose={() => setSelected(null)} /> : null}
   </div>
@@ -114,25 +114,41 @@ export function ArbitrageScannerPage() {
 function Metric({ label, value, detail, tone = 'neutral' }: { label: string; value: string; detail: string; tone?: string }) { return <article className={`arb-metric ${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article> }
 function isExecutableStatus(status: string) { return ['QUALIFIED', 'APPROVED', 'PAPER_READY'].includes(status.toUpperCase()) }
 function formatPercent(value: number | null | undefined) { return value == null ? '—' : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(4)}%` }
+function formatPercentPerHour(value: number | null | undefined) { return value == null ? '—' : `${formatPercent(value)}/h` }
 function formatFundingRate(value: number | null | undefined, intervalHours: number | null | undefined) {
   if (value == null) return '—'
   const period = intervalHours != null && intervalHours > 0 && intervalHours !== 8 ? ` · ${intervalHours}h` : ''
   return `${formatPercent(value)}${period}`
 }
 function formatNotional(value: number | null | undefined) { return value == null ? '—' : value >= 1000 ? `$${(value / 1000).toFixed(1)}K` : `$${value.toFixed(0)}` }
-function fundingTableHeaders(exchanges: string[]) { return ['币对', ...exchanges.map((exchange) => `${exchange} 资金费`), '最佳套利机会 · 费差 ↓', '可执行容量', '策略状态'] }
+function fundingTableHeaders(exchanges: string[]) { return ['币对', ...exchanges.map((exchange) => `${exchange} 资金费`), '最佳套利机会 · 原始差 / 小时化 ↓', '可执行容量', '策略状态'] }
 function compareFundingSpreadDescending(left: FundingRateMatrixRow, right: FundingRateMatrixRow) {
   if (left.hourlyFundingSpread == null) return right.hourlyFundingSpread == null ? left.symbol.localeCompare(right.symbol) : 1
   if (right.hourlyFundingSpread == null) return -1
   return right.hourlyFundingSpread - left.hourlyFundingSpread || left.symbol.localeCompare(right.symbol)
 }
+function bestRawFundingSpread(row: FundingRateMatrixRow) {
+  if (!row.longExchange || !row.shortExchange) return null
+  const longRate = row.ratesByExchange[row.longExchange]
+  const shortRate = row.ratesByExchange[row.shortExchange]
+  return longRate == null || shortRate == null ? null : shortRate - longRate
+}
+function bestIntervalHint(row: FundingRateMatrixRow) {
+  if (!row.longExchange || !row.shortExchange) return null
+  const longInterval = row.intervalHoursByExchange?.[row.longExchange]
+  const shortInterval = row.intervalHoursByExchange?.[row.shortExchange]
+  if (!longInterval || !shortInterval || longInterval === shortInterval) return null
+  return `${row.longExchange} ${longInterval}h / ${row.shortExchange} ${shortInterval}h`
+}
 function tableHeaders(mode: ArbitrageMode) { return mode === 'CROSS_PRICE' ? ['币种', '高价腿 · 卖出', '低价腿 · 买入', '报价 / VWAP', '开仓价差', '费用后价差', '容量', '24h · 7d · 30d', '状态', ''] : mode === 'SINGLE_EXCHANGE' ? ['币种', '现货腿 · 买入', '永续腿 · 卖出', '资金费 / 下次结算', '当前基差', '单次净收益', '可用额度', '24h · 7d · 30d', '状态', ''] : ['币种', '低资金费腿 · 多', '高资金费腿 · 空', '资金费 / 下次结算', '毛收益 / 成本', '单次净收益', 'L2 容量', '24h · 7d · 30d', '状态', ''] }
 function FundingRateMatrixTableRow({ row, exchanges }: { row: FundingRateMatrixRow; exchanges: string[] }) {
   const direction = row.longExchange && row.shortExchange ? `多 ${row.longExchange} / 空 ${row.shortExchange}` : '—'
+  const rawSpread = bestRawFundingSpread(row)
+  const intervalHint = bestIntervalHint(row)
   return <tr>
     <td><b>{row.symbol}</b><small>{row.sampledAt || '—'}</small></td>
     {exchanges.map((exchange) => <td key={exchange} className={`arb-rate-cell ${valueTone(row.ratesByExchange[exchange] || 0)}`}><b>{formatFundingRate(row.ratesByExchange[exchange], row.intervalHoursByExchange?.[exchange])}</b></td>)}
-    <td className="arb-best-opportunity"><b>{direction}</b><span className="arb-best-spread"><strong>Δ {formatPercent(row.hourlyFundingSpread)}</strong><small>每小时标准化费差</small></span></td>
+    <td className="arb-best-opportunity"><b>{direction}</b><span className="arb-best-spread"><strong>原始差 {formatPercent(rawSpread)}</strong><small>{intervalHint ? '周期不同，仅作肉眼核对' : '按上方费率直接相减'}</small></span><small className="arb-hourly-spread">小时化 {formatPercentPerHour(row.hourlyFundingSpread)}{intervalHint ? ` · ${intervalHint}` : ''}</small></td>
     <td>{formatNotional(row.executableNotional)}<small>净收益 {formatPercent(row.estimatedNetYield)}</small></td>
     <td><Status status={isExecutableStatus(row.status) ? 'QUALIFIED' : row.status === 'OBSERVING' ? 'OBSERVING' : 'REJECTED'} />{row.rejectionReason ? <small>{row.rejectionReason}</small> : null}</td>
   </tr>
