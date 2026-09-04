@@ -66,7 +66,7 @@ class StrategyProductQueryServiceTest {
     @Mock
     private SingleExchangeArbitrageFundingSettlementMapper settlementMapper;
     @Mock
-    private StrategyRuntimeConfigMapper strategyRuntimeConfigMapper;
+    private StrategyRuntimeConfigMapper runtimeConfigMapper;
 
     private StrategyProductQueryService service;
 
@@ -79,7 +79,7 @@ class StrategyProductQueryServiceTest {
                 orderMapper,
                 settlementMapper,
                 new SingleExchangeSpotFuturesProperties(3, new BigDecimal("0.0005")),
-                strategyRuntimeConfigMapper
+                runtimeConfigMapper
         );
         lenient().when(positionMapper.selectList(any())).thenReturn(List.of());
         lenient().when(orderMapper.selectList(any())).thenReturn(List.of());
@@ -274,7 +274,7 @@ class StrategyProductQueryServiceTest {
                 /* stopLossRealizedPnlUsdc */ BigDecimal.ZERO
         );
         lenient().when(reportReadService.performance(any())).thenReturn(performance);
-        lenient().when(strategyRuntimeConfigMapper.selectOne(any()))
+        lenient().when(runtimeConfigMapper.selectOne(any()))
                 .thenReturn(new StrategyRuntimeConfigEntity()
                         .setStrategyCode("POLYMARKET_COPY")
                         .setConfigKey("smart-wallet.signal-risk.max-total-open-cost-usdc")

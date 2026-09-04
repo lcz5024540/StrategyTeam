@@ -134,3 +134,35 @@ export interface ArbitrageExecutionOrder {
   bookReceivedAt?: string | null
   fills: ArbitrageExecutionFill[]
 }
+
+export type ArbitrageMode = 'CROSS_PRICE' | 'CROSS_FUNDING' | 'SINGLE_EXCHANGE'
+
+export interface FundingRateMatrixRow {
+  symbol: string
+  ratesByExchange: Record<string, number | null>
+  intervalHoursByExchange?: Record<string, number | null>
+  longExchange: string | null
+  shortExchange: string | null
+  rawFundingSpread?: number | null
+  settlementWindowHours?: number | null
+  settlementWindowSpread?: number | null
+  cadenceAdjusted?: boolean
+  hourlyFundingSpread: number | null
+  estimatedNetYield: number | null
+  executableNotional: number | null
+  status: string
+  rejectionReason: string | null
+  sampledAt: string | null
+}
+
+export interface FundingRateMatrixResponse {
+  asOf: string
+  timezone: string
+  source: string
+  partial: boolean
+  missingExchanges: string[]
+  data: {
+    exchanges: string[]
+    items: FundingRateMatrixRow[]
+  }
+}

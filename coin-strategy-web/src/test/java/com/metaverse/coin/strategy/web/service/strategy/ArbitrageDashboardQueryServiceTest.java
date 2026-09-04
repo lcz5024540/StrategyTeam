@@ -77,13 +77,14 @@ class ArbitrageDashboardQueryServiceTest {
 
         ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(opportunityMapper,
                 mock(CrossExchangeArbPositionMapper.class), mock(CrossExchangeArbOrderMapper.class),
-                mock(CrossExchangeFundingSettlementMapper.class), mock(SingleExchangeArbitragePositionMapper.class));
+                mock(CrossExchangeFundingSettlementMapper.class), mock(CrossExchangeExecutionFillMapper.class),
+                mock(SingleExchangeArbitragePositionMapper.class));
 
         var response = service.fundingRateMatrix();
 
         assertEquals(List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID"), response.data().exchanges());
         assertEquals(2, response.data().items().size());
-        var btc = response.data().items().get(1);
+        var btc = response.data().items().get(0);
         assertEquals("BTCUSDT", btc.symbol());
         assertEquals(new BigDecimal("0.0024"), btc.ratesByExchange().get("OKX"));
         assertEquals(new BigDecimal("0.0048"), btc.ratesByExchange().get("HTX"));
@@ -92,9 +93,13 @@ class ArbitrageDashboardQueryServiceTest {
         assertEquals(4, btc.intervalHoursByExchange().get("HTX"));
         assertNull(btc.ratesByExchange().get("BINANCE"));
         assertEquals("OKX", btc.longExchange());
-        assertEquals("BITGET", btc.shortExchange());
-        assertEquals(new BigDecimal("0.000700"), btc.hourlyFundingSpread());
-        assertEquals("QUALIFIED", btc.status());
+        assertEquals("HTX", btc.shortExchange());
+        assertEquals(new BigDecimal("0.0024"), btc.rawFundingSpread());
+        assertEquals(8, btc.settlementWindowHours());
+        assertEquals(new BigDecimal("0.0072"), btc.settlementWindowSpread());
+        assertTrue(btc.cadenceAdjusted());
+        assertEquals(new BigDecimal("0.000300"), btc.hourlyFundingSpread());
+        assertEquals("REJECTED", btc.status());
     }
 
     @Test

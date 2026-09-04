@@ -21,6 +21,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -49,6 +50,7 @@ public class ArbitrageDashboardQueryService {
     private static final BigDecimal PAPER_CAPITAL_PER_EXCHANGE = new BigDecimal("2000");
     private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("3");
     private static final List<String> FUNDING_EXCHANGES = List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID");
+    private static final Duration MAX_SNAPSHOT_AGE = Duration.ofMinutes(30);
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.SIMPLIFIED_CHINESE).withZone(ZoneId.of(TIMEZONE));
 
@@ -137,15 +139,17 @@ public class ArbitrageDashboardQueryService {
      */
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.FundingRateMatrix> fundingRateMatrix() {
         List<CrossExchangeArbOpportunityEntity> opportunities = readOrDefault("funding-rate matrix", List::of,
-                () -> opportunityMapper.selectList(new LambdaQueryWrapper<>()));
+                () -> opportunityMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOpportunityEntity>()
+                        .ge(CrossExchangeArbOpportunityEntity::getDiscoveredAt,
+                                Date.from(Instant.now().minus(MAX_SNAPSHOT_AGE)))));
         Map<String, List<CrossExchangeArbOpportunityEntity>> bySymbol = opportunities.stream()
                 .filter(item -> item.getSymbol() != null && !item.getSymbol().isBlank())
                 .collect(Collectors.groupingBy(CrossExchangeArbOpportunityEntity::getSymbol));
         List<ArbitrageDashboardViews.FundingRateMatrixRow> items = bySymbol.entrySet().stream()
                 .map(entry -> toFundingRateMatrixRow(entry.getKey(), entry.getValue()))
                 .flatMap(Optional::stream)
-                .sorted(Comparator.comparing(ArbitrageDashboardViews.FundingRateMatrixRow::hourlyFundingSpread,
-                                Comparator.nullsLast(BigDecimal::compareTo)).reversed()
+                .sorted(Comparator.comparing((ArbitrageDashboardViews.FundingRateMatrixRow row) -> rankSpread(row),
+                                Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(ArbitrageDashboardViews.FundingRateMatrixRow::symbol))
                 .toList();
         return envelope(new ArbitrageDashboardViews.FundingRateMatrix(FUNDING_EXCHANGES, items));
@@ -305,8 +309,8 @@ public class ArbitrageDashboardQueryService {
         List<CrossExchangeArbOpportunityEntity> current = symbolOpportunities.stream()
                 .filter(item -> sameTimestamp(item.getDiscoveredAt(), sampledAt)).toList();
         CrossExchangeArbOpportunityEntity best = current.stream()
-                .max(Comparator.comparing(CrossExchangeArbOpportunityEntity::getHourlyFundingSpread,
-                        Comparator.nullsLast(BigDecimal::compareTo))
+                .max(Comparator.comparing((CrossExchangeArbOpportunityEntity item) -> rankSpread(item),
+                        Comparator.nullsFirst(BigDecimal::compareTo))
                         .thenComparing(CrossExchangeArbOpportunityEntity::getUpdatedAt,
                                 Comparator.nullsLast(Date::compareTo)))
                 .orElse(null);
@@ -321,10 +325,85 @@ public class ArbitrageDashboardQueryService {
             putRate(rates, intervals, item.getShortExchange(), item.getShortFundingRate(),
                     item.getShortFundingIntervalHours());
         });
+        BigDecimal rawFundingSpread = rawFundingSpread(best);
+        boolean cadenceAdjusted = isCadenceAdjusted(best);
+        Integer settlementWindowHours = cadenceAdjusted ? settlementWindowHours(best) : null;
+        BigDecimal settlementWindowSpread = cadenceAdjusted ? settlementWindowSpread(best, settlementWindowHours) : null;
         return Optional.of(new ArbitrageDashboardViews.FundingRateMatrixRow(symbol, rates, intervals,
-                best.getLongExchange(), best.getShortExchange(), best.getHourlyFundingSpread(),
-                best.getEstimatedNetYield(), best.getExecutableNotional(), best.getStatus(),
-                best.getRejectionReason(), format(sampledAt)));
+                best.getLongExchange(), best.getShortExchange(), rawFundingSpread, settlementWindowHours,
+                settlementWindowSpread, cadenceAdjusted, best.getHourlyFundingSpread(), best.getEstimatedNetYield(),
+                best.getExecutableNotional(), best.getStatus(), best.getRejectionReason(), format(sampledAt)));
+    }
+
+    private static BigDecimal rankSpread(ArbitrageDashboardViews.FundingRateMatrixRow row) {
+        return row.cadenceAdjusted() && row.settlementWindowSpread() != null
+                ? row.settlementWindowSpread()
+                : row.rawFundingSpread();
+    }
+
+    private static BigDecimal rankSpread(CrossExchangeArbOpportunityEntity opportunity) {
+        if (isCadenceAdjusted(opportunity)) {
+            BigDecimal settlementWindowSpread = settlementWindowSpread(opportunity, settlementWindowHours(opportunity));
+            if (settlementWindowSpread != null) {
+                return settlementWindowSpread;
+            }
+        }
+        return rawFundingSpread(opportunity);
+    }
+
+    private static BigDecimal rawFundingSpread(CrossExchangeArbOpportunityEntity opportunity) {
+        if (opportunity.getShortFundingRate() == null || opportunity.getLongFundingRate() == null) {
+            return null;
+        }
+        return opportunity.getShortFundingRate().subtract(opportunity.getLongFundingRate());
+    }
+
+    private static BigDecimal settlementWindowSpread(CrossExchangeArbOpportunityEntity opportunity,
+            Integer settlementWindowHours) {
+        Integer longIntervalHours = opportunity.getLongFundingIntervalHours();
+        Integer shortIntervalHours = opportunity.getShortFundingIntervalHours();
+        if (opportunity.getShortFundingRate() == null || opportunity.getLongFundingRate() == null
+                || settlementWindowHours == null || longIntervalHours == null || shortIntervalHours == null
+                || longIntervalHours <= 0 || shortIntervalHours <= 0) {
+            return null;
+        }
+        BigDecimal window = BigDecimal.valueOf(settlementWindowHours);
+        BigDecimal shortSettlements = window.divide(BigDecimal.valueOf(shortIntervalHours));
+        BigDecimal longSettlements = window.divide(BigDecimal.valueOf(longIntervalHours));
+        return opportunity.getShortFundingRate().multiply(shortSettlements)
+                .subtract(opportunity.getLongFundingRate().multiply(longSettlements));
+    }
+
+    private static Integer settlementWindowHours(CrossExchangeArbOpportunityEntity opportunity) {
+        Integer longIntervalHours = opportunity.getLongFundingIntervalHours();
+        Integer shortIntervalHours = opportunity.getShortFundingIntervalHours();
+        if (longIntervalHours == null || shortIntervalHours == null || longIntervalHours <= 0
+                || shortIntervalHours <= 0) {
+            return null;
+        }
+        return lcm(longIntervalHours, shortIntervalHours);
+    }
+
+    private static boolean isCadenceAdjusted(CrossExchangeArbOpportunityEntity opportunity) {
+        Integer longIntervalHours = opportunity.getLongFundingIntervalHours();
+        Integer shortIntervalHours = opportunity.getShortFundingIntervalHours();
+        return longIntervalHours != null && shortIntervalHours != null && longIntervalHours > 0
+                && shortIntervalHours > 0 && !longIntervalHours.equals(shortIntervalHours);
+    }
+
+    private static int lcm(int left, int right) {
+        return Math.abs(left / gcd(left, right) * right);
+    }
+
+    private static int gcd(int left, int right) {
+        int a = Math.abs(left);
+        int b = Math.abs(right);
+        while (b != 0) {
+            int next = a % b;
+            a = b;
+            b = next;
+        }
+        return a;
     }
 
     private boolean sameTimestamp(Date value, Date expected) {

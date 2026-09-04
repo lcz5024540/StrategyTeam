@@ -38,15 +38,18 @@ public final class ArbitrageDashboardViews {
 
     /**
      * A single canonical contract, with its latest funding rate shown once per exchange.
-     * Rates are the exchange-native settlement rates. The best spread is hourly-normalized,
-     * which is the unit used by the execution policy when settlement intervals differ.
+     * Rates are the exchange-native settlement rates. The main spread is the raw spread
+     * between the chosen short and long exchanges; when settlement intervals differ, an
+     * additional common-window spread is exposed for cadence-aware arbitrage checks.
      */
     public record FundingRateMatrix(List<String> exchanges, List<FundingRateMatrixRow> items) {
     }
 
     public record FundingRateMatrixRow(String symbol, Map<String, BigDecimal> ratesByExchange,
                                        Map<String, Integer> intervalHoursByExchange,
-                                       String longExchange, String shortExchange,
+                                       String longExchange, String shortExchange, BigDecimal rawFundingSpread,
+                                       Integer settlementWindowHours, BigDecimal settlementWindowSpread,
+                                       boolean cadenceAdjusted,
                                        BigDecimal hourlyFundingSpread, BigDecimal estimatedNetYield,
                                        BigDecimal executableNotional, String status,
                                        String rejectionReason, String sampledAt) {
