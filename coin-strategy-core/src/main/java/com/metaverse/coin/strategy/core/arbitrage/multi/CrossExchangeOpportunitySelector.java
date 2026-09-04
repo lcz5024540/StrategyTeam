@@ -38,12 +38,13 @@ public final class CrossExchangeOpportunitySelector {
         for (int i = 0; i < rates.size(); i++) for (int j = i + 1; j < rates.size(); j++) {
             var a = rates.get(i); var b = rates.get(j);
             if (!a.canonicalSymbol().equals(b.canonicalSymbol()) || a.exchange() == b.exchange()) continue;
-            var low = a.hourlyFundingRate().compareTo(b.hourlyFundingRate()) <= 0 ? a : b;
-            var high = low == a ? b : a;
+            FundingRateYieldProjection.Direction direction = FundingRateYieldProjection.bestDirection(a, b, now);
+            var low = direction.longQuote();
+            var high = direction.shortQuote();
             ExecutionPlan execution = executionPlan(low, high, books, targetNotional);
             String reason = rejection(low, high, books, costs, execution, targetNotional, limits, now);
             BigDecimal hourlySpread = high.hourlyFundingRate().subtract(low.hourlyFundingRate());
-            BigDecimal projectedFundingYield = FundingRateYieldProjection.projectedSpread(low, high);
+            BigDecimal projectedFundingYield = direction.projectedSpread();
             BigDecimal cost = costs.containsKey(low.exchange()) && costs.containsKey(high.exchange())
                     ? costs.get(low.exchange()).roundTripTakerCost()
                             .add(costs.get(low.exchange()).amortizedCapitalTransferCost())
@@ -76,7 +77,11 @@ public final class CrossExchangeOpportunitySelector {
         if (low.isStale(now, limits.maxQuoteAge()) || high.isStale(now, limits.maxQuoteAge())) return "STALE_FUNDING_QUOTE";
         if (!costs.containsKey(low.exchange()) || !costs.containsKey(high.exchange())) return "MISSING_EXCHANGE_COST";
         if (!books.containsKey(low.exchange()) || !books.containsKey(high.exchange())) return "MISSING_ORDER_BOOK";
-        if (Duration.between(low.nextFundingTime(), high.nextFundingTime()).abs().compareTo(limits.maxSettlementSkew()) > 0) return "SETTLEMENT_TIME_SKEW";
+        if (low.fundingIntervalHours() == high.fundingIntervalHours()
+                && Duration.between(low.nextFundingTime(), high.nextFundingTime()).abs()
+                .compareTo(limits.maxSettlementSkew()) > 0) {
+            return "SETTLEMENT_TIME_SKEW";
+        }
         if (!limits.allowMixedSigns()
                 && low.rawFundingRate().signum() * high.rawFundingRate().signum() < 0) {
             return "MIXED_FUNDING_SIGNS";

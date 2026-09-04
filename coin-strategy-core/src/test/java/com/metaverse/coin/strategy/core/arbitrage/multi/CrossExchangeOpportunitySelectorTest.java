@@ -56,6 +56,21 @@ class CrossExchangeOpportunitySelectorTest {
         assertEquals(0, new BigDecimal("0.00005").compareTo(opportunity.hourlyFundingSpread()));
         assertEquals(0, new BigDecimal("0.0004").compareTo(opportunity.estimatedNetYield()));
     }
+    @Test void allowsDifferentCadenceWhenNextSettlementTimesAreSkewedButWindowYieldIsPositive() {
+        var limits = new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1),
+                Duration.ofMinutes(2), new BigDecimal("0.01"), BigDecimal.ONE,
+                new BigDecimal("0.0003"), BigDecimal.ZERO, false);
+
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.OKX, "0.0008", 8, now.plus(Duration.ofHours(8))),
+                        rate(Exchange.HYPERLIQUID, "0.00015", 1, now.plus(Duration.ofHours(1)))),
+                books(), costs(), new BigDecimal("100"), limits, now).get(0);
+
+        assertEquals(Exchange.OKX, opportunity.longQuote().exchange());
+        assertEquals(Exchange.HYPERLIQUID, opportunity.shortQuote().exchange());
+        assertEquals(0, new BigDecimal("0.0004").compareTo(opportunity.estimatedNetYield()));
+        assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
+    }
     @Test void rejectsWhenAmortizedCapitalTransferCostEliminatesNetYield() {
         Map<Exchange, ExchangeCost> costs = costs();
         costs.put(Exchange.BINANCE, new ExchangeCost(BigDecimal.ZERO, BigDecimal.ZERO,
@@ -147,7 +162,8 @@ class CrossExchangeOpportunitySelectorTest {
         assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
         assertEquals(0, new BigDecimal("100").compareTo(opportunity.executableNotional()));
     }
-    private NormalizedFundingRateSnapshot rate(Exchange e,String r,int h){return new NormalizedFundingRateSnapshot(e,"BTCUSDT",new BigDecimal(r),h,now.plusSeconds(3600),new BigDecimal("100"),new BigDecimal("100"),now);}
+    private NormalizedFundingRateSnapshot rate(Exchange e,String r,int h){return rate(e,r,h,now.plusSeconds(3600));}
+    private NormalizedFundingRateSnapshot rate(Exchange e,String r,int h,Instant settlement){return new NormalizedFundingRateSnapshot(e,"BTCUSDT",new BigDecimal(r),h,settlement,new BigDecimal("100"),new BigDecimal("100"),now);}
     private Map<Exchange,NormalizedOrderBookSnapshot> books(){Map<Exchange,NormalizedOrderBookSnapshot> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new NormalizedOrderBookSnapshot(e,"BTCUSDT",new BigDecimal("99"),new BigDecimal("101"),new BigDecimal("1000"),new BigDecimal("1000"),now));return m;}
     private Map<Exchange,NormalizedOrderBookSnapshot> books(Instant receivedAt){Map<Exchange,NormalizedOrderBookSnapshot> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new NormalizedOrderBookSnapshot(e,"BTCUSDT",new BigDecimal("99"),new BigDecimal("101"),new BigDecimal("1000"),new BigDecimal("1000"),receivedAt));return m;}
     private Map<Exchange,ExchangeCost> costs(){Map<Exchange,ExchangeCost> m=new EnumMap<>(Exchange.class);for(Exchange e:Exchange.values())m.put(e,new ExchangeCost(BigDecimal.ZERO,BigDecimal.ZERO,BigDecimal.ZERO));return m;}

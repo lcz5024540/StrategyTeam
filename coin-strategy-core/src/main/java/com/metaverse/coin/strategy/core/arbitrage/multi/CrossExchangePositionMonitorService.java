@@ -92,7 +92,7 @@ public class CrossExchangePositionMonitorService {
                 recordUnavailableMarketData(position, exception);
                 continue;
             }
-            BigDecimal latestNetYield = remainingNetYield(quotes.longQuote(), quotes.shortQuote());
+            BigDecimal latestNetYield = remainingNetYield(quotes.longQuote(), quotes.shortQuote(), now);
             BigDecimal deviation = quotes.shortQuote().markPrice()
                     .subtract(quotes.longQuote().markPrice()).abs()
                     .divide(quotes.longQuote().markPrice(), 12, RoundingMode.HALF_UP);
@@ -167,14 +167,17 @@ public class CrossExchangePositionMonitorService {
     }
 
     private BigDecimal remainingNetYield(NormalizedFundingRateSnapshot longQuote,
-            NormalizedFundingRateSnapshot shortQuote) {
-        return FundingRateYieldProjection.projectedSpread(longQuote, shortQuote)
+            NormalizedFundingRateSnapshot shortQuote, Instant now) {
+        return FundingRateYieldProjection.projectedSpread(longQuote, shortQuote, now)
                 .subtract(oneWayCost(longQuote.exchange()))
                 .subtract(oneWayCost(shortQuote.exchange()))
                 .subtract(basisRiskBuffer);
     }
 
     private boolean settlementAligned(LatestQuotes quotes) {
+        if (quotes.longQuote().fundingIntervalHours() != quotes.shortQuote().fundingIntervalHours()) {
+            return true;
+        }
         return Duration.between(quotes.longQuote().nextFundingTime(),
                 quotes.shortQuote().nextFundingTime()).abs().compareTo(maximumSettlementSkew) <= 0;
     }

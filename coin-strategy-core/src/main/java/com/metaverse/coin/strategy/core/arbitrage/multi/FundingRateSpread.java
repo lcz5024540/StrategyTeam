@@ -2,7 +2,7 @@ package com.metaverse.coin.strategy.core.arbitrage.multi;
 
 import java.math.BigDecimal;
 
-/** Candidate pair: long the lower funding leg and short the higher funding leg. */
+/** Candidate pair chosen by the highest common-window funding spread. */
 public record FundingRateSpread(FundingRateQuote longLeg, FundingRateQuote shortLeg,
                                 BigDecimal fundingSpread, BigDecimal priceSpread,
                                 BigDecimal estimatedNetYield) {
@@ -18,6 +18,6 @@ public record FundingRateSpread(FundingRateQuote longLeg, FundingRateQuote short
     public String directionRationale() {
         return mixedFundingSigns()
                 ? "mixed-sign funding: long receives on negative leg and short receives on positive leg; require extra risk checks"
-                : "long the lower numeric funding rate and short the higher numeric funding rate";
+                : "long the lower common-window funding leg and short the higher common-window funding leg";
     }
 }

@@ -221,9 +221,10 @@ public class CrossExchangeOpportunityScanService {
                         || !books.containsKey(a.exchange()) || !books.containsKey(b.exchange())) {
                     continue;
                 }
-                NormalizedFundingRateSnapshot low = a.hourlyFundingRate().compareTo(b.hourlyFundingRate()) <= 0 ? a : b;
-                NormalizedFundingRateSnapshot high = low == a ? b : a;
-                BigDecimal projected = FundingRateYieldProjection.projectedSpread(low, high)
+                FundingRateYieldProjection.Direction direction = FundingRateYieldProjection.bestDirection(a, b, now);
+                NormalizedFundingRateSnapshot low = direction.longQuote();
+                NormalizedFundingRateSnapshot high = direction.shortQuote();
+                BigDecimal projected = direction.projectedSpread()
                         .subtract(costs.get(low.exchange()).roundTripTakerCost())
                         .subtract(costs.get(high.exchange()).roundTripTakerCost())
                         .subtract(limits.basisRiskBuffer());

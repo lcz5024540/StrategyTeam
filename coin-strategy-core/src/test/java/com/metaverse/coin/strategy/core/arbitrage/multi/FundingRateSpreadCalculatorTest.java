@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.core.arbitrage.multi;
 
 import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
@@ -47,5 +48,27 @@ class FundingRateSpreadCalculatorTest {
 
         assertEquals(Exchange.OKX, result.longLeg().exchange());
         assertEquals(0, new BigDecimal("0.0004").compareTo(result.fundingSpread()));
+    }
+
+    @Test
+    void projectsRawFundingBySettlementCountsAcrossCommonWindow() {
+        Instant now = Instant.parse("2026-09-04T00:00:00Z");
+
+        BigDecimal projected = FundingRateYieldProjection.projectedSpread(
+                new BigDecimal("0.0008"), 8, now.plus(Duration.ofHours(8)),
+                new BigDecimal("0.0007"), 6, now.plus(Duration.ofHours(6)), now);
+
+        assertEquals(0, new BigDecimal("0.0004").compareTo(projected));
+    }
+
+    @Test
+    void excludesSettlementAtOpenTimeFromTimeAwareProjection() {
+        Instant now = Instant.parse("2026-09-04T00:00:00Z");
+
+        BigDecimal projected = FundingRateYieldProjection.projectedSpread(
+                new BigDecimal("0.0008"), 8, now,
+                new BigDecimal("0.00015"), 1, now.plus(Duration.ofHours(1)), now);
+
+        assertEquals(0, new BigDecimal("0.0004").compareTo(projected));
     }
 }
