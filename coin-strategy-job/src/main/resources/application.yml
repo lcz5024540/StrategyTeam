@@ -123,6 +123,9 @@ arbitrage:
     # 0 means use the approved opportunity's full executable notional.
     auto-paper-open-notional: 0
     auto-paper-open-max-per-cycle: 1
+    paper-pnl-snapshot-enabled: false
+    paper-pnl-snapshot-window-days: 7
+    paper-pnl-snapshot-delay-ms: 60000
     maintenance-margin-rate: 0.005
     minimum-liquidation-distance: 0.15
     unknown-symbol-liquidation-distance: 0.30

@@ -49,6 +49,8 @@ public class MultiExchangeFundingRateProperties {
     private final boolean autoPaperOpenEnabled;
     private final BigDecimal autoPaperOpenNotional;
     private final int autoPaperOpenMaxPerCycle;
+    private final boolean paperPnlSnapshotEnabled;
+    private final int paperPnlSnapshotWindowDays;
     private final BigDecimal exitNetYield;
     private final Duration maximumQuoteAge;
     private final Duration maximumSettlementSkew;
@@ -88,6 +90,8 @@ public class MultiExchangeFundingRateProperties {
         this.autoPaperOpenEnabled = false;
         this.autoPaperOpenNotional = BigDecimal.ZERO;
         this.autoPaperOpenMaxPerCycle = 1;
+        this.paperPnlSnapshotEnabled = false;
+        this.paperPnlSnapshotWindowDays = 7;
         this.exitNetYield = new BigDecimal("0.00001");
         this.maximumQuoteAge = Duration.ofSeconds(30);
         this.maximumSettlementSkew = Duration.ofMinutes(5);
@@ -140,6 +144,10 @@ public class MultiExchangeFundingRateProperties {
                 "arbitrage.multi-exchange.auto-paper-open-notional", "0");
         this.autoPaperOpenMaxPerCycle = positiveInt(env,
                 "arbitrage.multi-exchange.auto-paper-open-max-per-cycle", 1);
+        this.paperPnlSnapshotEnabled = Boolean.parseBoolean(env.getProperty(
+                "arbitrage.multi-exchange.paper-pnl-snapshot-enabled", "false"));
+        this.paperPnlSnapshotWindowDays = positiveInt(env,
+                "arbitrage.multi-exchange.paper-pnl-snapshot-window-days", 7);
         this.exitNetYield = decimal(env, "arbitrage.multi-exchange.exit-net-yield", "0.00001");
         this.maximumQuoteAge = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-quote-age-ms", 30000L));
         this.maximumSettlementSkew = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-settlement-skew-ms", 300000L));
@@ -180,6 +188,8 @@ public class MultiExchangeFundingRateProperties {
     public boolean isAutoPaperOpenEnabled() { return autoPaperOpenEnabled; }
     public BigDecimal getAutoPaperOpenNotional() { return autoPaperOpenNotional; }
     public int getAutoPaperOpenMaxPerCycle() { return autoPaperOpenMaxPerCycle; }
+    public boolean isPaperPnlSnapshotEnabled() { return paperPnlSnapshotEnabled; }
+    public int getPaperPnlSnapshotWindowDays() { return paperPnlSnapshotWindowDays; }
     public BigDecimal getExitNetYield() { return exitNetYield; }
     public Duration getMaximumQuoteAge() { return maximumQuoteAge; }
     public Duration getMaximumSettlementSkew() { return maximumSettlementSkew; }

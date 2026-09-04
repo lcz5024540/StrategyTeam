@@ -44,6 +44,10 @@ arbitrage:
     # 0 means use the approved opportunity's full executable notional after pre-trade revalidation.
     auto-paper-open-notional: 0
     auto-paper-open-max-per-cycle: 1
+    # Persist Paper PnL snapshots into cross_exchange_risk_snapshot for the 7-day observation window.
+    paper-pnl-snapshot-enabled: true
+    paper-pnl-snapshot-window-days: 7
+    paper-pnl-snapshot-delay-ms: 60000
     maintenance-margin-rate: 0.005
     minimum-liquidation-distance: 0.15
     unknown-symbol-liquidation-distance: 0.30

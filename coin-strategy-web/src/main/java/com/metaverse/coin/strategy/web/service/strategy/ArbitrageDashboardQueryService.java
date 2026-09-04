@@ -7,14 +7,18 @@ import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOrderMapper
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeExecutionFillMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeRiskSnapshotMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOpportunityEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbPositionEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeFundingSettlementEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeExecutionFillEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeRiskSnapshotEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
 import com.metaverse.coin.strategy.web.model.ArbitrageDashboardViews;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -46,6 +50,7 @@ public class ArbitrageDashboardQueryService {
 
     private static final String TIMEZONE = "Asia/Shanghai";
     private static final String SOURCE = "PAPER_PUBLIC_ESTIMATE";
+    private static final String STAGE_PAPER_PNL_PORTFOLIO = "PAPER_PNL_PORTFOLIO";
     private static final int MAX_PAGE_SIZE = 100;
     private static final BigDecimal PAPER_CAPITAL_PER_EXCHANGE = new BigDecimal("2000");
     private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("25");
@@ -59,20 +64,26 @@ public class ArbitrageDashboardQueryService {
     private final CrossExchangeArbOrderMapper crossOrderMapper;
     private final CrossExchangeFundingSettlementMapper crossSettlementMapper;
     private final CrossExchangeExecutionFillMapper executionFillMapper;
+    private final CrossExchangeRiskSnapshotMapper riskSnapshotMapper;
     private final SingleExchangeArbitragePositionMapper singlePositionMapper;
+    private final ObjectMapper objectMapper;
 
     public ArbitrageDashboardQueryService(CrossExchangeArbOpportunityMapper opportunityMapper,
                                           CrossExchangeArbPositionMapper crossPositionMapper,
                                           CrossExchangeArbOrderMapper crossOrderMapper,
                                           CrossExchangeFundingSettlementMapper crossSettlementMapper,
                                           CrossExchangeExecutionFillMapper executionFillMapper,
-                                          SingleExchangeArbitragePositionMapper singlePositionMapper) {
+                                          CrossExchangeRiskSnapshotMapper riskSnapshotMapper,
+                                          SingleExchangeArbitragePositionMapper singlePositionMapper,
+                                          ObjectMapper objectMapper) {
         this.opportunityMapper = opportunityMapper;
         this.crossPositionMapper = crossPositionMapper;
         this.crossOrderMapper = crossOrderMapper;
         this.crossSettlementMapper = crossSettlementMapper;
         this.executionFillMapper = executionFillMapper;
+        this.riskSnapshotMapper = riskSnapshotMapper;
         this.singlePositionMapper = singlePositionMapper;
+        this.objectMapper = objectMapper;
     }
 
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.Overview> overview() {
@@ -194,6 +205,10 @@ public class ArbitrageDashboardQueryService {
     }
 
     public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.TimePoint>> timeseries() {
+        List<ArbitrageDashboardViews.TimePoint> paperPnlSnapshots = paperPnlSnapshotTimeseries();
+        if (!paperPnlSnapshots.isEmpty()) {
+            return envelope(paperPnlSnapshots);
+        }
         Map<LocalDate, DailyPnl> daily = new TreeMap<>();
         readOrDefault("funding timeseries",
                 List::<CrossExchangeFundingSettlementEntity>of,
@@ -223,6 +238,46 @@ public class ArbitrageDashboardQueryService {
                     value.tradingCashflowPnl, value.fee, netPnl, cumulative));
         }
         return envelope(points);
+    }
+
+    private List<ArbitrageDashboardViews.TimePoint> paperPnlSnapshotTimeseries() {
+        Date since = Date.from(Instant.now().minus(Duration.ofDays(7)));
+        List<CrossExchangeRiskSnapshotEntity> snapshots = readOrDefault("paper pnl snapshots", List::of,
+                () -> riskSnapshotMapper.selectList(new LambdaQueryWrapper<CrossExchangeRiskSnapshotEntity>()
+                        .eq(CrossExchangeRiskSnapshotEntity::getCheckStage, STAGE_PAPER_PNL_PORTFOLIO)
+                        .ge(CrossExchangeRiskSnapshotEntity::getCreatedAt, since)
+                        .orderByAsc(CrossExchangeRiskSnapshotEntity::getCreatedAt)
+                        .last("LIMIT 10080")));
+        if (snapshots == null || snapshots.isEmpty()) {
+            return List.of();
+        }
+        List<ArbitrageDashboardViews.TimePoint> result = new ArrayList<>(snapshots.size());
+        BigDecimal previousTotal = BigDecimal.ZERO;
+        for (CrossExchangeRiskSnapshotEntity snapshot : snapshots) {
+            try {
+                JsonNode payload = objectMapper.readTree(snapshot.getDetailsJson());
+                BigDecimal fundingPnl = decimal(payload, "fundingIncome");
+                BigDecimal tradingCashflowPnl = decimal(payload, "basisPnl");
+                BigDecimal fee = decimal(payload, "executionCost");
+                BigDecimal totalPnl = decimal(payload, "totalPnl");
+                BigDecimal intervalPnl = totalPnl.subtract(previousTotal);
+                previousTotal = totalPnl;
+                result.add(new ArbitrageDashboardViews.TimePoint(format(snapshot.getCreatedAt()),
+                        fundingPnl, tradingCashflowPnl, fee, intervalPnl, totalPnl));
+            } catch (Exception exception) {
+                LOGGER.warn("Skip malformed paper pnl snapshot id={}: {}", snapshot.getId(),
+                        exception.getMessage());
+            }
+        }
+        return result;
+    }
+
+    private static BigDecimal decimal(JsonNode payload, String field) {
+        JsonNode value = payload == null ? null : payload.get(field);
+        if (value == null || value.isNull()) {
+            return BigDecimal.ZERO;
+        }
+        return new BigDecimal(value.asText());
     }
 
     public ArbitrageDashboardViews.Envelope<List<ArbitrageDashboardViews.ExecutionOrder>> executions(

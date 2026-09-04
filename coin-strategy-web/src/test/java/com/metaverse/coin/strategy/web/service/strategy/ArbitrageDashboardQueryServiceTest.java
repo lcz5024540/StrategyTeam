@@ -1,14 +1,17 @@
 package com.metaverse.coin.strategy.web.service.strategy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOpportunityMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeArbPositionMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeExecutionFillMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.CrossExchangeRiskSnapshotMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOpportunityEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeArbOrderEntity;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeFundingSettlementEntity;
+import com.metaverse.coin.strategy.common.model.arbitrage.entity.CrossExchangeRiskSnapshotEntity;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -33,6 +36,7 @@ class ArbitrageDashboardQueryServiceTest {
         CrossExchangeArbOrderMapper orderMapper = mock(CrossExchangeArbOrderMapper.class);
         CrossExchangeFundingSettlementMapper settlementMapper = mock(CrossExchangeFundingSettlementMapper.class);
         CrossExchangeExecutionFillMapper executionFillMapper = mock(CrossExchangeExecutionFillMapper.class);
+        CrossExchangeRiskSnapshotMapper riskSnapshotMapper = mock(CrossExchangeRiskSnapshotMapper.class);
         SingleExchangeArbitragePositionMapper singlePositionMapper = mock(SingleExchangeArbitragePositionMapper.class);
         Date occurredAt = Date.from(Instant.parse("2026-09-01T16:30:00Z"));
         CrossExchangeArbOrderEntity longOrder = new CrossExchangeArbOrderEntity().setLegSide("LONG")
@@ -45,9 +49,10 @@ class ArbitrageDashboardQueryServiceTest {
                 .setActualAmount(new BigDecimal("0.50")).setSettlementTime(occurredAt);
         when(orderMapper.selectList(any())).thenReturn(List.of(longOrder, shortOrder));
         when(settlementMapper.selectList(any())).thenReturn(List.of(funding));
+        when(riskSnapshotMapper.selectList(any())).thenReturn(List.of());
         ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
                 opportunityMapper, positionMapper, orderMapper, settlementMapper, executionFillMapper,
-                singlePositionMapper);
+                riskSnapshotMapper, singlePositionMapper, new ObjectMapper());
 
         var points = service.timeseries().data();
 
@@ -58,6 +63,32 @@ class ArbitrageDashboardQueryServiceTest {
         assertEquals("0.20", points.get(0).fee().toPlainString());
         assertEquals("2.30", points.get(0).netPnl().toPlainString());
         assertEquals("2.30", points.get(0).cumulativeNetPnl().toPlainString());
+    }
+
+    @Test
+    void timeseriesPrefersPersistedPaperPnlSnapshotsWhenAvailable() {
+        CrossExchangeArbOrderMapper orderMapper = mock(CrossExchangeArbOrderMapper.class);
+        CrossExchangeFundingSettlementMapper settlementMapper = mock(CrossExchangeFundingSettlementMapper.class);
+        CrossExchangeRiskSnapshotMapper riskSnapshotMapper = mock(CrossExchangeRiskSnapshotMapper.class);
+        when(riskSnapshotMapper.selectList(any())).thenReturn(List.of(
+                snapshot(Instant.parse("2026-09-04T08:00:00Z"),
+                        "{\"basisPnl\":\"1.2\",\"fundingIncome\":\"0.3\",\"executionCost\":\"0.1\",\"totalPnl\":\"1.4\"}"),
+                snapshot(Instant.parse("2026-09-04T08:01:00Z"),
+                        "{\"basisPnl\":\"0.8\",\"fundingIncome\":\"0.4\",\"executionCost\":\"0.1\",\"totalPnl\":\"1.1\"}")));
+
+        ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
+                mock(CrossExchangeArbOpportunityMapper.class), mock(CrossExchangeArbPositionMapper.class),
+                orderMapper, settlementMapper, mock(CrossExchangeExecutionFillMapper.class),
+                riskSnapshotMapper, mock(SingleExchangeArbitragePositionMapper.class), new ObjectMapper());
+
+        var points = service.timeseries().data();
+
+        assertEquals(2, points.size());
+        assertEquals("2026-09-04 16:00:00", points.get(0).bucketAt());
+        assertEquals("1.4", points.get(0).cumulativeNetPnl().toPlainString());
+        assertEquals("1.4", points.get(0).netPnl().toPlainString());
+        assertEquals("-0.3", points.get(1).netPnl().toPlainString());
+        assertEquals("1.1", points.get(1).cumulativeNetPnl().toPlainString());
     }
 
     @Test
@@ -78,7 +109,8 @@ class ArbitrageDashboardQueryServiceTest {
         ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(opportunityMapper,
                 mock(CrossExchangeArbPositionMapper.class), mock(CrossExchangeArbOrderMapper.class),
                 mock(CrossExchangeFundingSettlementMapper.class), mock(CrossExchangeExecutionFillMapper.class),
-                mock(SingleExchangeArbitragePositionMapper.class));
+                mock(CrossExchangeRiskSnapshotMapper.class), mock(SingleExchangeArbitragePositionMapper.class),
+                new ObjectMapper());
 
         var response = service.fundingRateMatrix();
 
@@ -118,7 +150,7 @@ class ArbitrageDashboardQueryServiceTest {
 
         ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
                 opportunityMapper, positionMapper, orderMapper, settlementMapper, executionFillMapper,
-                singlePositionMapper);
+                mock(CrossExchangeRiskSnapshotMapper.class), singlePositionMapper, new ObjectMapper());
 
         var response = service.overview();
 
@@ -154,7 +186,7 @@ class ArbitrageDashboardQueryServiceTest {
 
         ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
                 opportunityMapper, positionMapper, orderMapper, settlementMapper, executionFillMapper,
-                singlePositionMapper);
+                mock(CrossExchangeRiskSnapshotMapper.class), singlePositionMapper, new ObjectMapper());
 
         var response = service.overview();
 
@@ -173,5 +205,12 @@ class ArbitrageDashboardQueryServiceTest {
                 .setHourlyFundingSpread(new BigDecimal(hourlySpread)).setEstimatedNetYield(BigDecimal.ZERO)
                 .setExecutableNotional(new BigDecimal("2000")).setStatus(status).setRejectionReason(rejectionReason)
                 .setDiscoveredAt(sampledAt).setUpdatedAt(sampledAt);
+    }
+
+    private CrossExchangeRiskSnapshotEntity snapshot(Instant createdAt, String detailsJson) {
+        return new CrossExchangeRiskSnapshotEntity()
+                .setCheckStage("PAPER_PNL_PORTFOLIO")
+                .setDetailsJson(detailsJson)
+                .setCreatedAt(Date.from(createdAt));
     }
 }
