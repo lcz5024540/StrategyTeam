@@ -12,6 +12,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeMarketDataP
 import com.metaverse.coin.strategy.core.arbitrage.multi.Exchange;
 import com.metaverse.coin.strategy.core.arbitrage.multi.NormalizedOrderBookSnapshot;
 import com.metaverse.coin.strategy.core.arbitrage.multi.OrderBookSweep;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -36,6 +37,7 @@ public class CrossExchangePaperPnlService {
     private final Duration maximumQuoteAge;
     private final int orderBookDepth;
 
+    @Autowired
     public CrossExchangePaperPnlService(CrossExchangeArbPositionMapper positions,
             CrossExchangeArbOrderMapper orders, CrossExchangeFundingSettlementMapper settlements,
             List<CrossExchangeMarketDataProvider> providers,

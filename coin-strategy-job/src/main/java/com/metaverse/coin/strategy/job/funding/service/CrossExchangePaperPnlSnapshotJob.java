@@ -11,6 +11,7 @@ import com.metaverse.coin.strategy.core.arbitrage.config.MultiExchangeFundingRat
 import com.metaverse.coin.strategy.core.arbitrage.multi.PaperHedgePosition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -47,6 +48,7 @@ public class CrossExchangePaperPnlSnapshotJob {
     private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
+    @Autowired
     public CrossExchangePaperPnlSnapshotJob(CrossExchangePaperPnlService pnlService,
             CrossExchangeArbPositionMapper positions,
             CrossExchangeRiskSnapshotMapper snapshots,
