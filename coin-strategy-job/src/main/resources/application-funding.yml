@@ -38,8 +38,12 @@ arbitrage:
     minimum-order-book-coverage-ratio: 1.5
     maximum-leg-vwap-impact: 0.0005
     paper-capital-per-exchange: 2000
-    # Paper 每个交易所账户初始保证金 2000U；3x 是硬上限，实际仓位仍受深度、滑点和清算距离约束。
-    maximum-paper-leverage: 3
+    # Paper 每个交易所账户初始保证金 2000U；25x 是硬上限，实际仓位仍受深度、滑点和清算距离约束。
+    maximum-paper-leverage: 25
+    auto-paper-open-enabled: true
+    # 0 means use the approved opportunity's full executable notional after pre-trade revalidation.
+    auto-paper-open-notional: 0
+    auto-paper-open-max-per-cycle: 1
     maintenance-margin-rate: 0.005
     minimum-liquidation-distance: 0.15
     unknown-symbol-liquidation-distance: 0.30

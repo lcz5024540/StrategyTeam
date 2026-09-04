@@ -14,7 +14,8 @@ public final class ArbitrageDashboardViews {
     }
 
     public record Overview(long executableOpportunities, long openPositions, BigDecimal executableNotional,
-                           BigDecimal expectedNetYield, BigDecimal fundingPnl, BigDecimal netDelta,
+                           BigDecimal expectedNetYield, BigDecimal fundingPnl, BigDecimal executionCost,
+                           BigDecimal totalPnl, BigDecimal netDelta,
                            String riskState, long evaluatedDirections, long rejectedDirections,
                            BigDecimal paperCapitalPerExchange, BigDecimal maximumPaperLeverage,
                            BigDecimal maximumNotionalPerExchange) {
@@ -58,8 +59,8 @@ public final class ArbitrageDashboardViews {
     public record Position(String positionCode, String kind, String symbol, String longExchange,
                            String shortExchange, BigDecimal longQuantity, BigDecimal shortQuantity,
                            BigDecimal netDelta, BigDecimal notional, BigDecimal fundingPnl,
-                           BigDecimal basisPnl, String status, String nextSettlementAt,
-                           String openedAt, String message) {
+                           BigDecimal basisPnl, BigDecimal executionCost, BigDecimal totalPnl,
+                           String status, String nextSettlementAt, String openedAt, String message) {
     }
 
     public record TimePoint(String bucketAt, BigDecimal fundingPnl, BigDecimal tradingCashflowPnl,

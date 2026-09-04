@@ -125,6 +125,11 @@ public class CrossExchangeOpportunityScanService {
         return lastEvaluated;
     }
 
+    public List<CrossExchangeOpportunity> approvedOpportunities(Instant now) {
+        removeStaleApproved(now);
+        return List.copyOf(approved.values());
+    }
+
     public Optional<CrossExchangeOpportunity> approvedOpportunity(String opportunityId, Instant now) {
         CrossExchangeOpportunity opportunity = approved.get(opportunityId);
         if (opportunity == null) {

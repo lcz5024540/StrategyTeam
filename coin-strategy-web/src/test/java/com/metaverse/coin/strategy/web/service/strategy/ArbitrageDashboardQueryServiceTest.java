@@ -127,7 +127,40 @@ class ArbitrageDashboardQueryServiceTest {
         assertEquals(0, response.data().openPositions());
         assertEquals("UNKNOWN", response.data().riskState());
         assertEquals("2000", response.data().paperCapitalPerExchange().toPlainString());
-        assertEquals("3", response.data().maximumPaperLeverage().toPlainString());
+        assertEquals("25", response.data().maximumPaperLeverage().toPlainString());
+    }
+
+    @Test
+    void overviewIncludesTradingCostAndTotalPnl() {
+        CrossExchangeArbOpportunityMapper opportunityMapper = mock(CrossExchangeArbOpportunityMapper.class);
+        CrossExchangeArbPositionMapper positionMapper = mock(CrossExchangeArbPositionMapper.class);
+        CrossExchangeArbOrderMapper orderMapper = mock(CrossExchangeArbOrderMapper.class);
+        CrossExchangeFundingSettlementMapper settlementMapper = mock(CrossExchangeFundingSettlementMapper.class);
+        CrossExchangeExecutionFillMapper executionFillMapper = mock(CrossExchangeExecutionFillMapper.class);
+        SingleExchangeArbitragePositionMapper singlePositionMapper = mock(SingleExchangeArbitragePositionMapper.class);
+        Date occurredAt = Date.from(Instant.parse("2026-09-04T08:00:00Z"));
+        when(opportunityMapper.selectList(any())).thenReturn(List.of());
+        when(positionMapper.selectList(any())).thenReturn(List.of());
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                new CrossExchangeArbOrderEntity().setLegSide("LONG")
+                        .setFilledQuantity(new BigDecimal("1")).setAveragePrice(new BigDecimal("100"))
+                        .setFeeAmount(new BigDecimal("0.10")).setCreatedAt(occurredAt),
+                new CrossExchangeArbOrderEntity().setLegSide("SHORT")
+                        .setFilledQuantity(new BigDecimal("1")).setAveragePrice(new BigDecimal("101"))
+                        .setFeeAmount(new BigDecimal("0.10")).setCreatedAt(occurredAt)));
+        when(settlementMapper.selectList(any())).thenReturn(List.of(
+                new CrossExchangeFundingSettlementEntity().setActualAmount(new BigDecimal("0.50"))
+                        .setSettlementTime(occurredAt)));
+
+        ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
+                opportunityMapper, positionMapper, orderMapper, settlementMapper, executionFillMapper,
+                singlePositionMapper);
+
+        var response = service.overview();
+
+        assertEquals("0.50", response.data().fundingPnl().toPlainString());
+        assertEquals("0.20", response.data().executionCost().toPlainString());
+        assertEquals("1.30", response.data().totalPnl().toPlainString());
     }
 
     private CrossExchangeArbOpportunityEntity opportunity(String code, String symbol, String longExchange,

@@ -110,6 +110,12 @@ public class CrossExchangeFundingArbitrageController {
         return pnlService.summarize(positionId);
     }
 
+    @GetMapping("/paper/pnl/portfolio")
+    public CrossExchangePaperPnlService.PortfolioPnlSummary paperPortfolioPnl(
+            @RequestParam(defaultValue = "7") int days) {
+        return pnlService.summarizePortfolio(days);
+    }
+
     @PostMapping("/scan")
     public List<CrossExchangeOpportunity> scan(@RequestParam String symbol) {
         List<CrossExchangeOpportunity> approved = scanner.scan(symbol, Instant.now());

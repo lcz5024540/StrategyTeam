@@ -13,6 +13,8 @@ export interface ArbitrageOverview {
   executableNotional: number
   expectedNetYield: number
   fundingPnl: number
+  executionCost: number
+  totalPnl: number
   netDelta: number
   riskState: string
   evaluatedDirections: number
@@ -73,6 +75,8 @@ export interface ArbitragePosition {
   notional?: number | null
   fundingPnl?: number | null
   basisPnl?: number | null
+  executionCost?: number | null
+  totalPnl?: number | null
   status: string
   nextSettlementAt?: string | null
   openedAt?: string | null

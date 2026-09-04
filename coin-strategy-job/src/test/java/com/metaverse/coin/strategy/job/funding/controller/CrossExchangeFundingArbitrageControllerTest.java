@@ -105,11 +105,23 @@ class CrossExchangeFundingArbitrageControllerTest {
     @Test
     void returnsPaperPnlAttribution() {
         CrossExchangePaperPnlService.PaperPnlSummary expected =
-                new CrossExchangePaperPnlService.PaperPnlSummary("position", "PAPER_PUBLIC_ESTIMATE",
-                        BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, 4, 2);
+                new CrossExchangePaperPnlService.PaperPnlSummary("position", "PAPER_PUBLIC_MARK_TO_MARKET",
+                        BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, 4, 2,
+                        true, null);
         when(pnlService.summarize("position")).thenReturn(expected);
 
         assertEquals(expected, controller.paperPnl("position"));
+    }
+
+    @Test
+    void returnsPaperPortfolioPnlForObservationWindow() {
+        CrossExchangePaperPnlService.PortfolioPnlSummary expected =
+                new CrossExchangePaperPnlService.PortfolioPnlSummary("PAPER_PUBLIC_CASHFLOW",
+                        BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE,
+                        2, 1, 1, 4, 2, 7);
+        when(pnlService.summarizePortfolio(7)).thenReturn(expected);
+
+        assertEquals(expected, controller.paperPortfolioPnl(7));
     }
 
     private CrossExchangeOpportunity opportunity(String id, CrossExchangeOpportunity.Status status) {

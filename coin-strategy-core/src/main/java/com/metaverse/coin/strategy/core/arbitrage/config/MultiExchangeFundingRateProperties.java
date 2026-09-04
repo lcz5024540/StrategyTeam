@@ -46,6 +46,9 @@ public class MultiExchangeFundingRateProperties {
     private final BigDecimal minimumCostCoverageRatio;
     private final BigDecimal maxSymbolNotional;
     private final BigDecimal maxExchangeNotional;
+    private final boolean autoPaperOpenEnabled;
+    private final BigDecimal autoPaperOpenNotional;
+    private final int autoPaperOpenMaxPerCycle;
     private final BigDecimal exitNetYield;
     private final Duration maximumQuoteAge;
     private final Duration maximumSettlementSkew;
@@ -80,8 +83,11 @@ public class MultiExchangeFundingRateProperties {
         this.maxMarkPriceDeviation = new BigDecimal("0.01");
         this.maxExecutableBasis = new BigDecimal("0.003");
         this.minimumCostCoverageRatio = new BigDecimal("1.25");
-        this.maxSymbolNotional = new BigDecimal("50000");
-        this.maxExchangeNotional = new BigDecimal("50000");
+        this.maxSymbolNotional = paperCapitalPerExchange.multiply(maximumPaperLeverage);
+        this.maxExchangeNotional = paperCapitalPerExchange.multiply(maximumPaperLeverage);
+        this.autoPaperOpenEnabled = false;
+        this.autoPaperOpenNotional = BigDecimal.ZERO;
+        this.autoPaperOpenMaxPerCycle = 1;
         this.exitNetYield = new BigDecimal("0.00001");
         this.maximumQuoteAge = Duration.ofSeconds(30);
         this.maximumSettlementSkew = Duration.ofMinutes(5);
@@ -123,8 +129,17 @@ public class MultiExchangeFundingRateProperties {
         this.maxMarkPriceDeviation = decimal(env, "arbitrage.multi-exchange.max-mark-price-deviation", "0.01");
         this.maxExecutableBasis = decimal(env, "arbitrage.multi-exchange.max-executable-basis", "0.003");
         this.minimumCostCoverageRatio = decimal(env, "arbitrage.multi-exchange.minimum-cost-coverage-ratio", "1.25");
-        this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional", "50000");
-        this.maxExchangeNotional = decimal(env, "arbitrage.multi-exchange.max-exchange-notional", "50000");
+        BigDecimal leverageBound = paperCapitalPerExchange.multiply(maximumPaperLeverage);
+        this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional",
+                leverageBound.toPlainString());
+        this.maxExchangeNotional = decimal(env, "arbitrage.multi-exchange.max-exchange-notional",
+                leverageBound.toPlainString());
+        this.autoPaperOpenEnabled = Boolean.parseBoolean(env.getProperty(
+                "arbitrage.multi-exchange.auto-paper-open-enabled", "false"));
+        this.autoPaperOpenNotional = decimal(env,
+                "arbitrage.multi-exchange.auto-paper-open-notional", "0");
+        this.autoPaperOpenMaxPerCycle = positiveInt(env,
+                "arbitrage.multi-exchange.auto-paper-open-max-per-cycle", 1);
         this.exitNetYield = decimal(env, "arbitrage.multi-exchange.exit-net-yield", "0.00001");
         this.maximumQuoteAge = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-quote-age-ms", 30000L));
         this.maximumSettlementSkew = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-settlement-skew-ms", 300000L));
@@ -162,6 +177,9 @@ public class MultiExchangeFundingRateProperties {
     public BigDecimal getMinimumCostCoverageRatio() { return minimumCostCoverageRatio; }
     public BigDecimal getMaxSymbolNotional() { return maxSymbolNotional; }
     public BigDecimal getMaxExchangeNotional() { return maxExchangeNotional; }
+    public boolean isAutoPaperOpenEnabled() { return autoPaperOpenEnabled; }
+    public BigDecimal getAutoPaperOpenNotional() { return autoPaperOpenNotional; }
+    public int getAutoPaperOpenMaxPerCycle() { return autoPaperOpenMaxPerCycle; }
     public BigDecimal getExitNetYield() { return exitNetYield; }
     public Duration getMaximumQuoteAge() { return maximumQuoteAge; }
     public Duration getMaximumSettlementSkew() { return maximumSettlementSkew; }

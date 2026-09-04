@@ -48,7 +48,7 @@ public class ArbitrageDashboardQueryService {
     private static final String SOURCE = "PAPER_PUBLIC_ESTIMATE";
     private static final int MAX_PAGE_SIZE = 100;
     private static final BigDecimal PAPER_CAPITAL_PER_EXCHANGE = new BigDecimal("2000");
-    private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("3");
+    private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("25");
     private static final List<String> FUNDING_EXCHANGES = List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID");
     private static final Duration MAX_SNAPSHOT_AGE = Duration.ofMinutes(30);
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -94,8 +94,13 @@ public class ArbitrageDashboardQueryService {
                 () -> crossSettlementMapper.selectList(new LambdaQueryWrapper<>())).stream()
                 .map(CrossExchangeFundingSettlementEntity::getActualAmount).filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        PnlParts trading = pnlFromOrders(readOrDefault("paper orders", List::<CrossExchangeArbOrderEntity>of,
+                () -> crossOrderMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
+                        .gt(CrossExchangeArbOrderEntity::getFilledQuantity, BigDecimal.ZERO))));
+        BigDecimal totalPnl = trading.basisPnl.add(fundingPnl).subtract(trading.executionCost);
         return envelope(new ArbitrageDashboardViews.Overview(executable, positions.size(), notional,
-                expectedYield, fundingPnl, BigDecimal.ZERO, "UNKNOWN", opportunities.size(), rejected,
+                expectedYield, fundingPnl, trading.executionCost, totalPnl, BigDecimal.ZERO,
+                "UNKNOWN", opportunities.size(), rejected,
                 PAPER_CAPITAL_PER_EXCHANGE, MAXIMUM_PAPER_LEVERAGE,
                 PAPER_CAPITAL_PER_EXCHANGE.multiply(MAXIMUM_PAPER_LEVERAGE)));
     }
@@ -421,18 +426,46 @@ public class ArbitrageDashboardQueryService {
     }
 
     private ArbitrageDashboardViews.Position toCrossPosition(CrossExchangeArbPositionEntity item) {
+        PnlParts pnl = pnlForPosition(item.getPositionCode());
         return new ArbitrageDashboardViews.Position(item.getPositionCode(), "CROSS_EXCHANGE_FUNDING", item.getSymbol(),
                 item.getLongExchange(), item.getShortExchange(), item.getHedgedQuantity(), item.getHedgedQuantity(),
-                BigDecimal.ZERO, null, settlementTotal(item.getPositionCode()), BigDecimal.ZERO, item.getStatus(),
-                null, format(item.getOpenedAt()), item.getMessage());
+                BigDecimal.ZERO, null, pnl.fundingPnl, pnl.basisPnl, pnl.executionCost,
+                pnl.totalPnl(), item.getStatus(), null, format(item.getOpenedAt()), item.getMessage());
     }
 
     private ArbitrageDashboardViews.Position toSinglePosition(SingleExchangeArbitragePosition item) {
         return new ArbitrageDashboardViews.Position(item.getPositionCode(), "SINGLE_EXCHANGE_SPOT_FUTURES", item.getSymbol(),
                 item.getExchangeName() + " SPOT", item.getExchangeName() + " PERP", item.getQuantity(), item.getQuantity(),
                 BigDecimal.ZERO, item.getTotalInvestment(), zero(item.getFundingFeesEarned()), zero(item.getRealizedPnl()),
+                BigDecimal.ZERO, zero(item.getFundingFeesEarned()).add(zero(item.getRealizedPnl())),
                 item.getStatus(), item.getEntryNextFundingTime() == null ? null : FORMATTER.format(Instant.ofEpochMilli(item.getEntryNextFundingTime())),
                 format(item.getEntryTime()), item.getErrorMessage());
+    }
+
+    private PnlParts pnlForPosition(String positionCode) {
+        BigDecimal fundingPnl = settlementTotal(positionCode);
+        PnlParts trading = pnlFromOrders(readOrDefault("position orders", List::<CrossExchangeArbOrderEntity>of,
+                () -> crossOrderMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
+                        .eq(CrossExchangeArbOrderEntity::getPositionCode, positionCode))));
+        return new PnlParts(trading.basisPnl, fundingPnl, trading.executionCost);
+    }
+
+    private PnlParts pnlFromOrders(List<CrossExchangeArbOrderEntity> orders) {
+        BigDecimal basisPnl = BigDecimal.ZERO;
+        BigDecimal executionCost = BigDecimal.ZERO;
+        if (orders == null) {
+            return new PnlParts(basisPnl, BigDecimal.ZERO, executionCost);
+        }
+        for (CrossExchangeArbOrderEntity order : orders) {
+            BigDecimal notional = zero(order.getFilledQuantity()).multiply(zero(order.getAveragePrice()));
+            if ("SHORT".equalsIgnoreCase(order.getLegSide())) {
+                basisPnl = basisPnl.add(notional);
+            } else if ("LONG".equalsIgnoreCase(order.getLegSide())) {
+                basisPnl = basisPnl.subtract(notional);
+            }
+            executionCost = executionCost.add(zero(order.getFeeAmount()));
+        }
+        return new PnlParts(basisPnl, BigDecimal.ZERO, executionCost);
     }
 
     private BigDecimal settlementTotal(String positionCode) {
@@ -447,6 +480,23 @@ public class ArbitrageDashboardQueryService {
     private boolean isQualified(String status) { return "QUALIFIED".equalsIgnoreCase(status) || "APPROVED".equalsIgnoreCase(status) || "PAPER_READY".equalsIgnoreCase(status); }
     private BigDecimal zero(BigDecimal value) { return value == null ? BigDecimal.ZERO : value; }
     private String format(Date value) { return value == null ? null : FORMATTER.format(value.toInstant()); }
+
+    private static final class PnlParts {
+        private final BigDecimal basisPnl;
+        private final BigDecimal fundingPnl;
+        private final BigDecimal executionCost;
+
+        private PnlParts(BigDecimal basisPnl, BigDecimal fundingPnl, BigDecimal executionCost) {
+            this.basisPnl = basisPnl;
+            this.fundingPnl = fundingPnl;
+            this.executionCost = executionCost;
+        }
+
+        private BigDecimal totalPnl() {
+            return basisPnl.add(fundingPnl).subtract(executionCost);
+        }
+    }
+
     private <T> T readOrDefault(String projection, Supplier<T> fallback, Supplier<T> query) {
         try {
             return query.get();

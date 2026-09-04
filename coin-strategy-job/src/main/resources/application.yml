@@ -119,6 +119,10 @@ arbitrage:
     maximum-leg-vwap-impact: 0.0005
     paper-capital-per-exchange: 2000
     maximum-paper-leverage: 25
+    auto-paper-open-enabled: false
+    # 0 means use the approved opportunity's full executable notional.
+    auto-paper-open-notional: 0
+    auto-paper-open-max-per-cycle: 1
     maintenance-margin-rate: 0.005
     minimum-liquidation-distance: 0.15
     unknown-symbol-liquidation-distance: 0.30
@@ -128,6 +132,7 @@ arbitrage:
     minimum-risk-history-ms: 3600000
     basis-risk-buffer: 0.0002
     max-mark-price-deviation: 0.01
+    # Defaults to paper-capital-per-exchange x maximum-paper-leverage when omitted.
     max-symbol-notional: 50000
     max-exchange-notional: 50000
     exit-net-yield: 0.00001
