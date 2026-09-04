@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.web.service.strategy;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageFundingSettlementMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitrageOrderMapper;
 import com.metaverse.coin.strategy.common.dao.mapper.SingleExchangeArbitragePositionMapper;
+import com.metaverse.coin.strategy.common.dao.mapper.StrategyRuntimeConfigMapper;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageFundingSettlement;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitrageOrder;
 import com.metaverse.coin.strategy.common.model.arbitrage.entity.SingleExchangeArbitragePosition;
@@ -63,6 +64,8 @@ class StrategyProductQueryServiceTest {
     private SingleExchangeArbitrageOrderMapper orderMapper;
     @Mock
     private SingleExchangeArbitrageFundingSettlementMapper settlementMapper;
+    @Mock
+    private StrategyRuntimeConfigMapper runtimeConfigMapper;
 
     private StrategyProductQueryService service;
 
@@ -74,7 +77,8 @@ class StrategyProductQueryServiceTest {
                 positionMapper,
                 orderMapper,
                 settlementMapper,
-                new SingleExchangeSpotFuturesProperties(3, new BigDecimal("0.0005"))
+                new SingleExchangeSpotFuturesProperties(3, new BigDecimal("0.0005")),
+                runtimeConfigMapper
         );
         lenient().when(positionMapper.selectList(any())).thenReturn(List.of());
         lenient().when(orderMapper.selectList(any())).thenReturn(List.of());

@@ -64,7 +64,7 @@ public class FundingRateMatrixQueryService {
         List<FundingRateMatrixViews.Row> items = bySymbol.entrySet().stream()
                 .map(entry -> toRow(entry.getKey(), entry.getValue()))
                 .flatMap(Optional::stream)
-                .sorted(Comparator.comparing(FundingRateMatrixViews.Row::hourlyFundingSpread,
+                .sorted(Comparator.comparing((FundingRateMatrixViews.Row row) -> rankSpread(row),
                                 Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(FundingRateMatrixViews.Row::symbol))
                 .toList();
@@ -81,7 +81,7 @@ public class FundingRateMatrixQueryService {
                 .filter(item -> sameTimestamp(item.getDiscoveredAt(), sampledAt))
                 .toList();
         CrossExchangeArbOpportunityEntity best = current.stream()
-                .max(Comparator.comparing(CrossExchangeArbOpportunityEntity::getHourlyFundingSpread,
+                .max(Comparator.comparing(FundingRateMatrixQueryService::rankSpread,
                         Comparator.nullsFirst(BigDecimal::compareTo)))
                 .orElse(null);
         if (best == null) {
@@ -95,8 +95,13 @@ public class FundingRateMatrixQueryService {
             putRate(rates, intervals, item.getShortExchange(), item.getShortFundingRate(),
                     item.getShortFundingIntervalHours());
         });
+        BigDecimal rawFundingSpread = rawFundingSpread(best);
+        boolean cadenceAdjusted = isCadenceAdjusted(best);
+        Integer settlementWindowHours = cadenceAdjusted ? settlementWindowHours(best) : null;
+        BigDecimal settlementWindowSpread = cadenceAdjusted ? settlementWindowSpread(best, settlementWindowHours) : null;
         return Optional.of(new FundingRateMatrixViews.Row(symbol, rates, intervals, best.getLongExchange(),
-                best.getShortExchange(), best.getHourlyFundingSpread(), best.getEstimatedNetYield(),
+                best.getShortExchange(), rawFundingSpread, settlementWindowHours, settlementWindowSpread,
+                cadenceAdjusted, best.getHourlyFundingSpread(), best.getEstimatedNetYield(),
                 best.getExecutableNotional(), best.getStatus(), best.getRejectionReason(), format(sampledAt)));
     }
 
@@ -112,6 +117,77 @@ public class FundingRateMatrixQueryService {
                 intervals.putIfAbsent(exchange, intervalHours);
             }
         }
+    }
+
+    private static BigDecimal rankSpread(FundingRateMatrixViews.Row row) {
+        return row.cadenceAdjusted() && row.settlementWindowSpread() != null
+                ? row.settlementWindowSpread()
+                : row.rawFundingSpread();
+    }
+
+    private static BigDecimal rankSpread(CrossExchangeArbOpportunityEntity opportunity) {
+        if (isCadenceAdjusted(opportunity)) {
+            BigDecimal settlementWindowSpread = settlementWindowSpread(opportunity, settlementWindowHours(opportunity));
+            if (settlementWindowSpread != null) {
+                return settlementWindowSpread;
+            }
+        }
+        return rawFundingSpread(opportunity);
+    }
+
+    private static BigDecimal rawFundingSpread(CrossExchangeArbOpportunityEntity opportunity) {
+        if (opportunity.getShortFundingRate() == null || opportunity.getLongFundingRate() == null) {
+            return null;
+        }
+        return opportunity.getShortFundingRate().subtract(opportunity.getLongFundingRate());
+    }
+
+    private static BigDecimal settlementWindowSpread(CrossExchangeArbOpportunityEntity opportunity,
+            Integer settlementWindowHours) {
+        Integer longIntervalHours = opportunity.getLongFundingIntervalHours();
+        Integer shortIntervalHours = opportunity.getShortFundingIntervalHours();
+        if (opportunity.getShortFundingRate() == null || opportunity.getLongFundingRate() == null
+                || settlementWindowHours == null || longIntervalHours == null || shortIntervalHours == null
+                || longIntervalHours <= 0 || shortIntervalHours <= 0) {
+            return null;
+        }
+        BigDecimal window = BigDecimal.valueOf(settlementWindowHours);
+        BigDecimal shortSettlements = window.divide(BigDecimal.valueOf(shortIntervalHours));
+        BigDecimal longSettlements = window.divide(BigDecimal.valueOf(longIntervalHours));
+        return opportunity.getShortFundingRate().multiply(shortSettlements)
+                .subtract(opportunity.getLongFundingRate().multiply(longSettlements));
+    }
+
+    private static Integer settlementWindowHours(CrossExchangeArbOpportunityEntity opportunity) {
+        Integer longIntervalHours = opportunity.getLongFundingIntervalHours();
+        Integer shortIntervalHours = opportunity.getShortFundingIntervalHours();
+        if (longIntervalHours == null || shortIntervalHours == null || longIntervalHours <= 0
+                || shortIntervalHours <= 0) {
+            return null;
+        }
+        return lcm(longIntervalHours, shortIntervalHours);
+    }
+
+    private static boolean isCadenceAdjusted(CrossExchangeArbOpportunityEntity opportunity) {
+        Integer longIntervalHours = opportunity.getLongFundingIntervalHours();
+        Integer shortIntervalHours = opportunity.getShortFundingIntervalHours();
+        return longIntervalHours != null && shortIntervalHours != null && longIntervalHours > 0
+                && shortIntervalHours > 0 && !longIntervalHours.equals(shortIntervalHours);
+    }
+
+    private static int lcm(int left, int right) {
+        return Math.abs(left / gcd(left, right) * right);
+    }
+
+    private static int gcd(int left, int right) {
+        int a = Math.abs(left);
+        int b = Math.abs(right);
+        while (b != 0) {
+            int next = a % b;
+            a = b;
+            b = next;
+        }
+        return a;
     }
 
     private FundingRateMatrixViews.Envelope<FundingRateMatrixViews.Matrix> envelope(

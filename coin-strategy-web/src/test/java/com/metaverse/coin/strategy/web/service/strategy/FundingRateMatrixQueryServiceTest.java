@@ -38,12 +38,15 @@ class FundingRateMatrixQueryServiceTest {
         assertEquals(4, btc.intervalHoursByExchange().get("HTX"));
         assertNull(btc.ratesByExchange().get("BINANCE"));
         assertEquals("OKX", btc.longExchange());
-        assertEquals("BITGET", btc.shortExchange());
-        assertEquals(new BigDecimal("0.000700"), btc.hourlyFundingSpread());
+        assertEquals("HTX", btc.shortExchange());
+        assertEquals(new BigDecimal("0.0024"), btc.rawFundingSpread());
+        assertEquals(8, btc.settlementWindowHours());
+        assertEquals(new BigDecimal("0.0072"), btc.settlementWindowSpread());
+        assertEquals(new BigDecimal("0.000300"), btc.hourlyFundingSpread());
     }
 
     @Test
-    void sortsRowsByMaximumHourlySpreadDescendingAndKeepsMissingSpreadLast() {
+    void sortsRowsByRawSpreadOrCadenceWindowWithoutHourlyNormalization() {
         CrossExchangeArbOpportunityMapper mapper = mock(CrossExchangeArbOpportunityMapper.class);
         Date latest = new Date(2_000L);
         when(mapper.selectList(any())).thenReturn(List.of(
@@ -57,18 +60,50 @@ class FundingRateMatrixQueryServiceTest {
         assertEquals(List.of("BTCUSDT", "ETHUSDT", "SOLUSDT"),
                 rows.stream().map(row -> row.symbol()).toList());
         assertEquals("HTX", rows.get(0).shortExchange());
+        assertEquals(new BigDecimal("0.0030"), rows.get(0).rawFundingSpread());
+        assertEquals(new BigDecimal("0.0070"), rows.get(0).settlementWindowSpread());
         assertEquals(new BigDecimal("0.000500"), rows.get(0).hourlyFundingSpread());
-        assertNull(rows.get(2).hourlyFundingSpread());
+        assertNull(rows.get(2).settlementWindowSpread());
+    }
+
+    @Test
+    void promotesCadenceOpportunityWhenFastSettlementOffsetsSlowFundingCost() {
+        CrossExchangeArbOpportunityMapper mapper = mock(CrossExchangeArbOpportunityMapper.class);
+        Date latest = new Date(2_000L);
+        when(mapper.selectList(any())).thenReturn(List.of(
+                opportunity("ACEUSDT", "HYPERLIQUID", "BITGET", "-0.0020", "-0.0092", "0.000850", latest),
+                opportunity("BTCUSDT", "OKX", "BITGET", "0.0010", "0.0040", "0.000375", latest)));
+
+        var rows = new FundingRateMatrixQueryService(mapper).fundingRateMatrix().data().items();
+
+        var ace = rows.get(0);
+        assertEquals("ACEUSDT", ace.symbol());
+        assertEquals("HYPERLIQUID", ace.longExchange());
+        assertEquals("BITGET", ace.shortExchange());
+        assertEquals(new BigDecimal("-0.0072"), ace.rawFundingSpread());
+        assertEquals(8, ace.settlementWindowHours());
+        assertEquals(new BigDecimal("0.0068"), ace.settlementWindowSpread());
+        assertEquals(true, ace.cadenceAdjusted());
     }
 
     private CrossExchangeArbOpportunityEntity opportunity(String symbol, String longExchange,
             String shortExchange, String longRate, String shortRate, String hourlySpread, Date sampledAt) {
         return new CrossExchangeArbOpportunityEntity().setSymbol(symbol).setLongExchange(longExchange)
                 .setShortExchange(shortExchange).setLongFundingRate(new BigDecimal(longRate))
-                .setLongFundingIntervalHours("HTX".equals(longExchange) ? 4 : 8)
-                .setShortFundingRate(new BigDecimal(shortRate)).setShortFundingIntervalHours("HTX".equals(shortExchange) ? 4 : 8)
+                .setLongFundingIntervalHours(intervalHours(longExchange))
+                .setShortFundingRate(new BigDecimal(shortRate)).setShortFundingIntervalHours(intervalHours(shortExchange))
                 .setHourlyFundingSpread(hourlySpread == null ? null : new BigDecimal(hourlySpread))
                 .setEstimatedNetYield(BigDecimal.ZERO).setExecutableNotional(new BigDecimal("2000"))
                 .setStatus("QUALIFIED").setDiscoveredAt(sampledAt).setUpdatedAt(sampledAt);
+    }
+
+    private Integer intervalHours(String exchange) {
+        if ("HYPERLIQUID".equals(exchange)) {
+            return 1;
+        }
+        if ("HTX".equals(exchange)) {
+            return 4;
+        }
+        return 8;
     }
 }

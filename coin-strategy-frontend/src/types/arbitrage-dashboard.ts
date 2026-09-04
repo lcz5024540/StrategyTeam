@@ -58,6 +58,10 @@ export interface FundingRateMatrixRow {
   intervalHoursByExchange?: Record<string, number | null>
   longExchange: string | null
   shortExchange: string | null
+  rawFundingSpread?: number | null
+  settlementWindowHours?: number | null
+  settlementWindowSpread?: number | null
+  cadenceAdjusted?: boolean
   hourlyFundingSpread: number | null
   estimatedNetYield: number | null
   executableNotional: number | null
