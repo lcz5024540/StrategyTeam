@@ -25,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ArbitrageDashboardQueryServiceTest {
@@ -193,6 +195,33 @@ class ArbitrageDashboardQueryServiceTest {
         assertEquals("0.50", response.data().fundingPnl().toPlainString());
         assertEquals("0.20", response.data().executionCost().toPlainString());
         assertEquals("1.30", response.data().totalPnl().toPlainString());
+    }
+
+    @Test
+    void overviewPrefersLatestPaperPnlSnapshotOverLedgerScan() {
+        CrossExchangeArbOpportunityMapper opportunityMapper = mock(CrossExchangeArbOpportunityMapper.class);
+        CrossExchangeArbPositionMapper positionMapper = mock(CrossExchangeArbPositionMapper.class);
+        CrossExchangeArbOrderMapper orderMapper = mock(CrossExchangeArbOrderMapper.class);
+        CrossExchangeFundingSettlementMapper settlementMapper = mock(CrossExchangeFundingSettlementMapper.class);
+        CrossExchangeRiskSnapshotMapper riskSnapshotMapper = mock(CrossExchangeRiskSnapshotMapper.class);
+        when(opportunityMapper.selectList(any())).thenReturn(List.of());
+        when(positionMapper.selectList(any())).thenReturn(List.of());
+        when(riskSnapshotMapper.selectList(any())).thenReturn(List.of(
+                snapshot(Instant.parse("2026-09-04T08:01:00Z"),
+                        "{\"basisPnl\":\"1.2\",\"fundingIncome\":\"0.3\",\"executionCost\":\"0.1\",\"totalPnl\":\"1.4\"}")));
+
+        ArbitrageDashboardQueryService service = new ArbitrageDashboardQueryService(
+                opportunityMapper, positionMapper, orderMapper, settlementMapper,
+                mock(CrossExchangeExecutionFillMapper.class), riskSnapshotMapper,
+                mock(SingleExchangeArbitragePositionMapper.class), new ObjectMapper());
+
+        var response = service.overview();
+
+        assertEquals("0.3", response.data().fundingPnl().toPlainString());
+        assertEquals("0.1", response.data().executionCost().toPlainString());
+        assertEquals("1.4", response.data().totalPnl().toPlainString());
+        verify(orderMapper, never()).selectList(any());
+        verify(settlementMapper, never()).selectList(any());
     }
 
     private CrossExchangeArbOpportunityEntity opportunity(String code, String symbol, String longExchange,

@@ -56,6 +56,9 @@ public class ArbitrageDashboardQueryService {
     private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("25");
     private static final List<String> FUNDING_EXCHANGES = List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID");
     private static final Duration MAX_SNAPSHOT_AGE = Duration.ofMinutes(30);
+    private static final Duration PAPER_PNL_OVERVIEW_WINDOW = Duration.ofDays(7);
+    private static final int MAX_OVERVIEW_OPPORTUNITY_ROWS = 10_000;
+    private static final int MAX_OVERVIEW_LEDGER_ROWS = 10_000;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withLocale(Locale.SIMPLIFIED_CHINESE).withZone(ZoneId.of(TIMEZONE));
 
@@ -87,8 +90,12 @@ public class ArbitrageDashboardQueryService {
     }
 
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.Overview> overview() {
+        Date opportunitySince = Date.from(Instant.now().minus(MAX_SNAPSHOT_AGE));
         List<CrossExchangeArbOpportunityEntity> opportunities = readOrDefault("opportunities", List::of,
-                () -> opportunityMapper.selectList(new LambdaQueryWrapper<>()));
+                () -> opportunityMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOpportunityEntity>()
+                        .ge(CrossExchangeArbOpportunityEntity::getDiscoveredAt, opportunitySince)
+                        .orderByDesc(CrossExchangeArbOpportunityEntity::getUpdatedAt)
+                        .last("LIMIT " + MAX_OVERVIEW_OPPORTUNITY_ROWS)));
         List<CrossExchangeArbPositionEntity> positions = readOrDefault("cross positions", List::of,
                 () -> crossPositionMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbPositionEntity>()
                         .in(CrossExchangeArbPositionEntity::getStatus,
@@ -101,16 +108,9 @@ public class ArbitrageDashboardQueryService {
         BigDecimal expectedYield = opportunities.stream().filter(this::isQualified)
                 .map(CrossExchangeArbOpportunityEntity::getEstimatedNetYield).filter(Objects::nonNull)
                 .max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
-        BigDecimal fundingPnl = readOrDefault("funding settlements", List::<CrossExchangeFundingSettlementEntity>of,
-                () -> crossSettlementMapper.selectList(new LambdaQueryWrapper<>())).stream()
-                .map(CrossExchangeFundingSettlementEntity::getActualAmount).filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        PnlParts trading = pnlFromOrders(readOrDefault("paper orders", List::<CrossExchangeArbOrderEntity>of,
-                () -> crossOrderMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
-                        .gt(CrossExchangeArbOrderEntity::getFilledQuantity, BigDecimal.ZERO))));
-        BigDecimal totalPnl = trading.basisPnl.add(fundingPnl).subtract(trading.executionCost);
+        PnlParts pnl = latestPaperPnlSnapshot().orElseGet(this::recentLedgerPnl);
         return envelope(new ArbitrageDashboardViews.Overview(executable, positions.size(), notional,
-                expectedYield, fundingPnl, trading.executionCost, totalPnl, BigDecimal.ZERO,
+                expectedYield, pnl.fundingPnl, pnl.executionCost, pnl.totalPnl(), BigDecimal.ZERO,
                 "UNKNOWN", opportunities.size(), rejected,
                 PAPER_CAPITAL_PER_EXCHANGE, MAXIMUM_PAPER_LEVERAGE,
                 PAPER_CAPITAL_PER_EXCHANGE.multiply(MAXIMUM_PAPER_LEVERAGE)));
@@ -339,8 +339,12 @@ public class ArbitrageDashboardQueryService {
     }
 
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.DataQuality> dataQuality() {
+        Date opportunitySince = Date.from(Instant.now().minus(MAX_SNAPSHOT_AGE));
         List<CrossExchangeArbOpportunityEntity> opportunities = readOrDefault("data quality opportunities", List::of,
-                () -> opportunityMapper.selectList(new LambdaQueryWrapper<>()));
+                () -> opportunityMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOpportunityEntity>()
+                        .ge(CrossExchangeArbOpportunityEntity::getDiscoveredAt, opportunitySince)
+                        .orderByDesc(CrossExchangeArbOpportunityEntity::getUpdatedAt)
+                        .last("LIMIT " + MAX_OVERVIEW_OPPORTUNITY_ROWS)));
         Map<String, Long> reasons = opportunities.stream().filter(item -> item.getRejectionReason() != null)
                 .collect(Collectors.groupingBy(CrossExchangeArbOpportunityEntity::getRejectionReason, Collectors.counting()));
         List<ArbitrageDashboardViews.ReasonCount> reasonCounts = reasons.entrySet().stream()
@@ -502,6 +506,44 @@ public class ArbitrageDashboardQueryService {
         PnlParts trading = pnlFromOrders(readOrDefault("position orders", List::<CrossExchangeArbOrderEntity>of,
                 () -> crossOrderMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
                         .eq(CrossExchangeArbOrderEntity::getPositionCode, positionCode))));
+        return new PnlParts(trading.basisPnl, fundingPnl, trading.executionCost);
+    }
+
+    private Optional<PnlParts> latestPaperPnlSnapshot() {
+        List<CrossExchangeRiskSnapshotEntity> snapshots = readOrDefault("latest paper pnl snapshot", List::of,
+                () -> riskSnapshotMapper.selectList(new LambdaQueryWrapper<CrossExchangeRiskSnapshotEntity>()
+                        .eq(CrossExchangeRiskSnapshotEntity::getCheckStage, STAGE_PAPER_PNL_PORTFOLIO)
+                        .orderByDesc(CrossExchangeRiskSnapshotEntity::getCreatedAt)
+                        .last("LIMIT 1")));
+        if (snapshots == null || snapshots.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            JsonNode payload = objectMapper.readTree(snapshots.get(0).getDetailsJson());
+            return Optional.of(new PnlParts(decimal(payload, "basisPnl"),
+                    decimal(payload, "fundingIncome"), decimal(payload, "executionCost")));
+        } catch (Exception exception) {
+            LOGGER.warn("Skip malformed latest paper pnl snapshot id={}: {}", snapshots.get(0).getId(),
+                    exception.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private PnlParts recentLedgerPnl() {
+        Date since = Date.from(Instant.now().minus(PAPER_PNL_OVERVIEW_WINDOW));
+        BigDecimal fundingPnl = readOrDefault("recent funding settlements", List::<CrossExchangeFundingSettlementEntity>of,
+                () -> crossSettlementMapper.selectList(new LambdaQueryWrapper<CrossExchangeFundingSettlementEntity>()
+                        .ge(CrossExchangeFundingSettlementEntity::getSettlementTime, since)
+                        .orderByDesc(CrossExchangeFundingSettlementEntity::getSettlementTime)
+                        .last("LIMIT " + MAX_OVERVIEW_LEDGER_ROWS))).stream()
+                .map(CrossExchangeFundingSettlementEntity::getActualAmount).filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        PnlParts trading = pnlFromOrders(readOrDefault("recent paper orders", List::<CrossExchangeArbOrderEntity>of,
+                () -> crossOrderMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
+                        .gt(CrossExchangeArbOrderEntity::getFilledQuantity, BigDecimal.ZERO)
+                        .ge(CrossExchangeArbOrderEntity::getCreatedAt, since)
+                        .orderByDesc(CrossExchangeArbOrderEntity::getCreatedAt)
+                        .last("LIMIT " + MAX_OVERVIEW_LEDGER_ROWS))));
         return new PnlParts(trading.basisPnl, fundingPnl, trading.executionCost);
     }
 
