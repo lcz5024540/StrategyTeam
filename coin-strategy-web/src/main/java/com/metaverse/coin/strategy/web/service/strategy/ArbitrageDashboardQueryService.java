@@ -55,8 +55,10 @@ public class ArbitrageDashboardQueryService {
     private static final BigDecimal PAPER_CAPITAL_PER_EXCHANGE = new BigDecimal("2000");
     private static final BigDecimal MAXIMUM_PAPER_LEVERAGE = new BigDecimal("25");
     private static final List<String> FUNDING_EXCHANGES = List.of("BINANCE", "OKX", "HTX", "BITGET", "HYPERLIQUID");
+    private static final List<String> QUALIFIED_OPPORTUNITY_STATUSES = List.of("QUALIFIED", "APPROVED", "PAPER_READY");
     private static final Duration MAX_SNAPSHOT_AGE = Duration.ofMinutes(30);
     private static final Duration PAPER_PNL_OVERVIEW_WINDOW = Duration.ofDays(7);
+    private static final int MAX_OVERVIEW_QUALIFIED_ROWS = 1_000;
     private static final int MAX_OVERVIEW_OPPORTUNITY_ROWS = 10_000;
     private static final int MAX_OVERVIEW_LEDGER_ROWS = 10_000;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -91,27 +93,34 @@ public class ArbitrageDashboardQueryService {
 
     public ArbitrageDashboardViews.Envelope<ArbitrageDashboardViews.Overview> overview() {
         Date opportunitySince = Date.from(Instant.now().minus(MAX_SNAPSHOT_AGE));
-        List<CrossExchangeArbOpportunityEntity> opportunities = readOrDefault("opportunities", List::of,
+        long evaluated = zero(readOrDefault("opportunity count", () -> 0L,
+                () -> opportunityMapper.selectCount(new LambdaQueryWrapper<CrossExchangeArbOpportunityEntity>()
+                        .ge(CrossExchangeArbOpportunityEntity::getDiscoveredAt, opportunitySince))));
+        long executable = zero(readOrDefault("qualified opportunity count", () -> 0L,
+                () -> opportunityMapper.selectCount(new LambdaQueryWrapper<CrossExchangeArbOpportunityEntity>()
+                        .ge(CrossExchangeArbOpportunityEntity::getDiscoveredAt, opportunitySince)
+                        .in(CrossExchangeArbOpportunityEntity::getStatus, QUALIFIED_OPPORTUNITY_STATUSES))));
+        List<CrossExchangeArbOpportunityEntity> qualifiedOpportunities = readOrDefault("qualified opportunities", List::of,
                 () -> opportunityMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbOpportunityEntity>()
                         .ge(CrossExchangeArbOpportunityEntity::getDiscoveredAt, opportunitySince)
+                        .in(CrossExchangeArbOpportunityEntity::getStatus, QUALIFIED_OPPORTUNITY_STATUSES)
                         .orderByDesc(CrossExchangeArbOpportunityEntity::getUpdatedAt)
-                        .last("LIMIT " + MAX_OVERVIEW_OPPORTUNITY_ROWS)));
+                        .last("LIMIT " + MAX_OVERVIEW_QUALIFIED_ROWS)));
         List<CrossExchangeArbPositionEntity> positions = readOrDefault("cross positions", List::of,
                 () -> crossPositionMapper.selectList(new LambdaQueryWrapper<CrossExchangeArbPositionEntity>()
                         .in(CrossExchangeArbPositionEntity::getStatus,
                                 List.of("OPENING", "OPENED", "HEDGED", "CLOSING"))));
-        long executable = opportunities.stream().filter(this::isQualified).count();
-        long rejected = opportunities.stream().filter(item -> !isQualified(item)).count();
-        BigDecimal notional = opportunities.stream().filter(this::isQualified)
+        long rejected = Math.max(0L, evaluated - executable);
+        BigDecimal notional = qualifiedOpportunities.stream()
                 .map(CrossExchangeArbOpportunityEntity::getExecutableNotional).filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal expectedYield = opportunities.stream().filter(this::isQualified)
+        BigDecimal expectedYield = qualifiedOpportunities.stream()
                 .map(CrossExchangeArbOpportunityEntity::getEstimatedNetYield).filter(Objects::nonNull)
                 .max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
         PnlParts pnl = latestPaperPnlSnapshot().orElseGet(this::recentLedgerPnl);
         return envelope(new ArbitrageDashboardViews.Overview(executable, positions.size(), notional,
                 expectedYield, pnl.fundingPnl, pnl.executionCost, pnl.totalPnl(), BigDecimal.ZERO,
-                "UNKNOWN", opportunities.size(), rejected,
+                "UNKNOWN", evaluated, rejected,
                 PAPER_CAPITAL_PER_EXCHANGE, MAXIMUM_PAPER_LEVERAGE,
                 PAPER_CAPITAL_PER_EXCHANGE.multiply(MAXIMUM_PAPER_LEVERAGE)));
     }
@@ -574,7 +583,10 @@ public class ArbitrageDashboardQueryService {
     }
 
     private boolean isQualified(CrossExchangeArbOpportunityEntity item) { return isQualified(item.getStatus()); }
-    private boolean isQualified(String status) { return "QUALIFIED".equalsIgnoreCase(status) || "APPROVED".equalsIgnoreCase(status) || "PAPER_READY".equalsIgnoreCase(status); }
+    private boolean isQualified(String status) {
+        return status != null && QUALIFIED_OPPORTUNITY_STATUSES.stream().anyMatch(item -> item.equalsIgnoreCase(status));
+    }
+    private long zero(Long value) { return value == null ? 0L : value; }
     private BigDecimal zero(BigDecimal value) { return value == null ? BigDecimal.ZERO : value; }
     private String format(Date value) { return value == null ? null : FORMATTER.format(value.toInstant()); }
 
