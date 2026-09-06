@@ -4,5 +4,6 @@ import java.math.BigDecimal; import java.util.Date;
 @Data @Accessors(chain=true) @TableName("cross_exchange_funding_settlement")
 public class CrossExchangeFundingSettlementEntity {
  @TableId(type=IdType.AUTO) private Long id; private String positionCode; private String exchangeName; private String symbol;
- private BigDecimal fundingRate; private BigDecimal expectedAmount; private BigDecimal actualAmount; private Date settlementTime; private Date createdAt;
+ private BigDecimal fundingRate; private BigDecimal expectedAmount; private BigDecimal actualAmount; private String settlementSource;
+ private Date observedAt; private Date settlementTime; private Date createdAt;
 }

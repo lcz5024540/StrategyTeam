@@ -103,13 +103,19 @@ public class CrossExchangeFundingSettlementJob {
             BigDecimal actualFundingRate, BigDecimal expectedAmount, BigDecimal actualAmount, Instant now) {
         long intervalSeconds = scheduleQuote.fundingIntervalHours() * 3600L;
         Instant settlementAt = scheduleQuote.nextFundingTime();
-        while (!settlementAt.plusSeconds(intervalSeconds).isAfter(now)) {
+        while (!settlementAt.isAfter(now)) {
+            if (position.openedAt() == null || !settlementAt.isBefore(position.openedAt())) {
+                recordEstimatedSettlement(position, scheduleQuote, actualFundingRate,
+                        expectedAmount, actualAmount, now, settlementAt);
+            }
             settlementAt = settlementAt.plusSeconds(intervalSeconds);
         }
-        if (settlementAt.isAfter(now)
-                || position.openedAt() != null && settlementAt.isBefore(position.openedAt())) {
-            return;
-        }
+    }
+
+    private void recordEstimatedSettlement(PaperHedgePosition position,
+            NormalizedFundingRateSnapshot scheduleQuote, BigDecimal fundingRate,
+            BigDecimal expectedAmount, BigDecimal estimatedAmount, Instant observedAt,
+            Instant settlementAt) {
         Date settlementTime = Date.from(settlementAt);
         Long existing = mapper.selectCount(new LambdaQueryWrapper<CrossExchangeFundingSettlementEntity>()
                 .eq(CrossExchangeFundingSettlementEntity::getPositionCode, position.positionId())
@@ -122,9 +128,11 @@ public class CrossExchangeFundingSettlementJob {
                 .setPositionCode(position.positionId())
                 .setExchangeName(scheduleQuote.exchange().name())
                 .setSymbol(position.opportunity().symbol())
-                .setFundingRate(actualFundingRate)
+                .setFundingRate(fundingRate)
                 .setExpectedAmount(expectedAmount)
-                .setActualAmount(actualAmount)
+                .setActualAmount(estimatedAmount)
+                .setSettlementSource("PAPER_PUBLIC_ESTIMATE")
+                .setObservedAt(Date.from(observedAt))
                 .setSettlementTime(settlementTime)
                 .setCreatedAt(new Date()));
     }

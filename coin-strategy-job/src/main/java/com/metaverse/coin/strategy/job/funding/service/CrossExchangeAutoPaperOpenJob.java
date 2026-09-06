@@ -43,23 +43,32 @@ public class CrossExchangeAutoPaperOpenJob {
     private final CrossExchangePaperTradingService paper;
     private final CrossExchangeArbPositionMapper positions;
     private final MultiExchangeFundingRateProperties properties;
+    private final CrossExchangeStrategyLeaseService leases;
     private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     @Autowired
     public CrossExchangeAutoPaperOpenJob(CrossExchangeOpportunityScanService scanner,
             CrossExchangePaperTradingService paper, CrossExchangeArbPositionMapper positions,
-            MultiExchangeFundingRateProperties properties) {
-        this(scanner, paper, positions, properties, Clock.systemUTC());
+            MultiExchangeFundingRateProperties properties, CrossExchangeStrategyLeaseService leases) {
+        this(scanner, paper, positions, properties, leases, Clock.systemUTC());
     }
 
     CrossExchangeAutoPaperOpenJob(CrossExchangeOpportunityScanService scanner,
             CrossExchangePaperTradingService paper, CrossExchangeArbPositionMapper positions,
             MultiExchangeFundingRateProperties properties, Clock clock) {
+        this(scanner, paper, positions, properties, null, clock);
+    }
+
+    CrossExchangeAutoPaperOpenJob(CrossExchangeOpportunityScanService scanner,
+            CrossExchangePaperTradingService paper, CrossExchangeArbPositionMapper positions,
+            MultiExchangeFundingRateProperties properties, CrossExchangeStrategyLeaseService leases,
+            Clock clock) {
         this.scanner = scanner;
         this.paper = paper;
         this.positions = positions;
         this.properties = properties;
+        this.leases = leases;
         this.clock = clock;
     }
 
@@ -91,6 +100,12 @@ public class CrossExchangeAutoPaperOpenJob {
                 if (activeSymbols.contains(candidate.symbol())) {
                     continue;
                 }
+                if (leases != null && !leases.acquireSymbol(candidate.symbol(), now)) {
+                    LOG.info("[FundingAutoPaperOpen] skip lease held by another scheduler: symbol={}",
+                            candidate.symbol());
+                    continue;
+                }
+                try {
                 BigDecimal requestedNotional = requestedNotional(candidate);
                 if (requestedNotional.signum() <= 0) {
                     continue;
@@ -122,6 +137,11 @@ public class CrossExchangeAutoPaperOpenJob {
                 } catch (RuntimeException exception) {
                     LOG.warn("[FundingAutoPaperOpen] failed to open paper position: id={}, symbol={}, reason={}",
                             candidate.opportunityId(), candidate.symbol(), exception.getMessage());
+                }
+                } finally {
+                    if (leases != null) {
+                        leases.releaseSymbol(candidate.symbol());
+                    }
                 }
             }
             return opened;

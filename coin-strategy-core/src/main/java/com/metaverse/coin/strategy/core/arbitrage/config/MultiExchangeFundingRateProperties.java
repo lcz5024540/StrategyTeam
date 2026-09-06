@@ -73,7 +73,7 @@ public class MultiExchangeFundingRateProperties {
         this.maximumLegVwapImpact = new BigDecimal("0.0005");
         this.captureOrderBookDepth = 100;
         this.paperCapitalPerExchange = new BigDecimal("2000");
-        this.maximumPaperLeverage = new BigDecimal("3");
+        this.maximumPaperLeverage = new BigDecimal("5");
         this.maintenanceMarginRate = new BigDecimal("0.005");
         this.minimumLiquidationDistance = new BigDecimal("0.15");
         this.unknownSymbolLiquidationDistance = new BigDecimal("0.30");
@@ -85,8 +85,8 @@ public class MultiExchangeFundingRateProperties {
         this.maxMarkPriceDeviation = new BigDecimal("0.01");
         this.maxExecutableBasis = new BigDecimal("0.003");
         this.minimumCostCoverageRatio = new BigDecimal("1.25");
-        this.maxSymbolNotional = paperCapitalPerExchange.multiply(maximumPaperLeverage);
-        this.maxExchangeNotional = paperCapitalPerExchange.multiply(maximumPaperLeverage);
+        this.maxSymbolNotional = new BigDecimal("2000");
+        this.maxExchangeNotional = new BigDecimal("2000");
         this.autoPaperOpenEnabled = false;
         this.autoPaperOpenNotional = BigDecimal.ZERO;
         this.autoPaperOpenMaxPerCycle = 1;
@@ -123,7 +123,7 @@ public class MultiExchangeFundingRateProperties {
         this.captureOrderBookDepth = positiveInt(env,
                 "arbitrage.multi-exchange.capture-order-book-depth", 100);
         this.paperCapitalPerExchange = decimal(env, "arbitrage.multi-exchange.paper-capital-per-exchange", "2000");
-        this.maximumPaperLeverage = decimal(env, "arbitrage.multi-exchange.maximum-paper-leverage", "3");
+        this.maximumPaperLeverage = decimal(env, "arbitrage.multi-exchange.maximum-paper-leverage", "5");
         this.maintenanceMarginRate = decimal(env, "arbitrage.multi-exchange.maintenance-margin-rate", "0.005");
         this.minimumLiquidationDistance = decimal(env, "arbitrage.multi-exchange.minimum-liquidation-distance", "0.15");
         this.unknownSymbolLiquidationDistance = decimal(env, "arbitrage.multi-exchange.unknown-symbol-liquidation-distance", "0.30");
@@ -136,10 +136,11 @@ public class MultiExchangeFundingRateProperties {
         this.maxExecutableBasis = decimal(env, "arbitrage.multi-exchange.max-executable-basis", "0.003");
         this.minimumCostCoverageRatio = decimal(env, "arbitrage.multi-exchange.minimum-cost-coverage-ratio", "1.25");
         BigDecimal leverageBound = paperCapitalPerExchange.multiply(maximumPaperLeverage);
+        BigDecimal pilotNotionalCap = leverageBound.min(new BigDecimal("2000"));
         this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional",
-                leverageBound.toPlainString());
+                pilotNotionalCap.toPlainString());
         this.maxExchangeNotional = decimal(env, "arbitrage.multi-exchange.max-exchange-notional",
-                leverageBound.toPlainString());
+                pilotNotionalCap.toPlainString());
         this.autoPaperOpenEnabled = Boolean.parseBoolean(env.getProperty(
                 "arbitrage.multi-exchange.auto-paper-open-enabled", "false"));
         this.autoPaperOpenNotional = decimal(env,

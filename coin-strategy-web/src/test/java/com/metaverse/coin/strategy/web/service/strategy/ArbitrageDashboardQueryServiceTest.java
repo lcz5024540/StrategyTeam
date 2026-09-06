@@ -85,12 +85,11 @@ class ArbitrageDashboardQueryServiceTest {
 
         var points = service.timeseries().data();
 
-        assertEquals(2, points.size());
-        assertEquals("2026-09-04 16:00:00", points.get(0).bucketAt());
-        assertEquals("1.4", points.get(0).cumulativeNetPnl().toPlainString());
-        assertEquals("1.4", points.get(0).netPnl().toPlainString());
-        assertEquals("-0.3", points.get(1).netPnl().toPlainString());
-        assertEquals("1.1", points.get(1).cumulativeNetPnl().toPlainString());
+        assertEquals(1, points.size());
+        assertEquals("2026-09-04", points.get(0).bucketAt());
+        assertEquals("0.8", points.get(0).tradingCashflowPnl().toPlainString());
+        assertEquals("1.1", points.get(0).cumulativeNetPnl().toPlainString());
+        assertEquals("1.1", points.get(0).netPnl().toPlainString());
     }
 
     @Test

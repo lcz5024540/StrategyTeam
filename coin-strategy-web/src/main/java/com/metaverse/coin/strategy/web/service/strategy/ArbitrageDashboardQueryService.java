@@ -260,25 +260,33 @@ public class ArbitrageDashboardQueryService {
         if (snapshots == null || snapshots.isEmpty()) {
             return List.of();
         }
-        List<ArbitrageDashboardViews.TimePoint> result = new ArrayList<>(snapshots.size());
-        BigDecimal previousTotal = BigDecimal.ZERO;
+        Map<LocalDate, SnapshotPnl> dailyLastSnapshots = new TreeMap<>();
         for (CrossExchangeRiskSnapshotEntity snapshot : snapshots) {
             try {
                 JsonNode payload = objectMapper.readTree(snapshot.getDetailsJson());
-                BigDecimal fundingPnl = decimal(payload, "fundingIncome");
-                BigDecimal tradingCashflowPnl = decimal(payload, "basisPnl");
-                BigDecimal fee = decimal(payload, "executionCost");
-                BigDecimal totalPnl = decimal(payload, "totalPnl");
-                BigDecimal intervalPnl = totalPnl.subtract(previousTotal);
-                previousTotal = totalPnl;
-                result.add(new ArbitrageDashboardViews.TimePoint(format(snapshot.getCreatedAt()),
-                        fundingPnl, tradingCashflowPnl, fee, intervalPnl, totalPnl));
+                dailyLastSnapshots.put(toDate(snapshot.getCreatedAt()), new SnapshotPnl(
+                        decimal(payload, "fundingIncome"), decimal(payload, "basisPnl"),
+                        decimal(payload, "executionCost"), decimal(payload, "totalPnl")));
             } catch (Exception exception) {
                 LOGGER.warn("Skip malformed paper pnl snapshot id={}: {}", snapshot.getId(),
                         exception.getMessage());
             }
         }
+        List<ArbitrageDashboardViews.TimePoint> result = new ArrayList<>(dailyLastSnapshots.size());
+        BigDecimal previousTotal = BigDecimal.ZERO;
+        for (Map.Entry<LocalDate, SnapshotPnl> entry : dailyLastSnapshots.entrySet()) {
+            SnapshotPnl snapshot = entry.getValue();
+            BigDecimal dailyPnl = snapshot.totalPnl().subtract(previousTotal);
+            previousTotal = snapshot.totalPnl();
+            result.add(new ArbitrageDashboardViews.TimePoint(entry.getKey().toString(),
+                    snapshot.fundingPnl(), snapshot.tradingCashflowPnl(), snapshot.fee(), dailyPnl,
+                    snapshot.totalPnl()));
+        }
         return result;
+    }
+
+    private record SnapshotPnl(BigDecimal fundingPnl, BigDecimal tradingCashflowPnl,
+            BigDecimal fee, BigDecimal totalPnl) {
     }
 
     private static BigDecimal decimal(JsonNode payload, String field) {

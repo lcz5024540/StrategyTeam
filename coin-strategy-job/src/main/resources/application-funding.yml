@@ -40,8 +40,10 @@ arbitrage:
     minimum-order-book-coverage-ratio: 1.5
     maximum-leg-vwap-impact: 0.0005
     paper-capital-per-exchange: 2000
-    # Paper 每个交易所账户初始保证金 2000U；25x 是硬上限，实际仓位仍受深度、滑点和清算距离约束。
-    maximum-paper-leverage: 25
+    # 首轮 OKX/Bitget Paper 对齐逐仓 5x；每腿名义限制 2,000U，真实下单仍硬禁用。
+    maximum-paper-leverage: 5
+    max-symbol-notional: 2000
+    max-exchange-notional: 2000
     auto-paper-open-enabled: true
     # 0 means use the approved opportunity's full executable notional after pre-trade revalidation.
     auto-paper-open-notional: 0

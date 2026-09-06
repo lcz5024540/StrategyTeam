@@ -12,7 +12,6 @@ const money = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)} U`
 export function ArbitragePnlCharts({ data }: ArbitragePnlChartsProps) {
   if (!data.length) return <div className="arb-empty arb-chart-empty">暂无每日盈亏数据</div>
 
-  const hasSnapshotTime = data.some(item => item.bucketAt.includes(' '))
   const dates = data.map(item => item.bucketAt.slice(5))
   const common: EChartsOption = {
     animationDuration: 450,
@@ -38,7 +37,7 @@ export function ArbitragePnlCharts({ data }: ArbitragePnlChartsProps) {
   }
   const latest = data[data.length - 1]
   return <div className="arb-chart-grid">
-    <article className="arb-panel arb-chart"><header><div><span>累计净盈亏</span><strong>{money(latest.cumulativeNetPnl)}</strong></div><small>{hasSnapshotTime ? 'Paper PnL 快照：交易现金流/浮动盈亏 + 资金费 − 手续费' : '实际交易现金流 + 资金费 − 已记录费用'}</small></header><ReactECharts option={line} style={{ height: 300 }} /></article>
-    <article className="arb-panel arb-chart"><header><div><span>{hasSnapshotTime ? '快照变化' : '每日收益'}</span><strong>{money(latest.netPnl)}</strong></div><small>{hasSnapshotTime ? '相邻 Paper PnL 快照之间的变化' : 'Asia/Shanghai 自然日'}</small></header><ReactECharts option={bars} style={{ height: 300 }} /></article>
+    <article className="arb-panel arb-chart"><header><div><span>累计净盈亏</span><strong>{money(latest.cumulativeNetPnl)}</strong></div><small>Paper 估算权益：交易现金流/浮动盈亏 + 资金费 − 手续费</small></header><ReactECharts option={line} style={{ height: 300 }} /></article>
+    <article className="arb-panel arb-chart"><header><div><span>每日收益</span><strong>{money(latest.netPnl)}</strong></div><small>Asia/Shanghai 自然日的期末权益差额</small></header><ReactECharts option={bars} style={{ height: 300 }} /></article>
   </div>
 }

@@ -125,7 +125,7 @@ class CrossExchangeFundingSettlementJobTest {
     }
 
     @Test
-    void doesNotBackfillMultipleMissedIntervalsWithOneCurrentQuote() {
+    void backfillsEachMissedIntervalAsPublicEstimate() {
         Instant settlementAt = Instant.parse("2026-08-20T08:00:00Z");
         PaperHedgePosition position = position(settlementAt.minusSeconds(60), settlementAt);
         CrossExchangePaperTradingService paper = mock(CrossExchangePaperTradingService.class);
@@ -136,7 +136,10 @@ class CrossExchangeFundingSettlementJobTest {
         new CrossExchangeFundingSettlementJob(paper, mapper, providers(settlementAt))
                 .settle(settlementAt.plusSeconds(24 * 3600L));
 
-        verify(mapper, org.mockito.Mockito.times(2)).insert(any());
+        ArgumentCaptor<CrossExchangeFundingSettlementEntity> captor =
+                ArgumentCaptor.forClass(CrossExchangeFundingSettlementEntity.class);
+        verify(mapper, org.mockito.Mockito.times(8)).insert(captor.capture());
+        assertEquals("PAPER_PUBLIC_ESTIMATE", captor.getAllValues().get(0).getSettlementSource());
     }
 
     private PaperHedgePosition position(Instant openedAt, Instant settlementAt) {
