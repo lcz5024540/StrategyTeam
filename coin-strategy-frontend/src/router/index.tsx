@@ -14,7 +14,6 @@ import { StrategyConfigPage } from '../pages/StrategyConfigPage'
 import { StrategyLogsPage } from '../pages/StrategyLogsPage'
 import { PolymarketOrdersPage } from '../pages/PolymarketOrdersPage'
 import { ArbitrageScannerPage } from '../pages/ArbitrageScannerPage'
-import { StockHarborDexPage } from '../pages/StockHarborDexPage'
 
 export const router = createBrowserRouter([
   {
@@ -92,10 +91,6 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard/arbitrage',
         element: <ArbitrageScannerPage />,
-      },
-      {
-        path: 'stock-harbor',
-        element: <StockHarborDexPage />,
       },
     ],
   },
