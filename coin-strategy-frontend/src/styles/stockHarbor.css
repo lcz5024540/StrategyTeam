@@ -1,0 +1,302 @@
+.sh-page {
+  min-height: 100%;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(199, 255, 61, 0.12), transparent 30%),
+    radial-gradient(circle at 86% 8%, rgba(85, 214, 255, 0.10), transparent 28%),
+    #080b0d;
+  color: #eef4f1;
+}
+
+.sh-hero,
+.sh-panel,
+.sh-stats > div {
+  border: 1px solid #273038;
+  border-radius: 14px;
+  background: rgba(16, 20, 23, 0.88);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.28);
+}
+
+.sh-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.sh-kicker,
+.sh-stats span,
+.sh-stats em,
+.sh-panel p,
+.sh-panel label,
+.sh-market-meta span,
+.sh-balance-row span,
+.sh-fees span,
+.sh-quote span,
+.sh-wallet-card span,
+.sh-muted {
+  color: #89939d;
+}
+
+.sh-kicker {
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+}
+
+.sh-hero h1 {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 60px);
+  line-height: 1;
+}
+
+.sh-hero p {
+  max-width: 680px;
+  margin: 12px 0 0;
+  line-height: 1.7;
+}
+
+.sh-wallet-card {
+  min-width: 320px;
+  padding: 16px;
+  border: 1px solid #273038;
+  border-radius: 12px;
+  background: #0d1114;
+}
+
+.sh-wallet-row,
+.sh-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sh-wallet-card strong,
+.sh-wallet-card span {
+  display: block;
+  margin-top: 10px;
+}
+
+.sh-wallet-card button,
+.sh-panel button,
+.sh-tabs button {
+  min-height: 40px;
+  border: 1px solid #2d3942;
+  border-radius: 10px;
+  background: #11161a;
+  color: #eef4f1;
+  font-weight: 800;
+}
+
+.sh-wallet-card button:hover,
+.sh-panel button:hover,
+.sh-tabs button.active {
+  border-color: rgba(199, 255, 61, 0.76);
+  background: rgba(199, 255, 61, 0.12);
+  color: #c7ff3d;
+}
+
+.sh-wallet-card button:disabled,
+.sh-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.sh-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.sh-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.sh-stats > div {
+  padding: 16px;
+}
+
+.sh-stats span,
+.sh-stats em {
+  display: block;
+  font-size: 12px;
+}
+
+.sh-stats strong {
+  display: block;
+  margin: 8px 0;
+  font-size: 26px;
+}
+
+.sh-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 370px;
+  gap: 16px;
+  align-items: start;
+}
+
+.sh-panel {
+  padding: 18px;
+}
+
+.sh-panel h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.sh-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.sh-progress-track {
+  height: 18px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #252c32;
+}
+
+.sh-progress-track > div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #55d6ff, #c7ff3d);
+}
+
+.sh-market-meta {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.sh-market-meta div,
+.sh-balance-row,
+.sh-fees div,
+.sh-quote {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid #273038;
+  border-radius: 10px;
+  background: #0d1114;
+}
+
+.sh-market-meta strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #55d6ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.sh-trade-panel label {
+  display: block;
+  margin: 18px 0 8px;
+  font-size: 13px;
+}
+
+.sh-amount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 8px;
+}
+
+.sh-amount input {
+  min-width: 0;
+  height: 56px;
+  border: 1px solid #273038;
+  border-radius: 10px;
+  background: #0c1013;
+  color: #eef4f1;
+  padding: 0 14px;
+  font-size: 24px;
+  font-weight: 850;
+  outline: none;
+}
+
+.sh-amount span {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #20272d;
+  font-weight: 850;
+}
+
+.sh-quote {
+  margin-top: 12px;
+}
+
+.sh-quote strong {
+  color: #c7ff3d;
+}
+
+.sh-fees {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.sh-primary,
+.sh-secondary {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.sh-primary {
+  border: 0 !important;
+  background: #c7ff3d !important;
+  color: #081000 !important;
+}
+
+.sh-account-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.sh-balance-row {
+  margin-top: 10px;
+}
+
+.sh-status {
+  min-height: 46px;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.sh-panel a {
+  color: #55d6ff;
+}
+
+@media (max-width: 1180px) {
+  .sh-hero,
+  .sh-panel-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sh-wallet-card {
+    min-width: 0;
+  }
+
+  .sh-stats,
+  .sh-main-grid,
+  .sh-account-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .sh-page {
+    padding: 14px;
+  }
+}
