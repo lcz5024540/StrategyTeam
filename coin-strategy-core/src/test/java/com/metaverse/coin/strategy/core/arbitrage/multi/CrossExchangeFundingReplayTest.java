@@ -55,7 +55,7 @@ class CrossExchangeFundingReplayTest {
         }
 
         assertEquals(Set.of("same_positive", "same_negative", "mixed_signs", "settlement_skew",
-                "funding_spike", "stale_funding", "stale_order_book", "price_anomaly"),
+                "hyperliquid_hourly", "funding_spike", "stale_funding", "stale_order_book", "price_anomaly"),
                 coveredScenarios);
         assertEquals(Set.of(Exchange.values()), coveredExchanges);
     }

@@ -8,6 +8,8 @@ import java.util.*;
 
 /** Selects the best executable pair; rejected pairs retain an explicit reason. */
 public final class CrossExchangeOpportunitySelector {
+    private static final long SECONDS_PER_HOUR = 3_600L;
+
     public record Limits(Duration maxQuoteAge, Duration maxSettlementSkew, BigDecimal maxMarkPriceDeviation,
                          BigDecimal minNotional, BigDecimal minNetYield, BigDecimal basisRiskBuffer,
                          boolean allowMixedSigns, BigDecimal minimumCostCoverageRatio,
@@ -41,7 +43,8 @@ public final class CrossExchangeOpportunitySelector {
             FundingRateYieldProjection.Direction direction = FundingRateYieldProjection.bestDirection(a, b, now);
             var low = direction.longQuote();
             var high = direction.shortQuote();
-            ExecutionPlan execution = executionPlan(low, high, books, targetNotional);
+            ExecutionPlan execution = executionPlan(low, high, books, targetNotional,
+                    limits.maximumLegVwapImpact());
             String reason = rejection(low, high, books, costs, execution, targetNotional, limits, now);
             BigDecimal hourlySpread = high.hourlyFundingRate().subtract(low.hourlyFundingRate());
             BigDecimal projectedFundingYield = direction.projectedSpread();
@@ -78,13 +81,9 @@ public final class CrossExchangeOpportunitySelector {
         if (!costs.containsKey(low.exchange()) || !costs.containsKey(high.exchange())) return "MISSING_EXCHANGE_COST";
         if (!books.containsKey(low.exchange()) || !books.containsKey(high.exchange())) return "MISSING_ORDER_BOOK";
         if (low.fundingIntervalHours() == high.fundingIntervalHours()
-                && Duration.between(low.nextFundingTime(), high.nextFundingTime()).abs()
+                && settlementSkew(low, high, now, limits.maxSettlementSkew())
                 .compareTo(limits.maxSettlementSkew()) > 0) {
             return "SETTLEMENT_TIME_SKEW";
-        }
-        if (!limits.allowMixedSigns()
-                && low.rawFundingRate().signum() * high.rawFundingRate().signum() < 0) {
-            return "MIXED_FUNDING_SIGNS";
         }
         NormalizedOrderBookSnapshot longBook = books.get(low.exchange());
         NormalizedOrderBookSnapshot shortBook = books.get(high.exchange());
@@ -106,23 +105,24 @@ public final class CrossExchangeOpportunitySelector {
     private String depthRejection(NormalizedOrderBookSnapshot longBook,
             NormalizedOrderBookSnapshot shortBook, ExecutionPlan execution,
             BigDecimal targetNotional, Limits limits) {
-        if (limits.minimumOrderBookNotional().signum() <= 0) {
+        if (longBook.askLevels().isEmpty() || shortBook.bidLevels().isEmpty()) {
+            if (execution.executableNotional().compareTo(limits.minNotional()) < 0) {
+                return "MISSING_L2_DEPTH";
+            }
             return null;
         }
-        if (longBook.askLevels().isEmpty() || shortBook.bidLevels().isEmpty()) {
-            return "MISSING_L2_DEPTH";
-        }
-        BigDecimal requiredNotional = limits.minimumOrderBookNotional().max(
-                targetNotional.multiply(limits.minimumOrderBookCoverageRatio()));
         BigDecimal longCapacity = notionalWithinImpact(longBook.askLevels(), longBook.bestAsk(), true,
                 limits.maximumLegVwapImpact());
-        if (longCapacity.compareTo(requiredNotional) < 0) {
-            return "INSUFFICIENT_LONG_DEPTH_COVERAGE";
-        }
         BigDecimal shortCapacity = notionalWithinImpact(shortBook.bidLevels(), shortBook.bestBid(), false,
                 limits.maximumLegVwapImpact());
-        if (shortCapacity.compareTo(requiredNotional) < 0) {
+        if (longCapacity.signum() <= 0) {
+            return "INSUFFICIENT_LONG_DEPTH_COVERAGE";
+        }
+        if (shortCapacity.signum() <= 0) {
             return "INSUFFICIENT_SHORT_DEPTH_COVERAGE";
+        }
+        if (execution.executableNotional().compareTo(limits.minNotional()) < 0) {
+            return "INSUFFICIENT_LIQUIDITY";
         }
         if (vwapImpact(execution.longEntryPrice(), longBook.bestAsk())
                 .compareTo(limits.maximumLegVwapImpact()) > 0) {
@@ -157,7 +157,7 @@ public final class CrossExchangeOpportunitySelector {
      */
     private ExecutionPlan executionPlan(NormalizedFundingRateSnapshot low,
             NormalizedFundingRateSnapshot high, Map<Exchange, NormalizedOrderBookSnapshot> books,
-            BigDecimal targetNotional) {
+            BigDecimal targetNotional, BigDecimal maximumLegVwapImpact) {
         NormalizedOrderBookSnapshot longBook = books.get(low.exchange());
         NormalizedOrderBookSnapshot shortBook = books.get(high.exchange());
         if (longBook == null || shortBook == null) {
@@ -167,18 +167,55 @@ public final class CrossExchangeOpportunitySelector {
             return new ExecutionPlan(longBook.bestAsk(), shortBook.bestBid(),
                     longBook.askNotional().min(shortBook.bidNotional()).min(targetNotional));
         }
-        BigDecimal longTargetQuantity = quantityForNotional(longBook.askLevels(), targetNotional);
+        List<NormalizedOrderBookSnapshot.Level> longExecutableLevels = levelsWithinImpact(
+                longBook.askLevels(), longBook.bestAsk(), true, maximumLegVwapImpact);
+        List<NormalizedOrderBookSnapshot.Level> shortExecutableLevels = levelsWithinImpact(
+                shortBook.bidLevels(), shortBook.bestBid(), false, maximumLegVwapImpact);
+        if (longExecutableLevels.isEmpty() || shortExecutableLevels.isEmpty()) {
+            return new ExecutionPlan(longBook.bestAsk(), shortBook.bestBid(), BigDecimal.ZERO);
+        }
+        BigDecimal longTargetQuantity = quantityForNotional(longExecutableLevels, targetNotional);
         BigDecimal commonQuantity = longTargetQuantity
-                .min(totalQuantity(longBook.askLevels()))
-                .min(totalQuantity(shortBook.bidLevels()));
+                .min(totalQuantity(longExecutableLevels))
+                .min(totalQuantity(shortExecutableLevels));
         if (commonQuantity.signum() <= 0) {
             return new ExecutionPlan(longBook.bestAsk(), shortBook.bestBid(), BigDecimal.ZERO);
         }
-        BigDecimal longNotional = quoteForQuantity(longBook.askLevels(), commonQuantity);
+        BigDecimal longNotional = quoteForQuantity(longExecutableLevels, commonQuantity);
         return new ExecutionPlan(longNotional.divide(commonQuantity, 12, RoundingMode.HALF_UP),
-                quoteForQuantity(shortBook.bidLevels(), commonQuantity)
+                quoteForQuantity(shortExecutableLevels, commonQuantity)
                         .divide(commonQuantity, 12, RoundingMode.HALF_UP),
                 longNotional);
+    }
+
+    private Duration settlementSkew(NormalizedFundingRateSnapshot low,
+            NormalizedFundingRateSnapshot high, Instant now, Duration maxSettlementSkew) {
+        Duration rawSkew = Duration.between(low.nextFundingTime(), high.nextFundingTime()).abs();
+        if (rawSkew.compareTo(maxSettlementSkew) <= 0) {
+            return rawSkew;
+        }
+        Instant lowCanonical = nextCanonicalSettlement(now, low.fundingIntervalHours());
+        Instant highCanonical = nextCanonicalSettlement(now, high.fundingIntervalHours());
+        return Duration.between(lowCanonical, highCanonical).abs();
+    }
+
+    private Instant nextCanonicalSettlement(Instant now, int intervalHours) {
+        long intervalSeconds = Math.max(1, intervalHours) * SECONDS_PER_HOUR;
+        long epochSecond = now.getEpochSecond();
+        long nextSlot = (epochSecond / intervalSeconds + 1) * intervalSeconds;
+        return Instant.ofEpochSecond(nextSlot);
+    }
+
+    private List<NormalizedOrderBookSnapshot.Level> levelsWithinImpact(
+            List<NormalizedOrderBookSnapshot.Level> levels, BigDecimal bestPrice,
+            boolean buy, BigDecimal maximumImpact) {
+        BigDecimal boundary = buy
+                ? bestPrice.multiply(BigDecimal.ONE.add(maximumImpact))
+                : bestPrice.multiply(BigDecimal.ONE.subtract(maximumImpact));
+        return levels.stream()
+                .filter(level -> buy ? level.price().compareTo(boundary) <= 0
+                        : level.price().compareTo(boundary) >= 0)
+                .toList();
     }
 
     private BigDecimal quantityForNotional(List<NormalizedOrderBookSnapshot.Level> levels,

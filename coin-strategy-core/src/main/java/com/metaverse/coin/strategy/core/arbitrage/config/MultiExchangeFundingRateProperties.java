@@ -108,6 +108,8 @@ public class MultiExchangeFundingRateProperties {
         this.minNetYieldRate = decimal(env, "arbitrage.multi-exchange.min-net-yield-rate", "0.0002");
         this.roundTripFeeRate = decimal(env, "arbitrage.multi-exchange.round-trip-fee-rate", "0.0010");
         this.slippageRate = decimal(env, "arbitrage.multi-exchange.slippage-rate", "0.0005");
+        // Compatibility knob kept so existing funding profile files still bind cleanly.
+        // Direction selection no longer rejects mixed signs; it is decided by projected cashflow.
         this.allowMixedFundingSigns = Boolean.parseBoolean(env.getProperty("arbitrage.multi-exchange.allow-mixed-funding-signs", "false"));
         this.costs = configuredCosts(env);
         this.targetNotional = decimal(env, "arbitrage.multi-exchange.target-notional", "100");

@@ -25,7 +25,7 @@ class CrossExchangeFundingReplayServiceTest {
     Path captureDirectory;
 
     @Test
-    void replaysLegacyCapturesButRejectsThemWithoutL2Depth() throws Exception {
+    void replaysLegacyCapturesUsingTopOfBookNotional() throws Exception {
         Instant first = Instant.parse("2026-08-21T00:00:00Z");
         Instant stable = first.plusSeconds(180);
         Path input = captureDirectory.resolve("sample.csv");
@@ -42,9 +42,9 @@ class CrossExchangeFundingReplayServiceTest {
 
         assertEquals(2, report.frames());
         assertEquals(2, report.evaluatedPairs());
-        assertEquals(0, report.qualifiedPairs());
-        assertEquals(0, report.approvedPairs());
-        assertEquals(2, report.rejectedByReason().get("MISSING_L2_DEPTH"));
+        assertEquals(2, report.qualifiedPairs());
+        assertEquals(1, report.approvedPairs());
+        assertEquals(0, report.rejectedByReason().size());
     }
 
     @Test
@@ -87,8 +87,8 @@ class CrossExchangeFundingReplayServiceTest {
 
         assertEquals(1, report.captureFailures());
         assertEquals(1, report.evaluatedPairs());
-        assertEquals(0, report.qualifiedPairs());
-        assertEquals(1, report.rejectedByReason().get("MIXED_FUNDING_SIGNS"));
+        assertEquals(1, report.qualifiedPairs());
+        assertEquals(0, report.rejectedByReason().size());
     }
 
     @Test

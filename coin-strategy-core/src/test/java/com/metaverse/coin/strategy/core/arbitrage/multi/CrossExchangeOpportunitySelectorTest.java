@@ -71,6 +71,18 @@ class CrossExchangeOpportunitySelectorTest {
         assertEquals(0, new BigDecimal("0.0004").compareTo(opportunity.estimatedNetYield()));
         assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
     }
+    @Test void normalizesSameCadenceCexSettlementTimesToCommonGrid() {
+        var limits = new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1),
+                Duration.ofMinutes(2), new BigDecimal("0.01"), BigDecimal.ONE,
+                new BigDecimal("-1"), BigDecimal.ZERO, false);
+
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BITGET, "-0.001", 4, now.plus(Duration.ofHours(3))),
+                        rate(Exchange.OKX, "-0.0001", 4, now.plus(Duration.ofHours(7)))),
+                books(), costs(), new BigDecimal("100"), limits, now).get(0);
+
+        assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
+    }
     @Test void rejectsWhenAmortizedCapitalTransferCostEliminatesNetYield() {
         Map<Exchange, ExchangeCost> costs = costs();
         costs.put(Exchange.BINANCE, new ExchangeCost(BigDecimal.ZERO, BigDecimal.ZERO,
@@ -103,12 +115,15 @@ class CrossExchangeOpportunitySelectorTest {
 
         assertEquals("EXECUTABLE_BASIS_DEVIATION", result.get(0).rejectionReason());
     }
-    @Test void rejectsMixedSignsByDefault() {
+    @Test void selectsFundingReceivingDirectionForMixedSigns() {
         var limits = new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1), Duration.ofMinutes(2),
                 new BigDecimal("0.01"), BigDecimal.ONE, new BigDecimal("-1"), BigDecimal.ZERO, false);
         var result = new CrossExchangeOpportunitySelector().evaluate(List.of(rate(Exchange.BINANCE,"-0.001",8), rate(Exchange.OKX,"0.001",8)),
                 books(), costs(), BigDecimal.TEN, limits, now);
-        assertEquals("MIXED_FUNDING_SIGNS", result.get(0).rejectionReason());
+        assertEquals(Exchange.BINANCE, result.get(0).longQuote().exchange());
+        assertEquals(Exchange.OKX, result.get(0).shortQuote().exchange());
+        assertEquals(0, new BigDecimal("0.002").compareTo(result.get(0).estimatedNetYield()));
+        assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, result.get(0).status());
     }
     @Test void lessLiquidSideIsSelectedAsFirstLeg() {
         Map<Exchange,NormalizedOrderBookSnapshot> orderBooks=books();
@@ -135,7 +150,7 @@ class CrossExchangeOpportunitySelectorTest {
         assertEquals(0, new BigDecimal("101").compareTo(opportunity.shortEntryPrice()));
         assertEquals(0, new BigDecimal("204").compareTo(opportunity.executableNotional()));
     }
-    @Test void rejectsWhenLongLegCannotCoverRequiredDepthWithinFiveBps() {
+    @Test void shrinksToCommonExecutableQuantityInsteadOfRejectingDepthFloor() {
         Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);
         orderBooks.put(Exchange.BINANCE, book(Exchange.BINANCE, "99", "100",
                 List.of(level("99", "1000")), List.of(level("100", "299"))));
@@ -144,9 +159,10 @@ class CrossExchangeOpportunitySelectorTest {
 
         CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
                 List.of(rate(Exchange.BINANCE, "-0.001", 8), rate(Exchange.OKX, "-0.0001", 8)),
-                orderBooks, costs(), new BigDecimal("100"), strictDepthLimits(), now).get(0);
+                orderBooks, costs(), new BigDecimal("400"), strictDepthLimits(), now).get(0);
 
-        assertEquals("INSUFFICIENT_LONG_DEPTH_COVERAGE", opportunity.rejectionReason());
+        assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
+        assertEquals(0, new BigDecimal("299").compareTo(opportunity.executableNotional()));
     }
     @Test void qualifiesWhenBothLegsCoverThreeTimesTargetWithinFiveBps() {
         Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);

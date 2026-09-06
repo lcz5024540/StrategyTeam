@@ -11,6 +11,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class CrossExchangePositionMonitorService {
+    private static final long SECONDS_PER_HOUR = 3_600L;
+
     private final Map<Exchange, CrossExchangeMarketDataProvider> providers;
     private final CrossExchangeRiskService risk;
     private final CrossExchangePaperTradingService paper;
@@ -178,8 +180,24 @@ public class CrossExchangePositionMonitorService {
         if (quotes.longQuote().fundingIntervalHours() != quotes.shortQuote().fundingIntervalHours()) {
             return true;
         }
-        return Duration.between(quotes.longQuote().nextFundingTime(),
-                quotes.shortQuote().nextFundingTime()).abs().compareTo(maximumSettlementSkew) <= 0;
+        Duration rawSkew = Duration.between(quotes.longQuote().nextFundingTime(),
+                quotes.shortQuote().nextFundingTime()).abs();
+        if (rawSkew.compareTo(maximumSettlementSkew) <= 0) {
+            return true;
+        }
+        Instant now = quotes.longQuote().receivedAt().isAfter(quotes.shortQuote().receivedAt())
+                ? quotes.longQuote().receivedAt() : quotes.shortQuote().receivedAt();
+        Instant longCanonical = nextCanonicalSettlement(now, quotes.longQuote().fundingIntervalHours());
+        Instant shortCanonical = nextCanonicalSettlement(now, quotes.shortQuote().fundingIntervalHours());
+        return Duration.between(longCanonical, shortCanonical).abs()
+                .compareTo(maximumSettlementSkew) <= 0;
+    }
+
+    private Instant nextCanonicalSettlement(Instant now, int intervalHours) {
+        long intervalSeconds = Math.max(1, intervalHours) * SECONDS_PER_HOUR;
+        long epochSecond = now.getEpochSecond();
+        long nextSlot = (epochSecond / intervalSeconds + 1) * intervalSeconds;
+        return Instant.ofEpochSecond(nextSlot);
     }
 
     private void recordExit(PaperHedgePosition position, String reason) {

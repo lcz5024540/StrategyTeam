@@ -109,11 +109,14 @@ arbitrage:
     min-net-yield-rate: 0.0002
     round-trip-fee-rate: 0.0010
     slippage-rate: 0.0005
+    # Deprecated compatibility key: mixed funding signs are evaluated programmatically by
+    # projected funding cashflow, not rejected solely because signs differ.
     allow-mixed-funding-signs: false
     target-notional: 100
     minimum-notional: 20
-    # Both entry sides must cover max(absolute floor, target-notional x coverage ratio) within
-    # the allowed price impact; this is independent from the smaller minimum order size gate.
+    # L2 sizing shrinks the paper order to the common executable base quantity on both legs.
+    # These legacy depth knobs are kept for compatibility; minimum-notional and VWAP impact
+    # are the hard liquidity gates.
     minimum-order-book-notional: 300
     minimum-order-book-coverage-ratio: 1.5
     maximum-leg-vwap-impact: 0.0005
