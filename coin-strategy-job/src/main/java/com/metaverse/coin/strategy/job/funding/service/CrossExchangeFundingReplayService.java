@@ -52,7 +52,8 @@ public class CrossExchangeFundingReplayService {
                 properties.getMinNetYieldRate(), properties.getBasisRiskBuffer(),
                 properties.isAllowMixedFundingSigns(), properties.getMinimumCostCoverageRatio(),
                 properties.getMaxExecutableBasis(), properties.getMinimumOrderBookNotional(),
-                properties.getMinimumOrderBookCoverageRatio(), properties.getMaximumLegVwapImpact());
+                properties.getMinimumOrderBookCoverageRatio(), properties.getMaximumLegVwapImpact(),
+                properties.getExpectedHoldingWindows(), properties.getMinimumHorizonNetYield());
 
         int evaluatedPairs = 0;
         int qualifiedPairs = 0;

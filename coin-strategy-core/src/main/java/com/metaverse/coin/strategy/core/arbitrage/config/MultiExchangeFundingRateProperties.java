@@ -44,6 +44,8 @@ public class MultiExchangeFundingRateProperties {
     private final BigDecimal maxMarkPriceDeviation;
     private final BigDecimal maxExecutableBasis;
     private final BigDecimal minimumCostCoverageRatio;
+    private final int expectedHoldingWindows;
+    private final BigDecimal minimumHorizonNetYield;
     private final BigDecimal maxSymbolNotional;
     private final BigDecimal maxExchangeNotional;
     private final boolean autoPaperOpenEnabled;
@@ -84,7 +86,9 @@ public class MultiExchangeFundingRateProperties {
         this.basisRiskBuffer = new BigDecimal("0.0002");
         this.maxMarkPriceDeviation = new BigDecimal("0.01");
         this.maxExecutableBasis = new BigDecimal("0.003");
-        this.minimumCostCoverageRatio = new BigDecimal("1.25");
+        this.minimumCostCoverageRatio = BigDecimal.ONE;
+        this.expectedHoldingWindows = 2;
+        this.minimumHorizonNetYield = new BigDecimal("0.0001");
         this.maxSymbolNotional = new BigDecimal("2000");
         this.maxExchangeNotional = new BigDecimal("2000");
         this.autoPaperOpenEnabled = false;
@@ -134,7 +138,11 @@ public class MultiExchangeFundingRateProperties {
         this.basisRiskBuffer = decimal(env, "arbitrage.multi-exchange.basis-risk-buffer", "0.0002");
         this.maxMarkPriceDeviation = decimal(env, "arbitrage.multi-exchange.max-mark-price-deviation", "0.01");
         this.maxExecutableBasis = decimal(env, "arbitrage.multi-exchange.max-executable-basis", "0.003");
-        this.minimumCostCoverageRatio = decimal(env, "arbitrage.multi-exchange.minimum-cost-coverage-ratio", "1.25");
+        this.minimumCostCoverageRatio = decimal(env, "arbitrage.multi-exchange.minimum-cost-coverage-ratio", "1.0");
+        this.expectedHoldingWindows = positiveInt(env,
+                "arbitrage.multi-exchange.expected-holding-windows", 2);
+        this.minimumHorizonNetYield = decimal(env,
+                "arbitrage.multi-exchange.minimum-horizon-net-yield", "0.0001");
         BigDecimal leverageBound = paperCapitalPerExchange.multiply(maximumPaperLeverage);
         BigDecimal pilotNotionalCap = leverageBound.min(new BigDecimal("2000"));
         this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional",
@@ -186,6 +194,8 @@ public class MultiExchangeFundingRateProperties {
     public BigDecimal getMaxMarkPriceDeviation() { return maxMarkPriceDeviation; }
     public BigDecimal getMaxExecutableBasis() { return maxExecutableBasis; }
     public BigDecimal getMinimumCostCoverageRatio() { return minimumCostCoverageRatio; }
+    public int getExpectedHoldingWindows() { return expectedHoldingWindows; }
+    public BigDecimal getMinimumHorizonNetYield() { return minimumHorizonNetYield; }
     public BigDecimal getMaxSymbolNotional() { return maxSymbolNotional; }
     public BigDecimal getMaxExchangeNotional() { return maxExchangeNotional; }
     public boolean isAutoPaperOpenEnabled() { return autoPaperOpenEnabled; }

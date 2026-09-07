@@ -24,9 +24,12 @@ arbitrage:
     contract-sync-enabled: true
     # 合约元数据低频变更；目录使用内存缓存，定时刷新以发现上架/下架。
     contract-sync-delay-ms: 43200000
-    # 以可成交买卖价而非 Mark Price 限制跨所 basis；收益须覆盖一次开平成本的 1.25 倍。
+    # 以可成交买卖价而非 Mark Price 限制跨所 basis。
+    # 首个共同结算窗口至少覆盖确定性开平/滑点/转账成本；后续窗口才按完整利润观察。
     max-executable-basis: 0.003
-    minimum-cost-coverage-ratio: 1.25
+    minimum-cost-coverage-ratio: 1.0
+    expected-holding-windows: 2
+    minimum-horizon-net-yield: 0.0001
     health-check-enabled: true
     recovery-enabled: true
     # Paper 观测以 cross_exchange_arb_opportunity 数据库记录为准；关闭本地 CSV replay 文件采集。

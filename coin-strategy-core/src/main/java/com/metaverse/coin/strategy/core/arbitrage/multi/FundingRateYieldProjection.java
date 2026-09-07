@@ -19,8 +19,17 @@ public final class FundingRateYieldProjection {
 
     public static Direction bestDirection(NormalizedFundingRateSnapshot first,
             NormalizedFundingRateSnapshot second, Instant now) {
-        BigDecimal firstLongProjected = projectedSpread(first, second, now);
-        BigDecimal secondLongProjected = projectedSpread(second, first, now);
+        return bestDirection(first, second, now, 1);
+    }
+
+    public static Direction bestDirection(NormalizedFundingRateSnapshot first,
+            NormalizedFundingRateSnapshot second, Instant now, int expectedHoldingWindows) {
+        BigDecimal firstLongProjected = projectedSpread(first.rawFundingRate(),
+                first.fundingIntervalHours(), first.nextFundingTime(), second.rawFundingRate(),
+                second.fundingIntervalHours(), second.nextFundingTime(), now, expectedHoldingWindows);
+        BigDecimal secondLongProjected = projectedSpread(second.rawFundingRate(),
+                second.fundingIntervalHours(), second.nextFundingTime(), first.rawFundingRate(),
+                first.fundingIntervalHours(), first.nextFundingTime(), now, expectedHoldingWindows);
         if (firstLongProjected.compareTo(secondLongProjected) > 0) {
             return new Direction(first, second, firstLongProjected);
         }
@@ -80,16 +89,25 @@ public final class FundingRateYieldProjection {
     public static BigDecimal projectedSpread(BigDecimal longFundingRate, int longIntervalHours,
             Instant longNextFundingTime, BigDecimal shortFundingRate, int shortIntervalHours,
             Instant shortNextFundingTime, Instant now) {
+        return projectedSpread(longFundingRate, longIntervalHours, longNextFundingTime,
+                shortFundingRate, shortIntervalHours, shortNextFundingTime, now, 1);
+    }
+
+    public static BigDecimal projectedSpread(BigDecimal longFundingRate, int longIntervalHours,
+            Instant longNextFundingTime, BigDecimal shortFundingRate, int shortIntervalHours,
+            Instant shortNextFundingTime, Instant now, int expectedHoldingWindows) {
         if (longFundingRate == null || shortFundingRate == null || longNextFundingTime == null
                 || shortNextFundingTime == null || now == null
-                || longIntervalHours <= 0 || shortIntervalHours <= 0) {
+                || longIntervalHours <= 0 || shortIntervalHours <= 0
+                || expectedHoldingWindows <= 0) {
             throw new IllegalArgumentException("complete positive funding intervals are required");
         }
         int windowHours = lcm(longIntervalHours, shortIntervalHours);
+        long horizonHours = Math.multiplyExact((long) windowHours, expectedHoldingWindows);
         long longSettlements = settlementCount(longNextFundingTime, longIntervalHours, now,
-                windowHours);
+                horizonHours);
         long shortSettlements = settlementCount(shortNextFundingTime, shortIntervalHours, now,
-                windowHours);
+                horizonHours);
         return shortFundingRate.multiply(BigDecimal.valueOf(shortSettlements))
                 .subtract(longFundingRate.multiply(BigDecimal.valueOf(longSettlements)));
     }
@@ -106,7 +124,7 @@ public final class FundingRateYieldProjection {
     }
 
     private static long settlementCount(Instant nextFundingTime, int intervalHours, Instant now,
-            int windowHours) {
+            long windowHours) {
         long intervalSeconds = Duration.ofHours(intervalHours).getSeconds();
         Instant firstSettlement = nextFundingTime;
         if (firstSettlement.isBefore(now)) {
