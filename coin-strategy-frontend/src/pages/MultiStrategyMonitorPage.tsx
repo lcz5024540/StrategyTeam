@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { strategyApi } from '@/api'
 import { CardHeader, PrimeCard, StatTile, StatusPill, TypeBadge } from '@/components/ui/PrimePrimitives'
-import { type PositionMode } from '@/utils/constants'
+import { normalizeStrategyCode, type PositionMode } from '@/utils/constants'
 import { formatMoney, formatNumber, formatPercent, getAmountClass } from '@/utils/format'
 import { isEnterableStrategy, toRegistryItems } from '@/utils/strategyViewModels'
 
@@ -58,22 +58,25 @@ export function MultiStrategyMonitorPage() {
               </tr>
             </thead>
             <tbody>
-              {strategies.map((strategy) => (
-                <tr key={strategy.code} onClick={() => gotoStrategy(strategy.code)}>
-                  <td>
-                    <strong>{strategy.name}</strong>
-                    <span>{strategy.description}</span>
-                  </td>
-                  <td><TypeBadge strategyCode={strategy.code} small /></td>
-                  <td><StatusPill status={strategy.status} /></td>
-                  <td>{formatNumber(strategy.openPositions, 0)}</td>
-                  <td className={getAmountClass(strategy.netPnlUsdc)}>{formatMoney(strategy.netPnlUsdc)}</td>
-                  <td>{formatNumber(strategy.totalOrders, 0)}</td>
-                  <td>{formatPercent(strategy.winRate)}</td>
-                  <td><span className="badge">{strategy.modeBehavior}</span></td>
-                  <td><button type="button" className="ms-row-action">Dash</button></td>
-                </tr>
-              ))}
+              {strategies.map((strategy) => {
+                const strategyCode = normalizeStrategyCode(strategy.code)
+                return (
+                  <tr key={strategy.code} onClick={() => gotoStrategy(strategyCode)}>
+                    <td>
+                      <strong>{strategy.name}</strong>
+                      <span>{strategy.description}</span>
+                    </td>
+                    <td><TypeBadge strategyCode={strategyCode} small /></td>
+                    <td><StatusPill status={strategy.status} /></td>
+                    <td>{formatNumber(strategy.openPositions, 0)}</td>
+                    <td className={getAmountClass(strategy.netPnlUsdc)}>{formatMoney(strategy.netPnlUsdc)}</td>
+                    <td>{formatNumber(strategy.totalOrders, 0)}</td>
+                    <td>{formatPercent(strategy.winRate)}</td>
+                    <td><span className="badge">{strategy.modeBehavior}</span></td>
+                    <td><button type="button" className="ms-row-action">Dash</button></td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -90,14 +93,17 @@ export function MultiStrategyMonitorPage() {
         <PrimeCard>
           <CardHeader label="Planned Strategies" sub="visible in selector, disabled until backend capability is ready" />
           <div className="ms-planned-grid">
-            {plannedStrategies.map((strategy) => (
-              <article key={strategy.code} className="ms-planned-card">
-                <TypeBadge strategyCode={strategy.code} small />
-                <strong>{strategy.name}</strong>
-                <span>{strategy.description}</span>
-                <em>{strategy.status} / {strategy.modeBehavior}</em>
-              </article>
-            ))}
+            {plannedStrategies.map((strategy) => {
+              const strategyCode = normalizeStrategyCode(strategy.code)
+              return (
+                <article key={strategy.code} className="ms-planned-card">
+                  <TypeBadge strategyCode={strategyCode} small />
+                  <strong>{strategy.name}</strong>
+                  <span>{strategy.description}</span>
+                  <em>{strategy.status} / {strategy.modeBehavior}</em>
+                </article>
+              )
+            })}
           </div>
         </PrimeCard>
       ) : null}

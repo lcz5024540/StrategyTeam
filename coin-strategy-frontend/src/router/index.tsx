@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { App } from '../App'
-import { HomePage } from '../pages/HomePage'
+import { DashboardPage } from '../pages/DashboardPage'
 import { DetailPage } from '../pages/DetailPage'
 import { ChartsPage } from '../pages/ChartsPage'
 import { MonitoringPage } from '../pages/MonitoringPage'
@@ -26,7 +26,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'dashboard',
-        element: <HomePage />,
+        element: <DashboardPage />,
       },
       {
         path: 'dashboard/monitor',

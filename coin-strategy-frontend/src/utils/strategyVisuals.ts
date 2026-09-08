@@ -1,6 +1,6 @@
 import type { StrategyCode } from './constants'
 
-export type StrategyVisualType = 'polymarket' | 'funding' | 'bot' | 'trend'
+export type StrategyVisualType = 'polymarket' | 'funding' | 'stock-harbor' | 'bot' | 'trend'
 
 export interface StrategyVisualMeta {
   type: StrategyVisualType
@@ -21,6 +21,12 @@ export const STRATEGY_VISUALS: Record<StrategyCode, StrategyVisualMeta> = {
     label: 'Funding Arb',
     icon: '⇌',
     className: 'funding',
+  },
+  STOCK_HARBOR: {
+    type: 'stock-harbor',
+    label: 'Secure Vaults',
+    icon: '⌬',
+    className: 'stock-harbor',
   },
   ROBOT: {
     type: 'bot',

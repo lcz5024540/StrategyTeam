@@ -51,6 +51,7 @@ export function PrimeTopbar() {
   const strategies = useMemo(() => toRegistryItems(overview?.strategies), [overview?.strategies])
   const activeSummary = strategies.find((item) => item.code === strategy)
   const activeVisual = getStrategyVisual(strategy)
+  const isStockHarbor = strategy === 'STOCK_HARBOR'
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date().toTimeString().slice(0, 8)), 1000)
@@ -155,14 +156,14 @@ export function PrimeTopbar() {
 
       <div className="ms-topbar-stats">
         <div>
-          <span>Net PnL</span>
-          <strong className={activeSummary == null ? '' : getAmountClass(activeSummary.netPnlUsdc)}>
-            {formatSignedMoneyOrDash(activeSummary?.netPnlUsdc)}
+          <span>{isStockHarbor ? 'AUM' : 'Net PnL'}</span>
+          <strong className={isStockHarbor ? 'positive' : activeSummary == null ? '' : getAmountClass(activeSummary.netPnlUsdc)}>
+            {isStockHarbor ? '$18.6M' : formatSignedMoneyOrDash(activeSummary?.netPnlUsdc)}
           </strong>
         </div>
         <div>
-          <span>Open</span>
-          <strong>{activeSummary?.openPositions ?? '--'}</strong>
+          <span>{isStockHarbor ? 'Vaults' : 'Open'}</span>
+          <strong>{isStockHarbor ? '42' : activeSummary?.openPositions ?? '--'}</strong>
         </div>
       </div>
 

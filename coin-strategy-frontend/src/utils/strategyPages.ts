@@ -30,6 +30,9 @@ export const STRATEGY_PAGE_CONFIG: Record<StrategyCode, StrategyPageConfig[]> = 
     { key: 'settlement', label: '结算窗口', route: '/dashboard/funding-arb/settlement', title: 'Settlement Windows' },
     { key: 'factors', label: '因子', route: '/dashboard/factors', title: 'Factor Analysis' },
   ],
+  STOCK_HARBOR: [
+    { key: 'vaults', label: '基金金库', route: '/dashboard', title: 'StockHarbor Secure Vaults' },
+  ],
   ROBOT: FALLBACK_PAGES,
   INTELLIGENT: FALLBACK_PAGES,
 }
