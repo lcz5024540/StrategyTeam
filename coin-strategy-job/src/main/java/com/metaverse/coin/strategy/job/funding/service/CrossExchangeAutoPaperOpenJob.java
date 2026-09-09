@@ -100,6 +100,12 @@ public class CrossExchangeAutoPaperOpenJob {
                 if (activeSymbols.contains(candidate.symbol())) {
                     continue;
                 }
+                if (paper.isCircuitOpen(candidate, now)) {
+                    LOG.info("[FundingAutoPaperOpen] skip scoped circuit: id={}, symbol={}, long={}, short={}",
+                            candidate.opportunityId(), candidate.symbol(),
+                            candidate.longQuote().exchange(), candidate.shortQuote().exchange());
+                    continue;
+                }
                 if (leases != null && !leases.acquireSymbol(candidate.symbol(), now)) {
                     LOG.info("[FundingAutoPaperOpen] skip lease held by another scheduler: symbol={}",
                             candidate.symbol());
@@ -115,6 +121,12 @@ public class CrossExchangeAutoPaperOpenJob {
                 if (refreshed.isEmpty()) {
                     LOG.info("[FundingAutoPaperOpen] skip stale opportunity: id={}, symbol={}",
                             candidate.opportunityId(), candidate.symbol());
+                    continue;
+                }
+                if (paper.isCircuitOpen(refreshed.get(), now)) {
+                    LOG.info("[FundingAutoPaperOpen] skip refreshed scoped circuit: id={}, symbol={}, long={}, short={}",
+                            refreshed.get().opportunityId(), refreshed.get().symbol(),
+                            refreshed.get().longQuote().exchange(), refreshed.get().shortQuote().exchange());
                     continue;
                 }
                 try {

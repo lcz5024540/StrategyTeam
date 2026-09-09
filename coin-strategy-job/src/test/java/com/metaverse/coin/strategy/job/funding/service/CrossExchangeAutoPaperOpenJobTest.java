@@ -86,6 +86,26 @@ class CrossExchangeAutoPaperOpenJobTest {
     }
 
     @Test
+    void skipsScopedCircuitAndContinuesWithOtherApprovedSymbols() {
+        CrossExchangeOpportunity blocked = opportunity("blocked", "BTCUSDT", "0.0009", "250");
+        CrossExchangeOpportunity allowed = opportunity("allowed", "ETHUSDT", "0.0008", "200");
+        when(scanner.approvedOpportunities(NOW)).thenReturn(List.of(blocked, allowed));
+        when(paper.isCircuitOpen(blocked, NOW)).thenReturn(true);
+        when(scanner.revalidateApprovedOpportunity(eq("allowed"),
+                argThat(value -> sameAmount(value, "200")), eq(NOW))).thenReturn(Optional.of(allowed));
+        when(paper.positions()).thenReturn(List.of());
+        when(positions.selectList(any())).thenReturn(List.of());
+        when(paper.open(eq(allowed), argThat(value -> sameAmount(value, "200")), eq(NOW)))
+                .thenReturn(position("position", allowed, PaperHedgePosition.Status.OPENED));
+
+        int opened = job(properties("0", "1")).openApproved(NOW);
+
+        assertEquals(1, opened);
+        verify(scanner, never()).revalidateApprovedOpportunity(eq("blocked"), any(), any());
+        verify(paper).open(eq(allowed), argThat(value -> sameAmount(value, "200")), eq(NOW));
+    }
+
+    @Test
     void skipsSymbolsThatAlreadyHaveActiveDbPositionsAfterRestart() {
         CrossExchangeOpportunity opportunity = opportunity("approved", "BTCUSDT", "0.0008", "250");
         when(scanner.approvedOpportunities(NOW)).thenReturn(List.of(opportunity));

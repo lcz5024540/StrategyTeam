@@ -1,17 +1,24 @@
 package com.metaverse.coin.strategy.core.arbitrage.multi;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Safe application facade: V1 exposes paper mode only and has no LIVE switch. */
 public class CrossExchangePaperTradingService {
+    private static final Duration MARKET_DATA_CIRCUIT_TTL = Duration.ofMinutes(30);
+
     private final PaperAtomicHedgeExecutor executor;
     private final CrossExchangeRiskService risk;
     private final CrossExchangeArbitragePersistenceService persistence;
     private final AtomicBoolean paused = new AtomicBoolean(false);
     private final AtomicBoolean circuitOpen = new AtomicBoolean(false);
+    private final Map<ScopedCircuitKey, Instant> scopedCircuitExpiresAt = new ConcurrentHashMap<>();
 
     public CrossExchangePaperTradingService(PaperAtomicHedgeExecutor executor, CrossExchangeRiskService risk) {
         this(executor, risk, null);
@@ -55,8 +62,31 @@ public class CrossExchangePaperTradingService {
     public boolean resume() { paused.set(false); return true; }
     public boolean isPaused() { return paused.get(); }
     public boolean isCircuitOpen() { return circuitOpen.get(); }
+    public boolean isCircuitOpen(CrossExchangeOpportunity opportunity, Instant now) {
+        return isCircuitOpen() || isScopedCircuitOpen(opportunity, now);
+    }
+    public boolean isScopedCircuitOpen(CrossExchangeOpportunity opportunity, Instant now) {
+        if (opportunity == null) {
+            return false;
+        }
+        String symbol = opportunity.symbol();
+        return isScopedCircuitOpen(opportunity.longQuote().exchange(), symbol, now)
+                || isScopedCircuitOpen(opportunity.shortQuote().exchange(), symbol, now);
+    }
+    public boolean isScopedCircuitOpen(Exchange exchange, String symbol, Instant now) {
+        clearExpiredScopedCircuits(now);
+        Instant expiresAt = scopedCircuitExpiresAt.get(new ScopedCircuitKey(exchange, normalizeSymbol(symbol)));
+        return expiresAt != null && expiresAt.isAfter(now);
+    }
     public void openCircuit() { circuitOpen.set(true); }
-    public void resetCircuit() { circuitOpen.set(false); }
+    public void openScopedCircuit(Exchange exchange, String symbol, Instant now) {
+        scopedCircuitExpiresAt.put(new ScopedCircuitKey(exchange, normalizeSymbol(symbol)),
+                now.plus(MARKET_DATA_CIRCUIT_TTL));
+    }
+    public void resetCircuit() {
+        circuitOpen.set(false);
+        scopedCircuitExpiresAt.clear();
+    }
 
     private void saveExecutionEvents(String positionId) {
         for (PaperAtomicHedgeExecutor.ExecutionEvent event : executor.drainEvents(positionId)) {
@@ -66,5 +96,16 @@ public class CrossExchangePaperTradingService {
             persistence.saveRisk(event.positionId(), event.opportunityId(),
                     "STATE_TRANSITION", passed, reason);
         }
+    }
+
+    private void clearExpiredScopedCircuits(Instant now) {
+        scopedCircuitExpiresAt.entrySet().removeIf(entry -> !entry.getValue().isAfter(now));
+    }
+
+    private String normalizeSymbol(String symbol) {
+        return symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private record ScopedCircuitKey(Exchange exchange, String symbol) {
     }
 }

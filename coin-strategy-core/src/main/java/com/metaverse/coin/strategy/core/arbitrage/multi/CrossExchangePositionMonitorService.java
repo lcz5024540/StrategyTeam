@@ -91,7 +91,7 @@ public class CrossExchangePositionMonitorService {
             try {
                 quotes = latestQuotes(position, now);
             } catch (RuntimeException exception) {
-                recordUnavailableMarketData(position, exception);
+                recordUnavailableMarketData(position, exception, now);
                 continue;
             }
             BigDecimal latestNetYield = remainingNetYield(quotes.longQuote(), quotes.shortQuote(), now);
@@ -118,23 +118,37 @@ public class CrossExchangePositionMonitorService {
     }
 
     private LatestQuotes latestQuotes(PaperHedgePosition position, Instant now) {
-        NormalizedFundingRateSnapshot longQuote = provider(
-                position.opportunity().longQuote().exchange())
-                .fundingRate(position.opportunity().symbol());
-        NormalizedFundingRateSnapshot shortQuote = provider(
-                position.opportunity().shortQuote().exchange())
-                .fundingRate(position.opportunity().symbol());
-        NormalizedOrderBookSnapshot longBook = provider(position.opportunity().longQuote().exchange())
-                .orderBook(position.opportunity().symbol(), orderBookDepth);
-        NormalizedOrderBookSnapshot shortBook = provider(position.opportunity().shortQuote().exchange())
-                .orderBook(position.opportunity().symbol(), orderBookDepth);
-        if (longQuote.isStale(now, maximumQuoteAge) || shortQuote.isStale(now, maximumQuoteAge)) {
-            throw new IllegalStateException("latest funding quote is stale");
+        NormalizedFundingRateSnapshot longQuote = fundingRate(
+                position.opportunity().longQuote().exchange(), position.opportunity().symbol());
+        NormalizedFundingRateSnapshot shortQuote = fundingRate(
+                position.opportunity().shortQuote().exchange(), position.opportunity().symbol());
+        NormalizedOrderBookSnapshot longBook = orderBook(position.opportunity().longQuote().exchange(),
+                position.opportunity().symbol());
+        NormalizedOrderBookSnapshot shortBook = orderBook(position.opportunity().shortQuote().exchange(),
+                position.opportunity().symbol());
+        if (longQuote == null) {
+            throw new MarketDataUnavailableException(position.opportunity().longQuote().exchange(),
+                    position.opportunity().symbol(), "latest funding quote is missing");
         }
-        if (longBook == null || shortBook == null
-                || longBook.receivedAt().plus(maximumQuoteAge).isBefore(now)
-                || shortBook.receivedAt().plus(maximumQuoteAge).isBefore(now)) {
-            throw new IllegalStateException("latest order book is missing or stale");
+        if (shortQuote == null) {
+            throw new MarketDataUnavailableException(position.opportunity().shortQuote().exchange(),
+                    position.opportunity().symbol(), "latest funding quote is missing");
+        }
+        if (longQuote.isStale(now, maximumQuoteAge)) {
+            throw new MarketDataUnavailableException(longQuote.exchange(), position.opportunity().symbol(),
+                    "latest funding quote is stale");
+        }
+        if (shortQuote.isStale(now, maximumQuoteAge)) {
+            throw new MarketDataUnavailableException(shortQuote.exchange(), position.opportunity().symbol(),
+                    "latest funding quote is stale");
+        }
+        if (longBook == null || longBook.receivedAt().plus(maximumQuoteAge).isBefore(now)) {
+            throw new MarketDataUnavailableException(position.opportunity().longQuote().exchange(),
+                    position.opportunity().symbol(), "latest order book is missing or stale");
+        }
+        if (shortBook == null || shortBook.receivedAt().plus(maximumQuoteAge).isBefore(now)) {
+            throw new MarketDataUnavailableException(position.opportunity().shortQuote().exchange(),
+                    position.opportunity().symbol(), "latest order book is missing or stale");
         }
         return new LatestQuotes(longQuote, shortQuote, longBook, shortBook);
     }
@@ -160,8 +174,13 @@ public class CrossExchangePositionMonitorService {
         }
     }
 
-    private void recordUnavailableMarketData(PaperHedgePosition position, RuntimeException exception) {
-        paper.openCircuit();
+    private void recordUnavailableMarketData(PaperHedgePosition position, RuntimeException exception,
+            Instant now) {
+        if (exception instanceof MarketDataUnavailableException unavailable) {
+            paper.openScopedCircuit(unavailable.exchange(), unavailable.symbol(), now);
+        } else {
+            paper.openCircuit();
+        }
         if (persistence != null) {
             persistence.saveRisk(position.positionId(), position.opportunity().opportunityId(),
                     "MARKET_DATA", false, exception.getMessage());
@@ -220,8 +239,50 @@ public class CrossExchangePositionMonitorService {
         return provider;
     }
 
+    private NormalizedFundingRateSnapshot fundingRate(Exchange exchange, String symbol) {
+        try {
+            return provider(exchange).fundingRate(symbol);
+        } catch (RuntimeException exception) {
+            throw new MarketDataUnavailableException(exchange, symbol, exception.getMessage(), exception);
+        }
+    }
+
+    private NormalizedOrderBookSnapshot orderBook(Exchange exchange, String symbol) {
+        try {
+            return provider(exchange).orderBook(symbol, orderBookDepth);
+        } catch (RuntimeException exception) {
+            throw new MarketDataUnavailableException(exchange, symbol, exception.getMessage(), exception);
+        }
+    }
+
     private record LatestQuotes(NormalizedFundingRateSnapshot longQuote,
             NormalizedFundingRateSnapshot shortQuote, NormalizedOrderBookSnapshot longBook,
             NormalizedOrderBookSnapshot shortBook) {
+    }
+
+    private static class MarketDataUnavailableException extends RuntimeException {
+        private final Exchange exchange;
+        private final String symbol;
+
+        MarketDataUnavailableException(Exchange exchange, String symbol, String message) {
+            super(message);
+            this.exchange = exchange;
+            this.symbol = symbol;
+        }
+
+        MarketDataUnavailableException(Exchange exchange, String symbol, String message,
+                RuntimeException cause) {
+            super(message, cause);
+            this.exchange = exchange;
+            this.symbol = symbol;
+        }
+
+        Exchange exchange() {
+            return exchange;
+        }
+
+        String symbol() {
+            return symbol;
+        }
     }
 }
