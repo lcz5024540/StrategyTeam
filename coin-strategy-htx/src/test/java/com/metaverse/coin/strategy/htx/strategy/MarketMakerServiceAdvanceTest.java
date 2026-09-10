@@ -13,6 +13,7 @@ import com.metaverse.coin.strategy.common.client.htx.rest.HtxSpotService;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
 import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.service.HtxDepthGuard;
 import com.metaverse.coin.strategy.htx.service.HtxTradeProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,6 +75,15 @@ class MarketMakerServiceAdvanceTest {
                 .createdAt(LocalDateTime.now()).build();
     }
 
+    private HtxLockedPairEntity openSellEntity(long pairId, String price) {
+        HtxLockedPairEntity entity = new HtxLockedPairEntity();
+        entity.setId(pairId);
+        entity.setSymbol("btcusdt");
+        entity.setSellPrice(new BigDecimal(price));
+        entity.setStatus(HtxStatus.MM_RESTING_SELL);
+        return entity;
+    }
+
     private HtxRestResponse<HtxOrder> orderOk(String state, String filled, String fees, String amount) {
         HtxOrder o = new HtxOrder();
         o.setState(state);
@@ -129,6 +139,23 @@ class MarketMakerServiceAdvanceTest {
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), eq("0.000299"), eq("60058.20"), eq("mm-btcusdt-1-SELL"));
         verify(recorder).markMmSellPending(eq(100L), any(), any(),
                 eq(new BigDecimal("59700.00")), eq(new BigDecimal("60058.20")));
+        verify(recorder).markMmSellResting(100L, 777L);
+    }
+
+    @Test void restingBuyFilledMovesSellPriceAboveExistingActiveSell() {
+        mmProps.setMinGapPct(new BigDecimal("0.001"));
+        when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(openSellEntity(200L, "60058.20")));
+        when(spot.queryOrder(555L)).thenReturn(orderOk("filled", "0.0003", "0.0000006", null));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("60118.26"), eq("mm-btcusdt-1-SELL")))
+                .thenReturn(placeOk("777"));
+
+        svc.advanceCell(buyCell(555L, LocalDateTime.now()));
+
+        verify(recorder).markMmSellPending(eq(100L), any(), any(),
+                eq(new BigDecimal("59700.00")), eq(new BigDecimal("60118.26")));
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000299"), eq("60118.26"), eq("mm-btcusdt-1-SELL"));
         verify(recorder).markMmSellResting(100L, 777L);
     }
 
@@ -319,6 +346,24 @@ class MarketMakerServiceAdvanceTest {
                 new BigDecimal("0.0001"));
     }
 
+    @Test void retryableSellMovesLimitAboveExistingActiveSell() {
+        mmProps.setMinGapPct(new BigDecimal("0.001"));
+        MarketMakerCell retryable = sellCell(null);
+        retryable.setState(HtxStatus.MM_SELL_RETRYABLE);
+        retryable.setSellFilledAmount(new BigDecimal("0.0001"));
+        when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(openSellEntity(200L, "60300.00")));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000200"), eq("60360.30"), contains("-SELL-REC-")))
+                .thenReturn(placeOk("778"));
+
+        svc.advanceCell(retryable);
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000200"), eq("60360.30"), contains("-SELL-REC-"));
+        verify(recorder).markMmSellReprice(100L, 778L, new BigDecimal("60360.30"),
+                new BigDecimal("0.0001"));
+    }
+
     private HtxRestResponse<HtxDepth> depthWithBid(String bid) {
         HtxDepth d = new HtxDepth();
         d.setBids(List.of(new HtxPriceLevel(new BigDecimal(bid), new BigDecimal("10"))));
@@ -505,6 +550,27 @@ class MarketMakerServiceAdvanceTest {
         verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), anyString(), eq("60800.00"), anyString());
         verify(recorder).markMmSellReprice(eq(100L), eq(888L),
                 eq(new BigDecimal("60800.00")), eq(BigDecimal.ZERO));
+    }
+
+    @Test void sellFollow_reprice_movesTargetAboveExistingActiveSell() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.001"));
+        mmProps.setMinGapPct(new BigDecimal("0.001"));
+        when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(openSellEntity(200L, "60800.00")));
+        when(spot.queryOrder(777L)).thenReturn(orderOk("submitted", "0", null, "0.0003"))
+                .thenReturn(orderOk("canceled", "0", null, "0.0003"));
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthBidAsk("60780", "60800"));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"), anyString(), eq("60860.80"), anyString()))
+                .thenReturn(placeOk("888"));
+
+        svc.advanceCell(restingSellCell(777L, "59700.00", "60300.00"));
+
+        verify(spot).cancelOrder(777L);
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("60860.80"), anyString());
+        verify(recorder).markMmSellReprice(eq(100L), eq(888L),
+                eq(new BigDecimal("60860.80")), eq(BigDecimal.ZERO));
     }
 
     @Test void sellFollow_reprice_after_partial_fill_places_only_remaining_inventory() {
