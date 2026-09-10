@@ -275,6 +275,26 @@ class HtxMapperIntegrationTest {
         assertEquals(0, new BigDecimal("40.000").compareTo(after.subtract(before)));
     }
 
+    @Test void countRecentZeroFillCancelledMmBuy_matches_nearby_price_and_excludes_filled_cancel() {
+        java.time.LocalDateTime since = java.time.LocalDate.now().atStartOfDay();
+        Long before = pairMapper.countRecentZeroFillCancelledMmBuy(
+                "xautusdt", new BigDecimal("1000.5000"), new BigDecimal("0.001"), since);
+        insertMmRiskCell("mm-cooldown-zero-" + System.nanoTime(),
+                HtxStatus.MM_CANCELLED_BUY, "0.010", "0", "1000.0000");
+        insertMmRiskCell("mm-cooldown-filled-" + System.nanoTime(),
+                HtxStatus.MM_CANCELLED_BUY, "0.010", "0.001", "1000.0000");
+        insertMmRiskCell("mm-cooldown-far-" + System.nanoTime(),
+                HtxStatus.MM_CANCELLED_BUY, "0.010", "0", "1100.0000");
+
+        Long matched = pairMapper.countRecentZeroFillCancelledMmBuy(
+                "xautusdt", new BigDecimal("1000.5000"), new BigDecimal("0.001"), since);
+        Long missed = pairMapper.countRecentZeroFillCancelledMmBuy(
+                "xautusdt", new BigDecimal("998.0000"), new BigDecimal("0.001"), since);
+
+        assertEquals(1L, matched - before);
+        assertEquals(0L, missed);
+    }
+
     private void insertMmDone(String cid, String buyQty, String buyPrice,
                               String sellQty, String sellPrice) {
         HtxLockedPairEntity e = mmCell(cid, buyQty, buyPrice, sellQty, sellPrice);

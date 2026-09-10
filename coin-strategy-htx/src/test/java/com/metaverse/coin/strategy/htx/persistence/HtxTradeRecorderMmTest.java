@@ -143,6 +143,24 @@ class HtxTradeRecorderMmTest {
         assertTrue(ex.getMessage().contains("sumTodayMmRiskQuoteNotional failed"));
     }
 
+    @Test void hasRecentZeroFillCancelledMmBuy_delegates_to_mapper() {
+        when(pairMapper.countRecentZeroFillCancelledMmBuy(eq("btcusdt"), any(), any(), any())).thenReturn(1L);
+
+        assertTrue(recorder.hasRecentZeroFillCancelledMmBuy(
+                "btcusdt", new BigDecimal("100"), new BigDecimal("0.001"), java.time.LocalDateTime.now()));
+    }
+
+    @Test void hasRecentZeroFillCancelledMmBuy_fail_closed_on_mapper_error() {
+        when(pairMapper.countRecentZeroFillCancelledMmBuy(anyString(), any(), any(), any()))
+                .thenThrow(new RuntimeException("db down"));
+
+        HtxPersistenceException ex = assertThrows(HtxPersistenceException.class,
+                () -> recorder.hasRecentZeroFillCancelledMmBuy(
+                        "btcusdt", new BigDecimal("100"), new BigDecimal("0.001"),
+                        java.time.LocalDateTime.now()));
+        assertTrue(ex.getMessage().contains("countRecentZeroFillCancelledMmBuy failed"));
+    }
+
     @Test void findAllOpenMmCells_queries_strategy_and_resting_statuses() {
         when(pairMapper.selectList(any())).thenReturn(List.of());
         recorder.findAllOpenMmCells();

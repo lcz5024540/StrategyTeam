@@ -23,6 +23,7 @@ class HtxMarketMakerPropertiesBindingTest {
                 () -> assertTrue(yaml.contains("grid-step-pct: ${HTX_MM_GRID_STEP_PCT:0.001}")),
                 () -> assertTrue(yaml.contains("grid-levels: ${HTX_MM_GRID_LEVELS:20}")),
                 () -> assertTrue(yaml.contains("min-sell-order-quote-notional: ${HTX_MM_MIN_SELL_ORDER_QUOTE_NOTIONAL:1.1}")),
+                () -> assertTrue(yaml.contains("buy-cancel-retry-cooldown-ms: ${HTX_MM_BUY_CANCEL_RETRY_COOLDOWN_MS:300000}")),
                 () -> assertTrue(yaml.contains("grid-floor-price: ${HTX_MM_GRID_FLOOR_PRICE:0}")),
                 () -> assertTrue(yaml.contains("max-total-exposure-quote-notional: ${HTX_MM_MAX_TOTAL_EXPOSURE_QUOTE_NOTIONAL:240}")),
                 () -> assertTrue(yaml.contains("daily-net-loss-budget: ${HTX_MM_DAILY_NET_LOSS_BUDGET:5}")),

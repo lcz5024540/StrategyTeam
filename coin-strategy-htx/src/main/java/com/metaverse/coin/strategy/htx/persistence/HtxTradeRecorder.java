@@ -510,6 +510,19 @@ public class HtxTradeRecorder {
         }
     }
 
+    /**
+     * 查询近期同一/近似价位的零成交买单取消记录，用于移动网格防撤挂风暴。
+     */
+    public boolean hasRecentZeroFillCancelledMmBuy(String symbol, BigDecimal buyPrice,
+                                                   BigDecimal gapPct, LocalDateTime since) {
+        try {
+            Long count = pairMapper.countRecentZeroFillCancelledMmBuy(symbol, buyPrice, gapPct, since);
+            return count != null && count > 0;
+        } catch (Exception ex) {
+            throw new HtxPersistenceException("countRecentZeroFillCancelledMmBuy failed", ex);
+        }
+    }
+
     public List<HtxLockedPairEntity> findNonTerminalPairs() {
         return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
                 .in("status", HtxStatus.BUY_SENT, HtxStatus.BUY_FILLED,

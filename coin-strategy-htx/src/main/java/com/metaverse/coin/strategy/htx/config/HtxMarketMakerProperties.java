@@ -54,6 +54,9 @@ public class HtxMarketMakerProperties {
     /** 可用 USDT 不足时暂停所有新买单的时长（ms），到期后重新查余额自动恢复。 */
     private long insufficientBalanceBackoffMs = 300_000L;
 
+    /** 零成交买单被交易所取消后，同一/近似价位暂停重开的时长（ms）；0 = 不启用。 */
+    private long buyCancelRetryCooldownMs = 300_000L;
+
     /** 卖腿跟价+止损总开关；false=退回旧「固定价挂到成交」（config-only 回退）。 */
     private boolean sellFollowEnabled = true;
 

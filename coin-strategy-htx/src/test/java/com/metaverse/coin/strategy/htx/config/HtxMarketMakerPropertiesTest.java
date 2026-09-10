@@ -32,6 +32,7 @@ class HtxMarketMakerPropertiesTest {
         assertEquals(900_000L, p.getBuyTtlMs());
         assertEquals(0, new BigDecimal("0.001").compareTo(p.getRepriceThresholdPct()));
         assertEquals(300_000L, p.getInsufficientBalanceBackoffMs());
+        assertEquals(300_000L, p.getBuyCancelRetryCooldownMs());
         assertEquals(0L, p.getSellTtlMs());
         assertEquals(0, new BigDecimal("0.001").compareTo(p.getGridStepPct()));
         assertEquals(20, p.getGridLevels());
@@ -45,12 +46,14 @@ class HtxMarketMakerPropertiesTest {
         env.setProperty("htx.market-maker.spread-pct", "0.008");
         env.setProperty("htx.market-maker.max-concurrent-cells-per-symbol", "5");
         env.setProperty("htx.market-maker.insufficient-balance-backoff-ms", "60000");
+        env.setProperty("htx.market-maker.buy-cancel-retry-cooldown-ms", "120000");
         HtxMarketMakerProperties p = bind(env);
         assertTrue(p.isEnabled());
         assertEquals(List.of("btcusdt"), p.getSymbols());
         assertEquals(0, new BigDecimal("0.008").compareTo(p.getSpreadPct()));
         assertEquals(5, p.getMaxConcurrentCellsPerSymbol());
         assertEquals(60_000L, p.getInsufficientBalanceBackoffMs());
+        assertEquals(120_000L, p.getBuyCancelRetryCooldownMs());
     }
 
     @Test void sellFollowDefaultsEnabledWithStopLossAndThreshold() {

@@ -53,4 +53,20 @@ public interface HtxLockedPairMapper extends BaseMapper<HtxLockedPairEntity> {
             + "FROM htx_locked_pair "
             + "WHERE strategy = 'MARKET_MAKER' AND status = 'MM_DONE' AND dry_run = 0 AND updated_at >= #{start}")
     BigDecimal sumMmRealizedNetQuoteSince(@Param("start") LocalDateTime start);
+
+    /**
+     * 同一/近似买价刚出现零成交取消时，短期不再补同价买单，避免 post-only 立即取消后无限重开。
+     */
+    @Select("SELECT COUNT(*) FROM htx_locked_pair "
+            + "WHERE dry_run = 0 "
+            + "AND strategy = 'MARKET_MAKER' "
+            + "AND symbol = #{symbol} "
+            + "AND status = 'MM_CANCELLED_BUY' "
+            + "AND updated_at >= #{since} "
+            + "AND COALESCE(buy_filled_amount, 0) = 0 "
+            + "AND ABS(buy_price - #{buyPrice}) <= (#{buyPrice} * #{gapPct})")
+    Long countRecentZeroFillCancelledMmBuy(@Param("symbol") String symbol,
+                                           @Param("buyPrice") BigDecimal buyPrice,
+                                           @Param("gapPct") BigDecimal gapPct,
+                                           @Param("since") LocalDateTime since);
 }

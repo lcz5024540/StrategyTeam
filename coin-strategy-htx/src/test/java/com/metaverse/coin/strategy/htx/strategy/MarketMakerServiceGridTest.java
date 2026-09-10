@@ -203,6 +203,31 @@ class MarketMakerServiceGridTest {
         verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), eq("99.40"), anyString());
     }
 
+    @Test void recent_zero_fill_cancelled_buy_cools_same_grid_level() {
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
+        when(recorder.hasRecentZeroFillCancelledMmBuy(eq("btcusdt"), eq(new BigDecimal("100.00")),
+                eq(mmProps.getMinGapPct()), any())).thenReturn(true);
+
+        svc.fillGridLadder("btcusdt");
+
+        verify(recorder, never()).createMmCell(eq("btcusdt"), any(), eq(new BigDecimal("100.00")), any(), anyString());
+        verify(spot, never()).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"),
+                anyString(), eq("100.00"), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"),
+                anyString(), eq("99.70"), anyString());
+    }
+
+    @Test void buy_retry_cooldown_read_failure_blocks_new_buy_fail_closed() {
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
+        when(recorder.hasRecentZeroFillCancelledMmBuy(anyString(), any(), any(), any()))
+                .thenThrow(new HtxPersistenceException("db down", null));
+
+        svc.fillGridLadder("btcusdt");
+
+        verify(recorder, never()).createMmCell(anyString(), any(), any(), any(), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
     @Test void absolute_price_floor_skips_below_floor_levels() {
         // 地板 99.5：ladder [100.00,99.70,99.40,...] 中 <99.5 的全部不开，前两档合格
         mmProps.setGridFloorPrice(new BigDecimal("99.5"));

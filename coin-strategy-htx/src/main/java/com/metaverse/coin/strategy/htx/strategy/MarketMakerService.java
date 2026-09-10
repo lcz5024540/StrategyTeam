@@ -291,6 +291,9 @@ public class MarketMakerService {
         if (!MarketMakerMath.farEnough(buyPrice, existingBuys, mmProps.getMinGapPct())) {
             return -1;
         }
+        if (isBuyRetryCoolingDown(symbol, buyPrice)) {
+            return -1;
+        }
         BigDecimal buyNotional = qty.multiply(buyPrice);
         BigDecimal sellNotional = qty.multiply(sellPrice);
         BigDecimal maxSingle = tradeProps.getRisk().getMaxSingleQuoteNotional();
@@ -523,6 +526,30 @@ public class MarketMakerService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 零成交取消说明该价位当前挂不住或被交易所立即取消；冷却期内跳过近似价位，防止撤挂风暴。
+     */
+    private boolean isBuyRetryCoolingDown(String symbol, BigDecimal buyPrice) {
+        long cooldownMs = mmProps.getBuyCancelRetryCooldownMs();
+        if (cooldownMs <= 0) {
+            return false;
+        }
+        LocalDateTime since = LocalDateTime.now().minus(Duration.ofMillis(cooldownMs));
+        try {
+            boolean cooling = recorder.hasRecentZeroFillCancelledMmBuy(
+                    symbol, buyPrice, mmProps.getMinGapPct(), since);
+            if (cooling) {
+                log.info("MM buy retry cooldown blocks symbol={} buy={} cooldownMs={}",
+                        symbol, buyPrice, cooldownMs);
+            }
+            return cooling;
+        } catch (RuntimeException ex) {
+            log.error("MM buy retry cooldown read failed; fail-closed skip open symbol={} buy={}",
+                    symbol, buyPrice, ex);
+            return true;
+        }
     }
 
     /** 单标的所有 open cell 的买入名义之和（Σ reqQuantity×buyPrice），用于总敞口闸初值。 */
