@@ -111,13 +111,13 @@ public final class MarketMakerMath {
     }
 
     /**
-     * min-gap 去重：候选买价与每个已挂买价的相对距离 |cand−e|/e 都 ≥ minGapPct 才算够远。
-     * existingBuys 为空 → 直接够远。
+     * min-gap 去重：候选价与每个已挂价的相对距离 |cand−e|/e 都 ≥ minGapPct 才算够远。
+     * existingPrices 为空 → 直接够远。
      */
-    public static boolean farEnough(BigDecimal candidateBuy, List<BigDecimal> existingBuys,
+    public static boolean farEnough(BigDecimal candidatePrice, List<BigDecimal> existingPrices,
                                     BigDecimal minGapPct) {
-        for (BigDecimal e : existingBuys) {
-            BigDecimal rel = candidateBuy.subtract(e).abs()
+        for (BigDecimal e : existingPrices) {
+            BigDecimal rel = candidatePrice.subtract(e).abs()
                     .divide(e, 10, RoundingMode.HALF_UP);
             if (rel.compareTo(minGapPct) < 0) {
                 return false;

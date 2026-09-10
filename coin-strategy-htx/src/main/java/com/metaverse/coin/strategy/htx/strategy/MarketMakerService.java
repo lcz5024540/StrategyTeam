@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -808,6 +809,12 @@ public class MarketMakerService {
                 return;
             }
         }
+        BigDecimal floorSellPrice = sellPrice;
+        sellPrice = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
+        if (sellPrice.compareTo(floorSellPrice) != 0) {
+            log.info("MM sell price de-duplicated pairId={} symbol={} floor={} adjusted={}",
+                    cell.getPairId(), cell.getSymbol(), floorSellPrice, sellPrice);
+        }
         recorder.markMmSellPending(
                 cell.getPairId(), filledBase, nz(buyFeeBase), actualBuyPrice, sellPrice);
         submitSellLeg(cell.getPairId(), cell.getClientId(), cell.getSymbol(),
@@ -850,6 +857,12 @@ public class MarketMakerService {
         Long sellId = cell.getSellOrderId();
         if (sellId == null) {
             BigDecimal protectedSellPrice = protectedSellPrice(cell, cell.getSellPrice());
+            BigDecimal floorSellPrice = protectedSellPrice;
+            protectedSellPrice = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
+            if (protectedSellPrice.compareTo(floorSellPrice) != 0) {
+                log.info("MM remaining sell price de-duplicated pairId={} symbol={} floor={} adjusted={}",
+                        cell.getPairId(), cell.getSymbol(), floorSellPrice, protectedSellPrice);
+            }
             if (!HtxStatus.MM_SELL_RETRYABLE.equals(cell.getState())) {
                 recorder.markMmSellPending(cell.getPairId(), nz(cell.getBuyFilledAmount()),
                         nz(cell.getTotalFeeBase()), cell.getBuyPrice(), protectedSellPrice);
@@ -895,8 +908,13 @@ public class MarketMakerService {
             lingerExitFlatten(cell);
             return;
         }
-        BigDecimal desiredSell = protectedSellPrice(cell, top.ask());
+        BigDecimal floorSellPrice = protectedSellPrice(cell, top.ask());
+        BigDecimal desiredSell = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
         if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
+            if (desiredSell.compareTo(floorSellPrice) != 0) {
+                log.info("MM reprice sell price de-duplicated pairId={} symbol={} floor={} adjusted={}",
+                        cell.getPairId(), cell.getSymbol(), floorSellPrice, desiredSell);
+            }
             repriceSell(cell, desiredSell);
         }
     }
@@ -1081,6 +1099,48 @@ public class MarketMakerService {
         BigDecimal grossBase = filledBase.signum() > 0 ? filledBase : cell.getQty();
         return gridStrategy.sellPriceAfterFill(quoteCost, grossBase, nz(cell.getTotalFeeBase()),
                 cell.getBuyPrice(), bestAsk, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
+    }
+
+    private BigDecimal uniqueSellPrice(String symbol, long pairId, BigDecimal floorPrice) {
+        BigDecimal candidate = floorPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        List<HtxLockedPairEntity> openCells;
+        try {
+            openCells = recorder.findOpenMmCells(symbol);
+        } catch (RuntimeException ex) {
+            log.warn("MM sell price de-dup read failed; use protected price pairId={} symbol={} price={}",
+                    pairId, symbol, candidate, ex);
+            return candidate;
+        }
+        if (openCells == null) {
+            openCells = Collections.emptyList();
+        }
+        List<BigDecimal> activeSellPrices = openCells.stream()
+                .filter(cell -> cell.getId() == null || cell.getId() != pairId)
+                .filter(cell -> HtxStatus.MM_RESTING_SELL.equals(cell.getStatus())
+                        || HtxStatus.MM_SELL_RETRYABLE.equals(cell.getStatus()))
+                .map(HtxLockedPairEntity::getSellPrice)
+                .filter(price -> price != null && price.signum() > 0)
+                .collect(Collectors.toList());
+        if (MarketMakerMath.farEnough(candidate, activeSellPrices, mmProps.getMinGapPct())) {
+            return candidate;
+        }
+
+        BigDecimal tick = BigDecimal.ONE.movePointLeft(MarketMakerMath.PRICE_SCALE);
+        BigDecimal step = candidate.multiply(mmProps.getMinGapPct())
+                .setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING)
+                .max(tick);
+        int maxAttempts = activeSellPrices.size() + mmProps.getMaxConcurrentCellsPerSymbol()
+                + mmProps.getGridLevels() + 8;
+        BigDecimal adjusted = candidate;
+        for (int i = 0; i < maxAttempts; i++) {
+            adjusted = adjusted.add(step).setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+            if (MarketMakerMath.farEnough(adjusted, activeSellPrices, mmProps.getMinGapPct())) {
+                return adjusted;
+            }
+        }
+        log.warn("MM sell price de-dup exhausted pairId={} symbol={} floor={} adjusted={} activeSellCount={}",
+                pairId, symbol, candidate, adjusted, activeSellPrices.size());
+        return adjusted;
     }
 
     private BigDecimal cumulativeSellFilled(MarketMakerCell cell, BigDecimal latestFilled) {
