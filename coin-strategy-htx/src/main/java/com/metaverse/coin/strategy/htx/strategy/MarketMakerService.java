@@ -427,6 +427,9 @@ public class MarketMakerService {
             if (opened >= budget) {
                 break; // 并行度预算耗尽
             }
+            if (level.compareTo(bestBid) > 0) {
+                continue; // 移动窗口上半段可能高于现价；买单只补当前 bestBid 及以下的 maker 档
+            }
             if (maxTotal != null && maxTotal.signum() > 0
                     && running.add(perCell).compareTo(maxTotal) > 0) {
                 break; // 总敞口闸：再开一档即超上限 → 停更深档（同 perCell，越深只会更超）
@@ -555,9 +558,10 @@ public class MarketMakerService {
         }
     }
 
-    /** 单标的所有 open cell 的买入名义之和（Σ reqQuantity×buyPrice），用于总敞口闸初值。 */
+    /** 单标的未成交买单名义之和（Σ reqQuantity×buyPrice），用于补买总敞口闸初值。 */
     private BigDecimal currentOpenBuyNotional(String symbol) {
         return recorder.findOpenMmCells(symbol).stream()
+                .filter(cell -> HtxStatus.MM_RESTING_BUY.equals(cell.getStatus()))
                 .map(cell -> nz(cell.getReqQuantity()).multiply(nz(cell.getBuyPrice())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }

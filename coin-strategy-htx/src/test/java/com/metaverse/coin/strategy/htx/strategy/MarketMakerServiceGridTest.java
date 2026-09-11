@@ -246,6 +246,41 @@ class MarketMakerServiceGridTest {
         verify(spot, never()).placeOrder(anyString(), anyString(), anyString(), anyString(), eq("99.40"), anyString());
     }
 
+    @Test void restingSellInventoryDoesNotConsumeNewBuyExposureBudget() {
+        // 下跌后已有库存全部转成卖单；这些库存已有卖腿/合约对冲，不应挡住现价下方继续补买。
+        mmProps.setMaxTotalExposureQuoteNotional(new BigDecimal("45"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
+        HtxLockedPairEntity restingBuy = restingBuy("100.00", "0.2000");
+        HtxLockedPairEntity restingSell = restingBuy("120.00", "0.2000");
+        restingSell.setStatus(HtxStatus.MM_RESTING_SELL);
+        restingSell.setSellPrice(new BigDecimal("99.70"));
+        when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(restingBuy, restingSell));
+        when(recorder.countOpenMmBuyCells("btcusdt")).thenReturn(1);
+
+        svc.fillGridLadder("btcusdt");
+
+        verify(spot, times(1)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.70"), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), eq("99.40"), anyString());
+    }
+
+    @Test void movingGridBuyLadderSkipsLevelsAboveCurrentBestBid() {
+        // 窗口锚点仍在上方时，只从现价以下补 maker 买单，避免在盘口上方挂买导致网格停摆。
+        mmProps.setMaxConcurrentCellsPerSymbol(2);
+        mmProps.setMaxTotalExposureQuoteNotional(new BigDecimal("100"));
+        windowStore.save(new MovingGridEngine().initial("btcusdt", new BigDecimal("100"),
+                mmProps.getGridStepPct(), mmProps.getGridLevels(), LocalDateTime.now()));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("99.50", "99.55")));
+
+        svc.fillGridLadder("btcusdt");
+
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), eq("100.00"), anyString());
+        verify(spot, never()).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), eq("99.70"), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.40"), anyString());
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("buy-limit-maker"), anyString(), eq("99.10"), anyString());
+        verify(spot, times(2)).placeOrder(anyString(), anyString(), eq("buy-limit-maker"), anyString(), anyString(), anyString());
+    }
+
     @Test void recent_zero_fill_cancelled_buy_cools_same_grid_level() {
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));
         when(recorder.hasRecentZeroFillCancelledMmBuy(eq("btcusdt"), eq(new BigDecimal("100.00")),
