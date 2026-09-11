@@ -100,7 +100,7 @@ class HtxDeltaHedgeSupervisorTest {
         DeltaHedgeManager.HedgeDecision decision = decisionCaptor.getValue();
         assertEquals(DeltaHedgeManager.Action.OPEN_SHORT, decision.action());
         assertEquals("10", decision.orderRequest().getVolume());
-        assertEquals("CS-MM-HEDGE-XAUTUSDT-T10-C0-OPEN-46", decision.orderRequest().getClientOrderId());
+        assertTrue(decision.orderRequest().getClientOrderId().matches("\\d{18}"));
         assertFalse(decision.orderRequest().getReduceOnly());
         verify(executor, never()).executePendingHedgeIntents(20);
     }
@@ -142,7 +142,7 @@ class HtxDeltaHedgeSupervisorTest {
         assertEquals(DeltaHedgeManager.Action.CLOSE_SHORT, decision.action());
         assertTrue(decision.orderRequest().getReduceOnly());
         assertEquals("20", decision.orderRequest().getVolume());
-        assertEquals("CS-MM-HEDGE-XAUTUSDT-T0-C20-CLOSE-46", decision.orderRequest().getClientOrderId());
+        assertTrue(decision.orderRequest().getClientOrderId().matches("\\d{18}"));
         verify(executor, never()).executePendingHedgeIntents(20);
     }
 

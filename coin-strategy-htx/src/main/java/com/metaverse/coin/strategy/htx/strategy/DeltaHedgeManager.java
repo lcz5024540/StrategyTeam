@@ -4,6 +4,8 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.CRC32;
 
 /**
  * Pure aggregate delta hedge planner for the moving spot grid.
@@ -17,6 +19,9 @@ public class DeltaHedgeManager {
     private static final String CLOSE_SHORT_SIDE = "buy";
     private static final String MARKET_TYPE = "market";
     private static final String IOC = "ioc";
+    private static final long CLIENT_ORDER_ID_BASE = 800_000_000_000_000_000L;
+    private static final long CLIENT_ORDER_ID_EPOCH_MOD = 1_000_000L;
+    private static final long CLIENT_ORDER_ID_HASH_MOD = 100_000_000_000L;
 
     public HedgeDecision plan(HedgeInput input) {
         if (input == null || !input.enabled()) {
@@ -83,11 +88,21 @@ public class DeltaHedgeManager {
                 .positionSide(POSITION_SIDE_SHORT)
                 .side(side)
                 .type(MARKET_TYPE)
-                .clientOrderId(prefix + "-" + action + "-" + epoch)
+                .clientOrderId(clientOrderId(prefix, epoch, action, contracts))
                 .volume(Long.toString(contracts))
                 .reduceOnly(reduceOnly)
                 .timeInForce(IOC)
                 .build();
+    }
+
+    private static String clientOrderId(String prefix, long epoch, String action, long contracts) {
+        String raw = prefix + ":" + epoch + ":" + action + ":" + contracts;
+        CRC32 crc32 = new CRC32();
+        crc32.update(raw.getBytes(StandardCharsets.UTF_8));
+        long epochPart = Math.floorMod(epoch, CLIENT_ORDER_ID_EPOCH_MOD);
+        long hashPart = crc32.getValue() % CLIENT_ORDER_ID_HASH_MOD;
+        long value = CLIENT_ORDER_ID_BASE + epochPart * CLIENT_ORDER_ID_HASH_MOD + hashPart;
+        return Long.toString(value);
     }
 
     private static BigDecimal targetShortBase(BigDecimal inventory, BigDecimal ratio,

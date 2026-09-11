@@ -29,6 +29,15 @@ public interface HtxInventoryRecycleSagaMapper extends BaseMapper<HtxInventoryRe
     @Select("SELECT COUNT(*) FROM htx_inventory_recycle_saga WHERE status = #{status}")
     int countByStatus(@Param("status") String status);
 
+    @Update("UPDATE htx_inventory_recycle_saga SET status = #{nextStatus}, reason = #{nextReason}, "
+            + "updated_at = CURRENT_TIMESTAMP(3) "
+            + "WHERE status = #{expectedStatus} AND close_exchange_order_id IS NULL "
+            + "AND close_filled_contracts = 0 AND reason LIKE #{reasonPattern}")
+    int reclassifyPreAcceptRejects(@Param("expectedStatus") String expectedStatus,
+                                   @Param("nextStatus") String nextStatus,
+                                   @Param("nextReason") String nextReason,
+                                   @Param("reasonPattern") String reasonPattern);
+
     @Select("SELECT " + COLUMNS + " FROM htx_inventory_recycle_saga WHERE id = #{id} LIMIT 1")
     HtxInventoryRecycleSagaEntity findById(@Param("id") long id);
 

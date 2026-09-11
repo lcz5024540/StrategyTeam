@@ -32,6 +32,7 @@ class DeltaHedgeManagerTest {
         assertEquals("sell", request.getSide());
         assertEquals("500", request.getVolume());
         assertFalse(request.getReduceOnly());
+        assertTrue(request.getClientOrderId().matches("\\d{18}"));
     }
 
     @Test void excessShortClosesWithReduceOnly() {
@@ -45,6 +46,7 @@ class DeltaHedgeManagerTest {
         assertEquals("short", request.getPositionSide());
         assertEquals("300", request.getVolume());
         assertTrue(request.getReduceOnly());
+        assertTrue(request.getClientOrderId().matches("\\d{18}"));
     }
 
     @Test void targetShortIsCappedAndRoundedDownToContractStep() {

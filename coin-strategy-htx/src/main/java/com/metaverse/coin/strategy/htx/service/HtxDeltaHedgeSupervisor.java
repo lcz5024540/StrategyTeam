@@ -69,6 +69,7 @@ public class HtxDeltaHedgeSupervisor {
                     "hedge supervisor disabled");
         }
         int batchSize = Math.max(1, props.getHedgeSupervisorBatchSize());
+        executor.reclassifyKnownPreAcceptRejects();
         HtxDeltaHedgeIntentExecutor.RecoveryBacklog before = executor.recoveryBacklog();
         List<HtxDeltaHedgeIntentExecutor.ExecutionResult> hedgeReconciled =
                 executor.reconcileSentHedgeIntents(batchSize);

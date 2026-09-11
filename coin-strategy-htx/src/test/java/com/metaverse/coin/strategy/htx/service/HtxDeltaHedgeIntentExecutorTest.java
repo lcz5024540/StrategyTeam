@@ -145,6 +145,45 @@ class HtxDeltaHedgeIntentExecutorTest {
     }
 
     @Test
+    void preAcceptParameterRejectMovesToRejectedWithoutBlockingRecovery() {
+        props.setDryRun(false);
+        props.setLiveEnabled(true);
+        HtxDeltaHedgeLedgerEntity row = openShortRow(1601L);
+        when(hedgeMapper.updateStatusIfCurrent(eq(1601L), eq(HtxHedgeRecycleRecorder.STATUS_INTENT),
+                eq(HtxHedgeRecycleRecorder.STATUS_SENDING), anyString())).thenReturn(1);
+        when(hedgeMapper.updateStatusIfCurrent(eq(1601L), eq(HtxHedgeRecycleRecorder.STATUS_SENDING),
+                eq(HtxHedgeRecycleRecorder.STATUS_REJECTED), anyString())).thenReturn(1);
+        HtxRestResponse<HtxSwapOrderResult> rejected = response(400, null);
+        rejected.setMessage("Illegal parameter client_order_id.");
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(rejected);
+
+        HtxDeltaHedgeIntentExecutor.ExecutionResult result = executor.executeHedgeIntent(row);
+
+        assertEquals(HtxDeltaHedgeIntentExecutor.ExecutionCode.REJECTED, result.code());
+        assertEquals(HtxHedgeRecycleRecorder.STATUS_REJECTED, result.status());
+    }
+
+    @Test
+    void knownPreAcceptRejectsAreReclassifiedBeforeBacklogBlocksAutoSend() {
+        when(hedgeMapper.reclassifyPreAcceptRejects(
+                eq(HtxHedgeRecycleRecorder.STATUS_UNKNOWN),
+                eq(HtxHedgeRecycleRecorder.STATUS_REJECTED),
+                anyString(),
+                eq("exchange response not ok: Illegal parameter client_order_id%")))
+                .thenReturn(1);
+        when(recycleMapper.reclassifyPreAcceptRejects(
+                eq(HtxHedgeRecycleRecorder.STATUS_UNKNOWN),
+                eq(HtxHedgeRecycleRecorder.STATUS_REJECTED),
+                anyString(),
+                eq("exchange response not ok: Illegal parameter client_order_id%")))
+                .thenReturn(2);
+
+        int reclassified = executor.reclassifyKnownPreAcceptRejects();
+
+        assertEquals(3, reclassified);
+    }
+
+    @Test
     void exchangeExceptionMovesToUnknown() {
         props.setDryRun(false);
         props.setLiveEnabled(true);

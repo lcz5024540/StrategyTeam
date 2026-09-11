@@ -43,6 +43,10 @@ public class HtxDeltaHedgeIntentExecutor {
     private static final String IOC = "ioc";
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final int MAX_REASON_LENGTH = 512;
+    private static final String PRE_ACCEPT_CLIENT_ORDER_ID_REJECT_PATTERN =
+            "exchange response not ok: Illegal parameter client_order_id%";
+    private static final String PRE_ACCEPT_CLIENT_ORDER_ID_REJECT_REASON =
+            "exchange rejected before acceptance: Illegal parameter client_order_id";
 
     private final HtxUsdtSwapService swap;
     private final HtxContractProperties props;
@@ -149,6 +153,25 @@ public class HtxDeltaHedgeIntentExecutor {
                 recycleMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_HEDGE_DEGRADED),
                 hedgeMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_UNKNOWN),
                 recycleMapper.countByStatus(HtxHedgeRecycleRecorder.STATUS_UNKNOWN));
+    }
+
+    public int reclassifyKnownPreAcceptRejects() {
+        int hedgeRows = hedgeMapper.reclassifyPreAcceptRejects(
+                HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
+                HtxHedgeRecycleRecorder.STATUS_REJECTED,
+                PRE_ACCEPT_CLIENT_ORDER_ID_REJECT_REASON,
+                PRE_ACCEPT_CLIENT_ORDER_ID_REJECT_PATTERN);
+        int recycleRows = recycleMapper.reclassifyPreAcceptRejects(
+                HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
+                HtxHedgeRecycleRecorder.STATUS_REJECTED,
+                PRE_ACCEPT_CLIENT_ORDER_ID_REJECT_REASON,
+                PRE_ACCEPT_CLIENT_ORDER_ID_REJECT_PATTERN);
+        int total = hedgeRows + recycleRows;
+        if (total > 0) {
+            log.warn("reclassified known pre-accept HTX rejects hedgeRows={} recycleRows={} reason={}",
+                    hedgeRows, recycleRows, PRE_ACCEPT_CLIENT_ORDER_ID_REJECT_REASON);
+        }
+        return total;
     }
 
     public PendingBacklog pendingBacklog() {
@@ -327,8 +350,7 @@ public class HtxDeltaHedgeIntentExecutor {
             return finishAccepted(kind, id, item, acceptedReason(item));
         }
         String reason = exchangeReason(response, item);
-        boolean explicitReject = response != null && response.ok() && item != null && item.getCode() != null
-                && !Integer.valueOf(200).equals(item.getCode());
+        boolean explicitReject = explicitReject(response, item);
         return finish(kind, id, HtxHedgeRecycleRecorder.STATUS_SENDING,
                 explicitReject ? HtxHedgeRecycleRecorder.STATUS_REJECTED : HtxHedgeRecycleRecorder.STATUS_UNKNOWN,
                 reason, explicitReject ? ExecutionCode.REJECTED : ExecutionCode.UNKNOWN);
@@ -611,6 +633,19 @@ public class HtxDeltaHedgeIntentExecutor {
             return "exchange order result missing";
         }
         return "exchange rejected: code=" + item.getCode() + " message=" + item.getMessage();
+    }
+
+    private static boolean explicitReject(HtxRestResponse<HtxSwapOrderResult> response,
+                                          HtxSwapOrderResult item) {
+        if (response != null && response.ok() && item != null && item.getCode() != null
+                && !Integer.valueOf(200).equals(item.getCode())) {
+            return true;
+        }
+        if (response == null || response.ok()) {
+            return false;
+        }
+        String reason = firstNonBlank(response.getMessage(), response.getErrMsg(), response.getErrCode());
+        return reason != null && reason.toLowerCase().contains("illegal parameter");
     }
 
     private static boolean blank(String value) {
