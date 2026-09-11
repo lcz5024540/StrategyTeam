@@ -10,6 +10,9 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
+import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
+import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -31,6 +34,7 @@ class HtxDeltaHedgeSnapshotProviderTest {
     private HtxUsdtSwapService swap;
     private HtxMarketDataService spotMarketData;
     private HtxSpotLedgerRecorder spotLedgerRecorder;
+    private HtxTradeRecorder tradeRecorder;
     private HtxDeltaHedgeSnapshotProvider provider;
 
     @BeforeEach
@@ -38,7 +42,8 @@ class HtxDeltaHedgeSnapshotProviderTest {
         swap = mock(HtxUsdtSwapService.class);
         spotMarketData = mock(HtxMarketDataService.class);
         spotLedgerRecorder = mock(HtxSpotLedgerRecorder.class);
-        provider = new HtxDeltaHedgeSnapshotProvider(swap, spotMarketData, spotLedgerRecorder);
+        tradeRecorder = mock(HtxTradeRecorder.class);
+        provider = new HtxDeltaHedgeSnapshotProvider(swap, spotMarketData, spotLedgerRecorder, tradeRecorder);
     }
 
     @Test
@@ -62,6 +67,40 @@ class HtxDeltaHedgeSnapshotProviderTest {
         assertTrue(input.fundingAllowed());
         assertTrue(input.basisAllowed());
         assertTrue(input.marginSafe());
+    }
+
+
+    @Test
+    void emptyLedgerFallsBackToLegacyOpenSellInventory() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        givenHealthyFundingAndBasis();
+        when(spotLedgerRecorder.openInventory("xautusdt")).thenReturn(BigDecimal.ZERO);
+        when(tradeRecorder.findOpenMmCells("xautusdt")).thenReturn(List.of(
+                legacyCell(HtxStatus.MM_RESTING_SELL, "0.0100", "0.0001", "0.0020"),
+                legacyCell(HtxStatus.MM_SELL_RETRYABLE, "0.0050", "0", "0.0010"),
+                legacyCell(HtxStatus.MM_RESTING_BUY, "1.0000", "0", "0")));
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(null));
+
+        assertTrue(snapshot.available());
+        assertEquals(0, new BigDecimal("0.0119").compareTo(snapshot.input().spotBaseInventory()));
+    }
+
+    @Test
+    void ledgerInventoryTakesPrecedenceOverLegacyOpenSellInventory() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        givenHealthyFundingAndBasis();
+        when(spotLedgerRecorder.openInventory("xautusdt")).thenReturn(new BigDecimal("0.0200"));
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(null));
+
+        assertTrue(snapshot.available());
+        assertEquals(0, new BigDecimal("0.0200").compareTo(snapshot.input().spotBaseInventory()));
+        verify(tradeRecorder, never()).findOpenMmCells(anyString());
     }
 
     @Test
@@ -211,6 +250,17 @@ class HtxDeltaHedgeSnapshotProviderTest {
     private void givenHealthyBasis() {
         when(spotMarketData.depth("xautusdt", 1)).thenReturn(ok(depth("4200", "4202")));
         when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth("4201", "4203")));
+    }
+
+
+    private static HtxLockedPairEntity legacyCell(String status, String buyFilled, String feeBase, String sellFilled) {
+        HtxLockedPairEntity cell = new HtxLockedPairEntity();
+        cell.setStatus(status);
+        cell.setReqQuantity(new BigDecimal(buyFilled));
+        cell.setBuyFilledAmount(new BigDecimal(buyFilled));
+        cell.setTotalFeeBase(new BigDecimal(feeBase));
+        cell.setSellFilledAmount(new BigDecimal(sellFilled));
+        return cell;
     }
 
     private static HtxSwapContractInfo contract(String contractSize) {

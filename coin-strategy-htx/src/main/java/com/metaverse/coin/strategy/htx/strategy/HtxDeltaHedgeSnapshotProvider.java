@@ -12,6 +12,9 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxMarketDataService;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
+import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
+import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.util.HtxSymbolUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,20 +49,30 @@ public class HtxDeltaHedgeSnapshotProvider {
     private final HtxUsdtSwapService swap;
     private final HtxMarketDataService spotMarketData;
     private final HtxSpotLedgerRecorder spotLedgerRecorder;
+    private final HtxTradeRecorder tradeRecorder;
 
     @Autowired
     public HtxDeltaHedgeSnapshotProvider(HtxUsdtSwapApiService api,
                                          HtxApiService spotApi,
-                                         HtxSpotLedgerRecorder spotLedgerRecorder) {
-        this(api.getSwapService(), spotApi.getMarketDataService(), spotLedgerRecorder);
+                                         HtxSpotLedgerRecorder spotLedgerRecorder,
+                                         HtxTradeRecorder tradeRecorder) {
+        this(api.getSwapService(), spotApi.getMarketDataService(), spotLedgerRecorder, tradeRecorder);
     }
 
     HtxDeltaHedgeSnapshotProvider(HtxUsdtSwapService swap,
                                   HtxMarketDataService spotMarketData,
                                   HtxSpotLedgerRecorder spotLedgerRecorder) {
+        this(swap, spotMarketData, spotLedgerRecorder, null);
+    }
+
+    HtxDeltaHedgeSnapshotProvider(HtxUsdtSwapService swap,
+                                  HtxMarketDataService spotMarketData,
+                                  HtxSpotLedgerRecorder spotLedgerRecorder,
+                                  HtxTradeRecorder tradeRecorder) {
         this.swap = swap;
         this.spotMarketData = spotMarketData;
         this.spotLedgerRecorder = spotLedgerRecorder;
+        this.tradeRecorder = tradeRecorder;
     }
 
     public HedgeSnapshot snapshot(HedgeSourceRequest request) {
@@ -271,11 +284,52 @@ public class HtxDeltaHedgeSnapshotProvider {
             return new InventorySnapshot(true, positive(explicitInventory), null);
         }
         try {
-            return new InventorySnapshot(true, positive(spotLedgerRecorder.openInventory(symbol)), null);
+            BigDecimal ledgerInventory = positive(spotLedgerRecorder.openInventory(symbol));
+            if (ledgerInventory.signum() > 0) {
+                return new InventorySnapshot(true, ledgerInventory, null);
+            }
+            BigDecimal legacyInventory = legacyOpenSellInventory(symbol);
+            if (legacyInventory.signum() > 0) {
+                log.info("MM hedge spot inventory uses legacy open sell fallback symbol={} ledgerInventory={} legacyInventory={}",
+                        symbol, ledgerInventory, legacyInventory);
+                return new InventorySnapshot(true, legacyInventory, null);
+            }
+            return new InventorySnapshot(true, BigDecimal.ZERO, null);
         } catch (RuntimeException ex) {
             log.warn("MM hedge spot inventory unavailable symbol={} reason={}", symbol, ex.getMessage());
             return new InventorySnapshot(false, BigDecimal.ZERO, "spot inventory unavailable");
         }
+    }
+
+    private BigDecimal legacyOpenSellInventory(String symbol) {
+        if (tradeRecorder == null || isBlank(symbol)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        List<HtxLockedPairEntity> cells = tradeRecorder.findOpenMmCells(symbol);
+        if (cells == null || cells.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        for (HtxLockedPairEntity cell : cells) {
+            if (cell == null || !isLegacyOpenSell(cell.getStatus())) {
+                continue;
+            }
+            BigDecimal bought = positive(cell.getBuyFilledAmount());
+            if (bought.signum() <= 0) {
+                bought = positive(cell.getReqQuantity());
+            }
+            BigDecimal remaining = bought
+                    .subtract(positive(cell.getTotalFeeBase()))
+                    .subtract(positive(cell.getSellFilledAmount()));
+            if (remaining.signum() > 0) {
+                total = total.add(remaining);
+            }
+        }
+        return total;
+    }
+
+    private static boolean isLegacyOpenSell(String status) {
+        return HtxStatus.MM_RESTING_SELL.equals(status) || HtxStatus.MM_SELL_RETRYABLE.equals(status);
     }
 
     private static DeltaHedgeManager.HedgeInput input(HedgeSourceRequest request, String symbol,
