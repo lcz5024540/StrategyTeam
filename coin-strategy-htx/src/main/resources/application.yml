@@ -118,9 +118,16 @@ htx:
     uid-query-limit: ${HTX_CONTRACT_UID_QUERY_LIMIT:68}
     uid-trade-limit: ${HTX_CONTRACT_UID_TRADE_LIMIT:68}
     uid-rate-window-ms: ${HTX_CONTRACT_UID_RATE_WINDOW_MS:3000}
-    # Moving-grid hedge/recycle supervisor. Default off; when enabled, shadow mode only reconciles
-    # SENT rows and reports degraded/unknown rows. It does not submit pending hedge intents.
+    # Moving-grid hedge/recycle supervisor. Default off; when enabled, it can plan durable hedge
+    # intents from spot inventory and reconcile SENT rows. Shadow mode never submits pending intents.
     hedge-supervisor-enabled: ${HTX_CONTRACT_HEDGE_SUPERVISOR_ENABLED:false}
+    hedge-planner-enabled: ${HTX_CONTRACT_HEDGE_PLANNER_ENABLED:true}
+    hedge-ratio: ${HTX_CONTRACT_HEDGE_RATIO:0.5}
+    hedge-max-short-base: ${HTX_CONTRACT_HEDGE_MAX_SHORT_BASE:0.05}
+    hedge-minimum-margin-available: ${HTX_CONTRACT_HEDGE_MINIMUM_MARGIN_AVAILABLE:10}
+    hedge-max-abs-funding-rate: ${HTX_CONTRACT_HEDGE_MAX_ABS_FUNDING_RATE:0.0010}
+    hedge-max-basis-rate: ${HTX_CONTRACT_HEDGE_MAX_BASIS_RATE:0.0020}
+    hedge-minimum-liquidation-distance-rate: ${HTX_CONTRACT_HEDGE_MINIMUM_LIQUIDATION_DISTANCE_RATE:0.1000}
     hedge-supervisor-shadow-only: ${HTX_CONTRACT_HEDGE_SUPERVISOR_SHADOW_ONLY:true}
     # Future live-send gate. Requires shadow-only=false plus dry-run=false plus live-enabled=true.
     hedge-auto-send-enabled: ${HTX_CONTRACT_HEDGE_AUTO_SEND_ENABLED:false}

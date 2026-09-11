@@ -53,6 +53,13 @@ class HtxContractConfigIntegrationTest {
         assertEquals(68, properties.getUidTradeLimit());
         assertEquals(3_000L, properties.getUidRateWindowMs());
         assertFalse(properties.isHedgeSupervisorEnabled());
+        assertTrue(properties.isHedgePlannerEnabled());
+        assertEquals(new BigDecimal("0.5"), properties.getHedgeRatio());
+        assertEquals(new BigDecimal("0.05"), properties.getHedgeMaxShortBase());
+        assertEquals(new BigDecimal("10"), properties.getHedgeMinimumMarginAvailable());
+        assertEquals(new BigDecimal("0.0010"), properties.getHedgeMaxAbsFundingRate());
+        assertEquals(new BigDecimal("0.0020"), properties.getHedgeMaxBasisRate());
+        assertEquals(new BigDecimal("0.1000"), properties.getHedgeMinimumLiquidationDistanceRate());
         assertTrue(properties.isHedgeSupervisorShadowOnly());
         assertFalse(properties.isHedgeAutoSendEnabled());
         assertEquals(30_000L, properties.getHedgeSupervisorInitialDelayMs());

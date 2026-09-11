@@ -44,6 +44,20 @@ public class HtxContractProperties {
     private boolean autoLiveEnabled = false;
     /** Shadow supervisor for moving-grid hedge/recycle reconciliation. Default off. */
     private boolean hedgeSupervisorEnabled = false;
+    /** Generate durable aggregate short/reduce-short intents from moving-grid inventory. */
+    private boolean hedgePlannerEnabled = true;
+    /** Target short ratio against open spot inventory. */
+    private BigDecimal hedgeRatio = new BigDecimal("0.5");
+    /** Absolute base-asset short cap for one moving-grid symbol; keep conservative for XAUT default. */
+    private BigDecimal hedgeMaxShortBase = new BigDecimal("0.05");
+    /** Minimum available isolated contract margin before adding short exposure. */
+    private BigDecimal hedgeMinimumMarginAvailable = new BigDecimal("10");
+    /** Maximum absolute funding rate tolerated before adding short exposure. */
+    private BigDecimal hedgeMaxAbsFundingRate = new BigDecimal("0.0010");
+    /** Maximum spot/swap basis tolerated before adding short exposure. */
+    private BigDecimal hedgeMaxBasisRate = new BigDecimal("0.0020");
+    /** Minimum distance from short liquidation price before adding short exposure. */
+    private BigDecimal hedgeMinimumLiquidationDistanceRate = new BigDecimal("0.1000");
     /** Shadow mode reconciles and reports only; it never submits pending hedge intents. */
     private boolean hedgeSupervisorShadowOnly = true;
     /** Future live-send gate for pending hedge/recycle intents. Default false. */
