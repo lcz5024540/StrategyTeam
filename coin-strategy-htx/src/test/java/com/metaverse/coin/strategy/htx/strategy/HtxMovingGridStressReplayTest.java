@@ -103,7 +103,7 @@ class HtxMovingGridStressReplayTest {
     }
 
     @Test
-    void riskGateDeteriorationFailsClosedAndOnlyReducesExistingShort() {
+    void riskGateDeteriorationFailsClosedWithoutChangingExistingShort() {
         DeltaHedgeManager.HedgeDecision noPosition = hedgeManager.plan(hedgeInput(
                 new BigDecimal("0.050"), 0L, false, true, true, 11L));
 
@@ -114,12 +114,10 @@ class HtxMovingGridStressReplayTest {
         DeltaHedgeManager.HedgeDecision existingShort = hedgeManager.plan(hedgeInput(
                 new BigDecimal("0.050"), 12L, true, false, true, 12L));
 
-        assertEquals(DeltaHedgeManager.Action.CLOSE_SHORT, existingShort.action());
+        assertEquals(DeltaHedgeManager.Action.NONE, existingShort.action());
         assertEquals(MarketMakerRiskCoordinator.HEDGE_DEGRADED, existingShort.state());
-        assertNotNull(existingShort.orderRequest());
-        assertEquals("buy", existingShort.orderRequest().getSide());
-        assertEquals("short", existingShort.orderRequest().getPositionSide());
-        assertTrue(existingShort.orderRequest().getReduceOnly());
+        assertEquals(0, new BigDecimal("0.012").compareTo(existingShort.targetShortBase()));
+        assertNull(existingShort.orderRequest());
     }
 
     @Test

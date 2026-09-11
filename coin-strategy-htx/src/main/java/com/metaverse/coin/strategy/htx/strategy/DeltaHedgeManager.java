@@ -34,13 +34,8 @@ public class DeltaHedgeManager {
         }
         BigDecimal currentShort = contractBase(input.currentShortContracts(), contractSize);
         if (!input.fundingAllowed() || !input.basisAllowed() || !input.marginSafe()) {
-            if (currentShort.signum() > 0) {
-                return closeShort(input, contractSize, currentShort, BigDecimal.ZERO,
-                        MarketMakerRiskCoordinator.HEDGE_DEGRADED,
-                        "hedge data or margin gate blocked; reduce existing short");
-            }
             return HedgeDecision.none(MarketMakerRiskCoordinator.HEDGE_DEGRADED,
-                    BigDecimal.ZERO, "hedge data or margin gate blocked");
+                    currentShort, "hedge data or margin gate blocked; hold existing short");
         }
 
         BigDecimal target = targetShortBase(input.spotBaseInventory(), input.hedgeRatio(),

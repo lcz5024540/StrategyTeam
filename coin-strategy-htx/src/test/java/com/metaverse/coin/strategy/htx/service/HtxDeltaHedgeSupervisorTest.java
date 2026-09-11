@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxGridWindowEntity;
 import com.metaverse.coin.strategy.htx.strategy.DeltaHedgeManager;
 import com.metaverse.coin.strategy.htx.strategy.HtxDeltaHedgeSnapshotProvider;
 import com.metaverse.coin.strategy.htx.strategy.HtxGridWindowStore;
+import com.metaverse.coin.strategy.htx.strategy.MarketMakerRiskCoordinator;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -123,26 +124,25 @@ class HtxDeltaHedgeSupervisorTest {
     }
 
     @Test
-    void degradedSnapshotMayOnlyRecordReduceOnlyShortReduction() {
+    void degradedSnapshotDoesNotRecordShortReduction() {
         enableGridPlanner();
         when(gridWindowStore.find("xautusdt")).thenReturn(window(46L));
         when(snapshotProvider.snapshot(any())).thenReturn(snapshot(false, input(
                 BigDecimal.ZERO, 20L, false, false, false), "basis gate blocked"));
         when(recorder.recordHedgeIntent(eq("xautusdt"), eq(46L), any()))
-                .thenReturn(new HtxHedgeRecycleRecorder.RecordResult(true, false, null, 101L));
+                .thenReturn(new HtxHedgeRecycleRecorder.RecordResult(false, false, "no hedge order intent", null));
 
         HtxDeltaHedgeSupervisor.RunResult result = supervisor.runOnce();
 
-        assertEquals(1, result.shadowReport().appendedHedgeIntents());
+        assertEquals(0, result.shadowReport().appendedHedgeIntents());
+        assertEquals(1, result.shadowReport().skippedHedgePlans());
         assertEquals(1, result.shadowReport().degradedHedgeSnapshots());
         ArgumentCaptor<DeltaHedgeManager.HedgeDecision> decisionCaptor =
                 ArgumentCaptor.forClass(DeltaHedgeManager.HedgeDecision.class);
         verify(recorder).recordHedgeIntent(eq("xautusdt"), eq(46L), decisionCaptor.capture());
         DeltaHedgeManager.HedgeDecision decision = decisionCaptor.getValue();
-        assertEquals(DeltaHedgeManager.Action.CLOSE_SHORT, decision.action());
-        assertTrue(decision.orderRequest().getReduceOnly());
-        assertEquals("20", decision.orderRequest().getVolume());
-        assertTrue(decision.orderRequest().getClientOrderId().matches("\\d{18}"));
+        assertEquals(DeltaHedgeManager.Action.NONE, decision.action());
+        assertEquals(MarketMakerRiskCoordinator.HEDGE_DEGRADED, decision.state());
         verify(executor, never()).executePendingHedgeIntents(20);
     }
 

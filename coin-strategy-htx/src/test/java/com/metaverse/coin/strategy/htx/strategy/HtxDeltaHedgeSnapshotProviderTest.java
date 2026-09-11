@@ -134,7 +134,7 @@ class HtxDeltaHedgeSnapshotProviderTest {
     }
 
     @Test
-    void unsafeMarginDoesNotIncreaseRiskButAllowsReduceOnlyShortReduction() {
+    void unsafeMarginDoesNotIncreaseRiskAndKeepsExistingShortUntouched() {
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(position("short", null, "50"))));
         when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "3"))));
@@ -145,9 +145,8 @@ class HtxDeltaHedgeSnapshotProviderTest {
 
         assertFalse(snapshot.available());
         assertEquals("contract margin gate blocked", snapshot.reason());
-        assertEquals(DeltaHedgeManager.Action.CLOSE_SHORT, decision.action());
-        assertTrue(decision.orderRequest().getReduceOnly());
-        assertEquals("50", decision.orderRequest().getVolume());
+        assertEquals(DeltaHedgeManager.Action.NONE, decision.action());
+        assertNull(decision.orderRequest());
     }
 
     @Test
@@ -251,7 +250,7 @@ class HtxDeltaHedgeSnapshotProviderTest {
     }
 
     @Test
-    void closeLiquidationDistanceAllowsReduceOnlyShortReductionOnly() {
+    void closeLiquidationDistanceKeepsExistingShortUntouched() {
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(position("short", null, "50", "4210"))));
         when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
@@ -263,8 +262,8 @@ class HtxDeltaHedgeSnapshotProviderTest {
 
         assertFalse(snapshot.available());
         assertEquals("liquidation distance gate blocked", snapshot.reason());
-        assertEquals(DeltaHedgeManager.Action.CLOSE_SHORT, decision.action());
-        assertTrue(decision.orderRequest().getReduceOnly());
+        assertEquals(DeltaHedgeManager.Action.NONE, decision.action());
+        assertNull(decision.orderRequest());
     }
 
     private static HtxDeltaHedgeSnapshotProvider.HedgeSourceRequest request(BigDecimal inventory) {

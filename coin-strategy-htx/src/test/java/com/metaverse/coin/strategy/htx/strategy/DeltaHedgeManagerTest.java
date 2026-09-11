@@ -20,6 +20,16 @@ class DeltaHedgeManagerTest {
         assertNull(decision.orderRequest());
     }
 
+    @Test void degradedGateHoldsExistingShortWithoutReducingHedge() {
+        DeltaHedgeManager.HedgeDecision decision = manager.plan(input(
+                new BigDecimal("1.0"), 23L, true, false, true));
+
+        assertEquals(DeltaHedgeManager.Action.NONE, decision.action());
+        assertEquals(MarketMakerRiskCoordinator.HEDGE_DEGRADED, decision.state());
+        assertEquals(0, new BigDecimal("0.023").compareTo(decision.targetShortBase()));
+        assertNull(decision.orderRequest());
+    }
+
     @Test void healthyInventoryOpensOneAggregateShortWithoutReduceOnly() {
         DeltaHedgeManager.HedgeDecision decision = manager.plan(input(
                 new BigDecimal("1.0"), 0L, true, true, true));
