@@ -811,7 +811,7 @@ public class MarketMakerService {
             }
         }
         BigDecimal floorSellPrice = sellPrice;
-        sellPrice = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
+        sellPrice = uniqueSellPrice(cell, floorSellPrice);
         if (sellPrice.compareTo(floorSellPrice) != 0) {
             log.info("MM sell price de-duplicated pairId={} symbol={} floor={} adjusted={}",
                     cell.getPairId(), cell.getSymbol(), floorSellPrice, sellPrice);
@@ -867,7 +867,7 @@ public class MarketMakerService {
             }
             BigDecimal targetSellPrice = desiredSellPrice(cell, sellReference);
             BigDecimal floorSellPrice = targetSellPrice;
-            targetSellPrice = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
+            targetSellPrice = uniqueSellPrice(cell, floorSellPrice);
             if (targetSellPrice.compareTo(floorSellPrice) != 0) {
                 log.info("MM remaining sell price de-duplicated pairId={} symbol={} floor={} adjusted={}",
                         cell.getPairId(), cell.getSymbol(), floorSellPrice, targetSellPrice);
@@ -918,7 +918,7 @@ public class MarketMakerService {
             return;
         }
         BigDecimal floorSellPrice = desiredSellPrice(cell, top.ask());
-        BigDecimal desiredSell = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
+        BigDecimal desiredSell = uniqueSellPrice(cell, floorSellPrice);
         if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
             if (desiredSell.compareTo(floorSellPrice) != 0) {
                 log.info("MM reprice sell price de-duplicated pairId={} symbol={} floor={} adjusted={}",
@@ -1169,8 +1169,36 @@ public class MarketMakerService {
         return ask;
     }
 
-    private BigDecimal uniqueSellPrice(String symbol, long pairId, BigDecimal floorPrice) {
+    private BigDecimal uniqueSellPrice(MarketMakerCell cell, BigDecimal floorPrice) {
+        return uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorPrice,
+                gridSellPriceCeiling(cell.getSymbol(), floorPrice));
+    }
+
+    private BigDecimal gridSellPriceCeiling(String symbol, BigDecimal floorPrice) {
+        if (!mmProps.isGridModeEnabled() || !mmProps.isGridSellFollowWindowEnabled()
+                || floorPrice == null || floorPrice.signum() <= 0) {
+            return null;
+        }
+        try {
+            HtxGridWindowEntity window = gridWindowStore.find(symbol);
+            if (window == null || window.getLowerPrice() == null || window.getUpperPrice() == null) {
+                return null;
+            }
+            BigDecimal floor = floorPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+            if (floor.compareTo(window.getLowerPrice()) >= 0
+                    && floor.compareTo(window.getUpperPrice()) <= 0) {
+                return window.getUpperPrice().setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+            }
+        } catch (RuntimeException ex) {
+            log.warn("MM grid sell ceiling read failed; use unbounded de-dup symbol={}", symbol, ex);
+        }
+        return null;
+    }
+
+    private BigDecimal uniqueSellPrice(String symbol, long pairId, BigDecimal floorPrice, BigDecimal ceilingPrice) {
         BigDecimal candidate = floorPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        BigDecimal ceiling = ceilingPrice == null || ceilingPrice.compareTo(candidate) < 0
+                ? null : ceilingPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
         List<HtxLockedPairEntity> openCells;
         try {
             openCells = recorder.findOpenMmCells(symbol);
@@ -1188,6 +1216,7 @@ public class MarketMakerService {
                         || HtxStatus.MM_SELL_RETRYABLE.equals(cell.getStatus()))
                 .map(HtxLockedPairEntity::getSellPrice)
                 .filter(price -> price != null && price.signum() > 0)
+                .filter(price -> ceiling == null || price.compareTo(ceiling) <= 0)
                 .collect(Collectors.toList());
         if (MarketMakerMath.farEnough(candidate, activeSellPrices, mmProps.getMinGapPct())) {
             return candidate;
@@ -1202,6 +1231,11 @@ public class MarketMakerService {
         BigDecimal adjusted = candidate;
         for (int i = 0; i < maxAttempts; i++) {
             adjusted = adjusted.add(step).setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+            if (ceiling != null && adjusted.compareTo(ceiling) > 0) {
+                log.info("MM bounded sell price de-dup exhausted pairId={} symbol={} floor={} ceiling={} activeSellCount={}",
+                        pairId, symbol, candidate, ceiling, activeSellPrices.size());
+                return ceiling;
+            }
             if (MarketMakerMath.farEnough(adjusted, activeSellPrices, mmProps.getMinGapPct())) {
                 return adjusted;
             }
