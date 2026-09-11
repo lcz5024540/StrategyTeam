@@ -141,6 +141,49 @@ class MarketMakerServiceGridTest {
         return entity;
     }
 
+    private MarketMakerCell restingSellCell(String buy, String sell) {
+        return MarketMakerCell.builder()
+                .pairId(100L)
+                .clientId("mm-btcusdt-100")
+                .symbol("btcusdt")
+                .buyPrice(new BigDecimal(buy))
+                .sellPrice(new BigDecimal(sell))
+                .qty(new BigDecimal("0.0003"))
+                .state(HtxStatus.MM_RESTING_SELL)
+                .buyOrderId(555L)
+                .sellOrderId(777L)
+                .buyFilledAmount(new BigDecimal("0.0003"))
+                .totalFeeBase(BigDecimal.ZERO)
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    private MarketMakerCell retryableSellCellWithoutOrder(String buy, String sell) {
+        return MarketMakerCell.builder()
+                .pairId(101L)
+                .clientId("mm-btcusdt-101")
+                .symbol("btcusdt")
+                .buyPrice(new BigDecimal(buy))
+                .sellPrice(new BigDecimal(sell))
+                .qty(new BigDecimal("0.0003"))
+                .state(HtxStatus.MM_SELL_RETRYABLE)
+                .buyOrderId(556L)
+                .buyFilledAmount(new BigDecimal("0.0003"))
+                .sellFilledAmount(BigDecimal.ZERO)
+                .totalFeeBase(BigDecimal.ZERO)
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    private HtxLockedPairEntity restingSell(long id, String price) {
+        HtxLockedPairEntity entity = new HtxLockedPairEntity();
+        entity.setId(id);
+        entity.setSymbol("btcusdt");
+        entity.setSellPrice(new BigDecimal(price));
+        entity.setStatus(HtxStatus.MM_RESTING_SELL);
+        return entity;
+    }
+
     @Test void empty_inventory_fills_ladder_up_to_concurrency_budget() {
         // bestBid=100, step=0.003, levels=5 → [100.00, 99.70, 99.40, 99.10, 98.81]
         // maxConcurrent=3, open=0 → budget=3 → 只补最上三档
@@ -317,6 +360,97 @@ class MarketMakerServiceGridTest {
         verify(spot).cancelOrder(501L);
         verify(spot, never()).cancelOrder(601L);
         verify(recorder).markMmCancelledBuy(21L);
+    }
+
+    @Test void gridSellFollowRepricesLegacyInventoryToCurrentAskWhenWindowIsStale() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setGridSellFollowWindowEnabled(true);
+        mmProps.setGridStepPct(new BigDecimal("0.001"));
+        mmProps.setGridLevels(5);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.0001"));
+        windowStore.save(new MovingGridEngine().initial("btcusdt", new BigDecimal("60000"),
+                mmProps.getGridStepPct(), mmProps.getGridLevels(), LocalDateTime.now()));
+        when(spot.queryOrder(777L)).thenReturn(order("submitted", "0"))
+                .thenReturn(order("canceled", "0"));
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("59590", "59600")));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("59600.00"), anyString())).thenReturn(placeOk("888"));
+
+        svc.advanceCell(restingSellCell("59700.00", "60300.00"));
+
+        verify(spot).cancelOrder(777L);
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("59600.00"), anyString());
+        verify(recorder).markMmSellReprice(eq(100L), eq(888L),
+                eq(new BigDecimal("59600.00")), eq(BigDecimal.ZERO));
+    }
+
+    @Test void gridSellFollowUsesNearestWindowLevelAboveAsk() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setGridSellFollowWindowEnabled(true);
+        mmProps.setGridStepPct(new BigDecimal("0.001"));
+        mmProps.setGridLevels(5);
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.0001"));
+        windowStore.save(new MovingGridEngine().initial("btcusdt", new BigDecimal("60000"),
+                mmProps.getGridStepPct(), mmProps.getGridLevels(), LocalDateTime.now()));
+        when(spot.queryOrder(777L)).thenReturn(order("submitted", "0"))
+                .thenReturn(order("canceled", "0"));
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("59860", "59870")));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("59880.06"), anyString())).thenReturn(placeOk("888"));
+
+        svc.advanceCell(restingSellCell("61000.00", "61500.00"));
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("59880.06"), anyString());
+        verify(recorder).markMmSellReprice(eq(100L), eq(888L),
+                eq(new BigDecimal("59880.06")), eq(BigDecimal.ZERO));
+    }
+
+    @Test void gridSellFollowDeduplicatesNearCurrentWindowInsteadOfBreakEvenFloor() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setGridSellFollowWindowEnabled(true);
+        mmProps.setGridStepPct(new BigDecimal("0.001"));
+        mmProps.setGridLevels(5);
+        mmProps.setMinGapPct(new BigDecimal("0.001"));
+        mmProps.setSellRepriceThresholdPct(new BigDecimal("0.0001"));
+        windowStore.save(new MovingGridEngine().initial("btcusdt", new BigDecimal("60000"),
+                mmProps.getGridStepPct(), mmProps.getGridLevels(), LocalDateTime.now()));
+        when(recorder.findOpenMmCells("btcusdt")).thenReturn(List.of(restingSell(200L, "59880.06")));
+        when(spot.queryOrder(777L)).thenReturn(order("submitted", "0"))
+                .thenReturn(order("canceled", "0"));
+        when(spot.cancelOrder(777L)).thenReturn(placeOk("777"));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("59860", "59870")));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("59939.95"), anyString())).thenReturn(placeOk("888"));
+
+        svc.advanceCell(restingSellCell("61000.00", "61500.00"));
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                anyString(), eq("59939.95"), anyString());
+        verify(recorder).markMmSellReprice(eq(100L), eq(888L),
+                eq(new BigDecimal("59939.95")), eq(BigDecimal.ZERO));
+    }
+
+    @Test void retryableGridSellWithoutOrderIdFetchesCurrentAskBeforeResubmitting() {
+        mmProps.setSellFollowEnabled(true);
+        mmProps.setGridSellFollowWindowEnabled(true);
+        mmProps.setGridStepPct(new BigDecimal("0.001"));
+        mmProps.setGridLevels(5);
+        windowStore.save(new MovingGridEngine().initial("btcusdt", new BigDecimal("60000"),
+                mmProps.getGridStepPct(), mmProps.getGridLevels(), LocalDateTime.now()));
+        when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("59590", "59600")));
+        when(spot.placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000300"), eq("59600.00"), anyString())).thenReturn(placeOk("889"));
+
+        svc.advanceCell(retryableSellCellWithoutOrder("61000.00", "61500.00"));
+
+        verify(spot).placeOrder(eq("acc-1"), eq("btcusdt"), eq("sell-limit-maker"),
+                eq("0.000300"), eq("59600.00"), anyString());
+        verify(recorder).markMmSellReprice(eq(101L), eq(889L),
+                eq(new BigDecimal("59600.00")), eq(BigDecimal.ZERO));
     }
 
     private HtxRestResponse<HtxOrder> order(String state, String filled) {

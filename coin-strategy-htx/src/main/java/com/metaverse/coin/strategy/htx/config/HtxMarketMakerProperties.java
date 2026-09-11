@@ -87,6 +87,9 @@ public class HtxMarketMakerProperties {
     /** 网格全梯补齐总开关；false=完全回退现状单格逻辑（config-only 回退），行为逐字节等价。 */
     private boolean gridModeEnabled = false;
 
+    /** 网格模式下，卖腿按当前移动窗口/盘口重评估；库存浮亏风险交给合约对冲，不再用历史保本价把卖单推远。 */
+    private boolean gridSellFollowWindowEnabled = false;
+
     /** 等比步长（每档下移比例）：L_k=anchor·(1−此值)^k；与 spreadPct 同量级，保证每格卖腿仍满足不亏。 */
     private BigDecimal gridStepPct = new BigDecimal("0.001");
 

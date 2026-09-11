@@ -10,6 +10,7 @@ import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
 import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxGridWindowEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
 import com.metaverse.coin.strategy.htx.service.HtxDepthGuard;
 import com.metaverse.coin.strategy.htx.service.HtxFeeMath;
@@ -795,11 +796,11 @@ public class MarketMakerService {
         HtxSpotFeeRateProvider.FeeRates feeRates = feeRateProvider.rates(cell.getSymbol());
         BigDecimal sellPrice;
         if (mmProps.isSellFollowEnabled()) {
-            // follow：初始卖价取 max(含费保本地板, bestAsk)。盘口不可用则退回含费保本地板。
+            // follow：非网格仍取 max(含费保本地板, bestAsk)；网格窗口跟随打开时，库存风险由合约空头对冲，卖腿贴当前网格。
             TopOfBook top = currentTopOfBook(cell.getSymbol());
             BigDecimal ask = (top != null) ? top.ask() : actualBuyPrice;
-            sellPrice = gridStrategy.sellPriceAfterFill(filledCashAmount, filledBase, buyFeeBase,
-                    actualBuyPrice, ask, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
+            sellPrice = desiredSellPrice(cell, ask, filledCashAmount, filledBase, buyFeeBase,
+                    actualBuyPrice, feeRates);
         } else {
             sellPrice = gridStrategy.quote(actualBuyPrice, mmProps.getSpreadPct(),
                     feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE).sellPrice();
@@ -856,18 +857,26 @@ public class MarketMakerService {
     private void advanceRestingSell(MarketMakerCell cell) {
         Long sellId = cell.getSellOrderId();
         if (sellId == null) {
-            BigDecimal protectedSellPrice = protectedSellPrice(cell, cell.getSellPrice());
-            BigDecimal floorSellPrice = protectedSellPrice;
-            protectedSellPrice = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
-            if (protectedSellPrice.compareTo(floorSellPrice) != 0) {
+            BigDecimal sellReference = cell.getSellPrice();
+            if (mmProps.isSellFollowEnabled() && mmProps.isGridModeEnabled()
+                    && mmProps.isGridSellFollowWindowEnabled()) {
+                TopOfBook top = currentTopOfBook(cell.getSymbol());
+                if (top != null) {
+                    sellReference = top.ask();
+                }
+            }
+            BigDecimal targetSellPrice = desiredSellPrice(cell, sellReference);
+            BigDecimal floorSellPrice = targetSellPrice;
+            targetSellPrice = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
+            if (targetSellPrice.compareTo(floorSellPrice) != 0) {
                 log.info("MM remaining sell price de-duplicated pairId={} symbol={} floor={} adjusted={}",
-                        cell.getPairId(), cell.getSymbol(), floorSellPrice, protectedSellPrice);
+                        cell.getPairId(), cell.getSymbol(), floorSellPrice, targetSellPrice);
             }
             if (!HtxStatus.MM_SELL_RETRYABLE.equals(cell.getState())) {
                 recorder.markMmSellPending(cell.getPairId(), nz(cell.getBuyFilledAmount()),
-                        nz(cell.getTotalFeeBase()), cell.getBuyPrice(), protectedSellPrice);
+                        nz(cell.getTotalFeeBase()), cell.getBuyPrice(), targetSellPrice);
             }
-            submitRemainingSellLeg(cell, protectedSellPrice);
+            submitRemainingSellLeg(cell, targetSellPrice);
             return;
         }
         HtxRestResponse<HtxOrder> resp = htxApiService.getSpotService().queryOrder(sellId);
@@ -908,7 +917,7 @@ public class MarketMakerService {
             lingerExitFlatten(cell);
             return;
         }
-        BigDecimal floorSellPrice = protectedSellPrice(cell, top.ask());
+        BigDecimal floorSellPrice = desiredSellPrice(cell, top.ask());
         BigDecimal desiredSell = uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorSellPrice);
         if (MarketMakerMath.shouldRepriceSell(desiredSell, cell.getSellPrice(), mmProps.getSellRepriceThresholdPct())) {
             if (desiredSell.compareTo(floorSellPrice) != 0) {
@@ -1099,6 +1108,65 @@ public class MarketMakerService {
         BigDecimal grossBase = filledBase.signum() > 0 ? filledBase : cell.getQty();
         return gridStrategy.sellPriceAfterFill(quoteCost, grossBase, nz(cell.getTotalFeeBase()),
                 cell.getBuyPrice(), bestAsk, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
+    }
+
+    private BigDecimal desiredSellPrice(MarketMakerCell cell, BigDecimal bestAsk) {
+        HtxSpotFeeRateProvider.FeeRates feeRates = feeRateProvider.rates(cell.getSymbol());
+        BigDecimal filledBase = nz(cell.getBuyFilledAmount());
+        BigDecimal quoteCost = filledBase.signum() > 0
+                ? filledBase.multiply(cell.getBuyPrice())
+                : cell.getQty().multiply(cell.getBuyPrice());
+        BigDecimal grossBase = filledBase.signum() > 0 ? filledBase : cell.getQty();
+        return desiredSellPrice(cell, bestAsk, quoteCost, grossBase, nz(cell.getTotalFeeBase()),
+                cell.getBuyPrice(), feeRates);
+    }
+
+    private BigDecimal desiredSellPrice(MarketMakerCell cell, BigDecimal bestAsk,
+                                        BigDecimal filledQuote, BigDecimal filledBase,
+                                        BigDecimal buyFeeBase, BigDecimal fallbackBuyPrice,
+                                        HtxSpotFeeRateProvider.FeeRates feeRates) {
+        BigDecimal gridSell = gridWindowSellPrice(cell.getSymbol(), bestAsk);
+        if (gridSell != null) {
+            return gridSell;
+        }
+        return gridStrategy.sellPriceAfterFill(filledQuote, filledBase, buyFeeBase,
+                fallbackBuyPrice, bestAsk, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
+    }
+
+    private BigDecimal gridWindowSellPrice(String symbol, BigDecimal bestAsk) {
+        if (!mmProps.isGridModeEnabled() || !mmProps.isGridSellFollowWindowEnabled()
+                || bestAsk == null || bestAsk.signum() <= 0) {
+            return null;
+        }
+        HtxGridWindowEntity window;
+        try {
+            window = gridWindowStore.find(symbol);
+        } catch (RuntimeException ex) {
+            log.warn("MM grid sell target read failed; use protected sell price symbol={}", symbol, ex);
+            return null;
+        }
+        if (window == null || window.getAnchorPrice() == null || window.getStepPct() == null
+                || window.getLevels() == null || window.getLevels() <= 0) {
+            return bestAsk.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        }
+        BigDecimal ask = bestAsk.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        List<BigDecimal> levels = MarketMakerMath.gridBuyLevels(window.getAnchorPrice(), window.getStepPct(),
+                window.getLevels(), mmProps.getGridFloorPrice(), MarketMakerMath.PRICE_SCALE);
+        BigDecimal lower = window.getLowerPrice();
+        BigDecimal upper = window.getUpperPrice();
+        if (lower != null && upper != null
+                && ask.compareTo(lower) >= 0 && ask.compareTo(upper) <= 0) {
+            BigDecimal target = null;
+            for (BigDecimal level : levels) {
+                if (level.compareTo(ask) >= 0 && (target == null || level.compareTo(target) < 0)) {
+                    target = level;
+                }
+            }
+            if (target != null) {
+                return target.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+            }
+        }
+        return ask;
     }
 
     private BigDecimal uniqueSellPrice(String symbol, long pairId, BigDecimal floorPrice) {

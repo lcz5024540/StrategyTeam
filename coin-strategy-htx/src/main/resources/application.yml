@@ -82,6 +82,7 @@ htx:
     buy-taker-max-cross-pct: ${HTX_MM_BUY_TAKER_MAX_CROSS_PCT:0.001}            # 价差闸门：ask≤bid·(1+此值) 才吃单（btc/eth 可吃、xautusdt 被挡）
     buy-cancel-retry-cooldown-ms: ${HTX_MM_BUY_CANCEL_RETRY_COOLDOWN_MS:300000} # 零成交买单被取消后，同价/近价位暂停重开，防止 post-only 撤挂风暴
     grid-mode-enabled: ${HTX_MM_GRID_MODE_ENABLED:false}
+    grid-sell-follow-window-enabled: ${HTX_MM_GRID_SELL_FOLLOW_WINDOW_ENABLED:false} # 网格库存卖腿跟随当前窗口/盘口，浮亏风险由合约对冲承接
     grid-step-pct: ${HTX_MM_GRID_STEP_PCT:0.001}
     grid-levels: ${HTX_MM_GRID_LEVELS:20}
     grid-migration-hysteresis-pct: ${HTX_MM_GRID_MIGRATION_HYSTERESIS_PCT:0.0005}
