@@ -101,11 +101,57 @@ public class HtxHedgeRecycleRecorder {
             hedgeMapper.insert(entity);
             return RecordResult.appended(entity.getId());
         } catch (DuplicateKeyException duplicate) {
+            RecordResult reopened = appendReopenAfterFilledClose(entity);
+            if (reopened != null) {
+                return reopened;
+            }
             return RecordResult.duplicated();
         } catch (Exception ex) {
             log.error("hedge intent record failed key={}", entity.getHedgeKey(), ex);
             throw new HtxPersistenceException("hedge intent record failed", ex);
         }
+    }
+
+    private RecordResult appendReopenAfterFilledClose(HtxDeltaHedgeLedgerEntity entity) {
+        HtxDeltaHedgeLedgerEntity existing = hedgeMapper.findByHedgeKey(entity.getHedgeKey());
+        if (!canReopenAfterFilledClose(entity, existing)) {
+            return null;
+        }
+        String originalClientOrderId = entity.getClientOrderId();
+        String originalHedgeKey = entity.getHedgeKey();
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            entity.setClientOrderId(DeltaHedgeManager.retryClientOrderId(
+                    originalClientOrderId, existing.getId(), attempt));
+            entity.setHedgeKey(hedgeKey(entity.getSymbol(), entity.getEpoch(), entity.getClientOrderId()));
+            entity.setUpdatedAt(LocalDateTime.now());
+            try {
+                hedgeMapper.insert(entity);
+                log.warn("hedge intent reopened after filled close originalKey={} newKey={} closedAfterId={}",
+                        originalHedgeKey, entity.getHedgeKey(), existing.getId());
+                return RecordResult.appended(entity.getId());
+            } catch (DuplicateKeyException ignored) {
+                continue;
+            }
+        }
+        entity.setClientOrderId(originalClientOrderId);
+        entity.setHedgeKey(originalHedgeKey);
+        return null;
+    }
+
+    private boolean canReopenAfterFilledClose(HtxDeltaHedgeLedgerEntity entity,
+                                              HtxDeltaHedgeLedgerEntity existing) {
+        if (existing == null || existing.getId() == null) {
+            return false;
+        }
+        if (!DeltaHedgeManager.Action.OPEN_SHORT.name().equals(entity.getAction())
+                || !DeltaHedgeManager.Action.OPEN_SHORT.name().equals(existing.getAction())) {
+            return false;
+        }
+        if (!STATUS_FILLED.equals(existing.getStatus())) {
+            return false;
+        }
+        return hedgeMapper.countLaterRows(entity.getSymbol(), entity.getContractCode(),
+                DeltaHedgeManager.Action.CLOSE_SHORT.name(), STATUS_FILLED, existing.getId()) > 0;
     }
 
     private RecordResult insertRecycle(HtxInventoryRecycleSagaEntity entity) {
@@ -121,7 +167,11 @@ public class HtxHedgeRecycleRecorder {
     }
 
     private static String hedgeKey(String symbol, long epoch, HtxSwapOrderRequest order) {
-        return "hedge:" + symbol + ":" + epoch + ":" + order.getClientOrderId();
+        return hedgeKey(symbol, epoch, order.getClientOrderId());
+    }
+
+    private static String hedgeKey(String symbol, long epoch, String clientOrderId) {
+        return "hedge:" + symbol + ":" + epoch + ":" + clientOrderId;
     }
 
     private static String recycleKey(Long spotFillLedgerId, String closeClientOrderId) {

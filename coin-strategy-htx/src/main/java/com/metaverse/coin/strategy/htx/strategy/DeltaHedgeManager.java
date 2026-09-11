@@ -90,11 +90,20 @@ public class DeltaHedgeManager {
                 .build();
     }
 
+    public static String retryClientOrderId(String clientOrderId, long duplicateRowId, int attempt) {
+        return numericClientOrderId(clientOrderId + ":retry:" + duplicateRowId + ":" + attempt,
+                duplicateRowId);
+    }
+
     private static String clientOrderId(String prefix, long epoch, String action, long contracts) {
         String raw = prefix + ":" + epoch + ":" + action + ":" + contracts;
+        return numericClientOrderId(raw, epoch);
+    }
+
+    private static String numericClientOrderId(String raw, long epochSeed) {
         CRC32 crc32 = new CRC32();
         crc32.update(raw.getBytes(StandardCharsets.UTF_8));
-        long epochPart = Math.floorMod(epoch, CLIENT_ORDER_ID_EPOCH_MOD);
+        long epochPart = Math.floorMod(epochSeed, CLIENT_ORDER_ID_EPOCH_MOD);
         long hashPart = crc32.getValue() % CLIENT_ORDER_ID_HASH_MOD;
         long value = CLIENT_ORDER_ID_BASE + epochPart * CLIENT_ORDER_ID_HASH_MOD + hashPart;
         return Long.toString(value);

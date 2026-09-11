@@ -29,6 +29,15 @@ public interface HtxDeltaHedgeLedgerMapper extends BaseMapper<HtxDeltaHedgeLedge
     @Select("SELECT COUNT(*) FROM htx_delta_hedge_ledger WHERE status = #{status}")
     int countByStatus(@Param("status") String status);
 
+    @Select("SELECT COUNT(*) FROM htx_delta_hedge_ledger "
+            + "WHERE symbol = #{symbol} AND contract_code = #{contractCode} "
+            + "AND action = #{action} AND status = #{status} AND id > #{afterId}")
+    int countLaterRows(@Param("symbol") String symbol,
+                       @Param("contractCode") String contractCode,
+                       @Param("action") String action,
+                       @Param("status") String status,
+                       @Param("afterId") long afterId);
+
     @Update("UPDATE htx_delta_hedge_ledger SET status = #{nextStatus}, reason = #{nextReason}, "
             + "updated_at = CURRENT_TIMESTAMP(3) "
             + "WHERE status = #{expectedStatus} AND exchange_order_id IS NULL "

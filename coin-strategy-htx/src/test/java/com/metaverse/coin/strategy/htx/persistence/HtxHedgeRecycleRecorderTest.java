@@ -72,6 +72,41 @@ class HtxHedgeRecycleRecorderTest {
     }
 
     @Test
+    void filledOpenOffsetByLaterCloseCanAppendReopenIntent() {
+        when(hedgeMapper.insert(any()))
+                .thenThrow(new DuplicateKeyException("duplicate"))
+                .thenAnswer(inv -> {
+                    ((HtxDeltaHedgeLedgerEntity) inv.getArgument(0)).setId(13L);
+                    return 1;
+                });
+        HtxDeltaHedgeLedgerEntity existing = new HtxDeltaHedgeLedgerEntity();
+        existing.setId(2L);
+        existing.setAction(DeltaHedgeManager.Action.OPEN_SHORT.name());
+        existing.setStatus(HtxHedgeRecycleRecorder.STATUS_FILLED);
+        when(hedgeMapper.findByHedgeKey("hedge:xautusdt:7:800004702110380431"))
+                .thenReturn(existing);
+        when(hedgeMapper.countLaterRows("xautusdt", "XAUT-USDT",
+                DeltaHedgeManager.Action.CLOSE_SHORT.name(),
+                HtxHedgeRecycleRecorder.STATUS_FILLED, 2L))
+                .thenReturn(1);
+        DeltaHedgeManager.HedgeDecision decision = new DeltaHedgeManager.HedgeDecision(
+                DeltaHedgeManager.Action.OPEN_SHORT, MovingGridEngine.RUNNING,
+                new BigDecimal("0.023"), order("800004702110380431", "23", false), null);
+
+        HtxHedgeRecycleRecorder.RecordResult result =
+                recorder.recordHedgeIntent("xautusdt", 7L, decision);
+
+        assertTrue(result.appended());
+        ArgumentCaptor<HtxDeltaHedgeLedgerEntity> cap =
+                ArgumentCaptor.forClass(HtxDeltaHedgeLedgerEntity.class);
+        verify(hedgeMapper, times(2)).insert(cap.capture());
+        HtxDeltaHedgeLedgerEntity reopened = cap.getAllValues().get(1);
+        assertTrue(reopened.getClientOrderId().matches("\\d{18}"));
+        assertNotEquals("800004702110380431", reopened.getClientOrderId());
+        assertTrue(reopened.getHedgeKey().endsWith(reopened.getClientOrderId()));
+    }
+
+    @Test
     void noneHedgeDecisionIsSkipped() {
         HtxHedgeRecycleRecorder.RecordResult result = recorder.recordHedgeIntent(
                 "xautusdt", 9L, DeltaHedgeManager.HedgeDecision.none(
