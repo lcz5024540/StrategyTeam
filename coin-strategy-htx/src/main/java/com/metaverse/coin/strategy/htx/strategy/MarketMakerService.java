@@ -1170,8 +1170,87 @@ public class MarketMakerService {
     }
 
     private BigDecimal uniqueSellPrice(MarketMakerCell cell, BigDecimal floorPrice) {
+        BigDecimal gridPrice = uniqueGridWindowSellPrice(cell, floorPrice);
+        if (gridPrice != null) {
+            return gridPrice;
+        }
         return uniqueSellPrice(cell.getSymbol(), cell.getPairId(), floorPrice,
                 gridSellPriceCeiling(cell.getSymbol(), floorPrice));
+    }
+
+    private BigDecimal uniqueGridWindowSellPrice(MarketMakerCell cell, BigDecimal floorPrice) {
+        if (!mmProps.isGridModeEnabled() || !mmProps.isGridSellFollowWindowEnabled()
+                || cell == null || floorPrice == null || floorPrice.signum() <= 0) {
+            return null;
+        }
+        HtxGridWindowEntity window;
+        try {
+            window = gridWindowStore.find(cell.getSymbol());
+        } catch (RuntimeException ex) {
+            log.warn("MM grid sell level read failed; use bounded de-dup pairId={} symbol={}",
+                    cell.getPairId(), cell.getSymbol(), ex);
+            return null;
+        }
+        if (window == null || window.getAnchorPrice() == null || window.getStepPct() == null
+                || window.getLevels() == null || window.getLevels() <= 0
+                || window.getLowerPrice() == null || window.getUpperPrice() == null) {
+            return null;
+        }
+        BigDecimal floor = floorPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        if (floor.compareTo(window.getLowerPrice()) < 0 || floor.compareTo(window.getUpperPrice()) > 0) {
+            return null;
+        }
+        List<BigDecimal> activeSellPrices = activeSellPricesWithinCeiling(
+                cell.getSymbol(), cell.getPairId(), window.getUpperPrice());
+        List<BigDecimal> gridSellLevels = MarketMakerMath.gridBuyLevels(window.getAnchorPrice(), window.getStepPct(),
+                        window.getLevels(), mmProps.getGridFloorPrice(), MarketMakerMath.PRICE_SCALE)
+                .stream()
+                .map(price -> price.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING))
+                .filter(price -> price.compareTo(floor) >= 0)
+                .filter(price -> price.compareTo(window.getLowerPrice()) >= 0
+                        && price.compareTo(window.getUpperPrice()) <= 0)
+                .sorted()
+                .collect(Collectors.toList());
+        for (BigDecimal level : gridSellLevels) {
+            if (activeSellPrices.stream().noneMatch(price -> price.compareTo(level) == 0)) {
+                return level;
+            }
+        }
+        BigDecimal currentSell = cell.getSellPrice();
+        if (currentSell != null && currentSell.signum() > 0) {
+            BigDecimal current = currentSell.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+            if (current.compareTo(window.getLowerPrice()) >= 0 && current.compareTo(window.getUpperPrice()) <= 0) {
+                log.info("MM grid sell levels occupied; keep current in-window price pairId={} symbol={} floor={} current={} activeSellCount={}",
+                        cell.getPairId(), cell.getSymbol(), floor, current, activeSellPrices.size());
+                return current;
+            }
+        }
+        return null;
+    }
+
+    private List<BigDecimal> activeSellPricesWithinCeiling(String symbol, long pairId, BigDecimal ceilingPrice) {
+        List<HtxLockedPairEntity> openCells;
+        try {
+            openCells = recorder.findOpenMmCells(symbol);
+        } catch (RuntimeException ex) {
+            log.warn("MM sell price de-dup read failed; use protected grid price pairId={} symbol={}",
+                    pairId, symbol, ex);
+            return Collections.emptyList();
+        }
+        if (openCells == null) {
+            openCells = Collections.emptyList();
+        }
+        BigDecimal ceiling = ceilingPrice == null ? null
+                : ceilingPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        return openCells.stream()
+                .filter(openCell -> openCell.getId() == null || openCell.getId() != pairId)
+                .filter(openCell -> HtxStatus.MM_RESTING_SELL.equals(openCell.getStatus())
+                        || HtxStatus.MM_SELL_RETRYABLE.equals(openCell.getStatus()))
+                .map(HtxLockedPairEntity::getSellPrice)
+                .filter(price -> price != null && price.signum() > 0)
+                .map(price -> price.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING))
+                .filter(price -> ceiling == null || price.compareTo(ceiling) <= 0)
+                .collect(Collectors.toList());
     }
 
     private BigDecimal gridSellPriceCeiling(String symbol, BigDecimal floorPrice) {

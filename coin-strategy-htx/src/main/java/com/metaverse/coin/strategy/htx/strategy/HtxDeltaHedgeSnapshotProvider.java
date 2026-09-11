@@ -241,7 +241,7 @@ public class HtxDeltaHedgeSnapshotProvider {
     private BasisSnapshot loadBasis(String symbol, String contractCode, BigDecimal maxBasisRate) {
         BigDecimal maxRate = positive(maxBasisRate);
         if (maxRate.signum() <= 0) {
-            return new BasisSnapshot(true, true, BigDecimal.ZERO, null);
+            return new BasisSnapshot(true, true, swapMid(contractCode), null);
         }
         BigDecimal spotMid = spotMid(symbol);
         if (spotMid.signum() <= 0) {

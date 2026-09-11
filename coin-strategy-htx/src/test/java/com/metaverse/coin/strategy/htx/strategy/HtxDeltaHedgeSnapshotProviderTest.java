@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -247,6 +248,25 @@ class HtxDeltaHedgeSnapshotProviderTest {
         assertTrue(snapshot.input().basisAllowed());
         assertEquals(DeltaHedgeManager.Action.OPEN_SHORT, decision.action());
         assertEquals("23", decision.orderRequest().getVolume());
+    }
+
+
+    @Test
+    void disabledBasisGateStillUsesSwapMidForExistingShortLiquidationCheck() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(position("short", null, "23", "5000"))));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding("0.0001")));
+        when(swap.depth("XAUT-USDT", 6)).thenReturn(ok(depth("4201", "4203")));
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(
+                request(new BigDecimal("0.046"), new BigDecimal("0.0010"), BigDecimal.ZERO));
+
+        assertTrue(snapshot.available());
+        assertTrue(snapshot.input().basisAllowed());
+        assertTrue(snapshot.input().marginSafe());
+        assertEquals(23L, snapshot.input().currentShortContracts());
+        verify(spotMarketData, never()).depth(anyString(), anyInt());
     }
 
     @Test
