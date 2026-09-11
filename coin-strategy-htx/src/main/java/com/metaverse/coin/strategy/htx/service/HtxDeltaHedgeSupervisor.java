@@ -182,8 +182,10 @@ public class HtxDeltaHedgeSupervisor {
         if (recorded.duplicate()) {
             return new PlanningSummary(1, 0, 1, 0, degraded);
         }
-        log.debug("MM hedge planner skipped symbol={} epoch={} reason={} snapshotReason={}",
-                symbol, window.getEpoch(), recorded.skippedReason(), snapshot.reason());
+        log.warn("MM hedge planner skipped symbol={} epoch={} state={} action={} targetShortBase={} reason={} "
+                        + "snapshotAvailable={} snapshotReason={}",
+                symbol, window.getEpoch(), decision.state(), decision.action(), decision.targetShortBase(),
+                recorded.skippedReason(), snapshot.available(), snapshot.reason());
         return new PlanningSummary(1, 0, 0, 1, degraded);
     }
 
