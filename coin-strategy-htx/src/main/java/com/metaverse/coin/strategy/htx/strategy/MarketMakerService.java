@@ -27,6 +27,7 @@ import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -1216,6 +1217,15 @@ public class MarketMakerService {
                 return level;
             }
         }
+        List<BigDecimal> packedSellLevels = packedWindowSellLevels(floor, window.getUpperPrice(),
+                activeSellPrices.size() + 1);
+        for (BigDecimal level : packedSellLevels) {
+            if (activeSellPrices.stream().noneMatch(price -> price.compareTo(level) == 0)) {
+                log.info("MM grid sell uses packed overflow price pairId={} symbol={} floor={} adjusted={} activeSellCount={}",
+                        cell.getPairId(), cell.getSymbol(), floor, level, activeSellPrices.size());
+                return level;
+            }
+        }
         BigDecimal currentSell = cell.getSellPrice();
         if (currentSell != null && currentSell.signum() > 0) {
             BigDecimal current = currentSell.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
@@ -1226,6 +1236,33 @@ public class MarketMakerService {
             }
         }
         return null;
+    }
+
+    private List<BigDecimal> packedWindowSellLevels(BigDecimal floorPrice, BigDecimal ceilingPrice, int desiredSlots) {
+        BigDecimal floor = floorPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        BigDecimal ceiling = ceilingPrice.setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+        if (ceiling.compareTo(floor) < 0) {
+            return Collections.emptyList();
+        }
+        int slots = Math.max(2, Math.min(Math.max(1, desiredSlots), mmProps.getMaxConcurrentCellsPerSymbol()));
+        BigDecimal tick = BigDecimal.ONE.movePointLeft(MarketMakerMath.PRICE_SCALE);
+        BigDecimal span = ceiling.subtract(floor);
+        BigDecimal step = span.signum() <= 0 ? tick
+                : span.divide(BigDecimal.valueOf(slots - 1L), MarketMakerMath.PRICE_SCALE + 4, RoundingMode.HALF_UP)
+                .max(tick);
+        List<BigDecimal> levels = new ArrayList<>();
+        for (int i = 0; i < slots; i++) {
+            BigDecimal rawLevel = floor.add(step.multiply(BigDecimal.valueOf(i)))
+                    .setScale(MarketMakerMath.PRICE_SCALE, RoundingMode.CEILING);
+            BigDecimal level = rawLevel.compareTo(ceiling) > 0 ? ceiling : rawLevel;
+            if (levels.stream().noneMatch(existing -> existing.compareTo(level) == 0)) {
+                levels.add(level);
+            }
+        }
+        if (levels.stream().noneMatch(existing -> existing.compareTo(ceiling) == 0)) {
+            levels.add(ceiling);
+        }
+        return levels;
     }
 
     private List<BigDecimal> activeSellPricesWithinCeiling(String symbol, long pairId, BigDecimal ceilingPrice) {
