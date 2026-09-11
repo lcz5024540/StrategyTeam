@@ -222,7 +222,7 @@ public class HtxDeltaHedgeSnapshotProvider {
     private FundingSnapshot loadFunding(String contractCode, BigDecimal maxAbsFundingRate) {
         BigDecimal maxAbsRate = positive(maxAbsFundingRate);
         if (maxAbsRate.signum() <= 0) {
-            return FundingSnapshot.degraded("funding threshold missing");
+            return new FundingSnapshot(true, true, null);
         }
         HtxRestResponse<HtxSwapFundingRate> response = swap.fundingRate(contractCode);
         if (response == null || !response.ok() || response.payload() == null) {
@@ -241,7 +241,7 @@ public class HtxDeltaHedgeSnapshotProvider {
     private BasisSnapshot loadBasis(String symbol, String contractCode, BigDecimal maxBasisRate) {
         BigDecimal maxRate = positive(maxBasisRate);
         if (maxRate.signum() <= 0) {
-            return BasisSnapshot.degraded("basis threshold missing");
+            return new BasisSnapshot(true, true, BigDecimal.ZERO, null);
         }
         BigDecimal spotMid = spotMid(symbol);
         if (spotMid.signum() <= 0) {

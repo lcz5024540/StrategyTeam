@@ -218,6 +218,39 @@ class HtxDeltaHedgeSnapshotProviderTest {
     }
 
     @Test
+    void missingSpotDepthFailsClosedWhenBasisGateIsEnabled() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding("0.0001")));
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(request(new BigDecimal("1")));
+        DeltaHedgeManager.HedgeDecision decision = new DeltaHedgeManager().plan(snapshot.input());
+
+        assertFalse(snapshot.available());
+        assertEquals("spot depth unavailable", snapshot.reason());
+        assertEquals(MarketMakerRiskCoordinator.HEDGE_DEGRADED, decision.state());
+        assertNull(decision.orderRequest());
+    }
+
+    @Test
+    void disabledBasisGateAllowsOpenShortFromInventoryWhenSpotDepthIsUnavailable() {
+        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account("normal", "100"))));
+        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding("0.0001")));
+
+        HtxDeltaHedgeSnapshotProvider.HedgeSnapshot snapshot = provider.snapshot(
+                request(new BigDecimal("0.046"), new BigDecimal("0.0010"), BigDecimal.ZERO));
+        DeltaHedgeManager.HedgeDecision decision = new DeltaHedgeManager().plan(snapshot.input());
+
+        assertTrue(snapshot.available());
+        assertTrue(snapshot.input().basisAllowed());
+        assertEquals(DeltaHedgeManager.Action.OPEN_SHORT, decision.action());
+        assertEquals("23", decision.orderRequest().getVolume());
+    }
+
+    @Test
     void closeLiquidationDistanceAllowsReduceOnlyShortReductionOnly() {
         when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(contract("0.001"))));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(position("short", null, "50", "4210"))));
@@ -235,10 +268,15 @@ class HtxDeltaHedgeSnapshotProviderTest {
     }
 
     private static HtxDeltaHedgeSnapshotProvider.HedgeSourceRequest request(BigDecimal inventory) {
+        return request(inventory, new BigDecimal("0.0010"), new BigDecimal("0.0020"));
+    }
+
+    private static HtxDeltaHedgeSnapshotProvider.HedgeSourceRequest request(
+            BigDecimal inventory, BigDecimal maxAbsFundingRate, BigDecimal maxBasisRate) {
         return new HtxDeltaHedgeSnapshotProvider.HedgeSourceRequest(
                 true, "xautusdt", null, inventory, new BigDecimal("0.5"),
                 new BigDecimal("2"), true, true, new BigDecimal("10"),
-                new BigDecimal("0.0010"), new BigDecimal("0.0020"), new BigDecimal("0.1000"),
+                maxAbsFundingRate, maxBasisRate, new BigDecimal("0.1000"),
                 "CS-MM-HEDGE-XAUTUSDT", 7L);
     }
 

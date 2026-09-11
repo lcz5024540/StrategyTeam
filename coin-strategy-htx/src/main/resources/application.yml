@@ -126,8 +126,8 @@ htx:
     hedge-ratio: ${HTX_CONTRACT_HEDGE_RATIO:0.5}
     hedge-max-short-base: ${HTX_CONTRACT_HEDGE_MAX_SHORT_BASE:0.05}
     hedge-minimum-margin-available: ${HTX_CONTRACT_HEDGE_MINIMUM_MARGIN_AVAILABLE:10}
-    hedge-max-abs-funding-rate: ${HTX_CONTRACT_HEDGE_MAX_ABS_FUNDING_RATE:0.0010}
-    hedge-max-basis-rate: ${HTX_CONTRACT_HEDGE_MAX_BASIS_RATE:0.0020}
+    hedge-max-abs-funding-rate: ${HTX_CONTRACT_HEDGE_MAX_ABS_FUNDING_RATE:0.0010} # <=0 跳过资金费率 gate
+    hedge-max-basis-rate: ${HTX_CONTRACT_HEDGE_MAX_BASIS_RATE:0.0020}             # <=0 跳过现货/合约基差 gate
     hedge-minimum-liquidation-distance-rate: ${HTX_CONTRACT_HEDGE_MINIMUM_LIQUIDATION_DISTANCE_RATE:0.1000}
     hedge-supervisor-shadow-only: ${HTX_CONTRACT_HEDGE_SUPERVISOR_SHADOW_ONLY:true}
     # Future live-send gate. Requires shadow-only=false plus dry-run=false plus live-enabled=true.
