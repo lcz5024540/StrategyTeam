@@ -80,6 +80,44 @@ class CrossExchangeRiskServiceTest {
         assertEquals("MAX_NAKED_DURATION", assessment.reason());
     }
 
+    @Test
+    void keepsEconomicallyWeakPositionUntilMinimumHoldingDuration() {
+        Instant now = Instant.now();
+        var risk = new CrossExchangeRiskService(new CrossExchangeRiskService.Limits(
+                new BigDecimal("100"), new BigDecimal("100"), Duration.ofSeconds(5),
+                Duration.ofHours(16), BigDecimal.ZERO, new BigDecimal("0.002"),
+                Duration.ofHours(8)));
+        PaperHedgePosition position = new PaperHedgePosition("position", opportunity("BTCUSDT", now),
+                null, null, BigDecimal.ONE, PaperHedgePosition.Status.OPENED, now, now, null);
+
+        var beforeMinimum = risk.shouldExit(position, new BigDecimal("-0.001"),
+                new BigDecimal("0.001"), now.plus(Duration.ofHours(7)), true, false);
+        var afterMinimum = risk.shouldExit(position, new BigDecimal("-0.001"),
+                new BigDecimal("0.001"), now.plus(Duration.ofHours(8)), true, false);
+
+        assertFalse(beforeMinimum.passed());
+        assertEquals("MIN_HOLDING_DURATION", beforeMinimum.reason());
+        assertTrue(afterMinimum.passed());
+        assertEquals("NET_YIELD_EXIT_THRESHOLD", afterMinimum.reason());
+    }
+
+    @Test
+    void basisStopOverridesMinimumHoldingDuration() {
+        Instant now = Instant.now();
+        var risk = new CrossExchangeRiskService(new CrossExchangeRiskService.Limits(
+                new BigDecimal("100"), new BigDecimal("100"), Duration.ofSeconds(5),
+                Duration.ofHours(16), BigDecimal.ZERO, new BigDecimal("0.002"),
+                Duration.ofHours(8)));
+        PaperHedgePosition position = new PaperHedgePosition("position", opportunity("BTCUSDT", now),
+                null, null, BigDecimal.ONE, PaperHedgePosition.Status.OPENED, now, now, null);
+
+        var assessment = risk.shouldExit(position, BigDecimal.ONE, new BigDecimal("0.003"),
+                now.plus(Duration.ofMinutes(1)), true, false);
+
+        assertTrue(assessment.passed());
+        assertEquals("MARK_PRICE_DEVIATION", assessment.reason());
+    }
+
     private CrossExchangeOpportunity opportunity(String symbol, Instant now) {
         NormalizedFundingRateSnapshot longQuote = new NormalizedFundingRateSnapshot(
                 Exchange.BINANCE, symbol, new BigDecimal("-0.001"), 8,

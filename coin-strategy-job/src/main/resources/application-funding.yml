@@ -26,10 +26,10 @@ arbitrage:
     contract-sync-delay-ms: 43200000
     # 以可成交买卖价而非 Mark Price 限制跨所 basis。
     # 首个共同结算窗口至少覆盖确定性开平/滑点/转账成本；后续窗口才按完整利润观察。
-    max-executable-basis: 0.003
-    minimum-cost-coverage-ratio: 1.0
+    max-executable-basis: 0.0015
+    minimum-cost-coverage-ratio: 2.0
     expected-holding-windows: 2
-    minimum-horizon-net-yield: 0.0001
+    minimum-horizon-net-yield: 0.0015
     health-check-enabled: true
     recovery-enabled: true
     # Paper 观测以 cross_exchange_arb_opportunity 数据库记录为准；关闭本地 CSV replay 文件采集。
@@ -45,12 +45,18 @@ arbitrage:
     paper-capital-per-exchange: 2000
     # 首轮 OKX/Bitget Paper 对齐逐仓 5x；每腿名义限制 2,000U，真实下单仍硬禁用。
     maximum-paper-leverage: 5
-    max-symbol-notional: 2000
-    max-exchange-notional: 2000
-    auto-paper-open-enabled: true
-    # 0 means use the approved opportunity's full executable notional after pre-trade revalidation.
-    auto-paper-open-notional: 0
+    max-symbol-notional: 200
+    max-exchange-notional: 600
+    auto-paper-open-enabled: false
+    auto-paper-open-notional: 200
     auto-paper-open-max-per-cycle: 1
+    auto-paper-allowed-pairs: "BITGET>OKX"
+    auto-paper-max-open-positions: 2
+    auto-paper-failure-cooldown-ms: 300000
+    auto-paper-daily-net-loss-budget: 3
+    minimum-holding-duration-ms: 28800000
+    maximum-holding-duration-ms: 57600000
+    max-mark-price-deviation: 0.002
     # Persist Paper PnL snapshots into cross_exchange_risk_snapshot for the 7-day observation window.
     paper-pnl-snapshot-enabled: true
     paper-pnl-snapshot-window-days: 7

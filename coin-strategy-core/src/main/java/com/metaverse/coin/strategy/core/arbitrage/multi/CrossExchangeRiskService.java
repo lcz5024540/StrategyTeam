@@ -8,16 +8,22 @@ import java.util.Collection;
 public class CrossExchangeRiskService {
     public record Limits(BigDecimal maxSymbolNotional, BigDecimal maxExchangeNotional,
             Duration maxNakedDuration, Duration maxHoldingDuration, BigDecimal exitNetYield,
-            BigDecimal maxMarkPriceDeviation) {
+            BigDecimal maxMarkPriceDeviation, Duration minHoldingDuration) {
         public Limits(BigDecimal maxSymbolNotional, Duration maxNakedDuration,
                 Duration maxHoldingDuration, BigDecimal exitNetYield) {
             this(maxSymbolNotional, maxSymbolNotional, maxNakedDuration, maxHoldingDuration,
-                    exitNetYield, new BigDecimal("0.01"));
+                    exitNetYield, new BigDecimal("0.01"), Duration.ZERO);
         }
         public Limits(BigDecimal maxSymbolNotional, BigDecimal maxExchangeNotional,
                 Duration maxNakedDuration, Duration maxHoldingDuration, BigDecimal exitNetYield) {
             this(maxSymbolNotional, maxExchangeNotional, maxNakedDuration, maxHoldingDuration,
-                    exitNetYield, new BigDecimal("0.01"));
+                    exitNetYield, new BigDecimal("0.01"), Duration.ZERO);
+        }
+        public Limits(BigDecimal maxSymbolNotional, BigDecimal maxExchangeNotional,
+                Duration maxNakedDuration, Duration maxHoldingDuration, BigDecimal exitNetYield,
+                BigDecimal maxMarkPriceDeviation) {
+            this(maxSymbolNotional, maxExchangeNotional, maxNakedDuration, maxHoldingDuration,
+                    exitNetYield, maxMarkPriceDeviation, Duration.ZERO);
         }
     }
     public record Assessment(boolean passed, String reason) { }
@@ -82,8 +88,12 @@ public class CrossExchangeRiskService {
         if (markPriceDeviation.compareTo(limits.maxMarkPriceDeviation()) > 0) {
             return new Assessment(true, "MARK_PRICE_DEVIATION");
         }
-        if (latestNetYield.compareTo(limits.exitNetYield()) < 0) return new Assessment(true, "NET_YIELD_EXIT_THRESHOLD");
         if (position.openedAt() != null && position.openedAt().plus(limits.maxHoldingDuration()).isBefore(now)) return new Assessment(true, "MAX_HOLDING_DURATION");
+        if (position.openedAt() != null
+                && position.openedAt().plus(limits.minHoldingDuration()).isAfter(now)) {
+            return new Assessment(false, "MIN_HOLDING_DURATION");
+        }
+        if (latestNetYield.compareTo(limits.exitNetYield()) < 0) return new Assessment(true, "NET_YIELD_EXIT_THRESHOLD");
         return new Assessment(false, null);
     }
 

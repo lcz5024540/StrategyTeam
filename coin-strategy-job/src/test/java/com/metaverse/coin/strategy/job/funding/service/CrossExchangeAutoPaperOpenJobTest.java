@@ -149,17 +149,53 @@ class CrossExchangeAutoPaperOpenJobTest {
         verify(paper, never()).open(any(), any(), any());
     }
 
+    @Test
+    void rejectsDirectionOutsideConfiguredAllowList() {
+        CrossExchangeOpportunity opportunity = opportunity("approved", "BTCUSDT", "0.0008", "250");
+        when(scanner.approvedOpportunities(NOW)).thenReturn(List.of(opportunity));
+        when(paper.positions()).thenReturn(List.of());
+        when(positions.selectList(any())).thenReturn(List.of());
+        MockEnvironment environment = baseEnvironment("200", "1")
+                .withProperty("arbitrage.multi-exchange.auto-paper-allowed-pairs", "BITGET>OKX");
+
+        int opened = job(new MultiExchangeFundingRateProperties(environment)).openApproved(NOW);
+
+        assertEquals(0, opened);
+        verify(scanner, never()).revalidateApprovedOpportunity(any(), any(), any());
+    }
+
+    @Test
+    void coolsDownFailedOpportunityInsteadOfRetryingEveryCycle() {
+        CrossExchangeOpportunity opportunity = opportunity("approved", "BTCUSDT", "0.0008", "250");
+        when(scanner.approvedOpportunities(any())).thenReturn(List.of(opportunity));
+        when(scanner.revalidateApprovedOpportunity(eq("approved"), any(BigDecimal.class), any()))
+                .thenReturn(Optional.empty());
+        when(paper.positions()).thenReturn(List.of());
+        when(positions.selectList(any())).thenReturn(List.of());
+        CrossExchangeAutoPaperOpenJob job = job(properties("200", "1"));
+
+        assertEquals(0, job.openApproved(NOW));
+        assertEquals(0, job.openApproved(NOW.plusSeconds(30)));
+
+        verify(scanner).revalidateApprovedOpportunity(eq("approved"), any(BigDecimal.class), eq(NOW));
+        verify(scanner, never()).revalidateApprovedOpportunity(eq("approved"), any(BigDecimal.class),
+                eq(NOW.plusSeconds(30)));
+    }
+
     private CrossExchangeAutoPaperOpenJob job(MultiExchangeFundingRateProperties properties) {
         return new CrossExchangeAutoPaperOpenJob(scanner, paper, positions, properties,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private MultiExchangeFundingRateProperties properties(String notional, String maxPerCycle) {
-        MockEnvironment environment = new MockEnvironment()
+        return new MultiExchangeFundingRateProperties(baseEnvironment(notional, maxPerCycle));
+    }
+
+    private MockEnvironment baseEnvironment(String notional, String maxPerCycle) {
+        return new MockEnvironment()
                 .withProperty("arbitrage.multi-exchange.auto-paper-open-enabled", "true")
                 .withProperty("arbitrage.multi-exchange.auto-paper-open-notional", notional)
                 .withProperty("arbitrage.multi-exchange.auto-paper-open-max-per-cycle", maxPerCycle);
-        return new MultiExchangeFundingRateProperties(environment);
     }
 
     private boolean sameAmount(BigDecimal actual, String expected) {

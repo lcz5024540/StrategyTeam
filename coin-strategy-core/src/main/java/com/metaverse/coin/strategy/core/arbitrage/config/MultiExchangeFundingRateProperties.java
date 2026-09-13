@@ -51,6 +51,10 @@ public class MultiExchangeFundingRateProperties {
     private final boolean autoPaperOpenEnabled;
     private final BigDecimal autoPaperOpenNotional;
     private final int autoPaperOpenMaxPerCycle;
+    private final Set<String> autoPaperAllowedPairs;
+    private final int autoPaperMaxOpenPositions;
+    private final Duration autoPaperFailureCooldown;
+    private final BigDecimal autoPaperDailyNetLossBudget;
     private final boolean paperPnlSnapshotEnabled;
     private final int paperPnlSnapshotWindowDays;
     private final BigDecimal exitNetYield;
@@ -59,6 +63,7 @@ public class MultiExchangeFundingRateProperties {
     private final Duration stabilityWindow;
     private final Duration maximumNakedDuration;
     private final Duration maximumHoldingDuration;
+    private final Duration minimumHoldingDuration;
 
     public MultiExchangeFundingRateProperties() {
         this.exchanges = EnumSet.of(Exchange.BINANCE, Exchange.OKX, Exchange.HTX, Exchange.BITGET,
@@ -94,6 +99,10 @@ public class MultiExchangeFundingRateProperties {
         this.autoPaperOpenEnabled = false;
         this.autoPaperOpenNotional = BigDecimal.ZERO;
         this.autoPaperOpenMaxPerCycle = 1;
+        this.autoPaperAllowedPairs = Set.of();
+        this.autoPaperMaxOpenPositions = 2;
+        this.autoPaperFailureCooldown = Duration.ofMinutes(5);
+        this.autoPaperDailyNetLossBudget = new BigDecimal("3");
         this.paperPnlSnapshotEnabled = false;
         this.paperPnlSnapshotWindowDays = 7;
         this.exitNetYield = new BigDecimal("0.00001");
@@ -102,6 +111,7 @@ public class MultiExchangeFundingRateProperties {
         this.stabilityWindow = Duration.ofMinutes(3);
         this.maximumNakedDuration = Duration.ofSeconds(10);
         this.maximumHoldingDuration = Duration.ofDays(7);
+        this.minimumHoldingDuration = Duration.ZERO;
     }
 
     @Autowired
@@ -155,6 +165,20 @@ public class MultiExchangeFundingRateProperties {
                 "arbitrage.multi-exchange.auto-paper-open-notional", "0");
         this.autoPaperOpenMaxPerCycle = positiveInt(env,
                 "arbitrage.multi-exchange.auto-paper-open-max-per-cycle", 1);
+        String allowedPairs = env.getProperty(
+                "arbitrage.multi-exchange.auto-paper-allowed-pairs", "");
+        this.autoPaperAllowedPairs = allowedPairs.isBlank() ? Set.of()
+                : Arrays.stream(allowedPairs.split(","))
+                        .map(String::trim)
+                        .filter(value -> !value.isBlank())
+                        .map(String::toUpperCase)
+                        .collect(Collectors.toUnmodifiableSet());
+        this.autoPaperMaxOpenPositions = positiveInt(env,
+                "arbitrage.multi-exchange.auto-paper-max-open-positions", 2);
+        this.autoPaperFailureCooldown = Duration.ofMillis(longValue(env,
+                "arbitrage.multi-exchange.auto-paper-failure-cooldown-ms", 300000L));
+        this.autoPaperDailyNetLossBudget = decimal(env,
+                "arbitrage.multi-exchange.auto-paper-daily-net-loss-budget", "3");
         this.paperPnlSnapshotEnabled = Boolean.parseBoolean(env.getProperty(
                 "arbitrage.multi-exchange.paper-pnl-snapshot-enabled", "false"));
         this.paperPnlSnapshotWindowDays = positiveInt(env,
@@ -165,6 +189,8 @@ public class MultiExchangeFundingRateProperties {
         this.stabilityWindow = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.stability-window-ms", 180000L));
         this.maximumNakedDuration = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-naked-duration-ms", 10000L));
         this.maximumHoldingDuration = Duration.ofMillis(longValue(env, "arbitrage.multi-exchange.maximum-holding-duration-ms", 604800000L));
+        this.minimumHoldingDuration = Duration.ofMillis(longValue(env,
+                "arbitrage.multi-exchange.minimum-holding-duration-ms", 0L));
     }
     private static BigDecimal decimal(Environment e, String key, String fallback) {
         return new BigDecimal(e.getProperty(key, fallback));
@@ -201,6 +227,10 @@ public class MultiExchangeFundingRateProperties {
     public boolean isAutoPaperOpenEnabled() { return autoPaperOpenEnabled; }
     public BigDecimal getAutoPaperOpenNotional() { return autoPaperOpenNotional; }
     public int getAutoPaperOpenMaxPerCycle() { return autoPaperOpenMaxPerCycle; }
+    public Set<String> getAutoPaperAllowedPairs() { return autoPaperAllowedPairs; }
+    public int getAutoPaperMaxOpenPositions() { return autoPaperMaxOpenPositions; }
+    public Duration getAutoPaperFailureCooldown() { return autoPaperFailureCooldown; }
+    public BigDecimal getAutoPaperDailyNetLossBudget() { return autoPaperDailyNetLossBudget; }
     public boolean isPaperPnlSnapshotEnabled() { return paperPnlSnapshotEnabled; }
     public int getPaperPnlSnapshotWindowDays() { return paperPnlSnapshotWindowDays; }
     public BigDecimal getExitNetYield() { return exitNetYield; }
@@ -209,6 +239,7 @@ public class MultiExchangeFundingRateProperties {
     public Duration getStabilityWindow() { return stabilityWindow; }
     public Duration getMaximumNakedDuration() { return maximumNakedDuration; }
     public Duration getMaximumHoldingDuration() { return maximumHoldingDuration; }
+    public Duration getMinimumHoldingDuration() { return minimumHoldingDuration; }
     private static long longValue(Environment environment, String key, long fallback) {
         return Long.parseLong(environment.getProperty(key, String.valueOf(fallback)));
     }

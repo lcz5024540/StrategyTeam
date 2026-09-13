@@ -21,8 +21,10 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -44,31 +46,42 @@ public class CrossExchangeAutoPaperOpenJob {
     private final CrossExchangeArbPositionMapper positions;
     private final MultiExchangeFundingRateProperties properties;
     private final CrossExchangeStrategyLeaseService leases;
+    private final CrossExchangePaperPnlService pnlService;
     private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private final Map<String, Instant> failedUntil = new ConcurrentHashMap<>();
 
     @Autowired
     public CrossExchangeAutoPaperOpenJob(CrossExchangeOpportunityScanService scanner,
             CrossExchangePaperTradingService paper, CrossExchangeArbPositionMapper positions,
-            MultiExchangeFundingRateProperties properties, CrossExchangeStrategyLeaseService leases) {
-        this(scanner, paper, positions, properties, leases, Clock.systemUTC());
+            MultiExchangeFundingRateProperties properties, CrossExchangeStrategyLeaseService leases,
+            CrossExchangePaperPnlService pnlService) {
+        this(scanner, paper, positions, properties, leases, pnlService, Clock.systemUTC());
     }
 
     CrossExchangeAutoPaperOpenJob(CrossExchangeOpportunityScanService scanner,
             CrossExchangePaperTradingService paper, CrossExchangeArbPositionMapper positions,
             MultiExchangeFundingRateProperties properties, Clock clock) {
-        this(scanner, paper, positions, properties, null, clock);
+        this(scanner, paper, positions, properties, null, null, clock);
     }
 
     CrossExchangeAutoPaperOpenJob(CrossExchangeOpportunityScanService scanner,
             CrossExchangePaperTradingService paper, CrossExchangeArbPositionMapper positions,
             MultiExchangeFundingRateProperties properties, CrossExchangeStrategyLeaseService leases,
             Clock clock) {
+        this(scanner, paper, positions, properties, leases, null, clock);
+    }
+
+    CrossExchangeAutoPaperOpenJob(CrossExchangeOpportunityScanService scanner,
+            CrossExchangePaperTradingService paper, CrossExchangeArbPositionMapper positions,
+            MultiExchangeFundingRateProperties properties, CrossExchangeStrategyLeaseService leases,
+            CrossExchangePaperPnlService pnlService, Clock clock) {
         this.scanner = scanner;
         this.paper = paper;
         this.positions = positions;
         this.properties = properties;
         this.leases = leases;
+        this.pnlService = pnlService;
         this.clock = clock;
     }
 
@@ -93,11 +106,20 @@ public class CrossExchangeAutoPaperOpenJob {
             int attempts = 0;
             int opened = 0;
             Set<String> activeSymbols = activeSymbols();
+            if (activeSymbols.size() >= properties.getAutoPaperMaxOpenPositions()) {
+                return 0;
+            }
+            if (dailyLossBudgetExhausted()) {
+                return 0;
+            }
             for (CrossExchangeOpportunity candidate : candidates) {
                 if (attempts >= properties.getAutoPaperOpenMaxPerCycle()) {
                     break;
                 }
                 if (activeSymbols.contains(candidate.symbol())) {
+                    continue;
+                }
+                if (!isAllowedPair(candidate) || isCoolingDown(candidate, now)) {
                     continue;
                 }
                 if (paper.isCircuitOpen(candidate, now)) {
@@ -121,6 +143,7 @@ public class CrossExchangeAutoPaperOpenJob {
                 if (refreshed.isEmpty()) {
                     LOG.info("[FundingAutoPaperOpen] skip stale opportunity: id={}, symbol={}",
                             candidate.opportunityId(), candidate.symbol());
+                    markFailure(candidate, now);
                     continue;
                 }
                 if (paper.isCircuitOpen(refreshed.get(), now)) {
@@ -147,6 +170,7 @@ public class CrossExchangeAutoPaperOpenJob {
                         break;
                     }
                 } catch (RuntimeException exception) {
+                    markFailure(candidate, now);
                     LOG.warn("[FundingAutoPaperOpen] failed to open paper position: id={}, symbol={}, reason={}",
                             candidate.opportunityId(), candidate.symbol(), exception.getMessage());
                 }
@@ -169,6 +193,46 @@ public class CrossExchangeAutoPaperOpenJob {
         }
         return opportunity.executableNotional() == null ? BigDecimal.ZERO
                 : opportunity.executableNotional();
+    }
+
+    private boolean isAllowedPair(CrossExchangeOpportunity opportunity) {
+        Set<String> allowed = properties.getAutoPaperAllowedPairs();
+        if (allowed.isEmpty()) {
+            return true;
+        }
+        String pair = opportunity.longQuote().exchange().name() + ">"
+                + opportunity.shortQuote().exchange().name();
+        return allowed.contains(pair);
+    }
+
+    private boolean isCoolingDown(CrossExchangeOpportunity opportunity, Instant now) {
+        Instant until = failedUntil.get(opportunity.opportunityId());
+        if (until == null) {
+            return false;
+        }
+        if (!until.isAfter(now)) {
+            failedUntil.remove(opportunity.opportunityId(), until);
+            return false;
+        }
+        return true;
+    }
+
+    private void markFailure(CrossExchangeOpportunity opportunity, Instant now) {
+        failedUntil.put(opportunity.opportunityId(), now.plus(properties.getAutoPaperFailureCooldown()));
+    }
+
+    private boolean dailyLossBudgetExhausted() {
+        BigDecimal budget = properties.getAutoPaperDailyNetLossBudget();
+        if (pnlService == null || budget == null || budget.signum() <= 0) {
+            return false;
+        }
+        BigDecimal totalPnl = pnlService.summarizePortfolio(1).totalPnl();
+        if (totalPnl.compareTo(budget.negate()) > 0) {
+            return false;
+        }
+        LOG.warn("[FundingAutoPaperOpen] daily loss budget exhausted: pnl={}, budget={}",
+                totalPnl, budget);
+        return true;
     }
 
     private BigDecimal estimatedNetYield(CrossExchangeOpportunity opportunity) {
