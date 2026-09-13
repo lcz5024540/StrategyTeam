@@ -96,6 +96,18 @@ public class HtxHedgeRecycleRecorder {
         return insertRecycle(entity);
     }
 
+    /**
+     * A degraded or unknown hedge/recycle intent means aggregate inventory is not safely
+     * reconcilable. Callers may fail closed for new risk, but must keep existing inventory
+     * reconciliation and reduction paths available.
+     */
+    public boolean hasBlockingRecoveryBacklog() {
+        return hedgeMapper.countByStatus(STATUS_HEDGE_DEGRADED) > 0
+                || recycleMapper.countByStatus(STATUS_HEDGE_DEGRADED) > 0
+                || hedgeMapper.countByStatus(STATUS_UNKNOWN) > 0
+                || recycleMapper.countByStatus(STATUS_UNKNOWN) > 0;
+    }
+
     private RecordResult insertHedge(HtxDeltaHedgeLedgerEntity entity) {
         try {
             hedgeMapper.insert(entity);

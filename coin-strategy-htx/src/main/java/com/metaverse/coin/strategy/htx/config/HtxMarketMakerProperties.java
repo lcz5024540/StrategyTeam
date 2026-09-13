@@ -87,7 +87,13 @@ public class HtxMarketMakerProperties {
     /** 网格全梯补齐总开关；false=完全回退现状单格逻辑（config-only 回退），行为逐字节等价。 */
     private boolean gridModeEnabled = false;
 
-    /** 网格模式下，卖腿按当前移动窗口/盘口重评估；库存浮亏风险交给合约对冲，不再用历史保本价把卖单推远。 */
+    /** 单个轮询周期内最多新增的网格买单数；限制窗口迁移或深度抖动时的集中撤挂，仍可保持近市场高频报价。 */
+    private int gridMaxNewCellsPerTick = 2;
+
+    /** 对冲恢复队列存在 HEDGE_DEGRADED/UNKNOWN 时，禁止新增现货库存；已有仓位仍继续对账与卖出。 */
+    private boolean requireHealthyHedgeForNewBuys = true;
+
+    /** 网格模式下，卖腿按当前移动窗口/盘口重评估；窗口价只能抬高含费保本线，不能把历史库存压到亏损出售。 */
     private boolean gridSellFollowWindowEnabled = false;
 
     /** 等比步长（每档下移比例）：L_k=anchor·(1−此值)^k；与 spreadPct 同量级，保证每格卖腿仍满足不亏。 */

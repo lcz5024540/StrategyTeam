@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxStatus;
+import com.metaverse.coin.strategy.htx.persistence.HtxHedgeRecycleRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxSpotLedgerRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTradeRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxGridWindowEntity;
@@ -50,6 +51,7 @@ public class MarketMakerService {
     private final HtxTradeProperties tradeProps;
     private final HtxMarketMakerProperties mmProps;
     private final HtxTradeRecorder recorder;
+    private final HtxHedgeRecycleRecorder hedgeRecycleRecorder;
     private final HtxSpotLedgerRecorder spotLedgerRecorder;
     private final HtxSpotFeeRateProvider feeRateProvider;
     private final SpotGridStrategy gridStrategy;
@@ -71,6 +73,7 @@ public class MarketMakerService {
                               HtxTradeProperties tradeProps,
                               HtxMarketMakerProperties mmProps,
                               HtxTradeRecorder recorder,
+                              HtxHedgeRecycleRecorder hedgeRecycleRecorder,
                               HtxSpotLedgerRecorder spotLedgerRecorder,
                               HtxSpotFeeRateProvider feeRateProvider,
                               SpotGridStrategy gridStrategy,
@@ -80,6 +83,7 @@ public class MarketMakerService {
         this.tradeProps = tradeProps;
         this.mmProps = mmProps;
         this.recorder = recorder;
+        this.hedgeRecycleRecorder = hedgeRecycleRecorder;
         this.spotLedgerRecorder = spotLedgerRecorder;
         this.feeRateProvider = feeRateProvider;
         this.gridStrategy = gridStrategy;
@@ -101,7 +105,7 @@ public class MarketMakerService {
                        HtxTradeRecorder recorder,
                        HtxGridWindowStore gridWindowStore) {
         this(htxApiService, depthGuard, tradeProps, mmProps, recorder,
-                HtxSpotLedgerRecorder.noop(), new HtxSpotFeeRateProvider(htxApiService, mmProps),
+                null, HtxSpotLedgerRecorder.noop(), new HtxSpotFeeRateProvider(htxApiService, mmProps),
                 new FeeAwareSpotGridStrategy(), gridWindowStore);
     }
 
@@ -404,6 +408,12 @@ public class MarketMakerService {
                     decision.window().getAnchorPrice(), decision.window().getLowerPrice(),
                     decision.window().getUpperPrice());
         }
+        if (hedgeRecoveryBlocksNewRisk()) {
+            persistGridRiskState(decision.window(), MarketMakerRiskCoordinator.RiskDecision.blocked(
+                    MarketMakerRiskCoordinator.HEDGE_DEGRADED,
+                    "hedge/recycle recovery backlog exists; new spot inventory paused"));
+            return;
+        }
         MarketMakerRiskCoordinator.SpotBalanceSnapshot balances = null;
         if (spotRiskThresholdsEnabled()) {
             balances = spotBalances(symbol);
@@ -413,7 +423,9 @@ public class MarketMakerService {
                 return;
             }
         }
-        int budget = mmProps.getMaxConcurrentCellsPerSymbol() - recorder.countOpenMmBuyCells(symbol);
+        int capacityBudget = mmProps.getMaxConcurrentCellsPerSymbol() - recorder.countOpenMmBuyCells(symbol);
+        int tickBudget = Math.max(1, mmProps.getGridMaxNewCellsPerTick());
+        int budget = Math.min(capacityBudget, tickBudget);
         if (budget <= 0) {
             return;
         }
@@ -458,6 +470,23 @@ public class MarketMakerService {
     private boolean spotRiskThresholdsEnabled() {
         return positive(mmProps.getMinQuoteReserve()).signum() > 0
                 || positive(mmProps.getMaxBaseInventory()).signum() > 0;
+    }
+
+    /**
+     * Keep a degraded hedge/recycle saga from increasing unhedged spot exposure. The check is
+     * intentionally fail-closed when enabled; it never blocks sell/reconciliation paths because
+     * this method is only called before creating a new grid buy.
+     */
+    private boolean hedgeRecoveryBlocksNewRisk() {
+        if (!mmProps.isRequireHealthyHedgeForNewBuys() || hedgeRecycleRecorder == null) {
+            return false;
+        }
+        try {
+            return hedgeRecycleRecorder.hasBlockingRecoveryBacklog();
+        } catch (RuntimeException ex) {
+            log.error("MM hedge recovery gate unavailable; fail-closed for new grid buys", ex);
+            return true;
+        }
     }
 
     private MarketMakerRiskCoordinator.RiskDecision evaluateSpotRisk(
@@ -1130,12 +1159,16 @@ public class MarketMakerService {
                                         BigDecimal filledQuote, BigDecimal filledBase,
                                         BigDecimal buyFeeBase, BigDecimal fallbackBuyPrice,
                                         HtxSpotFeeRateProvider.FeeRates feeRates) {
+        BigDecimal protectedPrice = gridStrategy.sellPriceAfterFill(filledQuote, filledBase, buyFeeBase,
+                fallbackBuyPrice, bestAsk, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
         BigDecimal gridSell = gridWindowSellPrice(cell.getSymbol(), bestAsk);
         if (gridSell != null) {
-            return gridSell;
+            // 移动窗口只负责提高出售价格以保持报价贴近市场，绝不能把已成交库存
+            // 的卖价压到含费保本线以下。历史库存下跌后被窗口低价强制卖出会把浮亏
+            // 直接变成已实现亏损。
+            return gridSell.max(protectedPrice);
         }
-        return gridStrategy.sellPriceAfterFill(filledQuote, filledBase, buyFeeBase,
-                fallbackBuyPrice, bestAsk, feeRates.maker(), feeRates.maker(), MarketMakerMath.PRICE_SCALE);
+        return protectedPrice;
     }
 
     private BigDecimal gridWindowSellPrice(String symbol, BigDecimal bestAsk) {
