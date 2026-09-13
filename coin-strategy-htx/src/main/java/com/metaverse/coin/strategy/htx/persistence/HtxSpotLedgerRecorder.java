@@ -29,6 +29,8 @@ public class HtxSpotLedgerRecorder {
 
     public static final String SOURCE_MARKET_MAKER = "MARKET_MAKER";
     public static final String SOURCE_STARTUP_RECOVERY = "STARTUP_RECOVERY";
+    /** Durable backfill of fills discovered from persisted grid cells. */
+    public static final String SOURCE_PERSISTED_RECONCILIATION = "PERSISTED_RECONCILIATION";
     public static final String LOT_OPEN = "OPEN";
     public static final String LOT_CLOSED = "CLOSED";
 
@@ -128,6 +130,24 @@ public class HtxSpotLedgerRecorder {
         }
         BigDecimal total = lotMapper.sumOpenRemainingBase(symbol);
         return total == null ? BigDecimal.ZERO : total;
+    }
+
+    /**
+     * Whether at least one cumulative snapshot has already been persisted for this exchange order.
+     * Terminal legacy cells use this to avoid querying HTX forever once their authoritative fill was
+     * successfully backfilled. Open cells are still queried because their cumulative fill can grow.
+     */
+    public boolean hasSnapshot(String symbol, String side, Long htxOrderId) {
+        if (fillMapper == null || isBlank(symbol) || isBlank(side) || htxOrderId == null) {
+            return false;
+        }
+        try {
+            return fillMapper.countByOrder(normalizeSide(side), symbol, htxOrderId) > 0;
+        } catch (Exception ex) {
+            log.error("spot fill ledger identity lookup failed symbol={} side={} orderId={}",
+                    symbol, side, htxOrderId, ex);
+            throw new HtxPersistenceException("spot fill ledger identity lookup failed", ex);
+        }
     }
 
     private BigDecimal applyInventory(HtxSpotFillLedgerEntity entry, boolean feeInBase) {

@@ -9,6 +9,12 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface HtxSpotFillLedgerMapper extends BaseMapper<HtxSpotFillLedgerEntity> {
 
+    @Select("SELECT COUNT(*) FROM htx_spot_fill_ledger "
+            + "WHERE side = #{side} AND symbol = #{symbol} AND htx_order_id = #{htxOrderId}")
+    long countByOrder(@Param("side") String side,
+                      @Param("symbol") String symbol,
+                      @Param("htxOrderId") Long htxOrderId);
+
     @Select("""
             <script>
             SELECT *

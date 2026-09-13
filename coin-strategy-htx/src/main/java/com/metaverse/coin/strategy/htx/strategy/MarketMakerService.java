@@ -60,7 +60,9 @@ public class MarketMakerService {
     private final MarketMakerRiskCoordinator riskCoordinator = new MarketMakerRiskCoordinator();
 
     private static final int DEPTH_LEVELS = 5;
+    private static final long PERSISTED_FILL_RECONCILE_INTERVAL_MS = 60_000L;
     private volatile long buyBlockedUntilEpochMs;
+    private volatile long lastPersistedFillReconcileEpochMs;
 
     /** 网格熔断内存态：连续亏损退出的 round-trip 数（盈利退出清零）；重启清零，保守偏安全。 */
     private volatile int consecutiveLossCycles;
@@ -187,6 +189,7 @@ public class MarketMakerService {
                 log.error("MM advanceCell failed pairId={}", cell.getPairId(), ex);
             }
         }
+        reconcilePersistedFillLedger(false);
         if (!mmProps.isEnabled()) {
             return; // 急停：只停开新，不停推进
         }
@@ -223,12 +226,60 @@ public class MarketMakerService {
                 log.error("MM recover cancelled buy failed pairId={}", entity.getId(), ex);
             }
         }
+        reconcilePersistedFillLedger(true);
     }
 
     private List<MarketMakerCell> loadOpenCells() {
         return recorder.findAllOpenMmCells().stream()
                 .map(MarketMakerCell::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Backfill real fills for persisted grid cells that predate the ledger or were skipped during
+     * a transient state-machine failure. HTX order queries remain the source of truth; this method
+     * only appends idempotent ledger deltas and does not cancel, amend, or submit any order.
+     */
+    private void reconcilePersistedFillLedger(boolean force) {
+        long now = System.currentTimeMillis();
+        if (!force && now - lastPersistedFillReconcileEpochMs < PERSISTED_FILL_RECONCILE_INTERVAL_MS) {
+            return;
+        }
+        lastPersistedFillReconcileEpochMs = now;
+        List<HtxLockedPairEntity> candidates = recorder.findMmCellsWithPersistedFills();
+        if (candidates == null || candidates.isEmpty()) {
+            return;
+        }
+        for (HtxLockedPairEntity entity : candidates) {
+            reconcilePersistedOrder(entity, "buy", entity.getBuyOrderId(),
+                    HtxStatus.MM_RESTING_BUY.equals(entity.getStatus()));
+            reconcilePersistedOrder(entity, "sell", entity.getSellOrderId(),
+                    HtxStatus.MM_RESTING_SELL.equals(entity.getStatus())
+                            || HtxStatus.MM_SELL_RETRYABLE.equals(entity.getStatus()));
+        }
+    }
+
+    private void reconcilePersistedOrder(HtxLockedPairEntity entity, String side, Long orderId,
+                                         boolean potentiallyOpen) {
+        if (orderId == null || entity.getSymbol() == null || entity.getSymbol().isBlank()) {
+            return;
+        }
+        try {
+            if (!potentiallyOpen && spotLedgerRecorder.hasSnapshot(entity.getSymbol(), side, orderId)) {
+                return;
+            }
+            HtxRestResponse<HtxOrder> response = htxApiService.getSpotService().queryOrder(orderId);
+            if (response == null || !response.ok() || response.getData() == null) {
+                log.warn("MM persisted-fill reconcile query unavailable pairId={} side={} orderId={}",
+                        entity.getId(), side, orderId);
+                return;
+            }
+            recordSpotFillSnapshot(MarketMakerCell.fromEntity(entity), side, orderId, response.getData(),
+                    HtxSpotLedgerRecorder.SOURCE_PERSISTED_RECONCILIATION);
+        } catch (RuntimeException ex) {
+            log.error("MM persisted-fill reconcile failed pairId={} side={} orderId={}",
+                    entity.getId(), side, orderId, ex);
+        }
     }
 
     // ---- 开仓（D1） ----

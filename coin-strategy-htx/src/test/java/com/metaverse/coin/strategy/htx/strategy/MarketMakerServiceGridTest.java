@@ -228,6 +228,39 @@ class MarketMakerServiceGridTest {
         assertEquals(MarketMakerRiskCoordinator.HEDGE_DEGRADED, windowStore.find("btcusdt").getState());
     }
 
+    @Test void startup_backfills_legacy_filled_grid_cell_into_immutable_ledger() {
+        HtxSpotLedgerRecorder ledger = mock(HtxSpotLedgerRecorder.class);
+        svc = new MarketMakerService(api, depthGuard, tradeProps, mmProps, recorder, null,
+                ledger, new HtxSpotFeeRateProvider(api, mmProps),
+                new FeeAwareSpotGridStrategy(), windowStore);
+        HtxLockedPairEntity legacy = restingBuy(901L, 555L, "100.00", "0.2");
+        legacy.setStatus(HtxStatus.MM_DONE);
+        legacy.setBuyFilledAmount(new BigDecimal("0.2"));
+        legacy.setStrategy(null); // Historical cells were not always tagged MARKET_MAKER.
+        HtxOrder order = new HtxOrder();
+        order.setState("filled");
+        order.setFilledAmount(new BigDecimal("0.2"));
+        order.setFilledCashAmount(new BigDecimal("20"));
+        HtxRestResponse<HtxOrder> response = new HtxRestResponse<>();
+        response.setStatus("ok");
+        response.setData(order);
+        when(recorder.findAllOpenMmCells()).thenReturn(List.of());
+        when(recorder.findRecoverableCancelledMmCells()).thenReturn(List.of());
+        when(recorder.findMmCellsWithPersistedFills()).thenReturn(List.of(legacy));
+        when(ledger.hasSnapshot("btcusdt", "buy", 555L)).thenReturn(false);
+        when(spot.queryOrder(555L)).thenReturn(response);
+        when(ledger.recordOrderSnapshot(eq(901L), isNull(), eq("btcusdt"), eq("buy"), eq(555L),
+                isNull(), eq(order), eq(HtxSpotLedgerRecorder.SOURCE_PERSISTED_RECONCILIATION)))
+                .thenReturn(new HtxSpotLedgerRecorder.LedgerAppendResult(true, false, null,
+                        new BigDecimal("0.2"), new BigDecimal("-20"), BigDecimal.ZERO));
+
+        svc.recoverOpenCells();
+
+        verify(spot).queryOrder(555L);
+        verify(ledger).recordOrderSnapshot(eq(901L), isNull(), eq("btcusdt"), eq("buy"), eq(555L),
+                isNull(), eq(order), eq(HtxSpotLedgerRecorder.SOURCE_PERSISTED_RECONCILIATION));
+    }
+
     @Test void partial_ladder_only_opens_missing_levels() {
         // 已挂两档（100.00 / 99.70），open=2 → budget=1 → 仅补下一缺口 99.40
         when(md.depth(eq("btcusdt"), anyInt())).thenReturn(depthOk(depth("100", "100.05")));

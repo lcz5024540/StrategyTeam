@@ -409,6 +409,26 @@ public class HtxTradeRecorder {
                 .last("LIMIT 500"));
     }
 
+    /**
+     * Existing grids created before the immutable fill ledger can have real HTX fills but no
+     * ledger row. Include the explicit market-maker states even if their legacy strategy column
+     * was never backfilled; this is read-only reconciliation and never changes the cell state.
+     */
+    public List<HtxLockedPairEntity> findMmCellsWithPersistedFills() {
+        return pairMapper.selectList(new QueryWrapper<HtxLockedPairEntity>()
+                .in("status", HtxStatus.MM_RESTING_BUY, HtxStatus.MM_RESTING_SELL,
+                        HtxStatus.MM_SELL_RETRYABLE, HtxStatus.MM_RECONCILE_REQUIRED,
+                        HtxStatus.MM_DONE, HtxStatus.MM_DUST, HtxStatus.MM_CANCELLED_BUY)
+                .and(wrapper -> wrapper.gt("COALESCE(buy_filled_amount, 0)", BigDecimal.ZERO)
+                        .or()
+                        .gt("COALESCE(sell_filled_amount, 0)", BigDecimal.ZERO))
+                // Old HTX orders may no longer be queryable. Limit automatic recovery to the
+                // recent operational horizon so historic gaps never delay the live grid loop.
+                .ge("updated_at", LocalDateTime.now().minusDays(2))
+                .orderByDesc("updated_at")
+                .last("LIMIT 10"));
+    }
+
     /** 某标的 open cell 数（开仓 K 闸用）。 */
     public int countOpenMmCells(String symbol) {
         Long n = pairMapper.selectCount(new QueryWrapper<HtxLockedPairEntity>()
