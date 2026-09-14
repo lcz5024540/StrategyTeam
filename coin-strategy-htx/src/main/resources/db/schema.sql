@@ -200,6 +200,54 @@ CREATE TABLE IF NOT EXISTS htx_inventory_recycle_saga (
     INDEX idx_recycle_spot_fill      (spot_fill_ledger_id)
 );
 
+
+-- Spot-long plus perpetual-short funding fee arbitrage cycles. A row is written before
+-- the first live spot order, so restart recovery can continue the second leg instead of
+-- opening another spot position.
+CREATE TABLE IF NOT EXISTS htx_funding_arbitrage_cycle (
+    id                              BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    cycle_key                       VARCHAR(128)   NOT NULL UNIQUE,
+    symbol                          VARCHAR(32)    NOT NULL,
+    contract_code                   VARCHAR(32)    NOT NULL,
+    status                          VARCHAR(32)    NOT NULL,
+    target_quote_notional           DECIMAL(36,18) NOT NULL,
+    target_base_amount              DECIMAL(36,18) NOT NULL,
+    contract_size                   DECIMAL(36,18) NOT NULL,
+    contract_volume                 BIGINT         NOT NULL,
+    leverage                        INT            NOT NULL,
+    entry_funding_rate              DECIMAL(36,18) NOT NULL DEFAULT 0,
+    latest_funding_rate             DECIMAL(36,18) NOT NULL DEFAULT 0,
+    entry_spot_price                DECIMAL(36,18),
+    entry_swap_price                DECIMAL(36,18),
+    spot_entry_client_order_id      VARCHAR(64),
+    spot_entry_order_id             BIGINT,
+    spot_entry_filled_base          DECIMAL(36,18) NOT NULL DEFAULT 0,
+    spot_entry_filled_quote         DECIMAL(36,18) NOT NULL DEFAULT 0,
+    spot_entry_fee_base             DECIMAL(36,18) NOT NULL DEFAULT 0,
+    short_entry_client_order_id     VARCHAR(64),
+    short_entry_order_id            BIGINT,
+    short_entry_filled_contracts    DECIMAL(36,18) NOT NULL DEFAULT 0,
+    short_entry_avg_price           DECIMAL(36,18),
+    short_entry_fee                 DECIMAL(36,18) NOT NULL DEFAULT 0,
+    short_close_client_order_id     VARCHAR(64),
+    short_close_order_id            BIGINT,
+    short_close_filled_contracts    DECIMAL(36,18) NOT NULL DEFAULT 0,
+    short_close_avg_price           DECIMAL(36,18),
+    short_close_fee                 DECIMAL(36,18) NOT NULL DEFAULT 0,
+    spot_exit_client_order_id       VARCHAR(64),
+    spot_exit_order_id              BIGINT,
+    spot_exit_filled_base           DECIMAL(36,18) NOT NULL DEFAULT 0,
+    spot_exit_filled_quote          DECIMAL(36,18) NOT NULL DEFAULT 0,
+    spot_exit_fee_quote             DECIMAL(36,18) NOT NULL DEFAULT 0,
+    exit_reason                     VARCHAR(512),
+    message                         VARCHAR(512),
+    created_at                      DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at                      DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_funding_arb_active    (symbol, contract_code, status),
+    INDEX idx_funding_arb_spot      (spot_entry_order_id),
+    INDEX idx_funding_arb_short     (short_entry_order_id)
+);
+
 -- USDT-margined perpetual cycles are isolated from spot rows because volume is contracts, not base quantity.
 CREATE TABLE IF NOT EXISTS htx_contract_cycle (
     id                    BIGINT         PRIMARY KEY AUTO_INCREMENT,

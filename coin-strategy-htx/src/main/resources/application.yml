@@ -95,6 +95,31 @@ htx:
     max-base-inventory: ${HTX_MM_MAX_BASE_INVENTORY:0}
     daily-net-loss-budget: ${HTX_MM_DAILY_NET_LOSS_BUDGET:5}
     max-consecutive-loss-cycles: ${HTX_MM_MAX_CONSECUTIVE_LOSS_CYCLES:3}
+
+  funding-arbitrage:
+    enabled: ${HTX_FUNDING_ARB_ENABLED:false}
+    symbol: ${HTX_FUNDING_ARB_SYMBOL:xautusdt}
+    contract-code: ${HTX_FUNDING_ARB_CONTRACT:XAUT-USDT}
+    target-quote-notional: ${HTX_FUNDING_ARB_TARGET_NOTIONAL:500}
+    min-funding-rate: ${HTX_FUNDING_ARB_MIN_FUNDING_RATE:0.00005}
+    exit-funding-rate: ${HTX_FUNDING_ARB_EXIT_FUNDING_RATE:0}
+    max-entry-basis-rate: ${HTX_FUNDING_ARB_MAX_ENTRY_BASIS_RATE:0.0015}
+    max-hold-basis-rate: ${HTX_FUNDING_ARB_MAX_HOLD_BASIS_RATE:0.0030}
+    min-liquidation-distance-rate: ${HTX_FUNDING_ARB_MIN_LIQUIDATION_DISTANCE_RATE:0.0500}
+    spot-entry-slippage-rate: ${HTX_FUNDING_ARB_SPOT_ENTRY_SLIPPAGE_RATE:0.0005}
+    spot-exit-slippage-rate: ${HTX_FUNDING_ARB_SPOT_EXIT_SLIPPAGE_RATE:0.0010}
+    price-scale: ${HTX_FUNDING_ARB_PRICE_SCALE:2}
+    base-scale: ${HTX_FUNDING_ARB_BASE_SCALE:6}
+    spot-entry-ttl-ms: ${HTX_FUNDING_ARB_SPOT_ENTRY_TTL_MS:60000}
+    spot-exit-ttl-ms: ${HTX_FUNDING_ARB_SPOT_EXIT_TTL_MS:60000}
+    poll-interval-ms: ${HTX_FUNDING_ARB_POLL_INTERVAL_MS:30000}
+    initial-delay-ms: ${HTX_FUNDING_ARB_INITIAL_DELAY_MS:20000}
+    leverage: ${HTX_FUNDING_ARB_LEVERAGE:5}
+    min-contract-volume: ${HTX_FUNDING_ARB_MIN_CONTRACT_VOLUME:1}
+    min-spot-quote-available: ${HTX_FUNDING_ARB_MIN_SPOT_QUOTE_AVAILABLE:20}
+    min-contract-margin-available: ${HTX_FUNDING_ARB_MIN_CONTRACT_MARGIN_AVAILABLE:20}
+    min-spot-quote-reserve: ${HTX_FUNDING_ARB_MIN_SPOT_QUOTE_RESERVE:0}
+    client-order-id-prefix: ${HTX_FUNDING_ARB_CLIENT_ORDER_ID_PREFIX:CSFA}
   contract:
     # USDT 本位永续合约模式。默认整模块关闭；启用后仍默认 dry-run。
     enabled: ${HTX_CONTRACT_ENABLED:false}
