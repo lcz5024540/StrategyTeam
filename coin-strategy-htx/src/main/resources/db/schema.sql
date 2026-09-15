@@ -292,3 +292,64 @@ CREATE TABLE IF NOT EXISTS htx_contract_leg (
     UNIQUE KEY uk_contract_leg_cycle_type (cycle_id, leg_type),
     INDEX idx_contract_leg_order (order_id)
 );
+
+-- Contract-only trend-following managed positions. The strategy refuses to take over external
+-- positions; this table owns only positions opened by htx.trend.
+CREATE TABLE IF NOT EXISTS htx_trend_position (
+    id                       BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    position_key             VARCHAR(128)   NOT NULL UNIQUE,
+    contract_code            VARCHAR(32)    NOT NULL,
+    status                   VARCHAR(32)    NOT NULL,
+    side                     VARCHAR(8)     NOT NULL,
+    contract_size            DECIMAL(36,18) NOT NULL,
+    contract_volume          BIGINT         NOT NULL,
+    leverage                 INT            NOT NULL,
+    entry_client_order_id    VARCHAR(64),
+    entry_order_id           BIGINT,
+    entry_filled_contracts   DECIMAL(36,18) NOT NULL DEFAULT 0,
+    entry_avg_price          DECIMAL(36,18),
+    entry_fee                DECIMAL(36,18) NOT NULL DEFAULT 0,
+    close_client_order_id    VARCHAR(64),
+    close_order_id           BIGINT,
+    close_filled_contracts   DECIMAL(36,18) NOT NULL DEFAULT 0,
+    close_avg_price          DECIMAL(36,18),
+    close_fee                DECIMAL(36,18) NOT NULL DEFAULT 0,
+    realized_profit          DECIMAL(36,18),
+    stop_price               DECIMAL(36,18),
+    trailing_stop_price      DECIMAL(36,18),
+    take_profit_price        DECIMAL(36,18),
+    highest_price            DECIMAL(36,18),
+    lowest_price             DECIMAL(36,18),
+    entry_signal             VARCHAR(512),
+    exit_reason              VARCHAR(512),
+    message                  VARCHAR(512),
+    created_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_trend_position_contract (contract_code, status),
+    INDEX idx_trend_position_entry    (entry_order_id),
+    INDEX idx_trend_position_close    (close_order_id)
+);
+
+-- Append-only snapshots of the computed trend signal. This is the main observation surface while
+-- htx.trend.observe-only=true.
+CREATE TABLE IF NOT EXISTS htx_trend_signal (
+    id              BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    contract_code   VARCHAR(32)    NOT NULL,
+    period          VARCHAR(16)    NOT NULL,
+    bar_time        BIGINT,
+    signal          VARCHAR(16)    NOT NULL,
+    close_price     DECIMAL(36,18),
+    ema_fast        DECIMAL(36,18),
+    ema_slow        DECIMAL(36,18),
+    breakout_high   DECIMAL(36,18),
+    breakout_low    DECIMAL(36,18),
+    atr             DECIMAL(36,18),
+    atr_pct         DECIMAL(36,18),
+    adx             DECIMAL(36,18),
+    spread_rate     DECIMAL(36,18),
+    funding_rate    DECIMAL(36,18),
+    reason          VARCHAR(512),
+    created_at      DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_trend_signal_contract_time (contract_code, bar_time, created_at),
+    INDEX idx_trend_signal_created       (created_at)
+);

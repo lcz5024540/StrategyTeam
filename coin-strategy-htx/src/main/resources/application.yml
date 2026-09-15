@@ -98,6 +98,7 @@ htx:
 
   funding-arbitrage:
     enabled: ${HTX_FUNDING_ARB_ENABLED:false}
+    entry-enabled: ${HTX_FUNDING_ARB_ENTRY_ENABLED:true}
     symbol: ${HTX_FUNDING_ARB_SYMBOL:xautusdt}
     contract-code: ${HTX_FUNDING_ARB_CONTRACT:XAUT-USDT}
     target-quote-notional: ${HTX_FUNDING_ARB_TARGET_NOTIONAL:500}
@@ -120,6 +121,42 @@ htx:
     min-contract-margin-available: ${HTX_FUNDING_ARB_MIN_CONTRACT_MARGIN_AVAILABLE:20}
     min-spot-quote-reserve: ${HTX_FUNDING_ARB_MIN_SPOT_QUOTE_RESERVE:0}
     client-order-id-prefix: ${HTX_FUNDING_ARB_CLIENT_ORDER_ID_PREFIX:CSFA}
+  trend:
+    enabled: ${HTX_TREND_ENABLED:false}
+    observe-only: ${HTX_TREND_OBSERVE_ONLY:true}
+    contract-code: ${HTX_TREND_CONTRACT:XAUT-USDT}
+    period: ${HTX_TREND_PERIOD:15min}
+    trend-period: ${HTX_TREND_TREND_PERIOD:60min}
+    kline-size: ${HTX_TREND_KLINE_SIZE:160}
+    trend-kline-size: ${HTX_TREND_TREND_KLINE_SIZE:160}
+    candle-close-grace-seconds: ${HTX_TREND_CANDLE_CLOSE_GRACE_SECONDS:10}
+    fast-ema-period: ${HTX_TREND_FAST_EMA_PERIOD:12}
+    slow-ema-period: ${HTX_TREND_SLOW_EMA_PERIOD:48}
+    trend-fast-ema-period: ${HTX_TREND_TREND_FAST_EMA_PERIOD:8}
+    trend-slow-ema-period: ${HTX_TREND_TREND_SLOW_EMA_PERIOD:21}
+    breakout-lookback: ${HTX_TREND_BREAKOUT_LOOKBACK:20}
+    atr-period: ${HTX_TREND_ATR_PERIOD:14}
+    adx-period: ${HTX_TREND_ADX_PERIOD:14}
+    min-adx: ${HTX_TREND_MIN_ADX:18}
+    min-atr-pct: ${HTX_TREND_MIN_ATR_PCT:0.0010}
+    max-entry-spread-rate: ${HTX_TREND_MAX_ENTRY_SPREAD_RATE:0.0010}
+    target-quote-notional: ${HTX_TREND_TARGET_QUOTE_NOTIONAL:190}
+    max-quote-notional: ${HTX_TREND_MAX_QUOTE_NOTIONAL:190}
+    min-quote-notional: ${HTX_TREND_MIN_QUOTE_NOTIONAL:20}
+    risk-per-trade-usdt: ${HTX_TREND_RISK_PER_TRADE_USDT:1.5}
+    atr-stop-multiplier: ${HTX_TREND_ATR_STOP_MULTIPLIER:2.5}
+    trailing-atr-multiplier: ${HTX_TREND_TRAILING_ATR_MULTIPLIER:2.0}
+    take-profit-atr-multiplier: ${HTX_TREND_TAKE_PROFIT_ATR_MULTIPLIER:0}
+    max-entry-funding-cost-rate: ${HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE:0.0006}
+    max-hold-funding-cost-rate: ${HTX_TREND_MAX_HOLD_FUNDING_COST_RATE:0.0012}
+    leverage: ${HTX_TREND_LEVERAGE:5}
+    price-scale: ${HTX_TREND_PRICE_SCALE:2}
+    min-contract-margin-available: ${HTX_TREND_MIN_CONTRACT_MARGIN_AVAILABLE:20}
+    poll-interval-ms: ${HTX_TREND_POLL_INTERVAL_MS:60000}
+    initial-delay-ms: ${HTX_TREND_INITIAL_DELAY_MS:30000}
+    cooldown-ms: ${HTX_TREND_COOLDOWN_MS:3600000}
+    client-order-id-prefix: ${HTX_TREND_CLIENT_ORDER_ID_PREFIX:CSTF}
+
   contract:
     # USDT 本位永续合约模式。默认整模块关闭；启用后仍默认 dry-run。
     enabled: ${HTX_CONTRACT_ENABLED:false}

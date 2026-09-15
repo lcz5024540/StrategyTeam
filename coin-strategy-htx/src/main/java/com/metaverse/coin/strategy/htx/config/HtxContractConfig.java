@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @ConditionalOnProperty(prefix = "htx.contract", name = "enabled", havingValue = "true")
 @ConditionalOnExpression("'${htx.api.access-key:}' != '' && '${htx.api.secret-key:}' != ''")
-@EnableConfigurationProperties(HtxContractProperties.class)
+@EnableConfigurationProperties({HtxContractProperties.class, HtxTrendProperties.class})
 public class HtxContractConfig {
 
     @Bean

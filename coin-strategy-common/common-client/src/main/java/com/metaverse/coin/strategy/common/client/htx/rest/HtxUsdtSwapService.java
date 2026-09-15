@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAvailableLeverage;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
@@ -70,6 +71,15 @@ public class HtxUsdtSwapService {
         Map<String, String> params = singletonQuery("contract_code", contractCode);
         return rest.publicGet("/linear-swap-api/v1/swap_funding_rate", params,
                 new TypeReference<HtxRestResponse<HtxSwapFundingRate>>() { });
+    }
+
+    public HtxRestResponse<List<HtxSwapKline>> historyKline(String contractCode, String period, int size) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("contract_code", contractCode);
+        params.put("period", period);
+        params.put("size", Integer.toString(size));
+        return rest.publicGet("/linear-swap-ex/market/history/kline", params,
+                new TypeReference<HtxRestResponse<List<HtxSwapKline>>>() { });
     }
 
     public HtxRestResponse<List<HtxSwapAccount>> accountInfo(String contractCode) {

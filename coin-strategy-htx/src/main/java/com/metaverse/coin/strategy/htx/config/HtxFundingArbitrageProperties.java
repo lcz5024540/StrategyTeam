@@ -13,6 +13,9 @@ public class HtxFundingArbitrageProperties {
     /** Master switch. Default off so the strategy cannot start without an explicit deployment env. */
     private boolean enabled = false;
 
+    /** Whether this strategy may open new cycles. Existing active cycles are still managed when disabled. */
+    private boolean entryEnabled = true;
+
     /** Spot symbol, for example xautusdt. */
     private String symbol = "xautusdt";
 

@@ -101,6 +101,9 @@ public class HtxFundingArbitrageService {
         if (active.isPresent()) {
             return advance(active.get());
         }
+        if (!properties.isEntryEnabled()) {
+            return new RunResult(RunCode.SKIPPED, null, "funding arbitrage entry disabled; no active cycle");
+        }
         return openIfEligible(symbol, contractCode);
     }
 
