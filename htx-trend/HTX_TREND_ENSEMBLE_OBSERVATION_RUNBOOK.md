@@ -11,7 +11,7 @@
 | 项目 | 值 |
 |---|---|
 | 分支 | `support_htx` |
-| 最新提交 | `e8e806d0 fix(htx): dedupe trend ensemble candidate bars` |
+| 最新提交 | `a565816f docs(htx): add trend ensemble observation runbook` |
 | 服务器 | `49.51.250.174` |
 | 服务 | `coin-strategy-htx.service` |
 | 线上 JAR | `/opt/coinstrategy/htx-trade/app.jar` |
@@ -74,6 +74,7 @@ git log --oneline -5
 应能看到：
 
 ```text
+a565816f docs(htx): add trend ensemble observation runbook
 e8e806d0 fix(htx): dedupe trend ensemble candidate bars
 a564b04c fix(htx): report trend ensemble persistence failures
 7d78e370 feat(htx): add trend ensemble shadow signals
