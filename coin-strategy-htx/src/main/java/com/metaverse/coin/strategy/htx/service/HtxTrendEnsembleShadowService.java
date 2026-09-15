@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCandidateSignalRecorder;
+import com.metaverse.coin.strategy.htx.persistence.HtxTrendCandidateSignalRecorder.RecordResult;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendCandidateSignalEntity;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.TrendCandidateSignal;
 import lombok.extern.slf4j.Slf4j;
@@ -51,21 +52,24 @@ public class HtxTrendEnsembleShadowService {
     }
 
     public RunResult runOnce() {
-        int recorded = 0;
+        int stored = 0;
+        int skipped = 0;
         List<String> failures = new ArrayList<>();
         long now = Instant.now().getEpochSecond();
         for (String contractCode : normalizedContracts(properties.getContractCodes())) {
             for (String period : normalizedPeriods(properties.getPeriods())) {
                 try {
                     TrendCandidateSignal signal = loadSignal(contractCode, period, now);
-                    boolean stored = recorder.record(toEntity(contractCode, period, signal));
-                    if (stored) {
-                        recorded++;
+                    RecordResult recordResult = recorder.record(toEntity(contractCode, period, signal));
+                    if (recordResult == RecordResult.STORED) {
+                        stored++;
+                    } else if (recordResult == RecordResult.SKIPPED_DUPLICATE_BAR) {
+                        skipped++;
                     } else {
                         failures.add(contractCode + "/" + period + ": persistence failed");
                     }
-                    log.info("[HTX-TREND-ENSEMBLE] shadow=true stored={} contract={} period={} direction={} score={} regime={} reason={}",
-                            stored, contractCode, period, signal.direction(), signal.signalScore(), signal.regime(),
+                    log.info("[HTX-TREND-ENSEMBLE] shadow=true recordResult={} contract={} period={} direction={} score={} regime={} reason={}",
+                            recordResult, contractCode, period, signal.direction(), signal.signalScore(), signal.regime(),
                             signal.entryReason());
                 } catch (RuntimeException ex) {
                     String failure = contractCode + "/" + period + ": " + ex.getMessage();
@@ -74,7 +78,7 @@ public class HtxTrendEnsembleShadowService {
                 }
             }
         }
-        return new RunResult(recorded, failures.size(), failures);
+        return new RunResult(stored, skipped, failures.size(), failures);
     }
 
     private TrendCandidateSignal loadSignal(String contractCode, String period, long nowEpochSeconds) {
@@ -150,6 +154,6 @@ public class HtxTrendEnsembleShadowService {
         return "status=" + response.getStatus() + " errCode=" + response.getErrCode() + " errMsg=" + response.getErrMsg();
     }
 
-    public record RunResult(int recorded, int failed, List<String> failures) {
+    public record RunResult(int stored, int skippedDuplicateBars, int failed, List<String> failures) {
     }
 }

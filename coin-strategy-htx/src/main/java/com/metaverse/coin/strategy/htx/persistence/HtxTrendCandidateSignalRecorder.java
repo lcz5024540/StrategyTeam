@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
+
 /** Records trend ensemble shadow candidates without blocking the live trend runner. */
 @Slf4j
 @Component
@@ -14,16 +16,34 @@ public class HtxTrendCandidateSignalRecorder {
 
     private final HtxTrendCandidateSignalMapper mapper;
 
-    public boolean record(HtxTrendCandidateSignalEntity entity) {
+    public RecordResult record(HtxTrendCandidateSignalEntity entity) {
         try {
+            HtxTrendCandidateSignalEntity latest = mapper.findLatest(entity.getContractCode(), entity.getPeriod(),
+                    entity.getModelVersion());
+            if (sameBar(latest, entity)) {
+                return RecordResult.SKIPPED_DUPLICATE_BAR;
+            }
             mapper.insert(entity);
-            return true;
+            return RecordResult.STORED;
         } catch (RuntimeException ex) {
             log.warn("trend candidate insert failed contract={} period={} direction={}",
                     entity == null ? null : entity.getContractCode(),
                     entity == null ? null : entity.getPeriod(),
                     entity == null ? null : entity.getDirection(), ex);
-            return false;
+            return RecordResult.FAILED;
         }
+    }
+
+    private static boolean sameBar(HtxTrendCandidateSignalEntity latest, HtxTrendCandidateSignalEntity current) {
+        return latest != null
+                && current != null
+                && current.getBarTime() != null
+                && Objects.equals(latest.getBarTime(), current.getBarTime());
+    }
+
+    public enum RecordResult {
+        STORED,
+        SKIPPED_DUPLICATE_BAR,
+        FAILED
     }
 }

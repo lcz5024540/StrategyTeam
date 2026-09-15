@@ -392,6 +392,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_candidate_signal (
     shadow               TINYINT(1)     NOT NULL DEFAULT 1,
     model_version        VARCHAR(64)    NOT NULL,
     created_at           DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_trend_candidate_bar     (contract_code, period, bar_time, model_version),
     INDEX idx_trend_candidate_symbol_time (contract_code, period, bar_time, created_at),
     INDEX idx_trend_candidate_direction   (direction, signal_score, created_at),
     INDEX idx_trend_candidate_created     (created_at)
