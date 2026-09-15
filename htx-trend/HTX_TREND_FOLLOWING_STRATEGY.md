@@ -53,7 +53,7 @@
 
 ## 长期组合规划
 
-当前文档描述的是已上线的单策略链路验证版。多资产、多周期、多模型的长期组合规划见 [`HTX_TREND_ENSEMBLE_LONG_TERM_PLAN.md`](HTX_TREND_ENSEMBLE_LONG_TERM_PLAN.md)。
+当前文档描述的是已上线的单策略链路验证版。多资产、多周期、多模型的长期组合规划见 [`HTX_TREND_ENSEMBLE_LONG_TERM_PLAN.md`](HTX_TREND_ENSEMBLE_LONG_TERM_PLAN.md)；线上 shadow 观察、恢复步骤和后续实盘接入计划见 [`HTX_TREND_ENSEMBLE_OBSERVATION_RUNBOOK.md`](HTX_TREND_ENSEMBLE_OBSERVATION_RUNBOOK.md)。
 
 ## 推荐上线步骤
 
