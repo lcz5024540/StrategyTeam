@@ -3,22 +3,30 @@ package com.metaverse.coin.strategy.htx.service;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxDepth;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxPriceLevel;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
 import com.metaverse.coin.strategy.htx.config.HtxFundingArbitrageProperties;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSide;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSignal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -119,6 +128,42 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void liveEntryPersistsOrderIntentBeforeSendingExchangeOrder() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.SHORT);
+        givenFunding("0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("short"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("short")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        InOrder order = inOrder(recorder, swap);
+        order.verify(recorder).createOrderIntent(any(HtxTrendOrderEntity.class));
+        order.verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
+        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(captor.capture());
+        HtxTrendOrderEntity intent = captor.getValue();
+        assertEquals(77L, intent.getPositionId());
+        assertEquals(HtxTrendRecorder.LEG_ENTRY, intent.getLeg());
+        assertEquals("SHORT", intent.getTrendSide());
+        assertEquals("sell", intent.getOrderSide());
+        assertEquals("short", intent.getPositionSide());
+        assertEquals(false, intent.getReduceOnly());
+        assertTrue(intent.getReason().contains("entry signal"));
+        verify(recorder).markOrderAccepted(77L, HtxTrendRecorder.LEG_ENTRY, intent.getClientOrderId(),
+                88L, 99L, "entry accepted by exchange");
+    }
+
+    @Test
     void marketMakerSwitchBlocksExclusiveTrendMode() {
         marketMakerProperties.setEnabled(true);
 
@@ -165,6 +210,23 @@ class HtxTrendFollowingServiceTest {
         when(swap.depth("XAUT-USDT", contractProperties.getDepthStep())).thenReturn(ok(depth));
     }
 
+    private void givenNoOpenOrders() {
+        HtxSwapOpenOrders openOrders = new HtxSwapOpenOrders();
+        openOrders.setOrders(Collections.emptyList());
+        when(swap.openOrders("XAUT-USDT")).thenReturn(ok(openOrders));
+    }
+
+    private void givenNoExternalPositions() {
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(Collections.emptyList()));
+    }
+
+    private void givenContractMargin() {
+        HtxSwapAccount account = new HtxSwapAccount();
+        account.setContractCode("XAUT-USDT");
+        account.setMarginAvailable(new BigDecimal("1000"));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account)));
+    }
+
     private HtxSwapKline candle(long id) {
         HtxSwapKline candle = new HtxSwapKline();
         candle.setId(id);
@@ -177,5 +239,20 @@ class HtxTrendFollowingServiceTest {
 
     private <T> HtxRestResponse<T> ok(T data) {
         return HtxRestResponse.<T>builder().status("ok").data(data).build();
+    }
+
+    private HtxSwapOrderResult accepted(long orderId, long clientOrderId) {
+        HtxSwapOrderResult result = new HtxSwapOrderResult();
+        result.setOrderId(orderId);
+        result.setClientOrderId(clientOrderId);
+        return result;
+    }
+
+    private HtxSwapLeverageResult leverage(String positionSide) {
+        HtxSwapLeverageResult result = new HtxSwapLeverageResult();
+        result.setContractCode("XAUT-USDT");
+        result.setPositionSide(positionSide);
+        result.setLeverage(properties.getLeverage());
+        return result;
     }
 }

@@ -1,7 +1,9 @@
 package com.metaverse.coin.strategy.htx.persistence;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import lombok.RequiredArgsConstructor;
@@ -24,8 +26,16 @@ public class HtxTrendRecorder {
     public static final String DONE = "DONE";
     public static final String REJECTED = "REJECTED";
     public static final String UNKNOWN = "UNKNOWN";
+    public static final String ORDER_INTENT = "INTENT";
+    public static final String ORDER_ACCEPTED = "ACCEPTED";
+    public static final String ORDER_FILLED = "FILLED";
+    public static final String ORDER_TERMINAL = "TERMINAL";
+    public static final String ORDER_REJECTED = "REJECTED";
+    public static final String LEG_ENTRY = "ENTRY";
+    public static final String LEG_CLOSE = "CLOSE";
 
     private final HtxTrendPositionMapper positionMapper;
+    private final HtxTrendOrderMapper orderMapper;
     private final HtxTrendSignalMapper signalMapper;
 
     public Optional<HtxTrendPositionEntity> findActive(String contractCode) {
@@ -52,6 +62,32 @@ public class HtxTrendRecorder {
         } catch (RuntimeException ex) {
             throw new HtxPersistenceException("trend position intent insert failed", ex);
         }
+    }
+
+    public void createOrderIntent(HtxTrendOrderEntity entity) {
+        try {
+            orderMapper.insert(entity);
+        } catch (RuntimeException ex) {
+            throw new HtxPersistenceException("trend order intent insert failed", ex);
+        }
+    }
+
+    public void markOrderAccepted(long positionId, String leg, String clientOrderId, Long orderId,
+                                  Long exchangeClientOrderId, String message) {
+        orderMapper.markAccepted(positionId, leg, clientOrderId, ORDER_ACCEPTED, orderId,
+                exchangeClientOrderId, clip(message));
+    }
+
+    public void markOrderRejected(long positionId, String leg, String clientOrderId, String message) {
+        orderMapper.markStatus(positionId, leg, clientOrderId, ORDER_REJECTED, clip(message));
+    }
+
+    public void markOrderReconciled(long positionId, String leg, String clientOrderId, String status,
+                                    Long exchangeOrderId, Long exchangeClientOrderId, String exchangeState,
+                                    BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
+                                    String feeCurrency, BigDecimal realizedProfit, String message) {
+        orderMapper.markReconciled(positionId, leg, clientOrderId, status, exchangeOrderId, exchangeClientOrderId,
+                exchangeState, nz(filledContracts), avgPrice, nz(fee), feeCurrency, realizedProfit, clip(message));
     }
 
     public void markEntryAccepted(long id, Long orderId, String message) {
@@ -81,5 +117,16 @@ public class HtxTrendRecorder {
 
     public void markStatus(long id, String nextStatus, String message) {
         positionMapper.markStatus(id, nextStatus, message);
+    }
+
+    private static String clip(String value) {
+        if (value == null || value.length() <= 512) {
+            return value;
+        }
+        return value.substring(0, 512);
+    }
+
+    private static BigDecimal nz(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 }

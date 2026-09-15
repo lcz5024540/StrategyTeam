@@ -19,6 +19,7 @@ import com.metaverse.coin.strategy.htx.config.HtxFundingArbitrageProperties;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSide;
@@ -182,14 +183,21 @@ public class HtxTrendFollowingService {
         entity.setEntrySignal(signal.reason());
         entity.setMessage("trend entry intent signal=" + signal.side());
         long id = recorder.createIntent(entity);
-        HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(orderRequest(contractCode, signal.side(), false,
-                clientOrderId, volume));
+        entity.setId(id);
+        HtxSwapOrderRequest request = orderRequest(contractCode, signal.side(), false, clientOrderId, volume);
+        recorder.createOrderIntent(orderIntent(entity, HtxTrendRecorder.LEG_ENTRY, signal.side().name(), request,
+                "entry signal: " + signal.reason()));
+        HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
         if (response == null || !response.ok() || orderId == null) {
+            recorder.markOrderRejected(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId,
+                    "entry rejected: " + error(response));
             recorder.markStatus(id, HtxTrendRecorder.REJECTED, "entry rejected: " + error(response));
             return RunResult.of(RunCode.REJECTED, id, "entry rejected: " + error(response));
         }
+        recorder.markOrderAccepted(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, orderId,
+                accepted.getClientOrderId(), "entry accepted by exchange");
         recorder.markEntryAccepted(id, orderId, "entry sent side=" + side + " volume=" + volume);
         log.info("[HTX-TREND] entry sent id={} contract={} side={} orderId={} volume={} close={} atr={} adx={} reason={}",
                 id, contractCode, side, orderId, volume, signal.closePrice(), signal.atr(), signal.adx(), signal.reason());
@@ -219,11 +227,20 @@ public class HtxTrendFollowingService {
         if (filled(order)) {
             BigDecimal avg = firstPositive(order.getTradeAveragePrice(), position.getEntryAvgPrice());
             BigDecimal highLow = avg == null ? BigDecimal.ZERO : avg;
+            recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_ENTRY,
+                    position.getEntryClientOrderId(), HtxTrendRecorder.ORDER_FILLED, order.getOrderId(),
+                    order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()), avg, nz(order.getFee()),
+                    order.getFeeCurrency(), order.getRealProfit(), "entry filled state=" + exchangeState(order));
             recorder.markEntryFilled(position.getId(), nz(order.getTradeVolume()), avg, nz(order.getFee()),
                     highLow, highLow, "entry filled state=" + exchangeState(order));
             return RunResult.of(RunCode.ACTIVE, position.getId(), "entry filled");
         }
         if (terminal(order)) {
+            recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_ENTRY,
+                    position.getEntryClientOrderId(), HtxTrendRecorder.ORDER_TERMINAL, order.getOrderId(),
+                    order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()),
+                    order.getTradeAveragePrice(), nz(order.getFee()), order.getFeeCurrency(), order.getRealProfit(),
+                    "entry terminal without fill state=" + exchangeState(order));
             recorder.markStatus(position.getId(), HtxTrendRecorder.REJECTED,
                     "entry terminal without fill state=" + exchangeState(order));
             return RunResult.of(RunCode.REJECTED, position.getId(), "entry terminal without fill");
@@ -263,13 +280,20 @@ public class HtxTrendFollowingService {
         }
         String clientOrderId = Long.toString(numericClientOrderId());
         TrendSide side = LONG.equals(position.getSide()) ? TrendSide.LONG : TrendSide.SHORT;
-        HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(orderRequest(position.getContractCode(), side,
-                true, clientOrderId, position.getContractVolume()));
+        HtxSwapOrderRequest request = orderRequest(position.getContractCode(), side, true, clientOrderId,
+                position.getContractVolume());
+        recorder.createOrderIntent(orderIntent(position, HtxTrendRecorder.LEG_CLOSE, position.getSide(), request,
+                "exit signal: " + exitReason));
+        HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
         if (response == null || !response.ok() || orderId == null) {
+            recorder.markOrderRejected(position.getId(), HtxTrendRecorder.LEG_CLOSE, clientOrderId,
+                    "close rejected: " + error(response));
             return RunResult.of(RunCode.WAITING, position.getId(), "close rejected: " + error(response));
         }
+        recorder.markOrderAccepted(position.getId(), HtxTrendRecorder.LEG_CLOSE, clientOrderId, orderId,
+                accepted.getClientOrderId(), "close accepted by exchange");
         recorder.markCloseAccepted(position.getId(), exitReason, clientOrderId, orderId,
                 "close sent reason=" + exitReason);
         log.info("[HTX-TREND] close sent id={} contract={} side={} orderId={} volume={} reason={}",
@@ -286,11 +310,21 @@ public class HtxTrendFollowingService {
         }
         HtxSwapOrder order = query.order();
         if (filled(order)) {
+            recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_CLOSE,
+                    position.getCloseClientOrderId(), HtxTrendRecorder.ORDER_FILLED, order.getOrderId(),
+                    order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()),
+                    order.getTradeAveragePrice(), nz(order.getFee()), order.getFeeCurrency(), order.getRealProfit(),
+                    "close filled state=" + exchangeState(order));
             recorder.markCloseFilled(position.getId(), nz(order.getTradeVolume()), order.getTradeAveragePrice(),
                     nz(order.getFee()), order.getRealProfit(), "close filled state=" + exchangeState(order));
             return RunResult.of(RunCode.DONE, position.getId(), "position done");
         }
         if (terminal(order)) {
+            recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_CLOSE,
+                    position.getCloseClientOrderId(), HtxTrendRecorder.ORDER_TERMINAL, order.getOrderId(),
+                    order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()),
+                    order.getTradeAveragePrice(), nz(order.getFee()), order.getFeeCurrency(), order.getRealProfit(),
+                    "close terminal without fill state=" + exchangeState(order));
             recorder.markStatus(position.getId(), HtxTrendRecorder.UNKNOWN,
                     "close terminal without fill state=" + exchangeState(order));
             return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(), "close terminal without fill");
@@ -490,6 +524,27 @@ public class HtxTrendFollowingService {
         String positionSide = longSide ? POSITION_SIDE_LONG : POSITION_SIDE_SHORT;
         return HtxUsdtSwapService.orderRequest(contractCode, Long.parseLong(clientOrderId), volume,
                 side, positionSide, reduceOnly, null, ORDER_TYPE_MARKET);
+    }
+
+    private HtxTrendOrderEntity orderIntent(HtxTrendPositionEntity position, String leg, String trendSide,
+                                            HtxSwapOrderRequest request, String reason) {
+        HtxTrendOrderEntity entity = new HtxTrendOrderEntity();
+        entity.setPositionId(position.getId());
+        entity.setPositionKey(position.getPositionKey());
+        entity.setContractCode(request.getContractCode());
+        entity.setLeg(leg);
+        entity.setTrendSide(trendSide);
+        entity.setOrderSide(request.getSide());
+        entity.setPositionSide(request.getPositionSide());
+        entity.setReduceOnly(Boolean.TRUE.equals(request.getReduceOnly()));
+        entity.setClientOrderId(request.getClientOrderId());
+        entity.setRequestVolume(Long.parseLong(request.getVolume()));
+        entity.setFilledContracts(BigDecimal.ZERO);
+        entity.setFee(BigDecimal.ZERO);
+        entity.setStatus(HtxTrendRecorder.ORDER_INTENT);
+        entity.setReason(reason);
+        entity.setMessage("prepared " + leg.toLowerCase(Locale.ROOT) + " order");
+        return entity;
     }
 
     private long targetVolume(BigDecimal entryPrice, BigDecimal atr, BigDecimal contractSize) {

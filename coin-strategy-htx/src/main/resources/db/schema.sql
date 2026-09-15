@@ -330,6 +330,39 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     INDEX idx_trend_position_close    (close_order_id)
 );
 
+-- Contract-order audit trail for HTX trend following. A row is inserted before each
+-- live order send; if this insert fails, the strategy refuses to send the order.
+CREATE TABLE IF NOT EXISTS htx_trend_order (
+    id                       BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    position_id              BIGINT         NOT NULL,
+    position_key             VARCHAR(128)   NOT NULL,
+    contract_code            VARCHAR(32)    NOT NULL,
+    leg                      VARCHAR(16)    NOT NULL,
+    trend_side               VARCHAR(8)     NOT NULL,
+    order_side               VARCHAR(8)     NOT NULL,
+    position_side            VARCHAR(8)     NOT NULL,
+    reduce_only              TINYINT(1)     NOT NULL DEFAULT 0,
+    client_order_id          VARCHAR(64)    NOT NULL,
+    exchange_order_id        BIGINT,
+    exchange_client_order_id BIGINT,
+    request_volume           BIGINT         NOT NULL,
+    filled_contracts         DECIMAL(36,18) NOT NULL DEFAULT 0,
+    average_price            DECIMAL(36,18),
+    fee                      DECIMAL(36,18) NOT NULL DEFAULT 0,
+    fee_currency             VARCHAR(16),
+    realized_profit          DECIMAL(36,18),
+    exchange_state           VARCHAR(32),
+    status                   VARCHAR(32)    NOT NULL,
+    reason                   VARCHAR(512),
+    message                  VARCHAR(512),
+    created_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_trend_order_client (client_order_id),
+    INDEX idx_trend_order_position   (position_id, leg, status),
+    INDEX idx_trend_order_exchange   (exchange_order_id),
+    INDEX idx_trend_order_created    (created_at)
+);
+
 -- Append-only snapshots of the computed trend signal. This is the main observation surface while
 -- htx.trend.observe-only=true.
 CREATE TABLE IF NOT EXISTS htx_trend_signal (
