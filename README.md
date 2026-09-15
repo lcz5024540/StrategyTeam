@@ -142,6 +142,7 @@ Y
 
 ## 策略文档索引 (Strategy Documentation)
 
+*   [HTX XAUT-USDT 合约趋势策略](htx-trend/HTX_TREND_FOLLOWING_STRATEGY.md)
 *   [资金费率套利策略 (Funding Rate Arbitrage)](funding-rate/FUNDING_RATE_ARBITRAGE.md)
 *   [TOP50 趋势与波动率策略 (Top 50 Trend & Volatility)](TOP50_STRATEGY.md)
 *   [常规技术分析策略 (Conventional Technical Analysis)](CONVENTIONAL_TECHNICAL_STRATEGY.md)
