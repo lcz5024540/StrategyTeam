@@ -337,7 +337,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_signal (
     contract_code   VARCHAR(32)    NOT NULL,
     period          VARCHAR(16)    NOT NULL,
     bar_time        BIGINT,
-    signal          VARCHAR(16)    NOT NULL,
+    trend_signal    VARCHAR(16)    NOT NULL,
     close_price     DECIMAL(36,18),
     ema_fast        DECIMAL(36,18),
     ema_slow        DECIMAL(36,18),

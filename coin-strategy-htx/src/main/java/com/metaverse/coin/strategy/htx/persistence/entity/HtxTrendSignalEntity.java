@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.persistence.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -17,6 +18,7 @@ public class HtxTrendSignalEntity {
     private String contractCode;
     private String period;
     private Long barTime;
+    @TableField("trend_signal")
     private String signal;
     private BigDecimal closePrice;
     private BigDecimal emaFast;
