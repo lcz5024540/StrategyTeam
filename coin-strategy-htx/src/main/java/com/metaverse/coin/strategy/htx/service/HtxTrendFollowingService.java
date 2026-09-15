@@ -112,7 +112,7 @@ public class HtxTrendFollowingService {
 
     private RunResult openIfEligible(String contractCode, TrendSignal signal, HtxSwapContractInfo contract) {
         if (signal.side() == TrendSide.FLAT) {
-            return RunResult.of(RunCode.OBSERVED, null, signal.reason());
+            return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
         }
         String fundingCostGate = fundingCostGate(contractCode, signal.side(), properties.getMaxEntryFundingCostRate());
         if (fundingCostGate != null) {
@@ -769,7 +769,7 @@ public class HtxTrendFollowingService {
     }
 
     public enum RunCode {
-        OBSERVED, ENTRY_SENT, ACTIVE, CLOSE_SENT, DONE, WAITING, SKIPPED, REJECTED, MANUAL_REVIEW
+        OBSERVED, NO_SIGNAL, ENTRY_SENT, ACTIVE, CLOSE_SENT, DONE, WAITING, SKIPPED, REJECTED, MANUAL_REVIEW
     }
 
     public record RunResult(RunCode code, Long positionId, String message) {
