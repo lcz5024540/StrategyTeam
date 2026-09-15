@@ -363,6 +363,40 @@ CREATE TABLE IF NOT EXISTS htx_trend_order (
     INDEX idx_trend_order_created    (created_at)
 );
 
+-- Shadow-only multi-asset, multi-period trend ensemble candidates. These rows are generated
+-- before any live-order decision and are used to compare models, periods and symbols.
+CREATE TABLE IF NOT EXISTS htx_trend_candidate_signal (
+    id                   BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    contract_code        VARCHAR(32)    NOT NULL,
+    period               VARCHAR(16)    NOT NULL,
+    bar_time             BIGINT,
+    direction            VARCHAR(16)    NOT NULL,
+    regime               VARCHAR(32)    NOT NULL,
+    signal_score         DECIMAL(36,18) NOT NULL DEFAULT 0,
+    long_score           DECIMAL(36,18) NOT NULL DEFAULT 0,
+    short_score          DECIMAL(36,18) NOT NULL DEFAULT 0,
+    score_gap            DECIMAL(36,18) NOT NULL DEFAULT 0,
+    close_price          DECIMAL(36,18),
+    ema_fast             DECIMAL(36,18),
+    ema_medium           DECIMAL(36,18),
+    ema_slow             DECIMAL(36,18),
+    breakout_high        DECIMAL(36,18),
+    breakout_low         DECIMAL(36,18),
+    atr                  DECIMAL(36,18),
+    atr_pct              DECIMAL(36,18),
+    adx                  DECIMAL(36,18),
+    momentum_pct         DECIMAL(36,18),
+    volume_ratio         DECIMAL(36,18),
+    entry_reason         VARCHAR(512),
+    invalidation_reason  VARCHAR(512),
+    shadow               TINYINT(1)     NOT NULL DEFAULT 1,
+    model_version        VARCHAR(64)    NOT NULL,
+    created_at           DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_trend_candidate_symbol_time (contract_code, period, bar_time, created_at),
+    INDEX idx_trend_candidate_direction   (direction, signal_score, created_at),
+    INDEX idx_trend_candidate_created     (created_at)
+);
+
 -- Append-only snapshots of the computed trend signal. This is the main observation surface while
 -- htx.trend.observe-only=true.
 CREATE TABLE IF NOT EXISTS htx_trend_signal (

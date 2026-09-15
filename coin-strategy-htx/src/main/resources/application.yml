@@ -156,6 +156,29 @@ htx:
     initial-delay-ms: ${HTX_TREND_INITIAL_DELAY_MS:30000}
     cooldown-ms: ${HTX_TREND_COOLDOWN_MS:3600000}
     client-order-id-prefix: ${HTX_TREND_CLIENT_ORDER_ID_PREFIX:CSTF}
+    ensemble-shadow:
+      enabled: ${HTX_TREND_ENSEMBLE_SHADOW_ENABLED:false}
+      contract-codes: ${HTX_TREND_ENSEMBLE_CONTRACTS:BTC-USDT,ETH-USDT,XAUT-USDT}
+      periods: ${HTX_TREND_ENSEMBLE_PERIODS:15min,30min,60min,4hour}
+      kline-size: ${HTX_TREND_ENSEMBLE_KLINE_SIZE:180}
+      candle-close-grace-seconds: ${HTX_TREND_ENSEMBLE_CANDLE_CLOSE_GRACE_SECONDS:10}
+      fast-ema-period: ${HTX_TREND_ENSEMBLE_FAST_EMA_PERIOD:20}
+      medium-ema-period: ${HTX_TREND_ENSEMBLE_MEDIUM_EMA_PERIOD:60}
+      slow-ema-period: ${HTX_TREND_ENSEMBLE_SLOW_EMA_PERIOD:120}
+      breakout-lookback: ${HTX_TREND_ENSEMBLE_BREAKOUT_LOOKBACK:20}
+      momentum-lookback: ${HTX_TREND_ENSEMBLE_MOMENTUM_LOOKBACK:12}
+      atr-period: ${HTX_TREND_ENSEMBLE_ATR_PERIOD:14}
+      adx-period: ${HTX_TREND_ENSEMBLE_ADX_PERIOD:14}
+      volume-lookback: ${HTX_TREND_ENSEMBLE_VOLUME_LOOKBACK:20}
+      min-atr-pct: ${HTX_TREND_ENSEMBLE_MIN_ATR_PCT:0.0010}
+      min-adx: ${HTX_TREND_ENSEMBLE_MIN_ADX:16}
+      min-momentum-pct: ${HTX_TREND_ENSEMBLE_MIN_MOMENTUM_PCT:0.0015}
+      min-volume-ratio: ${HTX_TREND_ENSEMBLE_MIN_VOLUME_RATIO:1.10}
+      entry-score-threshold: ${HTX_TREND_ENSEMBLE_ENTRY_SCORE_THRESHOLD:60}
+      min-score-gap: ${HTX_TREND_ENSEMBLE_MIN_SCORE_GAP:12}
+      poll-interval-ms: ${HTX_TREND_ENSEMBLE_POLL_INTERVAL_MS:60000}
+      initial-delay-ms: ${HTX_TREND_ENSEMBLE_INITIAL_DELAY_MS:45000}
+      model-version: ${HTX_TREND_ENSEMBLE_MODEL_VERSION:ensemble-shadow-v1}
 
   contract:
     # USDT 本位永续合约模式。默认整模块关闭；启用后仍默认 dry-run。
