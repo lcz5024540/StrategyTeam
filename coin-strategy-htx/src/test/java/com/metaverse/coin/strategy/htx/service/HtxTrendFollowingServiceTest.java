@@ -101,6 +101,24 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void observeOnlyStillRecordsSignalWhenFundingArbitrageEnabled() {
+        properties.setObserveOnly(true);
+        fundingArbitrageProperties.setEnabled(true);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        givenDepth();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.OBSERVED, result.code());
+        verify(recorder).recordSignal(any());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void marketMakerSwitchBlocksExclusiveTrendMode() {
         marketMakerProperties.setEnabled(true);
 

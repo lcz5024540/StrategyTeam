@@ -573,10 +573,10 @@ public class HtxTrendFollowingService {
         if (!contractProperties.isEnabled()) {
             return "contract module disabled";
         }
-        if (marketMakerProperties != null && marketMakerProperties.isEnabled()) {
+        if (!properties.isObserveOnly() && marketMakerProperties != null && marketMakerProperties.isEnabled()) {
             return "trend exclusive mode blocked: market-maker enabled";
         }
-        if (fundingArbitrageProperties != null && fundingArbitrageProperties.isEnabled()) {
+        if (!properties.isObserveOnly() && fundingArbitrageProperties != null && fundingArbitrageProperties.isEnabled()) {
             return "trend exclusive mode blocked: funding arbitrage enabled";
         }
         if (!properties.isObserveOnly() && (contractProperties.isDryRun() || !contractProperties.isLiveEnabled())) {
