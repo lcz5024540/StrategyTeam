@@ -51,6 +51,10 @@
 | `HTX_TREND_MAX_HOLD_FUNDING_COST_RATE` | `0.0012` | 持仓资金费成本退出阈值 |
 | `HTX_TREND_COOLDOWN_MS` | `3600000` | 完成一轮后冷却 1 小时 |
 
+## 长期组合规划
+
+当前文档描述的是已上线的单策略链路验证版。多资产、多周期、多模型的长期组合规划见 [`HTX_TREND_ENSEMBLE_LONG_TERM_PLAN.md`](HTX_TREND_ENSEMBLE_LONG_TERM_PLAN.md)。
+
 ## 推荐上线步骤
 
 第一步，观察模式启动。设置 `HTX_TREND_ENABLED=true`、`HTX_TREND_OBSERVE_ONLY=true`、`HTX_MM_ENABLED=false`、`HTX_FUNDING_ARB_ENABLED=false`，确认 `htx_trend_signal` 能稳定写入，并观察至少一个完整 60 分钟趋势周期。
