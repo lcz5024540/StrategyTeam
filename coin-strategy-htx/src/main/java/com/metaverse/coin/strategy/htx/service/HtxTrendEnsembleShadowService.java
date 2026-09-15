@@ -58,10 +58,14 @@ public class HtxTrendEnsembleShadowService {
             for (String period : normalizedPeriods(properties.getPeriods())) {
                 try {
                     TrendCandidateSignal signal = loadSignal(contractCode, period, now);
-                    recorder.record(toEntity(contractCode, period, signal));
-                    recorded++;
-                    log.info("[HTX-TREND-ENSEMBLE] shadow=true contract={} period={} direction={} score={} regime={} reason={}",
-                            contractCode, period, signal.direction(), signal.signalScore(), signal.regime(),
+                    boolean stored = recorder.record(toEntity(contractCode, period, signal));
+                    if (stored) {
+                        recorded++;
+                    } else {
+                        failures.add(contractCode + "/" + period + ": persistence failed");
+                    }
+                    log.info("[HTX-TREND-ENSEMBLE] shadow=true stored={} contract={} period={} direction={} score={} regime={} reason={}",
+                            stored, contractCode, period, signal.direction(), signal.signalScore(), signal.regime(),
                             signal.entryReason());
                 } catch (RuntimeException ex) {
                     String failure = contractCode + "/" + period + ": " + ex.getMessage();

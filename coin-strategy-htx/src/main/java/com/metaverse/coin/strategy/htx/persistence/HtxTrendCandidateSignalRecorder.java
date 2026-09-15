@@ -14,14 +14,16 @@ public class HtxTrendCandidateSignalRecorder {
 
     private final HtxTrendCandidateSignalMapper mapper;
 
-    public void record(HtxTrendCandidateSignalEntity entity) {
+    public boolean record(HtxTrendCandidateSignalEntity entity) {
         try {
             mapper.insert(entity);
+            return true;
         } catch (RuntimeException ex) {
             log.warn("trend candidate insert failed contract={} period={} direction={}",
                     entity == null ? null : entity.getContractCode(),
                     entity == null ? null : entity.getPeriod(),
                     entity == null ? null : entity.getDirection(), ex);
+            return false;
         }
     }
 }
