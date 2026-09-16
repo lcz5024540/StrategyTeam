@@ -54,6 +54,7 @@ public class MultiExchangeFundingRateProperties {
     private final BigDecimal maxExchangeNotional;
     private final boolean autoPaperOpenEnabled;
     private final BigDecimal autoPaperOpenNotional;
+    private final BigDecimal autoPaperMinimumExecutableNotional;
     private final int autoPaperOpenMaxPerCycle;
     private final Set<String> autoPaperAllowedPairs;
     private final int autoPaperMaxOpenPositions;
@@ -106,6 +107,7 @@ public class MultiExchangeFundingRateProperties {
         this.maxExchangeNotional = new BigDecimal("2000");
         this.autoPaperOpenEnabled = false;
         this.autoPaperOpenNotional = BigDecimal.ZERO;
+        this.autoPaperMinimumExecutableNotional = BigDecimal.ZERO;
         this.autoPaperOpenMaxPerCycle = 1;
         this.autoPaperAllowedPairs = Set.of();
         this.autoPaperMaxOpenPositions = 2;
@@ -182,6 +184,8 @@ public class MultiExchangeFundingRateProperties {
                 "arbitrage.multi-exchange.auto-paper-open-enabled", "false"));
         this.autoPaperOpenNotional = decimal(env,
                 "arbitrage.multi-exchange.auto-paper-open-notional", "0");
+        this.autoPaperMinimumExecutableNotional = decimal(env,
+                "arbitrage.multi-exchange.auto-paper-min-executable-notional", "0");
         this.autoPaperOpenMaxPerCycle = positiveInt(env,
                 "arbitrage.multi-exchange.auto-paper-open-max-per-cycle", 1);
         String allowedPairs = env.getProperty(
@@ -249,6 +253,7 @@ public class MultiExchangeFundingRateProperties {
     public BigDecimal getMaxExchangeNotional() { return maxExchangeNotional; }
     public boolean isAutoPaperOpenEnabled() { return autoPaperOpenEnabled; }
     public BigDecimal getAutoPaperOpenNotional() { return autoPaperOpenNotional; }
+    public BigDecimal getAutoPaperMinimumExecutableNotional() { return autoPaperMinimumExecutableNotional; }
     public int getAutoPaperOpenMaxPerCycle() { return autoPaperOpenMaxPerCycle; }
     public Set<String> getAutoPaperAllowedPairs() { return autoPaperAllowedPairs; }
     public int getAutoPaperMaxOpenPositions() { return autoPaperMaxOpenPositions; }

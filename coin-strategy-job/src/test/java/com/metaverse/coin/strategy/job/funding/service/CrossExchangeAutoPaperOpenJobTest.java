@@ -165,6 +165,22 @@ class CrossExchangeAutoPaperOpenJobTest {
     }
 
     @Test
+    void skipsApprovedOpportunityBelowExecutableLiquidityFloor() {
+        CrossExchangeOpportunity opportunity = opportunity("approved", "BTCUSDT", "0.0008", "250");
+        when(scanner.approvedOpportunities(NOW)).thenReturn(List.of(opportunity));
+        when(paper.positions()).thenReturn(List.of());
+        when(positions.selectList(any())).thenReturn(List.of());
+        MockEnvironment environment = baseEnvironment("200", "1")
+                .withProperty("arbitrage.multi-exchange.auto-paper-min-executable-notional", "300");
+
+        int opened = job(new MultiExchangeFundingRateProperties(environment)).openApproved(NOW);
+
+        assertEquals(0, opened);
+        verify(scanner, never()).revalidateApprovedOpportunity(any(), any(), any());
+        verify(paper, never()).open(any(), any(), any());
+    }
+
+    @Test
     void coolsDownFailedOpportunityInsteadOfRetryingEveryCycle() {
         CrossExchangeOpportunity opportunity = opportunity("approved", "BTCUSDT", "0.0008", "250");
         when(scanner.approvedOpportunities(any())).thenReturn(List.of(opportunity));

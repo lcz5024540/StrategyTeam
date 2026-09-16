@@ -122,6 +122,15 @@ public class CrossExchangeAutoPaperOpenJob {
                 if (!isAllowedPair(candidate) || isCoolingDown(candidate, now)) {
                     continue;
                 }
+                if (!hasEnoughExecutableLiquidity(candidate)) {
+                    LOG.info("[FundingAutoPaperOpen] skip low executable liquidity: id={}, symbol={}, "
+                                    + "long={}, short={}, executableNotional={}, required={}",
+                            candidate.opportunityId(), candidate.symbol(),
+                            candidate.longQuote().exchange(), candidate.shortQuote().exchange(),
+                            candidate.executableNotional(),
+                            properties.getAutoPaperMinimumExecutableNotional());
+                    continue;
+                }
                 if (paper.isCircuitOpen(candidate, now)) {
                     LOG.info("[FundingAutoPaperOpen] skip scoped circuit: id={}, symbol={}, long={}, short={}",
                             candidate.opportunityId(), candidate.symbol(),
@@ -203,6 +212,15 @@ public class CrossExchangeAutoPaperOpenJob {
         String pair = opportunity.longQuote().exchange().name() + ">"
                 + opportunity.shortQuote().exchange().name();
         return allowed.contains(pair);
+    }
+
+    private boolean hasEnoughExecutableLiquidity(CrossExchangeOpportunity opportunity) {
+        BigDecimal required = properties.getAutoPaperMinimumExecutableNotional();
+        if (required == null || required.signum() <= 0) {
+            return true;
+        }
+        BigDecimal executable = opportunity.executableNotional();
+        return executable != null && executable.compareTo(required) >= 0;
     }
 
     private boolean isCoolingDown(CrossExchangeOpportunity opportunity, Instant now) {

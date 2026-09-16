@@ -128,6 +128,18 @@ class CrossExchangeFundingArbitrageControllerTest {
     }
 
     @Test
+    void returnsPaperPnlAttributionForLiquidityReview() {
+        CrossExchangePaperPnlService.AttributionSummary expected =
+                new CrossExchangePaperPnlService.AttributionSummary("DOGEUSDT", "BITGET>OKX",
+                        BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE,
+                        BigDecimal.ONE, new BigDecimal("200"), BigDecimal.TEN,
+                        BigDecimal.ONE, 1, 0, 1, 4, 2, 14);
+        when(pnlService.summarizeAttribution(14)).thenReturn(List.of(expected));
+
+        assertEquals(List.of(expected), controller.paperPnlAttribution(14));
+    }
+
+    @Test
     void exposesDirectionalBasisProfile() {
         basisGate.seed("BTCUSDT", Exchange.BITGET, Exchange.OKX, new BigDecimal("0.001"));
         basisGate.seed("BTCUSDT", Exchange.BITGET, Exchange.OKX, new BigDecimal("0.003"));

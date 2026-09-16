@@ -54,6 +54,7 @@ arbitrage:
     max-exchange-notional: 600
     auto-paper-open-enabled: false
     auto-paper-open-notional: 200
+    auto-paper-min-executable-notional: 1000
     auto-paper-open-max-per-cycle: 1
     auto-paper-allowed-pairs: "BITGET>OKX"
     auto-paper-max-open-positions: 2

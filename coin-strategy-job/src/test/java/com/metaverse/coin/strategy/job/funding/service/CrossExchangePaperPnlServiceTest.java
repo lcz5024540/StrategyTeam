@@ -109,6 +109,40 @@ class CrossExchangePaperPnlServiceTest {
         assertEquals(7, result.windowDays());
     }
 
+    @Test
+    void groupsAttributionBySymbolAndExchangePairWithLiquidityEvidence() {
+        CrossExchangeArbPositionMapper positions = mock(CrossExchangeArbPositionMapper.class);
+        CrossExchangeArbOrderMapper orders = mock(CrossExchangeArbOrderMapper.class);
+        CrossExchangeFundingSettlementMapper settlements = mock(CrossExchangeFundingSettlementMapper.class);
+        CrossExchangeArbOrderEntity longEntry = order("BITGET", "LONG", false, "2", "10")
+                .setImpactBps(new BigDecimal("12.5"))
+                .setSlippageAmount(new BigDecimal("0.4"));
+        CrossExchangeArbOrderEntity shortEntry = order("OKX", "SHORT", false, "2", "10.5")
+                .setImpactBps(new BigDecimal("8.0"))
+                .setSlippageAmount(new BigDecimal("0.3"));
+        when(positions.selectList(any())).thenReturn(List.of(
+                position("p1", "CLOSED", "DOGEUSDT", "BITGET", "OKX")));
+        when(positions.selectOne(any())).thenReturn(position("p1", "CLOSED"));
+        when(orders.selectList(any())).thenReturn(List.of(longEntry, shortEntry));
+        when(settlements.selectList(any())).thenReturn(List.of(
+                new CrossExchangeFundingSettlementEntity().setActualAmount(new BigDecimal("0.1"))));
+
+        CrossExchangePaperPnlService.AttributionSummary result = new CrossExchangePaperPnlService(
+                positions, orders, settlements, new MultiExchangeFundingRateProperties())
+                .summarizeAttribution(14).get(0);
+
+        assertEquals("DOGEUSDT", result.symbol());
+        assertEquals("BITGET>OKX", result.exchangePair());
+        assertEquals(1, result.positionCount());
+        assertEquals(0, new BigDecimal("1.0").compareTo(result.basisPnl()));
+        assertEquals(0, new BigDecimal("0.1").compareTo(result.fundingIncome()));
+        assertEquals(0, new BigDecimal("0.2").compareTo(result.estimatedExecutionCost()));
+        assertEquals(0, new BigDecimal("0.9").compareTo(result.totalPnl()));
+        assertEquals(0, new BigDecimal("20.500000000000").compareTo(result.averageEntryNotional()));
+        assertEquals(0, new BigDecimal("12.5").compareTo(result.maximumImpactBps()));
+        assertEquals(0, new BigDecimal("0.7").compareTo(result.totalSlippageAmount()));
+    }
+
     private CrossExchangeMarketDataProvider provider(Exchange exchange, String bid, String ask) {
         Instant now = Instant.now();
         return new CrossExchangeMarketDataProvider() {
@@ -158,5 +192,13 @@ class CrossExchangePaperPnlServiceTest {
                 .setPositionCode(code)
                 .setStatus(status)
                 .setOpenedAt(new Date());
+    }
+
+    private CrossExchangeArbPositionEntity position(String code, String status, String symbol,
+            String longExchange, String shortExchange) {
+        return position(code, status)
+                .setSymbol(symbol)
+                .setLongExchange(longExchange)
+                .setShortExchange(shortExchange);
     }
 }

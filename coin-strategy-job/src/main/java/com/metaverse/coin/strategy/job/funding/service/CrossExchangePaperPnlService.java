@@ -16,10 +16,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -131,6 +134,34 @@ public class CrossExchangePaperPnlService {
                 settlementCount, safeDays);
     }
 
+    public List<AttributionSummary> summarizeAttribution(int days) {
+        int safeDays = days <= 0 ? 14 : Math.min(days, 30);
+        Date openedAfter = Date.from(Instant.now().minus(safeDays, ChronoUnit.DAYS));
+        List<CrossExchangeArbPositionEntity> recentPositions = positions.selectList(
+                new LambdaQueryWrapper<CrossExchangeArbPositionEntity>()
+                        .ge(CrossExchangeArbPositionEntity::getOpenedAt, openedAfter)
+                        .orderByDesc(CrossExchangeArbPositionEntity::getOpenedAt)
+                        .last("LIMIT 500"));
+        Map<String, AttributionAccumulator> groups = new LinkedHashMap<>();
+        for (CrossExchangeArbPositionEntity position : recentPositions) {
+            PaperPnlSummary summary = summarize(position.getPositionCode());
+            List<CrossExchangeArbOrderEntity> positionOrders = orders.selectList(
+                    new LambdaQueryWrapper<CrossExchangeArbOrderEntity>()
+                            .eq(CrossExchangeArbOrderEntity::getPositionCode,
+                                    position.getPositionCode()));
+            String symbol = value(position.getSymbol(), "UNKNOWN");
+            String exchangePair = value(position.getLongExchange(), "UNKNOWN") + ">"
+                    + value(position.getShortExchange(), "UNKNOWN");
+            groups.computeIfAbsent(symbol + "|" + exchangePair,
+                    key -> new AttributionAccumulator(symbol, exchangePair))
+                    .add(position, summary, positionOrders);
+        }
+        return groups.values().stream()
+                .map(item -> item.toSummary(safeDays))
+                .sorted(Comparator.comparing(AttributionSummary::totalPnl))
+                .toList();
+    }
+
     private MarkToMarket markToMarket(CrossExchangeArbPositionEntity position) {
         if (!"OPENED".equals(position.getStatus())) {
             return new MarkToMarket(BigDecimal.ZERO, false, "position is not open");
@@ -182,6 +213,93 @@ public class CrossExchangePaperPnlService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
+    private static String value(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static BigDecimal divide(BigDecimal value, int divisor) {
+        if (divisor <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return value.divide(BigDecimal.valueOf(divisor), 12, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal averageEntryNotional(List<CrossExchangeArbOrderEntity> orders) {
+        BigDecimal total = BigDecimal.ZERO;
+        int legs = 0;
+        for (CrossExchangeArbOrderEntity order : orders) {
+            if (Boolean.TRUE.equals(order.getReduceOnly())) {
+                continue;
+            }
+            total = total.add(value(order.getFilledQuantity()).multiply(value(order.getAveragePrice())));
+            legs++;
+        }
+        return divide(total, legs);
+    }
+
+    private static BigDecimal maxImpactBps(List<CrossExchangeArbOrderEntity> orders) {
+        return orders.stream()
+                .map(CrossExchangeArbOrderEntity::getImpactBps)
+                .filter(value -> value != null)
+                .max(BigDecimal::compareTo)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    private static BigDecimal totalSlippageAmount(List<CrossExchangeArbOrderEntity> orders) {
+        return orders.stream()
+                .map(CrossExchangeArbOrderEntity::getSlippageAmount)
+                .map(CrossExchangePaperPnlService::value)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static final class AttributionAccumulator {
+        private final String symbol;
+        private final String exchangePair;
+        private BigDecimal basisPnl = BigDecimal.ZERO;
+        private BigDecimal fundingIncome = BigDecimal.ZERO;
+        private BigDecimal executionCost = BigDecimal.ZERO;
+        private BigDecimal totalPnl = BigDecimal.ZERO;
+        private BigDecimal entryNotional = BigDecimal.ZERO;
+        private BigDecimal maxImpactBps = BigDecimal.ZERO;
+        private BigDecimal slippageAmount = BigDecimal.ZERO;
+        private int positionCount;
+        private int openPositionCount;
+        private int closedPositionCount;
+        private int orderCount;
+        private int settlementCount;
+
+        private AttributionAccumulator(String symbol, String exchangePair) {
+            this.symbol = symbol;
+            this.exchangePair = exchangePair;
+        }
+
+        private void add(CrossExchangeArbPositionEntity position, PaperPnlSummary summary,
+                List<CrossExchangeArbOrderEntity> orders) {
+            basisPnl = basisPnl.add(summary.basisPnl());
+            fundingIncome = fundingIncome.add(summary.fundingIncome());
+            executionCost = executionCost.add(summary.estimatedExecutionCost());
+            totalPnl = totalPnl.add(summary.totalPnl());
+            entryNotional = entryNotional.add(averageEntryNotional(orders));
+            maxImpactBps = maxImpactBps.max(maxImpactBps(orders));
+            slippageAmount = slippageAmount.add(totalSlippageAmount(orders));
+            positionCount++;
+            if ("OPENED".equals(position.getStatus())) {
+                openPositionCount++;
+            } else if ("CLOSED".equals(position.getStatus())) {
+                closedPositionCount++;
+            }
+            orderCount += summary.orderCount();
+            settlementCount += summary.settlementCount();
+        }
+
+        private AttributionSummary toSummary(int days) {
+            return new AttributionSummary(symbol, exchangePair, basisPnl, fundingIncome, executionCost,
+                    totalPnl, divide(totalPnl, positionCount), divide(entryNotional, positionCount),
+                    maxImpactBps, slippageAmount, positionCount, openPositionCount, closedPositionCount,
+                    orderCount, settlementCount, days);
+        }
+    }
+
     public record PaperPnlSummary(String positionId, String source, BigDecimal basisPnl,
             BigDecimal fundingIncome, BigDecimal estimatedExecutionCost, BigDecimal totalPnl,
             int orderCount, int settlementCount, boolean markToMarketIncluded,
@@ -195,5 +313,13 @@ public class CrossExchangePaperPnlService {
             BigDecimal fundingIncome, BigDecimal estimatedExecutionCost, BigDecimal totalPnl,
             int positionCount, int openPositionCount, int closedPositionCount, int orderCount,
             int settlementCount, int windowDays) {
+    }
+
+    public record AttributionSummary(String symbol, String exchangePair, BigDecimal basisPnl,
+            BigDecimal fundingIncome, BigDecimal estimatedExecutionCost, BigDecimal totalPnl,
+            BigDecimal averagePositionPnl, BigDecimal averageEntryNotional,
+            BigDecimal maximumImpactBps, BigDecimal totalSlippageAmount, int positionCount,
+            int openPositionCount, int closedPositionCount, int orderCount, int settlementCount,
+            int windowDays) {
     }
 }
