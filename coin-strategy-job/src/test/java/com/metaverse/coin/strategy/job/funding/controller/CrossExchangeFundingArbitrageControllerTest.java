@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunity
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunityScanService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePaperTradingService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePositionMonitorService;
+import com.metaverse.coin.strategy.core.arbitrage.multi.DirectionalBasisAdmissionGate;
 import com.metaverse.coin.strategy.core.arbitrage.multi.ExchangeHealthRegistry;
 import com.metaverse.coin.strategy.core.arbitrage.multi.Exchange;
 import com.metaverse.coin.strategy.core.arbitrage.multi.NormalizedFundingRateSnapshot;
@@ -38,8 +39,10 @@ class CrossExchangeFundingArbitrageControllerTest {
     private final CrossExchangeFundingReplayService replay = mock(CrossExchangeFundingReplayService.class);
     private final CrossExchangePositionMonitorService positionMonitor = mock(CrossExchangePositionMonitorService.class);
     private final CrossExchangePaperPnlService pnlService = mock(CrossExchangePaperPnlService.class);
+    private final DirectionalBasisAdmissionGate basisGate = new DirectionalBasisAdmissionGate(true, 2, 4, 70);
     private final CrossExchangeFundingArbitrageController controller = new CrossExchangeFundingArbitrageController(
-            opportunities, positions, paper, scanner, health, persistence, replay, positionMonitor, pnlService);
+            opportunities, positions, paper, scanner, health, persistence, replay, positionMonitor, pnlService,
+            basisGate);
 
     @Test
     void opensOnlyServerApprovedOpportunity() {
@@ -122,6 +125,18 @@ class CrossExchangeFundingArbitrageControllerTest {
         when(pnlService.summarizePortfolio(7)).thenReturn(expected);
 
         assertEquals(expected, controller.paperPortfolioPnl(7));
+    }
+
+    @Test
+    void exposesDirectionalBasisProfile() {
+        basisGate.seed("BTCUSDT", Exchange.BITGET, Exchange.OKX, new BigDecimal("0.001"));
+        basisGate.seed("BTCUSDT", Exchange.BITGET, Exchange.OKX, new BigDecimal("0.003"));
+
+        DirectionalBasisAdmissionGate.Profile profile = controller.basisProfile(
+                "BTCUSDT", Exchange.BITGET, Exchange.OKX);
+
+        assertEquals(2, profile.sampleCount());
+        assertEquals(0, new BigDecimal("0.002").compareTo(profile.median()));
     }
 
     private CrossExchangeOpportunity opportunity(String id, CrossExchangeOpportunity.Status status) {

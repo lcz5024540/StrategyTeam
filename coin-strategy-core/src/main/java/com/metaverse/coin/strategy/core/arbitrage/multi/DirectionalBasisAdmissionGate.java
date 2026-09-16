@@ -78,6 +78,21 @@ public final class DirectionalBasisAdmissionGate {
         }
     }
 
+    /** Restores one already-observed sample without applying an admission decision. */
+    public void seed(String symbol, Exchange longExchange, Exchange shortExchange, BigDecimal basis) {
+        if (!enabled || basis == null) {
+            return;
+        }
+        Deque<BigDecimal> samples = history.computeIfAbsent(
+                key(symbol, longExchange, shortExchange), ignored -> new ArrayDeque<>());
+        synchronized (samples) {
+            samples.addLast(basis);
+            while (samples.size() > windowSize) {
+                samples.removeFirst();
+            }
+        }
+    }
+
     private String key(String symbol, Exchange longExchange, Exchange shortExchange) {
         return symbol + '|' + longExchange.name() + '|' + shortExchange.name();
     }

@@ -10,6 +10,8 @@ import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunity
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangeOpportunityScanService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePaperTradingService;
 import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePositionMonitorService;
+import com.metaverse.coin.strategy.core.arbitrage.multi.DirectionalBasisAdmissionGate;
+import com.metaverse.coin.strategy.core.arbitrage.multi.Exchange;
 import com.metaverse.coin.strategy.core.arbitrage.multi.ExchangeHealthRegistry;
 import com.metaverse.coin.strategy.core.arbitrage.multi.PaperHedgePosition;
 import com.metaverse.coin.strategy.job.funding.service.CrossExchangeFundingReplayService;
@@ -38,6 +40,7 @@ public class CrossExchangeFundingArbitrageController {
     private final CrossExchangeFundingReplayService replay;
     private final CrossExchangePositionMonitorService positionMonitor;
     private final CrossExchangePaperPnlService pnlService;
+    private final DirectionalBasisAdmissionGate basisGate;
 
     public CrossExchangeFundingArbitrageController(CrossExchangeArbOpportunityMapper opportunities,
             CrossExchangeArbPositionMapper positions, CrossExchangePaperTradingService paper,
@@ -45,7 +48,8 @@ public class CrossExchangeFundingArbitrageController {
             CrossExchangeArbitragePersistenceService persistence,
             CrossExchangeFundingReplayService replay,
             CrossExchangePositionMonitorService positionMonitor,
-            CrossExchangePaperPnlService pnlService) {
+            CrossExchangePaperPnlService pnlService,
+            DirectionalBasisAdmissionGate basisGate) {
         this.opportunities = opportunities;
         this.positions = positions;
         this.paper = paper;
@@ -55,6 +59,13 @@ public class CrossExchangeFundingArbitrageController {
         this.replay = replay;
         this.positionMonitor = positionMonitor;
         this.pnlService = pnlService;
+        this.basisGate = basisGate;
+    }
+
+    @GetMapping("/basis/profile")
+    public DirectionalBasisAdmissionGate.Profile basisProfile(@RequestParam String symbol,
+            @RequestParam Exchange longExchange, @RequestParam Exchange shortExchange) {
+        return basisGate.profile(symbol, longExchange, shortExchange);
     }
 
     @GetMapping("/opportunities")

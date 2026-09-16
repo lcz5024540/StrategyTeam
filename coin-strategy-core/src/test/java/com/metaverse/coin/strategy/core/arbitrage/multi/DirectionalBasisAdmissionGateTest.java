@@ -45,6 +45,20 @@ class DirectionalBasisAdmissionGateTest {
         assertTrue(profile.admissionThreshold().compareTo(BigDecimal.ZERO) > 0);
     }
 
+    @Test
+    void restoresPersistedSamplesWithoutAdmissionSideEffects() {
+        DirectionalBasisAdmissionGate gate = new DirectionalBasisAdmissionGate(true, 2, 2, 50);
+        gate.seed("BTCUSDT", Exchange.BITGET, Exchange.OKX, new BigDecimal("0.001"));
+        gate.seed("BTCUSDT", Exchange.BITGET, Exchange.OKX, new BigDecimal("0.003"));
+        gate.seed("BTCUSDT", Exchange.BITGET, Exchange.OKX, new BigDecimal("0.005"));
+
+        DirectionalBasisAdmissionGate.Profile profile = gate.profile(
+                "BTCUSDT", Exchange.BITGET, Exchange.OKX);
+
+        assertTrue(profile.sampleCount() == 2);
+        assertTrue(profile.median().compareTo(new BigDecimal("0.004")) == 0);
+    }
+
     private DirectionalBasisAdmissionGate.Assessment assess(DirectionalBasisAdmissionGate gate,
             String longPrice, String shortPrice) {
         return gate.assess("BTCUSDT", Exchange.BITGET, Exchange.OKX,
