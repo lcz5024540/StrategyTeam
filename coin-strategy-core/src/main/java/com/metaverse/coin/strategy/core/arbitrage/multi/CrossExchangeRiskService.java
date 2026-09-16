@@ -89,10 +89,10 @@ public class CrossExchangeRiskService {
             return new Assessment(true, "MARK_PRICE_DEVIATION");
         }
         if (position.openedAt() != null && position.openedAt().plus(limits.maxHoldingDuration()).isBefore(now)) return new Assessment(true, "MAX_HOLDING_DURATION");
-        if (position.openedAt() != null
-                && position.openedAt().plus(limits.minHoldingDuration()).isAfter(now)) {
-            return new Assessment(false, "MIN_HOLDING_DURATION");
-        }
+        // The economic exit is intentionally not delayed by a fixed holding period or a fixed
+        // number of settlements. When the forward incremental value turns negative, continuing
+        // to hold only adds basis and venue risk. The duration remains available to callers for
+        // compatibility and observation policy, but it is not an economic-exit veto.
         if (latestNetYield.compareTo(limits.exitNetYield()) < 0) return new Assessment(true, "NET_YIELD_EXIT_THRESHOLD");
         return new Assessment(false, null);
     }

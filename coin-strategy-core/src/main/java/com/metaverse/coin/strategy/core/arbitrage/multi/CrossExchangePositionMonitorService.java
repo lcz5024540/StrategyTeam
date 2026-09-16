@@ -94,7 +94,8 @@ public class CrossExchangePositionMonitorService {
                 recordUnavailableMarketData(position, exception, now);
                 continue;
             }
-            BigDecimal latestNetYield = remainingNetYield(quotes.longQuote(), quotes.shortQuote(), now);
+            BigDecimal latestNetYield = remainingIncrementalYield(
+                    quotes.longQuote(), quotes.shortQuote(), now);
             BigDecimal deviation = quotes.shortQuote().markPrice()
                     .subtract(quotes.longQuote().markPrice()).abs()
                     .divide(quotes.longQuote().markPrice(), 12, RoundingMode.HALF_UP);
@@ -187,11 +188,16 @@ public class CrossExchangePositionMonitorService {
         }
     }
 
-    private BigDecimal remainingNetYield(NormalizedFundingRateSnapshot longQuote,
+    /**
+     * Expected value of continuing to hold from now until the next funding horizon.
+     *
+     * <p>Close fees are deliberately excluded: they are payable whether the position closes now
+     * or later, so subtracting the full fee here would double count an unavoidable cost in the
+     * hold-vs-close decision. Actual close fees remain part of realized Paper PnL.</p>
+     */
+    private BigDecimal remainingIncrementalYield(NormalizedFundingRateSnapshot longQuote,
             NormalizedFundingRateSnapshot shortQuote, Instant now) {
         return FundingRateYieldProjection.projectedSpread(longQuote, shortQuote, now)
-                .subtract(oneWayCost(longQuote.exchange()))
-                .subtract(oneWayCost(shortQuote.exchange()))
                 .subtract(basisRiskBuffer);
     }
 
@@ -224,11 +230,6 @@ public class CrossExchangePositionMonitorService {
             persistence.saveRisk(position.positionId(), position.opportunity().opportunityId(),
                     "POSITION_MONITOR", false, reason);
         }
-    }
-
-    private BigDecimal oneWayCost(Exchange exchange) {
-        ExchangeCost cost = costs.get(exchange);
-        return cost == null ? BigDecimal.ZERO : cost.oneWayTakerCost();
     }
 
     private CrossExchangeMarketDataProvider provider(Exchange exchange) {

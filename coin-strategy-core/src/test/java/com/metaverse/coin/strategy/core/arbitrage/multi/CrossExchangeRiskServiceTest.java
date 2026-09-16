@@ -81,7 +81,7 @@ class CrossExchangeRiskServiceTest {
     }
 
     @Test
-    void keepsEconomicallyWeakPositionUntilMinimumHoldingDuration() {
+    void exitsEconomicallyWeakPositionWithoutWaitingForFixedHoldingDuration() {
         Instant now = Instant.now();
         var risk = new CrossExchangeRiskService(new CrossExchangeRiskService.Limits(
                 new BigDecimal("100"), new BigDecimal("100"), Duration.ofSeconds(5),
@@ -92,13 +92,9 @@ class CrossExchangeRiskServiceTest {
 
         var beforeMinimum = risk.shouldExit(position, new BigDecimal("-0.001"),
                 new BigDecimal("0.001"), now.plus(Duration.ofHours(7)), true, false);
-        var afterMinimum = risk.shouldExit(position, new BigDecimal("-0.001"),
-                new BigDecimal("0.001"), now.plus(Duration.ofHours(8)), true, false);
 
-        assertFalse(beforeMinimum.passed());
-        assertEquals("MIN_HOLDING_DURATION", beforeMinimum.reason());
-        assertTrue(afterMinimum.passed());
-        assertEquals("NET_YIELD_EXIT_THRESHOLD", afterMinimum.reason());
+        assertTrue(beforeMinimum.passed());
+        assertEquals("NET_YIELD_EXIT_THRESHOLD", beforeMinimum.reason());
     }
 
     @Test
