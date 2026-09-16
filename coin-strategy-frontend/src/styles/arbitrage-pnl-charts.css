@@ -1,0 +1,29 @@
+.arb-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.arb-chart {
+  min-width: 0;
+  padding: 1.1rem 1.1rem 0.5rem;
+}
+
+.arb-chart > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.arb-chart > header div { display: grid; gap: 0.3rem; }
+.arb-chart > header span { color: var(--muted); font-size: 0.8rem; }
+.arb-chart > header strong { color: var(--ink); font-size: 1.5rem; }
+.arb-chart > header small { color: var(--muted); max-width: 220px; text-align: right; line-height: 1.5; }
+.arb-chart-empty { min-height: 220px; display: grid; place-items: center; }
+
+@media (max-width: 980px) {
+  .arb-chart-grid { grid-template-columns: 1fr; }
+}

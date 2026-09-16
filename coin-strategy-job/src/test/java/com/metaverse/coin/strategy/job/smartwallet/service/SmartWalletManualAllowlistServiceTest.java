@@ -55,7 +55,7 @@ class SmartWalletManualAllowlistServiceTest {
         assertEquals("POLYMARKET", inserted.getSource());
         assertEquals("ACTIVE", inserted.getStatus());
         assertEquals("PAPER", inserted.getAllowedExecutionModes());
-        assertEquals(new BigDecimal("0.5000"), inserted.getStakeMultiplier());
+        assertEquals(0, new BigDecimal("0.5000").compareTo(inserted.getStakeMultiplier()));
         assertEquals(5, inserted.getMaxLiveOrdersPerDay());
         assertEquals(2, inserted.getMaxLiveOrdersPerRun());
         assertEquals("trusted address", inserted.getReason());

@@ -74,10 +74,12 @@ public class TradeEffectLabelService {
         }
         Date eventAt = event.getOpenedAt() == null ? new Date() : event.getOpenedAt();
 
-        SmartWalletMarketSnapshotEntity snapshotT0 = firstNonNull(
-                marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(event.getMarketId(), event.getOutcome(), eventAt),
-                marketSnapshotCollectorService.findNearestSnapshotAtOrAfter(event.getMarketId(), event.getOutcome(), eventAt)
-        );
+        SmartWalletMarketSnapshotEntity snapshotT0 = marketSnapshotCollectorService.findLatestSnapshotAtOrBefore(
+                event.getMarketId(), event.getOutcome(), eventAt);
+        if (snapshotT0 == null) {
+            snapshotT0 = marketSnapshotCollectorService.findNearestSnapshotAtOrAfter(
+                    event.getMarketId(), event.getOutcome(), eventAt);
+        }
         SmartWalletMarketSnapshotEntity snapshot10s = marketSnapshotCollectorService.findNearestSnapshotAtOrAfter(
                 event.getMarketId(), event.getOutcome(), new Date(eventAt.getTime() + 10_000L));
         SmartWalletMarketSnapshotEntity snapshot30s = marketSnapshotCollectorService.findNearestSnapshotAtOrAfter(

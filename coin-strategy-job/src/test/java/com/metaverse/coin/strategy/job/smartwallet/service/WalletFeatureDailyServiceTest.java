@@ -77,14 +77,14 @@ class WalletFeatureDailyServiceTest {
         assertEquals(2, feature.getTrades7d());
         assertEquals(2, feature.getTrades30d());
         assertEquals(2, feature.getMarkets30d());
-        assertEquals(new BigDecimal("10.00000000"), feature.getPnl30d());
-        assertEquals(new BigDecimal("0.5000"), feature.getWinRate30d());
-        assertEquals(new BigDecimal("15.00000000"), feature.getAvgSize30d());
-        assertEquals(new BigDecimal("0.1500"), feature.getDrawdown30d());
-        assertEquals(new BigDecimal("0.5000"), feature.getConcentrationMarket30d());
-        assertEquals(new BigDecimal("0.0000"), feature.getLowLiquidityRatio30d());
-        assertEquals(new BigDecimal("0.0000"), feature.getLateMarketRatio30d());
-        assertEquals(new BigDecimal("0.5000"), feature.getFollowableRate30d());
+        assertEquals(0, new BigDecimal("10.00000000").compareTo(feature.getPnl30d()));
+        assertEquals(0, new BigDecimal("0.5000").compareTo(feature.getWinRate30d()));
+        assertEquals(0, new BigDecimal("15.00000000").compareTo(feature.getAvgSize30d()));
+        assertEquals(0, new BigDecimal("0.1500").compareTo(feature.getDrawdown30d()));
+        assertEquals(0, new BigDecimal("0.5000").compareTo(feature.getConcentrationMarket30d()));
+        assertEquals(0, new BigDecimal("0.0000").compareTo(feature.getLowLiquidityRatio30d()));
+        assertEquals(0, new BigDecimal("0.0000").compareTo(feature.getLateMarketRatio30d()));
+        assertEquals(0, new BigDecimal("0.5000").compareTo(feature.getFollowableRate30d()));
 
         ArgumentCaptor<SmartWalletWalletFeatureDailyEntity> captor = ArgumentCaptor.forClass(SmartWalletWalletFeatureDailyEntity.class);
         verify(walletFeatureDailyMapper).insert(captor.capture());

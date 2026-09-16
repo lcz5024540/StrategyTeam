@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
@@ -49,6 +50,7 @@ public class SingleExchangeArbitrageOrderExecutor {
     private static final String HEDGE_SIDE_FUTURES = "FUTURES";
     private static final String ORDER_TYPE_MARKET = "MARKET";
     private static final String POSITION_SIDE_SHORT = "SHORT";
+    private static final String POSITION_SIDE_LONG = "LONG";
     private static final String STATUS_FILLED = "FILLED";
     private static final String STATUS_FAILED = "FAILED";
     private static final String ORDER_EXECUTION_MODE_BINANCE_TEST = "BINANCE_TEST";
@@ -184,13 +186,21 @@ public class SingleExchangeArbitrageOrderExecutor {
                 OrderAttempt<BinanceOrder> rollbackAttempt = placeSpotOrder(symbol, "SELL", quantity,
                         "CRITICAL: Failed to rollback Spot SELL order!");
                 orderRecords.add(buildSpotOrderRecord(plan, TRADE_PHASE_ROLLBACK, "SELL", rollbackAttempt));
+                List<SingleExchangeNakedPositionAlert> nakedAlerts = rollbackAttempt.isSuccess()
+                        ? Collections.emptyList()
+                        : List.of(buildNakedPositionAlert(plan.getSymbol(), HEDGE_SIDE_SPOT, POSITION_SIDE_LONG,
+                                quantity, TRADE_PHASE_OPEN, rollbackAttempt.getErrorMessage()));
+                String message = rollbackAttempt.isSuccess()
+                        ? "Legging Risk: Spot Success, Futures Failed. Rolled back Spot."
+                        : "Legging Risk: Spot Success, Futures Failed. Spot rollback FAILED - naked SPOT LONG position remains.";
                 return SingleExchangeArbitrageExecutionResult.builder()
                         .success(false)
                         .symbol(plan.getSymbol())
                         .quantity(quantity.toPlainString())
-                        .message("Legging Risk: Spot Success, Futures Failed. Rolled back Spot.")
+                        .message(message)
                         .orderRecords(orderRecords)
                         .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
+                        .nakedPositionAlerts(nakedAlerts)
                         .build();
             }
 
@@ -199,13 +209,21 @@ public class SingleExchangeArbitrageOrderExecutor {
                 OrderAttempt<BinanceFuturesOrder> rollbackAttempt = closeFuturesShort(futuresSymbol, quantity,
                         "CRITICAL: Failed to rollback Futures BUY order!");
                 orderRecords.add(buildFuturesOrderRecord(plan, TRADE_PHASE_ROLLBACK, "BUY", POSITION_SIDE_SHORT, rollbackAttempt));
+                List<SingleExchangeNakedPositionAlert> nakedAlerts = rollbackAttempt.isSuccess()
+                        ? Collections.emptyList()
+                        : List.of(buildNakedPositionAlert(plan.getSymbol(), HEDGE_SIDE_FUTURES, POSITION_SIDE_SHORT,
+                                quantity, TRADE_PHASE_OPEN, rollbackAttempt.getErrorMessage()));
+                String message = rollbackAttempt.isSuccess()
+                        ? "Legging Risk: Spot Failed, Futures Success. Rolled back Futures."
+                        : "Legging Risk: Spot Failed, Futures Success. Futures rollback FAILED - naked FUTURES SHORT position remains.";
                 return SingleExchangeArbitrageExecutionResult.builder()
                         .success(false)
                         .symbol(plan.getSymbol())
                         .quantity(quantity.toPlainString())
-                        .message("Legging Risk: Spot Failed, Futures Success. Rolled back Futures.")
+                        .message(message)
                         .orderRecords(orderRecords)
                         .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
+                        .nakedPositionAlerts(nakedAlerts)
                         .build();
             }
 
@@ -301,25 +319,38 @@ public class SingleExchangeArbitrageOrderExecutor {
                         .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
                         .build();
             }
+            List<SingleExchangeNakedPositionAlert> nakedAlerts = new ArrayList<>();
             if (spotAttempt.isSuccess()) {
                 log.error("Legging Risk on close: Spot close succeeded but Futures close failed. Re-opening Spot.");
                 OrderAttempt<BinanceOrder> rollbackAttempt = placeSpotOrder(symbol, "BUY", quantity,
                         "CRITICAL: Failed to rollback Spot BUY order!");
                 orderRecords.add(buildSpotOrderRecord(plan, TRADE_PHASE_ROLLBACK, "BUY", rollbackAttempt));
+                if (!rollbackAttempt.isSuccess()) {
+                    nakedAlerts.add(buildNakedPositionAlert(plan.getSymbol(), HEDGE_SIDE_FUTURES, POSITION_SIDE_SHORT,
+                            quantity, TRADE_PHASE_CLOSE, rollbackAttempt.getErrorMessage()));
+                }
             }
             if (futuresAttempt.isSuccess()) {
                 log.error("Legging Risk on close: Futures close succeeded but Spot close failed. Re-opening Futures short.");
                 OrderAttempt<BinanceFuturesOrder> rollbackAttempt = openFuturesShort(futuresSymbol, quantity,
                         "CRITICAL: Failed to rollback close flow on futures side!");
                 orderRecords.add(buildFuturesOrderRecord(plan, TRADE_PHASE_ROLLBACK, "SELL", POSITION_SIDE_SHORT, rollbackAttempt));
+                if (!rollbackAttempt.isSuccess()) {
+                    nakedAlerts.add(buildNakedPositionAlert(plan.getSymbol(), HEDGE_SIDE_SPOT, POSITION_SIDE_LONG,
+                            quantity, TRADE_PHASE_CLOSE, rollbackAttempt.getErrorMessage()));
+                }
             }
+            String closeMessage = nakedAlerts.isEmpty()
+                    ? "Close arbitrage position failed."
+                    : "Close arbitrage position failed. Rollback FAILED - naked position(s) remain.";
             return SingleExchangeArbitrageExecutionResult.builder()
                     .success(false)
                     .symbol(plan.getSymbol())
                     .quantity(quantity.toPlainString())
-                    .message("Close arbitrage position failed.")
+                    .message(closeMessage)
                     .orderRecords(orderRecords)
                     .slippageAlerts(collectSlippageAlerts(plan, orderRecords))
+                    .nakedPositionAlerts(nakedAlerts)
                     .build();
         } catch (Exception e) {
             log.error("Error closing dual-side order", e);
@@ -500,6 +531,31 @@ public class SingleExchangeArbitrageOrderExecutor {
      * <p>遍历已构建的订单记录，对每条已成交腿用真实成交均价与计划参考价计算实际滑点，
      * 超过配置阈值时产出告警记录并落结构化日志；参考价按对冲腿区分现货/合约。
      */
+    /**
+     * 分腿回滚失败 → 构建裸露仓位告警并落 CRITICAL 日志（P1）。
+     *
+     * <p>仅当已成交腿的反向 rollback 本身也失败时调用：此刻已成交腿的方向性敞口未被对冲、
+     * 残留成一个裸仓，须结构化上报供上层熔断 / 人工介入 / 事后对账，不能只靠一条误导性
+     * "Rolled back" 日志掩盖。
+     */
+    private SingleExchangeNakedPositionAlert buildNakedPositionAlert(String symbol,
+                                                                     String nakedHedgeSide,
+                                                                     String nakedPositionSide,
+                                                                     BigDecimal quantity,
+                                                                     String tradePhase,
+                                                                     String rollbackErrorMessage) {
+        log.error("NAKED POSITION: {} {} {} rollback FAILED at {} phase, quantity={}, rollbackError={}",
+                symbol, nakedHedgeSide, nakedPositionSide, tradePhase, quantity, rollbackErrorMessage);
+        return SingleExchangeNakedPositionAlert.builder()
+                .symbol(symbol)
+                .nakedHedgeSide(nakedHedgeSide)
+                .nakedPositionSide(nakedPositionSide)
+                .quantity(quantity)
+                .tradePhase(tradePhase)
+                .rollbackErrorMessage(rollbackErrorMessage)
+                .build();
+    }
+
     private List<SingleExchangeSlippageAlert> collectSlippageAlerts(SingleExchangeSpotFuturesOrderPlan plan,
                                                                     List<SingleExchangeArbitrageOrder> orderRecords) {
         List<SingleExchangeSlippageAlert> alerts = new ArrayList<>();

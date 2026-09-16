@@ -24,8 +24,11 @@ export const STRATEGY_PAGE_CONFIG: Record<StrategyCode, StrategyPageConfig[]> = 
   ],
   FUNDING_ARB: [
     { key: 'dashboard', label: '总览', route: '/dashboard', title: 'Funding Dashboard' },
+    { key: 'arbitrage', label: '套利扫描器', route: '/dashboard/arbitrage', title: 'Arbitrage Scanner' },
     { key: 'execution', label: '执行控制台', route: '/dashboard/funding-arb', title: 'Execution Console' },
+    { key: 'overview', label: '套利总览', route: '/dashboard/funding-arb/overview', title: 'Arbitrage Overview' },
     { key: 'positions', label: '持仓订单', route: '/dashboard/funding-arb/positions', title: 'Positions & Orders' },
+    { key: 'quality', label: '数据质量', route: '/dashboard/funding-arb/quality', title: 'Data Quality' },
     { key: 'settlement', label: '结算窗口', route: '/dashboard/funding-arb/settlement', title: 'Settlement Windows' },
     { key: 'factors', label: '因子', route: '/dashboard/factors', title: 'Factor Analysis' },
   ],

@@ -1,0 +1,32 @@
+package com.metaverse.coin.strategy.job.funding.service;
+
+import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePaperTradingService;
+import com.metaverse.coin.strategy.core.arbitrage.multi.CrossExchangePositionMonitorService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import java.time.Instant;
+
+@Component
+@ConditionalOnProperty(prefix = "arbitrage.multi-exchange", name = "monitor-enabled",
+        havingValue = "true")
+public class CrossExchangePositionMonitorJob {
+    private final CrossExchangePositionMonitorService monitor;
+    private final CrossExchangePaperTradingService paper;
+    private final CrossExchangeMetrics metrics;
+
+    public CrossExchangePositionMonitorJob(CrossExchangePositionMonitorService monitor,
+            CrossExchangePaperTradingService paper, CrossExchangeMetrics metrics) {
+        this.monitor = monitor;
+        this.paper = paper;
+        this.metrics = metrics;
+    }
+
+    @Scheduled(fixedDelayString = "${arbitrage.multi-exchange.monitor-delay-ms:30000}")
+    public void monitor() {
+        monitor.monitor(Instant.now());
+        metrics.positions(paper.positions());
+        metrics.strategyState(paper.isCircuitOpen(), paper.isPaused());
+    }
+}

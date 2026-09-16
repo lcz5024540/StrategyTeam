@@ -7,11 +7,19 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.TimeZone;
 
-@SpringBootApplication(scanBasePackages = "com.metaverse.coin.strategy")
+@SpringBootApplication
+@ComponentScan(
+        basePackages = "com.metaverse.coin.strategy",
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.CUSTOM,
+                classes = FundingOnlyComponentExcludeFilter.class))
 @MapperScan("com.metaverse.coin.strategy.common.dao.mapper")
 @EnableConfigurationProperties({SmartWalletProperties.class, WeatherArbitrageProperties.class})
 @EnableScheduling
@@ -23,8 +31,10 @@ public class CoinStrategyJobApplication {
         // SimpleDateFormat / LocalDate.now() / LocalDateTime.now() 以及 logback %d 日志时间戳。
         // 数据库连接已通过 JDBC serverTimezone=Asia/Shanghai 显式声明, 不受此设置影响。
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
-        SpringApplication.run(CoinStrategyJobApplication.class, args);
-        log.info("================CoinStrategyJobApplication start success!================");
+        ConfigurableApplicationContext context = SpringApplication.run(CoinStrategyJobApplication.class, args);
+        String deploymentMode = context.getEnvironment().getProperty("strategy.deployment-mode", "FULL");
+        log.info("================CoinStrategyJobApplication start success, deploymentMode={}================",
+                deploymentMode);
     }
 
 }

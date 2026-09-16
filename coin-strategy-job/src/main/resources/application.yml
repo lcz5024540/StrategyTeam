@@ -18,6 +18,15 @@ spring:
 logging:
   config: classpath:logback-spring.xml
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
 springdoc:
   # [FIXED-ONCE] Swagger UI entry path for local API inspection.
   swagger-ui:
@@ -66,6 +75,85 @@ binance:
     symbols: ""
 
 arbitrage:
+  multi-exchange:
+    # V1 强制模拟盘；这些开关只启用公共行情扫描、Paper 持仓监控和模拟资金费结算。
+    exchanges: BINANCE,OKX,HTX,BITGET,HYPERLIQUID
+    scan-enabled: false
+    monitor-enabled: false
+    settlement-enabled: false
+    contract-sync-enabled: false
+    health-check-enabled: false
+    recovery-enabled: false
+    # 默认关闭；启用后只采集公共 REST 行情到本地 CSV，不访问私有 API 或数据库。
+    capture-enabled: false
+    scan-delay-ms: 30000
+    monitor-delay-ms: 30000
+    settlement-delay-ms: 60000
+    contract-sync-delay-ms: 86400000
+    health-check-delay-ms: 60000
+    recovery-delay-ms: 60000
+    capture-delay-ms: 60000
+    capture-output-directory: "./data/funding-replay"
+    capture-symbols: "BTCUSDT"
+    # CEX snapshot capture and opportunity scans request 100 levels for reliable VWAP/capacity
+    # checks. Hyperliquid's public L2 response currently supplies 20 levels and is deliberately
+    # capped by its adapter.
+    capture-order-book-depth: 100
+    # 可按部署网络覆盖公共行情域名或内部代理；未配置时使用各交易所官方域名。
+    base-urls:
+      binance: ""
+      okx: ""
+      htx: ""
+      bitget: ""
+      hyperliquid: ""
+    min-net-yield-rate: 0.0002
+    round-trip-fee-rate: 0.0010
+    slippage-rate: 0.0005
+    # Deprecated compatibility key: mixed funding signs are evaluated programmatically by
+    # projected funding cashflow, not rejected solely because signs differ.
+    allow-mixed-funding-signs: false
+    target-notional: 100
+    minimum-notional: 20
+    # L2 sizing shrinks the paper order to the common executable base quantity on both legs.
+    # These legacy depth knobs are kept for compatibility; minimum-notional and VWAP impact
+    # are the hard liquidity gates.
+    minimum-order-book-notional: 300
+    minimum-order-book-coverage-ratio: 1.5
+    maximum-leg-vwap-impact: 0.0005
+    paper-capital-per-exchange: 2000
+    maximum-paper-leverage: 25
+    auto-paper-open-enabled: false
+    # 0 means use the approved opportunity's full executable notional.
+    auto-paper-open-notional: 0
+    auto-paper-open-max-per-cycle: 1
+    paper-pnl-snapshot-enabled: false
+    paper-pnl-snapshot-window-days: 7
+    paper-pnl-snapshot-delay-ms: 60000
+    maintenance-margin-rate: 0.005
+    minimum-liquidation-distance: 0.15
+    unknown-symbol-liquidation-distance: 0.30
+    maximum-liquidation-distance: 0.40
+    volatility-multiplier: 4
+    jump-multiplier: 3
+    minimum-risk-history-ms: 3600000
+    basis-risk-buffer: 0.0002
+    max-mark-price-deviation: 0.01
+    # Defaults to paper-capital-per-exchange x maximum-paper-leverage when omitted.
+    max-symbol-notional: 50000
+    max-exchange-notional: 50000
+    exit-net-yield: 0.00001
+    maximum-quote-age-ms: 30000
+    maximum-settlement-skew-ms: 300000
+    stability-window-ms: 180000
+    maximum-naked-duration-ms: 10000
+    maximum-holding-duration-ms: 604800000
+    costs:
+      binance: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      okx: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      htx: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      bitget: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
+      # Public-data Paper default. Set the transfer cost only after measuring the actual funding route.
+      hyperliquid: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005, capital-transfer-cost-rate: 0 }
   spot-futures:
     # [TUNE] 单交易所期现套利策略的主交易对。
     symbol: "BTCUSDT"

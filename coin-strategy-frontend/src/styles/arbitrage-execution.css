@@ -1,0 +1,9 @@
+.arb-execution { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; overflow: hidden; }
+.arb-execution > header { display: flex; justify-content: space-between; padding: .8rem; background: #f8fafc; }
+.arb-execution-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; padding: .8rem; }
+.arb-execution-metrics span { color: var(--muted); font-size: .75rem; }
+.arb-execution-metrics b { display: block; color: var(--ink); margin-top: .2rem; }
+.arb-execution table { width: 100%; border-collapse: collapse; }
+.arb-execution th, .arb-execution td { padding: .5rem .8rem; text-align: right; border-top: 1px solid #edf1f5; }
+.arb-execution th:first-child, .arb-execution td:first-child { text-align: left; }
+@media (max-width: 430px) { .arb-execution-metrics { grid-template-columns: 1fr 1fr; } }
