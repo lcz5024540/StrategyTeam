@@ -35,6 +35,8 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -92,7 +94,37 @@ public class HtxTrendFollowingService {
     }
 
     public RunResult runOnce() {
-        String contractCode = normalize(properties.getContractCode());
+        List<String> contractCodes = liveContractCodes();
+        if (contractCodes.isEmpty()) {
+            return RunResult.of(RunCode.SKIPPED, null, "trend contract list is blank");
+        }
+        long openLikePositions = recorder.countOpenLike();
+        int maxActivePositions = Math.max(1, properties.getMaxActivePositions());
+        List<String> summaries = new ArrayList<>();
+        RunResult selected = null;
+        for (String contractCode : contractCodes) {
+            boolean allowNewEntry = openLikePositions < maxActivePositions;
+            RunResult result = runOnce(contractCode, allowNewEntry);
+            RunResult tagged = tag(contractCode, result);
+            summaries.add(contractCode + "=" + result.code() + ":" + result.message());
+            if (opensPosition(result)) {
+                openLikePositions++;
+            }
+            if (selected == null || rank(tagged.code()) > rank(selected.code())) {
+                selected = tagged;
+            }
+            if (blocksFurtherEvaluation(result)) {
+                break;
+            }
+        }
+        if (selected == null) {
+            return RunResult.of(RunCode.SKIPPED, null, "no trend contracts evaluated");
+        }
+        return RunResult.of(selected.code(), selected.positionId(), selected.message()
+                + "; liveContracts=" + String.join(" | ", summaries));
+    }
+
+    private RunResult runOnce(String contractCode, boolean allowNewEntry) {
         String gate = configGate(contractCode);
         if (gate != null) {
             return RunResult.of(RunCode.SKIPPED, null, gate);
@@ -106,6 +138,9 @@ public class HtxTrendFollowingService {
         Optional<HtxTrendPositionEntity> active = recorder.findActive(contractCode);
         if (active.isPresent()) {
             return advance(active.get(), signal, contract);
+        }
+        if (!allowNewEntry) {
+            return RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
         }
         return openIfEligible(contractCode, signal, contract);
     }
@@ -692,6 +727,65 @@ public class HtxTrendFollowingService {
             return "short exit on opposite trend signal";
         }
         return null;
+    }
+
+
+    private List<String> liveContractCodes() {
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        if (properties.getContractCodes() != null) {
+            for (String code : properties.getContractCodes()) {
+                String normalized = normalize(code);
+                if (!normalized.isEmpty()) {
+                    result.add(normalized);
+                }
+            }
+        }
+        String legacy = normalize(properties.getContractCode());
+        if (result.isEmpty() && !legacy.isEmpty()) {
+            result.add(legacy);
+        }
+        return new ArrayList<>(result);
+    }
+
+    private static RunResult tag(String contractCode, RunResult result) {
+        if (result == null) {
+            return RunResult.of(RunCode.SKIPPED, null, contractCode + ": null result");
+        }
+        return RunResult.of(result.code(), result.positionId(), contractCode + ": " + result.message());
+    }
+
+    private static boolean opensPosition(RunResult result) {
+        return result != null && result.code() == RunCode.ENTRY_SENT;
+    }
+
+    private static boolean blocksFurtherEvaluation(RunResult result) {
+        if (result == null) {
+            return false;
+        }
+        return result.code() == RunCode.ENTRY_SENT
+                || result.code() == RunCode.ACTIVE
+                || result.code() == RunCode.CLOSE_SENT
+                || result.code() == RunCode.DONE
+                || result.code() == RunCode.WAITING
+                || result.code() == RunCode.REJECTED
+                || result.code() == RunCode.MANUAL_REVIEW;
+    }
+
+    private static int rank(RunCode code) {
+        if (code == RunCode.ENTRY_SENT || code == RunCode.CLOSE_SENT || code == RunCode.MANUAL_REVIEW
+                || code == RunCode.REJECTED) {
+            return 4;
+        }
+        if (code == RunCode.ACTIVE || code == RunCode.DONE || code == RunCode.WAITING) {
+            return 3;
+        }
+        if (code == RunCode.OBSERVED) {
+            return 2;
+        }
+        if (code == RunCode.SKIPPED) {
+            return 1;
+        }
+        return 0;
     }
 
     private String configGate(String contractCode) {

@@ -165,6 +165,48 @@ class HtxTrendFollowingServiceTest {
                 88L, 99L, "entry accepted by exchange");
     }
 
+
+    @Test
+    void liveRunnerScansMainstreamWhitelistAndOpensFirstEligibleContract() {
+        properties.setContractCodes(List.of("BTC-USDT", "ETH-USDT", "XAUT-USDT"));
+        givenContractInfo("BTC-USDT", "0.001");
+        givenContractInfo("ETH-USDT", "0.01");
+        givenKlines("BTC-USDT");
+        givenKlines("ETH-USDT");
+        givenFunding("BTC-USDT", "0.0001");
+        givenFunding("ETH-USDT", "-0.0001");
+        givenDepth("BTC-USDT", "59990", "60010");
+        givenDepth("ETH-USDT", "1999", "2001");
+        TrendSignal btcFlat = TrendSignal.of(TrendSide.FLAT, 2L, new BigDecimal("60000"),
+                new BigDecimal("59900"), new BigDecimal("59800"), new BigDecimal("60500"),
+                new BigDecimal("59000"), new BigDecimal("120"), new BigDecimal("0.0020"),
+                new BigDecimal("20"), "btc no signal");
+        TrendSignal ethLong = TrendSignal.of(TrendSide.LONG, 2L, new BigDecimal("2000"),
+                new BigDecimal("1990"), new BigDecimal("1980"), new BigDecimal("2010"),
+                new BigDecimal("1960"), new BigDecimal("20"), new BigDecimal("0.0100"),
+                new BigDecimal("30"), "eth breakout");
+        when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(btcFlat, ethLong);
+        givenNoOpenOrders("ETH-USDT");
+        givenNoExternalPositions("ETH-USDT");
+        givenContractMargin("ETH-USDT");
+        when(swap.switchLeverage(eq("ETH-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("ETH-USDT", "long")));
+        when(recorder.findActive("BTC-USDT")).thenReturn(Optional.empty());
+        when(recorder.findActive("ETH-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        assertTrue(result.message().contains("ETH-USDT"));
+        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(captor.capture());
+        assertEquals("ETH-USDT", captor.getValue().getContractCode());
+        assertEquals("LONG", captor.getValue().getTrendSide());
+        verify(swap, never()).contractInfo("XAUT-USDT");
+    }
+
     @Test
     void liveEntrySkipsWhenExpectedMoveCannotCoverRoundTripCosts() {
         givenContractInfo();
@@ -241,17 +283,25 @@ class HtxTrendFollowingServiceTest {
     }
 
     private void givenContractInfo() {
+        givenContractInfo("XAUT-USDT", "0.001");
+    }
+
+    private void givenContractInfo(String contractCode, String contractSize) {
         HtxSwapContractInfo info = new HtxSwapContractInfo();
-        info.setContractCode("XAUT-USDT");
-        info.setContractSize(new BigDecimal("0.001"));
-        when(swap.contractInfo("XAUT-USDT")).thenReturn(ok(List.of(info)));
+        info.setContractCode(contractCode);
+        info.setContractSize(new BigDecimal(contractSize));
+        when(swap.contractInfo(contractCode)).thenReturn(ok(List.of(info)));
     }
 
     private void givenKlines() {
+        givenKlines("XAUT-USDT");
+    }
+
+    private void givenKlines(String contractCode) {
         List<HtxSwapKline> klines = List.of(candle(1L), candle(2L));
-        when(swap.historyKline(eq("XAUT-USDT"), eq(properties.getPeriod()), eq(properties.getKlineSize())))
+        when(swap.historyKline(eq(contractCode), eq(properties.getPeriod()), eq(properties.getKlineSize())))
                 .thenReturn(ok(klines));
-        when(swap.historyKline(eq("XAUT-USDT"), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize())))
+        when(swap.historyKline(eq(contractCode), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize())))
                 .thenReturn(ok(klines));
     }
 
@@ -267,34 +317,54 @@ class HtxTrendFollowingServiceTest {
     }
 
     private void givenFunding(String value) {
+        givenFunding("XAUT-USDT", value);
+    }
+
+    private void givenFunding(String contractCode, String value) {
         HtxSwapFundingRate funding = new HtxSwapFundingRate();
-        funding.setContractCode("XAUT-USDT");
+        funding.setContractCode(contractCode);
         funding.setFundingRate(new BigDecimal(value));
-        when(swap.fundingRate("XAUT-USDT")).thenReturn(ok(funding));
+        when(swap.fundingRate(contractCode)).thenReturn(ok(funding));
     }
 
     private void givenDepth() {
+        givenDepth("XAUT-USDT", "4299", "4301");
+    }
+
+    private void givenDepth(String contractCode, String bid, String ask) {
         HtxDepth depth = new HtxDepth();
-        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal("4299"), BigDecimal.ONE)));
-        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal("4301"), BigDecimal.ONE)));
-        when(swap.depth("XAUT-USDT", contractProperties.getDepthStep())).thenReturn(ok(depth));
+        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal(bid), BigDecimal.ONE)));
+        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal(ask), BigDecimal.ONE)));
+        when(swap.depth(contractCode, contractProperties.getDepthStep())).thenReturn(ok(depth));
     }
 
     private void givenNoOpenOrders() {
+        givenNoOpenOrders("XAUT-USDT");
+    }
+
+    private void givenNoOpenOrders(String contractCode) {
         HtxSwapOpenOrders openOrders = new HtxSwapOpenOrders();
         openOrders.setOrders(Collections.emptyList());
-        when(swap.openOrders("XAUT-USDT")).thenReturn(ok(openOrders));
+        when(swap.openOrders(contractCode)).thenReturn(ok(openOrders));
     }
 
     private void givenNoExternalPositions() {
-        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(Collections.emptyList()));
+        givenNoExternalPositions("XAUT-USDT");
+    }
+
+    private void givenNoExternalPositions(String contractCode) {
+        when(swap.positionInfo(contractCode)).thenReturn(ok(Collections.emptyList()));
     }
 
     private void givenContractMargin() {
+        givenContractMargin("XAUT-USDT");
+    }
+
+    private void givenContractMargin(String contractCode) {
         HtxSwapAccount account = new HtxSwapAccount();
-        account.setContractCode("XAUT-USDT");
+        account.setContractCode(contractCode);
         account.setMarginAvailable(new BigDecimal("1000"));
-        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account)));
+        when(swap.accountInfo(contractCode)).thenReturn(ok(List.of(account)));
     }
 
     private HtxSwapKline candle(long id) {
@@ -348,8 +418,12 @@ class HtxTrendFollowingServiceTest {
     }
 
     private HtxSwapLeverageResult leverage(String positionSide) {
+        return leverage("XAUT-USDT", positionSide);
+    }
+
+    private HtxSwapLeverageResult leverage(String contractCode, String positionSide) {
         HtxSwapLeverageResult result = new HtxSwapLeverageResult();
-        result.setContractCode("XAUT-USDT");
+        result.setContractCode(contractCode);
         result.setPositionSide(positionSide);
         result.setLeverage(properties.getLeverage());
         return result;

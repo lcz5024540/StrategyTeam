@@ -42,6 +42,11 @@ public class HtxTrendRecorder {
         return Optional.ofNullable(positionMapper.findActive(contractCode));
     }
 
+    public long countOpenLike() {
+        Long count = positionMapper.countOpenLike();
+        return count == null ? 0L : count;
+    }
+
     public Optional<LocalDateTime> latestDoneAt(String contractCode) {
         return Optional.ofNullable(positionMapper.latestDoneAt(contractCode));
     }

@@ -125,6 +125,8 @@ htx:
     enabled: ${HTX_TREND_ENABLED:false}
     observe-only: ${HTX_TREND_OBSERVE_ONLY:true}
     contract-code: ${HTX_TREND_CONTRACT:XAUT-USDT}
+    contract-codes: ${HTX_TREND_CONTRACTS:BTC-USDT,ETH-USDT,XAUT-USDT}
+    max-active-positions: ${HTX_TREND_MAX_ACTIVE_POSITIONS:1}
     period: ${HTX_TREND_PERIOD:15min}
     trend-period: ${HTX_TREND_TREND_PERIOD:60min}
     kline-size: ${HTX_TREND_KLINE_SIZE:160}

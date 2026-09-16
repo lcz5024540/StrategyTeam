@@ -24,6 +24,10 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "ORDER BY id LIMIT 1")
     HtxTrendPositionEntity findActive(@Param("contractCode") String contractCode);
 
+    @Select("SELECT COUNT(*) FROM htx_trend_position "
+            + "WHERE status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'CLOSE_SENT', 'UNKNOWN')")
+    Long countOpenLike();
+
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "
             + "AND status = 'DONE' ORDER BY updated_at DESC LIMIT 1")
     HtxTrendPositionEntity findLastDone(@Param("contractCode") String contractCode);

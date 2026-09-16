@@ -4,8 +4,10 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Configuration for HTX XAUT-USDT contract trend following. */
+/** Configuration for HTX contract trend following. */
 @Data
 @ConfigurationProperties(prefix = "htx.trend")
 public class HtxTrendProperties {
@@ -16,8 +18,14 @@ public class HtxTrendProperties {
     /** Observe-only mode records/logs signals but never sends orders. */
     private boolean observeOnly = true;
 
-    /** USDT-margined perpetual contract, for example XAUT-USDT. */
+    /** Legacy single USDT-margined perpetual contract, used when {@link #contractCodes} is empty. */
     private String contractCode = "XAUT-USDT";
+
+    /** Live whitelist of USDT-margined perpetual contracts evaluated by the trend runner. */
+    private List<String> contractCodes = new ArrayList<>();
+
+    /** Maximum open-like trend positions across the live whitelist. */
+    private int maxActivePositions = 1;
 
     /** Lower timeframe used for entry and exit triggers, for example 15min or 60min. */
     private String period = "15min";
