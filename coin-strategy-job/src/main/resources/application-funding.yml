@@ -30,6 +30,11 @@ arbitrage:
     minimum-cost-coverage-ratio: 2.0
     expected-holding-windows: 2
     minimum-horizon-net-yield: 0.0015
+    # Warm up per symbol/direction, then admit only relatively favorable signed entry basis.
+    directional-basis-gate-enabled: true
+    directional-basis-minimum-samples: 30
+    directional-basis-window-size: 240
+    directional-basis-percentile: 70
     health-check-enabled: true
     recovery-enabled: true
     # Paper 观测以 cross_exchange_arb_opportunity 数据库记录为准；关闭本地 CSV replay 文件采集。

@@ -46,6 +46,10 @@ public class MultiExchangeFundingRateProperties {
     private final BigDecimal minimumCostCoverageRatio;
     private final int expectedHoldingWindows;
     private final BigDecimal minimumHorizonNetYield;
+    private final boolean directionalBasisGateEnabled;
+    private final int directionalBasisMinimumSamples;
+    private final int directionalBasisWindowSize;
+    private final int directionalBasisPercentile;
     private final BigDecimal maxSymbolNotional;
     private final BigDecimal maxExchangeNotional;
     private final boolean autoPaperOpenEnabled;
@@ -94,6 +98,10 @@ public class MultiExchangeFundingRateProperties {
         this.minimumCostCoverageRatio = BigDecimal.ONE;
         this.expectedHoldingWindows = 2;
         this.minimumHorizonNetYield = new BigDecimal("0.0001");
+        this.directionalBasisGateEnabled = false;
+        this.directionalBasisMinimumSamples = 30;
+        this.directionalBasisWindowSize = 240;
+        this.directionalBasisPercentile = 70;
         this.maxSymbolNotional = new BigDecimal("2000");
         this.maxExchangeNotional = new BigDecimal("2000");
         this.autoPaperOpenEnabled = false;
@@ -153,6 +161,17 @@ public class MultiExchangeFundingRateProperties {
                 "arbitrage.multi-exchange.expected-holding-windows", 2);
         this.minimumHorizonNetYield = decimal(env,
                 "arbitrage.multi-exchange.minimum-horizon-net-yield", "0.0001");
+        this.directionalBasisGateEnabled = Boolean.parseBoolean(env.getProperty(
+                "arbitrage.multi-exchange.directional-basis-gate-enabled", "false"));
+        this.directionalBasisMinimumSamples = positiveInt(env,
+                "arbitrage.multi-exchange.directional-basis-minimum-samples", 30);
+        this.directionalBasisWindowSize = positiveInt(env,
+                "arbitrage.multi-exchange.directional-basis-window-size", 240);
+        this.directionalBasisPercentile = boundedPercent(env,
+                "arbitrage.multi-exchange.directional-basis-percentile", 70);
+        if (directionalBasisWindowSize < directionalBasisMinimumSamples) {
+            throw new IllegalArgumentException("directional basis window must cover minimum samples");
+        }
         BigDecimal leverageBound = paperCapitalPerExchange.multiply(maximumPaperLeverage);
         BigDecimal pilotNotionalCap = leverageBound.min(new BigDecimal("2000"));
         this.maxSymbolNotional = decimal(env, "arbitrage.multi-exchange.max-symbol-notional",
@@ -222,6 +241,10 @@ public class MultiExchangeFundingRateProperties {
     public BigDecimal getMinimumCostCoverageRatio() { return minimumCostCoverageRatio; }
     public int getExpectedHoldingWindows() { return expectedHoldingWindows; }
     public BigDecimal getMinimumHorizonNetYield() { return minimumHorizonNetYield; }
+    public boolean isDirectionalBasisGateEnabled() { return directionalBasisGateEnabled; }
+    public int getDirectionalBasisMinimumSamples() { return directionalBasisMinimumSamples; }
+    public int getDirectionalBasisWindowSize() { return directionalBasisWindowSize; }
+    public int getDirectionalBasisPercentile() { return directionalBasisPercentile; }
     public BigDecimal getMaxSymbolNotional() { return maxSymbolNotional; }
     public BigDecimal getMaxExchangeNotional() { return maxExchangeNotional; }
     public boolean isAutoPaperOpenEnabled() { return autoPaperOpenEnabled; }
@@ -247,6 +270,13 @@ public class MultiExchangeFundingRateProperties {
         int value = Integer.parseInt(environment.getProperty(key, String.valueOf(fallback)));
         if (value <= 0) {
             throw new IllegalArgumentException(key + " must be positive");
+        }
+        return value;
+    }
+    private static int boundedPercent(Environment environment, String key, int fallback) {
+        int value = Integer.parseInt(environment.getProperty(key, String.valueOf(fallback)));
+        if (value < 0 || value > 100) {
+            throw new IllegalArgumentException(key + " must be between 0 and 100");
         }
         return value;
     }

@@ -9,6 +9,15 @@ import java.util.*;
 /** Selects the best executable pair; rejected pairs retain an explicit reason. */
 public final class CrossExchangeOpportunitySelector {
     private static final long SECONDS_PER_HOUR = 3_600L;
+    private final DirectionalBasisAdmissionGate basisAdmissionGate;
+
+    public CrossExchangeOpportunitySelector() {
+        this(DirectionalBasisAdmissionGate.disabled());
+    }
+
+    public CrossExchangeOpportunitySelector(DirectionalBasisAdmissionGate basisAdmissionGate) {
+        this.basisAdmissionGate = Objects.requireNonNull(basisAdmissionGate, "basisAdmissionGate");
+    }
 
     public record Limits(Duration maxQuoteAge, Duration maxSettlementSkew, BigDecimal maxMarkPriceDeviation,
                          BigDecimal minNotional, BigDecimal minNetYield, BigDecimal basisRiskBuffer,
@@ -76,6 +85,12 @@ public final class CrossExchangeOpportunitySelector {
             BigDecimal tradingCost = tradingCost(low, high, costs);
             BigDecimal riskAdjustedCost = tradingCost.add(limits.basisRiskBuffer());
             BigDecimal horizonNet = horizonFundingYield.subtract(riskAdjustedCost);
+            DirectionalBasisAdmissionGate.Assessment basisAssessment = basisAdmissionGate.assess(
+                    low.canonicalSymbol(), low.exchange(), high.exchange(),
+                    execution.longEntryPrice(), execution.shortEntryPrice());
+            if (reason == null && !basisAssessment.admitted()) {
+                reason = "UNFAVORABLE_DIRECTIONAL_BASIS";
+            }
             if (reason == null && tradingCost.signum() > 0
                     && firstWindowFundingYield.compareTo(tradingCost.multiply(
                             limits.minimumCostCoverageRatio())) < 0) {
