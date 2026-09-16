@@ -183,7 +183,7 @@ class CrossExchangeOpportunitySelectorTest {
         assertEquals(0, new BigDecimal("101").compareTo(opportunity.shortEntryPrice()));
         assertEquals(0, new BigDecimal("204").compareTo(opportunity.executableNotional()));
     }
-    @Test void shrinksToCommonExecutableQuantityInsteadOfRejectingDepthFloor() {
+    @Test void rejectsWhenOneLegFallsBelowAbsoluteDepthFloor() {
         Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);
         orderBooks.put(Exchange.BINANCE, book(Exchange.BINANCE, "99", "100",
                 List.of(level("99", "1000")), List.of(level("100", "299"))));
@@ -194,8 +194,24 @@ class CrossExchangeOpportunitySelectorTest {
                 List.of(rate(Exchange.BINANCE, "-0.001", 8), rate(Exchange.OKX, "-0.0001", 8)),
                 orderBooks, costs(), new BigDecimal("400"), strictDepthLimits(), now).get(0);
 
-        assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
+        assertEquals(CrossExchangeOpportunity.Status.REJECTED, opportunity.status());
+        assertEquals("INSUFFICIENT_LONG_DEPTH_NOTIONAL", opportunity.rejectionReason());
         assertEquals(0, new BigDecimal("299").compareTo(opportunity.executableNotional()));
+    }
+
+    @Test void rejectsWhenDepthDoesNotCoverConfiguredTargetMultiple() {
+        Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);
+        orderBooks.put(Exchange.BINANCE, book(Exchange.BINANCE, "99", "100",
+                List.of(level("99", "1000")), List.of(level("100", "250"))));
+        orderBooks.put(Exchange.OKX, book(Exchange.OKX, "101", "102",
+                List.of(level("101", "300")), List.of(level("102", "1000"))));
+
+        CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
+                List.of(rate(Exchange.BINANCE, "-0.001", 8), rate(Exchange.OKX, "-0.0001", 8)),
+                orderBooks, costs(), new BigDecimal("100"), coverageOnlyDepthLimits(), now).get(0);
+
+        assertEquals(CrossExchangeOpportunity.Status.REJECTED, opportunity.status());
+        assertEquals("INSUFFICIENT_LONG_DEPTH_COVERAGE", opportunity.rejectionReason());
     }
     @Test void qualifiesWhenBothLegsCoverThreeTimesTargetWithinFiveBps() {
         Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = new EnumMap<>(Exchange.class);
@@ -221,6 +237,12 @@ class CrossExchangeOpportunitySelectorTest {
         return new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1), Duration.ofMinutes(2),
                 new BigDecimal("0.01"), BigDecimal.ONE, new BigDecimal("-1"), BigDecimal.ZERO,
                 false, BigDecimal.ONE, new BigDecimal("0.03"), new BigDecimal("300"),
+                new BigDecimal("3"), new BigDecimal("0.0005"));
+    }
+    private CrossExchangeOpportunitySelector.Limits coverageOnlyDepthLimits() {
+        return new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1), Duration.ofMinutes(2),
+                new BigDecimal("0.01"), BigDecimal.ONE, new BigDecimal("-1"), BigDecimal.ZERO,
+                false, BigDecimal.ONE, new BigDecimal("0.03"), new BigDecimal("100"),
                 new BigDecimal("3"), new BigDecimal("0.0005"));
     }
     private CrossExchangeOpportunitySelector.Limits horizonLimits(String minimumHorizonNetYield) {

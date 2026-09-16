@@ -186,6 +186,11 @@ public final class CrossExchangeOpportunitySelector {
         if (shortCapacity.signum() <= 0) {
             return "INSUFFICIENT_SHORT_DEPTH_COVERAGE";
         }
+        String liquidityFloorReason = liquidityFloorRejection(longCapacity, shortCapacity,
+                targetNotional, limits);
+        if (liquidityFloorReason != null) {
+            return liquidityFloorReason;
+        }
         if (execution.executableNotional().compareTo(limits.minNotional()) < 0) {
             return "INSUFFICIENT_LIQUIDITY";
         }
@@ -196,6 +201,31 @@ public final class CrossExchangeOpportunitySelector {
         if (vwapImpact(execution.shortEntryPrice(), shortBook.bestBid())
                 .compareTo(limits.maximumLegVwapImpact()) > 0) {
             return "SHORT_LEG_VWAP_IMPACT_TOO_HIGH";
+        }
+        return null;
+    }
+
+    private String liquidityFloorRejection(BigDecimal longCapacity, BigDecimal shortCapacity,
+            BigDecimal targetNotional, Limits limits) {
+        BigDecimal minimumDepth = nonNegative(limits.minimumOrderBookNotional());
+        if (minimumDepth.signum() > 0) {
+            if (longCapacity.compareTo(minimumDepth) < 0) {
+                return "INSUFFICIENT_LONG_DEPTH_NOTIONAL";
+            }
+            if (shortCapacity.compareTo(minimumDepth) < 0) {
+                return "INSUFFICIENT_SHORT_DEPTH_NOTIONAL";
+            }
+        }
+        BigDecimal coverageRatio = nonNegative(limits.minimumOrderBookCoverageRatio());
+        if (coverageRatio.signum() <= 0 || targetNotional == null || targetNotional.signum() <= 0) {
+            return null;
+        }
+        BigDecimal requiredCapacity = targetNotional.multiply(coverageRatio);
+        if (longCapacity.compareTo(requiredCapacity) < 0) {
+            return "INSUFFICIENT_LONG_DEPTH_COVERAGE";
+        }
+        if (shortCapacity.compareTo(requiredCapacity) < 0) {
+            return "INSUFFICIENT_SHORT_DEPTH_COVERAGE";
         }
         return null;
     }
@@ -214,6 +244,10 @@ public final class CrossExchangeOpportunitySelector {
 
     private BigDecimal vwapImpact(BigDecimal vwap, BigDecimal bestPrice) {
         return vwap.subtract(bestPrice).abs().divide(bestPrice, 12, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal nonNegative(BigDecimal value) {
+        return value == null || value.signum() < 0 ? BigDecimal.ZERO : value;
     }
 
     /**

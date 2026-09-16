@@ -77,7 +77,9 @@ arbitrage:
 
 采集文件按 UTC 日期追加，当前以 `cross-exchange-funding-v2-<UTC 日期>.csv` 命名，包含 `schemaVersion`、`capturedAt`、`source=PUBLIC_REST`、交易所、资金费率、结算周期、下一结算时间、mark/index price、最优价、聚合名义深度及逐档价格/名义金额。逐档名义金额已按合约乘数归一为 USD/USDT 计价的名义值。单一交易所失败会写 `ERROR` 行而不会中断其他交易所；回放读取器同时兼容旧版 v1 文件（其逐档字段为空），并将成功行按 `capturedAt + symbol` 还原为统一资金费率和盘口快照，单独保留失败记录。`CrossExchangeFundingReplayService` 会按时间排序后复用生产机会选择器、成本模型和稳定窗口输出评估统计。生成目录已加入 `.gitignore`，原始采集数据须经脱敏和来源核验后才能选择性入库。
 
-扫描器按每所独立 2,000U 的 Paper 资金池计算名义金额，并取「爆仓距离/维持保证金/开仓成本约束」「25x 能力上限」和「两腿 5 bps 内、1.5 倍冗余的 L2 容量」三者最小值。价格历史不足 1 小时的新币按 30% 爆仓距离保守处理；历史充足后，最低距离为 `max(15%, 4 × 24h 内最大相邻价格变动, 3 × 最近 1h 最大变动)`，上限 40%。两腿取更严格者。资金费仅影响风险调整后的排序，不能降低爆仓距离。
+低流动性现在是机会选择阶段的硬拒绝条件，而不是只用于把仓位缩小。`minimum-order-book-notional` 要求多头腿和空头腿各自在 `maximum-leg-vwap-impact` 允许的价格冲击内，至少有该绝对名义盘口深度；任一腿不足会分别以 `INSUFFICIENT_LONG_DEPTH_NOTIONAL` 或 `INSUFFICIENT_SHORT_DEPTH_NOTIONAL` 拒绝。`minimum-order-book-coverage-ratio` 要求两腿可成交深度至少覆盖本次目标名义金额的指定倍数，例如目标 100U、覆盖倍数 1.5 时，两腿都必须在允许滑点内有 150U 以上容量；不足会以 `INSUFFICIENT_LONG_DEPTH_COVERAGE` 或 `INSUFFICIENT_SHORT_DEPTH_COVERAGE` 拒绝。这个过滤针对的是盘口深度、滑点和可成交容量，不是按币种大小做黑名单。
+
+扫描器按每所独立 2,000U 的 Paper 资金池计算名义金额。候选先通过上述盘口深度硬门槛；通过后，再取「爆仓距离/维持保证金/开仓成本约束」「25x 能力上限」和「两腿 5 bps 内共同可成交 L2 容量」三者最小值作为 Paper 仓位上限。价格历史不足 1 小时的新币按 30% 爆仓距离保守处理；历史充足后，最低距离为 `max(15%, 4 × 24h 内最大相邻价格变动, 3 × 最近 1h 最大变动)`，上限 40%。两腿取更严格者。资金费仅影响风险调整后的排序，不能降低爆仓距离。
 
 ## 2.1 Hyperliquid + CEX 的 Paper 边界
 
