@@ -100,7 +100,7 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, "trend contract list is blank");
         }
         long openLikePositions = recorder.countOpenLike();
-        int maxActivePositions = Math.max(1, properties.getMaxActivePositions());
+        int maxActivePositions = Math.max(0, properties.getMaxActivePositions());
         List<String> summaries = new ArrayList<>();
         RunResult selected = null;
         for (String contractCode : contractCodes) {
@@ -139,6 +139,9 @@ public class HtxTrendFollowingService {
         Optional<HtxTrendPositionEntity> active = recorder.findActive(contractCode);
         if (active.isPresent()) {
             return advance(active.get(), signal, contract);
+        }
+        if (!properties.isEntryEnabled()) {
+            return RunResult.of(RunCode.SKIPPED, null, "new trend entries disabled");
         }
         if (!allowNewEntry) {
             return RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
@@ -309,6 +312,9 @@ public class HtxTrendFollowingService {
         recorder.updateRiskLevels(position.getId(), position.getStopPrice(), trailingStop, takeProfit, highest, lowest,
                 "holding signal=" + signal.side() + " ref=" + reference + feeProtectionMessage(feeProtectedStop));
         String exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
+        if (exitReason == null) {
+            exitReason = flatLossControlExitReason(position, signal, reference);
+        }
         if (exitReason == null) {
             exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit);
         }
@@ -707,6 +713,64 @@ public class HtxTrendFollowingService {
                     + " stop=" + feeProtectedStop + " flatBars=" + flatBars + "/" + requiredFlatBars;
         }
         return null;
+    }
+
+    private String flatLossControlExitReason(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference) {
+        if (position == null || signal.side() != TrendSide.FLAT || !positive(reference)) {
+            return null;
+        }
+        int requiredFlatBars = Math.max(1, properties.getFlatLossExitConfirmationBars());
+        long flatBars = countRecentFlatSignals(position, requiredFlatBars);
+        if (flatBars < requiredFlatBars) {
+            return null;
+        }
+        BigDecimal estimatedNet = estimatedCloseNetProfit(position, reference);
+        if (estimatedNet == null || estimatedNet.signum() >= 0) {
+            return null;
+        }
+        BigDecimal lossBudget = flatLossBudget(position);
+        if (!positive(lossBudget) || estimatedNet.negate().compareTo(lossBudget) < 0) {
+            return null;
+        }
+        return position.getSide().toLowerCase(Locale.ROOT) + " exit on confirmed flat trend loss control ref="
+                + reference + " estimatedNet=" + estimatedNet + " lossBudget=" + lossBudget
+                + " flatBars=" + flatBars + "/" + requiredFlatBars;
+    }
+
+    private BigDecimal estimatedCloseNetProfit(HtxTrendPositionEntity position, BigDecimal reference) {
+        if (position == null || !positive(position.getEntryAvgPrice()) || !positive(position.getContractSize())
+                || position.getContractVolume() == null || position.getContractVolume() <= 0L || !positive(reference)) {
+            return null;
+        }
+        BigDecimal quantity = position.getContractSize().multiply(BigDecimal.valueOf(position.getContractVolume()));
+        if (!positive(quantity)) {
+            return null;
+        }
+        BigDecimal pricePnl = LONG.equals(position.getSide())
+                ? reference.subtract(position.getEntryAvgPrice()).multiply(quantity)
+                : position.getEntryAvgPrice().subtract(reference).multiply(quantity);
+        BigDecimal entryFee = positive(position.getEntryFee())
+                ? position.getEntryFee() : position.getEntryAvgPrice().multiply(quantity)
+                .multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
+        BigDecimal closeFee = reference.multiply(quantity).multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
+        return pricePnl.subtract(entryFee).subtract(closeFee);
+    }
+
+    private BigDecimal flatLossBudget(HtxTrendPositionEntity position) {
+        if (position == null || !positive(position.getEntryAvgPrice()) || !positive(position.getContractSize())
+                || position.getContractVolume() == null || position.getContractVolume() <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal quantity = position.getContractSize().multiply(BigDecimal.valueOf(position.getContractVolume()));
+        BigDecimal entryNotional = position.getEntryAvgPrice().multiply(quantity);
+        return nonNegative(properties.getMaxFlatExitLossUsdt())
+                .max(entryNotional.multiply(nonNegative(properties.getMaxFlatExitLossRate())));
+    }
+
+    private long countRecentFlatSignals(HtxTrendPositionEntity position, int requiredFlatBars) {
+        LocalDateTime since = position.getCreatedAt() == null ? SIGNAL_HISTORY_FLOOR : position.getCreatedAt();
+        return recorder.countRecentSignalsBySide(position.getContractCode(), TrendSide.FLAT.name(),
+                since, requiredFlatBars);
     }
 
     private BigDecimal roundTripCostRate(BigDecimal spreadRate) {

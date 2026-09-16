@@ -18,6 +18,9 @@ public class HtxTrendProperties {
     /** Observe-only mode records/logs signals but never sends orders. */
     private boolean observeOnly = true;
 
+    /** Whether the strategy may open new positions. Active positions are still managed when disabled. */
+    private boolean entryEnabled = true;
+
     /** Legacy single USDT-margined perpetual contract, used when {@link #contractCodes} is empty. */
     private String contractCode = "XAUT-USDT";
 
@@ -104,6 +107,15 @@ public class HtxTrendProperties {
 
     /** Number of consecutive flat signals required before fee-protected flat exit. */
     private int flatExitConfirmationBars = 3;
+
+    /** Maximum estimated net loss in USDT tolerated after a confirmed flat signal. */
+    private BigDecimal maxFlatExitLossUsdt = new BigDecimal("0.25");
+
+    /** Maximum estimated net loss rate tolerated after a confirmed flat signal. */
+    private BigDecimal maxFlatExitLossRate = new BigDecimal("0.0030");
+
+    /** Number of consecutive flat signals required before loss-control flat exit. */
+    private int flatLossExitConfirmationBars = 3;
 
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
