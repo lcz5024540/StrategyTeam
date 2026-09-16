@@ -22,6 +22,7 @@ public class CrossExchangePositionMonitorService {
     private final Duration maximumQuoteAge;
     private final Duration maximumSettlementSkew;
     private final int orderBookDepth;
+    private final DirectionalBasisAdmissionGate basisAdmissionGate;
 
     public CrossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,
             CrossExchangeRiskService risk, CrossExchangePaperTradingService paper) {
@@ -54,7 +55,7 @@ public class CrossExchangePositionMonitorService {
             CrossExchangeArbitragePersistenceService persistence, Map<Exchange, ExchangeCost> costs,
             BigDecimal basisRiskBuffer, Duration maximumQuoteAge, Duration maximumSettlementSkew) {
         this(providers, risk, paper, persistence, costs, basisRiskBuffer, maximumQuoteAge,
-                maximumSettlementSkew, 100);
+                maximumSettlementSkew, 100, DirectionalBasisAdmissionGate.disabled());
     }
 
     public CrossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,
@@ -62,6 +63,15 @@ public class CrossExchangePositionMonitorService {
             CrossExchangeArbitragePersistenceService persistence, Map<Exchange, ExchangeCost> costs,
             BigDecimal basisRiskBuffer, Duration maximumQuoteAge, Duration maximumSettlementSkew,
             int orderBookDepth) {
+        this(providers, risk, paper, persistence, costs, basisRiskBuffer, maximumQuoteAge,
+                maximumSettlementSkew, orderBookDepth, DirectionalBasisAdmissionGate.disabled());
+    }
+
+    public CrossExchangePositionMonitorService(List<CrossExchangeMarketDataProvider> providers,
+            CrossExchangeRiskService risk, CrossExchangePaperTradingService paper,
+            CrossExchangeArbitragePersistenceService persistence, Map<Exchange, ExchangeCost> costs,
+            BigDecimal basisRiskBuffer, Duration maximumQuoteAge, Duration maximumSettlementSkew,
+            int orderBookDepth, DirectionalBasisAdmissionGate basisAdmissionGate) {
         this.providers = providers.stream().collect(Collectors.toMap(
                 CrossExchangeMarketDataProvider::exchange, Function.identity()));
         this.risk = risk;
@@ -75,6 +85,8 @@ public class CrossExchangePositionMonitorService {
             throw new IllegalArgumentException("order book depth must be positive");
         }
         this.orderBookDepth = orderBookDepth;
+        this.basisAdmissionGate = basisAdmissionGate == null
+                ? DirectionalBasisAdmissionGate.disabled() : basisAdmissionGate;
     }
 
     public List<PaperHedgePosition> monitor(Instant now) {
@@ -94,8 +106,7 @@ public class CrossExchangePositionMonitorService {
                 recordUnavailableMarketData(position, exception, now);
                 continue;
             }
-            BigDecimal latestNetYield = remainingIncrementalYield(
-                    quotes.longQuote(), quotes.shortQuote(), now);
+            BigDecimal latestNetYield = remainingIncrementalYield(position, quotes, now);
             BigDecimal deviation = quotes.shortQuote().markPrice()
                     .subtract(quotes.longQuote().markPrice()).abs()
                     .divide(quotes.longQuote().markPrice(), 12, RoundingMode.HALF_UP);
@@ -195,10 +206,25 @@ public class CrossExchangePositionMonitorService {
      * or later, so subtracting the full fee here would double count an unavoidable cost in the
      * hold-vs-close decision. Actual close fees remain part of realized Paper PnL.</p>
      */
-    private BigDecimal remainingIncrementalYield(NormalizedFundingRateSnapshot longQuote,
-            NormalizedFundingRateSnapshot shortQuote, Instant now) {
-        return FundingRateYieldProjection.projectedSpread(longQuote, shortQuote, now)
+    private BigDecimal remainingIncrementalYield(PaperHedgePosition position, LatestQuotes quotes,
+            Instant now) {
+        return FundingRateYieldProjection.projectedSpread(
+                        quotes.longQuote(), quotes.shortQuote(), now)
+                .add(expectedBasisReversion(position, quotes))
                 .subtract(basisRiskBuffer);
+    }
+
+    private BigDecimal expectedBasisReversion(PaperHedgePosition position, LatestQuotes quotes) {
+        DirectionalBasisAdmissionGate.Profile profile = basisAdmissionGate.profile(
+                position.opportunity().symbol(), position.opportunity().longQuote().exchange(),
+                position.opportunity().shortQuote().exchange());
+        if (profile.median() == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal currentDirectionalBasis = quotes.shortBook().bestBid()
+                .subtract(quotes.longBook().bestAsk())
+                .divide(quotes.longBook().bestAsk(), 12, RoundingMode.HALF_UP);
+        return currentDirectionalBasis.subtract(profile.median());
     }
 
     private boolean settlementAligned(LatestQuotes quotes) {

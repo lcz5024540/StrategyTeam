@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class DirectionalBasisAdmissionGate {
     public record Assessment(boolean admitted, BigDecimal basis, BigDecimal threshold,
             int sampleCount) { }
+    public record Profile(int sampleCount, BigDecimal median, BigDecimal admissionThreshold) { }
 
     private final boolean enabled;
     private final int minimumSamples;
@@ -49,10 +50,11 @@ public final class DirectionalBasisAdmissionGate {
         if (!enabled) {
             return new Assessment(true, basis, null, 0);
         }
-        String key = symbol + '|' + longExchange.name() + '|' + shortExchange.name();
+        String key = key(symbol, longExchange, shortExchange);
         Deque<BigDecimal> samples = history.computeIfAbsent(key, ignored -> new ArrayDeque<>());
         synchronized (samples) {
-            BigDecimal threshold = samples.size() < minimumSamples ? null : percentile(samples);
+            BigDecimal threshold = samples.size() < minimumSamples ? null
+                    : percentile(samples, percentile);
             boolean admitted = threshold == null || basis.compareTo(threshold) >= 0;
             samples.addLast(basis);
             while (samples.size() > windowSize) {
@@ -62,13 +64,31 @@ public final class DirectionalBasisAdmissionGate {
         }
     }
 
-    private BigDecimal percentile(Deque<BigDecimal> samples) {
+    public Profile profile(String symbol, Exchange longExchange, Exchange shortExchange) {
+        Deque<BigDecimal> samples = history.get(key(symbol, longExchange, shortExchange));
+        if (samples == null) {
+            return new Profile(0, null, null);
+        }
+        synchronized (samples) {
+            if (samples.isEmpty()) {
+                return new Profile(0, null, null);
+            }
+            return new Profile(samples.size(), percentile(samples, 50),
+                    samples.size() < minimumSamples ? null : percentile(samples, percentile));
+        }
+    }
+
+    private String key(String symbol, Exchange longExchange, Exchange shortExchange) {
+        return symbol + '|' + longExchange.name() + '|' + shortExchange.name();
+    }
+
+    private BigDecimal percentile(Deque<BigDecimal> samples, int requestedPercentile) {
         ArrayList<BigDecimal> sorted = new ArrayList<>(samples);
         sorted.sort(Comparator.naturalOrder());
         if (sorted.size() == 1) {
             return sorted.get(0);
         }
-        BigDecimal index = BigDecimal.valueOf(percentile)
+        BigDecimal index = BigDecimal.valueOf(requestedPercentile)
                 .multiply(BigDecimal.valueOf(sorted.size() - 1))
                 .divide(BigDecimal.valueOf(100), 12, RoundingMode.HALF_UP);
         int lower = index.intValue();

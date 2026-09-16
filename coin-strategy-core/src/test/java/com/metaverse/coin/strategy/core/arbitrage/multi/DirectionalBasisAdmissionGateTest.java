@@ -32,6 +32,19 @@ class DirectionalBasisAdmissionGateTest {
         assertTrue(other.admitted());
     }
 
+    @Test
+    void exposesMedianAndAdmissionThresholdForSharedExitModel() {
+        DirectionalBasisAdmissionGate gate = new DirectionalBasisAdmissionGate(true, 2, 4, 70);
+        assess(gate, "100", "99");
+        assess(gate, "100", "101");
+
+        DirectionalBasisAdmissionGate.Profile profile = gate.profile(
+                "BTCUSDT", Exchange.BITGET, Exchange.OKX);
+
+        assertTrue(profile.median().compareTo(BigDecimal.ZERO) == 0);
+        assertTrue(profile.admissionThreshold().compareTo(BigDecimal.ZERO) > 0);
+    }
+
     private DirectionalBasisAdmissionGate.Assessment assess(DirectionalBasisAdmissionGate gate,
             String longPrice, String shortPrice) {
         return gate.assess("BTCUSDT", Exchange.BITGET, Exchange.OKX,

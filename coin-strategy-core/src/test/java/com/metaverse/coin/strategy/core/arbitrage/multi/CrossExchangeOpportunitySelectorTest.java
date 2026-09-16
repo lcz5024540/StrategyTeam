@@ -42,7 +42,7 @@ class CrossExchangeOpportunitySelectorTest {
                 List.of(rate(Exchange.BINANCE, "-0.0008", 8), rate(Exchange.OKX, "-0.0002", 4)),
                 books(), costs(), new BigDecimal("100"), defaultLimits(), now);
 
-        assertEquals(0, new BigDecimal("0.0004").compareTo(result.get(0).estimatedNetYield()));
+        assertEquals(0, new BigDecimal("0.0012").compareTo(result.get(0).estimatedNetYield()));
         assertEquals(0, new BigDecimal("0.00005").compareTo(result.get(0).hourlyFundingSpread()));
     }
     @Test void projectsHyperliquidHourlyRateAcrossCexSettlementInterval() {
@@ -54,7 +54,7 @@ class CrossExchangeOpportunitySelectorTest {
         assertEquals(Exchange.OKX, opportunity.longQuote().exchange());
         assertEquals(Exchange.HYPERLIQUID, opportunity.shortQuote().exchange());
         assertEquals(0, new BigDecimal("0.00005").compareTo(opportunity.hourlyFundingSpread()));
-        assertEquals(0, new BigDecimal("0.0004").compareTo(opportunity.estimatedNetYield()));
+        assertEquals(0, new BigDecimal("0.0012").compareTo(opportunity.estimatedNetYield()));
     }
     @Test void allowsDifferentCadenceWhenNextSettlementTimesAreSkewedButWindowYieldIsPositive() {
         var limits = new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1),
@@ -68,7 +68,7 @@ class CrossExchangeOpportunitySelectorTest {
 
         assertEquals(Exchange.OKX, opportunity.longQuote().exchange());
         assertEquals(Exchange.HYPERLIQUID, opportunity.shortQuote().exchange());
-        assertEquals(0, new BigDecimal("0.0004").compareTo(opportunity.estimatedNetYield()));
+        assertEquals(0, new BigDecimal("0.0012").compareTo(opportunity.estimatedNetYield()));
         assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
     }
     @Test void normalizesSameCadenceCexSettlementTimesToCommonGrid() {
@@ -98,24 +98,24 @@ class CrossExchangeOpportunitySelectorTest {
 
         assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, opportunity.status());
         assertNull(opportunity.rejectionReason());
-        assertEquals(0, new BigDecimal("0.0003").compareTo(opportunity.estimatedNetYield()));
+        assertEquals(0, new BigDecimal("0.0007").compareTo(opportunity.estimatedNetYield()));
     }
 
-    @Test void rejectsWhenFirstWindowFundingCannotCoverTradingCost() {
+    @Test void rejectsWhenFundingCannotBreakEvenWithinMaximumRiskDuration() {
         Map<Exchange, ExchangeCost> costs = costs();
         costs.put(Exchange.BINANCE, new ExchangeCost(BigDecimal.ZERO, new BigDecimal("0.00005"),
                 new BigDecimal("0.00005")));
         costs.put(Exchange.HYPERLIQUID, new ExchangeCost(BigDecimal.ZERO, new BigDecimal("0.00005"),
                 new BigDecimal("0.00005")));
-        CrossExchangeOpportunitySelector.Limits limits = horizonLimits("0.0001");
+        CrossExchangeOpportunitySelector.Limits limits = horizonLimits("0.0001", 8);
 
         CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
                 List.of(rate(Exchange.BINANCE, "0.0001", 8),
                         rate(Exchange.HYPERLIQUID, "0.0004", 8)),
                 books(), costs, new BigDecimal("100"), limits, now).get(0);
 
-        assertEquals(0, new BigDecimal("0.0001").compareTo(opportunity.estimatedNetYield()));
-        assertEquals("COST_COVERAGE_BELOW_THRESHOLD", opportunity.rejectionReason());
+        assertEquals(0, new BigDecimal("-0.0002").compareTo(opportunity.estimatedNetYield()));
+        assertEquals("BREAK_EVEN_HORIZON_EXCEEDED", opportunity.rejectionReason());
     }
 
     @Test void rejectsWhenHoldingWindowNetYieldIsBelowMinimum() {
@@ -124,7 +124,7 @@ class CrossExchangeOpportunitySelectorTest {
                 new BigDecimal("0.00005")));
         costs.put(Exchange.HYPERLIQUID, new ExchangeCost(BigDecimal.ZERO, new BigDecimal("0.00005"),
                 new BigDecimal("0.00005")));
-        CrossExchangeOpportunitySelector.Limits limits = horizonLimits("0.0004");
+        CrossExchangeOpportunitySelector.Limits limits = horizonLimits("0.0004", 16);
 
         CrossExchangeOpportunity opportunity = new CrossExchangeOpportunitySelector().evaluate(
                 List.of(rate(Exchange.BINANCE, "0.0001", 8),
@@ -132,7 +132,7 @@ class CrossExchangeOpportunitySelectorTest {
                 books(), costs, new BigDecimal("100"), limits, now).get(0);
 
         assertEquals(0, new BigDecimal("0.0003").compareTo(opportunity.estimatedNetYield()));
-        assertEquals("NET_YIELD_BELOW_THRESHOLD", opportunity.rejectionReason());
+        assertEquals("BREAK_EVEN_HORIZON_EXCEEDED", opportunity.rejectionReason());
     }
     @Test void rejectsWhenExecutableBidAskBasisExceedsLimit() {
         Map<Exchange, NormalizedOrderBookSnapshot> orderBooks = books();
@@ -155,7 +155,7 @@ class CrossExchangeOpportunitySelectorTest {
                 books(), costs(), BigDecimal.TEN, limits, now);
         assertEquals(Exchange.BINANCE, result.get(0).longQuote().exchange());
         assertEquals(Exchange.OKX, result.get(0).shortQuote().exchange());
-        assertEquals(0, new BigDecimal("0.002").compareTo(result.get(0).estimatedNetYield()));
+        assertEquals(0, new BigDecimal("0.006").compareTo(result.get(0).estimatedNetYield()));
         assertEquals(CrossExchangeOpportunity.Status.QUALIFIED, result.get(0).status());
     }
     @Test void lessLiquidSideIsSelectedAsFirstLeg() {
@@ -224,11 +224,16 @@ class CrossExchangeOpportunitySelectorTest {
                 new BigDecimal("3"), new BigDecimal("0.0005"));
     }
     private CrossExchangeOpportunitySelector.Limits horizonLimits(String minimumHorizonNetYield) {
+        return horizonLimits(minimumHorizonNetYield, 24);
+    }
+    private CrossExchangeOpportunitySelector.Limits horizonLimits(String minimumHorizonNetYield,
+            int maximumBreakEvenHours) {
         return new CrossExchangeOpportunitySelector.Limits(Duration.ofMinutes(1),
                 Duration.ofMinutes(2), new BigDecimal("0.01"), BigDecimal.ONE,
                 new BigDecimal("-1"), new BigDecimal("0.0001"), false, BigDecimal.ONE,
                 new BigDecimal("0.03"), BigDecimal.ZERO, BigDecimal.ONE, BigDecimal.ONE,
-                2, new BigDecimal(minimumHorizonNetYield));
+                2, new BigDecimal(minimumHorizonNetYield),
+                Duration.ofHours(maximumBreakEvenHours));
     }
     private NormalizedOrderBookSnapshot book(Exchange exchange, String bid, String ask,
             List<NormalizedOrderBookSnapshot.Level> bids, List<NormalizedOrderBookSnapshot.Level> asks) {

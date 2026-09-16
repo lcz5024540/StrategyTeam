@@ -24,14 +24,27 @@ public final class CrossExchangeOpportunitySelector {
                          boolean allowMixedSigns, BigDecimal minimumCostCoverageRatio,
                          BigDecimal maxExecutableBasis, BigDecimal minimumOrderBookNotional,
                          BigDecimal minimumOrderBookCoverageRatio, BigDecimal maximumLegVwapImpact,
-                         int expectedHoldingWindows, BigDecimal minimumHorizonNetYield) {
+                         int expectedHoldingWindows, BigDecimal minimumHorizonNetYield,
+                         Duration maximumBreakEvenDuration) {
+        public Limits(Duration maxQuoteAge, Duration maxSettlementSkew,
+                BigDecimal maxMarkPriceDeviation, BigDecimal minNotional, BigDecimal minNetYield,
+                BigDecimal basisRiskBuffer, boolean allowMixedSigns,
+                BigDecimal minimumCostCoverageRatio, BigDecimal maxExecutableBasis,
+                BigDecimal minimumOrderBookNotional, BigDecimal minimumOrderBookCoverageRatio,
+                BigDecimal maximumLegVwapImpact, int expectedHoldingWindows,
+                BigDecimal minimumHorizonNetYield) {
+            this(maxQuoteAge, maxSettlementSkew, maxMarkPriceDeviation, minNotional, minNetYield,
+                    basisRiskBuffer, allowMixedSigns, minimumCostCoverageRatio, maxExecutableBasis,
+                    minimumOrderBookNotional, minimumOrderBookCoverageRatio, maximumLegVwapImpact,
+                    expectedHoldingWindows, minimumHorizonNetYield, Duration.ofHours(24));
+        }
         public Limits(Duration maxQuoteAge, Duration maxSettlementSkew,
                 BigDecimal maxMarkPriceDeviation, BigDecimal minNotional, BigDecimal minNetYield,
                 BigDecimal basisRiskBuffer, boolean allowMixedSigns) {
             this(maxQuoteAge, maxSettlementSkew, maxMarkPriceDeviation, minNotional, minNetYield,
                     basisRiskBuffer, allowMixedSigns, BigDecimal.ONE,
                     new BigDecimal("0.03"), BigDecimal.ZERO, BigDecimal.ONE, BigDecimal.ONE,
-                    1, minNetYield);
+                    1, minNetYield, Duration.ofHours(24));
         }
 
         public Limits(Duration maxQuoteAge, Duration maxSettlementSkew,
@@ -59,6 +72,10 @@ public final class CrossExchangeOpportunitySelector {
             if (expectedHoldingWindows <= 0) {
                 throw new IllegalArgumentException("expectedHoldingWindows must be positive");
             }
+            if (maximumBreakEvenDuration == null || maximumBreakEvenDuration.isZero()
+                    || maximumBreakEvenDuration.isNegative()) {
+                throw new IllegalArgumentException("maximumBreakEvenDuration must be positive");
+            }
         }
     }
 
@@ -77,11 +94,10 @@ public final class CrossExchangeOpportunitySelector {
                     limits.maximumLegVwapImpact());
             String reason = rejection(low, high, books, costs, execution, targetNotional, limits, now);
             BigDecimal hourlySpread = high.hourlyFundingRate().subtract(low.hourlyFundingRate());
-            BigDecimal firstWindowFundingYield = FundingRateYieldProjection.projectedSpread(
-                    low.rawFundingRate(), low.fundingIntervalHours(), low.nextFundingTime(),
-                    high.rawFundingRate(), high.fundingIntervalHours(), high.nextFundingTime(),
-                    now);
-            BigDecimal horizonFundingYield = direction.projectedSpread();
+            BigDecimal maximumHoldingHours = BigDecimal.valueOf(
+                    limits.maximumBreakEvenDuration().toSeconds())
+                    .divide(BigDecimal.valueOf(SECONDS_PER_HOUR), 12, RoundingMode.HALF_UP);
+            BigDecimal horizonFundingYield = hourlySpread.multiply(maximumHoldingHours);
             BigDecimal tradingCost = tradingCost(low, high, costs);
             BigDecimal riskAdjustedCost = tradingCost.add(limits.basisRiskBuffer());
             BigDecimal horizonNet = horizonFundingYield.subtract(riskAdjustedCost);
@@ -91,13 +107,11 @@ public final class CrossExchangeOpportunitySelector {
             if (reason == null && !basisAssessment.admitted()) {
                 reason = "UNFAVORABLE_DIRECTIONAL_BASIS";
             }
-            if (reason == null && tradingCost.signum() > 0
-                    && firstWindowFundingYield.compareTo(tradingCost.multiply(
-                            limits.minimumCostCoverageRatio())) < 0) {
-                reason = "COST_COVERAGE_BELOW_THRESHOLD";
-            }
-            if (reason == null && horizonNet.compareTo(limits.minimumHorizonNetYield()) < 0) {
-                reason = "NET_YIELD_BELOW_THRESHOLD";
+            BigDecimal requiredYield = tradingCost.multiply(limits.minimumCostCoverageRatio())
+                    .add(limits.basisRiskBuffer()).add(limits.minimumHorizonNetYield());
+            if (reason == null && (hourlySpread.signum() <= 0
+                    || horizonFundingYield.compareTo(requiredYield) < 0)) {
+                reason = "BREAK_EVEN_HORIZON_EXCEEDED";
             }
             Exchange firstLeg = firstLeg(low, high, books);
             NormalizedOrderBookSnapshot longBook = books.get(low.exchange());
