@@ -147,6 +147,11 @@ htx:
     atr-stop-multiplier: ${HTX_TREND_ATR_STOP_MULTIPLIER:2.5}
     trailing-atr-multiplier: ${HTX_TREND_TRAILING_ATR_MULTIPLIER:2.0}
     take-profit-atr-multiplier: ${HTX_TREND_TAKE_PROFIT_ATR_MULTIPLIER:0}
+    estimated-taker-fee-rate: ${HTX_TREND_ESTIMATED_TAKER_FEE_RATE:0.0004}
+    min-net-profit-rate: ${HTX_TREND_MIN_NET_PROFIT_RATE:0.0002}
+    min-expected-move-atr-multiplier: ${HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER:1.0}
+    fee-protection-enabled: ${HTX_TREND_FEE_PROTECTION_ENABLED:true}
+    exit-flat-after-fee-protection: ${HTX_TREND_EXIT_FLAT_AFTER_FEE_PROTECTION:true}
     max-entry-funding-cost-rate: ${HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE:0.0006}
     max-hold-funding-cost-rate: ${HTX_TREND_MAX_HOLD_FUNDING_COST_RATE:0.0012}
     leverage: ${HTX_TREND_LEVERAGE:5}

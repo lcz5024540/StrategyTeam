@@ -85,6 +85,21 @@ public class HtxTrendProperties {
     /** Optional take-profit distance = ATR * this multiplier; <=0 disables. */
     private BigDecimal takeProfitAtrMultiplier = new BigDecimal("0");
 
+    /** Estimated taker fee per side, used before fills are known to reject fee-dominated signals. */
+    private BigDecimal estimatedTakerFeeRate = new BigDecimal("0.0004");
+
+    /** Minimum net profit buffer required after estimated round-trip fees. */
+    private BigDecimal minNetProfitRate = new BigDecimal("0.0002");
+
+    /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
+    private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
+
+    /** Once a live position reaches fee breakeven, trailing stop is clamped to at least breakeven. */
+    private boolean feeProtectionEnabled = true;
+
+    /** After price reaches the fee-protected zone, a flat signal exits instead of waiting for a wide stop. */
+    private boolean exitFlatAfterFeeProtection = true;
+
     /** Maximum funding rate cost tolerated for the entry side per funding period. */
     private BigDecimal maxEntryFundingCostRate = new BigDecimal("0.0006");
 
