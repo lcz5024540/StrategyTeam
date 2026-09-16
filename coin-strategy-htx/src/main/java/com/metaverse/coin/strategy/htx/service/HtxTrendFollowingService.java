@@ -57,6 +57,7 @@ public class HtxTrendFollowingService {
     private static final String SIDE_SELL = "sell";
     private static final String ORDER_TYPE_MARKET = "market";
     private static final BigDecimal TWO = new BigDecimal("2");
+    private static final LocalDateTime SIGNAL_HISTORY_FLOOR = LocalDateTime.of(1970, 1, 1, 0, 0);
 
     private final HtxUsdtSwapService swap;
     private final HtxContractProperties contractProperties;
@@ -197,8 +198,8 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, leverageGate);
         }
         String side = signal.side() == TrendSide.LONG ? LONG : SHORT;
-        BigDecimal stopPrice = initialStop(signal, side);
-        BigDecimal takeProfitPrice = initialTakeProfit(signal, side);
+        BigDecimal stopPrice = initialStop(signal, side, contract);
+        BigDecimal takeProfitPrice = initialTakeProfit(signal, side, contract);
         String positionKey = positionKey(contractCode);
         String clientOrderId = Long.toString(numericClientOrderId());
         HtxTrendPositionEntity entity = new HtxTrendPositionEntity();
@@ -298,8 +299,8 @@ public class HtxTrendFollowingService {
                 signal.closePrice(), position.getEntryAvgPrice());
         BigDecimal highest = max(firstPositive(position.getHighestPrice(), reference), reference);
         BigDecimal lowest = min(firstPositive(position.getLowestPrice(), reference), reference);
-        BigDecimal trailingStop = trailingStop(position, signal, reference, highest, lowest);
-        BigDecimal feeProtectedStop = feeProtectedStop(position, highest, lowest);
+        BigDecimal trailingStop = trailingStop(position, signal, reference, highest, lowest, contract);
+        BigDecimal feeProtectedStop = feeProtectedStop(position, highest, lowest, contract);
         if (feeProtectedStop != null) {
             trailingStop = LONG.equals(position.getSide())
                     ? max(trailingStop, feeProtectedStop) : min(trailingStop, feeProtectedStop);
@@ -307,7 +308,7 @@ public class HtxTrendFollowingService {
         BigDecimal takeProfit = position.getTakeProfitPrice();
         recorder.updateRiskLevels(position.getId(), position.getStopPrice(), trailingStop, takeProfit, highest, lowest,
                 "holding signal=" + signal.side() + " ref=" + reference + feeProtectionMessage(feeProtectedStop));
-        String exitReason = flatAfterFeeProtectionExitReason(position.getSide(), signal, reference, feeProtectedStop);
+        String exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
         if (exitReason == null) {
             exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit);
         }
@@ -625,34 +626,35 @@ public class HtxTrendFollowingService {
         return null;
     }
 
-    private BigDecimal initialStop(TrendSignal signal, String side) {
+    private BigDecimal initialStop(TrendSignal signal, String side, HtxSwapContractInfo contract) {
         BigDecimal distance = signal.atr().multiply(properties.getAtrStopMultiplier());
         BigDecimal value = LONG.equals(side) ? signal.closePrice().subtract(distance) : signal.closePrice().add(distance);
-        return scalePrice(value);
+        return scalePrice(value, contract);
     }
 
-    private BigDecimal initialTakeProfit(TrendSignal signal, String side) {
+    private BigDecimal initialTakeProfit(TrendSignal signal, String side, HtxSwapContractInfo contract) {
         if (properties.getTakeProfitAtrMultiplier() == null || properties.getTakeProfitAtrMultiplier().signum() <= 0) {
             return null;
         }
         BigDecimal distance = signal.atr().multiply(properties.getTakeProfitAtrMultiplier());
         BigDecimal value = LONG.equals(side) ? signal.closePrice().add(distance) : signal.closePrice().subtract(distance);
-        return scalePrice(value);
+        return scalePrice(value, contract);
     }
 
     private BigDecimal trailingStop(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
-                                    BigDecimal highest, BigDecimal lowest) {
+                                    BigDecimal highest, BigDecimal lowest, HtxSwapContractInfo contract) {
         BigDecimal distance = positive(signal.atr()) ? signal.atr().multiply(properties.getTrailingAtrMultiplier())
                 : reference.multiply(properties.getMinAtrPct()).multiply(properties.getTrailingAtrMultiplier());
         BigDecimal candidate = LONG.equals(position.getSide()) ? highest.subtract(distance) : lowest.add(distance);
         BigDecimal previous = firstPositive(position.getTrailingStopPrice(), position.getStopPrice(), candidate);
         if (LONG.equals(position.getSide())) {
-            return scalePrice(max(previous, candidate));
+            return scalePrice(max(previous, candidate), contract);
         }
-        return scalePrice(min(previous, candidate));
+        return scalePrice(min(previous, candidate), contract);
     }
 
-    private BigDecimal feeProtectedStop(HtxTrendPositionEntity position, BigDecimal highest, BigDecimal lowest) {
+    private BigDecimal feeProtectedStop(HtxTrendPositionEntity position, BigDecimal highest, BigDecimal lowest,
+                                        HtxSwapContractInfo contract) {
         if (!properties.isFeeProtectionEnabled() || position == null || !positive(position.getEntryAvgPrice())
                 || !positive(position.getContractSize()) || position.getContractVolume() == null
                 || position.getContractVolume() <= 0L) {
@@ -667,14 +669,15 @@ public class HtxTrendFollowingService {
         BigDecimal entryFee = positive(position.getEntryFee())
                 ? position.getEntryFee() : entryNotional.multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
         BigDecimal estimatedCloseFee = entryNotional.multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
-        BigDecimal minProfit = entryNotional.multiply(nonNegative(properties.getMinNetProfitRate()));
+        BigDecimal minProfit = entryNotional.multiply(nonNegative(properties.getMinNetProfitRate()))
+                .max(nonNegative(properties.getMinFlatExitProfitUsdt()));
         BigDecimal priceDelta = entryFee.add(estimatedCloseFee).add(minProfit)
                 .divide(quantity, 18, RoundingMode.UP);
         if (LONG.equals(position.getSide())) {
-            BigDecimal protectedStop = entryPrice.add(priceDelta).setScale(properties.getPriceScale(), RoundingMode.UP);
+            BigDecimal protectedStop = scalePrice(entryPrice.add(priceDelta), contract, RoundingMode.UP);
             return highest.compareTo(protectedStop) >= 0 ? protectedStop : null;
         }
-        BigDecimal protectedStop = entryPrice.subtract(priceDelta).setScale(properties.getPriceScale(), RoundingMode.DOWN);
+        BigDecimal protectedStop = scalePrice(entryPrice.subtract(priceDelta), contract, RoundingMode.DOWN);
         return lowest.compareTo(protectedStop) <= 0 ? protectedStop : null;
     }
 
@@ -682,17 +685,26 @@ public class HtxTrendFollowingService {
         return feeProtectedStop == null ? "" : " feeProtectedStop=" + feeProtectedStop;
     }
 
-    private String flatAfterFeeProtectionExitReason(String side, TrendSignal signal, BigDecimal reference,
-                                                   BigDecimal feeProtectedStop) {
+    private String flatAfterFeeProtectionExitReason(HtxTrendPositionEntity position, TrendSignal signal,
+                                                   BigDecimal reference, BigDecimal feeProtectedStop) {
         if (!properties.isExitFlatAfterFeeProtection() || feeProtectedStop == null
                 || signal.side() != TrendSide.FLAT || !positive(reference)) {
             return null;
         }
-        if (LONG.equals(side) && reference.compareTo(feeProtectedStop) >= 0) {
-            return "long exit on flat trend after fee protection ref=" + reference + " stop=" + feeProtectedStop;
+        int requiredFlatBars = Math.max(1, properties.getFlatExitConfirmationBars());
+        LocalDateTime since = position.getCreatedAt() == null ? SIGNAL_HISTORY_FLOOR : position.getCreatedAt();
+        long flatBars = recorder.countRecentSignalsBySide(position.getContractCode(), TrendSide.FLAT.name(),
+                since, requiredFlatBars);
+        if (flatBars < requiredFlatBars) {
+            return null;
         }
-        if (SHORT.equals(side) && reference.compareTo(feeProtectedStop) <= 0) {
-            return "short exit on flat trend after fee protection ref=" + reference + " stop=" + feeProtectedStop;
+        if (LONG.equals(position.getSide()) && reference.compareTo(feeProtectedStop) >= 0) {
+            return "long exit on confirmed flat trend after fee protection ref=" + reference
+                    + " stop=" + feeProtectedStop + " flatBars=" + flatBars + "/" + requiredFlatBars;
+        }
+        if (SHORT.equals(position.getSide()) && reference.compareTo(feeProtectedStop) <= 0) {
+            return "short exit on confirmed flat trend after fee protection ref=" + reference
+                    + " stop=" + feeProtectedStop + " flatBars=" + flatBars + "/" + requiredFlatBars;
         }
         return null;
     }
@@ -852,11 +864,23 @@ public class HtxTrendFollowingService {
         return book.bid().add(book.ask()).divide(TWO, 18, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal scalePrice(BigDecimal value) {
+    private BigDecimal scalePrice(BigDecimal value, HtxSwapContractInfo contract) {
+        return scalePrice(value, contract, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal scalePrice(BigDecimal value, HtxSwapContractInfo contract, RoundingMode mode) {
         if (value == null) {
             return null;
         }
-        return value.setScale(properties.getPriceScale(), RoundingMode.HALF_UP);
+        return value.setScale(priceScale(contract), mode);
+    }
+
+    private int priceScale(HtxSwapContractInfo contract) {
+        BigDecimal priceTick = contract == null ? null : contract.getPriceTick();
+        if (positive(priceTick)) {
+            return Math.max(0, priceTick.stripTrailingZeros().scale());
+        }
+        return Math.max(0, properties.getPriceScale());
     }
 
     private String trendPeriod() {

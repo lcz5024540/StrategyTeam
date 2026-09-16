@@ -28,6 +28,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -227,28 +228,51 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void activeLongExitsFlatSignalAfterFeeProtectionInsteadOfWaitingForWideStop() {
+    void activeLongWaitsForConfirmedFlatSignalAfterFeeProtection() {
         givenContractInfo();
         givenKlines();
         givenSignal(TrendSide.FLAT, new BigDecimal("7.0"));
         givenFunding("-0.0001");
         HtxTrendPositionEntity active = activeLongPosition();
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(30));
         when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4324.34"))));
+        when(recorder.countRecentSignalsBySide(eq("XAUT-USDT"), eq("FLAT"), any(LocalDateTime.class), eq(3)))
+                .thenReturn(1L);
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        assertTrue(result.message().contains("trailingStop=4323.84"));
+        verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4295.00")),
+                eq(new BigDecimal("4323.84")), eq(null), eq(new BigDecimal("4332.21")),
+                eq(new BigDecimal("4315.84")), any());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void activeLongExitsOnlyAfterConfirmedFlatSignalAfterFeeProtection() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.FLAT, new BigDecimal("7.0"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(30));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4324.34"))));
+        when(recorder.countRecentSignalsBySide(eq("XAUT-USDT"), eq("FLAT"), any(LocalDateTime.class), eq(3)))
+                .thenReturn(3L);
         when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("flat trend after fee protection"));
-        verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4295.00")),
-                eq(new BigDecimal("4320.16")), eq(null), eq(new BigDecimal("4332.21")),
-                eq(new BigDecimal("4315.84")), any());
+        assertTrue(result.message().contains("confirmed flat trend after fee protection"));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
         assertEquals(HtxTrendRecorder.LEG_CLOSE, captor.getValue().getLeg());
         assertEquals(true, captor.getValue().getReduceOnly());
-        assertTrue(captor.getValue().getReason().contains("flat trend after fee protection"));
+        assertTrue(captor.getValue().getReason().contains("flatBars=3/3"));
     }
 
     @Test
@@ -265,10 +289,39 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("stop=4320.16"));
+        assertTrue(result.message().contains("stop=4323.84"));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
-        assertTrue(captor.getValue().getReason().contains("stop=4320.16"));
+        assertTrue(captor.getValue().getReason().contains("stop=4323.84"));
+    }
+
+    @Test
+    void activeLongUsesContractPriceTickForFeeProtectedStop() {
+        properties.setContractCodes(List.of("NEAR-USDT"));
+        properties.setFlatExitConfirmationBars(1);
+        givenContractInfo("NEAR-USDT", "1", "0.001");
+        givenKlines("NEAR-USDT");
+        TrendSignal signal = TrendSignal.of(TrendSide.FLAT, 2L, new BigDecimal("2.482"),
+                new BigDecimal("2.470"), new BigDecimal("2.460"), new BigDecimal("2.482"),
+                new BigDecimal("2.440"), new BigDecimal("0.019"), new BigDecimal("0.0077"),
+                new BigDecimal("30"), "near flat");
+        when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
+        givenFunding("NEAR-USDT", "-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition("NEAR-USDT", "1", 31L,
+                "2.472", "0.0306528", "2.440", "2.440", "2.482", "2.452");
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(30));
+        when(recorder.findActive("NEAR-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("NEAR-USDT")).thenReturn(ok(List.of(openLongPosition("NEAR-USDT", "31", "2.482"))));
+        when(recorder.countRecentSignalsBySide(eq("NEAR-USDT"), eq("FLAT"), any(LocalDateTime.class), eq(1)))
+                .thenReturn(1L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        verify(recorder).updateRiskLevels(eq(active.getId()), eq(new BigDecimal("2.440")),
+                eq(new BigDecimal("2.481")), eq(null), eq(new BigDecimal("2.482")),
+                eq(new BigDecimal("2.452")), any());
     }
 
     @Test
@@ -287,9 +340,14 @@ class HtxTrendFollowingServiceTest {
     }
 
     private void givenContractInfo(String contractCode, String contractSize) {
+        givenContractInfo(contractCode, contractSize, "0.01");
+    }
+
+    private void givenContractInfo(String contractCode, String contractSize, String priceTick) {
         HtxSwapContractInfo info = new HtxSwapContractInfo();
         info.setContractCode(contractCode);
         info.setContractSize(new BigDecimal(contractSize));
+        info.setPriceTick(new BigDecimal(priceTick));
         when(swap.contractInfo(contractCode)).thenReturn(ok(List.of(info)));
     }
 
@@ -378,30 +436,41 @@ class HtxTrendFollowingServiceTest {
     }
 
     private HtxTrendPositionEntity activeLongPosition() {
+        return activeLongPosition("XAUT-USDT", "0.001", 44L, "4315.84", "0.075958784",
+                "4295.00", "4316.64", "4332.21", "4315.84");
+    }
+
+    private HtxTrendPositionEntity activeLongPosition(String contractCode, String contractSize, long volume,
+                                                     String entryPrice, String entryFee, String stopPrice,
+                                                     String trailingStopPrice, String highestPrice, String lowestPrice) {
         HtxTrendPositionEntity position = new HtxTrendPositionEntity();
         position.setId(77L);
-        position.setPositionKey("CSTF-XAUTUSDT-test");
-        position.setContractCode("XAUT-USDT");
+        position.setPositionKey("CSTF-" + contractCode.replace("-", "") + "-test");
+        position.setContractCode(contractCode);
         position.setStatus(HtxTrendRecorder.ACTIVE);
         position.setSide("LONG");
-        position.setContractSize(new BigDecimal("0.001"));
-        position.setContractVolume(44L);
-        position.setEntryAvgPrice(new BigDecimal("4315.84"));
-        position.setEntryFee(new BigDecimal("0.075958784"));
-        position.setEntryFilledContracts(new BigDecimal("44"));
-        position.setStopPrice(new BigDecimal("4295.00"));
-        position.setTrailingStopPrice(new BigDecimal("4316.64"));
+        position.setContractSize(new BigDecimal(contractSize));
+        position.setContractVolume(volume);
+        position.setEntryAvgPrice(new BigDecimal(entryPrice));
+        position.setEntryFee(new BigDecimal(entryFee));
+        position.setEntryFilledContracts(new BigDecimal(Long.toString(volume)));
+        position.setStopPrice(new BigDecimal(stopPrice));
+        position.setTrailingStopPrice(new BigDecimal(trailingStopPrice));
         position.setTakeProfitPrice(null);
-        position.setHighestPrice(new BigDecimal("4332.21"));
-        position.setLowestPrice(new BigDecimal("4315.84"));
+        position.setHighestPrice(new BigDecimal(highestPrice));
+        position.setLowestPrice(new BigDecimal(lowestPrice));
         return position;
     }
 
     private HtxSwapPosition openLongPosition(String markPrice) {
+        return openLongPosition("XAUT-USDT", "44", markPrice);
+    }
+
+    private HtxSwapPosition openLongPosition(String contractCode, String volume, String markPrice) {
         HtxSwapPosition position = new HtxSwapPosition();
-        position.setContractCode("XAUT-USDT");
+        position.setContractCode(contractCode);
         position.setPositionSide("long");
-        position.setVolume(new BigDecimal("44"));
+        position.setVolume(new BigDecimal(volume));
         position.setMarkPrice(new BigDecimal(markPrice));
         return position;
     }

@@ -97,7 +97,13 @@ public class HtxTrendProperties {
     private BigDecimal estimatedTakerFeeRate = new BigDecimal("0.0004");
 
     /** Minimum net profit buffer required after estimated round-trip fees. */
-    private BigDecimal minNetProfitRate = new BigDecimal("0.0002");
+    private BigDecimal minNetProfitRate = new BigDecimal("0.0010");
+
+    /** Minimum absolute net profit in USDT before a flat signal can close a protected winner. */
+    private BigDecimal minFlatExitProfitUsdt = new BigDecimal("0.20");
+
+    /** Number of consecutive flat signals required before fee-protected flat exit. */
+    private int flatExitConfirmationBars = 3;
 
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
