@@ -8,7 +8,7 @@ export function App() {
   const location = useLocation()
   // The strategy console is intentionally isolated from the legacy Polymarket workspace.
   if (location.pathname.startsWith('/dashboard/arbitrage')) {
-    return <main className="ms-main strategy-console"><div className="ms-content"><Outlet /></div></main>
+    return <main className="ms-main strategy-console"><div className="ms-content" tabIndex={0}><Outlet /></div></main>
   }
   return (
     <div className="ms-shell">
@@ -18,7 +18,7 @@ export function App() {
         <main className="ms-main">
           <PageLabelBar />
           <StrategySubnav />
-          <div className="ms-content">
+          <div className="ms-content" tabIndex={0}>
             <Outlet />
           </div>
         </main>

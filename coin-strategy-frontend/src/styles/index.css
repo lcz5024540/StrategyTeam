@@ -11,8 +11,30 @@
 }
 
 /* Strategy console — calm, light data workstation. Kept scoped so legacy pages retain their shell. */
-.strategy-console { min-height: 100vh; background: #f5f5f1; color: #1c2825; }
-.strategy-console .ms-content { max-width: none; padding: 36px 42px 56px; }
+.strategy-console {
+  min-height: 100vh;
+  background: #f5f5f1;
+  color: #1c2825;
+}
+
+.strategy-console.ms-main {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.strategy-console .ms-content {
+  height: 100%;
+  max-width: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 36px 42px 56px;
+  scrollbar-gutter: stable;
+}
+
+.ms-content:focus {
+  outline: none;
+}
 .strategy-console .arb-page { max-width: 1440px; margin: 0 auto; color: #1c2825; }
 .strategy-console .arb-hero { display: flex; justify-content: space-between; gap: 32px; padding: 4px 0 28px; border: 0; background: transparent; }
 .strategy-console .arb-hero > div:first-child { max-width: 850px; }
