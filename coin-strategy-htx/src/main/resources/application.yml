@@ -163,6 +163,7 @@ htx:
     max-flat-exit-loss-rate: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_RATE:0.0030}
     flat-loss-exit-confirmation-bars: ${HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS:3}
     min-expected-move-atr-multiplier: ${HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER:1.0}
+    max-entry-signal-age-seconds: ${HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS:180}
     fee-protection-enabled: ${HTX_TREND_FEE_PROTECTION_ENABLED:true}
     exit-flat-after-fee-protection: ${HTX_TREND_EXIT_FLAT_AFTER_FEE_PROTECTION:true}
     max-entry-funding-cost-rate: ${HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE:0.0006}

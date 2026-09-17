@@ -28,6 +28,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -178,11 +179,11 @@ class HtxTrendFollowingServiceTest {
         givenFunding("ETH-USDT", "-0.0001");
         givenDepth("BTC-USDT", "59990", "60010");
         givenDepth("ETH-USDT", "1999", "2001");
-        TrendSignal btcFlat = TrendSignal.of(TrendSide.FLAT, 2L, new BigDecimal("60000"),
+        TrendSignal btcFlat = TrendSignal.of(TrendSide.FLAT, freshBarTime(), new BigDecimal("60000"),
                 new BigDecimal("59900"), new BigDecimal("59800"), new BigDecimal("60500"),
                 new BigDecimal("59000"), new BigDecimal("120"), new BigDecimal("0.0020"),
                 new BigDecimal("20"), "btc no signal");
-        TrendSignal ethLong = TrendSignal.of(TrendSide.LONG, 2L, new BigDecimal("2000"),
+        TrendSignal ethLong = TrendSignal.of(TrendSide.LONG, freshBarTime(), new BigDecimal("2000"),
                 new BigDecimal("1990"), new BigDecimal("1980"), new BigDecimal("2010"),
                 new BigDecimal("1960"), new BigDecimal("20"), new BigDecimal("0.0100"),
                 new BigDecimal("30"), "eth breakout");
@@ -206,6 +207,21 @@ class HtxTrendFollowingServiceTest {
         assertEquals("ETH-USDT", captor.getValue().getContractCode());
         assertEquals("LONG", captor.getValue().getTrendSide());
         verify(swap, never()).contractInfo("XAUT-USDT");
+    }
+
+    @Test
+    void liveEntrySkipsStaleSignalBar() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"), new BigDecimal("0.0028"), staleBarTime());
+        givenFunding("-0.0001");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("entry signal too stale"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
     @Test
@@ -528,10 +544,22 @@ class HtxTrendFollowingServiceTest {
     }
 
     private void givenSignal(TrendSide side, BigDecimal atr, BigDecimal atrPct) {
-        TrendSignal signal = TrendSignal.of(side, 2L, new BigDecimal("4300"), new BigDecimal("4290"),
+        givenSignal(side, atr, atrPct, freshBarTime());
+    }
+
+    private void givenSignal(TrendSide side, BigDecimal atr, BigDecimal atrPct, long barTime) {
+        TrendSignal signal = TrendSignal.of(side, barTime, new BigDecimal("4300"), new BigDecimal("4290"),
                 new BigDecimal("4280"), new BigDecimal("4310"), new BigDecimal("4260"),
                 atr, atrPct, new BigDecimal("24"), "test signal");
         when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
+    }
+
+    private long freshBarTime() {
+        return Instant.now().getEpochSecond() - 15 * 60L - 30L;
+    }
+
+    private long staleBarTime() {
+        return Instant.now().getEpochSecond() - 15 * 60L - properties.getMaxEntrySignalAgeSeconds() - 60L;
     }
 
     private void givenFunding(String value) {

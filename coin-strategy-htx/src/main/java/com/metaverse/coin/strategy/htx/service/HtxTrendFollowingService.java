@@ -164,6 +164,10 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.OBSERVED, null, "observe-only signal=" + signal.side()
                     + " reason=" + signal.reason());
         }
+        String freshnessGate = entrySignalFreshnessGate(signal);
+        if (freshnessGate != null) {
+            return RunResult.of(RunCode.SKIPPED, null, freshnessGate);
+        }
         String cooldownGate = cooldownGate(contractCode);
         if (cooldownGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, cooldownGate);
@@ -677,6 +681,40 @@ public class HtxTrendFollowingService {
                     + " requiredMove=" + requiredMove + " atr=" + signal.atr();
         }
         return null;
+    }
+
+    private String entrySignalFreshnessGate(TrendSignal signal) {
+        long maxAgeSeconds = properties.getMaxEntrySignalAgeSeconds();
+        if (maxAgeSeconds <= 0L) {
+            return null;
+        }
+        Long barTime = signal.barTime();
+        if (barTime == null || barTime <= 0L) {
+            return "entry signal bar time unavailable";
+        }
+        long closeEpoch = barTime + periodSeconds(properties.getPeriod());
+        long ageSeconds = Instant.now().getEpochSecond() - closeEpoch;
+        if (ageSeconds < 0L) {
+            return "entry signal bar not closed ageSeconds=" + ageSeconds;
+        }
+        if (ageSeconds > maxAgeSeconds) {
+            return "entry signal too stale ageSeconds=" + ageSeconds + " max=" + maxAgeSeconds;
+        }
+        return null;
+    }
+
+    private static long periodSeconds(String period) {
+        String value = period == null ? "" : period.trim().toLowerCase(Locale.ROOT);
+        if (value.endsWith("min")) {
+            return Long.parseLong(value.substring(0, value.length() - 3)) * 60L;
+        }
+        if (value.endsWith("hour")) {
+            return Long.parseLong(value.substring(0, value.length() - 4)) * 3_600L;
+        }
+        if (value.endsWith("day")) {
+            return Long.parseLong(value.substring(0, value.length() - 3)) * 86_400L;
+        }
+        throw new IllegalArgumentException("unsupported HTX trend period: " + period);
     }
 
     private BigDecimal initialStop(TrendSignal signal, String side, HtxSwapContractInfo contract) {

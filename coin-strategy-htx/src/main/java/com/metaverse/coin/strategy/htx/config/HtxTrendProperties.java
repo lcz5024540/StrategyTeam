@@ -135,6 +135,9 @@ public class HtxTrendProperties {
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
 
+    /** Maximum seconds after the signal bar closed during which a live entry is still allowed; <=0 disables. */
+    private long maxEntrySignalAgeSeconds = 180L;
+
     /** Once a live position reaches fee breakeven, trailing stop is clamped to at least breakeven. */
     private boolean feeProtectionEnabled = true;
 
