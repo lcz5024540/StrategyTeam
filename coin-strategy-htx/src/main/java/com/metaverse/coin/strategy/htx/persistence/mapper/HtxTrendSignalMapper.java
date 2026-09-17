@@ -6,11 +6,30 @@ import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
 
 @Mapper
 public interface HtxTrendSignalMapper extends BaseMapper<HtxTrendSignalEntity> {
+
+    @Select("SELECT id FROM htx_trend_signal "
+            + "WHERE contract_code = #{contractCode} AND period = #{period} "
+            + "AND ((bar_time = #{barTime}) OR (bar_time IS NULL AND #{barTime} IS NULL)) "
+            + "ORDER BY id DESC LIMIT 1")
+    Long findLatestSignalIdForBar(@Param("contractCode") String contractCode,
+                                  @Param("period") String period,
+                                  @Param("barTime") Long barTime);
+
+    @Update("UPDATE htx_trend_signal SET "
+            + "trend_signal = #{signal.signal}, close_price = #{signal.closePrice}, "
+            + "ema_fast = #{signal.emaFast}, ema_slow = #{signal.emaSlow}, "
+            + "breakout_high = #{signal.breakoutHigh}, breakout_low = #{signal.breakoutLow}, "
+            + "atr = #{signal.atr}, atr_pct = #{signal.atrPct}, adx = #{signal.adx}, "
+            + "spread_rate = #{signal.spreadRate}, funding_rate = #{signal.fundingRate}, "
+            + "reason = #{signal.reason} WHERE id = #{id}")
+    int updateSignalSnapshotById(@Param("id") Long id,
+                                 @Param("signal") HtxTrendSignalEntity signal);
 
     @Select("SELECT COUNT(*) FROM ("
             + "SELECT s.trend_signal FROM htx_trend_signal s "

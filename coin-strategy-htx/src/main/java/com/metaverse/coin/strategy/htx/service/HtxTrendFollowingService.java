@@ -97,6 +97,14 @@ public class HtxTrendFollowingService {
     }
 
     public RunResult runOnce() {
+        return runOnce(true);
+    }
+
+    public boolean hasOpenLikePositions() {
+        return recorder.countOpenLike() > 0L;
+    }
+
+    RunResult runOnce(boolean entryWindowAllowsNewEntries) {
         List<String> contractCodes = liveContractCodes();
         if (contractCodes.isEmpty()) {
             return RunResult.of(RunCode.SKIPPED, null, "trend contract list is blank");
@@ -108,7 +116,7 @@ public class HtxTrendFollowingService {
         List<String> summaries = new ArrayList<>();
         RunResult selected = null;
         for (String contractCode : contractCodes) {
-            boolean allowNewEntry = openLikePositions < maxActivePositions;
+            boolean allowNewEntry = entryWindowAllowsNewEntries && openLikePositions < maxActivePositions;
             RunResult result = runOnce(contractCode, allowNewEntry, marketBreadth, performance);
             RunResult tagged = tag(contractCode, result);
             summaries.add(contractCode + "=" + result.code() + ":" + result.message());

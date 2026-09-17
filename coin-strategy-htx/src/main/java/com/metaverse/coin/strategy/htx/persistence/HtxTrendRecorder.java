@@ -79,11 +79,20 @@ public class HtxTrendRecorder {
     }
 
     public void recordSignal(HtxTrendSignalEntity signal) {
+        if (signal == null) {
+            return;
+        }
         try {
+            Long existingId = signalMapper.findLatestSignalIdForBar(signal.getContractCode(),
+                    signal.getPeriod(), signal.getBarTime());
+            if (existingId != null) {
+                signalMapper.updateSignalSnapshotById(existingId, signal);
+                return;
+            }
             signalMapper.insert(signal);
         } catch (RuntimeException ex) {
-            log.warn("trend signal insert failed contract={} signal={}",
-                    signal == null ? null : signal.getContractCode(), signal == null ? null : signal.getSignal(), ex);
+            log.warn("trend signal upsert failed contract={} period={} barTime={} signal={}",
+                    signal.getContractCode(), signal.getPeriod(), signal.getBarTime(), signal.getSignal(), ex);
         }
     }
 

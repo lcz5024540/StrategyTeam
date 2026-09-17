@@ -243,6 +243,15 @@ public class HtxTrendProperties {
     /** Scheduler initial delay. */
     private long initialDelayMs = 30_000L;
 
+    /** Only allow new entries in a short window after each completed candle closes. */
+    private boolean alignEntryToCandleClose = true;
+
+    /** Seconds after candle close before a new-entry scan may start. */
+    private long entryWindowStartSecondsAfterClose = 15L;
+
+    /** Seconds after the entry window starts during which new entries may be evaluated. */
+    private long entryWindowDurationSeconds = 45L;
+
     /** Avoid immediate re-entry after a completed trend cycle. */
     private long cooldownMs = 3_600_000L;
 

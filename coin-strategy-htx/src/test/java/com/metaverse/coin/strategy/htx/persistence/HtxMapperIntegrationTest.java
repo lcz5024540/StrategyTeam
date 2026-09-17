@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxDeltaHedgeLedgerEnt
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryLotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryRecycleSagaEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxSpotFillLedgerEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxDeltaHedgeLedgerMapper;
@@ -14,6 +15,7 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxInventoryLotMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxInventoryRecycleSagaMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxLockedPairMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxSpotFillLedgerMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +33,26 @@ class HtxMapperIntegrationTest {
     @Autowired HtxInventoryLotMapper inventoryLotMapper;
     @Autowired HtxDeltaHedgeLedgerMapper deltaHedgeLedgerMapper;
     @Autowired HtxInventoryRecycleSagaMapper inventoryRecycleSagaMapper;
+    @Autowired HtxTrendSignalMapper trendSignalMapper;
+
+
+    @Test void trend_signal_snapshot_can_be_updated_by_contract_period_and_bar() {
+        long barTime = 1789639200L + System.nanoTime() % 1000;
+        HtxTrendSignalEntity first = trendSignal("BTC-USDT", barTime, "FLAT", "first flat");
+        assertEquals(1, trendSignalMapper.insert(first));
+
+        Long existingId = trendSignalMapper.findLatestSignalIdForBar("BTC-USDT", "15min", barTime);
+        assertEquals(first.getId(), existingId);
+
+        HtxTrendSignalEntity update = trendSignal("BTC-USDT", barTime, "LONG", "Fibonacci pullback continuation");
+        update.setSpreadRate(new BigDecimal("0.0005"));
+        assertEquals(1, trendSignalMapper.updateSignalSnapshotById(existingId, update));
+
+        HtxTrendSignalEntity stored = trendSignalMapper.selectById(first.getId());
+        assertEquals("LONG", stored.getSignal());
+        assertEquals("Fibonacci pullback continuation", stored.getReason());
+        assertEquals(0, new BigDecimal("0.0005").compareTo(stored.getSpreadRate()));
+    }
 
     @Test void insert_and_read_pair() {
         HtxLockedPairEntity p = new HtxLockedPairEntity();
@@ -326,5 +348,24 @@ class HtxMapperIntegrationTest {
         e.setDryRun(false);
         e.setBuyFilledAmount(buyFilledQty == null ? null : new BigDecimal(buyFilledQty));
         pairMapper.insert(e);
+    }
+
+    private static HtxTrendSignalEntity trendSignal(String contractCode, long barTime, String signalValue, String reason) {
+        HtxTrendSignalEntity signal = new HtxTrendSignalEntity();
+        signal.setContractCode(contractCode);
+        signal.setPeriod("15min");
+        signal.setBarTime(barTime);
+        signal.setSignal(signalValue);
+        signal.setClosePrice(new BigDecimal("60000"));
+        signal.setEmaFast(new BigDecimal("60100"));
+        signal.setEmaSlow(new BigDecimal("59900"));
+        signal.setBreakoutHigh(new BigDecimal("60200"));
+        signal.setBreakoutLow(new BigDecimal("59000"));
+        signal.setAtr(new BigDecimal("100"));
+        signal.setAtrPct(new BigDecimal("0.0017"));
+        signal.setAdx(new BigDecimal("30"));
+        signal.setFundingRate(new BigDecimal("0.0001"));
+        signal.setReason(reason);
+        return signal;
     }
 }
