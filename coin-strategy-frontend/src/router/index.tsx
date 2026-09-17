@@ -22,7 +22,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/dashboard?strategy=POLYMARKET_COPY" replace />,
+        element: <Navigate to="/dashboard/arbitrage?mode=CROSS_FUNDING" replace />,
       },
       {
         path: 'dashboard',
@@ -96,6 +96,6 @@ export const router = createBrowserRouter([
   },
   {
     path: '*',
-    element: <Navigate to="/dashboard?strategy=POLYMARKET_COPY" replace />,
+    element: <Navigate to="/dashboard/arbitrage?mode=CROSS_FUNDING" replace />,
   },
 ])

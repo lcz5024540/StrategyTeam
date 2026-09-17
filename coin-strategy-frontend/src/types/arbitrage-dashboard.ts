@@ -1,4 +1,4 @@
-export type ArbitrageMode = 'CROSS_PRICE' | 'CROSS_FUNDING' | 'SINGLE_EXCHANGE'
+export type ArbitrageMode = 'CROSS_PRICE' | 'CROSS_FUNDING' | 'SINGLE_EXCHANGE' | 'HTX_TREND' | 'HTX_GRID'
 export type ArbitrageStatus = 'QUALIFIED' | 'OBSERVING' | 'REJECTED'
 
 export interface ArbitrageLeg {
@@ -81,3 +81,13 @@ export interface FundingRateMatrixResponse {
     items: FundingRateMatrixRow[]
   }
 }
+
+export interface HtxTrendDashboardResponse {
+  asOf: string
+  source: string
+  summary: { totalPositions: number; activePositions: number; closedPositions: number; winningPositions: number; totalTurnover: number; totalFees: number; realizedProfit: number; netRealizedProfit: number }
+  activePositions: TrendPosition[]
+  recentPositions: TrendPosition[]
+  dailyPnl: Array<{ tradeDate: string; closedPositions: number; realizedProfit: number; fees: number; netProfit: number }>
+}
+export interface TrendPosition { id: number; contractCode: string; status: string; side: string; contractVolume: number; entryAvgPrice: number | null; closeAvgPrice: number | null; entryFee: number; closeFee: number; realizedProfit: number | null; stopPrice: number | null; trailingStopPrice: number | null; entrySignal: string | null; exitReason: string | null; createdAt: string; updatedAt: string }

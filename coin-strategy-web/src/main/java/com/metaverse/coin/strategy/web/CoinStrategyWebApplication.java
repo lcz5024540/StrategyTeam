@@ -22,7 +22,10 @@ import java.util.TimeZone;
  * 任何之前依赖 proxy 透传到 job 的接口，必须在 web 端落地本地实现，否则会 404。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.metaverse.coin.strategy")
-@MapperScan("com.metaverse.coin.strategy.common.dao.mapper")
+@MapperScan({
+        "com.metaverse.coin.strategy.common.dao.mapper",
+        "com.metaverse.coin.strategy.web.mapper"
+})
 @EnableConfigurationProperties({SmartWalletProperties.class})
 public class CoinStrategyWebApplication {
 
