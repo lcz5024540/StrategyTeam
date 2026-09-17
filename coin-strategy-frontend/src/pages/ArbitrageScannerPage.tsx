@@ -72,7 +72,7 @@ export function ArbitrageScannerPage() {
   const executableFundingRows = fundingRows.filter((row) => isExecutableStatus(row.status))
   const bestFunding = executableFundingRows[0] || fundingRows[0]
   const largestFunding = fundingRows.reduce<FundingRateMatrixRow | undefined>((current, row) => !current || (row.executableNotional || 0) > (current.executableNotional || 0) ? row : current, undefined)
-  const trend = trendResponse
+  const trend = normalizeTrendDashboardResponse(trendResponse)
   const sourceStatus = isTrendMode ? trendSourceStatus(trend) : isFundingMode && matrixResponse ? '跨所资金费读模型 · 在线' : '未接入该模式真实读模型'
   const sourceDetail = isTrendMode ? trendSourceDetail(trend) : isFundingMode
     ? `${matrixResponse?.source || '等待 funding-rate-matrix'}${(matrixResponse?.partial ?? false) ? ` · 部分数据：${(matrixResponse?.missingExchanges || []).join('、') || '未知'}` : ''}`
@@ -185,6 +185,11 @@ function FundingRateMatrixTableRow({ row, exchanges }: { row: FundingRateMatrixR
     <td><Status status={isExecutableStatus(row.status) ? 'QUALIFIED' : row.status === 'OBSERVING' ? 'OBSERVING' : 'REJECTED'} />{row.rejectionReason ? <small>{row.rejectionReason}</small> : null}</td>
   </tr>
 }
+function normalizeTrendDashboardResponse(response: HtxTrendDashboardResponse | { data?: HtxTrendDashboardResponse } | undefined): HtxTrendDashboardResponse | undefined {
+  if (!response) return undefined
+  if ('summary' in response && 'activePositions' in response) return response as HtxTrendDashboardResponse
+  return (response as { data?: HtxTrendDashboardResponse }).data
+}
 function TrendDashboard({ trend, loading, refresh }: { trend?: HtxTrendDashboardResponse; loading: boolean; refresh: () => void }) {
   if (!trend) return <div className="arb-unavailable-panel"><p className="arb-eyebrow">HTX TREND LEDGER</p><h2>{loading ? '趋势账本加载中' : '等待趋势账本数据'}</h2><button className="arb-text-button" type="button" onClick={refresh}>刷新</button></div>
   const days = [...trend.dailyPnl].reverse()
@@ -234,7 +239,7 @@ function TrendSignalsTable({ rows }: { rows: TrendSignal[] }) {
 function TrendCandidateTable({ rows }: { rows: TrendCandidateSignal[] }) {
   return <section className="arb-table-wrap"><header className="trend-table-title"><div><p className="arb-eyebrow">ENSEMBLE CANDIDATES</p><h2>组合模型候选信号</h2></div><span>{rows.length} 条</span></header><table><thead><tr><th>合约 / 周期</th><th>方向 / 状态</th><th>分数</th><th>ADX</th><th>ATR%</th><th>动量</th><th>量能</th><th>说明</th><th>时间</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.id}><td><b>{row.contractCode}</b><small>{row.period}</small></td><td><Status status={row.direction} /><small>{row.regime}</small></td><td><b>{formatDecimal(row.signalScore, 1)}</b><small>L {formatDecimal(row.longScore, 1)} / S {formatDecimal(row.shortScore, 1)} / gap {formatDecimal(row.scoreGap, 1)}</small></td><td>{formatDecimal(row.adx, 2)}</td><td>{formatPercent(row.atrPct)}</td><td>{formatPercent(row.momentumPct)}</td><td>{formatDecimal(row.volumeRatio, 2)}</td><td><small>{compactReason(row.entryReason || row.invalidationReason)}</small></td><td><small>{row.createdAt}</small></td></tr>) : <tr><td className="arb-empty" colSpan={9}>暂无组合模型候选信号</td></tr>}</tbody></table></section>
 }
-function TrendPositionRow({ position, active = false }: { position: TrendPosition; active?: boolean }) { return <tr><td><b>{position.contractCode}</b><small>{position.side}</small></td><td><Status status={position.status === 'ACTIVE' ? 'QUALIFIED' : position.status === 'DONE' ? 'OBSERVING' : position.status} /></td>{active ? <><td>{position.contractVolume}</td><td>{formatDecimal(position.entryAvgPrice)}</td><td>{formatDecimal(position.trailingStopPrice ?? position.stopPrice)}</td><td><small>{position.entrySignal || position.message || '—'}</small></td></> : <><td>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</td><td>{formatUsdtNoSign((position.entryFee || 0) + (position.closeFee || 0))}</td><td className={valueTone(position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.netRealizedProfit ?? position.realizedProfit)}</td><td><small>{position.exitReason || position.entrySignal || '—'}</small></td></>}<td><small>{position.updatedAt || '—'}</small></td></tr> }
+function TrendPositionRow({ position, active = false }: { position: TrendPosition; active?: boolean }) { return <tr><td><b>{position.contractCode}</b><small>{position.side}</small></td><td><Status status={position.status} /></td>{active ? <><td>{position.contractVolume}</td><td>{formatDecimal(position.entryAvgPrice)}</td><td>{formatDecimal(position.trailingStopPrice ?? position.stopPrice)}</td><td><small>{position.entrySignal || position.message || '—'}</small></td></> : <><td>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</td><td>{formatUsdtNoSign((position.entryFee || 0) + (position.closeFee || 0))}</td><td className={valueTone(position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.netRealizedProfit ?? position.realizedProfit)}</td><td><small>{position.exitReason || position.entrySignal || '—'}</small></td></>}<td><small>{position.updatedAt || '—'}</small></td></tr> }
 function Status({ status }: { status: string }) {
   const upper = (status || '').toUpperCase()
   const label = upper === 'QUALIFIED' ? '可执行' : upper === 'OBSERVING' ? '观察中' : upper === 'REJECTED' ? '已拒绝' : upper === 'ACTIVE' ? '持仓中' : upper === 'DONE' ? '已完成' : upper || '未知'
