@@ -14,6 +14,7 @@ public class HtxTrendSignalCalculator {
 
     private static final BigDecimal TWO = new BigDecimal("2");
     private static final BigDecimal HUNDRED = new BigDecimal("100");
+    private static final int SCALE = 18;
 
     public TrendSignal evaluate(List<HtxSwapKline> rawCandles, HtxTrendProperties props) {
         return evaluate(rawCandles, rawCandles, props, Long.MAX_VALUE);
@@ -45,6 +46,7 @@ public class HtxTrendSignalCalculator {
         }
 
         BigDecimal close = entry.closes()[last];
+        BigDecimal previousClose = entry.closes()[last - 1];
         BigDecimal emaFast = ema(entry.closes(), props.getFastEmaPeriod());
         BigDecimal emaSlow = ema(entry.closes(), props.getSlowEmaPeriod());
         BigDecimal trendEmaFast = ema(trend.closes(), props.getTrendFastEmaPeriod());
@@ -72,8 +74,27 @@ public class HtxTrendSignalCalculator {
             return TrendSignal.of(TrendSide.SHORT, entryCandles.get(last).getId(), close, emaFast, emaSlow,
                     breakoutHigh, breakoutLow, atr, atrPct, adx, "close broke Donchian low with higher-timeframe EMA downtrend");
         }
+        FibonacciZone fibonacciZone = fibonacciZone(breakoutHigh, breakoutLow, props);
+        if (props.isFibonacciPullbackEnabled() && higherTrend == TrendSide.LONG
+                && emaFast.compareTo(emaSlow) > 0
+                && fibonacciZone.validFor(atr, props.getFibonacciMinRangeAtrMultiplier())
+                && close.compareTo(previousClose) > 0
+                && close.compareTo(emaSlow) > 0
+                && fibonacciZone.containsLongPullback(close)) {
+            return TrendSignal.of(TrendSide.LONG, entryCandles.get(last).getId(), close, emaFast, emaSlow,
+                    breakoutHigh, breakoutLow, atr, atrPct, adx, "Fibonacci 38.2%-61.8% pullback continuation with higher-timeframe EMA uptrend");
+        }
+        if (props.isFibonacciPullbackEnabled() && higherTrend == TrendSide.SHORT
+                && emaFast.compareTo(emaSlow) < 0
+                && fibonacciZone.validFor(atr, props.getFibonacciMinRangeAtrMultiplier())
+                && close.compareTo(previousClose) < 0
+                && close.compareTo(emaSlow) < 0
+                && fibonacciZone.containsShortPullback(close)) {
+            return TrendSignal.of(TrendSide.SHORT, entryCandles.get(last).getId(), close, emaFast, emaSlow,
+                    breakoutHigh, breakoutLow, atr, atrPct, adx, "Fibonacci 38.2%-61.8% pullback continuation with higher-timeframe EMA downtrend");
+        }
         return TrendSignal.of(TrendSide.FLAT, entryCandles.get(last).getId(), close, emaFast, emaSlow,
-                breakoutHigh, breakoutLow, atr, atrPct, adx, "no breakout aligned with higher-timeframe trend=" + higherTrend);
+                breakoutHigh, breakoutLow, atr, atrPct, adx, "no breakout or Fibonacci continuation aligned with higher-timeframe trend=" + higherTrend);
     }
 
     private static List<HtxSwapKline> normalizeCompleted(List<HtxSwapKline> rawCandles, String period,
@@ -165,6 +186,29 @@ public class HtxTrendSignalCalculator {
         return result;
     }
 
+    private static FibonacciZone fibonacciZone(BigDecimal high, BigDecimal low, HtxTrendProperties props) {
+        if (!positive(high) || !positive(low) || high.compareTo(low) <= 0) {
+            return FibonacciZone.invalid();
+        }
+        BigDecimal lowerRate = normalizedRate(props.getFibonacciLowerRate(), new BigDecimal("0.382"));
+        BigDecimal upperRate = normalizedRate(props.getFibonacciUpperRate(), new BigDecimal("0.618"));
+        BigDecimal shallow = lowerRate.min(upperRate);
+        BigDecimal deep = lowerRate.max(upperRate);
+        BigDecimal range = high.subtract(low);
+        BigDecimal longUpper = high.subtract(range.multiply(shallow));
+        BigDecimal longLower = high.subtract(range.multiply(deep));
+        BigDecimal shortLower = low.add(range.multiply(shallow));
+        BigDecimal shortUpper = low.add(range.multiply(deep));
+        return new FibonacciZone(range, longLower, longUpper, shortLower, shortUpper);
+    }
+
+    private static BigDecimal normalizedRate(BigDecimal value, BigDecimal fallback) {
+        if (value == null || value.signum() <= 0 || value.compareTo(BigDecimal.ONE) >= 0) {
+            return fallback;
+        }
+        return value;
+    }
+
     private static BigDecimal atr(List<HtxSwapKline> candles, int period) {
         List<BigDecimal> trueRanges = trueRanges(candles);
         return averageTail(trueRanges, period);
@@ -241,6 +285,30 @@ public class HtxTrendSignalCalculator {
     }
 
     private record PriceArrays(BigDecimal[] closes, BigDecimal[] highs, BigDecimal[] lows, boolean valid) {
+    }
+
+    private record FibonacciZone(BigDecimal range, BigDecimal longLower, BigDecimal longUpper,
+                                 BigDecimal shortLower, BigDecimal shortUpper) {
+        static FibonacciZone invalid() {
+            return new FibonacciZone(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+
+        boolean validFor(BigDecimal atr, BigDecimal minRangeAtrMultiplier) {
+            if (!positive(range) || !positive(atr)) {
+                return false;
+            }
+            BigDecimal multiplier = minRangeAtrMultiplier == null || minRangeAtrMultiplier.signum() <= 0
+                    ? BigDecimal.ONE : minRangeAtrMultiplier;
+            return range.compareTo(atr.multiply(multiplier).setScale(SCALE, RoundingMode.HALF_UP)) >= 0;
+        }
+
+        boolean containsLongPullback(BigDecimal close) {
+            return close.compareTo(longLower) >= 0 && close.compareTo(longUpper) <= 0;
+        }
+
+        boolean containsShortPullback(BigDecimal close) {
+            return close.compareTo(shortLower) >= 0 && close.compareTo(shortUpper) <= 0;
+        }
     }
 
     public enum TrendSide {

@@ -142,6 +142,10 @@ htx:
     adx-period: ${HTX_TREND_ADX_PERIOD:14}
     min-adx: ${HTX_TREND_MIN_ADX:18}
     min-atr-pct: ${HTX_TREND_MIN_ATR_PCT:0.0010}
+    fibonacci-pullback-enabled: ${HTX_TREND_FIBONACCI_PULLBACK_ENABLED:true}
+    fibonacci-lower-rate: ${HTX_TREND_FIBONACCI_LOWER_RATE:0.382}
+    fibonacci-upper-rate: ${HTX_TREND_FIBONACCI_UPPER_RATE:0.618}
+    fibonacci-min-range-atr-multiplier: ${HTX_TREND_FIBONACCI_MIN_RANGE_ATR_MULTIPLIER:1.2}
     max-entry-spread-rate: ${HTX_TREND_MAX_ENTRY_SPREAD_RATE:0.0010}
     liquidity-lookback-bars: ${HTX_TREND_LIQUIDITY_LOOKBACK_BARS:20}
     min-entry-avg-turnover-usdt: ${HTX_TREND_MIN_ENTRY_AVG_TURNOVER_USDT:0}
@@ -183,6 +187,12 @@ htx:
     fee-protection-enabled: ${HTX_TREND_FEE_PROTECTION_ENABLED:true}
     exit-flat-after-fee-protection: ${HTX_TREND_EXIT_FLAT_AFTER_FEE_PROTECTION:true}
     max-entry-funding-cost-rate: ${HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE:0.0006}
+    funding-carry-entry-enabled: ${HTX_TREND_FUNDING_CARRY_ENTRY_ENABLED:true}
+    min-carry-funding-rate-abs: ${HTX_TREND_MIN_CARRY_FUNDING_RATE_ABS:0.0002}
+    funding-carry-min-adx: ${HTX_TREND_FUNDING_CARRY_MIN_ADX:16}
+    funding-carry-min-atr-pct: ${HTX_TREND_FUNDING_CARRY_MIN_ATR_PCT:0.0010}
+    funding-carry-require-confirmation: ${HTX_TREND_FUNDING_CARRY_REQUIRE_CONFIRMATION:true}
+    funding-carry-allow-against-broad-market: ${HTX_TREND_FUNDING_CARRY_ALLOW_AGAINST_BROAD_MARKET:false}
     max-hold-funding-cost-rate: ${HTX_TREND_MAX_HOLD_FUNDING_COST_RATE:0.0012}
     leverage: ${HTX_TREND_LEVERAGE:5}
     price-scale: ${HTX_TREND_PRICE_SCALE:2}

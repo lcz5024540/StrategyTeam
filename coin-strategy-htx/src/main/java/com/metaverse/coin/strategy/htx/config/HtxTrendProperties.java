@@ -72,6 +72,18 @@ public class HtxTrendProperties {
     /** Minimum ATR / close ratio; filters dead, fee-dominated markets. */
     private BigDecimal minAtrPct = new BigDecimal("0.0010");
 
+    /** Enable Fibonacci retracement continuation entries after the higher-timeframe trend is already established. */
+    private boolean fibonacciPullbackEnabled = true;
+
+    /** Lower Fibonacci retracement bound used for pullback continuation entries. */
+    private BigDecimal fibonacciLowerRate = new BigDecimal("0.382");
+
+    /** Upper Fibonacci retracement bound used for pullback continuation entries. */
+    private BigDecimal fibonacciUpperRate = new BigDecimal("0.618");
+
+    /** Recent swing range must be at least this many ATRs before Fibonacci levels are trusted. */
+    private BigDecimal fibonacciMinRangeAtrMultiplier = new BigDecimal("1.2");
+
     /** Maximum allowed top-of-book spread before live entry. */
     private BigDecimal maxEntrySpreadRate = new BigDecimal("0.0010");
 
@@ -194,6 +206,24 @@ public class HtxTrendProperties {
 
     /** Maximum funding rate cost tolerated for the entry side per funding period. */
     private BigDecimal maxEntryFundingCostRate = new BigDecimal("0.0006");
+
+    /** Allow funding-carry entries when the strict breakout signal is flat and no trend position is active. */
+    private boolean fundingCarryEntryEnabled = true;
+
+    /** Minimum absolute funding rate before carry can promote a flat signal into a live entry. */
+    private BigDecimal minCarryFundingRateAbs = new BigDecimal("0.0002");
+
+    /** Minimum ADX required for funding-carry entries. */
+    private BigDecimal fundingCarryMinAdx = new BigDecimal("16");
+
+    /** Minimum ATR / close ratio required for funding-carry entries. */
+    private BigDecimal fundingCarryMinAtrPct = new BigDecimal("0.0010");
+
+    /** Funding-carry entries need either local EMA alignment or broad-market alignment. */
+    private boolean fundingCarryRequireConfirmation = true;
+
+    /** Prevent funding-carry entries that fight a broad market regime, for example shorting into broad-up. */
+    private boolean fundingCarryAllowAgainstBroadMarket = false;
 
     /** Exit a live trend position when its side funding cost is above this rate. */
     private BigDecimal maxHoldFundingCostRate = new BigDecimal("0.0012");

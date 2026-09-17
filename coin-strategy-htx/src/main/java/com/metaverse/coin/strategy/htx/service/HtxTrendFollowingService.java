@@ -142,12 +142,14 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, "contract info unavailable");
         }
         SignalSnapshot snapshot = loadSignal(contractCode);
-        TrendSignal signal = snapshot.signal();
-        recordSignal(contractCode, signal);
+        TrendSignal rawSignal = snapshot.signal();
         Optional<HtxTrendPositionEntity> active = recorder.findActive(contractCode);
         if (active.isPresent()) {
-            return advance(active.get(), signal, contract);
+            recordSignal(contractCode, rawSignal);
+            return advance(active.get(), rawSignal, contract);
         }
+        TrendSignal signal = entrySignalWithCarryContext(contractCode, rawSignal, marketBreadth);
+        recordSignal(contractCode, signal);
         if (!properties.isEntryEnabled()) {
             return RunResult.of(RunCode.SKIPPED, null, "new trend entries disabled");
         }
@@ -155,6 +157,86 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
         }
         return openIfEligible(contractCode, signal, snapshot.entryCandles(), contract, marketBreadth, performance);
+    }
+
+    private TrendSignal entrySignalWithCarryContext(String contractCode, TrendSignal signal, MarketBreadthContext marketBreadth) {
+        if (!properties.isFundingCarryEntryEnabled() || signal == null || signal.side() != TrendSide.FLAT) {
+            return signal;
+        }
+        FundingMarket funding = currentFunding(contractCode);
+        if (funding == null || funding.fundingRate() == null || funding.fundingRate().signum() == 0) {
+            return signal;
+        }
+        BigDecimal fundingRate = funding.fundingRate();
+        BigDecimal minCarry = nonNegative(properties.getMinCarryFundingRateAbs());
+        if (fundingRate.abs().compareTo(minCarry) < 0) {
+            return signal;
+        }
+        TrendSide carrySide = fundingRate.signum() > 0 ? TrendSide.SHORT : TrendSide.LONG;
+        String rejection = carryEntryRejectionReason(signal, carrySide, marketBreadth);
+        if (rejection != null) {
+            return TrendSignal.of(TrendSide.FLAT, signal.barTime(), signal.closePrice(), signal.emaFast(),
+                    signal.emaSlow(), signal.breakoutHigh(), signal.breakoutLow(), signal.atr(), signal.atrPct(),
+                    signal.adx(), signal.reason() + "; funding carry rejected side=" + carrySide
+                            + " funding=" + fundingRate + " reason=" + rejection);
+        }
+        return TrendSignal.of(carrySide, signal.barTime(), signal.closePrice(), signal.emaFast(),
+                signal.emaSlow(), signal.breakoutHigh(), signal.breakoutLow(), signal.atr(), signal.atrPct(),
+                signal.adx(), "funding carry " + carrySide + " promoted from flat signal funding=" + fundingRate
+                        + "; " + carryConfirmationSummary(carrySide, signal, marketBreadth)
+                        + "; base=" + signal.reason());
+    }
+
+    private String carryEntryRejectionReason(TrendSignal signal, TrendSide carrySide, MarketBreadthContext marketBreadth) {
+        if (!positive(signal.atrPct()) || signal.atrPct().compareTo(nonNegative(properties.getFundingCarryMinAtrPct())) < 0) {
+            return "ATR below carry threshold";
+        }
+        if (signal.adx() == null || signal.adx().compareTo(nonNegative(properties.getFundingCarryMinAdx())) < 0) {
+            return "ADX below carry threshold";
+        }
+        if (!properties.isFundingCarryAllowAgainstBroadMarket() && againstBroadMarket(carrySide, marketBreadth)) {
+            return "against broad market " + marketBreadth.summary();
+        }
+        if (properties.isFundingCarryRequireConfirmation()
+                && !emaAligned(signal, carrySide) && !breadthAligned(carrySide, marketBreadth)) {
+            return "no EMA or broad-market confirmation";
+        }
+        return null;
+    }
+
+    private String carryConfirmationSummary(TrendSide side, TrendSignal signal, MarketBreadthContext marketBreadth) {
+        return "emaAligned=" + emaAligned(signal, side)
+                + " breadthAligned=" + breadthAligned(side, marketBreadth)
+                + " market=" + (marketBreadth == null ? "UNKNOWN" : marketBreadth.summary());
+    }
+
+    private static boolean emaAligned(TrendSignal signal, TrendSide side) {
+        if (signal == null || signal.emaFast() == null || signal.emaSlow() == null) {
+            return false;
+        }
+        if (side == TrendSide.LONG) {
+            return signal.emaFast().compareTo(signal.emaSlow()) > 0;
+        }
+        if (side == TrendSide.SHORT) {
+            return signal.emaFast().compareTo(signal.emaSlow()) < 0;
+        }
+        return false;
+    }
+
+    private static boolean breadthAligned(TrendSide side, MarketBreadthContext marketBreadth) {
+        if (marketBreadth == null) {
+            return false;
+        }
+        return (side == TrendSide.LONG && marketBreadth.regime() == MarketRegime.BROAD_UP)
+                || (side == TrendSide.SHORT && marketBreadth.regime() == MarketRegime.BROAD_DOWN);
+    }
+
+    private static boolean againstBroadMarket(TrendSide side, MarketBreadthContext marketBreadth) {
+        if (marketBreadth == null) {
+            return false;
+        }
+        return (side == TrendSide.LONG && marketBreadth.regime() == MarketRegime.BROAD_DOWN)
+                || (side == TrendSide.SHORT && marketBreadth.regime() == MarketRegime.BROAD_UP);
     }
 
     private RunResult openIfEligible(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,

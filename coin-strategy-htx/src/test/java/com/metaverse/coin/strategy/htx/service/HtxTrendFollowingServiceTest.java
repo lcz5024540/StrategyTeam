@@ -222,6 +222,72 @@ class HtxTrendFollowingServiceTest {
         assertEquals("22", captor.getValue().getVolume());
     }
 
+    @Test
+    void positiveFundingCanPromoteFlatSignalToCarryShortWhenLocallyConfirmed() {
+        givenContractInfo();
+        givenKlines();
+        givenFlatSignalForCarry(TrendSide.SHORT);
+        givenFunding("0.0003");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("short"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("short")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(captor.capture());
+        assertEquals("SHORT", captor.getValue().getTrendSide());
+        assertTrue(captor.getValue().getReason().contains("funding carry SHORT"));
+    }
+
+    @Test
+    void negativeFundingCanPromoteFlatSignalToCarryLongWhenLocallyConfirmed() {
+        givenContractInfo();
+        givenKlines();
+        givenFlatSignalForCarry(TrendSide.LONG);
+        givenFunding("-0.0003");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(captor.capture());
+        assertEquals("LONG", captor.getValue().getTrendSide());
+        assertTrue(captor.getValue().getReason().contains("funding carry LONG"));
+    }
+
+    @Test
+    void fundingCarryDoesNotShortAgainstBroadBullishMarket() {
+        givenContractInfo();
+        givenKlines();
+        givenFlatSignalForCarry(TrendSide.SHORT);
+        givenFunding("0.0003");
+        givenBroadBullishBreadth();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.NO_SIGNAL, result.code());
+        assertTrue(result.message().contains("funding carry rejected"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
 
     @Test
     void liveRunnerScansMainstreamWhitelistAndOpensFirstEligibleContract() {
@@ -606,6 +672,15 @@ class HtxTrendFollowingServiceTest {
         TrendSignal signal = TrendSignal.of(side, barTime, new BigDecimal("4300"), new BigDecimal("4290"),
                 new BigDecimal("4280"), new BigDecimal("4310"), new BigDecimal("4260"),
                 atr, atrPct, new BigDecimal("24"), "test signal");
+        when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
+    }
+
+    private void givenFlatSignalForCarry(TrendSide confirmationSide) {
+        BigDecimal emaFast = confirmationSide == TrendSide.LONG ? new BigDecimal("4290") : new BigDecimal("4270");
+        BigDecimal emaSlow = confirmationSide == TrendSide.LONG ? new BigDecimal("4280") : new BigDecimal("4280");
+        TrendSignal signal = TrendSignal.of(TrendSide.FLAT, freshBarTime(), new BigDecimal("4300"), emaFast,
+                emaSlow, new BigDecimal("4310"), new BigDecimal("4260"), new BigDecimal("12"),
+                new BigDecimal("0.0028"), new BigDecimal("24"), "flat base signal");
         when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
     }
 

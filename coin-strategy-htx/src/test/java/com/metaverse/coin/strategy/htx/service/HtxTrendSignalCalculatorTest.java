@@ -42,6 +42,30 @@ class HtxTrendSignalCalculatorTest {
     }
 
     @Test
+    void fibonacciPullbackContinuationCanProduceLongWithoutFreshBreakout() {
+        HtxTrendProperties props = looseProperties();
+        props.setBreakoutLookback(5);
+        props.setFibonacciMinRangeAtrMultiplier(new BigDecimal("0.5"));
+        List<HtxSwapKline> candles = new ArrayList<>();
+        for (int i = 0; i < 70; i++) {
+            BigDecimal open = new BigDecimal("4000").add(BigDecimal.valueOf(i * 5L));
+            BigDecimal close = open.add(new BigDecimal("4"));
+            candles.add(candle(i, open.toPlainString(), close.add(new BigDecimal("4")).toPlainString(),
+                    open.subtract(new BigDecimal("4")).toPlainString(), close.toPlainString()));
+        }
+        candles.add(candle(70, "4350", "4400", "4340", "4390"));
+        candles.add(candle(71, "4390", "4395", "4370", "4380"));
+        candles.add(candle(72, "4380", "4384", "4360", "4368"));
+        candles.add(candle(73, "4368", "4372", "4350", "4358"));
+        candles.add(candle(74, "4358", "4374", "4355", "4371"));
+
+        TrendSignal signal = calculator.evaluate(candles, props);
+
+        assertEquals(TrendSide.LONG, signal.side());
+        assertTrue(signal.reason().contains("Fibonacci"));
+    }
+
+    @Test
     void lowVolatilityRangeProducesFlatSignal() {
         HtxTrendProperties props = looseProperties();
         props.setMinAtrPct(new BigDecimal("0.005"));
