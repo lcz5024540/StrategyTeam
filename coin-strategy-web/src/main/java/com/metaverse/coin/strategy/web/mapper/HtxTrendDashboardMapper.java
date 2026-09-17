@@ -10,6 +10,12 @@ import java.util.Map;
 @Mapper
 public interface HtxTrendDashboardMapper {
 
+    String TREND_SCHEMA = "htx_trade_strategy.";
+    String POSITION_TABLE = TREND_SCHEMA + "htx_trend_position";
+    String ORDER_TABLE = TREND_SCHEMA + "htx_trend_order";
+    String SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_signal";
+    String CANDIDATE_SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_candidate_signal";
+
     String CLOSED_TURNOVER = "entry_filled_contracts * contract_size * entry_avg_price "
             + "+ close_filled_contracts * contract_size * close_avg_price";
 
@@ -27,23 +33,23 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit ELSE 0 END), 0) AS todayRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN status = 'DONE' THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS netRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS todayNetRealizedProfit "
-            + "FROM htx_trend_position")
+            + "FROM " + POSITION_TABLE + "")
     Map<String, Object> summary();
 
     @Select("SELECT "
-            + "(SELECT MAX(created_at) FROM htx_trend_signal) AS latestSignalAt, "
-            + "(SELECT MAX(updated_at) FROM htx_trend_order) AS latestOrderAt, "
-            + "(SELECT MAX(updated_at) FROM htx_trend_position) AS latestPositionAt, "
-            + "(SELECT MAX(created_at) FROM htx_trend_candidate_signal) AS latestCandidateAt, "
-            + "(SELECT COUNT(*) FROM htx_trend_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS signalsLast30m, "
-            + "(SELECT COUNT(DISTINCT contract_code) FROM htx_trend_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS scannedContractsLast30m, "
-            + "(SELECT COUNT(*) FROM htx_trend_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND trend_signal = 'LONG') AS longSignalsLast30m, "
-            + "(SELECT COUNT(*) FROM htx_trend_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND trend_signal = 'SHORT') AS shortSignalsLast30m, "
-            + "(SELECT COUNT(*) FROM htx_trend_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND trend_signal = 'FLAT') AS flatSignalsLast30m, "
-            + "(SELECT COUNT(*) FROM htx_trend_candidate_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS candidateSignalsLast30m, "
-            + "(SELECT COUNT(*) FROM htx_trend_candidate_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'LONG') AS candidateLongLast30m, "
-            + "(SELECT COUNT(*) FROM htx_trend_candidate_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'SHORT') AS candidateShortLast30m, "
-            + "(SELECT COUNT(*) FROM htx_trend_candidate_signal WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'FLAT') AS candidateFlatLast30m")
+            + "(SELECT MAX(created_at) FROM " + SIGNAL_TABLE + ") AS latestSignalAt, "
+            + "(SELECT MAX(updated_at) FROM " + ORDER_TABLE + ") AS latestOrderAt, "
+            + "(SELECT MAX(updated_at) FROM " + POSITION_TABLE + ") AS latestPositionAt, "
+            + "(SELECT MAX(created_at) FROM " + CANDIDATE_SIGNAL_TABLE + ") AS latestCandidateAt, "
+            + "(SELECT COUNT(*) FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS signalsLast30m, "
+            + "(SELECT COUNT(DISTINCT contract_code) FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS scannedContractsLast30m, "
+            + "(SELECT COUNT(*) FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND trend_signal = 'LONG') AS longSignalsLast30m, "
+            + "(SELECT COUNT(*) FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND trend_signal = 'SHORT') AS shortSignalsLast30m, "
+            + "(SELECT COUNT(*) FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND trend_signal = 'FLAT') AS flatSignalsLast30m, "
+            + "(SELECT COUNT(*) FROM " + CANDIDATE_SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE) AS candidateSignalsLast30m, "
+            + "(SELECT COUNT(*) FROM " + CANDIDATE_SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'LONG') AS candidateLongLast30m, "
+            + "(SELECT COUNT(*) FROM " + CANDIDATE_SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'SHORT') AS candidateShortLast30m, "
+            + "(SELECT COUNT(*) FROM " + CANDIDATE_SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 30 MINUTE AND direction = 'FLAT') AS candidateFlatLast30m")
     Map<String, Object> runtime();
 
     @Select("SELECT id, contract_code AS contractCode, status, side, contract_volume AS contractVolume, "
@@ -52,7 +58,7 @@ public interface HtxTrendDashboardMapper {
             + "realized_profit AS realizedProfit, realized_profit - entry_fee - close_fee AS netRealizedProfit, "
             + "(" + CLOSED_TURNOVER + ") AS turnover, stop_price AS stopPrice, trailing_stop_price AS trailingStopPrice, "
             + "entry_signal AS entrySignal, exit_reason AS exitReason, message, created_at AS createdAt, updated_at AS updatedAt "
-            + "FROM htx_trend_position WHERE status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') "
+            + "FROM " + POSITION_TABLE + " WHERE status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') "
             + "ORDER BY updated_at DESC, id DESC LIMIT 50")
     List<Map<String, Object>> activePositions();
 
@@ -62,7 +68,7 @@ public interface HtxTrendDashboardMapper {
             + "realized_profit AS realizedProfit, realized_profit - entry_fee - close_fee AS netRealizedProfit, "
             + "(" + CLOSED_TURNOVER + ") AS turnover, stop_price AS stopPrice, trailing_stop_price AS trailingStopPrice, "
             + "entry_signal AS entrySignal, exit_reason AS exitReason, message, created_at AS createdAt, updated_at AS updatedAt "
-            + "FROM htx_trend_position ORDER BY updated_at DESC, id DESC LIMIT 100")
+            + "FROM " + POSITION_TABLE + " ORDER BY updated_at DESC, id DESC LIMIT 100")
     List<Map<String, Object>> recentPositions();
 
     @Select("SELECT DATE(updated_at) AS tradeDate, COUNT(*) AS closedPositions, "
@@ -70,7 +76,7 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
             + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
-            + "FROM htx_trend_position WHERE status = 'DONE' GROUP BY DATE(updated_at) "
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' GROUP BY DATE(updated_at) "
             + "ORDER BY tradeDate DESC LIMIT 30")
     List<Map<String, Object>> dailyPnl();
 
@@ -80,7 +86,7 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
             + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
-            + "FROM htx_trend_position WHERE status = 'DONE' GROUP BY side ORDER BY netProfit DESC")
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' GROUP BY side ORDER BY netProfit DESC")
     List<Map<String, Object>> sidePnl();
 
     @Select("SELECT side AS bucket, side, COUNT(*) AS closedPositions, "
@@ -89,7 +95,7 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
             + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
-            + "FROM htx_trend_position WHERE status = 'DONE' AND updated_at >= CURDATE() "
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' AND updated_at >= CURDATE() "
             + "GROUP BY side ORDER BY netProfit DESC")
     List<Map<String, Object>> todaySidePnl();
 
@@ -105,7 +111,7 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
             + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
-            + "FROM htx_trend_position WHERE status = 'DONE' AND updated_at >= CURDATE() "
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' AND updated_at >= CURDATE() "
             + "GROUP BY bucket, side ORDER BY netProfit ASC LIMIT 20")
     List<Map<String, Object>> exitReasonPnl();
 
@@ -115,7 +121,7 @@ public interface HtxTrendDashboardMapper {
             + "o.filled_contracts AS filledContracts, o.average_price AS averagePrice, o.fee, o.realized_profit AS realizedProfit, "
             + "o.filled_contracts * p.contract_size * o.average_price AS notional, o.exchange_state AS exchangeState, "
             + "o.status, o.reason, o.message, o.created_at AS createdAt, o.updated_at AS updatedAt "
-            + "FROM htx_trend_order o LEFT JOIN htx_trend_position p ON p.id = o.position_id "
+            + "FROM " + ORDER_TABLE + " o LEFT JOIN " + POSITION_TABLE + " p ON p.id = o.position_id "
             + "ORDER BY o.updated_at DESC, o.id DESC LIMIT 100")
     List<Map<String, Object>> recentOrders();
 
@@ -123,7 +129,7 @@ public interface HtxTrendDashboardMapper {
             + "close_price AS closePrice, ema_fast AS emaFast, ema_slow AS emaSlow, breakout_high AS breakoutHigh, "
             + "breakout_low AS breakoutLow, atr, atr_pct AS atrPct, adx, spread_rate AS spreadRate, "
             + "funding_rate AS fundingRate, reason, created_at AS createdAt "
-            + "FROM htx_trend_signal ORDER BY created_at DESC, id DESC LIMIT 120")
+            + "FROM " + SIGNAL_TABLE + " ORDER BY created_at DESC, id DESC LIMIT 120")
     List<Map<String, Object>> recentSignals();
 
     @Select("SELECT trend_signal AS trendSignal, CASE "
@@ -135,7 +141,7 @@ public interface HtxTrendDashboardMapper {
             + "WHEN reason IS NULL OR reason = '' THEN 'none' ELSE LEFT(reason, 96) END AS reasonBucket, "
             + "COUNT(*) AS signals, COUNT(DISTINCT contract_code) AS contracts, COALESCE(AVG(adx), 0) AS avgAdx, "
             + "COALESCE(AVG(atr_pct), 0) AS avgAtrPct, MAX(created_at) AS latestAt "
-            + "FROM htx_trend_signal WHERE created_at >= NOW() - INTERVAL 24 HOUR "
+            + "FROM " + SIGNAL_TABLE + " WHERE created_at >= NOW() - INTERVAL 24 HOUR "
             + "GROUP BY trendSignal, reasonBucket ORDER BY signals DESC LIMIT 20")
     List<Map<String, Object>> signalRollup();
 
@@ -143,6 +149,6 @@ public interface HtxTrendDashboardMapper {
             + "signal_score AS signalScore, long_score AS longScore, short_score AS shortScore, score_gap AS scoreGap, "
             + "close_price AS closePrice, atr_pct AS atrPct, adx, momentum_pct AS momentumPct, volume_ratio AS volumeRatio, "
             + "entry_reason AS entryReason, invalidation_reason AS invalidationReason, model_version AS modelVersion, "
-            + "created_at AS createdAt FROM htx_trend_candidate_signal ORDER BY created_at DESC, id DESC LIMIT 80")
+            + "created_at AS createdAt FROM " + CANDIDATE_SIGNAL_TABLE + " ORDER BY created_at DESC, id DESC LIMIT 80")
     List<Map<String, Object>> recentCandidateSignals();
 }
