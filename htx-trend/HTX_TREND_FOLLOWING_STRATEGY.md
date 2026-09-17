@@ -10,7 +10,7 @@
 |---|---|---|
 | 行情事件层 | K 线驱动策略回调 | `HtxTrendFollowingScheduler` 定时拉取 HTX USDT 本位永续 K 线 |
 | 信号层 | CTA 策略把指标计算与交易执行分开 | `HtxTrendSignalCalculator` 只计算信号，不下单、不读 DB |
-| 风控层 | 下单前统一 gate | `HtxTrendFollowingService` 检查资金费、盘口价差、杠杆、保证金、开放订单和外部仓位 |
+| 风控层 | 下单前统一 gate | `HtxTrendFollowingService` 检查资金费、盘口价差、K 线成交额、盘口深度、极端波动、杠杆、保证金、开放订单和外部仓位 |
 | 执行层 | `buy/sell/short/cover` 语义映射到交易所订单 | 开多=`buy/long`，平多=`sell/long reduce_only`；开空=`sell/short`，平空=`buy/short reduce_only` |
 | 状态层 | 策略自有持仓状态机 | `htx_trend_position` 只管理本策略开出的仓，不接管外部手工仓位 |
 | 观测层 | 策略变量可审计 | `htx_trend_signal` 每轮记录信号、ATR、ADX、突破位、资金费和点差 |
@@ -23,7 +23,9 @@
 
 第三步，判断低周期突破。默认用 15 分钟 K 线，收盘价突破过去 20 根已完成 K 线的 Donchian 高点才考虑做多，跌破 Donchian 低点才考虑做空，同时要求低周期 EMA 快慢线同向。
 
-第四步，过滤低波动和弱趋势。`ATR / close` 低于阈值时跳过，避免 XAUT 低波动阶段被手续费吃掉；ADX 低于阈值时跳过，避免震荡区间反复开平。
+第四步，过滤低波动和弱趋势。`ATR / close` 低于阈值时跳过，避免低波动阶段被手续费吃掉；ADX 低于阈值时跳过，避免震荡区间反复开平。
+
+第五步，过滤低流动性和异常波动。策略不按“是否小币”做静态黑名单；开仓前会用最近已完成 K 线的平均成交额、当前入场方向的盘口深度，以及 `ATR / close` 是否异常过高来判断。也就是说，小币如果成交活跃、盘口够厚仍可交易；大币如果当下深度薄、滑点风险大，同样会被拒绝。
 
 ## 加密合约交易规则
 
@@ -43,6 +45,11 @@
 | `HTX_TREND_BREAKOUT_LOOKBACK` | `20` | Donchian 突破窗口 |
 | `HTX_TREND_MIN_ADX` | `18` | 最小趋势强度 |
 | `HTX_TREND_MIN_ATR_PCT` | `0.0010` | 最小波动率，低于则跳过 |
+| `HTX_TREND_LIQUIDITY_LOOKBACK_BARS` | `20` | 成交额流动性检查使用的最近 K 线数量 |
+| `HTX_TREND_MIN_ENTRY_AVG_TURNOVER_USDT` | `0` | 最小平均成交额，`0` 表示默认不启用成交额 gate，建议实盘按观测分位数设置 |
+| `HTX_TREND_ENTRY_DEPTH_LEVELS` | `5` | 盘口深度检查的前 N 档 |
+| `HTX_TREND_MIN_ENTRY_DEPTH_MULTIPLIER` | `3` | 入场方向前 N 档张数至少覆盖计划下单张数的倍数 |
+| `HTX_TREND_MAX_ENTRY_ATR_PCT` | `0.0500` | 最大 `ATR / close`，过滤低流动性尖刺导致的异常波动 |
 | `HTX_TREND_TARGET_QUOTE_NOTIONAL` | `190` | 目标名义本金 |
 | `HTX_TREND_RISK_PER_TRADE_USDT` | `1.5` | 单笔风险预算 |
 | `HTX_TREND_ATR_STOP_MULTIPLIER` | `2.5` | 初始止损距离 |
@@ -59,7 +66,7 @@
 
 第一步，观察模式启动。设置 `HTX_TREND_ENABLED=true`、`HTX_TREND_OBSERVE_ONLY=true`、`HTX_MM_ENABLED=false`、`HTX_FUNDING_ARB_ENABLED=false`，确认 `htx_trend_signal` 能稳定写入，并观察至少一个完整 60 分钟趋势周期。
 
-第二步，核对信号质量。重点看 `signal`、`reason`、`atr_pct`、`adx`、`spread_rate`、`funding_rate`，如果长期都是 `ATR below threshold`，说明 XAUT 波动仍不足，应降低周期或换更活跃标的，而不是继续调低网格。
+第二步，核对信号质量。重点看 `signal`、`reason`、`atr_pct`、`adx`、`spread_rate`、`funding_rate`。如果拒绝原因集中在 `liquidity turnover too low`、`liquidity depth too low` 或 `ATR too high for liquidity-adjusted entry`，应调流动性阈值或剔除当下低流动性标的，而不是按“小币/大币”粗分。
 
 第三步，小额度实盘。设置 `HTX_TREND_OBSERVE_ONLY=false`，同时保持 `HTX_CONTRACT_ENABLED=true`、`HTX_CONTRACT_DRY_RUN=false`、`HTX_CONTRACT_LIVE_ENABLED=true`，目标名义先限制在 190U 左右，确认真实订单、DB 状态和交易所持仓一致。
 

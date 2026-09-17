@@ -134,7 +134,8 @@ public class HtxTrendFollowingService {
         if (contract == null || !positive(contract.getContractSize())) {
             return RunResult.of(RunCode.SKIPPED, null, "contract info unavailable");
         }
-        TrendSignal signal = loadSignal(contractCode);
+        SignalSnapshot snapshot = loadSignal(contractCode);
+        TrendSignal signal = snapshot.signal();
         recordSignal(contractCode, signal);
         Optional<HtxTrendPositionEntity> active = recorder.findActive(contractCode);
         if (active.isPresent()) {
@@ -146,10 +147,11 @@ public class HtxTrendFollowingService {
         if (!allowNewEntry) {
             return RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
         }
-        return openIfEligible(contractCode, signal, contract);
+        return openIfEligible(contractCode, signal, snapshot.entryCandles(), contract);
     }
 
-    private RunResult openIfEligible(String contractCode, TrendSignal signal, HtxSwapContractInfo contract) {
+    private RunResult openIfEligible(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
+                                     HtxSwapContractInfo contract) {
         if (signal.side() == TrendSide.FLAT) {
             return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
         }
@@ -166,7 +168,8 @@ public class HtxTrendFollowingService {
         if (cooldownGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, cooldownGate);
         }
-        TopOfBook book = topOfBook(contractCode);
+        HtxDepth depth = depthSnapshot(contractCode);
+        TopOfBook book = topOfBook(depth);
         if (book == null) {
             return RunResult.of(RunCode.SKIPPED, null, "depth unavailable");
         }
@@ -186,6 +189,10 @@ public class HtxTrendFollowingService {
         long volume = targetVolume(entryPrice, signal.atr(), contract.getContractSize());
         if (volume <= 0) {
             return RunResult.of(RunCode.SKIPPED, null, "target volume below minimum");
+        }
+        String liquidityGate = liquidityGate(signal, entryCandles, depth, volume);
+        if (liquidityGate != null) {
+            return RunResult.of(RunCode.SKIPPED, null, liquidityGate);
         }
         String expectedMoveGate = expectedMoveGate(signal, entryPrice, spreadRate);
         if (expectedMoveGate != null) {
@@ -386,19 +393,22 @@ public class HtxTrendFollowingService {
         return RunResult.of(RunCode.WAITING, position.getId(), "waiting close fill");
     }
 
-    private TrendSignal loadSignal(String contractCode) {
+    private SignalSnapshot loadSignal(String contractCode) {
         HtxRestResponse<List<HtxSwapKline>> entryResponse = swap.historyKline(contractCode,
                 properties.getPeriod(), properties.getKlineSize());
         if (entryResponse == null || !entryResponse.ok() || entryResponse.payload() == null) {
-            return TrendSignal.skip("entry kline unavailable: " + error(entryResponse));
+            return new SignalSnapshot(TrendSignal.skip("entry kline unavailable: " + error(entryResponse)), List.of());
         }
         String trendPeriod = trendPeriod();
         HtxRestResponse<List<HtxSwapKline>> trendResponse = trendPeriod.equalsIgnoreCase(properties.getPeriod())
                 ? entryResponse : swap.historyKline(contractCode, trendPeriod, properties.getTrendKlineSize());
         if (trendResponse == null || !trendResponse.ok() || trendResponse.payload() == null) {
-            return TrendSignal.skip("trend kline unavailable: " + error(trendResponse));
+            return new SignalSnapshot(TrendSignal.skip("trend kline unavailable: " + error(trendResponse)),
+                    entryResponse.payload());
         }
-        return calculator.evaluate(entryResponse.payload(), trendResponse.payload(), properties, Instant.now().getEpochSecond());
+        TrendSignal signal = calculator.evaluate(entryResponse.payload(), trendResponse.payload(),
+                properties, Instant.now().getEpochSecond());
+        return new SignalSnapshot(signal, entryResponse.payload());
     }
 
     private void recordSignal(String contractCode, TrendSignal signal) {
@@ -434,8 +444,15 @@ public class HtxTrendFollowingService {
     }
 
     private TopOfBook topOfBook(String contractCode) {
+        return topOfBook(depthSnapshot(contractCode));
+    }
+
+    private HtxDepth depthSnapshot(String contractCode) {
         HtxRestResponse<HtxDepth> response = swap.depth(contractCode, contractProperties.getDepthStep());
-        HtxDepth depth = response == null ? null : response.payload();
+        return response == null ? null : response.payload();
+    }
+
+    private TopOfBook topOfBook(HtxDepth depth) {
         if (depth == null || depth.getBids() == null || depth.getAsks() == null
                 || depth.getBids().isEmpty() || depth.getAsks().isEmpty()) {
             return null;
@@ -446,6 +463,36 @@ public class HtxTrendFollowingService {
             return null;
         }
         return new TopOfBook(bid.getPrice(), ask.getPrice());
+    }
+
+    private String liquidityGate(TrendSignal signal, List<HtxSwapKline> entryCandles, HtxDepth depth, long volume) {
+        if (positive(properties.getMaxEntryAtrPct()) && positive(signal.atrPct())
+                && signal.atrPct().compareTo(properties.getMaxEntryAtrPct()) > 0) {
+            return "ATR too high for liquidity-adjusted entry atrPct=" + signal.atrPct()
+                    + " max=" + properties.getMaxEntryAtrPct();
+        }
+        BigDecimal minTurnover = properties.getMinEntryAvgTurnoverUsdt();
+        if (positive(minTurnover)) {
+            BigDecimal avgTurnover = averageRecentTurnover(entryCandles, properties.getLiquidityLookbackBars());
+            if (avgTurnover == null) {
+                return "liquidity turnover unavailable";
+            }
+            if (avgTurnover.compareTo(minTurnover) < 0) {
+                return "liquidity turnover too low avgTurnover=" + avgTurnover + " min=" + minTurnover;
+            }
+        }
+        BigDecimal depthMultiplier = properties.getMinEntryDepthMultiplier();
+        if (positive(depthMultiplier)) {
+            int depthLevels = Math.max(1, properties.getEntryDepthLevels());
+            List<HtxPriceLevel> levels = signal.side() == TrendSide.LONG ? depth.getAsks() : depth.getBids();
+            BigDecimal availableContracts = sumTopLevels(levels, depthLevels);
+            BigDecimal requiredContracts = BigDecimal.valueOf(volume).multiply(depthMultiplier);
+            if (availableContracts.compareTo(requiredContracts) < 0) {
+                return "liquidity depth too low side=" + signal.side() + " top" + depthLevels
+                        + "Contracts=" + availableContracts + " requiredContracts=" + requiredContracts;
+            }
+        }
+        return null;
     }
 
     private String openOrderGate(String contractCode) {
@@ -779,6 +826,43 @@ public class HtxTrendFollowingService {
                 .add(nonNegative(spreadRate));
     }
 
+    private static BigDecimal averageRecentTurnover(List<HtxSwapKline> candles, int lookbackBars) {
+        if (candles == null || candles.isEmpty()) {
+            return null;
+        }
+        int remaining = Math.max(1, lookbackBars);
+        BigDecimal sum = BigDecimal.ZERO;
+        int count = 0;
+        for (int i = candles.size() - 1; i >= 0 && remaining > 0; i--) {
+            HtxSwapKline candle = candles.get(i);
+            BigDecimal turnover = candle == null ? null : candle.getTradeTurnover();
+            if (positive(turnover)) {
+                sum = sum.add(turnover);
+                count++;
+                remaining--;
+            }
+        }
+        if (count == 0) {
+            return null;
+        }
+        return sum.divide(BigDecimal.valueOf(count), 18, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal sumTopLevels(List<HtxPriceLevel> levels, int topN) {
+        if (levels == null || levels.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        int limit = Math.min(Math.max(1, topN), levels.size());
+        for (int i = 0; i < limit; i++) {
+            HtxPriceLevel level = levels.get(i);
+            if (level != null && positive(level.getAmount())) {
+                sum = sum.add(level.getAmount());
+            }
+        }
+        return sum;
+    }
+
     private String exitReason(String side, TrendSignal signal, BigDecimal reference,
                               BigDecimal trailingStop, BigDecimal takeProfit) {
         if (LONG.equals(side)) {
@@ -1038,6 +1122,9 @@ public class HtxTrendFollowingService {
         public static RunResult of(RunCode code, Long positionId, String message) {
             return new RunResult(code, positionId, message);
         }
+    }
+
+    private record SignalSnapshot(TrendSignal signal, List<HtxSwapKline> entryCandles) {
     }
 
     private record TopOfBook(BigDecimal bid, BigDecimal ask) {

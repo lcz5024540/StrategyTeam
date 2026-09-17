@@ -228,6 +228,66 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void liveEntrySkipsWhenRecentTurnoverIsTooLow() {
+        properties.setMinEntryAvgTurnoverUsdt(new BigDecimal("50000"));
+        properties.setLiquidityLookbackBars(2);
+        givenContractInfo();
+        givenKlinesWithTurnover("XAUT-USDT", "12000", "18000");
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("liquidity turnover too low"));
+        verify(swap, never()).switchLeverage(any(), any(), any(Integer.class));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveEntrySkipsWhenEntrySideDepthCannotAbsorbOrder() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.SHORT);
+        givenFunding("0.0001");
+        givenDepth("XAUT-USDT", "4299", "4301", "10");
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("liquidity depth too low"));
+        verify(swap, never()).switchLeverage(any(), any(), any(Integer.class));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveEntrySkipsWhenAtrPctLooksLikeThinBookSpike() {
+        properties.setMaxEntryAtrPct(new BigDecimal("0.0100"));
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("80"), new BigDecimal("0.0180"));
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("ATR too high for liquidity-adjusted entry"));
+        verify(swap, never()).switchLeverage(any(), any(), any(Integer.class));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void entryDisabledSkipsNewPositionsButStillRecordsSignal() {
         properties.setEntryEnabled(false);
         givenContractInfo();
@@ -451,14 +511,26 @@ class HtxTrendFollowingServiceTest {
                 .thenReturn(ok(klines));
     }
 
+    private void givenKlinesWithTurnover(String contractCode, String firstTurnover, String secondTurnover) {
+        List<HtxSwapKline> klines = List.of(candle(1L, firstTurnover), candle(2L, secondTurnover));
+        when(swap.historyKline(eq(contractCode), eq(properties.getPeriod()), eq(properties.getKlineSize())))
+                .thenReturn(ok(klines));
+        when(swap.historyKline(eq(contractCode), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize())))
+                .thenReturn(ok(klines));
+    }
+
     private void givenSignal(TrendSide side) {
         givenSignal(side, new BigDecimal("12"));
     }
 
     private void givenSignal(TrendSide side, BigDecimal atr) {
+        givenSignal(side, atr, new BigDecimal("0.0028"));
+    }
+
+    private void givenSignal(TrendSide side, BigDecimal atr, BigDecimal atrPct) {
         TrendSignal signal = TrendSignal.of(side, 2L, new BigDecimal("4300"), new BigDecimal("4290"),
                 new BigDecimal("4280"), new BigDecimal("4310"), new BigDecimal("4260"),
-                atr, new BigDecimal("0.0028"), new BigDecimal("24"), "test signal");
+                atr, atrPct, new BigDecimal("24"), "test signal");
         when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
     }
 
@@ -478,9 +550,13 @@ class HtxTrendFollowingServiceTest {
     }
 
     private void givenDepth(String contractCode, String bid, String ask) {
+        givenDepth(contractCode, bid, ask, "1000");
+    }
+
+    private void givenDepth(String contractCode, String bid, String ask, String amount) {
         HtxDepth depth = new HtxDepth();
-        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal(bid), BigDecimal.ONE)));
-        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal(ask), BigDecimal.ONE)));
+        depth.setBids(List.of(new HtxPriceLevel(new BigDecimal(bid), new BigDecimal(amount))));
+        depth.setAsks(List.of(new HtxPriceLevel(new BigDecimal(ask), new BigDecimal(amount))));
         when(swap.depth(contractCode, contractProperties.getDepthStep())).thenReturn(ok(depth));
     }
 
@@ -514,12 +590,17 @@ class HtxTrendFollowingServiceTest {
     }
 
     private HtxSwapKline candle(long id) {
+        return candle(id, "100000");
+    }
+
+    private HtxSwapKline candle(long id, String tradeTurnover) {
         HtxSwapKline candle = new HtxSwapKline();
         candle.setId(id);
         candle.setOpen(new BigDecimal("4300"));
         candle.setHigh(new BigDecimal("4310"));
         candle.setLow(new BigDecimal("4290"));
         candle.setClose(new BigDecimal("4305"));
+        candle.setTradeTurnover(new BigDecimal(tradeTurnover));
         return candle;
     }
 

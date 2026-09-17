@@ -75,6 +75,21 @@ public class HtxTrendProperties {
     /** Maximum allowed top-of-book spread before live entry. */
     private BigDecimal maxEntrySpreadRate = new BigDecimal("0.0010");
 
+    /** Recent completed bars used to judge whether a contract has enough quote turnover. */
+    private int liquidityLookbackBars = 20;
+
+    /** Minimum average quote turnover per entry-timeframe bar; <=0 disables the turnover gate. */
+    private BigDecimal minEntryAvgTurnoverUsdt = BigDecimal.ZERO;
+
+    /** Order book levels used to judge whether the entry side has enough executable liquidity. */
+    private int entryDepthLevels = 5;
+
+    /** Required top-book contracts relative to the planned order size; <=0 disables the depth gate. */
+    private BigDecimal minEntryDepthMultiplier = new BigDecimal("3");
+
+    /** Maximum ATR / close ratio before entry; <=0 disables the extreme-volatility gate. */
+    private BigDecimal maxEntryAtrPct = new BigDecimal("0.0500");
+
     /** Base target notional before risk sizing clamps it. */
     private BigDecimal targetQuoteNotional = new BigDecimal("190");
 

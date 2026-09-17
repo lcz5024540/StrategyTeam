@@ -143,6 +143,11 @@ htx:
     min-adx: ${HTX_TREND_MIN_ADX:18}
     min-atr-pct: ${HTX_TREND_MIN_ATR_PCT:0.0010}
     max-entry-spread-rate: ${HTX_TREND_MAX_ENTRY_SPREAD_RATE:0.0010}
+    liquidity-lookback-bars: ${HTX_TREND_LIQUIDITY_LOOKBACK_BARS:20}
+    min-entry-avg-turnover-usdt: ${HTX_TREND_MIN_ENTRY_AVG_TURNOVER_USDT:0}
+    entry-depth-levels: ${HTX_TREND_ENTRY_DEPTH_LEVELS:5}
+    min-entry-depth-multiplier: ${HTX_TREND_MIN_ENTRY_DEPTH_MULTIPLIER:3}
+    max-entry-atr-pct: ${HTX_TREND_MAX_ENTRY_ATR_PCT:0.0500}
     target-quote-notional: ${HTX_TREND_TARGET_QUOTE_NOTIONAL:190}
     max-quote-notional: ${HTX_TREND_MAX_QUOTE_NOTIONAL:190}
     min-quote-notional: ${HTX_TREND_MIN_QUOTE_NOTIONAL:20}
