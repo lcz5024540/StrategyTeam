@@ -129,7 +129,7 @@ export function ArbitrageScannerPage() {
       <div className="arb-source"><span>数据来源</span><strong>{sourceStatus}</strong><small>{sourceDetail}</small></div>
     </section>
     <section className="arb-metrics">
-      <Metric label={isTrendMode ? '今日交易量' : '可执行机会'} value={isTrendMode ? formatNotional(trend?.summary.todayTurnover) : isFundingMode ? String(executableFundingRows.length) : '0'} detail={isTrendMode ? `累计 ${formatNotional(trend?.summary.totalTurnover)}` : isFundingMode ? '满足 L2、成本和同步结算条件' : '未接入真实读模型，不展示 demo'} tone={isTrendMode || isFundingMode ? 'positive' : 'neutral'} />
+      <Metric label={isTrendMode ? '今日交易量' : '可执行机会'} value={isTrendMode ? formatNotional(trend?.summary.todayTurnover) : isFundingMode ? String(executableFundingRows.length) : '0'} detail={isTrendMode ? `累计 ${formatNotional(trend?.summary.totalTurnover)}` : isFundingMode ? '满足 L2、成本和同步结算条件' : '未接入真实读模型，不展示 demo'} tone={isTrendMode ? 'neutral' : isFundingMode ? 'positive' : 'neutral'} />
       <Metric label={isTrendMode ? '今日净盈亏' : isFundingMode ? '最大原始费差' : '最佳单次净收益'} value={isTrendMode ? formatUsdt(trend?.summary.todayNetRealizedProfit) : isFundingMode ? formatOpportunitySpread(bestFunding) : '—'} detail={isTrendMode ? `累计 ${formatUsdt(trend?.summary.netRealizedProfit)}` : isFundingMode ? '主展示不做按小时换算；跨周期另标累计判断' : '等待真实机会接口'} tone={isTrendMode ? valueTone(trend?.summary.todayNetRealizedProfit || 0) : isFundingMode ? 'positive' : 'neutral'} />
       <Metric label={isTrendMode ? '活动仓位' : '最大可成交容量'} value={isTrendMode ? String(trend?.summary.activePositions || 0) : isFundingMode ? formatNotional(largestFunding?.executableNotional) : '—'} detail={isTrendMode ? `今日平仓 ${trend?.summary.todayClosedPositions || 0} · 今日胜 ${trend?.summary.todayWinningPositions || 0}` : isFundingMode ? '共同基础币数量对应的单腿名义金额' : '等待真实 L2/VWAP 容量'} />
       <Metric label={isTrendMode ? '今日手续费' : isFundingMode ? '覆盖币对' : '数据状态'} value={isTrendMode ? formatUsdtNoSign(trend?.summary.todayFees) : isFundingMode ? String(fundingRows.length) : '未接入'} detail={isTrendMode ? `累计手续费 ${formatUsdtNoSign(trend?.summary.totalFees)}` : isFundingMode ? `${fundingMatrix.exchanges.length} 个交易所横向比对 · 缺失以 — 显示` : '已移除前端硬编码样例'} tone="warn" />
@@ -149,7 +149,7 @@ export function ArbitrageScannerPage() {
     </section>
     {isFundingMode && <section className="arb-bottom-grid"><article className="arb-card arb-health"><header><div><p className="arb-eyebrow">DATA COVERAGE</p><h2>资金费矩阵覆盖</h2></div><span>{matrixResponse?.asOf || '等待接口'}</span></header>{exchangeCoverage.length ? exchangeCoverage.map((item) => <div className="arb-health-row" key={item.name}><strong className={item.count > 0 ? 'good' : 'bad'}>● {item.name}</strong><i><b style={{ width: `${fundingMatrix.items.length ? Math.round(item.count / fundingMatrix.items.length * 100) : 0}%` }} /></i><span>{item.count || '—'}</span><small>{item.count ? '有资金费样本' : '当前矩阵无样本'}</small></div>) : <p className="arb-compact-note">行情读模型尚未返回资金费样本；不会将空数据呈现为可交易机会。</p>}</article>
       <article className="arb-card arb-ranking"><p className="arb-eyebrow">DATA RULES</p><h2>排序口径</h2><ol><li>仅保留具备可执行深度的市场。</li><li>资金费统一折算到共同结算窗口。</li><li>排序前已扣除手续费与 L2 滑点。</li></ol></article></section>}
-    {(isError || trendError) ? <div className="arb-notice">读模型接口暂不可用；为避免误导，当前不展示 Demo 数据。</div> : null}
+    {((isFundingMode && isError && !matrixResponse) || (isTrendMode && trendError && !trend)) ? <div className="arb-notice">读模型接口暂不可用；为避免误导，当前不展示 Demo 数据。</div> : null}
   </div>
 }
 
@@ -230,6 +230,7 @@ function TrendDashboard({ trend, loading, refresh, view, onViewChange }: { trend
   if (!trend) return <div className="arb-unavailable-panel"><p className="arb-eyebrow">HTX TREND LEDGER</p><h2>{loading ? '趋势账本加载中' : '等待趋势账本数据'}</h2><button className="arb-text-button" type="button" onClick={refresh}>刷新</button></div>
   const winRate = trend.summary.closedPositions ? trend.summary.winningPositions / trend.summary.closedPositions : null
   const lastPosition = trend.recentPositions.find((position) => position.status.toUpperCase() === 'DONE') || trend.recentPositions[0]
+  const todayWinRate = trend.summary.todayClosedPositions ? trend.summary.todayWinningPositions / trend.summary.todayClosedPositions : null
   const dataCoverage = [
     { label: '活动仓位', value: trend.activePositions.length },
     { label: '平仓历史', value: trend.recentPositions.length },
@@ -237,17 +238,8 @@ function TrendDashboard({ trend, loading, refresh, view, onViewChange }: { trend
     { label: '定时信号', value: trend.recentSignals.length },
     { label: '候选信号', value: trend.recentCandidateSignals.length },
   ]
-  return <div className="trend-dashboard">
-    <section className="trend-command-bar">
-      <div><p className="arb-eyebrow">HTX TREND</p><h2>Live execution ledger</h2></div>
-      <div className="trend-command-actions"><span>{trend.asOf}</span><button className="arb-text-button" type="button" onClick={refresh}>{loading ? '刷新中' : '刷新'}</button></div>
-    </section>
-    <section className="trend-runtime-grid">
-      <TrendMiniMetric label="运行态" value={trend.summary.activePositions > 0 ? '持仓中' : '等待信号'} detail={`最新信号 ${trend.runtime.latestSignalAt || '—'}`} tone={trend.summary.activePositions > 0 ? 'positive' : 'neutral'} />
-      <TrendMiniMetric label="今日表现" value={formatUsdt(trend.summary.todayNetRealizedProfit)} detail={`平仓 ${trend.summary.todayClosedPositions} / 胜 ${trend.summary.todayWinningPositions} / 手续费 ${formatUsdtNoSign(trend.summary.todayFees)}`} tone={valueTone(trend.summary.todayNetRealizedProfit)} />
-      <TrendMiniMetric label="累计胜率" value={winRate == null ? '—' : `${(winRate * 100).toFixed(1)}%`} detail={`已平仓 ${trend.summary.closedPositions} / 总仓位 ${trend.summary.totalPositions}`} />
-      <TrendMiniMetric label="最近订单" value={trend.runtime.latestOrderAt || '—'} detail={`订单 ${trend.recentOrders.length} 条 / 最新仓位 ${trend.runtime.latestPositionAt || '—'}`} />
-    </section>
+  return <div className={`trend-dashboard trend-dashboard-${view}`}>
+    <TrendBotHero trend={trend} loading={loading} refresh={refresh} winRate={winRate} todayWinRate={todayWinRate} />
     <TrendViewTabs view={view} onViewChange={onViewChange} />
     {view === 'overview' ? <TrendOverview trend={trend} lastPosition={lastPosition} onViewChange={onViewChange} /> : null}
     {view === 'history' ? <TrendHistoryView positions={trend.recentPositions} orders={trend.recentOrders} /> : null}
@@ -255,11 +247,39 @@ function TrendDashboard({ trend, loading, refresh, view, onViewChange }: { trend
     {view === 'strategy' ? <TrendStrategyView trend={trend} dataCoverage={dataCoverage} /> : null}
   </div>
 }
+function TrendBotHero({ trend, loading, refresh, winRate, todayWinRate }: { trend: HtxTrendDashboardResponse; loading: boolean; refresh: () => void; winRate: number | null; todayWinRate: number | null }) {
+  const unavailable = trend.source === 'HTX_TREND_EXECUTION_LEDGER_UNAVAILABLE'
+  const botStatus = unavailable ? '账本不可用' : trend.summary.activePositions > 0 ? '持仓管理中' : '等待下一次有效信号'
+  const latestEvent = trend.runtime.latestOrderAt || trend.runtime.latestSignalAt || trend.runtime.latestCandidateAt || trend.asOf
+  return <section className="trend-bot-hero">
+    <div className="trend-bot-identity">
+      <p className="arb-eyebrow">AUTO TRADING BOT</p>
+      <h2>HTX Trend Bot</h2>
+      <p>自动扫描合约、过滤候选信号、执行开平仓，并把仓位、订单、费用和退出原因回写到账本。</p>
+      <div className="trend-bot-state">
+        <Status status={trend.summary.activePositions > 0 ? 'ACTIVE' : unavailable ? 'REJECTED' : 'OBSERVING'} />
+        <span>{botStatus}</span>
+        <small>最近事件 {latestEvent || '—'}</small>
+      </div>
+    </div>
+    <div className="trend-bot-kpis">
+      <TrendMiniMetric label="今日净盈亏" value={formatUsdt(trend.summary.todayNetRealizedProfit)} detail={`今日胜率 ${todayWinRate == null ? '—' : `${(todayWinRate * 100).toFixed(1)}%`}`} tone={valueTone(trend.summary.todayNetRealizedProfit)} />
+      <TrendMiniMetric label="当前仓位" value={`${trend.summary.activePositions}`} detail={`总仓位 ${trend.summary.totalPositions} / 已平 ${trend.summary.closedPositions}`} tone={trend.summary.activePositions > 0 ? 'positive' : 'neutral'} />
+      <TrendMiniMetric label="累计胜率" value={winRate == null ? '—' : `${(winRate * 100).toFixed(1)}%`} detail={`胜 ${trend.summary.winningPositions} / 平仓 ${trend.summary.closedPositions}`} />
+      <TrendMiniMetric label="最近订单" value={trend.runtime.latestOrderAt || '—'} detail={`订单账本 ${trend.recentOrders.length} 条`} />
+    </div>
+    <div className="trend-bot-actions">
+      <span>{trend.asOf}</span>
+      <button className="arb-text-button" type="button" onClick={refresh}>{loading ? '刷新中' : '刷新'}</button>
+    </div>
+  </section>
+}
 function TrendViewTabs({ view, onViewChange }: { view: TrendView; onViewChange: (view: TrendView) => void }) {
   return <div className="trend-view-tabs" role="tablist">{TREND_VIEWS.map((item) => <button key={item.value} type="button" role="tab" aria-selected={view === item.value} className={view === item.value ? 'active' : ''} onClick={() => onViewChange(item.value)}><strong>{item.label}</strong><small>{item.hint}</small></button>)}</div>
 }
 function TrendOverview({ trend, lastPosition, onViewChange }: { trend: HtxTrendDashboardResponse; lastPosition?: TrendPosition; onViewChange: (view: TrendView) => void }) {
   return <div className="trend-overview">
+    <BotExecutionPipeline trend={trend} />
     <section className="trend-overview-grid">
       <TrendNowPanel positions={trend.activePositions} />
       <TrendLastTradePanel position={lastPosition} onHistory={() => onViewChange('history')} />
@@ -274,6 +294,26 @@ function TrendOverview({ trend, lastPosition, onViewChange }: { trend: HtxTrendD
       <TrendDataCoverage trend={trend} onStrategy={() => onViewChange('strategy')} />
     </section>
   </div>
+}
+function BotExecutionPipeline({ trend }: { trend: HtxTrendDashboardResponse }) {
+  const todayWinRate = trend.summary.todayClosedPositions ? `${(trend.summary.todayWinningPositions / trend.summary.todayClosedPositions * 100).toFixed(1)}%` : '—'
+  const steps = [
+    { label: '信号扫描', value: `${trend.runtime.scannedContractsLast30m || 0} 合约`, detail: `最新 ${trend.runtime.latestSignalAt || '—'}`, tone: trend.runtime.signalsLast30m > 0 ? 'active' : 'idle' },
+    { label: 'Gate 过滤', value: `${trend.runtime.candidateSignalsLast30m || 0} 候选`, detail: `多 ${trend.runtime.candidateLongLast30m} / 空 ${trend.runtime.candidateShortLast30m} / 平 ${trend.runtime.candidateFlatLast30m}`, tone: trend.runtime.candidateSignalsLast30m > 0 ? 'active' : 'idle' },
+    { label: '下单执行', value: `${trend.recentOrders.length} 订单`, detail: `最新 ${trend.runtime.latestOrderAt || '—'}`, tone: trend.runtime.latestOrderAt ? 'active' : 'idle' },
+    { label: '持仓管理', value: `${trend.summary.activePositions} 活动`, detail: `最新仓位 ${trend.runtime.latestPositionAt || '—'}`, tone: trend.summary.activePositions > 0 ? 'active' : 'idle' },
+    { label: '退出复盘', value: `${trend.summary.todayClosedPositions} 平仓`, detail: `今日胜率 ${todayWinRate}`, tone: trend.summary.todayNetRealizedProfit > 0 ? 'positive' : trend.summary.todayNetRealizedProfit < 0 ? 'negative' : 'idle' },
+  ]
+  return <section className="trend-pipeline" aria-label="Bot execution pipeline">
+    <header><div><p className="arb-eyebrow">EXECUTION FLOW</p><h2>自动交易链路</h2></div><span>信号 → 风控 → 下单 → 持仓 → 退出</span></header>
+    <div className="trend-pipeline-steps">
+      {steps.map((step) => <div className={`trend-pipeline-step ${step.tone}`} key={step.label}>
+        <small>{step.label}</small>
+        <strong>{step.value}</strong>
+        <span>{step.detail}</span>
+      </div>)}
+    </div>
+  </section>
 }
 function TrendNowPanel({ positions }: { positions: TrendPosition[] }) {
   const first = positions[0]
@@ -330,7 +370,7 @@ function TrendHistoryView({ positions, orders }: { positions: TrendPosition[]; o
   const [status, setStatus] = useState('ALL')
   const [symbol, setSymbol] = useState('')
   const filteredPositions = positions.filter((position) => (!symbol || position.contractCode.includes(symbol.toUpperCase())) && (side === 'ALL' || position.side === side) && (status === 'ALL' || position.status === status))
-  return <div className="trend-view-stack">
+  return <div className="trend-view-stack trend-history-view">
     <section className="trend-toolbar">
       <div><p className="arb-eyebrow">EXECUTION HISTORY</p><h2>交易历史记录</h2></div>
       <label>合约<input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="BTC、SOL" /></label>

@@ -6356,3 +6356,414 @@ td {
     flex-direction: column;
   }
 }
+
+/* HTX trend bot cockpit — minimal light product surface, real ledger data only. */
+.strategy-console {
+  --trend-bg: #f7f8fb;
+  --trend-surface: #ffffff;
+  --trend-surface-muted: #f9fafb;
+  --trend-border: #e5e7eb;
+  --trend-border-strong: #d1d5db;
+  --trend-text: #111827;
+  --trend-soft-text: #334155;
+  --trend-muted: #64748b;
+  --trend-faint: #94a3b8;
+  --trend-accent: #2563eb;
+  --trend-accent-soft: #eff6ff;
+  --trend-positive: #059669;
+  --trend-positive-soft: #ecfdf5;
+  --trend-negative: #dc2626;
+  --trend-negative-soft: #fef2f2;
+  --trend-warn: #b45309;
+  --trend-warn-soft: #fffbeb;
+  background: var(--trend-bg);
+}
+
+.strategy-console .arb-page {
+  color: var(--trend-text);
+}
+
+.strategy-console .arb-hero {
+  padding-bottom: 16px;
+}
+
+.strategy-console .arb-hero h1 {
+  color: var(--trend-text);
+  font-size: clamp(28px, 2.8vw, 38px);
+  letter-spacing: -.02em;
+}
+
+.strategy-console .arb-hero p:not(.arb-eyebrow) {
+  color: var(--trend-muted);
+}
+
+.strategy-console .arb-source,
+.strategy-console .arb-metric,
+.strategy-console .arb-card,
+.strategy-console .trend-panel,
+.strategy-console .trend-chart,
+.strategy-console .trend-mini,
+.strategy-console .trend-pipeline,
+.strategy-console .trend-bot-hero {
+  border-color: var(--trend-border);
+  background: var(--trend-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
+}
+
+.strategy-console .arb-metric,
+.strategy-console .trend-mini {
+  border-radius: 14px;
+}
+
+.strategy-console .arb-card,
+.strategy-console .trend-panel,
+.strategy-console .trend-chart,
+.strategy-console .trend-pipeline,
+.strategy-console .trend-bot-hero {
+  border-radius: 16px;
+}
+
+.strategy-console .arb-metric strong,
+.strategy-console .trend-mini strong,
+.strategy-console .trend-current-position strong,
+.strategy-console .trend-last-trade strong,
+.strategy-console .trend-pulse-grid b,
+.strategy-console .trend-coverage-list b,
+.strategy-console .trend-definition-grid b,
+.strategy-console .trend-pipeline-step strong {
+  color: var(--trend-text);
+}
+
+.strategy-console .arb-eyebrow {
+  color: var(--trend-faint);
+  letter-spacing: .12em;
+}
+
+.strategy-console .arb-source strong,
+.strategy-console .arb-tabs button.active {
+  color: var(--trend-accent);
+}
+
+.strategy-console .arb-tabs button.active::after {
+  background: var(--trend-accent);
+}
+
+.strategy-console .arb-tabs button span {
+  border-color: var(--trend-border);
+  background: var(--trend-surface-muted);
+  color: var(--trend-muted);
+}
+
+.strategy-console .arb-tabs button.active span {
+  border-color: #bfdbfe;
+  background: var(--trend-accent-soft);
+  color: var(--trend-accent);
+}
+
+.strategy-console .arb-metric.positive strong {
+  color: var(--trend-positive);
+}
+
+.strategy-console .arb-metric.negative strong {
+  color: var(--trend-negative);
+}
+
+.strategy-console .arb-metric.warn strong {
+  color: var(--trend-warn);
+}
+
+.strategy-console .arb-text-button {
+  border-color: var(--trend-border-strong);
+  border-radius: 999px;
+  background: var(--trend-surface);
+  color: var(--trend-accent);
+}
+
+.strategy-console .arb-text-button:hover {
+  background: var(--trend-accent-soft);
+  border-color: #bfdbfe;
+}
+
+.strategy-console .trend-dashboard {
+  gap: 14px;
+  padding: 14px;
+  background: var(--trend-bg);
+}
+
+.strategy-console .trend-bot-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(300px, .9fr) minmax(420px, 1.5fr) auto;
+  gap: 18px;
+  align-items: stretch;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid var(--trend-border);
+}
+
+.strategy-console .trend-bot-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  width: auto;
+  height: 3px;
+  background: var(--trend-accent);
+}
+
+.strategy-console .trend-bot-identity,
+.strategy-console .trend-bot-kpis,
+.strategy-console .trend-bot-actions {
+  position: relative;
+  z-index: 1;
+}
+
+.strategy-console .trend-bot-identity h2 {
+  margin: 0;
+  color: var(--trend-text);
+  font-size: clamp(24px, 2vw, 32px);
+  letter-spacing: -.03em;
+}
+
+.strategy-console .trend-bot-identity p:not(.arb-eyebrow) {
+  max-width: 520px;
+  margin: 10px 0 0;
+  color: var(--trend-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.strategy-console .trend-bot-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
+  color: var(--trend-soft-text);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.strategy-console .trend-bot-state small {
+  color: var(--trend-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.strategy-console .trend-bot-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.strategy-console .trend-bot-kpis .trend-mini {
+  min-height: 0;
+  padding: 12px;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .trend-bot-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 140px;
+  color: var(--trend-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+}
+
+.strategy-console .trend-dashboard-history .trend-bot-hero,
+.strategy-console .trend-dashboard-signals .trend-bot-hero,
+.strategy-console .trend-dashboard-strategy .trend-bot-hero {
+  grid-template-columns: minmax(260px, 1fr) auto;
+  padding: 14px 16px;
+}
+
+.strategy-console .trend-dashboard-history .trend-bot-identity p:not(.arb-eyebrow),
+.strategy-console .trend-dashboard-signals .trend-bot-identity p:not(.arb-eyebrow),
+.strategy-console .trend-dashboard-strategy .trend-bot-identity p:not(.arb-eyebrow),
+.strategy-console .trend-dashboard-history .trend-bot-kpis,
+.strategy-console .trend-dashboard-signals .trend-bot-kpis,
+.strategy-console .trend-dashboard-strategy .trend-bot-kpis {
+  display: none;
+}
+
+.strategy-console .trend-dashboard-history .trend-bot-identity h2,
+.strategy-console .trend-dashboard-signals .trend-bot-identity h2,
+.strategy-console .trend-dashboard-strategy .trend-bot-identity h2 {
+  font-size: 22px;
+}
+
+.strategy-console .trend-pipeline {
+  padding: 16px;
+  border: 1px solid var(--trend-border);
+}
+
+.strategy-console .trend-pipeline header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--trend-border);
+}
+
+.strategy-console .trend-pipeline h2 {
+  margin: 0;
+  color: var(--trend-text);
+  font-size: 16px;
+}
+
+.strategy-console .trend-pipeline header > span {
+  color: var(--trend-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.strategy-console .trend-pipeline-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.strategy-console .trend-pipeline-step {
+  position: relative;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--trend-border);
+  border-radius: 12px;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .trend-pipeline-step::before {
+  content: '';
+  display: block;
+  width: 26px;
+  height: 4px;
+  margin-bottom: 11px;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.strategy-console .trend-pipeline-step.active::before {
+  background: var(--trend-accent);
+}
+
+.strategy-console .trend-pipeline-step.positive::before {
+  background: var(--trend-positive);
+}
+
+.strategy-console .trend-pipeline-step.negative::before {
+  background: var(--trend-negative);
+}
+
+.strategy-console .trend-pipeline-step small,
+.strategy-console .trend-pipeline-step span {
+  display: block;
+  color: var(--trend-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.strategy-console .trend-pipeline-step strong {
+  display: block;
+  margin: 5px 0 3px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-console .trend-view-tabs button {
+  border-radius: 12px;
+  background: var(--trend-surface);
+}
+
+.strategy-console .trend-view-tabs button.active {
+  border-color: #bfdbfe;
+  background: var(--trend-accent-soft);
+  color: var(--trend-accent);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .08);
+}
+
+.strategy-console .trend-panel,
+.strategy-console .trend-chart {
+  padding: 18px;
+}
+
+.strategy-console .trend-current-position dl div,
+.strategy-console .trend-last-trade dl div,
+.strategy-console .trend-pulse-grid span,
+.strategy-console .trend-coverage-list span,
+.strategy-console .trend-definition-grid span {
+  border-color: var(--trend-border);
+  border-radius: 12px;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .trend-toolbar,
+.strategy-console .arb-table-wrap {
+  border-color: var(--trend-border);
+  border-radius: 14px;
+  background: var(--trend-surface);
+}
+
+.strategy-console .arb-table-wrap {
+  max-height: 58vh;
+}
+
+.strategy-console .trend-history-view .arb-table-wrap {
+  max-height: 390px;
+}
+
+.strategy-console .arb-table-wrap th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .arb-table-wrap tbody tr:hover td {
+  background: #f8fafc;
+}
+
+@media (max-width: 1180px) {
+  .strategy-console .trend-bot-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-console .trend-dashboard-history .trend-bot-hero,
+  .strategy-console .trend-dashboard-signals .trend-bot-hero,
+  .strategy-console .trend-dashboard-strategy .trend-bot-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-console .trend-bot-kpis,
+  .strategy-console .trend-pipeline-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-console .trend-bot-actions {
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .strategy-console .trend-bot-hero,
+  .strategy-console .trend-pipeline,
+  .strategy-console .trend-panel,
+  .strategy-console .trend-chart {
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .strategy-console .trend-bot-kpis,
+  .strategy-console .trend-pipeline-steps {
+    grid-template-columns: 1fr;
+  }
+}
