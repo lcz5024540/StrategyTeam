@@ -22,7 +22,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <Navigate to="/dashboard/arbitrage?mode=CROSS_FUNDING" replace />,
+        element: <Navigate to="/dashboard/htx-trend" replace />,
       },
       {
         path: 'dashboard',
@@ -89,6 +89,10 @@ export const router = createBrowserRouter([
         element: <FundingArbPage />,
       },
       {
+        path: 'dashboard/htx-trend',
+        element: <Navigate to="/dashboard/arbitrage?mode=HTX_TREND" replace />,
+      },
+      {
         path: 'dashboard/arbitrage',
         element: <ArbitrageScannerPage />,
       },
@@ -96,6 +100,6 @@ export const router = createBrowserRouter([
   },
   {
     path: '*',
-    element: <Navigate to="/dashboard/arbitrage?mode=CROSS_FUNDING" replace />,
+    element: <Navigate to="/dashboard/htx-trend" replace />,
   },
 ])
