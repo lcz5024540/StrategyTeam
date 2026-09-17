@@ -164,6 +164,22 @@ htx:
     flat-loss-exit-confirmation-bars: ${HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS:3}
     min-expected-move-atr-multiplier: ${HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER:1.0}
     max-entry-signal-age-seconds: ${HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS:180}
+    adaptive-sizing-enabled: ${HTX_TREND_ADAPTIVE_SIZING_ENABLED:true}
+    quality-lookback-trades: ${HTX_TREND_QUALITY_LOOKBACK_TRADES:20}
+    quality-lookback-hours: ${HTX_TREND_QUALITY_LOOKBACK_HOURS:24}
+    quality-min-closed-trades: ${HTX_TREND_QUALITY_MIN_CLOSED_TRADES:6}
+    quality-min-profit-factor: ${HTX_TREND_QUALITY_MIN_PROFIT_FACTOR:1.10}
+    quality-strong-profit-factor: ${HTX_TREND_QUALITY_STRONG_PROFIT_FACTOR:1.30}
+    weak-quality-position-multiplier: ${HTX_TREND_WEAK_QUALITY_POSITION_MULTIPLIER:0.50}
+    strong-quality-position-multiplier: ${HTX_TREND_STRONG_QUALITY_POSITION_MULTIPLIER:1.15}
+    market-breadth-lookback-minutes: ${HTX_TREND_MARKET_BREADTH_LOOKBACK_MINUTES:35}
+    market-breadth-min-symbols: ${HTX_TREND_MARKET_BREADTH_MIN_SYMBOLS:20}
+    market-breadth-threshold: ${HTX_TREND_MARKET_BREADTH_THRESHOLD:0.70}
+    market-breadth-opposite-max: ${HTX_TREND_MARKET_BREADTH_OPPOSITE_MAX:0.15}
+    market-breadth-aligned-position-multiplier: ${HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER:1.50}
+    market-breadth-counter-position-multiplier: ${HTX_TREND_MARKET_BREADTH_COUNTER_POSITION_MULTIPLIER:0.50}
+    min-adaptive-position-multiplier: ${HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER:0.25}
+    max-adaptive-position-multiplier: ${HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER:1.50}
     fee-protection-enabled: ${HTX_TREND_FEE_PROTECTION_ENABLED:true}
     exit-flat-after-fee-protection: ${HTX_TREND_EXIT_FLAT_AFTER_FEE_PROTECTION:true}
     max-entry-funding-cost-rate: ${HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE:0.0006}

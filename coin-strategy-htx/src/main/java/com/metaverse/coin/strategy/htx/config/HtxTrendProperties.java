@@ -138,6 +138,54 @@ public class HtxTrendProperties {
     /** Maximum seconds after the signal bar closed during which a live entry is still allowed; <=0 disables. */
     private long maxEntrySignalAgeSeconds = 180L;
 
+    /** Enable quality and market-breadth based entry sizing. This never hard-pauses entries by itself. */
+    private boolean adaptiveSizingEnabled = true;
+
+    /** Closed trend positions inspected for recent quality sizing. */
+    private int qualityLookbackTrades = 20;
+
+    /** Time window inspected for recent quality sizing. */
+    private int qualityLookbackHours = 24;
+
+    /** Minimum closed positions before quality sizing changes the base size. */
+    private int qualityMinClosedTrades = 6;
+
+    /** Profit factor required to avoid weak-quality downsizing. */
+    private BigDecimal qualityMinProfitFactor = new BigDecimal("1.10");
+
+    /** Profit factor required for strong-quality upsizing. */
+    private BigDecimal qualityStrongProfitFactor = new BigDecimal("1.30");
+
+    /** Position multiplier when wins do not exceed losses, profit factor is poor, or recent net is negative. */
+    private BigDecimal weakQualityPositionMultiplier = new BigDecimal("0.50");
+
+    /** Position multiplier when recent win count and profit factor are both healthy. */
+    private BigDecimal strongQualityPositionMultiplier = new BigDecimal("1.15");
+
+    /** Recent signal window used to detect market-wide trend breadth. */
+    private int marketBreadthLookbackMinutes = 35;
+
+    /** Minimum symbols required before market breadth can affect sizing. */
+    private int marketBreadthMinSymbols = 20;
+
+    /** Bull/bear breadth threshold, e.g. 0.70 means 70% of symbols share the direction. */
+    private BigDecimal marketBreadthThreshold = new BigDecimal("0.70");
+
+    /** Opposite breadth must stay below this value before a broad trend is trusted. */
+    private BigDecimal marketBreadthOppositeMax = new BigDecimal("0.15");
+
+    /** Position multiplier for signals aligned with a broad market trend. */
+    private BigDecimal marketBreadthAlignedPositionMultiplier = new BigDecimal("1.50");
+
+    /** Position multiplier for signals against a broad market trend. */
+    private BigDecimal marketBreadthCounterPositionMultiplier = new BigDecimal("0.50");
+
+    /** Lower clamp for the combined adaptive sizing multiplier. */
+    private BigDecimal minAdaptivePositionMultiplier = new BigDecimal("0.25");
+
+    /** Upper clamp for the combined adaptive sizing multiplier. */
+    private BigDecimal maxAdaptivePositionMultiplier = new BigDecimal("1.50");
+
     /** Once a live position reaches fee breakeven, trailing stop is clamped to at least breakeven. */
     private boolean feeProtectionEnabled = true;
 

@@ -6,6 +6,8 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -54,6 +56,26 @@ public class HtxTrendRecorder {
     public long countRecentSignalsBySide(String contractCode, String signal, LocalDateTime since, int limit) {
         Long count = signalMapper.countRecentSignalsBySide(contractCode, signal, since, limit);
         return count == null ? 0L : count;
+    }
+
+    public HtxTrendBreadthStats latestBreadthStats(LocalDateTime since) {
+        try {
+            HtxTrendBreadthStats stats = signalMapper.latestBreadthStats(since);
+            return stats == null ? HtxTrendBreadthStats.empty() : stats;
+        } catch (RuntimeException ex) {
+            log.warn("trend breadth stats query failed since={}", since, ex);
+            return HtxTrendBreadthStats.empty();
+        }
+    }
+
+    public HtxTrendPerformanceStats trendPerformanceSince(LocalDateTime since, int limit) {
+        try {
+            HtxTrendPerformanceStats stats = positionMapper.trendPerformanceSince(since, limit);
+            return stats == null ? HtxTrendPerformanceStats.empty() : stats;
+        } catch (RuntimeException ex) {
+            log.warn("trend performance stats query failed since={} limit={}", since, limit, ex);
+            return HtxTrendPerformanceStats.empty();
+        }
     }
 
     public void recordSignal(HtxTrendSignalEntity signal) {

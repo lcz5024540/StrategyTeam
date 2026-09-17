@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.htx.persistence.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -91,4 +92,19 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
 
     @Select("SELECT MAX(updated_at) FROM htx_trend_position WHERE contract_code = #{contractCode} AND status = 'DONE'")
     LocalDateTime latestDoneAt(@Param("contractCode") String contractCode);
+
+    @Select("SELECT COUNT(*) AS closedCount, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit > 0 THEN 1 ELSE 0 END), 0) AS winCount, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit < 0 THEN 1 ELSE 0 END), 0) AS lossCount, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit > 0 THEN recent.net_profit ELSE 0 END), 0) AS grossProfit, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit < 0 THEN -recent.net_profit ELSE 0 END), 0) AS grossLoss, "
+            + "COALESCE(SUM(recent.net_profit), 0) AS netProfit "
+            + "FROM ("
+            + "SELECT COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0) AS net_profit "
+            + "FROM htx_trend_position "
+            + "WHERE status = 'DONE' AND updated_at >= #{since} "
+            + "ORDER BY updated_at DESC LIMIT #{limit}"
+            + ") recent")
+    HtxTrendPerformanceStats trendPerformanceSince(@Param("since") LocalDateTime since,
+                                                   @Param("limit") int limit);
 }

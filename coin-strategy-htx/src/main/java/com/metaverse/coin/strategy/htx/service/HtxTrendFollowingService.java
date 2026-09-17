@@ -22,6 +22,8 @@ import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSide;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSignal;
 import lombok.extern.slf4j.Slf4j;
@@ -101,11 +103,13 @@ public class HtxTrendFollowingService {
         }
         long openLikePositions = recorder.countOpenLike();
         int maxActivePositions = Math.max(0, properties.getMaxActivePositions());
+        MarketBreadthContext marketBreadth = marketBreadthContext();
+        PerformanceContext performance = performanceContext();
         List<String> summaries = new ArrayList<>();
         RunResult selected = null;
         for (String contractCode : contractCodes) {
             boolean allowNewEntry = openLikePositions < maxActivePositions;
-            RunResult result = runOnce(contractCode, allowNewEntry);
+            RunResult result = runOnce(contractCode, allowNewEntry, marketBreadth, performance);
             RunResult tagged = tag(contractCode, result);
             summaries.add(contractCode + "=" + result.code() + ":" + result.message());
             if (opensPosition(result)) {
@@ -122,10 +126,13 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, "no trend contracts evaluated");
         }
         return RunResult.of(selected.code(), selected.positionId(), selected.message()
+                + "; market=" + marketBreadth.summary()
+                + "; quality=" + performance.summary()
                 + "; liveContracts=" + String.join(" | ", summaries));
     }
 
-    private RunResult runOnce(String contractCode, boolean allowNewEntry) {
+    private RunResult runOnce(String contractCode, boolean allowNewEntry,
+                              MarketBreadthContext marketBreadth, PerformanceContext performance) {
         String gate = configGate(contractCode);
         if (gate != null) {
             return RunResult.of(RunCode.SKIPPED, null, gate);
@@ -147,11 +154,12 @@ public class HtxTrendFollowingService {
         if (!allowNewEntry) {
             return RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
         }
-        return openIfEligible(contractCode, signal, snapshot.entryCandles(), contract);
+        return openIfEligible(contractCode, signal, snapshot.entryCandles(), contract, marketBreadth, performance);
     }
 
     private RunResult openIfEligible(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
-                                     HtxSwapContractInfo contract) {
+                                     HtxSwapContractInfo contract, MarketBreadthContext marketBreadth,
+                                     PerformanceContext performance) {
         if (signal.side() == TrendSide.FLAT) {
             return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
         }
@@ -190,9 +198,10 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, externalPositionGate);
         }
         BigDecimal entryPrice = signal.side() == TrendSide.LONG ? book.ask() : book.bid();
-        long volume = targetVolume(entryPrice, signal.atr(), contract.getContractSize());
+        SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance);
+        long volume = targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing);
         if (volume <= 0) {
-            return RunResult.of(RunCode.SKIPPED, null, "target volume below minimum");
+            return RunResult.of(RunCode.SKIPPED, null, "target volume below minimum " + sizing.summary());
         }
         String liquidityGate = liquidityGate(signal, entryCandles, depth, volume);
         if (liquidityGate != null) {
@@ -234,13 +243,13 @@ public class HtxTrendFollowingService {
         entity.setTakeProfitPrice(takeProfitPrice);
         entity.setHighestPrice(signal.closePrice());
         entity.setLowestPrice(signal.closePrice());
-        entity.setEntrySignal(signal.reason());
-        entity.setMessage("trend entry intent signal=" + signal.side());
+        entity.setEntrySignal(clip(signal.reason() + "; " + sizing.summary()));
+        entity.setMessage(clip("trend entry intent signal=" + signal.side() + " " + sizing.summary()));
         long id = recorder.createIntent(entity);
         entity.setId(id);
         HtxSwapOrderRequest request = orderRequest(contractCode, signal.side(), false, clientOrderId, volume);
         recorder.createOrderIntent(orderIntent(entity, HtxTrendRecorder.LEG_ENTRY, signal.side().name(), request,
-                "entry signal: " + signal.reason()));
+                "entry signal: " + signal.reason() + "; " + sizing.summary()));
         HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
@@ -253,9 +262,10 @@ public class HtxTrendFollowingService {
         recorder.markOrderAccepted(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, orderId,
                 accepted.getClientOrderId(), "entry accepted by exchange");
         recorder.markEntryAccepted(id, orderId, "entry sent side=" + side + " volume=" + volume);
-        log.info("[HTX-TREND] entry sent id={} contract={} side={} orderId={} volume={} close={} atr={} adx={} reason={}",
-                id, contractCode, side, orderId, volume, signal.closePrice(), signal.atr(), signal.adx(), signal.reason());
-        return RunResult.of(RunCode.ENTRY_SENT, id, "entry order sent");
+        log.info("[HTX-TREND] entry sent id={} contract={} side={} orderId={} volume={} close={} atr={} adx={} reason={} sizing={}",
+                id, contractCode, side, orderId, volume, signal.closePrice(), signal.atr(), signal.adx(),
+                signal.reason(), sizing.summary());
+        return RunResult.of(RunCode.ENTRY_SENT, id, "entry order sent " + sizing.summary());
     }
 
     private RunResult advance(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract) {
@@ -613,6 +623,111 @@ public class HtxTrendFollowingService {
         return gate == null ? null : "exit because " + gate;
     }
 
+    private MarketBreadthContext marketBreadthContext() {
+        if (!properties.isAdaptiveSizingEnabled()) {
+            return MarketBreadthContext.neutral("adaptive sizing disabled");
+        }
+        int lookbackMinutes = Math.max(1, properties.getMarketBreadthLookbackMinutes());
+        HtxTrendBreadthStats stats = recorder.latestBreadthStats(LocalDateTime.now().minusMinutes(lookbackMinutes));
+        if (stats == null) {
+            return MarketBreadthContext.neutral("breadth unavailable");
+        }
+        long total = nonNegativeLong(stats.getTotalCount());
+        long minSymbols = Math.max(1, properties.getMarketBreadthMinSymbols());
+        if (total < minSymbols) {
+            return new MarketBreadthContext(MarketRegime.MIXED, total, nonNegativeLong(stats.getLongContextCount()),
+                    nonNegativeLong(stats.getShortContextCount()), BigDecimal.ZERO, BigDecimal.ZERO,
+                    "insufficient breadth symbols=" + total + " min=" + minSymbols);
+        }
+        long longCount = nonNegativeLong(stats.getLongContextCount());
+        long shortCount = nonNegativeLong(stats.getShortContextCount());
+        BigDecimal longRatio = ratio(longCount, total);
+        BigDecimal shortRatio = ratio(shortCount, total);
+        BigDecimal threshold = nonNegative(properties.getMarketBreadthThreshold());
+        BigDecimal oppositeMax = nonNegative(properties.getMarketBreadthOppositeMax());
+        if (longRatio.compareTo(threshold) >= 0 && shortRatio.compareTo(oppositeMax) <= 0) {
+            return new MarketBreadthContext(MarketRegime.BROAD_UP, total, longCount, shortCount,
+                    longRatio, shortRatio, "broad up");
+        }
+        if (shortRatio.compareTo(threshold) >= 0 && longRatio.compareTo(oppositeMax) <= 0) {
+            return new MarketBreadthContext(MarketRegime.BROAD_DOWN, total, longCount, shortCount,
+                    longRatio, shortRatio, "broad down");
+        }
+        return new MarketBreadthContext(MarketRegime.MIXED, total, longCount, shortCount,
+                longRatio, shortRatio, "mixed");
+    }
+
+    private PerformanceContext performanceContext() {
+        if (!properties.isAdaptiveSizingEnabled()) {
+            return PerformanceContext.neutral("adaptive sizing disabled");
+        }
+        int lookbackHours = Math.max(1, properties.getQualityLookbackHours());
+        int lookbackTrades = Math.max(1, properties.getQualityLookbackTrades());
+        HtxTrendPerformanceStats stats = recorder.trendPerformanceSince(LocalDateTime.now().minusHours(lookbackHours),
+                lookbackTrades);
+        if (stats == null) {
+            return PerformanceContext.neutral("performance unavailable");
+        }
+        long closed = nonNegativeLong(stats.getClosedCount());
+        long wins = nonNegativeLong(stats.getWinCount());
+        long losses = nonNegativeLong(stats.getLossCount());
+        BigDecimal grossProfit = nonNegative(stats.getGrossProfit());
+        BigDecimal grossLoss = nonNegative(stats.getGrossLoss());
+        BigDecimal netProfit = nz(stats.getNetProfit());
+        BigDecimal profitFactor = profitFactor(grossProfit, grossLoss);
+        if (closed < Math.max(1, properties.getQualityMinClosedTrades())) {
+            return new PerformanceContext(QualityRegime.NEUTRAL, closed, wins, losses, profitFactor, netProfit,
+                    "insufficient closed trades=" + closed);
+        }
+        if (wins <= losses || profitFactor.compareTo(nonNegative(properties.getQualityMinProfitFactor())) < 0
+                || netProfit.signum() < 0) {
+            return new PerformanceContext(QualityRegime.WEAK, closed, wins, losses, profitFactor, netProfit,
+                    "weak quality");
+        }
+        if (wins > losses && profitFactor.compareTo(nonNegative(properties.getQualityStrongProfitFactor())) >= 0
+                && netProfit.signum() > 0) {
+            return new PerformanceContext(QualityRegime.STRONG, closed, wins, losses, profitFactor, netProfit,
+                    "strong quality");
+        }
+        return new PerformanceContext(QualityRegime.NEUTRAL, closed, wins, losses, profitFactor, netProfit,
+                "normal quality");
+    }
+
+    private SizingContext sizingContext(TrendSide side, MarketBreadthContext marketBreadth,
+                                        PerformanceContext performance) {
+        BigDecimal multiplier = BigDecimal.ONE;
+        StringBuilder reason = new StringBuilder();
+        if (performance != null && performance.regime() == QualityRegime.WEAK) {
+            multiplier = multiplier.multiply(nonNegative(properties.getWeakQualityPositionMultiplier()));
+            reason.append("quality=WEAK ");
+        } else if (performance != null && performance.regime() == QualityRegime.STRONG) {
+            multiplier = multiplier.multiply(nonNegative(properties.getStrongQualityPositionMultiplier()));
+            reason.append("quality=STRONG ");
+        } else {
+            reason.append("quality=NEUTRAL ");
+        }
+        if (marketBreadth != null && side == TrendSide.LONG && marketBreadth.regime() == MarketRegime.BROAD_UP) {
+            multiplier = multiplier.multiply(nonNegative(properties.getMarketBreadthAlignedPositionMultiplier()));
+            reason.append("breadth=BROAD_UP_ALIGNED ");
+        } else if (marketBreadth != null && side == TrendSide.SHORT && marketBreadth.regime() == MarketRegime.BROAD_DOWN) {
+            multiplier = multiplier.multiply(nonNegative(properties.getMarketBreadthAlignedPositionMultiplier()));
+            reason.append("breadth=BROAD_DOWN_ALIGNED ");
+        } else if (marketBreadth != null && side == TrendSide.SHORT && marketBreadth.regime() == MarketRegime.BROAD_UP) {
+            multiplier = multiplier.multiply(nonNegative(properties.getMarketBreadthCounterPositionMultiplier()));
+            reason.append("breadth=BROAD_UP_COUNTER ");
+        } else if (marketBreadth != null && side == TrendSide.LONG && marketBreadth.regime() == MarketRegime.BROAD_DOWN) {
+            multiplier = multiplier.multiply(nonNegative(properties.getMarketBreadthCounterPositionMultiplier()));
+            reason.append("breadth=BROAD_DOWN_COUNTER ");
+        } else {
+            reason.append("breadth=MIXED ");
+        }
+        multiplier = clamp(multiplier, positive(properties.getMinAdaptivePositionMultiplier())
+                        ? properties.getMinAdaptivePositionMultiplier() : BigDecimal.ONE,
+                positive(properties.getMaxAdaptivePositionMultiplier())
+                        ? properties.getMaxAdaptivePositionMultiplier() : BigDecimal.ONE);
+        return new SizingContext(multiplier, reason.toString().trim());
+    }
+
     private QueryOrderResult queryOrder(String contractCode, Long orderId, String clientOrderId) {
         HtxRestResponse<List<HtxSwapOrder>> response = orderId != null
                 ? swap.queryOrder(contractCode, orderId) : swap.queryOrderByClientOrderId(contractCode, clientOrderId);
@@ -647,22 +762,25 @@ public class HtxTrendFollowingService {
         entity.setFilledContracts(BigDecimal.ZERO);
         entity.setFee(BigDecimal.ZERO);
         entity.setStatus(HtxTrendRecorder.ORDER_INTENT);
-        entity.setReason(reason);
+        entity.setReason(clip(reason));
         entity.setMessage("prepared " + leg.toLowerCase(Locale.ROOT) + " order");
         return entity;
     }
 
-    private long targetVolume(BigDecimal entryPrice, BigDecimal atr, BigDecimal contractSize) {
+    private long targetVolume(BigDecimal entryPrice, BigDecimal atr, BigDecimal contractSize, SizingContext sizing) {
         if (!positive(entryPrice) || !positive(atr) || !positive(contractSize)) {
             return 0L;
         }
+        BigDecimal multiplier = sizing == null ? BigDecimal.ONE : sizing.multiplier();
         BigDecimal stopDistance = atr.multiply(properties.getAtrStopMultiplier());
         if (stopDistance.signum() <= 0) {
             return 0L;
         }
-        BigDecimal riskSizedNotional = properties.getRiskPerTradeUsdt()
+        BigDecimal riskSizedNotional = nonNegative(properties.getRiskPerTradeUsdt()).multiply(multiplier)
                 .divide(stopDistance.divide(entryPrice, 18, RoundingMode.UP), 18, RoundingMode.DOWN);
-        BigDecimal notional = min(properties.getTargetQuoteNotional(), properties.getMaxQuoteNotional(), riskSizedNotional);
+        BigDecimal targetNotional = nonNegative(properties.getTargetQuoteNotional()).multiply(multiplier);
+        BigDecimal maxNotional = nonNegative(properties.getMaxQuoteNotional()).multiply(multiplier);
+        BigDecimal notional = min(targetNotional, maxNotional, riskSizedNotional);
         if (notional.compareTo(properties.getMinQuoteNotional()) < 0) {
             return 0L;
         }
@@ -1102,8 +1220,26 @@ public class HtxTrendFollowingService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
+    private static long nonNegativeLong(Long value) {
+        return value == null || value < 0L ? 0L : value;
+    }
+
     private static BigDecimal nonNegative(BigDecimal value) {
         return value == null || value.signum() < 0 ? BigDecimal.ZERO : value;
+    }
+
+    private static BigDecimal ratio(long numerator, long denominator) {
+        if (denominator <= 0L || numerator <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        return BigDecimal.valueOf(numerator).divide(BigDecimal.valueOf(denominator), 18, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal profitFactor(BigDecimal grossProfit, BigDecimal grossLoss) {
+        if (!positive(grossLoss)) {
+            return positive(grossProfit) ? new BigDecimal("999") : BigDecimal.ONE;
+        }
+        return nonNegative(grossProfit).divide(grossLoss, 18, RoundingMode.HALF_UP);
     }
 
     private static BigDecimal firstPositive(BigDecimal... values) {
@@ -1139,6 +1275,22 @@ public class HtxTrendFollowingService {
         return min(min(first, second), third);
     }
 
+    private static BigDecimal clamp(BigDecimal value, BigDecimal minValue, BigDecimal maxValue) {
+        BigDecimal result = value == null ? BigDecimal.ONE : value;
+        BigDecimal lower = minValue == null ? BigDecimal.ZERO : minValue;
+        BigDecimal upper = maxValue == null ? result : maxValue;
+        if (upper.compareTo(lower) < 0) {
+            upper = lower;
+        }
+        if (result.compareTo(lower) < 0) {
+            return lower;
+        }
+        if (result.compareTo(upper) > 0) {
+            return upper;
+        }
+        return result;
+    }
+
     private static String error(HtxRestResponse<?> response) {
         if (response == null) {
             return "null response";
@@ -1152,8 +1304,62 @@ public class HtxTrendFollowingService {
         return "status=" + response.getStatus();
     }
 
+    private static String clip(String value) {
+        if (value == null || value.length() <= 512) {
+            return value;
+        }
+        return value.substring(0, 512);
+    }
+
     public enum RunCode {
         OBSERVED, NO_SIGNAL, ENTRY_SENT, ACTIVE, CLOSE_SENT, DONE, WAITING, SKIPPED, REJECTED, MANUAL_REVIEW
+    }
+
+    private enum MarketRegime {
+        BROAD_UP, BROAD_DOWN, MIXED
+    }
+
+    private enum QualityRegime {
+        WEAK, NEUTRAL, STRONG
+    }
+
+    private record MarketBreadthContext(MarketRegime regime, long total, long longCount, long shortCount,
+                                        BigDecimal longRatio, BigDecimal shortRatio, String reason) {
+        static MarketBreadthContext neutral(String reason) {
+            return new MarketBreadthContext(MarketRegime.MIXED, 0L, 0L, 0L,
+                    BigDecimal.ZERO, BigDecimal.ZERO, reason);
+        }
+
+        String summary() {
+            return regime + "(long=" + longCount + "/" + total + "=" + pct(longRatio)
+                    + ",short=" + shortCount + "/" + total + "=" + pct(shortRatio)
+                    + ",reason=" + reason + ")";
+        }
+    }
+
+    private record PerformanceContext(QualityRegime regime, long closedCount, long winCount, long lossCount,
+                                      BigDecimal profitFactor, BigDecimal netProfit, String reason) {
+        static PerformanceContext neutral(String reason) {
+            return new PerformanceContext(QualityRegime.NEUTRAL, 0L, 0L, 0L,
+                    BigDecimal.ONE, BigDecimal.ZERO, reason);
+        }
+
+        String summary() {
+            return regime + "(closed=" + closedCount + ",wins=" + winCount + ",losses=" + lossCount
+                    + ",pf=" + profitFactor.setScale(2, RoundingMode.HALF_UP)
+                    + ",net=" + netProfit.setScale(4, RoundingMode.HALF_UP)
+                    + ",reason=" + reason + ")";
+        }
+    }
+
+    private record SizingContext(BigDecimal multiplier, String reason) {
+        String summary() {
+            return "sizingMultiplier=" + multiplier.setScale(2, RoundingMode.HALF_UP) + " " + reason;
+        }
+    }
+
+    private static String pct(BigDecimal ratio) {
+        return ratio.multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP) + "%";
     }
 
     public record RunResult(RunCode code, Long positionId, String message) {

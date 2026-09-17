@@ -20,6 +20,8 @@ import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSide;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSignal;
 import org.junit.jupiter.api.BeforeEach;
@@ -165,6 +167,59 @@ class HtxTrendFollowingServiceTest {
         assertTrue(intent.getReason().contains("entry signal"));
         verify(recorder).markOrderAccepted(77L, HtxTrendRecorder.LEG_ENTRY, intent.getClientOrderId(),
                 88L, 99L, "entry accepted by exchange");
+    }
+
+    @Test
+    void broadBullishMarketAndStrongQualityIncreaseAlignedLongSize() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        givenBroadBullishBreadth();
+        givenStrongPerformance();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        assertTrue(result.message().contains("sizingMultiplier=1.50"));
+        ArgumentCaptor<HtxSwapOrderRequest> captor = ArgumentCaptor.forClass(HtxSwapOrderRequest.class);
+        verify(swap).placeOrder(captor.capture());
+        assertEquals("66", captor.getValue().getVolume());
+    }
+
+    @Test
+    void weakQualityDownsizesButDoesNotDisableLiveEntry() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        givenWeakPerformance();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        assertTrue(result.message().contains("sizingMultiplier=0.50"));
+        ArgumentCaptor<HtxSwapOrderRequest> captor = ArgumentCaptor.forClass(HtxSwapOrderRequest.class);
+        verify(swap).placeOrder(captor.capture());
+        assertEquals("22", captor.getValue().getVolume());
     }
 
 
@@ -615,6 +670,40 @@ class HtxTrendFollowingServiceTest {
         account.setContractCode(contractCode);
         account.setMarginAvailable(new BigDecimal("1000"));
         when(swap.accountInfo(contractCode)).thenReturn(ok(List.of(account)));
+    }
+
+    private void givenBroadBullishBreadth() {
+        HtxTrendBreadthStats stats = new HtxTrendBreadthStats();
+        stats.setTotalCount(50L);
+        stats.setLongContextCount(38L);
+        stats.setShortContextCount(2L);
+        stats.setLongSignalCount(6L);
+        stats.setShortSignalCount(0L);
+        when(recorder.latestBreadthStats(any(LocalDateTime.class))).thenReturn(stats);
+    }
+
+    private void givenStrongPerformance() {
+        HtxTrendPerformanceStats stats = new HtxTrendPerformanceStats();
+        stats.setClosedCount(12L);
+        stats.setWinCount(8L);
+        stats.setLossCount(4L);
+        stats.setGrossProfit(new BigDecimal("3.00"));
+        stats.setGrossLoss(new BigDecimal("1.00"));
+        stats.setNetProfit(new BigDecimal("2.00"));
+        when(recorder.trendPerformanceSince(any(LocalDateTime.class), eq(properties.getQualityLookbackTrades())))
+                .thenReturn(stats);
+    }
+
+    private void givenWeakPerformance() {
+        HtxTrendPerformanceStats stats = new HtxTrendPerformanceStats();
+        stats.setClosedCount(12L);
+        stats.setWinCount(6L);
+        stats.setLossCount(6L);
+        stats.setGrossProfit(new BigDecimal("1.00"));
+        stats.setGrossLoss(new BigDecimal("2.00"));
+        stats.setNetProfit(new BigDecimal("-1.00"));
+        when(recorder.trendPerformanceSince(any(LocalDateTime.class), eq(properties.getQualityLookbackTrades())))
+                .thenReturn(stats);
     }
 
     private HtxSwapKline candle(long id) {
