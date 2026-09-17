@@ -5690,3 +5690,647 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+/* HTX trend workstation refresh: compact first screen, deeper ledger views behind tabs. */
+.strategy-console .arb-page {
+  max-width: 1520px;
+}
+
+.strategy-console .arb-hero {
+  align-items: flex-end;
+  gap: 24px;
+  padding: 6px 0 18px;
+}
+
+.strategy-console .arb-hero h1 {
+  color: #16211d;
+  font-size: clamp(28px, 3.4vw, 40px);
+  letter-spacing: 0;
+}
+
+.strategy-console .arb-hero p:not(.arb-eyebrow) {
+  max-width: 800px;
+  margin-top: 10px;
+  color: #5d6964;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.strategy-console .arb-source,
+.strategy-console .arb-metric,
+.strategy-console .arb-card,
+.strategy-console .trend-panel,
+.strategy-console .trend-chart,
+.strategy-console .trend-mini {
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.strategy-console .arb-source {
+  width: 310px;
+  min-width: 310px;
+  border-color: #d7ddd7;
+}
+
+.strategy-console .arb-source strong {
+  color: #0b6b55;
+}
+
+.strategy-console .arb-metrics {
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.strategy-console .arb-metric {
+  min-height: 102px;
+  padding: 15px;
+  border-color: #dce1da;
+}
+
+.strategy-console .arb-metric strong {
+  margin-top: 12px;
+  color: #17211f;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.strategy-console .arb-metric.positive strong,
+.strategy-console .trend-mini.positive strong,
+.strategy-console .trend-current-position dd.positive,
+.strategy-console .trend-last-trade dd.positive,
+.strategy-console .arb-table-wrap td.positive {
+  color: #12835e;
+}
+
+.strategy-console .arb-metric.negative strong,
+.strategy-console .trend-mini.negative strong,
+.strategy-console .trend-current-position dd.negative,
+.strategy-console .trend-last-trade dd.negative,
+.strategy-console .arb-table-wrap td.negative {
+  color: #bd463d;
+}
+
+.strategy-console .arb-metric.warn strong,
+.strategy-console .trend-mini.warn strong {
+  color: #a96817;
+}
+
+.strategy-console .arb-mode-panel {
+  overflow: hidden;
+  border-color: #d9ded7;
+}
+
+.strategy-console .arb-tabs {
+  padding: 0 14px;
+  background: #fff;
+}
+
+.strategy-console .arb-tabs button,
+.strategy-console .trend-view-tabs button,
+.strategy-console .arb-text-button {
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+.strategy-console .arb-tabs button:focus-visible,
+.strategy-console .trend-view-tabs button:focus-visible,
+.strategy-console .arb-text-button:focus-visible,
+.strategy-console .trend-toolbar input:focus,
+.strategy-console .trend-toolbar select:focus,
+.strategy-console .arb-filters input:focus,
+.strategy-console .arb-filters select:focus {
+  outline: 2px solid #7ab6a5;
+  outline-offset: 2px;
+}
+
+.strategy-console .arb-tabs button {
+  color: #61706a;
+  font-size: 12px;
+}
+
+.strategy-console .arb-tabs button.active {
+  color: #0b6b55;
+}
+
+.strategy-console .arb-tabs button.active::after {
+  background: #0b6b55;
+}
+
+.strategy-console .arb-tabs button span {
+  border-color: #dce1da;
+  background: #f7f8f4;
+  color: #77827d;
+}
+
+.strategy-console .arb-meta {
+  border-bottom-color: #e5e8e1;
+  color: #6f7b75;
+  font-family: var(--font-family);
+}
+
+.strategy-console .trend-dashboard {
+  gap: 12px;
+  padding: 12px;
+  background: #f7f8f4;
+}
+
+.strategy-console .trend-command-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid #dfe4dd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.strategy-console .trend-command-bar h2 {
+  margin: 0;
+  color: #18231f;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.strategy-console .trend-command-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #71807a;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.strategy-console .trend-runtime-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.strategy-console .trend-mini {
+  min-height: 94px;
+  gap: 7px;
+  padding: 13px;
+  border-color: #dfe4dd;
+}
+
+.strategy-console .trend-mini span,
+.strategy-console .trend-mini small {
+  color: #71807a;
+}
+
+.strategy-console .trend-mini strong {
+  color: #17211f;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.strategy-console .trend-view-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-console .trend-view-tabs button {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dde3dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #68766f;
+  cursor: pointer;
+  text-align: left;
+}
+
+.strategy-console .trend-view-tabs button:hover {
+  border-color: #abcbbf;
+  background: #f3f8f5;
+}
+
+.strategy-console .trend-view-tabs button.active {
+  border-color: #0b6b55;
+  background: #eef7f2;
+  color: #0b6b55;
+}
+
+.strategy-console .trend-view-tabs strong,
+.strategy-console .trend-view-tabs small {
+  display: block;
+}
+
+.strategy-console .trend-view-tabs strong {
+  font-size: 13px;
+}
+
+.strategy-console .trend-view-tabs small {
+  margin-top: 4px;
+  color: #7d8883;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.strategy-console .trend-overview,
+.strategy-console .trend-view-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.strategy-console .trend-overview-grid,
+.strategy-console .trend-strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.strategy-console .trend-panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #dfe4dd;
+}
+
+.strategy-console .trend-panel header,
+.strategy-console .trend-chart header,
+.strategy-console .trend-table-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.strategy-console .trend-panel header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #edf0eb;
+}
+
+.strategy-console .trend-panel h2,
+.strategy-console .trend-chart h2,
+.strategy-console .trend-table-title h2,
+.strategy-console .trend-toolbar h2 {
+  margin: 0;
+  color: #19231f;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.strategy-console .trend-panel header > span,
+.strategy-console .trend-chart header > span,
+.strategy-console .trend-table-title > span {
+  color: #7c8782;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.strategy-console .trend-current-position,
+.strategy-console .trend-last-trade {
+  display: grid;
+  gap: 13px;
+  padding-top: 13px;
+}
+
+.strategy-console .trend-current-position > div:first-child,
+.strategy-console .trend-last-trade > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.strategy-console .trend-current-position strong,
+.strategy-console .trend-last-trade strong {
+  color: #17211f;
+  font-size: 22px;
+}
+
+.strategy-console .trend-current-position dl,
+.strategy-console .trend-last-trade dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.strategy-console .trend-current-position dl div,
+.strategy-console .trend-last-trade dl div,
+.strategy-console .trend-pulse-grid span,
+.strategy-console .trend-coverage-list span,
+.strategy-console .trend-definition-grid span {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e5e9e3;
+  border-radius: 7px;
+  background: #fafbf8;
+}
+
+.strategy-console .trend-current-position dt,
+.strategy-console .trend-last-trade dt {
+  color: #7a8580;
+  font-size: 11px;
+}
+
+.strategy-console .trend-current-position dd,
+.strategy-console .trend-last-trade dd {
+  margin: 5px 0 0;
+  color: #26332e;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.strategy-console .trend-current-position p,
+.strategy-console .trend-muted {
+  margin: 0;
+  color: #5f6b66;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.strategy-console .trend-current-position small,
+.strategy-console .trend-empty-state small {
+  color: #74817a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.strategy-console .trend-empty-state {
+  display: grid;
+  gap: 8px;
+  padding-top: 18px;
+}
+
+.strategy-console .trend-empty-state strong {
+  color: #1f2c27;
+  font-size: 16px;
+}
+
+.strategy-console .trend-pulse-grid,
+.strategy-console .trend-coverage-list,
+.strategy-console .trend-definition-grid {
+  display: grid;
+  gap: 8px;
+  padding-top: 13px;
+}
+
+.strategy-console .trend-pulse-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.strategy-console .trend-coverage-list {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.strategy-console .trend-coverage-list.strategy {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.strategy-console .trend-definition-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.strategy-console .trend-pulse-grid b,
+.strategy-console .trend-coverage-list b,
+.strategy-console .trend-definition-grid b {
+  display: block;
+  color: #1d2a25;
+  font-family: var(--font-mono);
+  font-size: 17px;
+}
+
+.strategy-console .trend-definition-grid b {
+  font-family: var(--font-family);
+  font-size: 13px;
+}
+
+.strategy-console .trend-pulse-grid small,
+.strategy-console .trend-coverage-list small,
+.strategy-console .trend-definition-grid small {
+  display: block;
+  margin-top: 4px;
+  color: #71807a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.strategy-console .trend-chart {
+  min-height: 214px;
+  padding: 16px;
+  border-color: #dfe4dd;
+}
+
+.strategy-console .trend-bars {
+  min-height: 132px;
+  padding-top: 14px;
+}
+
+.strategy-console .trend-bar-item {
+  min-width: 46px;
+  height: 132px;
+}
+
+.strategy-console .trend-bar-item i {
+  border-radius: 4px 4px 0 0;
+}
+
+.strategy-console .trend-bar-item i.positive {
+  background: #17916e;
+}
+
+.strategy-console .trend-bar-item i.negative {
+  background: #c75d51;
+}
+
+.strategy-console .trend-bar-item strong {
+  color: #48534e;
+}
+
+.strategy-console .trend-bar-item small {
+  color: #7d8883;
+}
+
+.strategy-console .trend-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px 140px 140px;
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #dfe4dd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.strategy-console .trend-toolbar label {
+  display: grid;
+  gap: 5px;
+  color: #6b7872;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.strategy-console .trend-toolbar input,
+.strategy-console .trend-toolbar select {
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid #d6ddd5;
+  border-radius: 6px;
+  background: #fff;
+  color: #24302b;
+}
+
+.strategy-console .arb-table-wrap {
+  overflow: auto;
+  max-height: 540px;
+  border: 1px solid #dfe4dd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.strategy-console .arb-table-wrap table {
+  min-width: 1050px;
+  color: #27332f;
+}
+
+.strategy-console .arb-table-wrap th {
+  border-bottom-color: #e3e7e1;
+  background: #f8f9f5;
+  color: #71807a;
+}
+
+.strategy-console .arb-table-wrap td {
+  border-bottom-color: #edf0eb;
+  color: #314039;
+}
+
+.strategy-console .arb-table-wrap tbody tr:hover td {
+  background: #f5f9f6;
+}
+
+.strategy-console .arb-table-wrap td b {
+  color: #17211f;
+}
+
+.strategy-console .arb-table-wrap td small {
+  color: #71807a;
+}
+
+.strategy-console .trend-table-title {
+  padding: 14px 16px 10px;
+  border-top: 0;
+  border-bottom-color: #e5e8e1;
+  background: #fff;
+}
+
+.strategy-console .trend-two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.strategy-console .trend-strategy-grid .trend-wide {
+  grid-column: 1 / -1;
+}
+
+.strategy-console .trend-rule-list {
+  margin: 13px 0 0;
+  padding-left: 20px;
+  color: #56635e;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.strategy-console .trend-rule-list li + li {
+  margin-top: 6px;
+}
+
+.strategy-console .arb-status {
+  border-color: #dce3dc;
+  background: #f7f8f5;
+  color: #5f6b66;
+}
+
+.strategy-console .arb-status.qualified,
+.strategy-console .arb-status.long,
+.strategy-console .arb-status.active,
+.strategy-console .arb-status.accepted,
+.strategy-console .arb-status.filled {
+  border-color: #b7d6c9;
+  background: #eef8f3;
+  color: #0b6b55;
+}
+
+.strategy-console .arb-status.short,
+.strategy-console .arb-status.close_sent,
+.strategy-console .arb-status.entry_sent {
+  border-color: #c7d4eb;
+  background: #f2f6fd;
+  color: #315f99;
+}
+
+.strategy-console .arb-status.rejected {
+  border-color: #ecc7bf;
+  background: #fff3f0;
+  color: #b24738;
+}
+
+.strategy-console .arb-status.flat,
+.strategy-console .arb-status.done,
+.strategy-console .arb-status.terminal {
+  border-color: #d9ded8;
+  background: #fafaf7;
+  color: #65716b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strategy-console .arb-tabs button,
+  .strategy-console .trend-view-tabs button,
+  .strategy-console .arb-text-button {
+    transition: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .strategy-console .trend-runtime-grid,
+  .strategy-console .trend-view-tabs,
+  .strategy-console .trend-overview-grid,
+  .strategy-console .trend-strategy-grid,
+  .strategy-console .trend-two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-console .trend-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .strategy-console .ms-content {
+    padding: 18px 12px 36px;
+  }
+
+  .strategy-console .arb-hero,
+  .strategy-console .trend-command-bar {
+    display: grid;
+  }
+
+  .strategy-console .arb-source {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .strategy-console .arb-metrics,
+  .strategy-console .trend-runtime-grid,
+  .strategy-console .trend-view-tabs,
+  .strategy-console .trend-overview-grid,
+  .strategy-console .trend-strategy-grid,
+  .strategy-console .trend-two-column,
+  .strategy-console .trend-toolbar,
+  .strategy-console .trend-current-position dl,
+  .strategy-console .trend-last-trade dl,
+  .strategy-console .trend-pulse-grid,
+  .strategy-console .trend-coverage-list,
+  .strategy-console .trend-coverage-list.strategy,
+  .strategy-console .trend-definition-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-console .trend-command-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
