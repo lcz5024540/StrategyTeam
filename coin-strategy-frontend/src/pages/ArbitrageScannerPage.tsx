@@ -350,7 +350,7 @@ function TrendNowPanel({ positions, onHistory }: { positions: TrendPosition[]; o
         <dl><div><dt>数量</dt><dd>{position.contractVolume}</dd></div><div><dt>开仓均价</dt><dd>{formatDecimal(position.entryAvgPrice)}</dd></div><div><dt>追踪止损</dt><dd>{formatDecimal(position.trailingStopPrice ?? position.stopPrice)}</dd></div><div><dt>管理状态</dt><dd>{positionManagementLabel(position)}</dd></div></dl>
       </article>)}
       {positions.length > 5 ? <small>另有 {positions.length - 5} 条活动仓位，可在交易历史视图完整查看。</small> : null}
-    </div> : <div className="trend-empty-state"><strong>当前没有活动趋势仓位</strong><small>下一笔开仓需要候选信号、定时信号、流动性、点差与风险 gate 同时满足。</small></div>}
+    </div> : <div className="trend-empty-state"><strong>当前没有活动趋势仓位</strong><small>等待下一次交易机会。</small></div>}
   </section>
 }
 function TrendTodayPnlPanel({ trend }: { trend: HtxTrendDashboardResponse }) {
