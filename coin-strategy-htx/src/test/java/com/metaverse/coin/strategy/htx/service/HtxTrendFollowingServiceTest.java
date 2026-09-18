@@ -200,6 +200,60 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void recentLosingPositionKeepsSameContractInLossCooldown() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        when(recorder.findLastDone("XAUT-USDT")).thenReturn(Optional.of(donePosition("-1.20", "0.05", "0.05", 30)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("loss cooldown active"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void recentProfitablePositionUsesShortProfitCooldownForOrdinarySignal() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        when(recorder.findLastDone("XAUT-USDT")).thenReturn(Optional.of(donePosition("3.00", "0.05", "0.05", 5)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("profit cooldown active"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void strongBreakoutCanReenterAfterProfitableCooldownMinimumAge() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"), new BigDecimal("0.0030"), freshBarTime(),
+                new BigDecimal("35"), "close broke Donchian high with higher-timeframe EMA uptrend");
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        givenBroadBullishBreadth();
+        when(recorder.findLastDone("XAUT-USDT")).thenReturn(Optional.of(donePosition("3.00", "0.05", "0.05", 11)));
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void weakQualityDownsizesButDoesNotDisableLiveEntry() {
         givenContractInfo();
         givenKlines();
@@ -754,9 +808,14 @@ class HtxTrendFollowingServiceTest {
     }
 
     private void givenSignal(TrendSide side, BigDecimal atr, BigDecimal atrPct, long barTime) {
+        givenSignal(side, atr, atrPct, barTime, new BigDecimal("24"), "test signal");
+    }
+
+    private void givenSignal(TrendSide side, BigDecimal atr, BigDecimal atrPct, long barTime,
+                             BigDecimal adx, String reason) {
         TrendSignal signal = TrendSignal.of(side, barTime, new BigDecimal("4300"), new BigDecimal("4290"),
                 new BigDecimal("4280"), new BigDecimal("4310"), new BigDecimal("4260"),
-                atr, atrPct, new BigDecimal("24"), "test signal");
+                atr, atrPct, adx, reason);
         when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
     }
 
@@ -926,6 +985,19 @@ class HtxTrendFollowingServiceTest {
         position.setTakeProfitPrice(null);
         position.setHighestPrice(new BigDecimal(highestPrice));
         position.setLowestPrice(new BigDecimal(lowestPrice));
+        return position;
+    }
+
+    private HtxTrendPositionEntity donePosition(String realizedProfit, String entryFee, String closeFee, long minutesAgo) {
+        HtxTrendPositionEntity position = new HtxTrendPositionEntity();
+        position.setId(66L);
+        position.setContractCode("XAUT-USDT");
+        position.setStatus(HtxTrendRecorder.DONE);
+        position.setSide("LONG");
+        position.setRealizedProfit(new BigDecimal(realizedProfit));
+        position.setEntryFee(new BigDecimal(entryFee));
+        position.setCloseFee(new BigDecimal(closeFee));
+        position.setUpdatedAt(LocalDateTime.now().minusMinutes(minutesAgo));
         return position;
     }
 

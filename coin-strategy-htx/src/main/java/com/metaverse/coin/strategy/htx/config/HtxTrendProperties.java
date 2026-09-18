@@ -257,8 +257,29 @@ public class HtxTrendProperties {
     /** Seconds after the entry window starts during which new entries may be evaluated. */
     private long entryWindowDurationSeconds = 45L;
 
-    /** Avoid immediate re-entry after a completed trend cycle. */
+    /** Master switch for same-contract re-entry cooldown after a completed trend cycle; <=0 disables all cooldowns. */
     private long cooldownMs = 3_600_000L;
+
+    /** Same-contract cooldown after a losing completed trend position. */
+    private long lossCooldownMs = 3_600_000L;
+
+    /** Same-contract cooldown after a near-breakeven completed trend position. */
+    private long breakevenCooldownMs = 1_800_000L;
+
+    /** Same-contract cooldown after a clearly profitable completed trend position. */
+    private long profitCooldownMs = 900_000L;
+
+    /** Net USDT profit threshold that classifies a completed position as clearly profitable. */
+    private BigDecimal profitCooldownMinNetProfitUsdt = new BigDecimal("1.00");
+
+    /** After this profit cooldown age, a fresh strong breakout may re-enter before profitCooldownMs expires. */
+    private long profitCooldownStrongReentryAfterMs = 600_000L;
+
+    /** Minimum ADX required before bypassing profit cooldown for a strong re-entry. */
+    private BigDecimal profitCooldownStrongReentryMinAdx = new BigDecimal("30");
+
+    /** Minimum ATR / close ratio required before bypassing profit cooldown for a strong re-entry. */
+    private BigDecimal profitCooldownStrongReentryMinAtrPct = new BigDecimal("0.0020");
 
     /** Prefix for DB keys. Contract client ids remain numeric due to HTX V5 validation. */
     private String clientOrderIdPrefix = "CSTF";

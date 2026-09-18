@@ -53,6 +53,10 @@ public class HtxTrendRecorder {
         return Optional.ofNullable(positionMapper.latestDoneAt(contractCode));
     }
 
+    public Optional<HtxTrendPositionEntity> findLastDone(String contractCode) {
+        return Optional.ofNullable(positionMapper.findLastDone(contractCode));
+    }
+
     public long countRecentSignalsBySide(String contractCode, String signal, LocalDateTime since, int limit) {
         Long count = signalMapper.countRecentSignalsBySide(contractCode, signal, since, limit);
         return count == null ? 0L : count;

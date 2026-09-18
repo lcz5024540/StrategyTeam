@@ -529,7 +529,7 @@ public class HtxTrendFollowingService {
         if (freshnessGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, freshnessGate);
         }
-        String cooldownGate = cooldownGate(contractCode);
+        String cooldownGate = cooldownGate(contractCode, signal, marketBreadth);
         if (cooldownGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, cooldownGate);
         }
@@ -930,19 +930,77 @@ public class HtxTrendFollowingService {
         return null;
     }
 
-    private String cooldownGate(String contractCode) {
+    private String cooldownGate(String contractCode, TrendSignal signal, MarketBreadthContext marketBreadth) {
         if (properties.getCooldownMs() <= 0) {
             return null;
         }
-        Optional<LocalDateTime> latest = recorder.latestDoneAt(contractCode);
-        if (latest.isEmpty()) {
+        Optional<HtxTrendPositionEntity> lastDone = recorder.findLastDone(contractCode);
+        if (lastDone.isEmpty() || lastDone.get().getUpdatedAt() == null) {
             return null;
         }
-        long age = Duration.between(latest.get(), LocalDateTime.now()).toMillis();
-        if (age < properties.getCooldownMs()) {
-            return "cooldown active remainingMs=" + (properties.getCooldownMs() - age);
+        CooldownContext cooldown = cooldownContext(lastDone.get());
+        long age = Duration.between(lastDone.get().getUpdatedAt(), LocalDateTime.now()).toMillis();
+        if (age < 0) {
+            age = 0;
+        }
+        if (cooldown.type() == CooldownType.PROFIT
+                && age >= Math.max(0L, properties.getProfitCooldownStrongReentryAfterMs())
+                && strongProfitReentrySignal(signal, marketBreadth)) {
+            return null;
+        }
+        if (age < cooldown.durationMs()) {
+            return cooldown.type().label() + " cooldown active remainingMs=" + (cooldown.durationMs() - age)
+                    + " net=" + cooldown.netProfit().setScale(4, RoundingMode.HALF_UP)
+                    + " lastDoneId=" + lastDone.get().getId();
         }
         return null;
+    }
+
+    private CooldownContext cooldownContext(HtxTrendPositionEntity lastDone) {
+        BigDecimal netProfit = netRealizedProfit(lastDone);
+        if (netProfit.signum() < 0) {
+            return new CooldownContext(CooldownType.LOSS, effectiveCooldownMs(properties.getLossCooldownMs()), netProfit);
+        }
+        if (netProfit.compareTo(nonNegative(properties.getProfitCooldownMinNetProfitUsdt())) >= 0) {
+            return new CooldownContext(CooldownType.PROFIT, effectiveCooldownMs(properties.getProfitCooldownMs()), netProfit);
+        }
+        return new CooldownContext(CooldownType.BREAKEVEN, effectiveCooldownMs(properties.getBreakevenCooldownMs()), netProfit);
+    }
+
+    private long effectiveCooldownMs(long configuredMs) {
+        if (configuredMs < 0) {
+            return Math.max(0L, properties.getCooldownMs());
+        }
+        return Math.max(0L, configuredMs);
+    }
+
+    private BigDecimal netRealizedProfit(HtxTrendPositionEntity position) {
+        return nz(position.getRealizedProfit()).subtract(nz(position.getEntryFee())).subtract(nz(position.getCloseFee()));
+    }
+
+    private boolean strongProfitReentrySignal(TrendSignal signal, MarketBreadthContext marketBreadth) {
+        if (signal == null || signal.side() == TrendSide.FLAT) {
+            return false;
+        }
+        if (!strongBreakoutReason(signal.reason())) {
+            return false;
+        }
+        if (signal.adx() == null || signal.adx().compareTo(nonNegative(properties.getProfitCooldownStrongReentryMinAdx())) < 0) {
+            return false;
+        }
+        if (!positive(signal.atrPct())
+                || signal.atrPct().compareTo(nonNegative(properties.getProfitCooldownStrongReentryMinAtrPct())) < 0) {
+            return false;
+        }
+        return breadthAligned(signal.side(), marketBreadth);
+    }
+
+    private static boolean strongBreakoutReason(String reason) {
+        if (reason == null) {
+            return false;
+        }
+        String normalized = reason.toLowerCase(Locale.ROOT);
+        return normalized.contains("broke donchian") || normalized.contains("breakout");
     }
 
     private FundingMarket currentFunding(String contractCode) {
@@ -1666,12 +1724,31 @@ public class HtxTrendFollowingService {
         OBSERVED, NO_SIGNAL, ENTRY_SENT, ACTIVE, CLOSE_SENT, DONE, WAITING, SKIPPED, REJECTED, MANUAL_REVIEW
     }
 
+
+    private enum CooldownType {
+        LOSS("loss"), BREAKEVEN("breakeven"), PROFIT("profit");
+
+        private final String label;
+
+        CooldownType(String label) {
+            this.label = label;
+        }
+
+        String label() {
+            return label;
+        }
+    }
+
     private enum MarketRegime {
         BROAD_UP, BROAD_DOWN, MIXED
     }
 
     private enum QualityRegime {
         WEAK, NEUTRAL, STRONG
+    }
+
+
+    private record CooldownContext(CooldownType type, long durationMs, BigDecimal netProfit) {
     }
 
     private record MarketBreadthContext(MarketRegime regime, long total, long longCount, long shortCount,
