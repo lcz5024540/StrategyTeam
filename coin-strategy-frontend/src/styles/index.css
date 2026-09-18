@@ -6767,3 +6767,266 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+/* HTX trend bot cockpit additions: status strip, diagnostics, sorted ledgers and config readout. */
+.strategy-console .trend-command-bar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.strategy-console .trend-command-bar span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--trend-border);
+  border-radius: 12px;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .trend-command-bar b {
+  color: var(--trend-faint);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.strategy-console .trend-command-bar small {
+  color: var(--trend-soft-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.strategy-console .trend-command-bar small.positive {
+  color: var(--trend-positive);
+}
+
+.strategy-console .trend-command-bar small.negative {
+  color: var(--trend-negative);
+}
+
+.strategy-console .trend-command-bar small.warn {
+  color: var(--trend-warn);
+}
+
+.strategy-console .trend-bot-hero.positive::before {
+  background: var(--trend-positive);
+}
+
+.strategy-console .trend-bot-hero.negative::before {
+  background: var(--trend-negative);
+}
+
+.strategy-console .trend-bot-hero.warn::before {
+  background: var(--trend-warn);
+}
+
+.strategy-console .trend-first-screen-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.strategy-console .trend-first-screen-kpis .trend-mini.active strong {
+  color: var(--trend-accent);
+}
+
+.strategy-console .trend-mini.idle strong {
+  color: var(--trend-muted);
+}
+
+.strategy-console .trend-position-list {
+  display: grid;
+  gap: 12px;
+}
+
+.strategy-console .trend-position-list .trend-current-position + .trend-current-position {
+  padding-top: 12px;
+  border-top: 1px solid var(--trend-border);
+}
+
+.strategy-console .trend-compact-dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding-top: 13px;
+}
+
+.strategy-console .trend-compact-dl div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--trend-border);
+  border-radius: 12px;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .trend-compact-dl dt {
+  color: var(--trend-muted);
+  font-size: 11px;
+}
+
+.strategy-console .trend-compact-dl dd {
+  margin: 5px 0 0;
+  color: var(--trend-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.strategy-console .trend-panel header > span.positive,
+.strategy-console .trend-compact-dl dd.positive {
+  color: var(--trend-positive);
+}
+
+.strategy-console .trend-panel header > span.negative,
+.strategy-console .trend-compact-dl dd.negative {
+  color: var(--trend-negative);
+}
+
+.strategy-console .trend-gate-summary {
+  display: grid;
+  gap: 8px;
+  margin: 13px 0 10px;
+  padding: 12px;
+  border: 1px solid var(--trend-border);
+  border-radius: 12px;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .trend-gate-summary strong {
+  color: var(--trend-text);
+  font-family: var(--font-mono);
+  font-size: 18px;
+}
+
+.strategy-console .trend-gate-summary span {
+  color: var(--trend-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.strategy-console .trend-gate-summary.active {
+  border-color: #bfdbfe;
+  background: var(--trend-accent-soft);
+}
+
+.strategy-console .trend-gate-summary.warn {
+  border-color: #fde68a;
+  background: var(--trend-warn-soft);
+}
+
+.strategy-console .trend-diagnostics {
+  padding: 16px;
+  border: 1px solid var(--trend-border);
+  border-radius: 16px;
+  background: var(--trend-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .05);
+}
+
+.strategy-console .trend-diagnostics header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--trend-border);
+}
+
+.strategy-console .trend-diagnostics h2 {
+  margin: 0;
+  color: var(--trend-text);
+  font-size: 16px;
+}
+
+.strategy-console .trend-diagnostics header > span {
+  color: var(--trend-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.strategy-console .trend-diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.strategy-console .trend-diagnostic-grid article {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--trend-border);
+  border-radius: 12px;
+  background: var(--trend-surface-muted);
+}
+
+.strategy-console .trend-diagnostic-grid small {
+  color: var(--trend-faint);
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.strategy-console .trend-diagnostic-grid strong {
+  overflow: hidden;
+  color: var(--trend-text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-console .trend-diagnostic-grid span {
+  color: var(--trend-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.strategy-console .trend-history-toolbar {
+  grid-template-columns: minmax(220px, 1fr) repeat(5, minmax(128px, 160px));
+}
+
+.strategy-console .trend-risk-config .trend-definition-grid em {
+  display: block;
+  margin-top: 6px;
+  color: var(--trend-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.strategy-console .trend-pipeline-steps {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.strategy-console .arb-status.warn {
+  border-color: #fde68a;
+  background: var(--trend-warn-soft);
+  color: var(--trend-warn);
+}
+
+@media (max-width: 1320px) {
+  .strategy-console .trend-first-screen-grid,
+  .strategy-console .trend-diagnostic-grid,
+  .strategy-console .trend-pipeline-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-console .trend-history-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .strategy-console .trend-command-bar,
+  .strategy-console .trend-first-screen-grid,
+  .strategy-console .trend-diagnostic-grid,
+  .strategy-console .trend-compact-dl,
+  .strategy-console .trend-history-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
