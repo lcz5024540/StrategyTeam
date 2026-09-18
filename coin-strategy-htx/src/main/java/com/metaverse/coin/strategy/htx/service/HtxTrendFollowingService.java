@@ -79,6 +79,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendProperties properties;
     private final HtxTrendRecorder recorder;
     private final HtxTrendSignalCalculator calculator;
+    private final HtxTrendMirrorExecutor mirrorExecutor;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
 
@@ -88,9 +89,10 @@ public class HtxTrendFollowingService {
                                     HtxFundingArbitrageProperties fundingArbitrageProperties,
                                     HtxMarketMakerProperties marketMakerProperties,
                                     HtxTrendProperties properties,
-                                    HtxTrendRecorder recorder) {
+                                    HtxTrendRecorder recorder,
+                                    HtxTrendMirrorExecutor mirrorExecutor) {
         this(api.getSwapService(), contractProperties, fundingArbitrageProperties, marketMakerProperties,
-                properties, recorder, new HtxTrendSignalCalculator());
+                properties, recorder, new HtxTrendSignalCalculator(), mirrorExecutor);
     }
 
     HtxTrendFollowingService(HtxUsdtSwapService swap,
@@ -100,6 +102,18 @@ public class HtxTrendFollowingService {
                              HtxTrendProperties properties,
                              HtxTrendRecorder recorder,
                              HtxTrendSignalCalculator calculator) {
+        this(swap, contractProperties, fundingArbitrageProperties, marketMakerProperties,
+                properties, recorder, calculator, null);
+    }
+
+    HtxTrendFollowingService(HtxUsdtSwapService swap,
+                             HtxContractProperties contractProperties,
+                             HtxFundingArbitrageProperties fundingArbitrageProperties,
+                             HtxMarketMakerProperties marketMakerProperties,
+                             HtxTrendProperties properties,
+                             HtxTrendRecorder recorder,
+                             HtxTrendSignalCalculator calculator,
+                             HtxTrendMirrorExecutor mirrorExecutor) {
         this.swap = swap;
         this.contractProperties = contractProperties;
         this.fundingArbitrageProperties = fundingArbitrageProperties;
@@ -107,6 +121,7 @@ public class HtxTrendFollowingService {
         this.properties = properties;
         this.recorder = recorder;
         this.calculator = calculator;
+        this.mirrorExecutor = mirrorExecutor;
     }
 
     public RunResult runOnce() {
@@ -648,9 +663,19 @@ public class HtxTrendFollowingService {
                     position.getEntryClientOrderId(), HtxTrendRecorder.ORDER_FILLED, order.getOrderId(),
                     order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()), avg, nz(order.getFee()),
                     order.getFeeCurrency(), order.getRealProfit(), "entry filled state=" + exchangeState(order));
+            position.setEntryAvgPrice(avg);
+            position.setEntryFilledContracts(nz(order.getTradeVolume()));
+            position.setEntryFee(nz(order.getFee()));
             recorder.markEntryFilled(position.getId(), nz(order.getTradeVolume()), avg, nz(order.getFee()),
                     highLow, highLow, "entry filled state=" + exchangeState(order));
-            return RunResult.of(RunCode.ACTIVE, position.getId(), "entry filled");
+            HtxTrendMirrorExecutor.SyncResult mirror = syncMirrorEntry(position);
+            if (!mirror.ok()) {
+                log.warn("[HTX-TREND-MIRROR] entry sync failed id={} contract={} side={} message={}",
+                        position.getId(), position.getContractCode(), position.getSide(), mirror.message());
+                return RunResult.of(RunCode.ACTIVE, position.getId(),
+                        "entry filled; mirror warning: " + mirror.message());
+            }
+            return RunResult.of(RunCode.ACTIVE, position.getId(), "entry filled; " + mirror.message());
         }
         if (terminal(order)) {
             recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_ENTRY,
@@ -743,9 +768,17 @@ public class HtxTrendFollowingService {
                     order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()),
                     order.getTradeAveragePrice(), nz(order.getFee()), order.getFeeCurrency(), order.getRealProfit(),
                     "close filled state=" + exchangeState(order));
+            HtxTrendMirrorExecutor.SyncResult mirror = syncMirrorClose(position);
+            if (!mirror.ok() && mirrorExecutor != null && mirrorExecutor.blockPrimaryCloseUntilSynced()) {
+                log.warn("[HTX-TREND-MIRROR] close sync pending id={} contract={} side={} message={}",
+                        position.getId(), position.getContractCode(), position.getSide(), mirror.message());
+                return RunResult.of(RunCode.WAITING, position.getId(),
+                        "primary close filled; mirror pending: " + mirror.message());
+            }
             recorder.markCloseFilled(position.getId(), nz(order.getTradeVolume()), order.getTradeAveragePrice(),
-                    nz(order.getFee()), order.getRealProfit(), "close filled state=" + exchangeState(order));
-            return RunResult.of(RunCode.DONE, position.getId(), "position done");
+                    nz(order.getFee()), order.getRealProfit(), "close filled state=" + exchangeState(order)
+                            + "; " + mirror.message());
+            return RunResult.of(RunCode.DONE, position.getId(), "position done; " + mirror.message());
         }
         if (terminal(order)) {
             recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_CLOSE,
@@ -758,6 +791,29 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(), "close terminal without fill");
         }
         return RunResult.of(RunCode.WAITING, position.getId(), "waiting close fill");
+    }
+
+
+    private HtxTrendMirrorExecutor.SyncResult syncMirrorEntry(HtxTrendPositionEntity position) {
+        if (mirrorExecutor == null) {
+            return HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled");
+        }
+        try {
+            return mirrorExecutor.syncEntry(position);
+        } catch (RuntimeException ex) {
+            return HtxTrendMirrorExecutor.SyncResult.failed("mirror entry exception: " + ex.getClass().getSimpleName());
+        }
+    }
+
+    private HtxTrendMirrorExecutor.SyncResult syncMirrorClose(HtxTrendPositionEntity position) {
+        if (mirrorExecutor == null) {
+            return HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled");
+        }
+        try {
+            return mirrorExecutor.syncClose(position);
+        } catch (RuntimeException ex) {
+            return HtxTrendMirrorExecutor.SyncResult.failed("mirror close exception: " + ex.getClass().getSimpleName());
+        }
     }
 
     private SignalSnapshot loadSignal(String contractCode) {

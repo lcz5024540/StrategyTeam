@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
@@ -59,6 +60,7 @@ class HtxTrendFollowingServiceTest {
     private HtxFundingArbitrageProperties fundingArbitrageProperties;
     private HtxMarketMakerProperties marketMakerProperties;
     private HtxTrendProperties properties;
+    private HtxTrendMirrorExecutor mirrorExecutor;
     private HtxTrendFollowingService service;
 
     @BeforeEach
@@ -79,8 +81,12 @@ class HtxTrendFollowingServiceTest {
         properties.setEnabled(true);
         properties.setObserveOnly(false);
         properties.setMaxEntryFundingCostRate(new BigDecimal("0.0006"));
+        mirrorExecutor = mock(HtxTrendMirrorExecutor.class);
+        when(mirrorExecutor.syncEntry(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled"));
+        when(mirrorExecutor.syncClose(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled"));
+        when(mirrorExecutor.blockPrimaryCloseUntilSynced()).thenReturn(true);
         service = new HtxTrendFollowingService(swap, contractProperties, fundingArbitrageProperties,
-                marketMakerProperties, properties, recorder, calculator);
+                marketMakerProperties, properties, recorder, calculator, mirrorExecutor);
         when(recorder.findActive(any())).thenReturn(Optional.empty());
     }
 
@@ -748,6 +754,67 @@ class HtxTrendFollowingServiceTest {
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
+
+    @Test
+    void primaryEntryFillTriggersMirrorEntryAfterPrimaryFill() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.FLAT);
+        HtxTrendPositionEntity position = entrySentLongPosition();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(position));
+        when(swap.queryOrder("XAUT-USDT", 88L)).thenReturn(ok(List.of(filledOrder(88L, 99L, "44", "4316.00", "0.0759"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        assertTrue(result.message().contains("entry filled"));
+        InOrder order = inOrder(recorder, mirrorExecutor);
+        order.verify(recorder).markEntryFilled(eq(77L), eq(new BigDecimal("44")),
+                eq(new BigDecimal("4316.00")), eq(new BigDecimal("0.0759")),
+                eq(new BigDecimal("4316.00")), eq(new BigDecimal("4316.00")), any());
+        ArgumentCaptor<HtxTrendPositionEntity> captor = ArgumentCaptor.forClass(HtxTrendPositionEntity.class);
+        order.verify(mirrorExecutor).syncEntry(captor.capture());
+        assertEquals(new BigDecimal("4316.00"), captor.getValue().getEntryAvgPrice());
+        assertEquals(new BigDecimal("44"), captor.getValue().getEntryFilledContracts());
+    }
+
+    @Test
+    void primaryCloseDoneWaitsWhenMirrorClosePending() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.FLAT);
+        HtxTrendPositionEntity position = closeSentLongPosition();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(position));
+        when(swap.queryOrder("XAUT-USDT", 188L)).thenReturn(ok(List.of(filledOrder(188L, 199L, "44", "4320.00", "0.0760"))));
+        when(mirrorExecutor.syncClose(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.pending("mirror close sent"));
+        when(mirrorExecutor.blockPrimaryCloseUntilSynced()).thenReturn(true);
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.WAITING, result.code());
+        assertTrue(result.message().contains("mirror pending"));
+        verify(mirrorExecutor).syncClose(position);
+        verify(recorder, never()).markCloseFilled(anyLong(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void primaryCloseMarksDoneWhenMirrorAlreadyFlat() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.FLAT);
+        HtxTrendPositionEntity position = closeSentLongPosition();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(position));
+        when(swap.queryOrder("XAUT-USDT", 188L)).thenReturn(ok(List.of(filledOrder(188L, 199L, "44", "4320.00", "0.0760"))));
+        when(mirrorExecutor.syncClose(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror already flat"));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.DONE, result.code());
+        verify(mirrorExecutor).syncClose(position);
+        verify(recorder).markCloseFilled(eq(77L), eq(new BigDecimal("44")), eq(new BigDecimal("4320.00")),
+                eq(new BigDecimal("0.0760")), eq(new BigDecimal("0.25")), any());
+    }
+
     @Test
     void marketMakerSwitchBlocksExclusiveTrendMode() {
         marketMakerProperties.setEnabled(true);
@@ -757,6 +824,40 @@ class HtxTrendFollowingServiceTest {
         assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
         assertTrue(result.message().contains("market-maker enabled"));
         verify(swap, never()).contractInfo(any());
+    }
+
+
+    private HtxTrendPositionEntity entrySentLongPosition() {
+        HtxTrendPositionEntity position = activeLongPosition();
+        position.setStatus(HtxTrendRecorder.ENTRY_SENT);
+        position.setEntryOrderId(88L);
+        position.setEntryClientOrderId("99");
+        position.setEntryAvgPrice(null);
+        position.setEntryFilledContracts(BigDecimal.ZERO);
+        position.setEntryFee(BigDecimal.ZERO);
+        return position;
+    }
+
+    private HtxTrendPositionEntity closeSentLongPosition() {
+        HtxTrendPositionEntity position = activeLongPosition();
+        position.setStatus(HtxTrendRecorder.CLOSE_SENT);
+        position.setCloseOrderId(188L);
+        position.setCloseClientOrderId("199");
+        return position;
+    }
+
+    private HtxSwapOrder filledOrder(long orderId, long clientOrderId, String tradeVolume, String avgPrice, String fee) {
+        HtxSwapOrder order = new HtxSwapOrder();
+        order.setOrderId(orderId);
+        order.setClientOrderId(clientOrderId);
+        order.setStatus(6);
+        order.setState("filled");
+        order.setTradeVolume(new BigDecimal(tradeVolume));
+        order.setTradeAveragePrice(new BigDecimal(avgPrice));
+        order.setFee(new BigDecimal(fee));
+        order.setFeeCurrency("USDT");
+        order.setRealProfit(new BigDecimal("0.25"));
+        return order;
     }
 
     private void givenContractInfo() {

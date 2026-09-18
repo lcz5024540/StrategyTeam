@@ -209,6 +209,14 @@ htx:
     profit-cooldown-strong-reentry-min-adx: ${HTX_TREND_PROFIT_COOLDOWN_STRONG_REENTRY_MIN_ADX:30}
     profit-cooldown-strong-reentry-min-atr-pct: ${HTX_TREND_PROFIT_COOLDOWN_STRONG_REENTRY_MIN_ATR_PCT:0.0020}
     client-order-id-prefix: ${HTX_TREND_CLIENT_ORDER_ID_PREFIX:CSTF}
+    mirror:
+      enabled: ${HTX_TREND_MIRROR_ENABLED:false}
+      account-label: ${HTX_TREND_MIRROR_ACCOUNT_LABEL:TradeX}
+      access-key: ${HTX_TREND_MIRROR_ACCESS_KEY:}
+      secret-key: ${HTX_TREND_MIRROR_SECRET_KEY:}
+      base-url: ${HTX_TREND_MIRROR_BASE_URL:https://api.hbdm.com}
+      sync-leverage: ${HTX_TREND_MIRROR_SYNC_LEVERAGE:true}
+      block-primary-close-until-synced: ${HTX_TREND_MIRROR_BLOCK_PRIMARY_CLOSE_UNTIL_SYNCED:true}
     ensemble-shadow:
       enabled: ${HTX_TREND_ENSEMBLE_SHADOW_ENABLED:false}
       contract-codes: ${HTX_TREND_ENSEMBLE_CONTRACTS:BTC-USDT,ETH-USDT,XAUT-USDT}

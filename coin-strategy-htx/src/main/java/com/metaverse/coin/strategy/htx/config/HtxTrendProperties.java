@@ -283,4 +283,22 @@ public class HtxTrendProperties {
 
     /** Prefix for DB keys. Contract client ids remain numeric due to HTX V5 validation. */
     private String clientOrderIdPrefix = "CSTF";
+
+    /** Optional secondary account that mirrors live trend entries and exits after the primary account. */
+    private Mirror mirror = new Mirror();
+
+    @Data
+    public static class Mirror {
+        /** Default off; enabling requires a dedicated secondary HTX contract API key. */
+        private boolean enabled = false;
+        /** Human-readable account label used only in logs. Do not put secrets here. */
+        private String accountLabel = "TradeX";
+        private String accessKey;
+        private String secretKey;
+        private String baseUrl = "https://api.hbdm.com";
+        /** Keep follower leverage aligned before opening mirrored positions. */
+        private boolean syncLeverage = true;
+        /** Keep the primary position visible as close-pending until the follower account is flat. */
+        private boolean blockPrimaryCloseUntilSynced = true;
+    }
 }
