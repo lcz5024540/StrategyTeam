@@ -168,6 +168,7 @@ htx:
     flat-loss-exit-confirmation-bars: ${HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS:3}
     min-expected-move-atr-multiplier: ${HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER:1.0}
     max-entry-signal-age-seconds: ${HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS:600}
+    candidate-scan-concurrency: ${HTX_TREND_CANDIDATE_SCAN_CONCURRENCY:6}
     adaptive-sizing-enabled: ${HTX_TREND_ADAPTIVE_SIZING_ENABLED:true}
     quality-lookback-trades: ${HTX_TREND_QUALITY_LOOKBACK_TRADES:20}
     quality-lookback-hours: ${HTX_TREND_QUALITY_LOOKBACK_HOURS:24}

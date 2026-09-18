@@ -150,6 +150,9 @@ public class HtxTrendProperties {
     /** Maximum seconds after the signal bar closed during which a live entry is still allowed; <=0 disables. */
     private long maxEntrySignalAgeSeconds = 600L;
 
+    /** Bounded parallelism for market/signal candidate scans. Live order submission remains sequential. */
+    private int candidateScanConcurrency = 6;
+
     /** Enable quality and market-breadth based entry sizing. This never hard-pauses entries by itself. */
     private boolean adaptiveSizingEnabled = true;
 

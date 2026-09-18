@@ -45,7 +45,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Contract-only trend following for HTX swaps, safe to run in observe-only mode. */
@@ -123,6 +130,9 @@ public class HtxTrendFollowingService {
         PerformanceContext performance = performanceContext();
         List<String> summaries = new ArrayList<>();
         Map<String, EntryCandidate> entryCandidates = new HashMap<>();
+        long candidateScanDurationMs = 0L;
+        int candidateScanConcurrency = candidateScanConcurrency(contractCodes.size());
+        int candidateScanContracts = scanEntryCandidates ? contractCodes.size() : 0;
         RunResult selected = null;
 
         for (String contractCode : contractCodes) {
@@ -139,8 +149,10 @@ public class HtxTrendFollowingService {
         boolean hasFreshCarryoverCandidate = hasFreshPendingEntryCandidate(new ArrayList<>(entryCandidates.values()));
 
         if (scanEntryCandidates) {
-            for (String contractCode : contractCodes) {
-                CandidateEvaluation evaluation = evaluateEntryCandidate(contractCode, marketBreadth);
+            long scanStartedAt = System.nanoTime();
+            for (CandidateScanResult scanResult : evaluateEntryCandidates(contractCodes, marketBreadth, candidateScanConcurrency)) {
+                String contractCode = scanResult.contractCode();
+                CandidateEvaluation evaluation = scanResult.evaluation();
                 if (evaluation == null) {
                     pendingEntryCandidates.remove(contractCode);
                     continue;
@@ -155,6 +167,7 @@ public class HtxTrendFollowingService {
                     putBestCandidate(entryCandidates, evaluation.candidate());
                 }
             }
+            candidateScanDurationMs = Duration.ofNanos(System.nanoTime() - scanStartedAt).toMillis();
         } else {
             RunResult scanSkipped = RunResult.of(RunCode.SKIPPED, null,
                     "candidate scan already completed closeEpoch=" + candidateScanCloseEpoch);
@@ -207,8 +220,70 @@ public class HtxTrendFollowingService {
                 + "; candidates=" + rankedCandidates.size()
                 + "; pendingCandidates=" + pendingEntryCandidates.size()
                 + "; candidateScanCloseEpoch=" + candidateScanCloseEpoch
+                + "; candidateScanConcurrency=" + candidateScanConcurrency
+                + "; candidateScanContracts=" + candidateScanContracts
+                + "; candidateScanDurationMs=" + candidateScanDurationMs
                 + "; remainingSlots=" + remainingSlots
                 + "; liveContracts=" + String.join(" | ", summaries));
+    }
+
+    private List<CandidateScanResult> evaluateEntryCandidates(List<String> contractCodes,
+                                                              MarketBreadthContext marketBreadth,
+                                                              int concurrency) {
+        if (contractCodes.size() <= 1 || concurrency <= 1) {
+            List<CandidateScanResult> results = new ArrayList<>(contractCodes.size());
+            for (String contractCode : contractCodes) {
+                results.add(scanEntryCandidate(contractCode, marketBreadth));
+            }
+            return results;
+        }
+        AtomicInteger threadIndex = new AtomicInteger();
+        ThreadFactory threadFactory = task -> {
+            Thread thread = new Thread(task, "htx-trend-candidate-" + threadIndex.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        ExecutorService executor = Executors.newFixedThreadPool(concurrency, threadFactory);
+        try {
+            List<Callable<CandidateScanResult>> tasks = new ArrayList<>(contractCodes.size());
+            for (String contractCode : contractCodes) {
+                tasks.add(() -> scanEntryCandidate(contractCode, marketBreadth));
+            }
+            List<Future<CandidateScanResult>> futures = executor.invokeAll(tasks);
+            List<CandidateScanResult> results = new ArrayList<>(futures.size());
+            for (Future<CandidateScanResult> future : futures) {
+                results.add(future.get());
+            }
+            return results;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            List<CandidateScanResult> interrupted = new ArrayList<>(contractCodes.size());
+            for (String contractCode : contractCodes) {
+                interrupted.add(new CandidateScanResult(contractCode, new CandidateEvaluation(
+                        RunResult.of(RunCode.SKIPPED, null, "candidate scan interrupted"), null)));
+            }
+            return interrupted;
+        } catch (ExecutionException ex) {
+            return List.of(new CandidateScanResult("ENTRY_SCAN", new CandidateEvaluation(
+                    RunResult.of(RunCode.SKIPPED, null, "candidate scan failed: " + rootMessage(ex)), null)));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private CandidateScanResult scanEntryCandidate(String contractCode, MarketBreadthContext marketBreadth) {
+        try {
+            return new CandidateScanResult(contractCode, evaluateEntryCandidate(contractCode, marketBreadth));
+        } catch (RuntimeException ex) {
+            log.warn("[HTX-TREND] candidate scan failed contract={}", contractCode, ex);
+            return new CandidateScanResult(contractCode, new CandidateEvaluation(
+                    RunResult.of(RunCode.SKIPPED, null, "candidate scan failed: " + rootMessage(ex)), null));
+        }
+    }
+
+    private int candidateScanConcurrency(int contractCount) {
+        int configured = Math.max(1, properties.getCandidateScanConcurrency());
+        return Math.min(configured, Math.max(1, contractCount));
     }
 
     private void addPendingEntryCandidates(Map<String, EntryCandidate> entryCandidates, List<String> summaries) {
@@ -1569,6 +1644,17 @@ public class HtxTrendFollowingService {
         return "status=" + response.getStatus();
     }
 
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null && current.getCause() != null) {
+            current = current.getCause();
+        }
+        if (current == null || isBlank(current.getMessage())) {
+            return throwable == null ? "unknown" : throwable.getClass().getSimpleName();
+        }
+        return current.getMessage();
+    }
+
     private static String clip(String value) {
         if (value == null || value.length() <= 512) {
             return value;
@@ -1634,6 +1720,9 @@ public class HtxTrendFollowingService {
     }
 
     private record SignalSnapshot(TrendSignal signal, List<HtxSwapKline> entryCandles) {
+    }
+
+    private record CandidateScanResult(String contractCode, CandidateEvaluation evaluation) {
     }
 
     private record CandidateEvaluation(RunResult result, EntryCandidate candidate) {
