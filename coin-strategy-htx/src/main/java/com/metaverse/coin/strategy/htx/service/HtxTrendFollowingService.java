@@ -38,6 +38,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -114,36 +115,85 @@ public class HtxTrendFollowingService {
         MarketBreadthContext marketBreadth = marketBreadthContext();
         PerformanceContext performance = performanceContext();
         List<String> summaries = new ArrayList<>();
+        List<EntryCandidate> entryCandidates = new ArrayList<>();
         RunResult selected = null;
+
         for (String contractCode : contractCodes) {
-            boolean allowNewEntry = entryWindowAllowsNewEntries && openLikePositions < maxActivePositions;
-            RunResult result = runOnce(contractCode, allowNewEntry, marketBreadth, performance);
+            RunResult result = manageActiveContract(contractCode);
+            if (result == null) {
+                continue;
+            }
             RunResult tagged = tag(contractCode, result);
             summaries.add(contractCode + "=" + result.code() + ":" + result.message());
-            if (opensPosition(result)) {
-                openLikePositions++;
+            selected = select(selected, tagged);
+        }
+
+        for (String contractCode : contractCodes) {
+            CandidateEvaluation evaluation = evaluateEntryCandidate(contractCode, marketBreadth);
+            if (evaluation == null) {
+                continue;
             }
-            if (selected == null || rank(tagged.code()) > rank(selected.code())) {
-                selected = tagged;
-            }
-            if (blocksFurtherEvaluation(result)) {
-                break;
+            RunResult tagged = tag(contractCode, evaluation.result());
+            summaries.add(contractCode + "=" + evaluation.result().code() + ":" + evaluation.result().message());
+            if (evaluation.candidate() == null) {
+                selected = select(selected, tagged);
+            } else {
+                entryCandidates.add(evaluation.candidate());
             }
         }
+
+        long remainingSlots = Math.max(0L, maxActivePositions - openLikePositions);
+        if (!entryCandidates.isEmpty()) {
+            if (!properties.isEntryEnabled()) {
+                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "new trend entries disabled");
+                selected = select(selected, tag("ENTRY", blocked));
+                summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
+            } else if (!entryWindowAllowsNewEntries) {
+                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "entry window closed");
+                selected = select(selected, tag("ENTRY", blocked));
+                summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
+            } else if (remainingSlots <= 0L) {
+                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
+                selected = select(selected, tag("ENTRY", blocked));
+                summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
+            } else {
+                entryCandidates.sort(Comparator.comparing(EntryCandidate::score).reversed());
+                long opened = 0L;
+                for (EntryCandidate candidate : entryCandidates) {
+                    if (opened >= remainingSlots) {
+                        break;
+                    }
+                    RunResult result = openIfEligible(candidate.contractCode(), candidate.signal(),
+                            candidate.entryCandles(), candidate.contract(), marketBreadth, performance);
+                    RunResult tagged = tag(candidate.contractCode(), result);
+                    summaries.add(candidate.contractCode() + "=" + result.code() + ":" + result.message());
+                    selected = select(selected, tagged);
+                    if (opensPosition(result)) {
+                        opened++;
+                    }
+                }
+            }
+        }
+
         if (selected == null) {
             return RunResult.of(RunCode.SKIPPED, null, "no trend contracts evaluated");
         }
         return RunResult.of(selected.code(), selected.positionId(), selected.message()
                 + "; market=" + marketBreadth.summary()
                 + "; quality=" + performance.summary()
+                + "; candidates=" + entryCandidates.size()
+                + "; remainingSlots=" + remainingSlots
                 + "; liveContracts=" + String.join(" | ", summaries));
     }
 
-    private RunResult runOnce(String contractCode, boolean allowNewEntry,
-                              MarketBreadthContext marketBreadth, PerformanceContext performance) {
+    private RunResult manageActiveContract(String contractCode) {
         String gate = configGate(contractCode);
         if (gate != null) {
             return RunResult.of(RunCode.SKIPPED, null, gate);
+        }
+        Optional<HtxTrendPositionEntity> active = recorder.findActive(contractCode);
+        if (active.isEmpty()) {
+            return null;
         }
         HtxSwapContractInfo contract = loadContract(contractCode);
         if (contract == null || !positive(contract.getContractSize())) {
@@ -151,20 +201,35 @@ public class HtxTrendFollowingService {
         }
         SignalSnapshot snapshot = loadSignal(contractCode);
         TrendSignal rawSignal = snapshot.signal();
+        recordSignal(contractCode, rawSignal);
+        return advance(active.get(), rawSignal, contract);
+    }
+
+    private CandidateEvaluation evaluateEntryCandidate(String contractCode, MarketBreadthContext marketBreadth) {
+        String gate = configGate(contractCode);
+        if (gate != null) {
+            return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null, gate), null);
+        }
         Optional<HtxTrendPositionEntity> active = recorder.findActive(contractCode);
         if (active.isPresent()) {
-            recordSignal(contractCode, rawSignal);
-            return advance(active.get(), rawSignal, contract);
+            return null;
         }
+        HtxSwapContractInfo contract = loadContract(contractCode);
+        if (contract == null || !positive(contract.getContractSize())) {
+            return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null, "contract info unavailable"), null);
+        }
+        SignalSnapshot snapshot = loadSignal(contractCode);
+        TrendSignal rawSignal = snapshot.signal();
         TrendSignal signal = entrySignalWithCarryContext(contractCode, rawSignal, marketBreadth);
         recordSignal(contractCode, signal);
-        if (!properties.isEntryEnabled()) {
-            return RunResult.of(RunCode.SKIPPED, null, "new trend entries disabled");
+        if (signal.side() == TrendSide.FLAT) {
+            return new CandidateEvaluation(RunResult.of(RunCode.NO_SIGNAL, null, signal.reason()), null);
         }
-        if (!allowNewEntry) {
-            return RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
-        }
-        return openIfEligible(contractCode, signal, snapshot.entryCandles(), contract, marketBreadth, performance);
+        BigDecimal score = entryCandidateScore(signal, marketBreadth);
+        EntryCandidate candidate = new EntryCandidate(contractCode, signal, snapshot.entryCandles(), contract, score);
+        return new CandidateEvaluation(RunResult.of(RunCode.OBSERVED, null,
+                "entry candidate queued side=" + signal.side() + " score=" + score.setScale(2, RoundingMode.HALF_UP)
+                        + " reason=" + signal.reason()), candidate);
     }
 
     private TrendSignal entrySignalWithCarryContext(String contractCode, TrendSignal signal, MarketBreadthContext marketBreadth) {
@@ -196,20 +261,52 @@ public class HtxTrendFollowingService {
     }
 
     private String carryEntryRejectionReason(TrendSignal signal, TrendSide carrySide, MarketBreadthContext marketBreadth) {
+        if (weakFlatReason(signal.reason())) {
+            return "base signal is weak trend: " + signal.reason();
+        }
         if (!positive(signal.atrPct()) || signal.atrPct().compareTo(nonNegative(properties.getFundingCarryMinAtrPct())) < 0) {
             return "ATR below carry threshold";
         }
-        if (signal.adx() == null || signal.adx().compareTo(nonNegative(properties.getFundingCarryMinAdx())) < 0) {
-            return "ADX below carry threshold";
+        BigDecimal requiredAdx = nonNegative(properties.getFundingCarryMinAdx()).max(nonNegative(properties.getMinAdx()));
+        if (signal.adx() == null || signal.adx().compareTo(requiredAdx) < 0) {
+            return "ADX below strict carry threshold " + requiredAdx;
         }
         if (!properties.isFundingCarryAllowAgainstBroadMarket() && againstBroadMarket(carrySide, marketBreadth)) {
             return "against broad market " + marketBreadth.summary();
         }
         if (properties.isFundingCarryRequireConfirmation()
-                && !emaAligned(signal, carrySide) && !breadthAligned(carrySide, marketBreadth)) {
-            return "no EMA or broad-market confirmation";
+                && (!emaAligned(signal, carrySide) || !breadthAligned(carrySide, marketBreadth))) {
+            return "carry requires both EMA and broad-market confirmation";
         }
         return null;
+    }
+
+    private BigDecimal entryCandidateScore(TrendSignal signal, MarketBreadthContext marketBreadth) {
+        BigDecimal score = nz(signal.adx()).add(nonNegative(signal.atrPct()).multiply(new BigDecimal("10000")));
+        String reason = signal.reason() == null ? "" : signal.reason().toLowerCase(Locale.ROOT);
+        if (reason.contains("broke donchian")) {
+            score = score.add(new BigDecimal("30"));
+        }
+        if (reason.contains("fibonacci")) {
+            score = score.add(new BigDecimal("20"));
+        }
+        if (reason.contains("funding carry")) {
+            score = score.subtract(new BigDecimal("15"));
+        }
+        if (breadthAligned(signal.side(), marketBreadth)) {
+            score = score.add(new BigDecimal("10"));
+        }
+        return score;
+    }
+
+    private static RunResult select(RunResult current, RunResult candidate) {
+        if (candidate == null) {
+            return current;
+        }
+        if (current == null || rank(candidate.code()) > rank(current.code())) {
+            return candidate;
+        }
+        return current;
     }
 
     private String carryConfirmationSummary(TrendSide side, TrendSignal signal, MarketBreadthContext marketBreadth) {
@@ -245,6 +342,17 @@ public class HtxTrendFollowingService {
         }
         return (side == TrendSide.LONG && marketBreadth.regime() == MarketRegime.BROAD_DOWN)
                 || (side == TrendSide.SHORT && marketBreadth.regime() == MarketRegime.BROAD_UP);
+    }
+
+    private static boolean weakFlatReason(String reason) {
+        if (reason == null) {
+            return true;
+        }
+        String normalized = reason.toLowerCase(Locale.ROOT);
+        return normalized.contains("adx below threshold")
+                || normalized.contains("atr below threshold")
+                || normalized.contains("kline unavailable")
+                || normalized.contains("not enough");
     }
 
     private RunResult openIfEligible(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
@@ -1164,19 +1272,6 @@ public class HtxTrendFollowingService {
         return result != null && result.code() == RunCode.ENTRY_SENT;
     }
 
-    private static boolean blocksFurtherEvaluation(RunResult result) {
-        if (result == null) {
-            return false;
-        }
-        return result.code() == RunCode.ENTRY_SENT
-                || result.code() == RunCode.ACTIVE
-                || result.code() == RunCode.CLOSE_SENT
-                || result.code() == RunCode.DONE
-                || result.code() == RunCode.WAITING
-                || result.code() == RunCode.REJECTED
-                || result.code() == RunCode.MANUAL_REVIEW;
-    }
-
     private static int rank(RunCode code) {
         if (code == RunCode.ENTRY_SENT || code == RunCode.CLOSE_SENT || code == RunCode.MANUAL_REVIEW
                 || code == RunCode.REJECTED) {
@@ -1459,6 +1554,13 @@ public class HtxTrendFollowingService {
     }
 
     private record SignalSnapshot(TrendSignal signal, List<HtxSwapKline> entryCandles) {
+    }
+
+    private record CandidateEvaluation(RunResult result, EntryCandidate candidate) {
+    }
+
+    private record EntryCandidate(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
+                                  HtxSwapContractInfo contract, BigDecimal score) {
     }
 
     private record TopOfBook(BigDecimal bid, BigDecimal ask) {

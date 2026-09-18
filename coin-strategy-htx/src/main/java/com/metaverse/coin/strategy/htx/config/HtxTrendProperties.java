@@ -213,8 +213,10 @@ public class HtxTrendProperties {
     /** Minimum absolute funding rate before carry can promote a flat signal into a live entry. */
     private BigDecimal minCarryFundingRateAbs = new BigDecimal("0.0002");
 
-    /** Minimum ADX required for funding-carry entries. */
-    private BigDecimal fundingCarryMinAdx = new BigDecimal("16");
+    /**
+     * Minimum ADX required for funding-carry entries; stricter than normal entries because carry starts from a flat base signal.
+     */
+    private BigDecimal fundingCarryMinAdx = new BigDecimal("24");
 
     /** Minimum ATR / close ratio required for funding-carry entries. */
     private BigDecimal fundingCarryMinAtrPct = new BigDecimal("0.0010");

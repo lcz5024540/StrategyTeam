@@ -20,6 +20,7 @@ import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import com.metaverse.coin.strategy.htx.service.HtxTrendSignalCalculator.TrendSide;
@@ -45,6 +46,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,6 +81,7 @@ class HtxTrendFollowingServiceTest {
         properties.setMaxEntryFundingCostRate(new BigDecimal("0.0006"));
         service = new HtxTrendFollowingService(swap, contractProperties, fundingArbitrageProperties,
                 marketMakerProperties, properties, recorder, calculator);
+        when(recorder.findActive(any())).thenReturn(Optional.empty());
     }
 
     @Test
@@ -223,7 +226,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void positiveFundingCanPromoteFlatSignalToCarryShortWhenLocallyConfirmed() {
+    void positiveFundingCanPromoteFlatSignalToCarryShortWhenLocallyAndBroadConfirmed() {
         givenContractInfo();
         givenKlines();
         givenFlatSignalForCarry(TrendSide.SHORT);
@@ -232,6 +235,7 @@ class HtxTrendFollowingServiceTest {
         givenNoOpenOrders();
         givenNoExternalPositions();
         givenContractMargin();
+        givenBroadBearishBreadth();
         when(swap.switchLeverage(eq("XAUT-USDT"), eq("short"), eq(properties.getLeverage())))
                 .thenReturn(ok(leverage("short")));
         when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
@@ -248,7 +252,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void negativeFundingCanPromoteFlatSignalToCarryLongWhenLocallyConfirmed() {
+    void negativeFundingCanPromoteFlatSignalToCarryLongWhenLocallyAndBroadConfirmed() {
         givenContractInfo();
         givenKlines();
         givenFlatSignalForCarry(TrendSide.LONG);
@@ -257,6 +261,7 @@ class HtxTrendFollowingServiceTest {
         givenNoOpenOrders();
         givenNoExternalPositions();
         givenContractMargin();
+        givenBroadBullishBreadth();
         when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
                 .thenReturn(ok(leverage("long")));
         when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
@@ -270,6 +275,25 @@ class HtxTrendFollowingServiceTest {
         verify(recorder).createOrderIntent(captor.capture());
         assertEquals("LONG", captor.getValue().getTrendSide());
         assertTrue(captor.getValue().getReason().contains("funding carry LONG"));
+    }
+
+    @Test
+    void fundingCarryDoesNotPromoteWeakAdxFlatSignalToLiveEntry() {
+        givenContractInfo();
+        givenKlines();
+        givenFlatSignalForCarryBelowAdx(TrendSide.LONG);
+        givenFunding("-0.0003");
+        givenBroadBullishBreadth();
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.NO_SIGNAL, result.code());
+        assertTrue(result.message().contains("base signal is weak trend"));
+        ArgumentCaptor<HtxTrendSignalEntity> captor = ArgumentCaptor.forClass(HtxTrendSignalEntity.class);
+        verify(recorder).recordSignal(captor.capture());
+        assertEquals("FLAT", captor.getValue().getSignal());
+        assertTrue(captor.getValue().getReason().contains("funding carry rejected"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
     @Test
@@ -288,46 +312,62 @@ class HtxTrendFollowingServiceTest {
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
-
     @Test
-    void liveRunnerScansMainstreamWhitelistAndOpensFirstEligibleContract() {
-        properties.setContractCodes(List.of("BTC-USDT", "ETH-USDT", "XAUT-USDT"));
+    void liveRunnerManagesExistingPositionsThenOpensTopCandidatesUpToRemainingSlots() {
+        properties.setContractCodes(List.of("BTC-USDT", "ETH-USDT", "SOL-USDT"));
+        properties.setMaxActivePositions(3);
+        when(recorder.countOpenLike()).thenReturn(1L);
         givenContractInfo("BTC-USDT", "0.001");
         givenContractInfo("ETH-USDT", "0.01");
+        givenContractInfo("SOL-USDT", "0.1");
         givenKlines("BTC-USDT");
         givenKlines("ETH-USDT");
+        givenKlines("SOL-USDT");
         givenFunding("BTC-USDT", "0.0001");
         givenFunding("ETH-USDT", "-0.0001");
-        givenDepth("BTC-USDT", "59990", "60010");
+        givenFunding("SOL-USDT", "-0.0001");
         givenDepth("ETH-USDT", "1999", "2001");
+        givenDepth("SOL-USDT", "99.95", "100.05");
         TrendSignal btcFlat = TrendSignal.of(TrendSide.FLAT, freshBarTime(), new BigDecimal("60000"),
                 new BigDecimal("59900"), new BigDecimal("59800"), new BigDecimal("60500"),
                 new BigDecimal("59000"), new BigDecimal("120"), new BigDecimal("0.0020"),
-                new BigDecimal("20"), "btc no signal");
+                new BigDecimal("30"), "btc active flat");
         TrendSignal ethLong = TrendSignal.of(TrendSide.LONG, freshBarTime(), new BigDecimal("2000"),
                 new BigDecimal("1990"), new BigDecimal("1980"), new BigDecimal("2010"),
                 new BigDecimal("1960"), new BigDecimal("20"), new BigDecimal("0.0100"),
                 new BigDecimal("30"), "eth breakout");
-        when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(btcFlat, ethLong);
+        TrendSignal solLong = TrendSignal.of(TrendSide.LONG, freshBarTime(), new BigDecimal("100"),
+                new BigDecimal("99"), new BigDecimal("98"), new BigDecimal("101"),
+                new BigDecimal("96"), new BigDecimal("3"), new BigDecimal("0.0300"),
+                new BigDecimal("40"), "sol breakout");
+        when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(btcFlat, ethLong, solLong);
+        HtxTrendPositionEntity active = activeLongPosition("BTC-USDT", "0.001", 1L,
+                "60000", "0.024", "59800", "59900", "60100", "60000");
+        when(recorder.findActive("BTC-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("BTC-USDT")).thenReturn(ok(List.of(openLongPosition("BTC-USDT", "1", "60050"))));
         givenNoOpenOrders("ETH-USDT");
         givenNoExternalPositions("ETH-USDT");
         givenContractMargin("ETH-USDT");
+        givenNoOpenOrders("SOL-USDT");
+        givenNoExternalPositions("SOL-USDT");
+        givenContractMargin("SOL-USDT");
         when(swap.switchLeverage(eq("ETH-USDT"), eq("long"), eq(properties.getLeverage())))
                 .thenReturn(ok(leverage("ETH-USDT", "long")));
-        when(recorder.findActive("BTC-USDT")).thenReturn(Optional.empty());
-        when(recorder.findActive("ETH-USDT")).thenReturn(Optional.empty());
-        when(recorder.createIntent(any())).thenReturn(77L);
-        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+        when(swap.switchLeverage(eq("SOL-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("SOL-USDT", "long")));
+        when(recorder.createIntent(any())).thenReturn(77L, 78L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)), ok(accepted(89L, 100L)));
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
-
         assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
-        assertTrue(result.message().contains("ETH-USDT"));
+        assertTrue(result.message().contains("candidates=2"));
+        InOrder order = inOrder(recorder, swap);
+        order.verify(recorder).updateRiskLevels(eq(active.getId()), any(), any(), any(), any(), any(), any());
+        order.verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
-        verify(recorder).createOrderIntent(captor.capture());
-        assertEquals("ETH-USDT", captor.getValue().getContractCode());
-        assertEquals("LONG", captor.getValue().getTrendSide());
-        verify(swap, never()).contractInfo("XAUT-USDT");
+        verify(recorder, times(2)).createOrderIntent(captor.capture());
+        assertEquals("SOL-USDT", captor.getAllValues().get(0).getContractCode());
+        assertEquals("ETH-USDT", captor.getAllValues().get(1).getContractCode());
     }
 
     @Test
@@ -684,6 +724,16 @@ class HtxTrendFollowingServiceTest {
         when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
     }
 
+
+    private void givenFlatSignalForCarryBelowAdx(TrendSide confirmationSide) {
+        BigDecimal emaFast = confirmationSide == TrendSide.LONG ? new BigDecimal("4290") : new BigDecimal("4270");
+        BigDecimal emaSlow = new BigDecimal("4280");
+        TrendSignal signal = TrendSignal.of(TrendSide.FLAT, freshBarTime(), new BigDecimal("4300"), emaFast,
+                emaSlow, new BigDecimal("4310"), new BigDecimal("4260"), new BigDecimal("12"),
+                new BigDecimal("0.0028"), new BigDecimal("17"), "ADX below threshold");
+        when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenReturn(signal);
+    }
+
     private long freshBarTime() {
         return Instant.now().getEpochSecond() - 15 * 60L - 30L;
     }
@@ -754,6 +804,17 @@ class HtxTrendFollowingServiceTest {
         stats.setShortContextCount(2L);
         stats.setLongSignalCount(6L);
         stats.setShortSignalCount(0L);
+        when(recorder.latestBreadthStats(any(LocalDateTime.class))).thenReturn(stats);
+    }
+
+
+    private void givenBroadBearishBreadth() {
+        HtxTrendBreadthStats stats = new HtxTrendBreadthStats();
+        stats.setTotalCount(50L);
+        stats.setLongContextCount(2L);
+        stats.setShortContextCount(38L);
+        stats.setLongSignalCount(0L);
+        stats.setShortSignalCount(6L);
         when(recorder.latestBreadthStats(any(LocalDateTime.class))).thenReturn(stats);
     }
 
