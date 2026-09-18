@@ -148,7 +148,7 @@ public class HtxTrendProperties {
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
 
     /** Maximum seconds after the signal bar closed during which a live entry is still allowed; <=0 disables. */
-    private long maxEntrySignalAgeSeconds = 180L;
+    private long maxEntrySignalAgeSeconds = 600L;
 
     /** Enable quality and market-breadth based entry sizing. This never hard-pauses entries by itself. */
     private boolean adaptiveSizingEnabled = true;
