@@ -371,6 +371,51 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void outsideEntryWindowCachesCandidateThenOpensWithoutRepeatingFullScan() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("XAUT-USDT", "long")));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult deferred = service.runOnce(false);
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, deferred.code());
+        assertTrue(deferred.message().contains("entry window closed; candidates cached"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+
+        HtxTrendFollowingService.RunResult opened = service.runOnce(true);
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, opened.code());
+        assertTrue(opened.message().contains("cached entry candidate"));
+        verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
+        verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getPeriod()), eq(properties.getKlineSize()));
+        verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize()));
+    }
+
+    @Test
+    void duplicateConfiguredContractsAreEvaluatedOncePerCandidateScan() {
+        properties.setContractCodes(List.of("XAUT-USDT", "xaut-usdt", " XAUT-USDT "));
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.FLAT);
+        givenFunding("-0.0001");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce(false);
+
+        assertEquals(HtxTrendFollowingService.RunCode.NO_SIGNAL, result.code());
+        verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getPeriod()), eq(properties.getKlineSize()));
+        verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize()));
+    }
+
+    @Test
     void liveEntrySkipsStaleSignalBar() {
         givenContractInfo();
         givenKlines();

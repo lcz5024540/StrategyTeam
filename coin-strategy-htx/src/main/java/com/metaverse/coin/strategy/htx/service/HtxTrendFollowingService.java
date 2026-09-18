@@ -39,10 +39,13 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Contract-only trend following for HTX swaps, safe to run in observe-only mode. */
@@ -69,6 +72,8 @@ public class HtxTrendFollowingService {
     private final HtxTrendProperties properties;
     private final HtxTrendRecorder recorder;
     private final HtxTrendSignalCalculator calculator;
+    private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
+    private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
 
     @Autowired
     public HtxTrendFollowingService(HtxUsdtSwapApiService api,
@@ -110,12 +115,14 @@ public class HtxTrendFollowingService {
         if (contractCodes.isEmpty()) {
             return RunResult.of(RunCode.SKIPPED, null, "trend contract list is blank");
         }
+        long candidateScanCloseEpoch = currentStableCandleCloseEpoch();
+        boolean scanEntryCandidates = markCandidateScanStarted(candidateScanCloseEpoch);
         long openLikePositions = recorder.countOpenLike();
         int maxActivePositions = Math.max(0, properties.getMaxActivePositions());
         MarketBreadthContext marketBreadth = marketBreadthContext();
         PerformanceContext performance = performanceContext();
         List<String> summaries = new ArrayList<>();
-        List<EntryCandidate> entryCandidates = new ArrayList<>();
+        Map<String, EntryCandidate> entryCandidates = new HashMap<>();
         RunResult selected = null;
 
         for (String contractCode : contractCodes) {
@@ -128,28 +135,44 @@ public class HtxTrendFollowingService {
             selected = select(selected, tagged);
         }
 
-        for (String contractCode : contractCodes) {
-            CandidateEvaluation evaluation = evaluateEntryCandidate(contractCode, marketBreadth);
-            if (evaluation == null) {
-                continue;
+        addPendingEntryCandidates(entryCandidates, summaries);
+        boolean hasFreshCarryoverCandidate = hasFreshPendingEntryCandidate(new ArrayList<>(entryCandidates.values()));
+
+        if (scanEntryCandidates) {
+            for (String contractCode : contractCodes) {
+                CandidateEvaluation evaluation = evaluateEntryCandidate(contractCode, marketBreadth);
+                if (evaluation == null) {
+                    pendingEntryCandidates.remove(contractCode);
+                    continue;
+                }
+                RunResult tagged = tag(contractCode, evaluation.result());
+                summaries.add(contractCode + "=" + evaluation.result().code() + ":" + evaluation.result().message());
+                if (evaluation.candidate() == null) {
+                    pendingEntryCandidates.remove(contractCode);
+                    selected = select(selected, tagged);
+                } else {
+                    rememberEntryCandidate(evaluation.candidate());
+                    putBestCandidate(entryCandidates, evaluation.candidate());
+                }
             }
-            RunResult tagged = tag(contractCode, evaluation.result());
-            summaries.add(contractCode + "=" + evaluation.result().code() + ":" + evaluation.result().message());
-            if (evaluation.candidate() == null) {
-                selected = select(selected, tagged);
-            } else {
-                entryCandidates.add(evaluation.candidate());
-            }
+        } else {
+            RunResult scanSkipped = RunResult.of(RunCode.SKIPPED, null,
+                    "candidate scan already completed closeEpoch=" + candidateScanCloseEpoch);
+            selected = select(selected, tag("ENTRY_SCAN", scanSkipped));
+            summaries.add("ENTRY_SCAN=" + scanSkipped.code() + ":" + scanSkipped.message());
         }
 
         long remainingSlots = Math.max(0L, maxActivePositions - openLikePositions);
-        if (!entryCandidates.isEmpty()) {
+        List<EntryCandidate> rankedCandidates = entryCandidates.values().stream()
+                .sorted(Comparator.comparing(EntryCandidate::score).reversed())
+                .toList();
+        if (!rankedCandidates.isEmpty()) {
             if (!properties.isEntryEnabled()) {
                 RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "new trend entries disabled");
                 selected = select(selected, tag("ENTRY", blocked));
                 summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
-            } else if (!entryWindowAllowsNewEntries) {
-                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "entry window closed");
+            } else if (!entryWindowAllowsNewEntries && !hasFreshCarryoverCandidate) {
+                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "entry window closed; candidates cached");
                 selected = select(selected, tag("ENTRY", blocked));
                 summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
             } else if (remainingSlots <= 0L) {
@@ -157,14 +180,14 @@ public class HtxTrendFollowingService {
                 selected = select(selected, tag("ENTRY", blocked));
                 summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
             } else {
-                entryCandidates.sort(Comparator.comparing(EntryCandidate::score).reversed());
                 long opened = 0L;
-                for (EntryCandidate candidate : entryCandidates) {
+                for (EntryCandidate candidate : rankedCandidates) {
                     if (opened >= remainingSlots) {
                         break;
                     }
                     RunResult result = openIfEligible(candidate.contractCode(), candidate.signal(),
                             candidate.entryCandles(), candidate.contract(), marketBreadth, performance);
+                    pendingEntryCandidates.remove(candidate.contractCode());
                     RunResult tagged = tag(candidate.contractCode(), result);
                     summaries.add(candidate.contractCode() + "=" + result.code() + ":" + result.message());
                     selected = select(selected, tagged);
@@ -181,9 +204,65 @@ public class HtxTrendFollowingService {
         return RunResult.of(selected.code(), selected.positionId(), selected.message()
                 + "; market=" + marketBreadth.summary()
                 + "; quality=" + performance.summary()
-                + "; candidates=" + entryCandidates.size()
+                + "; candidates=" + rankedCandidates.size()
+                + "; pendingCandidates=" + pendingEntryCandidates.size()
+                + "; candidateScanCloseEpoch=" + candidateScanCloseEpoch
                 + "; remainingSlots=" + remainingSlots
                 + "; liveContracts=" + String.join(" | ", summaries));
+    }
+
+    private void addPendingEntryCandidates(Map<String, EntryCandidate> entryCandidates, List<String> summaries) {
+        for (EntryCandidate candidate : pendingEntryCandidates.values()) {
+            if (candidate == null || isBlank(candidate.contractCode())) {
+                continue;
+            }
+            if (configGate(candidate.contractCode()) != null || entrySignalFreshnessGate(candidate.signal()) != null) {
+                pendingEntryCandidates.remove(candidate.contractCode());
+                continue;
+            }
+            putBestCandidate(entryCandidates, candidate);
+            summaries.add(candidate.contractCode() + "=OBSERVED:cached entry candidate score="
+                    + candidate.score().setScale(2, RoundingMode.HALF_UP)
+                    + " reason=" + candidate.signal().reason());
+        }
+    }
+
+    private void rememberEntryCandidate(EntryCandidate candidate) {
+        pendingEntryCandidates.compute(candidate.contractCode(), (contractCode, existing) -> {
+            if (existing == null || candidate.score().compareTo(existing.score()) > 0) {
+                return candidate;
+            }
+            return existing;
+        });
+    }
+
+    private static void putBestCandidate(Map<String, EntryCandidate> candidates, EntryCandidate candidate) {
+        candidates.merge(candidate.contractCode(), candidate,
+                (left, right) -> right.score().compareTo(left.score()) > 0 ? right : left);
+    }
+
+    private boolean hasFreshPendingEntryCandidate(List<EntryCandidate> candidates) {
+        for (EntryCandidate candidate : candidates) {
+            if (entrySignalFreshnessGate(candidate.signal()) == null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private synchronized boolean markCandidateScanStarted(long closeEpoch) {
+        if (closeEpoch <= lastCandidateScanCloseEpoch) {
+            return false;
+        }
+        lastCandidateScanCloseEpoch = closeEpoch;
+        return true;
+    }
+
+    private long currentStableCandleCloseEpoch() {
+        long periodSeconds = periodSeconds(properties.getPeriod());
+        long now = Instant.now().getEpochSecond();
+        long stableNow = now - Math.max(0L, properties.getCandleCloseGraceSeconds());
+        return stableNow - Math.floorMod(stableNow, periodSeconds);
     }
 
     private RunResult manageActiveContract(String contractCode) {
@@ -195,6 +274,7 @@ public class HtxTrendFollowingService {
         if (active.isEmpty()) {
             return null;
         }
+        pendingEntryCandidates.remove(contractCode);
         HtxSwapContractInfo contract = loadContract(contractCode);
         if (contract == null || !positive(contract.getContractSize())) {
             return RunResult.of(RunCode.SKIPPED, null, "contract info unavailable");

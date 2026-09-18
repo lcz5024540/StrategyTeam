@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Periodic runner for HTX contract trend following. */
 @Slf4j
@@ -22,11 +23,16 @@ public class HtxTrendFollowingScheduler {
 
     private final HtxTrendFollowingService service;
     private final HtxTrendProperties properties;
+    private final AtomicBoolean running = new AtomicBoolean(false);
 
     @Scheduled(
             fixedDelayString = "${htx.trend.poll-interval-ms:60000}",
             initialDelayString = "${htx.trend.initial-delay-ms:30000}")
     public void scheduled() {
+        if (!running.compareAndSet(false, true)) {
+            log.warn("[HTX-TREND] previous scheduled run is still active; skip overlapping tick");
+            return;
+        }
         try {
             HtxTrendFollowingService.RunResult result = scheduledAt(Instant.now());
             log.info("[HTX-TREND] result={}", result);
@@ -34,6 +40,8 @@ public class HtxTrendFollowingScheduler {
             log.error("[HTX-TREND] persistence failure; no new order will be attempted", ex);
         } catch (RuntimeException ex) {
             log.error("[HTX-TREND] scheduled run failed", ex);
+        } finally {
+            running.set(false);
         }
     }
 
@@ -41,8 +49,10 @@ public class HtxTrendFollowingScheduler {
         boolean entryWindowOpen = entryWindowOpen(now);
         boolean hasOpenLikePositions = service.hasOpenLikePositions();
         if (!entryWindowOpen && !hasOpenLikePositions) {
-            return HtxTrendFollowingService.RunResult.of(HtxTrendFollowingService.RunCode.SKIPPED, null,
-                    "outside candle-close entry window ageSeconds=" + ageSinceLastCandleClose(now));
+            HtxTrendFollowingService.RunResult result = service.runOnce(false);
+            return HtxTrendFollowingService.RunResult.of(result.code(), result.positionId(),
+                    result.message() + "; outside candle-close entry window ageSeconds="
+                            + ageSinceLastCandleClose(now));
         }
         return service.runOnce(entryWindowOpen);
     }

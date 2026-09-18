@@ -15,17 +15,20 @@ import static org.mockito.Mockito.when;
 class HtxTrendFollowingSchedulerTest {
 
     @Test
-    void skipsNewEntryScanOutsideCandleCloseWindowWhenNoOpenPosition() {
+    void scansCandidatesOutsideCandleCloseWindowWhenNoOpenPosition() {
         HtxTrendFollowingService service = mock(HtxTrendFollowingService.class);
         HtxTrendProperties properties = new HtxTrendProperties();
         HtxTrendFollowingScheduler scheduler = new HtxTrendFollowingScheduler(service, properties);
+        HtxTrendFollowingService.RunResult expected = HtxTrendFollowingService.RunResult.of(
+                HtxTrendFollowingService.RunCode.SKIPPED, null, "candidate scan complete");
         when(service.hasOpenLikePositions()).thenReturn(false);
+        when(service.runOnce(false)).thenReturn(expected);
 
         HtxTrendFollowingService.RunResult result = scheduler.scheduledAt(Instant.ofEpochSecond(980L));
 
         assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
         assertTrue(result.message().contains("outside candle-close entry window"));
-        verify(service, never()).runOnce(false);
+        verify(service).runOnce(false);
         verify(service, never()).runOnce(true);
     }
 
