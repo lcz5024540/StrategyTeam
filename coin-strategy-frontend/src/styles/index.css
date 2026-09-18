@@ -5913,13 +5913,13 @@ td {
 
 .strategy-console .trend-view-tabs button {
   min-width: 0;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid #dde3dc;
   border-radius: 8px;
   background: #fff;
   color: #68766f;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
 }
 
 .strategy-console .trend-view-tabs button:hover {
@@ -6493,11 +6493,11 @@ td {
 .strategy-console .trend-bot-hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(300px, .9fr) minmax(420px, 1.5fr) auto;
-  gap: 18px;
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
   overflow: hidden;
-  padding: 18px;
+  padding: 16px 18px;
   border: 1px solid var(--trend-border);
 }
 
@@ -6520,7 +6520,7 @@ td {
 .strategy-console .trend-bot-identity h2 {
   margin: 0;
   color: var(--trend-text);
-  font-size: clamp(24px, 2vw, 32px);
+  font-size: clamp(22px, 1.8vw, 28px);
   letter-spacing: -.03em;
 }
 
@@ -6564,11 +6564,11 @@ td {
 
 .strategy-console .trend-bot-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-  min-width: 140px;
+  min-width: 88px;
   color: var(--trend-muted);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -6578,13 +6578,9 @@ td {
 .strategy-console .trend-dashboard-history .trend-bot-hero,
 .strategy-console .trend-dashboard-signals .trend-bot-hero,
 .strategy-console .trend-dashboard-strategy .trend-bot-hero {
-  grid-template-columns: minmax(260px, 1fr) auto;
   padding: 14px 16px;
 }
 
-.strategy-console .trend-dashboard-history .trend-bot-identity p:not(.arb-eyebrow),
-.strategy-console .trend-dashboard-signals .trend-bot-identity p:not(.arb-eyebrow),
-.strategy-console .trend-dashboard-strategy .trend-bot-identity p:not(.arb-eyebrow),
 .strategy-console .trend-dashboard-history .trend-bot-kpis,
 .strategy-console .trend-dashboard-signals .trend-bot-kpis,
 .strategy-console .trend-dashboard-strategy .trend-bot-kpis {
@@ -6771,9 +6767,9 @@ td {
 /* HTX trend bot cockpit additions: status strip, diagnostics, sorted ledgers and config readout. */
 .strategy-console .trend-command-bar {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 14px;
   padding: 0;
   border: 0;
   background: transparent;
