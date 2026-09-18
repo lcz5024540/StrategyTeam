@@ -17,8 +17,8 @@ import type {
 const REFRESH_MS = 10_000
 const MODES: Array<{ value: ArbitrageMode; label: string; tag: string }> = [
   { value: 'CROSS_PRICE', label: '跨所套利', tag: '观察' },
-  { value: 'CROSS_FUNDING', label: '对冲套利', tag: 'Paper' },
-  { value: 'HTX_TREND', label: 'HTX 趋势交易', tag: 'Live' },
+  { value: 'CROSS_FUNDING', label: '对冲套利', tag: '观察' },
+  { value: 'HTX_TREND', label: 'HTX 趋势交易', tag: '实盘' },
   { value: 'HTX_GRID', label: '网格交易', tag: '暂停' },
 ]
 const TREND_VIEWS = [
@@ -166,7 +166,23 @@ function formatNotional(value: number | null | undefined) { return value == null
 function formatUsdt(value: number | null | undefined) { return value == null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(4)} U` }
 function formatUsdtNoSign(value: number | null | undefined) { return value == null ? '—' : `${value.toFixed(4)} U` }
 function formatDecimal(value: number | null | undefined, digits = 6) { return value == null ? '—' : Number(value).toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1') }
-function compactReason(value: string | null | undefined) { return value || '—' }
+function humanizeReason(value: string | null | undefined) {
+  const text = (value || '').trim()
+  if (!text) return ''
+  const lower = text.toLowerCase()
+  if (lower.includes('close broke donchian high')) return 'Donchian 向上突破'
+  if (lower.includes('close broke donchian low')) return 'Donchian 向下突破'
+  if (lower.includes('higher-timeframe ema uptrend')) return '高周期 EMA 向上'
+  if (lower.includes('higher-timeframe ema downtrend')) return '高周期 EMA 向下'
+  if (lower.includes('long trailing stop hit') || lower.includes('short trailing stop hit') || lower.includes('trailing stop')) return '追踪止损触发'
+  if (lower.includes('flat after fee protection')) return '费用保护退出'
+  if (lower.includes('flat loss control')) return '亏损控制退出'
+  if (lower.includes('candidate valid for shadow observation')) return '候选通过初筛'
+  if (lower.includes('no breakout') && lower.includes('fibonacci')) return '未形成突破或斐波那契延续'
+  if (lower.includes('entry signal')) return '趋势入场信号'
+  return text.length > 36 ? `${text.slice(0, 36)}…` : text
+}
+function compactReason(value: string | null | undefined) { return humanizeReason(value) || '—' }
 function isOpenLikePosition(status: string | null | undefined) { return ['INTENT', 'ENTRY_SENT', 'ACTIVE', 'CLOSE_SENT', 'UNKNOWN'].includes((status || '').toUpperCase()) }
 function StatusText(status: string | null | undefined) {
   const upper = (status || '').toUpperCase()
@@ -199,6 +215,8 @@ function latestActiveManagementText(positions: TrendPosition[]) {
 function normalizeGateReason(value: string | null | undefined) {
   const text = (value || '').trim()
   if (!text) return ''
+  const readable = humanizeReason(text)
+  if (readable !== text) return readable
   const lower = text.toLowerCase()
   if (lower.includes('adx below')) return 'ADX 不足'
   if (lower.includes('atr below')) return 'ATR 不足'
@@ -351,7 +369,7 @@ function TrendBotHero({ trend, loading, refresh }: { trend: HtxTrendDashboardRes
   const heartbeat = latestRuntimeEventAt(trend)
   return <section className={`trend-bot-hero ${state.tone}`}>
     <div className="trend-bot-identity">
-      <h2>HTX Trend Bot</h2>
+      <h2>趋势 Bot</h2>
       <div className="trend-command-bar" aria-label="Bot status bar">
         <span><b>状态</b><Status status={state.status} /></span>
         <span><b>心跳</b><small>{heartbeat || '—'}</small></span>
@@ -397,7 +415,7 @@ function BotExecutionPipeline({ trend }: { trend: HtxTrendDashboardResponse }) {
     { label: '持仓管理', value: `${trend.summary.activePositions} 活动`, detail: latestActiveManagementText(trend.activePositions), tone: trend.summary.activePositions > 0 ? 'active' : 'idle' },
     { label: '退出', value: `${trend.summary.todayClosedPositions} 平仓`, detail: `今日胜率 ${todayWinRate}`, tone: trend.summary.todayNetRealizedProfit > 0 ? 'positive' : trend.summary.todayNetRealizedProfit < 0 ? 'negative' : 'idle' },
   ]
-  return <section className="trend-pipeline" aria-label="Bot execution pipeline">
+  return <section className="trend-pipeline" aria-label="Bot 执行链路">
     <header><div><h2>Bot 执行链路</h2></div></header>
     <div className="trend-pipeline-steps">
       {steps.map((step) => <div className={`trend-pipeline-step ${step.tone}`} key={step.label}>
@@ -410,12 +428,12 @@ function BotExecutionPipeline({ trend }: { trend: HtxTrendDashboardResponse }) {
 }
 function TrendNowPanel({ positions, onHistory }: { positions: TrendPosition[]; onHistory: () => void }) {
   return <section className="trend-panel trend-now">
-    <header><div><p className="arb-eyebrow">CURRENT POSITIONS</p><h2>当前仓位</h2></div><button className="arb-text-button" type="button" onClick={onHistory}>{positions.length} 条</button></header>
+    <header><div><h2>当前仓位</h2></div><button className="arb-text-button" type="button" onClick={onHistory}>{positions.length} 条</button></header>
     {positions.length ? <div className="trend-position-list">
       {positions.slice(0, 5).map((position) => <article className="trend-current-position" key={position.id}>
         <div><strong>{position.contractCode}</strong><Status status={position.side} /></div>
         <dl><div><dt>数量</dt><dd>{position.contractVolume}</dd></div><div><dt>开仓均价</dt><dd>{formatDecimal(position.entryAvgPrice)}</dd></div><div><dt>追踪止损</dt><dd>{formatDecimal(position.trailingStopPrice ?? position.stopPrice)}</dd></div><div><dt>管理状态</dt><dd>{positionManagementLabel(position)}</dd></div></dl>
-        <p><b>入场依据：</b>{compactReason(position.entrySignal || position.message)}</p>
+        <p>{compactReason(position.entrySignal || position.message)}</p>
       </article>)}
       {positions.length > 5 ? <small>另有 {positions.length - 5} 条活动仓位，可在交易历史视图完整查看。</small> : null}
     </div> : <div className="trend-empty-state"><strong>当前没有活动趋势仓位</strong><small>下一笔开仓需要候选信号、定时信号、流动性、点差与风险 gate 同时满足。</small></div>}
@@ -452,7 +470,7 @@ function TrendDiagnosticPanel({ trend }: { trend: HtxTrendDashboardResponse }) {
     <header><div><h2>策略诊断</h2></div></header>
     <div className="trend-diagnostic-grid">
       <article><small>为什么没开仓</small><strong>{blockers[0]?.reason || '暂无明确拦截'}</strong><span>{blockers[0] ? `${blockers[0].count} 次 · 最新 ${blockers[0].latestAt || '—'}` : '最近信号没有可聚合的拒绝原因'}</span></article>
-      <article><small>哪个 gate 拦截最多</small><strong>{blockers[0]?.reason || '—'}</strong><span>{blockers.slice(0, 3).map((item) => `${item.reason} ${item.count}`).join(' / ') || '暂无 gate 统计'}</span></article>
+      <article><small>哪个过滤最多</small><strong>{blockers[0]?.reason || '—'}</strong><span>{blockers.slice(0, 3).map((item) => `${item.reason} ${item.count}`).join(' / ') || '暂无过滤统计'}</span></article>
       <article><small>哪个退出原因最伤</small><strong>{worstExit?.bucket || '—'}</strong><span>{worstExit ? `${worstExit.closedPositions} 笔 · ${formatUsdt(worstExit.netProfit)}` : '今日暂无已平仓归因'}</span></article>
       <article><small>最近订单链路</small><strong>{latestOrder ? `${latestOrder.contractCode} ${latestOrder.leg}` : '—'}</strong><span>{latestOrder ? `${StatusText(latestOrder.status)} · ${compactReason(latestOrder.reason || latestOrder.message)}` : '暂无订单记录'}</span></article>
     </div>
