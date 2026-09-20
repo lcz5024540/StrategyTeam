@@ -27,6 +27,8 @@ const TREND_VIEWS = [
 type TrendView = typeof TREND_VIEWS[number]['value']
 type PositionSortKey = 'updatedAt' | 'pnl' | 'turnover' | 'fee' | 'symbol'
 type OrderSortKey = 'updatedAt' | 'notional' | 'fee' | 'state' | 'symbol'
+type AccountFilter = 'ALL' | 'ACTIVE' | 'TRADED' | 'WATCH' | 'MIRROR'
+type AccountSortKey = 'priority' | 'pnl' | 'turnover' | 'orders' | 'latest' | 'name'
 
 const EMPTY_FUNDING_MATRIX: { exchanges: string[]; items: FundingRateMatrixRow[] } = {
   exchanges: ['BINANCE', 'OKX', 'HTX', 'BITGET', 'HYPERLIQUID'],
@@ -376,29 +378,73 @@ function TrendTodayPnlPanel({ trend }: { trend: HtxTrendDashboardResponse }) {
   </section>
 }
 function TrendAccountOverview({ rows }: { rows: TrendAccountSummary[] }) {
-  return <section className="trend-account-overview">
-    <header className="trend-table-title"><div><h2>账户总览</h2></div><span>{rows.length} 个账户</span></header>
-    {rows.length ? <div className="trend-account-grid">
-      {rows.map((row) => {
-        const winRate = row.closedPositions ? `${(row.winningPositions / row.closedPositions * 100).toFixed(1)}%` : '—'
-        const latest = row.latestOrderAt || row.latestPositionAt || '—'
-        return <article className="trend-account-card" key={accountName(row.accountLabel)}>
-          <header><strong>{accountName(row.accountLabel)}</strong><span className={valueTone(row.todayNetRealizedProfit)}>{formatUsdt(row.todayNetRealizedProfit)}</span></header>
-          <small>{accountRoleText(row)} · {row.accountEnabled && row.trendEnabled ? '启用' : '停用'}</small>
-          <dl>
-            <div><dt>活动仓位</dt><dd>{row.activePositions}</dd></div>
-            <div><dt>今日平仓</dt><dd>{row.todayClosedPositions}</dd></div>
-            <div><dt>胜率</dt><dd>{winRate}</dd></div>
-            <div><dt>今日交易量</dt><dd>{formatNotional(row.todayTurnover || row.todayOrderNotional)}</dd></div>
-            <div><dt>订单数</dt><dd>{row.totalOrders}</dd></div>
-            <div><dt>订单手续费</dt><dd>{formatUsdtNoSign(row.todayOrderFees || row.todayEstimatedOrderFees)}</dd></div>
-          </dl>
-          <small>最近账本 {latest}</small>
-        </article>
-      })}
-    </div> : <div className="trend-empty-state"><strong>暂无账户账本</strong><small>等策略写入仓位或订单后会自动出现。</small></div>}
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<AccountFilter>('ALL')
+  const [sort, setSort] = useState<AccountSortKey>('priority')
+  const ordered = accountRows(rows, filter, sort, query)
+  const visible = ordered.slice(0, 20)
+  const totalNet = rows.reduce((sum, row) => sum + (row.todayNetRealizedProfit || 0), 0)
+  const totalTurnover = rows.reduce((sum, row) => sum + (row.todayTurnover || row.todayOrderNotional || 0), 0)
+  const activeAccounts = rows.filter((row) => row.activePositions > 0).length
+  const tradedAccounts = rows.filter((row) => row.todayClosedPositions > 0 || row.todayOrders > 0).length
+  const mirrorAccounts = rows.filter((row) => row.mirrorEnabled || (row.accountRole || '').toUpperCase() === 'MIRROR').length
+  return <section className="trend-account-overview trend-account-workspace">
+    <header className="trend-table-title trend-account-title"><div><h2>账户池</h2><p>多账户先看组合状态，再进表格定位具体账号。</p></div><span>{rows.length} 个账户</span></header>
+    {rows.length ? <>
+      <div className="trend-account-pool">
+        <div><small>今日净收益</small><strong className={valueTone(totalNet)}>{formatUsdt(totalNet)}</strong></div>
+        <div><small>活跃账号</small><strong>{activeAccounts}</strong></div>
+        <div><small>今日有交易</small><strong>{tradedAccounts}</strong></div>
+        <div><small>跟随账号</small><strong>{mirrorAccounts}</strong></div>
+        <div><small>今日交易量</small><strong>{formatNotional(totalTurnover)}</strong></div>
+      </div>
+      <div className="trend-account-controls">
+        <label>搜索账号<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="primary / TradeX" /></label>
+        <label>账户范围<select value={filter} onChange={(event) => setFilter(event.target.value as AccountFilter)}><option value="ALL">全部账户</option><option value="ACTIVE">有仓位 / 挂单</option><option value="TRADED">今日有交易</option><option value="WATCH">需要关注</option><option value="MIRROR">跟随账户</option></select></label>
+        <label>排序<select value={sort} onChange={(event) => setSort(event.target.value as AccountSortKey)}><option value="priority">优先级</option><option value="pnl">今日净收益</option><option value="turnover">今日交易量</option><option value="orders">订单数</option><option value="latest">最近账本</option><option value="name">账号名</option></select></label>
+      </div>
+      <div className="arb-table-wrap trend-account-table-wrap">
+        <table className="trend-account-table"><thead><tr><th>账号</th><th>角色</th><th>状态</th><th>活动</th><th>今日平仓</th><th>胜率</th><th>交易量</th><th>净收益</th><th>费用</th><th>最近账本</th></tr></thead><tbody>{visible.map((row) => <TrendAccountRow key={accountName(row.accountLabel)} row={row} />)}</tbody></table>
+      </div>
+      {ordered.length > visible.length ? <p className="trend-account-footnote">已按优先级显示前 20 个账户；完整账户池应进入独立账户管理页。</p> : null}
+    </> : <div className="trend-empty-state"><strong>暂无账户账本</strong><small>账号注册或策略写入后会自动出现。</small></div>}
   </section>
 }
+
+function TrendAccountRow({ row }: { row: TrendAccountSummary }) {
+  const winRate = row.closedPositions ? `${(row.winningPositions / row.closedPositions * 100).toFixed(1)}%` : '—'
+  const latest = row.latestOrderAt || row.latestPositionAt || '—'
+  const fees = row.todayFees || row.todayOrderFees || row.todayEstimatedOrderFees
+  const activity = row.activePositions > 0 ? `${row.activePositions} 持仓` : row.openOrders > 0 ? `${row.openOrders} 挂单` : '空闲'
+  return <tr><td><b>{accountName(row.accountLabel)}</b></td><td><small>{accountRoleText(row)}</small></td><td><Status status={row.accountEnabled && row.trendEnabled ? 'ACTIVE' : 'REJECTED'} /></td><td>{activity}</td><td>{row.todayClosedPositions}</td><td>{winRate}</td><td>{formatNotional(row.todayTurnover || row.todayOrderNotional)}</td><td className={valueTone(row.todayNetRealizedProfit)}>{formatUsdt(row.todayNetRealizedProfit)}</td><td>{formatUsdtNoSign(fees)}</td><td><small>{latest}</small></td></tr>
+}
+
+function compareAccounts(sort: AccountSortKey) {
+  return (left: TrendAccountSummary, right: TrendAccountSummary) => {
+    if (sort === 'name') return accountName(left.accountLabel).localeCompare(accountName(right.accountLabel))
+    if (sort === 'pnl') return (right.todayNetRealizedProfit || 0) - (left.todayNetRealizedProfit || 0)
+    if (sort === 'turnover') return (right.todayTurnover || right.todayOrderNotional || 0) - (left.todayTurnover || left.todayOrderNotional || 0)
+    if (sort === 'orders') return (right.totalOrders || 0) - (left.totalOrders || 0)
+    if (sort === 'latest') return String(right.latestOrderAt || right.latestPositionAt || '').localeCompare(String(left.latestOrderAt || left.latestPositionAt || ''))
+    return accountPriority(right) - accountPriority(left)
+  }
+}
+function accountPriority(row: TrendAccountSummary) {
+  return (row.activePositions > 0 ? 1000 : 0) + (row.openOrders > 0 ? 500 : 0) + (row.todayClosedPositions > 0 || row.todayOrders > 0 ? 100 : 0) + Math.abs(row.todayNetRealizedProfit || 0)
+}
+function accountRows(rows: TrendAccountSummary[], filter: AccountFilter, sort: AccountSortKey, query: string) {
+  const keyword = query.trim().toLowerCase()
+  return [...rows].filter((row) => {
+    const label = accountName(row.accountLabel).toLowerCase()
+    if (keyword && !label.includes(keyword)) return false
+    if (filter === 'ACTIVE') return row.activePositions > 0 || row.openOrders > 0
+    if (filter === 'TRADED') return row.todayClosedPositions > 0 || row.todayOrders > 0 || row.todayTurnover > 0 || row.todayOrderNotional > 0
+    if (filter === 'WATCH') return !row.accountEnabled || !row.trendEnabled || row.todayNetRealizedProfit < 0 || row.openOrders > 0
+    if (filter === 'MIRROR') return row.mirrorEnabled || (row.accountRole || '').toUpperCase() === 'MIRROR'
+    return true
+  }).sort(compareAccounts(sort))
+}
+
 function TrendLastTradePanel({ position, onHistory }: { position?: TrendPosition; onHistory: () => void }) {
   return <section className="trend-panel">
     <header><div><h2>最近一笔交易</h2></div><button className="arb-text-button" type="button" onClick={onHistory}>完整历史</button></header>
