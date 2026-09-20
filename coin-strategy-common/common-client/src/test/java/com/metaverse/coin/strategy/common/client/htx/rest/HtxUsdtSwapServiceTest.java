@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAvailableLeverage;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFeeRate;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrder;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
@@ -191,6 +192,28 @@ class HtxUsdtSwapServiceTest {
         assertEquals("GET", request.getMethod());
         assertEquals("/linear-swap-api/v1/swap_funding_rate", request.getRequestUrl().encodedPath());
         assertEquals("XAUT-USDT", request.getRequestUrl().queryParameter("contract_code"));
+    }
+
+    @Test
+    void tradingFeeUsesLegacyPrivateSwapFeeEndpoint() throws InterruptedException {
+        server.enqueue(json("{\"status\":\"ok\",\"data\":[{"
+                + "\"symbol\":\"BTC\",\"contract_code\":\"BTC-USDT\","
+                + "\"open_maker_fee\":\"0.0001\",\"open_taker_fee\":\"0.00025\","
+                + "\"close_maker_fee\":\"0.0001\",\"close_taker_fee\":\"0.0003\","
+                + "\"fee_asset\":\"USDT\"}]}"));
+
+        HtxRestResponse<List<HtxSwapFeeRate>> response = service.tradingFee("BTC-USDT");
+
+        assertTrue(response.ok());
+        assertEquals("BTC-USDT", response.getData().get(0).getContractCode());
+        assertEquals(new BigDecimal("0.00025"), response.getData().get(0).getOpenTakerFee());
+        assertEquals(new BigDecimal("0.0003"), response.getData().get(0).getCloseTakerFee());
+        RecordedRequest request = takeRequest();
+        assertEquals("GET", request.getMethod());
+        assertEquals("/linear-swap-api/v1/swap_fee", request.getRequestUrl().encodedPath());
+        assertEquals("BTC-USDT", request.getRequestUrl().queryParameter("contract_code"));
+        assertEquals("swap", request.getRequestUrl().queryParameter("business_type"));
+        assertNotNull(request.getRequestUrl().queryParameter("Signature"));
     }
 
     @Test

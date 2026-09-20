@@ -103,16 +103,16 @@ public class HtxTrendProperties {
     private BigDecimal maxEntryAtrPct = new BigDecimal("0.0500");
 
     /** Base target notional before risk sizing clamps it. */
-    private BigDecimal targetQuoteNotional = new BigDecimal("190");
+    private BigDecimal targetQuoteNotional = new BigDecimal("220");
 
-    /** Maximum live notional for this strategy. */
-    private BigDecimal maxQuoteNotional = new BigDecimal("190");
+    /** Absolute maximum live notional for this strategy after sizing multipliers. */
+    private BigDecimal maxQuoteNotional = new BigDecimal("350");
 
     /** Minimum live notional; smaller calculated sizes are skipped. */
     private BigDecimal minQuoteNotional = new BigDecimal("20");
 
     /** Max USDT loss budget per trade, used with ATR stop distance. */
-    private BigDecimal riskPerTradeUsdt = new BigDecimal("1.5");
+    private BigDecimal riskPerTradeUsdt = new BigDecimal("2.0");
 
     /** Initial stop distance = ATR * this multiplier. */
     private BigDecimal atrStopMultiplier = new BigDecimal("2.5");
@@ -123,8 +123,11 @@ public class HtxTrendProperties {
     /** Optional take-profit distance = ATR * this multiplier; <=0 disables. */
     private BigDecimal takeProfitAtrMultiplier = new BigDecimal("0");
 
-    /** Estimated taker fee per side, used before fills are known to reject fee-dominated signals. */
+    /** Conservative taker fee fallback per side when the account-specific HTX fee query is unavailable. */
     private BigDecimal estimatedTakerFeeRate = new BigDecimal("0.0004");
+
+    /** Cache lifetime for account-specific HTX swap fee rates. */
+    private long feeRateCacheMs = 600_000L;
 
     /** Minimum net profit buffer required after estimated round-trip fees. */
     private BigDecimal minNetProfitRate = new BigDecimal("0.0010");
@@ -244,7 +247,22 @@ public class HtxTrendProperties {
     private BigDecimal minAdaptivePositionMultiplier = new BigDecimal("0.25");
 
     /** Upper clamp for the combined adaptive sizing multiplier. */
-    private BigDecimal maxAdaptivePositionMultiplier = new BigDecimal("1.50");
+    private BigDecimal maxAdaptivePositionMultiplier = new BigDecimal("1.80");
+
+    /** Allow high-confidence entries to receive an extra sizing multiplier. */
+    private boolean confidenceSizingEnabled = true;
+
+    /** Minimum direction-confidence score that may receive the high-confidence multiplier. */
+    private BigDecimal highConfidenceSizingScore = new BigDecimal("105");
+
+    /** Extra position multiplier for high-confidence entries. */
+    private BigDecimal highConfidencePositionMultiplier = new BigDecimal("1.20");
+
+    /** Minimum score for high-confidence entries aligned with broad market and strong recent quality. */
+    private BigDecimal strongConfluenceSizingScore = new BigDecimal("120");
+
+    /** Extra position multiplier for strong confluence entries. */
+    private BigDecimal strongConfluencePositionMultiplier = new BigDecimal("1.35");
 
     /** Once a live position reaches fee breakeven, trailing stop is clamped to at least breakeven. */
     private boolean feeProtectionEnabled = true;

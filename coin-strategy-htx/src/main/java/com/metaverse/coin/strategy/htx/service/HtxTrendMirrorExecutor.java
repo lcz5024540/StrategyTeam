@@ -43,6 +43,7 @@ public class HtxTrendMirrorExecutor {
     private final HtxTrendProperties properties;
     private final HtxContractProperties contractProperties;
     private final HtxUsdtSwapService mirrorSwap;
+    private final HtxSwapFeeRateResolver feeRateResolver;
     private final Map<String, PendingMirrorOrder> pendingCloseOrders = new ConcurrentHashMap<>();
 
     @Autowired
@@ -55,6 +56,8 @@ public class HtxTrendMirrorExecutor {
         this.properties = properties;
         this.contractProperties = contractProperties;
         this.mirrorSwap = mirrorSwap;
+        this.feeRateResolver = new HtxSwapFeeRateResolver(mirrorSwap,
+                properties::getEstimatedTakerFeeRate, properties::getFeeRateCacheMs, accountLabel());
     }
 
     public SyncResult syncEntry(HtxTrendPositionEntity position) {
@@ -94,6 +97,7 @@ public class HtxTrendMirrorExecutor {
         if (marginGate != null) {
             return SyncResult.failed(marginGate);
         }
+        BigDecimal takerFeeRate = feeRateResolver.takerRate(contractCode);
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), false, deltaVolume);
         HtxRestResponse<HtxSwapOrderResult> response = mirrorSwap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
@@ -101,10 +105,10 @@ public class HtxTrendMirrorExecutor {
             return SyncResult.failed("mirror entry rejected account=" + accountLabel()
                     + " contract=" + contractCode + " error=" + error(response));
         }
-        log.info("[HTX-TREND-MIRROR] entry sent account={} contract={} side={} orderId={} volume={}",
-                accountLabel(), contractCode, position.getSide(), accepted.getOrderId(), deltaVolume);
+        log.info("[HTX-TREND-MIRROR] entry sent account={} contract={} side={} orderId={} volume={} feeRate={}",
+                accountLabel(), contractCode, position.getSide(), accepted.getOrderId(), deltaVolume, takerFeeRate);
         return SyncResult.ok("mirror entry sent account=" + accountLabel() + " orderId=" + accepted.getOrderId()
-                + " volume=" + deltaVolume);
+                + " volume=" + deltaVolume + " feeRate=" + takerFeeRate);
     }
 
     public SyncResult syncClose(HtxTrendPositionEntity position) {
@@ -143,6 +147,7 @@ public class HtxTrendMirrorExecutor {
             return SyncResult.failed("mirror close skipped: position volume below one contract account=" + accountLabel()
                     + " contract=" + contractCode + " volume=" + snapshot.sameVolume());
         }
+        BigDecimal takerFeeRate = feeRateResolver.takerRate(contractCode);
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), true, closeVolume);
         HtxRestResponse<HtxSwapOrderResult> response = mirrorSwap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
@@ -151,10 +156,10 @@ public class HtxTrendMirrorExecutor {
                     + " contract=" + contractCode + " error=" + error(response));
         }
         pendingCloseOrders.put(pendingKey, new PendingMirrorOrder(accepted.getOrderId(), System.currentTimeMillis()));
-        log.info("[HTX-TREND-MIRROR] close sent account={} contract={} side={} orderId={} volume={}",
-                accountLabel(), contractCode, position.getSide(), accepted.getOrderId(), closeVolume);
+        log.info("[HTX-TREND-MIRROR] close sent account={} contract={} side={} orderId={} volume={} feeRate={}",
+                accountLabel(), contractCode, position.getSide(), accepted.getOrderId(), closeVolume, takerFeeRate);
         return SyncResult.pending("mirror close sent account=" + accountLabel() + " orderId=" + accepted.getOrderId()
-                + " volume=" + closeVolume);
+                + " volume=" + closeVolume + " feeRate=" + takerFeeRate);
     }
 
     public boolean blockPrimaryCloseUntilSynced() {

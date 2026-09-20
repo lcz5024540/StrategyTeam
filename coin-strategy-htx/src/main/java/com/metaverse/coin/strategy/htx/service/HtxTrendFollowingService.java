@@ -80,6 +80,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendRecorder recorder;
     private final HtxTrendSignalCalculator calculator;
     private final HtxTrendMirrorExecutor mirrorExecutor;
+    private final HtxSwapFeeRateResolver feeRateResolver;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
 
@@ -122,6 +123,8 @@ public class HtxTrendFollowingService {
         this.recorder = recorder;
         this.calculator = calculator;
         this.mirrorExecutor = mirrorExecutor;
+        this.feeRateResolver = new HtxSwapFeeRateResolver(swap, properties::getEstimatedTakerFeeRate,
+                properties::getFeeRateCacheMs, "primary");
     }
 
     public RunResult runOnce() {
@@ -469,12 +472,11 @@ public class HtxTrendFollowingService {
         return score;
     }
 
-    private String directionConfidenceGate(TrendSignal signal, List<HtxSwapKline> entryCandles,
-                                           MarketBreadthContext marketBreadth, PerformanceContext performance) {
-        if (!properties.isDirectionConfidenceGateEnabled() || signal == null || signal.side() == TrendSide.FLAT) {
+    private String directionConfidenceGate(TrendSignal signal, DirectionConfidence confidence) {
+        if (!properties.isDirectionConfidenceGateEnabled() || signal == null || signal.side() == TrendSide.FLAT
+                || confidence == null) {
             return null;
         }
-        DirectionConfidence confidence = directionConfidence(signal, entryCandles, marketBreadth, performance);
         if (confidence.score().compareTo(confidence.requiredScore()) >= 0) {
             return null;
         }
@@ -663,7 +665,8 @@ public class HtxTrendFollowingService {
         if (cooldownGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, cooldownGate);
         }
-        String directionGate = directionConfidenceGate(signal, entryCandles, marketBreadth, performance);
+        DirectionConfidence confidence = directionConfidence(signal, entryCandles, marketBreadth, performance);
+        String directionGate = directionConfidenceGate(signal, confidence);
         if (directionGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, directionGate);
         }
@@ -689,7 +692,7 @@ public class HtxTrendFollowingService {
         if (chaseGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, chaseGate);
         }
-        SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance);
+        SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance, confidence);
         long volume = targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing);
         if (volume <= 0) {
             return RunResult.of(RunCode.SKIPPED, null, "target volume below minimum " + sizing.summary());
@@ -698,7 +701,8 @@ public class HtxTrendFollowingService {
         if (liquidityGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, liquidityGate);
         }
-        String expectedMoveGate = expectedMoveGate(signal, entryPrice, spreadRate);
+        BigDecimal takerFeeRate = effectiveTakerFeeRate(contractCode);
+        String expectedMoveGate = expectedMoveGate(signal, entryPrice, spreadRate, takerFeeRate);
         if (expectedMoveGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, expectedMoveGate);
         }
@@ -753,9 +757,9 @@ public class HtxTrendFollowingService {
         recorder.markOrderAccepted(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, orderId,
                 accepted.getClientOrderId(), "entry accepted by exchange");
         recorder.markEntryAccepted(id, orderId, "entry sent side=" + side + " volume=" + volume);
-        log.info("[HTX-TREND] entry sent id={} contract={} side={} orderId={} volume={} close={} atr={} adx={} reason={} sizing={}",
+        log.info("[HTX-TREND] entry sent id={} contract={} side={} orderId={} volume={} close={} atr={} adx={} feeRate={} reason={} sizing={}",
                 id, contractCode, side, orderId, volume, signal.closePrice(), signal.atr(), signal.adx(),
-                signal.reason(), sizing.summary());
+                takerFeeRate, signal.reason(), sizing.summary());
         return RunResult.of(RunCode.ENTRY_SENT, id, "entry order sent " + sizing.summary());
     }
 
@@ -1290,7 +1294,7 @@ public class HtxTrendFollowingService {
     }
 
     private SizingContext sizingContext(TrendSide side, MarketBreadthContext marketBreadth,
-                                        PerformanceContext performance) {
+                                        PerformanceContext performance, DirectionConfidence confidence) {
         BigDecimal multiplier = BigDecimal.ONE;
         StringBuilder reason = new StringBuilder();
         if (performance != null && performance.regime() == QualityRegime.WEAK) {
@@ -1316,6 +1320,27 @@ public class HtxTrendFollowingService {
             reason.append("breadth=BROAD_DOWN_COUNTER ");
         } else {
             reason.append("breadth=MIXED ");
+        }
+        if (properties.isDirectionConfidenceGateEnabled() && properties.isConfidenceSizingEnabled()
+                && confidence != null && performance != null && performance.regime() != QualityRegime.WEAK) {
+            BigDecimal score = confidence.score();
+            if (score.compareTo(nonNegative(properties.getStrongConfluenceSizingScore())) >= 0
+                    && breadthAligned(side, marketBreadth) && performance.regime() == QualityRegime.STRONG) {
+                multiplier = multiplier.multiply(nonNegative(properties.getStrongConfluencePositionMultiplier()));
+                reason.append("confidence=STRONG_CONFLUENCE(score=")
+                        .append(score.setScale(2, RoundingMode.HALF_UP)).append(") ");
+            } else if (score.compareTo(nonNegative(properties.getHighConfidenceSizingScore())) >= 0) {
+                multiplier = multiplier.multiply(nonNegative(properties.getHighConfidencePositionMultiplier()));
+                reason.append("confidence=HIGH(score=")
+                        .append(score.setScale(2, RoundingMode.HALF_UP)).append(") ");
+            } else {
+                reason.append("confidence=NORMAL(score=")
+                        .append(score.setScale(2, RoundingMode.HALF_UP)).append(") ");
+            }
+        } else if (properties.isConfidenceSizingEnabled() && performance != null && performance.regime() == QualityRegime.WEAK
+                && confidence != null) {
+            reason.append("confidence=HELD_BY_WEAK_QUALITY(score=")
+                    .append(confidence.score().setScale(2, RoundingMode.HALF_UP)).append(") ");
         }
         multiplier = clamp(multiplier, positive(properties.getMinAdaptivePositionMultiplier())
                         ? properties.getMinAdaptivePositionMultiplier() : BigDecimal.ONE,
@@ -1375,7 +1400,7 @@ public class HtxTrendFollowingService {
         BigDecimal riskSizedNotional = nonNegative(properties.getRiskPerTradeUsdt()).multiply(multiplier)
                 .divide(stopDistance.divide(entryPrice, 18, RoundingMode.UP), 18, RoundingMode.DOWN);
         BigDecimal targetNotional = nonNegative(properties.getTargetQuoteNotional()).multiply(multiplier);
-        BigDecimal maxNotional = nonNegative(properties.getMaxQuoteNotional()).multiply(multiplier);
+        BigDecimal maxNotional = nonNegative(properties.getMaxQuoteNotional());
         BigDecimal notional = min(targetNotional, maxNotional, riskSizedNotional);
         if (notional.compareTo(properties.getMinQuoteNotional()) < 0) {
             return 0L;
@@ -1384,15 +1409,17 @@ public class HtxTrendFollowingService {
         return notional.divide(perContract, 0, RoundingMode.DOWN).longValue();
     }
 
-    private String expectedMoveGate(TrendSignal signal, BigDecimal entryPrice, BigDecimal spreadRate) {
+    private String expectedMoveGate(TrendSignal signal, BigDecimal entryPrice, BigDecimal spreadRate,
+                                    BigDecimal takerFeeRate) {
         if (!properties.isFeeProtectionEnabled() || !positive(signal.atr()) || !positive(entryPrice)) {
             return null;
         }
         BigDecimal expectedMove = signal.atr().multiply(nonNegative(properties.getMinExpectedMoveAtrMultiplier()));
-        BigDecimal requiredMove = entryPrice.multiply(roundTripCostRate(spreadRate));
+        BigDecimal requiredMove = entryPrice.multiply(roundTripCostRate(spreadRate, takerFeeRate));
         if (expectedMove.compareTo(requiredMove) < 0) {
             return "expected move too small after fees expectedMove=" + expectedMove
-                    + " requiredMove=" + requiredMove + " atr=" + signal.atr();
+                    + " requiredMove=" + requiredMove + " atr=" + signal.atr()
+                    + " feeRate=" + nonNegative(takerFeeRate);
         }
         return null;
     }
@@ -1506,9 +1533,10 @@ public class HtxTrendFollowingService {
         }
         BigDecimal entryPrice = position.getEntryAvgPrice();
         BigDecimal entryNotional = entryPrice.multiply(quantity);
+        BigDecimal takerFeeRate = effectiveTakerFeeRate(position.getContractCode());
         BigDecimal entryFee = positive(position.getEntryFee())
-                ? position.getEntryFee() : entryNotional.multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
-        BigDecimal estimatedCloseFee = entryNotional.multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
+                ? position.getEntryFee() : entryNotional.multiply(takerFeeRate);
+        BigDecimal estimatedCloseFee = entryNotional.multiply(takerFeeRate);
         BigDecimal minProfit = entryNotional.multiply(nonNegative(properties.getMinNetProfitRate()))
                 .max(nonNegative(properties.getMinFlatExitProfitUsdt()));
         BigDecimal priceDelta = entryFee.add(estimatedCloseFee).add(minProfit)
@@ -1659,10 +1687,10 @@ public class HtxTrendFollowingService {
         BigDecimal pricePnl = LONG.equals(position.getSide())
                 ? reference.subtract(position.getEntryAvgPrice()).multiply(quantity)
                 : position.getEntryAvgPrice().subtract(reference).multiply(quantity);
+        BigDecimal takerFeeRate = effectiveTakerFeeRate(position.getContractCode());
         BigDecimal entryFee = positive(position.getEntryFee())
-                ? position.getEntryFee() : position.getEntryAvgPrice().multiply(quantity)
-                .multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
-        BigDecimal closeFee = reference.multiply(quantity).multiply(nonNegative(properties.getEstimatedTakerFeeRate()));
+                ? position.getEntryFee() : position.getEntryAvgPrice().multiply(quantity).multiply(takerFeeRate);
+        BigDecimal closeFee = reference.multiply(quantity).multiply(takerFeeRate);
         return pricePnl.subtract(entryFee).subtract(closeFee);
     }
 
@@ -1683,10 +1711,14 @@ public class HtxTrendFollowingService {
                 since, requiredFlatBars);
     }
 
-    private BigDecimal roundTripCostRate(BigDecimal spreadRate) {
-        return nonNegative(properties.getEstimatedTakerFeeRate()).multiply(TWO)
+    private BigDecimal roundTripCostRate(BigDecimal spreadRate, BigDecimal takerFeeRate) {
+        return nonNegative(takerFeeRate).multiply(TWO)
                 .add(nonNegative(properties.getMinNetProfitRate()))
                 .add(nonNegative(spreadRate));
+    }
+
+    private BigDecimal effectiveTakerFeeRate(String contractCode) {
+        return feeRateResolver.takerRate(contractCode);
     }
 
     private static BigDecimal averageRecentTurnover(List<HtxSwapKline> candles, int lookbackBars) {

@@ -152,14 +152,15 @@ htx:
     entry-depth-levels: ${HTX_TREND_ENTRY_DEPTH_LEVELS:5}
     min-entry-depth-multiplier: ${HTX_TREND_MIN_ENTRY_DEPTH_MULTIPLIER:3}
     max-entry-atr-pct: ${HTX_TREND_MAX_ENTRY_ATR_PCT:0.0500}
-    target-quote-notional: ${HTX_TREND_TARGET_QUOTE_NOTIONAL:190}
-    max-quote-notional: ${HTX_TREND_MAX_QUOTE_NOTIONAL:190}
+    target-quote-notional: ${HTX_TREND_TARGET_QUOTE_NOTIONAL:220}
+    max-quote-notional: ${HTX_TREND_MAX_QUOTE_NOTIONAL:350}
     min-quote-notional: ${HTX_TREND_MIN_QUOTE_NOTIONAL:20}
-    risk-per-trade-usdt: ${HTX_TREND_RISK_PER_TRADE_USDT:1.5}
+    risk-per-trade-usdt: ${HTX_TREND_RISK_PER_TRADE_USDT:2.0}
     atr-stop-multiplier: ${HTX_TREND_ATR_STOP_MULTIPLIER:2.5}
     trailing-atr-multiplier: ${HTX_TREND_TRAILING_ATR_MULTIPLIER:2.0}
     take-profit-atr-multiplier: ${HTX_TREND_TAKE_PROFIT_ATR_MULTIPLIER:0}
     estimated-taker-fee-rate: ${HTX_TREND_ESTIMATED_TAKER_FEE_RATE:0.0004}
+    fee-rate-cache-ms: ${HTX_TREND_FEE_RATE_CACHE_MS:600000}
     min-net-profit-rate: ${HTX_TREND_MIN_NET_PROFIT_RATE:0.0010}
     direction-confidence-gate-enabled: ${HTX_TREND_DIRECTION_CONFIDENCE_GATE_ENABLED:true}
     min-direction-confidence-score: ${HTX_TREND_MIN_DIRECTION_CONFIDENCE_SCORE:70}
@@ -199,7 +200,12 @@ htx:
     market-breadth-aligned-position-multiplier: ${HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER:1.50}
     market-breadth-counter-position-multiplier: ${HTX_TREND_MARKET_BREADTH_COUNTER_POSITION_MULTIPLIER:0.50}
     min-adaptive-position-multiplier: ${HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER:0.25}
-    max-adaptive-position-multiplier: ${HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER:1.50}
+    max-adaptive-position-multiplier: ${HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER:1.80}
+    confidence-sizing-enabled: ${HTX_TREND_CONFIDENCE_SIZING_ENABLED:true}
+    high-confidence-sizing-score: ${HTX_TREND_HIGH_CONFIDENCE_SIZING_SCORE:105}
+    high-confidence-position-multiplier: ${HTX_TREND_HIGH_CONFIDENCE_POSITION_MULTIPLIER:1.20}
+    strong-confluence-sizing-score: ${HTX_TREND_STRONG_CONFLUENCE_SIZING_SCORE:120}
+    strong-confluence-position-multiplier: ${HTX_TREND_STRONG_CONFLUENCE_POSITION_MULTIPLIER:1.35}
     fee-protection-enabled: ${HTX_TREND_FEE_PROTECTION_ENABLED:true}
     exit-flat-after-fee-protection: ${HTX_TREND_EXIT_FLAT_AFTER_FEE_PROTECTION:true}
     max-entry-funding-cost-rate: ${HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE:0.0006}

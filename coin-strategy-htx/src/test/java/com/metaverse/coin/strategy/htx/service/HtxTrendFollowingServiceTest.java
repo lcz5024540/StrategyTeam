@@ -6,6 +6,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapAccount;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapContractInfo;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFundingRate;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapFeeRate;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
@@ -84,6 +85,11 @@ class HtxTrendFollowingServiceTest {
         properties.setDirectionConfidenceGateEnabled(false);
         properties.setNoExtensionExitEnabled(false);
         properties.setAdverseShockExitEnabled(false);
+        properties.setConfidenceSizingEnabled(false);
+        properties.setTargetQuoteNotional(new BigDecimal("190"));
+        properties.setMaxQuoteNotional(new BigDecimal("190"));
+        properties.setRiskPerTradeUsdt(new BigDecimal("1.5"));
+        properties.setMaxAdaptivePositionMultiplier(new BigDecimal("1.50"));
         properties.setMaxEntryFundingCostRate(new BigDecimal("0.0006"));
         mirrorExecutor = mock(HtxTrendMirrorExecutor.class);
         when(mirrorExecutor.syncEntry(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled"));
@@ -183,7 +189,66 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void highConfidenceConfluenceUsesLargerButCappedPositionSize() {
+        properties.setDirectionConfidenceGateEnabled(true);
+        properties.setConfidenceSizingEnabled(true);
+        properties.setTargetQuoteNotional(new BigDecimal("220"));
+        properties.setMaxQuoteNotional(new BigDecimal("350"));
+        properties.setRiskPerTradeUsdt(new BigDecimal("10"));
+        properties.setMaxAdaptivePositionMultiplier(new BigDecimal("1.80"));
+        givenContractInfo();
+        givenRisingKlines("XAUT-USDT");
+        givenSignal(TrendSide.LONG, new BigDecimal("12"), new BigDecimal("0.0060"), freshBarTime(),
+                new BigDecimal("60"), "close broke Donchian high with higher-timeframe EMA uptrend");
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        givenBroadBullishBreadth();
+        givenStrongPerformance();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        assertTrue(result.message().contains("sizingMultiplier=1.80"));
+        assertTrue(result.message().contains("confidence=STRONG_CONFLUENCE"));
+        ArgumentCaptor<HtxSwapOrderRequest> captor = ArgumentCaptor.forClass(HtxSwapOrderRequest.class);
+        verify(swap).placeOrder(captor.capture());
+        assertEquals("81", captor.getValue().getVolume());
+    }
+
+    @Test
+    void accountFeeRateCanBlockFeeDominatedEntry() {
+        properties.setEstimatedTakerFeeRate(new BigDecimal("0.0001"));
+        properties.setMaxEntrySignalChaseAtrMultiplier(BigDecimal.ZERO);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("10.0"));
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        when(swap.tradingFee("XAUT-USDT")).thenReturn(ok(List.of(feeRate("XAUT-USDT", "0.0030", "0.0030"))));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("expected move too small after fees"));
+        assertTrue(result.message().contains("feeRate=0.0030"));
+        verify(swap, never()).switchLeverage(any(), any(), any(Integer.class));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void broadBullishMarketAndStrongQualityIncreaseAlignedLongSize() {
+        properties.setMaxQuoteNotional(new BigDecimal("285"));
         givenContractInfo();
         givenKlines();
         givenSignal(TrendSide.LONG);
@@ -1043,6 +1108,14 @@ class HtxTrendFollowingServiceTest {
                 .thenReturn(ok(klines));
     }
 
+    private void givenRisingKlines(String contractCode) {
+        List<HtxSwapKline> klines = List.of(candle(1L, "100000", "4290"), candle(2L, "100000", "4305"));
+        when(swap.historyKline(eq(contractCode), eq(properties.getPeriod()), eq(properties.getKlineSize())))
+                .thenReturn(ok(klines));
+        when(swap.historyKline(eq(contractCode), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize())))
+                .thenReturn(ok(klines));
+    }
+
     private void givenSignal(TrendSide side) {
         givenSignal(side, new BigDecimal("12"));
     }
@@ -1199,14 +1272,29 @@ class HtxTrendFollowingServiceTest {
     }
 
     private HtxSwapKline candle(long id, String tradeTurnover) {
+        return candle(id, tradeTurnover, "4305");
+    }
+
+    private HtxSwapKline candle(long id, String tradeTurnover, String close) {
         HtxSwapKline candle = new HtxSwapKline();
         candle.setId(id);
         candle.setOpen(new BigDecimal("4300"));
         candle.setHigh(new BigDecimal("4310"));
         candle.setLow(new BigDecimal("4290"));
-        candle.setClose(new BigDecimal("4305"));
+        candle.setClose(new BigDecimal(close));
         candle.setTradeTurnover(new BigDecimal(tradeTurnover));
         return candle;
+    }
+
+    private HtxSwapFeeRate feeRate(String contractCode, String openTaker, String closeTaker) {
+        HtxSwapFeeRate feeRate = new HtxSwapFeeRate();
+        feeRate.setContractCode(contractCode);
+        feeRate.setOpenMakerFee(new BigDecimal("0.0001"));
+        feeRate.setOpenTakerFee(new BigDecimal(openTaker));
+        feeRate.setCloseMakerFee(new BigDecimal("0.0001"));
+        feeRate.setCloseTakerFee(new BigDecimal(closeTaker));
+        feeRate.setFeeAsset("USDT");
+        return feeRate;
     }
 
     private HtxTrendPositionEntity activeLongPosition() {
