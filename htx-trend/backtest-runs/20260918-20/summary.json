@@ -1,0 +1,111 @@
+{
+  "baseline_chase_only": {
+    "total": {
+      "trades": 77,
+      "net_win_rate": 0.35064935064935066,
+      "gross_pnl": 19.85240049678144,
+      "fees": 6.2700333257668825,
+      "net_pnl": 13.582367171014532,
+      "profit_factor": 1.2928408790913946,
+      "avg_win": 2.220879914185623,
+      "avg_loss": 0.9276278102399454,
+      "max_loss": -4.298996872964192
+    },
+    "days": {
+      "2026-09-18": {
+        "trades": 32,
+        "net_win_rate": 0.4375,
+        "gross_pnl": 25.325045932102682,
+        "fees": 2.612257022882419,
+        "net_pnl": 22.712788909220254,
+        "profit_factor": 2.1229177117432108,
+        "avg_win": 3.0670980323479973,
+        "avg_loss": 1.1236990857584281,
+        "max_loss": -2.5973042162162057
+      },
+      "2026-09-19": {
+        "trades": 31,
+        "net_win_rate": 0.3225806451612903,
+        "gross_pnl": -0.675247483854286,
+        "fees": 2.4517517687878745,
+        "net_pnl": -3.1269992526421593,
+        "profit_factor": 0.7901064934573307,
+        "avg_win": 1.177102834311137,
+        "avg_loss": 0.7094298855120729,
+        "max_loss": -2.1192431858407157
+      },
+      "2026-09-20": {
+        "trades": 14,
+        "net_win_rate": 0.21428571428571427,
+        "gross_pnl": -4.7973979514669765,
+        "fees": 1.2060245340965885,
+        "net_pnl": -6.003422485563565,
+        "profit_factor": 0.4666838278645958,
+        "avg_win": 1.7511189623428258,
+        "avg_loss": 1.0233435793265493,
+        "max_loss": -4.298996872964192
+      }
+    }
+  },
+  "repaired_confidence_no_extension": {
+    "total": {
+      "trades": 66,
+      "net_win_rate": 0.3484848484848485,
+      "gross_pnl": 39.91160804692779,
+      "fees": 8.572899635571938,
+      "net_pnl": 31.338708411355853,
+      "profit_factor": 1.6306804160244759,
+      "avg_win": 3.5230010092517556,
+      "avg_loss": 1.15558871631243,
+      "max_loss": -4.298996872964192
+    },
+    "days": {
+      "2026-09-18": {
+        "trades": 34,
+        "net_win_rate": 0.3235294117647059,
+        "gross_pnl": 31.461722463465577,
+        "fees": 4.5728678167280385,
+        "net_pnl": 26.888854646737535,
+        "profit_factor": 2.165697941263829,
+        "avg_win": 4.541417953845708,
+        "avg_loss": 1.0029018628506625,
+        "max_loss": -2.5340625000000117
+      },
+      "2026-09-19": {
+        "trades": 19,
+        "net_win_rate": 0.3684210526315789,
+        "gross_pnl": 2.6320197486293955,
+        "fees": 2.253128855227229,
+        "net_pnl": 0.37889089340216575,
+        "profit_factor": 1.0268491960703396,
+        "avg_win": 2.0701008714914675,
+        "avg_loss": 1.1759846005865089,
+        "max_loss": -2.7979634687157326
+      },
+      "2026-09-20": {
+        "trades": 13,
+        "net_win_rate": 0.38461538461538464,
+        "gross_pnl": 5.8178658348328245,
+        "fees": 1.7469029636166682,
+        "net_pnl": 4.070962871216155,
+        "profit_factor": 1.3253710052824084,
+        "avg_win": 3.3165439240094656,
+        "avg_loss": 1.5639695936038964,
+        "max_loss": -4.298996872964192
+      }
+    }
+  },
+  "skip_counts": {
+    "direction:Donchian:MIXED": 343,
+    "direction:Fibonacci:MIXED": 355,
+    "direction:Fibonacci:BROAD_DOWN": 41,
+    "direction:Fibonacci:BROAD_UP": 22,
+    "chase:Fibonacci:BROAD_UP": 5,
+    "chase:Donchian:BROAD_UP": 35,
+    "chase:Donchian:MIXED": 40,
+    "chase:Fibonacci:MIXED": 20,
+    "chase:Fibonacci:BROAD_DOWN": 2,
+    "direction:Donchian:BROAD_DOWN": 3,
+    "chase:Donchian:BROAD_DOWN": 3
+  }
+}

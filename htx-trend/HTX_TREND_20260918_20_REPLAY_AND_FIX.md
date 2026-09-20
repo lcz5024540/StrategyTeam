@@ -66,8 +66,8 @@
    - Donchian/Fibonacci/carry 只生成候选。
    - 实盘下单前根据 ADX、ATR、EMA、1 根本地动量、市场宽度、近期策略质量合成分数。
    - 普通信号默认要求 `70` 分。
-   - MIXED 环境要求 `82` 分。
-   - Fibonacci 要求至少 `82` 分。
+   - MIXED 环境要求 `88` 分。
+   - Fibonacci 要求至少 `90` 分。
    - Funding carry 要求至少 `90` 分。
    - 逆市场宽度方向要求至少 `95` 分。
 

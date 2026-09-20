@@ -136,13 +136,13 @@ public class HtxTrendProperties {
     private BigDecimal minDirectionConfidenceScore = new BigDecimal("70");
 
     /** Minimum composite score when broad-market direction is mixed. */
-    private BigDecimal minMixedDirectionConfidenceScore = new BigDecimal("82");
+    private BigDecimal minMixedDirectionConfidenceScore = new BigDecimal("88");
 
     /** Minimum composite score when entering against broad-market direction. */
     private BigDecimal minCounterBreadthDirectionConfidenceScore = new BigDecimal("95");
 
     /** Minimum composite score for Fibonacci pullback entries. */
-    private BigDecimal fibonacciMinDirectionConfidenceScore = new BigDecimal("82");
+    private BigDecimal fibonacciMinDirectionConfidenceScore = new BigDecimal("90");
 
     /** Minimum composite score for funding-carry entries promoted from a flat base signal. */
     private BigDecimal fundingCarryMinDirectionConfidenceScore = new BigDecimal("90");
