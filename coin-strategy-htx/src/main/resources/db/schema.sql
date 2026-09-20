@@ -1,4 +1,35 @@
 -- htx_trade_strategy 专用库。买/卖 round-trip、写前订单、撤单、单腿裸露死信。
+
+-- Registered HTX trading accounts. api_key_cipher / secret_key_cipher must store ENC(...) in production.
+CREATE TABLE IF NOT EXISTS htx_trade_account (
+    id                                      BIGINT       PRIMARY KEY AUTO_INCREMENT,
+    account_label                           VARCHAR(32)  NOT NULL UNIQUE,
+    exchange                                VARCHAR(16)  NOT NULL DEFAULT 'HTX',
+    market_type                             VARCHAR(16)  NOT NULL DEFAULT 'USDT_SWAP',
+    account_role                            VARCHAR(16)  NOT NULL DEFAULT 'FOLLOWER',
+    enabled                                 TINYINT(1)   NOT NULL DEFAULT 1,
+    trend_enabled                           TINYINT(1)   NOT NULL DEFAULT 1,
+    mirror_enabled                          TINYINT(1)   NOT NULL DEFAULT 0,
+    api_key_cipher                          VARCHAR(1024),
+    secret_key_cipher                       VARCHAR(2048),
+    base_url                                VARCHAR(255) NOT NULL DEFAULT 'https://api.hbdm.com',
+    sync_leverage                           TINYINT(1)   NOT NULL DEFAULT 1,
+    block_entry_on_leverage_sync_failure    TINYINT(1)   NOT NULL DEFAULT 0,
+    block_primary_close_until_synced         TINYINT(1)   NOT NULL DEFAULT 1,
+    sort_order                              INT          NOT NULL DEFAULT 100,
+    note                                    VARCHAR(512),
+    created_at                              DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at                              DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    INDEX idx_trade_account_trend           (enabled, trend_enabled, mirror_enabled, account_role, sort_order)
+);
+
+INSERT INTO htx_trade_account (account_label, exchange, market_type, account_role, enabled, trend_enabled,
+                               mirror_enabled, base_url, sync_leverage, block_entry_on_leverage_sync_failure,
+                               block_primary_close_until_synced, sort_order, note)
+SELECT 'primary', 'HTX', 'USDT_SWAP', 'PRIMARY', 1, 1, 0, 'https://api.hbdm.com', 1, 0, 1, 0,
+       'default primary trend account; credentials may be filled by migration'
+WHERE NOT EXISTS (SELECT 1 FROM htx_trade_account WHERE account_label = 'primary');
+
 CREATE TABLE IF NOT EXISTS htx_locked_pair (
     id                  BIGINT       PRIMARY KEY AUTO_INCREMENT,
     client_order_id     VARCHAR(64)  NOT NULL UNIQUE,

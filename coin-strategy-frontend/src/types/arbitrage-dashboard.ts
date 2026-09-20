@@ -120,6 +120,10 @@ export interface TrendSummary {
 
 export interface TrendAccountSummary {
   accountLabel: string | null
+  accountRole: string | null
+  accountEnabled: boolean
+  trendEnabled: boolean
+  mirrorEnabled: boolean
   totalPositions: number
   activePositions: number
   closedPositions: number

@@ -237,6 +237,7 @@ htx:
       secret-key: ${HTX_TREND_MIRROR_SECRET_KEY:}
       base-url: ${HTX_TREND_MIRROR_BASE_URL:https://api.hbdm.com}
       sync-leverage: ${HTX_TREND_MIRROR_SYNC_LEVERAGE:true}
+      block-entry-on-leverage-sync-failure: ${HTX_TREND_MIRROR_BLOCK_ENTRY_ON_LEVERAGE_SYNC_FAILURE:false}
       block-primary-close-until-synced: ${HTX_TREND_MIRROR_BLOCK_PRIMARY_CLOSE_UNTIL_SYNCED:true}
     ensemble-shadow:
       enabled: ${HTX_TREND_ENSEMBLE_SHADOW_ENABLED:false}

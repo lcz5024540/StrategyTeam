@@ -15,6 +15,7 @@ public interface HtxTrendDashboardMapper {
     String ORDER_TABLE = TREND_SCHEMA + "htx_trend_order";
     String SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_signal";
     String CANDIDATE_SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_candidate_signal";
+    String ACCOUNT_TABLE = TREND_SCHEMA + "htx_trade_account";
 
     String CLOSED_TURNOVER = "entry_filled_contracts * contract_size * entry_avg_price "
             + "+ close_filled_contracts * contract_size * close_avg_price";
@@ -37,7 +38,9 @@ public interface HtxTrendDashboardMapper {
     Map<String, Object> summary();
 
 
-    @Select("SELECT accounts.accountLabel AS accountLabel, "
+    @Select("SELECT accountLabels.accountLabel AS accountLabel, COALESCE(accounts.account_role, 'LEDGER') AS accountRole, "
+            + "COALESCE(accounts.enabled, 1) AS accountEnabled, COALESCE(accounts.trend_enabled, 1) AS trendEnabled, "
+            + "COALESCE(accounts.mirror_enabled, 0) AS mirrorEnabled, "
             + "COALESCE(pos.totalPositions, 0) AS totalPositions, "
             + "COALESCE(pos.activePositions, 0) AS activePositions, "
             + "COALESCE(pos.closedPositions, 0) AS closedPositions, "
@@ -67,9 +70,11 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(ord.todayOrderRealizedProfit, 0) AS todayOrderRealizedProfit, "
             + "ord.latestOrderAt AS latestOrderAt, pos.latestPositionAt AS latestPositionAt "
             + "FROM ("
-            + "SELECT account_label AS accountLabel FROM " + POSITION_TABLE + " GROUP BY account_label "
+            + "SELECT account_label AS accountLabel FROM " + ACCOUNT_TABLE + " WHERE trend_enabled = 1 "
+            + "UNION SELECT account_label AS accountLabel FROM " + POSITION_TABLE + " GROUP BY account_label "
             + "UNION SELECT account_label AS accountLabel FROM " + ORDER_TABLE + " GROUP BY account_label"
-            + ") accounts "
+            + ") accountLabels "
+            + "LEFT JOIN " + ACCOUNT_TABLE + " accounts ON accounts.account_label = accountLabels.accountLabel "
             + "LEFT JOIN (SELECT account_label AS accountLabel, COUNT(*) AS totalPositions, "
             + "SUM(CASE WHEN status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') THEN 1 ELSE 0 END) AS activePositions, "
             + "SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS closedPositions, "
@@ -85,7 +90,7 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(CASE WHEN status = 'DONE' THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS netRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS todayNetRealizedProfit, "
             + "MAX(updated_at) AS latestPositionAt FROM " + POSITION_TABLE + " GROUP BY account_label) pos "
-            + "ON pos.accountLabel = accounts.accountLabel "
+            + "ON pos.accountLabel = accountLabels.accountLabel "
             + "LEFT JOIN (SELECT o.account_label AS accountLabel, COUNT(*) AS totalOrders, "
             + "SUM(CASE WHEN o.created_at >= CURDATE() THEN 1 ELSE 0 END) AS todayOrders, "
             + "SUM(CASE WHEN o.status IN ('INTENT','ACCEPTED') THEN 1 ELSE 0 END) AS openOrders, "
@@ -100,8 +105,9 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(o.realized_profit), 0) AS orderRealizedProfit, "
             + "COALESCE(SUM(CASE WHEN o.created_at >= CURDATE() THEN o.realized_profit ELSE 0 END), 0) AS todayOrderRealizedProfit, "
             + "MAX(o.updated_at) AS latestOrderAt FROM " + ORDER_TABLE + " o LEFT JOIN " + POSITION_TABLE + " p ON p.id = o.position_id "
-            + "GROUP BY o.account_label) ord ON ord.accountLabel = accounts.accountLabel "
-            + "ORDER BY COALESCE(pos.activePositions, 0) DESC, COALESCE(pos.todayNetRealizedProfit, ord.todayOrderRealizedProfit, 0) DESC, accounts.accountLabel")
+            + "GROUP BY o.account_label) ord ON ord.accountLabel = accountLabels.accountLabel "
+            + "ORDER BY COALESCE(pos.activePositions, 0) DESC, COALESCE(pos.todayNetRealizedProfit, ord.todayOrderRealizedProfit, 0) DESC, "
+            + "COALESCE(accounts.sort_order, 999), accountLabels.accountLabel")
     List<Map<String, Object>> accountSummaries();
 
     @Select("SELECT "

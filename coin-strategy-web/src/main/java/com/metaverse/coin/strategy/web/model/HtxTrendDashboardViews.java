@@ -29,7 +29,8 @@ public final class HtxTrendDashboardViews {
                                   long candidateShortLast30m, long candidateFlatLast30m) {
     }
 
-    public record AccountSummary(String accountLabel, long totalPositions, long activePositions,
+    public record AccountSummary(String accountLabel, String accountRole, boolean accountEnabled,
+                                 boolean trendEnabled, boolean mirrorEnabled, long totalPositions, long activePositions,
                                  long closedPositions, long winningPositions, long todayClosedPositions,
                                  long todayWinningPositions, BigDecimal totalTurnover, BigDecimal todayTurnover,
                                  BigDecimal totalFees, BigDecimal todayFees, BigDecimal realizedProfit,

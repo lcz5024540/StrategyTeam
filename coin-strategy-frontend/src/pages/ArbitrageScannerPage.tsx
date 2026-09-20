@@ -197,6 +197,12 @@ function accountName(value: string | null | undefined) {
   const name = (value || '').trim()
   return name || 'primary'
 }
+function accountRoleText(row: TrendAccountSummary) {
+  const role = (row.accountRole || '').toUpperCase()
+  if (role === 'PRIMARY') return '主账户'
+  if (row.mirrorEnabled || role === 'FOLLOWER') return '跟随账户'
+  return role || '账户'
+}
 function accountOptions(positions: TrendPosition[], orders: TrendOrder[]) {
   return Array.from(new Set([...positions.map((item) => accountName(item.accountLabel)), ...orders.map((item) => accountName(item.accountLabel))])).sort()
 }
@@ -378,6 +384,7 @@ function TrendAccountOverview({ rows }: { rows: TrendAccountSummary[] }) {
         const latest = row.latestOrderAt || row.latestPositionAt || '—'
         return <article className="trend-account-card" key={accountName(row.accountLabel)}>
           <header><strong>{accountName(row.accountLabel)}</strong><span className={valueTone(row.todayNetRealizedProfit)}>{formatUsdt(row.todayNetRealizedProfit)}</span></header>
+          <small>{accountRoleText(row)} · {row.accountEnabled && row.trendEnabled ? '启用' : '停用'}</small>
           <dl>
             <div><dt>活动仓位</dt><dd>{row.activePositions}</dd></div>
             <div><dt>今日平仓</dt><dd>{row.todayClosedPositions}</dd></div>

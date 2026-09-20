@@ -65,7 +65,8 @@ public class HtxTrendDashboardQueryService {
 
 
     private HtxTrendDashboardViews.AccountSummary accountSummary(Map<String, Object> row) {
-        return new HtxTrendDashboardViews.AccountSummary(text(row, "accountLabel"),
+        return new HtxTrendDashboardViews.AccountSummary(text(row, "accountLabel"), text(row, "accountRole"),
+                bool(row, "accountEnabled"), bool(row, "trendEnabled"), bool(row, "mirrorEnabled"),
                 number(row, "totalPositions").longValue(), number(row, "activePositions").longValue(),
                 number(row, "closedPositions").longValue(), number(row, "winningPositions").longValue(),
                 number(row, "todayClosedPositions").longValue(), number(row, "todayWinningPositions").longValue(),
