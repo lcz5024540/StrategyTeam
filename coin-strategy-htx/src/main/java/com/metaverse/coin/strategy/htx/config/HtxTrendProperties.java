@@ -129,6 +129,24 @@ public class HtxTrendProperties {
     /** Minimum net profit buffer required after estimated round-trip fees. */
     private BigDecimal minNetProfitRate = new BigDecimal("0.0010");
 
+    /** Require a composite direction-confidence score before live entry. */
+    private boolean directionConfidenceGateEnabled = true;
+
+    /** Minimum composite score for ordinary trend entries. */
+    private BigDecimal minDirectionConfidenceScore = new BigDecimal("70");
+
+    /** Minimum composite score when broad-market direction is mixed. */
+    private BigDecimal minMixedDirectionConfidenceScore = new BigDecimal("82");
+
+    /** Minimum composite score when entering against broad-market direction. */
+    private BigDecimal minCounterBreadthDirectionConfidenceScore = new BigDecimal("95");
+
+    /** Minimum composite score for Fibonacci pullback entries. */
+    private BigDecimal fibonacciMinDirectionConfidenceScore = new BigDecimal("82");
+
+    /** Minimum composite score for funding-carry entries promoted from a flat base signal. */
+    private BigDecimal fundingCarryMinDirectionConfidenceScore = new BigDecimal("90");
+
     /** Minimum absolute net profit in USDT before a flat signal can close a protected winner. */
     private BigDecimal minFlatExitProfitUsdt = new BigDecimal("0.20");
 
@@ -143,6 +161,15 @@ public class HtxTrendProperties {
 
     /** Number of consecutive flat signals required before loss-control flat exit. */
     private int flatLossExitConfirmationBars = 3;
+
+    /** Exit early when a new position fails to produce enough favorable movement. */
+    private boolean noExtensionExitEnabled = true;
+
+    /** Minimum entry-period bars to wait before judging no-extension exits. */
+    private int noExtensionExitBars = 2;
+
+    /** Minimum favorable net PnL required to keep a losing position after the no-extension window. */
+    private BigDecimal noExtensionMinFavorableNetUsdt = new BigDecimal("0.15");
 
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;

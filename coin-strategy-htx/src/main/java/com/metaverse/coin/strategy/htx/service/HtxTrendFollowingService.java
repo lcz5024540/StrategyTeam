@@ -469,6 +469,121 @@ public class HtxTrendFollowingService {
         return score;
     }
 
+    private String directionConfidenceGate(TrendSignal signal, List<HtxSwapKline> entryCandles,
+                                           MarketBreadthContext marketBreadth, PerformanceContext performance) {
+        if (!properties.isDirectionConfidenceGateEnabled() || signal == null || signal.side() == TrendSide.FLAT) {
+            return null;
+        }
+        DirectionConfidence confidence = directionConfidence(signal, entryCandles, marketBreadth, performance);
+        if (confidence.score().compareTo(confidence.requiredScore()) >= 0) {
+            return null;
+        }
+        return "direction confidence too low side=" + signal.side()
+                + " score=" + confidence.score().setScale(2, RoundingMode.HALF_UP)
+                + " required=" + confidence.requiredScore().setScale(2, RoundingMode.HALF_UP)
+                + " detail=" + confidence.reason();
+    }
+
+    private DirectionConfidence directionConfidence(TrendSignal signal, List<HtxSwapKline> entryCandles,
+                                                    MarketBreadthContext marketBreadth, PerformanceContext performance) {
+        BigDecimal score = BigDecimal.ZERO;
+        StringBuilder reason = new StringBuilder();
+        BigDecimal minAdx = nonNegative(properties.getMinAdx());
+        if (signal.adx() != null && signal.adx().compareTo(minAdx) >= 0) {
+            BigDecimal excessAdx = signal.adx().subtract(minAdx).max(BigDecimal.ZERO).min(new BigDecimal("15"));
+            score = score.add(new BigDecimal("25")).add(excessAdx);
+            reason.append("adx+");
+        } else {
+            score = score.subtract(new BigDecimal("20"));
+            reason.append("adx-");
+        }
+        BigDecimal minAtrPct = nonNegative(properties.getMinAtrPct());
+        if (positive(signal.atrPct()) && signal.atrPct().compareTo(minAtrPct) >= 0) {
+            score = score.add(new BigDecimal("10"));
+            if (minAtrPct.signum() > 0 && signal.atrPct().compareTo(minAtrPct.multiply(TWO)) >= 0) {
+                score = score.add(new BigDecimal("5"));
+            }
+            reason.append(" atr+");
+        } else {
+            score = score.subtract(new BigDecimal("15"));
+            reason.append(" atr-");
+        }
+        if (emaAligned(signal, signal.side())) {
+            score = score.add(new BigDecimal("15"));
+            reason.append(" ema+");
+        } else {
+            score = score.subtract(new BigDecimal("20"));
+            reason.append(" ema-");
+        }
+        String normalizedReason = signal.reason() == null ? "" : signal.reason().toLowerCase(Locale.ROOT);
+        if (normalizedReason.contains("broke donchian")) {
+            score = score.add(new BigDecimal("20"));
+            reason.append(" donchian+");
+        } else if (normalizedReason.contains("fibonacci")) {
+            score = score.add(new BigDecimal("10"));
+            reason.append(" fibonacci+");
+        } else if (normalizedReason.contains("funding carry")) {
+            score = score.add(new BigDecimal("5"));
+            reason.append(" carry+");
+        }
+        if (localMomentumAligned(signal.side(), entryCandles)) {
+            score = score.add(new BigDecimal("10"));
+            reason.append(" localMomentum+");
+        } else {
+            score = score.subtract(new BigDecimal("10"));
+            reason.append(" localMomentum-");
+        }
+        if (breadthAligned(signal.side(), marketBreadth)) {
+            score = score.add(new BigDecimal("20"));
+            reason.append(" breadth+");
+        } else if (againstBroadMarket(signal.side(), marketBreadth)) {
+            score = score.subtract(new BigDecimal("40"));
+            reason.append(" breadthCounter-");
+        } else {
+            score = score.subtract(new BigDecimal("5"));
+            reason.append(" breadthMixed-");
+        }
+        if (performance != null && performance.regime() == QualityRegime.STRONG) {
+            score = score.add(new BigDecimal("5"));
+            reason.append(" quality+");
+        } else if (performance != null && performance.regime() == QualityRegime.WEAK) {
+            score = score.subtract(new BigDecimal("10"));
+            reason.append(" quality-");
+        }
+        BigDecimal required = nonNegative(properties.getMinDirectionConfidenceScore());
+        if (marketBreadth == null || marketBreadth.regime() == MarketRegime.MIXED) {
+            required = required.max(nonNegative(properties.getMinMixedDirectionConfidenceScore()));
+        }
+        if (againstBroadMarket(signal.side(), marketBreadth)) {
+            required = required.max(nonNegative(properties.getMinCounterBreadthDirectionConfidenceScore()));
+        }
+        if (normalizedReason.contains("fibonacci")) {
+            required = required.max(nonNegative(properties.getFibonacciMinDirectionConfidenceScore()));
+        }
+        if (normalizedReason.contains("funding carry")) {
+            required = required.max(nonNegative(properties.getFundingCarryMinDirectionConfidenceScore()));
+        }
+        return new DirectionConfidence(score, required, reason.toString().trim());
+    }
+
+    private static boolean localMomentumAligned(TrendSide side, List<HtxSwapKline> entryCandles) {
+        if (entryCandles == null || entryCandles.size() < 2) {
+            return false;
+        }
+        HtxSwapKline latest = entryCandles.get(entryCandles.size() - 1);
+        HtxSwapKline previous = entryCandles.get(entryCandles.size() - 2);
+        if (latest == null || previous == null || latest.getClose() == null || previous.getClose() == null) {
+            return false;
+        }
+        if (side == TrendSide.LONG) {
+            return latest.getClose().compareTo(previous.getClose()) > 0;
+        }
+        if (side == TrendSide.SHORT) {
+            return latest.getClose().compareTo(previous.getClose()) < 0;
+        }
+        return false;
+    }
+
     private static RunResult select(RunResult current, RunResult candidate) {
         if (candidate == null) {
             return current;
@@ -547,6 +662,10 @@ public class HtxTrendFollowingService {
         String cooldownGate = cooldownGate(contractCode, signal, marketBreadth);
         if (cooldownGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, cooldownGate);
+        }
+        String directionGate = directionConfidenceGate(signal, entryCandles, marketBreadth, performance);
+        if (directionGate != null) {
+            return RunResult.of(RunCode.SKIPPED, null, directionGate);
         }
         HtxDepth depth = depthSnapshot(contractCode);
         TopOfBook book = topOfBook(depth);
@@ -717,6 +836,9 @@ public class HtxTrendFollowingService {
         String exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
         if (exitReason == null) {
             exitReason = flatLossControlExitReason(position, signal, reference);
+        }
+        if (exitReason == null) {
+            exitReason = noExtensionExitReason(position, reference);
         }
         if (exitReason == null) {
             exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit);
@@ -1446,6 +1568,37 @@ public class HtxTrendFollowingService {
                 + " flatBars=" + flatBars + "/" + requiredFlatBars;
     }
 
+    private String noExtensionExitReason(HtxTrendPositionEntity position, BigDecimal reference) {
+        if (!properties.isNoExtensionExitEnabled() || position == null || !positive(reference)
+                || position.getCreatedAt() == null) {
+            return null;
+        }
+        int requiredBars = Math.max(1, properties.getNoExtensionExitBars());
+        long minimumAgeSeconds = periodSeconds(properties.getPeriod()) * requiredBars;
+        long ageSeconds = Duration.between(position.getCreatedAt(), LocalDateTime.now()).getSeconds();
+        if (ageSeconds < minimumAgeSeconds) {
+            return null;
+        }
+        BigDecimal estimatedNet = estimatedCloseNetProfit(position, reference);
+        if (estimatedNet == null || estimatedNet.signum() >= 0) {
+            return null;
+        }
+        BigDecimal bestReference = LONG.equals(position.getSide())
+                ? firstPositive(position.getHighestPrice(), reference)
+                : firstPositive(position.getLowestPrice(), reference);
+        BigDecimal bestNet = estimatedCloseNetProfit(position, bestReference);
+        BigDecimal requiredFavorableNet = nonNegative(properties.getNoExtensionMinFavorableNetUsdt());
+        if (bestNet != null && bestNet.compareTo(requiredFavorableNet) >= 0) {
+            return null;
+        }
+        return position.getSide().toLowerCase(Locale.ROOT) + " exit on no-extension trend ref=" + reference
+                + " estimatedNet=" + estimatedNet
+                + " bestNet=" + bestNet
+                + " requiredBestNet=" + requiredFavorableNet
+                + " ageSeconds=" + ageSeconds
+                + " bars=" + requiredBars;
+    }
+
     private BigDecimal estimatedCloseNetProfit(HtxTrendPositionEntity position, BigDecimal reference) {
         if (position == null || !positive(position.getEntryAvgPrice()) || !positive(position.getContractSize())
                 || position.getContractVolume() == null || position.getContractVolume() <= 0L || !positive(reference)) {
@@ -1879,6 +2032,9 @@ public class HtxTrendFollowingService {
         String summary() {
             return "sizingMultiplier=" + multiplier.setScale(2, RoundingMode.HALF_UP) + " " + reason;
         }
+    }
+
+    private record DirectionConfidence(BigDecimal score, BigDecimal requiredScore, String reason) {
     }
 
     private static String pct(BigDecimal ratio) {

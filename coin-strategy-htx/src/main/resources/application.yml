@@ -161,12 +161,23 @@ htx:
     take-profit-atr-multiplier: ${HTX_TREND_TAKE_PROFIT_ATR_MULTIPLIER:0}
     estimated-taker-fee-rate: ${HTX_TREND_ESTIMATED_TAKER_FEE_RATE:0.0004}
     min-net-profit-rate: ${HTX_TREND_MIN_NET_PROFIT_RATE:0.0010}
+    direction-confidence-gate-enabled: ${HTX_TREND_DIRECTION_CONFIDENCE_GATE_ENABLED:true}
+    min-direction-confidence-score: ${HTX_TREND_MIN_DIRECTION_CONFIDENCE_SCORE:70}
+    min-mixed-direction-confidence-score: ${HTX_TREND_MIN_MIXED_DIRECTION_CONFIDENCE_SCORE:82}
+    min-counter-breadth-direction-confidence-score: ${HTX_TREND_MIN_COUNTER_BREADTH_DIRECTION_CONFIDENCE_SCORE:95}
+    fibonacci-min-direction-confidence-score: ${HTX_TREND_FIBONACCI_MIN_DIRECTION_CONFIDENCE_SCORE:82}
+    funding-carry-min-direction-confidence-score: ${HTX_TREND_FUNDING_CARRY_MIN_DIRECTION_CONFIDENCE_SCORE:90}
     min-flat-exit-profit-usdt: ${HTX_TREND_MIN_FLAT_EXIT_PROFIT_USDT:0.20}
     flat-exit-confirmation-bars: ${HTX_TREND_FLAT_EXIT_CONFIRMATION_BARS:3}
     max-flat-exit-loss-usdt: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_USDT:0.25}
     max-flat-exit-loss-rate: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_RATE:0.0030}
     flat-loss-exit-confirmation-bars: ${HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS:3}
+    no-extension-exit-enabled: ${HTX_TREND_NO_EXTENSION_EXIT_ENABLED:true}
+    no-extension-exit-bars: ${HTX_TREND_NO_EXTENSION_EXIT_BARS:2}
+    no-extension-min-favorable-net-usdt: ${HTX_TREND_NO_EXTENSION_MIN_FAVORABLE_NET_USDT:0.15}
     min-expected-move-atr-multiplier: ${HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER:1.0}
+    max-entry-signal-chase-atr-multiplier: ${HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_ATR_MULTIPLIER:0.20}
+    max-entry-signal-chase-rate: ${HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_RATE:0}
     max-entry-signal-age-seconds: ${HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS:600}
     candidate-scan-concurrency: ${HTX_TREND_CANDIDATE_SCAN_CONCURRENCY:6}
     adaptive-sizing-enabled: ${HTX_TREND_ADAPTIVE_SIZING_ENABLED:true}

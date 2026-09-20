@@ -41,6 +41,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -80,6 +81,8 @@ class HtxTrendFollowingServiceTest {
         properties = new HtxTrendProperties();
         properties.setEnabled(true);
         properties.setObserveOnly(false);
+        properties.setDirectionConfidenceGateEnabled(false);
+        properties.setNoExtensionExitEnabled(false);
         properties.setMaxEntryFundingCostRate(new BigDecimal("0.0006"));
         mirrorExecutor = mock(HtxTrendMirrorExecutor.class);
         when(mirrorExecutor.syncEntry(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled"));
@@ -376,6 +379,7 @@ class HtxTrendFollowingServiceTest {
     void liveRunnerManagesExistingPositionsThenOpensTopCandidatesUpToRemainingSlots() {
         properties.setContractCodes(List.of("BTC-USDT", "ETH-USDT", "SOL-USDT"));
         properties.setMaxActivePositions(3);
+        properties.setCandidateScanConcurrency(1);
         when(recorder.countOpenLike()).thenReturn(1L);
         givenContractInfo("BTC-USDT", "0.001");
         givenContractInfo("ETH-USDT", "0.01");
@@ -526,6 +530,28 @@ class HtxTrendFollowingServiceTest {
         assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
         assertTrue(result.message().contains("entry price chased signal too far"));
         verify(swap, never()).switchLeverage(any(), any(), any(Integer.class));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveEntrySkipsWeakFibonacciWhenDirectionConfidenceIsTooLow() {
+        properties.setDirectionConfidenceGateEnabled(true);
+        properties.setMinDirectionConfidenceScore(new BigDecimal("200"));
+        properties.setMinMixedDirectionConfidenceScore(new BigDecimal("200"));
+        properties.setFibonacciMinDirectionConfidenceScore(new BigDecimal("200"));
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"), new BigDecimal("0.0028"),
+                freshBarTime(), new BigDecimal("24"),
+                "Fibonacci 38.2%-61.8% pullback continuation with higher-timeframe EMA uptrend");
+        givenFunding("-0.0001");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("direction confidence too low"));
+        verify(swap, never()).switchLeverage(any(), any(), anyInt());
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
@@ -772,6 +798,31 @@ class HtxTrendFollowingServiceTest {
         assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
         assertTrue(result.message().contains("holding"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void activeLongExitsWhenPositionNeverExtendsAfterEntryWindow() {
+        properties.setNoExtensionExitEnabled(true);
+        properties.setNoExtensionExitBars(2);
+        properties.setNoExtensionMinFavorableNetUsdt(new BigDecimal("0.15"));
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition("XAUT-USDT", "0.001", 44L,
+                "4315.84", "0.075958784", "4295.00", "4290.00", "4316.10", "4308.00");
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(40));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4310.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("no-extension trend"));
+        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(captor.capture());
+        assertTrue(captor.getValue().getReason().contains("no-extension trend"));
     }
 
 
