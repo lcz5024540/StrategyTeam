@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HtxUsdtSwapServiceTest {
@@ -209,10 +210,13 @@ class HtxUsdtSwapServiceTest {
         assertEquals(new BigDecimal("0.00025"), response.getData().get(0).getOpenTakerFee());
         assertEquals(new BigDecimal("0.0003"), response.getData().get(0).getCloseTakerFee());
         RecordedRequest request = takeRequest();
-        assertEquals("GET", request.getMethod());
+        assertEquals("POST", request.getMethod());
         assertEquals("/linear-swap-api/v1/swap_fee", request.getRequestUrl().encodedPath());
-        assertEquals("BTC-USDT", request.getRequestUrl().queryParameter("contract_code"));
-        assertEquals("swap", request.getRequestUrl().queryParameter("business_type"));
+        assertNull(request.getRequestUrl().queryParameter("contract_code"));
+        assertNull(request.getRequestUrl().queryParameter("business_type"));
+        String body = request.getBody().readUtf8();
+        assertTrue(body.contains("\"contract_code\":\"BTC-USDT\""));
+        assertTrue(body.contains("\"business_type\":\"swap\""));
         assertNotNull(request.getRequestUrl().queryParameter("Signature"));
     }
 

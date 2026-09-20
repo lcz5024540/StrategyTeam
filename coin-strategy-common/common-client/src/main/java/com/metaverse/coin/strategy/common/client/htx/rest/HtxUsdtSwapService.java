@@ -76,9 +76,10 @@ public class HtxUsdtSwapService {
 
     public HtxRestResponse<List<HtxSwapFeeRate>> tradingFee(String contractCode) {
         rateLimiter.acquire(HtxUidRateLimiter.RequestType.QUERY);
-        Map<String, String> params = singletonQuery("contract_code", contractCode);
-        params.put("business_type", "swap");
-        return rest.signedGet("/linear-swap-api/v1/swap_fee", params,
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("contract_code", contractCode);
+        body.put("business_type", "swap");
+        return rest.signedPost("/linear-swap-api/v1/swap_fee", Collections.emptyMap(), body,
                 new TypeReference<HtxRestResponse<List<HtxSwapFeeRate>>>() { });
     }
 

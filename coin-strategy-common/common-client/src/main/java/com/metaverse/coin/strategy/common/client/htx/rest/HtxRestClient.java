@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.TypeReference;
 import com.metaverse.coin.strategy.common.client.htx.HtxSignUtils;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxRestResponse;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -90,11 +91,24 @@ public class HtxRestClient {
 
     // -------- internal --------
 
+
+    private String redactedUrl(Request req) {
+        HttpUrl url = req.url();
+        HttpUrl.Builder builder = url.newBuilder();
+        if (url.queryParameter("AccessKeyId") != null) {
+            builder.setQueryParameter("AccessKeyId", "***");
+        }
+        if (url.queryParameter("Signature") != null) {
+            builder.setQueryParameter("Signature", "***");
+        }
+        return builder.build().toString();
+    }
+
     private <T> HtxRestResponse<T> execute(Request req, TypeReference<HtxRestResponse<T>> ref) {
         try (Response resp = http.newCall(req).execute()) {
             String bodyStr = resp.body() == null ? "" : resp.body().string();
             if (!resp.isSuccessful()) {
-                log.warn("HTX HTTP {} for {}: {}", resp.code(), req.url(), bodyStr);
+                log.warn("HTX HTTP {} for {}: {}", resp.code(), redactedUrl(req), bodyStr);
                 HtxRestResponse<T> err = new HtxRestResponse<>();
                 err.setStatus("error");
                 err.setErrCode("http-" + resp.code());
