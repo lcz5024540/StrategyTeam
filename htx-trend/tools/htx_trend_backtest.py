@@ -71,6 +71,9 @@ class Config:
     max_flat_exit_loss_rate: float = 0.0030
     no_extension_exit_bars: int = 2
     no_extension_min_favorable_net_usdt: float = 0.15
+    adverse_shock_exit_bars: int = 1
+    adverse_shock_atr_multiplier: float = 0.90
+    adverse_shock_min_favorable_net_usdt: float = 0.15
     market_breadth_lookback_bars: int = 3
     market_breadth_threshold: float = 0.70
     market_breadth_opposite_max: float = 0.15
@@ -564,15 +567,21 @@ def run_backtest(name: str, symbols: List[str], bars15: Dict[str, List[Bar]], ba
             elif signal and signal.side != pos.side:
                 pos.flat_count = 0
             exit_reason = None
-            if repaired and now_epoch - pos.entry_time >= cfg.period_seconds * cfg.no_extension_exit_bars:
+            if signal and signal.side == "FLAT" and pos.flat_count >= cfg.flat_loss_exit_confirmation_bars:
+                loss_budget = max(cfg.max_flat_exit_loss_usdt, pos.notional * cfg.max_flat_exit_loss_rate)
+                if current_net < 0 and abs(current_net) >= loss_budget:
+                    exit_reason = "flat-loss"
+            if exit_reason is None and repaired and now_epoch - pos.entry_time >= cfg.period_seconds * cfg.adverse_shock_exit_bars:
+                adverse_ref = pos.lowest if pos.side == "LONG" else pos.highest
+                adverse_move = pos.entry_price - adverse_ref if pos.side == "LONG" else adverse_ref - pos.entry_price
+                required_move = pos.atr * cfg.adverse_shock_atr_multiplier
+                if current_net < 0 and pos.best_net < cfg.adverse_shock_min_favorable_net_usdt and adverse_move >= required_move:
+                    exit_reason = "adverse-shock"
+            if exit_reason is None and repaired and now_epoch - pos.entry_time >= cfg.period_seconds * cfg.no_extension_exit_bars:
                 if current_net < 0 and pos.best_net < cfg.no_extension_min_favorable_net_usdt:
                     exit_reason = "no-extension"
             if exit_reason is None and signal and signal.side != "FLAT" and signal.side != pos.side:
                 exit_reason = "opposite-signal"
-            if exit_reason is None and signal and signal.side == "FLAT" and pos.flat_count >= cfg.flat_loss_exit_confirmation_bars:
-                loss_budget = max(cfg.max_flat_exit_loss_usdt, pos.notional * cfg.max_flat_exit_loss_rate)
-                if current_net < 0 and abs(current_net) >= loss_budget:
-                    exit_reason = "flat-loss"
             if exit_reason is None:
                 distance = pos.atr * cfg.trailing_atr_multiplier
                 if pos.side == "LONG":
@@ -702,7 +711,7 @@ def write_outputs(out_dir: Path, legacy: RunStats, repaired: RunStats) -> None:
     md = []
     md.append("# HTX trend strategy-level backtest 2026-09-18~20")
     md.append("")
-    md.append("This replay regenerates signals from historical 15m/60m klines. It compares the previous live-like path with the repaired path that adds direction-confidence gating and no-extension exits. Funding-carry entries and historical order-book depth are not simulated in this first offline pass.")
+    md.append("This replay regenerates signals from historical 15m/60m klines. It compares the previous live-like path with the repaired path that adds direction-confidence gating, adverse-shock exits, and no-extension exits. Funding-carry entries and historical order-book depth are not simulated in this first offline pass.")
     md.append("")
     md.append("## Daily comparison")
     md.append("")
@@ -749,7 +758,7 @@ def main() -> None:
     start_ts = int(parse_day(args.start).timestamp())
     end_ts = int(parse_day(args.end).timestamp())
     legacy = run_backtest("baseline_chase_only", symbols, bars15, bars60, start_ts, end_ts, cfg, repaired=False)
-    repaired = run_backtest("repaired_confidence_no_extension", symbols, bars15, bars60, start_ts, end_ts, cfg, repaired=True)
+    repaired = run_backtest("repaired_confidence_shock_no_extension", symbols, bars15, bars60, start_ts, end_ts, cfg, repaired=True)
     write_outputs(args.out_dir, legacy, repaired)
     print(args.out_dir / "summary.md")
 

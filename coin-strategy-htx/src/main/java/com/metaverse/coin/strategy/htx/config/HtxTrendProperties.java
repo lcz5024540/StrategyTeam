@@ -171,6 +171,18 @@ public class HtxTrendProperties {
     /** Minimum favorable net PnL required to keep a losing position after the no-extension window. */
     private BigDecimal noExtensionMinFavorableNetUsdt = new BigDecimal("0.15");
 
+    /** Exit early when a fresh position is quickly hit by an adverse ATR shock without enough MFE. */
+    private boolean adverseShockExitEnabled = true;
+
+    /** Minimum entry-period bars to wait before judging adverse-shock exits. */
+    private int adverseShockExitBars = 1;
+
+    /** Adverse move threshold = ATR * this multiplier before the fresh-position shock exit can fire. */
+    private BigDecimal adverseShockAtrMultiplier = new BigDecimal("0.90");
+
+    /** Minimum favorable net PnL that proves the trade had enough MFE and should not be shock-exited. */
+    private BigDecimal adverseShockMinFavorableNetUsdt = new BigDecimal("0.15");
+
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
 

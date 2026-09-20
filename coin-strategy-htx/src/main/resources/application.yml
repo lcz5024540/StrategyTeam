@@ -175,6 +175,10 @@ htx:
     no-extension-exit-enabled: ${HTX_TREND_NO_EXTENSION_EXIT_ENABLED:true}
     no-extension-exit-bars: ${HTX_TREND_NO_EXTENSION_EXIT_BARS:2}
     no-extension-min-favorable-net-usdt: ${HTX_TREND_NO_EXTENSION_MIN_FAVORABLE_NET_USDT:0.15}
+    adverse-shock-exit-enabled: ${HTX_TREND_ADVERSE_SHOCK_EXIT_ENABLED:true}
+    adverse-shock-exit-bars: ${HTX_TREND_ADVERSE_SHOCK_EXIT_BARS:1}
+    adverse-shock-atr-multiplier: ${HTX_TREND_ADVERSE_SHOCK_ATR_MULTIPLIER:0.90}
+    adverse-shock-min-favorable-net-usdt: ${HTX_TREND_ADVERSE_SHOCK_MIN_FAVORABLE_NET_USDT:0.15}
     min-expected-move-atr-multiplier: ${HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER:1.0}
     max-entry-signal-chase-atr-multiplier: ${HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_ATR_MULTIPLIER:0.20}
     max-entry-signal-chase-rate: ${HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_RATE:0}
