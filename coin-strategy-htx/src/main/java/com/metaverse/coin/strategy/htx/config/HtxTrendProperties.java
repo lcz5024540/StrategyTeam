@@ -361,6 +361,8 @@ public class HtxTrendProperties {
         private String baseUrl = "https://api.hbdm.com";
         /** Keep follower leverage aligned before opening mirrored positions. */
         private boolean syncLeverage = true;
+        /** Whether a failed leverage sync must block the mirrored entry order. */
+        private boolean blockEntryOnLeverageSyncFailure = false;
         /** Keep the primary position visible as close-pending until the follower account is flat. */
         private boolean blockPrimaryCloseUntilSynced = true;
     }

@@ -98,9 +98,9 @@ public class HtxTrendMirrorExecutor {
         if (openOrderGate != null) {
             return SyncResult.failed(openOrderGate);
         }
-        String leverageGate = switchLeverage(contractCode, positionSide);
-        if (leverageGate != null) {
-            return SyncResult.failed(leverageGate);
+        String leverageWarning = switchLeverage(contractCode, positionSide);
+        if (leverageWarning != null && mirrorProperties().isBlockEntryOnLeverageSyncFailure()) {
+            return SyncResult.failed(leverageWarning);
         }
         long deltaVolume = targetVolume - currentVolume;
         String marginGate = marginGate(contractCode, position.getContractSize(), deltaVolume,
@@ -112,7 +112,7 @@ public class HtxTrendMirrorExecutor {
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), false, deltaVolume);
         createMirrorOrderIntent(position, HtxTrendRecorder.LEG_ENTRY, request, deltaVolume, takerFeeRate,
                 estimateFee(position.getEntryAvgPrice(), position.getContractSize(), deltaVolume, takerFeeRate),
-                "mirror entry signal: " + safe(position.getEntrySignal()));
+                mirrorEntryReason(position, leverageWarning));
         HtxRestResponse<HtxSwapOrderResult> response = mirrorSwap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         if (response == null || !response.ok() || accepted == null || accepted.getOrderId() == null) {
@@ -251,10 +251,22 @@ public class HtxTrendMirrorExecutor {
         }
         HtxRestResponse<?> response = mirrorSwap.switchLeverage(contractCode, positionSide, properties.getLeverage());
         if (response == null || !response.ok() || response.getData() == null) {
-            return "mirror leverage switch failed account=" + accountLabel() + " contract=" + contractCode
+            String message = "mirror leverage switch failed account=" + accountLabel() + " contract=" + contractCode
                     + " positionSide=" + positionSide + " error=" + error(response);
+            if (!mirror.isBlockEntryOnLeverageSyncFailure()) {
+                log.warn("[HTX-TREND-MIRROR] leverage sync failed but entry will continue: {}", message);
+            }
+            return message;
         }
         return null;
+    }
+
+    private String mirrorEntryReason(HtxTrendPositionEntity position, String leverageWarning) {
+        String reason = "mirror entry signal: " + safe(position.getEntrySignal());
+        if (!StringUtils.hasText(leverageWarning)) {
+            return reason;
+        }
+        return reason + "; " + leverageWarning;
     }
 
     private String marginGate(String contractCode, BigDecimal contractSize, long volume, BigDecimal referencePrice) {
