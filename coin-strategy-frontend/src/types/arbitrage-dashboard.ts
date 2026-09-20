@@ -87,6 +87,7 @@ export interface HtxTrendDashboardResponse {
   source: string
   summary: TrendSummary
   runtime: TrendRuntimeSnapshot
+  accountSummaries: TrendAccountSummary[]
   activePositions: TrendPosition[]
   recentPositions: TrendPosition[]
   dailyPnl: TrendDailyPnl[]
@@ -114,6 +115,40 @@ export interface TrendSummary {
   todayRealizedProfit: number
   netRealizedProfit: number
   todayNetRealizedProfit: number
+}
+
+
+export interface TrendAccountSummary {
+  accountLabel: string | null
+  totalPositions: number
+  activePositions: number
+  closedPositions: number
+  winningPositions: number
+  todayClosedPositions: number
+  todayWinningPositions: number
+  totalTurnover: number
+  todayTurnover: number
+  totalFees: number
+  todayFees: number
+  realizedProfit: number
+  todayRealizedProfit: number
+  netRealizedProfit: number
+  todayNetRealizedProfit: number
+  totalOrders: number
+  todayOrders: number
+  openOrders: number
+  entryOrders: number
+  closeOrders: number
+  orderNotional: number
+  todayOrderNotional: number
+  orderFees: number
+  todayOrderFees: number
+  estimatedOrderFees: number
+  todayEstimatedOrderFees: number
+  orderRealizedProfit: number
+  todayOrderRealizedProfit: number
+  latestOrderAt: string | null
+  latestPositionAt: string | null
 }
 
 export interface TrendRuntimeSnapshot {

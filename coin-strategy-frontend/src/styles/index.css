@@ -6015,6 +6015,13 @@ td {
   gap: 12px;
 }
 
+.strategy-console .trend-current-position > div:first-child span,
+.strategy-console .trend-last-trade > div:first-child span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .strategy-console .trend-current-position strong,
 .strategy-console .trend-last-trade strong {
   color: #17211f;
@@ -6080,6 +6087,70 @@ td {
 .strategy-console .trend-empty-state strong {
   color: #1f2c27;
   font-size: 16px;
+}
+
+.strategy-console .trend-account-overview {
+  overflow: hidden;
+  border: 1px solid #dfe4dd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.strategy-console .trend-account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.strategy-console .trend-account-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e5e9e3;
+  border-radius: 8px;
+  background: #fafbf8;
+}
+
+.strategy-console .trend-account-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.strategy-console .trend-account-card header strong {
+  color: #17211f;
+  font-size: 18px;
+}
+
+.strategy-console .trend-account-card header span,
+.strategy-console .trend-account-card dd {
+  font-family: var(--font-mono);
+}
+
+.strategy-console .trend-account-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.strategy-console .trend-account-card dl div {
+  min-width: 0;
+}
+
+.strategy-console .trend-account-card dt,
+.strategy-console .trend-account-card small {
+  color: #71807a;
+  font-size: 11px;
+}
+
+.strategy-console .trend-account-card dd {
+  margin: 4px 0 0;
+  color: #24302b;
+  font-size: 13px;
 }
 
 .strategy-console .trend-pulse-grid,
@@ -6168,7 +6239,7 @@ td {
 
 .strategy-console .trend-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 180px 140px 140px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   align-items: end;
   padding: 14px;

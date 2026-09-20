@@ -334,6 +334,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     created_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX idx_trend_position_contract (contract_code, status),
+    INDEX idx_trend_position_account  (account_label, status, updated_at),
     INDEX idx_trend_position_entry    (entry_order_id),
     INDEX idx_trend_position_close    (close_order_id)
 );
@@ -375,6 +376,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_order (
     updated_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     UNIQUE KEY uk_trend_order_client (client_order_id),
     INDEX idx_trend_order_position   (position_id, leg, status),
+    INDEX idx_trend_order_account    (account_label, status, updated_at),
     INDEX idx_trend_order_exchange   (exchange_order_id),
     INDEX idx_trend_order_created    (created_at)
 );

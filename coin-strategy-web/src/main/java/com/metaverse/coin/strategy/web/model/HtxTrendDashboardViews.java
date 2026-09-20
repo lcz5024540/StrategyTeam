@@ -8,8 +8,8 @@ public final class HtxTrendDashboardViews {
     }
 
     public record Dashboard(String asOf, String source, Summary summary, RuntimeSnapshot runtime,
-                            List<Position> activePositions, List<Position> recentPositions,
-                            List<DailyPnl> dailyPnl, List<DimensionPnl> sidePnl,
+                            List<AccountSummary> accountSummaries, List<Position> activePositions,
+                            List<Position> recentPositions, List<DailyPnl> dailyPnl, List<DimensionPnl> sidePnl,
                             List<DimensionPnl> todaySidePnl, List<DimensionPnl> exitReasonPnl,
                             List<TrendOrder> recentOrders, List<TrendSignal> recentSignals,
                             List<SignalRollup> signalRollup, List<CandidateSignal> recentCandidateSignals) {
@@ -27,6 +27,19 @@ public final class HtxTrendDashboardViews {
                                   long longSignalsLast30m, long shortSignalsLast30m, long flatSignalsLast30m,
                                   long candidateSignalsLast30m, long candidateLongLast30m,
                                   long candidateShortLast30m, long candidateFlatLast30m) {
+    }
+
+    public record AccountSummary(String accountLabel, long totalPositions, long activePositions,
+                                 long closedPositions, long winningPositions, long todayClosedPositions,
+                                 long todayWinningPositions, BigDecimal totalTurnover, BigDecimal todayTurnover,
+                                 BigDecimal totalFees, BigDecimal todayFees, BigDecimal realizedProfit,
+                                 BigDecimal todayRealizedProfit, BigDecimal netRealizedProfit,
+                                 BigDecimal todayNetRealizedProfit, long totalOrders, long todayOrders,
+                                 long openOrders, long entryOrders, long closeOrders, BigDecimal orderNotional,
+                                 BigDecimal todayOrderNotional, BigDecimal orderFees, BigDecimal todayOrderFees,
+                                 BigDecimal estimatedOrderFees, BigDecimal todayEstimatedOrderFees,
+                                 BigDecimal orderRealizedProfit, BigDecimal todayOrderRealizedProfit,
+                                 String latestOrderAt, String latestPositionAt) {
     }
 
     public record Position(long id, String contractCode, String status, String side, long contractVolume,

@@ -28,6 +28,7 @@ public class HtxTrendDashboardQueryService {
         try {
             return new HtxTrendDashboardViews.Dashboard(TIME.format(Instant.now()), "HTX_TREND_EXECUTION_LEDGER",
                     summary(mapper.summary()), runtime(mapper.runtime()),
+                    mapper.accountSummaries().stream().map(this::accountSummary).toList(),
                     mapper.activePositions().stream().map(this::position).toList(),
                     mapper.recentPositions().stream().map(this::position).toList(),
                     mapper.dailyPnl().stream().map(this::daily).toList(),
@@ -49,7 +50,7 @@ public class HtxTrendDashboardQueryService {
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
                 new HtxTrendDashboardViews.RuntimeSnapshot(null, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     private HtxTrendDashboardViews.Summary summary(Map<String, Object> row) {
@@ -60,6 +61,24 @@ public class HtxTrendDashboardQueryService {
                 decimal(row, "todayTurnover"), decimal(row, "totalFees"), decimal(row, "todayFees"),
                 decimal(row, "realizedProfit"), decimal(row, "todayRealizedProfit"),
                 decimal(row, "netRealizedProfit"), decimal(row, "todayNetRealizedProfit"));
+    }
+
+
+    private HtxTrendDashboardViews.AccountSummary accountSummary(Map<String, Object> row) {
+        return new HtxTrendDashboardViews.AccountSummary(text(row, "accountLabel"),
+                number(row, "totalPositions").longValue(), number(row, "activePositions").longValue(),
+                number(row, "closedPositions").longValue(), number(row, "winningPositions").longValue(),
+                number(row, "todayClosedPositions").longValue(), number(row, "todayWinningPositions").longValue(),
+                decimal(row, "totalTurnover"), decimal(row, "todayTurnover"), decimal(row, "totalFees"),
+                decimal(row, "todayFees"), decimal(row, "realizedProfit"), decimal(row, "todayRealizedProfit"),
+                decimal(row, "netRealizedProfit"), decimal(row, "todayNetRealizedProfit"),
+                number(row, "totalOrders").longValue(), number(row, "todayOrders").longValue(),
+                number(row, "openOrders").longValue(), number(row, "entryOrders").longValue(),
+                number(row, "closeOrders").longValue(), decimal(row, "orderNotional"),
+                decimal(row, "todayOrderNotional"), decimal(row, "orderFees"), decimal(row, "todayOrderFees"),
+                decimal(row, "estimatedOrderFees"), decimal(row, "todayEstimatedOrderFees"),
+                decimal(row, "orderRealizedProfit"), decimal(row, "todayOrderRealizedProfit"),
+                text(row, "latestOrderAt"), text(row, "latestPositionAt"));
     }
 
     private HtxTrendDashboardViews.RuntimeSnapshot runtime(Map<String, Object> row) {
