@@ -7057,6 +7057,24 @@ td {
   grid-template-columns: minmax(220px, 1fr) repeat(5, minmax(128px, 160px));
 }
 
+.strategy-console .trend-history-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: #334155;
+  font-size: 13px;
+}
+
+.strategy-console .trend-history-scope strong {
+  color: #1d4ed8;
+  font-family: var(--font-mono);
+}
+
 .strategy-console .trend-risk-config .trend-definition-grid em {
   display: block;
   margin-top: 6px;
@@ -7096,6 +7114,11 @@ td {
   .strategy-console .trend-history-toolbar {
     grid-template-columns: 1fr;
   }
+
+  .strategy-console .trend-history-scope {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 /* Account pool scales beyond a handful of accounts: summary first, table for detail. */
@@ -7111,7 +7134,7 @@ td {
 
 .strategy-console .trend-account-pool {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   padding: 14px;
   border-bottom: 1px solid #e5e8e1;
@@ -7148,7 +7171,57 @@ td {
 }
 
 .strategy-console .trend-account-table {
-  min-width: 980px;
+  min-width: 1080px;
+}
+
+.strategy-console .trend-account-table tbody tr {
+  cursor: pointer;
+}
+
+.strategy-console .trend-account-table tbody tr.selected td {
+  background: #eff6ff;
+}
+
+.strategy-console .trend-account-open {
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.strategy-console .trend-account-detail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: stretch;
+  padding: 12px 14px;
+  border-top: 1px solid #eef1eb;
+  background: #fbfdff;
+}
+
+.strategy-console .trend-account-detail > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.strategy-console .trend-account-detail small,
+.strategy-console .trend-account-detail span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.strategy-console .trend-account-detail strong {
+  display: block;
+  margin: 6px 0 4px;
+  color: #111827;
+  font-family: var(--font-mono);
+  font-size: 16px;
+}
+
+.strategy-console .trend-account-detail button {
+  align-self: center;
 }
 
 .strategy-console .trend-account-footnote {
@@ -7162,10 +7235,18 @@ td {
   .strategy-console .trend-account-pool {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .strategy-console .trend-account-detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
   .strategy-console .trend-account-pool {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-console .trend-account-detail {
     grid-template-columns: 1fr;
   }
 }
