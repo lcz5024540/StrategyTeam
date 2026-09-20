@@ -174,6 +174,18 @@ class HtxTrendFollowingServiceTest {
         InOrder order = inOrder(recorder, swap);
         order.verify(recorder).createOrderIntent(any(HtxTrendOrderEntity.class));
         order.verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
+        ArgumentCaptor<HtxTrendPositionEntity> positionCaptor = ArgumentCaptor.forClass(HtxTrendPositionEntity.class);
+        verify(recorder).createIntent(positionCaptor.capture());
+        HtxTrendPositionEntity positionIntent = positionCaptor.getValue();
+        assertEquals("primary", positionIntent.getAccountLabel());
+        assertEquals(new BigDecimal("0.0004"), positionIntent.getEntryFeeRate());
+        assertTrue(positionIntent.getEstimatedEntryFee().signum() > 0);
+        assertTrue(positionIntent.getEstimatedCloseFee().signum() > 0);
+        assertTrue(positionIntent.getExpectedNetAfterFees().signum() > 0);
+        assertEquals(new BigDecimal("1.00"), positionIntent.getSizingMultiplier().setScale(2));
+        assertTrue(positionIntent.getSizingReason().contains("quality=NEUTRAL"));
+        assertTrue(positionIntent.getEntryGateReason().contains("expectedMoveGate=PASS"));
+
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
         HtxTrendOrderEntity intent = captor.getValue();
@@ -183,6 +195,9 @@ class HtxTrendFollowingServiceTest {
         assertEquals("sell", intent.getOrderSide());
         assertEquals("short", intent.getPositionSide());
         assertEquals(false, intent.getReduceOnly());
+        assertEquals("primary", intent.getAccountLabel());
+        assertEquals(new BigDecimal("0.0004"), intent.getFeeRateUsed());
+        assertTrue(intent.getEstimatedFee().signum() > 0);
         assertTrue(intent.getReason().contains("entry signal"));
         verify(recorder).markOrderAccepted(77L, HtxTrendRecorder.LEG_ENTRY, intent.getClientOrderId(),
                 88L, 99L, "entry accepted by exchange");

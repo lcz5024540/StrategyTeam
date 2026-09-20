@@ -706,6 +706,8 @@ public class HtxTrendFollowingService {
         if (expectedMoveGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, expectedMoveGate);
         }
+        EntryCostContext entryCost = entryCostContext(signal, entryPrice, spreadRate, contract.getContractSize(),
+                volume, takerFeeRate, confidence);
         BigDecimal notional = BigDecimal.valueOf(volume).multiply(contract.getContractSize()).multiply(entryPrice);
         String marginGate = marginGate(contractCode, notional);
         if (marginGate != null) {
@@ -740,6 +742,14 @@ public class HtxTrendFollowingService {
         entity.setLowestPrice(signal.closePrice());
         entity.setEntrySignal(clip(signal.reason() + "; " + sizing.summary()));
         entity.setMessage(clip("trend entry intent signal=" + signal.side() + " " + sizing.summary()));
+        entity.setAccountLabel("primary");
+        entity.setEntryFeeRate(takerFeeRate);
+        entity.setEstimatedEntryFee(entryCost.estimatedEntryFee());
+        entity.setEstimatedCloseFee(entryCost.estimatedCloseFee());
+        entity.setExpectedNetAfterFees(entryCost.expectedNetAfterFees());
+        entity.setSizingMultiplier(sizing.multiplier());
+        entity.setSizingReason(clip(sizing.reason()));
+        entity.setEntryGateReason(clip(entryCost.entryGateReason(), 1024));
         long id = recorder.createIntent(entity);
         entity.setId(id);
         HtxSwapOrderRequest request = orderRequest(contractCode, signal.side(), false, clientOrderId, volume);
@@ -1385,7 +1395,39 @@ public class HtxTrendFollowingService {
         entity.setStatus(HtxTrendRecorder.ORDER_INTENT);
         entity.setReason(clip(reason));
         entity.setMessage("prepared " + leg.toLowerCase(Locale.ROOT) + " order");
+        entity.setAccountLabel(position.getAccountLabel() == null ? "primary" : position.getAccountLabel());
+        entity.setFeeRateUsed(position.getEntryFeeRate());
+        entity.setEstimatedOpenFee(position.getEstimatedEntryFee());
+        entity.setEstimatedCloseFee(position.getEstimatedCloseFee());
+        entity.setEstimatedFee(HtxTrendRecorder.LEG_CLOSE.equals(leg)
+                ? position.getEstimatedCloseFee() : position.getEstimatedEntryFee());
+        entity.setSizingMultiplier(position.getSizingMultiplier());
+        entity.setSizingReason(clip(position.getSizingReason()));
+        entity.setEntryGateReason(clip(position.getEntryGateReason(), 1024));
         return entity;
+    }
+
+    private EntryCostContext entryCostContext(TrendSignal signal, BigDecimal entryPrice, BigDecimal spreadRate,
+                                              BigDecimal contractSize, long volume, BigDecimal takerFeeRate,
+                                              DirectionConfidence confidence) {
+        BigDecimal quantity = contractSize.multiply(BigDecimal.valueOf(volume));
+        BigDecimal entryNotional = entryPrice.multiply(quantity);
+        BigDecimal estimatedEntryFee = entryNotional.multiply(nonNegative(takerFeeRate));
+        BigDecimal estimatedCloseFee = entryNotional.multiply(nonNegative(takerFeeRate));
+        BigDecimal spreadCost = entryNotional.multiply(nonNegative(spreadRate));
+        BigDecimal expectedMove = positive(signal.atr())
+                ? signal.atr().multiply(nonNegative(properties.getMinExpectedMoveAtrMultiplier())) : BigDecimal.ZERO;
+        BigDecimal expectedGross = expectedMove.multiply(quantity);
+        BigDecimal expectedNet = expectedGross.subtract(estimatedEntryFee).subtract(estimatedCloseFee).subtract(spreadCost);
+        BigDecimal requiredMove = entryPrice.multiply(roundTripCostRate(spreadRate, takerFeeRate));
+        String confidencePart = confidence == null ? "directionConfidence=NA"
+                : "directionConfidence=PASS score=" + confidence.score().setScale(2, RoundingMode.HALF_UP)
+                + " required=" + confidence.requiredScore().setScale(2, RoundingMode.HALF_UP)
+                + " detail=" + confidence.reason();
+        String gateReason = confidencePart + "; expectedMoveGate=PASS expectedMove=" + expectedMove
+                + " requiredMove=" + requiredMove + " spreadRate=" + nonNegative(spreadRate)
+                + " feeRate=" + nonNegative(takerFeeRate);
+        return new EntryCostContext(estimatedEntryFee, estimatedCloseFee, expectedNet, gateReason);
     }
 
     private long targetVolume(BigDecimal entryPrice, BigDecimal atr, BigDecimal contractSize, SizingContext sizing) {
@@ -2042,10 +2084,14 @@ public class HtxTrendFollowingService {
     }
 
     private static String clip(String value) {
-        if (value == null || value.length() <= 512) {
+        return clip(value, 512);
+    }
+
+    private static String clip(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
             return value;
         }
-        return value.substring(0, 512);
+        return value.substring(0, maxLength);
     }
 
     public enum RunCode {
@@ -2112,6 +2158,10 @@ public class HtxTrendFollowingService {
         String summary() {
             return "sizingMultiplier=" + multiplier.setScale(2, RoundingMode.HALF_UP) + " " + reason;
         }
+    }
+
+    private record EntryCostContext(BigDecimal estimatedEntryFee, BigDecimal estimatedCloseFee,
+                                    BigDecimal expectedNetAfterFees, String entryGateReason) {
     }
 
     private record DirectionConfidence(BigDecimal score, BigDecimal requiredScore, String reason) {

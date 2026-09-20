@@ -81,7 +81,10 @@ public class HtxTrendDashboardQueryService {
                 nullableDecimal(row, "netRealizedProfit"), nullableDecimal(row, "turnover"),
                 nullableDecimal(row, "stopPrice"), nullableDecimal(row, "trailingStopPrice"),
                 text(row, "entrySignal"), text(row, "exitReason"), text(row, "message"),
-                text(row, "createdAt"), text(row, "updatedAt"));
+                text(row, "accountLabel"), nullableDecimal(row, "entryFeeRate"),
+                nullableDecimal(row, "estimatedEntryFee"), nullableDecimal(row, "estimatedCloseFee"),
+                nullableDecimal(row, "expectedNetAfterFees"), nullableDecimal(row, "sizingMultiplier"),
+                text(row, "sizingReason"), text(row, "entryGateReason"), text(row, "createdAt"), text(row, "updatedAt"));
     }
 
     private HtxTrendDashboardViews.DailyPnl daily(Map<String, Object> row) {
@@ -102,6 +105,9 @@ public class HtxTrendDashboardQueryService {
                 nullableLong(row, "exchangeOrderId"), number(row, "requestVolume").longValue(),
                 decimal(row, "filledContracts"), nullableDecimal(row, "averagePrice"), decimal(row, "fee"),
                 nullableDecimal(row, "realizedProfit"), nullableDecimal(row, "notional"), text(row, "exchangeState"),
+                text(row, "accountLabel"), nullableDecimal(row, "feeRateUsed"), nullableDecimal(row, "estimatedFee"),
+                nullableDecimal(row, "estimatedOpenFee"), nullableDecimal(row, "estimatedCloseFee"),
+                nullableDecimal(row, "sizingMultiplier"), text(row, "sizingReason"), text(row, "entryGateReason"),
                 text(row, "status"), text(row, "reason"), text(row, "message"), text(row, "createdAt"), text(row, "updatedAt"));
     }
 

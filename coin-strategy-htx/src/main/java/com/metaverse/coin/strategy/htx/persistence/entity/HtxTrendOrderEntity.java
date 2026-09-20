@@ -35,6 +35,14 @@ public class HtxTrendOrderEntity {
     private String status;
     private String reason;
     private String message;
+    private String accountLabel;
+    private BigDecimal feeRateUsed;
+    private BigDecimal estimatedFee;
+    private BigDecimal estimatedOpenFee;
+    private BigDecimal estimatedCloseFee;
+    private BigDecimal sizingMultiplier;
+    private String sizingReason;
+    private String entryGateReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -57,7 +57,11 @@ public interface HtxTrendDashboardMapper {
             + "entry_avg_price AS entryAvgPrice, close_avg_price AS closeAvgPrice, entry_fee AS entryFee, close_fee AS closeFee, "
             + "realized_profit AS realizedProfit, realized_profit - entry_fee - close_fee AS netRealizedProfit, "
             + "(" + CLOSED_TURNOVER + ") AS turnover, stop_price AS stopPrice, trailing_stop_price AS trailingStopPrice, "
-            + "entry_signal AS entrySignal, exit_reason AS exitReason, message, created_at AS createdAt, updated_at AS updatedAt "
+            + "entry_signal AS entrySignal, exit_reason AS exitReason, message, account_label AS accountLabel, "
+            + "entry_fee_rate AS entryFeeRate, estimated_entry_fee AS estimatedEntryFee, "
+            + "estimated_close_fee AS estimatedCloseFee, expected_net_after_fees AS expectedNetAfterFees, "
+            + "sizing_multiplier AS sizingMultiplier, sizing_reason AS sizingReason, entry_gate_reason AS entryGateReason, "
+            + "created_at AS createdAt, updated_at AS updatedAt "
             + "FROM " + POSITION_TABLE + " WHERE status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') "
             + "ORDER BY updated_at DESC, id DESC LIMIT 50")
     List<Map<String, Object>> activePositions();
@@ -67,7 +71,11 @@ public interface HtxTrendDashboardMapper {
             + "entry_avg_price AS entryAvgPrice, close_avg_price AS closeAvgPrice, entry_fee AS entryFee, close_fee AS closeFee, "
             + "realized_profit AS realizedProfit, realized_profit - entry_fee - close_fee AS netRealizedProfit, "
             + "(" + CLOSED_TURNOVER + ") AS turnover, stop_price AS stopPrice, trailing_stop_price AS trailingStopPrice, "
-            + "entry_signal AS entrySignal, exit_reason AS exitReason, message, created_at AS createdAt, updated_at AS updatedAt "
+            + "entry_signal AS entrySignal, exit_reason AS exitReason, message, account_label AS accountLabel, "
+            + "entry_fee_rate AS entryFeeRate, estimated_entry_fee AS estimatedEntryFee, "
+            + "estimated_close_fee AS estimatedCloseFee, expected_net_after_fees AS expectedNetAfterFees, "
+            + "sizing_multiplier AS sizingMultiplier, sizing_reason AS sizingReason, entry_gate_reason AS entryGateReason, "
+            + "created_at AS createdAt, updated_at AS updatedAt "
             + "FROM " + POSITION_TABLE + " ORDER BY updated_at DESC, id DESC LIMIT 100")
     List<Map<String, Object>> recentPositions();
 
@@ -120,6 +128,9 @@ public interface HtxTrendDashboardMapper {
             + "o.client_order_id AS clientOrderId, o.exchange_order_id AS exchangeOrderId, o.request_volume AS requestVolume, "
             + "o.filled_contracts AS filledContracts, o.average_price AS averagePrice, o.fee, o.realized_profit AS realizedProfit, "
             + "o.filled_contracts * p.contract_size * o.average_price AS notional, o.exchange_state AS exchangeState, "
+            + "o.account_label AS accountLabel, o.fee_rate_used AS feeRateUsed, o.estimated_fee AS estimatedFee, "
+            + "o.estimated_open_fee AS estimatedOpenFee, o.estimated_close_fee AS estimatedCloseFee, "
+            + "o.sizing_multiplier AS sizingMultiplier, o.sizing_reason AS sizingReason, o.entry_gate_reason AS entryGateReason, "
             + "o.status, o.reason, o.message, o.created_at AS createdAt, o.updated_at AS updatedAt "
             + "FROM " + ORDER_TABLE + " o LEFT JOIN " + POSITION_TABLE + " p ON p.id = o.position_id "
             + "ORDER BY o.updated_at DESC, o.id DESC LIMIT 100")

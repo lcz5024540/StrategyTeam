@@ -152,6 +152,14 @@ export interface TrendPosition {
   entrySignal: string | null
   exitReason: string | null
   message: string | null
+  accountLabel: string | null
+  entryFeeRate: number | null
+  estimatedEntryFee: number | null
+  estimatedCloseFee: number | null
+  expectedNetAfterFees: number | null
+  sizingMultiplier: number | null
+  sizingReason: string | null
+  entryGateReason: string | null
   createdAt: string
   updatedAt: string
 }
@@ -194,6 +202,14 @@ export interface TrendOrder {
   realizedProfit: number | null
   notional: number | null
   exchangeState: string | null
+  accountLabel: string | null
+  feeRateUsed: number | null
+  estimatedFee: number | null
+  estimatedOpenFee: number | null
+  estimatedCloseFee: number | null
+  sizingMultiplier: number | null
+  sizingReason: string | null
+  entryGateReason: string | null
   status: string
   reason: string | null
   message: string | null

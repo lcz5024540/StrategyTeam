@@ -10,6 +10,9 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
+import com.metaverse.coin.strategy.htx.persistence.HtxPersistenceException;
+import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,19 +46,27 @@ public class HtxTrendMirrorExecutor {
     private final HtxTrendProperties properties;
     private final HtxContractProperties contractProperties;
     private final HtxUsdtSwapService mirrorSwap;
+    private final HtxTrendRecorder recorder;
     private final HtxSwapFeeRateResolver feeRateResolver;
     private final Map<String, PendingMirrorOrder> pendingCloseOrders = new ConcurrentHashMap<>();
 
     @Autowired
-    public HtxTrendMirrorExecutor(HtxTrendProperties properties, HtxContractProperties contractProperties) {
-        this(properties, contractProperties, createMirrorSwap(properties, contractProperties));
+    public HtxTrendMirrorExecutor(HtxTrendProperties properties, HtxContractProperties contractProperties,
+                                  HtxTrendRecorder recorder) {
+        this(properties, contractProperties, createMirrorSwap(properties, contractProperties), recorder);
     }
 
     HtxTrendMirrorExecutor(HtxTrendProperties properties, HtxContractProperties contractProperties,
                            HtxUsdtSwapService mirrorSwap) {
+        this(properties, contractProperties, mirrorSwap, null);
+    }
+
+    HtxTrendMirrorExecutor(HtxTrendProperties properties, HtxContractProperties contractProperties,
+                           HtxUsdtSwapService mirrorSwap, HtxTrendRecorder recorder) {
         this.properties = properties;
         this.contractProperties = contractProperties;
         this.mirrorSwap = mirrorSwap;
+        this.recorder = recorder;
         this.feeRateResolver = new HtxSwapFeeRateResolver(mirrorSwap,
                 properties::getEstimatedTakerFeeRate, properties::getFeeRateCacheMs, accountLabel());
     }
@@ -99,12 +110,19 @@ public class HtxTrendMirrorExecutor {
         }
         BigDecimal takerFeeRate = feeRateResolver.takerRate(contractCode);
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), false, deltaVolume);
+        createMirrorOrderIntent(position, HtxTrendRecorder.LEG_ENTRY, request, deltaVolume, takerFeeRate,
+                estimateFee(position.getEntryAvgPrice(), position.getContractSize(), deltaVolume, takerFeeRate),
+                "mirror entry signal: " + safe(position.getEntrySignal()));
         HtxRestResponse<HtxSwapOrderResult> response = mirrorSwap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         if (response == null || !response.ok() || accepted == null || accepted.getOrderId() == null) {
+            markMirrorOrderRejected(position, HtxTrendRecorder.LEG_ENTRY, request.getClientOrderId(),
+                    "mirror entry rejected: " + error(response));
             return SyncResult.failed("mirror entry rejected account=" + accountLabel()
                     + " contract=" + contractCode + " error=" + error(response));
         }
+        markMirrorOrderAccepted(position, HtxTrendRecorder.LEG_ENTRY, request.getClientOrderId(), accepted,
+                "mirror entry accepted by exchange");
         log.info("[HTX-TREND-MIRROR] entry sent account={} contract={} side={} orderId={} volume={} feeRate={}",
                 accountLabel(), contractCode, position.getSide(), accepted.getOrderId(), deltaVolume, takerFeeRate);
         return SyncResult.ok("mirror entry sent account=" + accountLabel() + " orderId=" + accepted.getOrderId()
@@ -149,12 +167,19 @@ public class HtxTrendMirrorExecutor {
         }
         BigDecimal takerFeeRate = feeRateResolver.takerRate(contractCode);
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), true, closeVolume);
+        createMirrorOrderIntent(position, HtxTrendRecorder.LEG_CLOSE, request, closeVolume, takerFeeRate,
+                estimateFee(position.getEntryAvgPrice(), position.getContractSize(), closeVolume, takerFeeRate),
+                "mirror exit signal: " + safe(position.getExitReason()));
         HtxRestResponse<HtxSwapOrderResult> response = mirrorSwap.placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         if (response == null || !response.ok() || accepted == null || accepted.getOrderId() == null) {
+            markMirrorOrderRejected(position, HtxTrendRecorder.LEG_CLOSE, request.getClientOrderId(),
+                    "mirror close rejected: " + error(response));
             return SyncResult.failed("mirror close rejected account=" + accountLabel()
                     + " contract=" + contractCode + " error=" + error(response));
         }
+        markMirrorOrderAccepted(position, HtxTrendRecorder.LEG_CLOSE, request.getClientOrderId(), accepted,
+                "mirror close accepted by exchange");
         pendingCloseOrders.put(pendingKey, new PendingMirrorOrder(accepted.getOrderId(), System.currentTimeMillis()));
         log.info("[HTX-TREND-MIRROR] close sent account={} contract={} side={} orderId={} volume={} feeRate={}",
                 accountLabel(), contractCode, position.getSide(), accepted.getOrderId(), closeVolume, takerFeeRate);
@@ -262,6 +287,69 @@ public class HtxTrendMirrorExecutor {
         return null;
     }
 
+    private void createMirrorOrderIntent(HtxTrendPositionEntity position, String leg, HtxSwapOrderRequest request,
+                                         long volume, BigDecimal takerFeeRate, BigDecimal estimatedFee, String reason) {
+        if (recorder == null) {
+            return;
+        }
+        HtxTrendOrderEntity entity = new HtxTrendOrderEntity();
+        entity.setPositionId(position.getId());
+        entity.setPositionKey(position.getPositionKey());
+        entity.setContractCode(request.getContractCode());
+        entity.setLeg(leg);
+        entity.setTrendSide(position.getSide());
+        entity.setOrderSide(request.getSide());
+        entity.setPositionSide(request.getPositionSide());
+        entity.setReduceOnly(Boolean.TRUE.equals(request.getReduceOnly()));
+        entity.setClientOrderId(request.getClientOrderId());
+        entity.setRequestVolume(volume);
+        entity.setFilledContracts(BigDecimal.ZERO);
+        entity.setFee(BigDecimal.ZERO);
+        entity.setStatus(HtxTrendRecorder.ORDER_INTENT);
+        entity.setReason(clip(reason));
+        entity.setMessage("prepared mirror " + leg.toLowerCase(Locale.ROOT) + " order");
+        entity.setAccountLabel(accountLabel());
+        entity.setFeeRateUsed(takerFeeRate);
+        entity.setEstimatedFee(estimatedFee);
+        if (HtxTrendRecorder.LEG_CLOSE.equals(leg)) {
+            entity.setEstimatedCloseFee(estimatedFee);
+        } else {
+            entity.setEstimatedOpenFee(estimatedFee);
+        }
+        entity.setSizingMultiplier(position.getSizingMultiplier());
+        entity.setSizingReason(clip(position.getSizingReason()));
+        entity.setEntryGateReason(clip(position.getEntryGateReason(), 1024));
+        try {
+            recorder.createOrderIntent(entity);
+        } catch (HtxPersistenceException ex) {
+            throw ex;
+        }
+    }
+
+    private void markMirrorOrderAccepted(HtxTrendPositionEntity position, String leg, String clientOrderId,
+                                         HtxSwapOrderResult accepted, String message) {
+        if (recorder == null) {
+            return;
+        }
+        recorder.markOrderAccepted(position.getId(), leg, clientOrderId, accepted.getOrderId(),
+                accepted.getClientOrderId(), message);
+    }
+
+    private void markMirrorOrderRejected(HtxTrendPositionEntity position, String leg, String clientOrderId,
+                                         String message) {
+        if (recorder == null) {
+            return;
+        }
+        recorder.markOrderRejected(position.getId(), leg, clientOrderId, message);
+    }
+
+    private static BigDecimal estimateFee(BigDecimal price, BigDecimal contractSize, long volume, BigDecimal feeRate) {
+        if (!positive(price) || !positive(contractSize) || volume <= 0L || feeRate == null) {
+            return BigDecimal.ZERO;
+        }
+        return price.multiply(contractSize).multiply(BigDecimal.valueOf(volume)).multiply(feeRate);
+    }
+
     private HtxSwapOrderRequest orderRequest(String contractCode, String trendSide, boolean reduceOnly, long volume) {
         boolean longSide = LONG.equals(trendSide);
         String side = reduceOnly ? (longSide ? SIDE_SELL : SIDE_BUY) : (longSide ? SIDE_BUY : SIDE_SELL);
@@ -303,6 +391,21 @@ public class HtxTrendMirrorExecutor {
 
     private static boolean positive(BigDecimal value) {
         return value != null && value.signum() > 0;
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String clip(String value) {
+        return clip(value, 512);
+    }
+
+    private static String clip(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private static String error(HtxRestResponse<?> response) {

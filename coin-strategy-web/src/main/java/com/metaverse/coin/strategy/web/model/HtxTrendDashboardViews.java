@@ -34,8 +34,10 @@ public final class HtxTrendDashboardViews {
                            BigDecimal entryAvgPrice, BigDecimal closeAvgPrice, BigDecimal entryFee,
                            BigDecimal closeFee, BigDecimal realizedProfit, BigDecimal netRealizedProfit,
                            BigDecimal turnover, BigDecimal stopPrice, BigDecimal trailingStopPrice,
-                           String entrySignal, String exitReason, String message, String createdAt,
-                           String updatedAt) {
+                           String entrySignal, String exitReason, String message, String accountLabel,
+                           BigDecimal entryFeeRate, BigDecimal estimatedEntryFee, BigDecimal estimatedCloseFee,
+                           BigDecimal expectedNetAfterFees, BigDecimal sizingMultiplier, String sizingReason,
+                           String entryGateReason, String createdAt, String updatedAt) {
     }
 
     public record DailyPnl(String tradeDate, long closedPositions, BigDecimal realizedProfit,
@@ -51,8 +53,10 @@ public final class HtxTrendDashboardViews {
                              String orderSide, String positionSide, boolean reduceOnly, String clientOrderId,
                              Long exchangeOrderId, long requestVolume, BigDecimal filledContracts,
                              BigDecimal averagePrice, BigDecimal fee, BigDecimal realizedProfit,
-                             BigDecimal notional, String exchangeState, String status, String reason,
-                             String message, String createdAt, String updatedAt) {
+                             BigDecimal notional, String exchangeState, String accountLabel, BigDecimal feeRateUsed,
+                             BigDecimal estimatedFee, BigDecimal estimatedOpenFee, BigDecimal estimatedCloseFee,
+                             BigDecimal sizingMultiplier, String sizingReason, String entryGateReason,
+                             String status, String reason, String message, String createdAt, String updatedAt) {
     }
 
     public record TrendSignal(long id, String contractCode, String period, Long barTime, String trendSignal,

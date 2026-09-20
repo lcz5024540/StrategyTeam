@@ -40,6 +40,14 @@ public class HtxTrendPositionEntity {
     private String entrySignal;
     private String exitReason;
     private String message;
+    private String accountLabel;
+    private BigDecimal entryFeeRate;
+    private BigDecimal estimatedEntryFee;
+    private BigDecimal estimatedCloseFee;
+    private BigDecimal expectedNetAfterFees;
+    private BigDecimal sizingMultiplier;
+    private String sizingReason;
+    private String entryGateReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
