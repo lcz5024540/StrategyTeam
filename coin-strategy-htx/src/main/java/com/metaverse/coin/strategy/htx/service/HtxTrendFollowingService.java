@@ -566,6 +566,10 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, externalPositionGate);
         }
         BigDecimal entryPrice = signal.side() == TrendSide.LONG ? book.ask() : book.bid();
+        String chaseGate = entryChaseGate(signal, entryPrice);
+        if (chaseGate != null) {
+            return RunResult.of(RunCode.SKIPPED, null, chaseGate);
+        }
         SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance);
         long volume = targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing);
         if (volume <= 0) {
@@ -1266,6 +1270,41 @@ public class HtxTrendFollowingService {
                     + " requiredMove=" + requiredMove + " atr=" + signal.atr();
         }
         return null;
+    }
+
+    private String entryChaseGate(TrendSignal signal, BigDecimal entryPrice) {
+        if (signal == null || signal.side() == TrendSide.FLAT || !positive(entryPrice)
+                || !positive(signal.closePrice())) {
+            return null;
+        }
+        BigDecimal worseFill = signal.side() == TrendSide.LONG
+                ? entryPrice.subtract(signal.closePrice())
+                : signal.closePrice().subtract(entryPrice);
+        if (worseFill.signum() <= 0) {
+            return null;
+        }
+        BigDecimal maxChase = BigDecimal.ZERO;
+        BigDecimal atrMultiplier = nonNegative(properties.getMaxEntrySignalChaseAtrMultiplier());
+        if (atrMultiplier.signum() > 0 && positive(signal.atr())) {
+            maxChase = signal.atr().multiply(atrMultiplier);
+        }
+        BigDecimal chaseRate = nonNegative(properties.getMaxEntrySignalChaseRate());
+        if (chaseRate.signum() > 0) {
+            BigDecimal rateLimit = signal.closePrice().multiply(chaseRate);
+            maxChase = positive(maxChase) ? min(maxChase, rateLimit) : rateLimit;
+        }
+        if (!positive(maxChase) || worseFill.compareTo(maxChase) <= 0) {
+            return null;
+        }
+        BigDecimal chaseRateValue = worseFill.divide(signal.closePrice(), 18, RoundingMode.HALF_UP);
+        BigDecimal chaseAtr = positive(signal.atr())
+                ? worseFill.divide(signal.atr(), 18, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        return "entry price chased signal too far entryPrice=" + entryPrice
+                + " signalClose=" + signal.closePrice()
+                + " chase=" + worseFill
+                + " maxChase=" + maxChase
+                + " chaseRate=" + chaseRateValue
+                + " chaseAtr=" + chaseAtr;
     }
 
     private String entrySignalFreshnessGate(TrendSignal signal) {

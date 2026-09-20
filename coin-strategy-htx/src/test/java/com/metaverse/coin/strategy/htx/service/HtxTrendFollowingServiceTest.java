@@ -492,6 +492,7 @@ class HtxTrendFollowingServiceTest {
 
     @Test
     void liveEntrySkipsWhenExpectedMoveCannotCoverRoundTripCosts() {
+        properties.setMaxEntrySignalChaseAtrMultiplier(BigDecimal.ZERO);
         givenContractInfo();
         givenKlines();
         givenSignal(TrendSide.LONG, new BigDecimal("1.0"));
@@ -505,6 +506,25 @@ class HtxTrendFollowingServiceTest {
 
         assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
         assertTrue(result.message().contains("expected move too small after fees"));
+        verify(swap, never()).switchLeverage(any(), any(), any(Integer.class));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveEntrySkipsWhenEntryPriceChasesSignalTooFar() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("10.0"));
+        givenFunding("-0.0001");
+        givenDepth("XAUT-USDT", "4302", "4303");
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("entry price chased signal too far"));
         verify(swap, never()).switchLeverage(any(), any(), any(Integer.class));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }

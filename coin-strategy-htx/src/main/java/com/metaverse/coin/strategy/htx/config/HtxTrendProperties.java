@@ -147,6 +147,12 @@ public class HtxTrendProperties {
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
 
+    /** Maximum worse fill versus the signal close, expressed as ATR multiple; <=0 disables this chase guard. */
+    private BigDecimal maxEntrySignalChaseAtrMultiplier = new BigDecimal("0.20");
+
+    /** Maximum worse fill versus the signal close, expressed as price rate; <=0 disables this chase guard. */
+    private BigDecimal maxEntrySignalChaseRate = BigDecimal.ZERO;
+
     /** Maximum seconds after the signal bar closed during which a live entry is still allowed; <=0 disables. */
     private long maxEntrySignalAgeSeconds = 600L;
 
