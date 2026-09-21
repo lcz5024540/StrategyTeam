@@ -23,6 +23,7 @@ const MODES: Array<{ value: ArbitrageMode; label: string; tag: string }> = [
 const TREND_VIEWS = [
   { value: 'overview', label: '驾驶舱' },
   { value: 'history', label: '交易历史' },
+  { value: 'quality', label: '收益归因' },
 ] as const
 
 type TrendView = typeof TREND_VIEWS[number]['value']
@@ -178,6 +179,21 @@ function directionText(value: string | null | undefined) {
   if (upper === 'CLOSE_BUY') return '平空'
   if (upper === 'CLOSE_SELL') return '平多'
   return value || '—'
+}
+function trendBucketText(value: string | null | undefined) {
+  const raw = value || '—'
+  const upper = raw.toUpperCase()
+  if (upper === 'BREAKOUT') return '突破'
+  if (upper === 'FIBONACCI CONTINUATION') return '回踩延续'
+  if (upper === 'FUNDING CARRY') return '资金费辅助'
+  if (upper === 'ENSEMBLE') return '组合信号'
+  if (upper === 'BROAD UP') return '普涨'
+  if (upper === 'BROAD DOWN') return '普跌'
+  if (upper === 'COUNTER MARKET') return '逆市场'
+  if (upper === 'MIXED') return '混合'
+  if (upper === 'UNKNOWN') return '未知'
+  if (upper === 'UNCLASSIFIED') return '未分类'
+  return directionText(raw)
 }
 function ledgerEventText(value: string | null | undefined) {
   const upper = (value || '').toUpperCase()
@@ -342,6 +358,7 @@ function TrendDashboard({ trend, loading, refresh, view, onViewChange }: { trend
     <TrendViewTabs view={view} onViewChange={onViewChange} />
     {view === 'overview' ? <TrendOverview trend={trend} lastPosition={lastPosition} onViewChange={onViewChange} selectedAccount={selectedAccount} onSelectAccount={setSelectedAccount} onOpenAccountHistory={openAccountHistory} /> : null}
     {view === 'history' ? <TrendHistoryView positions={trend.recentPositions} orders={trend.recentOrders} ledgerEvents={trend.recentLedgerEvents || []} accountSummaries={trend.accountSummaries || []} selectedAccount={selectedAccount} /> : null}
+    {view === 'quality' ? <TrendQualityView trend={trend} /> : null}
   </div>
 }
 function TrendBotHero({ trend, loading, refresh }: { trend: HtxTrendDashboardResponse; loading: boolean; refresh: () => void }) {
@@ -568,8 +585,19 @@ function TrendHistoryView({ positions, orders, ledgerEvents, accountSummaries, s
     <TrendOrdersTable rows={filteredOrders} />
   </div>
 }
+function TrendQualityView({ trend }: { trend: HtxTrendDashboardResponse }) {
+  return <div className="trend-view-stack trend-quality-view">
+    <section className="trend-quality-grid">
+      <TrendAttributionTable title="入场模型收益质量" rows={trend.entryModelPnl || []} />
+      <TrendAttributionTable title="市场状态收益质量" rows={trend.marketRegimePnl || []} />
+      <TrendAttributionTable title="亏损币种优先排查" rows={trend.symbolPnl || []} />
+      <TrendAttributionTable title="今日退出原因" rows={trend.exitReasonPnl || []} />
+    </section>
+  </div>
+}
+
 function TrendAttributionTable({ title, rows }: { title: string; rows: TrendDimensionPnl[] }) {
-  return <section className="arb-table-wrap trend-compact-table"><header className="trend-table-title"><div><h2>{title}</h2></div><span>{rows.length} 类</span></header><table><thead><tr><th>分类</th><th>笔数</th><th>胜率</th><th>交易量</th><th>手续费</th><th>净盈亏</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={`${row.bucket}-${row.side}`}><td><b>{directionText(row.bucket)}</b>{row.side && row.side !== row.bucket ? <small>{directionText(row.side)}</small> : null}</td><td>{row.closedPositions}</td><td>{row.closedPositions ? `${(row.winningPositions / row.closedPositions * 100).toFixed(1)}%` : '—'}</td><td>{formatNotional(row.turnover)}</td><td>{formatUsdtNoSign(row.fees)}</td><td className={valueTone(row.netProfit)}>{formatUsdt(row.netProfit)}</td></tr>) : <tr><td className="arb-empty" colSpan={6}>暂无归因数据</td></tr>}</tbody></table></section>
+  return <section className="arb-table-wrap trend-compact-table"><header className="trend-table-title"><div><h2>{title}</h2></div><span>{rows.length} 类</span></header><table><thead><tr><th>分类</th><th>笔数</th><th>胜率</th><th>均赚/均亏</th><th>盈亏比/PF</th><th>期望</th><th>净盈亏</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={`${row.bucket}-${row.side}`}><td><b>{trendBucketText(row.bucket)}</b>{row.side && row.side !== row.bucket ? <small>{directionText(row.side)}</small> : null}</td><td>{row.closedPositions}</td><td>{row.closedPositions ? `${((row.winRate ?? row.winningPositions / row.closedPositions) * 100).toFixed(1)}%` : '—'}</td><td>{formatUsdtNoSign(row.averageWin)} / {formatUsdtNoSign(row.averageLoss)}</td><td>{formatRatio(row.payoffRatio)} / {formatRatio(row.profitFactor)}</td><td className={valueTone(row.expectancy || 0)}>{formatUsdt(row.expectancy)}</td><td className={valueTone(row.netProfit)}>{formatUsdt(row.netProfit)}</td></tr>) : <tr><td className="arb-empty" colSpan={7}>暂无归因数据</td></tr>}</tbody></table></section>
 }
 function TrendLedgerEventsTable({ rows, total }: { rows: TrendLedgerEvent[]; total: number }) {
   return <section className="arb-table-wrap">

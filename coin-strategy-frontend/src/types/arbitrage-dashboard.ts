@@ -96,6 +96,9 @@ export interface HtxTrendDashboardResponse {
   sidePnl: TrendDimensionPnl[]
   todaySidePnl: TrendDimensionPnl[]
   exitReasonPnl: TrendDimensionPnl[]
+  entryModelPnl: TrendDimensionPnl[]
+  marketRegimePnl: TrendDimensionPnl[]
+  symbolPnl: TrendDimensionPnl[]
   recentOrders: TrendOrder[]
   recentLedgerEvents?: TrendLedgerEvent[]
   recentSignals: TrendSignal[]
@@ -262,6 +265,13 @@ export interface TrendDimensionPnl {
   side: string | null
   closedPositions: number
   winningPositions: number
+  losingPositions?: number
+  winRate?: number
+  averageWin?: number
+  averageLoss?: number
+  payoffRatio?: number
+  profitFactor?: number
+  expectancy?: number
   realizedProfit: number
   fees: number
   netProfit: number

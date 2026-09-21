@@ -37,6 +37,9 @@ public class HtxTrendDashboardQueryService {
                     mapper.sidePnl().stream().map(this::dimensionPnl).toList(),
                     mapper.todaySidePnl().stream().map(this::dimensionPnl).toList(),
                     mapper.exitReasonPnl().stream().map(this::dimensionPnl).toList(),
+                    mapper.entryModelPnl().stream().map(this::dimensionPnl).toList(),
+                    mapper.marketRegimePnl().stream().map(this::dimensionPnl).toList(),
+                    mapper.symbolPnl().stream().map(this::dimensionPnl).toList(),
                     mapper.recentOrders().stream().map(this::order).toList(),
                     recentLedgerEvents(),
                     mapper.recentSignals().stream().map(this::signal).toList(),
@@ -55,7 +58,7 @@ public class HtxTrendDashboardQueryService {
                 emptyLedgerSummary(), emptyPerformanceSummary(),
                 new HtxTrendDashboardViews.RuntimeSnapshot(null, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     private HtxTrendDashboardViews.Summary summary(Map<String, Object> row) {
@@ -197,9 +200,18 @@ public class HtxTrendDashboardQueryService {
     }
 
     private HtxTrendDashboardViews.DimensionPnl dimensionPnl(Map<String, Object> row) {
-        return new HtxTrendDashboardViews.DimensionPnl(text(row, "bucket"), text(row, "side"),
-                number(row, "closedPositions").longValue(), number(row, "winningPositions").longValue(),
-                decimal(row, "realizedProfit"), decimal(row, "fees"), decimal(row, "netProfit"), decimal(row, "turnover"));
+        long closedPositions = number(row, "closedPositions").longValue();
+        long winningPositions = number(row, "winningPositions").longValue();
+        long losingPositions = number(row, "losingPositions").longValue();
+        BigDecimal grossProfit = decimal(row, "grossProfit");
+        BigDecimal grossLoss = decimal(row, "grossLoss");
+        BigDecimal netProfit = decimal(row, "netProfit");
+        return new HtxTrendDashboardViews.DimensionPnl(text(row, "bucket"), text(row, "side"), closedPositions,
+                winningPositions, losingPositions, ratio(winningPositions, closedPositions),
+                average(grossProfit, winningPositions), average(grossLoss, losingPositions),
+                payoffRatio(grossProfit, winningPositions, grossLoss, losingPositions), profitFactor(grossProfit, grossLoss),
+                average(netProfit, closedPositions), decimal(row, "realizedProfit"), decimal(row, "fees"),
+                netProfit, decimal(row, "turnover"));
     }
 
     private HtxTrendDashboardViews.TrendOrder order(Map<String, Object> row) {

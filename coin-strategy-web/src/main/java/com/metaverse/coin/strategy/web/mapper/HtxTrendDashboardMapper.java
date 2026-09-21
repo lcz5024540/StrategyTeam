@@ -22,8 +22,32 @@ public interface HtxTrendDashboardMapper {
     String LEDGER_FEE = "CASE WHEN event_type = 'FEE' THEN COALESCE(fee_usdt, 0) ELSE 0 END";
     String LEDGER_NET = "COALESCE(net_pnl_after_fee, 0)";
 
-    String CLOSED_TURNOVER = "entry_filled_contracts * contract_size * entry_avg_price "
-            + "+ close_filled_contracts * contract_size * close_avg_price";
+    String CLOSED_NET_PROFIT = "COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0)";
+    String CLOSED_TURNOVER = "COALESCE(entry_filled_contracts, 0) * COALESCE(contract_size, 0) * COALESCE(entry_avg_price, 0) "
+            + "+ COALESCE(close_filled_contracts, 0) * COALESCE(contract_size, 0) * COALESCE(close_avg_price, 0)";
+    String DIMENSION_PNL_METRICS = "COUNT(*) AS closedPositions, "
+            + "SUM(CASE WHEN " + CLOSED_NET_PROFIT + " > 0 THEN 1 ELSE 0 END) AS winningPositions, "
+            + "SUM(CASE WHEN " + CLOSED_NET_PROFIT + " < 0 THEN 1 ELSE 0 END) AS losingPositions, "
+            + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
+            + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
+            + "COALESCE(SUM(CASE WHEN " + CLOSED_NET_PROFIT + " > 0 THEN " + CLOSED_NET_PROFIT + " ELSE 0 END), 0) AS grossProfit, "
+            + "COALESCE(SUM(CASE WHEN " + CLOSED_NET_PROFIT + " < 0 THEN -(" + CLOSED_NET_PROFIT + ") ELSE 0 END), 0) AS grossLoss, "
+            + "COALESCE(SUM(" + CLOSED_NET_PROFIT + "), 0) AS netProfit, "
+            + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover ";
+    String ENTRY_MODEL_BUCKET = "CASE "
+            + "WHEN entry_signal LIKE '%funding carry%' THEN 'funding carry' "
+            + "WHEN entry_signal LIKE '%ensemble entry%' THEN 'ensemble' "
+            + "WHEN entry_signal LIKE '%Fibonacci%' THEN 'fibonacci continuation' "
+            + "WHEN entry_signal LIKE '%Donchian%' OR entry_signal LIKE '%breakout%' OR entry_signal LIKE '%broke%' THEN 'breakout' "
+            + "WHEN entry_signal IS NULL OR entry_signal = '' THEN 'unknown' "
+            + "ELSE 'other' END";
+    String MARKET_REGIME_BUCKET = "CASE "
+            + "WHEN entry_signal LIKE '%market anchor counter%' THEN 'counter market' "
+            + "WHEN entry_signal LIKE '%market anchor aligned BROAD_UP%' OR entry_signal LIKE '%breadth=BROAD_UP%' OR entry_signal LIKE '%BROAD_UP%' THEN 'broad up' "
+            + "WHEN entry_signal LIKE '%market anchor aligned BROAD_DOWN%' OR entry_signal LIKE '%breadth=BROAD_DOWN%' OR entry_signal LIKE '%BROAD_DOWN%' THEN 'broad down' "
+            + "WHEN entry_signal LIKE '%MIXED%' THEN 'mixed' "
+            + "WHEN entry_signal IS NULL OR entry_signal = '' THEN 'unknown' "
+            + "ELSE 'unclassified' END";
 
     @Select("SELECT COUNT(*) AS totalPositions, "
             + "SUM(CASE WHEN status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') THEN 1 ELSE 0 END) AS activePositions, "
@@ -207,24 +231,29 @@ public interface HtxTrendDashboardMapper {
             + "ORDER BY tradeDate DESC LIMIT 30")
     List<Map<String, Object>> dailyPnl();
 
-    @Select("SELECT side AS bucket, side, COUNT(*) AS closedPositions, "
-            + "SUM(CASE WHEN realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
-            + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
-            + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
-            + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
-            + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
+    @Select("SELECT side AS bucket, side, " + DIMENSION_PNL_METRICS
             + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' GROUP BY side ORDER BY netProfit DESC")
     List<Map<String, Object>> sidePnl();
 
-    @Select("SELECT side AS bucket, side, COUNT(*) AS closedPositions, "
-            + "SUM(CASE WHEN realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
-            + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
-            + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
-            + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
-            + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
+    @Select("SELECT side AS bucket, side, " + DIMENSION_PNL_METRICS
             + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' AND updated_at >= CURDATE() "
             + "GROUP BY side ORDER BY netProfit DESC")
     List<Map<String, Object>> todaySidePnl();
+
+    @Select("SELECT " + ENTRY_MODEL_BUCKET + " AS bucket, side, " + DIMENSION_PNL_METRICS
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' "
+            + "GROUP BY bucket, side ORDER BY netProfit DESC LIMIT 30")
+    List<Map<String, Object>> entryModelPnl();
+
+    @Select("SELECT " + MARKET_REGIME_BUCKET + " AS bucket, side, " + DIMENSION_PNL_METRICS
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' "
+            + "GROUP BY bucket, side ORDER BY netProfit DESC LIMIT 30")
+    List<Map<String, Object>> marketRegimePnl();
+
+    @Select("SELECT contract_code AS bucket, side, " + DIMENSION_PNL_METRICS
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' "
+            + "GROUP BY contract_code, side ORDER BY netProfit ASC LIMIT 30")
+    List<Map<String, Object>> symbolPnl();
 
     @Select("SELECT CASE "
             + "WHEN exit_reason LIKE '%loss control%' THEN 'flat loss control' "
@@ -232,12 +261,7 @@ public interface HtxTrendDashboardMapper {
             + "WHEN exit_reason LIKE '%trailing stop%' THEN 'trailing stop' "
             + "WHEN exit_reason LIKE '%take profit%' THEN 'take profit' "
             + "WHEN exit_reason IS NULL OR exit_reason = '' THEN 'unknown' "
-            + "ELSE LEFT(exit_reason, 96) END AS bucket, side, COUNT(*) AS closedPositions, "
-            + "SUM(CASE WHEN realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
-            + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
-            + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
-            + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
-            + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS turnover "
+            + "ELSE LEFT(exit_reason, 96) END AS bucket, side, " + DIMENSION_PNL_METRICS
             + "FROM " + POSITION_TABLE + " WHERE status = 'DONE' AND updated_at >= CURDATE() "
             + "GROUP BY bucket, side ORDER BY netProfit ASC LIMIT 20")
     List<Map<String, Object>> exitReasonPnl();

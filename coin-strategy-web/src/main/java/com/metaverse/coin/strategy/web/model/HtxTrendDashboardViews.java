@@ -12,7 +12,9 @@ public final class HtxTrendDashboardViews {
                             List<AccountSummary> accountSummaries, List<Position> activePositions,
                             List<Position> recentPositions, List<DailyPnl> dailyPnl, List<DimensionPnl> sidePnl,
                             List<DimensionPnl> todaySidePnl, List<DimensionPnl> exitReasonPnl,
-                            List<TrendOrder> recentOrders, List<LedgerEvent> recentLedgerEvents,
+                            List<DimensionPnl> entryModelPnl, List<DimensionPnl> marketRegimePnl,
+                            List<DimensionPnl> symbolPnl, List<TrendOrder> recentOrders,
+                            List<LedgerEvent> recentLedgerEvents,
                             List<TrendSignal> recentSignals, List<SignalRollup> signalRollup,
                             List<CandidateSignal> recentCandidateSignals) {
     }
@@ -80,8 +82,10 @@ public final class HtxTrendDashboardViews {
     }
 
     public record DimensionPnl(String bucket, String side, long closedPositions, long winningPositions,
-                               BigDecimal realizedProfit, BigDecimal fees, BigDecimal netProfit,
-                               BigDecimal turnover) {
+                               long losingPositions, BigDecimal winRate, BigDecimal averageWin,
+                               BigDecimal averageLoss, BigDecimal payoffRatio, BigDecimal profitFactor,
+                               BigDecimal expectancy, BigDecimal realizedProfit, BigDecimal fees,
+                               BigDecimal netProfit, BigDecimal turnover) {
     }
 
     public record TrendOrder(long id, long positionId, String contractCode, String leg, String trendSide,
