@@ -82,8 +82,13 @@ public final class SpotPerpBacktest {
 
     public Report replay(List<SpotPerpHistoryClient.FundingPrint> prints, SpotPerpRules rules,
             Instant from, Instant to, List<String> fetchErrors) {
+        return replay(prints, rules, SpotPerpExecutionPolicy.productionTaker(), from, to, fetchErrors);
+    }
+
+    public Report replay(List<SpotPerpHistoryClient.FundingPrint> prints, SpotPerpRules rules,
+            SpotPerpExecutionPolicy policy, Instant from, Instant to, List<String> fetchErrors) {
         Objects.requireNonNull(prints, "prints");
-        SpotPerpDryRunEngine engine = new SpotPerpDryRunEngine(rules);
+        SpotPerpDryRunEngine engine = new SpotPerpDryRunEngine(rules, policy);
         Map<SpotPerpInstrument, Integer> printCounts = new LinkedHashMap<>();
         Map<SpotPerpInstrument, Instant> first = new LinkedHashMap<>();
         Map<SpotPerpInstrument, Instant> last = new LinkedHashMap<>();
@@ -143,16 +148,15 @@ public final class SpotPerpBacktest {
         String notes = "Binance: GET /fapi/v1/fundingRate (includes markPrice). "
                 + "HTX: GET /linear-swap-api/v1/swap_historical_funding_rate (mark often absent; "
                 + "avg_premium_index used as basis proxy when present). "
-                + "No historical spot/perp L2; synthetic 1,000,000 USDT book so 100 USDT BTC/ETH "
-                + "liquidity gates are assumed to pass. If a venue fetch failed, that series is empty.";
+                + "No historical spot/perp L2; synthetic 1,000,000 USDT book so "
+                + rules.notionalUsdt().toPlainString()
+                + " USDT BTC/ETH liquidity gates are assumed to pass. If a venue fetch failed, that series is empty.";
         return new Report(METHOD, from, to, rules, stats,
                 fetchErrors == null ? List.of() : List.copyOf(fetchErrors), notes);
     }
 
     static SpotPerpSnapshot snapshotFromPrint(SpotPerpHistoryClient.FundingPrint print, Duration interval) {
-        BigDecimal mark = print.markPrice() == null || print.markPrice().signum() <= 0
-                ? new BigDecimal("100000")
-                : print.markPrice();
+        BigDecimal mark = placeholderMark(print);
         BigDecimal index = inferIndex(print, mark);
         BigDecimal tick = mark.movePointLeft(5).max(new BigDecimal("0.01"));
         BigDecimal spotAsk = index;
@@ -186,6 +190,21 @@ public final class SpotPerpBacktest {
                 new BigDecimal("5"),
                 print.fundingTime()
         );
+    }
+
+    /**
+     * HTX historical funding often omits mark (the client stores 1). Using that
+     * would size a 10,000 USDT BTC hedge as 10,000 coins. Substitute a BTC/ETH
+     * placeholder so fees stay percent-of-notional; still not a real mark.
+     */
+    private static BigDecimal placeholderMark(SpotPerpHistoryClient.FundingPrint print) {
+        BigDecimal mark = print.markPrice();
+        if (mark == null || mark.signum() <= 0 || mark.compareTo(new BigDecimal("10")) < 0) {
+            return print.instrument().asset() == SpotPerpInstrument.SpotPerpAsset.BTC
+                    ? new BigDecimal("100000")
+                    : new BigDecimal("4000");
+        }
+        return mark;
     }
 
     private static BigDecimal inferIndex(SpotPerpHistoryClient.FundingPrint print, BigDecimal mark) {

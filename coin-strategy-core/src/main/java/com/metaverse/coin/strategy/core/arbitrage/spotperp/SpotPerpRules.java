@@ -164,8 +164,93 @@ public record SpotPerpRules(
         );
     }
 
+    /** Locked dry-run slot: 10,000 USDT per symbol, production taker lump fees. */
+    public static SpotPerpRules tenThousandTaker() {
+        return defaults().withNotional(new BigDecimal("10000"));
+    }
+
+    /**
+     * Scheme B: 10,000 USDT, published per-style round-trip bps in the gate,
+     * enter only when projected remaining funding covers those fees plus buffer.
+     */
+    public static SpotPerpRules schemeB(SpotPerpExecutionStyle style, int remainingPeriods,
+            BigDecimal feeBufferRate) {
+        Objects.requireNonNull(style, "style");
+        Objects.requireNonNull(feeBufferRate, "feeBufferRate");
+        EnumMap<SpotPerpVenue, BigDecimal> fees = new EnumMap<>(SpotPerpVenue.class);
+        for (SpotPerpVenue venue : SpotPerpVenue.values()) {
+            fees.put(venue, SpotPerpFeeSchedule.forVenue(venue).roundTrip(style));
+        }
+        return defaults()
+                .withNotional(new BigDecimal("10000"))
+                .withMinFundingPeriods(remainingPeriods)
+                .withMinNetYieldRate(feeBufferRate)
+                .withRoundTripFeeRates(fees);
+    }
+
+    public static SpotPerpRules publishedTaker(int remainingPeriods, BigDecimal feeBufferRate) {
+        return schemeB(SpotPerpExecutionStyle.TAKER_IOC, remainingPeriods, feeBufferRate);
+    }
+
+    public SpotPerpRules withNotional(BigDecimal notional) {
+        return copy(dryRun, autoOpenEnabled, notional, leverage, openThreshold, closeThreshold,
+                minBasisRate, maxBasisRate, maxBasisDeteriorationRate, minNetYieldRate,
+                minFundingPeriods, settlementProtection, minHolding, maxHolding, maxQuoteAge,
+                minBookNotional, coverageRatio, maxVwapImpact, maxLotOvershoot, roundTripFeeRates);
+    }
+
+    public SpotPerpRules withMinNetYieldRate(BigDecimal minNetYield) {
+        return copy(dryRun, autoOpenEnabled, notionalUsdt, leverage, openThreshold, closeThreshold,
+                minBasisRate, maxBasisRate, maxBasisDeteriorationRate, minNetYield,
+                minFundingPeriods, settlementProtection, minHolding, maxHolding, maxQuoteAge,
+                minBookNotional, coverageRatio, maxVwapImpact, maxLotOvershoot, roundTripFeeRates);
+    }
+
+    public SpotPerpRules withMinFundingPeriods(int periods) {
+        return copy(dryRun, autoOpenEnabled, notionalUsdt, leverage, openThreshold, closeThreshold,
+                minBasisRate, maxBasisRate, maxBasisDeteriorationRate, minNetYieldRate,
+                periods, settlementProtection, minHolding, maxHolding, maxQuoteAge,
+                minBookNotional, coverageRatio, maxVwapImpact, maxLotOvershoot, roundTripFeeRates);
+    }
+
+    public SpotPerpRules withRoundTripFeeRates(Map<SpotPerpVenue, BigDecimal> fees) {
+        return copy(dryRun, autoOpenEnabled, notionalUsdt, leverage, openThreshold, closeThreshold,
+                minBasisRate, maxBasisRate, maxBasisDeteriorationRate, minNetYieldRate,
+                minFundingPeriods, settlementProtection, minHolding, maxHolding, maxQuoteAge,
+                minBookNotional, coverageRatio, maxVwapImpact, maxLotOvershoot, fees);
+    }
+
     public BigDecimal roundTripFee(SpotPerpVenue venue) {
         return roundTripFeeRates.get(venue);
+    }
+
+    private SpotPerpRules copy(
+            boolean dryRunCopy,
+            boolean autoOpenCopy,
+            BigDecimal notionalCopy,
+            int leverageCopy,
+            BigDecimal openThresholdCopy,
+            BigDecimal closeThresholdCopy,
+            BigDecimal minBasisCopy,
+            BigDecimal maxBasisCopy,
+            BigDecimal maxDeteriorationCopy,
+            BigDecimal minNetCopy,
+            int minPeriodsCopy,
+            Duration settlementCopy,
+            Duration minHoldingCopy,
+            Duration maxHoldingCopy,
+            Duration maxQuoteAgeCopy,
+            BigDecimal minBookCopy,
+            BigDecimal coverageCopy,
+            BigDecimal maxVwapCopy,
+            BigDecimal maxOvershootCopy,
+            Map<SpotPerpVenue, BigDecimal> feesCopy
+    ) {
+        return new SpotPerpRules(
+                dryRunCopy, autoOpenCopy, notionalCopy, leverageCopy, openThresholdCopy, closeThresholdCopy,
+                minBasisCopy, maxBasisCopy, maxDeteriorationCopy, minNetCopy, minPeriodsCopy,
+                settlementCopy, minHoldingCopy, maxHoldingCopy, maxQuoteAgeCopy,
+                minBookCopy, coverageCopy, maxVwapCopy, maxOvershootCopy, feesCopy);
     }
 
     public BigDecimal maxVwapImpactBps() {

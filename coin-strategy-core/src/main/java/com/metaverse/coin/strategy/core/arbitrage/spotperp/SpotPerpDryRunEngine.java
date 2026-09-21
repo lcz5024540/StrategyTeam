@@ -37,13 +37,20 @@ public final class SpotPerpDryRunEngine {
     private final SpotPerpRules rules;
     private final SpotPerpGates gates;
     private final SpotPerpPaperExecutor executor;
+    private final SpotPerpExecutionPolicy policy;
     private final Map<String, SpotPerpPosition> open = new ConcurrentHashMap<>();
+    private final Map<String, Integer> pendingBars = new ConcurrentHashMap<>();
     private final List<SpotPerpPosition> closed = new ArrayList<>();
 
     public SpotPerpDryRunEngine(SpotPerpRules rules) {
+        this(rules, SpotPerpExecutionPolicy.productionTaker());
+    }
+
+    public SpotPerpDryRunEngine(SpotPerpRules rules, SpotPerpExecutionPolicy policy) {
         this.rules = Objects.requireNonNull(rules, "rules");
+        this.policy = Objects.requireNonNull(policy, "policy");
         this.gates = new SpotPerpGates(rules);
-        this.executor = new SpotPerpPaperExecutor(rules);
+        this.executor = new SpotPerpPaperExecutor(rules, policy);
     }
 
     public CycleResult tick(Instant now, List<SpotPerpSnapshot> snapshots) {
@@ -89,14 +96,38 @@ public final class SpotPerpDryRunEngine {
         return pnl;
     }
 
+    public SpotPerpExecutionPolicy policy() {
+        return policy;
+    }
+
     private List<Action> tickOne(Instant now, SpotPerpSnapshot snapshot) {
         List<Action> actions = new ArrayList<>();
         SpotPerpPosition current = open.get(snapshot.instrument().key());
         if (current == null) {
             Optional<String> blocked = gates.openBlockReason(snapshot, now);
+            String key = snapshot.instrument().key();
+            Integer waited = pendingBars.get(key);
             if (blocked.isPresent()) {
-                actions.add(new Action(snapshot.instrument(), ActionType.SKIPPED, blocked.get(), null, BigDecimal.ZERO));
+                pendingBars.remove(key);
+                String reason = waited != null ? "MAKER_UNFILLED_" + blocked.get() : blocked.get();
+                actions.add(new Action(snapshot.instrument(), ActionType.SKIPPED, reason, null, BigDecimal.ZERO));
                 return actions;
+            }
+            if (waited == null && policy.makerFillDelayPeriods() > 0 && policy.style().rests()) {
+                pendingBars.put(key, 0);
+                actions.add(new Action(snapshot.instrument(), ActionType.SKIPPED, "MAKER_RESTING",
+                        null, BigDecimal.ZERO));
+                return actions;
+            }
+            if (waited != null) {
+                int nextWait = waited + 1;
+                if (nextWait < policy.makerFillDelayPeriods()) {
+                    pendingBars.put(key, nextWait);
+                    actions.add(new Action(snapshot.instrument(), ActionType.SKIPPED, "MAKER_RESTING",
+                            null, BigDecimal.ZERO));
+                    return actions;
+                }
+                pendingBars.remove(key);
             }
             SpotPerpPaperExecutor.Result opened = executor.open(snapshot, now);
             if (!opened.success()) {

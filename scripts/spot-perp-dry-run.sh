@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Public-data dry-run / backtest for the spot-long perp-short funding harvest.
 # Does not start Spring, does not read API keys, does not place orders.
+# Commands: once | backtest | compare
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

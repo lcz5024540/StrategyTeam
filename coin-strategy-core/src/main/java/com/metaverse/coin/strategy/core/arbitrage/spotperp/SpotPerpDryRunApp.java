@@ -13,6 +13,7 @@ import java.util.List;
  * <pre>
  *   mvn -pl coin-strategy-core -am exec:java -Dexec.args=once
  *   mvn -pl coin-strategy-core -am exec:java -Dexec.args=backtest
+ *   mvn -pl coin-strategy-core -am exec:java -Dexec.args=compare
  * </pre>
  */
 public final class SpotPerpDryRunApp {
@@ -25,8 +26,9 @@ public final class SpotPerpDryRunApp {
         switch (command) {
             case "once" -> runOnce(rules);
             case "backtest" -> runBacktest(rules);
+            case "compare" -> runCompare();
             default -> {
-                System.err.println("Unknown command '" + command + "'. Use once | backtest");
+                System.err.println("Unknown command '" + command + "'. Use once | backtest | compare");
                 System.exit(2);
             }
         }
@@ -75,6 +77,18 @@ public final class SpotPerpDryRunApp {
         SpotPerpHistoryClient client = new SpotPerpHistoryClient();
         List<SpotPerpHistoryClient.FundingPrint> prints = client.fetchUniverse(from, to, errors);
         SpotPerpBacktest.Report report = new SpotPerpBacktest().replay(prints, rules, from, to, errors);
+        System.out.print(report.asText());
+        System.out.println("prints fetched: " + prints.size());
+        return report;
+    }
+
+    static SpotPerpSchemeCompare.Report runCompare() {
+        Instant to = Instant.now().truncatedTo(ChronoUnit.HOURS);
+        Instant from = to.minus(Duration.ofDays(90));
+        List<String> errors = new ArrayList<>();
+        SpotPerpHistoryClient client = new SpotPerpHistoryClient();
+        List<SpotPerpHistoryClient.FundingPrint> prints = client.fetchUniverse(from, to, errors);
+        SpotPerpSchemeCompare.Report report = new SpotPerpSchemeCompare().run(prints, from, to, errors);
         System.out.print(report.asText());
         System.out.println("prints fetched: " + prints.size());
         return report;
