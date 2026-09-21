@@ -164,6 +164,7 @@ function formatFundingRate(value: number | null | undefined, intervalHours: numb
 function formatNotional(value: number | null | undefined) { return value == null ? '—' : value >= 1000 ? `$${(value / 1000).toFixed(1)}K` : `$${value.toFixed(0)}` }
 function formatUsdt(value: number | null | undefined) { return value == null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(4)} U` }
 function formatUsdtNoSign(value: number | null | undefined) { return value == null ? '—' : `${value.toFixed(4)} U` }
+function formatRatio(value: number | null | undefined) { return value == null ? '—' : value >= 100 ? '∞' : value.toFixed(2) }
 function formatDecimal(value: number | null | undefined, digits = 6) { return value == null ? '—' : Number(value).toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1') }
 function directionText(value: string | null | undefined) {
   const upper = (value || '').toUpperCase()
@@ -409,10 +410,20 @@ function TrendNowPanel({ positions, onHistory }: { positions: TrendPosition[]; o
   </section>
 }
 function TrendTodayPnlPanel({ trend }: { trend: HtxTrendDashboardResponse }) {
-  const winRate = trend.summary.todayClosedPositions ? `${(trend.summary.todayWinningPositions / trend.summary.todayClosedPositions * 100).toFixed(1)}%` : '—'
+  const performance = trend.performance
+  const todayWinRate = performance?.todayClosedPositions ? `${((performance.todayWinRate || 0) * 100).toFixed(1)}%` : '—'
+  const payoff = performance?.todayClosedPositions ? formatRatio(performance.todayPayoffRatio) : '—'
+  const profitFactor = performance?.todayClosedPositions ? formatRatio(performance.todayProfitFactor) : '—'
   return <section className="trend-panel trend-pnl-panel">
     <header><div><h2>今日已实现</h2></div><span className={valueTone(trend.summary.todayNetRealizedProfit)}>{formatUsdt(trend.summary.todayNetRealizedProfit)}</span></header>
-    <dl className="trend-compact-dl"><div><dt>平仓 / 胜单</dt><dd>{trend.summary.todayClosedPositions} / {trend.summary.todayWinningPositions}</dd></div><div><dt>胜率</dt><dd>{winRate}</dd></div><div><dt>交易量</dt><dd>{formatNotional(trend.summary.todayTurnover)}</dd></div><div><dt>手续费</dt><dd>{formatUsdtNoSign(trend.summary.todayFees)}</dd></div></dl>
+    <dl className="trend-compact-dl">
+      <div><dt>平仓 / 胜单</dt><dd>{trend.summary.todayClosedPositions} / {trend.summary.todayWinningPositions}</dd></div>
+      <div><dt>胜率</dt><dd>{todayWinRate}</dd></div>
+      <div><dt>均赚 / 均亏</dt><dd>{formatUsdtNoSign(performance?.todayAverageWin)} / {formatUsdtNoSign(performance?.todayAverageLoss)}</dd></div>
+      <div><dt>盈亏比 / PF</dt><dd>{payoff} / {profitFactor}</dd></div>
+      <div><dt>单笔期望</dt><dd className={valueTone(performance?.todayExpectancy || 0)}>{formatUsdt(performance?.todayExpectancy)}</dd></div>
+      <div><dt>交易量 / 费用</dt><dd>{formatNotional(trend.summary.todayTurnover)} / {formatUsdtNoSign(trend.summary.todayFees)}</dd></div>
+    </dl>
   </section>
 }
 function TrendAccountOverview({ rows, selectedAccount, onSelectAccount, onOpenAccountHistory }: { rows: TrendAccountSummary[]; selectedAccount: string; onSelectAccount: (account: string) => void; onOpenAccountHistory: (account: string) => void }) {

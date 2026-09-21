@@ -28,9 +28,9 @@ public interface HtxTrendDashboardMapper {
     @Select("SELECT COUNT(*) AS totalPositions, "
             + "SUM(CASE WHEN status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') THEN 1 ELSE 0 END) AS activePositions, "
             + "SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS closedPositions, "
-            + "SUM(CASE WHEN status = 'DONE' AND realized_profit > 0 THEN 1 ELSE 0 END) AS winningPositions, "
+            + "SUM(CASE WHEN status = 'DONE' AND realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
             + "SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN 1 ELSE 0 END) AS todayClosedPositions, "
-            + "SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() AND realized_profit > 0 THEN 1 ELSE 0 END) AS todayWinningPositions, "
+            + "SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() AND realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS todayWinningPositions, "
             + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS totalTurnover, "
             + "COALESCE(SUM(CASE WHEN updated_at >= CURDATE() THEN " + CLOSED_TURNOVER + " ELSE 0 END), 0) AS todayTurnover, "
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS totalFees, "
@@ -65,6 +65,23 @@ public interface HtxTrendDashboardMapper {
     List<Map<String, Object>> ledgerAccountSummaries();
 
 
+
+
+    @Select("SELECT COUNT(*) AS closedPositions, "
+            + "COALESCE(SUM(CASE WHEN closed.net_profit > 0 THEN 1 ELSE 0 END), 0) AS winningPositions, "
+            + "COALESCE(SUM(CASE WHEN closed.net_profit < 0 THEN 1 ELSE 0 END), 0) AS losingPositions, "
+            + "COALESCE(SUM(CASE WHEN closed.net_profit > 0 THEN closed.net_profit ELSE 0 END), 0) AS grossProfit, "
+            + "COALESCE(SUM(CASE WHEN closed.net_profit < 0 THEN -closed.net_profit ELSE 0 END), 0) AS grossLoss, "
+            + "COALESCE(SUM(closed.net_profit), 0) AS netRealizedProfit, "
+            + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() THEN 1 ELSE 0 END), 0) AS todayClosedPositions, "
+            + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() AND closed.net_profit > 0 THEN 1 ELSE 0 END), 0) AS todayWinningPositions, "
+            + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() AND closed.net_profit < 0 THEN 1 ELSE 0 END), 0) AS todayLosingPositions, "
+            + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() AND closed.net_profit > 0 THEN closed.net_profit ELSE 0 END), 0) AS todayGrossProfit, "
+            + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() AND closed.net_profit < 0 THEN -closed.net_profit ELSE 0 END), 0) AS todayGrossLoss, "
+            + "COALESCE(SUM(CASE WHEN closed.updated_at >= CURDATE() THEN closed.net_profit ELSE 0 END), 0) AS todayNetRealizedProfit "
+            + "FROM (SELECT updated_at, COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0) AS net_profit "
+            + "FROM " + POSITION_TABLE + " WHERE status = 'DONE') closed")
+    Map<String, Object> performanceSummary();
 
     @Select("SELECT accountLabels.accountLabel AS accountLabel, COALESCE(accounts.account_role, 'LEDGER') AS accountRole, "
             + "COALESCE(accounts.enabled, 1) AS accountEnabled, COALESCE(accounts.trend_enabled, 1) AS trendEnabled, "
@@ -106,9 +123,9 @@ public interface HtxTrendDashboardMapper {
             + "LEFT JOIN (SELECT account_label AS accountLabel, COUNT(*) AS totalPositions, "
             + "SUM(CASE WHEN status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') THEN 1 ELSE 0 END) AS activePositions, "
             + "SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS closedPositions, "
-            + "SUM(CASE WHEN status = 'DONE' AND realized_profit > 0 THEN 1 ELSE 0 END) AS winningPositions, "
+            + "SUM(CASE WHEN status = 'DONE' AND realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
             + "SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN 1 ELSE 0 END) AS todayClosedPositions, "
-            + "SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() AND realized_profit > 0 THEN 1 ELSE 0 END) AS todayWinningPositions, "
+            + "SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() AND realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS todayWinningPositions, "
             + "COALESCE(SUM(" + CLOSED_TURNOVER + "), 0) AS totalTurnover, "
             + "COALESCE(SUM(CASE WHEN updated_at >= CURDATE() THEN " + CLOSED_TURNOVER + " ELSE 0 END), 0) AS todayTurnover, "
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS totalFees, "
@@ -191,7 +208,7 @@ public interface HtxTrendDashboardMapper {
     List<Map<String, Object>> dailyPnl();
 
     @Select("SELECT side AS bucket, side, COUNT(*) AS closedPositions, "
-            + "SUM(CASE WHEN realized_profit > 0 THEN 1 ELSE 0 END) AS winningPositions, "
+            + "SUM(CASE WHEN realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
             + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
@@ -200,7 +217,7 @@ public interface HtxTrendDashboardMapper {
     List<Map<String, Object>> sidePnl();
 
     @Select("SELECT side AS bucket, side, COUNT(*) AS closedPositions, "
-            + "SUM(CASE WHEN realized_profit > 0 THEN 1 ELSE 0 END) AS winningPositions, "
+            + "SUM(CASE WHEN realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
             + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "
@@ -216,7 +233,7 @@ public interface HtxTrendDashboardMapper {
             + "WHEN exit_reason LIKE '%take profit%' THEN 'take profit' "
             + "WHEN exit_reason IS NULL OR exit_reason = '' THEN 'unknown' "
             + "ELSE LEFT(exit_reason, 96) END AS bucket, side, COUNT(*) AS closedPositions, "
-            + "SUM(CASE WHEN realized_profit > 0 THEN 1 ELSE 0 END) AS winningPositions, "
+            + "SUM(CASE WHEN realized_profit - entry_fee - close_fee > 0 THEN 1 ELSE 0 END) AS winningPositions, "
             + "COALESCE(SUM(realized_profit), 0) AS realizedProfit, "
             + "COALESCE(SUM(entry_fee + close_fee), 0) AS fees, "
             + "COALESCE(SUM(realized_profit - entry_fee - close_fee), 0) AS netProfit, "

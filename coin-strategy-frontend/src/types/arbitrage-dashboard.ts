@@ -87,6 +87,7 @@ export interface HtxTrendDashboardResponse {
   source: string
   summary: TrendSummary
   ledgerSummary?: TrendLedgerSummary
+  performance?: TrendPerformanceSummary
   runtime: TrendRuntimeSnapshot
   accountSummaries: TrendAccountSummary[]
   activePositions: TrendPosition[]
@@ -129,6 +130,29 @@ export interface TrendLedgerSummary {
   ledgerNetRealizedProfit: number
   ledgerTodayNetRealizedProfit: number
   latestLedgerAt: string | null
+}
+
+export interface TrendPerformanceSummary {
+  closedPositions: number
+  winningPositions: number
+  losingPositions: number
+  winRate: number
+  averageWin: number
+  averageLoss: number
+  payoffRatio: number
+  profitFactor: number
+  expectancy: number
+  netRealizedProfit: number
+  todayClosedPositions: number
+  todayWinningPositions: number
+  todayLosingPositions: number
+  todayWinRate: number
+  todayAverageWin: number
+  todayAverageLoss: number
+  todayPayoffRatio: number
+  todayProfitFactor: number
+  todayExpectancy: number
+  todayNetRealizedProfit: number
 }
 
 export interface TrendAccountSummary {

@@ -240,13 +240,25 @@ public class HtxTrendProperties {
     /** Profit factor required to avoid weak-quality downsizing. */
     private BigDecimal qualityMinProfitFactor = new BigDecimal("1.10");
 
+    /** Average win / average loss required to avoid weak-quality downsizing when both sides have samples. */
+    private BigDecimal qualityMinPayoffRatio = new BigDecimal("1.00");
+
+    /** Minimum average net profit per closed trade required to avoid weak-quality downsizing. */
+    private BigDecimal qualityMinExpectancyUsdt = BigDecimal.ZERO;
+
     /** Profit factor required for strong-quality upsizing. */
     private BigDecimal qualityStrongProfitFactor = new BigDecimal("1.30");
 
-    /** Position multiplier when wins do not exceed losses, profit factor is poor, or recent net is negative. */
+    /** Average win / average loss required for strong-quality upsizing when both sides have samples. */
+    private BigDecimal qualityStrongPayoffRatio = new BigDecimal("1.20");
+
+    /** Position multiplier when wins do not exceed losses, payoff is poor, profit factor is poor, or recent expectancy is weak. */
     private BigDecimal weakQualityPositionMultiplier = new BigDecimal("0.50");
 
-    /** Position multiplier when recent win count and profit factor are both healthy. */
+    /** Upper cap for the final adaptive multiplier while recent execution quality is weak. */
+    private BigDecimal weakQualityMaxPositionMultiplier = new BigDecimal("0.60");
+
+    /** Position multiplier when recent win count, payoff ratio and profit factor are all healthy. */
     private BigDecimal strongQualityPositionMultiplier = new BigDecimal("1.15");
 
     /** Recent signal window used to detect market-wide trend breadth. */

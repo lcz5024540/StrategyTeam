@@ -8,7 +8,8 @@ public final class HtxTrendDashboardViews {
     }
 
     public record Dashboard(String asOf, String source, Summary summary, LedgerSummary ledgerSummary,
-                            RuntimeSnapshot runtime, List<AccountSummary> accountSummaries, List<Position> activePositions,
+                            PerformanceSummary performance, RuntimeSnapshot runtime,
+                            List<AccountSummary> accountSummaries, List<Position> activePositions,
                             List<Position> recentPositions, List<DailyPnl> dailyPnl, List<DimensionPnl> sidePnl,
                             List<DimensionPnl> todaySidePnl, List<DimensionPnl> exitReasonPnl,
                             List<TrendOrder> recentOrders, List<LedgerEvent> recentLedgerEvents,
@@ -27,6 +28,16 @@ public final class HtxTrendDashboardViews {
                                 BigDecimal ledgerTotalFees, BigDecimal ledgerTodayFees,
                                 BigDecimal ledgerNetRealizedProfit, BigDecimal ledgerTodayNetRealizedProfit,
                                 String latestLedgerAt) {
+    }
+
+    public record PerformanceSummary(long closedPositions, long winningPositions, long losingPositions,
+                                     BigDecimal winRate, BigDecimal averageWin, BigDecimal averageLoss,
+                                     BigDecimal payoffRatio, BigDecimal profitFactor, BigDecimal expectancy,
+                                     BigDecimal netRealizedProfit, long todayClosedPositions,
+                                     long todayWinningPositions, long todayLosingPositions, BigDecimal todayWinRate,
+                                     BigDecimal todayAverageWin, BigDecimal todayAverageLoss,
+                                     BigDecimal todayPayoffRatio, BigDecimal todayProfitFactor,
+                                     BigDecimal todayExpectancy, BigDecimal todayNetRealizedProfit) {
     }
 
     public record RuntimeSnapshot(String latestSignalAt, String latestOrderAt, String latestPositionAt,

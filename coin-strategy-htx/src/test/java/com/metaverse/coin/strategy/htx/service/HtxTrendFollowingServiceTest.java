@@ -371,6 +371,34 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void broadMarketDoesNotResizeWeakQualityAboveWeakCap() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        givenBroadBullishBreadth();
+        givenWeakPerformance();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        assertTrue(result.message().contains("sizingMultiplier=0.60"));
+        assertTrue(result.message().contains("qualityCap=WEAK_MAX"));
+        ArgumentCaptor<HtxSwapOrderRequest> captor = ArgumentCaptor.forClass(HtxSwapOrderRequest.class);
+        verify(swap).placeOrder(captor.capture());
+        assertEquals("26", captor.getValue().getVolume());
+    }
+
+    @Test
     void positiveFundingCanPromoteFlatSignalToCarryShortWhenLocallyAndBroadConfirmed() {
         givenContractInfo();
         givenKlines();

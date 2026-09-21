@@ -1577,23 +1577,31 @@ public class HtxTrendFollowingService {
         BigDecimal grossProfit = nonNegative(stats.getGrossProfit());
         BigDecimal grossLoss = nonNegative(stats.getGrossLoss());
         BigDecimal netProfit = nz(stats.getNetProfit());
+        BigDecimal averageWin = average(grossProfit, wins);
+        BigDecimal averageLoss = average(grossLoss, losses);
+        BigDecimal payoffRatio = payoffRatio(averageWin, averageLoss);
+        BigDecimal expectancy = closed > 0L ? netProfit.divide(BigDecimal.valueOf(closed), 18, RoundingMode.HALF_UP)
+                : nz(stats.getExpectancy());
         BigDecimal profitFactor = profitFactor(grossProfit, grossLoss);
         if (closed < Math.max(1, properties.getQualityMinClosedTrades())) {
-            return new PerformanceContext(QualityRegime.NEUTRAL, closed, wins, losses, profitFactor, netProfit,
-                    "insufficient closed trades=" + closed);
+            return new PerformanceContext(QualityRegime.NEUTRAL, closed, wins, losses, profitFactor, payoffRatio,
+                    averageWin, averageLoss, expectancy, netProfit, "insufficient closed trades=" + closed);
         }
+        BigDecimal minPayoff = nonNegative(properties.getQualityMinPayoffRatio());
+        boolean payoffTooSmall = losses > 0L && wins > 0L && payoffRatio.compareTo(minPayoff) < 0;
         if (wins <= losses || profitFactor.compareTo(nonNegative(properties.getQualityMinProfitFactor())) < 0
-                || netProfit.signum() < 0) {
-            return new PerformanceContext(QualityRegime.WEAK, closed, wins, losses, profitFactor, netProfit,
-                    "weak quality");
+                || payoffTooSmall || expectancy.compareTo(nz(properties.getQualityMinExpectancyUsdt())) < 0) {
+            return new PerformanceContext(QualityRegime.WEAK, closed, wins, losses, profitFactor, payoffRatio,
+                    averageWin, averageLoss, expectancy, netProfit, "weak quality");
         }
         if (wins > losses && profitFactor.compareTo(nonNegative(properties.getQualityStrongProfitFactor())) >= 0
-                && netProfit.signum() > 0) {
-            return new PerformanceContext(QualityRegime.STRONG, closed, wins, losses, profitFactor, netProfit,
-                    "strong quality");
+                && (losses == 0L || payoffRatio.compareTo(nonNegative(properties.getQualityStrongPayoffRatio())) >= 0)
+                && expectancy.signum() > 0) {
+            return new PerformanceContext(QualityRegime.STRONG, closed, wins, losses, profitFactor, payoffRatio,
+                    averageWin, averageLoss, expectancy, netProfit, "strong quality");
         }
-        return new PerformanceContext(QualityRegime.NEUTRAL, closed, wins, losses, profitFactor, netProfit,
-                "normal quality");
+        return new PerformanceContext(QualityRegime.NEUTRAL, closed, wins, losses, profitFactor, payoffRatio,
+                averageWin, averageLoss, expectancy, netProfit, "normal quality");
     }
 
     private SizingContext sizingContext(TrendSide side, MarketBreadthContext marketBreadth,
@@ -1644,6 +1652,12 @@ public class HtxTrendFollowingService {
                 && confidence != null) {
             reason.append("confidence=HELD_BY_WEAK_QUALITY(score=")
                     .append(confidence.score().setScale(2, RoundingMode.HALF_UP)).append(") ");
+        }
+        if (performance != null && performance.regime() == QualityRegime.WEAK
+                && positive(properties.getWeakQualityMaxPositionMultiplier())
+                && multiplier.compareTo(properties.getWeakQualityMaxPositionMultiplier()) > 0) {
+            multiplier = properties.getWeakQualityMaxPositionMultiplier();
+            reason.append("qualityCap=WEAK_MAX ");
         }
         multiplier = clamp(multiplier, positive(properties.getMinAdaptivePositionMultiplier())
                         ? properties.getMinAdaptivePositionMultiplier() : BigDecimal.ONE,
@@ -2296,6 +2310,20 @@ public class HtxTrendFollowingService {
         return BigDecimal.valueOf(numerator).divide(BigDecimal.valueOf(denominator), 18, RoundingMode.HALF_UP);
     }
 
+    private static BigDecimal average(BigDecimal value, long count) {
+        if (count <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        return nz(value).divide(BigDecimal.valueOf(count), 18, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal payoffRatio(BigDecimal averageWin, BigDecimal averageLoss) {
+        if (!positive(averageLoss)) {
+            return positive(averageWin) ? new BigDecimal("999") : BigDecimal.ONE;
+        }
+        return nonNegative(averageWin).divide(averageLoss, 18, RoundingMode.HALF_UP);
+    }
+
     private static BigDecimal profitFactor(BigDecimal grossProfit, BigDecimal grossLoss) {
         if (!positive(grossLoss)) {
             return positive(grossProfit) ? new BigDecimal("999") : BigDecimal.ONE;
@@ -2446,15 +2474,21 @@ public class HtxTrendFollowingService {
     }
 
     private record PerformanceContext(QualityRegime regime, long closedCount, long winCount, long lossCount,
-                                      BigDecimal profitFactor, BigDecimal netProfit, String reason) {
+                                      BigDecimal profitFactor, BigDecimal payoffRatio, BigDecimal averageWin,
+                                      BigDecimal averageLoss, BigDecimal expectancy, BigDecimal netProfit,
+                                      String reason) {
         static PerformanceContext neutral(String reason) {
-            return new PerformanceContext(QualityRegime.NEUTRAL, 0L, 0L, 0L,
-                    BigDecimal.ONE, BigDecimal.ZERO, reason);
+            return new PerformanceContext(QualityRegime.NEUTRAL, 0L, 0L, 0L, BigDecimal.ONE, BigDecimal.ONE,
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, reason);
         }
 
         String summary() {
             return regime + "(closed=" + closedCount + ",wins=" + winCount + ",losses=" + lossCount
                     + ",pf=" + profitFactor.setScale(2, RoundingMode.HALF_UP)
+                    + ",payoff=" + payoffRatio.setScale(2, RoundingMode.HALF_UP)
+                    + ",avgWin=" + averageWin.setScale(4, RoundingMode.HALF_UP)
+                    + ",avgLoss=" + averageLoss.setScale(4, RoundingMode.HALF_UP)
+                    + ",expectancy=" + expectancy.setScale(4, RoundingMode.HALF_UP)
                     + ",net=" + netProfit.setScale(4, RoundingMode.HALF_UP)
                     + ",reason=" + reason + ")";
         }

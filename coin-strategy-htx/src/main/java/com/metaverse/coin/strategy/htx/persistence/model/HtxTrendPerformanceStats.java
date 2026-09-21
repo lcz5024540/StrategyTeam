@@ -13,6 +13,9 @@ public class HtxTrendPerformanceStats {
     private BigDecimal grossProfit;
     private BigDecimal grossLoss;
     private BigDecimal netProfit;
+    private BigDecimal averageWin;
+    private BigDecimal averageLoss;
+    private BigDecimal expectancy;
 
     public static HtxTrendPerformanceStats empty() {
         HtxTrendPerformanceStats stats = new HtxTrendPerformanceStats();
@@ -22,6 +25,9 @@ public class HtxTrendPerformanceStats {
         stats.setGrossProfit(BigDecimal.ZERO);
         stats.setGrossLoss(BigDecimal.ZERO);
         stats.setNetProfit(BigDecimal.ZERO);
+        stats.setAverageWin(BigDecimal.ZERO);
+        stats.setAverageLoss(BigDecimal.ZERO);
+        stats.setExpectancy(BigDecimal.ZERO);
         return stats;
     }
 }

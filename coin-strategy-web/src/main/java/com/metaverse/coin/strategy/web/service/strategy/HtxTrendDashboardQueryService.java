@@ -29,7 +29,7 @@ public class HtxTrendDashboardQueryService {
         try {
             Map<String, Map<String, Object>> ledgerAccounts = ledgerAccountSummaries();
             return new HtxTrendDashboardViews.Dashboard(TIME.format(Instant.now()), "HTX_TREND_EXECUTION_LEDGER",
-                    summary(mapper.summary()), ledgerSummary(), runtime(mapper.runtime()),
+                    summary(mapper.summary()), ledgerSummary(), performanceSummary(), runtime(mapper.runtime()),
                     mapper.accountSummaries().stream().map(row -> accountSummary(row, ledgerAccounts)).toList(),
                     mapper.activePositions().stream().map(this::position).toList(),
                     mapper.recentPositions().stream().map(this::position).toList(),
@@ -52,7 +52,7 @@ public class HtxTrendDashboardQueryService {
                 new HtxTrendDashboardViews.Summary(0, 0, 0, 0, 0, 0, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
-                emptyLedgerSummary(),
+                emptyLedgerSummary(), emptyPerformanceSummary(),
                 new HtxTrendDashboardViews.RuntimeSnapshot(null, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of());
@@ -100,6 +100,46 @@ public class HtxTrendDashboardQueryService {
     private HtxTrendDashboardViews.LedgerSummary emptyLedgerSummary() {
         return new HtxTrendDashboardViews.LedgerSummary(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null);
+    }
+
+    private HtxTrendDashboardViews.PerformanceSummary performanceSummary() {
+        try {
+            return performanceSummary(mapper.performanceSummary());
+        } catch (DataAccessException exception) {
+            return emptyPerformanceSummary();
+        }
+    }
+
+    private HtxTrendDashboardViews.PerformanceSummary performanceSummary(Map<String, Object> row) {
+        long closedPositions = number(row, "closedPositions").longValue();
+        long winningPositions = number(row, "winningPositions").longValue();
+        long losingPositions = number(row, "losingPositions").longValue();
+        BigDecimal grossProfit = decimal(row, "grossProfit");
+        BigDecimal grossLoss = decimal(row, "grossLoss");
+        BigDecimal netRealizedProfit = decimal(row, "netRealizedProfit");
+        long todayClosedPositions = number(row, "todayClosedPositions").longValue();
+        long todayWinningPositions = number(row, "todayWinningPositions").longValue();
+        long todayLosingPositions = number(row, "todayLosingPositions").longValue();
+        BigDecimal todayGrossProfit = decimal(row, "todayGrossProfit");
+        BigDecimal todayGrossLoss = decimal(row, "todayGrossLoss");
+        BigDecimal todayNetRealizedProfit = decimal(row, "todayNetRealizedProfit");
+        return new HtxTrendDashboardViews.PerformanceSummary(closedPositions, winningPositions, losingPositions,
+                ratio(winningPositions, closedPositions), average(grossProfit, winningPositions),
+                average(grossLoss, losingPositions), payoffRatio(grossProfit, winningPositions, grossLoss, losingPositions),
+                profitFactor(grossProfit, grossLoss), average(netRealizedProfit, closedPositions), netRealizedProfit,
+                todayClosedPositions, todayWinningPositions, todayLosingPositions,
+                ratio(todayWinningPositions, todayClosedPositions), average(todayGrossProfit, todayWinningPositions),
+                average(todayGrossLoss, todayLosingPositions),
+                payoffRatio(todayGrossProfit, todayWinningPositions, todayGrossLoss, todayLosingPositions),
+                profitFactor(todayGrossProfit, todayGrossLoss), average(todayNetRealizedProfit, todayClosedPositions),
+                todayNetRealizedProfit);
+    }
+
+    private HtxTrendDashboardViews.PerformanceSummary emptyPerformanceSummary() {
+        return new HtxTrendDashboardViews.PerformanceSummary(0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, 0,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ONE,
+                BigDecimal.ZERO, BigDecimal.ZERO);
     }
 
     private HtxTrendDashboardViews.AccountSummary accountSummary(Map<String, Object> row,
@@ -226,6 +266,40 @@ public class HtxTrendDashboardQueryService {
 
     private static BigDecimal decimal(Map<String, Object> row, String key) {
         BigDecimal value = nullableDecimal(row, key);
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private static BigDecimal ratio(long numerator, long denominator) {
+        if (denominator <= 0L || numerator <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        return BigDecimal.valueOf(numerator).divide(BigDecimal.valueOf(denominator), 18, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal average(BigDecimal value, long count) {
+        if (count <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        return decimalValue(value).divide(BigDecimal.valueOf(count), 18, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal payoffRatio(BigDecimal grossProfit, long wins, BigDecimal grossLoss, long losses) {
+        BigDecimal averageLoss = average(grossLoss, losses);
+        if (averageLoss.signum() <= 0) {
+            return average(grossProfit, wins).signum() > 0 ? new BigDecimal("999") : BigDecimal.ONE;
+        }
+        return average(grossProfit, wins).divide(averageLoss, 18, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal profitFactor(BigDecimal grossProfit, BigDecimal grossLoss) {
+        BigDecimal loss = decimalValue(grossLoss);
+        if (loss.signum() <= 0) {
+            return decimalValue(grossProfit).signum() > 0 ? new BigDecimal("999") : BigDecimal.ONE;
+        }
+        return decimalValue(grossProfit).divide(loss, 18, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal decimalValue(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
 
