@@ -1014,12 +1014,6 @@ public class HtxTrendFollowingService {
             exitReason = flatLossControlExitReason(position, signal, reference);
         }
         if (exitReason == null) {
-            exitReason = adverseShockExitReason(position, signal, reference, highest, lowest);
-        }
-        if (exitReason == null) {
-            exitReason = noExtensionExitReason(position, reference);
-        }
-        if (exitReason == null) {
             exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit);
         }
         if (exitReason == null) {
@@ -1946,82 +1940,6 @@ public class HtxTrendFollowingService {
         return position.getSide().toLowerCase(Locale.ROOT) + " exit on confirmed flat trend loss control ref="
                 + reference + " estimatedNet=" + estimatedNet + " lossBudget=" + lossBudget
                 + " flatBars=" + flatBars + "/" + requiredFlatBars;
-    }
-
-    private String adverseShockExitReason(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
-                                          BigDecimal highest, BigDecimal lowest) {
-        if (!properties.isAdverseShockExitEnabled() || position == null || signal == null || !positive(reference)
-                || !positive(signal.atr()) || !positive(position.getEntryAvgPrice())
-                || position.getCreatedAt() == null) {
-            return null;
-        }
-        int requiredBars = Math.max(1, properties.getAdverseShockExitBars());
-        long minimumAgeSeconds = periodSeconds(properties.getPeriod()) * requiredBars;
-        long ageSeconds = Duration.between(position.getCreatedAt(), LocalDateTime.now()).getSeconds();
-        if (ageSeconds < minimumAgeSeconds) {
-            return null;
-        }
-        BigDecimal estimatedNet = estimatedCloseNetProfit(position, reference);
-        if (estimatedNet == null || estimatedNet.signum() >= 0) {
-            return null;
-        }
-        BigDecimal bestReference = LONG.equals(position.getSide())
-                ? firstPositive(highest, position.getHighestPrice(), reference)
-                : firstPositive(lowest, position.getLowestPrice(), reference);
-        BigDecimal bestNet = estimatedCloseNetProfit(position, bestReference);
-        BigDecimal requiredFavorableNet = nonNegative(properties.getAdverseShockMinFavorableNetUsdt());
-        if (bestNet != null && bestNet.compareTo(requiredFavorableNet) >= 0) {
-            return null;
-        }
-        BigDecimal adverseReference = LONG.equals(position.getSide())
-                ? firstPositive(lowest, position.getLowestPrice(), reference)
-                : firstPositive(highest, position.getHighestPrice(), reference);
-        BigDecimal adverseMove = LONG.equals(position.getSide())
-                ? position.getEntryAvgPrice().subtract(adverseReference)
-                : adverseReference.subtract(position.getEntryAvgPrice());
-        BigDecimal requiredMove = signal.atr().multiply(nonNegative(properties.getAdverseShockAtrMultiplier()));
-        if (!positive(requiredMove) || adverseMove.compareTo(requiredMove) < 0) {
-            return null;
-        }
-        return position.getSide().toLowerCase(Locale.ROOT) + " exit on adverse-shock trend ref=" + reference
-                + " adverseMove=" + adverseMove
-                + " requiredMove=" + requiredMove
-                + " estimatedNet=" + estimatedNet
-                + " bestNet=" + bestNet
-                + " requiredBestNet=" + requiredFavorableNet
-                + " ageSeconds=" + ageSeconds
-                + " bars=" + requiredBars;
-    }
-
-    private String noExtensionExitReason(HtxTrendPositionEntity position, BigDecimal reference) {
-        if (!properties.isNoExtensionExitEnabled() || position == null || !positive(reference)
-                || position.getCreatedAt() == null) {
-            return null;
-        }
-        int requiredBars = Math.max(1, properties.getNoExtensionExitBars());
-        long minimumAgeSeconds = periodSeconds(properties.getPeriod()) * requiredBars;
-        long ageSeconds = Duration.between(position.getCreatedAt(), LocalDateTime.now()).getSeconds();
-        if (ageSeconds < minimumAgeSeconds) {
-            return null;
-        }
-        BigDecimal estimatedNet = estimatedCloseNetProfit(position, reference);
-        if (estimatedNet == null || estimatedNet.signum() >= 0) {
-            return null;
-        }
-        BigDecimal bestReference = LONG.equals(position.getSide())
-                ? firstPositive(position.getHighestPrice(), reference)
-                : firstPositive(position.getLowestPrice(), reference);
-        BigDecimal bestNet = estimatedCloseNetProfit(position, bestReference);
-        BigDecimal requiredFavorableNet = nonNegative(properties.getNoExtensionMinFavorableNetUsdt());
-        if (bestNet != null && bestNet.compareTo(requiredFavorableNet) >= 0) {
-            return null;
-        }
-        return position.getSide().toLowerCase(Locale.ROOT) + " exit on no-extension trend ref=" + reference
-                + " estimatedNet=" + estimatedNet
-                + " bestNet=" + bestNet
-                + " requiredBestNet=" + requiredFavorableNet
-                + " ageSeconds=" + ageSeconds
-                + " bars=" + requiredBars;
     }
 
     private BigDecimal estimatedCloseNetProfit(HtxTrendPositionEntity position, BigDecimal reference) {

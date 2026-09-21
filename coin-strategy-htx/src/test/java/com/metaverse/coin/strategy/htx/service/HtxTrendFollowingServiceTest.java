@@ -83,8 +83,6 @@ class HtxTrendFollowingServiceTest {
         properties.setEnabled(true);
         properties.setObserveOnly(false);
         properties.setDirectionConfidenceGateEnabled(false);
-        properties.setNoExtensionExitEnabled(false);
-        properties.setAdverseShockExitEnabled(false);
         properties.setConfidenceSizingEnabled(false);
         properties.setEnsembleEntryEnabled(false);
         properties.setTargetQuoteNotional(new BigDecimal("190"));
@@ -1034,95 +1032,14 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void activeLongExitsWhenPositionNeverExtendsAfterEntryWindow() {
-        properties.setNoExtensionExitEnabled(true);
-        properties.setNoExtensionExitBars(2);
-        properties.setNoExtensionMinFavorableNetUsdt(new BigDecimal("0.15"));
-        givenContractInfo();
-        givenKlines();
-        givenSignal(TrendSide.LONG, new BigDecimal("12"));
-        givenFunding("-0.0001");
-        HtxTrendPositionEntity active = activeLongPosition("XAUT-USDT", "0.001", 44L,
-                "4315.84", "0.075958784", "4295.00", "4290.00", "4316.10", "4308.00");
-        active.setCreatedAt(LocalDateTime.now().minusMinutes(40));
-        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
-        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4310.00"))));
-        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
-
-        HtxTrendFollowingService.RunResult result = service.runOnce();
-
-        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("no-extension trend"));
-        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
-        verify(recorder).createOrderIntent(captor.capture());
-        assertTrue(captor.getValue().getReason().contains("no-extension trend"));
-    }
-
-    @Test
-    void activeLongExitsOnAdverseShockAfterEntryWindow() {
-        properties.setAdverseShockExitEnabled(true);
-        properties.setAdverseShockExitBars(1);
-        properties.setAdverseShockAtrMultiplier(new BigDecimal("0.90"));
-        properties.setAdverseShockMinFavorableNetUsdt(new BigDecimal("0.15"));
+    void activeLongHoldsThroughLocalPullbackWithoutEarlyExitRules() {
         givenContractInfo();
         givenKlines();
         givenSignal(TrendSide.LONG, new BigDecimal("12"));
         givenFunding("-0.0001");
         HtxTrendPositionEntity active = activeLongPosition("XAUT-USDT", "0.001", 44L,
                 "4315.84", "0.075958784", "4295.00", "4290.00", "4316.10", "4304.00");
-        active.setCreatedAt(LocalDateTime.now().minusMinutes(20));
-        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
-        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4304.00"))));
-        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
-
-        HtxTrendFollowingService.RunResult result = service.runOnce();
-
-        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("adverse-shock trend"));
-        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
-        verify(recorder).createOrderIntent(captor.capture());
-        assertTrue(captor.getValue().getReason().contains("adverseMove=11.84"));
-    }
-
-    @Test
-    void activeShortExitsOnAdverseShockAfterEntryWindow() {
-        properties.setAdverseShockExitEnabled(true);
-        properties.setAdverseShockExitBars(1);
-        properties.setAdverseShockAtrMultiplier(new BigDecimal("0.90"));
-        properties.setAdverseShockMinFavorableNetUsdt(new BigDecimal("0.15"));
-        givenContractInfo();
-        givenKlines();
-        givenSignal(TrendSide.SHORT, new BigDecimal("12"));
-        givenFunding("0.0001");
-        HtxTrendPositionEntity active = activeShortPosition("XAUT-USDT", "0.001", 44L,
-                "4315.84", "0.075958784", "4350.00", "4340.00", "4327.00", "4315.20");
-        active.setCreatedAt(LocalDateTime.now().minusMinutes(20));
-        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
-        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openShortPosition("XAUT-USDT", "44", "4327.00"))));
-        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
-
-        HtxTrendFollowingService.RunResult result = service.runOnce();
-
-        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("adverse-shock trend"));
-        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
-        verify(recorder).createOrderIntent(captor.capture());
-        assertTrue(captor.getValue().getReason().contains("adverseMove=11.16"));
-    }
-
-    @Test
-    void activeLongKeepsAdverseShockPositionWhenFavorableMoveAlreadyPaidCosts() {
-        properties.setAdverseShockExitEnabled(true);
-        properties.setAdverseShockExitBars(1);
-        properties.setAdverseShockAtrMultiplier(new BigDecimal("0.90"));
-        properties.setAdverseShockMinFavorableNetUsdt(new BigDecimal("0.15"));
-        givenContractInfo();
-        givenKlines();
-        givenSignal(TrendSide.LONG, new BigDecimal("12"));
-        givenFunding("-0.0001");
-        HtxTrendPositionEntity active = activeLongPosition("XAUT-USDT", "0.001", 44L,
-                "4315.84", "0.075958784", "4295.00", "4290.00", "4322.90", "4304.00");
-        active.setCreatedAt(LocalDateTime.now().minusMinutes(20));
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(40));
         when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4304.00"))));
 
@@ -1132,7 +1049,6 @@ class HtxTrendFollowingServiceTest {
         assertTrue(result.message().contains("holding"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
-
 
     @Test
     void primaryEntryFillTriggersMirrorEntryAfterPrimaryFill() {

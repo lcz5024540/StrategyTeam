@@ -103,16 +103,16 @@ public class HtxTrendProperties {
     private BigDecimal maxEntryAtrPct = new BigDecimal("0.0500");
 
     /** Base target notional before risk sizing clamps it. */
-    private BigDecimal targetQuoteNotional = new BigDecimal("220");
+    private BigDecimal targetQuoteNotional = new BigDecimal("190");
 
     /** Absolute maximum live notional for this strategy after sizing multipliers. */
-    private BigDecimal maxQuoteNotional = new BigDecimal("350");
+    private BigDecimal maxQuoteNotional = new BigDecimal("190");
 
     /** Minimum live notional; smaller calculated sizes are skipped. */
     private BigDecimal minQuoteNotional = new BigDecimal("20");
 
     /** Max USDT loss budget per trade, used with ATR stop distance. */
-    private BigDecimal riskPerTradeUsdt = new BigDecimal("2.0");
+    private BigDecimal riskPerTradeUsdt = new BigDecimal("1.5");
 
     /** Initial stop distance = ATR * this multiplier. */
     private BigDecimal atrStopMultiplier = new BigDecimal("2.5");
@@ -188,27 +188,6 @@ public class HtxTrendProperties {
 
     /** Number of consecutive flat signals required before loss-control flat exit. */
     private int flatLossExitConfirmationBars = 3;
-
-    /** Exit early when a new position fails to produce enough favorable movement. */
-    private boolean noExtensionExitEnabled = true;
-
-    /** Minimum entry-period bars to wait before judging no-extension exits. */
-    private int noExtensionExitBars = 2;
-
-    /** Minimum favorable net PnL required to keep a losing position after the no-extension window. */
-    private BigDecimal noExtensionMinFavorableNetUsdt = new BigDecimal("0.15");
-
-    /** Exit early when a fresh position is quickly hit by an adverse ATR shock without enough MFE. */
-    private boolean adverseShockExitEnabled = true;
-
-    /** Minimum entry-period bars to wait before judging adverse-shock exits. */
-    private int adverseShockExitBars = 1;
-
-    /** Adverse move threshold = ATR * this multiplier before the fresh-position shock exit can fire. */
-    private BigDecimal adverseShockAtrMultiplier = new BigDecimal("0.90");
-
-    /** Minimum favorable net PnL that proves the trade had enough MFE and should not be shock-exited. */
-    private BigDecimal adverseShockMinFavorableNetUsdt = new BigDecimal("0.15");
 
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
