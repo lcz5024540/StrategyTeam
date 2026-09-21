@@ -11,8 +11,9 @@ public final class HtxTrendDashboardViews {
                             RuntimeSnapshot runtime, List<AccountSummary> accountSummaries, List<Position> activePositions,
                             List<Position> recentPositions, List<DailyPnl> dailyPnl, List<DimensionPnl> sidePnl,
                             List<DimensionPnl> todaySidePnl, List<DimensionPnl> exitReasonPnl,
-                            List<TrendOrder> recentOrders, List<TrendSignal> recentSignals,
-                            List<SignalRollup> signalRollup, List<CandidateSignal> recentCandidateSignals) {
+                            List<TrendOrder> recentOrders, List<LedgerEvent> recentLedgerEvents,
+                            List<TrendSignal> recentSignals, List<SignalRollup> signalRollup,
+                            List<CandidateSignal> recentCandidateSignals) {
     }
 
     public record Summary(long totalPositions, long activePositions, long closedPositions, long winningPositions,
@@ -80,6 +81,14 @@ public final class HtxTrendDashboardViews {
                              BigDecimal estimatedFee, BigDecimal estimatedOpenFee, BigDecimal estimatedCloseFee,
                              BigDecimal sizingMultiplier, String sizingReason, String entryGateReason,
                              String status, String reason, String message, String createdAt, String updatedAt) {
+    }
+
+    public record LedgerEvent(long id, String eventKey, String eventType, String accountLabel, String contractCode,
+                              long positionId, Long orderId, String clientOrderId, String side,
+                              BigDecimal executionPriceUsdt, BigDecimal entryPriceUsdt, BigDecimal closePriceUsdt,
+                              BigDecimal filledContracts, BigDecimal contractSize, BigDecimal amountUsdt,
+                              BigDecimal feeUsdt, BigDecimal grossPnlUsdt, BigDecimal netPnlAfterFee,
+                              String reason, String occurredAt) {
     }
 
     public record TrendSignal(long id, String contractCode, String period, Long barTime, String trendSignal,

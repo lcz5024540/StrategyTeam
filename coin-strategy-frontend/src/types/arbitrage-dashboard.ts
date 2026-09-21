@@ -96,6 +96,7 @@ export interface HtxTrendDashboardResponse {
   todaySidePnl: TrendDimensionPnl[]
   exitReasonPnl: TrendDimensionPnl[]
   recentOrders: TrendOrder[]
+  recentLedgerEvents?: TrendLedgerEvent[]
   recentSignals: TrendSignal[]
   signalRollup: TrendSignalRollup[]
   recentCandidateSignals: TrendCandidateSignal[]
@@ -274,6 +275,29 @@ export interface TrendOrder {
   message: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface TrendLedgerEvent {
+  id: number
+  eventKey: string | null
+  eventType: string | null
+  accountLabel: string | null
+  contractCode: string | null
+  positionId: number
+  orderId: number | null
+  clientOrderId: string | null
+  side: string | null
+  executionPriceUsdt: number | null
+  entryPriceUsdt: number | null
+  closePriceUsdt: number | null
+  filledContracts: number | null
+  contractSize: number | null
+  amountUsdt: number | null
+  feeUsdt: number | null
+  grossPnlUsdt: number | null
+  netPnlAfterFee: number | null
+  reason: string | null
+  occurredAt: string | null
 }
 
 export interface TrendSignal {

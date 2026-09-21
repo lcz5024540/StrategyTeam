@@ -38,6 +38,7 @@ public class HtxTrendDashboardQueryService {
                     mapper.todaySidePnl().stream().map(this::dimensionPnl).toList(),
                     mapper.exitReasonPnl().stream().map(this::dimensionPnl).toList(),
                     mapper.recentOrders().stream().map(this::order).toList(),
+                    recentLedgerEvents(),
                     mapper.recentSignals().stream().map(this::signal).toList(),
                     mapper.signalRollup().stream().map(this::signalRollup).toList(),
                     mapper.recentCandidateSignals().stream().map(this::candidateSignal).toList());
@@ -53,7 +54,8 @@ public class HtxTrendDashboardQueryService {
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
                 emptyLedgerSummary(),
                 new HtxTrendDashboardViews.RuntimeSnapshot(null, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of());
     }
 
     private HtxTrendDashboardViews.Summary summary(Map<String, Object> row) {
@@ -171,6 +173,26 @@ public class HtxTrendDashboardQueryService {
                 nullableDecimal(row, "estimatedOpenFee"), nullableDecimal(row, "estimatedCloseFee"),
                 nullableDecimal(row, "sizingMultiplier"), text(row, "sizingReason"), text(row, "entryGateReason"),
                 text(row, "status"), text(row, "reason"), text(row, "message"), text(row, "createdAt"), text(row, "updatedAt"));
+    }
+
+
+    private List<HtxTrendDashboardViews.LedgerEvent> recentLedgerEvents() {
+        try {
+            return mapper.recentLedgerEvents().stream().map(this::ledgerEvent).toList();
+        } catch (DataAccessException exception) {
+            return List.of();
+        }
+    }
+
+    private HtxTrendDashboardViews.LedgerEvent ledgerEvent(Map<String, Object> row) {
+        return new HtxTrendDashboardViews.LedgerEvent(number(row, "id").longValue(), text(row, "eventKey"),
+                text(row, "eventType"), text(row, "accountLabel"), text(row, "contractCode"),
+                number(row, "positionId").longValue(), nullableLong(row, "orderId"), text(row, "clientOrderId"),
+                text(row, "side"), nullableDecimal(row, "executionPriceUsdt"), nullableDecimal(row, "entryPriceUsdt"),
+                nullableDecimal(row, "closePriceUsdt"), nullableDecimal(row, "filledContracts"),
+                nullableDecimal(row, "contractSize"), nullableDecimal(row, "amountUsdt"),
+                decimal(row, "feeUsdt"), nullableDecimal(row, "grossPnlUsdt"), nullableDecimal(row, "netPnlAfterFee"),
+                text(row, "reason"), text(row, "occurredAt"));
     }
 
     private HtxTrendDashboardViews.TrendSignal signal(Map<String, Object> row) {

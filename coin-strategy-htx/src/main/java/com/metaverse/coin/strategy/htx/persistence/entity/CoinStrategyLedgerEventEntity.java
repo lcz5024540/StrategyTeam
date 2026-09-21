@@ -31,6 +31,11 @@ public class CoinStrategyLedgerEventEntity {
     private Long orderId;
     private String clientOrderId;
     private String side;
+    private BigDecimal executionPriceUsdt;
+    private BigDecimal entryPriceUsdt;
+    private BigDecimal closePriceUsdt;
+    private BigDecimal filledContracts;
+    private BigDecimal contractSize;
     private BigDecimal amountUsdt;
     private BigDecimal feeUsdt;
     private BigDecimal fundingFeeUsdt;

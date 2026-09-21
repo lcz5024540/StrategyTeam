@@ -76,6 +76,10 @@ public class CoinStrategyLedgerRecorder {
         }
         BigDecimal notional = notional(position.getEntryFilledContracts(), position.getContractSize(), position.getEntryAvgPrice());
         CoinStrategyLedgerEventEntity fill = baseEvent(EVENT_OPEN_FILL, "trend-open-fill:" + position.getId(), position);
+        fill.setExecutionPriceUsdt(position.getEntryAvgPrice());
+        fill.setEntryPriceUsdt(position.getEntryAvgPrice());
+        fill.setFilledContracts(position.getEntryFilledContracts());
+        fill.setContractSize(position.getContractSize());
         fill.setAmountUsdt(notional);
         fill.setReason(clip(position.getEntrySignal(), 1024));
         insertIgnoreDuplicate(fill);
@@ -88,6 +92,11 @@ public class CoinStrategyLedgerRecorder {
         }
         BigDecimal notional = notional(position.getCloseFilledContracts(), position.getContractSize(), position.getCloseAvgPrice());
         CoinStrategyLedgerEventEntity close = baseEvent(EVENT_CLOSE_FILL, "trend-close-fill:" + position.getId(), position);
+        close.setExecutionPriceUsdt(position.getCloseAvgPrice());
+        close.setEntryPriceUsdt(position.getEntryAvgPrice());
+        close.setClosePriceUsdt(position.getCloseAvgPrice());
+        close.setFilledContracts(position.getCloseFilledContracts());
+        close.setContractSize(position.getContractSize());
         close.setAmountUsdt(notional);
         close.setReason(clip(position.getExitReason(), 1024));
         insertIgnoreDuplicate(close);
@@ -112,6 +121,8 @@ public class CoinStrategyLedgerRecorder {
     private void recordRealizedPnl(HtxTrendPositionEntity position) {
         CoinStrategyLedgerEventEntity event = baseEvent(EVENT_REALIZED_PNL, "trend-realized-pnl:" + position.getId(), position);
         BigDecimal realizedProfit = nz(position.getRealizedProfit());
+        event.setEntryPriceUsdt(position.getEntryAvgPrice());
+        event.setClosePriceUsdt(position.getCloseAvgPrice());
         event.setGrossPnlUsdt(realizedProfit);
         event.setNetPnlAfterFee(realizedProfit);
         event.setReason(clip(position.getExitReason(), 1024));

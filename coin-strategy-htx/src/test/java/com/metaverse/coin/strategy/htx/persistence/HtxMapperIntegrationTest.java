@@ -56,6 +56,10 @@ class HtxMapperIntegrationTest {
         event.setPositionId(nonce);
         event.setClientOrderId("it-order-" + nonce);
         event.setSide("LONG");
+        event.setExecutionPriceUsdt(new BigDecimal("100000"));
+        event.setEntryPriceUsdt(new BigDecimal("100000"));
+        event.setFilledContracts(new BigDecimal("2"));
+        event.setContractSize(new BigDecimal("0.001"));
         event.setAmountUsdt(new BigDecimal("200.00"));
         event.setFeeUsdt(new BigDecimal("0.10"));
         event.setFundingFeeUsdt(BigDecimal.ZERO);
@@ -68,6 +72,10 @@ class HtxMapperIntegrationTest {
         CoinStrategyLedgerEventEntity stored = ledgerEventMapper.selectById(event.getId());
         assertEquals("HTX_TREND_V1", stored.getStrategyName());
         assertEquals("FIB_PULLBACK_CONTINUATION", stored.getModelName());
+        assertEquals(0, new BigDecimal("100000").compareTo(stored.getExecutionPriceUsdt()));
+        assertEquals(0, new BigDecimal("100000").compareTo(stored.getEntryPriceUsdt()));
+        assertEquals(0, new BigDecimal("2").compareTo(stored.getFilledContracts()));
+        assertEquals(0, new BigDecimal("0.001").compareTo(stored.getContractSize()));
         assertEquals(0, new BigDecimal("1.10").compareTo(stored.getNetPnlAfterFee()));
     }
 

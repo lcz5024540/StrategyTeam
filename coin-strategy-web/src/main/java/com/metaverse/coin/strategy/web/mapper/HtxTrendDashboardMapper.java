@@ -258,6 +258,17 @@ public interface HtxTrendDashboardMapper {
             + "GROUP BY trendSignal, reasonBucket ORDER BY signals DESC LIMIT 20")
     List<Map<String, Object>> signalRollup();
 
+    @Select("SELECT id, event_key AS eventKey, event_type AS eventType, account_label AS accountLabel, "
+            + "contract_code AS contractCode, position_id AS positionId, order_id AS orderId, "
+            + "client_order_id AS clientOrderId, side, execution_price_usdt AS executionPriceUsdt, "
+            + "entry_price_usdt AS entryPriceUsdt, close_price_usdt AS closePriceUsdt, "
+            + "filled_contracts AS filledContracts, contract_size AS contractSize, amount_usdt AS amountUsdt, "
+            + "fee_usdt AS feeUsdt, gross_pnl_usdt AS grossPnlUsdt, net_pnl_after_fee AS netPnlAfterFee, "
+            + "reason, occurred_at AS occurredAt FROM " + LEDGER_TABLE
+            + " WHERE strategy_family = 'TREND' AND strategy_name = 'HTX_TREND_V1' "
+            + "ORDER BY occurred_at DESC, id DESC LIMIT 120")
+    List<Map<String, Object>> recentLedgerEvents();
+
     @Select("SELECT id, contract_code AS contractCode, period, bar_time AS barTime, direction, regime, "
             + "signal_score AS signalScore, long_score AS longScore, short_score AS shortScore, score_gap AS scoreGap, "
             + "close_price AS closePrice, atr_pct AS atrPct, adx, momentum_pct AS momentumPct, volume_ratio AS volumeRatio, "

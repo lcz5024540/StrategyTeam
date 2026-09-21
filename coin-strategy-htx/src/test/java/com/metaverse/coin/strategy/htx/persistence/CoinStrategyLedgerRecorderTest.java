@@ -38,13 +38,27 @@ class CoinStrategyLedgerRecorderTest {
 
         CoinStrategyLedgerEventEntity openFill = event(events, CoinStrategyLedgerRecorder.EVENT_OPEN_FILL);
         assertEquals(new BigDecimal("200.000"), openFill.getAmountUsdt());
+        assertEquals(0, new BigDecimal("100000").compareTo(openFill.getExecutionPriceUsdt()));
+        assertEquals(0, new BigDecimal("100000").compareTo(openFill.getEntryPriceUsdt()));
+        assertNull(openFill.getClosePriceUsdt());
+        assertEquals(0, new BigDecimal("2").compareTo(openFill.getFilledContracts()));
+        assertEquals(0, new BigDecimal("0.001").compareTo(openFill.getContractSize()));
         assertEquals(0, BigDecimal.ZERO.compareTo(openFill.getFeeUsdt()));
         assertNull(openFill.getNetPnlAfterFee());
 
         CoinStrategyLedgerEventEntity closeFill = event(events, CoinStrategyLedgerRecorder.EVENT_CLOSE_FILL);
         assertEquals(new BigDecimal("201.000"), closeFill.getAmountUsdt());
+        assertEquals(0, new BigDecimal("100500").compareTo(closeFill.getExecutionPriceUsdt()));
+        assertEquals(0, new BigDecimal("100000").compareTo(closeFill.getEntryPriceUsdt()));
+        assertEquals(0, new BigDecimal("100500").compareTo(closeFill.getClosePriceUsdt()));
+        assertEquals(0, new BigDecimal("2").compareTo(closeFill.getFilledContracts()));
+        assertEquals(0, new BigDecimal("0.001").compareTo(closeFill.getContractSize()));
         assertEquals(0, BigDecimal.ZERO.compareTo(closeFill.getFeeUsdt()));
         assertNull(closeFill.getNetPnlAfterFee());
+
+        CoinStrategyLedgerEventEntity realizedPnl = event(events, CoinStrategyLedgerRecorder.EVENT_REALIZED_PNL);
+        assertEquals(0, new BigDecimal("100000").compareTo(realizedPnl.getEntryPriceUsdt()));
+        assertEquals(0, new BigDecimal("100500").compareTo(realizedPnl.getClosePriceUsdt()));
 
         BigDecimal additiveNet = events.stream()
                 .map(CoinStrategyLedgerEventEntity::getNetPnlAfterFee)
