@@ -10,6 +10,8 @@ updated: 2026-09-21
 
 本地图汇总 Polymarket 之外的全部交易策略文档（CEX 与链上）。Polymarket 策略见 [Polymarket MOC](MOC-Polymarket.md)。
 
+总纲：[COINSTRATEGY_STRATEGY_MASTER_PLAN_V1](architecture-refactor/COINSTRATEGY_STRATEGY_MASTER_PLAN_V1.md) — CoinStrategy 趋势 + 套利双引擎策略总纲：资金分层、策略族、统一风控、统一账本与落地路线。
+
 返回 [知识库首页](知识库首页.md)
 
 ## 一、资金费率套利 (Funding Rate Arbitrage)
