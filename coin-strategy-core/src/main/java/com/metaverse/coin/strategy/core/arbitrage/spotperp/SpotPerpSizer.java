@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
 
-/** Sizes a delta-neutral 100 USDT (configurable) hedge to venue lot constraints. */
+/** Sizes a delta-neutral hedge (Scheme A default 10,000 USDT) to venue lot constraints. */
 public final class SpotPerpSizer {
     public record Result(
             boolean accepted,

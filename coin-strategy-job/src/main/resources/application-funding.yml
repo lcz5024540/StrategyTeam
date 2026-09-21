@@ -79,7 +79,7 @@ arbitrage:
     enabled: true
     dry-run: true
     auto-open-enabled: true
-    notional-usdt: 100
+    notional-usdt: 10000
     leverage: 2
     open-threshold: 0.00008
     close-threshold: 0.00002

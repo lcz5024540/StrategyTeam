@@ -74,9 +74,14 @@ public final class SpotPerpDryRunApp {
         List<String> errors = new ArrayList<>();
         SpotPerpHistoryClient client = new SpotPerpHistoryClient();
         List<SpotPerpHistoryClient.FundingPrint> prints = client.fetchUniverse(from, to, errors);
-        SpotPerpBacktest.Report report = new SpotPerpBacktest().replay(prints, rules, from, to, errors);
+        SpotPerpBacktest backtest = new SpotPerpBacktest();
+        SpotPerpRules large = rules.withNotional(SpotPerpBacktest.SCHEME_A_NOTIONAL);
+        SpotPerpRules small = rules.withNotional(SpotPerpBacktest.SMALL_NOTIONAL);
+        SpotPerpBacktest.Report report = backtest.replay(prints, large, from, to, errors);
+        SpotPerpBacktest.Report smallReport = backtest.replay(prints, small, from, to, errors);
         System.out.print(report.asText());
         System.out.println("prints fetched: " + prints.size());
+        System.out.print(backtest.compareScale(smallReport, report).asText());
         return report;
     }
 }

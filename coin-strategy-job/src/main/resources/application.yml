@@ -159,6 +159,7 @@ arbitrage:
   spot-perp-funding:
     enabled: false
     dry-run: true
+    notional-usdt: 10000
   spot-futures:
     # [TUNE] 单交易所期现套利策略的主交易对。
     symbol: "BTCUSDT"

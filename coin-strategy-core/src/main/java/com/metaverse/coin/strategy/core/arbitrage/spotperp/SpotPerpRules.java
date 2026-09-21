@@ -85,7 +85,7 @@ public record SpotPerpRules(
     }
 
     /**
-     * Production defaults: 100 USDT per symbol, 2x perp hedge, taker IOC both legs,
+     * Scheme A defaults: 10,000 USDT per symbol, 2x perp hedge, taker IOC both legs,
      * enter only when projected funding over ~10 days can cover retail round-trip fees.
      */
     public static SpotPerpRules defaults() {
@@ -97,7 +97,7 @@ public record SpotPerpRules(
         return new SpotPerpRules(
                 true,
                 true,
-                new BigDecimal("100"),
+                new BigDecimal("10000"),
                 2,
                 new BigDecimal("0.00008"),
                 new BigDecimal("0.00002"),
@@ -162,6 +162,14 @@ public record SpotPerpRules(
                 decimal(environment, "arbitrage.spot-perp-funding.max-lot-overshoot", defaults.maxLotOvershoot),
                 fees
         );
+    }
+
+    public SpotPerpRules withNotional(BigDecimal notional) {
+        return new SpotPerpRules(
+                dryRun, autoOpenEnabled, notional, leverage, openThreshold, closeThreshold,
+                minBasisRate, maxBasisRate, maxBasisDeteriorationRate, minNetYieldRate,
+                minFundingPeriods, settlementProtection, minHolding, maxHolding, maxQuoteAge,
+                minBookNotional, coverageRatio, maxVwapImpact, maxLotOvershoot, roundTripFeeRates);
     }
 
     public BigDecimal roundTripFee(SpotPerpVenue venue) {

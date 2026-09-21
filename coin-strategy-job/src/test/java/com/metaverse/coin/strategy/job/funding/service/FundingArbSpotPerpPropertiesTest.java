@@ -12,11 +12,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FundingArbSpotPerpPropertiesTest {
     @Test
-    void defaultsStayDryRunWithHundredUsdtNotional() {
+    void defaultsStayDryRunWithTenThousandUsdtNotional() {
         FundingArbSpotPerpProperties properties = new FundingArbSpotPerpProperties(new MockEnvironment());
         assertTrue(properties.enabled());
         assertTrue(properties.rules().dryRun());
-        assertEquals(0, new BigDecimal("100").compareTo(properties.rules().notionalUsdt()));
+        assertEquals(0, new BigDecimal("10000").compareTo(properties.rules().notionalUsdt()));
+        assertEquals(0, new BigDecimal("10000").compareTo(SpotPerpRules.defaults().notionalUsdt()));
         assertEquals(2, properties.rules().leverage());
     }
 

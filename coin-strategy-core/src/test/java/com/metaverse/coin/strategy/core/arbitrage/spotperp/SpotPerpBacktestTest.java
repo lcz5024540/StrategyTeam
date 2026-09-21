@@ -49,6 +49,52 @@ class SpotPerpBacktestTest {
         assertEquals(0, report.stats().stream().mapToInt(SpotPerpBacktest.InstrumentStats::prints).sum());
     }
 
+    @Test
+    void feeAndFundingRatiosAreScaleInvariantExceptLotRounding() {
+        List<SpotPerpHistoryClient.FundingPrint> prints = new ArrayList<>();
+        Instant t = T0;
+        for (int i = 0; i < 40; i++) {
+            String rate = i < 32 ? "0.0003" : "0.00001";
+            prints.add(print(btcBinance(), t, rate, "100000"));
+            prints.add(print(ethHtx(), t, rate, "4000"));
+            t = t.plus(Duration.ofHours(8));
+        }
+        SpotPerpBacktest backtest = new SpotPerpBacktest();
+        SpotPerpRules large = SpotPerpRules.defaults();
+        SpotPerpRules small = large.withNotional(SpotPerpBacktest.SMALL_NOTIONAL);
+        assertEquals(0, SpotPerpBacktest.SCHEME_A_NOTIONAL.compareTo(large.notionalUsdt()));
+        SpotPerpBacktest.Report report100 = backtest.replay(prints, small, T0, t, List.of());
+        SpotPerpBacktest.Report report10k = backtest.replay(prints, large, T0, t, List.of());
+        SpotPerpBacktest.ScaleComparison comparison = backtest.compareScale(report100, report10k);
+        assertTrue(report10k.asText().contains("FundBps"));
+        assertTrue(comparison.asText().contains("scale-invariant"));
+
+        BigDecimal maxRelativeDrift = new BigDecimal("0.02");
+        for (SpotPerpBacktest.ScaleRow row : comparison.rows()) {
+            assertEquals(row.opensSmall(), row.opensLarge(), row.instrument().key());
+            if (row.opensLarge() == 0) {
+                continue;
+            }
+            assertCloseRatio(row.fundingScale(), row.expectedScale(), maxRelativeDrift, row.instrument().key() + " funding");
+            assertCloseRatio(row.feesScale(), row.expectedScale(), maxRelativeDrift, row.instrument().key() + " fees");
+            assertCloseRatio(row.feeToFundingLarge(), row.feeToFundingSmall(), maxRelativeDrift,
+                    row.instrument().key() + " fee/funding");
+            assertCloseRatio(row.fundingBpsLarge(), row.fundingBpsSmall(), maxRelativeDrift,
+                    row.instrument().key() + " funding bps");
+            assertCloseRatio(row.feesBpsLarge(), row.feesBpsSmall(), maxRelativeDrift,
+                    row.instrument().key() + " fee bps");
+        }
+    }
+
+    private static void assertCloseRatio(BigDecimal actual, BigDecimal expected, BigDecimal maxRelativeDrift,
+            String label) {
+        assertTrue(actual != null && expected != null && expected.signum() != 0, label + " missing ratio");
+        BigDecimal drift = actual.subtract(expected).abs().divide(expected.abs(), 8, java.math.RoundingMode.HALF_UP);
+        assertTrue(drift.compareTo(maxRelativeDrift) <= 0,
+                label + " actual=" + actual.toPlainString() + " expected=" + expected.toPlainString()
+                        + " drift=" + drift.toPlainString());
+    }
+
     private static SpotPerpHistoryClient.FundingPrint print(
             SpotPerpInstrument instrument, Instant time, String rate, String mark) {
         return new SpotPerpHistoryClient.FundingPrint(
