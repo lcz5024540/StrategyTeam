@@ -78,6 +78,50 @@ htx_trend_order.account_label
 | 缺资金池配置 | 趋势资金、套利资金、缓冲资金无法统一分配。 |
 | 缺风险快照 | 页面只能看订单和仓位，不能看风险预算占用。 |
 
+### 2.4 现状对齐后的落地判断
+
+当前代码已经完成了一部分正确能力，不能推倒重来。
+
+| 已完成能力 | 当前价值 | 处理方式 |
+|---|---|---|
+| `htx_trade_account` | 已经能从 DB 识别 primary / follower，并承载加密凭据、启用状态和趋势开关。 | 保留为 HTX 账户登记表，短期只增强，不重建。 |
+| `HtxTradeAccountService` | 已经能优先读 DB 账号，缺凭据时才回退环境变量。 | 保留，后续让环境变量回退逐步退场。 |
+| `htx_trend_position` | 已经记录趋势仓位状态、entry/close fee、realized profit、expected net、sizing、gate reason。 | 保留为趋势执行状态表，不把它改成总账本。 |
+| `htx_trend_order` | 已经做到下单前先写 intent，成交后再 reconcile。 | 保留为趋势订单审计表，作为统一账本的事件来源。 |
+| `HtxTrendRecorder` | 已经是趋势执行的“局部账本写入器”。 | 保留并扩展为双写统一账本的入口。 |
+| `htx_trend_signal` | 已经记录真实扫描信号和拒绝原因。 | 保留为第一版信号快照，后续补 `run_id` 和策略维度。 |
+| `htx_trend_candidate_signal` | 已经记录 shadow/ensemble 候选。 | 保留为候选观察表，后续升级为模型候选统一表或作为兼容视图。 |
+| Web dashboard 聚合 SQL | 已经按账户、今日净收益、手续费、成交额展示。 | 保留页面结构，数据源逐步从执行表聚合切到统一账本聚合。 |
+
+因此 P1 的“最小实现”不能理解为简单在所有表里硬加字段。更合理的方案是三层演进：
+
+```text
+第一层：执行状态层
+  保留 htx_trend_position / htx_trend_order / htx_trade_account，保证真实交易不中断。
+
+第二层：统一归因层
+  新增 account_id、strategy_family、strategy_name、model_name、run_id、factor_snapshot_id，并从趋势执行写入器双写统一账本。
+
+第三层：页面读模型层
+  页面先保持现有 SQL 兼容，再切到 ledger / risk snapshot 聚合，最后废弃 account_label-only 聚合。
+```
+
+这比直接重建订单/仓位表更稳，也更契合当前已经完成的内容。
+
+### 2.5 保留、增强、废弃边界
+
+| 类型 | 对象 | 决策 |
+|---|---|---|
+| 保留 | `htx_trade_account` | 作为 HTX 账户登记表继续使用，补字段即可。 |
+| 保留 | `htx_trend_position` / `htx_trend_order` | 继续作为趋势策略执行状态和交易所回报审计。 |
+| 保留 | `HtxTrendRecorder` | 继续负责先写 intent 再下单，后续增加统一账本双写。 |
+| 增强 | `htx_trend_signal` | 补 `run_id`、市场分型、策略维度，避免只靠 reason 文本解析。 |
+| 增强 | `htx_trend_candidate_signal` | 补 `model_name`、gate 状态、shadow/live 类型，或者迁移到标准模型信号表。 |
+| 增强 | Dashboard API | 短期保留现有字段，新增 accountId/strategy/model 维度；中期改读统一账本。 |
+| 逐步废弃 | 环境变量里的 mirror 账号配置 | DB 账户体系稳定后，环境变量只保留 emergency fallback。 |
+| 逐步废弃 | `account_label` 作为关联键 | 保留展示，但关联、统计和回测改用 `account_id`。 |
+| 逐步废弃 | 页面直接从执行表拼总收益 | 统一账本稳定后，收益、费用、成交额改从 ledger 聚合。 |
+
 ---
 
 ## 3. 核心概念
@@ -482,11 +526,12 @@ coin_risk_exposure_snapshot
 
 | 顺序 | 动作 | 验收 |
 |---|---|---|
-| 1 | 保留 `htx_trade_account`，补账户费率表 | primary、TradeX/后续账号都有 maker/taker 费率。 |
-| 2 | 给趋势订单/仓位补 `account_id` 和策略维度 | 新数据同时写 account_id 与 account_label。 |
-| 3 | 建统一账本表 | 开平仓、手续费、已实现收益能从账本查。 |
-| 4 | 页面聚合改读账本 | 总览和账户页默认看扣费后净收益。 |
-| 5 | 保留旧字段兼容 | 老数据通过 account_label 回填或兼容查询。 |
+| 1 | 在现有 `htx_trade_account` 上补账户元数据，新增账户费率表 | primary、TradeX/后续账号都有稳定 ID、maker/taker 费率和健康状态。 |
+| 2 | 给趋势订单/仓位原地补 `account_id` 和策略维度 | 新数据同时写 account_id 与 account_label；旧查询不受影响。 |
+| 3 | 建统一账本表，但先从 `HtxTrendRecorder` 双写 | 开平仓、手续费、已实现收益能从账本查；失败时不影响原执行表落库。 |
+| 4 | 给 Web dashboard 增加 ledger-backed 聚合接口 | 总览和账户页可切到统一账本口径，同时保留旧 SQL fallback。 |
+| 5 | 回填老数据 | 老订单和仓位按 account_label 映射 account_id，策略默认填 `TREND / HTX_TREND_V1 / LEGACY_TREND_SIGNAL`。 |
+| 6 | 观察一致性 | 新旧聚合结果连续 24 小时差异在可解释范围内，再让页面默认读 ledger。 |
 
 ### 9.2 P2 最小迁移
 
