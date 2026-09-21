@@ -82,6 +82,10 @@ public final class SpotPerpSchemeCompare {
                         bpsText(row.fundingBps()),
                         bpsText(row.feeBps()),
                         bpsText(row.netBps())));
+                if (stats.skipReasons() != null && !stats.skipReasons().isEmpty()) {
+                    builder.append("    skip ").append(stats.instrument().key())
+                            .append(": ").append(stats.skipReasons()).append('\n');
+                }
             }
             builder.append('\n');
             builder.append(totalsTable());
