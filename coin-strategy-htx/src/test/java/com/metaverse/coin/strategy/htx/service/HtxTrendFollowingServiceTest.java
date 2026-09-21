@@ -636,6 +636,40 @@ class HtxTrendFollowingServiceTest {
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
+
+    @Test
+    void broadMarketFibonacciEntryPassesModerateDirectionConfidence() {
+        properties.setDirectionConfidenceGateEnabled(true);
+        properties.setConfidenceSizingEnabled(false);
+        properties.setMinMixedDirectionConfidenceScore(new BigDecimal("82"));
+        properties.setFibonacciMinDirectionConfidenceScore(new BigDecimal("80"));
+        givenContractInfo();
+        givenRisingKlines("XAUT-USDT");
+        givenSignal(TrendSide.LONG, new BigDecimal("12"), new BigDecimal("0.0028"),
+                freshBarTime(), new BigDecimal("24"),
+                "Fibonacci 38.2%-61.8% pullback continuation with higher-timeframe EMA uptrend");
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        givenBroadBullishBreadth();
+        givenWeakPerformance();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        ArgumentCaptor<HtxTrendPositionEntity> positionCaptor = ArgumentCaptor.forClass(HtxTrendPositionEntity.class);
+        verify(recorder).createIntent(positionCaptor.capture());
+        assertTrue(positionCaptor.getValue().getEntryGateReason().contains("directionConfidence=PASS"));
+        assertTrue(positionCaptor.getValue().getEntryGateReason().contains("required=80"));
+    }
+
     @Test
     void liveEntrySkipsWhenRecentTurnoverIsTooLow() {
         properties.setMinEntryAvgTurnoverUsdt(new BigDecimal("50000"));

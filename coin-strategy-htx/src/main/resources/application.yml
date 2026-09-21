@@ -164,9 +164,9 @@ htx:
     min-net-profit-rate: ${HTX_TREND_MIN_NET_PROFIT_RATE:0.0010}
     direction-confidence-gate-enabled: ${HTX_TREND_DIRECTION_CONFIDENCE_GATE_ENABLED:true}
     min-direction-confidence-score: ${HTX_TREND_MIN_DIRECTION_CONFIDENCE_SCORE:70}
-    min-mixed-direction-confidence-score: ${HTX_TREND_MIN_MIXED_DIRECTION_CONFIDENCE_SCORE:88}
+    min-mixed-direction-confidence-score: ${HTX_TREND_MIN_MIXED_DIRECTION_CONFIDENCE_SCORE:82}
     min-counter-breadth-direction-confidence-score: ${HTX_TREND_MIN_COUNTER_BREADTH_DIRECTION_CONFIDENCE_SCORE:95}
-    fibonacci-min-direction-confidence-score: ${HTX_TREND_FIBONACCI_MIN_DIRECTION_CONFIDENCE_SCORE:90}
+    fibonacci-min-direction-confidence-score: ${HTX_TREND_FIBONACCI_MIN_DIRECTION_CONFIDENCE_SCORE:80}
     funding-carry-min-direction-confidence-score: ${HTX_TREND_FUNDING_CARRY_MIN_DIRECTION_CONFIDENCE_SCORE:90}
     min-flat-exit-profit-usdt: ${HTX_TREND_MIN_FLAT_EXIT_PROFIT_USDT:0.20}
     flat-exit-confirmation-bars: ${HTX_TREND_FLAT_EXIT_CONFIRMATION_BARS:3}

@@ -88,9 +88,9 @@ class Config:
     quality_min_profit_factor: float = 1.10
     quality_strong_profit_factor: float = 1.30
     min_direction_confidence_score: float = 70.0
-    min_mixed_direction_confidence_score: float = 88.0
+    min_mixed_direction_confidence_score: float = 82.0
     min_counter_breadth_direction_confidence_score: float = 95.0
-    fibonacci_min_direction_confidence_score: float = 90.0
+    fibonacci_min_direction_confidence_score: float = 80.0
 
 
 @dataclass(frozen=True)
