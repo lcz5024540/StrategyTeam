@@ -16,6 +16,11 @@ public interface HtxTrendDashboardMapper {
     String SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_signal";
     String CANDIDATE_SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_candidate_signal";
     String ACCOUNT_TABLE = TREND_SCHEMA + "htx_trade_account";
+    String LEDGER_TABLE = TREND_SCHEMA + "coin_strategy_ledger_event";
+
+    String LEDGER_TURNOVER = "CASE WHEN event_type IN ('OPEN_FILL','CLOSE_FILL') THEN COALESCE(amount_usdt, 0) ELSE 0 END";
+    String LEDGER_FEE = "CASE WHEN event_type = 'FEE' THEN COALESCE(fee_usdt, 0) ELSE 0 END";
+    String LEDGER_NET = "COALESCE(net_pnl_after_fee, 0)";
 
     String CLOSED_TURNOVER = "entry_filled_contracts * contract_size * entry_avg_price "
             + "+ close_filled_contracts * contract_size * close_avg_price";
@@ -36,6 +41,29 @@ public interface HtxTrendDashboardMapper {
             + "COALESCE(SUM(CASE WHEN status = 'DONE' AND updated_at >= CURDATE() THEN realized_profit - entry_fee - close_fee ELSE 0 END), 0) AS todayNetRealizedProfit "
             + "FROM " + POSITION_TABLE + "")
     Map<String, Object> summary();
+
+    @Select("SELECT COUNT(*) AS ledgerEventCount, "
+            + "COALESCE(SUM(" + LEDGER_TURNOVER + "), 0) AS ledgerTotalTurnover, "
+            + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_TURNOVER + " ELSE 0 END), 0) AS ledgerTodayTurnover, "
+            + "COALESCE(SUM(" + LEDGER_FEE + "), 0) AS ledgerTotalFees, "
+            + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_FEE + " ELSE 0 END), 0) AS ledgerTodayFees, "
+            + "COALESCE(SUM(" + LEDGER_NET + "), 0) AS ledgerNetRealizedProfit, "
+            + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_NET + " ELSE 0 END), 0) AS ledgerTodayNetRealizedProfit, "
+            + "MAX(occurred_at) AS latestLedgerAt FROM " + LEDGER_TABLE
+            + " WHERE strategy_family = 'TREND' AND strategy_name = 'HTX_TREND_V1'")
+    Map<String, Object> ledgerSummary();
+
+    @Select("SELECT account_label AS accountLabel, COUNT(*) AS ledgerEventCount, "
+            + "COALESCE(SUM(" + LEDGER_TURNOVER + "), 0) AS ledgerTotalTurnover, "
+            + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_TURNOVER + " ELSE 0 END), 0) AS ledgerTodayTurnover, "
+            + "COALESCE(SUM(" + LEDGER_FEE + "), 0) AS ledgerTotalFees, "
+            + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_FEE + " ELSE 0 END), 0) AS ledgerTodayFees, "
+            + "COALESCE(SUM(" + LEDGER_NET + "), 0) AS ledgerNetRealizedProfit, "
+            + "COALESCE(SUM(CASE WHEN occurred_at >= CURDATE() THEN " + LEDGER_NET + " ELSE 0 END), 0) AS ledgerTodayNetRealizedProfit, "
+            + "MAX(occurred_at) AS latestLedgerAt FROM " + LEDGER_TABLE
+            + " WHERE strategy_family = 'TREND' AND strategy_name = 'HTX_TREND_V1' GROUP BY account_label")
+    List<Map<String, Object>> ledgerAccountSummaries();
+
 
 
     @Select("SELECT accountLabels.accountLabel AS accountLabel, COALESCE(accounts.account_role, 'LEDGER') AS accountRole, "

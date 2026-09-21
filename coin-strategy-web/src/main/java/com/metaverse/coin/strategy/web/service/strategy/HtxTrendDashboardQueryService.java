@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,9 +27,10 @@ public class HtxTrendDashboardQueryService {
 
     public HtxTrendDashboardViews.Dashboard dashboard() {
         try {
+            Map<String, Map<String, Object>> ledgerAccounts = ledgerAccountSummaries();
             return new HtxTrendDashboardViews.Dashboard(TIME.format(Instant.now()), "HTX_TREND_EXECUTION_LEDGER",
-                    summary(mapper.summary()), runtime(mapper.runtime()),
-                    mapper.accountSummaries().stream().map(this::accountSummary).toList(),
+                    summary(mapper.summary()), ledgerSummary(), runtime(mapper.runtime()),
+                    mapper.accountSummaries().stream().map(row -> accountSummary(row, ledgerAccounts)).toList(),
                     mapper.activePositions().stream().map(this::position).toList(),
                     mapper.recentPositions().stream().map(this::position).toList(),
                     mapper.dailyPnl().stream().map(this::daily).toList(),
@@ -49,6 +51,7 @@ public class HtxTrendDashboardQueryService {
                 new HtxTrendDashboardViews.Summary(0, 0, 0, 0, 0, 0, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                         BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
+                emptyLedgerSummary(),
                 new HtxTrendDashboardViews.RuntimeSnapshot(null, null, null, null, 0, 0, 0, 0, 0, 0, 0, 0, 0),
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
@@ -64,7 +67,42 @@ public class HtxTrendDashboardQueryService {
     }
 
 
-    private HtxTrendDashboardViews.AccountSummary accountSummary(Map<String, Object> row) {
+    private HtxTrendDashboardViews.LedgerSummary ledgerSummary() {
+        try {
+            return ledgerSummary(mapper.ledgerSummary());
+        } catch (DataAccessException exception) {
+            return emptyLedgerSummary();
+        }
+    }
+
+    private Map<String, Map<String, Object>> ledgerAccountSummaries() {
+        try {
+            Map<String, Map<String, Object>> rows = new HashMap<>();
+            for (Map<String, Object> row : mapper.ledgerAccountSummaries()) {
+                rows.put(text(row, "accountLabel"), row);
+            }
+            return rows;
+        } catch (DataAccessException exception) {
+            return Map.of();
+        }
+    }
+
+    private HtxTrendDashboardViews.LedgerSummary ledgerSummary(Map<String, Object> row) {
+        return new HtxTrendDashboardViews.LedgerSummary(number(row, "ledgerEventCount").longValue(),
+                decimal(row, "ledgerTotalTurnover"), decimal(row, "ledgerTodayTurnover"),
+                decimal(row, "ledgerTotalFees"), decimal(row, "ledgerTodayFees"),
+                decimal(row, "ledgerNetRealizedProfit"), decimal(row, "ledgerTodayNetRealizedProfit"),
+                text(row, "latestLedgerAt"));
+    }
+
+    private HtxTrendDashboardViews.LedgerSummary emptyLedgerSummary() {
+        return new HtxTrendDashboardViews.LedgerSummary(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null);
+    }
+
+    private HtxTrendDashboardViews.AccountSummary accountSummary(Map<String, Object> row,
+                                                                Map<String, Map<String, Object>> ledgerAccounts) {
+        Map<String, Object> ledger = ledgerAccounts.getOrDefault(text(row, "accountLabel"), Map.of());
         return new HtxTrendDashboardViews.AccountSummary(text(row, "accountLabel"), text(row, "accountRole"),
                 bool(row, "accountEnabled"), bool(row, "trendEnabled"), bool(row, "mirrorEnabled"),
                 number(row, "totalPositions").longValue(), number(row, "activePositions").longValue(),
@@ -79,6 +117,10 @@ public class HtxTrendDashboardQueryService {
                 decimal(row, "todayOrderNotional"), decimal(row, "orderFees"), decimal(row, "todayOrderFees"),
                 decimal(row, "estimatedOrderFees"), decimal(row, "todayEstimatedOrderFees"),
                 decimal(row, "orderRealizedProfit"), decimal(row, "todayOrderRealizedProfit"),
+                number(ledger, "ledgerEventCount").longValue(), decimal(ledger, "ledgerTotalTurnover"),
+                decimal(ledger, "ledgerTodayTurnover"), decimal(ledger, "ledgerTotalFees"),
+                decimal(ledger, "ledgerTodayFees"), decimal(ledger, "ledgerNetRealizedProfit"),
+                decimal(ledger, "ledgerTodayNetRealizedProfit"), text(ledger, "latestLedgerAt"),
                 text(row, "latestOrderAt"), text(row, "latestPositionAt"));
     }
 

@@ -86,6 +86,7 @@ export interface HtxTrendDashboardResponse {
   asOf: string
   source: string
   summary: TrendSummary
+  ledgerSummary?: TrendLedgerSummary
   runtime: TrendRuntimeSnapshot
   accountSummaries: TrendAccountSummary[]
   activePositions: TrendPosition[]
@@ -117,6 +118,17 @@ export interface TrendSummary {
   todayNetRealizedProfit: number
 }
 
+
+export interface TrendLedgerSummary {
+  ledgerEventCount: number
+  ledgerTotalTurnover: number
+  ledgerTodayTurnover: number
+  ledgerTotalFees: number
+  ledgerTodayFees: number
+  ledgerNetRealizedProfit: number
+  ledgerTodayNetRealizedProfit: number
+  latestLedgerAt: string | null
+}
 
 export interface TrendAccountSummary {
   accountLabel: string | null
@@ -151,6 +163,14 @@ export interface TrendAccountSummary {
   todayEstimatedOrderFees: number
   orderRealizedProfit: number
   todayOrderRealizedProfit: number
+  ledgerEventCount?: number
+  ledgerTotalTurnover?: number
+  ledgerTodayTurnover?: number
+  ledgerTotalFees?: number
+  ledgerTodayFees?: number
+  ledgerNetRealizedProfit?: number
+  ledgerTodayNetRealizedProfit?: number
+  latestLedgerAt?: string | null
   latestOrderAt: string | null
   latestPositionAt: string | null
 }

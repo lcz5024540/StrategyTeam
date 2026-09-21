@@ -7,8 +7,8 @@ public final class HtxTrendDashboardViews {
     private HtxTrendDashboardViews() {
     }
 
-    public record Dashboard(String asOf, String source, Summary summary, RuntimeSnapshot runtime,
-                            List<AccountSummary> accountSummaries, List<Position> activePositions,
+    public record Dashboard(String asOf, String source, Summary summary, LedgerSummary ledgerSummary,
+                            RuntimeSnapshot runtime, List<AccountSummary> accountSummaries, List<Position> activePositions,
                             List<Position> recentPositions, List<DailyPnl> dailyPnl, List<DimensionPnl> sidePnl,
                             List<DimensionPnl> todaySidePnl, List<DimensionPnl> exitReasonPnl,
                             List<TrendOrder> recentOrders, List<TrendSignal> recentSignals,
@@ -20,6 +20,12 @@ public final class HtxTrendDashboardViews {
                           BigDecimal todayTurnover, BigDecimal totalFees, BigDecimal todayFees,
                           BigDecimal realizedProfit, BigDecimal todayRealizedProfit,
                           BigDecimal netRealizedProfit, BigDecimal todayNetRealizedProfit) {
+    }
+
+    public record LedgerSummary(long ledgerEventCount, BigDecimal ledgerTotalTurnover, BigDecimal ledgerTodayTurnover,
+                                BigDecimal ledgerTotalFees, BigDecimal ledgerTodayFees,
+                                BigDecimal ledgerNetRealizedProfit, BigDecimal ledgerTodayNetRealizedProfit,
+                                String latestLedgerAt) {
     }
 
     public record RuntimeSnapshot(String latestSignalAt, String latestOrderAt, String latestPositionAt,
@@ -40,7 +46,10 @@ public final class HtxTrendDashboardViews {
                                  BigDecimal todayOrderNotional, BigDecimal orderFees, BigDecimal todayOrderFees,
                                  BigDecimal estimatedOrderFees, BigDecimal todayEstimatedOrderFees,
                                  BigDecimal orderRealizedProfit, BigDecimal todayOrderRealizedProfit,
-                                 String latestOrderAt, String latestPositionAt) {
+                                 long ledgerEventCount, BigDecimal ledgerTotalTurnover, BigDecimal ledgerTodayTurnover,
+                                 BigDecimal ledgerTotalFees, BigDecimal ledgerTodayFees,
+                                 BigDecimal ledgerNetRealizedProfit, BigDecimal ledgerTodayNetRealizedProfit,
+                                 String latestLedgerAt, String latestOrderAt, String latestPositionAt) {
     }
 
     public record Position(long id, String contractCode, String status, String side, long contractVolume,
