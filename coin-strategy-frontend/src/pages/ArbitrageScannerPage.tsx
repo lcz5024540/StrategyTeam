@@ -369,17 +369,18 @@ function TrendScanPanel({ trend }: { trend: HtxTrendDashboardResponse }) {
   const runtime = trend.runtime
   const latest = runtime.latestSignalAt || runtime.latestCandidateAt || trend.asOf
   const scannedText = runtime.scannedContractsLast30m > 0 ? `${runtime.scannedContractsLast30m} 个币对` : '等待扫描'
+  const hasLiveActivity = trend.activePositions.length > 0 || runtime.latestOrderAt != null
   return <section className="trend-panel trend-scan-panel">
     <header><div><h2>最近扫描</h2></div><span>30m</span></header>
-    <div className={`trend-gate-summary ${runtime.candidateSignalsLast30m > 0 ? 'active' : 'neutral'}`}>
+    <div className={`trend-gate-summary ${hasLiveActivity ? 'active' : 'neutral'}`}>
       <strong>{scannedText}</strong>
-      <span>信号 {runtime.signalsLast30m} · 候选 {runtime.candidateSignalsLast30m} · 最近 {latest || '—'}</span>
+      <span>实盘信号 {runtime.signalsLast30m} · 影子观察 {runtime.candidateSignalsLast30m} · 最近 {latest || '—'}</span>
     </div>
     <dl className="trend-compact-dl">
-      <div><dt>方向信号</dt><dd>多 {runtime.longSignalsLast30m} / 空 {runtime.shortSignalsLast30m}</dd></div>
-      <div><dt>候选方向</dt><dd>多 {runtime.candidateLongLast30m} / 空 {runtime.candidateShortLast30m}</dd></div>
-      <div><dt>观望信号</dt><dd>{runtime.flatSignalsLast30m}</dd></div>
-      <div><dt>候选观望</dt><dd>{runtime.candidateFlatLast30m}</dd></div>
+      <div><dt>实盘方向</dt><dd>多 {runtime.longSignalsLast30m} / 空 {runtime.shortSignalsLast30m}</dd></div>
+      <div><dt>观察方向</dt><dd>多 {runtime.candidateLongLast30m} / 空 {runtime.candidateShortLast30m}</dd></div>
+      <div><dt>实盘观望</dt><dd>{runtime.flatSignalsLast30m}</dd></div>
+      <div><dt>观察观望</dt><dd>{runtime.candidateFlatLast30m}</dd></div>
     </dl>
   </section>
 }
