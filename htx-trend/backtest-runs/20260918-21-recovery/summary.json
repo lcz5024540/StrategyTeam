@@ -1,0 +1,176 @@
+{
+  "baseline_chase_only": {
+    "total": {
+      "trades": 30,
+      "net_win_rate": 0.26666666666666666,
+      "gross_pnl": 4.072623171364936,
+      "fees": 3.2799966667405465,
+      "net_pnl": 0.7926265046243866,
+      "profit_factor": 1.067923014902735,
+      "avg_win": 1.5577637560008557,
+      "avg_loss": 0.5304310701537481,
+      "max_loss": -1.3960424285596211
+    },
+    "days": {
+      "2026-09-18": {
+        "trades": 9,
+        "net_win_rate": 0.4444444444444444,
+        "gross_pnl": 3.0183457222051464,
+        "fees": 1.2077420694110264,
+        "net_pnl": 1.8106036527941198,
+        "profit_factor": 1.507886955473354,
+        "avg_win": 1.3438943450694203,
+        "avg_loss": 0.7129947454967123,
+        "max_loss": -1.3960424285596211
+      },
+      "2026-09-19": {
+        "trades": 10,
+        "net_win_rate": 0.1,
+        "gross_pnl": -2.794033137212841,
+        "fees": 1.0239688994605016,
+        "net_pnl": -3.818002036673343,
+        "profit_factor": 0.06924408367739757,
+        "avg_win": 0.284042301393495,
+        "avg_loss": 0.45578270422964867,
+        "max_loss": -0.859448209667517
+      },
+      "2026-09-20": {
+        "trades": 4,
+        "net_win_rate": 0.0,
+        "gross_pnl": -1.6600556991301185,
+        "fees": 0.4429405088015007,
+        "net_pnl": -2.1029962079316196,
+        "profit_factor": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.5257490519829049,
+        "max_loss": -0.65407039875874
+      },
+      "2026-09-21": {
+        "trades": 7,
+        "net_win_rate": 0.42857142857142855,
+        "gross_pnl": 5.508366285502748,
+        "fees": 0.6053451890675183,
+        "net_pnl": 4.903021096435229,
+        "profit_factor": 3.5812584463091737,
+        "avg_win": 2.267496788778556,
+        "avg_loss": 0.4748673174751099,
+        "max_loss": -0.8511248605475661
+      }
+    }
+  },
+  "recovery_20260921": {
+    "total": {
+      "trades": 11,
+      "net_win_rate": 0.45454545454545453,
+      "gross_pnl": 8.608327120635646,
+      "fees": 1.375238772527872,
+      "net_pnl": 7.233088348107775,
+      "profit_factor": 3.0659028893187874,
+      "avg_win": 2.1468527470305245,
+      "avg_loss": 0.5835292311741413,
+      "max_loss": -1.3050581195062678
+    },
+    "days": {
+      "2026-09-18": {
+        "trades": 6,
+        "net_win_rate": 0.6666666666666666,
+        "gross_pnl": 7.3052359057915615,
+        "fees": 0.8361468170239579,
+        "net_pnl": 6.469089088767604,
+        "profit_factor": 6.818609370001868,
+        "avg_win": 1.8952205188176035,
+        "avg_loss": 0.5558964932514046,
+        "max_loss": -0.5867709563026766
+      },
+      "2026-09-19": {
+        "trades": 2,
+        "net_win_rate": 0.0,
+        "gross_pnl": -0.6734439978364417,
+        "fees": 0.17180149794400837,
+        "net_pnl": -0.84524549578045,
+        "profit_factor": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.422622747890225,
+        "max_loss": -0.4405119478306031
+      },
+      "2026-09-21": {
+        "trades": 3,
+        "net_win_rate": 0.3333333333333333,
+        "gross_pnl": 1.976535212680526,
+        "fees": 0.3672904575599059,
+        "net_pnl": 1.6092447551206202,
+        "profit_factor": 2.0421645581802115,
+        "avg_win": 3.153381659882209,
+        "avg_loss": 0.7720684523807942,
+        "max_loss": -1.3050581195062678
+      }
+    }
+  },
+  "skip_counts": {
+    "direction:Fibonacci:MIXED": 37,
+    "direction:Donchian:MIXED": 11,
+    "direction:Fibonacci:BROAD_DOWN": 1
+  },
+  "recovery_sleeves": {
+    "BTC-USDT:Donchian": {
+      "trades": 5,
+      "net_win_rate": 0.6,
+      "gross_pnl": 3.821107479797411,
+      "fees": 0.6851903146085858,
+      "net_pnl": 3.135917165188826,
+      "profit_factor": 4.797200637579419,
+      "avg_win": 1.3205889689156078,
+      "avg_loss": 0.4129248707789987,
+      "max_loss": -0.5867709563026766,
+      "decision": "PAPER_CANDIDATE"
+    },
+    "BTC-USDT:Fibonacci": {
+      "trades": 1,
+      "net_win_rate": 1.0,
+      "gross_pnl": 4.879662455044853,
+      "fees": 0.15395186498201796,
+      "net_pnl": 4.725710590062835,
+      "profit_factor": 999.0,
+      "avg_win": 4.725710590062835,
+      "avg_loss": 0.0,
+      "max_loss": 4.725710590062835,
+      "decision": "INSUFFICIENT_SAMPLE"
+    },
+    "ETH-USDT:Donchian": {
+      "trades": 4,
+      "net_win_rate": 0.25,
+      "gross_pnl": 0.3111407418948231,
+      "fees": 0.4146581188385768,
+      "net_pnl": -0.10351737694375363,
+      "profit_factor": 0.9518591810905966,
+      "avg_win": 2.0467862383429645,
+      "avg_loss": 0.7167678717622392,
+      "max_loss": -1.3050581195062678,
+      "decision": "REJECT"
+    },
+    "ETH-USDT:Fibonacci": {
+      "trades": 1,
+      "net_win_rate": 0.0,
+      "gross_pnl": -0.40358355610144103,
+      "fees": 0.12143847409869162,
+      "net_pnl": -0.5250220302001326,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.5250220302001326,
+      "max_loss": -0.5250220302001326,
+      "decision": "INSUFFICIENT_SAMPLE"
+    },
+    "XAUT-USDT:NoSignal": {
+      "trades": 0,
+      "net_win_rate": 0.0,
+      "gross_pnl": 0,
+      "fees": 0,
+      "net_pnl": 0,
+      "profit_factor": 0.0,
+      "avg_win": 0.0,
+      "avg_loss": 0.0,
+      "max_loss": 0.0,
+      "decision": "INSUFFICIENT_SAMPLE"
+    }
+  }
+}

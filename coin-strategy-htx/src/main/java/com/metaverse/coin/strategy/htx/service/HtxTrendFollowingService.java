@@ -84,6 +84,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendEnsembleSignalCalculator ensembleCalculator;
     private final HtxTrendMirrorExecutor mirrorExecutor;
     private final HtxSwapFeeRateResolver feeRateResolver;
+    private HtxTrendCombinationService combinationService;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
 
@@ -153,6 +154,11 @@ public class HtxTrendFollowingService {
         return runOnce(true);
     }
 
+    @Autowired(required = false)
+    void setCombinationService(HtxTrendCombinationService combinationService) {
+        this.combinationService = combinationService;
+    }
+
     public boolean hasOpenLikePositions() {
         return recorder.countOpenLike() > 0L;
     }
@@ -220,7 +226,8 @@ public class HtxTrendFollowingService {
             summaries.add("ENTRY_SCAN=" + scanSkipped.code() + ":" + scanSkipped.message());
         }
 
-        long remainingSlots = Math.max(0L, maxActivePositions - openLikePositions);
+        long remainingSlots = properties.isCombinationEntryEnabled() && maxActivePositions == 0
+                ? Long.MAX_VALUE : Math.max(0L, maxActivePositions - openLikePositions);
         List<EntryCandidate> rankedCandidates = entryCandidates.values().stream()
                 .sorted(Comparator.comparing(EntryCandidate::score).reversed())
                 .toList();
@@ -244,7 +251,8 @@ public class HtxTrendFollowingService {
                         break;
                     }
                     RunResult result = openIfEligible(candidate.contractCode(), candidate.signal(),
-                            candidate.entryCandles(), candidate.contract(), marketBreadth, marketAnchor, performance);
+                            candidate.entryCandles(), candidate.contract(), marketBreadth, marketAnchor, performance,
+                            candidate.combination());
                     pendingEntryCandidates.remove(candidate.contractCode());
                     RunResult tagged = tag(candidate.contractCode(), result);
                     summaries.add(candidate.contractCode() + "=" + result.code() + ":" + result.message());
@@ -424,6 +432,9 @@ public class HtxTrendFollowingService {
         }
         SignalSnapshot snapshot = loadSignal(contractCode);
         TrendSignal rawSignal = snapshot.signal();
+        if (properties.isCombinationEntryEnabled()) {
+            return combinationCandidateEvaluation(contractCode, contract, snapshot, marketBreadth, marketAnchor);
+        }
         TrendSignal signal = entrySignalWithCarryContext(contractCode, rawSignal, marketBreadth);
         signal = entrySignalWithEnsembleContext(contractCode, signal, snapshot.entryCandles(), marketBreadth);
         signal = entrySignalWithMarketAnchorContext(signal, marketAnchor);
@@ -432,10 +443,36 @@ public class HtxTrendFollowingService {
             return new CandidateEvaluation(RunResult.of(RunCode.NO_SIGNAL, null, signal.reason()), null);
         }
         BigDecimal score = entryCandidateScore(signal, marketBreadth, marketAnchor);
-        EntryCandidate candidate = new EntryCandidate(contractCode, signal, snapshot.entryCandles(), contract, score);
+        EntryCandidate candidate = new EntryCandidate(contractCode, signal, snapshot.entryCandles(), contract, score, null);
         return new CandidateEvaluation(RunResult.of(RunCode.OBSERVED, null,
                 "entry candidate queued side=" + signal.side() + " score=" + score.setScale(2, RoundingMode.HALF_UP)
                         + " reason=" + signal.reason()), candidate);
+    }
+
+    private CandidateEvaluation combinationCandidateEvaluation(String contractCode, HtxSwapContractInfo contract,
+                                                               SignalSnapshot snapshot, MarketBreadthContext marketBreadth,
+                                                               MarketAnchorContext marketAnchor) {
+        if (combinationService == null) {
+            return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null, "combination service unavailable"), null);
+        }
+        HtxTrendEnsembleSignalCalculator.TrendCandidateSignal ensemble = ensembleCalculator.evaluate(snapshot.entryCandles(),
+                ensembleProperties, properties.getPeriod(), Instant.now().getEpochSecond());
+        HtxTrendCombinationService.Selection selection = combinationService.select(contractCode, properties.getPeriod(),
+                snapshot.entryCandles(), ensemble);
+        if (!selection.accepted()) {
+            recordSignal(contractCode, snapshot.signal());
+            return new CandidateEvaluation(RunResult.of(RunCode.NO_SIGNAL, null, selection.rejection()), null);
+        }
+        TrendSide side = trendSide(selection.candidate().direction());
+        TrendSignal signal = TrendSignal.of(side, ensemble.barTime(), ensemble.closePrice(), ensemble.emaFast(),
+                ensemble.emaSlow(), ensemble.breakoutHigh(), ensemble.breakoutLow(), ensemble.atr(), ensemble.atrPct(),
+                ensemble.adx(), selection.candidate().hypothesis() + "; policy=" + selection.policy().getPolicyCode());
+        recordSignal(contractCode, signal);
+        BigDecimal score = selection.candidate().score();
+        CombinationContext context = new CombinationContext(selection);
+        EntryCandidate candidate = new EntryCandidate(contractCode, signal, snapshot.entryCandles(), contract, score, context);
+        return new CandidateEvaluation(RunResult.of(RunCode.OBSERVED, null,
+                "combination candidate queued policy=" + selection.policy().getPolicyCode() + " score=" + score), candidate);
     }
 
     private TrendSignal entrySignalWithCarryContext(String contractCode, TrendSignal signal, MarketBreadthContext marketBreadth) {
@@ -806,7 +843,8 @@ public class HtxTrendFollowingService {
 
     private RunResult openIfEligible(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
                                      HtxSwapContractInfo contract, MarketBreadthContext marketBreadth,
-                                     MarketAnchorContext marketAnchor, PerformanceContext performance) {
+                                     MarketAnchorContext marketAnchor, PerformanceContext performance,
+                                     CombinationContext combination) {
         if (signal.side() == TrendSide.FLAT) {
             return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
         }
@@ -855,7 +893,8 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, chaseGate);
         }
         SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance, confidence);
-        long volume = targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing);
+        long volume = combination == null ? targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing)
+                : targetVolumeForNotional(entryPrice, contract.getContractSize(), combination.plannedNotionalUsdt());
         if (volume <= 0) {
             return RunResult.of(RunCode.SKIPPED, null, "target volume below minimum " + sizing.summary());
         }
@@ -880,7 +919,8 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, leverageGate);
         }
         String side = signal.side() == TrendSide.LONG ? LONG : SHORT;
-        BigDecimal stopPrice = initialStop(signal, side, contract);
+        BigDecimal stopPrice = combination == null ? initialStop(signal, side, contract)
+                : scalePrice(combination.invalidationPrice(), contract);
         BigDecimal takeProfitPrice = initialTakeProfit(signal, side, contract);
         String positionKey = positionKey(contractCode);
         String clientOrderId = Long.toString(numericClientOrderId());
@@ -905,6 +945,15 @@ public class HtxTrendFollowingService {
         entity.setEntrySignal(clip(signal.reason() + "; " + sizing.summary()));
         entity.setMessage(clip("trend entry intent signal=" + signal.side() + " " + sizing.summary()));
         entity.setAccountLabel("primary");
+        if (combination != null) {
+            entity.setPrimaryModel(combination.primaryModel());
+            entity.setConfirmationModels(combination.confirmationModels());
+            entity.setPolicyVersion(combination.policyVersion());
+            entity.setMarketRegime(combination.marketRegime());
+            entity.setFactorSnapshotId(combination.factorSnapshotId());
+            entity.setEntryHypothesis(combination.hypothesis());
+            entity.setInvalidationPrice(combination.invalidationPrice());
+        }
         entity.setEntryFeeRate(takerFeeRate);
         entity.setEstimatedEntryFee(entryCost.estimatedEntryFee());
         entity.setEstimatedCloseFee(entryCost.estimatedCloseFee());
@@ -1009,7 +1058,10 @@ public class HtxTrendFollowingService {
         BigDecimal takeProfit = position.getTakeProfitPrice();
         recorder.updateRiskLevels(position.getId(), position.getStopPrice(), trailingStop, takeProfit, highest, lowest,
                 "holding signal=" + signal.side() + " ref=" + reference + feeProtectionMessage(feeProtectedStop));
-        String exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
+        String exitReason = combinationInvalidationExitReason(position, reference);
+        if (exitReason == null) {
+            exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
+        }
         if (exitReason == null) {
             exitReason = flatLossControlExitReason(position, signal, reference);
         }
@@ -1024,6 +1076,17 @@ public class HtxTrendFollowingService {
                     + " signal=" + signal.side() + " trailingStop=" + trailingStop);
         }
         return closePosition(position, exitReason);
+    }
+
+    private static String combinationInvalidationExitReason(HtxTrendPositionEntity position, BigDecimal reference) {
+        if (position.getPrimaryModel() == null || !positive(position.getInvalidationPrice()) || !positive(reference)) {
+            return null;
+        }
+        boolean invalidated = LONG.equals(position.getSide())
+                ? reference.compareTo(position.getInvalidationPrice()) <= 0
+                : reference.compareTo(position.getInvalidationPrice()) >= 0;
+        return invalidated ? "combination invalidation " + position.getPrimaryModel()
+                + " ref=" + reference + " invalidation=" + position.getInvalidationPrice() : null;
     }
 
     private RunResult closePosition(HtxTrendPositionEntity position, String exitReason) {
@@ -1752,6 +1815,14 @@ public class HtxTrendFollowingService {
         return notional.divide(perContract, 0, RoundingMode.DOWN).longValue();
     }
 
+    private long targetVolumeForNotional(BigDecimal entryPrice, BigDecimal contractSize, BigDecimal notional) {
+        if (!positive(entryPrice) || !positive(contractSize) || !positive(notional)
+                || notional.compareTo(properties.getMinQuoteNotional()) < 0) {
+            return 0L;
+        }
+        return notional.divide(entryPrice.multiply(contractSize), 0, RoundingMode.DOWN).longValue();
+    }
+
     private String expectedMoveGate(TrendSignal signal, BigDecimal entryPrice, BigDecimal spreadRate,
                                     BigDecimal takerFeeRate) {
         if (!properties.isFeeProtectionEnabled() || !positive(signal.atr()) || !positive(entryPrice)) {
@@ -2445,7 +2516,18 @@ public class HtxTrendFollowingService {
     }
 
     private record EntryCandidate(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
-                                  HtxSwapContractInfo contract, BigDecimal score) {
+                                  HtxSwapContractInfo contract, BigDecimal score, CombinationContext combination) {
+    }
+
+    private record CombinationContext(HtxTrendCombinationService.Selection selection) {
+        String primaryModel() { return selection.candidate().primaryModel(); }
+        String confirmationModels() { return selection.candidate().confirmationModels(); }
+        String policyVersion() { return selection.policy().getPolicyVersion(); }
+        String marketRegime() { return selection.candidate().marketRegime(); }
+        Long factorSnapshotId() { return selection.factorSnapshotId(); }
+        String hypothesis() { return selection.candidate().hypothesis(); }
+        BigDecimal invalidationPrice() { return selection.candidate().invalidationPrice(); }
+        BigDecimal plannedNotionalUsdt() { return selection.plannedNotionalUsdt(); }
     }
 
     private record TopOfBook(BigDecimal bid, BigDecimal ask) {

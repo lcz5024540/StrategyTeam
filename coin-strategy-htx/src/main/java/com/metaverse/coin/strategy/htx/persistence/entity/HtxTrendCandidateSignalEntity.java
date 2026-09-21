@@ -38,5 +38,15 @@ public class HtxTrendCandidateSignalEntity {
     private String invalidationReason;
     private Boolean shadow;
     private String modelVersion;
+    private String primaryModel;
+    private String confirmationModels;
+    private String policyVersion;
+    private Long factorSnapshotId;
+    private String gateResult;
+    private String gateReason;
+    private BigDecimal invalidationPrice;
+    private String entryHypothesis;
+    private BigDecimal sizingMultiplier;
+    private BigDecimal plannedNotionalUsdt;
     private LocalDateTime createdAt;
 }

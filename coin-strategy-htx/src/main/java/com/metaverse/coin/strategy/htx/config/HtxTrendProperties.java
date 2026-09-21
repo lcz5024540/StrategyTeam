@@ -21,6 +21,9 @@ public class HtxTrendProperties {
     /** Whether the strategy may open new positions. Active positions are still managed when disabled. */
     private boolean entryEnabled = true;
 
+    /** When enabled, only a database-backed combined candidate may submit a new live entry. */
+    private boolean combinationEntryEnabled = false;
+
     /** Legacy single USDT-margined perpetual contract, used when {@link #contractCodes} is empty. */
     private String contractCode = "XAUT-USDT";
 

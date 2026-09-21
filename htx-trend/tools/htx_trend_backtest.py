@@ -22,6 +22,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import median
 from typing import Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlencode
+from urllib.request import urlopen
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("Asia/Shanghai")
@@ -55,10 +57,10 @@ class Config:
     fibonacci_lower: float = 0.382
     fibonacci_upper: float = 0.618
     fibonacci_min_range_atr: float = 1.2
-    target_quote_notional: float = 300.0
-    max_quote_notional: float = 450.0
+    target_quote_notional: float = 190.0
+    max_quote_notional: float = 190.0
     min_quote_notional: float = 20.0
-    risk_per_trade_usdt: float = 3.0
+    risk_per_trade_usdt: float = 1.5
     atr_stop_multiplier: float = 2.5
     trailing_atr_multiplier: float = 2.0
     estimated_taker_fee_rate: float = 0.0004
@@ -91,6 +93,44 @@ class Config:
     min_mixed_direction_confidence_score: float = 82.0
     min_counter_breadth_direction_confidence_score: float = 95.0
     fibonacci_min_direction_confidence_score: float = 80.0
+
+
+@dataclass(frozen=True)
+class ReplayProfile:
+    """A named, reviewable replay policy.
+
+    The recovery profile is deliberately separate from Config: values in this
+    object are the production recovery decision, rather than accidental
+    defaults inherited by an offline experiment.
+    """
+    name: str
+    direction_gate_enabled: bool
+    adverse_shock_exit_enabled: bool
+    no_extension_exit_enabled: bool
+    target_quote_notional: float
+    max_quote_notional: float
+    risk_per_trade_usdt: float
+
+
+RECOVERY_PROFILE = ReplayProfile(
+    name="recovery_20260921",
+    direction_gate_enabled=True,
+    adverse_shock_exit_enabled=False,
+    no_extension_exit_enabled=False,
+    target_quote_notional=190.0,
+    max_quote_notional=190.0,
+    risk_per_trade_usdt=1.5,
+)
+
+BASELINE_PROFILE = ReplayProfile(
+    name="baseline_chase_only",
+    direction_gate_enabled=False,
+    adverse_shock_exit_enabled=False,
+    no_extension_exit_enabled=False,
+    target_quote_notional=190.0,
+    max_quote_notional=190.0,
+    risk_per_trade_usdt=1.5,
+)
 
 
 @dataclass(frozen=True)
@@ -217,7 +257,8 @@ def load_bars(data_dir: Path, symbol: str, period: str) -> List[Bar]:
     path = data_dir / f"{symbol}_{period}.json"
     if not path.exists():
         return []
-    rows = json.loads(path.read_text())
+    payload = json.loads(path.read_text())
+    rows = payload.get("data", []) if isinstance(payload, dict) else payload
     bars = []
     for r in rows:
         try:
@@ -233,6 +274,20 @@ def load_bars(data_dir: Path, symbol: str, period: str) -> List[Bar]:
         except (KeyError, TypeError, ValueError):
             continue
     return sorted(bars, key=lambda b: b.ts)
+
+
+def capture_kline(data_dir: Path, symbol: str, period: str, size: int) -> Path:
+    """Save the untouched public HTX response used by a replay."""
+    query = urlencode({"contract_code": symbol, "period": period, "size": size})
+    url = "https://api.hbdm.com/linear-swap-ex/market/history/kline?" + query
+    with urlopen(url, timeout=20) as response:
+        payload = json.load(response)
+    if payload.get("status") != "ok" or not payload.get("data"):
+        raise RuntimeError(f"HTX kline fetch failed for {symbol} {period}: {payload}")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = data_dir / f"{symbol}_{period}.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def ema(values: List[float], period: int) -> float:
@@ -529,9 +584,16 @@ def exit_position(pos: Position, exit_time: int, exit_price: float, reason: str,
                  pos.breadth_regime, pos.direction_score)
 
 
-def run_backtest(name: str, symbols: List[str], bars15: Dict[str, List[Bar]], bars60: Dict[str, List[Bar]],
-                 start_ts: int, end_ts: int, cfg: Config, repaired: bool) -> RunStats:
-    stats = RunStats(name)
+def run_backtest(profile: ReplayProfile, symbols: List[str], bars15: Dict[str, List[Bar]], bars60: Dict[str, List[Bar]],
+                 start_ts: int, end_ts: int, cfg: Config) -> RunStats:
+    cfg = Config(**{
+        **cfg.__dict__,
+        "target_quote_notional": profile.target_quote_notional,
+        "max_quote_notional": profile.max_quote_notional,
+        "risk_per_trade_usdt": profile.risk_per_trade_usdt,
+    })
+    direction_gate = profile.direction_gate_enabled
+    stats = RunStats(profile.name)
     cooldown_until: Dict[str, int] = {}
     positions: Dict[str, Position] = {}
     all_times = sorted({b.ts for bars in bars15.values() for b in bars if start_ts <= b.ts < end_ts})
@@ -571,13 +633,13 @@ def run_backtest(name: str, symbols: List[str], bars15: Dict[str, List[Bar]], ba
                 loss_budget = max(cfg.max_flat_exit_loss_usdt, pos.notional * cfg.max_flat_exit_loss_rate)
                 if current_net < 0 and abs(current_net) >= loss_budget:
                     exit_reason = "flat-loss"
-            if exit_reason is None and repaired and now_epoch - pos.entry_time >= cfg.period_seconds * cfg.adverse_shock_exit_bars:
+            if exit_reason is None and profile.adverse_shock_exit_enabled and now_epoch - pos.entry_time >= cfg.period_seconds * cfg.adverse_shock_exit_bars:
                 adverse_ref = pos.lowest if pos.side == "LONG" else pos.highest
                 adverse_move = pos.entry_price - adverse_ref if pos.side == "LONG" else adverse_ref - pos.entry_price
                 required_move = pos.atr * cfg.adverse_shock_atr_multiplier
                 if current_net < 0 and pos.best_net < cfg.adverse_shock_min_favorable_net_usdt and adverse_move >= required_move:
                     exit_reason = "adverse-shock"
-            if exit_reason is None and repaired and now_epoch - pos.entry_time >= cfg.period_seconds * cfg.no_extension_exit_bars:
+            if exit_reason is None and profile.no_extension_exit_enabled and now_epoch - pos.entry_time >= cfg.period_seconds * cfg.no_extension_exit_bars:
                 if current_net < 0 and pos.best_net < cfg.no_extension_min_favorable_net_usdt:
                     exit_reason = "no-extension"
             if exit_reason is None and signal and signal.side != "FLAT" and signal.side != pos.side:
@@ -630,7 +692,7 @@ def run_backtest(name: str, symbols: List[str], bars15: Dict[str, List[Bar]], ba
                 stats.skipped.append(skipped)
                 continue
             dc_score = dc_required = None
-            if repaired:
+            if direction_gate:
                 dc_score, dc_required, _ = direction_confidence(signal, entry_history[sym], breadth, quality, cfg)
                 if dc_score < dc_required:
                     skipped = Candidate(sym, signal, candidate_score(signal, breadth), breadth, quality, next_bar.open, dc_score, dc_required, "direction")
@@ -686,7 +748,27 @@ def group_by_day(trades: List[Trade]) -> Dict[str, Dict[str, float]]:
     return {d: summarize([t for t in trades if day(t.entry_time) == d]) for d in days}
 
 
-def write_outputs(out_dir: Path, legacy: RunStats, repaired: RunStats) -> None:
+def sleeve_summary(trades: List[Trade], symbols: Optional[List[str]] = None) -> Dict[str, Dict[str, float]]:
+    grouped: Dict[str, List[Trade]] = {}
+    for trade in trades:
+        grouped.setdefault(f"{trade.symbol}:{trade.entry_model}", []).append(trade)
+    summary = {key: summarize(rows) for key, rows in sorted(grouped.items())}
+    for symbol in symbols or []:
+        if not any(key.startswith(f"{symbol}:") for key in summary):
+            summary[f"{symbol}:NoSignal"] = summarize([])
+    return dict(sorted(summary.items()))
+
+
+def sleeve_decision(metrics: Dict[str, float]) -> str:
+    if metrics["trades"] < 3:
+        return "INSUFFICIENT_SAMPLE"
+    if metrics["net_pnl"] <= 0 or metrics["profit_factor"] < 1.20 or metrics["max_loss"] < -1.5:
+        return "REJECT"
+    return "PAPER_CANDIDATE"
+
+
+def write_outputs(out_dir: Path, legacy: RunStats, repaired: RunStats, symbols: List[str],
+                  start_label: str, end_label: str) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     for run in (legacy, repaired):
         with (out_dir / f"{run.name}_trades.csv").open("w", newline="", encoding="utf-8") as f:
@@ -699,19 +781,22 @@ def write_outputs(out_dir: Path, legacy: RunStats, repaired: RunStats) -> None:
             w.writerow(["symbol", "bar_time", "side", "model", "reason", "skip_reason", "score", "required", "breadth"])
             for c in run.skipped:
                 w.writerow([c.symbol, fmt_ts(c.signal.bar_time), c.signal.side, model(c.signal.reason), c.signal.reason, c.skip_reason, "" if c.direction_score is None else f"{c.direction_score:.2f}", "" if c.direction_required is None else f"{c.direction_required:.2f}", c.breadth.regime])
+    recovery_sleeves = sleeve_summary(repaired.trades, symbols)
     payload = {
         legacy.name: {"total": summarize(legacy.trades), "days": group_by_day(legacy.trades)},
         repaired.name: {"total": summarize(repaired.trades), "days": group_by_day(repaired.trades)},
         "skip_counts": {},
+        "recovery_sleeves": {key: {**metrics, "decision": sleeve_decision(metrics)}
+                              for key, metrics in recovery_sleeves.items()},
     }
     for c in repaired.skipped:
         key = f"{c.skip_reason}:{model(c.signal.reason)}:{c.breadth.regime}"
         payload["skip_counts"][key] = payload["skip_counts"].get(key, 0) + 1
     (out_dir / "summary.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     md = []
-    md.append("# HTX trend strategy-level backtest 2026-09-18~20")
+    md.append(f"# HTX trend strategy-level backtest {start_label} to {end_label}")
     md.append("")
-    md.append("This replay regenerates signals from historical 15m/60m klines. It compares the previous live-like path with the repaired path that adds direction-confidence gating, adverse-shock exits, and no-extension exits. Funding-carry entries and historical order-book depth are not simulated in this first offline pass.")
+    md.append("This replay regenerates signals from historical 15m/60m klines. The recovery profile matches the deployed recovery package: direction-confidence gating remains enabled, adverse-shock/no-extension exits are disabled, and sizing is capped at 190 USDT with a 1.5 USDT risk budget. Funding-carry entries and historical order-book depth are not simulated.")
     md.append("")
     md.append("## Daily comparison")
     md.append("")
@@ -729,6 +814,13 @@ def write_outputs(out_dir: Path, legacy: RunStats, repaired: RunStats) -> None:
         s = summarize(run.trades)
         md.append(f"| {run.name} | {s['trades']} | {s['net_win_rate']*100:.2f}% | {s['gross_pnl']:.4f} | {s['fees']:.4f} | {s['net_pnl']:.4f} | {s['profit_factor']:.2f} | {s['avg_win']:.4f} | {s['avg_loss']:.4f} | {s['max_loss']:.4f} |")
     md.append("")
+    md.append("## Recovery sleeve decisions")
+    md.append("")
+    md.append("| sleeve | trades | net PnL | PF | max loss | decision |")
+    md.append("|---|---:|---:|---:|---:|---|")
+    for key, metrics in recovery_sleeves.items():
+        md.append(f"| {key} | {metrics['trades']} | {metrics['net_pnl']:.4f} | {metrics['profit_factor']:.2f} | {metrics['max_loss']:.4f} | {sleeve_decision(metrics)} |")
+    md.append("")
     md.append("## Repaired skip counts")
     md.append("")
     md.append("| skip bucket | count |")
@@ -745,21 +837,46 @@ def write_outputs(out_dir: Path, legacy: RunStats, repaired: RunStats) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True, type=Path)
-    ap.add_argument("--out-dir", required=True, type=Path)
+    ap.add_argument("--out-dir", type=Path)
     ap.add_argument("--start", default="2026-09-18")
-    ap.add_argument("--end", default="2026-09-21")
+    ap.add_argument("--end", default="2026-09-22")
     ap.add_argument("--symbols", default=",".join(DEFAULT_SYMBOLS))
+    ap.add_argument("--validate-data", action="store_true",
+                    help="verify frozen inputs cover the requested replay window, then exit")
+    ap.add_argument("--capture-data", action="store_true",
+                    help="fetch and persist raw public HTX K-lines, then exit")
     args = ap.parse_args()
     cfg = Config()
     symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+    if args.capture_data:
+        sizes = {"15min": 2000, "30min": 1200, "60min": 700, "4hour": 300}
+        for symbol in symbols:
+            for period, size in sizes.items():
+                path = capture_kline(args.data_dir, symbol, period, size)
+                print(path)
+        return
     bars15 = {s: load_bars(args.data_dir, s, "15min") for s in symbols}
     bars60 = {s: load_bars(args.data_dir, s, "60min") for s in symbols}
     symbols = [s for s in symbols if bars15.get(s) and bars60.get(s)]
     start_ts = int(parse_day(args.start).timestamp())
     end_ts = int(parse_day(args.end).timestamp())
-    legacy = run_backtest("baseline_chase_only", symbols, bars15, bars60, start_ts, end_ts, cfg, repaired=False)
-    repaired = run_backtest("repaired_confidence_shock_no_extension", symbols, bars15, bars60, start_ts, end_ts, cfg, repaired=True)
-    write_outputs(args.out_dir, legacy, repaired)
+    if args.validate_data:
+        missing = []
+        for symbol in [s.strip() for s in args.symbols.split(",") if s.strip()]:
+            for period, seconds, rows in (("15min", cfg.period_seconds, bars15.get(symbol, [])),
+                                          ("60min", cfg.trend_period_seconds, bars60.get(symbol, []))):
+                if not rows or rows[0].ts > start_ts or rows[-1].ts < end_ts - seconds:
+                    missing.append(f"{symbol} {period}")
+                else:
+                    print(f"coverage {symbol} {period}: {fmt_ts(rows[0].ts)} -> {fmt_ts(rows[-1].ts)}")
+        if missing:
+            raise SystemExit("insufficient input coverage: " + ", ".join(missing))
+        return
+    if args.out_dir is None:
+        ap.error("--out-dir is required unless --validate-data is used")
+    legacy = run_backtest(BASELINE_PROFILE, symbols, bars15, bars60, start_ts, end_ts, cfg)
+    repaired = run_backtest(RECOVERY_PROFILE, symbols, bars15, bars60, start_ts, end_ts, cfg)
+    write_outputs(args.out_dir, legacy, repaired, symbols, args.start, args.end)
     print(args.out_dir / "summary.md")
 
 

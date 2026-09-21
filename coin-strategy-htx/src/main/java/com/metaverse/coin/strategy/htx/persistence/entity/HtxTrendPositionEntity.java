@@ -48,6 +48,13 @@ public class HtxTrendPositionEntity {
     private BigDecimal sizingMultiplier;
     private String sizingReason;
     private String entryGateReason;
+    private String primaryModel;
+    private String confirmationModels;
+    private String policyVersion;
+    private String marketRegime;
+    private Long factorSnapshotId;
+    private String entryHypothesis;
+    private BigDecimal invalidationPrice;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
