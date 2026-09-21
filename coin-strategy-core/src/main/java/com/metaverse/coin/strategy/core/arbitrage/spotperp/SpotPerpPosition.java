@@ -168,6 +168,20 @@ public final class SpotPerpPosition {
                 .divide(BigDecimal.valueOf(Math.max(1, leverage)), 8, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Remaining distance to isolated-short liquidation: (liqPrice - mark) / mark.
+     * Short liqPrice ≈ entry * (1 + 1/leverage - MMR). Dummy marks are rejected by callers.
+     */
+    public BigDecimal liquidationDistance(BigDecimal mark, BigDecimal maintenanceMarginRate) {
+        Objects.requireNonNull(mark, "mark");
+        BigDecimal mmr = maintenanceMarginRate == null ? BigDecimal.ZERO : maintenanceMarginRate;
+        BigDecimal buffer = BigDecimal.ONE
+                .divide(BigDecimal.valueOf(Math.max(1, leverage)), 18, RoundingMode.HALF_UP)
+                .subtract(mmr);
+        BigDecimal liqPrice = perpEntry.multiply(BigDecimal.ONE.add(buffer));
+        return liqPrice.subtract(mark).divide(mark, 18, RoundingMode.HALF_UP);
+    }
+
     public List<Fill> fills() {
         return List.copyOf(fills);
     }

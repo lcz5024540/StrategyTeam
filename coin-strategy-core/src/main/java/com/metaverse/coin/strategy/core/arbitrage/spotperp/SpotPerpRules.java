@@ -34,9 +34,60 @@ public record SpotPerpRules(
         BigDecimal coverageRatio,
         BigDecimal maxVwapImpact,
         BigDecimal maxLotOvershoot,
-        Map<SpotPerpVenue, BigDecimal> roundTripFeeRates
+        Map<SpotPerpVenue, BigDecimal> roundTripFeeRates,
+        SchemeCPolicy schemeC
 ) {
     private static final BigDecimal BPS = new BigDecimal("10000");
+
+    /**
+     * Timing / leverage overlays. {@link #disabled()} keeps production
+     * anytime-entry + 21-day TTL behavior.
+     *
+     * @param entryWindow when positive, open only if next settlement is inside this window
+     * @param maxSettlementsHeld when &gt; 0, close after this many collected funding prints
+     * @param minLiquidationDistance remaining short-perp distance to liq; zero disables the stop
+     * @param maintenanceMarginRate isolated USDT-M MMR used for the distance calc
+     */
+    public record SchemeCPolicy(
+            Duration entryWindow,
+            int maxSettlementsHeld,
+            BigDecimal minLiquidationDistance,
+            BigDecimal maintenanceMarginRate
+    ) {
+        public SchemeCPolicy {
+            Objects.requireNonNull(entryWindow, "entryWindow");
+            Objects.requireNonNull(minLiquidationDistance, "minLiquidationDistance");
+            Objects.requireNonNull(maintenanceMarginRate, "maintenanceMarginRate");
+            if (entryWindow.isNegative()) {
+                throw new IllegalArgumentException("entryWindow must be >= 0");
+            }
+            if (maxSettlementsHeld < 0) {
+                throw new IllegalArgumentException("maxSettlementsHeld must be >= 0");
+            }
+            if (minLiquidationDistance.signum() < 0) {
+                throw new IllegalArgumentException("minLiquidationDistance must be >= 0");
+            }
+            if (maintenanceMarginRate.signum() <= 0 || maintenanceMarginRate.compareTo(BigDecimal.ONE) >= 0) {
+                throw new IllegalArgumentException("maintenanceMarginRate must be in (0, 1)");
+            }
+        }
+
+        public static SchemeCPolicy disabled() {
+            return new SchemeCPolicy(Duration.ZERO, 0, BigDecimal.ZERO, new BigDecimal("0.004"));
+        }
+
+        public boolean nearSettlementEntry() {
+            return !entryWindow.isZero();
+        }
+
+        public boolean holdSettlementCap() {
+            return maxSettlementsHeld > 0;
+        }
+
+        public boolean liquidationStopEnabled() {
+            return minLiquidationDistance.signum() > 0;
+        }
+    }
 
     public SpotPerpRules {
         Objects.requireNonNull(notionalUsdt, "notionalUsdt");
@@ -55,6 +106,7 @@ public record SpotPerpRules(
         Objects.requireNonNull(maxVwapImpact, "maxVwapImpact");
         Objects.requireNonNull(maxLotOvershoot, "maxLotOvershoot");
         roundTripFeeRates = Map.copyOf(Objects.requireNonNull(roundTripFeeRates, "roundTripFeeRates"));
+        schemeC = schemeC == null ? SchemeCPolicy.disabled() : schemeC;
         if (!dryRun) {
             throw new IllegalArgumentException(
                     "live spot-perp trading is not implemented; dry-run must stay true");
@@ -114,7 +166,8 @@ public record SpotPerpRules(
                 new BigDecimal("2.0"),
                 new BigDecimal("0.0005"),
                 new BigDecimal("1.25"),
-                fees
+                fees,
+                SchemeCPolicy.disabled()
         );
     }
 
@@ -160,8 +213,50 @@ public record SpotPerpRules(
                 decimal(environment, "arbitrage.spot-perp-funding.coverage-ratio", defaults.coverageRatio),
                 decimal(environment, "arbitrage.spot-perp-funding.max-vwap-impact", defaults.maxVwapImpact),
                 decimal(environment, "arbitrage.spot-perp-funding.max-lot-overshoot", defaults.maxLotOvershoot),
-                fees
+                fees,
+                schemeCFromEnvironment(environment, defaults.schemeC)
         );
+    }
+
+    /**
+     * Locked Scheme C size: 10,000 USDT notional. Fees stay percent-of-notional.
+     */
+    public static SpotPerpRules schemeCTenThousand(int leverage, int minFundingPeriods,
+            BigDecimal closeThreshold, BigDecimal maxBasisRate, Duration settlementProtection,
+            Duration minHolding, SchemeCPolicy schemeC) {
+        SpotPerpRules base = defaults();
+        if (leverage < 1 || leverage > 5) {
+            throw new IllegalArgumentException("leverage must be in 1..5 for this dry-run");
+        }
+        return new SpotPerpRules(
+                true,
+                true,
+                new BigDecimal("10000"),
+                leverage,
+                base.openThreshold(),
+                closeThreshold,
+                base.minBasisRate(),
+                maxBasisRate,
+                base.maxBasisDeteriorationRate(),
+                base.minNetYieldRate(),
+                minFundingPeriods,
+                settlementProtection,
+                minHolding,
+                base.maxHolding(),
+                base.maxQuoteAge(),
+                new BigDecimal("20000"),
+                base.coverageRatio(),
+                base.maxVwapImpact(),
+                base.maxLotOvershoot(),
+                base.roundTripFeeRates(),
+                schemeC
+        );
+    }
+
+    /** Spot notional plus isolated perp margin at the configured leverage. */
+    public BigDecimal capitalUsdt() {
+        return notionalUsdt.add(notionalUsdt.divide(BigDecimal.valueOf(leverage), 8,
+                java.math.RoundingMode.HALF_UP));
     }
 
     public BigDecimal roundTripFee(SpotPerpVenue venue) {
@@ -194,5 +289,19 @@ public record SpotPerpRules(
     private static boolean bool(Environment environment, String key, boolean fallback) {
         String value = environment.getProperty(key);
         return value == null || value.isBlank() ? fallback : Boolean.parseBoolean(value.trim());
+    }
+
+    private static SchemeCPolicy schemeCFromEnvironment(Environment environment, SchemeCPolicy fallback) {
+        return new SchemeCPolicy(
+                Duration.ofMinutes(longValue(environment,
+                        "arbitrage.spot-perp-funding.entry-window-minutes",
+                        fallback.entryWindow().toMinutes())),
+                integer(environment, "arbitrage.spot-perp-funding.max-settlements-held",
+                        fallback.maxSettlementsHeld()),
+                decimal(environment, "arbitrage.spot-perp-funding.min-liquidation-distance",
+                        fallback.minLiquidationDistance()),
+                decimal(environment, "arbitrage.spot-perp-funding.maintenance-margin-rate",
+                        fallback.maintenanceMarginRate())
+        );
     }
 }

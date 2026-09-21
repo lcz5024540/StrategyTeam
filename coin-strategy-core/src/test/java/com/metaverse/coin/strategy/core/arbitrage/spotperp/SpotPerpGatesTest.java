@@ -49,7 +49,7 @@ class SpotPerpGatesTest {
                 new BigDecimal("0.0010"), defaults.minFundingPeriods(), defaults.settlementProtection(),
                 defaults.minHolding(), defaults.maxHolding(), defaults.maxQuoteAge(),
                 defaults.minBookNotional(), defaults.coverageRatio(), defaults.maxVwapImpact(),
-                defaults.maxLotOvershoot(), defaults.roundTripFeeRates()));
+                defaults.maxLotOvershoot(), defaults.roundTripFeeRates(), defaults.schemeC()));
         Optional<String> reason = strict.openBlockReason(liquid(btcBinance(), "0.0003", T0), T0);
         assertEquals("EXPECTED_NET_YIELD_TOO_LOW", reason.orElseThrow());
     }
@@ -141,6 +141,73 @@ class SpotPerpGatesTest {
     }
 
     @Test
+    void nearSettlementWindowAdmitsInsideAndRejectsFar() {
+        SpotPerpRules near = SpotPerpRules.schemeCTenThousand(
+                2, 3, BigDecimal.ZERO, new BigDecimal("0.0020"),
+                Duration.ZERO, Duration.ZERO,
+                new SpotPerpRules.SchemeCPolicy(Duration.ofMinutes(30), 3,
+                        new BigDecimal("0.15"), new BigDecimal("0.004")));
+        SpotPerpGates timed = new SpotPerpGates(near);
+        Instant next = T0.plus(Duration.ofMinutes(5));
+        SpotPerpSnapshot inside = snapshot(btcBinance(), "0.0030",
+                "100000", "100000", "100000", "100010",
+                "99990", "100000", new BigDecimal("1000000"), T0, next);
+        assertTrue(timed.openBlockReason(inside, T0).isEmpty());
+        SpotPerpSnapshot far = snapshot(btcBinance(), "0.0030",
+                "100000", "100000", "100000", "100010",
+                "99990", "100000", new BigDecimal("1000000"), T0,
+                T0.plus(Duration.ofHours(8)));
+        assertEquals("TOO_FAR_FROM_SETTLEMENT", timed.openBlockReason(far, T0).orElseThrow());
+    }
+
+    @Test
+    void closesAfterConfiguredSettlementCount() {
+        SpotPerpRules holdOne = SpotPerpRules.schemeCTenThousand(
+                2, 1, BigDecimal.ZERO, new BigDecimal("0.0020"),
+                Duration.ZERO, Duration.ZERO,
+                new SpotPerpRules.SchemeCPolicy(Duration.ofMinutes(30), 1,
+                        new BigDecimal("0.15"), new BigDecimal("0.004")));
+        SpotPerpDryRunEngine engine = new SpotPerpDryRunEngine(holdOne);
+        Instant next = T0.plus(Duration.ofMinutes(30));
+        SpotPerpSnapshot pre = snapshot(btcBinance(), "0.0050",
+                "100000", "100000", "100000", "100010",
+                "100000", "100000", new BigDecimal("1000000"), T0, next);
+        assertEquals(1, engine.tick(T0, java.util.List.of(pre)).count(SpotPerpDryRunEngine.ActionType.OPENED));
+        SpotPerpSnapshot settle = snapshot(btcBinance(), "0.0050",
+                "100000", "100000", "100000", "100010",
+                "100000", "100000", new BigDecimal("1000000"),
+                next, next.plus(Duration.ofHours(8)));
+        SpotPerpDryRunEngine.CycleResult cycle = engine.tick(next, java.util.List.of(settle));
+        assertEquals(1, cycle.count(SpotPerpDryRunEngine.ActionType.FUNDING_SETTLED));
+        assertEquals(1, cycle.count(SpotPerpDryRunEngine.ActionType.CLOSED));
+        assertEquals("HOLD_SETTLEMENTS_REACHED", engine.closedPositions().get(0).closeReason());
+    }
+
+    @Test
+    void emergencyClosesWhenShortPerpLiquidationDistanceCompresses() {
+        SpotPerpRules leveraged = SpotPerpRules.schemeCTenThousand(
+                3, 3, BigDecimal.ZERO, new BigDecimal("0.0020"),
+                Duration.ZERO, Duration.ZERO,
+                new SpotPerpRules.SchemeCPolicy(Duration.ofMinutes(30), 3,
+                        new BigDecimal("0.15"), new BigDecimal("0.004")));
+        SpotPerpDryRunEngine engine = new SpotPerpDryRunEngine(leveraged);
+        Instant next = T0.plus(Duration.ofMinutes(20));
+        engine.tick(T0, java.util.List.of(snapshot(btcBinance(), "0.0050",
+                "100000", "100000", "100000", "100010",
+                "100000", "100000", new BigDecimal("1000000"), T0, next)));
+        SpotPerpPosition open = engine.position(btcBinance()).orElseThrow();
+        BigDecimal atEntry = open.liquidationDistance(new BigDecimal("100000"), new BigDecimal("0.004"));
+        assertTrue(atEntry.compareTo(new BigDecimal("0.30")) > 0, atEntry.toPlainString());
+        SpotPerpSnapshot squeezed = snapshot(btcBinance(), "0.0050",
+                "120000", "120000", "120000", "120010",
+                "120000", "120000", new BigDecimal("1000000"),
+                T0.plus(Duration.ofMinutes(10)), next);
+        assertEquals("LIQUIDATION_DISTANCE",
+                new SpotPerpGates(leveraged).closeSignal(squeezed, open, T0.plus(Duration.ofMinutes(10)))
+                        .orElseThrow().reason());
+    }
+
+    @Test
     void liveRulesAreRejected() {
         SpotPerpRules defaults = testRules();
         assertThrows(IllegalArgumentException.class, () -> new SpotPerpRules(
@@ -163,7 +230,8 @@ class SpotPerpGatesTest {
                 defaults.coverageRatio(),
                 defaults.maxVwapImpact(),
                 defaults.maxLotOvershoot(),
-                defaults.roundTripFeeRates()
+                defaults.roundTripFeeRates(),
+                defaults.schemeC()
         ));
     }
 

@@ -25,6 +25,12 @@ class SpotPerpPaperExecutorTest {
         assertEquals("MARKET_IOC", result.fills().get(0).orderType());
         assertEquals(0, new BigDecimal("0.001").compareTo(result.position().quantity()));
         assertTrue(result.position().estimatedFees().signum() > 0);
+        BigDecimal expectedOpenFee = result.position().quantity()
+                .multiply(result.position().spotEntry().add(result.position().perpEntry()))
+                .multiply(testRules().roundTripFee(btcBinance().venue())
+                        .divide(new BigDecimal("4"), 18, java.math.RoundingMode.HALF_UP));
+        assertEquals(0, expectedOpenFee.setScale(8, java.math.RoundingMode.HALF_UP)
+                .compareTo(result.position().estimatedFees()));
     }
 
     @Test

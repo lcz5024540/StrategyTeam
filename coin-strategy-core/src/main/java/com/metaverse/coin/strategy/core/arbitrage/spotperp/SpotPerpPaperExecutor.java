@@ -92,9 +92,10 @@ public final class SpotPerpPaperExecutor {
     }
 
     private BigDecimal fee(SpotPerpSnapshot snapshot, BigDecimal quantity, BigDecimal price) {
-        BigDecimal halfRoundTrip = rules.roundTripFee(snapshot.instrument().venue())
-                .divide(new BigDecimal("2"), 18, RoundingMode.HALF_UP);
-        return quantity.multiply(price).multiply(halfRoundTrip).setScale(8, RoundingMode.HALF_UP);
+        // Round-trip rate is open+close on both legs (4 fills). Each fill takes 1/4.
+        BigDecimal perFill = rules.roundTripFee(snapshot.instrument().venue())
+                .divide(new BigDecimal("4"), 18, RoundingMode.HALF_UP);
+        return quantity.multiply(price).multiply(perFill).setScale(8, RoundingMode.HALF_UP);
     }
 
     private static SpotPerpPosition.Fill fill(String leg, String side, String orderType,

@@ -41,7 +41,8 @@ final class SpotPerpTestSupport {
                 new BigDecimal("1.5"),
                 new BigDecimal("0.0005"),
                 new BigDecimal("1.25"),
-                Map.copyOf(fees)
+                Map.copyOf(fees),
+                SpotPerpRules.SchemeCPolicy.disabled()
         );
     }
 

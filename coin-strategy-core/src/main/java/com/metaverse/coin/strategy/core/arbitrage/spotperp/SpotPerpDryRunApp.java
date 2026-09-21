@@ -13,6 +13,7 @@ import java.util.List;
  * <pre>
  *   mvn -pl coin-strategy-core -am exec:java -Dexec.args=once
  *   mvn -pl coin-strategy-core -am exec:java -Dexec.args=backtest
+ *   mvn -pl coin-strategy-core -am exec:java -Dexec.args=scheme-c
  * </pre>
  */
 public final class SpotPerpDryRunApp {
@@ -25,8 +26,9 @@ public final class SpotPerpDryRunApp {
         switch (command) {
             case "once" -> runOnce(rules);
             case "backtest" -> runBacktest(rules);
+            case "scheme-c" -> runSchemeC();
             default -> {
-                System.err.println("Unknown command '" + command + "'. Use once | backtest");
+                System.err.println("Unknown command '" + command + "'. Use once | backtest | scheme-c");
                 System.exit(2);
             }
         }
@@ -78,5 +80,18 @@ public final class SpotPerpDryRunApp {
         System.out.print(report.asText());
         System.out.println("prints fetched: " + prints.size());
         return report;
+    }
+
+    static SchemeCTimingRiskBacktest.Comparison runSchemeC() {
+        Instant to = Instant.now().truncatedTo(ChronoUnit.HOURS);
+        Instant from = to.minus(Duration.ofDays(90));
+        List<String> errors = new ArrayList<>();
+        SpotPerpHistoryClient client = new SpotPerpHistoryClient();
+        List<SpotPerpHistoryClient.FundingPrint> prints = client.fetchUniverse(from, to, errors);
+        SchemeCTimingRiskBacktest.Comparison comparison =
+                new SchemeCTimingRiskBacktest().compare(prints, from, to, errors);
+        System.out.print(comparison.asText());
+        System.out.println("prints fetched: " + prints.size());
+        return comparison;
     }
 }

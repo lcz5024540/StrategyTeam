@@ -56,8 +56,9 @@ public final class SpotPerpGates {
         if (snapshot.fundingRate().compareTo(rules.openThreshold()) < 0) {
             return Optional.of("FUNDING_BELOW_OPEN_THRESHOLD");
         }
-        if (withinSettlementProtection(snapshot.nextFundingTime(), now)) {
-            return Optional.of("WITHIN_SETTLEMENT_PROTECTION");
+        Optional<String> timing = entryTimingBlock(snapshot, now);
+        if (timing.isPresent()) {
+            return timing;
         }
         BigDecimal basis = snapshot.executableOpenBasis();
         if (basis.compareTo(rules.minBasisRate()) < 0) {
@@ -96,6 +97,17 @@ public final class SpotPerpGates {
         BigDecimal deterioration = basis.subtract(position.entryBasis());
         if (deterioration.compareTo(rules.maxBasisDeteriorationRate()) > 0) {
             return Optional.of(new CloseSignal("BASIS_DETERIORATED", true));
+        }
+        if (rules.schemeC().liquidationStopEnabled() && usableMark(snapshot.markPrice())) {
+            BigDecimal distance = position.liquidationDistance(snapshot.markPrice(),
+                    rules.schemeC().maintenanceMarginRate());
+            if (distance.compareTo(rules.schemeC().minLiquidationDistance()) < 0) {
+                return Optional.of(new CloseSignal("LIQUIDATION_DISTANCE", true));
+            }
+        }
+        if (rules.schemeC().holdSettlementCap()
+                && position.settlements().size() >= rules.schemeC().maxSettlementsHeld()) {
+            return Optional.of(new CloseSignal("HOLD_SETTLEMENTS_REACHED", false));
         }
         Duration held = Duration.between(position.openedAt(), now);
         if (held.compareTo(rules.maxHolding()) >= 0) {
@@ -180,6 +192,26 @@ public final class SpotPerpGates {
         return filled;
     }
 
+    private Optional<String> entryTimingBlock(SpotPerpSnapshot snapshot, Instant now) {
+        if (rules.schemeC().nearSettlementEntry()) {
+            if (snapshot.nextFundingTime() == null) {
+                return Optional.of("NO_NEXT_FUNDING");
+            }
+            Duration until = Duration.between(now, snapshot.nextFundingTime());
+            if (until.isNegative() || until.isZero()) {
+                return Optional.of("SETTLEMENT_ALREADY_DUE");
+            }
+            if (until.compareTo(rules.schemeC().entryWindow()) > 0) {
+                return Optional.of("TOO_FAR_FROM_SETTLEMENT");
+            }
+            return Optional.empty();
+        }
+        if (withinSettlementProtection(snapshot.nextFundingTime(), now)) {
+            return Optional.of("WITHIN_SETTLEMENT_PROTECTION");
+        }
+        return Optional.empty();
+    }
+
     private boolean withinSettlementProtection(Instant nextFundingTime, Instant now) {
         if (nextFundingTime == null || rules.settlementProtection().isZero()
                 || rules.settlementProtection().isNegative()) {
@@ -191,5 +223,9 @@ public final class SpotPerpGates {
 
     private static BigDecimal zero(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    static boolean usableMark(BigDecimal mark) {
+        return mark != null && mark.compareTo(new BigDecimal("10")) >= 0;
     }
 }
