@@ -3,6 +3,7 @@ package com.metaverse.coin.strategy.htx.persistence.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTradeAccountEntity;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
@@ -17,6 +18,9 @@ public interface HtxTradeAccountMapper extends BaseMapper<HtxTradeAccountEntity>
     @Select("SELECT " + COLUMNS + " FROM htx_trade_account WHERE enabled = 1 AND trend_enabled = 1 "
             + "AND account_role = 'PRIMARY' ORDER BY sort_order, id LIMIT 1")
     HtxTradeAccountEntity findPrimaryTrendAccount();
+
+    @Select("SELECT id FROM htx_trade_account WHERE account_label = #{accountLabel} ORDER BY id LIMIT 1")
+    Long findIdByAccountLabel(@Param("accountLabel") String accountLabel);
 
     @Select("SELECT " + COLUMNS + " FROM htx_trade_account WHERE enabled = 1 AND trend_enabled = 1 "
             + "AND mirror_enabled = 1 AND account_role <> 'PRIMARY' ORDER BY sort_order, id")

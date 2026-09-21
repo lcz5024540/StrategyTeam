@@ -8,8 +8,8 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -18,7 +18,6 @@ import java.util.Optional;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class HtxTrendRecorder {
 
     public static final String INTENT = "INTENT";
@@ -39,6 +38,21 @@ public class HtxTrendRecorder {
     private final HtxTrendPositionMapper positionMapper;
     private final HtxTrendOrderMapper orderMapper;
     private final HtxTrendSignalMapper signalMapper;
+    private final CoinStrategyLedgerRecorder ledgerRecorder;
+
+    public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
+                            HtxTrendSignalMapper signalMapper) {
+        this(positionMapper, orderMapper, signalMapper, null);
+    }
+
+    @Autowired
+    public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
+                            HtxTrendSignalMapper signalMapper, CoinStrategyLedgerRecorder ledgerRecorder) {
+        this.positionMapper = positionMapper;
+        this.orderMapper = orderMapper;
+        this.signalMapper = signalMapper;
+        this.ledgerRecorder = ledgerRecorder;
+    }
 
     public Optional<HtxTrendPositionEntity> findActive(String contractCode) {
         return Optional.ofNullable(positionMapper.findActive(contractCode));
@@ -103,6 +117,7 @@ public class HtxTrendRecorder {
     public long createIntent(HtxTrendPositionEntity entity) {
         try {
             positionMapper.insert(entity);
+            recordLedger(() -> ledgerRecorder.recordTrendPositionIntent(entity));
             return entity.getId();
         } catch (RuntimeException ex) {
             throw new HtxPersistenceException("trend position intent insert failed", ex);
@@ -112,6 +127,7 @@ public class HtxTrendRecorder {
     public void createOrderIntent(HtxTrendOrderEntity entity) {
         try {
             orderMapper.insert(entity);
+            recordLedger(() -> ledgerRecorder.recordTrendOrderIntent(entity));
         } catch (RuntimeException ex) {
             throw new HtxPersistenceException("trend order intent insert failed", ex);
         }
@@ -142,6 +158,7 @@ public class HtxTrendRecorder {
     public void markEntryFilled(long id, BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
                                 BigDecimal highestPrice, BigDecimal lowestPrice, String message) {
         positionMapper.markEntryFilled(id, filledContracts, avgPrice, fee, highestPrice, lowestPrice, message);
+        recordLedger(() -> ledgerRecorder.recordTrendEntryFill(positionMapper.selectById(id)));
     }
 
     public void updateRiskLevels(long id, BigDecimal stopPrice, BigDecimal trailingStopPrice,
@@ -158,10 +175,22 @@ public class HtxTrendRecorder {
     public void markCloseFilled(long id, BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
                                 BigDecimal realizedProfit, String message) {
         positionMapper.markCloseFilled(id, filledContracts, avgPrice, fee, realizedProfit, message);
+        recordLedger(() -> ledgerRecorder.recordTrendCloseFill(positionMapper.selectById(id)));
     }
 
     public void markStatus(long id, String nextStatus, String message) {
         positionMapper.markStatus(id, nextStatus, message);
+    }
+
+    private void recordLedger(Runnable writer) {
+        if (ledgerRecorder == null || writer == null) {
+            return;
+        }
+        try {
+            writer.run();
+        } catch (RuntimeException ex) {
+            log.warn("trend ledger projection failed: {}", ex.getClass().getSimpleName());
+        }
     }
 
     private static String clip(String value) {

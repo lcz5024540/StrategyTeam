@@ -30,6 +30,41 @@ SELECT 'primary', 'HTX', 'USDT_SWAP', 'PRIMARY', 1, 1, 0, 'https://api.hbdm.com'
        'default primary trend account; credentials may be filled by migration'
 WHERE NOT EXISTS (SELECT 1 FROM htx_trade_account WHERE account_label = 'primary');
 
+-- Cross-strategy append-only ledger projection. Execution tables remain the source of truth;
+-- this table provides account/strategy/model level attribution for dashboards and backtests.
+CREATE TABLE IF NOT EXISTS coin_strategy_ledger_event (
+    id                   BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    event_key            VARCHAR(160)   NOT NULL UNIQUE,
+    event_type           VARCHAR(32)    NOT NULL,
+    account_id           BIGINT,
+    account_label        VARCHAR(32)    NOT NULL DEFAULT 'primary',
+    exchange             VARCHAR(16)    NOT NULL DEFAULT 'HTX',
+    market_type          VARCHAR(16)    NOT NULL DEFAULT 'USDT_SWAP',
+    strategy_family      VARCHAR(32)    NOT NULL,
+    strategy_name        VARCHAR(64)    NOT NULL,
+    model_name           VARCHAR(64)    NOT NULL,
+    run_id               VARCHAR(96),
+    factor_snapshot_id   BIGINT,
+    symbol               VARCHAR(32),
+    contract_code        VARCHAR(32),
+    position_id          BIGINT,
+    order_id             BIGINT,
+    client_order_id      VARCHAR(64),
+    side                 VARCHAR(16),
+    amount_usdt          DECIMAL(36,18),
+    fee_usdt             DECIMAL(36,18) NOT NULL DEFAULT 0,
+    funding_fee_usdt     DECIMAL(36,18) NOT NULL DEFAULT 0,
+    gross_pnl_usdt       DECIMAL(36,18),
+    net_pnl_after_fee    DECIMAL(36,18),
+    reason               VARCHAR(1024),
+    occurred_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    created_at           DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_strategy_ledger_account_time  (account_id, account_label, occurred_at),
+    INDEX idx_strategy_ledger_strategy_time (strategy_family, strategy_name, model_name, occurred_at),
+    INDEX idx_strategy_ledger_position      (position_id, event_type, occurred_at),
+    INDEX idx_strategy_ledger_symbol_time   (contract_code, occurred_at)
+);
+
 CREATE TABLE IF NOT EXISTS htx_locked_pair (
     id                  BIGINT       PRIMARY KEY AUTO_INCREMENT,
     client_order_id     VARCHAR(64)  NOT NULL UNIQUE,

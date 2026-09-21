@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.persistence;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxLockedPairEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.CoinStrategyLedgerEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractCycleEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxContractLegEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxDeltaHedgeLedgerEntity;
@@ -8,6 +9,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryLotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryRecycleSagaEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxSpotFillLedgerEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
+import com.metaverse.coin.strategy.htx.persistence.mapper.CoinStrategyLedgerEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxDeltaHedgeLedgerMapper;
@@ -34,7 +36,40 @@ class HtxMapperIntegrationTest {
     @Autowired HtxDeltaHedgeLedgerMapper deltaHedgeLedgerMapper;
     @Autowired HtxInventoryRecycleSagaMapper inventoryRecycleSagaMapper;
     @Autowired HtxTrendSignalMapper trendSignalMapper;
+    @Autowired CoinStrategyLedgerEventMapper ledgerEventMapper;
 
+
+    @Test void insert_and_read_strategy_ledger_event() {
+        long nonce = System.nanoTime();
+        CoinStrategyLedgerEventEntity event = new CoinStrategyLedgerEventEntity();
+        event.setEventKey("it-ledger-" + nonce);
+        event.setEventType(CoinStrategyLedgerRecorder.EVENT_OPEN_FILL);
+        event.setAccountId(1L);
+        event.setAccountLabel("primary");
+        event.setExchange("HTX");
+        event.setMarketType("USDT_SWAP");
+        event.setStrategyFamily("TREND");
+        event.setStrategyName("HTX_TREND_V1");
+        event.setModelName("FIB_PULLBACK_CONTINUATION");
+        event.setSymbol("btcusdt");
+        event.setContractCode("BTC-USDT");
+        event.setPositionId(nonce);
+        event.setClientOrderId("it-order-" + nonce);
+        event.setSide("LONG");
+        event.setAmountUsdt(new BigDecimal("200.00"));
+        event.setFeeUsdt(new BigDecimal("0.10"));
+        event.setFundingFeeUsdt(BigDecimal.ZERO);
+        event.setGrossPnlUsdt(new BigDecimal("1.20"));
+        event.setNetPnlAfterFee(new BigDecimal("1.10"));
+        event.setReason("Fibonacci pullback continuation");
+
+        assertEquals(1, ledgerEventMapper.insert(event));
+
+        CoinStrategyLedgerEventEntity stored = ledgerEventMapper.selectById(event.getId());
+        assertEquals("HTX_TREND_V1", stored.getStrategyName());
+        assertEquals("FIB_PULLBACK_CONTINUATION", stored.getModelName());
+        assertEquals(0, new BigDecimal("1.10").compareTo(stored.getNetPnlAfterFee()));
+    }
 
     @Test void trend_signal_snapshot_can_be_updated_by_contract_period_and_bar() {
         long barTime = 1789639200L + System.nanoTime() % 1000;
