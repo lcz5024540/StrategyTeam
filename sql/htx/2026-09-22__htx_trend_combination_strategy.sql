@@ -47,25 +47,25 @@ CREATE TABLE IF NOT EXISTS htx_trend_strategy_policy_audit (
 );
 
 ALTER TABLE htx_trend_candidate_signal
-    ADD COLUMN IF NOT EXISTS primary_model VARCHAR(64),
-    ADD COLUMN IF NOT EXISTS confirmation_models VARCHAR(256),
-    ADD COLUMN IF NOT EXISTS policy_version VARCHAR(64),
-    ADD COLUMN IF NOT EXISTS factor_snapshot_id BIGINT,
-    ADD COLUMN IF NOT EXISTS gate_result VARCHAR(16),
-    ADD COLUMN IF NOT EXISTS gate_reason VARCHAR(1024),
-    ADD COLUMN IF NOT EXISTS invalidation_price DECIMAL(36,18),
-    ADD COLUMN IF NOT EXISTS entry_hypothesis VARCHAR(1024),
-    ADD COLUMN IF NOT EXISTS sizing_multiplier DECIMAL(18,8),
-    ADD COLUMN IF NOT EXISTS planned_notional_usdt DECIMAL(36,18);
+    ADD COLUMN primary_model VARCHAR(64),
+    ADD COLUMN confirmation_models VARCHAR(256),
+    ADD COLUMN policy_version VARCHAR(64),
+    ADD COLUMN factor_snapshot_id BIGINT,
+    ADD COLUMN gate_result VARCHAR(16),
+    ADD COLUMN gate_reason VARCHAR(1024),
+    ADD COLUMN invalidation_price DECIMAL(36,18),
+    ADD COLUMN entry_hypothesis VARCHAR(1024),
+    ADD COLUMN sizing_multiplier DECIMAL(18,8),
+    ADD COLUMN planned_notional_usdt DECIMAL(36,18);
 
 ALTER TABLE htx_trend_position
-    ADD COLUMN IF NOT EXISTS primary_model VARCHAR(64),
-    ADD COLUMN IF NOT EXISTS confirmation_models VARCHAR(256),
-    ADD COLUMN IF NOT EXISTS policy_version VARCHAR(64),
-    ADD COLUMN IF NOT EXISTS market_regime VARCHAR(32),
-    ADD COLUMN IF NOT EXISTS factor_snapshot_id BIGINT,
-    ADD COLUMN IF NOT EXISTS entry_hypothesis VARCHAR(1024),
-    ADD COLUMN IF NOT EXISTS invalidation_price DECIMAL(36,18);
+    ADD COLUMN primary_model VARCHAR(64),
+    ADD COLUMN confirmation_models VARCHAR(256),
+    ADD COLUMN policy_version VARCHAR(64),
+    ADD COLUMN market_regime VARCHAR(32),
+    ADD COLUMN factor_snapshot_id BIGINT,
+    ADD COLUMN entry_hypothesis VARCHAR(1024),
+    ADD COLUMN invalidation_price DECIMAL(36,18);
 
 INSERT INTO htx_trend_strategy_policy (
     policy_code, policy_version, primary_model, confirmation_models, enabled,
