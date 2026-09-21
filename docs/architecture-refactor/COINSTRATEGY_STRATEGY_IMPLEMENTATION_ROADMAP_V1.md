@@ -22,7 +22,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 | L1 总纲 | [CoinStrategy 策略总纲 v1](COINSTRATEGY_STRATEGY_MASTER_PLAN_V1.md) | 定义趋势 + 套利双引擎、资金分层、统一风控、统一账本。 | 已建立 |
 | L2 子系统 | [HTX 趋势策略系统 v1](HTX_TREND_STRATEGY_SYSTEM_V1.md) | 定义趋势策略的市场分型、因子、模型、gate、sizing、退出和回测。 | 已建立 |
 | L2 子系统 | `HTX_FUNDING_ARBITRAGE_SYSTEM_V1.md` | 定义单所现货合约对冲资金费套利、跨所资金费套利、对冲和退出。 | 待创建 |
-| L2 子系统 | `COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md` | 定义资金调度、账户体系、策略维度、统一账本和风控边界。 | 待创建 |
+| L2 子系统 | [CoinStrategy 资金、账户、风控与账本体系 v1](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) | 定义资金调度、账户体系、策略维度、统一账本和风控边界。 | 已建立 |
 | L2 子系统 | `COINSTRATEGY_BACKTEST_SYSTEM_V1.md` | 定义 K 线采集、回测引擎、费用滑点模型、指标和报告。 | 待创建 |
 | L2 子系统 | `COINSTRATEGY_STRATEGY_DASHBOARD_V1.md` | 定义总览页、趋势页、套利页、账户页和诊断页。 | 待创建 |
 | L3 执行计划 | 本文档 | 定义实现顺序、验收标准、提交边界。 | 已建立 |
@@ -72,7 +72,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 
 | 优先级 | 文档 | 内容 |
 |---|---|---|
-| 高 | `COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md` | 账户体系、策略维度、资金池、统一风控、账本口径。 |
+| 高 | [COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) | 账户体系、策略维度、资金池、统一风控、账本口径。 |
 | 高 | `COINSTRATEGY_BACKTEST_SYSTEM_V1.md` | K 线数据、回测事件模型、手续费滑点、评估指标。 |
 | 中 | `HTX_FUNDING_ARBITRAGE_SYSTEM_V1.md` | 单所和跨所资金费套利设计。 |
 | 中 | `COINSTRATEGY_STRATEGY_DASHBOARD_V1.md` | 页面产品形态和 API 数据口径。 |

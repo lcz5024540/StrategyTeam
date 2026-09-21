@@ -14,6 +14,8 @@ updated: 2026-09-21
 
 路线图：[COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1](architecture-refactor/COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1.md) — 策略体系实施顺序、验收标准、数据账本、回测、套利和页面落地计划。
 
+资金账本：[COINSTRATEGY_CAPITAL_RISK_LEDGER_V1](architecture-refactor/COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) — 账户、资金池、策略维度、统一账本、净 PnL、手续费和风控口径。
+
 返回 [知识库首页](知识库首页.md)
 
 ## 一、资金费率套利 (Funding Rate Arbitrage)

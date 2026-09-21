@@ -11,6 +11,8 @@ tags: [strategy, master-plan, trend, arbitrage, capital-allocation, risk]
 
 > **配套路线图**：实施顺序和验收标准见 [CoinStrategy 策略体系实施路线图 v1](COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1.md)。
 
+> **资金、账户、风控与账本口径**：账户维度、资金池、费用、净收益和风险暴露定义见 [CoinStrategy 资金、账户、风控与账本体系 v1](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md)。
+
 > **结论先行**：CoinStrategy 的策略体系拆成两条主线：**套利策略负责稳定收益和资金底仓利用率，趋势策略负责收益弹性和行情捕捉能力**。资金不能全部暴露在趋势波动里，也不能全部锁在低弹性的套利里；系统需要用统一资金调度、统一风控、统一账本和统一回测实盘评价，把两类策略组合成一个可持续运行的交易系统。
 
 ---
@@ -401,6 +403,7 @@ CapitalAllocator
 | 文档 | 关系 |
 |---|---|
 | `HTX_TREND_STRATEGY_SYSTEM_V1.md` | 本总纲下的趋势策略子系统设计。 |
+| `COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md` | 本总纲下的账户、资金、风控与统一账本设计。 |
 | 资金费率套利文档 | 本总纲下的套利策略子系统设计，需要后续按新资金池和账本体系重整。 |
 | HTX dashboard 页面文档/实现 | 应按本总纲改造成“策略驾驶舱”，不是单页数据报表。 |
 
