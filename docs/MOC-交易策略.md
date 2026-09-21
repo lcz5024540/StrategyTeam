@@ -3,7 +3,7 @@ title: 交易策略知识地图
 type: index
 status: active
 tags: [strategy, arbitrage]
-updated: 2026-05-23
+updated: 2026-09-21
 ---
 
 # 交易策略知识地图 (MOC)
@@ -39,6 +39,7 @@ updated: 2026-05-23
 
 ## 三、CEX 趋势与技术分析策略
 
+- [HTX_TREND_STRATEGY_SYSTEM_V1](architecture-refactor/HTX_TREND_STRATEGY_SYSTEM_V1.md) — HTX 合约趋势策略系统 v1：市场分型、多模型信号、因子评分、gate、sizing、退出、回测与实盘观察骨架
 - [TOP50_STRATEGY](../TOP50_STRATEGY.md) — TOP50 趋势与波动率策略
 - [CONVENTIONAL_TECHNICAL_STRATEGY](../CONVENTIONAL_TECHNICAL_STRATEGY.md) — 常规技术分析策略
 - [RATE_MOMENTUM_STRATEGY](../RATE_MOMENTUM_STRATEGY.md) — 利率动量策略
