@@ -86,6 +86,7 @@ class HtxTrendFollowingServiceTest {
         properties.setNoExtensionExitEnabled(false);
         properties.setAdverseShockExitEnabled(false);
         properties.setConfidenceSizingEnabled(false);
+        properties.setEnsembleEntryEnabled(false);
         properties.setTargetQuoteNotional(new BigDecimal("190"));
         properties.setMaxQuoteNotional(new BigDecimal("190"));
         properties.setRiskPerTradeUsdt(new BigDecimal("1.5"));
@@ -558,6 +559,95 @@ class HtxTrendFollowingServiceTest {
         assertEquals(HtxTrendFollowingService.RunCode.NO_SIGNAL, result.code());
         verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getPeriod()), eq(properties.getKlineSize()));
         verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize()));
+    }
+
+
+
+    @Test
+    void marketAnchorBoostsMajorMultiTimeframeTrendIntoDirectionConfidencePass() {
+        properties.setDirectionConfidenceGateEnabled(true);
+        properties.setConfidenceSizingEnabled(false);
+        properties.setTargetQuoteNotional(new BigDecimal("220"));
+        properties.setMaxQuoteNotional(new BigDecimal("350"));
+        properties.setRiskPerTradeUsdt(new BigDecimal("10"));
+        givenContractInfo();
+        givenRisingKlines("XAUT-USDT");
+        givenBullishMarketAnchor();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"), new BigDecimal("0.0028"), freshBarTime(),
+                new BigDecimal("24"), "test long momentum signal");
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        ArgumentCaptor<HtxTrendPositionEntity> positionCaptor = ArgumentCaptor.forClass(HtxTrendPositionEntity.class);
+        verify(recorder).createIntent(positionCaptor.capture());
+        HtxTrendPositionEntity position = positionCaptor.getValue();
+        assertTrue(position.getEntrySignal().contains("market anchor aligned BROAD_UP"));
+        assertTrue(position.getEntryGateReason().contains("marketAnchor+"));
+        verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void marketAnchorDoesNotPromoteOrdinaryFlatSignalByItself() {
+        properties.setMarketAnchorEnabled(true);
+        properties.setEnsembleEntryEnabled(false);
+        givenContractInfo();
+        givenKlines();
+        givenBullishMarketAnchor();
+        givenSignal(TrendSide.FLAT, new BigDecimal("12"), new BigDecimal("0.0028"), freshBarTime(),
+                new BigDecimal("24"), "no breakout or Fibonacci continuation aligned with higher-timeframe trend=LONG");
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.NO_SIGNAL, result.code());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void ensembleEntryPromotesStrongFlatSignalIntoLiveEntryCandidate() {
+        properties.setEnsembleEntryEnabled(true);
+        properties.setDirectionConfidenceGateEnabled(true);
+        properties.setConfidenceSizingEnabled(true);
+        properties.setTargetQuoteNotional(new BigDecimal("220"));
+        properties.setMaxQuoteNotional(new BigDecimal("350"));
+        properties.setRiskPerTradeUsdt(new BigDecimal("10"));
+        givenContractInfo("XAUT-USDT", "0.001", "0.01");
+        givenEnsembleRisingKlines("XAUT-USDT");
+        givenSignal(TrendSide.FLAT, new BigDecimal("35"), new BigDecimal("0.0070"), freshBarTime(),
+                new BigDecimal("30"), "no breakout or Fibonacci continuation aligned with higher-timeframe trend=LONG");
+        givenFunding("-0.0001");
+        givenDepth("XAUT-USDT", "4989", "4991", "10000");
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        assertTrue(result.message().contains("entry order sent"));
+        ArgumentCaptor<HtxTrendPositionEntity> positionCaptor = ArgumentCaptor.forClass(HtxTrendPositionEntity.class);
+        verify(recorder).createIntent(positionCaptor.capture());
+        HtxTrendPositionEntity position = positionCaptor.getValue();
+        assertEquals("LONG", position.getSide());
+        assertTrue(position.getEntrySignal().contains("ensemble entry LONG"));
+        assertTrue(position.getEntryGateReason().contains("directionConfidence=PASS"));
+        assertTrue(position.getEntryGateReason().contains("expectedMoveGate=PASS"));
+        verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
     @Test
@@ -1157,12 +1247,65 @@ class HtxTrendFollowingServiceTest {
                 .thenReturn(ok(klines));
     }
 
+
+    private void givenEnsembleRisingKlines(String contractCode) {
+        long periodSeconds = 15 * 60L;
+        long lastBar = freshBarTime();
+        long firstBar = lastBar - 139L * periodSeconds;
+        List<HtxSwapKline> klines = java.util.stream.IntStream.range(0, 140)
+                .mapToObj(index -> trendingCandle(firstBar + index * periodSeconds,
+                        new BigDecimal("3600").add(new BigDecimal(index).multiply(new BigDecimal("10"))),
+                        index >= 120 ? "220000" : "100000"))
+                .toList();
+        when(swap.historyKline(eq(contractCode), eq(properties.getPeriod()), eq(properties.getKlineSize())))
+                .thenReturn(ok(klines));
+        when(swap.historyKline(eq(contractCode), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize())))
+                .thenReturn(ok(klines));
+    }
+
     private void givenRisingKlines(String contractCode) {
         List<HtxSwapKline> klines = List.of(candle(1L, "100000", "4290"), candle(2L, "100000", "4305"));
         when(swap.historyKline(eq(contractCode), eq(properties.getPeriod()), eq(properties.getKlineSize())))
                 .thenReturn(ok(klines));
         when(swap.historyKline(eq(contractCode), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize())))
                 .thenReturn(ok(klines));
+    }
+
+
+    private void givenBullishMarketAnchor() {
+        for (String contractCode : properties.getMarketAnchorContracts()) {
+            for (String period : properties.getMarketAnchorPeriods()) {
+                givenMarketAnchorKlines(contractCode, period, true);
+            }
+        }
+    }
+
+    private void givenMarketAnchorKlines(String contractCode, String period, boolean rising) {
+        long periodSeconds = testPeriodSeconds(period);
+        long lastBar = Instant.now().getEpochSecond() - periodSeconds - 30L;
+        long firstBar = lastBar - 39L * periodSeconds;
+        BigDecimal base = contractCode.startsWith("BTC") ? new BigDecimal("60000") : new BigDecimal("3000");
+        List<HtxSwapKline> klines = java.util.stream.IntStream.range(0, 40)
+                .mapToObj(index -> {
+                    BigDecimal offset = new BigDecimal(index).multiply(contractCode.startsWith("BTC")
+                            ? new BigDecimal("120") : new BigDecimal("8"));
+                    BigDecimal close = rising ? base.add(offset) : base.subtract(offset);
+                    return trendingCandle(firstBar + index * periodSeconds, close, "500000");
+                })
+                .toList();
+        when(swap.historyKline(eq(contractCode), eq(period), eq(properties.getMarketAnchorKlineSize())))
+                .thenReturn(ok(klines));
+    }
+
+    private long testPeriodSeconds(String period) {
+        String value = period == null ? "" : period.trim().toLowerCase();
+        if (value.endsWith("min")) {
+            return Long.parseLong(value.substring(0, value.length() - 3)) * 60L;
+        }
+        if (value.endsWith("hour")) {
+            return Long.parseLong(value.substring(0, value.length() - 4)) * 3_600L;
+        }
+        throw new IllegalArgumentException("unsupported test period: " + period);
     }
 
     private void givenSignal(TrendSide side) {
@@ -1331,6 +1474,18 @@ class HtxTrendFollowingServiceTest {
         candle.setHigh(new BigDecimal("4310"));
         candle.setLow(new BigDecimal("4290"));
         candle.setClose(new BigDecimal(close));
+        candle.setTradeTurnover(new BigDecimal(tradeTurnover));
+        return candle;
+    }
+
+
+    private HtxSwapKline trendingCandle(long id, BigDecimal close, String tradeTurnover) {
+        HtxSwapKline candle = new HtxSwapKline();
+        candle.setId(id);
+        candle.setOpen(close.subtract(new BigDecimal("3")));
+        candle.setHigh(close.add(new BigDecimal("3")));
+        candle.setLow(close.subtract(new BigDecimal("40")));
+        candle.setClose(close);
         candle.setTradeTurnover(new BigDecimal(tradeTurnover));
         return candle;
     }

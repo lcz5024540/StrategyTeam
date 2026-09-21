@@ -17,6 +17,7 @@ import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
 import com.metaverse.coin.strategy.htx.config.HtxFundingArbitrageProperties;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
+import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
@@ -79,6 +80,8 @@ public class HtxTrendFollowingService {
     private final HtxTrendProperties properties;
     private final HtxTrendRecorder recorder;
     private final HtxTrendSignalCalculator calculator;
+    private final HtxTrendEnsembleShadowProperties ensembleProperties;
+    private final HtxTrendEnsembleSignalCalculator ensembleCalculator;
     private final HtxTrendMirrorExecutor mirrorExecutor;
     private final HtxSwapFeeRateResolver feeRateResolver;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
@@ -91,9 +94,11 @@ public class HtxTrendFollowingService {
                                     HtxMarketMakerProperties marketMakerProperties,
                                     HtxTrendProperties properties,
                                     HtxTrendRecorder recorder,
-                                    HtxTrendMirrorExecutor mirrorExecutor) {
+                                    HtxTrendMirrorExecutor mirrorExecutor,
+                                    HtxTrendEnsembleShadowProperties ensembleProperties) {
         this(api.getSwapService(), contractProperties, fundingArbitrageProperties, marketMakerProperties,
-                properties, recorder, new HtxTrendSignalCalculator(), mirrorExecutor);
+                properties, recorder, new HtxTrendSignalCalculator(), ensembleProperties,
+                new HtxTrendEnsembleSignalCalculator(), mirrorExecutor);
     }
 
     HtxTrendFollowingService(HtxUsdtSwapService swap,
@@ -115,6 +120,21 @@ public class HtxTrendFollowingService {
                              HtxTrendRecorder recorder,
                              HtxTrendSignalCalculator calculator,
                              HtxTrendMirrorExecutor mirrorExecutor) {
+        this(swap, contractProperties, fundingArbitrageProperties, marketMakerProperties,
+                properties, recorder, calculator, new HtxTrendEnsembleShadowProperties(),
+                new HtxTrendEnsembleSignalCalculator(), mirrorExecutor);
+    }
+
+    HtxTrendFollowingService(HtxUsdtSwapService swap,
+                             HtxContractProperties contractProperties,
+                             HtxFundingArbitrageProperties fundingArbitrageProperties,
+                             HtxMarketMakerProperties marketMakerProperties,
+                             HtxTrendProperties properties,
+                             HtxTrendRecorder recorder,
+                             HtxTrendSignalCalculator calculator,
+                             HtxTrendEnsembleShadowProperties ensembleProperties,
+                             HtxTrendEnsembleSignalCalculator ensembleCalculator,
+                             HtxTrendMirrorExecutor mirrorExecutor) {
         this.swap = swap;
         this.contractProperties = contractProperties;
         this.fundingArbitrageProperties = fundingArbitrageProperties;
@@ -122,6 +142,8 @@ public class HtxTrendFollowingService {
         this.properties = properties;
         this.recorder = recorder;
         this.calculator = calculator;
+        this.ensembleProperties = ensembleProperties == null ? new HtxTrendEnsembleShadowProperties() : ensembleProperties;
+        this.ensembleCalculator = ensembleCalculator == null ? new HtxTrendEnsembleSignalCalculator() : ensembleCalculator;
         this.mirrorExecutor = mirrorExecutor;
         this.feeRateResolver = new HtxSwapFeeRateResolver(swap, properties::getEstimatedTakerFeeRate,
                 properties::getFeeRateCacheMs, "primary");
@@ -145,6 +167,7 @@ public class HtxTrendFollowingService {
         long openLikePositions = recorder.countOpenLike();
         int maxActivePositions = Math.max(0, properties.getMaxActivePositions());
         MarketBreadthContext marketBreadth = marketBreadthContext();
+        MarketAnchorContext marketAnchor = MarketAnchorContext.neutral("not evaluated");
         PerformanceContext performance = performanceContext();
         List<String> summaries = new ArrayList<>();
         Map<String, EntryCandidate> entryCandidates = new HashMap<>();
@@ -165,10 +188,14 @@ public class HtxTrendFollowingService {
 
         addPendingEntryCandidates(entryCandidates, summaries);
         boolean hasFreshCarryoverCandidate = hasFreshPendingEntryCandidate(new ArrayList<>(entryCandidates.values()));
+        if (scanEntryCandidates || hasFreshCarryoverCandidate) {
+            marketAnchor = marketAnchorContext();
+        }
 
         if (scanEntryCandidates) {
             long scanStartedAt = System.nanoTime();
-            for (CandidateScanResult scanResult : evaluateEntryCandidates(contractCodes, marketBreadth, candidateScanConcurrency)) {
+            for (CandidateScanResult scanResult : evaluateEntryCandidates(contractCodes, marketBreadth, marketAnchor,
+                    candidateScanConcurrency)) {
                 String contractCode = scanResult.contractCode();
                 CandidateEvaluation evaluation = scanResult.evaluation();
                 if (evaluation == null) {
@@ -217,7 +244,7 @@ public class HtxTrendFollowingService {
                         break;
                     }
                     RunResult result = openIfEligible(candidate.contractCode(), candidate.signal(),
-                            candidate.entryCandles(), candidate.contract(), marketBreadth, performance);
+                            candidate.entryCandles(), candidate.contract(), marketBreadth, marketAnchor, performance);
                     pendingEntryCandidates.remove(candidate.contractCode());
                     RunResult tagged = tag(candidate.contractCode(), result);
                     summaries.add(candidate.contractCode() + "=" + result.code() + ":" + result.message());
@@ -234,6 +261,7 @@ public class HtxTrendFollowingService {
         }
         return RunResult.of(selected.code(), selected.positionId(), selected.message()
                 + "; market=" + marketBreadth.summary()
+                + "; anchor=" + marketAnchor.summary()
                 + "; quality=" + performance.summary()
                 + "; candidates=" + rankedCandidates.size()
                 + "; pendingCandidates=" + pendingEntryCandidates.size()
@@ -247,11 +275,12 @@ public class HtxTrendFollowingService {
 
     private List<CandidateScanResult> evaluateEntryCandidates(List<String> contractCodes,
                                                               MarketBreadthContext marketBreadth,
+                                                              MarketAnchorContext marketAnchor,
                                                               int concurrency) {
         if (contractCodes.size() <= 1 || concurrency <= 1) {
             List<CandidateScanResult> results = new ArrayList<>(contractCodes.size());
             for (String contractCode : contractCodes) {
-                results.add(scanEntryCandidate(contractCode, marketBreadth));
+                results.add(scanEntryCandidate(contractCode, marketBreadth, marketAnchor));
             }
             return results;
         }
@@ -265,7 +294,7 @@ public class HtxTrendFollowingService {
         try {
             List<Callable<CandidateScanResult>> tasks = new ArrayList<>(contractCodes.size());
             for (String contractCode : contractCodes) {
-                tasks.add(() -> scanEntryCandidate(contractCode, marketBreadth));
+                tasks.add(() -> scanEntryCandidate(contractCode, marketBreadth, marketAnchor));
             }
             List<Future<CandidateScanResult>> futures = executor.invokeAll(tasks);
             List<CandidateScanResult> results = new ArrayList<>(futures.size());
@@ -289,9 +318,10 @@ public class HtxTrendFollowingService {
         }
     }
 
-    private CandidateScanResult scanEntryCandidate(String contractCode, MarketBreadthContext marketBreadth) {
+    private CandidateScanResult scanEntryCandidate(String contractCode, MarketBreadthContext marketBreadth,
+                                                   MarketAnchorContext marketAnchor) {
         try {
-            return new CandidateScanResult(contractCode, evaluateEntryCandidate(contractCode, marketBreadth));
+            return new CandidateScanResult(contractCode, evaluateEntryCandidate(contractCode, marketBreadth, marketAnchor));
         } catch (RuntimeException ex) {
             log.warn("[HTX-TREND] candidate scan failed contract={}", contractCode, ex);
             return new CandidateScanResult(contractCode, new CandidateEvaluation(
@@ -378,7 +408,8 @@ public class HtxTrendFollowingService {
         return advance(active.get(), rawSignal, contract);
     }
 
-    private CandidateEvaluation evaluateEntryCandidate(String contractCode, MarketBreadthContext marketBreadth) {
+    private CandidateEvaluation evaluateEntryCandidate(String contractCode, MarketBreadthContext marketBreadth,
+                                                       MarketAnchorContext marketAnchor) {
         String gate = configGate(contractCode);
         if (gate != null) {
             return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null, gate), null);
@@ -394,11 +425,13 @@ public class HtxTrendFollowingService {
         SignalSnapshot snapshot = loadSignal(contractCode);
         TrendSignal rawSignal = snapshot.signal();
         TrendSignal signal = entrySignalWithCarryContext(contractCode, rawSignal, marketBreadth);
+        signal = entrySignalWithEnsembleContext(contractCode, signal, snapshot.entryCandles(), marketBreadth);
+        signal = entrySignalWithMarketAnchorContext(signal, marketAnchor);
         recordSignal(contractCode, signal);
         if (signal.side() == TrendSide.FLAT) {
             return new CandidateEvaluation(RunResult.of(RunCode.NO_SIGNAL, null, signal.reason()), null);
         }
-        BigDecimal score = entryCandidateScore(signal, marketBreadth);
+        BigDecimal score = entryCandidateScore(signal, marketBreadth, marketAnchor);
         EntryCandidate candidate = new EntryCandidate(contractCode, signal, snapshot.entryCandles(), contract, score);
         return new CandidateEvaluation(RunResult.of(RunCode.OBSERVED, null,
                 "entry candidate queued side=" + signal.side() + " score=" + score.setScale(2, RoundingMode.HALF_UP)
@@ -433,6 +466,97 @@ public class HtxTrendFollowingService {
                         + "; base=" + signal.reason());
     }
 
+
+    private TrendSignal entrySignalWithEnsembleContext(String contractCode, TrendSignal signal,
+                                                       List<HtxSwapKline> entryCandles,
+                                                       MarketBreadthContext marketBreadth) {
+        if (!properties.isEnsembleEntryEnabled() || signal == null || signal.side() != TrendSide.FLAT) {
+            return signal;
+        }
+        HtxTrendEnsembleSignalCalculator.TrendCandidateSignal candidate = ensembleCalculator.evaluate(entryCandles,
+                ensembleProperties, properties.getPeriod(), Instant.now().getEpochSecond());
+        TrendSide side = trendSide(candidate.direction());
+        String rejection = ensembleEntryRejectionReason(candidate, side, marketBreadth);
+        if (rejection != null) {
+            return TrendSignal.of(TrendSide.FLAT, signal.barTime(), signal.closePrice(), signal.emaFast(),
+                    signal.emaSlow(), signal.breakoutHigh(), signal.breakoutLow(), signal.atr(), signal.atrPct(),
+                    signal.adx(), signal.reason() + "; ensemble entry rejected: " + rejection);
+        }
+        return TrendSignal.of(side, candidate.barTime(), candidate.closePrice(), candidate.emaFast(),
+                candidate.emaSlow(), candidate.breakoutHigh(), candidate.breakoutLow(), candidate.atr(),
+                candidate.atrPct(), candidate.adx(), "ensemble entry " + side
+                        + " score=" + candidate.signalScore().setScale(2, RoundingMode.HALF_UP)
+                        + " gap=" + candidate.scoreGap().setScale(2, RoundingMode.HALF_UP)
+                        + " regime=" + candidate.regime()
+                        + "; " + candidate.entryReason()
+                        + "; base=" + signal.reason());
+    }
+
+    private String ensembleEntryRejectionReason(HtxTrendEnsembleSignalCalculator.TrendCandidateSignal candidate,
+                                                TrendSide side, MarketBreadthContext marketBreadth) {
+        if (candidate == null || side == TrendSide.FLAT) {
+            return candidate == null ? "candidate unavailable" : candidate.invalidationReason();
+        }
+        if (!positive(candidate.closePrice()) || !positive(candidate.atr()) || !positive(candidate.atrPct())) {
+            return "candidate price or volatility unavailable";
+        }
+        if (candidate.signalScore().compareTo(nonNegative(properties.getEnsembleEntryMinScore())) < 0) {
+            return "score below live threshold " + properties.getEnsembleEntryMinScore();
+        }
+        if (candidate.scoreGap().compareTo(nonNegative(properties.getEnsembleEntryMinScoreGap())) < 0) {
+            return "score gap below live threshold " + properties.getEnsembleEntryMinScoreGap();
+        }
+        if (candidate.adx() == null || candidate.adx().compareTo(nonNegative(properties.getEnsembleEntryMinAdx())) < 0) {
+            return "ADX below live ensemble threshold " + properties.getEnsembleEntryMinAdx();
+        }
+        if (candidate.atrPct().compareTo(nonNegative(properties.getEnsembleEntryMinAtrPct())) < 0) {
+            return "ATR below live ensemble threshold " + properties.getEnsembleEntryMinAtrPct();
+        }
+        if (properties.isEnsembleEntryRequireTrendingRegime()
+                && !ensembleRegimeAligned(candidate.regime(), side)) {
+            return "regime not aligned for live entry " + candidate.regime();
+        }
+        if (!properties.isEnsembleEntryAllowAgainstBroadMarket() && againstBroadMarket(side, marketBreadth)) {
+            return "against broad market " + marketBreadth.summary();
+        }
+        if (properties.isEnsembleEntryRequireBreadthAlignment() && !breadthAligned(side, marketBreadth)) {
+            return "broad market is not aligned " + (marketBreadth == null ? "UNKNOWN" : marketBreadth.summary());
+        }
+        return null;
+    }
+
+    private static boolean ensembleRegimeAligned(HtxTrendEnsembleSignalCalculator.Regime regime, TrendSide side) {
+        return (side == TrendSide.LONG && regime == HtxTrendEnsembleSignalCalculator.Regime.TRENDING_UP)
+                || (side == TrendSide.SHORT && regime == HtxTrendEnsembleSignalCalculator.Regime.TRENDING_DOWN);
+    }
+
+    private static TrendSide trendSide(HtxTrendEnsembleSignalCalculator.Direction direction) {
+        if (direction == HtxTrendEnsembleSignalCalculator.Direction.LONG) {
+            return TrendSide.LONG;
+        }
+        if (direction == HtxTrendEnsembleSignalCalculator.Direction.SHORT) {
+            return TrendSide.SHORT;
+        }
+        return TrendSide.FLAT;
+    }
+
+    private TrendSignal entrySignalWithMarketAnchorContext(TrendSignal signal, MarketAnchorContext marketAnchor) {
+        if (!properties.isMarketAnchorEnabled() || signal == null || signal.side() == TrendSide.FLAT) {
+            return signal;
+        }
+        String suffix;
+        if (anchorAligned(signal.side(), marketAnchor)) {
+            suffix = "; market anchor aligned " + marketAnchor.summary();
+        } else if (anchorAgainst(signal.side(), marketAnchor)) {
+            suffix = "; market anchor counter " + marketAnchor.summary();
+        } else {
+            suffix = "; market anchor mixed " + (marketAnchor == null ? "UNKNOWN" : marketAnchor.summary());
+        }
+        return TrendSignal.of(signal.side(), signal.barTime(), signal.closePrice(), signal.emaFast(),
+                signal.emaSlow(), signal.breakoutHigh(), signal.breakoutLow(), signal.atr(), signal.atrPct(),
+                signal.adx(), signal.reason() + suffix);
+    }
+
     private String carryEntryRejectionReason(TrendSignal signal, TrendSide carrySide, MarketBreadthContext marketBreadth) {
         if (weakFlatReason(signal.reason())) {
             return "base signal is weak trend: " + signal.reason();
@@ -454,7 +578,8 @@ public class HtxTrendFollowingService {
         return null;
     }
 
-    private BigDecimal entryCandidateScore(TrendSignal signal, MarketBreadthContext marketBreadth) {
+    private BigDecimal entryCandidateScore(TrendSignal signal, MarketBreadthContext marketBreadth,
+                                           MarketAnchorContext marketAnchor) {
         BigDecimal score = nz(signal.adx()).add(nonNegative(signal.atrPct()).multiply(new BigDecimal("10000")));
         String reason = signal.reason() == null ? "" : signal.reason().toLowerCase(Locale.ROOT);
         if (reason.contains("broke donchian")) {
@@ -466,8 +591,16 @@ public class HtxTrendFollowingService {
         if (reason.contains("funding carry")) {
             score = score.subtract(new BigDecimal("15"));
         }
+        if (reason.contains("ensemble entry")) {
+            score = score.add(new BigDecimal("25"));
+        }
         if (breadthAligned(signal.side(), marketBreadth)) {
             score = score.add(new BigDecimal("10"));
+        }
+        if (anchorAligned(signal.side(), marketAnchor)) {
+            score = score.add(nonNegative(properties.getMarketAnchorScoreBonus()));
+        } else if (anchorAgainst(signal.side(), marketAnchor)) {
+            score = score.subtract(nonNegative(properties.getMarketAnchorCounterScorePenalty()));
         }
         return score;
     }
@@ -487,7 +620,8 @@ public class HtxTrendFollowingService {
     }
 
     private DirectionConfidence directionConfidence(TrendSignal signal, List<HtxSwapKline> entryCandles,
-                                                    MarketBreadthContext marketBreadth, PerformanceContext performance) {
+                                                    MarketBreadthContext marketBreadth, MarketAnchorContext marketAnchor,
+                                                    PerformanceContext performance) {
         BigDecimal score = BigDecimal.ZERO;
         StringBuilder reason = new StringBuilder();
         BigDecimal minAdx = nonNegative(properties.getMinAdx());
@@ -527,6 +661,9 @@ public class HtxTrendFollowingService {
         } else if (normalizedReason.contains("funding carry")) {
             score = score.add(new BigDecimal("5"));
             reason.append(" carry+");
+        } else if (normalizedReason.contains("ensemble entry")) {
+            score = score.add(new BigDecimal("20"));
+            reason.append(" ensemble+");
         }
         if (localMomentumAligned(signal.side(), entryCandles)) {
             score = score.add(new BigDecimal("10"));
@@ -544,6 +681,15 @@ public class HtxTrendFollowingService {
         } else {
             score = score.subtract(new BigDecimal("5"));
             reason.append(" breadthMixed-");
+        }
+        if (anchorAligned(signal.side(), marketAnchor)) {
+            score = score.add(nonNegative(properties.getMarketAnchorConfidenceBonus()));
+            reason.append(" marketAnchor+");
+        } else if (anchorAgainst(signal.side(), marketAnchor)) {
+            score = score.subtract(nonNegative(properties.getMarketAnchorCounterConfidencePenalty()));
+            reason.append(" marketAnchorCounter-");
+        } else {
+            reason.append(" marketAnchorMixed");
         }
         if (performance != null && performance.regime() == QualityRegime.STRONG) {
             score = score.add(new BigDecimal("5"));
@@ -631,6 +777,22 @@ public class HtxTrendFollowingService {
                 || (side == TrendSide.SHORT && marketBreadth.regime() == MarketRegime.BROAD_UP);
     }
 
+    private static boolean anchorAligned(TrendSide side, MarketAnchorContext marketAnchor) {
+        if (marketAnchor == null) {
+            return false;
+        }
+        return (side == TrendSide.LONG && marketAnchor.regime() == MarketRegime.BROAD_UP)
+                || (side == TrendSide.SHORT && marketAnchor.regime() == MarketRegime.BROAD_DOWN);
+    }
+
+    private static boolean anchorAgainst(TrendSide side, MarketAnchorContext marketAnchor) {
+        if (marketAnchor == null) {
+            return false;
+        }
+        return (side == TrendSide.LONG && marketAnchor.regime() == MarketRegime.BROAD_DOWN)
+                || (side == TrendSide.SHORT && marketAnchor.regime() == MarketRegime.BROAD_UP);
+    }
+
     private static boolean weakFlatReason(String reason) {
         if (reason == null) {
             return true;
@@ -644,7 +806,7 @@ public class HtxTrendFollowingService {
 
     private RunResult openIfEligible(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
                                      HtxSwapContractInfo contract, MarketBreadthContext marketBreadth,
-                                     PerformanceContext performance) {
+                                     MarketAnchorContext marketAnchor, PerformanceContext performance) {
         if (signal.side() == TrendSide.FLAT) {
             return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
         }
@@ -665,7 +827,7 @@ public class HtxTrendFollowingService {
         if (cooldownGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, cooldownGate);
         }
-        DirectionConfidence confidence = directionConfidence(signal, entryCandles, marketBreadth, performance);
+        DirectionConfidence confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor, performance);
         String directionGate = directionConfidenceGate(signal, confidence);
         if (directionGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, directionGate);
@@ -1265,6 +1427,137 @@ public class HtxTrendFollowingService {
         }
         return new MarketBreadthContext(MarketRegime.MIXED, total, longCount, shortCount,
                 longRatio, shortRatio, "mixed");
+    }
+
+    private MarketAnchorContext marketAnchorContext() {
+        if (!properties.isMarketAnchorEnabled()) {
+            return MarketAnchorContext.neutral("market anchor disabled");
+        }
+        List<String> contracts = normalizedList(properties.getMarketAnchorContracts());
+        List<String> periods = normalizedPeriods(properties.getMarketAnchorPeriods());
+        if (contracts.isEmpty() || periods.isEmpty()) {
+            return MarketAnchorContext.neutral("market anchor contracts or periods blank");
+        }
+        int longSignals = 0;
+        int shortSignals = 0;
+        int validSignals = 0;
+        int longSymbols = 0;
+        int shortSymbols = 0;
+        List<String> parts = new ArrayList<>();
+        for (String contractCode : contracts) {
+            int symbolLong = 0;
+            int symbolShort = 0;
+            for (String period : periods) {
+                TrendSide side = marketAnchorPeriodSide(contractCode, period);
+                if (side == TrendSide.LONG) {
+                    longSignals++;
+                    symbolLong++;
+                    validSignals++;
+                } else if (side == TrendSide.SHORT) {
+                    shortSignals++;
+                    symbolShort++;
+                    validSignals++;
+                }
+            }
+            int minPeriods = Math.max(1, properties.getMarketAnchorMinAlignedPeriodsPerSymbol());
+            if (symbolLong >= minPeriods && symbolLong > symbolShort) {
+                longSymbols++;
+            } else if (symbolShort >= minPeriods && symbolShort > symbolLong) {
+                shortSymbols++;
+            }
+            parts.add(contractCode + "(long=" + symbolLong + ",short=" + symbolShort + ")");
+        }
+        int minSignals = Math.max(1, properties.getMarketAnchorMinAlignedSignals());
+        int minSymbols = Math.max(1, properties.getMarketAnchorMinAlignedSymbols());
+        int maxOpposite = Math.max(0, properties.getMarketAnchorMaxOppositeSignals());
+        if (longSignals >= minSignals && longSymbols >= minSymbols && shortSignals <= maxOpposite) {
+            return new MarketAnchorContext(MarketRegime.BROAD_UP, validSignals, longSignals, shortSignals,
+                    longSymbols, shortSymbols, String.join(",", parts));
+        }
+        if (shortSignals >= minSignals && shortSymbols >= minSymbols && longSignals <= maxOpposite) {
+            return new MarketAnchorContext(MarketRegime.BROAD_DOWN, validSignals, longSignals, shortSignals,
+                    longSymbols, shortSymbols, String.join(",", parts));
+        }
+        return new MarketAnchorContext(MarketRegime.MIXED, validSignals, longSignals, shortSignals,
+                longSymbols, shortSymbols, String.join(",", parts));
+    }
+
+    private TrendSide marketAnchorPeriodSide(String contractCode, String period) {
+        HtxRestResponse<List<HtxSwapKline>> response = swap.historyKline(contractCode, period, properties.getMarketAnchorKlineSize());
+        if (response == null || !response.ok() || response.payload() == null) {
+            return TrendSide.FLAT;
+        }
+        List<HtxSwapKline> candles = completedCandles(response.payload(), period);
+        int slowPeriod = Math.max(2, properties.getMarketAnchorSlowEmaPeriod());
+        if (candles.size() < slowPeriod + 2) {
+            return TrendSide.FLAT;
+        }
+        List<BigDecimal> closes = new ArrayList<>(candles.size());
+        for (HtxSwapKline candle : candles) {
+            if (candle == null || !positive(candle.getClose())) {
+                return TrendSide.FLAT;
+            }
+            closes.add(candle.getClose());
+        }
+        BigDecimal latest = closes.get(closes.size() - 1);
+        BigDecimal previous = closes.get(closes.size() - 2);
+        BigDecimal fast = ema(closes, Math.max(1, properties.getMarketAnchorFastEmaPeriod()));
+        BigDecimal slow = ema(closes, slowPeriod);
+        if (latest.compareTo(previous) > 0 && fast.compareTo(slow) > 0 && latest.compareTo(fast) >= 0) {
+            return TrendSide.LONG;
+        }
+        if (latest.compareTo(previous) < 0 && fast.compareTo(slow) < 0 && latest.compareTo(fast) <= 0) {
+            return TrendSide.SHORT;
+        }
+        return TrendSide.FLAT;
+    }
+
+    private List<HtxSwapKline> completedCandles(List<HtxSwapKline> rawCandles, String period) {
+        if (rawCandles == null || rawCandles.isEmpty()) {
+            return List.of();
+        }
+        long seconds = periodSeconds(period);
+        long now = Instant.now().getEpochSecond();
+        long grace = Math.max(0L, properties.getCandleCloseGraceSeconds());
+        return rawCandles.stream()
+                .filter(item -> item != null && item.getId() != null)
+                .filter(item -> item.getId() + seconds + grace <= now)
+                .sorted(Comparator.comparing(HtxSwapKline::getId))
+                .toList();
+    }
+
+    private static BigDecimal ema(List<BigDecimal> values, int period) {
+        if (values == null || values.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal multiplier = TWO.divide(BigDecimal.valueOf(period + 1L), 18, RoundingMode.HALF_UP);
+        BigDecimal ema = values.get(0);
+        for (int i = 1; i < values.size(); i++) {
+            ema = values.get(i).subtract(ema).multiply(multiplier).add(ema);
+        }
+        return ema;
+    }
+
+    private static List<String> normalizedList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.stream()
+                .map(HtxTrendFollowingService::normalize)
+                .filter(value -> !value.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    private static List<String> normalizedPeriods(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.stream()
+                .filter(value -> !isBlank(value))
+                .map(String::trim)
+                .distinct()
+                .toList();
     }
 
     private PerformanceContext performanceContext() {
@@ -2136,6 +2429,19 @@ public class HtxTrendFollowingService {
             return regime + "(long=" + longCount + "/" + total + "=" + pct(longRatio)
                     + ",short=" + shortCount + "/" + total + "=" + pct(shortRatio)
                     + ",reason=" + reason + ")";
+        }
+    }
+
+    private record MarketAnchorContext(MarketRegime regime, int validSignals, int longSignals, int shortSignals,
+                                       int longSymbols, int shortSymbols, String reason) {
+        static MarketAnchorContext neutral(String reason) {
+            return new MarketAnchorContext(MarketRegime.MIXED, 0, 0, 0, 0, 0, reason);
+        }
+
+        String summary() {
+            return regime + "(longSignals=" + longSignals + ",shortSignals=" + shortSignals
+                    + ",validSignals=" + validSignals + ",longSymbols=" + longSymbols
+                    + ",shortSymbols=" + shortSymbols + ",reason=" + reason + ")";
         }
     }
 

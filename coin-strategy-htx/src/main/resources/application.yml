@@ -168,6 +168,14 @@ htx:
     min-counter-breadth-direction-confidence-score: ${HTX_TREND_MIN_COUNTER_BREADTH_DIRECTION_CONFIDENCE_SCORE:95}
     fibonacci-min-direction-confidence-score: ${HTX_TREND_FIBONACCI_MIN_DIRECTION_CONFIDENCE_SCORE:80}
     funding-carry-min-direction-confidence-score: ${HTX_TREND_FUNDING_CARRY_MIN_DIRECTION_CONFIDENCE_SCORE:90}
+    ensemble-entry-enabled: ${HTX_TREND_ENSEMBLE_ENTRY_ENABLED:true}
+    ensemble-entry-min-score: ${HTX_TREND_ENSEMBLE_ENTRY_MIN_SCORE:85}
+    ensemble-entry-min-score-gap: ${HTX_TREND_ENSEMBLE_ENTRY_MIN_SCORE_GAP:20}
+    ensemble-entry-min-adx: ${HTX_TREND_ENSEMBLE_ENTRY_MIN_ADX:24}
+    ensemble-entry-min-atr-pct: ${HTX_TREND_ENSEMBLE_ENTRY_MIN_ATR_PCT:0.0012}
+    ensemble-entry-require-trending-regime: ${HTX_TREND_ENSEMBLE_ENTRY_REQUIRE_TRENDING_REGIME:true}
+    ensemble-entry-require-breadth-alignment: ${HTX_TREND_ENSEMBLE_ENTRY_REQUIRE_BREADTH_ALIGNMENT:false}
+    ensemble-entry-allow-against-broad-market: ${HTX_TREND_ENSEMBLE_ENTRY_ALLOW_AGAINST_BROAD_MARKET:false}
     min-flat-exit-profit-usdt: ${HTX_TREND_MIN_FLAT_EXIT_PROFIT_USDT:0.20}
     flat-exit-confirmation-bars: ${HTX_TREND_FLAT_EXIT_CONFIRMATION_BARS:3}
     max-flat-exit-loss-usdt: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_USDT:0.25}
@@ -199,6 +207,20 @@ htx:
     market-breadth-opposite-max: ${HTX_TREND_MARKET_BREADTH_OPPOSITE_MAX:0.15}
     market-breadth-aligned-position-multiplier: ${HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER:1.50}
     market-breadth-counter-position-multiplier: ${HTX_TREND_MARKET_BREADTH_COUNTER_POSITION_MULTIPLIER:0.50}
+    market-anchor-enabled: ${HTX_TREND_MARKET_ANCHOR_ENABLED:true}
+    market-anchor-contracts: ${HTX_TREND_MARKET_ANCHOR_CONTRACTS:BTC-USDT,ETH-USDT}
+    market-anchor-periods: ${HTX_TREND_MARKET_ANCHOR_PERIODS:15min,30min,60min,4hour}
+    market-anchor-kline-size: ${HTX_TREND_MARKET_ANCHOR_KLINE_SIZE:80}
+    market-anchor-fast-ema-period: ${HTX_TREND_MARKET_ANCHOR_FAST_EMA_PERIOD:8}
+    market-anchor-slow-ema-period: ${HTX_TREND_MARKET_ANCHOR_SLOW_EMA_PERIOD:21}
+    market-anchor-min-aligned-periods-per-symbol: ${HTX_TREND_MARKET_ANCHOR_MIN_ALIGNED_PERIODS_PER_SYMBOL:2}
+    market-anchor-min-aligned-signals: ${HTX_TREND_MARKET_ANCHOR_MIN_ALIGNED_SIGNALS:4}
+    market-anchor-min-aligned-symbols: ${HTX_TREND_MARKET_ANCHOR_MIN_ALIGNED_SYMBOLS:2}
+    market-anchor-max-opposite-signals: ${HTX_TREND_MARKET_ANCHOR_MAX_OPPOSITE_SIGNALS:1}
+    market-anchor-score-bonus: ${HTX_TREND_MARKET_ANCHOR_SCORE_BONUS:20}
+    market-anchor-counter-score-penalty: ${HTX_TREND_MARKET_ANCHOR_COUNTER_SCORE_PENALTY:20}
+    market-anchor-confidence-bonus: ${HTX_TREND_MARKET_ANCHOR_CONFIDENCE_BONUS:20}
+    market-anchor-counter-confidence-penalty: ${HTX_TREND_MARKET_ANCHOR_COUNTER_CONFIDENCE_PENALTY:20}
     min-adaptive-position-multiplier: ${HTX_TREND_MIN_ADAPTIVE_POSITION_MULTIPLIER:0.25}
     max-adaptive-position-multiplier: ${HTX_TREND_MAX_ADAPTIVE_POSITION_MULTIPLIER:1.80}
     confidence-sizing-enabled: ${HTX_TREND_CONFIDENCE_SIZING_ENABLED:true}

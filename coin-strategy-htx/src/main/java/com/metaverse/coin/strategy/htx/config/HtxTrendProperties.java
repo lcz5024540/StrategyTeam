@@ -150,6 +150,30 @@ public class HtxTrendProperties {
     /** Minimum composite score for funding-carry entries promoted from a flat base signal. */
     private BigDecimal fundingCarryMinDirectionConfidenceScore = new BigDecimal("90");
 
+    /** Allow the stricter ensemble model to promote a flat strict signal into the normal live entry gate chain. */
+    private boolean ensembleEntryEnabled = true;
+
+    /** Minimum ensemble score before a shadow observation may become a live entry candidate. */
+    private BigDecimal ensembleEntryMinScore = new BigDecimal("85");
+
+    /** Minimum long/short score gap before a shadow observation may become a live entry candidate. */
+    private BigDecimal ensembleEntryMinScoreGap = new BigDecimal("20");
+
+    /** Minimum ADX for ensemble-promoted live candidates. */
+    private BigDecimal ensembleEntryMinAdx = new BigDecimal("24");
+
+    /** Minimum ATR / close ratio for ensemble-promoted live candidates. */
+    private BigDecimal ensembleEntryMinAtrPct = new BigDecimal("0.0012");
+
+    /** Require the ensemble regime to be TRENDING_UP for long or TRENDING_DOWN for short. */
+    private boolean ensembleEntryRequireTrendingRegime = true;
+
+    /** Optionally require broad market to be aligned; default false because mixed markets still pass direction-confidence gate. */
+    private boolean ensembleEntryRequireBreadthAlignment = false;
+
+    /** Prevent ensemble-promoted entries from fighting a clear broad-market trend. */
+    private boolean ensembleEntryAllowAgainstBroadMarket = false;
+
     /** Minimum absolute net profit in USDT before a flat signal can close a protected winner. */
     private BigDecimal minFlatExitProfitUsdt = new BigDecimal("0.20");
 
@@ -242,6 +266,48 @@ public class HtxTrendProperties {
 
     /** Position multiplier for signals against a broad market trend. */
     private BigDecimal marketBreadthCounterPositionMultiplier = new BigDecimal("0.50");
+
+    /** Enable BTC/ETH multi-timeframe market-anchor context for candidate scoring and direction confidence. */
+    private boolean marketAnchorEnabled = true;
+
+    /** Major contracts used as market anchors. */
+    private List<String> marketAnchorContracts = new ArrayList<>(List.of("BTC-USDT", "ETH-USDT"));
+
+    /** Timeframes checked for each market anchor contract. */
+    private List<String> marketAnchorPeriods = new ArrayList<>(List.of("15min", "30min", "60min", "4hour"));
+
+    /** Number of bars fetched for each market-anchor period. */
+    private int marketAnchorKlineSize = 80;
+
+    /** Fast EMA period for market-anchor trend detection. */
+    private int marketAnchorFastEmaPeriod = 8;
+
+    /** Slow EMA period for market-anchor trend detection. */
+    private int marketAnchorSlowEmaPeriod = 21;
+
+    /** Minimum aligned periods per BTC/ETH symbol before the symbol is counted as directional. */
+    private int marketAnchorMinAlignedPeriodsPerSymbol = 2;
+
+    /** Minimum aligned period signals across BTC/ETH before the anchor is treated as broad up/down. */
+    private int marketAnchorMinAlignedSignals = 4;
+
+    /** Minimum aligned anchor symbols, default two means BTC and ETH must both participate. */
+    private int marketAnchorMinAlignedSymbols = 2;
+
+    /** Maximum opposite period signals tolerated before the anchor becomes mixed. */
+    private int marketAnchorMaxOppositeSignals = 1;
+
+    /** Candidate score bonus when entry direction aligns with BTC/ETH multi-timeframe anchor. */
+    private BigDecimal marketAnchorScoreBonus = new BigDecimal("20");
+
+    /** Candidate score penalty when entry direction fights BTC/ETH multi-timeframe anchor. */
+    private BigDecimal marketAnchorCounterScorePenalty = new BigDecimal("20");
+
+    /** Direction-confidence bonus when entry direction aligns with BTC/ETH multi-timeframe anchor. */
+    private BigDecimal marketAnchorConfidenceBonus = new BigDecimal("20");
+
+    /** Direction-confidence penalty when entry direction fights BTC/ETH multi-timeframe anchor. */
+    private BigDecimal marketAnchorCounterConfidencePenalty = new BigDecimal("20");
 
     /** Lower clamp for the combined adaptive sizing multiplier. */
     private BigDecimal minAdaptivePositionMultiplier = new BigDecimal("0.25");
