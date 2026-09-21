@@ -74,3 +74,29 @@ arbitrage:
     volatility-multiplier: 4
     jump-multiplier: 3
     minimum-risk-history-ms: 3600000
+  # Single-venue spot-long / perp-short funding harvest. Public data, paper fills only.
+  spot-perp-funding:
+    enabled: true
+    dry-run: true
+    auto-open-enabled: true
+    notional-usdt: 100
+    leverage: 2
+    open-threshold: 0.00008
+    close-threshold: 0.00002
+    min-basis-rate: -0.0005
+    max-basis-rate: 0.0020
+    max-basis-deterioration-rate: 0.0015
+    min-net-yield-rate: 0
+    min-funding-periods: 30
+    settlement-protection-minutes: 10
+    min-holding-hours: 8
+    max-holding-hours: 504
+    max-quote-age-ms: 15000
+    min-book-notional: 500
+    coverage-ratio: 2.0
+    max-vwap-impact: 0.0005
+    max-lot-overshoot: 1.25
+    poll-interval-ms: 30000
+    fees:
+      binance-round-trip: 0.0028
+      htx-round-trip: 0.0048

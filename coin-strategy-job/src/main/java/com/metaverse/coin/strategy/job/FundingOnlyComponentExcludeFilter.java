@@ -37,7 +37,8 @@ public final class FundingOnlyComponentExcludeFilter implements TypeFilter {
     private static final List<String> FUNDING_ONLY_ALLOWED_PACKAGE_PREFIXES = List.of(
             "com.metaverse.coin.strategy.job.funding.service.CrossExchange",
             "com.metaverse.coin.strategy.job.funding.service.FundingArb",
-            "com.metaverse.coin.strategy.core.arbitrage.multi."
+            "com.metaverse.coin.strategy.core.arbitrage.multi.",
+            "com.metaverse.coin.strategy.core.arbitrage.spotperp."
     );
 
     private final boolean fundingOnly;

@@ -72,6 +72,12 @@ class FundingOnlyComponentExcludeFilterTest {
         assertThat(matches(filter,
                 "com.metaverse.coin.strategy.job.config.DataSourceConfig"))
                 .isFalse();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.job.funding.service.FundingArbSpotPerpDryRunJob"))
+                .isFalse();
+        assertThat(matches(filter,
+                "com.metaverse.coin.strategy.core.arbitrage.spotperp.SpotPerpDryRunEngine"))
+                .isFalse();
     }
 
     @Test

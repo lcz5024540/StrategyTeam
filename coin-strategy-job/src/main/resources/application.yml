@@ -154,6 +154,11 @@ arbitrage:
       bitget: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005 }
       # Public-data Paper default. Set the transfer cost only after measuring the actual funding route.
       hyperliquid: { maker-fee-rate: 0.0002, taker-fee-rate: 0.0005, slippage-rate: 0.0005, capital-transfer-cost-rate: 0 }
+  # Public-data paper harvest. Off in FULL mode so it does not poll unless the funding profile is on.
+  # dry-run stays true; there is no live order path for this strategy.
+  spot-perp-funding:
+    enabled: false
+    dry-run: true
   spot-futures:
     # [TUNE] 单交易所期现套利策略的主交易对。
     symbol: "BTCUSDT"
