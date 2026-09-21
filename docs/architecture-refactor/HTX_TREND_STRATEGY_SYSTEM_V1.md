@@ -11,6 +11,8 @@ tags: [htx, trend, strategy, futures, crypto, backtest]
 
 > **上层总纲**：本设计隶属于 [CoinStrategy 策略总纲 v1](COINSTRATEGY_STRATEGY_MASTER_PLAN_V1.md) 的趋势策略子系统。
 
+> **实施路线**：趋势子系统落地顺序见 [CoinStrategy 策略体系实施路线图 v1](COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1.md) 的 P1–P4。
+
 > **结论先行**：HTX 趋势策略必须从“单指标补丁式开仓”重构为“市场分型 + 多模型信号 + 因子评分 + 统一 gate + 模型匹配退出 + 回测/实盘闭环”的系统。第一版只做合约趋势交易，不做资金费套利；资金费只作为成本与拥挤度因子。
 
 ---

@@ -9,6 +9,8 @@ tags: [strategy, master-plan, trend, arbitrage, capital-allocation, risk]
 
 # CoinStrategy 策略总纲 v1 · 趋势 + 套利双引擎
 
+> **配套路线图**：实施顺序和验收标准见 [CoinStrategy 策略体系实施路线图 v1](COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1.md)。
+
 > **结论先行**：CoinStrategy 的策略体系拆成两条主线：**套利策略负责稳定收益和资金底仓利用率，趋势策略负责收益弹性和行情捕捉能力**。资金不能全部暴露在趋势波动里，也不能全部锁在低弹性的套利里；系统需要用统一资金调度、统一风控、统一账本和统一回测实盘评价，把两类策略组合成一个可持续运行的交易系统。
 
 ---
