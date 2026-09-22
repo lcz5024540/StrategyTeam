@@ -29,13 +29,13 @@ public class HtxTrendCombinationService {
                             TrendCandidateSignal signal) {
         List<HtxTrendStrategyPolicyEntity> policies = policyService.enabledPolicies();
         if (policies.isEmpty()) {
-            return reject(contractCode, period, signal, "no enabled combination policy in database");
+            return reject(contractCode, period, signal, HtxTrendCombinationGateReason.NO_ENABLED_POLICY);
         }
         List<CombinationCandidate> candidates = calculator.evaluate(candles, signal,
                 policies.stream().map(HtxTrendStrategyPolicyEntity::getBoxWindowBars)
                         .filter(value -> value != null && value > 1).findFirst().orElse(32));
         if (candidates.isEmpty()) {
-            return reject(contractCode, period, signal, "no valid combination candidate");
+            return reject(contractCode, period, signal, HtxTrendCombinationGateReason.classifyNoCandidate(signal));
         }
         List<ResolvedCandidate> resolved = candidates.stream()
                 .map(candidate -> resolve(candidate, policies))
@@ -43,7 +43,7 @@ public class HtxTrendCombinationService {
                 .sorted(Comparator.comparing((ResolvedCandidate item) -> item.candidate().score()).reversed())
                 .toList();
         if (resolved.isEmpty()) {
-            return reject(contractCode, period, signal, "candidate rejected by enabled combination policies");
+            return reject(contractCode, period, signal, HtxTrendCombinationGateReason.POLICY_NOT_MATCHED);
         }
         ResolvedCandidate selected = resolved.get(0);
         Long snapshotId = recordSnapshot(contractCode, period, signal, selected);
@@ -52,7 +52,7 @@ public class HtxTrendCombinationService {
         }
         for (ResolvedCandidate item : resolved) {
             recordCandidate(contractCode, period, signal, item, snapshotId,
-                    item == selected ? "PASSED" : "REJECTED", item == selected ? "highest score for symbol" : "lower score");
+                    item == selected ? "PASSED" : "REJECTED", item == selected ? "PASSED" : HtxTrendCombinationGateReason.LOWER_PRIORITY_FOR_SYMBOL.code());
         }
         BigDecimal multiplier = sizingMultiplier(selected.candidate().score(), selected.candidate().marketRegime());
         BigDecimal notional = selected.policy().getBaseNotionalUsdt().multiply(multiplier)
@@ -61,9 +61,10 @@ public class HtxTrendCombinationService {
     }
 
     /** Persist a negative decision too, so a later review can distinguish missing structure from execution rejection. */
-    private Selection reject(String contractCode, String period, TrendCandidateSignal signal, String reason) {
+    private Selection reject(String contractCode, String period, TrendCandidateSignal signal,
+                             HtxTrendCombinationGateReason reason) {
         if (signal == null || signal.barTime() == null) {
-            return Selection.rejected(reason);
+            return Selection.rejected(reason.code());
         }
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
         snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":combo-v2:REJECTED");
@@ -81,9 +82,9 @@ public class HtxTrendCombinationService {
         entity.setInvalidationReason(signal.invalidationReason()); entity.setShadow(false);
         entity.setModelVersion("combo-v2:COMBINATION_GATE"); entity.setPrimaryModel("NONE");
         entity.setPolicyVersion("combo-v2"); entity.setFactorSnapshotId(snapshotId);
-        entity.setGateResult("REJECTED"); entity.setGateReason(reason);
+        entity.setGateResult("REJECTED"); entity.setGateReason(reason.code());
         candidateRecorder.record(entity);
-        return Selection.rejected(reason);
+        return Selection.rejected(reason.code());
     }
 
     private ResolvedCandidate resolve(CombinationCandidate candidate, List<HtxTrendStrategyPolicyEntity> policies) {
