@@ -3,7 +3,7 @@ title: "CoinStrategy 策略体系实施路线图 v1"
 type: implementation-roadmap
 status: draft
 created: 2026-09-21
-updated: 2026-09-21
+updated: 2026-09-22
 tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backtest]
 ---
 
@@ -21,6 +21,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 |---|---|---|---|
 | L1 总纲 | [CoinStrategy 策略总纲 v1](COINSTRATEGY_STRATEGY_MASTER_PLAN_V1.md) | 定义趋势 + 套利双引擎、资金分层、统一风控、统一账本。 | 已建立 |
 | L2 子系统 | [HTX 趋势策略系统 v1](HTX_TREND_STRATEGY_SYSTEM_V1.md) | 定义趋势策略的市场分型、因子、模型、gate、sizing、退出和回测。 | 已建立 |
+| L3 执行计划 | [HTX 趋势策略开仓与持仓管理重构计划 v1](HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md) | 将开仓链路、已有仓位管理、冷却解冻、多周期和外部仓位处理拆成分批实施计划。 | 已建立 |
 | L2 子系统 | `HTX_FUNDING_ARBITRAGE_SYSTEM_V1.md` | 定义单所现货合约对冲资金费套利、跨所资金费套利、对冲和退出。 | 待创建 |
 | L2 子系统 | [CoinStrategy 资金、账户、风控与账本体系 v1](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) | 定义资金调度、账户体系、策略维度、统一账本和风控边界。 | 已建立 |
 | L2 子系统 | `COINSTRATEGY_BACKTEST_SYSTEM_V1.md` | 定义 K 线采集、回测引擎、费用滑点模型、指标和报告。 | 待创建 |
@@ -66,6 +67,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 |---|---|---|
 | 策略总纲 | `COINSTRATEGY_STRATEGY_MASTER_PLAN_V1.md` | 明确趋势、套利、资金池、风控和账本方向。 |
 | 趋势系统设计 | `HTX_TREND_STRATEGY_SYSTEM_V1.md` | 明确市场分型、因子、模型、gate、sizing、退出和回测。 |
+| 趋势执行重构计划 | `HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md` | 明确开仓链路前置、持仓退出引擎、冷却解冻、多周期和外部仓位处理批次。 |
 | 文档入口 | `docs/MOC-交易策略.md` | 知识地图可直接找到总纲和趋势设计。 |
 
 ### 3.3 待补文档
