@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -60,6 +61,32 @@ class HtxTrendCombinationServiceTest {
         assertTrue(snapshot.getValue().getFactorsJson().contains("\"roc\":0.02"));
         assertTrue(snapshot.getValue().getFactorsJson().contains("\"status\":\"UNAVAILABLE\""));
         assertTrue(snapshot.getValue().getFactorsJson().contains("history kline unavailable"));
+    }
+
+    @Test
+    void multiTimeframeSnapshotRoundsEvidenceWithoutChangingItsNumericType() {
+        HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        HtxTrendCandidateSignalRecorder candidateRecorder = mock(HtxTrendCandidateSignalRecorder.class);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(policyService, combinationRecorder,
+                candidateRecorder);
+
+        TrendCandidateSignal precise = new TrendCandidateSignal("15min", 1_790_069_400L, Direction.LONG,
+                Regime.TRENDING_UP, new BigDecimal("90"), new BigDecimal("90"), BigDecimal.ZERO,
+                new BigDecimal("90"), new BigDecimal("0.1234567890125678"),
+                new BigDecimal("0.1234567890125678"), new BigDecimal("0.1234567890125678"),
+                new BigDecimal("0.1234567890125678"), new BigDecimal("101"), new BigDecimal("95"),
+                new BigDecimal("2"), new BigDecimal("0.02"), new BigDecimal("30"),
+                new BigDecimal("0.02"), new BigDecimal("1.5"), "valid", "none");
+
+        service.recordMultiTimeframeSnapshot("BTC-USDT", "15min", 1_790_069_400L, "BROAD_UP",
+                List.of(precise));
+
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder).recordSnapshot(snapshot.capture());
+        assertTrue(snapshot.getValue().getFactorsJson().contains("\"fast\":0.123456789013"));
+        assertFalse(snapshot.getValue().getFactorsJson().contains("0.1234567890125678"));
     }
 
     private static TrendCandidateSignal signal(String period) {

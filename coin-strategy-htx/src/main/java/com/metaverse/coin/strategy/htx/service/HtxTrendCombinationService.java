@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 
@@ -19,6 +20,9 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class HtxTrendCombinationService {
+    /** K-line values on HTX have materially lower precision; cap evidence only to keep JSON reviewable. */
+    private static final int EVIDENCE_FRACTION_SCALE = 12;
+
     private final HtxTrendStrategyPolicyService policyService;
     private final HtxTrendCombinationRecorder combinationRecorder;
     private final HtxTrendCandidateSignalRecorder candidateRecorder;
@@ -248,7 +252,14 @@ public class HtxTrendCombinationService {
     }
 
     private static String jsonNumber(Number value) {
-        return value == null ? "null" : value.toString();
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof BigDecimal decimal) {
+            int scale = Math.min(Math.max(decimal.scale(), 0), EVIDENCE_FRACTION_SCALE);
+            return decimal.setScale(scale, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+        }
+        return value.toString();
     }
 
     private static String jsonText(String value) {
