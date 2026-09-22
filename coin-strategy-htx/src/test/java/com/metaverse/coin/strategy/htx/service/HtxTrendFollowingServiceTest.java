@@ -20,6 +20,7 @@ import com.metaverse.coin.strategy.htx.config.HtxFundingArbitrageProperties;
 import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendStrategyPolicyEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
@@ -815,6 +816,51 @@ class HtxTrendFollowingServiceTest {
         assertTrue(result.message().contains("direction confidence too low"));
         verify(swap, never()).switchLeverage(any(), any(), anyInt());
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void combinationEntryBypassesLegacyDirectionConfidenceInMixedMarket() {
+        properties.setCombinationEntryEnabled(true);
+        properties.setDirectionConfidenceGateEnabled(true);
+        properties.setMinDirectionConfidenceScore(new BigDecimal("200"));
+        properties.setMinMixedDirectionConfidenceScore(new BigDecimal("200"));
+        HtxTrendCombinationService combinationService = mock(HtxTrendCombinationService.class);
+        HtxTrendStrategyPolicyEntity policy = new HtxTrendStrategyPolicyEntity();
+        policy.setPolicyCode("FIB_BOX_DONCHIAN");
+        policy.setPolicyVersion("combo-v2");
+        policy.setBaseNotionalUsdt(new BigDecimal("190"));
+        policy.setMaxNotionalUsdt(new BigDecimal("285"));
+        HtxTrendCombinationCalculator.CombinationCandidate candidate =
+                new HtxTrendCombinationCalculator.CombinationCandidate("FIB_PULLBACK_CONTINUATION",
+                        "BOX_BREAKOUT,DONCHIAN_BREAKOUT", HtxTrendEnsembleSignalCalculator.Direction.LONG,
+                        new BigDecimal("90"), "BROAD_UP", new BigDecimal("4310"), new BigDecimal("4260"),
+                        new BigDecimal("4310"), new BigDecimal("4260"), new BigDecimal("4270"),
+                        new BigDecimal("4290"), new BigDecimal("4260"), new BigDecimal("4350"),
+                        new BigDecimal("4350"), new BigDecimal("4350"), new BigDecimal("4380"),
+                        new BigDecimal("4400"), new BigDecimal("2.0"), new BigDecimal("70"),
+                        "test combination", HtxTrendCombinationCalculator.FibonacciEvidence.notApplicable(32, 8));
+        HtxTrendCombinationService.Selection selection = new HtxTrendCombinationService.Selection(candidate, policy,
+                1L, BigDecimal.ONE, new BigDecimal("190"), null);
+        when(combinationService.select(eq("XAUT-USDT"), eq(properties.getPeriod()), anyList(), any()))
+                .thenReturn(selection);
+        service.setCombinationService(combinationService);
+        givenContractInfo();
+        givenEnsembleRisingKlines("XAUT-USDT");
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("long")));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code(), result.message());
+        verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
 

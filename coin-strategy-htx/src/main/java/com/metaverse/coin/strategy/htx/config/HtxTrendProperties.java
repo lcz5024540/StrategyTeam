@@ -281,6 +281,9 @@ public class HtxTrendProperties {
     /** Position multiplier for signals against a broad market trend. */
     private BigDecimal marketBreadthCounterPositionMultiplier = new BigDecimal("0.50");
 
+    /** Combination entries in a mixed market remain eligible, but start at a reduced notional. */
+    private BigDecimal combinationMixedMarketPositionMultiplier = new BigDecimal("0.50");
+
     /** Enable BTC/ETH multi-timeframe market-anchor context for candidate scoring and direction confidence. */
     private boolean marketAnchorEnabled = true;
 

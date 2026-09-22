@@ -213,6 +213,7 @@ htx:
     market-breadth-opposite-max: ${HTX_TREND_MARKET_BREADTH_OPPOSITE_MAX:0.15}
     market-breadth-aligned-position-multiplier: ${HTX_TREND_MARKET_BREADTH_ALIGNED_POSITION_MULTIPLIER:1.50}
     market-breadth-counter-position-multiplier: ${HTX_TREND_MARKET_BREADTH_COUNTER_POSITION_MULTIPLIER:0.50}
+    combination-mixed-market-position-multiplier: ${HTX_TREND_COMBINATION_MIXED_MARKET_POSITION_MULTIPLIER:0.50}
     market-anchor-enabled: ${HTX_TREND_MARKET_ANCHOR_ENABLED:true}
     market-anchor-contracts: ${HTX_TREND_MARKET_ANCHOR_CONTRACTS:BTC-USDT,ETH-USDT}
     market-anchor-periods: ${HTX_TREND_MARKET_ANCHOR_PERIODS:15min,30min,60min,4hour}

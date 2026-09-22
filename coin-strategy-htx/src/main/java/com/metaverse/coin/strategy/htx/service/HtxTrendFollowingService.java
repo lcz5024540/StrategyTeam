@@ -972,10 +972,18 @@ public class HtxTrendFollowingService {
         if (cooldownGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, cooldownGate));
         }
-        DirectionConfidence confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor, performance);
-        String directionGate = directionConfidenceGate(signal, confidence);
-        if (directionGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, directionGate));
+        DirectionConfidence confidence = null;
+        if (combination != null) {
+            String marketRiskGate = combinationMarketRiskGate(signal.side(), marketBreadth);
+            if (marketRiskGate != null) {
+                return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, marketRiskGate));
+            }
+        } else {
+            confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor, performance);
+            String directionGate = directionConfidenceGate(signal, confidence);
+            if (directionGate != null) {
+                return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, directionGate));
+            }
         }
         HtxDepth depth = depthSnapshot(contractCode);
         TopOfBook book = topOfBook(depth);
@@ -999,9 +1007,10 @@ public class HtxTrendFollowingService {
         if (chaseGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, chaseGate));
         }
-        SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance, confidence);
+        SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance, confidence, combination != null);
         long volume = combination == null ? targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing)
-                : targetVolumeForNotional(entryPrice, contract.getContractSize(), combination.plannedNotionalUsdt());
+                : targetVolumeForNotional(entryPrice, contract.getContractSize(),
+                combination.plannedNotionalUsdt().multiply(sizing.multiplier()));
         if (volume <= 0) {
             return RunResult.of(RunCode.SKIPPED, null,
                     gateMessage(ENTRY_GATE, "target volume below minimum " + sizing.summary()));
@@ -1793,7 +1802,8 @@ public class HtxTrendFollowingService {
     }
 
     private SizingContext sizingContext(TrendSide side, MarketBreadthContext marketBreadth,
-                                        PerformanceContext performance, DirectionConfidence confidence) {
+                                        PerformanceContext performance, DirectionConfidence confidence,
+                                        boolean combinationEntry) {
         BigDecimal multiplier = BigDecimal.ONE;
         StringBuilder reason = new StringBuilder();
         if (performance != null && performance.regime() == QualityRegime.WEAK) {
@@ -1819,6 +1829,11 @@ public class HtxTrendFollowingService {
             reason.append("breadth=BROAD_DOWN_COUNTER ");
         } else {
             reason.append("breadth=MIXED ");
+            if (combinationEntry) {
+                multiplier = multiplier.multiply(nonNegative(properties.getCombinationMixedMarketPositionMultiplier()));
+                reason.append("combinationMixedMarket=")
+                        .append(properties.getCombinationMixedMarketPositionMultiplier()).append(" ");
+            }
         }
         if (properties.isDirectionConfidenceGateEnabled() && properties.isConfidenceSizingEnabled()
                 && confidence != null && performance != null && performance.regime() != QualityRegime.WEAK) {
@@ -1852,6 +1867,18 @@ public class HtxTrendFollowingService {
                 positive(properties.getMaxAdaptivePositionMultiplier())
                         ? properties.getMaxAdaptivePositionMultiplier() : BigDecimal.ONE);
         return new SizingContext(multiplier, reason.toString().trim());
+    }
+
+    /**
+     * The combination candidate already inherits EMA, momentum, Donchian, ADX, ATR and volume confirmation
+     * from the ensemble signal. Do not score those inputs a second time here: only reject a clearly opposite
+     * broad market. A mixed market is handled by reduced sizing in {@link #sizingContext}.
+     */
+    private static String combinationMarketRiskGate(TrendSide side, MarketBreadthContext marketBreadth) {
+        if (againstBroadMarket(side, marketBreadth)) {
+            return "combination market risk: signal opposes " + marketBreadth.summary();
+        }
+        return null;
     }
 
     private QueryOrderResult queryOrder(String contractCode, Long orderId, String clientOrderId) {
