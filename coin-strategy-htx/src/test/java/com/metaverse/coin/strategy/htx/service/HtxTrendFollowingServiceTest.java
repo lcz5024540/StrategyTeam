@@ -111,6 +111,7 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("entry gate: funding cost blocked"));
         assertTrue(result.message().contains("funding cost blocked"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
@@ -128,6 +129,7 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.OBSERVED, result.code());
+        assertTrue(result.message().contains("mode gate: observe-only signal=LONG"));
         assertTrue(result.message().contains("observe-only signal=LONG"));
         verify(recorder).recordSignal(any());
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
@@ -189,6 +191,27 @@ class HtxTrendFollowingServiceTest {
         assertEquals(HtxTrendFollowingService.RunCode.OBSERVED, result.code());
         assertTrue(result.message().contains("live entry gates bypassed"));
         verify(swap, never()).switchLeverage(any(), any(), anyInt());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveEntryClassifiesLeverageFailureAsExecutionPreflight() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(error("risk", "leverage unavailable"));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code());
+        assertTrue(result.message().contains("execution preflight: leverage switch failed"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
@@ -1572,6 +1595,10 @@ class HtxTrendFollowingServiceTest {
 
     private <T> HtxRestResponse<T> ok(T data) {
         return HtxRestResponse.<T>builder().status("ok").data(data).build();
+    }
+
+    private <T> HtxRestResponse<T> error(String code, String message) {
+        return HtxRestResponse.<T>builder().status("error").errCode(code).errMsg(message).build();
     }
 
     private HtxSwapOrderResult accepted(long orderId, long clientOrderId) {

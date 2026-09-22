@@ -71,6 +71,11 @@ public class HtxTrendFollowingService {
     private static final String SIDE_SELL = "sell";
     private static final String ORDER_TYPE_MARKET = "market";
     private static final BigDecimal TWO = new BigDecimal("2");
+    private static final String MODE_GATE = "mode gate";
+    private static final String CANDIDATE_SCAN = "candidate scan";
+    private static final String EXECUTION_PREFLIGHT = "execution preflight";
+    private static final String ENTRY_GATE = "entry gate";
+    private static final String ORDER_EXECUTION = "order execution";
     private static final LocalDateTime SIGNAL_HISTORY_FLOOR = LocalDateTime.of(1970, 1, 1, 0, 0);
 
     private final HtxUsdtSwapService swap;
@@ -166,7 +171,7 @@ public class HtxTrendFollowingService {
     RunResult runOnce(boolean entryWindowAllowsNewEntries) {
         List<String> contractCodes = liveContractCodes();
         if (contractCodes.isEmpty()) {
-            return RunResult.of(RunCode.SKIPPED, null, "trend contract list is blank");
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(MODE_GATE, "trend contract list is blank"));
         }
         long candidateScanCloseEpoch = currentStableCandleCloseEpoch();
         boolean scanEntryCandidates = markCandidateScanStarted(candidateScanCloseEpoch);
@@ -221,7 +226,7 @@ public class HtxTrendFollowingService {
             candidateScanDurationMs = Duration.ofNanos(System.nanoTime() - scanStartedAt).toMillis();
         } else {
             RunResult scanSkipped = RunResult.of(RunCode.SKIPPED, null,
-                    "candidate scan already completed closeEpoch=" + candidateScanCloseEpoch);
+                    gateMessage(CANDIDATE_SCAN, "already completed closeEpoch=" + candidateScanCloseEpoch));
             selected = select(selected, tag("ENTRY_SCAN", scanSkipped));
             summaries.add("ENTRY_SCAN=" + scanSkipped.code() + ":" + scanSkipped.message());
         }
@@ -233,15 +238,18 @@ public class HtxTrendFollowingService {
                 .toList();
         if (!rankedCandidates.isEmpty()) {
             if (!properties.isEntryEnabled()) {
-                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "new trend entries disabled");
+                RunResult blocked = RunResult.of(RunCode.SKIPPED, null,
+                        gateMessage(EXECUTION_PREFLIGHT, "new trend entries disabled"));
                 selected = select(selected, tag("ENTRY", blocked));
                 summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
             } else if (!entryWindowAllowsNewEntries && !hasFreshCarryoverCandidate) {
-                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "entry window closed; candidates cached");
+                RunResult blocked = RunResult.of(RunCode.SKIPPED, null,
+                        gateMessage(EXECUTION_PREFLIGHT, "entry window closed; candidates cached"));
                 selected = select(selected, tag("ENTRY", blocked));
                 summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
             } else if (remainingSlots <= 0L) {
-                RunResult blocked = RunResult.of(RunCode.SKIPPED, null, "max active trend positions reached");
+                RunResult blocked = RunResult.of(RunCode.SKIPPED, null,
+                        gateMessage(EXECUTION_PREFLIGHT, "max active trend positions reached"));
                 selected = select(selected, tag("ENTRY", blocked));
                 summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
             } else {
@@ -265,7 +273,7 @@ public class HtxTrendFollowingService {
         }
 
         if (selected == null) {
-            return RunResult.of(RunCode.SKIPPED, null, "no trend contracts evaluated");
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(CANDIDATE_SCAN, "no trend contracts evaluated"));
         }
         return RunResult.of(selected.code(), selected.positionId(), selected.message()
                 + "; market=" + marketBreadth.summary()
@@ -315,12 +323,12 @@ public class HtxTrendFollowingService {
             List<CandidateScanResult> interrupted = new ArrayList<>(contractCodes.size());
             for (String contractCode : contractCodes) {
                 interrupted.add(new CandidateScanResult(contractCode, new CandidateEvaluation(
-                        RunResult.of(RunCode.SKIPPED, null, "candidate scan interrupted"), null)));
+                        RunResult.of(RunCode.SKIPPED, null, gateMessage(CANDIDATE_SCAN, "interrupted")), null)));
             }
             return interrupted;
         } catch (ExecutionException ex) {
             return List.of(new CandidateScanResult("ENTRY_SCAN", new CandidateEvaluation(
-                    RunResult.of(RunCode.SKIPPED, null, "candidate scan failed: " + rootMessage(ex)), null)));
+                    RunResult.of(RunCode.SKIPPED, null, gateMessage(CANDIDATE_SCAN, "failed: " + rootMessage(ex))), null)));
         } finally {
             executor.shutdownNow();
         }
@@ -333,7 +341,7 @@ public class HtxTrendFollowingService {
         } catch (RuntimeException ex) {
             log.warn("[HTX-TREND] candidate scan failed contract={}", contractCode, ex);
             return new CandidateScanResult(contractCode, new CandidateEvaluation(
-                    RunResult.of(RunCode.SKIPPED, null, "candidate scan failed: " + rootMessage(ex)), null));
+                    RunResult.of(RunCode.SKIPPED, null, gateMessage(CANDIDATE_SCAN, "failed: " + rootMessage(ex))), null));
         }
     }
 
@@ -408,7 +416,7 @@ public class HtxTrendFollowingService {
         pendingEntryCandidates.remove(contractCode);
         HtxSwapContractInfo contract = loadContract(contractCode);
         if (contract == null || !positive(contract.getContractSize())) {
-            return RunResult.of(RunCode.SKIPPED, null, "contract info unavailable");
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, "contract info unavailable"));
         }
         SignalSnapshot snapshot = loadSignal(contractCode);
         TrendSignal rawSignal = snapshot.signal();
@@ -428,7 +436,8 @@ public class HtxTrendFollowingService {
         }
         HtxSwapContractInfo contract = loadContract(contractCode);
         if (contract == null || !positive(contract.getContractSize())) {
-            return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null, "contract info unavailable"), null);
+            return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(EXECUTION_PREFLIGHT, "contract info unavailable")), null);
         }
         SignalSnapshot snapshot = loadSignal(contractCode);
         TrendSignal rawSignal = snapshot.signal();
@@ -453,7 +462,8 @@ public class HtxTrendFollowingService {
                                                                SignalSnapshot snapshot, MarketBreadthContext marketBreadth,
                                                                MarketAnchorContext marketAnchor) {
         if (combinationService == null) {
-            return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null, "combination service unavailable"), null);
+            return new CandidateEvaluation(RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(EXECUTION_PREFLIGHT, "combination service unavailable")), null);
         }
         HtxTrendEnsembleSignalCalculator.TrendCandidateSignal ensemble = ensembleCalculator.evaluate(snapshot.entryCandles(),
                 ensembleProperties, properties.getPeriod(), Instant.now().getEpochSecond());
@@ -849,73 +859,74 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
         }
         if (properties.isObserveOnly()) {
-            return RunResult.of(RunCode.OBSERVED, null, "observe-only signal=" + signal.side()
-                    + "; live entry gates bypassed reason=" + signal.reason());
+            return RunResult.of(RunCode.OBSERVED, null, gateMessage(MODE_GATE, "observe-only signal=" + signal.side()
+                    + "; live entry gates bypassed reason=" + signal.reason()));
         }
         String fundingCostGate = fundingCostGate(contractCode, signal.side(), properties.getMaxEntryFundingCostRate());
         if (fundingCostGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, fundingCostGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, fundingCostGate));
         }
         String freshnessGate = entrySignalFreshnessGate(signal);
         if (freshnessGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, freshnessGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, freshnessGate));
         }
         String cooldownGate = cooldownGate(contractCode, signal, marketBreadth);
         if (cooldownGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, cooldownGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, cooldownGate));
         }
         DirectionConfidence confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor, performance);
         String directionGate = directionConfidenceGate(signal, confidence);
         if (directionGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, directionGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, directionGate));
         }
         HtxDepth depth = depthSnapshot(contractCode);
         TopOfBook book = topOfBook(depth);
         if (book == null) {
-            return RunResult.of(RunCode.SKIPPED, null, "depth unavailable");
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, "depth unavailable"));
         }
         BigDecimal spreadRate = book.ask().subtract(book.bid()).divide(mid(book), 18, RoundingMode.HALF_UP);
         if (spreadRate.compareTo(properties.getMaxEntrySpreadRate()) > 0) {
-            return RunResult.of(RunCode.SKIPPED, null, "spread too wide: " + spreadRate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, "spread too wide: " + spreadRate));
         }
         String openOrderGate = openOrderGate(contractCode);
         if (openOrderGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, openOrderGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, openOrderGate));
         }
         String externalPositionGate = externalPositionGate(contractCode);
         if (externalPositionGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, externalPositionGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, externalPositionGate));
         }
         BigDecimal entryPrice = signal.side() == TrendSide.LONG ? book.ask() : book.bid();
         String chaseGate = entryChaseGate(signal, entryPrice);
         if (chaseGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, chaseGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, chaseGate));
         }
         SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance, confidence);
         long volume = combination == null ? targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing)
                 : targetVolumeForNotional(entryPrice, contract.getContractSize(), combination.plannedNotionalUsdt());
         if (volume <= 0) {
-            return RunResult.of(RunCode.SKIPPED, null, "target volume below minimum " + sizing.summary());
+            return RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, "target volume below minimum " + sizing.summary()));
         }
         String liquidityGate = liquidityGate(signal, entryCandles, depth, volume);
         if (liquidityGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, liquidityGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, liquidityGate));
         }
         BigDecimal takerFeeRate = effectiveTakerFeeRate(contractCode);
         String expectedMoveGate = expectedMoveGate(signal, entryPrice, spreadRate, takerFeeRate);
         if (expectedMoveGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, expectedMoveGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, expectedMoveGate));
         }
         EntryCostContext entryCost = entryCostContext(signal, entryPrice, spreadRate, contract.getContractSize(),
                 volume, takerFeeRate, confidence);
         BigDecimal notional = BigDecimal.valueOf(volume).multiply(contract.getContractSize()).multiply(entryPrice);
         String marginGate = marginGate(contractCode, notional);
         if (marginGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, marginGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, marginGate));
         }
         String leverageGate = switchLeverage(contractCode, signal.side());
         if (leverageGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, leverageGate);
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, leverageGate));
         }
         String side = signal.side() == TrendSide.LONG ? LONG : SHORT;
         BigDecimal stopPrice = combination == null ? initialStop(signal, side, contract)
@@ -973,10 +984,10 @@ public class HtxTrendFollowingService {
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
         if (response == null || !response.ok() || orderId == null) {
-            recorder.markOrderRejected(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId,
-                    "entry rejected: " + error(response));
-            recorder.markStatus(id, HtxTrendRecorder.REJECTED, "entry rejected: " + error(response));
-            return RunResult.of(RunCode.REJECTED, id, "entry rejected: " + error(response));
+            String rejectionReason = gateMessage(ORDER_EXECUTION, "entry rejected: " + error(response));
+            recorder.markOrderRejected(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, rejectionReason);
+            recorder.markStatus(id, HtxTrendRecorder.REJECTED, rejectionReason);
+            return RunResult.of(RunCode.REJECTED, id, rejectionReason);
         }
         recorder.markOrderAccepted(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, orderId,
                 accepted.getClientOrderId(), "entry accepted by exchange");
@@ -2171,28 +2182,34 @@ public class HtxTrendFollowingService {
         return 0;
     }
 
+    private static String gateMessage(String stage, String reason) {
+        String safeStage = stage == null ? "gate" : stage;
+        String safeReason = reason == null ? "unknown" : reason;
+        return safeStage + ": " + safeReason;
+    }
+
     private String configGate(String contractCode) {
         if (!properties.isEnabled()) {
-            return "trend strategy disabled";
+            return gateMessage(MODE_GATE, "trend strategy disabled");
         }
         if (isBlank(contractCode)) {
-            return "contract code is blank";
+            return gateMessage(MODE_GATE, "contract code is blank");
         }
         if (!contractProperties.isEnabled()) {
-            return "contract module disabled";
+            return gateMessage(MODE_GATE, "contract module disabled");
         }
         if (!properties.isObserveOnly() && marketMakerProperties != null && marketMakerProperties.isEnabled()) {
-            return "trend exclusive mode blocked: market-maker enabled";
+            return gateMessage(EXECUTION_PREFLIGHT, "trend exclusive mode blocked: market-maker enabled");
         }
         if (!properties.isObserveOnly() && fundingArbitrageProperties != null && fundingArbitrageProperties.isEnabled()) {
-            return "trend exclusive mode blocked: funding arbitrage enabled";
+            return gateMessage(EXECUTION_PREFLIGHT, "trend exclusive mode blocked: funding arbitrage enabled");
         }
         if (!properties.isObserveOnly() && (contractProperties.isDryRun() || !contractProperties.isLiveEnabled())) {
-            return "trend live mode requires contract dry-run=false and live-enabled=true";
+            return gateMessage(EXECUTION_PREFLIGHT, "trend live mode requires contract dry-run=false and live-enabled=true");
         }
         if (!properties.isObserveOnly()
                 && (properties.getLeverage() <= 0 || properties.getLeverage() > contractProperties.getMaxLeverage())) {
-            return "trend leverage outside configured max leverage";
+            return gateMessage(EXECUTION_PREFLIGHT, "trend leverage outside configured max leverage");
         }
         return null;
     }

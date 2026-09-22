@@ -92,6 +92,7 @@ flowchart TD
 |---|---|---|
 | 2026-09-22 | 已完成代码第一步 | observe-only 在真实开仓 gate 前返回 `OBSERVED`，并明确写入 `live entry gates bypassed`；真实模式仍继续资金费成本 gate。 |
 | 2026-09-22 | 已完成代码第一步 | 杠杆范围检查限定为真实模式，观察模式不会因实盘杠杆配置不合适而丢失候选诊断。 |
+| 2026-09-22 | 已完成诊断拆分 | 真实开仓拒绝原因增加阶段前缀：`mode gate`、`candidate scan`、`entry gate`、`execution preflight`、`order execution`；先复用现有 message/gate reason，不新增表结构。 |
 
 ---
 
