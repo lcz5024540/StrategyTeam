@@ -48,5 +48,12 @@ public class HtxTrendCandidateSignalEntity {
     private String entryHypothesis;
     private BigDecimal sizingMultiplier;
     private BigDecimal plannedNotionalUsdt;
+    private BigDecimal targetZoneLow;
+    private BigDecimal targetZoneHigh;
+    private BigDecimal boxMeasuredMoveTarget;
+    private BigDecimal fibExtension1272;
+    private BigDecimal fibExtension1618;
+    private BigDecimal expectedRMultiple;
+    private BigDecimal momentumQualityScore;
     private LocalDateTime createdAt;
 }

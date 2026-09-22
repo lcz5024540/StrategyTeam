@@ -71,9 +71,35 @@ public class HtxTrendCombinationCalculator {
                                            TrendCandidateSignal signal, Structure structure, MarketState marketState,
                                            BigDecimal score, String hypothesis) {
         BigDecimal invalidation = invalidation(primaryModel, signal, structure);
+        Targets targets = targets(signal.direction(), structure);
+        BigDecimal reward = signal.direction() == Direction.LONG
+                ? targets.targetZoneLow().subtract(signal.closePrice()) : signal.closePrice().subtract(targets.targetZoneHigh());
+        BigDecimal risk = signal.direction() == Direction.LONG
+                ? signal.closePrice().subtract(invalidation) : invalidation.subtract(signal.closePrice());
+        BigDecimal expectedR = risk.signum() > 0 ? reward.max(BigDecimal.ZERO).divide(risk, 18, java.math.RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        BigDecimal momentumQuality = score.min(ONE_HUNDRED).add(signal.adx() == null ? BigDecimal.ZERO : signal.adx())
+                .divide(new BigDecimal("2"), 18, java.math.RoundingMode.HALF_UP).min(ONE_HUNDRED);
         return new CombinationCandidate(primaryModel, confirmationModels, signal.direction(), score.min(ONE_HUNDRED),
                 marketState.name(), structure.boxHigh(), structure.boxLow(), structure.swingHigh(), structure.swingLow(),
-                structure.fibonacciLower(), structure.fibonacciUpper(), invalidation, hypothesis);
+                structure.fibonacciLower(), structure.fibonacciUpper(), invalidation, targets.targetZoneLow(),
+                targets.targetZoneHigh(), targets.boxMeasuredMoveTarget(), targets.fibExtension1272(),
+                targets.fibExtension1618(), expectedR, momentumQuality, hypothesis);
+    }
+
+    private static Targets targets(Direction direction, Structure structure) {
+        BigDecimal range = structure.boxHigh().subtract(structure.boxLow());
+        BigDecimal swingRange = structure.swingHigh().subtract(structure.swingLow());
+        BigDecimal measured = direction == Direction.LONG ? structure.boxHigh().add(range) : structure.boxLow().subtract(range);
+        BigDecimal extension1272 = direction == Direction.LONG
+                ? structure.swingLow().add(swingRange.multiply(new BigDecimal("1.272")))
+                : structure.swingHigh().subtract(swingRange.multiply(new BigDecimal("1.272")));
+        BigDecimal extension1618 = direction == Direction.LONG
+                ? structure.swingLow().add(swingRange.multiply(new BigDecimal("1.618")))
+                : structure.swingHigh().subtract(swingRange.multiply(new BigDecimal("1.618")));
+        BigDecimal zoneLow = measured.min(extension1272).min(extension1618);
+        BigDecimal zoneHigh = measured.max(extension1272).max(extension1618);
+        return new Targets(zoneLow, zoneHigh, measured, extension1272, extension1618);
     }
 
     private static BigDecimal invalidation(String primaryModel, TrendCandidateSignal signal, Structure structure) {
@@ -204,7 +230,10 @@ public class HtxTrendCombinationCalculator {
     public record CombinationCandidate(String primaryModel, String confirmationModels, Direction direction,
                                        BigDecimal score, String marketRegime, BigDecimal boxHigh, BigDecimal boxLow,
                                        BigDecimal swingHigh, BigDecimal swingLow, BigDecimal fibonacciLower,
-                                       BigDecimal fibonacciUpper, BigDecimal invalidationPrice, String hypothesis) {
+                                       BigDecimal fibonacciUpper, BigDecimal invalidationPrice, BigDecimal targetZoneLow,
+                                       BigDecimal targetZoneHigh, BigDecimal boxMeasuredMoveTarget, BigDecimal fibExtension1272,
+                                       BigDecimal fibExtension1618, BigDecimal expectedRMultiple,
+                                       BigDecimal momentumQualityScore, String hypothesis) {
     }
 
     private record Structure(BigDecimal boxHigh, BigDecimal boxLow, BigDecimal swingHigh, BigDecimal swingLow,
@@ -221,4 +250,7 @@ public class HtxTrendCombinationCalculator {
             return boxBreakout || donchianBreakout;
         }
     }
+
+    private record Targets(BigDecimal targetZoneLow, BigDecimal targetZoneHigh, BigDecimal boxMeasuredMoveTarget,
+                           BigDecimal fibExtension1272, BigDecimal fibExtension1618) { }
 }

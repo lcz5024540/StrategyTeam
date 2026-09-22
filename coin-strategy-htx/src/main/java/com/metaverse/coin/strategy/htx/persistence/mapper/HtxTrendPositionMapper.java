@@ -21,7 +21,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "entry_signal, exit_reason, message, account_label, entry_fee_rate, estimated_entry_fee, "
             + "estimated_close_fee, expected_net_after_fees, sizing_multiplier, sizing_reason, entry_gate_reason, "
             + "primary_model, confirmation_models, policy_version, market_regime, factor_snapshot_id, "
-            + "entry_hypothesis, invalidation_price, "
+            + "entry_hypothesis, invalidation_price, target_zone_low, target_zone_high, expected_r_multiple, momentum_quality_score, "
             + "created_at, updated_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "

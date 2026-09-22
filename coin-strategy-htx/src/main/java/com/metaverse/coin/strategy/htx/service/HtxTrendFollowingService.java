@@ -953,6 +953,10 @@ public class HtxTrendFollowingService {
             entity.setFactorSnapshotId(combination.factorSnapshotId());
             entity.setEntryHypothesis(combination.hypothesis());
             entity.setInvalidationPrice(combination.invalidationPrice());
+            entity.setTargetZoneLow(combination.targetZoneLow());
+            entity.setTargetZoneHigh(combination.targetZoneHigh());
+            entity.setExpectedRMultiple(combination.expectedRMultiple());
+            entity.setMomentumQualityScore(combination.momentumQualityScore());
         }
         entity.setEntryFeeRate(takerFeeRate);
         entity.setEstimatedEntryFee(entryCost.estimatedEntryFee());
@@ -2528,6 +2532,10 @@ public class HtxTrendFollowingService {
         String hypothesis() { return selection.candidate().hypothesis(); }
         BigDecimal invalidationPrice() { return selection.candidate().invalidationPrice(); }
         BigDecimal plannedNotionalUsdt() { return selection.plannedNotionalUsdt(); }
+        BigDecimal targetZoneLow() { return selection.candidate().targetZoneLow(); }
+        BigDecimal targetZoneHigh() { return selection.candidate().targetZoneHigh(); }
+        BigDecimal expectedRMultiple() { return selection.candidate().expectedRMultiple(); }
+        BigDecimal momentumQualityScore() { return selection.candidate().momentumQualityScore(); }
     }
 
     private record TopOfBook(BigDecimal bid, BigDecimal ask) {

@@ -55,6 +55,10 @@ public class HtxTrendPositionEntity {
     private Long factorSnapshotId;
     private String entryHypothesis;
     private BigDecimal invalidationPrice;
+    private BigDecimal targetZoneLow;
+    private BigDecimal targetZoneHigh;
+    private BigDecimal expectedRMultiple;
+    private BigDecimal momentumQualityScore;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

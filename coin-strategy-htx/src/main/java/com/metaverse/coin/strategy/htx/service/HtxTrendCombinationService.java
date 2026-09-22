@@ -114,6 +114,13 @@ public class HtxTrendCombinationService {
                 + resolved.candidate().boxLow() + "\",\"swingHigh\":\"" + resolved.candidate().swingHigh()
                 + "\",\"swingLow\":\"" + resolved.candidate().swingLow() + "\",\"fibLower\":\""
                 + resolved.candidate().fibonacciLower() + "\",\"fibUpper\":\"" + resolved.candidate().fibonacciUpper()
+                + "\",\"targetZoneLow\":\"" + resolved.candidate().targetZoneLow()
+                + "\",\"targetZoneHigh\":\"" + resolved.candidate().targetZoneHigh()
+                + "\",\"boxMeasuredMove\":\"" + resolved.candidate().boxMeasuredMoveTarget()
+                + "\",\"fib1272\":\"" + resolved.candidate().fibExtension1272()
+                + "\",\"fib1618\":\"" + resolved.candidate().fibExtension1618()
+                + "\",\"expectedR\":\"" + resolved.candidate().expectedRMultiple()
+                + "\",\"momentumQuality\":\"" + resolved.candidate().momentumQualityScore()
                 + "\",\"adx\":\"" + signal.adx() + "\",\"atr\":\"" + signal.atr()
                 + "\",\"volumeRatio\":\"" + signal.volumeRatio() + "\"}");
         return combinationRecorder.recordSnapshot(snapshot);
@@ -138,6 +145,11 @@ public class HtxTrendCombinationService {
         entity.setSizingMultiplier(sizingMultiplier(resolved.candidate().score(), resolved.candidate().marketRegime()));
         entity.setPlannedNotionalUsdt(resolved.policy().getBaseNotionalUsdt().multiply(entity.getSizingMultiplier())
                 .min(resolved.policy().getMaxNotionalUsdt()));
+        entity.setTargetZoneLow(resolved.candidate().targetZoneLow()); entity.setTargetZoneHigh(resolved.candidate().targetZoneHigh());
+        entity.setBoxMeasuredMoveTarget(resolved.candidate().boxMeasuredMoveTarget());
+        entity.setFibExtension1272(resolved.candidate().fibExtension1272()); entity.setFibExtension1618(resolved.candidate().fibExtension1618());
+        entity.setExpectedRMultiple(resolved.candidate().expectedRMultiple());
+        entity.setMomentumQualityScore(resolved.candidate().momentumQualityScore());
         candidateRecorder.record(entity);
     }
 

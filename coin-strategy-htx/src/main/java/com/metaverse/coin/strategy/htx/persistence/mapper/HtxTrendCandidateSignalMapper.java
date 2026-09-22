@@ -13,7 +13,9 @@ public interface HtxTrendCandidateSignalMapper extends BaseMapper<HtxTrendCandid
             + "short_score, score_gap, close_price, ema_fast, ema_medium, ema_slow, breakout_high, breakout_low, "
             + "atr, atr_pct, adx, momentum_pct, volume_ratio, entry_reason, invalidation_reason, shadow, "
             + "model_version, primary_model, confirmation_models, policy_version, factor_snapshot_id, gate_result, "
-            + "gate_reason, invalidation_price, entry_hypothesis, sizing_multiplier, planned_notional_usdt, created_at";
+            + "gate_reason, invalidation_price, entry_hypothesis, sizing_multiplier, planned_notional_usdt, "
+            + "target_zone_low, target_zone_high, box_measured_move_target, fib_extension_1272, fib_extension_1618, "
+            + "expected_r_multiple, momentum_quality_score, created_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_candidate_signal "
             + "WHERE contract_code = #{contractCode} AND period = #{period} AND model_version = #{modelVersion} "
