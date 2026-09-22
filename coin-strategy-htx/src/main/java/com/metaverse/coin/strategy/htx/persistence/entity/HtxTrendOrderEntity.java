@@ -16,6 +16,7 @@ public class HtxTrendOrderEntity {
     private Long id;
     private Long positionId;
     private String positionKey;
+    private String runId;
     private String contractCode;
     private String leg;
     private String trendSide;

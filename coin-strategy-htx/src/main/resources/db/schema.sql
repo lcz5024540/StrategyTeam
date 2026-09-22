@@ -369,6 +369,7 @@ CREATE TABLE IF NOT EXISTS htx_contract_leg (
 CREATE TABLE IF NOT EXISTS htx_trend_position (
     id                       BIGINT         PRIMARY KEY AUTO_INCREMENT,
     position_key             VARCHAR(128)   NOT NULL UNIQUE,
+    run_id                   VARCHAR(128),
     contract_code            VARCHAR(32)    NOT NULL,
     status                   VARCHAR(32)    NOT NULL,
     side                     VARCHAR(8)     NOT NULL,
@@ -427,6 +428,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     INDEX idx_trend_position_account  (account_label, status, updated_at),
     INDEX idx_trend_position_entry    (entry_order_id),
     INDEX idx_trend_position_close    (close_order_id)
+    ,INDEX idx_trend_position_run     (run_id)
 );
 
 -- Immutable factor evidence for a combined trend candidate. Policy and position rows reference this record;
@@ -483,6 +485,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_order (
     id                       BIGINT         PRIMARY KEY AUTO_INCREMENT,
     position_id              BIGINT         NOT NULL,
     position_key             VARCHAR(128)   NOT NULL,
+    run_id                   VARCHAR(128),
     contract_code            VARCHAR(32)    NOT NULL,
     leg                      VARCHAR(16)    NOT NULL,
     trend_side               VARCHAR(8)     NOT NULL,
@@ -517,6 +520,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_order (
     INDEX idx_trend_order_account    (account_label, status, updated_at),
     INDEX idx_trend_order_exchange   (exchange_order_id),
     INDEX idx_trend_order_created    (created_at)
+    ,INDEX idx_trend_order_run       (run_id)
 );
 
 -- Shadow-only multi-asset, multi-period trend ensemble candidates. These rows are generated
@@ -550,9 +554,13 @@ CREATE TABLE IF NOT EXISTS htx_trend_candidate_signal (
     primary_model        VARCHAR(64),
     confirmation_models  VARCHAR(256),
     policy_version       VARCHAR(64),
+    run_id               VARCHAR(128),
     factor_snapshot_id   BIGINT,
     gate_result          VARCHAR(16),
     gate_reason          VARCHAR(1024),
+    execution_gate_result VARCHAR(32),
+    execution_gate_reason VARCHAR(1024),
+    execution_evaluated_at DATETIME(3),
     invalidation_price   DECIMAL(36,18),
     entry_hypothesis     VARCHAR(1024),
     sizing_multiplier    DECIMAL(18,8),
@@ -569,6 +577,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_candidate_signal (
     INDEX idx_trend_candidate_symbol_time (contract_code, period, bar_time, created_at),
     INDEX idx_trend_candidate_direction   (direction, signal_score, created_at),
     INDEX idx_trend_candidate_created     (created_at)
+    ,INDEX idx_trend_candidate_run         (run_id, contract_code)
 );
 
 -- Append-only snapshots of the computed trend signal. This is the main observation surface while

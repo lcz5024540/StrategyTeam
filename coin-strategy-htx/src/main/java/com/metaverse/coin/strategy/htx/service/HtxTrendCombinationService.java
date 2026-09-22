@@ -53,14 +53,15 @@ public class HtxTrendCombinationService {
         if (snapshotId == null) {
             return Selection.rejected("factor snapshot persistence failed");
         }
+        String runId = runId(contractCode, period, signal.barTime());
         for (ResolvedCandidate item : resolved) {
             recordCandidate(contractCode, period, signal, item, snapshotId,
-                    item == selected ? "PASSED" : "REJECTED", item == selected ? "PASSED" : HtxTrendCombinationGateReason.LOWER_PRIORITY_FOR_SYMBOL.code());
+                    runId, item == selected ? "PASSED" : "REJECTED", item == selected ? "PASSED" : HtxTrendCombinationGateReason.LOWER_PRIORITY_FOR_SYMBOL.code());
         }
         BigDecimal multiplier = sizingMultiplier(selected.candidate().score(), selected.candidate().marketRegime());
         BigDecimal notional = selected.policy().getBaseNotionalUsdt().multiply(multiplier)
                 .min(selected.policy().getMaxNotionalUsdt());
-        return Selection.selected(selected.candidate(), selected.policy(), snapshotId, multiplier, notional);
+        return Selection.selected(selected.candidate(), selected.policy(), snapshotId, multiplier, notional, runId);
     }
 
     /** Records the scan-level market context once per completed entry candle for later model attribution. */
@@ -119,14 +120,21 @@ public class HtxTrendCombinationService {
             return;
         }
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
-        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + barTime + ":" + policyVersion
-                + ":entry-cost-v1");
+        String key = contractCode + ":" + period + ":" + barTime + ":" + policyVersion + ":entry-cost-v1";
+        if (evidence.runId() != null && !evidence.runId().isBlank()) {
+            key += ":" + evidence.runId() + ":" + evidence.gateResult();
+        }
+        snapshot.setSnapshotKey(key);
         snapshot.setContractCode(contractCode);
         snapshot.setPeriod(period);
         snapshot.setBarTime(barTime);
         snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
         snapshot.setFactorsJson(entryCostEvidenceJson(evidence));
         combinationRecorder.recordSnapshot(snapshot);
+    }
+
+    public void recordExecutionGate(String runId, String contractCode, String result, String reason) {
+        candidateRecorder.markExecutionGate(runId, contractCode, result, reason);
     }
 
     /** Persist a negative decision too, so a later review can distinguish missing structure from execution rejection. */
@@ -151,6 +159,7 @@ public class HtxTrendCombinationService {
         entity.setInvalidationReason(signal.invalidationReason()); entity.setShadow(false);
         entity.setModelVersion("combo-v2:evidence-v2:COMBINATION_GATE"); entity.setPrimaryModel("NONE");
         entity.setPolicyVersion("combo-v2"); entity.setFactorSnapshotId(snapshotId);
+        entity.setRunId(runId(contractCode, period, signal.barTime()));
         entity.setGateResult("REJECTED"); entity.setGateReason(reason.code());
         candidateRecorder.record(entity);
         return Selection.rejected(reason.code());
@@ -274,7 +283,7 @@ public class HtxTrendCombinationService {
     }
 
     private static String entryCostEvidenceJson(EntryCostEvidence evidence) {
-        return "{\"schema\":\"trend-entry-cost-v1\",\"account\":{\"label\":"
+        return "{\"schema\":\"trend-entry-cost-v1\",\"runId\":" + jsonText(evidence.runId()) + ",\"account\":{\"label\":"
                 + jsonText(evidence.accountLabel()) + ",\"feeSource\":" + jsonText(evidence.feeSource())
                 + ",\"openTakerRate\":" + jsonNumber(evidence.openTakerRate())
                 + ",\"closeTakerRate\":" + jsonNumber(evidence.closeTakerRate())
@@ -317,7 +326,7 @@ public class HtxTrendCombinationService {
     }
 
     private void recordCandidate(String contractCode, String period, TrendCandidateSignal signal, ResolvedCandidate resolved,
-                                 Long snapshotId, String result, String reason) {
+                                 Long snapshotId, String runId, String result, String reason) {
         HtxTrendCandidateSignalEntity entity = new HtxTrendCandidateSignalEntity();
         entity.setContractCode(contractCode); entity.setPeriod(period); entity.setBarTime(signal.barTime());
         entity.setDirection(signal.direction().name()); entity.setRegime(resolved.candidate().marketRegime());
@@ -330,6 +339,7 @@ public class HtxTrendCombinationService {
         entity.setShadow(false); entity.setModelVersion(resolved.policy().getPolicyVersion()
                 + ":evidence-v2:" + resolved.policy().getPolicyCode());
         entity.setPrimaryModel(resolved.candidate().primaryModel()); entity.setConfirmationModels(resolved.candidate().confirmationModels());
+        entity.setRunId(runId);
         entity.setPolicyVersion(resolved.policy().getPolicyVersion()); entity.setFactorSnapshotId(snapshotId);
         entity.setGateResult(result); entity.setGateReason(reason); entity.setInvalidationPrice(resolved.candidate().invalidationPrice());
         entity.setEntryHypothesis(resolved.candidate().hypothesis());
@@ -351,19 +361,28 @@ public class HtxTrendCombinationService {
         return BigDecimal.ONE;
     }
 
+    private static String runId(String contractCode, String period, Long barTime) {
+        return "trend-entry:" + contractCode + ":" + period + ":" + barTime;
+    }
+
     private record ResolvedCandidate(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy) { }
 
     public record Selection(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy, Long factorSnapshotId,
-                            BigDecimal sizingMultiplier, BigDecimal plannedNotionalUsdt, String rejection) {
-        static Selection selected(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy, Long snapshotId,
-                                  BigDecimal multiplier, BigDecimal notional) {
-            return new Selection(candidate, policy, snapshotId, multiplier, notional, null);
+                            BigDecimal sizingMultiplier, BigDecimal plannedNotionalUsdt, String runId, String rejection) {
+        /** Compatibility constructor for callers that only hold structural evidence. */
+        public Selection(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy, Long factorSnapshotId,
+                         BigDecimal sizingMultiplier, BigDecimal plannedNotionalUsdt, String rejection) {
+            this(candidate, policy, factorSnapshotId, sizingMultiplier, plannedNotionalUsdt, null, rejection);
         }
-        static Selection rejected(String rejection) { return new Selection(null, null, null, null, null, rejection); }
+        static Selection selected(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy, Long snapshotId,
+                                  BigDecimal multiplier, BigDecimal notional, String runId) {
+            return new Selection(candidate, policy, snapshotId, multiplier, notional, runId, null);
+        }
+        static Selection rejected(String rejection) { return new Selection(null, null, null, null, null, null, rejection); }
         public boolean accepted() { return candidate != null; }
     }
 
-    public record EntryCostEvidence(String accountLabel, String feeSource, BigDecimal openTakerRate,
+    public record EntryCostEvidence(String runId, String accountLabel, String feeSource, BigDecimal openTakerRate,
                                     BigDecimal closeTakerRate, BigDecimal effectiveTakerRate,
                                     BigDecimal bestBid, BigDecimal bestAsk, BigDecimal spreadRate,
                                     int depthLevels, BigDecimal availableContracts, BigDecimal requiredContracts,
@@ -372,5 +391,21 @@ public class HtxTrendCombinationService {
                                     BigDecimal estimatedEntryFee, BigDecimal estimatedCloseFee,
                                     BigDecimal estimatedSpreadCost, BigDecimal expectedNetAfterCosts,
                                     BigDecimal requiredMove, String gateResult, String gateReason) {
+        /** Compatibility constructor for historical tests and callers without a scan identifier. */
+        public EntryCostEvidence(String accountLabel, String feeSource, BigDecimal openTakerRate,
+                                 BigDecimal closeTakerRate, BigDecimal effectiveTakerRate,
+                                 BigDecimal bestBid, BigDecimal bestAsk, BigDecimal spreadRate,
+                                 int depthLevels, BigDecimal availableContracts, BigDecimal requiredContracts,
+                                 BigDecimal depthCoverageRatio, String side, BigDecimal entryPrice, long volume,
+                                 BigDecimal notionalUsdt, BigDecimal expectedMove, BigDecimal expectedGrossPnl,
+                                 BigDecimal estimatedEntryFee, BigDecimal estimatedCloseFee,
+                                 BigDecimal estimatedSpreadCost, BigDecimal expectedNetAfterCosts,
+                                 BigDecimal requiredMove, String gateResult, String gateReason) {
+            this(null, accountLabel, feeSource, openTakerRate, closeTakerRate, effectiveTakerRate,
+                    bestBid, bestAsk, spreadRate, depthLevels, availableContracts, requiredContracts,
+                    depthCoverageRatio, side, entryPrice, volume, notionalUsdt, expectedMove, expectedGrossPnl,
+                    estimatedEntryFee, estimatedCloseFee, estimatedSpreadCost, expectedNetAfterCosts,
+                    requiredMove, gateResult, gateReason);
+        }
     }
 }

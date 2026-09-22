@@ -34,6 +34,19 @@ public class HtxTrendCandidateSignalRecorder {
         }
     }
 
+    /** Final live-preflight outcome is mutable operational evidence; structural candidate fields remain immutable. */
+    public void markExecutionGate(String runId, String contractCode, String result, String reason) {
+        if (runId == null || runId.isBlank() || contractCode == null || contractCode.isBlank()) {
+            return;
+        }
+        try {
+            mapper.markExecutionGate(runId, contractCode, result, reason == null ? null
+                    : reason.substring(0, Math.min(reason.length(), 1024)));
+        } catch (RuntimeException ex) {
+            log.warn("trend execution gate update failed runId={} contract={}", runId, contractCode, ex);
+        }
+    }
+
     private static boolean sameBar(HtxTrendCandidateSignalEntity latest, HtxTrendCandidateSignalEntity current) {
         return latest != null
                 && current != null

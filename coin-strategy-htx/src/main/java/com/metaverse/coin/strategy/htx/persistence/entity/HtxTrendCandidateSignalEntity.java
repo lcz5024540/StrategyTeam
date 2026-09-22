@@ -42,9 +42,14 @@ public class HtxTrendCandidateSignalEntity {
     private String primaryModel;
     private String confirmationModels;
     private String policyVersion;
+    /** Deterministic scan identifier joining this candidate to its execution attempt and resulting order. */
+    private String runId;
     private Long factorSnapshotId;
     private String gateResult;
     private String gateReason;
+    private String executionGateResult;
+    private String executionGateReason;
+    private LocalDateTime executionEvaluatedAt;
     private BigDecimal invalidationPrice;
     private String entryHypothesis;
     private BigDecimal sizingMultiplier;

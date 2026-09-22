@@ -15,6 +15,7 @@ public class HtxTrendPositionEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String positionKey;
+    private String runId;
     private String contractCode;
     private String status;
     private String side;

@@ -953,67 +953,68 @@ public class HtxTrendFollowingService {
                                      HtxSwapContractInfo contract, MarketBreadthContext marketBreadth,
                                      MarketAnchorContext marketAnchor, PerformanceContext performance,
                                      CombinationContext combination) {
+        recordCombinationCostNotEvaluated(contractCode, signal, combination);
         if (signal.side() == TrendSide.FLAT) {
-            return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
+            return executionResult(contractCode, combination, RunResult.of(RunCode.NO_SIGNAL, null, signal.reason()));
         }
         if (properties.isObserveOnly()) {
-            return RunResult.of(RunCode.OBSERVED, null, gateMessage(MODE_GATE, "observe-only signal=" + signal.side()
-                    + "; live entry gates bypassed reason=" + signal.reason()));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.OBSERVED, null, gateMessage(MODE_GATE, "observe-only signal=" + signal.side()
+                    + "; live entry gates bypassed reason=" + signal.reason())));
         }
         String fundingCostGate = fundingCostGate(contractCode, signal.side(), properties.getMaxEntryFundingCostRate());
         if (fundingCostGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, fundingCostGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, fundingCostGate)));
         }
         String freshnessGate = entrySignalFreshnessGate(signal);
         if (freshnessGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, freshnessGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, freshnessGate)));
         }
         String cooldownGate = cooldownGate(contractCode, signal, marketBreadth);
         if (cooldownGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, cooldownGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, cooldownGate)));
         }
         DirectionConfidence confidence = null;
         if (combination != null) {
             String marketRiskGate = combinationMarketRiskGate(signal.side(), marketBreadth);
             if (marketRiskGate != null) {
-                return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, marketRiskGate));
+                return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, marketRiskGate)));
             }
         } else {
             confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor, performance);
             String directionGate = directionConfidenceGate(signal, confidence);
             if (directionGate != null) {
-                return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, directionGate));
+                return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, directionGate)));
             }
         }
         HtxDepth depth = depthSnapshot(contractCode);
         TopOfBook book = topOfBook(depth);
         if (book == null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, "depth unavailable"));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, "depth unavailable")));
         }
         BigDecimal spreadRate = book.ask().subtract(book.bid()).divide(mid(book), 18, RoundingMode.HALF_UP);
         if (spreadRate.compareTo(properties.getMaxEntrySpreadRate()) > 0) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, "spread too wide: " + spreadRate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, "spread too wide: " + spreadRate)));
         }
         String openOrderGate = openOrderGate(contractCode);
         if (openOrderGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, openOrderGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, openOrderGate)));
         }
         String externalPositionGate = externalPositionGate(contractCode);
         if (externalPositionGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, externalPositionGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, externalPositionGate)));
         }
         BigDecimal entryPrice = signal.side() == TrendSide.LONG ? book.ask() : book.bid();
         String chaseGate = entryChaseGate(signal, entryPrice);
         if (chaseGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, chaseGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, chaseGate)));
         }
         SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance, confidence, combination != null);
         long volume = combination == null ? targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing)
                 : targetVolumeForNotional(entryPrice, contract.getContractSize(),
                 combination.plannedNotionalUsdt().multiply(sizing.multiplier()));
         if (volume <= 0) {
-            return RunResult.of(RunCode.SKIPPED, null,
-                    gateMessage(ENTRY_GATE, "target volume below minimum " + sizing.summary()));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, "target volume below minimum " + sizing.summary())));
         }
         String liquidityGate = liquidityGate(signal, entryCandles, depth, volume);
         HtxSwapFeeRateResolver.FeeRates feeRates = feeRateResolver.rates(contractCode);
@@ -1024,19 +1025,19 @@ public class HtxTrendFollowingService {
         recordCombinationEntryCostEvidence(contractCode, signal, contract, combination, depth, book, volume,
                 feeRates, entryCost, liquidityGate, expectedMoveGate);
         if (liquidityGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, liquidityGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, liquidityGate)));
         }
         if (expectedMoveGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, expectedMoveGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, expectedMoveGate)));
         }
         BigDecimal notional = BigDecimal.valueOf(volume).multiply(contract.getContractSize()).multiply(entryPrice);
         String marginGate = marginGate(contractCode, notional);
         if (marginGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, marginGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, marginGate)));
         }
         String leverageGate = switchLeverage(contractCode, signal.side());
         if (leverageGate != null) {
-            return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, leverageGate));
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, leverageGate)));
         }
         String side = signal.side() == TrendSide.LONG ? LONG : SHORT;
         BigDecimal stopPrice = combination == null ? initialStop(signal, side, contract)
@@ -1046,6 +1047,7 @@ public class HtxTrendFollowingService {
         String clientOrderId = Long.toString(numericClientOrderId());
         HtxTrendPositionEntity entity = new HtxTrendPositionEntity();
         entity.setPositionKey(positionKey);
+        entity.setRunId(combination == null ? null : combination.runId());
         entity.setContractCode(contractCode);
         entity.setStatus(HtxTrendRecorder.INTENT);
         entity.setSide(side);
@@ -1097,7 +1099,7 @@ public class HtxTrendFollowingService {
             String rejectionReason = gateMessage(ORDER_EXECUTION, "entry rejected: " + error(response));
             recorder.markOrderRejected(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, rejectionReason);
             recorder.markStatus(id, HtxTrendRecorder.REJECTED, rejectionReason);
-            return RunResult.of(RunCode.REJECTED, id, rejectionReason);
+            return executionResult(contractCode, combination, RunResult.of(RunCode.REJECTED, id, rejectionReason));
         }
         recorder.markOrderAccepted(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, orderId,
                 accepted.getClientOrderId(), "entry accepted by exchange");
@@ -1105,7 +1107,34 @@ public class HtxTrendFollowingService {
         log.info("[HTX-TREND] entry sent id={} contract={} side={} orderId={} volume={} close={} atr={} adx={} feeRate={} reason={} sizing={}",
                 id, contractCode, side, orderId, volume, signal.closePrice(), signal.atr(), signal.adx(),
                 takerFeeRate, signal.reason(), sizing.summary());
-        return RunResult.of(RunCode.ENTRY_SENT, id, "entry order sent " + sizing.summary());
+        return executionResult(contractCode, combination, RunResult.of(RunCode.ENTRY_SENT, id, "entry order sent " + sizing.summary()));
+    }
+
+    private RunResult executionResult(String contractCode, CombinationContext combination, RunResult result) {
+        if (combination == null || combinationService == null || result == null) {
+            return result;
+        }
+        String state = switch (result.code()) {
+            case ENTRY_SENT -> "ORDER_SUBMITTED";
+            case REJECTED -> "ORDER_REJECTED";
+            case OBSERVED -> "OBSERVED";
+            default -> "REJECTED";
+        };
+        combinationService.recordExecutionGate(combination.runId(), contractCode, state, result.message());
+        return result;
+    }
+
+    /** Every model-passed combination receives a cost-evidence row, even if an earlier gate prevents market-data preflight. */
+    private void recordCombinationCostNotEvaluated(String contractCode, TrendSignal signal, CombinationContext combination) {
+        if (combinationService == null || combination == null || signal == null || signal.barTime() == null) {
+            return;
+        }
+        combinationService.recordEntryCostEvidence(contractCode, properties.getPeriod(), signal.barTime(),
+                combination.policyVersion(), combination.marketRegime(),
+                new HtxTrendCombinationService.EntryCostEvidence(combination.runId(), "primary", "NOT_EVALUATED",
+                        null, null, null, null, null, null, 0, null, null, null, signal.side().name(), null, 0L,
+                        null, null, null, null, null, null, null, null, "NOT_EVALUATED",
+                        "cost preflight awaiting depth, fee and sizing inputs"));
     }
 
     private RunResult advance(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract,
@@ -1904,6 +1933,7 @@ public class HtxTrendFollowingService {
         HtxTrendOrderEntity entity = new HtxTrendOrderEntity();
         entity.setPositionId(position.getId());
         entity.setPositionKey(position.getPositionKey());
+        entity.setRunId(position.getRunId());
         entity.setContractCode(request.getContractCode());
         entity.setLeg(leg);
         entity.setTrendSide(trendSide);
@@ -1985,7 +2015,7 @@ public class HtxTrendFollowingService {
                 : expectedMoveGate != null ? "REJECTED_COST" : "PASSED";
         combinationService.recordEntryCostEvidence(contractCode, properties.getPeriod(), signal.barTime(),
                 combination.policyVersion(), combination.marketRegime(),
-                new HtxTrendCombinationService.EntryCostEvidence("primary",
+                new HtxTrendCombinationService.EntryCostEvidence(combination.runId(), "primary",
                         feeRates.fallback() ? "CONFIG_FALLBACK" : "HTX_ACCOUNT",
                         feeRates.openTaker(), feeRates.closeTaker(), feeRates.taker(), book.bid(), book.ask(),
                         book.ask().subtract(book.bid()).divide(mid(book), 18, RoundingMode.HALF_UP), depthLevels,
@@ -3077,6 +3107,7 @@ public class HtxTrendFollowingService {
     }
 
     private record CombinationContext(HtxTrendCombinationService.Selection selection) {
+        String runId() { return selection.runId(); }
         String primaryModel() { return selection.candidate().primaryModel(); }
         String confirmationModels() { return selection.candidate().confirmationModels(); }
         String policyVersion() { return selection.policy().getPolicyVersion(); }
