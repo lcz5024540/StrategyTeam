@@ -965,6 +965,8 @@ class HtxTrendFollowingServiceTest {
                 eq(new BigDecimal("4315.84")), messageCaptor.capture());
         assertTrue(messageCaptor.getValue().contains("stopSource=LEGACY_FEE_PROTECTED_CLAMP"));
         assertTrue(messageCaptor.getValue().contains("structureStopCandidate=4290.00"));
+        assertTrue(messageCaptor.getValue().contains("exitSnapshot state="));
+        assertTrue(messageCaptor.getValue().contains("candidates=["));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
@@ -993,6 +995,8 @@ class HtxTrendFollowingServiceTest {
         assertEquals(true, captor.getValue().getReduceOnly());
         assertTrue(captor.getValue().getReason().contains("exit engine: FEE_PROTECTION"));
         assertTrue(captor.getValue().getReason().contains("flatBars=3/3"));
+        assertTrue(captor.getValue().getReason().contains("exitSnapshot state="));
+        assertTrue(captor.getValue().getReason().contains("giveback="));
     }
 
     @Test
@@ -1103,6 +1107,7 @@ class HtxTrendFollowingServiceTest {
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
         assertTrue(captor.getValue().getReason().contains("exit engine: MODEL_INVALIDATION"));
+        assertTrue(captor.getValue().getReason().contains("exitSnapshot state=LOSS_ZONE"));
     }
 
     @Test

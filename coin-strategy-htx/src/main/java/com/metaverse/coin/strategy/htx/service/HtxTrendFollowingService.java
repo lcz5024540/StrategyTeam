@@ -1085,9 +1085,11 @@ public class HtxTrendFollowingService {
             }
         }
         BigDecimal takeProfit = position.getTakeProfitPrice();
+        ExitSnapshot exitSnapshot = exitSnapshot(position, signal, reference, highest, lowest, trailingStop,
+                takeProfit, stopContext);
         recorder.updateRiskLevels(position.getId(), position.getStopPrice(), trailingStop, takeProfit, highest, lowest,
-                "holding signal=" + signal.side() + " ref=" + reference + " " + stopContext.summary()
-                        + feeProtectionMessage(feeProtectedStop));
+                clip("holding signal=" + signal.side() + " ref=" + reference + " " + stopContext.summary()
+                        + feeProtectionMessage(feeProtectedStop) + " " + exitSnapshot.summary()));
         String exitReason = combinationInvalidationExitReason(position, reference);
         if (exitReason == null) {
             exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
@@ -1103,11 +1105,11 @@ public class HtxTrendFollowingService {
             exitReason = fundingCostExitReason(position.getContractCode(), position.getSide());
         }
         if (exitReason == null) {
-            return RunResult.of(RunCode.ACTIVE, position.getId(), "holding ref=" + reference
+            return RunResult.of(RunCode.ACTIVE, position.getId(), clip("holding ref=" + reference
                     + " signal=" + signal.side() + " trailingStop=" + trailingStop
-                    + " " + stopContext.summary());
+                    + " " + stopContext.summary() + " " + exitSnapshot.summary()));
         }
-        return closePosition(position, exitReason);
+        return closePosition(position, clip(exitReason + " " + exitSnapshot.summary()));
     }
 
     private static String combinationInvalidationExitReason(HtxTrendPositionEntity position, BigDecimal reference) {
@@ -2107,6 +2109,112 @@ public class HtxTrendFollowingService {
                         + " flatBars=" + flatBars + "/" + requiredFlatBars);
     }
 
+    private ExitSnapshot exitSnapshot(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
+                                      BigDecimal highest, BigDecimal lowest, BigDecimal trailingStop,
+                                      BigDecimal takeProfit, StopContext stopContext) {
+        BigDecimal currentNet = estimatedCloseNetProfit(position, reference);
+        BigDecimal favorablePrice = LONG.equals(position.getSide()) ? highest : lowest;
+        BigDecimal adversePrice = LONG.equals(position.getSide()) ? lowest : highest;
+        BigDecimal mfe = estimatedCloseNetProfit(position, favorablePrice);
+        BigDecimal mae = estimatedCloseNetProfit(position, adversePrice);
+        BigDecimal giveback = givebackRate(currentNet, mfe);
+        long bars = timeInPositionBars(position);
+        String state = exitState(position.getSide(), signal, currentNet, mfe, giveback);
+        String candidates = exitCandidateSummary(position, signal, reference, trailingStop, takeProfit, stopContext,
+                bars);
+        return new ExitSnapshot(state, currentNet, mfe, mae, giveback, bars, candidates);
+    }
+
+    private String exitCandidateSummary(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
+                                        BigDecimal trailingStop, BigDecimal takeProfit, StopContext stopContext,
+                                        long bars) {
+        List<String> candidates = new ArrayList<>();
+        if (positive(position.getInvalidationPrice())) {
+            candidates.add("MODEL_INVALIDATION:" + triggerState(crossed(position.getSide(), reference,
+                    position.getInvalidationPrice())) + "@" + position.getInvalidationPrice());
+        }
+        if (positive(position.getStopPrice())) {
+            candidates.add("INITIAL_STOP:" + triggerState(crossed(position.getSide(), reference,
+                    position.getStopPrice())) + "@" + position.getStopPrice());
+        }
+        if (positive(trailingStop)) {
+            candidates.add("TRAILING_STOP:" + triggerState(crossed(position.getSide(), reference, trailingStop))
+                    + "@" + trailingStop + "/" + stopContext.stopSource());
+        }
+        if (positive(takeProfit)) {
+            candidates.add("TARGET_ZONE:" + triggerState(targetReached(position.getSide(), reference, takeProfit))
+                    + "@" + takeProfit);
+        }
+        if (signal.side() == TrendSide.FLAT) {
+            candidates.add("TREND_EXHAUSTION:watch:FLAT");
+        } else if ((LONG.equals(position.getSide()) && signal.side() == TrendSide.SHORT)
+                || (SHORT.equals(position.getSide()) && signal.side() == TrendSide.LONG)) {
+            candidates.add("TREND_EXHAUSTION:trigger:" + signal.side());
+        }
+        candidates.add("TIME_STOP:observe:bars=" + bars);
+        return String.join(",", candidates);
+    }
+
+    private static boolean crossed(String side, BigDecimal reference, BigDecimal price) {
+        if (!positive(reference) || !positive(price)) {
+            return false;
+        }
+        return LONG.equals(side) ? reference.compareTo(price) <= 0 : reference.compareTo(price) >= 0;
+    }
+
+    private static boolean targetReached(String side, BigDecimal reference, BigDecimal target) {
+        if (!positive(reference) || !positive(target)) {
+            return false;
+        }
+        return LONG.equals(side) ? reference.compareTo(target) >= 0 : reference.compareTo(target) <= 0;
+    }
+
+    private static String triggerState(boolean triggered) {
+        return triggered ? "trigger" : "watch";
+    }
+
+    private String exitState(String positionSide, TrendSignal signal, BigDecimal currentNet, BigDecimal mfe, BigDecimal giveback) {
+        if (currentNet == null) {
+            return "UNKNOWN";
+        }
+        if (currentNet.signum() < 0) {
+            return "LOSS_ZONE";
+        }
+        BigDecimal breakeven = nonNegative(properties.getMinFlatExitProfitUsdt());
+        if (currentNet.compareTo(breakeven) <= 0) {
+            return "FEE_BREAKEVEN_ZONE";
+        }
+        if (positive(giveback) && giveback.compareTo(new BigDecimal("0.50")) >= 0) {
+            return "EXHAUSTION_ZONE";
+        }
+        if (positive(mfe) && currentNet.signum() > 0 && signal != null
+                && ((LONG.equals(positionSide) && signal.side() == TrendSide.LONG)
+                || (SHORT.equals(positionSide) && signal.side() == TrendSide.SHORT))) {
+            return "RUNNER_ZONE";
+        }
+        return "PROFIT_ZONE";
+    }
+
+    private BigDecimal givebackRate(BigDecimal currentNet, BigDecimal mfe) {
+        if (currentNet == null || !positive(mfe)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal giveback = mfe.subtract(currentNet);
+        if (giveback.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return giveback.divide(mfe, 18, RoundingMode.HALF_UP);
+    }
+
+    private long timeInPositionBars(HtxTrendPositionEntity position) {
+        if (position == null || position.getCreatedAt() == null) {
+            return 0L;
+        }
+        long seconds = Math.max(0L, Duration.between(position.getCreatedAt(), LocalDateTime.now()).getSeconds());
+        long period = Math.max(1L, periodSeconds(properties.getPeriod()));
+        return seconds / period;
+    }
+
     private BigDecimal estimatedCloseNetProfit(HtxTrendPositionEntity position, BigDecimal reference) {
         if (position == null || !positive(position.getEntryAvgPrice()) || !positive(position.getContractSize())
                 || position.getContractVolume() == null || position.getContractVolume() <= 0L || !positive(reference)) {
@@ -2613,6 +2721,13 @@ public class HtxTrendFollowingService {
         return ratio.multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP) + "%";
     }
 
+    private static String fmt(BigDecimal value) {
+        if (value == null) {
+            return "NA";
+        }
+        return value.setScale(6, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+    }
+
     public record RunResult(RunCode code, Long positionId, String message) {
         public static RunResult of(RunCode code, Long positionId, String message) {
             return new RunResult(code, positionId, message);
@@ -2651,6 +2766,19 @@ public class HtxTrendFollowingService {
     }
 
     private record FundingMarket(BigDecimal fundingRate) {
+    }
+
+    private record ExitSnapshot(String state, BigDecimal currentNet, BigDecimal mfe, BigDecimal mae,
+                                BigDecimal giveback, long bars, String candidates) {
+        private String summary() {
+            return "exitSnapshot state=" + state
+                    + " net=" + fmt(currentNet)
+                    + " mfe=" + fmt(mfe)
+                    + " mae=" + fmt(mae)
+                    + " giveback=" + pct(nonNegative(giveback))
+                    + " bars=" + bars
+                    + " candidates=[" + candidates + "]";
+        }
     }
 
     private record StopContext(BigDecimal effectiveStop, String stopSource, BigDecimal atrStop,
