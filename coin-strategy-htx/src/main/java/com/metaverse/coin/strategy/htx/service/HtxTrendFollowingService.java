@@ -85,6 +85,7 @@ public class HtxTrendFollowingService {
     private static final String EXIT_TRAILING_STOP = "TRAILING_STOP";
     private static final String EXIT_TARGET_ZONE = "TARGET_ZONE";
     private static final LocalDateTime SIGNAL_HISTORY_FLOOR = LocalDateTime.of(1970, 1, 1, 0, 0);
+    private static final List<String> EXIT_CONFIRMATION_PERIODS = List.of("30min", "60min", "4hour");
 
     private final HtxUsdtSwapService swap;
     private final HtxContractProperties contractProperties;
@@ -2155,6 +2156,7 @@ public class HtxTrendFollowingService {
         if (profitProtection != null) {
             candidates.add(profitProtection);
         }
+        candidates.add(timeframeConfirmationCandidate(position));
         if (signal.side() == TrendSide.FLAT) {
             candidates.add("TREND_EXHAUSTION:watch:FLAT");
         } else if ((LONG.equals(position.getSide()) && signal.side() == TrendSide.SHORT)
@@ -2198,6 +2200,48 @@ public class HtxTrendFollowingService {
         return "PROFIT_PROTECTION:" + state + ":net=" + moneyText(currentNet)
                 + ",mfe=" + moneyText(mfe) + ",giveback=" + pct(giveback)
                 + ",protectNet=" + moneyText(protectNet);
+    }
+
+    private String timeframeConfirmationCandidate(HtxTrendPositionEntity position) {
+        if (position == null || position.getContractCode() == null || position.getSide() == null) {
+            return "TIMEFRAME_CONFIRMATION:unknown";
+        }
+        int aligned = 0;
+        int opposite = 0;
+        List<String> parts = new ArrayList<>(EXIT_CONFIRMATION_PERIODS.size());
+        for (String period : EXIT_CONFIRMATION_PERIODS) {
+            TrendSide side = marketAnchorPeriodSide(position.getContractCode(), period);
+            if ((LONG.equals(position.getSide()) && side == TrendSide.LONG)
+                    || (SHORT.equals(position.getSide()) && side == TrendSide.SHORT)) {
+                aligned++;
+            } else if ((LONG.equals(position.getSide()) && side == TrendSide.SHORT)
+                    || (SHORT.equals(position.getSide()) && side == TrendSide.LONG)) {
+                opposite++;
+            }
+            parts.add(periodLabel(period) + "=" + side);
+        }
+        String state;
+        if (aligned == EXIT_CONFIRMATION_PERIODS.size()) {
+            state = "hold";
+        } else if (opposite >= 2) {
+            state = "warn_major";
+        } else if (opposite == 1) {
+            state = "warn_short";
+        } else {
+            state = "mixed";
+        }
+        return "TIMEFRAME_CONFIRMATION:" + state + ":" + String.join(",", parts);
+    }
+
+    private static String periodLabel(String period) {
+        String normalized = period == null ? "" : period.trim().toLowerCase(Locale.ROOT);
+        if (normalized.endsWith("min")) {
+            return normalized.substring(0, normalized.length() - 3) + "m";
+        }
+        if (normalized.endsWith("hour")) {
+            return normalized.substring(0, normalized.length() - 4) + "h";
+        }
+        return normalized;
     }
 
     private BigDecimal rTargetPrice(HtxTrendPositionEntity position, BigDecimal multiple) {

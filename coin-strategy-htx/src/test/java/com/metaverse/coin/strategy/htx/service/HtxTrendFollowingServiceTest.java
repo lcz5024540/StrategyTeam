@@ -1026,6 +1026,54 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void activeLongRecordsTimeframeConfirmationHoldWithoutSendingCloseOrder() {
+        givenContractInfo();
+        givenKlines();
+        givenExitConfirmationKlines("XAUT-USDT", true);
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(45));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4342.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        ArgumentCaptor<String> candidatesCaptor = ArgumentCaptor.forClass(String.class);
+        verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4295.00")),
+                any(), eq(null), eq(new BigDecimal("4342.00")), eq(new BigDecimal("4315.84")),
+                any(), any(), any(), any(), any(), any(), any(), candidatesCaptor.capture());
+        assertTrue(candidatesCaptor.getValue()
+                .contains("TIMEFRAME_CONFIRMATION:hold:30m=LONG,60m=LONG,4h=LONG"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void activeLongRecordsTimeframeConfirmationMajorWarningWithoutSendingCloseOrder() {
+        givenContractInfo();
+        givenKlines();
+        givenExitConfirmationKlines("XAUT-USDT", false);
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(45));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4326.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        ArgumentCaptor<String> candidatesCaptor = ArgumentCaptor.forClass(String.class);
+        verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4295.00")),
+                any(), eq(null), eq(new BigDecimal("4332.21")), eq(new BigDecimal("4315.84")),
+                any(), any(), any(), any(), any(), any(), any(), candidatesCaptor.capture());
+        assertTrue(candidatesCaptor.getValue()
+                .contains("TIMEFRAME_CONFIRMATION:warn_major:30m=SHORT,60m=SHORT,4h=SHORT"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void activeLongClampsTrailingStopToFeeProtectedBreakevenWhenPriceFallsThroughProtectedStop() {
         givenContractInfo();
         givenKlines();
@@ -1420,6 +1468,12 @@ class HtxTrendFollowingServiceTest {
             for (String period : properties.getMarketAnchorPeriods()) {
                 givenMarketAnchorKlines(contractCode, period, true);
             }
+        }
+    }
+
+    private void givenExitConfirmationKlines(String contractCode, boolean rising) {
+        for (String period : List.of("30min", "60min", "4hour")) {
+            givenMarketAnchorKlines(contractCode, period, rising);
         }
     }
 

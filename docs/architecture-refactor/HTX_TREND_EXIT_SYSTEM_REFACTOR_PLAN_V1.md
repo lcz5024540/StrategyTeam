@@ -382,6 +382,8 @@ ATR trailing 是波动率移动止损，适合保护 runner，但它不是退出
 | BTC/ETH 锚点退出 | 普涨/普跌模型用市场广度辅助退出。 |
 | 回测按周期画像分组 | 输出 `INTRADAY_15M` / `SWING_4H` 等表现。 |
 
+实施记录：2026-09-22 已完成 E4 第一刀，只把 `TIMEFRAME_CONFIRMATION` 写入退出快照候选，不进入真实 `exitReason`，不调用平仓单。当前先看活动仓位自己的 `30m/60m/4h` 方向画像：全部顺仓位方向记为 `hold`，两档及以上反向记为 `warn_major`，一档反向记为 `warn_short`，其余记为 `mixed`。这一步用于解释“runner 继续拿”或“高周期开始反向预警”，不改变真实平仓、开仓或 sizing。
+
 ### Batch E5：退出评分与自动化接入
 
 | 任务 | 验收 |
@@ -465,12 +467,12 @@ E5 才允许组合评分接管真实退出动作。
 
 ## 11. 当前执行建议
 
-下一步直接执行 Batch E1：
+下一步围绕 E4 样本继续观察，不急着接入真实平仓：
 
-1. 不启用新的真实平仓规则。
-2. 在持仓管理中计算 MFE、MAE、max favorable price、giveback、time in position。
-3. 生成退出候选 JSON，但只写入诊断或快照。
-4. 页面先展示“当前仓位为什么继续持有/为什么建议退出”。
-5. 收集 24–48 小时样本后，再做 9/18–9/21 回测对比。
+1. 不启用新的真实多周期平仓规则。
+2. 收集真实 ACTIVE 仓位的 `TIMEFRAME_CONFIRMATION` 样本。
+3. 对比 `hold` / `warn_short` / `warn_major` 后续 3–12 根 K 线走势。
+4. 用回测验证多周期反向预警是否能提高 MFE 捕获率、profit factor 和平均盈亏比。
+5. 只有当回测和实盘样本都证明有效后，再考虑把 `warn_major` 接入减仓或退出评分。
 
 这一步完成后，我们再决定是否进入 E2：模型专属 no-extension / time-stop 重写。
