@@ -123,6 +123,11 @@ public class HtxTrendProperties {
     /** Trailing stop distance = ATR * this multiplier. */
     private BigDecimal trailingAtrMultiplier = new BigDecimal("2.0");
 
+    /**
+     * Enable structure-based trailing stop selection. Default off until backtest and live samples prove it improves exits.
+     */
+    private boolean structureStopEnabled = false;
+
     /** Optional take-profit distance = ATR * this multiplier; <=0 disables. */
     private BigDecimal takeProfitAtrMultiplier = new BigDecimal("0");
 

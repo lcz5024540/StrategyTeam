@@ -159,6 +159,7 @@ htx:
     risk-per-trade-usdt: ${HTX_TREND_RISK_PER_TRADE_USDT:2.0}
     atr-stop-multiplier: ${HTX_TREND_ATR_STOP_MULTIPLIER:2.5}
     trailing-atr-multiplier: ${HTX_TREND_TRAILING_ATR_MULTIPLIER:2.0}
+    structure-stop-enabled: ${HTX_TREND_STRUCTURE_STOP_ENABLED:false}
     take-profit-atr-multiplier: ${HTX_TREND_TAKE_PROFIT_ATR_MULTIPLIER:0}
     estimated-taker-fee-rate: ${HTX_TREND_ESTIMATED_TAKER_FEE_RATE:0.0004}
     fee-rate-cache-ms: ${HTX_TREND_FEE_RATE_CACHE_MS:600000}

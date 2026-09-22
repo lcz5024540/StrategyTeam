@@ -1961,7 +1961,29 @@ public class HtxTrendFollowingService {
                                     List<HtxSwapKline> entryCandles) {
         BigDecimal atrStop = atrTrailingStop(position, signal, reference, highest, lowest, contract);
         BigDecimal structureStop = structureStopCandidate(position, entryCandles, contract);
+        if (properties.isStructureStopEnabled() && structureStopSelectable(position, reference, atrStop, structureStop)) {
+            return new StopContext(structureStop, "STRUCTURE_STOP", atrStop, structureStop);
+        }
         return new StopContext(atrStop, "ATR_TRAILING", atrStop, structureStop);
+    }
+
+    private boolean structureStopSelectable(HtxTrendPositionEntity position, BigDecimal reference, BigDecimal atrStop,
+                                            BigDecimal structureStop) {
+        if (position == null || !positive(reference) || !positive(atrStop) || !positive(structureStop)) {
+            return false;
+        }
+        BigDecimal initialStop = position.getStopPrice();
+        BigDecimal previousStop = firstPositive(position.getTrailingStopPrice(), initialStop);
+        if (LONG.equals(position.getSide())) {
+            return structureStop.compareTo(reference) < 0
+                    && structureStop.compareTo(atrStop) < 0
+                    && (!positive(initialStop) || structureStop.compareTo(initialStop) >= 0)
+                    && (!positive(previousStop) || structureStop.compareTo(previousStop) >= 0);
+        }
+        return structureStop.compareTo(reference) > 0
+                && structureStop.compareTo(atrStop) > 0
+                && (!positive(initialStop) || structureStop.compareTo(initialStop) <= 0)
+                && (!positive(previousStop) || structureStop.compareTo(previousStop) <= 0);
     }
 
     private BigDecimal atrTrailingStop(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,

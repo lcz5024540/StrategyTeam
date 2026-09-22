@@ -1193,6 +1193,32 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void activeLongUsesStructureStopWhenExplicitlyEnabled() {
+        properties.setStructureStopEnabled(true);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition("XAUT-USDT", "0.001", 44L,
+                "4315.84", "0.075958784", "4285.00", "4290.00", "4316.10", "4304.00");
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(40));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4291.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        assertTrue(result.message().contains("stopSource=STRUCTURE_STOP"));
+        assertTrue(result.message().contains("trailingStop=4290.00"));
+        assertTrue(result.message().contains("atrStop=4292.10"));
+        assertTrue(result.message().contains("structureStopCandidate=4290.00"));
+        verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4285.00")),
+                eq(new BigDecimal("4290.00")), eq(null), eq(new BigDecimal("4316.10")),
+                eq(new BigDecimal("4291.00")), any());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void primaryEntryFillTriggersMirrorEntryAfterPrimaryFill() {
         givenContractInfo();
         givenKlines();
