@@ -981,11 +981,13 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("exit engine: FEE_PROTECTION"));
         assertTrue(result.message().contains("confirmed flat trend after fee protection"));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
         assertEquals(HtxTrendRecorder.LEG_CLOSE, captor.getValue().getLeg());
         assertEquals(true, captor.getValue().getReduceOnly());
+        assertTrue(captor.getValue().getReason().contains("exit engine: FEE_PROTECTION"));
         assertTrue(captor.getValue().getReason().contains("flatBars=3/3"));
     }
 
@@ -1003,9 +1005,11 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("exit engine: TRAILING_STOP"));
         assertTrue(result.message().contains("stop=4323.84"));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
+        assertTrue(captor.getValue().getReason().contains("exit engine: TRAILING_STOP"));
         assertTrue(captor.getValue().getReason().contains("stop=4323.84"));
     }
 
@@ -1061,12 +1065,78 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("exit engine: TREND_EXHAUSTION"));
         assertTrue(result.message().contains("loss control"));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
         assertEquals(HtxTrendRecorder.LEG_CLOSE, captor.getValue().getLeg());
         assertEquals(true, captor.getValue().getReduceOnly());
+        assertTrue(captor.getValue().getReason().contains("exit engine: TREND_EXHAUSTION"));
         assertTrue(captor.getValue().getReason().contains("flatBars=3/3"));
+    }
+
+    @Test
+    void activeLongExitsWhenCombinationModelInvalidates() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition("XAUT-USDT", "0.001", 44L,
+                "4315.84", "0.075958784", "4295.00", "4290.00", "4316.10", "4304.00");
+        active.setPrimaryModel("DONCHIAN_BREAKOUT");
+        active.setInvalidationPrice(new BigDecimal("4310.00"));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4304.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("exit engine: MODEL_INVALIDATION"));
+        assertTrue(result.message().contains("combination invalidation DONCHIAN_BREAKOUT"));
+        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(captor.capture());
+        assertTrue(captor.getValue().getReason().contains("exit engine: MODEL_INVALIDATION"));
+    }
+
+    @Test
+    void activeLongExitsWhenHoldFundingCostIsTooHigh() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("0.0020");
+        HtxTrendPositionEntity active = activeLongPosition("XAUT-USDT", "0.001", 44L,
+                "4315.84", "0.075958784", "4295.00", "4290.00", "4316.10", "4304.00");
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(30));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4315.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("exit engine: FUNDING_COST"));
+        assertTrue(result.message().contains("funding cost blocked"));
+        verify(recorder).createOrderIntent(any(HtxTrendOrderEntity.class));
+    }
+
+    @Test
+    void activePositionMissingOnExchangeIsHardRiskManualReview() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        HtxTrendPositionEntity active = activeLongPosition();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(Collections.emptyList()));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.MANUAL_REVIEW, result.code());
+        assertTrue(result.message().contains("exit engine: HARD_RISK"));
+        assertTrue(result.message().contains("managed position missing on exchange"));
+        verify(recorder).markStatus(eq(77L), eq(HtxTrendRecorder.UNKNOWN),
+                eq("exit engine: HARD_RISK: managed position missing on exchange; manual review"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
     @Test

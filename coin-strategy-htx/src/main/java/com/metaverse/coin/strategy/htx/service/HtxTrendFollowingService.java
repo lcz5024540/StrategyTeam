@@ -76,6 +76,14 @@ public class HtxTrendFollowingService {
     private static final String EXECUTION_PREFLIGHT = "execution preflight";
     private static final String ENTRY_GATE = "entry gate";
     private static final String ORDER_EXECUTION = "order execution";
+    private static final String EXIT_ENGINE = "exit engine";
+    private static final String EXIT_HARD_RISK = "HARD_RISK";
+    private static final String EXIT_MODEL_INVALIDATION = "MODEL_INVALIDATION";
+    private static final String EXIT_FEE_PROTECTION = "FEE_PROTECTION";
+    private static final String EXIT_TREND_EXHAUSTION = "TREND_EXHAUSTION";
+    private static final String EXIT_FUNDING_COST = "FUNDING_COST";
+    private static final String EXIT_TRAILING_STOP = "TRAILING_STOP";
+    private static final String EXIT_TARGET_ZONE = "TARGET_ZONE";
     private static final LocalDateTime SIGNAL_HISTORY_FLOOR = LocalDateTime.of(1970, 1, 1, 0, 0);
 
     private final HtxUsdtSwapService swap;
@@ -1055,9 +1063,10 @@ public class HtxTrendFollowingService {
     private RunResult monitorActive(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract) {
         Optional<HtxSwapPosition> exchangePosition = exchangePosition(position.getContractCode(), position.getSide());
         if (exchangePosition.isEmpty()) {
+            String reviewReason = exitEngineReason(EXIT_HARD_RISK, "managed position missing on exchange");
             recorder.markStatus(position.getId(), HtxTrendRecorder.UNKNOWN,
-                    "managed position missing on exchange; manual review");
-            return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(), "managed position missing on exchange");
+                    reviewReason + "; manual review");
+            return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(), reviewReason);
         }
         BigDecimal reference = firstPositive(exchangePosition.get().getMarkPrice(), exchangePosition.get().getLastPrice(),
                 signal.closePrice(), position.getEntryAvgPrice());
@@ -1083,7 +1092,7 @@ public class HtxTrendFollowingService {
             exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit);
         }
         if (exitReason == null) {
-            exitReason = fundingExitReason(position.getContractCode(), position.getSide());
+            exitReason = fundingCostExitReason(position.getContractCode(), position.getSide());
         }
         if (exitReason == null) {
             return RunResult.of(RunCode.ACTIVE, position.getId(), "holding ref=" + reference
@@ -1099,8 +1108,9 @@ public class HtxTrendFollowingService {
         boolean invalidated = LONG.equals(position.getSide())
                 ? reference.compareTo(position.getInvalidationPrice()) <= 0
                 : reference.compareTo(position.getInvalidationPrice()) >= 0;
-        return invalidated ? "combination invalidation " + position.getPrimaryModel()
-                + " ref=" + reference + " invalidation=" + position.getInvalidationPrice() : null;
+        return invalidated ? exitEngineReason(EXIT_MODEL_INVALIDATION,
+                "combination invalidation " + position.getPrimaryModel()
+                        + " ref=" + reference + " invalidation=" + position.getInvalidationPrice()) : null;
     }
 
     private RunResult closePosition(HtxTrendPositionEntity position, String exitReason) {
@@ -1117,9 +1127,10 @@ public class HtxTrendFollowingService {
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         Long orderId = accepted == null ? null : accepted.getOrderId();
         if (response == null || !response.ok() || orderId == null) {
+            String rejectionReason = gateMessage(ORDER_EXECUTION, "close rejected: " + error(response));
             recorder.markOrderRejected(position.getId(), HtxTrendRecorder.LEG_CLOSE, clientOrderId,
-                    "close rejected: " + error(response));
-            return RunResult.of(RunCode.WAITING, position.getId(), "close rejected: " + error(response));
+                    rejectionReason);
+            return RunResult.of(RunCode.WAITING, position.getId(), rejectionReason);
         }
         recorder.markOrderAccepted(position.getId(), HtxTrendRecorder.LEG_CLOSE, clientOrderId, orderId,
                 accepted.getClientOrderId(), "close accepted by exchange");
@@ -1460,10 +1471,10 @@ public class HtxTrendFollowingService {
         return null;
     }
 
-    private String fundingExitReason(String contractCode, String side) {
+    private String fundingCostExitReason(String contractCode, String side) {
         TrendSide trendSide = LONG.equals(side) ? TrendSide.LONG : TrendSide.SHORT;
         String gate = fundingCostGate(contractCode, trendSide, properties.getMaxHoldFundingCostRate());
-        return gate == null ? null : "exit because " + gate;
+        return gate == null ? null : exitEngineReason(EXIT_FUNDING_COST, "exit because " + gate);
     }
 
     private MarketBreadthContext marketBreadthContext() {
@@ -1995,12 +2006,14 @@ public class HtxTrendFollowingService {
             return null;
         }
         if (LONG.equals(position.getSide()) && reference.compareTo(feeProtectedStop) >= 0) {
-            return "long exit on confirmed flat trend after fee protection ref=" + reference
-                    + " stop=" + feeProtectedStop + " flatBars=" + flatBars + "/" + requiredFlatBars;
+            return exitEngineReason(EXIT_FEE_PROTECTION,
+                    "long exit on confirmed flat trend after fee protection ref=" + reference
+                            + " stop=" + feeProtectedStop + " flatBars=" + flatBars + "/" + requiredFlatBars);
         }
         if (SHORT.equals(position.getSide()) && reference.compareTo(feeProtectedStop) <= 0) {
-            return "short exit on confirmed flat trend after fee protection ref=" + reference
-                    + " stop=" + feeProtectedStop + " flatBars=" + flatBars + "/" + requiredFlatBars;
+            return exitEngineReason(EXIT_FEE_PROTECTION,
+                    "short exit on confirmed flat trend after fee protection ref=" + reference
+                            + " stop=" + feeProtectedStop + " flatBars=" + flatBars + "/" + requiredFlatBars);
         }
         return null;
     }
@@ -2022,9 +2035,10 @@ public class HtxTrendFollowingService {
         if (!positive(lossBudget) || estimatedNet.negate().compareTo(lossBudget) < 0) {
             return null;
         }
-        return position.getSide().toLowerCase(Locale.ROOT) + " exit on confirmed flat trend loss control ref="
-                + reference + " estimatedNet=" + estimatedNet + " lossBudget=" + lossBudget
-                + " flatBars=" + flatBars + "/" + requiredFlatBars;
+        return exitEngineReason(EXIT_TREND_EXHAUSTION,
+                position.getSide().toLowerCase(Locale.ROOT) + " exit on confirmed flat trend loss control ref="
+                        + reference + " estimatedNet=" + estimatedNet + " lossBudget=" + lossBudget
+                        + " flatBars=" + flatBars + "/" + requiredFlatBars);
     }
 
     private BigDecimal estimatedCloseNetProfit(HtxTrendPositionEntity position, BigDecimal reference) {
@@ -2114,24 +2128,28 @@ public class HtxTrendFollowingService {
                               BigDecimal trailingStop, BigDecimal takeProfit) {
         if (LONG.equals(side)) {
             if (reference.compareTo(trailingStop) <= 0) {
-                return "long trailing stop hit ref=" + reference + " stop=" + trailingStop;
+                return exitEngineReason(EXIT_TRAILING_STOP,
+                        "long trailing stop hit ref=" + reference + " stop=" + trailingStop);
             }
             if (takeProfit != null && reference.compareTo(takeProfit) >= 0) {
-                return "long take profit hit ref=" + reference + " target=" + takeProfit;
+                return exitEngineReason(EXIT_TARGET_ZONE,
+                        "long take profit hit ref=" + reference + " target=" + takeProfit);
             }
             if (signal.side() == TrendSide.SHORT) {
-                return "long exit on opposite trend signal";
+                return exitEngineReason(EXIT_TREND_EXHAUSTION, "long exit on opposite trend signal");
             }
             return null;
         }
         if (reference.compareTo(trailingStop) >= 0) {
-            return "short trailing stop hit ref=" + reference + " stop=" + trailingStop;
+            return exitEngineReason(EXIT_TRAILING_STOP,
+                    "short trailing stop hit ref=" + reference + " stop=" + trailingStop);
         }
         if (takeProfit != null && reference.compareTo(takeProfit) <= 0) {
-            return "short take profit hit ref=" + reference + " target=" + takeProfit;
+            return exitEngineReason(EXIT_TARGET_ZONE,
+                    "short take profit hit ref=" + reference + " target=" + takeProfit);
         }
         if (signal.side() == TrendSide.LONG) {
-            return "short exit on opposite trend signal";
+            return exitEngineReason(EXIT_TREND_EXHAUSTION, "short exit on opposite trend signal");
         }
         return null;
     }
@@ -2186,6 +2204,12 @@ public class HtxTrendFollowingService {
         String safeStage = stage == null ? "gate" : stage;
         String safeReason = reason == null ? "unknown" : reason;
         return safeStage + ": " + safeReason;
+    }
+
+    private static String exitEngineReason(String category, String reason) {
+        String safeCategory = category == null ? "UNKNOWN" : category;
+        String safeReason = reason == null ? "unknown" : reason;
+        return gateMessage(EXIT_ENGINE, safeCategory + ": " + safeReason);
     }
 
     private String configGate(String contractCode) {

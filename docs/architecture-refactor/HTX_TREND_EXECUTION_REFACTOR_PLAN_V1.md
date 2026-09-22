@@ -129,6 +129,13 @@ flowchart TD
 | 费用保护有效 | 已覆盖手续费的仓位不会因为普通 flat 信号直接变成净亏退出。 |
 | 可回测 | 退出引擎的每个原因能在回测报告中单独统计胜率和盈亏比。 |
 
+### 3.4 实施记录
+
+| 日期 | 状态 | 内容 |
+|---|---|---|
+| 2026-09-22 | 已完成第一刀 | 退出原因增加 `exit engine` 分类前缀：`HARD_RISK`、`MODEL_INVALIDATION`、`FEE_PROTECTION`、`TREND_EXHAUSTION`、`FUNDING_COST`、`TRAILING_STOP`、`TARGET_ZONE`；先复用现有平仓原因字段和订单 reason，不新增表结构。 |
+| 2026-09-22 | 待继续 | 移动止损仍沿用原 ATR + fee-protected clamp；下一刀再拆模型失效价、手续费保护止损、结构止损、ATR trailing 的独立价格计算。 |
+
 ---
 
 ## 4. Batch 3：冷却期与强弱信号分层
