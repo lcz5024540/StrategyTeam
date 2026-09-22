@@ -3,7 +3,7 @@ title: "CoinStrategy 策略总纲 v1 · 趋势 + 套利双引擎"
 type: strategy-master-plan
 status: draft
 created: 2026-09-21
-updated: 2026-09-21
+updated: 2026-09-22
 tags: [strategy, master-plan, trend, arbitrage, capital-allocation, risk]
 ---
 
@@ -12,6 +12,8 @@ tags: [strategy, master-plan, trend, arbitrage, capital-allocation, risk]
 > **配套路线图**：实施顺序和验收标准见 [CoinStrategy 策略体系实施路线图 v1](COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1.md)。
 
 > **资金、账户、风控与账本口径**：账户维度、资金池、费用、净收益和风险暴露定义见 [CoinStrategy 资金、账户、风控与账本体系 v1](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md)。
+
+> **策略闭环模板**：所有趋势、套利、网格和后续新策略上线前，必须按 [CoinStrategy 策略闭环定义模板 v1](COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md) 补齐目标、市场、因子、信号、gate、sizing、执行、持仓、退出、账本、回测和实盘反馈。
 
 > **结论先行**：CoinStrategy 的策略体系拆成两条主线：**套利策略负责稳定收益和资金底仓利用率，趋势策略负责收益弹性和行情捕捉能力**。资金不能全部暴露在趋势波动里，也不能全部锁在低弹性的套利里；系统需要用统一资金调度、统一风控、统一账本和统一回测实盘评价，把两类策略组合成一个可持续运行的交易系统。
 
@@ -148,6 +150,19 @@ reject_reason
 ```
 
 只有 `gate_result=PASS` 的候选才能进入真实下单队列。
+
+### 3.5 策略闭环要求
+
+趋势策略不是“开仓信号 + 平仓信号”的组合，而是完整闭环。每个趋势模型必须按策略闭环模板补齐以下内容：
+
+| 闭环项 | 趋势策略要求 |
+|---|---|
+| 收益来源 | 说明赚的是突破延续、回踩延续、短周期动量还是大盘共振。 |
+| 开仓假设 | 明确为什么现在入场后价格应该继续走。 |
+| 失效条件 | 明确什么价格结构或多周期信号证明假设错误。 |
+| 持仓管理 | 区分亏损区、保本区、盈利区和 runner 区。 |
+| 退出组合 | 同时设计止损、分批止盈、利润保护、趋势衰竭和时间退出。 |
+| 归因反馈 | 每笔订单能回放方向、入场、仓位、退出和成本哪个环节出错。 |
 
 ---
 

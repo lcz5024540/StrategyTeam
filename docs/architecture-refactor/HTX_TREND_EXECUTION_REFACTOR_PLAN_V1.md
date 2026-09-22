@@ -13,6 +13,8 @@ tags: [htx, trend, execution, gate, exit, multi-timeframe, cooldown]
 
 > **实施路线**：本计划补充 [CoinStrategy 策略体系实施路线图 v1](COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1.md) 的 P2/P3/P4，作为后续分批研发和回测的任务拆分依据。
 
+> **策略闭环模板**：本文中的开仓 gate、持仓管理和退出引擎必须回到 [CoinStrategy 策略闭环定义模板 v1](COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md) 的完整策略对象，不能只围绕某个止损参数局部修补。
+
 > **结论先行**：当前趋势策略的问题不是某一个参数太松或太紧，而是执行链路仍偏线性。后续要先把观察模式、实盘开关、账户和策略互斥等前置，再把持仓退出、冷却解冻、多周期信号和外部仓位处理拆成可诊断的分层决策。第一版先形成计划和诊断口径，不直接扩大真实仓位。
 
 ---

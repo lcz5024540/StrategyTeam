@@ -14,6 +14,8 @@ updated: 2026-09-22
 
 路线图：[COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1](architecture-refactor/COINSTRATEGY_STRATEGY_IMPLEMENTATION_ROADMAP_V1.md) — 策略体系实施顺序、验收标准、数据账本、回测、套利和页面落地计划。
 
+策略模板：[COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1](architecture-refactor/COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md) — 定义任何策略上线前必须补齐的目标、市场、因子、信号、gate、sizing、执行、持仓、退出、账本、回测和实盘反馈闭环。
+
 资金账本：[COINSTRATEGY_CAPITAL_RISK_LEDGER_V1](architecture-refactor/COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) — 账户、资金池、策略维度、统一账本、净 PnL、手续费和风控口径。
 
 返回 [知识库首页](知识库首页.md)
