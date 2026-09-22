@@ -164,8 +164,19 @@ public class HtxTrendRecorder {
     public void updateRiskLevels(long id, BigDecimal stopPrice, BigDecimal trailingStopPrice,
                                  BigDecimal takeProfitPrice, BigDecimal highestPrice, BigDecimal lowestPrice,
                                  String message) {
+        updateRiskLevels(id, stopPrice, trailingStopPrice, takeProfitPrice, highestPrice, lowestPrice, message,
+                null, null, null, null, null, null, null);
+    }
+
+    public void updateRiskLevels(long id, BigDecimal stopPrice, BigDecimal trailingStopPrice,
+                                 BigDecimal takeProfitPrice, BigDecimal highestPrice, BigDecimal lowestPrice,
+                                 String message, String exitSnapshotState, BigDecimal exitSnapshotNet,
+                                 BigDecimal exitSnapshotMfe, BigDecimal exitSnapshotMae,
+                                 BigDecimal exitSnapshotGiveback, Long exitSnapshotBars,
+                                 String exitSnapshotCandidates) {
         positionMapper.updateRiskLevels(id, stopPrice, trailingStopPrice, takeProfitPrice,
-                highestPrice, lowestPrice, message);
+                highestPrice, lowestPrice, message, exitSnapshotState, exitSnapshotNet, exitSnapshotMfe,
+                exitSnapshotMae, exitSnapshotGiveback, exitSnapshotBars, clip(exitSnapshotCandidates, 1024));
     }
 
     public void markCloseAccepted(long id, String exitReason, String clientOrderId, Long orderId, String message) {
@@ -194,10 +205,14 @@ public class HtxTrendRecorder {
     }
 
     private static String clip(String value) {
-        if (value == null || value.length() <= 512) {
+        return clip(value, 512);
+    }
+
+    private static String clip(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
             return value;
         }
-        return value.substring(0, 512);
+        return value.substring(0, maxLength);
     }
 
     private static BigDecimal nz(BigDecimal value) {

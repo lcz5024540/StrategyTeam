@@ -247,6 +247,14 @@ export interface TrendPosition {
   sizingMultiplier: number | null
   sizingReason: string | null
   entryGateReason: string | null
+  exitSnapshotState: string | null
+  exitSnapshotNet: number | null
+  exitSnapshotMfe: number | null
+  exitSnapshotMae: number | null
+  exitSnapshotGiveback: number | null
+  exitSnapshotBars: number | null
+  exitSnapshotCandidates: string | null
+  exitSnapshotUpdatedAt: string | null
   createdAt: string
   updatedAt: string
 }

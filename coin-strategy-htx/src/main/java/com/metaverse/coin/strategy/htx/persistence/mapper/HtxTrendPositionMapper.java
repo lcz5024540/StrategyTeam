@@ -22,7 +22,8 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "estimated_close_fee, expected_net_after_fees, sizing_multiplier, sizing_reason, entry_gate_reason, "
             + "primary_model, confirmation_models, policy_version, market_regime, factor_snapshot_id, "
             + "entry_hypothesis, invalidation_price, target_zone_low, target_zone_high, expected_r_multiple, momentum_quality_score, "
-            + "created_at, updated_at";
+            + "exit_snapshot_state, exit_snapshot_net, exit_snapshot_mfe, exit_snapshot_mae, exit_snapshot_giveback, "
+            + "exit_snapshot_bars, exit_snapshot_candidates, exit_snapshot_updated_at, created_at, updated_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "
             + "AND status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'CLOSE_SENT', 'UNKNOWN') "
@@ -60,6 +61,10 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
 
     @Update("UPDATE htx_trend_position SET stop_price = #{stopPrice}, trailing_stop_price = #{trailingStopPrice}, "
             + "take_profit_price = #{takeProfitPrice}, highest_price = #{highestPrice}, lowest_price = #{lowestPrice}, "
+            + "exit_snapshot_state = #{exitSnapshotState}, exit_snapshot_net = #{exitSnapshotNet}, "
+            + "exit_snapshot_mfe = #{exitSnapshotMfe}, exit_snapshot_mae = #{exitSnapshotMae}, "
+            + "exit_snapshot_giveback = #{exitSnapshotGiveback}, exit_snapshot_bars = #{exitSnapshotBars}, "
+            + "exit_snapshot_candidates = #{exitSnapshotCandidates}, exit_snapshot_updated_at = CURRENT_TIMESTAMP(3), "
             + "message = #{message}, updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
     int updateRiskLevels(@Param("id") long id,
                          @Param("stopPrice") BigDecimal stopPrice,
@@ -67,7 +72,14 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                          @Param("takeProfitPrice") BigDecimal takeProfitPrice,
                          @Param("highestPrice") BigDecimal highestPrice,
                          @Param("lowestPrice") BigDecimal lowestPrice,
-                         @Param("message") String message);
+                         @Param("message") String message,
+                         @Param("exitSnapshotState") String exitSnapshotState,
+                         @Param("exitSnapshotNet") BigDecimal exitSnapshotNet,
+                         @Param("exitSnapshotMfe") BigDecimal exitSnapshotMfe,
+                         @Param("exitSnapshotMae") BigDecimal exitSnapshotMae,
+                         @Param("exitSnapshotGiveback") BigDecimal exitSnapshotGiveback,
+                         @Param("exitSnapshotBars") Long exitSnapshotBars,
+                         @Param("exitSnapshotCandidates") String exitSnapshotCandidates);
 
     @Update("UPDATE htx_trend_position SET status = 'CLOSE_SENT', exit_reason = #{exitReason}, "
             + "close_client_order_id = #{clientOrderId}, close_order_id = #{orderId}, message = #{message}, "

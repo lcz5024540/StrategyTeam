@@ -59,6 +59,14 @@ public class HtxTrendPositionEntity {
     private BigDecimal targetZoneHigh;
     private BigDecimal expectedRMultiple;
     private BigDecimal momentumQualityScore;
+    private String exitSnapshotState;
+    private BigDecimal exitSnapshotNet;
+    private BigDecimal exitSnapshotMfe;
+    private BigDecimal exitSnapshotMae;
+    private BigDecimal exitSnapshotGiveback;
+    private Long exitSnapshotBars;
+    private String exitSnapshotCandidates;
+    private LocalDateTime exitSnapshotUpdatedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

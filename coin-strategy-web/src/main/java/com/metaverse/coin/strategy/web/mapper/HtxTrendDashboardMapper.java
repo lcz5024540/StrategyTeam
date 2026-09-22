@@ -49,6 +49,12 @@ public interface HtxTrendDashboardMapper {
             + "WHEN entry_signal IS NULL OR entry_signal = '' THEN 'unknown' "
             + "ELSE 'unclassified' END";
 
+    String POSITION_EXIT_SNAPSHOT_COLUMNS = "exit_snapshot_state AS exitSnapshotState, "
+            + "exit_snapshot_net AS exitSnapshotNet, exit_snapshot_mfe AS exitSnapshotMfe, "
+            + "exit_snapshot_mae AS exitSnapshotMae, exit_snapshot_giveback AS exitSnapshotGiveback, "
+            + "exit_snapshot_bars AS exitSnapshotBars, exit_snapshot_candidates AS exitSnapshotCandidates, "
+            + "exit_snapshot_updated_at AS exitSnapshotUpdatedAt";
+
     @Select("SELECT COUNT(*) AS totalPositions, "
             + "SUM(CASE WHEN status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') THEN 1 ELSE 0 END) AS activePositions, "
             + "SUM(CASE WHEN status = 'DONE' THEN 1 ELSE 0 END) AS closedPositions, "
@@ -204,7 +210,7 @@ public interface HtxTrendDashboardMapper {
             + "entry_fee_rate AS entryFeeRate, estimated_entry_fee AS estimatedEntryFee, "
             + "estimated_close_fee AS estimatedCloseFee, expected_net_after_fees AS expectedNetAfterFees, "
             + "sizing_multiplier AS sizingMultiplier, sizing_reason AS sizingReason, entry_gate_reason AS entryGateReason, "
-            + "created_at AS createdAt, updated_at AS updatedAt "
+            + POSITION_EXIT_SNAPSHOT_COLUMNS + ", created_at AS createdAt, updated_at AS updatedAt "
             + "FROM " + POSITION_TABLE + " WHERE status IN ('INTENT','ENTRY_SENT','ACTIVE','CLOSE_SENT','UNKNOWN') "
             + "ORDER BY updated_at DESC, id DESC LIMIT 50")
     List<Map<String, Object>> activePositions();
@@ -218,7 +224,7 @@ public interface HtxTrendDashboardMapper {
             + "entry_fee_rate AS entryFeeRate, estimated_entry_fee AS estimatedEntryFee, "
             + "estimated_close_fee AS estimatedCloseFee, expected_net_after_fees AS expectedNetAfterFees, "
             + "sizing_multiplier AS sizingMultiplier, sizing_reason AS sizingReason, entry_gate_reason AS entryGateReason, "
-            + "created_at AS createdAt, updated_at AS updatedAt "
+            + POSITION_EXIT_SNAPSHOT_COLUMNS + ", created_at AS createdAt, updated_at AS updatedAt "
             + "FROM " + POSITION_TABLE + " ORDER BY updated_at DESC, id DESC LIMIT 100")
     List<Map<String, Object>> recentPositions();
 

@@ -258,6 +258,29 @@ function positionManagementLabel(position: TrendPosition) {
   if (position.status === 'ACTIVE') return '追踪止损管理中'
   return StatusText(position.status)
 }
+function exitSnapshotStateText(value: string | null | undefined) {
+  const upper = (value || '').toUpperCase()
+  if (upper === 'LOSS' || upper === 'LOSS_ZONE') return '亏损区'
+  if (upper === 'FEE_BREAKEVEN' || upper === 'FEE_BREAKEVEN_ZONE') return '费用线附近'
+  if (upper === 'RUNNER' || upper === 'RUNNER_ZONE') return '趋势奔跑'
+  if (upper === 'EXHAUSTION' || upper === 'EXHAUSTION_ZONE') return '回吐观察'
+  if (upper === 'PROFIT' || upper === 'PROFIT_ZONE') return '盈利区'
+  return value || '—'
+}
+function formatGiveback(value: number | null | undefined) {
+  return value == null ? '—' : `${Math.max(0, value * 100).toFixed(1)}%`
+}
+function compactExitSnapshot(position: TrendPosition) {
+  if (!position.exitSnapshotState && position.exitSnapshotNet == null && position.exitSnapshotMfe == null) return '—'
+  const parts = [
+    exitSnapshotStateText(position.exitSnapshotState),
+    `净值 ${formatUsdt(position.exitSnapshotNet)}`,
+    `MFE ${formatUsdt(position.exitSnapshotMfe)}`,
+    `回吐 ${formatGiveback(position.exitSnapshotGiveback)}`,
+  ]
+  if (position.exitSnapshotBars != null) parts.push(`${position.exitSnapshotBars} 根K`)
+  return parts.join(' · ')
+}
 function botState(trend: HtxTrendDashboardResponse) {
   if (trend.source === 'HTX_TREND_EXECUTION_LEDGER_UNAVAILABLE') return { status: 'REJECTED', detail: '数据库账本不可用', tone: 'negative' } as const
   if (trend.summary.todayNetRealizedProfit <= -1) return { status: 'WARN', detail: `今日净亏 ${formatUsdt(trend.summary.todayNetRealizedProfit)}`, tone: 'warn' } as const
@@ -420,7 +443,7 @@ function TrendNowPanel({ positions, onHistory }: { positions: TrendPosition[]; o
     {positions.length ? <div className="trend-position-list">
       {positions.slice(0, 5).map((position) => <article className="trend-current-position" key={position.id}>
         <div><strong>{position.contractCode}</strong><span><small>{accountName(position.accountLabel)}</small><Status status={position.side} /></span></div>
-        <dl><div><dt>账户</dt><dd>{accountName(position.accountLabel)}</dd></div><div><dt>开仓均价</dt><dd>{formatDecimal(position.entryAvgPrice)}</dd></div><div><dt>追踪止损</dt><dd>{formatDecimal(position.trailingStopPrice ?? position.stopPrice)}</dd></div><div><dt>管理状态</dt><dd>{positionManagementLabel(position)}</dd></div></dl>
+        <dl><div><dt>账户</dt><dd>{accountName(position.accountLabel)}</dd></div><div><dt>开仓均价</dt><dd>{formatDecimal(position.entryAvgPrice)}</dd></div><div><dt>追踪止损</dt><dd>{formatDecimal(position.trailingStopPrice ?? position.stopPrice)}</dd></div><div><dt>管理状态</dt><dd>{positionManagementLabel(position)}</dd></div><div><dt>退出状态</dt><dd>{exitSnapshotStateText(position.exitSnapshotState)}</dd></div><div><dt>当前净值</dt><dd className={valueTone(position.exitSnapshotNet ?? 0)}>{formatUsdt(position.exitSnapshotNet)}</dd></div><div><dt>MFE / 回吐</dt><dd>{formatUsdt(position.exitSnapshotMfe)} / {formatGiveback(position.exitSnapshotGiveback)}</dd></div></dl>
       </article>)}
       {positions.length > 5 ? <small>另有 {positions.length - 5} 条活动仓位，可在交易历史视图完整查看。</small> : null}
     </div> : <div className="trend-empty-state"><strong>当前没有活动趋势仓位</strong><small>等待下一次交易机会。</small></div>}
@@ -580,7 +603,7 @@ function TrendHistoryView({ positions, orders, ledgerEvents, accountSummaries, s
       <label>订单排序<select value={orderSort} onChange={(event) => setOrderSort(event.target.value as OrderSortKey)}><option value="updatedAt">最近更新</option><option value="notional">成交额</option><option value="fee">手续费</option><option value="state">订单状态</option><option value="symbol">合约名</option></select></label>
     </section>
     {account !== 'ALL' ? <div className="trend-history-scope"><span>正在查看 <strong>{account}</strong></span><button className="arb-text-button" type="button" onClick={() => setAccount('ALL')}>全部账户</button></div> : null}
-    <section className="arb-table-wrap"><header className="trend-table-title"><div><h2>仓位账本</h2></div><span>{filteredPositions.length} / {positions.length}</span></header><table><thead><tr><th>账户</th><th>合约 / 方向</th><th>状态</th><th>开仓 / 平仓价</th><th>数量</th><th>手续费</th><th>交易量</th><th>净盈亏</th><th>更新时间</th></tr></thead><tbody>{filteredPositions.length ? filteredPositions.map((position) => <TrendPositionRow key={position.id} position={position} />) : <tr><td className="arb-empty" colSpan={9}>没有符合筛选条件的仓位记录</td></tr>}</tbody></table></section>
+    <section className="arb-table-wrap"><header className="trend-table-title"><div><h2>仓位账本</h2></div><span>{filteredPositions.length} / {positions.length}</span></header><table><thead><tr><th>账户</th><th>合约 / 方向</th><th>状态</th><th>开仓 / 平仓价</th><th>数量</th><th>手续费</th><th>交易量</th><th>净盈亏</th><th>退出诊断</th><th>更新时间</th></tr></thead><tbody>{filteredPositions.length ? filteredPositions.map((position) => <TrendPositionRow key={position.id} position={position} />) : <tr><td className="arb-empty" colSpan={10}>没有符合筛选条件的仓位记录</td></tr>}</tbody></table></section>
     <TrendLedgerEventsTable rows={filteredLedgerEvents} total={ledgerEvents.length} />
     <TrendOrdersTable rows={filteredOrders} />
   </div>
@@ -622,7 +645,7 @@ function TrendLedgerEventsTable({ rows, total }: { rows: TrendLedgerEvent[]; tot
 function TrendOrdersTable({ rows }: { rows: TrendOrder[] }) {
   return <section className="arb-table-wrap"><header className="trend-table-title"><div><h2>最近订单</h2></div><span>{rows.length} 条</span></header><table><thead><tr><th>账户</th><th>合约 / 腿</th><th>方向</th><th>状态</th><th>数量</th><th>均价</th><th>成交额</th><th>手续费</th><th>已实现</th><th>更新时间</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.id}><td><b>{accountName(row.accountLabel)}</b></td><td><b>{row.contractCode}</b><small>{orderLegText(row.leg)} · #{row.positionId}</small></td><td><small>{directionText(row.trendSide)} / {directionText(row.orderSide)}{row.reduceOnly ? ' · 只减仓' : ''}</small></td><td><Status status={row.status} /></td><td>{row.filledContracts || row.requestVolume}</td><td>{formatDecimal(row.averagePrice)}</td><td>{formatNotional(row.notional)}</td><td>{formatUsdtNoSign(row.fee)}</td><td className={valueTone(row.realizedProfit || 0)}>{formatUsdt(row.realizedProfit)}</td><td><small>{row.updatedAt || row.createdAt || '—'}</small></td></tr>) : <tr><td className="arb-empty" colSpan={10}>暂无订单记录</td></tr>}</tbody></table></section>
 }
-function TrendPositionRow({ position }: { position: TrendPosition }) { return <tr><td><b>{accountName(position.accountLabel)}</b></td><td><b>{position.contractCode}</b><small>{directionText(position.side)}</small></td><td><Status status={position.status} /></td><td>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</td><td>{position.contractVolume}</td><td>{formatUsdtNoSign((position.entryFee || 0) + (position.closeFee || 0))}</td><td>{formatNotional(position.turnover)}</td><td className={valueTone(position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.netRealizedProfit ?? position.realizedProfit)}</td><td><small>{position.updatedAt || '—'}</small></td></tr> }
+function TrendPositionRow({ position }: { position: TrendPosition }) { return <tr><td><b>{accountName(position.accountLabel)}</b></td><td><b>{position.contractCode}</b><small>{directionText(position.side)}</small></td><td><Status status={position.status} /></td><td>{formatDecimal(position.entryAvgPrice)} / {formatDecimal(position.closeAvgPrice)}</td><td>{position.contractVolume}</td><td>{formatUsdtNoSign((position.entryFee || 0) + (position.closeFee || 0))}</td><td>{formatNotional(position.turnover)}</td><td className={valueTone(position.netRealizedProfit ?? position.realizedProfit ?? 0)}>{formatUsdt(position.netRealizedProfit ?? position.realizedProfit)}</td><td><small>{compactExitSnapshot(position)}</small></td><td><small>{position.updatedAt || '—'}</small></td></tr> }
 function Status({ status }: { status: string }) {
   const upper = (status || '').toUpperCase()
   const label = upper === 'QUALIFIED' ? '可执行' : upper === 'OBSERVING' ? '观察中' : upper === 'REJECTED' ? '已拒绝' : upper === 'WARN' ? '预警' : upper === 'ACTIVE' ? '持仓中' : upper === 'DONE' ? '已完成' : upper === 'LONG' ? '多' : upper === 'SHORT' ? '空' : upper || '未知'

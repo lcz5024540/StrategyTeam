@@ -1089,7 +1089,9 @@ public class HtxTrendFollowingService {
                 takeProfit, stopContext);
         recorder.updateRiskLevels(position.getId(), position.getStopPrice(), trailingStop, takeProfit, highest, lowest,
                 clip("holding signal=" + signal.side() + " ref=" + reference + " " + stopContext.summary()
-                        + feeProtectionMessage(feeProtectedStop) + " " + exitSnapshot.summary()));
+                        + feeProtectionMessage(feeProtectedStop) + " " + exitSnapshot.summary()),
+                exitSnapshot.state(), exitSnapshot.currentNet(), exitSnapshot.mfe(), exitSnapshot.mae(),
+                exitSnapshot.giveback(), exitSnapshot.bars(), exitSnapshot.candidates());
         String exitReason = combinationInvalidationExitReason(position, reference);
         if (exitReason == null) {
             exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);

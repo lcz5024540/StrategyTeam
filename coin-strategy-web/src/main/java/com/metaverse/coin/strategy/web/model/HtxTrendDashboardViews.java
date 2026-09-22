@@ -74,7 +74,10 @@ public final class HtxTrendDashboardViews {
                            String entrySignal, String exitReason, String message, String accountLabel,
                            BigDecimal entryFeeRate, BigDecimal estimatedEntryFee, BigDecimal estimatedCloseFee,
                            BigDecimal expectedNetAfterFees, BigDecimal sizingMultiplier, String sizingReason,
-                           String entryGateReason, String createdAt, String updatedAt) {
+                           String entryGateReason, String exitSnapshotState, BigDecimal exitSnapshotNet,
+                           BigDecimal exitSnapshotMfe, BigDecimal exitSnapshotMae, BigDecimal exitSnapshotGiveback,
+                           Long exitSnapshotBars, String exitSnapshotCandidates, String exitSnapshotUpdatedAt,
+                           String createdAt, String updatedAt) {
     }
 
     public record DailyPnl(String tradeDate, long closedPositions, BigDecimal realizedProfit,

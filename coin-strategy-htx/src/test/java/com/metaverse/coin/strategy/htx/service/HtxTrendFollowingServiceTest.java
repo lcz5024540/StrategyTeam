@@ -598,7 +598,8 @@ class HtxTrendFollowingServiceTest {
         assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
         assertTrue(result.message().contains("candidates=2"));
         InOrder order = inOrder(recorder, swap);
-        order.verify(recorder).updateRiskLevels(eq(active.getId()), any(), any(), any(), any(), any(), any());
+        order.verify(recorder).updateRiskLevels(eq(active.getId()), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any());
         order.verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder, times(2)).createOrderIntent(captor.capture());
@@ -962,7 +963,8 @@ class HtxTrendFollowingServiceTest {
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
         verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4295.00")),
                 eq(new BigDecimal("4323.84")), eq(null), eq(new BigDecimal("4332.21")),
-                eq(new BigDecimal("4315.84")), messageCaptor.capture());
+                eq(new BigDecimal("4315.84")), messageCaptor.capture(), eq("EXHAUSTION_ZONE"),
+                any(), any(), any(), any(), any(), any());
         assertTrue(messageCaptor.getValue().contains("stopSource=LEGACY_FEE_PROTECTED_CLAMP"));
         assertTrue(messageCaptor.getValue().contains("structureStopCandidate=4290.00"));
         assertTrue(messageCaptor.getValue().contains("exitSnapshot state="));
@@ -1049,7 +1051,7 @@ class HtxTrendFollowingServiceTest {
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
         verify(recorder).updateRiskLevels(eq(active.getId()), eq(new BigDecimal("2.440")),
                 eq(new BigDecimal("2.481")), eq(null), eq(new BigDecimal("2.482")),
-                eq(new BigDecimal("2.452")), any());
+                eq(new BigDecimal("2.452")), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -1219,7 +1221,7 @@ class HtxTrendFollowingServiceTest {
         assertTrue(result.message().contains("structureStopCandidate=4290.00"));
         verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4285.00")),
                 eq(new BigDecimal("4290.00")), eq(null), eq(new BigDecimal("4316.10")),
-                eq(new BigDecimal("4291.00")), any());
+                eq(new BigDecimal("4291.00")), any(), any(), any(), any(), any(), any(), any(), any());
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 

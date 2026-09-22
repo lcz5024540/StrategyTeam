@@ -191,7 +191,11 @@ public class HtxTrendDashboardQueryService {
                 text(row, "accountLabel"), nullableDecimal(row, "entryFeeRate"),
                 nullableDecimal(row, "estimatedEntryFee"), nullableDecimal(row, "estimatedCloseFee"),
                 nullableDecimal(row, "expectedNetAfterFees"), nullableDecimal(row, "sizingMultiplier"),
-                text(row, "sizingReason"), text(row, "entryGateReason"), text(row, "createdAt"), text(row, "updatedAt"));
+                text(row, "sizingReason"), text(row, "entryGateReason"), text(row, "exitSnapshotState"),
+                nullableDecimal(row, "exitSnapshotNet"), nullableDecimal(row, "exitSnapshotMfe"),
+                nullableDecimal(row, "exitSnapshotMae"), nullableDecimal(row, "exitSnapshotGiveback"),
+                nullableLong(row, "exitSnapshotBars"), text(row, "exitSnapshotCandidates"),
+                text(row, "exitSnapshotUpdatedAt"), text(row, "createdAt"), text(row, "updatedAt"));
     }
 
     private HtxTrendDashboardViews.DailyPnl daily(Map<String, Object> row) {
