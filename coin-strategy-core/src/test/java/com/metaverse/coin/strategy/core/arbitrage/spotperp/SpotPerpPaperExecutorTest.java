@@ -28,6 +28,26 @@ class SpotPerpPaperExecutorTest {
     }
 
     @Test
+    void configuredRoundTripIsSplitAcrossFourTakerFillsNotDoubledOnExit() {
+        SpotPerpPaperExecutor executor = new SpotPerpPaperExecutor(SpotPerpRules.defaults());
+        SpotPerpSnapshot snap = liquid(btcBinance(), "0.0003", T0);
+        SpotPerpPosition position = executor.open(snap, T0).position();
+        BigDecimal notional = position.spotNotional();
+        BigDecimal openBps = bps(position.estimatedFees(), notional);
+        assertTrue(openBps.subtract(new BigDecimal("14")).abs().compareTo(new BigDecimal("0.5")) <= 0,
+                "open fee bps=" + openBps.toPlainString());
+        executor.close(position, snap, T0, "TEST_CLOSE");
+        BigDecimal cycleBps = bps(position.estimatedFees(), notional);
+        assertTrue(cycleBps.subtract(new BigDecimal("28")).abs().compareTo(new BigDecimal("0.5")) <= 0,
+                "cycle fee bps=" + cycleBps.toPlainString());
+        assertEquals(0, new BigDecimal("10000").compareTo(SpotPerpRules.defaults().notionalUsdt()));
+    }
+
+    private static BigDecimal bps(BigDecimal amount, BigDecimal notional) {
+        return amount.divide(notional, 10, java.math.RoundingMode.HALF_UP).multiply(new BigDecimal("10000"));
+    }
+
+    @Test
     void closesWithPerpBuyThenSpotSell() {
         SpotPerpPaperExecutor executor = new SpotPerpPaperExecutor(testRules());
         SpotPerpPosition position = executor.open(liquid(btcBinance(), "0.0003", T0), T0).position();

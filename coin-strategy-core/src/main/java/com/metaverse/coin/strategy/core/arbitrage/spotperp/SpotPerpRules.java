@@ -90,7 +90,10 @@ public record SpotPerpRules(
      */
     public static SpotPerpRules defaults() {
         EnumMap<SpotPerpVenue, BigDecimal> fees = new EnumMap<>(SpotPerpVenue.class);
-        // Spot taker 10 bps + USDT-M taker 4 bps, both sides of the round trip.
+        // Spot taker 10 bps + USDT-M taker 4 bps, both sides of the round trip
+        // (four fills: open spot, open perp, close perp, close spot). The paper
+        // executor splits this rate across those four fills; do not charge it
+        // again as a second "round trip" on exit.
         fees.put(SpotPerpVenue.BINANCE, new BigDecimal("0.0028"));
         // HTX spot taker is typically wider; keep the harvest gate conservative.
         fees.put(SpotPerpVenue.HTX, new BigDecimal("0.0048"));

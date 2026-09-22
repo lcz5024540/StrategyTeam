@@ -49,16 +49,14 @@ public final class SpotPerpPaperExecutor {
                     snapshot.instrument(), rules.leverage(), sized.quantity(),
                     spotBuy.vwap(), unwind.vwap(), snapshot.executableOpenBasis(),
                     snapshot.fundingRate(), now, snapshot.nextFundingTime(),
-                    fee(snapshot, sized.quantity(), spotBuy.vwap().add(unwind.vwap()).divide(
-                            new BigDecimal("2"), 18, RoundingMode.HALF_UP)),
+                    twoLegFee(snapshot, sized.quantity(), spotBuy.vwap(), unwind.vwap()),
                     List.of(fill("SPOT", "BUY", "MARKET_IOC", spotBuy, now, "-OPEN-SPOT"),
                             fill("SPOT", "SELL", "MARKET_IOC", unwind, now, "-COMPENSATE-SPOT")));
             rolled.markRolledBack(now, "PERP_OPEN_FAILED_SPOT_UNWOUND", List.of());
             return new Result(false, "PERP_OPEN_FAILED_SPOT_UNWOUND", rolled,
                     rolled.fills());
         }
-        BigDecimal openFee = fee(snapshot, sized.quantity(), spotBuy.vwap())
-                .add(fee(snapshot, sized.quantity(), perpSell.vwap()));
+        BigDecimal openFee = twoLegFee(snapshot, sized.quantity(), spotBuy.vwap(), perpSell.vwap());
         SpotPerpPosition position = SpotPerpPosition.opened(
                 snapshot.instrument(), rules.leverage(), sized.quantity(),
                 spotBuy.vwap(), perpSell.vwap(), snapshot.executableOpenBasis(),
@@ -83,18 +81,28 @@ public final class SpotPerpPaperExecutor {
         } catch (RuntimeException exception) {
             return new Result(false, "CLOSE_DEPTH_INSUFFICIENT", position, List.of());
         }
-        BigDecimal closeFee = fee(snapshot, position.quantity(), perpBuy.vwap())
-                .add(fee(snapshot, position.quantity(), spotSell.vwap()));
+        BigDecimal closeFee = twoLegFee(snapshot, position.quantity(), perpBuy.vwap(), spotSell.vwap());
         position.close(now, reason, spotSell.vwap(), perpBuy.vwap(), closeFee,
                 List.of(fill("PERP", "BUY", "MARKET_IOC", perpBuy, now, "-CLOSE-PERP"),
                         fill("SPOT", "SELL", "MARKET_IOC", spotSell, now, "-CLOSE-SPOT")));
         return new Result(true, reason, position, position.fills());
     }
 
-    private BigDecimal fee(SpotPerpSnapshot snapshot, BigDecimal quantity, BigDecimal price) {
-        BigDecimal halfRoundTrip = rules.roundTripFee(snapshot.instrument().venue())
-                .divide(new BigDecimal("2"), 18, RoundingMode.HALF_UP);
-        return quantity.multiply(price).multiply(halfRoundTrip).setScale(8, RoundingMode.HALF_UP);
+    /**
+     * {@code roundTripFee} is the full open+close lifecycle (four taker fills:
+     * spot in, perp in, perp out, spot out). Each two-leg event therefore books
+     * half of that rate so a completed cycle matches the gate, which subtracts
+     * the configured round-trip once.
+     */
+    private BigDecimal twoLegFee(SpotPerpSnapshot snapshot, BigDecimal quantity,
+            BigDecimal firstPrice, BigDecimal secondPrice) {
+        BigDecimal perFill = rules.roundTripFee(snapshot.instrument().venue())
+                .divide(new BigDecimal("4"), 18, RoundingMode.HALF_UP);
+        return fillFee(quantity, firstPrice, perFill).add(fillFee(quantity, secondPrice, perFill));
+    }
+
+    private static BigDecimal fillFee(BigDecimal quantity, BigDecimal price, BigDecimal perFill) {
+        return quantity.multiply(price).multiply(perFill).setScale(8, RoundingMode.HALF_UP);
     }
 
     private static SpotPerpPosition.Fill fill(String leg, String side, String orderType,
