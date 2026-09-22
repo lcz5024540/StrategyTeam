@@ -29,13 +29,13 @@ public class HtxTrendCombinationService {
                             TrendCandidateSignal signal) {
         List<HtxTrendStrategyPolicyEntity> policies = policyService.enabledPolicies();
         if (policies.isEmpty()) {
-            return Selection.rejected("no enabled combination policy in database");
+            return reject(contractCode, period, signal, "no enabled combination policy in database");
         }
         List<CombinationCandidate> candidates = calculator.evaluate(candles, signal,
                 policies.stream().map(HtxTrendStrategyPolicyEntity::getBoxWindowBars)
                         .filter(value -> value != null && value > 1).findFirst().orElse(32));
         if (candidates.isEmpty()) {
-            return Selection.rejected("no valid combination candidate");
+            return reject(contractCode, period, signal, "no valid combination candidate");
         }
         List<ResolvedCandidate> resolved = candidates.stream()
                 .map(candidate -> resolve(candidate, policies))
@@ -43,7 +43,7 @@ public class HtxTrendCombinationService {
                 .sorted(Comparator.comparing((ResolvedCandidate item) -> item.candidate().score()).reversed())
                 .toList();
         if (resolved.isEmpty()) {
-            return Selection.rejected("candidate rejected by enabled combination policies");
+            return reject(contractCode, period, signal, "candidate rejected by enabled combination policies");
         }
         ResolvedCandidate selected = resolved.get(0);
         Long snapshotId = recordSnapshot(contractCode, period, signal, selected);
@@ -58,6 +58,32 @@ public class HtxTrendCombinationService {
         BigDecimal notional = selected.policy().getBaseNotionalUsdt().multiply(multiplier)
                 .min(selected.policy().getMaxNotionalUsdt());
         return Selection.selected(selected.candidate(), selected.policy(), snapshotId, multiplier, notional);
+    }
+
+    /** Persist a negative decision too, so a later review can distinguish missing structure from execution rejection. */
+    private Selection reject(String contractCode, String period, TrendCandidateSignal signal, String reason) {
+        if (signal == null || signal.barTime() == null) {
+            return Selection.rejected(reason);
+        }
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":combo-v2:REJECTED");
+        snapshot.setContractCode(contractCode); snapshot.setPeriod(period); snapshot.setBarTime(signal.barTime());
+        snapshot.setMarketRegime(signal.regime().name());
+        snapshot.setFactorsJson("{\"adx\":\"" + signal.adx() + "\",\"atr\":\"" + signal.atr()
+                + "\",\"atrPct\":\"" + signal.atrPct() + "\",\"volumeRatio\":\"" + signal.volumeRatio() + "\"}");
+        Long snapshotId = combinationRecorder.recordSnapshot(snapshot);
+        HtxTrendCandidateSignalEntity entity = new HtxTrendCandidateSignalEntity();
+        entity.setContractCode(contractCode); entity.setPeriod(period); entity.setBarTime(signal.barTime());
+        entity.setDirection(signal.direction().name()); entity.setRegime(signal.regime().name());
+        entity.setSignalScore(signal.signalScore()); entity.setClosePrice(signal.closePrice()); entity.setAdx(signal.adx());
+        entity.setAtr(signal.atr()); entity.setAtrPct(signal.atrPct()); entity.setMomentumPct(signal.momentumPct());
+        entity.setVolumeRatio(signal.volumeRatio()); entity.setEntryReason(signal.entryReason());
+        entity.setInvalidationReason(signal.invalidationReason()); entity.setShadow(false);
+        entity.setModelVersion("combo-v2:COMBINATION_GATE"); entity.setPrimaryModel("NONE");
+        entity.setPolicyVersion("combo-v2"); entity.setFactorSnapshotId(snapshotId);
+        entity.setGateResult("REJECTED"); entity.setGateReason(reason);
+        candidateRecorder.record(entity);
+        return Selection.rejected(reason);
     }
 
     private ResolvedCandidate resolve(CombinationCandidate candidate, List<HtxTrendStrategyPolicyEntity> policies) {

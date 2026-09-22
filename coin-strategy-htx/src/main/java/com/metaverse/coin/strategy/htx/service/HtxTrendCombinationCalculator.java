@@ -48,21 +48,21 @@ public class HtxTrendCombinationCalculator {
         BigDecimal baseScore = signal.signalScore() == null ? BigDecimal.ZERO : signal.signalScore();
 
         if (boxBreakout && donchianBreakout) {
-            candidates.add(candidate("BOX_BREAKOUT", "DONCHIAN_BREAKOUT", signal, structure, marketState,
-                    baseScore.add(new BigDecimal("15")), "box and channel breakout agree"));
+            candidates.add(candidate("DONCHIAN_BREAKOUT", "BOX_BREAKOUT", signal, structure, marketState,
+                    baseScore.add(new BigDecimal("15")), "fresh channel breakout confirmed by box"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && fibonacciRetest) {
-            candidates.add(candidate("BOX_BREAKOUT", "FIB_PULLBACK_CONTINUATION", signal, structure, marketState,
-                    baseScore.add(new BigDecimal("10")), "box structure and Fibonacci retest agree"));
+            candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT", signal, structure, marketState,
+                    baseScore.add(new BigDecimal("10")), "Fibonacci retest confirmed by prior box breakout"));
         }
         if ((donchianBreakout || priorBreakout.donchianBreakout()) && fibonacciRetest) {
-            candidates.add(candidate("DONCHIAN_BREAKOUT", "FIB_PULLBACK_CONTINUATION", signal, structure, marketState,
-                    baseScore.add(new BigDecimal("10")), "channel structure and Fibonacci retest agree"));
+            candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "DONCHIAN_BREAKOUT", signal, structure, marketState,
+                    baseScore.add(new BigDecimal("10")), "Fibonacci retest confirmed by prior channel breakout"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && (donchianBreakout || priorBreakout.donchianBreakout())
                 && fibonacciRetest) {
-            candidates.add(candidate("BOX_BREAKOUT", "DONCHIAN_BREAKOUT,FIB_PULLBACK_CONTINUATION", signal,
-                    structure, marketState, baseScore.add(new BigDecimal("20")), "box, channel and Fibonacci agree"));
+            candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal,
+                    structure, marketState, baseScore.add(new BigDecimal("20")), "Fibonacci retest confirmed by box and channel"));
         }
         return candidates.stream().sorted(Comparator.comparing(CombinationCandidate::score).reversed()).toList();
     }
@@ -70,10 +70,20 @@ public class HtxTrendCombinationCalculator {
     private CombinationCandidate candidate(String primaryModel, String confirmationModels,
                                            TrendCandidateSignal signal, Structure structure, MarketState marketState,
                                            BigDecimal score, String hypothesis) {
-        BigDecimal invalidation = signal.direction() == Direction.LONG ? structure.boxLow() : structure.boxHigh();
+        BigDecimal invalidation = invalidation(primaryModel, signal, structure);
         return new CombinationCandidate(primaryModel, confirmationModels, signal.direction(), score.min(ONE_HUNDRED),
                 marketState.name(), structure.boxHigh(), structure.boxLow(), structure.swingHigh(), structure.swingLow(),
                 structure.fibonacciLower(), structure.fibonacciUpper(), invalidation, hypothesis);
+    }
+
+    private static BigDecimal invalidation(String primaryModel, TrendCandidateSignal signal, Structure structure) {
+        if ("FIB_PULLBACK_CONTINUATION".equals(primaryModel)) {
+            return signal.direction() == Direction.LONG ? structure.fibonacciLower() : structure.fibonacciUpper();
+        }
+        if ("DONCHIAN_BREAKOUT".equals(primaryModel)) {
+            return signal.direction() == Direction.LONG ? signal.breakoutLow() : signal.breakoutHigh();
+        }
+        return signal.direction() == Direction.LONG ? structure.boxLow() : structure.boxHigh();
     }
 
     private static boolean valid(HtxSwapKline candle) {

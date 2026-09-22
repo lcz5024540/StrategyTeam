@@ -28,11 +28,11 @@ class HtxTrendCombinationCalculatorTest {
 
         assertFalse(candidates.isEmpty());
         CombinationCandidate candidate = candidates.get(0);
-        assertEquals("BOX_BREAKOUT", candidate.primaryModel());
-        assertEquals("DONCHIAN_BREAKOUT", candidate.confirmationModels());
+        assertEquals("DONCHIAN_BREAKOUT", candidate.primaryModel());
+        assertEquals("BOX_BREAKOUT", candidate.confirmationModels());
         assertEquals("BROAD_UP", candidate.marketRegime());
         assertEquals(new BigDecimal("100"), candidate.score());
-        assertEquals(new BigDecimal("101"), candidate.invalidationPrice());
+        assertEquals(new BigDecimal("99"), candidate.invalidationPrice());
     }
 
     @Test
