@@ -2123,13 +2123,13 @@ public class HtxTrendFollowingService {
         long bars = timeInPositionBars(position);
         String state = exitState(position.getSide(), signal, currentNet, mfe, giveback);
         String candidates = exitCandidateSummary(position, signal, reference, trailingStop, takeProfit, stopContext,
-                bars);
+                bars, currentNet, mfe, giveback);
         return new ExitSnapshot(state, currentNet, mfe, mae, giveback, bars, candidates);
     }
 
     private String exitCandidateSummary(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
                                         BigDecimal trailingStop, BigDecimal takeProfit, StopContext stopContext,
-                                        long bars) {
+                                        long bars, BigDecimal currentNet, BigDecimal mfe, BigDecimal giveback) {
         List<String> candidates = new ArrayList<>();
         if (positive(position.getInvalidationPrice())) {
             candidates.add("MODEL_INVALIDATION:" + triggerState(crossed(position.getSide(), reference,
@@ -2147,6 +2147,14 @@ public class HtxTrendFollowingService {
             candidates.add("TARGET_ZONE:" + triggerState(targetReached(position.getSide(), reference, takeProfit))
                     + "@" + takeProfit);
         }
+        String partialTakeProfit = partialTakeProfitCandidate(position, reference, currentNet);
+        if (partialTakeProfit != null) {
+            candidates.add(partialTakeProfit);
+        }
+        String profitProtection = profitProtectionCandidate(currentNet, mfe, giveback);
+        if (profitProtection != null) {
+            candidates.add(profitProtection);
+        }
         if (signal.side() == TrendSide.FLAT) {
             candidates.add("TREND_EXHAUSTION:watch:FLAT");
         } else if ((LONG.equals(position.getSide()) && signal.side() == TrendSide.SHORT)
@@ -2155,6 +2163,76 @@ public class HtxTrendFollowingService {
         }
         candidates.add("TIME_STOP:observe:bars=" + bars);
         return String.join(",", candidates);
+    }
+
+    private String partialTakeProfitCandidate(HtxTrendPositionEntity position, BigDecimal reference, BigDecimal currentNet) {
+        BigDecimal oneR = rTargetPrice(position, BigDecimal.ONE);
+        BigDecimal twoR = rTargetPrice(position, new BigDecimal("2"));
+        BigDecimal structuralTarget = structuralTargetPrice(position);
+        if (!positive(oneR) && !positive(twoR) && !positive(structuralTarget)) {
+            return null;
+        }
+        boolean oneRReached = positive(oneR) && targetReached(position.getSide(), reference, oneR);
+        boolean twoRReached = positive(twoR) && targetReached(position.getSide(), reference, twoR);
+        boolean structuralReached = positive(structuralTarget) && targetReached(position.getSide(), reference, structuralTarget);
+        boolean profitable = currentNet != null && currentNet.signum() > 0;
+        String state = profitable && (oneRReached || structuralReached) ? "simulate_trigger" : "observe";
+        String suggestClose = twoRReached ? "50%" : oneRReached || structuralReached ? "33%" : "0%";
+        return "PARTIAL_TAKE_PROFIT:" + state + ":1R@" + priceText(oneR)
+                + ",2R@" + priceText(twoR) + ",structure@" + priceText(structuralTarget)
+                + ",suggestClose=" + suggestClose;
+    }
+
+    private String profitProtectionCandidate(BigDecimal currentNet, BigDecimal mfe, BigDecimal giveback) {
+        if (currentNet == null) {
+            return null;
+        }
+        if (currentNet.signum() <= 0) {
+            return "PROFIT_PROTECTION:inactive:net=" + moneyText(currentNet);
+        }
+        BigDecimal breakeven = nonNegative(properties.getMinFlatExitProfitUsdt());
+        BigDecimal protectNet = positive(mfe) ? mfe.multiply(new BigDecimal("0.50")) : breakeven;
+        protectNet = max(protectNet, breakeven);
+        String state = positive(giveback) && giveback.compareTo(new BigDecimal("0.35")) >= 0
+                ? "simulate_trigger" : "observe";
+        return "PROFIT_PROTECTION:" + state + ":net=" + moneyText(currentNet)
+                + ",mfe=" + moneyText(mfe) + ",giveback=" + pct(giveback)
+                + ",protectNet=" + moneyText(protectNet);
+    }
+
+    private BigDecimal rTargetPrice(HtxTrendPositionEntity position, BigDecimal multiple) {
+        if (position == null || !positive(position.getEntryAvgPrice()) || !positive(position.getStopPrice())
+                || multiple == null || multiple.signum() <= 0) {
+            return null;
+        }
+        BigDecimal riskDistance = LONG.equals(position.getSide())
+                ? position.getEntryAvgPrice().subtract(position.getStopPrice())
+                : position.getStopPrice().subtract(position.getEntryAvgPrice());
+        if (!positive(riskDistance)) {
+            return null;
+        }
+        BigDecimal targetDistance = riskDistance.multiply(multiple);
+        return LONG.equals(position.getSide())
+                ? position.getEntryAvgPrice().add(targetDistance)
+                : position.getEntryAvgPrice().subtract(targetDistance);
+    }
+
+    private BigDecimal structuralTargetPrice(HtxTrendPositionEntity position) {
+        if (position == null) {
+            return null;
+        }
+        if (LONG.equals(position.getSide())) {
+            return firstPositive(position.getTargetZoneLow(), position.getTargetZoneHigh(), position.getTakeProfitPrice());
+        }
+        return firstPositive(position.getTargetZoneHigh(), position.getTargetZoneLow(), position.getTakeProfitPrice());
+    }
+
+    private static String priceText(BigDecimal value) {
+        return value == null ? "-" : value.stripTrailingZeros().toPlainString();
+    }
+
+    private static String moneyText(BigDecimal value) {
+        return value == null ? "-" : value.setScale(6, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
     }
 
     private static boolean crossed(String side, BigDecimal reference, BigDecimal price) {

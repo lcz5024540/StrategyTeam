@@ -1002,6 +1002,30 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void activeLongRecordsSimulatedPartialTakeProfitWithoutSendingCloseOrder() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(45));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4342.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        ArgumentCaptor<String> candidatesCaptor = ArgumentCaptor.forClass(String.class);
+        verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4295.00")),
+                any(), eq(null), eq(new BigDecimal("4342.00")), eq(new BigDecimal("4315.84")),
+                any(), any(), any(), any(), any(), any(), any(), candidatesCaptor.capture());
+        assertTrue(candidatesCaptor.getValue().contains("PARTIAL_TAKE_PROFIT:simulate_trigger"));
+        assertTrue(candidatesCaptor.getValue().contains("suggestClose=33%"));
+        assertTrue(candidatesCaptor.getValue().contains("PROFIT_PROTECTION:"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void activeLongClampsTrailingStopToFeeProtectedBreakevenWhenPriceFallsThroughProtectedStop() {
         givenContractInfo();
         givenKlines();

@@ -279,7 +279,16 @@ function compactExitSnapshot(position: TrendPosition) {
     `回吐 ${formatGiveback(position.exitSnapshotGiveback)}`,
   ]
   if (position.exitSnapshotBars != null) parts.push(`${position.exitSnapshotBars} 根K`)
+  const actionHint = exitActionHint(position.exitSnapshotCandidates)
+  if (actionHint !== '—') parts.push(actionHint)
   return parts.join(' · ')
+}
+function exitActionHint(candidates: string | null | undefined) {
+  const value = candidates || ''
+  const hints = []
+  if (value.includes('PARTIAL_TAKE_PROFIT:simulate_trigger')) hints.push('分批止盈待评估')
+  if (value.includes('PROFIT_PROTECTION:simulate_trigger')) hints.push('利润保护待评估')
+  return hints.length ? hints.join(' / ') : '—'
 }
 function botState(trend: HtxTrendDashboardResponse) {
   if (trend.source === 'HTX_TREND_EXECUTION_LEDGER_UNAVAILABLE') return { status: 'REJECTED', detail: '数据库账本不可用', tone: 'negative' } as const
