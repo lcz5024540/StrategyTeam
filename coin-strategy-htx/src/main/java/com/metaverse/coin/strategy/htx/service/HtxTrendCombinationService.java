@@ -123,7 +123,7 @@ public class HtxTrendCombinationService {
         entity.setAtr(signal.atr()); entity.setAtrPct(signal.atrPct()); entity.setMomentumPct(signal.momentumPct());
         entity.setVolumeRatio(signal.volumeRatio()); entity.setEntryReason(signal.entryReason());
         entity.setInvalidationReason(signal.invalidationReason()); entity.setShadow(false);
-        entity.setModelVersion("combo-v2:COMBINATION_GATE"); entity.setPrimaryModel("NONE");
+        entity.setModelVersion("combo-v2:evidence-v2:COMBINATION_GATE"); entity.setPrimaryModel("NONE");
         entity.setPolicyVersion("combo-v2"); entity.setFactorSnapshotId(snapshotId);
         entity.setGateResult("REJECTED"); entity.setGateReason(reason.code());
         candidateRecorder.record(entity);
@@ -266,7 +266,8 @@ public class HtxTrendCombinationService {
         entity.setBreakoutHigh(signal.breakoutHigh()); entity.setBreakoutLow(signal.breakoutLow());
         entity.setEmaFast(signal.emaFast()); entity.setEmaMedium(signal.emaMedium()); entity.setEmaSlow(signal.emaSlow());
         entity.setEntryReason(signal.entryReason()); entity.setInvalidationReason(signal.invalidationReason());
-        entity.setShadow(false); entity.setModelVersion(resolved.policy().getPolicyVersion() + ":" + resolved.policy().getPolicyCode());
+        entity.setShadow(false); entity.setModelVersion(resolved.policy().getPolicyVersion()
+                + ":evidence-v2:" + resolved.policy().getPolicyCode());
         entity.setPrimaryModel(resolved.candidate().primaryModel()); entity.setConfirmationModels(resolved.candidate().confirmationModels());
         entity.setPolicyVersion(resolved.policy().getPolicyVersion()); entity.setFactorSnapshotId(snapshotId);
         entity.setGateResult(result); entity.setGateReason(reason); entity.setInvalidationPrice(resolved.candidate().invalidationPrice());
