@@ -97,6 +97,7 @@ flowchart TD
 | 2026-09-22 | 已完成代码第一步 | observe-only 在真实开仓 gate 前返回 `OBSERVED`，并明确写入 `live entry gates bypassed`；真实模式仍继续资金费成本 gate。 |
 | 2026-09-22 | 已完成代码第一步 | 杠杆范围检查限定为真实模式，观察模式不会因实盘杠杆配置不合适而丢失候选诊断。 |
 | 2026-09-22 | 已完成诊断拆分 | 真实开仓拒绝原因增加阶段前缀：`mode gate`、`candidate scan`、`entry gate`、`execution preflight`、`order execution`；先复用现有 message/gate reason，不新增表结构。 |
+| 2026-09-22 | 待补 | 当前候选页只展示模型层 Gate，成本证据又在方向置信度 Gate 后写入，导致模型通过但被最终 Gate 拒绝的候选不可解释；统一归档为 [OBS-01 / OBS-02](COINSTRATEGY_STRATEGY_BACKLOG_V1.md)。 |
 
 ---
 
@@ -280,3 +281,4 @@ flowchart TD
 3. 多周期扩展优先服务趋势确认和退出，不急于马上新增大仓位长线单。
 4. 第一批只改执行顺序和诊断，不提高仓位、不新增真实开仓模型。
 5. 后续每批执行前必须先补对应回测或单测，避免直接用实盘试错。
+6. 所有尚未完成项统一以 [CoinStrategy 策略未完成任务清单 v1](COINSTRATEGY_STRATEGY_BACKLOG_V1.md) 为执行入口；本计划保留机制和验收细节。

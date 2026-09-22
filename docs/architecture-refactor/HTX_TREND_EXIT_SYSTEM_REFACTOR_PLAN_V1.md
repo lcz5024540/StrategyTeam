@@ -467,7 +467,7 @@ E5 才允许组合评分接管真实退出动作。
 
 ## 11. 当前执行建议
 
-下一步围绕 E4 样本继续观察，不急着接入真实平仓：
+未完成的 E2–E5 任务、手续费保护止损和回测依赖已统一归档到 [CoinStrategy 策略未完成任务清单 v1](COINSTRATEGY_STRATEGY_BACKLOG_V1.md)。下一步围绕 E4 样本继续观察，不急着接入真实平仓：
 
 1. 不启用新的真实多周期平仓规则。
 2. 收集真实 ACTIVE 仓位的 `TIMEFRAME_CONFIRMATION` 样本。

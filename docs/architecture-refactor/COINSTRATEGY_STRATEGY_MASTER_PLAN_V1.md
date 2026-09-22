@@ -426,8 +426,5 @@ CapitalAllocator
 
 ## 11. 下一步
 
-1. 先实现统一策略维度：`strategy_family`、`strategy_name`、`model_name`、`account_id`。
-2. 再实现趋势因子快照和模型候选观察链路。
-3. 同步补套利策略资金池设计，先定单交易所现货合约对冲资金费套利。
-4. 最后改页面总览，让资金分配、策略收益、账户表现、风险状态可视化。
+趋势、套利、账本和驾驶舱的未完成项统一以 [CoinStrategy 策略未完成任务清单 v1](COINSTRATEGY_STRATEGY_BACKLOG_V1.md) 为入口。先补最终执行可观测性和同源回测，再决定趋势 Gate、试探性限价执行和退出灰度；资金费套利和资金调度继续暂缓。
 
