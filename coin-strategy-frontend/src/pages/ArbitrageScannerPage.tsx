@@ -9,6 +9,7 @@ import type {
   TrendAccountSummary,
   TrendDimensionPnl,
   TrendLedgerEvent,
+  TrendCandidateSignal,
   TrendOrder,
   TrendPosition,
 } from '@/types/arbitrage-dashboard'
@@ -24,6 +25,7 @@ const TREND_VIEWS = [
   { value: 'overview', label: '驾驶舱' },
   { value: 'history', label: '交易历史' },
   { value: 'quality', label: '收益归因' },
+  { value: 'candidates', label: '候选观察' },
 ] as const
 
 type TrendView = typeof TREND_VIEWS[number]['value']
@@ -391,6 +393,7 @@ function TrendDashboard({ trend, loading, refresh, view, onViewChange }: { trend
     {view === 'overview' ? <TrendOverview trend={trend} lastPosition={lastPosition} onViewChange={onViewChange} selectedAccount={selectedAccount} onSelectAccount={setSelectedAccount} onOpenAccountHistory={openAccountHistory} /> : null}
     {view === 'history' ? <TrendHistoryView positions={trend.recentPositions} orders={trend.recentOrders} ledgerEvents={trend.recentLedgerEvents || []} accountSummaries={trend.accountSummaries || []} selectedAccount={selectedAccount} /> : null}
     {view === 'quality' ? <TrendQualityView trend={trend} /> : null}
+    {view === 'candidates' ? <TrendCandidateEvidenceView candidates={trend.recentCandidateSignals || []} /> : null}
   </div>
 }
 function TrendBotHero({ trend, loading, refresh }: { trend: HtxTrendDashboardResponse; loading: boolean; refresh: () => void }) {
@@ -625,6 +628,60 @@ function TrendQualityView({ trend }: { trend: HtxTrendDashboardResponse }) {
       <TrendAttributionTable title="亏损币种优先排查" rows={trend.symbolPnl || []} />
       <TrendAttributionTable title="今日退出原因" rows={trend.exitReasonPnl || []} />
     </section>
+  </div>
+}
+
+type TrendCostEvidence = {
+  account?: { label?: string; feeSource?: string; openTakerRate?: number; closeTakerRate?: number; effectiveTakerRate?: number }
+  orderBook?: { bestBid?: number; bestAsk?: number; spreadRate?: number; depthLevels?: number; availableContracts?: number; requiredContracts?: number; coverageRatio?: number }
+  expectation?: { atrMove?: number; grossPnl?: number; entryFee?: number; closeFee?: number; spreadCost?: number; netPnlAfterCosts?: number; requiredMove?: number; gateResult?: string; gateReason?: string }
+}
+
+function parseCostEvidence(value: string | null | undefined): TrendCostEvidence | undefined {
+  if (!value) return undefined
+  try { return JSON.parse(value) as TrendCostEvidence } catch { return undefined }
+}
+
+function TrendCandidateEvidenceView({ candidates }: { candidates: TrendCandidateSignal[] }) {
+  const [symbol, setSymbol] = useState('')
+  const [gate, setGate] = useState('ALL')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const rows = [...candidates]
+    .filter((row) => !symbol || row.contractCode.includes(symbol.toUpperCase()))
+    .filter((row) => gate === 'ALL' || row.gateResult === gate)
+  const selected = rows.find((row) => row.id === selectedId) || rows[0]
+  const cost = parseCostEvidence(selected?.costFactorsJson)
+  const distinctGates = [...new Set(candidates.map((row) => row.gateResult)
+    .filter((value): value is string => Boolean(value)))]
+  const estimatedCosts = cost ? (cost.expectation?.entryFee || 0) + (cost.expectation?.closeFee || 0) + (cost.expectation?.spreadCost || 0) : undefined
+  return <div className="trend-view-stack trend-candidate-view">
+    <section className="trend-toolbar trend-candidate-toolbar">
+      <div><h2>候选与执行证据</h2></div>
+      <label>合约<input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="BTC、SOL" /></label>
+      <label>Gate<select value={gate} onChange={(event) => setGate(event.target.value)}><option value="ALL">全部</option>{distinctGates.map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
+      <span>{rows.length} / {candidates.length}</span>
+    </section>
+    <section className="arb-table-wrap"><table><thead><tr><th>合约 / 方向</th><th>模型</th><th>分数</th><th>Gate</th><th>实际费率</th><th>点差 / 深度</th><th>预期净收益</th><th>时间</th></tr></thead><tbody>{rows.length ? rows.map((row) => {
+      const rowCost = parseCostEvidence(row.costFactorsJson)
+      return <tr key={row.id} className={selected?.id === row.id ? 'selected' : ''} onClick={() => setSelectedId(row.id)}>
+        <td><b>{row.contractCode}</b><small>{directionText(row.direction)} · {row.regime}</small></td>
+        <td><b>{row.primaryModel || '未匹配'}</b><small>{row.confirmationModels || '—'}</small></td>
+        <td>{formatDecimal(row.signalScore, 2)}<small>差值 {formatDecimal(row.scoreGap, 2)}</small></td>
+        <td><Status status={row.gateResult || 'OBSERVING'} /><small>{row.gateReason || row.invalidationReason || '—'}</small></td>
+        <td>{rowCost ? <><b>{formatPercent(rowCost.account?.effectiveTakerRate)}</b><small>{rowCost.account?.feeSource === 'HTX_ACCOUNT' ? '账户实际费率' : '保守配置费率'}</small></> : '待执行预检'}</td>
+        <td>{rowCost ? <><b>{formatPercent(rowCost.orderBook?.spreadRate)}</b><small>{formatDecimal(rowCost.orderBook?.coverageRatio, 2)}× 深度覆盖</small></> : '待盘口快照'}</td>
+        <td className={valueTone(rowCost?.expectation?.netPnlAfterCosts || 0)}>{rowCost ? <><b>{formatUsdt(rowCost.expectation?.netPnlAfterCosts)}</b><small>成本 {formatUsdtNoSign((rowCost.expectation?.entryFee || 0) + (rowCost.expectation?.closeFee || 0) + (rowCost.expectation?.spreadCost || 0))}</small></> : '—'}</td>
+        <td><small>{row.createdAt || '—'}</small></td>
+      </tr>
+    }) : <tr><td className="arb-empty" colSpan={8}>没有符合筛选条件的候选</td></tr>}</tbody></table></section>
+    {selected ? <section className="trend-candidate-detail"><header><div><h2>{selected.contractCode} · {selected.primaryModel || '候选'}</h2><small>{selected.entryHypothesis || selected.entryReason || '—'}</small></div><Status status={selected.gateResult || 'OBSERVING'} /></header>{cost ? <div className="trend-evidence-grid">
+      <div><small>费用来源</small><strong>{cost.account?.feeSource === 'HTX_ACCOUNT' ? 'HTX 账户实际费率' : '保守配置费率'}</strong><span>开 {formatPercent(cost.account?.openTakerRate)} · 平 {formatPercent(cost.account?.closeTakerRate)}</span></div>
+      <div><small>盘口</small><strong>{formatDecimal(cost.orderBook?.bestBid)} / {formatDecimal(cost.orderBook?.bestAsk)}</strong><span>点差 {formatPercent(cost.orderBook?.spreadRate)}</span></div>
+      <div><small>深度覆盖</small><strong>{formatDecimal(cost.orderBook?.coverageRatio, 2)}×</strong><span>{formatDecimal(cost.orderBook?.availableContracts)} / {formatDecimal(cost.orderBook?.requiredContracts)} 张</span></div>
+      <div><small>预期毛收益</small><strong>{formatUsdt(cost.expectation?.grossPnl)}</strong><span>ATR 目标移动 {formatDecimal(cost.expectation?.atrMove)}</span></div>
+      <div><small>预估总成本</small><strong>{formatUsdtNoSign(estimatedCosts)}</strong><span>费用与点差已计入</span></div>
+      <div><small>扣费后预期</small><strong className={valueTone(cost.expectation?.netPnlAfterCosts || 0)}>{formatUsdt(cost.expectation?.netPnlAfterCosts)}</strong><span>{cost.expectation?.gateResult || '—'}</span></div>
+    </div> : <div className="trend-empty-state"><strong>该候选尚未进入真实执行预检</strong><small>因此没有伪造账户费率、盘口或预期收益；下一次候选进入执行预检后会自动补齐。</small></div>}<p className="trend-candidate-gate"><b>Gate：</b>{cost?.expectation?.gateReason || selected.gateReason || selected.invalidationReason || '—'}</p></section> : null}
   </div>
 }
 

@@ -1007,16 +1007,19 @@ public class HtxTrendFollowingService {
                     gateMessage(ENTRY_GATE, "target volume below minimum " + sizing.summary()));
         }
         String liquidityGate = liquidityGate(signal, entryCandles, depth, volume);
+        HtxSwapFeeRateResolver.FeeRates feeRates = feeRateResolver.rates(contractCode);
+        BigDecimal takerFeeRate = feeRates.taker();
+        String expectedMoveGate = expectedMoveGate(signal, entryPrice, spreadRate, takerFeeRate);
+        EntryCostContext entryCost = entryCostContext(signal, entryPrice, spreadRate, contract.getContractSize(),
+                volume, takerFeeRate, confidence);
+        recordCombinationEntryCostEvidence(contractCode, signal, contract, combination, depth, book, volume,
+                feeRates, entryCost, liquidityGate, expectedMoveGate);
         if (liquidityGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, liquidityGate));
         }
-        BigDecimal takerFeeRate = effectiveTakerFeeRate(contractCode);
-        String expectedMoveGate = expectedMoveGate(signal, entryPrice, spreadRate, takerFeeRate);
         if (expectedMoveGate != null) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, expectedMoveGate));
         }
-        EntryCostContext entryCost = entryCostContext(signal, entryPrice, spreadRate, contract.getContractSize(),
-                volume, takerFeeRate, confidence);
         BigDecimal notional = BigDecimal.valueOf(volume).multiply(contract.getContractSize()).multiply(entryPrice);
         String marginGate = marginGate(contractCode, notional);
         if (marginGate != null) {
@@ -1920,6 +1923,49 @@ public class HtxTrendFollowingService {
                 + " requiredMove=" + requiredMove + " spreadRate=" + nonNegative(spreadRate)
                 + " feeRate=" + nonNegative(takerFeeRate);
         return new EntryCostContext(estimatedEntryFee, estimatedCloseFee, expectedNet, gateReason);
+    }
+
+    private void recordCombinationEntryCostEvidence(String contractCode, TrendSignal signal,
+                                                    HtxSwapContractInfo contract, CombinationContext combination,
+                                                    HtxDepth depth, TopOfBook book, long volume,
+                                                    HtxSwapFeeRateResolver.FeeRates feeRates,
+                                                    EntryCostContext entryCost, String liquidityGate,
+                                                    String expectedMoveGate) {
+        if (combinationService == null || combination == null || signal == null || contract == null || book == null
+                || feeRates == null || entryCost == null) {
+            return;
+        }
+        int depthLevels = Math.max(1, properties.getEntryDepthLevels());
+        List<HtxPriceLevel> levels = signal.side() == TrendSide.LONG ? depth.getAsks() : depth.getBids();
+        BigDecimal availableContracts = sumTopLevels(levels, depthLevels);
+        BigDecimal multiplier = positive(properties.getMinEntryDepthMultiplier())
+                ? properties.getMinEntryDepthMultiplier() : BigDecimal.ONE;
+        BigDecimal requiredContracts = BigDecimal.valueOf(volume).multiply(multiplier);
+        BigDecimal coverageRatio = positive(requiredContracts)
+                ? availableContracts.divide(requiredContracts, 12, RoundingMode.HALF_UP) : null;
+        BigDecimal entryPrice = signal.side() == TrendSide.LONG ? book.ask() : book.bid();
+        BigDecimal notional = BigDecimal.valueOf(volume).multiply(contract.getContractSize()).multiply(entryPrice);
+        BigDecimal expectedMove = positive(signal.atr())
+                ? signal.atr().multiply(nonNegative(properties.getMinExpectedMoveAtrMultiplier())) : BigDecimal.ZERO;
+        BigDecimal expectedGross = expectedMove.multiply(contract.getContractSize()).multiply(BigDecimal.valueOf(volume));
+        BigDecimal spreadCost = notional.multiply(nonNegative(book.ask().subtract(book.bid())
+                .divide(mid(book), 18, RoundingMode.HALF_UP)));
+        BigDecimal requiredMove = entryPrice.multiply(roundTripCostRate(book.ask().subtract(book.bid())
+                .divide(mid(book), 18, RoundingMode.HALF_UP), feeRates.taker()));
+        String gateReason = liquidityGate != null ? liquidityGate
+                : expectedMoveGate != null ? expectedMoveGate : "all cost gates passed";
+        String gateResult = liquidityGate != null ? "REJECTED_LIQUIDITY"
+                : expectedMoveGate != null ? "REJECTED_COST" : "PASSED";
+        combinationService.recordEntryCostEvidence(contractCode, properties.getPeriod(), signal.barTime(),
+                combination.policyVersion(), combination.marketRegime(),
+                new HtxTrendCombinationService.EntryCostEvidence("primary",
+                        feeRates.fallback() ? "CONFIG_FALLBACK" : "HTX_ACCOUNT",
+                        feeRates.openTaker(), feeRates.closeTaker(), feeRates.taker(), book.bid(), book.ask(),
+                        book.ask().subtract(book.bid()).divide(mid(book), 18, RoundingMode.HALF_UP), depthLevels,
+                        availableContracts, requiredContracts, coverageRatio, signal.side().name(), entryPrice, volume,
+                        notional, expectedMove, expectedGross, entryCost.estimatedEntryFee(),
+                        entryCost.estimatedCloseFee(), spreadCost, entryCost.expectedNetAfterFees(), requiredMove,
+                        gateResult, gateReason));
     }
 
     private long targetVolume(BigDecimal entryPrice, BigDecimal atr, BigDecimal contractSize, SizingContext sizing) {

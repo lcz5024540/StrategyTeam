@@ -278,7 +278,7 @@ public class HtxTrendDashboardQueryService {
                 nullableDecimal(row, "invalidationPrice"), text(row, "entryHypothesis"),
                 nullableDecimal(row, "targetZoneLow"), nullableDecimal(row, "targetZoneHigh"),
                 nullableDecimal(row, "expectedRMultiple"), nullableDecimal(row, "momentumQualityScore"),
-                text(row, "factorsJson"), text(row, "createdAt"));
+                text(row, "factorsJson"), text(row, "costFactorsJson"), text(row, "createdAt"));
     }
 
     private static Number number(Map<String, Object> row, String key) {

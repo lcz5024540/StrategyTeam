@@ -317,16 +317,18 @@ public interface HtxTrendDashboardMapper {
             + "ORDER BY occurred_at DESC, id DESC LIMIT 120")
     List<Map<String, Object>> recentLedgerEvents();
 
-    @Select("SELECT id, contract_code AS contractCode, period, bar_time AS barTime, direction, regime, "
-            + "signal_score AS signalScore, long_score AS longScore, short_score AS shortScore, score_gap AS scoreGap, "
-            + "close_price AS closePrice, atr_pct AS atrPct, adx, momentum_pct AS momentumPct, volume_ratio AS volumeRatio, "
-            + "entry_reason AS entryReason, invalidation_reason AS invalidationReason, model_version AS modelVersion, "
-            + "primary_model AS primaryModel, confirmation_models AS confirmationModels, policy_version AS policyVersion, "
-            + "factor_snapshot_id AS factorSnapshotId, gate_result AS gateResult, gate_reason AS gateReason, "
-            + "invalidation_price AS invalidationPrice, entry_hypothesis AS entryHypothesis, "
-            + "target_zone_low AS targetZoneLow, target_zone_high AS targetZoneHigh, "
-            + "expected_r_multiple AS expectedRMultiple, momentum_quality_score AS momentumQualityScore, "
-            + "(SELECT factors_json FROM " + FACTOR_SNAPSHOT_TABLE + " f WHERE f.id = factor_snapshot_id) AS factorsJson, "
-            + "created_at AS createdAt FROM " + CANDIDATE_SIGNAL_TABLE + " ORDER BY created_at DESC, id DESC LIMIT 80")
+    @Select("SELECT s.id, s.contract_code AS contractCode, s.period, s.bar_time AS barTime, s.direction, s.regime, "
+            + "s.signal_score AS signalScore, s.long_score AS longScore, s.short_score AS shortScore, s.score_gap AS scoreGap, "
+            + "s.close_price AS closePrice, s.atr_pct AS atrPct, s.adx, s.momentum_pct AS momentumPct, s.volume_ratio AS volumeRatio, "
+            + "s.entry_reason AS entryReason, s.invalidation_reason AS invalidationReason, s.model_version AS modelVersion, "
+            + "s.primary_model AS primaryModel, s.confirmation_models AS confirmationModels, s.policy_version AS policyVersion, "
+            + "s.factor_snapshot_id AS factorSnapshotId, s.gate_result AS gateResult, s.gate_reason AS gateReason, "
+            + "s.invalidation_price AS invalidationPrice, s.entry_hypothesis AS entryHypothesis, "
+            + "s.target_zone_low AS targetZoneLow, s.target_zone_high AS targetZoneHigh, "
+            + "s.expected_r_multiple AS expectedRMultiple, s.momentum_quality_score AS momentumQualityScore, "
+            + "(SELECT f.factors_json FROM " + FACTOR_SNAPSHOT_TABLE + " f WHERE f.id = s.factor_snapshot_id) AS factorsJson, "
+            + "(SELECT c.factors_json FROM " + FACTOR_SNAPSHOT_TABLE + " c WHERE c.snapshot_key = CONCAT(s.contract_code, ':', "
+            + "s.period, ':', s.bar_time, ':', s.policy_version, ':entry-cost-v1') LIMIT 1) AS costFactorsJson, "
+            + "s.created_at AS createdAt FROM " + CANDIDATE_SIGNAL_TABLE + " s ORDER BY s.created_at DESC, s.id DESC LIMIT 80")
     List<Map<String, Object>> recentCandidateSignals();
 }

@@ -89,6 +89,33 @@ class HtxTrendCombinationServiceTest {
         assertFalse(snapshot.getValue().getFactorsJson().contains("0.1234567890125678"));
     }
 
+    @Test
+    void entryCostEvidencePersistsActualFeesOrderBookAndNetExpectation() {
+        HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        HtxTrendCandidateSignalRecorder candidateRecorder = mock(HtxTrendCandidateSignalRecorder.class);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(policyService, combinationRecorder,
+                candidateRecorder);
+
+        service.recordEntryCostEvidence("BTC-USDT", "15min", 1_790_069_400L, "combo-v2", "BROAD_UP",
+                new HtxTrendCombinationService.EntryCostEvidence("primary", "HTX_ACCOUNT",
+                        new BigDecimal("0.0002"), new BigDecimal("0.0004"), new BigDecimal("0.0004"),
+                        new BigDecimal("100"), new BigDecimal("100.1"), new BigDecimal("0.001"), 5,
+                        new BigDecimal("900"), new BigDecimal("600"), new BigDecimal("1.5"), "LONG",
+                        new BigDecimal("100.1"), 3L, new BigDecimal("300.3"), new BigDecimal("1.2"),
+                        new BigDecimal("3.6"), new BigDecimal("0.12012"), new BigDecimal("0.12012"),
+                        new BigDecimal("0.3003"), new BigDecimal("3.05946"), new BigDecimal("0.22022"),
+                        "PASSED", "all cost gates passed"));
+
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder).recordSnapshot(snapshot.capture());
+        assertEquals("BTC-USDT:15min:1790069400:combo-v2:entry-cost-v1", snapshot.getValue().getSnapshotKey());
+        assertTrue(snapshot.getValue().getFactorsJson().contains("\"feeSource\":\"HTX_ACCOUNT\""));
+        assertTrue(snapshot.getValue().getFactorsJson().contains("\"spreadRate\":0.001"));
+        assertTrue(snapshot.getValue().getFactorsJson().contains("\"netPnlAfterCosts\":3.05946"));
+    }
+
     private static TrendCandidateSignal signal(String period) {
         return new TrendCandidateSignal(period, 1_790_069_400L, Direction.LONG, Regime.TRENDING_UP,
                 new BigDecimal("90"), new BigDecimal("90"), BigDecimal.ZERO, new BigDecimal("90"),

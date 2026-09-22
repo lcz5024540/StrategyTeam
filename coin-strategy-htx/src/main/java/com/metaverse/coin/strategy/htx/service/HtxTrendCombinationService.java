@@ -107,6 +107,28 @@ public class HtxTrendCombinationService {
         combinationRecorder.recordSnapshot(snapshot);
     }
 
+    /**
+     * Records the executable cost evidence after a combination candidate reaches the live preflight stage.
+     * This is intentionally a separate immutable record: market structure is captured at signal time, while
+     * account fees and the order book are only meaningful at the later execution attempt.
+     */
+    public void recordEntryCostEvidence(String contractCode, String period, Long barTime, String policyVersion,
+                                        String marketRegime, EntryCostEvidence evidence) {
+        if (contractCode == null || contractCode.isBlank() || barTime == null || barTime <= 0L
+                || policyVersion == null || policyVersion.isBlank() || evidence == null) {
+            return;
+        }
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + barTime + ":" + policyVersion
+                + ":entry-cost-v1");
+        snapshot.setContractCode(contractCode);
+        snapshot.setPeriod(period);
+        snapshot.setBarTime(barTime);
+        snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
+        snapshot.setFactorsJson(entryCostEvidenceJson(evidence));
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
     /** Persist a negative decision too, so a later review can distinguish missing structure from execution rejection. */
     private Selection reject(String contractCode, String period, TrendCandidateSignal signal,
                              HtxTrendCombinationGateReason reason) {
@@ -251,6 +273,34 @@ public class HtxTrendCombinationService {
         return json.append("}}").toString();
     }
 
+    private static String entryCostEvidenceJson(EntryCostEvidence evidence) {
+        return "{\"schema\":\"trend-entry-cost-v1\",\"account\":{\"label\":"
+                + jsonText(evidence.accountLabel()) + ",\"feeSource\":" + jsonText(evidence.feeSource())
+                + ",\"openTakerRate\":" + jsonNumber(evidence.openTakerRate())
+                + ",\"closeTakerRate\":" + jsonNumber(evidence.closeTakerRate())
+                + ",\"effectiveTakerRate\":" + jsonNumber(evidence.effectiveTakerRate()) + "}"
+                + ",\"orderBook\":{\"bestBid\":" + jsonNumber(evidence.bestBid())
+                + ",\"bestAsk\":" + jsonNumber(evidence.bestAsk())
+                + ",\"spreadRate\":" + jsonNumber(evidence.spreadRate())
+                + ",\"depthLevels\":" + evidence.depthLevels()
+                + ",\"availableContracts\":" + jsonNumber(evidence.availableContracts())
+                + ",\"requiredContracts\":" + jsonNumber(evidence.requiredContracts())
+                + ",\"coverageRatio\":" + jsonNumber(evidence.depthCoverageRatio()) + "}"
+                + ",\"entry\":{\"side\":" + jsonText(evidence.side())
+                + ",\"price\":" + jsonNumber(evidence.entryPrice())
+                + ",\"volume\":" + evidence.volume()
+                + ",\"notionalUsdt\":" + jsonNumber(evidence.notionalUsdt()) + "}"
+                + ",\"expectation\":{\"atrMove\":" + jsonNumber(evidence.expectedMove())
+                + ",\"grossPnl\":" + jsonNumber(evidence.expectedGrossPnl())
+                + ",\"entryFee\":" + jsonNumber(evidence.estimatedEntryFee())
+                + ",\"closeFee\":" + jsonNumber(evidence.estimatedCloseFee())
+                + ",\"spreadCost\":" + jsonNumber(evidence.estimatedSpreadCost())
+                + ",\"netPnlAfterCosts\":" + jsonNumber(evidence.expectedNetAfterCosts())
+                + ",\"requiredMove\":" + jsonNumber(evidence.requiredMove())
+                + ",\"gateResult\":" + jsonText(evidence.gateResult())
+                + ",\"gateReason\":" + jsonText(evidence.gateReason()) + "}}";
+    }
+
     private static String jsonNumber(Number value) {
         if (value == null) {
             return "null";
@@ -311,5 +361,16 @@ public class HtxTrendCombinationService {
         }
         static Selection rejected(String rejection) { return new Selection(null, null, null, null, null, rejection); }
         public boolean accepted() { return candidate != null; }
+    }
+
+    public record EntryCostEvidence(String accountLabel, String feeSource, BigDecimal openTakerRate,
+                                    BigDecimal closeTakerRate, BigDecimal effectiveTakerRate,
+                                    BigDecimal bestBid, BigDecimal bestAsk, BigDecimal spreadRate,
+                                    int depthLevels, BigDecimal availableContracts, BigDecimal requiredContracts,
+                                    BigDecimal depthCoverageRatio, String side, BigDecimal entryPrice, long volume,
+                                    BigDecimal notionalUsdt, BigDecimal expectedMove, BigDecimal expectedGrossPnl,
+                                    BigDecimal estimatedEntryFee, BigDecimal estimatedCloseFee,
+                                    BigDecimal estimatedSpreadCost, BigDecimal expectedNetAfterCosts,
+                                    BigDecimal requiredMove, String gateResult, String gateReason) {
     }
 }

@@ -404,5 +404,6 @@ export interface TrendCandidateSignal {
   expectedRMultiple: number | null
   momentumQualityScore: number | null
   factorsJson: string | null
+  costFactorsJson: string | null
   createdAt: string
 }
