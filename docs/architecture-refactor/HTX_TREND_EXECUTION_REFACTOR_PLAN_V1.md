@@ -15,6 +15,8 @@ tags: [htx, trend, execution, gate, exit, multi-timeframe, cooldown]
 
 > **策略闭环模板**：本文中的开仓 gate、持仓管理和退出引擎必须回到 [CoinStrategy 策略闭环定义模板 v1](COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md) 的完整策略对象，不能只围绕某个止损参数局部修补。
 
+> **退出系统计划**：Batch 2 的退出引擎已扩展为独立计划，详见 [HTX 趋势策略退出系统重构计划 v1](HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md)。本文件只保留执行链路视角，具体退出机制以独立计划为准。
+
 > **结论先行**：当前趋势策略的问题不是某一个参数太松或太紧，而是执行链路仍偏线性。后续要先把观察模式、实盘开关、账户和策略互斥等前置，再把持仓退出、冷却解冻、多周期信号和外部仓位处理拆成可诊断的分层决策。第一版先形成计划和诊断口径，不直接扩大真实仓位。
 
 ---
@@ -100,6 +102,8 @@ flowchart TD
 
 ## 3. Batch 2：已有仓位管理与退出引擎
 
+> 本批次的详细机制已拆到 [HTX 趋势策略退出系统重构计划 v1](HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md)。这里保留历史拆分和执行链路约束；后续代码任务以独立退出系统计划的 E1–E5 为准。
+
 ### 3.1 移动止损分层
 
 当前移动止损要拆成四类价格保护。
@@ -139,7 +143,7 @@ flowchart TD
 | 2026-09-22 | 已完成第二刀第一步 | 移动止损诊断拆出 `ATR_TRAILING` 来源，并新增 `structureStopCandidate` 观察值；结构止损候选只写入持仓管理消息，不参与真实平仓价格选择。 |
 | 2026-09-22 | TODO | 手续费保护止损先暂放：现有 fee-protected clamp 仍按旧逻辑运行，仅在诊断中标记 `LEGACY_FEE_PROTECTED_CLAMP`，后续结合成交样本和回测再决定是否重写。 |
 | 2026-09-22 | 已完成第二刀第二步 | 新增默认关闭的 `structure-stop-enabled` 灰度开关。开启后，结构止损只有在仍位于初始风险内、不放松既有 trailing stop、且比 ATR trailing 更宽松时才可成为真实 `STRUCTURE_STOP`，用于避免 ATR 在局部回撤中机械扫损。默认关闭时仍只观察，不改变线上退出行为。 |
-| 2026-09-22 | 待继续 | 下一刀评估 ATR trailing 是否按模型/周期拆不同参数，并把结构止损灰度结果纳入回测/实盘统计。 |
+| 2026-09-22 | 已转入独立计划 | 已新增 `HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md`，下一刀不直接改 ATR 参数，而是先做 E1：退出候选快照、MFE/MAE/giveback 与不改变真实行为的诊断落库。 |
 
 ---
 

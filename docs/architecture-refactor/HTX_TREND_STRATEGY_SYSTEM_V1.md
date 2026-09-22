@@ -17,6 +17,8 @@ tags: [htx, trend, strategy, futures, crypto, backtest]
 
 > **策略闭环模板**：趋势策略的每个模型必须按 [CoinStrategy 策略闭环定义模板 v1](COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md) 补齐策略目标、开仓假设、失效条件、持仓管理、退出组合、账本归因和回测指标。
 
+> **退出系统计划**：止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出、模型失效、MFE/MAE 和退出质量回测见 [HTX 趋势策略退出系统重构计划 v1](HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md)。
+
 > **结论先行**：HTX 趋势策略必须从“单指标补丁式开仓”重构为“市场分型 + 多模型信号 + 因子评分 + 统一 gate + 模型匹配退出 + 回测/实盘闭环”的系统。第一版只做合约趋势交易，不做资金费套利；资金费只作为成本与拥挤度因子。
 
 ---

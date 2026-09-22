@@ -23,6 +23,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 | L2 标准模板 | [CoinStrategy 策略闭环定义模板 v1](COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md) | 定义任何策略上线前必须补齐的目标、市场、因子、信号、gate、sizing、执行、持仓、退出、账本、回测和实盘反馈闭环。 | 已建立 |
 | L2 子系统 | [HTX 趋势策略系统 v1](HTX_TREND_STRATEGY_SYSTEM_V1.md) | 定义趋势策略的市场分型、因子、模型、gate、sizing、退出和回测。 | 已建立 |
 | L3 执行计划 | [HTX 趋势策略开仓与持仓管理重构计划 v1](HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md) | 将开仓链路、已有仓位管理、冷却解冻、多周期和外部仓位处理拆成分批实施计划。 | 已建立 |
+| L3 执行计划 | [HTX 趋势策略退出系统重构计划 v1](HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md) | 将止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出、模型失效和退出质量回测拆成分批实施计划。 | 已建立 |
 | L2 子系统 | `HTX_FUNDING_ARBITRAGE_SYSTEM_V1.md` | 定义单所现货合约对冲资金费套利、跨所资金费套利、对冲和退出。 | 待创建 |
 | L2 子系统 | [CoinStrategy 资金、账户、风控与账本体系 v1](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) | 定义资金调度、账户体系、策略维度、统一账本和风控边界。 | 已建立 |
 | L2 子系统 | `COINSTRATEGY_BACKTEST_SYSTEM_V1.md` | 定义 K 线采集、回测引擎、费用滑点模型、指标和报告。 | 待创建 |
@@ -70,6 +71,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 | 策略闭环模板 | `COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md` | 统一定义策略目标、市场、因子、信号、gate、sizing、执行、持仓、退出、账本、回测和实盘反馈。 |
 | 趋势系统设计 | `HTX_TREND_STRATEGY_SYSTEM_V1.md` | 明确市场分型、因子、模型、gate、sizing、退出和回测。 |
 | 趋势执行重构计划 | `HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md` | 明确开仓链路前置、持仓退出引擎、冷却解冻、多周期和外部仓位处理批次。 |
+| 趋势退出系统计划 | `HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md` | 单独定义止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出、模型失效、MFE/MAE/giveback 和回测指标。 |
 | 文档入口 | `docs/MOC-交易策略.md` | 知识地图可直接找到总纲和趋势设计。 |
 
 ### 3.3 待补文档
@@ -316,8 +318,8 @@ DB 能查到每个模型为什么 PASS / REJECT / OBSERVE。
 第一步先执行“策略闭环 → 退出系统 → 因子快照”的最小闭环：
 
 1. 已补 `COINSTRATEGY_STRATEGY_CLOSED_LOOP_TEMPLATE_V1.md`，后续任何策略必须先补齐 14 个闭环模块。
-2. 下一步新增 HTX 趋势退出系统重构计划，专门定义止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出和模型失效。
-3. 在代码里先做无行为变更的退出候选快照和 MFE/MAE/giveback 记录。
+2. 已补 `HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md`，明确退出不是单个止损价，而是退出候选、仓位状态、分批落袋和回测反馈的系统。
+3. 下一步在代码里先做无行为变更的退出候选快照和 MFE/MAE/giveback 记录。
 4. 再推进趋势因子快照表和模型候选表，把 52 个币的市场分型、单币因子、模型候选、gate 结果写入 DB。
 5. 页面读取 DB 展示候选、拦截原因和退出候选；观察 24 小时后，再进入 P3 多模型重构。
 

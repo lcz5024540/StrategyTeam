@@ -1,0 +1,45 @@
+<mxfile host="app.diagrams.net" modified="2026-09-22T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="htx-trend-exit-system-refactor-v1" name="HTX 趋势退出系统重构 v1">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="a" value="已有仓位管理启动" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" vertex="1" parent="1"><mxGeometry x="40" y="80" width="150" height="60" as="geometry" /></mxCell>
+        <mxCell id="b" value="读取仓位与交易所状态&#xa;DB/交易所/挂单/保证金" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;" vertex="1" parent="1"><mxGeometry x="230" y="80" width="180" height="70" as="geometry" /></mxCell>
+        <mxCell id="c" value="硬风险?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;" vertex="1" parent="1"><mxGeometry x="460" y="75" width="110" height="80" as="geometry" /></mxCell>
+        <mxCell id="c1" value="硬风险退出 / 人工复核" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=14;" vertex="1" parent="1"><mxGeometry x="450" y="210" width="150" height="60" as="geometry" /></mxCell>
+        <mxCell id="d" value="刷新行情与成本&#xa;15m/30m/1h/4h/1d" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;" vertex="1" parent="1"><mxGeometry x="630" y="80" width="170" height="70" as="geometry" /></mxCell>
+        <mxCell id="e" value="更新仓位运行指标&#xa;净PnL / MFE / MAE / giveback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;" vertex="1" parent="1"><mxGeometry x="840" y="80" width="190" height="70" as="geometry" /></mxCell>
+        <mxCell id="f" value="识别仓位状态&#xa;亏损/保本/盈利/runner/衰竭" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;" vertex="1" parent="1"><mxGeometry x="1070" y="80" width="190" height="70" as="geometry" /></mxCell>
+        <mxCell id="g" value="生成退出候选&#xa;模型失效/止损/止盈/利润保护" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;" vertex="1" parent="1"><mxGeometry x="1290" y="80" width="210" height="70" as="geometry" /></mxCell>
+        <mxCell id="h" value="候选评分与优先级" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=14;" vertex="1" parent="1"><mxGeometry x="1290" y="230" width="170" height="60" as="geometry" /></mxCell>
+        <mxCell id="i" value="动作选择" style="rhombus;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="1095" y="220" width="120" height="80" as="geometry" /></mxCell>
+        <mxCell id="i1" value="HOLD&#xa;记录继续持有原因" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="840" y="205" width="170" height="60" as="geometry" /></mxCell>
+        <mxCell id="i2" value="MOVE_STOP&#xa;上移保护价候选" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="840" y="285" width="170" height="60" as="geometry" /></mxCell>
+        <mxCell id="i3" value="PARTIAL_CLOSE&#xa;分批减仓" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="630" y="205" width="160" height="60" as="geometry" /></mxCell>
+        <mxCell id="i4" value="FULL_CLOSE&#xa;全部平仓" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;" vertex="1" parent="1"><mxGeometry x="630" y="285" width="160" height="60" as="geometry" /></mxCell>
+        <mxCell id="j" value="写入退出快照与账本归因" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;" vertex="1" parent="1"><mxGeometry x="350" y="330" width="210" height="60" as="geometry" /></mxCell>
+        <mxCell id="k" value="回测与实盘反馈&#xa;MFE捕获率/过早退出/回吐率/PF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;" vertex="1" parent="1"><mxGeometry x="80" y="330" width="230" height="70" as="geometry" /></mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="a" target="b" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="b" target="c" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" value="是" edge="1" parent="1" source="c" target="c1" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="否" edge="1" parent="1" source="c" target="d" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="d" target="e" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="e" target="f" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="f" target="g" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="g" target="h" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="h" target="i" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="i" target="i1" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="i" target="i2" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="i" target="i3" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="i" target="i4" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="c1" target="j" style="endArrow=block;html=1;rounded=1;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="i1" target="j" style="endArrow=block;html=1;rounded=1;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="i2" target="j" style="endArrow=block;html=1;rounded=1;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e17" edge="1" parent="1" source="i3" target="j" style="endArrow=block;html=1;rounded=1;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="i4" target="j" style="endArrow=block;html=1;rounded=1;"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="j" target="k" style="endArrow=block;html=1;rounded=0;"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
