@@ -848,14 +848,13 @@ public class HtxTrendFollowingService {
         if (signal.side() == TrendSide.FLAT) {
             return RunResult.of(RunCode.NO_SIGNAL, null, signal.reason());
         }
-        String fundingCostGate = fundingCostGate(contractCode, signal.side(), properties.getMaxEntryFundingCostRate());
-        if (fundingCostGate != null) {
-            RunCode code = properties.isObserveOnly() ? RunCode.OBSERVED : RunCode.SKIPPED;
-            return RunResult.of(code, null, fundingCostGate);
-        }
         if (properties.isObserveOnly()) {
             return RunResult.of(RunCode.OBSERVED, null, "observe-only signal=" + signal.side()
-                    + " reason=" + signal.reason());
+                    + "; live entry gates bypassed reason=" + signal.reason());
+        }
+        String fundingCostGate = fundingCostGate(contractCode, signal.side(), properties.getMaxEntryFundingCostRate());
+        if (fundingCostGate != null) {
+            return RunResult.of(RunCode.SKIPPED, null, fundingCostGate);
         }
         String freshnessGate = entrySignalFreshnessGate(signal);
         if (freshnessGate != null) {
@@ -2191,7 +2190,8 @@ public class HtxTrendFollowingService {
         if (!properties.isObserveOnly() && (contractProperties.isDryRun() || !contractProperties.isLiveEnabled())) {
             return "trend live mode requires contract dry-run=false and live-enabled=true";
         }
-        if (properties.getLeverage() <= 0 || properties.getLeverage() > contractProperties.getMaxLeverage()) {
+        if (!properties.isObserveOnly()
+                && (properties.getLeverage() <= 0 || properties.getLeverage() > contractProperties.getMaxLeverage())) {
             return "trend leverage outside configured max leverage";
         }
         return null;

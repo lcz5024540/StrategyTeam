@@ -152,6 +152,47 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void observeOnlyBypassesLiveEntryFundingCostGate() {
+        properties.setObserveOnly(true);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.SHORT);
+        givenFunding("-0.0010");
+        givenDepth();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.OBSERVED, result.code());
+        assertTrue(result.message().contains("observe-only signal=SHORT"));
+        assertTrue(result.message().contains("candidates=1"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+        verify(swap, never()).openOrders(any());
+        verify(swap, never()).positionInfo(any());
+        verify(swap, never()).accountInfo(any());
+        verify(swap, never()).switchLeverage(any(), any(), anyInt());
+    }
+
+    @Test
+    void observeOnlyBypassesLiveLeverageGate() {
+        properties.setObserveOnly(true);
+        properties.setLeverage(contractProperties.getMaxLeverage() + 1);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        givenFunding("0.0001");
+        givenDepth();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.OBSERVED, result.code());
+        assertTrue(result.message().contains("live entry gates bypassed"));
+        verify(swap, never()).switchLeverage(any(), any(), anyInt());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void liveEntryPersistsOrderIntentBeforeSendingExchangeOrder() {
         givenContractInfo();
         givenKlines();
