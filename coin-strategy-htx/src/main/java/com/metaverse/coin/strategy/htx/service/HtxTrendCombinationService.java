@@ -110,7 +110,8 @@ public class HtxTrendCombinationService {
             return Selection.rejected(reason.code());
         }
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
-        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":combo-v2:REJECTED");
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime()
+                + ":combo-v2:REJECTED:evidence-v2");
         snapshot.setContractCode(contractCode); snapshot.setPeriod(period); snapshot.setBarTime(signal.barTime());
         snapshot.setMarketRegime(signal.regime().name());
         snapshot.setFactorsJson(factorSnapshotJson(signal, null));
@@ -148,7 +149,7 @@ public class HtxTrendCombinationService {
     private Long recordSnapshot(String contractCode, String period, TrendCandidateSignal signal, ResolvedCandidate resolved) {
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
         snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":"
-                + resolved.policy().getPolicyVersion() + ":" + resolved.policy().getPolicyCode());
+                + resolved.policy().getPolicyVersion() + ":" + resolved.policy().getPolicyCode() + ":evidence-v2");
         snapshot.setContractCode(contractCode);
         snapshot.setPeriod(period);
         snapshot.setBarTime(signal.barTime());
