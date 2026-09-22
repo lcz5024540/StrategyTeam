@@ -429,7 +429,7 @@ public class HtxTrendFollowingService {
         SignalSnapshot snapshot = loadSignal(contractCode);
         TrendSignal rawSignal = snapshot.signal();
         recordSignal(contractCode, rawSignal);
-        return advance(active.get(), rawSignal, contract);
+        return advance(active.get(), rawSignal, contract, snapshot.entryCandles());
     }
 
     private CandidateEvaluation evaluateEntryCandidate(String contractCode, MarketBreadthContext marketBreadth,
@@ -1006,12 +1006,13 @@ public class HtxTrendFollowingService {
         return RunResult.of(RunCode.ENTRY_SENT, id, "entry order sent " + sizing.summary());
     }
 
-    private RunResult advance(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract) {
+    private RunResult advance(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract,
+                              List<HtxSwapKline> entryCandles) {
         if (HtxTrendRecorder.ENTRY_SENT.equals(position.getStatus())) {
             return reconcileEntry(position);
         }
         if (HtxTrendRecorder.ACTIVE.equals(position.getStatus())) {
-            return monitorActive(position, signal, contract);
+            return monitorActive(position, signal, contract, entryCandles);
         }
         if (HtxTrendRecorder.CLOSE_SENT.equals(position.getStatus())) {
             return reconcileClose(position);
@@ -1060,7 +1061,8 @@ public class HtxTrendFollowingService {
         return RunResult.of(RunCode.WAITING, position.getId(), "waiting entry fill");
     }
 
-    private RunResult monitorActive(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract) {
+    private RunResult monitorActive(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract,
+                                    List<HtxSwapKline> entryCandles) {
         Optional<HtxSwapPosition> exchangePosition = exchangePosition(position.getContractCode(), position.getSide());
         if (exchangePosition.isEmpty()) {
             String reviewReason = exitEngineReason(EXIT_HARD_RISK, "managed position missing on exchange");
@@ -1072,15 +1074,20 @@ public class HtxTrendFollowingService {
                 signal.closePrice(), position.getEntryAvgPrice());
         BigDecimal highest = max(firstPositive(position.getHighestPrice(), reference), reference);
         BigDecimal lowest = min(firstPositive(position.getLowestPrice(), reference), reference);
-        BigDecimal trailingStop = trailingStop(position, signal, reference, highest, lowest, contract);
+        StopContext stopContext = stopContext(position, signal, reference, highest, lowest, contract, entryCandles);
+        BigDecimal trailingStop = stopContext.effectiveStop();
         BigDecimal feeProtectedStop = feeProtectedStop(position, highest, lowest, contract);
         if (feeProtectedStop != null) {
             trailingStop = LONG.equals(position.getSide())
                     ? max(trailingStop, feeProtectedStop) : min(trailingStop, feeProtectedStop);
+            if (trailingStop.compareTo(stopContext.effectiveStop()) != 0) {
+                stopContext = stopContext.withEffectiveStop(trailingStop, "LEGACY_FEE_PROTECTED_CLAMP");
+            }
         }
         BigDecimal takeProfit = position.getTakeProfitPrice();
         recorder.updateRiskLevels(position.getId(), position.getStopPrice(), trailingStop, takeProfit, highest, lowest,
-                "holding signal=" + signal.side() + " ref=" + reference + feeProtectionMessage(feeProtectedStop));
+                "holding signal=" + signal.side() + " ref=" + reference + " " + stopContext.summary()
+                        + feeProtectionMessage(feeProtectedStop));
         String exitReason = combinationInvalidationExitReason(position, reference);
         if (exitReason == null) {
             exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
@@ -1089,14 +1096,16 @@ public class HtxTrendFollowingService {
             exitReason = flatLossControlExitReason(position, signal, reference);
         }
         if (exitReason == null) {
-            exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit);
+            exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit,
+                    stopContext.stopSource());
         }
         if (exitReason == null) {
             exitReason = fundingCostExitReason(position.getContractCode(), position.getSide());
         }
         if (exitReason == null) {
             return RunResult.of(RunCode.ACTIVE, position.getId(), "holding ref=" + reference
-                    + " signal=" + signal.side() + " trailingStop=" + trailingStop);
+                    + " signal=" + signal.side() + " trailingStop=" + trailingStop
+                    + " " + stopContext.summary());
         }
         return closePosition(position, exitReason);
     }
@@ -1947,8 +1956,16 @@ public class HtxTrendFollowingService {
         return scalePrice(value, contract);
     }
 
-    private BigDecimal trailingStop(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
-                                    BigDecimal highest, BigDecimal lowest, HtxSwapContractInfo contract) {
+    private StopContext stopContext(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
+                                    BigDecimal highest, BigDecimal lowest, HtxSwapContractInfo contract,
+                                    List<HtxSwapKline> entryCandles) {
+        BigDecimal atrStop = atrTrailingStop(position, signal, reference, highest, lowest, contract);
+        BigDecimal structureStop = structureStopCandidate(position, entryCandles, contract);
+        return new StopContext(atrStop, "ATR_TRAILING", atrStop, structureStop);
+    }
+
+    private BigDecimal atrTrailingStop(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
+                                       BigDecimal highest, BigDecimal lowest, HtxSwapContractInfo contract) {
         BigDecimal distance = positive(signal.atr()) ? signal.atr().multiply(properties.getTrailingAtrMultiplier())
                 : reference.multiply(properties.getMinAtrPct()).multiply(properties.getTrailingAtrMultiplier());
         BigDecimal candidate = LONG.equals(position.getSide()) ? highest.subtract(distance) : lowest.add(distance);
@@ -1957,6 +1974,33 @@ public class HtxTrendFollowingService {
             return scalePrice(max(previous, candidate), contract);
         }
         return scalePrice(min(previous, candidate), contract);
+    }
+
+    private BigDecimal structureStopCandidate(HtxTrendPositionEntity position, List<HtxSwapKline> entryCandles,
+                                              HtxSwapContractInfo contract) {
+        if (position == null || entryCandles == null || entryCandles.isEmpty()) {
+            return null;
+        }
+        int lookback = Math.min(5, entryCandles.size());
+        BigDecimal candidate = null;
+        for (int i = entryCandles.size() - lookback; i < entryCandles.size(); i++) {
+            HtxSwapKline candle = entryCandles.get(i);
+            if (candle == null) {
+                continue;
+            }
+            BigDecimal value = LONG.equals(position.getSide()) ? candle.getLow() : candle.getHigh();
+            if (!positive(value)) {
+                continue;
+            }
+            if (candidate == null) {
+                candidate = value;
+            } else if (LONG.equals(position.getSide())) {
+                candidate = candidate.min(value);
+            } else {
+                candidate = candidate.max(value);
+            }
+        }
+        return candidate == null ? null : scalePrice(candidate, contract);
     }
 
     private BigDecimal feeProtectedStop(HtxTrendPositionEntity position, BigDecimal highest, BigDecimal lowest,
@@ -2125,11 +2169,12 @@ public class HtxTrendFollowingService {
     }
 
     private String exitReason(String side, TrendSignal signal, BigDecimal reference,
-                              BigDecimal trailingStop, BigDecimal takeProfit) {
+                              BigDecimal trailingStop, BigDecimal takeProfit, String stopSource) {
         if (LONG.equals(side)) {
             if (reference.compareTo(trailingStop) <= 0) {
                 return exitEngineReason(EXIT_TRAILING_STOP,
-                        "long trailing stop hit ref=" + reference + " stop=" + trailingStop);
+                        "long trailing stop hit ref=" + reference + " stop=" + trailingStop
+                                + " stopSource=" + stopSource);
             }
             if (takeProfit != null && reference.compareTo(takeProfit) >= 0) {
                 return exitEngineReason(EXIT_TARGET_ZONE,
@@ -2142,7 +2187,8 @@ public class HtxTrendFollowingService {
         }
         if (reference.compareTo(trailingStop) >= 0) {
             return exitEngineReason(EXIT_TRAILING_STOP,
-                    "short trailing stop hit ref=" + reference + " stop=" + trailingStop);
+                    "short trailing stop hit ref=" + reference + " stop=" + trailingStop
+                            + " stopSource=" + stopSource);
         }
         if (takeProfit != null && reference.compareTo(takeProfit) <= 0) {
             return exitEngineReason(EXIT_TARGET_ZONE,
@@ -2583,6 +2629,19 @@ public class HtxTrendFollowingService {
     }
 
     private record FundingMarket(BigDecimal fundingRate) {
+    }
+
+    private record StopContext(BigDecimal effectiveStop, String stopSource, BigDecimal atrStop,
+                               BigDecimal structureStopCandidate) {
+        private StopContext withEffectiveStop(BigDecimal stop, String source) {
+            return new StopContext(stop, source, atrStop, structureStopCandidate);
+        }
+
+        private String summary() {
+            return "stopSource=" + stopSource
+                    + " atrStop=" + atrStop
+                    + " structureStopCandidate=" + (structureStopCandidate == null ? "NA" : structureStopCandidate);
+        }
     }
 
     private record QueryOrderResult(boolean found, HtxSwapOrder order, String message) {

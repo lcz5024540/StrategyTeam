@@ -958,9 +958,13 @@ class HtxTrendFollowingServiceTest {
 
         assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
         assertTrue(result.message().contains("trailingStop=4323.84"));
+        assertTrue(result.message().contains("structureStopCandidate=4290.00"));
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
         verify(recorder).updateRiskLevels(eq(77L), eq(new BigDecimal("4295.00")),
                 eq(new BigDecimal("4323.84")), eq(null), eq(new BigDecimal("4332.21")),
-                eq(new BigDecimal("4315.84")), any());
+                eq(new BigDecimal("4315.84")), messageCaptor.capture());
+        assertTrue(messageCaptor.getValue().contains("stopSource=LEGACY_FEE_PROTECTED_CLAMP"));
+        assertTrue(messageCaptor.getValue().contains("structureStopCandidate=4290.00"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
@@ -1006,10 +1010,12 @@ class HtxTrendFollowingServiceTest {
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
         assertTrue(result.message().contains("exit engine: TRAILING_STOP"));
+        assertTrue(result.message().contains("stopSource=LEGACY_FEE_PROTECTED_CLAMP"));
         assertTrue(result.message().contains("stop=4323.84"));
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
         verify(recorder).createOrderIntent(captor.capture());
         assertTrue(captor.getValue().getReason().contains("exit engine: TRAILING_STOP"));
+        assertTrue(captor.getValue().getReason().contains("stopSource=LEGACY_FEE_PROTECTED_CLAMP"));
         assertTrue(captor.getValue().getReason().contains("stop=4323.84"));
     }
 
@@ -1181,6 +1187,8 @@ class HtxTrendFollowingServiceTest {
 
         assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
         assertTrue(result.message().contains("holding"));
+        assertTrue(result.message().contains("stopSource=ATR_TRAILING"));
+        assertTrue(result.message().contains("structureStopCandidate=4290.00"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 

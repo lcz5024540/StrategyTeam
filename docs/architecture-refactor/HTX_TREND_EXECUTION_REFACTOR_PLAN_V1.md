@@ -134,7 +134,9 @@ flowchart TD
 | 日期 | 状态 | 内容 |
 |---|---|---|
 | 2026-09-22 | 已完成第一刀 | 退出原因增加 `exit engine` 分类前缀：`HARD_RISK`、`MODEL_INVALIDATION`、`FEE_PROTECTION`、`TREND_EXHAUSTION`、`FUNDING_COST`、`TRAILING_STOP`、`TARGET_ZONE`；先复用现有平仓原因字段和订单 reason，不新增表结构。 |
-| 2026-09-22 | 待继续 | 移动止损仍沿用原 ATR + fee-protected clamp；下一刀再拆模型失效价、手续费保护止损、结构止损、ATR trailing 的独立价格计算。 |
+| 2026-09-22 | 已完成第二刀第一步 | 移动止损诊断拆出 `ATR_TRAILING` 来源，并新增 `structureStopCandidate` 观察值；结构止损候选只写入持仓管理消息，不参与真实平仓价格选择。 |
+| 2026-09-22 | TODO | 手续费保护止损先暂放：现有 fee-protected clamp 仍按旧逻辑运行，仅在诊断中标记 `LEGACY_FEE_PROTECTED_CLAMP`，后续结合成交样本和回测再决定是否重写。 |
+| 2026-09-22 | 待继续 | 下一刀再评估结构止损是否从观察值升级为真实止损，以及 ATR trailing 是否按模型/周期拆不同参数。 |
 
 ---
 
