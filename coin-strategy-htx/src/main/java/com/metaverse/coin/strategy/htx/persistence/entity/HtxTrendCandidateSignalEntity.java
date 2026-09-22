@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.persistence.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -51,7 +52,9 @@ public class HtxTrendCandidateSignalEntity {
     private BigDecimal targetZoneLow;
     private BigDecimal targetZoneHigh;
     private BigDecimal boxMeasuredMoveTarget;
+    @TableField("fib_extension_1272")
     private BigDecimal fibExtension1272;
+    @TableField("fib_extension_1618")
     private BigDecimal fibExtension1618;
     private BigDecimal expectedRMultiple;
     private BigDecimal momentumQualityScore;
