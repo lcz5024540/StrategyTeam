@@ -41,6 +41,27 @@ class SpotPerpBacktestTest {
     }
 
     @Test
+    void accruesEveryPrintWhileOpenWhenFundingTimeHasMillisecondJitter() {
+        List<SpotPerpHistoryClient.FundingPrint> prints = new ArrayList<>();
+        Instant t = T0;
+        for (int i = 0; i < 8; i++) {
+            Instant stamped = t.plusMillis(i % 2 == 0 ? 0 : 7);
+            prints.add(print(btcBinance(), stamped, "0.0003", "100000"));
+            t = t.plus(Duration.ofHours(8));
+        }
+        SpotPerpBacktest.Report report = new SpotPerpBacktest().replay(
+                prints, testRules(), T0, t, List.of());
+        SpotPerpBacktest.InstrumentStats btc = report.stats().stream()
+                .filter(row -> row.instrument().equals(btcBinance()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(1, btc.opens());
+        assertEquals(0, btc.closes());
+        assertEquals(7, btc.settlements());
+        assertEquals(0, new BigDecimal("0.21").compareTo(btc.fundingPnl()));
+    }
+
+    @Test
     void reportsEmptySeriesWhenAVenueHasNoPrints() {
         SpotPerpBacktest.Report report = new SpotPerpBacktest().replay(
                 List.of(), testRules(), T0, T0.plus(Duration.ofDays(1)),

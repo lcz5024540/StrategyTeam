@@ -81,16 +81,16 @@ Paper positions are in-memory only. Restarting the JVM flattens the book.
 
 Public history is funding prints, not L2. Replay uses a synthetic 1,000,000 USDT book at mark, so BTC/ETH 10,000 USDT depth gates (coverage 2.0 → 20,000 USDT required) are assumed to pass. HTX history has no mark price (only `funding_rate` + `avg_premium_index`); `api.hbdm.com` timed out from this network, so history was fetched from `https://api.hbdm.vn`. HTX spot L2 hosts (`api.huobi.pro`, `api.htx.com`) were unreachable or presented invalid TLS, so live dry-run proxies HTX spot from the USDT-M index.
 
-Ran 2026-09-21 against public REST, 90 days `2026-06-23T15:00Z → 2026-09-21T15:00Z`, 270 prints/series (complete 8h calendar), 1080 prints total, **10,000 USDT**, 2x, production fee gates (Binance 28 bps / HTX 48 bps configured round-trip). The same prints were also replayed at 100 USDT:
+Re-ran 2026-09-22 against public REST on the same window as the 21 Sep book: `2026-06-23T15:00Z → 2026-09-21T15:00Z`, 270 prints/series (complete 8h calendar), 1,080 prints, **10,000 USDT**, 2x. Binance 28 bps / HTX 48 bps is one four-fill round-trip. Funding times within 1s of an 8h boundary are snapped onto that boundary so every print while OPENED accrues once.
 
 | Instrument | Opens | FundN | Funding USDT | Funding bps | Fees USDT | Fees bps | Net USDT | Net bps | Fee/Funding |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| BINANCE:BTCUSDT | 7 | 91 | 68.92 | 68.92 | 369.05 | 369.05 | **-300.13** | -300.13 | 5.35 |
-| BINANCE:ETHUSDT | 7 | 43 | 31.57 | 31.57 | 368.95 | 368.95 | **-337.38** | -337.38 | 11.69 |
+| BINANCE:BTCUSDT | 7 | 124 | 96.81 | 96.81 | 184.53 | 184.53 | **-87.72** | -87.72 | 1.91 |
+| BINANCE:ETHUSDT | 7 | 58 | 44.11 | 44.11 | 184.47 | 184.47 | **-140.37** | -140.37 | 4.18 |
 | HTX:BTCUSDT | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | n/a |
 | HTX:ETHUSDT | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | n/a |
 
-HTX never opened: 48 bps assumed taker round-trip needs ~16 bp per 8h for 30 periods, and most prints were `FUNDING_BELOW_OPEN_THRESHOLD` / `EXPECTED_NET_YIELD_TOO_LOW` (plus some `BASIS_BELOW_MIN`). Binance funding was real but smaller than booked taker fees. **That is rate economics, not size:** fee/funding is 5.35 (BTC) and 11.69 (ETH) at both 100 and 10,000 USDT; cash scales ~100× except BTC lot rounding (100.48×). Do not read the old 100 USDT net as “fees ate funding because the clip was small.”
+The 21 Sep book (BTC funding +68.92, fees 369.05, net −300.13; ETH +31.57 / 368.95 / −337.38; 7 opens, 6 closes, one clip still open) had two errors. Fees billed the 28 bps round-trip on entry and again on exit. Funding skipped prints whose timestamps were a few milliseconds off `previous + 8h` (BTC 91 booked vs 124 prints while open). Exact corrected cash: BTC funding 96.81112717, fees 184.52623374, net −87.71510657; ETH funding 44.10739985, fees 184.47399530, net −140.36659545. Still a loss against 28 bps taker. HTX never opened (48 bps gate).
 
 Live one-cycle dry-run earlier the same day used **100 USDT** (opened BINANCE:ETHUSDT qty 0.036). Scheme A did not re-run `once`; the 10k evidence is the backtest above. Gates are rate-based, so skip reasons do not change with notional.
 

@@ -242,7 +242,13 @@ public final class SpotPerpBacktest {
         Map<SpotPerpInstrument, Integer> skips = new LinkedHashMap<>();
         Map<SpotPerpInstrument, Map<String, Integer>> skipReasons = new LinkedHashMap<>();
         Duration interval = Duration.ofHours(8);
-        for (SpotPerpHistoryClient.FundingPrint print : prints) {
+        for (SpotPerpHistoryClient.FundingPrint raw : prints) {
+            // Binance fundingTime is the 8h boundary plus a few milliseconds.
+            // The engine's due clock is previous print + exactly 8h, so a print
+            // that lands a few ms early is skipped and the next catch-up books
+            // only one interval. Snap sub-second noise onto the 8h grid so
+            // every print while OPENED accrues that print's rate once.
+            SpotPerpHistoryClient.FundingPrint print = alignFundingPrint(raw);
             printCounts.merge(print.instrument(), 1, Integer::sum);
             first.putIfAbsent(print.instrument(), print.fundingTime());
             last.put(print.instrument(), print.fundingTime());
@@ -324,6 +330,27 @@ public final class SpotPerpBacktest {
                     large.rules().notionalUsdt()));
         }
         return new ScaleComparison(small.rules().notionalUsdt(), large.rules().notionalUsdt(), List.copyOf(rows));
+    }
+
+    /**
+     * Exchange history stamps the 00:00/08:00/16:00 UTC settlement a few
+     * milliseconds late. Within one second of an 8h boundary, use the boundary.
+     * Prints farther away keep their own timestamp.
+     */
+    static SpotPerpHistoryClient.FundingPrint alignFundingPrint(SpotPerpHistoryClient.FundingPrint print) {
+        long gridMs = Duration.ofHours(8).toMillis();
+        long millis = print.fundingTime().toEpochMilli();
+        long nearest = Math.round(millis / (double) gridMs) * gridMs;
+        if (Math.abs(millis - nearest) > 1000L || nearest == millis) {
+            return print;
+        }
+        return new SpotPerpHistoryClient.FundingPrint(
+                print.instrument(),
+                Instant.ofEpochMilli(nearest),
+                print.fundingRate(),
+                print.markPrice(),
+                print.indexOrPremium(),
+                print.source());
     }
 
     static SpotPerpSnapshot snapshotFromPrint(SpotPerpHistoryClient.FundingPrint print, Duration interval) {
