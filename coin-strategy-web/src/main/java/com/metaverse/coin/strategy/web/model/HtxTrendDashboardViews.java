@@ -125,6 +125,10 @@ public final class HtxTrendDashboardViews {
                                   BigDecimal shortScore, BigDecimal scoreGap, BigDecimal closePrice,
                                   BigDecimal atrPct, BigDecimal adx, BigDecimal momentumPct,
                                   BigDecimal volumeRatio, String entryReason, String invalidationReason,
-                                  String modelVersion, String createdAt) {
+                                  String modelVersion, String primaryModel, String confirmationModels,
+                                  String policyVersion, Long factorSnapshotId, String gateResult, String gateReason,
+                                  BigDecimal invalidationPrice, String entryHypothesis, BigDecimal targetZoneLow,
+                                  BigDecimal targetZoneHigh, BigDecimal expectedRMultiple,
+                                  BigDecimal momentumQualityScore, String factorsJson, String createdAt) {
     }
 }

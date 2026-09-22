@@ -391,5 +391,18 @@ export interface TrendCandidateSignal {
   entryReason: string | null
   invalidationReason: string | null
   modelVersion: string | null
+  primaryModel: string | null
+  confirmationModels: string | null
+  policyVersion: string | null
+  factorSnapshotId: number | null
+  gateResult: string | null
+  gateReason: string | null
+  invalidationPrice: number | null
+  entryHypothesis: string | null
+  targetZoneLow: number | null
+  targetZoneHigh: number | null
+  expectedRMultiple: number | null
+  momentumQualityScore: number | null
+  factorsJson: string | null
   createdAt: string
 }

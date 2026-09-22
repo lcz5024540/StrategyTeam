@@ -212,6 +212,21 @@ public class HtxTrendProperties {
     /** Bounded parallelism for market/signal candidate scans. Live order submission remains sequential. */
     private int candidateScanConcurrency = 6;
 
+    /**
+     * Persist a read-only multi-timeframe factor snapshot after each completed candidate scan.
+     * This runs after live entry decisions, so observation never makes a fresh signal stale.
+     */
+    private boolean factorSnapshotEnabled = true;
+
+    /** Timeframes captured for each whitelisted contract in the P2 evidence snapshot. */
+    private List<String> factorSnapshotPeriods = new ArrayList<>(List.of("15min", "30min", "60min", "4hour", "1day"));
+
+    /** History bars loaded for each P2 factor-snapshot timeframe. */
+    private int factorSnapshotKlineSize = 160;
+
+    /** Bounded read-only concurrency for P2 snapshots; it is independent of order submission. */
+    private int factorSnapshotConcurrency = 4;
+
     /** Enable quality and market-breadth based entry sizing. This never hard-pauses entries by itself. */
     private boolean adaptiveSizingEnabled = true;
 

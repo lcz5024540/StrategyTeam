@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 
@@ -60,6 +59,50 @@ public class HtxTrendCombinationService {
         return Selection.selected(selected.candidate(), selected.policy(), snapshotId, multiplier, notional);
     }
 
+    /** Records the scan-level market context once per completed entry candle for later model attribution. */
+    public void recordMarketSnapshot(long barTime, String breadthRegime, long breadthTotal, long breadthLong,
+                                     long breadthShort, String breadthReason, String anchorRegime,
+                                     int anchorValidSignals, int anchorLongSignals, int anchorShortSignals,
+                                     String anchorReason) {
+        if (barTime <= 0L) {
+            return;
+        }
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey("MARKET:15min:" + barTime + ":trend-market-v1");
+        snapshot.setContractCode("MARKET");
+        snapshot.setPeriod("15min");
+        snapshot.setBarTime(barTime);
+        snapshot.setMarketRegime(breadthRegime);
+        snapshot.setFactorsJson("{\"schema\":\"trend-market-v1\",\"breadth\":{\"regime\":"
+                + jsonText(breadthRegime) + ",\"total\":" + breadthTotal + ",\"long\":" + breadthLong
+                + ",\"short\":" + breadthShort + ",\"reason\":" + jsonText(breadthReason)
+                + "},\"anchor\":{\"regime\":" + jsonText(anchorRegime) + ",\"validSignals\":"
+                + anchorValidSignals + ",\"longSignals\":" + anchorLongSignals + ",\"shortSignals\":"
+                + anchorShortSignals + ",\"reason\":" + jsonText(anchorReason) + "}}");
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
+    /**
+     * Records the read-only P2 evidence for every configured timeframe after live entry decisions have finished.
+     * It is deliberately separate from the immutable entry-decision snapshot: capturing more market data must not
+     * delay a fresh signal, while both records remain queryable by contract and completed entry candle.
+     */
+    public void recordMultiTimeframeSnapshot(String contractCode, String entryPeriod, long entryBarTime,
+                                             String marketRegime, List<TrendCandidateSignal> timeframeSignals) {
+        if (contractCode == null || contractCode.isBlank() || entryBarTime <= 0L) {
+            return;
+        }
+        String period = entryPeriod == null || entryPeriod.isBlank() ? "15min" : entryPeriod;
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + entryBarTime + ":trend-factor-multi-v1");
+        snapshot.setContractCode(contractCode);
+        snapshot.setPeriod(period);
+        snapshot.setBarTime(entryBarTime);
+        snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
+        snapshot.setFactorsJson(multiTimeframeSnapshotJson(timeframeSignals));
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
     /** Persist a negative decision too, so a later review can distinguish missing structure from execution rejection. */
     private Selection reject(String contractCode, String period, TrendCandidateSignal signal,
                              HtxTrendCombinationGateReason reason) {
@@ -70,8 +113,7 @@ public class HtxTrendCombinationService {
         snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":combo-v2:REJECTED");
         snapshot.setContractCode(contractCode); snapshot.setPeriod(period); snapshot.setBarTime(signal.barTime());
         snapshot.setMarketRegime(signal.regime().name());
-        snapshot.setFactorsJson("{\"adx\":\"" + signal.adx() + "\",\"atr\":\"" + signal.atr()
-                + "\",\"atrPct\":\"" + signal.atrPct() + "\",\"volumeRatio\":\"" + signal.volumeRatio() + "\"}");
+        snapshot.setFactorsJson(factorSnapshotJson(signal, null));
         Long snapshotId = combinationRecorder.recordSnapshot(snapshot);
         HtxTrendCandidateSignalEntity entity = new HtxTrendCandidateSignalEntity();
         entity.setContractCode(contractCode); entity.setPeriod(period); entity.setBarTime(signal.barTime());
@@ -111,20 +153,105 @@ public class HtxTrendCombinationService {
         snapshot.setPeriod(period);
         snapshot.setBarTime(signal.barTime());
         snapshot.setMarketRegime(resolved.candidate().marketRegime());
-        snapshot.setFactorsJson("{\"boxHigh\":\"" + resolved.candidate().boxHigh() + "\",\"boxLow\":\""
-                + resolved.candidate().boxLow() + "\",\"swingHigh\":\"" + resolved.candidate().swingHigh()
-                + "\",\"swingLow\":\"" + resolved.candidate().swingLow() + "\",\"fibLower\":\""
-                + resolved.candidate().fibonacciLower() + "\",\"fibUpper\":\"" + resolved.candidate().fibonacciUpper()
-                + "\",\"targetZoneLow\":\"" + resolved.candidate().targetZoneLow()
-                + "\",\"targetZoneHigh\":\"" + resolved.candidate().targetZoneHigh()
-                + "\",\"boxMeasuredMove\":\"" + resolved.candidate().boxMeasuredMoveTarget()
-                + "\",\"fib1272\":\"" + resolved.candidate().fibExtension1272()
-                + "\",\"fib1618\":\"" + resolved.candidate().fibExtension1618()
-                + "\",\"expectedR\":\"" + resolved.candidate().expectedRMultiple()
-                + "\",\"momentumQuality\":\"" + resolved.candidate().momentumQualityScore()
-                + "\",\"adx\":\"" + signal.adx() + "\",\"atr\":\"" + signal.atr()
-                + "\",\"volumeRatio\":\"" + signal.volumeRatio() + "\"}");
+        snapshot.setFactorsJson(factorSnapshotJson(signal, resolved.candidate()));
         return combinationRecorder.recordSnapshot(snapshot);
+    }
+
+    /**
+     * Stores all factors that actually participated in this entry decision. In particular, a Fibonacci
+     * candidate keeps the prior breakout candle and impulse range rather than only the derived 0.382/0.618 zone.
+     */
+    private static String factorSnapshotJson(TrendCandidateSignal signal, CombinationCandidate candidate) {
+        HtxTrendCombinationCalculator.FibonacciEvidence fibonacci = candidate == null
+                ? HtxTrendCombinationCalculator.FibonacciEvidence.notApplicable(0, 0)
+                : candidate.fibonacciEvidence();
+        return "{\"schema\":\"trend-factor-v2\",\"period\":" + jsonText(signal.period())
+                + ",\"direction\":" + jsonText(signal.direction().name())
+                + ",\"regime\":" + jsonText(signal.regime().name())
+                + ",\"signalScore\":" + jsonNumber(signal.signalScore())
+                + ",\"longScore\":" + jsonNumber(signal.longScore())
+                + ",\"shortScore\":" + jsonNumber(signal.shortScore())
+                + ",\"scoreGap\":" + jsonNumber(signal.scoreGap())
+                + ",\"close\":" + jsonNumber(signal.closePrice())
+                + ",\"ema\":{\"fast\":" + jsonNumber(signal.emaFast())
+                + ",\"medium\":" + jsonNumber(signal.emaMedium())
+                + ",\"slow\":" + jsonNumber(signal.emaSlow()) + "}"
+                + ",\"volatility\":{\"atr\":" + jsonNumber(signal.atr())
+                + ",\"atrPct\":" + jsonNumber(signal.atrPct())
+                + ",\"adx\":" + jsonNumber(signal.adx())
+                + ",\"momentumPct\":" + jsonNumber(signal.momentumPct())
+                + ",\"volumeRatio\":" + jsonNumber(signal.volumeRatio()) + "}"
+                + ",\"donchian\":{\"high\":" + jsonNumber(signal.breakoutHigh())
+                + ",\"low\":" + jsonNumber(signal.breakoutLow()) + "}"
+                + ",\"structure\":{\"boxHigh\":" + jsonNumber(candidate == null ? null : candidate.boxHigh())
+                + ",\"boxLow\":" + jsonNumber(candidate == null ? null : candidate.boxLow())
+                + ",\"swingHigh\":" + jsonNumber(candidate == null ? null : candidate.swingHigh())
+                + ",\"swingLow\":" + jsonNumber(candidate == null ? null : candidate.swingLow())
+                + ",\"invalidationPrice\":" + jsonNumber(candidate == null ? null : candidate.invalidationPrice()) + "}"
+                + ",\"fibonacci\":{\"applicable\":" + (candidate != null
+                && "FIB_PULLBACK_CONTINUATION".equals(candidate.primaryModel()))
+                + ",\"priorBreakoutBarTime\":" + jsonNumber(fibonacci.breakoutBarTime())
+                + ",\"impulseHigh\":" + jsonNumber(fibonacci.impulseHigh())
+                + ",\"impulseLow\":" + jsonNumber(fibonacci.impulseLow())
+                + ",\"retracementLower\":" + jsonNumber(fibonacci.retracementLower())
+                + ",\"retracementUpper\":" + jsonNumber(fibonacci.retracementUpper())
+                + ",\"emaReclaimConfirmed\":" + fibonacci.emaReclaimConfirmed()
+                + ",\"boxWindowBars\":" + fibonacci.boxWindowBars()
+                + ",\"sourceLookbackBars\":" + fibonacci.sourceLookbackBars() + "}"
+                + ",\"targets\":{\"zoneLow\":" + jsonNumber(candidate == null ? null : candidate.targetZoneLow())
+                + ",\"zoneHigh\":" + jsonNumber(candidate == null ? null : candidate.targetZoneHigh())
+                + ",\"boxMeasuredMove\":" + jsonNumber(candidate == null ? null : candidate.boxMeasuredMoveTarget())
+                + ",\"fib1272\":" + jsonNumber(candidate == null ? null : candidate.fibExtension1272())
+                + ",\"fib1618\":" + jsonNumber(candidate == null ? null : candidate.fibExtension1618())
+                + ",\"expectedR\":" + jsonNumber(candidate == null ? null : candidate.expectedRMultiple()) + "}}";
+    }
+
+    private static String multiTimeframeSnapshotJson(List<TrendCandidateSignal> signals) {
+        StringBuilder json = new StringBuilder("{\"schema\":\"trend-factor-multi-v1\",\"source\":\"htx-completed-kline\",\"timeframes\":{");
+        boolean first = true;
+        if (signals != null) {
+            for (TrendCandidateSignal signal : signals) {
+                if (signal == null || signal.period() == null || signal.period().isBlank()) {
+                    continue;
+                }
+                if (!first) {
+                    json.append(',');
+                }
+                first = false;
+                boolean available = signal.barTime() != null && signal.barTime() > 0L;
+                json.append(jsonText(signal.period())).append(":{")
+                        .append("\"status\":").append(jsonText(available ? "COMPLETE" : "UNAVAILABLE"))
+                        .append(",\"barTime\":").append(jsonNumber(signal.barTime()))
+                        .append(",\"direction\":").append(jsonText(signal.direction() == null ? null : signal.direction().name()))
+                        .append(",\"regime\":").append(jsonText(signal.regime() == null ? null : signal.regime().name()))
+                        .append(",\"signalScore\":").append(jsonNumber(signal.signalScore()))
+                        .append(",\"longScore\":").append(jsonNumber(signal.longScore()))
+                        .append(",\"shortScore\":").append(jsonNumber(signal.shortScore()))
+                        .append(",\"scoreGap\":").append(jsonNumber(signal.scoreGap()))
+                        .append(",\"close\":").append(jsonNumber(signal.closePrice()))
+                        .append(",\"ema\":{\"fast\":").append(jsonNumber(signal.emaFast()))
+                        .append(",\"medium\":").append(jsonNumber(signal.emaMedium()))
+                        .append(",\"slow\":").append(jsonNumber(signal.emaSlow())).append('}')
+                        .append(",\"volatility\":{\"atr\":").append(jsonNumber(signal.atr()))
+                        .append(",\"atrPct\":").append(jsonNumber(signal.atrPct()))
+                        .append(",\"adx\":").append(jsonNumber(signal.adx())).append('}')
+                        .append(",\"momentum\":{\"roc\":").append(jsonNumber(signal.momentumPct()))
+                        .append(",\"volumeRatio\":").append(jsonNumber(signal.volumeRatio())).append('}')
+                        .append(",\"donchian\":{\"high\":").append(jsonNumber(signal.breakoutHigh()))
+                        .append(",\"low\":").append(jsonNumber(signal.breakoutLow())).append('}')
+                        .append(",\"reason\":").append(jsonText(available ? signal.entryReason() : signal.invalidationReason()))
+                        .append('}');
+            }
+        }
+        return json.append("}}").toString();
+    }
+
+    private static String jsonNumber(Number value) {
+        return value == null ? "null" : value.toString();
+    }
+
+    private static String jsonText(String value) {
+        return value == null ? "null" : "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private void recordCandidate(String contractCode, String period, TrendCandidateSignal signal, ResolvedCandidate resolved,

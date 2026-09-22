@@ -195,6 +195,7 @@ public class HtxTrendFollowingService {
         int candidateScanConcurrency = candidateScanConcurrency(contractCodes.size());
         int candidateScanContracts = scanEntryCandidates ? contractCodes.size() : 0;
         RunResult selected = null;
+        FactorSnapshotCaptureSummary factorSnapshotSummary = FactorSnapshotCaptureSummary.notRun();
 
         for (String contractCode : contractCodes) {
             RunResult result = manageActiveContract(contractCode);
@@ -210,6 +211,12 @@ public class HtxTrendFollowingService {
         boolean hasFreshCarryoverCandidate = hasFreshPendingEntryCandidate(new ArrayList<>(entryCandidates.values()));
         if (scanEntryCandidates || hasFreshCarryoverCandidate) {
             marketAnchor = marketAnchorContext();
+        }
+        if (scanEntryCandidates && combinationService != null) {
+            combinationService.recordMarketSnapshot(candidateScanCloseEpoch, marketBreadth.regime().name(),
+                    marketBreadth.total(), marketBreadth.longCount(), marketBreadth.shortCount(), marketBreadth.reason(),
+                    marketAnchor.regime().name(), marketAnchor.validSignals(), marketAnchor.longSignals(),
+                    marketAnchor.shortSignals(), marketAnchor.reason());
         }
 
         if (scanEntryCandidates) {
@@ -281,6 +288,14 @@ public class HtxTrendFollowingService {
             }
         }
 
+        if (scanEntryCandidates && combinationService != null && properties.isFactorSnapshotEnabled()) {
+            long snapshotStartedAt = System.nanoTime();
+            factorSnapshotSummary = recordMultiTimeframeFactorSnapshots(contractCodes, candidateScanCloseEpoch,
+                    marketBreadth, candidateScanConcurrency(contractCodes.size()));
+            factorSnapshotSummary = factorSnapshotSummary.withDuration(
+                    Duration.ofNanos(System.nanoTime() - snapshotStartedAt).toMillis());
+        }
+
         if (selected == null) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(CANDIDATE_SCAN, "no trend contracts evaluated"));
         }
@@ -294,8 +309,82 @@ public class HtxTrendFollowingService {
                 + "; candidateScanConcurrency=" + candidateScanConcurrency
                 + "; candidateScanContracts=" + candidateScanContracts
                 + "; candidateScanDurationMs=" + candidateScanDurationMs
+                + "; factorSnapshots=" + factorSnapshotSummary.summary()
                 + "; remainingSlots=" + remainingSlots
                 + "; liveContracts=" + String.join(" | ", summaries));
+    }
+
+    /**
+     * P2 observation runs after live candidates have already passed their gates and orders have been submitted.
+     * It is read-only and bounded separately from the entry scanner, so extra evidence cannot make a valid signal stale.
+     */
+    private FactorSnapshotCaptureSummary recordMultiTimeframeFactorSnapshots(List<String> contractCodes,
+                                                                               long entryBarTime,
+                                                                               MarketBreadthContext marketBreadth,
+                                                                               int scanConcurrency) {
+        List<String> periods = normalizedPeriods(properties.getFactorSnapshotPeriods());
+        if (contractCodes == null || contractCodes.isEmpty() || periods.isEmpty()) {
+            return FactorSnapshotCaptureSummary.skipped("contracts or periods blank");
+        }
+        int concurrency = Math.min(Math.max(1, properties.getFactorSnapshotConcurrency()),
+                Math.max(1, Math.min(contractCodes.size(), scanConcurrency)));
+        if (concurrency <= 1 || contractCodes.size() <= 1) {
+            List<FactorSnapshotCaptureResult> results = new ArrayList<>(contractCodes.size());
+            for (String contractCode : contractCodes) {
+                results.add(captureMultiTimeframeFactorSnapshot(contractCode, entryBarTime, marketBreadth, periods));
+            }
+            return FactorSnapshotCaptureSummary.from(results, periods.size());
+        }
+        AtomicInteger threadIndex = new AtomicInteger();
+        ThreadFactory threadFactory = task -> {
+            Thread thread = new Thread(task, "htx-trend-factor-snapshot-" + threadIndex.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        ExecutorService executor = Executors.newFixedThreadPool(concurrency, threadFactory);
+        try {
+            List<Callable<FactorSnapshotCaptureResult>> tasks = new ArrayList<>(contractCodes.size());
+            for (String contractCode : contractCodes) {
+                tasks.add(() -> captureMultiTimeframeFactorSnapshot(contractCode, entryBarTime, marketBreadth, periods));
+            }
+            List<FactorSnapshotCaptureResult> results = new ArrayList<>(contractCodes.size());
+            for (Future<FactorSnapshotCaptureResult> future : executor.invokeAll(tasks)) {
+                results.add(future.get());
+            }
+            return FactorSnapshotCaptureSummary.from(results, periods.size());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return FactorSnapshotCaptureSummary.skipped("interrupted");
+        } catch (ExecutionException ex) {
+            return FactorSnapshotCaptureSummary.skipped("failed: " + rootMessage(ex));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private FactorSnapshotCaptureResult captureMultiTimeframeFactorSnapshot(String contractCode, long entryBarTime,
+                                                                              MarketBreadthContext marketBreadth,
+                                                                              List<String> periods) {
+        List<HtxTrendEnsembleSignalCalculator.TrendCandidateSignal> signals = new ArrayList<>(periods.size());
+        int available = 0;
+        for (String period : periods) {
+            HtxRestResponse<List<HtxSwapKline>> response = swap.historyKline(contractCode, period,
+                    Math.max(1, properties.getFactorSnapshotKlineSize()));
+            if (response == null || !response.ok() || response.payload() == null) {
+                signals.add(HtxTrendEnsembleSignalCalculator.TrendCandidateSignal.skip(period,
+                        "history kline unavailable: " + error(response)));
+                continue;
+            }
+            HtxTrendEnsembleSignalCalculator.TrendCandidateSignal signal = ensembleCalculator.evaluate(response.payload(),
+                    ensembleProperties, period, Instant.now().getEpochSecond());
+            signals.add(signal);
+            if (signal.barTime() != null && signal.barTime() > 0L) {
+                available++;
+            }
+        }
+        combinationService.recordMultiTimeframeSnapshot(contractCode, properties.getPeriod(), entryBarTime,
+                marketBreadth == null ? "UNKNOWN" : marketBreadth.regime().name(), signals);
+        return new FactorSnapshotCaptureResult(contractCode, available, periods.size());
     }
 
     private List<CandidateScanResult> evaluateEntryCandidates(List<String> contractCodes,
@@ -2865,6 +2954,49 @@ public class HtxTrendFollowingService {
     }
 
     private record CandidateEvaluation(RunResult result, EntryCandidate candidate) {
+    }
+
+    private record FactorSnapshotCaptureResult(String contractCode, int availablePeriods, int requestedPeriods) {
+    }
+
+    private record FactorSnapshotCaptureSummary(int contracts, int completeContracts, int availablePeriods,
+                                                int requestedPeriods, long durationMs, String status) {
+        static FactorSnapshotCaptureSummary notRun() {
+            return new FactorSnapshotCaptureSummary(0, 0, 0, 0, 0L, "not-run");
+        }
+
+        static FactorSnapshotCaptureSummary skipped(String reason) {
+            return new FactorSnapshotCaptureSummary(0, 0, 0, 0, 0L, "skipped:" + reason);
+        }
+
+        static FactorSnapshotCaptureSummary from(List<FactorSnapshotCaptureResult> results, int requestedPeriods) {
+            int contracts = results == null ? 0 : results.size();
+            int completeContracts = 0;
+            int availablePeriods = 0;
+            if (results != null) {
+                for (FactorSnapshotCaptureResult result : results) {
+                    if (result == null) {
+                        continue;
+                    }
+                    availablePeriods += result.availablePeriods();
+                    if (result.availablePeriods() == requestedPeriods) {
+                        completeContracts++;
+                    }
+                }
+            }
+            return new FactorSnapshotCaptureSummary(contracts, completeContracts, availablePeriods,
+                    contracts * requestedPeriods, 0L, "complete");
+        }
+
+        FactorSnapshotCaptureSummary withDuration(long durationMs) {
+            return new FactorSnapshotCaptureSummary(contracts, completeContracts, availablePeriods,
+                    requestedPeriods, durationMs, status);
+        }
+
+        String summary() {
+            return status + " contracts=" + contracts + " completeContracts=" + completeContracts
+                    + " periods=" + availablePeriods + "/" + requestedPeriods + " durationMs=" + durationMs;
+        }
     }
 
     private record EntryCandidate(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,

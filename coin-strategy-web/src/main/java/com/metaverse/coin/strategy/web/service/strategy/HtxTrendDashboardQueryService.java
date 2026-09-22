@@ -272,7 +272,13 @@ public class HtxTrendDashboardQueryService {
                 decimal(row, "signalScore"), decimal(row, "longScore"), decimal(row, "shortScore"),
                 decimal(row, "scoreGap"), nullableDecimal(row, "closePrice"), nullableDecimal(row, "atrPct"),
                 nullableDecimal(row, "adx"), nullableDecimal(row, "momentumPct"), nullableDecimal(row, "volumeRatio"),
-                text(row, "entryReason"), text(row, "invalidationReason"), text(row, "modelVersion"), text(row, "createdAt"));
+                text(row, "entryReason"), text(row, "invalidationReason"), text(row, "modelVersion"),
+                text(row, "primaryModel"), text(row, "confirmationModels"), text(row, "policyVersion"),
+                nullableLong(row, "factorSnapshotId"), text(row, "gateResult"), text(row, "gateReason"),
+                nullableDecimal(row, "invalidationPrice"), text(row, "entryHypothesis"),
+                nullableDecimal(row, "targetZoneLow"), nullableDecimal(row, "targetZoneHigh"),
+                nullableDecimal(row, "expectedRMultiple"), nullableDecimal(row, "momentumQualityScore"),
+                text(row, "factorsJson"), text(row, "createdAt"));
     }
 
     private static Number number(Map<String, Object> row, String key) {

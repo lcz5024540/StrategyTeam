@@ -49,27 +49,32 @@ public class HtxTrendCombinationCalculator {
 
         if (boxBreakout && donchianBreakout) {
             candidates.add(candidate("DONCHIAN_BREAKOUT", "BOX_BREAKOUT", signal, structure, marketState,
-                    baseScore.add(new BigDecimal("15")), "fresh channel breakout confirmed by box"));
+                    priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("15")),
+                    "fresh channel breakout confirmed by box"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && fibonacciRetest) {
             candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT", signal, structure, marketState,
-                    baseScore.add(new BigDecimal("10")), "Fibonacci retest confirmed by prior box breakout"));
+                    priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("10")),
+                    "Fibonacci retest confirmed by prior box breakout"));
         }
         if ((donchianBreakout || priorBreakout.donchianBreakout()) && fibonacciRetest) {
             candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "DONCHIAN_BREAKOUT", signal, structure, marketState,
-                    baseScore.add(new BigDecimal("10")), "Fibonacci retest confirmed by prior channel breakout"));
+                    priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("10")),
+                    "Fibonacci retest confirmed by prior channel breakout"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && (donchianBreakout || priorBreakout.donchianBreakout())
                 && fibonacciRetest) {
             candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal,
-                    structure, marketState, baseScore.add(new BigDecimal("20")), "Fibonacci retest confirmed by box and channel"));
+                    structure, marketState, priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("20")),
+                    "Fibonacci retest confirmed by box and channel"));
         }
         return candidates.stream().sorted(Comparator.comparing(CombinationCandidate::score).reversed()).toList();
     }
 
     private CombinationCandidate candidate(String primaryModel, String confirmationModels,
                                            TrendCandidateSignal signal, Structure structure, MarketState marketState,
-                                           BigDecimal score, String hypothesis) {
+                                           BreakoutEvidence priorBreakout, boolean emaReclaimConfirmed,
+                                           int boxWindowBars, BigDecimal score, String hypothesis) {
         BigDecimal invalidation = invalidation(primaryModel, signal, structure);
         Targets targets = targets(signal.direction(), structure);
         BigDecimal reward = signal.direction() == Direction.LONG
@@ -80,11 +85,16 @@ public class HtxTrendCombinationCalculator {
                 : BigDecimal.ZERO;
         BigDecimal momentumQuality = score.min(ONE_HUNDRED).add(signal.adx() == null ? BigDecimal.ZERO : signal.adx())
                 .divide(new BigDecimal("2"), 18, java.math.RoundingMode.HALF_UP).min(ONE_HUNDRED);
+        FibonacciEvidence fibonacciEvidence = "FIB_PULLBACK_CONTINUATION".equals(primaryModel)
+                ? new FibonacciEvidence(priorBreakout.breakoutBarTime(), priorBreakout.impulseHigh(),
+                priorBreakout.impulseLow(), priorBreakout.fibonacciLower(), priorBreakout.fibonacciUpper(),
+                emaReclaimConfirmed, boxWindowBars, FIB_SOURCE_LOOKBACK_BARS)
+                : FibonacciEvidence.notApplicable(boxWindowBars, FIB_SOURCE_LOOKBACK_BARS);
         return new CombinationCandidate(primaryModel, confirmationModels, signal.direction(), score.min(ONE_HUNDRED),
                 marketState.name(), structure.boxHigh(), structure.boxLow(), structure.swingHigh(), structure.swingLow(),
                 structure.fibonacciLower(), structure.fibonacciUpper(), invalidation, targets.targetZoneLow(),
                 targets.targetZoneHigh(), targets.boxMeasuredMoveTarget(), targets.fibExtension1272(),
-                targets.fibExtension1618(), expectedR, momentumQuality, hypothesis);
+                targets.fibExtension1618(), expectedR, momentumQuality, hypothesis, fibonacciEvidence);
     }
 
     private static Targets targets(Direction direction, Structure structure) {
@@ -186,10 +196,12 @@ public class HtxTrendCombinationCalculator {
             }
             if (direction == Direction.LONG) {
                 return new BreakoutEvidence(box, donchian,
+                        breakout.getId(), impulseHigh, impulseLow,
                         impulseHigh.subtract(range.multiply(new BigDecimal("0.618"))),
                         impulseHigh.subtract(range.multiply(new BigDecimal("0.382"))));
             }
             return new BreakoutEvidence(box, donchian,
+                    breakout.getId(), impulseHigh, impulseLow,
                     impulseLow.add(range.multiply(new BigDecimal("0.382"))),
                     impulseLow.add(range.multiply(new BigDecimal("0.618"))));
         }
@@ -233,21 +245,32 @@ public class HtxTrendCombinationCalculator {
                                        BigDecimal fibonacciUpper, BigDecimal invalidationPrice, BigDecimal targetZoneLow,
                                        BigDecimal targetZoneHigh, BigDecimal boxMeasuredMoveTarget, BigDecimal fibExtension1272,
                                        BigDecimal fibExtension1618, BigDecimal expectedRMultiple,
-                                       BigDecimal momentumQualityScore, String hypothesis) {
+                                       BigDecimal momentumQualityScore, String hypothesis,
+                                       FibonacciEvidence fibonacciEvidence) {
     }
 
     private record Structure(BigDecimal boxHigh, BigDecimal boxLow, BigDecimal swingHigh, BigDecimal swingLow,
                              BigDecimal fibonacciLower, BigDecimal fibonacciUpper) {
     }
 
-    private record BreakoutEvidence(boolean boxBreakout, boolean donchianBreakout,
+    private record BreakoutEvidence(boolean boxBreakout, boolean donchianBreakout, Long breakoutBarTime,
+                                    BigDecimal impulseHigh, BigDecimal impulseLow,
                                     BigDecimal fibonacciLower, BigDecimal fibonacciUpper) {
         static BreakoutEvidence none() {
-            return new BreakoutEvidence(false, false, BigDecimal.ZERO, BigDecimal.ZERO);
+            return new BreakoutEvidence(false, false, null, null, null, null, null);
         }
 
         boolean hasBreakout() {
             return boxBreakout || donchianBreakout;
+        }
+    }
+
+    /** Exact prior-breakout evidence used by the Fibonacci retracement gate. */
+    public record FibonacciEvidence(Long breakoutBarTime, BigDecimal impulseHigh, BigDecimal impulseLow,
+                                    BigDecimal retracementLower, BigDecimal retracementUpper,
+                                    boolean emaReclaimConfirmed, int boxWindowBars, int sourceLookbackBars) {
+        static FibonacciEvidence notApplicable(int boxWindowBars, int sourceLookbackBars) {
+            return new FibonacciEvidence(null, null, null, null, null, false, boxWindowBars, sourceLookbackBars);
         }
     }
 

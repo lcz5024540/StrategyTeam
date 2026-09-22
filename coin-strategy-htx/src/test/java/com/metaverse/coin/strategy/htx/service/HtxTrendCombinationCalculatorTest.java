@@ -43,6 +43,29 @@ class HtxTrendCombinationCalculatorTest {
         assertEquals(List.of(), calculator.evaluate(candles, signal, 32));
     }
 
+    @Test
+    void fibonacciRetestRetainsThePriorBreakoutAndImpulseEvidence() {
+        List<HtxSwapKline> candles = risingRange(32);
+        candles.add(candle(32, "106", "121", "107", "120"));
+        for (int index = 33; index < 40; index++) {
+            candles.add(candle(index, "116", "120", "112", "116"));
+        }
+        candles.add(candle(40, "115", "117", "113", "114"));
+        TrendCandidateSignal signal = signal(Direction.LONG, Regime.TRENDING_UP, "114", "120", "90");
+
+        List<CombinationCandidate> candidates = calculator.evaluate(candles, signal, 32);
+
+        assertFalse(candidates.isEmpty());
+        CombinationCandidate candidate = candidates.get(0);
+        assertEquals("FIB_PULLBACK_CONTINUATION", candidate.primaryModel());
+        assertEquals(32L, candidate.fibonacciEvidence().breakoutBarTime());
+        assertEquals(new BigDecimal("121"), candidate.fibonacciEvidence().impulseHigh());
+        assertEquals(new BigDecimal("107"), candidate.fibonacciEvidence().impulseLow());
+        assertEquals(new BigDecimal("112.348"), candidate.fibonacciEvidence().retracementLower());
+        assertEquals(new BigDecimal("115.652"), candidate.fibonacciEvidence().retracementUpper());
+        assertEquals(true, candidate.fibonacciEvidence().emaReclaimConfirmed());
+    }
+
     private TrendCandidateSignal signal(Direction direction, Regime regime, String close, String breakoutHigh, String score) {
         return new TrendCandidateSignal("15min", 40L, direction, regime, new BigDecimal(score), new BigDecimal(score),
                 BigDecimal.ZERO, new BigDecimal(score), new BigDecimal(close), new BigDecimal("106"),

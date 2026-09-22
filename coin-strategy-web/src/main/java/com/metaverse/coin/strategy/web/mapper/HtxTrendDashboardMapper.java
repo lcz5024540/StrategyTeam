@@ -15,6 +15,7 @@ public interface HtxTrendDashboardMapper {
     String ORDER_TABLE = TREND_SCHEMA + "htx_trend_order";
     String SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_signal";
     String CANDIDATE_SIGNAL_TABLE = TREND_SCHEMA + "htx_trend_candidate_signal";
+    String FACTOR_SNAPSHOT_TABLE = TREND_SCHEMA + "htx_trend_factor_snapshot";
     String ACCOUNT_TABLE = TREND_SCHEMA + "htx_trade_account";
     String LEDGER_TABLE = TREND_SCHEMA + "coin_strategy_ledger_event";
 
@@ -320,6 +321,12 @@ public interface HtxTrendDashboardMapper {
             + "signal_score AS signalScore, long_score AS longScore, short_score AS shortScore, score_gap AS scoreGap, "
             + "close_price AS closePrice, atr_pct AS atrPct, adx, momentum_pct AS momentumPct, volume_ratio AS volumeRatio, "
             + "entry_reason AS entryReason, invalidation_reason AS invalidationReason, model_version AS modelVersion, "
+            + "primary_model AS primaryModel, confirmation_models AS confirmationModels, policy_version AS policyVersion, "
+            + "factor_snapshot_id AS factorSnapshotId, gate_result AS gateResult, gate_reason AS gateReason, "
+            + "invalidation_price AS invalidationPrice, entry_hypothesis AS entryHypothesis, "
+            + "target_zone_low AS targetZoneLow, target_zone_high AS targetZoneHigh, "
+            + "expected_r_multiple AS expectedRMultiple, momentum_quality_score AS momentumQualityScore, "
+            + "(SELECT factors_json FROM " + FACTOR_SNAPSHOT_TABLE + " f WHERE f.id = factor_snapshot_id) AS factorsJson, "
             + "created_at AS createdAt FROM " + CANDIDATE_SIGNAL_TABLE + " ORDER BY created_at DESC, id DESC LIMIT 80")
     List<Map<String, Object>> recentCandidateSignals();
 }

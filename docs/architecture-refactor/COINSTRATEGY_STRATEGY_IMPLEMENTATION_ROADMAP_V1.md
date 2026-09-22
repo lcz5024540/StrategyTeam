@@ -144,9 +144,9 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 
 | 编号 | 任务 | 验收 |
 |---|---|---|
-| P2-T1 | 实现市场分型快照 | 每轮扫描写入 `BROAD_UP/BROAD_DOWN/MIXED/CHOP/HIGH_VOL_RISK/LOW_VOL_DEAD`。 |
-| P2-T2 | 实现单币多周期因子 | 每个币记录 15m/30m/60m/4h 方向、EMA 斜率、ROC、ATR、ADX。 |
-| P2-T3 | 实现结构因子 | 箱体、swing high/low、Fibonacci 来源、回踩区间、失效价。 |
+| P2-T1 | 实现市场分型快照 | 已完成：每轮扫描写入市场广度和 BTC/ETH 锚点快照。 |
+| P2-T2 | 实现单币多周期因子 | 已完成：每个币在真实开仓判定之后记录 15m/30m/60m/4h/1d 的方向、EMA、ROC、ATR、ADX、Donchian 与数据可用性。 |
+| P2-T3 | 实现结构因子 | 已完成第一刀：组合候选记录箱体、swing high/low、Fibonacci 来源、回踩区间、失效价和目标区。 |
 | P2-T4 | 实现成本因子 | 账户手续费率、点差、深度、预期扣费后收益。 |
 | P2-T5 | 页面展示候选观察 | 能看到候选、分数、gate 拒绝原因。 |
 
@@ -158,6 +158,15 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 每轮 52 个币的候选、因子、gate 均可从 DB 查询。
 页面可查看最近一次扫描和最近 100 个候选。
 ```
+
+### 5.5 实施记录
+
+| 日期 | 范围 | 结果 |
+|---|---|---|
+| 2026-09-22 | P2 证据快照第一刀 | 已补生产库目标区/Fibonacci 扩展字段迁移，消除候选写入的 schema drift。组合候选快照新增精确的此前突破 K、impulse 高低点、0.382/0.618 回踩区间、EMA 收复确认和结构窗口；每个扫描收盘价另写一条市场广度/BTC-ETH 锚点快照。Dashboard API 的候选记录现返回模型、policy、gate、失效价、目标区、R 倍数及关联因子快照。未改变开仓、平仓或仓位 sizing。 |
+| 2026-09-22 | P2 单币多周期因子 | 扫描完成后，对全部白名单币种以受限并发写入独立 `trend-factor-multi-v1` 快照，覆盖 15m/30m/60m/4h/1d；每个周期记录方向、市场分型、分数、EMA、ATR/ATR%、ADX、ROC、成交量比、Donchian 和数据可用性。该步骤在候选 gate 与真实下单之后执行，保证可观测性不影响信号新鲜度；同时把新增 JSON 中的数值改为 JSON number，避免数值被错误序列化为字符串。 |
+
+仍待完成：账户手续费率/盘口深度的结构化成本快照，以及页面中的内部候选证据查看器。
 
 ---
 
@@ -322,4 +331,3 @@ DB 能查到每个模型为什么 PASS / REJECT / OBSERVE。
 3. 下一步在代码里先做无行为变更的退出候选快照和 MFE/MAE/giveback 记录。
 4. 再推进趋势因子快照表和模型候选表，把 52 个币的市场分型、单币因子、模型候选、gate 结果写入 DB。
 5. 页面读取 DB 展示候选、拦截原因和退出候选；观察 24 小时后，再进入 P3 多模型重构。
-

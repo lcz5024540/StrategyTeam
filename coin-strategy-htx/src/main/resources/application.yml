@@ -195,6 +195,10 @@ htx:
     max-entry-signal-chase-rate: ${HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_RATE:0}
     max-entry-signal-age-seconds: ${HTX_TREND_MAX_ENTRY_SIGNAL_AGE_SECONDS:600}
     candidate-scan-concurrency: ${HTX_TREND_CANDIDATE_SCAN_CONCURRENCY:6}
+    factor-snapshot-enabled: ${HTX_TREND_FACTOR_SNAPSHOT_ENABLED:true}
+    factor-snapshot-periods: ${HTX_TREND_FACTOR_SNAPSHOT_PERIODS:15min,30min,60min,4hour,1day}
+    factor-snapshot-kline-size: ${HTX_TREND_FACTOR_SNAPSHOT_KLINE_SIZE:160}
+    factor-snapshot-concurrency: ${HTX_TREND_FACTOR_SNAPSHOT_CONCURRENCY:4}
     adaptive-sizing-enabled: ${HTX_TREND_ADAPTIVE_SIZING_ENABLED:true}
     quality-lookback-trades: ${HTX_TREND_QUALITY_LOOKBACK_TRADES:20}
     quality-lookback-hours: ${HTX_TREND_QUALITY_LOOKBACK_HOURS:24}
