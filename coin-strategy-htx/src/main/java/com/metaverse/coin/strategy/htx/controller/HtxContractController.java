@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.htx.replay.HtxTrendReplayService;
 import com.metaverse.coin.strategy.htx.service.HtxContractLeverageRequest;
 import com.metaverse.coin.strategy.htx.service.HtxContractTradeResult;
 import com.metaverse.coin.strategy.htx.service.HtxContractTradingService;
+import com.metaverse.coin.strategy.htx.service.HtxTrendPaperExecutionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.validation.annotation.Validated;
@@ -29,6 +30,7 @@ public class HtxContractController {
     private final HtxUsdtSwapApiService api;
     private final HtxContractTradingService tradingService;
     private final HtxTrendReplayService trendReplayService;
+    private final HtxTrendPaperExecutionService paperExecutionService;
 
     @GetMapping("/depth")
     public HtxRestResponse<HtxDepth> depth(@RequestParam String contractCode,
@@ -55,5 +57,12 @@ public class HtxContractController {
     @PostMapping("/trend-replay")
     public HtxTrendReplayService.ReplaySummary replayTrend(@Validated @RequestBody HtxTrendReplayRequest request) {
         return trendReplayService.replay(request.getStartAt(), request.getEndAt());
+    }
+
+    /** Paper-only callback. It persists a simulated result and does not invoke any exchange API. */
+    @PostMapping("/trend-paper-executions")
+    public HtxTrendPaperExecutionService.Result reportPaperExecution(
+            @RequestBody HtxTrendPaperExecutionService.Report request) {
+        return paperExecutionService.report(request);
     }
 }
