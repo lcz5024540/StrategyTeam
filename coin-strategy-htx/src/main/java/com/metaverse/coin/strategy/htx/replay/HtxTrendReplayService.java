@@ -208,12 +208,31 @@ public class HtxTrendReplayService {
         for (String period : EXIT_PERIODS) {
             byPeriod.put(period, replayCandleMapper.findByReplayRun(replayRunId, contractCode, period));
         }
+        return computeOppositionByEntryBar(byPeriod, positionSide, entryCandles, EXIT_PERIODS,
+                properties.getMarketAnchorFastEmaPeriod(), properties.getMarketAnchorSlowEmaPeriod());
+    }
+
+    /**
+     * Returns a value only when all required higher periods are complete as of the entry-period candle.
+     * The integer is the count of periods whose confirmed direction opposes the replay position.
+     */
+    static Map<Long, Integer> computeOppositionByEntryBar(
+            Map<String, List<HtxTrendReplayCandleEntity>> candlesByPeriod, String positionSide,
+            List<HtxTrendReplayCandleEntity> entryCandles, List<String> periods, int fastEmaPeriod,
+            int slowEmaPeriod) {
         Map<Long, Integer> result = new LinkedHashMap<>();
+        if (entryCandles == null || periods == null || periods.isEmpty()) {
+            return result;
+        }
         for (HtxTrendReplayCandleEntity entryCandle : entryCandles) {
+            if (entryCandle == null || entryCandle.getBarTime() == null) {
+                continue;
+            }
             int opposite = 0;
             boolean complete = true;
-            for (String period : EXIT_PERIODS) {
-                String side = timeframeSide(byPeriod.get(period), entryCandle.getBarTime(), period);
+            for (String period : periods) {
+                String side = timeframeSide(candlesByPeriod == null ? null : candlesByPeriod.get(period),
+                        entryCandle.getBarTime(), period, fastEmaPeriod, slowEmaPeriod);
                 if ("UNKNOWN".equals(side)) {
                     complete = false;
                     break;
@@ -223,15 +242,15 @@ public class HtxTrendReplayService {
                     opposite++;
                 }
             }
-            // Direction belongs to the replay position, so callers convert this complete marker into an actual count.
             if (complete) {
-                result.put(entryCandle.getBarTime(), 0);
+                result.put(entryCandle.getBarTime(), opposite);
             }
         }
         return result;
     }
 
-    private String timeframeSide(List<HtxTrendReplayCandleEntity> all, long asOfBarTime, String period) {
+    private static String timeframeSide(List<HtxTrendReplayCandleEntity> all, long asOfBarTime, String period,
+                                        int fastEmaPeriod, int slowEmaPeriod) {
         if (all == null) {
             return "UNKNOWN";
         }
@@ -239,13 +258,13 @@ public class HtxTrendReplayService {
                 .filter(candle -> candle.getBarTime() + periodSeconds(period) <= asOfBarTime)
                 .sorted(Comparator.comparing(HtxTrendReplayCandleEntity::getBarTime))
                 .map(HtxTrendReplayCandleEntity::getClosePrice).filter(HtxTrendReplayService::positive).toList();
-        int slow = Math.max(2, properties.getMarketAnchorSlowEmaPeriod());
+        int slow = Math.max(2, slowEmaPeriod);
         if (closes.size() < slow + 2) {
             return "UNKNOWN";
         }
         BigDecimal latest = closes.get(closes.size() - 1);
         BigDecimal previous = closes.get(closes.size() - 2);
-        BigDecimal fast = ema(closes, Math.max(1, properties.getMarketAnchorFastEmaPeriod()));
+        BigDecimal fast = ema(closes, Math.max(1, fastEmaPeriod));
         BigDecimal slowValue = ema(closes, slow);
         if (latest.compareTo(previous) > 0 && fast.compareTo(slowValue) > 0 && latest.compareTo(fast) >= 0) return "LONG";
         if (latest.compareTo(previous) < 0 && fast.compareTo(slowValue) < 0 && latest.compareTo(fast) <= 0) return "SHORT";
