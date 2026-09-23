@@ -2597,20 +2597,8 @@ public class HtxTrendFollowingService {
     }
 
     private BigDecimal rTargetPrice(HtxTrendPositionEntity position, BigDecimal multiple) {
-        if (position == null || !positive(position.getEntryAvgPrice()) || !positive(position.getStopPrice())
-                || multiple == null || multiple.signum() <= 0) {
-            return null;
-        }
-        BigDecimal riskDistance = LONG.equals(position.getSide())
-                ? position.getEntryAvgPrice().subtract(position.getStopPrice())
-                : position.getStopPrice().subtract(position.getEntryAvgPrice());
-        if (!positive(riskDistance)) {
-            return null;
-        }
-        BigDecimal targetDistance = riskDistance.multiply(multiple);
-        return LONG.equals(position.getSide())
-                ? position.getEntryAvgPrice().add(targetDistance)
-                : position.getEntryAvgPrice().subtract(targetDistance);
+        return position == null ? null : HtxTrendExitRules.rTargetPrice(position.getSide(), position.getEntryAvgPrice(),
+                position.getStopPrice(), multiple);
     }
 
     private BigDecimal structuralTargetPrice(HtxTrendPositionEntity position) {
@@ -2632,17 +2620,11 @@ public class HtxTrendFollowingService {
     }
 
     private static boolean crossed(String side, BigDecimal reference, BigDecimal price) {
-        if (!positive(reference) || !positive(price)) {
-            return false;
-        }
-        return LONG.equals(side) ? reference.compareTo(price) <= 0 : reference.compareTo(price) >= 0;
+        return HtxTrendExitRules.crossedStop(side, reference, price);
     }
 
     private static boolean targetReached(String side, BigDecimal reference, BigDecimal target) {
-        if (!positive(reference) || !positive(target)) {
-            return false;
-        }
-        return LONG.equals(side) ? reference.compareTo(target) >= 0 : reference.compareTo(target) <= 0;
+        return HtxTrendExitRules.targetReached(side, reference, target);
     }
 
     private static String triggerState(boolean triggered) {
@@ -2794,14 +2776,13 @@ public class HtxTrendFollowingService {
     }
 
     private boolean trailingExitAllowed(HtxTrendPositionEntity position, BigDecimal reference) {
-        BigDecimal activationTarget = rTargetPrice(position, nonNegative(properties.getTrailingActivationR()));
-        if (!positive(activationTarget) || !targetReached(position.getSide(), reference, activationTarget)) {
+        if (position == null) {
             return false;
         }
-        if (!properties.isRunnerTrailingRequireTimeframeExhaustion()) {
-            return true;
-        }
-        return majorTimeframeOpposition(position) >= Math.max(1, properties.getRunnerTimeframeMajorOppositeCount());
+        return HtxTrendExitRules.trailingExitAllowed(position.getSide(), position.getEntryAvgPrice(),
+                position.getStopPrice(), reference, nonNegative(properties.getTrailingActivationR()),
+                properties.isRunnerTrailingRequireTimeframeExhaustion(), majorTimeframeOpposition(position),
+                properties.getRunnerTimeframeMajorOppositeCount());
     }
 
     private int majorTimeframeOpposition(HtxTrendPositionEntity position) {
@@ -2826,11 +2807,7 @@ public class HtxTrendFollowingService {
     }
 
     private static long partialCloseVolume(long remaining, BigDecimal rate) {
-        if (remaining <= 1L || rate == null || rate.signum() <= 0) {
-            return 0L;
-        }
-        long volume = BigDecimal.valueOf(remaining).multiply(rate).setScale(0, RoundingMode.DOWN).longValue();
-        return Math.max(1L, Math.min(remaining - 1L, volume));
+        return HtxTrendExitRules.partialCloseVolume(remaining, rate);
     }
 
     private static int nextPartialExitStage(HtxTrendPositionEntity position) {

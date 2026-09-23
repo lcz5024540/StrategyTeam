@@ -12,4 +12,9 @@ public interface HtxTrendFactorSnapshotMapper extends BaseMapper<HtxTrendFactorS
     @Select("SELECT id, snapshot_key, contract_code, period, bar_time, market_regime, factors_json, created_at "
             + "FROM htx_trend_factor_snapshot WHERE snapshot_key = #{snapshotKey} LIMIT 1")
     HtxTrendFactorSnapshotEntity findBySnapshotKey(@Param("snapshotKey") String snapshotKey);
+    @Select("SELECT id, snapshot_key, contract_code, period, bar_time, market_regime, factors_json, created_at "
+            + "FROM htx_trend_factor_snapshot WHERE snapshot_key LIKE CONCAT(#{prefix}, '%') "
+            + "ORDER BY id DESC LIMIT 1")
+    HtxTrendFactorSnapshotEntity findLatestBySnapshotPrefix(@Param("prefix") String prefix);
+
 }

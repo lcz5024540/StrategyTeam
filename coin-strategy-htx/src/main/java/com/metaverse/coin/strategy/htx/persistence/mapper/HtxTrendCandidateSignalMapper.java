@@ -7,6 +7,8 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.util.List;
+
 @Mapper
 public interface HtxTrendCandidateSignalMapper extends BaseMapper<HtxTrendCandidateSignalEntity> {
 
@@ -24,6 +26,12 @@ public interface HtxTrendCandidateSignalMapper extends BaseMapper<HtxTrendCandid
     HtxTrendCandidateSignalEntity findLatest(@Param("contractCode") String contractCode,
                                              @Param("period") String period,
                                              @Param("modelVersion") String modelVersion);
+
+    @Select("SELECT " + COLUMNS + " FROM htx_trend_candidate_signal "
+            + "WHERE bar_time >= #{startBarTime} AND bar_time <= #{endBarTime} "
+            + "AND gate_result = 'PASSED' ORDER BY bar_time, id")
+    List<HtxTrendCandidateSignalEntity> findPassedBetween(@Param("startBarTime") long startBarTime,
+                                                           @Param("endBarTime") long endBarTime);
 
     @Update("UPDATE htx_trend_candidate_signal SET execution_gate_result = #{result}, "
             + "execution_gate_reason = #{reason}, execution_evaluated_at = CURRENT_TIMESTAMP(3) "

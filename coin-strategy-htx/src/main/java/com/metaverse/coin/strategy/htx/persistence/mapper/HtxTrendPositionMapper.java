@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @Mapper
 public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntity> {
 
-    String COLUMNS = "id, position_key, contract_code, status, side, contract_size, contract_volume, remaining_contract_volume, partial_exit_stage, partial_close_client_order_id, partial_close_order_id, leverage, "
+    String COLUMNS = "id, position_key, run_id, contract_code, status, side, contract_size, contract_volume, remaining_contract_volume, partial_exit_stage, partial_close_client_order_id, partial_close_order_id, leverage, "
             + "entry_client_order_id, entry_order_id, entry_filled_contracts, entry_avg_price, entry_fee, "
             + "close_client_order_id, close_order_id, close_filled_contracts, close_avg_price, close_fee, "
             + "realized_profit, stop_price, trailing_stop_price, take_profit_price, highest_price, lowest_price, "
@@ -29,6 +29,9 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "AND status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'PARTIAL_CLOSE_SENT', 'CLOSE_SENT', 'UNKNOWN') "
             + "ORDER BY id LIMIT 1")
     HtxTrendPositionEntity findActive(@Param("contractCode") String contractCode);
+
+    @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE run_id = #{runId} ORDER BY id DESC LIMIT 1")
+    HtxTrendPositionEntity findByRunId(@Param("runId") String runId);
 
     @Select("SELECT COUNT(*) FROM htx_trend_position "
             + "WHERE status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'PARTIAL_CLOSE_SENT', 'CLOSE_SENT', 'UNKNOWN')")

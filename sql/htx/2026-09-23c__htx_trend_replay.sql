@@ -1,0 +1,74 @@
+-- HTX trend replay: versioned input manifest, immutable public K-line freeze, and replay outcome ledger.
+-- Additive only. Execute manually before invoking HtxTrendReplayService against production history.
+
+CREATE TABLE IF NOT EXISTS htx_trend_replay_run (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    replay_run_id VARCHAR(96) NOT NULL,
+    engine_version VARCHAR(96) NOT NULL,
+    input_start_at DATETIME(3) NOT NULL,
+    input_end_at DATETIME(3) NOT NULL,
+    periods VARCHAR(256) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    input_integrity VARCHAR(32) NOT NULL,
+    candidate_count BIGINT NOT NULL DEFAULT 0,
+    trade_count BIGINT NOT NULL DEFAULT 0,
+    comparable_trade_count BIGINT NOT NULL DEFAULT 0,
+    net_profit DECIMAL(36,18) NULL,
+    profit_factor DECIMAL(36,18) NULL,
+    message VARCHAR(1024) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    completed_at DATETIME(3) NULL,
+    UNIQUE KEY uk_htx_trend_replay_run_id (replay_run_id),
+    INDEX idx_htx_trend_replay_run_time (created_at)
+);
+
+CREATE TABLE IF NOT EXISTS htx_trend_replay_candle (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    replay_run_id VARCHAR(96) NOT NULL,
+    contract_code VARCHAR(32) NOT NULL,
+    period VARCHAR(16) NOT NULL,
+    bar_time BIGINT NOT NULL,
+    open_price DECIMAL(36,18) NOT NULL,
+    high_price DECIMAL(36,18) NOT NULL,
+    low_price DECIMAL(36,18) NOT NULL,
+    close_price DECIMAL(36,18) NOT NULL,
+    volume DECIMAL(36,18) NULL,
+    turnover DECIMAL(36,18) NULL,
+    trade_count BIGINT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_htx_trend_replay_candle (replay_run_id, contract_code, period, bar_time),
+    INDEX idx_htx_trend_replay_candle_lookup (replay_run_id, contract_code, period, bar_time)
+);
+
+CREATE TABLE IF NOT EXISTS htx_trend_replay_trade (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    replay_run_id VARCHAR(96) NOT NULL,
+    source_candidate_id BIGINT NOT NULL,
+    source_position_id BIGINT NULL,
+    source_run_id VARCHAR(128) NULL,
+    contract_code VARCHAR(32) NOT NULL,
+    period VARCHAR(16) NOT NULL,
+    direction VARCHAR(16) NULL,
+    market_regime VARCHAR(32) NULL,
+    primary_model VARCHAR(64) NULL,
+    entry_bar_time BIGINT NOT NULL,
+    entry_price DECIMAL(36,18) NULL,
+    exit_bar_time BIGINT NULL,
+    exit_price DECIMAL(36,18) NULL,
+    initial_contracts BIGINT NULL,
+    remaining_contracts BIGINT NULL,
+    mfe DECIMAL(36,18) NULL,
+    mae DECIMAL(36,18) NULL,
+    entry_fee DECIMAL(36,18) NULL,
+    close_fee DECIMAL(36,18) NULL,
+    net_profit DECIMAL(36,18) NULL,
+    outcome_state VARCHAR(32) NOT NULL,
+    exit_reason VARCHAR(64) NOT NULL,
+    data_integrity VARCHAR(32) NOT NULL,
+    ambiguity_reason VARCHAR(512) NULL,
+    message VARCHAR(1024) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_htx_trend_replay_trade (replay_run_id, source_candidate_id),
+    INDEX idx_htx_trend_replay_trade_source (source_position_id, source_run_id),
+    INDEX idx_htx_trend_replay_trade_result (replay_run_id, data_integrity, net_profit)
+);
