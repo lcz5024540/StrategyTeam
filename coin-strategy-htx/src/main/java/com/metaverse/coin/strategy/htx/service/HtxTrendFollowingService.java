@@ -2216,7 +2216,8 @@ public class HtxTrendFollowingService {
                 combination.marketRegime(), new HtxTrendCombinationService.PricePlanEvidence(combination.runId(),
                 timeframeProfile(properties.getPeriod()), signal.closePrice(), entryPrice, entryPrice, validUntil,
                 combination.invalidationPrice(), stopPrice, scalePrice(oneR, contract), scalePrice(twoR, contract),
-                structureTarget, plannedRisk, netR));
+                structureTarget, plannedRisk, netR, signal.side().name(), contract.getContractSize(), volume,
+                entryCost.estimatedEntryFee().add(entryCost.estimatedCloseFee()).add(spreadCost)));
     }
 
     private static String timeframeProfile(String period) {

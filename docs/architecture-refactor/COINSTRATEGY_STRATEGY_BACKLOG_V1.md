@@ -54,8 +54,8 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | OBS-03 | 后端完成，退出链路待实现 | **候选、委托、成交与仓位统一关联**：为同一次扫描建立稳定 `run_id`，串联候选、各 Gate、委托、成交和退出。 | 可从任意订单反查开仓假设和所有 Gate；可从任意候选查到最终是否委托。 | P1、TD-046 |
 | SIG-01 | 代码完成，待部署观察 | **TrendState 与模型专属 Alpha 证据**：以方向、分型、趋势强度、结构质量、动量、参与度、衍生品质量、市场一致性、拥挤风险和执行质量描述候选；明确 BOX、Donchian、FIB、动量各自的主要/次要/冲突证据。 | `trend-factor-v3` 快照保留证据组、来源和同源结构关联；FIB 回踩与 BOX/Donchian 确认共享 `BREAKOUT_RETEST:<barTime>`，独立 Alpha 数为 1；本阶段只读，不改变 Gate、仓位或订单。 | 价格执行讨论稿 §1.2 |
 | PLAN-01 | 代码完成，待部署观察 | **统一价格计划**：为通过最终 Gate 的候选生成 `EntryPricePlan` 与 `ExitPricePlan`，替代“直接按 ask/bid 开仓”的模糊传递。 | `trend-price-plan-v1` 按 `run_id` 冻结当前市价执行基线、触发/理想/最差价、失效/初始止损、1R/2R/结构目标、TTL、周期画像、计划风险和扣费后结构目标净 R；最大滑点为 0，明确表示尚未启用限价、重报价或新的 Gate。 | 价格执行讨论稿 §4、§8 |
-| EXT-01 | 待设计 + 待实现 | **外部信号 outbox 与订阅**：将已经冻结价格计划的事件以 `run_id` 对外提供，不直接把 Dashboard 候选当交易信号。 | `ENTRY_READY`、`ENTRY_CANCELLED`、`PLAN_EXPIRED`、`EXIT_REDUCE`、`EXIT_CLOSE` 有版本、幂等、有效期、鉴权和审计；不暴露账户/交易所密钥，不调用 HTX 下单。 | 价格执行讨论稿 §9 |
-| EXT-02 | 待设计 + 待实现 | **外部模拟执行与回传**：以独立模拟执行器验证订单价格、TTL、部分成交与滑点。 | 模拟成交按 `run_id` 回传；策略按实际均价重算风险、1R/2R 和退出计划；回传失败、过期、重复和超价均 fail-closed。 | 价格执行讨论稿 §9 |
+| EXT-01 | 基础代码完成，待部署观察 | **外部信号 outbox 与订阅**：将已经冻结价格计划的事件以 `run_id` 对外提供，不直接把 Dashboard 候选当交易信号。当前仅发布不可变 `signal-outbox-v1:ENTRY_READY`；不暴露账户/交易所密钥，不调用 HTX 下单。 | 后续补齐 `ENTRY_CANCELLED`、`PLAN_EXPIRED`、`EXIT_REDUCE`、`EXIT_CLOSE`、订阅鉴权和审计；不得以 Dashboard 候选替代事件合同。 | 价格执行讨论稿 §9 |
+| EXT-02 | 代码完成，待执行 SQL 与部署观察 | **外部模拟执行与回传**：以独立模拟执行器验证订单价格、TTL、部分成交与滑点。 | `FILLED` / `PARTIALLY_FILLED` 必须在价格计划有效期内，成交价和数量须符合冻结的方向、最差价及计划张数；`REJECTED` / `EXPIRED` 不得携带伪造成交；重复回传 fail-closed。按实际均价产生不可变 `paper-exit-plan-v1`，重算风险、1R/2R、结构目标和按成交量分摊的预计成本。 | 价格执行讨论稿 §9 |
 | BT-01 | 待设计 + 待实现 | **同源历史回测与 walk-forward**：回放生产信号、Gate、仓位和退出代码，不用近似脚本替代。 | 覆盖 2026-09-18、09-19、09-20 和扩展样本；按模型/币种/方向/regime 输出交易数、胜率、净 PnL、PF、平均盈亏比、最大回撤、MFE/MAE、费用和滑点。 | P4、TD-045/047 |
 | BT-02 | 待回测 | **重标定组合模型与方向置信度**：拆分“模型结构过滤”和“市场方向确认”的增益，避免双重 Gate 使强结构候选归零。 | 对历史 Tag、当前组合模型、组合+方向 Gate、分层方向 Gate 做消融对比；以扣费后 PF、回撤、漏单率决定阈值。 | TD-046 |
 | BT-01A | 已执行；历史样本证据不足 | **生产同源回放器**：已在 49 创建回放专用表并运行 2026-09-18 至 09-21 的只读回放。该窗口的候选早于最终 Gate、因子快照与稳定 `run_id` 落库；回放器现会逐笔保留并标记 `INSUFFICIENT_EVIDENCE`，不再静默过滤为零样本。`52838649` 已修正 30m/60m/4h 反向周期数被错误固定为 0 的问题。 | 每次回放有版本化 `replay_run_id`；缺少最终 Gate、仓位、费率、因子快照或高周期 K 线时写 `INSUFFICIENT_EVIDENCE`，不伪造 PnL；可比较样本才汇总净收益、PF、MFE/MAE、费用和滑点。 | BT-01 |
@@ -110,7 +110,7 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 |---|---|---|---|---|
 | P0-A | 候选质量 | `SIG-01` | 已满足，可立即开始。 | 只读快照，不修改 Gate、仓位或订单。 |
 | P0-B | 价格计划 | `PLAN-01` 与嵌入式 `OBS-01/02` | `SIG-01` 验收完成。 | 只读计划，不改 HTX 下单。 |
-| P0-C | 外部模拟执行 | `EXT-01`、`EXT-02` 与嵌入式 `OBS-03` | `PLAN-01` 验收完成。 | 只发布/回传模拟事件，不接真实账户。 |
+| P0-C | 外部模拟执行 | `EXT-01`、`EXT-02` 与嵌入式 `OBS-03` | `PLAN-01` 验收完成。 | 基础代码已完成，待执行纸面账本 SQL、部署和积累样本；只发布/回传模拟事件，不接真实账户。 |
 | P0-D | 回测定标 | `BT-01`、`BT-02`、`BT-02A`、`BT-03` | 累积完整新口径样本。 | 不根据不可比历史窗口改参数。 |
 | P0-E | 真实执行灰度 | `ENTRY-01`、`EXIT-01/02/03` | P0-D 通过，HTX 订单能力实测，单账号批准。 | 小仓、高流动、可关闭；默认不追价。 |
 | P1 | 策略完善 | `ENTRY-02` 至 `ENTRY-05`、`EXIT-04/05`、`LEDGER-*`、`DASH-*` | P0-A 至 P0-C 的事件与账本合同稳定。 | 不与 P0 并行改变核心开仓链路。 |
@@ -128,3 +128,4 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | 2026-09-23 | `BT-01A` 多周期退出计数修复 | 回放器已计算 30m/60m/4h 的反向数但此前错误写为 0；现仅在三周期完整时传入真实数量，缺任一周期继续按证据不足处理。 |
 | 2026-09-23 | 价格计划与外部模拟执行归档 | 将 `TrendState`、模型专属证据、`EntryPricePlan`/`ExitPricePlan`、外部信号 outbox、`PAPER_EXECUTION`、成交回传和执行方式回放统一登记为 `SIG-01`、`PLAN-01`、`EXT-01`、`EXT-02`、`BT-03`；明确先只读与模拟，禁止直接切换真实 HTX 下单。 |
 | 2026-09-23 | `SIG-01` 只读证据落地 | 候选因子快照升级为 `trend-factor-v3` 与 `evidence-v3`，新增 `TrendState`、模型主/确认/冲突证据、同源结构关联和独立 Alpha 数；BOX、Donchian 与 Fibonacci 在同一次突破—回踩中只作为同源确认记录。衍生品、拥挤与执行预检尚无同刻可靠输入时明确写 `NOT_AVAILABLE` 或 `NOT_EVALUATED`。未改变候选排序、最终 Gate、仓位、HTX 下单或生产配置，待部署后积累新样本。 |
+| 2026-09-23 | `EXT-01` / `EXT-02` 纸面执行基础闭环 | `ENTRY_READY` outbox 与 `trend-price-plan-v1` 已按稳定 `run_id` 配对；纸面回传先核验 outbox、价格计划、TTL、方向最差价、计划张数与幂等键，绝不触发 HTX 下单。有效的全成或部分成交以实际均价生成独立 `paper-exit-plan-v1`，重算初始风险、1R、2R、结构目标、按成交量分摊的预计成本与净 R。新增纸面账本建表 SQL，尚未执行生产 SQL、未部署、未改变真实交易。 |

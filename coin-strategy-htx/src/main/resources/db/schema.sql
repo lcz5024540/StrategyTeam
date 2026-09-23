@@ -450,6 +450,21 @@ CREATE TABLE IF NOT EXISTS htx_trend_factor_snapshot (
     INDEX idx_trend_factor_contract_time (contract_code, period, bar_time)
 );
 
+-- Immutable simulated fills. This table is isolated from the real HTX order and position tables.
+CREATE TABLE IF NOT EXISTS htx_trend_paper_execution (
+    id                   BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    execution_key        VARCHAR(160)   NOT NULL,
+    run_id               VARCHAR(128)   NOT NULL,
+    contract_code        VARCHAR(32)    NOT NULL,
+    outcome              VARCHAR(32)    NOT NULL,
+    fill_price           DECIMAL(36,18),
+    filled_contracts     BIGINT,
+    reason               VARCHAR(1024),
+    created_at           DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_htx_trend_paper_execution_key (execution_key),
+    INDEX idx_htx_trend_paper_execution_run (run_id, created_at)
+);
+
 -- Dashboard-managed policy. Only the latest enabled version may promote a combination candidate to live entry.
 CREATE TABLE IF NOT EXISTS htx_trend_strategy_policy (
     id                       BIGINT         PRIMARY KEY AUTO_INCREMENT,

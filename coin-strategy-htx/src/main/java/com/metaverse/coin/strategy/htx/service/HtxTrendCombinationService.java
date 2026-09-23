@@ -13,8 +13,12 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 
 /** Resolves the one highest-ranked DB-authorized combination for a symbol and candle. */
@@ -165,6 +169,38 @@ public class HtxTrendCombinationService {
         }
         return combinationRecorder.findLatestSnapshot(contractCode + ":" + period + ":" + barTime + ":"
                 + policyVersion + ":signal-outbox-v1:ENTRY_READY:" + runId);
+    }
+
+    /** Reads the immutable plan paired with an ENTRY_READY outbox event. */
+    public HtxTrendFactorSnapshotEntity latestPricePlan(String contractCode, String period, Long barTime,
+                                                         String policyVersion, String runId) {
+        if (contractCode == null || period == null || barTime == null || policyVersion == null || runId == null) {
+            return null;
+        }
+        return combinationRecorder.findLatestSnapshot(contractCode + ":" + period + ":" + barTime + ":"
+                + policyVersion + ":price-plan-v1:" + runId);
+    }
+
+    /**
+     * Freezes the exit prices recalculated from a simulated fill. The compact key avoids exceeding the database
+     * key limit while the JSON preserves the full run and execution identifiers for replay.
+     */
+    public Long recordPaperExitPlan(String contractCode, String period, Long barTime, String policyVersion,
+                                    String marketRegime, PaperExitPlanEvidence plan) {
+        if (contractCode == null || contractCode.isBlank() || period == null || period.isBlank() || barTime == null
+                || barTime <= 0L || policyVersion == null || policyVersion.isBlank() || plan == null
+                || plan.runId() == null || plan.runId().isBlank() || plan.executionKey() == null
+                || plan.executionKey().isBlank()) {
+            return null;
+        }
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey("PAPER_EXIT:" + stableKey(plan.runId(), plan.executionKey()));
+        snapshot.setContractCode(contractCode);
+        snapshot.setPeriod(period);
+        snapshot.setBarTime(barTime);
+        snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
+        snapshot.setFactorsJson(paperExitPlanJson(contractCode, period, barTime, policyVersion, plan));
+        return combinationRecorder.recordSnapshot(snapshot);
     }
 
     private void recordExternalSignal(String contractCode, String period, Long barTime, String policyVersion,
@@ -470,23 +506,56 @@ public class HtxTrendCombinationService {
                 + ",\"orderMode\":\"MARKET_BASELINE\",\"entry\":{\"triggerPrice\":"
                 + jsonNumber(plan.triggerPrice()) + ",\"idealPrice\":" + jsonNumber(plan.idealPrice())
                 + ",\"maxAcceptablePrice\":" + jsonNumber(plan.maxAcceptablePrice())
-                + ",\"validUntilEpoch\":" + jsonNumber(plan.validUntilEpoch()) + "}"
+                + ",\"validUntilEpoch\":" + jsonNumber(plan.validUntilEpoch())
+                + ",\"side\":" + jsonText(plan.side())
+                + ",\"contractSize\":" + jsonNumber(plan.contractSize())
+                + ",\"plannedContracts\":" + plan.plannedContracts() + "}"
                 + ",\"exit\":{\"invalidationPrice\":" + jsonNumber(plan.invalidationPrice())
                 + ",\"initialStopPrice\":" + jsonNumber(plan.initialStopPrice())
                 + ",\"target1RPrice\":" + jsonNumber(plan.target1RPrice())
                 + ",\"target2RPrice\":" + jsonNumber(plan.target2RPrice())
                 + ",\"structureTargetPrice\":" + jsonNumber(plan.structureTargetPrice()) + "}"
                 + ",\"risk\":{\"maxSlippageBps\":0,\"plannedRiskUsdt\":" + jsonNumber(plan.plannedRiskUsdt())
-                + ",\"netRAtStructureTarget\":" + jsonNumber(plan.netRAtStructureTarget()) + "}"
+                + ",\"netRAtStructureTarget\":" + jsonNumber(plan.netRAtStructureTarget())
+                + ",\"estimatedRoundTripCostUsdt\":" + jsonNumber(plan.estimatedRoundTripCostUsdt()) + "}"
                 + ",\"status\":\"FINAL_GATE_PASSED\",\"note\":\"read-only baseline; does not alter live order mode\"}";
     }
 
     private static String externalSignalJson(String contractCode, PricePlanEvidence plan) {
         return "{\"schema\":\"trend-external-signal-v1\",\"eventType\":\"ENTRY_READY\",\"mode\":\"SIGNAL_ONLY\","
                 + "\"runId\":" + jsonText(plan.runId()) + ",\"contractCode\":" + jsonText(contractCode)
-                + ",\"timeframeProfile\":" + jsonText(plan.timeframeProfile()) + ",\"validUntilEpoch\":"
+                + ",\"side\":" + jsonText(plan.side()) + ",\"timeframeProfile\":" + jsonText(plan.timeframeProfile()) + ",\"validUntilEpoch\":"
                 + jsonNumber(plan.validUntilEpoch()) + ",\"pricePlanRef\":" + jsonText("trend-price-plan-v1")
                 + ",\"executionBoundary\":\"NO_EXCHANGE_ORDER\"}";
+    }
+
+    private static String paperExitPlanJson(String contractCode, String period, Long barTime, String policyVersion,
+                                            PaperExitPlanEvidence plan) {
+        return "{\"schema\":\"paper-exit-plan-v1\",\"source\":{\"runId\":"
+                + jsonText(plan.runId()) + ",\"executionKey\":" + jsonText(plan.executionKey())
+                + ",\"contractCode\":" + jsonText(contractCode) + ",\"period\":" + jsonText(period)
+                + ",\"barTime\":" + jsonNumber(barTime) + ",\"policyVersion\":" + jsonText(policyVersion)
+                + ",\"pricePlanRef\":\"trend-price-plan-v1\"},\"entry\":{\"side\":"
+                + jsonText(plan.side()) + ",\"fillPrice\":" + jsonNumber(plan.fillPrice())
+                + ",\"filledContracts\":" + plan.filledContracts() + ",\"contractSize\":"
+                + jsonNumber(plan.contractSize()) + "},\"exit\":{\"invalidationPrice\":"
+                + jsonNumber(plan.invalidationPrice()) + ",\"initialStopPrice\":" + jsonNumber(plan.initialStopPrice())
+                + ",\"target1RPrice\":" + jsonNumber(plan.target1RPrice()) + ",\"target2RPrice\":"
+                + jsonNumber(plan.target2RPrice()) + ",\"structureTargetPrice\":"
+                + jsonNumber(plan.structureTargetPrice()) + "},\"risk\":{\"distance\":"
+                + jsonNumber(plan.riskDistance()) + ",\"plannedRiskUsdt\":" + jsonNumber(plan.plannedRiskUsdt())
+                + ",\"structureGrossPnlUsdt\":" + jsonNumber(plan.structureGrossPnlUsdt())
+                + ",\"estimatedRoundTripCostUsdt\":" + jsonNumber(plan.estimatedRoundTripCostUsdt())
+                + ",\"netRAtStructureTarget\":" + jsonNumber(plan.netRAtStructureTarget()) + "}}";
+    }
+
+    private static String stableKey(String runId, String executionKey) {
+        try {
+            byte[] input = (runId + "\u0000" + executionKey).getBytes(StandardCharsets.UTF_8);
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     private static String jsonNumber(Number value) {
@@ -592,6 +661,25 @@ public class HtxTrendCombinationService {
                                     BigDecimal idealPrice, BigDecimal maxAcceptablePrice, Long validUntilEpoch,
                                     BigDecimal invalidationPrice, BigDecimal initialStopPrice, BigDecimal target1RPrice,
                                     BigDecimal target2RPrice, BigDecimal structureTargetPrice,
-                                    BigDecimal plannedRiskUsdt, BigDecimal netRAtStructureTarget) {
+                                    BigDecimal plannedRiskUsdt, BigDecimal netRAtStructureTarget, String side,
+                                    BigDecimal contractSize, long plannedContracts, BigDecimal estimatedRoundTripCostUsdt) {
+        /** Compatibility constructor for plans recorded before simulated execution dimensions were introduced. */
+        public PricePlanEvidence(String runId, String timeframeProfile, BigDecimal triggerPrice,
+                                 BigDecimal idealPrice, BigDecimal maxAcceptablePrice, Long validUntilEpoch,
+                                 BigDecimal invalidationPrice, BigDecimal initialStopPrice, BigDecimal target1RPrice,
+                                 BigDecimal target2RPrice, BigDecimal structureTargetPrice,
+                                 BigDecimal plannedRiskUsdt, BigDecimal netRAtStructureTarget) {
+            this(runId, timeframeProfile, triggerPrice, idealPrice, maxAcceptablePrice, validUntilEpoch,
+                    invalidationPrice, initialStopPrice, target1RPrice, target2RPrice, structureTargetPrice,
+                    plannedRiskUsdt, netRAtStructureTarget, null, null, 0L, null);
+        }
+    }
+
+    public record PaperExitPlanEvidence(String runId, String executionKey, String side, BigDecimal fillPrice,
+                                        long filledContracts, BigDecimal contractSize, BigDecimal invalidationPrice,
+                                        BigDecimal initialStopPrice, BigDecimal target1RPrice, BigDecimal target2RPrice,
+                                        BigDecimal structureTargetPrice, BigDecimal riskDistance,
+                                        BigDecimal plannedRiskUsdt, BigDecimal structureGrossPnlUsdt,
+                                        BigDecimal estimatedRoundTripCostUsdt, BigDecimal netRAtStructureTarget) {
     }
 }

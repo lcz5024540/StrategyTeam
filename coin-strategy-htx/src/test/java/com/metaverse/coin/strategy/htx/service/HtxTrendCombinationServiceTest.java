@@ -178,7 +178,8 @@ class HtxTrendCombinationServiceTest {
                 new HtxTrendCombinationService.PricePlanEvidence("run-1", "INTRADAY_15M",
                         new BigDecimal("100"), new BigDecimal("101"), new BigDecimal("101"), 1_790_070_345L,
                         new BigDecimal("98"), new BigDecimal("98"), new BigDecimal("104"), new BigDecimal("107"),
-                        new BigDecimal("108"), new BigDecimal("3"), new BigDecimal("1.8")));
+                        new BigDecimal("108"), new BigDecimal("3"), new BigDecimal("1.8"), "LONG",
+                        new BigDecimal("0.1"), 3L, new BigDecimal("0.24")));
 
         ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
         verify(combinationRecorder, times(2)).recordSnapshot(snapshot.capture());
@@ -188,8 +189,12 @@ class HtxTrendCombinationServiceTest {
         assertEquals("INTRADAY_15M", json.getString("timeframeProfile"));
         assertEquals(new BigDecimal("101"), json.getJSONObject("entry").getBigDecimal("maxAcceptablePrice"));
         assertEquals(new BigDecimal("107"), json.getJSONObject("exit").getBigDecimal("target2RPrice"));
+        assertEquals("LONG", json.getJSONObject("entry").getString("side"));
+        assertEquals(3L, json.getJSONObject("entry").getLongValue("plannedContracts"));
+        assertEquals(new BigDecimal("0.24"), json.getJSONObject("risk").getBigDecimal("estimatedRoundTripCostUsdt"));
         assertEquals(0, json.getJSONObject("risk").getIntValue("maxSlippageBps"));
         assertEquals("ENTRY_READY", event.getString("eventType"));
+        assertEquals("LONG", event.getString("side"));
         assertEquals("NO_EXCHANGE_ORDER", event.getString("executionBoundary"));
     }
 
