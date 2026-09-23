@@ -6,14 +6,18 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -49,6 +53,26 @@ class HtxTrendRecorderTest {
 
         verify(signalMapper).insert(signal);
         verify(signalMapper, never()).updateSignalSnapshotById(88L, signal);
+    }
+
+    @Test
+    void directionalPerformanceUsesExactBucketAndKeepsFeeAdjustedStats() {
+        HtxTrendPositionMapper positionMapper = mock(HtxTrendPositionMapper.class);
+        HtxTrendPerformanceStats stats = HtxTrendPerformanceStats.empty();
+        stats.setClosedCount(3L);
+        stats.setNetProfit(new BigDecimal("-0.42"));
+        when(positionMapper.trendPerformanceForBucket(any(LocalDateTime.class), eq(20), eq("LONG"),
+                eq("FIB_PULLBACK_CONTINUATION"), eq("BROAD_UP"), eq("primary"))).thenReturn(stats);
+        HtxTrendRecorder recorder = new HtxTrendRecorder(positionMapper, mock(HtxTrendOrderMapper.class),
+                mock(HtxTrendSignalMapper.class));
+
+        HtxTrendPerformanceStats result = recorder.trendPerformanceForBucket(LocalDateTime.now().minusHours(24), 20,
+                "LONG", "FIB_PULLBACK_CONTINUATION", "BROAD_UP", "primary");
+
+        assertEquals(3L, result.getClosedCount());
+        assertEquals(new BigDecimal("-0.42"), result.getNetProfit());
+        verify(positionMapper).trendPerformanceForBucket(any(LocalDateTime.class), eq(20), eq("LONG"),
+                eq("FIB_PULLBACK_CONTINUATION"), eq("BROAD_UP"), eq("primary"));
     }
 
     @Test

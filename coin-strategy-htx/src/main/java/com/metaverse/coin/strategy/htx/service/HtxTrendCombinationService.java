@@ -142,6 +142,29 @@ public class HtxTrendCombinationService {
         candidateRecorder.markExecutionGate(runId, contractCode, result, reason);
     }
 
+    /**
+     * Persists quality evidence for exactly the candidate bucket being evaluated. This observation is intentionally
+     * separate from the mutable execution gate: a weak or sparse bucket is evidence for later review, not a new
+     * reason to block a live order in this release.
+     */
+    public void recordDirectionalQualityEvidence(String contractCode, String period, Long barTime, String policyVersion,
+                                                 String marketRegime, DirectionalQualityEvidence evidence) {
+        if (contractCode == null || contractCode.isBlank() || period == null || period.isBlank()
+                || barTime == null || barTime <= 0L || policyVersion == null || policyVersion.isBlank()
+                || evidence == null || evidence.runId() == null || evidence.runId().isBlank()) {
+            return;
+        }
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + barTime + ":" + policyVersion
+                + ":trend-directional-quality-v1:" + evidence.runId());
+        snapshot.setContractCode(contractCode);
+        snapshot.setPeriod(period);
+        snapshot.setBarTime(barTime);
+        snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
+        snapshot.setFactorsJson(directionalQualityEvidenceJson(evidence));
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
     /** Persists an execution-neutral price contract after all current live preflight gates have passed. */
     public void recordPricePlan(String contractCode, String period, Long barTime, String policyVersion,
                                 String marketRegime, PricePlanEvidence plan) {
@@ -500,6 +523,25 @@ public class HtxTrendCombinationService {
                 + ",\"gateReason\":" + jsonText(evidence.gateReason()) + "}}";
     }
 
+    private static String directionalQualityEvidenceJson(DirectionalQualityEvidence evidence) {
+        return "{\"schema\":\"trend-directional-quality-v1\",\"runId\":" + jsonText(evidence.runId())
+                + ",\"scope\":{\"accountLabel\":" + jsonText(evidence.accountLabel())
+                + ",\"side\":" + jsonText(evidence.side())
+                + ",\"primaryModel\":" + jsonText(evidence.primaryModel())
+                + ",\"marketRegime\":" + jsonText(evidence.marketRegime()) + "}"
+                + ",\"quality\":{\"regime\":" + jsonText(evidence.qualityRegime())
+                + ",\"reason\":" + jsonText(evidence.reason())
+                + ",\"closedCount\":" + evidence.closedCount()
+                + ",\"winCount\":" + evidence.winCount()
+                + ",\"lossCount\":" + evidence.lossCount()
+                + ",\"profitFactor\":" + jsonNumber(evidence.profitFactor())
+                + ",\"payoffRatio\":" + jsonNumber(evidence.payoffRatio())
+                + ",\"averageWin\":" + jsonNumber(evidence.averageWin())
+                + ",\"averageLoss\":" + jsonNumber(evidence.averageLoss())
+                + ",\"expectancy\":" + jsonNumber(evidence.expectancy())
+                + ",\"netProfit\":" + jsonNumber(evidence.netProfit()) + "}}";
+    }
+
     private static String pricePlanJson(PricePlanEvidence plan) {
         return "{\"schema\":\"trend-price-plan-v1\",\"runId\":" + jsonText(plan.runId())
                 + ",\"timeframeProfile\":" + jsonText(plan.timeframeProfile())
@@ -655,6 +697,14 @@ public class HtxTrendCombinationService {
                     estimatedEntryFee, estimatedCloseFee, estimatedSpreadCost, expectedNetAfterCosts,
                     requiredMove, gateResult, gateReason);
         }
+    }
+
+    public record DirectionalQualityEvidence(String runId, String accountLabel, String side, String primaryModel,
+                                             String marketRegime, String qualityRegime, String reason,
+                                             long closedCount, long winCount, long lossCount,
+                                             BigDecimal profitFactor, BigDecimal payoffRatio,
+                                             BigDecimal averageWin, BigDecimal averageLoss,
+                                             BigDecimal expectancy, BigDecimal netProfit) {
     }
 
     public record PricePlanEvidence(String runId, String timeframeProfile, BigDecimal triggerPrice,

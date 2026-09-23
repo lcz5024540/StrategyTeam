@@ -842,7 +842,7 @@ class HtxTrendFollowingServiceTest {
                         new BigDecimal("4400"), new BigDecimal("2.0"), new BigDecimal("70"),
                         "test combination", HtxTrendCombinationCalculator.FibonacciEvidence.notApplicable(32, 8));
         HtxTrendCombinationService.Selection selection = new HtxTrendCombinationService.Selection(candidate, policy,
-                1L, BigDecimal.ONE, new BigDecimal("190"), null);
+                1L, BigDecimal.ONE, new BigDecimal("190"), "run-quality-observation", null);
         when(combinationService.select(eq("XAUT-USDT"), eq(properties.getPeriod()), anyList(), any()))
                 .thenReturn(selection);
         service.setCombinationService(combinationService);
@@ -862,6 +862,10 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code(), result.message());
+        verify(recorder).trendPerformanceForBucket(any(LocalDateTime.class), eq(properties.getQualityLookbackTrades()),
+                eq("LONG"), eq("FIB_PULLBACK_CONTINUATION"), eq("BROAD_UP"), eq("primary"));
+        verify(combinationService).recordDirectionalQualityEvidence(eq("XAUT-USDT"), eq(properties.getPeriod()),
+                anyLong(), eq("combo-v2"), eq("BROAD_UP"), any());
         verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
     }
 

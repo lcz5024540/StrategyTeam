@@ -181,4 +181,35 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + ") recent")
     HtxTrendPerformanceStats trendPerformanceSince(@Param("since") LocalDateTime since,
                                                    @Param("limit") int limit);
+
+    /**
+     * Returns closed-position performance for one direction/model/regime bucket.
+     * Fees are deducted before classifying wins and losses, so this query never treats fee-only gains as profit.
+     * An absent account label intentionally means all recorded accounts; callers must choose that scope explicitly.
+     */
+    @Select("SELECT COUNT(*) AS closedCount, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit > 0 THEN 1 ELSE 0 END), 0) AS winCount, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit < 0 THEN 1 ELSE 0 END), 0) AS lossCount, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit > 0 THEN recent.net_profit ELSE 0 END), 0) AS grossProfit, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit < 0 THEN -recent.net_profit ELSE 0 END), 0) AS grossLoss, "
+            + "COALESCE(SUM(recent.net_profit), 0) AS netProfit, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit > 0 THEN recent.net_profit ELSE 0 END) "
+            + "/ NULLIF(SUM(CASE WHEN recent.net_profit > 0 THEN 1 ELSE 0 END), 0), 0) AS averageWin, "
+            + "COALESCE(SUM(CASE WHEN recent.net_profit < 0 THEN -recent.net_profit ELSE 0 END) "
+            + "/ NULLIF(SUM(CASE WHEN recent.net_profit < 0 THEN 1 ELSE 0 END), 0) AS averageLoss, "
+            + "COALESCE(SUM(recent.net_profit) / NULLIF(COUNT(*), 0), 0) AS expectancy "
+            + "FROM ("
+            + "SELECT COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0) AS net_profit "
+            + "FROM htx_trend_position "
+            + "WHERE status = 'DONE' AND updated_at >= #{since} "
+            + "AND side = #{side} AND primary_model = #{primaryModel} AND market_regime = #{marketRegime} "
+            + "AND (#{accountLabel} IS NULL OR account_label = #{accountLabel}) "
+            + "ORDER BY updated_at DESC LIMIT #{limit}"
+            + ") recent")
+    HtxTrendPerformanceStats trendPerformanceForBucket(@Param("since") LocalDateTime since,
+                                                        @Param("limit") int limit,
+                                                        @Param("side") String side,
+                                                        @Param("primaryModel") String primaryModel,
+                                                        @Param("marketRegime") String marketRegime,
+                                                        @Param("accountLabel") String accountLabel);
 }

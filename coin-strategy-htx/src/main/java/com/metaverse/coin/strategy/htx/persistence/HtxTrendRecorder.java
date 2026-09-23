@@ -107,6 +107,21 @@ public class HtxTrendRecorder {
         }
     }
 
+    /** Read-only quality slice for a prospective entry; it never feeds the current live gate or sizing path. */
+    public HtxTrendPerformanceStats trendPerformanceForBucket(LocalDateTime since, int limit, String side,
+                                                               String primaryModel, String marketRegime,
+                                                               String accountLabel) {
+        try {
+            HtxTrendPerformanceStats stats = positionMapper.trendPerformanceForBucket(since, limit, side,
+                    primaryModel, marketRegime, accountLabel);
+            return stats == null ? HtxTrendPerformanceStats.empty() : stats;
+        } catch (RuntimeException ex) {
+            log.warn("trend bucket performance query failed since={} limit={} side={} model={} regime={} account={}",
+                    since, limit, side, primaryModel, marketRegime, accountLabel, ex);
+            return HtxTrendPerformanceStats.empty();
+        }
+    }
+
     public void recordSignal(HtxTrendSignalEntity signal) {
         if (signal == null) {
             return;

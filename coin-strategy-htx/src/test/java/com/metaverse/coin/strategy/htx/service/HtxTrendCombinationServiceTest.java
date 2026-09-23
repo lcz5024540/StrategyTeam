@@ -124,6 +124,32 @@ class HtxTrendCombinationServiceTest {
     }
 
     @Test
+    void directionalQualityEvidenceKeepsBucketDimensionsAndDoesNotClaimSparseDataIsWeak() {
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(mock(HtxTrendStrategyPolicyService.class),
+                combinationRecorder, mock(HtxTrendCandidateSignalRecorder.class));
+
+        service.recordDirectionalQualityEvidence("BTC-USDT", "15min", 1_790_069_400L, "combo-v2", "BROAD_UP",
+                new HtxTrendCombinationService.DirectionalQualityEvidence("run-1", "primary", "LONG",
+                        "FIB_PULLBACK_CONTINUATION", "BROAD_UP", "INSUFFICIENT_SAMPLE",
+                        "insufficient closed trades=2", 2L, 1L, 1L, new BigDecimal("0.80"),
+                        new BigDecimal("0.90"), new BigDecimal("0.12"), new BigDecimal("0.13"),
+                        new BigDecimal("-0.01"), new BigDecimal("-0.02")));
+
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder).recordSnapshot(snapshot.capture());
+        JSONObject json = JSON.parseObject(snapshot.getValue().getFactorsJson());
+        assertEquals("BTC-USDT:15min:1790069400:combo-v2:trend-directional-quality-v1:run-1",
+                snapshot.getValue().getSnapshotKey());
+        assertEquals("trend-directional-quality-v1", json.getString("schema"));
+        assertEquals("LONG", json.getJSONObject("scope").getString("side"));
+        assertEquals("FIB_PULLBACK_CONTINUATION", json.getJSONObject("scope").getString("primaryModel"));
+        assertEquals("INSUFFICIENT_SAMPLE", json.getJSONObject("quality").getString("regime"));
+        assertEquals(new BigDecimal("-0.02"), json.getJSONObject("quality").getBigDecimal("netProfit"));
+    }
+
+    @Test
     void factorSnapshotSeparatesSameStructureConfirmationsFromIndependentAlpha() {
         HtxTrendCombinationCalculator calculator = new HtxTrendCombinationCalculator();
         List<HtxSwapKline> candles = risingRange(32);

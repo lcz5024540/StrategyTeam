@@ -961,6 +961,8 @@ public class HtxTrendFollowingService {
                                      HtxSwapContractInfo contract, MarketBreadthContext marketBreadth,
                                      MarketAnchorContext marketAnchor, PerformanceContext performance,
                                      CombinationContext combination) {
+        DirectionalQualityContext directionalQuality = directionalQualityContext(signal, combination);
+        recordCombinationDirectionalQualityEvidence(contractCode, signal, combination, directionalQuality);
         recordCombinationCostNotEvaluated(contractCode, signal, combination);
         if (signal.side() == TrendSide.FLAT) {
             return executionResult(contractCode, combination, RunResult.of(RunCode.NO_SIGNAL, null, signal.reason()));
@@ -1132,6 +1134,73 @@ public class HtxTrendFollowingService {
         };
         combinationService.recordExecutionGate(combination.runId(), contractCode, state, result.message());
         return result;
+    }
+
+    /**
+     * Computes a read-only, post-fee outcome slice for the exact side/model/regime of the candidate.
+     * It deliberately does not participate in the current execution gate, direction confidence, or sizing path.
+     */
+    private DirectionalQualityContext directionalQualityContext(TrendSignal signal, CombinationContext combination) {
+        if (signal == null || combination == null || signal.side() == TrendSide.FLAT) {
+            return DirectionalQualityContext.unavailable("candidate has no directional combination model");
+        }
+        int lookbackHours = Math.max(1, properties.getQualityLookbackHours());
+        int lookbackTrades = Math.max(1, properties.getQualityLookbackTrades());
+        HtxTrendPerformanceStats stats = recorder.trendPerformanceForBucket(
+                LocalDateTime.now().minusHours(lookbackHours), lookbackTrades, signal.side().name(),
+                combination.primaryModel(), combination.marketRegime(), "primary");
+        if (stats == null) {
+            return DirectionalQualityContext.unavailable("performance unavailable");
+        }
+        long closed = nonNegativeLong(stats.getClosedCount());
+        long wins = nonNegativeLong(stats.getWinCount());
+        long losses = nonNegativeLong(stats.getLossCount());
+        BigDecimal grossProfit = nonNegative(stats.getGrossProfit());
+        BigDecimal grossLoss = nonNegative(stats.getGrossLoss());
+        BigDecimal netProfit = nz(stats.getNetProfit());
+        BigDecimal averageWin = average(grossProfit, wins);
+        BigDecimal averageLoss = average(grossLoss, losses);
+        BigDecimal payoffRatio = payoffRatio(averageWin, averageLoss);
+        BigDecimal expectancy = closed > 0L ? netProfit.divide(BigDecimal.valueOf(closed), 18, RoundingMode.HALF_UP)
+                : nz(stats.getExpectancy());
+        BigDecimal profitFactor = profitFactor(grossProfit, grossLoss);
+        if (closed < Math.max(1, properties.getQualityMinClosedTrades())) {
+            return new DirectionalQualityContext(DirectionalQualityRegime.INSUFFICIENT_SAMPLE, closed, wins, losses,
+                    profitFactor, payoffRatio, averageWin, averageLoss, expectancy, netProfit,
+                    "insufficient closed trades=" + closed);
+        }
+        BigDecimal minPayoff = nonNegative(properties.getQualityMinPayoffRatio());
+        boolean payoffTooSmall = losses > 0L && wins > 0L && payoffRatio.compareTo(minPayoff) < 0;
+        if (wins <= losses || profitFactor.compareTo(nonNegative(properties.getQualityMinProfitFactor())) < 0
+                || payoffTooSmall || expectancy.compareTo(nz(properties.getQualityMinExpectancyUsdt())) < 0) {
+            return new DirectionalQualityContext(DirectionalQualityRegime.WEAK, closed, wins, losses, profitFactor,
+                    payoffRatio, averageWin, averageLoss, expectancy, netProfit, "weak quality");
+        }
+        if (wins > losses && profitFactor.compareTo(nonNegative(properties.getQualityStrongProfitFactor())) >= 0
+                && (losses == 0L || payoffRatio.compareTo(nonNegative(properties.getQualityStrongPayoffRatio())) >= 0)
+                && expectancy.signum() > 0) {
+            return new DirectionalQualityContext(DirectionalQualityRegime.STRONG, closed, wins, losses, profitFactor,
+                    payoffRatio, averageWin, averageLoss, expectancy, netProfit, "strong quality");
+        }
+        return new DirectionalQualityContext(DirectionalQualityRegime.NEUTRAL, closed, wins, losses, profitFactor,
+                payoffRatio, averageWin, averageLoss, expectancy, netProfit, "normal quality");
+    }
+
+    /** Writes immutable candidate evidence only; callers must not use it as an entry rejection or sizing signal. */
+    private void recordCombinationDirectionalQualityEvidence(String contractCode, TrendSignal signal,
+                                                             CombinationContext combination,
+                                                             DirectionalQualityContext quality) {
+        if (combinationService == null || combination == null || signal == null || signal.barTime() == null
+                || quality == null) {
+            return;
+        }
+        combinationService.recordDirectionalQualityEvidence(contractCode, properties.getPeriod(), signal.barTime(),
+                combination.policyVersion(), combination.marketRegime(),
+                new HtxTrendCombinationService.DirectionalQualityEvidence(combination.runId(), "primary",
+                        signal.side().name(), combination.primaryModel(), combination.marketRegime(),
+                        quality.regime().name(), quality.reason(), quality.closedCount(), quality.winCount(),
+                        quality.lossCount(), quality.profitFactor(), quality.payoffRatio(), quality.averageWin(),
+                        quality.averageLoss(), quality.expectancy(), quality.netProfit()));
     }
 
     /** Every model-passed combination receives a cost-evidence row, even if an earlier gate prevents market-data preflight. */
@@ -3237,6 +3306,11 @@ public class HtxTrendFollowingService {
         WEAK, NEUTRAL, STRONG
     }
 
+    /** Separate from QualityRegime so sparse buckets are never mislabeled as weak strategy evidence. */
+    private enum DirectionalQualityRegime {
+        INSUFFICIENT_SAMPLE, WEAK, NEUTRAL, STRONG, UNAVAILABLE
+    }
+
 
     private record CooldownContext(CooldownType type, long durationMs, BigDecimal netProfit) {
     }
@@ -3265,6 +3339,17 @@ public class HtxTrendFollowingService {
             return regime + "(longSignals=" + longSignals + ",shortSignals=" + shortSignals
                     + ",validSignals=" + validSignals + ",longSymbols=" + longSymbols
                     + ",shortSymbols=" + shortSymbols + ",reason=" + reason + ")";
+        }
+    }
+
+    private record DirectionalQualityContext(DirectionalQualityRegime regime, long closedCount, long winCount,
+                                             long lossCount, BigDecimal profitFactor, BigDecimal payoffRatio,
+                                             BigDecimal averageWin, BigDecimal averageLoss, BigDecimal expectancy,
+                                             BigDecimal netProfit, String reason) {
+        static DirectionalQualityContext unavailable(String reason) {
+            return new DirectionalQualityContext(DirectionalQualityRegime.UNAVAILABLE, 0L, 0L, 0L,
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                    BigDecimal.ZERO, reason);
         }
     }
 
