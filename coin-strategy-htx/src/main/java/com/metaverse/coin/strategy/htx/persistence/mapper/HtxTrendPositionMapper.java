@@ -196,7 +196,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "COALESCE(SUM(CASE WHEN recent.net_profit > 0 THEN recent.net_profit ELSE 0 END) "
             + "/ NULLIF(SUM(CASE WHEN recent.net_profit > 0 THEN 1 ELSE 0 END), 0), 0) AS averageWin, "
             + "COALESCE(SUM(CASE WHEN recent.net_profit < 0 THEN -recent.net_profit ELSE 0 END) "
-            + "/ NULLIF(SUM(CASE WHEN recent.net_profit < 0 THEN 1 ELSE 0 END), 0) AS averageLoss, "
+            + "/ NULLIF(SUM(CASE WHEN recent.net_profit < 0 THEN 1 ELSE 0 END), 0), 0) AS averageLoss, "
             + "COALESCE(SUM(recent.net_profit) / NULLIF(COUNT(*), 0), 0) AS expectancy "
             + "FROM ("
             + "SELECT COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0) AS net_profit "

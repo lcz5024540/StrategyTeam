@@ -9,6 +9,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryLotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryRecycleSagaEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxSpotFillLedgerEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.CoinStrategyLedgerEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
@@ -18,11 +19,14 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxInventoryRecycleSag
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxLockedPairMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxSpotFillLedgerMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -36,6 +40,7 @@ class HtxMapperIntegrationTest {
     @Autowired HtxDeltaHedgeLedgerMapper deltaHedgeLedgerMapper;
     @Autowired HtxInventoryRecycleSagaMapper inventoryRecycleSagaMapper;
     @Autowired HtxTrendSignalMapper trendSignalMapper;
+    @Autowired HtxTrendPositionMapper trendPositionMapper;
     @Autowired CoinStrategyLedgerEventMapper ledgerEventMapper;
 
 
@@ -95,6 +100,33 @@ class HtxMapperIntegrationTest {
         assertEquals("LONG", stored.getSignal());
         assertEquals("Fibonacci pullback continuation", stored.getReason());
         assertEquals(0, new BigDecimal("0.0005").compareTo(stored.getSpreadRate()));
+    }
+
+    @Test void trend_performance_bucket_executes_and_deducts_fees_before_loss_average() {
+        long nonce = System.nanoTime();
+        HtxTrendPositionEntity position = new HtxTrendPositionEntity();
+        position.setPositionKey("it-trend-quality-" + nonce);
+        position.setContractCode("BTC-USDT");
+        position.setStatus(HtxTrendRecorder.DONE);
+        position.setSide("LONG");
+        position.setContractSize(new BigDecimal("0.001"));
+        position.setContractVolume(1L);
+        position.setLeverage(3);
+        position.setEntryFee(new BigDecimal("0.10"));
+        position.setCloseFee(new BigDecimal("0.10"));
+        position.setRealizedProfit(new BigDecimal("-0.80"));
+        position.setPrimaryModel("FIB_PULLBACK_CONTINUATION");
+        position.setMarketRegime("BROAD_UP");
+        position.setAccountLabel("primary");
+        assertEquals(1, trendPositionMapper.insert(position));
+
+        HtxTrendPerformanceStats stats = trendPositionMapper.trendPerformanceForBucket(
+                LocalDateTime.now().minusMinutes(1), 20, "LONG", "FIB_PULLBACK_CONTINUATION", "BROAD_UP", "primary");
+
+        assertEquals(1L, stats.getClosedCount());
+        assertEquals(1L, stats.getLossCount());
+        assertEquals(0, new BigDecimal("-1.00").compareTo(stats.getNetProfit()));
+        assertEquals(0, new BigDecimal("1.00").compareTo(stats.getAverageLoss()));
     }
 
     @Test void insert_and_read_pair() {
