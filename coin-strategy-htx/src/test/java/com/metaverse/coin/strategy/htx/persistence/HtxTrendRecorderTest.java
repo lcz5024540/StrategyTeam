@@ -7,9 +7,13 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -111,6 +115,22 @@ class HtxTrendRecorderTest {
         verify(positionMapper).markCloseFilled(42L, new BigDecimal("2"), new BigDecimal("110"),
                 new BigDecimal("0.02"), new BigDecimal("0.50"), "closed");
         verify(ledgerRecorder).recordTrendCloseFill(position);
+    }
+
+    @Test
+    void closeAcknowledgementFitsPositionColumnWhenExitEvidenceIsLong() {
+        HtxTrendPositionMapper positionMapper = mock(HtxTrendPositionMapper.class);
+        HtxTrendRecorder recorder = new HtxTrendRecorder(positionMapper, mock(HtxTrendOrderMapper.class),
+                mock(HtxTrendSignalMapper.class));
+        String longEvidence = "x".repeat(600);
+
+        recorder.markCloseAccepted(7L, longEvidence, "client-7", 8L, "close sent reason=" + longEvidence);
+
+        ArgumentCaptor<String> exitReason = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> message = ArgumentCaptor.forClass(String.class);
+        verify(positionMapper).markCloseAccepted(anyLong(), exitReason.capture(), anyString(), anyLong(), message.capture());
+        assertEquals(512, exitReason.getValue().length());
+        assertEquals(512, message.getValue().length());
     }
 
     private static HtxTrendSignalEntity trendSignal() {

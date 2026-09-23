@@ -4,12 +4,17 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
 
 @Mapper
 public interface HtxTrendOrderMapper extends BaseMapper<HtxTrendOrderEntity> {
+
+    @Select("SELECT * FROM htx_trend_order WHERE position_id = #{positionId} AND leg = 'CLOSE' "
+            + "AND status = 'ACCEPTED' ORDER BY id DESC LIMIT 1")
+    HtxTrendOrderEntity findLatestAcceptedCloseOrder(@Param("positionId") long positionId);
 
     @Update("UPDATE htx_trend_order SET status = #{status}, exchange_order_id = #{exchangeOrderId}, "
             + "exchange_client_order_id = #{exchangeClientOrderId}, message = #{message}, "

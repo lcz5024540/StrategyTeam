@@ -512,6 +512,10 @@ public class HtxTrendFollowingService {
             return null;
         }
         pendingEntryCandidates.remove(contractCode);
+        RunResult recoveredClose = recoverAcceptedClose(active.get());
+        if (recoveredClose != null) {
+            return recoveredClose;
+        }
         HtxSwapContractInfo contract = loadContract(contractCode);
         if (contract == null || !positive(contract.getContractSize())) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, "contract info unavailable"));
@@ -1322,6 +1326,29 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(), "close terminal without fill");
         }
         return RunResult.of(RunCode.WAITING, position.getId(), "waiting close fill");
+    }
+
+    /**
+     * Repairs the narrow acknowledgement gap where HTX accepted a reduce-only close order but the local
+     * position state was not advanced. The order ledger is durable before the exchange call, so it is the
+     * authority for resuming reconciliation without issuing another close order.
+     */
+    private RunResult recoverAcceptedClose(HtxTrendPositionEntity position) {
+        Optional<HtxTrendOrderEntity> acceptedClose = recorder.findAcceptedCloseOrder(position.getId());
+        if (acceptedClose.isEmpty()) {
+            return null;
+        }
+        HtxTrendOrderEntity closeOrder = acceptedClose.get();
+        if (closeOrder.getExchangeOrderId() == null && isBlank(closeOrder.getClientOrderId())) {
+            return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(),
+                    "accepted close order missing exchange identifiers");
+        }
+        recorder.markCloseAccepted(position.getId(), closeOrder.getReason(), closeOrder.getClientOrderId(),
+                closeOrder.getExchangeOrderId(), "recovered accepted close order=" + closeOrder.getExchangeOrderId());
+        position.setStatus(HtxTrendRecorder.CLOSE_SENT);
+        position.setCloseClientOrderId(closeOrder.getClientOrderId());
+        position.setCloseOrderId(closeOrder.getExchangeOrderId());
+        return reconcileClose(position);
     }
 
 

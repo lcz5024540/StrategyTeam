@@ -46,6 +46,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -1401,6 +1402,32 @@ class HtxTrendFollowingServiceTest {
         verify(mirrorExecutor).syncClose(position);
         verify(recorder).markCloseFilled(eq(77L), eq(new BigDecimal("44")), eq(new BigDecimal("4320.00")),
                 eq(new BigDecimal("0.0760")), eq(new BigDecimal("0.25")), any());
+    }
+
+    @Test
+    void unknownPositionReconcilesPreviouslyAcceptedCloseOrder() {
+        HtxTrendPositionEntity position = activeLongPosition();
+        position.setStatus(HtxTrendRecorder.UNKNOWN);
+        HtxTrendOrderEntity closeOrder = new HtxTrendOrderEntity();
+        closeOrder.setPositionId(position.getId());
+        closeOrder.setLeg(HtxTrendRecorder.LEG_CLOSE);
+        closeOrder.setStatus(HtxTrendRecorder.ORDER_ACCEPTED);
+        closeOrder.setClientOrderId("199");
+        closeOrder.setExchangeOrderId(188L);
+        closeOrder.setReason("exit signal: exit engine: TRAILING_STOP");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(position));
+        when(recorder.findAcceptedCloseOrder(77L)).thenReturn(Optional.of(closeOrder));
+        when(swap.queryOrder("XAUT-USDT", 188L))
+                .thenReturn(ok(List.of(filledOrder(188L, 199L, "44", "4320.00", "0.0760"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.DONE, result.code());
+        verify(recorder).markCloseAccepted(eq(77L), eq("exit signal: exit engine: TRAILING_STOP"),
+                eq("199"), eq(188L), contains("recovered accepted close order"));
+        verify(recorder).markCloseFilled(eq(77L), eq(new BigDecimal("44")), eq(new BigDecimal("4320.00")),
+                eq(new BigDecimal("0.0760")), eq(new BigDecimal("0.25")), any());
+        verify(swap, never()).positionInfo("XAUT-USDT");
     }
 
     @Test

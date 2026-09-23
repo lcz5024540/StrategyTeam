@@ -71,6 +71,10 @@ public class HtxTrendRecorder {
         return Optional.ofNullable(positionMapper.findLastDone(contractCode));
     }
 
+    public Optional<HtxTrendOrderEntity> findAcceptedCloseOrder(long positionId) {
+        return Optional.ofNullable(orderMapper.findLatestAcceptedCloseOrder(positionId));
+    }
+
     public long countRecentSignalsBySide(String contractCode, String signal, LocalDateTime since, int limit) {
         Long count = signalMapper.countRecentSignalsBySide(contractCode, signal, since, limit);
         return count == null ? 0L : count;
@@ -180,7 +184,7 @@ public class HtxTrendRecorder {
     }
 
     public void markCloseAccepted(long id, String exitReason, String clientOrderId, Long orderId, String message) {
-        positionMapper.markCloseAccepted(id, exitReason, clientOrderId, orderId, message);
+        positionMapper.markCloseAccepted(id, clip(exitReason), clientOrderId, orderId, clip(message));
     }
 
     public void markCloseFilled(long id, BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
