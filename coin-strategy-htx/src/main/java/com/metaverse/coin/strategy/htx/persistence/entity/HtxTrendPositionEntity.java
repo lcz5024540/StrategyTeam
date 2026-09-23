@@ -21,6 +21,12 @@ public class HtxTrendPositionEntity {
     private String side;
     private BigDecimal contractSize;
     private Long contractVolume;
+    /** Remaining contracts after completed reduce-only partial exits. */
+    private Long remainingContractVolume;
+    /** 0 before partial exit, 1 after 1R/structure reduction, 2 after 2R reduction. */
+    private Integer partialExitStage;
+    private String partialCloseClientOrderId;
+    private Long partialCloseOrderId;
     private Integer leverage;
     private String entryClientOrderId;
     private Long entryOrderId;

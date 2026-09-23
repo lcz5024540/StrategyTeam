@@ -118,6 +118,25 @@ class HtxTrendRecorderTest {
     }
 
     @Test
+    void partialCloseFillUpdatesRemainingStateAndWritesClientScopedLedgerEvent() {
+        HtxTrendPositionMapper positionMapper = mock(HtxTrendPositionMapper.class);
+        HtxTrendOrderMapper orderMapper = mock(HtxTrendOrderMapper.class);
+        HtxTrendSignalMapper signalMapper = mock(HtxTrendSignalMapper.class);
+        CoinStrategyLedgerRecorder ledgerRecorder = mock(CoinStrategyLedgerRecorder.class);
+        HtxTrendRecorder recorder = new HtxTrendRecorder(positionMapper, orderMapper, signalMapper, ledgerRecorder);
+        HtxTrendPositionEntity position = trendPosition();
+        when(positionMapper.selectById(42L)).thenReturn(position);
+
+        recorder.markPartialCloseFilled(42L, 1, "partial-1", new BigDecimal("1"), new BigDecimal("110"),
+                new BigDecimal("0.01"), new BigDecimal("0.20"), "partial filled");
+
+        verify(positionMapper).markPartialCloseFilled(42L, 1, new BigDecimal("1"), new BigDecimal("110"),
+                new BigDecimal("0.01"), new BigDecimal("0.20"), "partial filled");
+        verify(ledgerRecorder).recordTrendCloseFill(position, "partial-1", new BigDecimal("1"),
+                new BigDecimal("110"), new BigDecimal("0.01"), new BigDecimal("0.20"));
+    }
+
+    @Test
     void closeAcknowledgementFitsPositionColumnWhenExitEvidenceIsLong() {
         HtxTrendPositionMapper positionMapper = mock(HtxTrendPositionMapper.class);
         HtxTrendRecorder recorder = new HtxTrendRecorder(positionMapper, mock(HtxTrendOrderMapper.class),

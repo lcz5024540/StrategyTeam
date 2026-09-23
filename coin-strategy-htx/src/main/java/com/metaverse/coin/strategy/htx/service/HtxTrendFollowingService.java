@@ -516,6 +516,10 @@ public class HtxTrendFollowingService {
         if (recoveredClose != null) {
             return recoveredClose;
         }
+        RunResult recoveredPartialClose = recoverAcceptedPartialClose(active.get());
+        if (recoveredPartialClose != null) {
+            return recoveredPartialClose;
+        }
         HtxSwapContractInfo contract = loadContract(contractCode);
         if (contract == null || !positive(contract.getContractSize())) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, "contract info unavailable"));
@@ -1149,6 +1153,9 @@ public class HtxTrendFollowingService {
         if (HtxTrendRecorder.ACTIVE.equals(position.getStatus())) {
             return monitorActive(position, signal, contract, entryCandles);
         }
+        if (HtxTrendRecorder.PARTIAL_CLOSE_SENT.equals(position.getStatus())) {
+            return reconcilePartialClose(position);
+        }
         if (HtxTrendRecorder.CLOSE_SENT.equals(position.getStatus())) {
             return reconcileClose(position);
         }
@@ -1234,17 +1241,21 @@ public class HtxTrendFollowingService {
         if (exitReason == null) {
             exitReason = flatLossControlExitReason(position, signal, reference);
         }
-        if (exitReason == null) {
-            exitReason = exitReason(position.getSide(), signal, reference, trailingStop, takeProfit,
-                    stopContext.stopSource());
+        if (exitReason != null) {
+            return closePosition(position, clip(exitReason + " " + exitSnapshot.summary()));
         }
+        PartialExitDecision partialExit = partialExitDecision(position, reference, exitSnapshot.currentNet());
+        if (partialExit.triggered() && properties.isPartialTakeProfitLiveEnabled()) {
+            return partialClosePosition(position, partialExit, clip(exitSnapshot.summary()));
+        }
+        exitReason = exitReason(position, signal, reference, trailingStop, takeProfit, stopContext.stopSource());
         if (exitReason == null) {
             exitReason = fundingCostExitReason(position.getContractCode(), position.getSide());
         }
         if (exitReason == null) {
             return RunResult.of(RunCode.ACTIVE, position.getId(), clip("holding ref=" + reference
                     + " signal=" + signal.side() + " trailingStop=" + trailingStop
-                    + " " + stopContext.summary() + " " + exitSnapshot.summary()));
+                    + " partial=" + partialExit.summary() + " " + stopContext.summary() + " " + exitSnapshot.summary()));
         }
         return closePosition(position, clip(exitReason + " " + exitSnapshot.summary()));
     }
@@ -1268,7 +1279,7 @@ public class HtxTrendFollowingService {
         String clientOrderId = Long.toString(numericClientOrderId());
         TrendSide side = LONG.equals(position.getSide()) ? TrendSide.LONG : TrendSide.SHORT;
         HtxSwapOrderRequest request = orderRequest(position.getContractCode(), side, true, clientOrderId,
-                position.getContractVolume());
+                remainingContractVolume(position));
         recorder.createOrderIntent(orderIntent(position, HtxTrendRecorder.LEG_CLOSE, position.getSide(), request,
                 "exit signal: " + exitReason));
         HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
@@ -1286,8 +1297,80 @@ public class HtxTrendFollowingService {
                 "close sent reason=" + exitReason);
         log.info("[HTX-TREND] close sent id={} contract={} side={} orderId={} volume={} reason={}",
                 position.getId(), position.getContractCode(), position.getSide(), orderId,
-                position.getContractVolume(), exitReason);
+                remainingContractVolume(position), exitReason);
         return RunResult.of(RunCode.CLOSE_SENT, position.getId(), exitReason);
+    }
+
+    private RunResult partialClosePosition(HtxTrendPositionEntity position, PartialExitDecision decision,
+                                            String exitSnapshotSummary) {
+        long remaining = remainingContractVolume(position);
+        if (properties.isObserveOnly()) {
+            return RunResult.of(RunCode.ACTIVE, position.getId(), "observe-only partial close signal: " + decision.summary());
+        }
+        long requestedVolume = partialCloseVolume(remaining, decision.rate());
+        if (requestedVolume <= 0L || requestedVolume >= remaining) {
+            return RunResult.of(RunCode.ACTIVE, position.getId(), "partial close skipped: " + decision.summary()
+                    + " remaining=" + remaining);
+        }
+        String clientOrderId = Long.toString(numericClientOrderId());
+        TrendSide side = LONG.equals(position.getSide()) ? TrendSide.LONG : TrendSide.SHORT;
+        HtxSwapOrderRequest request = orderRequest(position.getContractCode(), side, true, clientOrderId, requestedVolume);
+        String reason = "partial exit stage=" + decision.stage() + " " + decision.reason();
+        recorder.createOrderIntent(orderIntent(position, HtxTrendRecorder.LEG_PARTIAL_CLOSE, position.getSide(), request,
+                reason));
+        HtxRestResponse<HtxSwapOrderResult> response = swap.placeOrder(request);
+        HtxSwapOrderResult accepted = response == null ? null : response.payload();
+        Long orderId = accepted == null ? null : accepted.getOrderId();
+        if (response == null || !response.ok() || orderId == null) {
+            String rejectionReason = gateMessage(ORDER_EXECUTION, "partial close rejected: " + error(response));
+            recorder.markOrderRejected(position.getId(), HtxTrendRecorder.LEG_PARTIAL_CLOSE, clientOrderId, rejectionReason);
+            return RunResult.of(RunCode.WAITING, position.getId(), rejectionReason);
+        }
+        recorder.markOrderAccepted(position.getId(), HtxTrendRecorder.LEG_PARTIAL_CLOSE, clientOrderId, orderId,
+                accepted.getClientOrderId(), "partial close accepted by exchange");
+        recorder.markPartialCloseAccepted(position.getId(), clientOrderId, orderId,
+                "partial close sent stage=" + decision.stage() + " reason=" + decision.reason());
+        log.info("[HTX-TREND] partial close sent id={} contract={} side={} orderId={} volume={} stage={} reason={}",
+                position.getId(), position.getContractCode(), position.getSide(), orderId, requestedVolume,
+                decision.stage(), decision.reason());
+        return RunResult.of(RunCode.PARTIAL_CLOSE_SENT, position.getId(), reason + " " + exitSnapshotSummary);
+    }
+
+    private RunResult reconcilePartialClose(HtxTrendPositionEntity position) {
+        QueryOrderResult query = queryOrder(position.getContractCode(), position.getPartialCloseOrderId(),
+                position.getPartialCloseClientOrderId());
+        if (!query.found()) {
+            return RunResult.of(RunCode.WAITING, position.getId(), query.message());
+        }
+        HtxSwapOrder order = query.order();
+        if (hasTradeFill(order) && terminal(order)) {
+            recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_PARTIAL_CLOSE,
+                    position.getPartialCloseClientOrderId(), fillStatus(order), order.getOrderId(),
+                    order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()), order.getTradeAveragePrice(),
+                    nz(order.getFee()), order.getFeeCurrency(), order.getRealProfit(),
+                    "partial close executed state=" + exchangeState(order));
+            int stage = nextPartialExitStage(position);
+            HtxTrendMirrorExecutor.SyncResult mirror = syncMirrorPartialClose(position, nz(order.getTradeVolume()));
+            if (!mirror.ok() && mirrorExecutor != null && mirrorExecutor.blockPrimaryCloseUntilSynced()) {
+                return RunResult.of(RunCode.WAITING, position.getId(), "primary partial close filled; mirror pending: "
+                        + mirror.message());
+            }
+            recorder.markPartialCloseFilled(position.getId(), stage, position.getPartialCloseClientOrderId(),
+                    nz(order.getTradeVolume()), order.getTradeAveragePrice(), nz(order.getFee()), order.getRealProfit(),
+                    "partial close executed stage=" + stage + " state=" + exchangeState(order) + "; " + mirror.message());
+            return RunResult.of(RunCode.ACTIVE, position.getId(), "partial close executed stage=" + stage + "; " + mirror.message());
+        }
+        if (terminal(order)) {
+            recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_PARTIAL_CLOSE,
+                    position.getPartialCloseClientOrderId(), HtxTrendRecorder.ORDER_TERMINAL, order.getOrderId(),
+                    order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()), order.getTradeAveragePrice(),
+                    nz(order.getFee()), order.getFeeCurrency(), order.getRealProfit(),
+                    "partial close terminal without fill state=" + exchangeState(order));
+            recorder.markStatus(position.getId(), HtxTrendRecorder.ACTIVE,
+                    "partial close terminal without fill state=" + exchangeState(order));
+            return RunResult.of(RunCode.ACTIVE, position.getId(), "partial close terminal without fill");
+        }
+        return RunResult.of(RunCode.WAITING, position.getId(), "waiting partial close fill");
     }
 
     private RunResult reconcileClose(HtxTrendPositionEntity position) {
@@ -1314,6 +1397,23 @@ public class HtxTrendFollowingService {
                     nz(order.getFee()), order.getRealProfit(), "close filled state=" + exchangeState(order)
                             + "; " + mirror.message());
             return RunResult.of(RunCode.DONE, position.getId(), "position done; " + mirror.message());
+        }
+        if (hasTradeFill(order) && terminal(order)) {
+            recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_CLOSE,
+                    position.getCloseClientOrderId(), HtxTrendRecorder.ORDER_PARTIALLY_FILLED, order.getOrderId(),
+                    order.getClientOrderId(), exchangeState(order), nz(order.getTradeVolume()),
+                    order.getTradeAveragePrice(), nz(order.getFee()), order.getFeeCurrency(), order.getRealProfit(),
+                    "close partially filled state=" + exchangeState(order));
+            HtxTrendMirrorExecutor.SyncResult mirror = syncMirrorPartialClose(position, nz(order.getTradeVolume()));
+            if (!mirror.ok() && mirrorExecutor != null && mirrorExecutor.blockPrimaryCloseUntilSynced()) {
+                return RunResult.of(RunCode.WAITING, position.getId(), "primary close partially filled; mirror pending: "
+                        + mirror.message());
+            }
+            recorder.markClosePartiallyFilled(position.getId(), position.getCloseClientOrderId(),
+                    nz(order.getTradeVolume()), order.getTradeAveragePrice(), nz(order.getFee()), order.getRealProfit(),
+                    "close partially filled state=" + exchangeState(order) + "; " + mirror.message());
+            return RunResult.of(RunCode.ACTIVE, position.getId(), "close partially filled; remaining position active; "
+                    + mirror.message());
         }
         if (terminal(order)) {
             recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_CLOSE,
@@ -1352,6 +1452,25 @@ public class HtxTrendFollowingService {
     }
 
 
+    private RunResult recoverAcceptedPartialClose(HtxTrendPositionEntity position) {
+        Optional<HtxTrendOrderEntity> acceptedPartialClose = recorder.findAcceptedPartialCloseOrder(position.getId());
+        if (acceptedPartialClose.isEmpty()) {
+            return null;
+        }
+        HtxTrendOrderEntity partialCloseOrder = acceptedPartialClose.get();
+        if (partialCloseOrder.getExchangeOrderId() == null && isBlank(partialCloseOrder.getClientOrderId())) {
+            return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(),
+                    "accepted partial close order missing exchange identifiers");
+        }
+        recorder.markPartialCloseAccepted(position.getId(), partialCloseOrder.getClientOrderId(),
+                partialCloseOrder.getExchangeOrderId(),
+                "recovered accepted partial close order=" + partialCloseOrder.getExchangeOrderId());
+        position.setStatus(HtxTrendRecorder.PARTIAL_CLOSE_SENT);
+        position.setPartialCloseClientOrderId(partialCloseOrder.getClientOrderId());
+        position.setPartialCloseOrderId(partialCloseOrder.getExchangeOrderId());
+        return reconcilePartialClose(position);
+    }
+
     private HtxTrendMirrorExecutor.SyncResult syncMirrorEntry(HtxTrendPositionEntity position) {
         if (mirrorExecutor == null) {
             return HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled");
@@ -1360,6 +1479,20 @@ public class HtxTrendFollowingService {
             return mirrorExecutor.syncEntry(position);
         } catch (RuntimeException ex) {
             return HtxTrendMirrorExecutor.SyncResult.failed("mirror entry exception: " + ex.getClass().getSimpleName());
+        }
+    }
+
+    private HtxTrendMirrorExecutor.SyncResult syncMirrorPartialClose(HtxTrendPositionEntity position,
+                                                                      BigDecimal filledContracts) {
+        if (mirrorExecutor == null) {
+            return HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled");
+        }
+        try {
+            return mirrorExecutor.syncPartialClose(position, filledContracts == null ? 0L
+                    : filledContracts.setScale(0, RoundingMode.DOWN).longValue());
+        } catch (RuntimeException ex) {
+            return HtxTrendMirrorExecutor.SyncResult.failed("mirror partial close exception: "
+                    + ex.getClass().getSimpleName());
         }
     }
 
@@ -2641,10 +2774,75 @@ public class HtxTrendFollowingService {
         return sum;
     }
 
-    private String exitReason(String side, TrendSignal signal, BigDecimal reference,
+    private PartialExitDecision partialExitDecision(HtxTrendPositionEntity position, BigDecimal reference,
+                                                    BigDecimal currentNet) {
+        int stage = position.getPartialExitStage() == null ? 0 : position.getPartialExitStage();
+        BigDecimal oneR = rTargetPrice(position, BigDecimal.ONE);
+        BigDecimal twoR = rTargetPrice(position, TWO);
+        BigDecimal structuralTarget = structuralTargetPrice(position);
+        boolean profitable = currentNet != null && currentNet.signum() > 0;
+        if (stage < 1 && profitable && ((positive(oneR) && targetReached(position.getSide(), reference, oneR))
+                || (positive(structuralTarget) && targetReached(position.getSide(), reference, structuralTarget)))) {
+            return PartialExitDecision.trigger(1, properties.getPartialTakeProfitFirstRate(),
+                    "1R/structure target reached oneR=" + priceText(oneR) + " structure=" + priceText(structuralTarget));
+        }
+        if (stage < 2 && profitable && positive(twoR) && targetReached(position.getSide(), reference, twoR)) {
+            return PartialExitDecision.trigger(2, properties.getPartialTakeProfitSecondRate(),
+                    "2R target reached twoR=" + priceText(twoR));
+        }
+        return PartialExitDecision.inactive(stage);
+    }
+
+    private boolean trailingExitAllowed(HtxTrendPositionEntity position, BigDecimal reference) {
+        BigDecimal activationTarget = rTargetPrice(position, nonNegative(properties.getTrailingActivationR()));
+        if (!positive(activationTarget) || !targetReached(position.getSide(), reference, activationTarget)) {
+            return false;
+        }
+        if (!properties.isRunnerTrailingRequireTimeframeExhaustion()) {
+            return true;
+        }
+        return majorTimeframeOpposition(position) >= Math.max(1, properties.getRunnerTimeframeMajorOppositeCount());
+    }
+
+    private int majorTimeframeOpposition(HtxTrendPositionEntity position) {
+        int opposite = 0;
+        for (String period : EXIT_CONFIRMATION_PERIODS) {
+            TrendSide side = marketAnchorPeriodSide(position.getContractCode(), period);
+            if ((LONG.equals(position.getSide()) && side == TrendSide.SHORT)
+                    || (SHORT.equals(position.getSide()) && side == TrendSide.LONG)) {
+                opposite++;
+            }
+        }
+        return opposite;
+    }
+
+    private static long remainingContractVolume(HtxTrendPositionEntity position) {
+        if (position == null) {
+            return 0L;
+        }
+        Long remaining = position.getRemainingContractVolume();
+        return remaining != null && remaining > 0L ? remaining
+                : position.getContractVolume() == null ? 0L : position.getContractVolume();
+    }
+
+    private static long partialCloseVolume(long remaining, BigDecimal rate) {
+        if (remaining <= 1L || rate == null || rate.signum() <= 0) {
+            return 0L;
+        }
+        long volume = BigDecimal.valueOf(remaining).multiply(rate).setScale(0, RoundingMode.DOWN).longValue();
+        return Math.max(1L, Math.min(remaining - 1L, volume));
+    }
+
+    private static int nextPartialExitStage(HtxTrendPositionEntity position) {
+        int stage = position.getPartialExitStage() == null ? 0 : position.getPartialExitStage();
+        return Math.min(2, stage + 1);
+    }
+
+    private String exitReason(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
                               BigDecimal trailingStop, BigDecimal takeProfit, String stopSource) {
+        String side = position.getSide();
         if (LONG.equals(side)) {
-            if (reference.compareTo(trailingStop) <= 0) {
+            if (reference.compareTo(trailingStop) <= 0 && trailingExitAllowed(position, reference)) {
                 return exitEngineReason(EXIT_TRAILING_STOP,
                         "long trailing stop hit ref=" + reference + " stop=" + trailingStop
                                 + " stopSource=" + stopSource);
@@ -2658,7 +2856,7 @@ public class HtxTrendFollowingService {
             }
             return null;
         }
-        if (reference.compareTo(trailingStop) >= 0) {
+        if (reference.compareTo(trailingStop) >= 0 && trailingExitAllowed(position, reference)) {
             return exitEngineReason(EXIT_TRAILING_STOP,
                     "short trailing stop hit ref=" + reference + " stop=" + trailingStop
                             + " stopSource=" + stopSource);
@@ -2760,6 +2958,14 @@ public class HtxTrendFollowingService {
     private static boolean filled(HtxSwapOrder order) {
         return order != null && ("filled".equalsIgnoreCase(exchangeState(order)) || Integer.valueOf(6).equals(order.getStatus()))
                 && nz(order.getTradeVolume()).signum() > 0;
+    }
+
+    private static boolean hasTradeFill(HtxSwapOrder order) {
+        return order != null && nz(order.getTradeVolume()).signum() > 0;
+    }
+
+    private static String fillStatus(HtxSwapOrder order) {
+        return filled(order) ? HtxTrendRecorder.ORDER_FILLED : HtxTrendRecorder.ORDER_PARTIALLY_FILLED;
     }
 
     private static boolean terminal(HtxSwapOrder order) {
@@ -2968,8 +3174,23 @@ public class HtxTrendFollowingService {
         return value.substring(0, maxLength);
     }
 
+    private record PartialExitDecision(boolean triggered, int stage, BigDecimal rate, String reason) {
+        static PartialExitDecision trigger(int stage, BigDecimal rate, String reason) {
+            return new PartialExitDecision(true, stage, rate, reason);
+        }
+
+        static PartialExitDecision inactive(int stage) {
+            return new PartialExitDecision(false, stage, BigDecimal.ZERO, "inactive");
+        }
+
+        String summary() {
+            return triggered ? "trigger stage=" + stage + " rate=" + rate + " reason=" + reason
+                    : "inactive stage=" + stage;
+        }
+    }
+
     public enum RunCode {
-        OBSERVED, NO_SIGNAL, ENTRY_SENT, ACTIVE, CLOSE_SENT, DONE, WAITING, SKIPPED, REJECTED, MANUAL_REVIEW
+        OBSERVED, NO_SIGNAL, ENTRY_SENT, ACTIVE, PARTIAL_CLOSE_SENT, CLOSE_SENT, DONE, WAITING, SKIPPED, REJECTED, MANUAL_REVIEW
     }
 
 

@@ -96,17 +96,26 @@ public class HtxTrendMirrorExecutor {
     }
 
     public SyncResult syncClose(HtxTrendPositionEntity position) {
+        return syncClose(position, remainingContractVolume(position), HtxTrendRecorder.LEG_CLOSE);
+    }
+
+    /** Mirrors an already-filled primary reduce-only partial close with the same contract quantity. */
+    public SyncResult syncPartialClose(HtxTrendPositionEntity position, long requestedVolume) {
+        return syncClose(position, requestedVolume, HtxTrendRecorder.LEG_PARTIAL_CLOSE);
+    }
+
+    private SyncResult syncClose(HtxTrendPositionEntity position, long requestedVolume, String leg) {
         List<HtxTrendMirrorAccount> accounts = mirrorAccounts();
         if (accounts.isEmpty()) {
             return SyncResult.ok("mirror disabled");
         }
-        if (position == null || position.getContractVolume() == null || position.getContractVolume() <= 0L) {
+        if (position == null || requestedVolume <= 0L) {
             return SyncResult.ok("mirror close skipped: invalid primary position");
         }
         List<AccountSyncResult> results = new ArrayList<>();
         for (HtxTrendMirrorAccount account : accounts) {
             try {
-                results.add(new AccountSyncResult(account, syncClose(position, account)));
+                results.add(new AccountSyncResult(account, syncClose(position, account, requestedVolume, leg)));
             } catch (RuntimeException ex) {
                 results.add(new AccountSyncResult(account, SyncResult.failed("mirror close exception account="
                         + account.accountLabel() + " error=" + ex.getClass().getSimpleName())));
@@ -171,7 +180,8 @@ public class HtxTrendMirrorExecutor {
                 + " volume=" + deltaVolume + " feeRate=" + takerFeeRate);
     }
 
-    private SyncResult syncClose(HtxTrendPositionEntity position, HtxTrendMirrorAccount account) {
+    private SyncResult syncClose(HtxTrendPositionEntity position, HtxTrendMirrorAccount account,
+                                 long requestedVolume, String leg) {
         String contractCode = position.getContractCode();
         String positionSide = positionSide(position.getSide());
         PositionSnapshot snapshot = positionSnapshot(account, contractCode, positionSide);
@@ -195,7 +205,7 @@ public class HtxTrendMirrorExecutor {
         if (openOrderGate != null) {
             return SyncResult.failed(openOrderGate);
         }
-        long closeVolume = snapshot.sameVolume().min(BigDecimal.valueOf(position.getContractVolume()))
+        long closeVolume = snapshot.sameVolume().min(BigDecimal.valueOf(requestedVolume))
                 .setScale(0, RoundingMode.DOWN).longValue();
         if (closeVolume <= 0L) {
             return SyncResult.failed("mirror close skipped: position volume below one contract account="
@@ -203,18 +213,18 @@ public class HtxTrendMirrorExecutor {
         }
         BigDecimal takerFeeRate = account.feeRateResolver().takerRate(contractCode);
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), true, closeVolume);
-        createMirrorOrderIntent(position, account, HtxTrendRecorder.LEG_CLOSE, request, closeVolume, takerFeeRate,
+        createMirrorOrderIntent(position, account, leg, request, closeVolume, takerFeeRate,
                 estimateFee(position.getEntryAvgPrice(), position.getContractSize(), closeVolume, takerFeeRate),
                 "mirror exit signal: " + safe(position.getExitReason()));
         HtxRestResponse<HtxSwapOrderResult> response = account.swap().placeOrder(request);
         HtxSwapOrderResult accepted = response == null ? null : response.payload();
         if (response == null || !response.ok() || accepted == null || accepted.getOrderId() == null) {
-            markMirrorOrderRejected(position, HtxTrendRecorder.LEG_CLOSE, request.getClientOrderId(),
+            markMirrorOrderRejected(position, leg, request.getClientOrderId(),
                     "mirror close rejected: " + error(response));
             return SyncResult.failed("mirror close rejected account=" + account.accountLabel()
                     + " contract=" + contractCode + " error=" + error(response));
         }
-        markMirrorOrderAccepted(position, HtxTrendRecorder.LEG_CLOSE, request.getClientOrderId(), accepted,
+        markMirrorOrderAccepted(position, leg, request.getClientOrderId(), accepted,
                 "mirror close accepted by exchange");
         pendingCloseOrders.put(pendingKey, new PendingMirrorOrder(accepted.getOrderId(), System.currentTimeMillis()));
         log.info("[HTX-TREND-MIRROR] close sent account={} contract={} side={} orderId={} volume={} feeRate={}",
@@ -447,6 +457,15 @@ public class HtxTrendMirrorExecutor {
         return new HtxUsdtSwapApiService(mirror.getAccessKey(), mirror.getSecretKey(), baseUrl,
                 contractProperties.getUidQueryLimit(), contractProperties.getUidTradeLimit(),
                 contractProperties.getUidRateWindowMs()).getSwapService();
+    }
+
+    private static long remainingContractVolume(HtxTrendPositionEntity position) {
+        if (position == null) {
+            return 0L;
+        }
+        Long remaining = position.getRemainingContractVolume();
+        return remaining != null && remaining > 0L ? remaining
+                : position.getContractVolume() == null ? 0L : position.getContractVolume();
     }
 
     private static String positionSide(String trendSide) {

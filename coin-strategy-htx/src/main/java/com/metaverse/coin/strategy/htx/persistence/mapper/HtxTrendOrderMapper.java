@@ -28,6 +28,10 @@ public interface HtxTrendOrderMapper extends BaseMapper<HtxTrendOrderEntity> {
                      @Param("exchangeClientOrderId") Long exchangeClientOrderId,
                      @Param("message") String message);
 
+    @Select("SELECT * FROM htx_trend_order WHERE position_id = #{positionId} AND leg = 'PARTIAL_CLOSE' "
+            + "AND status = 'ACCEPTED' ORDER BY id DESC LIMIT 1")
+    HtxTrendOrderEntity findLatestAcceptedPartialCloseOrder(@Param("positionId") long positionId);
+
     @Update("UPDATE htx_trend_order SET status = #{status}, exchange_order_id = #{exchangeOrderId}, "
             + "exchange_client_order_id = #{exchangeClientOrderId}, exchange_state = #{exchangeState}, "
             + "filled_contracts = #{filledContracts}, average_price = #{averagePrice}, fee = #{fee}, "

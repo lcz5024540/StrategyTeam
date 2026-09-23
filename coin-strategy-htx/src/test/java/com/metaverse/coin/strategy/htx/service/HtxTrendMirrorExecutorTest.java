@@ -7,6 +7,7 @@ import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapLeverageResult
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOpenOrders;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderRequest;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapOrderResult;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapPosition;
 import com.metaverse.coin.strategy.common.client.htx.rest.HtxUsdtSwapService;
 import com.metaverse.coin.strategy.htx.config.HtxContractProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
@@ -127,6 +128,33 @@ class HtxTrendMirrorExecutorTest {
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
+    @Test
+    void mirrorPartialCloseUsesOnlyPrimaryPartialVolume() {
+        HtxTrendProperties properties = new HtxTrendProperties();
+        properties.getMirror().setEnabled(true);
+        properties.getMirror().setAccountLabel("TradeX");
+        properties.getMirror().setSyncLeverage(false);
+        HtxUsdtSwapService swap = mock(HtxUsdtSwapService.class);
+        HtxTrendRecorder recorder = mock(HtxTrendRecorder.class);
+        HtxTrendMirrorExecutor executor = new HtxTrendMirrorExecutor(properties, new HtxContractProperties(), swap, recorder);
+        HtxTrendPositionEntity position = position();
+        position.setRemainingContractVolume(50L);
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("50"))));
+        HtxSwapOpenOrders openOrders = new HtxSwapOpenOrders();
+        openOrders.setOrders(List.of());
+        when(swap.openOrders("XAUT-USDT")).thenReturn(ok(openOrders));
+        when(swap.tradingFee("XAUT-USDT")).thenReturn(ok(List.of(feeRate("0.0002"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(123L, 456L)));
+
+        HtxTrendMirrorExecutor.SyncResult result = executor.syncPartialClose(position, 14L);
+
+        assertTrue(result.pending());
+        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(captor.capture());
+        assertEquals(HtxTrendRecorder.LEG_PARTIAL_CLOSE, captor.getValue().getLeg());
+        assertEquals(14L, captor.getValue().getRequestVolume());
+    }
+
     private static HtxTrendPositionEntity position() {
         HtxTrendPositionEntity entity = new HtxTrendPositionEntity();
         entity.setId(77L);
@@ -141,6 +169,14 @@ class HtxTrendMirrorExecutorTest {
         entity.setSizingReason("quality=STRONG confidence=HIGH");
         entity.setEntryGateReason("directionConfidence=PASS score=110 required=90");
         return entity;
+    }
+
+    private static HtxSwapPosition openLongPosition(String volume) {
+        HtxSwapPosition position = new HtxSwapPosition();
+        position.setContractCode("XAUT-USDT");
+        position.setPositionSide("long");
+        position.setVolume(new BigDecimal(volume));
+        return position;
     }
 
     private static HtxSwapFeeRate feeRate(String taker) {

@@ -123,6 +123,24 @@ public class HtxTrendProperties {
     /** Trailing stop distance = ATR * this multiplier. */
     private BigDecimal trailingAtrMultiplier = new BigDecimal("2.0");
 
+    /** ATR trailing may close the runner only after this R multiple has been reached. */
+    private BigDecimal trailingActivationR = BigDecimal.ONE;
+
+    /** Enables real reduce-only partial exits after replay validation; defaults to diagnostic-only. */
+    private boolean partialTakeProfitLiveEnabled = false;
+
+    /** Fraction of the original live position closed at 1R or first structural target. */
+    private BigDecimal partialTakeProfitFirstRate = new BigDecimal("0.33");
+
+    /** Fraction of the remaining live position closed at 2R. */
+    private BigDecimal partialTakeProfitSecondRate = new BigDecimal("0.50");
+
+    /** Require at least the configured higher-timeframe opposition before a runner trailing stop can close. */
+    private boolean runnerTrailingRequireTimeframeExhaustion = true;
+
+    /** Number of 30m/60m/4h periods that must oppose the runner before ATR trailing may close it. */
+    private int runnerTimeframeMajorOppositeCount = 2;
+
     /**
      * Enable structure-based trailing stop selection. Default off until backtest and live samples prove it improves exits.
      */

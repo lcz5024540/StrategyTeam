@@ -87,21 +87,33 @@ public class CoinStrategyLedgerRecorder {
     }
 
     public void recordTrendCloseFill(HtxTrendPositionEntity position) {
+        if (position == null) {
+            return;
+        }
+        recordTrendCloseFill(position, position.getCloseClientOrderId(), position.getCloseFilledContracts(),
+                position.getCloseAvgPrice(), position.getCloseFee(), position.getRealizedProfit());
+    }
+
+    /** Records one filled reduce-only order, so partial exits do not overwrite or duplicate economic events. */
+    public void recordTrendCloseFill(HtxTrendPositionEntity position, String clientOrderId, BigDecimal filledContracts,
+                                     BigDecimal closePrice, BigDecimal fee, BigDecimal realizedProfit) {
         if (position == null || position.getId() == null) {
             return;
         }
-        BigDecimal notional = notional(position.getCloseFilledContracts(), position.getContractSize(), position.getCloseAvgPrice());
-        CoinStrategyLedgerEventEntity close = baseEvent(EVENT_CLOSE_FILL, "trend-close-fill:" + position.getId(), position);
-        close.setExecutionPriceUsdt(position.getCloseAvgPrice());
+        String executionKey = StringUtils.hasText(clientOrderId) ? clientOrderId : "position-" + position.getId();
+        BigDecimal notional = notional(filledContracts, position.getContractSize(), closePrice);
+        CoinStrategyLedgerEventEntity close = baseEvent(EVENT_CLOSE_FILL, "trend-close-fill:" + position.getId() + ":" + executionKey, position);
+        close.setClientOrderId(clientOrderId);
+        close.setExecutionPriceUsdt(closePrice);
         close.setEntryPriceUsdt(position.getEntryAvgPrice());
-        close.setClosePriceUsdt(position.getCloseAvgPrice());
-        close.setFilledContracts(position.getCloseFilledContracts());
+        close.setClosePriceUsdt(closePrice);
+        close.setFilledContracts(filledContracts);
         close.setContractSize(position.getContractSize());
         close.setAmountUsdt(notional);
         close.setReason(clip(position.getExitReason(), 1024));
         insertIgnoreDuplicate(close);
-        recordFee(position, EVENT_CLOSE_FILL, position.getCloseFee(), position.getCloseClientOrderId(), "close fee");
-        recordRealizedPnl(position);
+        recordCloseFee(position, fee, clientOrderId, executionKey);
+        recordCloseRealizedPnl(position, closePrice, realizedProfit, clientOrderId, executionKey);
     }
 
     private void recordFee(HtxTrendPositionEntity position, String parentEventType, BigDecimal fee,
@@ -118,13 +130,29 @@ public class CoinStrategyLedgerRecorder {
         insertIgnoreDuplicate(event);
     }
 
-    private void recordRealizedPnl(HtxTrendPositionEntity position) {
-        CoinStrategyLedgerEventEntity event = baseEvent(EVENT_REALIZED_PNL, "trend-realized-pnl:" + position.getId(), position);
-        BigDecimal realizedProfit = nz(position.getRealizedProfit());
+    private void recordCloseFee(HtxTrendPositionEntity position, BigDecimal fee, String clientOrderId,
+                                String executionKey) {
+        if (fee == null || fee.signum() == 0) {
+            return;
+        }
+        CoinStrategyLedgerEventEntity event = baseEvent(EVENT_FEE,
+                "trend-fee:" + EVENT_CLOSE_FILL + ":" + position.getId() + ":" + executionKey, position);
+        event.setClientOrderId(clientOrderId);
+        event.setFeeUsdt(fee);
+        event.setNetPnlAfterFee(fee.negate());
+        event.setReason("close fee");
+        insertIgnoreDuplicate(event);
+    }
+
+    private void recordCloseRealizedPnl(HtxTrendPositionEntity position, BigDecimal closePrice,
+                                        BigDecimal realizedProfit, String clientOrderId, String executionKey) {
+        CoinStrategyLedgerEventEntity event = baseEvent(EVENT_REALIZED_PNL,
+                "trend-realized-pnl:" + position.getId() + ":" + executionKey, position);
+        event.setClientOrderId(clientOrderId);
         event.setEntryPriceUsdt(position.getEntryAvgPrice());
-        event.setClosePriceUsdt(position.getCloseAvgPrice());
-        event.setGrossPnlUsdt(realizedProfit);
-        event.setNetPnlAfterFee(realizedProfit);
+        event.setClosePriceUsdt(closePrice);
+        event.setGrossPnlUsdt(nz(realizedProfit));
+        event.setNetPnlAfterFee(nz(realizedProfit));
         event.setReason(clip(position.getExitReason(), 1024));
         insertIgnoreDuplicate(event);
     }

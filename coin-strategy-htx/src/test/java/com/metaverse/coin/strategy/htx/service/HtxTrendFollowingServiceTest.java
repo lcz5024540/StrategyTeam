@@ -95,6 +95,7 @@ class HtxTrendFollowingServiceTest {
         mirrorExecutor = mock(HtxTrendMirrorExecutor.class);
         when(mirrorExecutor.syncEntry(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled"));
         when(mirrorExecutor.syncClose(any())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled"));
+        when(mirrorExecutor.syncPartialClose(any(), anyLong())).thenReturn(HtxTrendMirrorExecutor.SyncResult.ok("mirror disabled"));
         when(mirrorExecutor.blockPrimaryCloseUntilSynced()).thenReturn(true);
         service = new HtxTrendFollowingService(swap, contractProperties, fundingArbitrageProperties,
                 marketMakerProperties, properties, recorder, calculator, mirrorExecutor);
@@ -1121,7 +1122,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void activeLongClampsTrailingStopToFeeProtectedBreakevenWhenPriceFallsThroughProtectedStop() {
+    void activeLongRecordsPreOneRTrailingBreachWithoutSendingCloseOrder() {
         givenContractInfo();
         givenKlines();
         givenSignal(TrendSide.FLAT, new BigDecimal("7.0"));
@@ -1133,15 +1134,9 @@ class HtxTrendFollowingServiceTest {
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
-        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("exit engine: TRAILING_STOP"));
-        assertTrue(result.message().contains("stopSource=LEGACY_FEE_PROTECTED_CLAMP"));
-        assertTrue(result.message().contains("stop=4323.84"));
-        ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
-        verify(recorder).createOrderIntent(captor.capture());
-        assertTrue(captor.getValue().getReason().contains("exit engine: TRAILING_STOP"));
-        assertTrue(captor.getValue().getReason().contains("stopSource=LEGACY_FEE_PROTECTED_CLAMP"));
-        assertTrue(captor.getValue().getReason().contains("stop=4323.84"));
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        assertTrue(result.message().contains("trailingStop=4323.84"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
     @Test
@@ -1428,6 +1423,124 @@ class HtxTrendFollowingServiceTest {
         verify(recorder).markCloseFilled(eq(77L), eq(new BigDecimal("44")), eq(new BigDecimal("4320.00")),
                 eq(new BigDecimal("0.0760")), eq(new BigDecimal("0.25")), any());
         verify(swap, never()).positionInfo("XAUT-USDT");
+    }
+
+    @Test
+    void activeLongSendsReduceOnlyFirstPartialCloseAtOneRWhenLiveEnabled() {
+        properties.setPartialTakeProfitLiveEnabled(true);
+        properties.setFeeProtectionEnabled(false);
+        properties.setExitFlatAfterFeeProtection(false);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4340.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.PARTIAL_CLOSE_SENT, result.code());
+        ArgumentCaptor<HtxTrendOrderEntity> orderCaptor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(orderCaptor.capture());
+        assertEquals(HtxTrendRecorder.LEG_PARTIAL_CLOSE, orderCaptor.getValue().getLeg());
+        assertEquals(true, orderCaptor.getValue().getReduceOnly());
+        assertEquals(14L, orderCaptor.getValue().getRequestVolume());
+        verify(recorder).markPartialCloseAccepted(eq(77L), any(), eq(888L), any());
+    }
+
+    @Test
+    void partialCloseFillReturnsPositionToActiveAndKeepsRemainingContracts() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setStatus(HtxTrendRecorder.PARTIAL_CLOSE_SENT);
+        active.setRemainingContractVolume(44L);
+        active.setPartialCloseClientOrderId("199");
+        active.setPartialCloseOrderId(188L);
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.queryOrder("XAUT-USDT", 188L))
+                .thenReturn(ok(List.of(filledOrder(188L, 199L, "14", "4340.00", "0.0200"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        verify(recorder).markPartialCloseFilled(eq(77L), eq(1), eq("199"), eq(new BigDecimal("14")),
+                eq(new BigDecimal("4340.00")), eq(new BigDecimal("0.0200")), eq(new BigDecimal("0.25")), any());
+        verify(mirrorExecutor).syncPartialClose(active, 14L);
+    }
+
+    @Test
+    void partiallyCanceledPartialCloseStillRecordsTheExecutedContracts() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setStatus(HtxTrendRecorder.PARTIAL_CLOSE_SENT);
+        active.setRemainingContractVolume(44L);
+        active.setPartialCloseClientOrderId("199");
+        active.setPartialCloseOrderId(188L);
+        HtxSwapOrder partial = filledOrder(188L, 199L, "7", "4340.00", "0.0100");
+        partial.setStatus(5);
+        partial.setState("partially_canceled");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.queryOrder("XAUT-USDT", 188L)).thenReturn(ok(List.of(partial)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        verify(recorder).markOrderReconciled(eq(77L), eq(HtxTrendRecorder.LEG_PARTIAL_CLOSE), eq("199"),
+                eq(HtxTrendRecorder.ORDER_PARTIALLY_FILLED), anyLong(), anyLong(), eq("partially_canceled"),
+                eq(new BigDecimal("7")), eq(new BigDecimal("4340.00")), eq(new BigDecimal("0.0100")), any(), any(), any());
+        verify(recorder).markPartialCloseFilled(eq(77L), eq(1), eq("199"), eq(new BigDecimal("7")),
+                eq(new BigDecimal("4340.00")), eq(new BigDecimal("0.0100")), eq(new BigDecimal("0.25")), any());
+    }
+
+    @Test
+    void runnerTrailingHoldsWhenAllHigherTimeframesStillAlign() {
+        properties.setFeeProtectionEnabled(false);
+        properties.setExitFlatAfterFeeProtection(false);
+        givenContractInfo();
+        givenKlines();
+        givenExitConfirmationKlines("XAUT-USDT", true);
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setHighestPrice(new BigDecimal("4400.00"));
+        active.setTrailingStopPrice(new BigDecimal("4350.00"));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4340.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void runnerTrailingClosesWhenTwoHigherTimeframesOppose() {
+        properties.setFeeProtectionEnabled(false);
+        properties.setExitFlatAfterFeeProtection(false);
+        givenContractInfo();
+        givenKlines();
+        givenExitConfirmationKlines("XAUT-USDT", false);
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setHighestPrice(new BigDecimal("4400.00"));
+        active.setTrailingStopPrice(new BigDecimal("4350.00"));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4340.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("exit engine: TRAILING_STOP"));
     }
 
     @Test

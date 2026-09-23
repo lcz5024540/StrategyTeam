@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -71,6 +72,32 @@ class CoinStrategyLedgerRecorderTest {
                 .map(CoinStrategyLedgerEventEntity::getFeeUsdt)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertEquals(0, new BigDecimal("0.03").compareTo(actualFees));
+    }
+
+    @Test
+    void partialCloseFillsUseClientOrderScopedLedgerEvents() {
+        CoinStrategyLedgerEventMapper ledgerMapper = mock(CoinStrategyLedgerEventMapper.class);
+        HtxTradeAccountMapper accountMapper = mock(HtxTradeAccountMapper.class);
+        when(accountMapper.findIdByAccountLabel("primary")).thenReturn(1L);
+        when(ledgerMapper.insert(any())).thenReturn(1);
+        CoinStrategyLedgerRecorder recorder = new CoinStrategyLedgerRecorder(ledgerMapper, accountMapper);
+        HtxTrendPositionEntity position = trendPosition();
+
+        recorder.recordTrendCloseFill(position, "partial-1", new BigDecimal("1"),
+                new BigDecimal("100500"), new BigDecimal("0.01"), new BigDecimal("0.20"));
+        recorder.recordTrendCloseFill(position, "partial-2", new BigDecimal("1"),
+                new BigDecimal("100600"), new BigDecimal("0.01"), new BigDecimal("0.30"));
+
+        ArgumentCaptor<CoinStrategyLedgerEventEntity> captor = ArgumentCaptor.forClass(CoinStrategyLedgerEventEntity.class);
+        verify(ledgerMapper, org.mockito.Mockito.times(6)).insert(captor.capture());
+        List<CoinStrategyLedgerEventEntity> events = captor.getAllValues();
+        assertTrue(events.stream().anyMatch(event -> "trend-close-fill:42:partial-1".equals(event.getEventKey())));
+        assertTrue(events.stream().anyMatch(event -> "trend-close-fill:42:partial-2".equals(event.getEventKey())));
+        BigDecimal additiveNet = events.stream()
+                .map(CoinStrategyLedgerEventEntity::getNetPnlAfterFee)
+                .filter(v -> v != null)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertEquals(0, new BigDecimal("0.48").compareTo(additiveNet));
     }
 
     @Test

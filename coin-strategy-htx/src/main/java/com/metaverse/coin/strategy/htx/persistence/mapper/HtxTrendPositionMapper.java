@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @Mapper
 public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntity> {
 
-    String COLUMNS = "id, position_key, contract_code, status, side, contract_size, contract_volume, leverage, "
+    String COLUMNS = "id, position_key, contract_code, status, side, contract_size, contract_volume, remaining_contract_volume, partial_exit_stage, partial_close_client_order_id, partial_close_order_id, leverage, "
             + "entry_client_order_id, entry_order_id, entry_filled_contracts, entry_avg_price, entry_fee, "
             + "close_client_order_id, close_order_id, close_filled_contracts, close_avg_price, close_fee, "
             + "realized_profit, stop_price, trailing_stop_price, take_profit_price, highest_price, lowest_price, "
@@ -26,12 +26,12 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "exit_snapshot_bars, exit_snapshot_candidates, exit_snapshot_updated_at, created_at, updated_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "
-            + "AND status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'CLOSE_SENT', 'UNKNOWN') "
+            + "AND status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'PARTIAL_CLOSE_SENT', 'CLOSE_SENT', 'UNKNOWN') "
             + "ORDER BY id LIMIT 1")
     HtxTrendPositionEntity findActive(@Param("contractCode") String contractCode);
 
     @Select("SELECT COUNT(*) FROM htx_trend_position "
-            + "WHERE status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'CLOSE_SENT', 'UNKNOWN')")
+            + "WHERE status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'PARTIAL_CLOSE_SENT', 'CLOSE_SENT', 'UNKNOWN')")
     Long countOpenLike();
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "
@@ -48,6 +48,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                           @Param("message") String message);
 
     @Update("UPDATE htx_trend_position SET status = 'ACTIVE', entry_filled_contracts = #{filledContracts}, "
+            + "remaining_contract_volume = FLOOR(#{filledContracts}), partial_exit_stage = 0, "
             + "entry_avg_price = #{avgPrice}, entry_fee = #{fee}, highest_price = #{highestPrice}, "
             + "lowest_price = #{lowestPrice}, message = #{message}, updated_at = CURRENT_TIMESTAMP(3) "
             + "WHERE id = #{id}")
@@ -90,8 +91,57 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                           @Param("orderId") Long orderId,
                           @Param("message") String message);
 
-    @Update("UPDATE htx_trend_position SET status = 'DONE', close_filled_contracts = #{filledContracts}, "
-            + "close_avg_price = #{avgPrice}, close_fee = #{fee}, realized_profit = #{realizedProfit}, "
+
+    @Update("UPDATE htx_trend_position SET status = 'PARTIAL_CLOSE_SENT', exit_reason = #{message}, "
+            + "partial_close_client_order_id = #{clientOrderId}, partial_close_order_id = #{orderId}, "
+            + "message = #{message}, updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
+    int markPartialCloseAccepted(@Param("id") long id,
+                                 @Param("clientOrderId") String clientOrderId,
+                                 @Param("orderId") Long orderId,
+                                 @Param("message") String message);
+
+    @Update("UPDATE htx_trend_position SET status = 'ACTIVE', partial_exit_stage = #{partialExitStage}, "
+            + "remaining_contract_volume = GREATEST(0, COALESCE(remaining_contract_volume, contract_volume) - FLOOR(#{filledContracts})), "
+            + "close_avg_price = CASE WHEN COALESCE(close_filled_contracts, 0) + #{filledContracts} > 0 "
+            + "THEN ((COALESCE(close_avg_price, 0) * COALESCE(close_filled_contracts, 0)) + (#{avgPrice} * #{filledContracts})) "
+            + "/ (COALESCE(close_filled_contracts, 0) + #{filledContracts}) ELSE #{avgPrice} END, "
+            + "close_filled_contracts = COALESCE(close_filled_contracts, 0) + #{filledContracts}, "
+            + "close_fee = COALESCE(close_fee, 0) + #{fee}, "
+            + "realized_profit = COALESCE(realized_profit, 0) + COALESCE(#{realizedProfit}, 0), "
+            + "partial_close_client_order_id = NULL, partial_close_order_id = NULL, "
+            + "message = #{message}, updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
+    int markPartialCloseFilled(@Param("id") long id,
+                               @Param("partialExitStage") int partialExitStage,
+                               @Param("filledContracts") BigDecimal filledContracts,
+                               @Param("avgPrice") BigDecimal avgPrice,
+                               @Param("fee") BigDecimal fee,
+                               @Param("realizedProfit") BigDecimal realizedProfit,
+                               @Param("message") String message);
+
+    @Update("UPDATE htx_trend_position SET status = 'ACTIVE', "
+            + "remaining_contract_volume = GREATEST(0, COALESCE(remaining_contract_volume, contract_volume) - FLOOR(#{filledContracts})), "
+            + "close_avg_price = CASE WHEN COALESCE(close_filled_contracts, 0) + #{filledContracts} > 0 "
+            + "THEN ((COALESCE(close_avg_price, 0) * COALESCE(close_filled_contracts, 0)) + (#{avgPrice} * #{filledContracts})) "
+            + "/ (COALESCE(close_filled_contracts, 0) + #{filledContracts}) ELSE #{avgPrice} END, "
+            + "close_filled_contracts = COALESCE(close_filled_contracts, 0) + #{filledContracts}, "
+            + "close_fee = COALESCE(close_fee, 0) + #{fee}, "
+            + "realized_profit = COALESCE(realized_profit, 0) + COALESCE(#{realizedProfit}, 0), "
+            + "close_client_order_id = NULL, close_order_id = NULL, "
+            + "message = #{message}, updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
+    int markClosePartiallyFilled(@Param("id") long id,
+                                 @Param("filledContracts") BigDecimal filledContracts,
+                                 @Param("avgPrice") BigDecimal avgPrice,
+                                 @Param("fee") BigDecimal fee,
+                                 @Param("realizedProfit") BigDecimal realizedProfit,
+                                 @Param("message") String message);
+
+    @Update("UPDATE htx_trend_position SET status = 'DONE', remaining_contract_volume = 0, "
+            + "close_avg_price = CASE WHEN COALESCE(close_filled_contracts, 0) + #{filledContracts} > 0 "
+            + "THEN ((COALESCE(close_avg_price, 0) * COALESCE(close_filled_contracts, 0)) + (#{avgPrice} * #{filledContracts})) "
+            + "/ (COALESCE(close_filled_contracts, 0) + #{filledContracts}) ELSE #{avgPrice} END, "
+            + "close_filled_contracts = COALESCE(close_filled_contracts, 0) + #{filledContracts}, "
+            + "close_fee = COALESCE(close_fee, 0) + #{fee}, "
+            + "realized_profit = COALESCE(realized_profit, 0) + COALESCE(#{realizedProfit}, 0), "
             + "message = #{message}, updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
     int markCloseFilled(@Param("id") long id,
                         @Param("filledContracts") BigDecimal filledContracts,

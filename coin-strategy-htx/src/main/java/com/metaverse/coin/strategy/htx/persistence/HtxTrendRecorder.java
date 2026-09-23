@@ -24,16 +24,19 @@ public class HtxTrendRecorder {
     public static final String ENTRY_SENT = "ENTRY_SENT";
     public static final String ACTIVE = "ACTIVE";
     public static final String CLOSE_SENT = "CLOSE_SENT";
+    public static final String PARTIAL_CLOSE_SENT = "PARTIAL_CLOSE_SENT";
     public static final String DONE = "DONE";
     public static final String REJECTED = "REJECTED";
     public static final String UNKNOWN = "UNKNOWN";
     public static final String ORDER_INTENT = "INTENT";
     public static final String ORDER_ACCEPTED = "ACCEPTED";
     public static final String ORDER_FILLED = "FILLED";
+    public static final String ORDER_PARTIALLY_FILLED = "PARTIALLY_FILLED";
     public static final String ORDER_TERMINAL = "TERMINAL";
     public static final String ORDER_REJECTED = "REJECTED";
     public static final String LEG_ENTRY = "ENTRY";
     public static final String LEG_CLOSE = "CLOSE";
+    public static final String LEG_PARTIAL_CLOSE = "PARTIAL_CLOSE";
 
     private final HtxTrendPositionMapper positionMapper;
     private final HtxTrendOrderMapper orderMapper;
@@ -73,6 +76,10 @@ public class HtxTrendRecorder {
 
     public Optional<HtxTrendOrderEntity> findAcceptedCloseOrder(long positionId) {
         return Optional.ofNullable(orderMapper.findLatestAcceptedCloseOrder(positionId));
+    }
+
+    public Optional<HtxTrendOrderEntity> findAcceptedPartialCloseOrder(long positionId) {
+        return Optional.ofNullable(orderMapper.findLatestAcceptedPartialCloseOrder(positionId));
     }
 
     public long countRecentSignalsBySide(String contractCode, String signal, LocalDateTime since, int limit) {
@@ -187,10 +194,43 @@ public class HtxTrendRecorder {
         positionMapper.markCloseAccepted(id, clip(exitReason), clientOrderId, orderId, clip(message));
     }
 
+    public void markPartialCloseAccepted(long id, String clientOrderId, Long orderId, String message) {
+        positionMapper.markPartialCloseAccepted(id, clientOrderId, orderId, clip(message));
+    }
+
+    public void markPartialCloseFilled(long id, int partialExitStage, String clientOrderId,
+                                       BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
+                                       BigDecimal realizedProfit, String message) {
+        positionMapper.markPartialCloseFilled(id, partialExitStage, filledContracts, avgPrice, fee, realizedProfit,
+                clip(message));
+        recordLedger(() -> ledgerRecorder.recordTrendCloseFill(positionMapper.selectById(id), clientOrderId,
+                filledContracts, avgPrice, fee, realizedProfit));
+    }
+
+    /**
+     * A full-close intent can be cancelled after an exchange-side partial fill. Keep the position active
+     * with the remaining contracts instead of treating the unfilled balance as closed or unknown.
+     */
+    public void markClosePartiallyFilled(long id, String clientOrderId, BigDecimal filledContracts,
+                                         BigDecimal avgPrice, BigDecimal fee, BigDecimal realizedProfit,
+                                         String message) {
+        positionMapper.markClosePartiallyFilled(id, filledContracts, avgPrice, fee, realizedProfit, clip(message));
+        recordLedger(() -> ledgerRecorder.recordTrendCloseFill(positionMapper.selectById(id), clientOrderId,
+                filledContracts, avgPrice, fee, realizedProfit));
+    }
+
     public void markCloseFilled(long id, BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
                                 BigDecimal realizedProfit, String message) {
         positionMapper.markCloseFilled(id, filledContracts, avgPrice, fee, realizedProfit, message);
-        recordLedger(() -> ledgerRecorder.recordTrendCloseFill(positionMapper.selectById(id)));
+        recordLedger(() -> {
+            HtxTrendPositionEntity position = positionMapper.selectById(id);
+            if (position == null || position.getPartialExitStage() == null || position.getPartialExitStage() <= 0) {
+                ledgerRecorder.recordTrendCloseFill(position);
+                return;
+            }
+            ledgerRecorder.recordTrendCloseFill(position, position.getCloseClientOrderId(), filledContracts,
+                    avgPrice, fee, realizedProfit);
+        });
     }
 
     public void markStatus(long id, String nextStatus, String message) {

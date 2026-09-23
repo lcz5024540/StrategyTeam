@@ -159,6 +159,12 @@ htx:
     risk-per-trade-usdt: ${HTX_TREND_RISK_PER_TRADE_USDT:2.0}
     atr-stop-multiplier: ${HTX_TREND_ATR_STOP_MULTIPLIER:2.5}
     trailing-atr-multiplier: ${HTX_TREND_TRAILING_ATR_MULTIPLIER:2.0}
+    trailing-activation-r: ${HTX_TREND_TRAILING_ACTIVATION_R:1.0}
+    partial-take-profit-live-enabled: ${HTX_TREND_PARTIAL_TAKE_PROFIT_LIVE_ENABLED:false}
+    partial-take-profit-first-rate: ${HTX_TREND_PARTIAL_TAKE_PROFIT_FIRST_RATE:0.33}
+    partial-take-profit-second-rate: ${HTX_TREND_PARTIAL_TAKE_PROFIT_SECOND_RATE:0.50}
+    runner-trailing-require-timeframe-exhaustion: ${HTX_TREND_RUNNER_TRAILING_REQUIRE_TIMEFRAME_EXHAUSTION:true}
+    runner-timeframe-major-opposite-count: ${HTX_TREND_RUNNER_TIMEFRAME_MAJOR_OPPOSITE_COUNT:2}
     structure-stop-enabled: ${HTX_TREND_STRUCTURE_STOP_ENABLED:false}
     take-profit-atr-multiplier: ${HTX_TREND_TAKE_PROFIT_ATR_MULTIPLIER:0}
     estimated-taker-fee-rate: ${HTX_TREND_ESTIMATED_TAKER_FEE_RATE:0.0004}
@@ -235,8 +241,8 @@ htx:
     high-confidence-position-multiplier: ${HTX_TREND_HIGH_CONFIDENCE_POSITION_MULTIPLIER:1.20}
     strong-confluence-sizing-score: ${HTX_TREND_STRONG_CONFLUENCE_SIZING_SCORE:120}
     strong-confluence-position-multiplier: ${HTX_TREND_STRONG_CONFLUENCE_POSITION_MULTIPLIER:1.35}
-    fee-protection-enabled: ${HTX_TREND_FEE_PROTECTION_ENABLED:true}
-    exit-flat-after-fee-protection: ${HTX_TREND_EXIT_FLAT_AFTER_FEE_PROTECTION:true}
+    fee-protection-enabled: ${HTX_TREND_FEE_PROTECTION_ENABLED:false}
+    exit-flat-after-fee-protection: ${HTX_TREND_EXIT_FLAT_AFTER_FEE_PROTECTION:false}
     max-entry-funding-cost-rate: ${HTX_TREND_MAX_ENTRY_FUNDING_COST_RATE:0.0006}
     funding-carry-entry-enabled: ${HTX_TREND_FUNDING_CARRY_ENTRY_ENABLED:true}
     min-carry-funding-rate-abs: ${HTX_TREND_MIN_CARRY_FUNDING_RATE_ABS:0.0002}
