@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.htx.replay;
 
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendCandidateSignalMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendReplayCandleEntity;
+import org.apache.ibatis.annotations.Select;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -9,6 +11,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HtxTrendReplayServiceTest {
 
@@ -42,6 +46,19 @@ class HtxTrendReplayServiceTest {
                 "LONG", List.of(candle("15min", entryBarTime, "100")), EXIT_PERIODS, 2, 3);
 
         assertFalse(opposition.containsKey(entryBarTime));
+    }
+
+    @Test
+    void replaySelectionRetainsLegacyCandidatesWithoutFinalGate() throws NoSuchMethodException {
+        Select select = HtxTrendCandidateSignalMapper.class
+                .getMethod("findReplayCandidatesBetween", long.class, long.class)
+                .getAnnotation(Select.class);
+
+        assertNotNull(select);
+        String statement = select.value()[0];
+        assertTrue(statement.contains("bar_time >= #{startBarTime}"));
+        assertTrue(statement.contains("bar_time <= #{endBarTime}"));
+        assertFalse(statement.contains("gate_result = 'PASSED'"));
     }
 
     private static List<HtxTrendReplayCandleEntity> candles(String period, List<String> closes, List<Long> barTimes) {

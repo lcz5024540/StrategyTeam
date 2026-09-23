@@ -87,7 +87,7 @@ public class HtxTrendReplayService {
         run.setMessage("freezing public HTX candles before replay");
         replayRunMapper.insert(run);
 
-        List<HtxTrendCandidateSignalEntity> candidates = candidateMapper.findPassedBetween(startBarTime, endBarTime);
+        List<HtxTrendCandidateSignalEntity> candidates = candidateMapper.findReplayCandidatesBetween(startBarTime, endBarTime);
         freezeInputs(replayRunId, candidates, startBarTime, endBarTime);
         List<HtxTrendReplayTradeEntity> trades = new ArrayList<>();
         for (HtxTrendCandidateSignalEntity candidate : candidates) {
