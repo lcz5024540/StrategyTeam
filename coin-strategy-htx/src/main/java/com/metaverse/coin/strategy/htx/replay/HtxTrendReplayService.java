@@ -35,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -48,7 +49,7 @@ import java.util.stream.Collectors;
 @ConditionalOnBean(HtxUsdtSwapApiService.class)
 public class HtxTrendReplayService {
 
-    static final String ENGINE_VERSION = "htx-trend-exit-replay-v1";
+    static final String ENGINE_VERSION = "htx-trend-exit-replay-v2";
     private static final List<String> EXIT_PERIODS = List.of("30min", "60min", "4hour");
     private static final int HTX_HISTORY_LIMIT = 2_000;
     /** Dashboard and HTX operations use China Standard Time; request timestamps are intentionally local to it. */
@@ -91,14 +92,16 @@ public class HtxTrendReplayService {
         freezeInputs(replayRunId, candidates, startBarTime, endBarTime);
         List<HtxTrendReplayTradeEntity> trades = new ArrayList<>();
         for (HtxTrendCandidateSignalEntity candidate : candidates) {
-            HtxTrendReplayTradeEntity trade = replayCandidate(replayRunId, candidate);
-            replayTradeMapper.insert(trade);
-            trades.add(trade);
+            for (HtxTrendExitReplayEngine.ExitProfile profile : HtxTrendExitReplayEngine.ExitProfile.values()) {
+                HtxTrendReplayTradeEntity trade = replayCandidate(replayRunId, candidate, profile);
+                replayTradeMapper.insert(trade);
+                trades.add(trade);
+            }
         }
         ReplaySummary summary = summarize(replayRunId, candidates.size(), trades);
         replayRunMapper.complete(replayRunId, "COMPLETED", summary.inputIntegrity(), summary.candidateCount(),
                 summary.tradeCount(), summary.comparableTradeCount(), summary.netProfit(), summary.profitFactor(),
-                summary.message());
+                JSON.toJSONString(summary.profileSummaries()), summary.message());
         return summary;
     }
 
@@ -154,8 +157,10 @@ public class HtxTrendReplayService {
         }
     }
 
-    private HtxTrendReplayTradeEntity replayCandidate(String replayRunId, HtxTrendCandidateSignalEntity candidate) {
+    private HtxTrendReplayTradeEntity replayCandidate(String replayRunId, HtxTrendCandidateSignalEntity candidate,
+                                                       HtxTrendExitReplayEngine.ExitProfile profile) {
         HtxTrendReplayTradeEntity trade = baseTrade(replayRunId, candidate);
+        trade.setExitProfile(profile.name());
         if (blank(candidate.getRunId())) {
             unavailable(trade, "candidate has no stable run_id; cannot join execution evidence");
             return trade;
@@ -185,7 +190,8 @@ public class HtxTrendReplayService {
                 firstPositive(position.getStopPrice(), position.getInvalidationPrice(), candidate.getInvalidationPrice()),
                 structuralTarget(position, candidate), candidate.getAtr(), position.getContractSize(), filledVolume(position),
                 position.getEntryFee(), feeRate, properties.getPartialTakeProfitFirstRate(), properties.getPartialTakeProfitSecondRate());
-        HtxTrendExitReplayEngine.Outcome outcome = exitReplayEngine.replay(input, toEngineCandles(entryCandles), opposition);
+        HtxTrendExitReplayEngine.Outcome outcome = exitReplayEngine.replay(input, toEngineCandles(entryCandles), opposition,
+                profile);
         trade.setExitBarTime(outcome.exitBarTime());
         trade.setExitPrice(outcome.exitPrice());
         trade.setRemainingContracts(outcome.remainingContracts());
@@ -366,8 +372,44 @@ public class HtxTrendReplayService {
         }
     }
 
-    private static ReplaySummary summarize(String replayRunId, int candidateCount, List<HtxTrendReplayTradeEntity> trades) {
+    static ReplaySummary summarize(String replayRunId, int candidateCount, List<HtxTrendReplayTradeEntity> trades) {
+        Set<Long> comparableCandidateIds = comparableCandidateIds(trades);
+        Map<String, ProfileSummary> profileSummaries = new LinkedHashMap<>();
+        for (HtxTrendExitReplayEngine.ExitProfile profile : HtxTrendExitReplayEngine.ExitProfile.values()) {
+            profileSummaries.put(profile.name(), summarizeProfile(trades, profile.name(), comparableCandidateIds));
+        }
+        ProfileSummary primary = profileSummaries.get(HtxTrendExitReplayEngine.ExitProfile.STAGED_RUNNER.name());
+        String integrity = comparableCandidateIds.size() == candidateCount ? "COMPLETE" : "PARTIAL";
+        return new ReplaySummary(replayRunId, candidateCount, trades.size(), comparableCandidateIds.size(), primary.netProfit(),
+                primary.profitFactor(), integrity, profileSummaries,
+                "frozen candle replay; exit profile comparison uses identical entry and candle evidence");
+    }
+
+    private static Set<Long> comparableCandidateIds(List<HtxTrendReplayTradeEntity> trades) {
+        return trades.stream().filter(trade -> trade.getSourceCandidateId() != null)
+                .collect(Collectors.groupingBy(HtxTrendReplayTradeEntity::getSourceCandidateId,
+                        LinkedHashMap::new, Collectors.toList()))
+                .entrySet().stream().filter(entry -> isComparableAcrossProfiles(entry.getValue()))
+                .map(Map.Entry::getKey).collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static boolean isComparableAcrossProfiles(List<HtxTrendReplayTradeEntity> profileTrades) {
+        if (profileTrades == null || profileTrades.size() != HtxTrendExitReplayEngine.ExitProfile.values().length) {
+            return false;
+        }
+        Set<String> expectedProfiles = java.util.Arrays.stream(HtxTrendExitReplayEngine.ExitProfile.values())
+                .map(Enum::name).collect(Collectors.toSet());
+        Set<String> actualProfiles = profileTrades.stream().map(HtxTrendReplayTradeEntity::getExitProfile)
+                .collect(Collectors.toSet());
+        return expectedProfiles.equals(actualProfiles) && profileTrades.stream()
+                .allMatch(trade -> "COMPLETE".equals(trade.getDataIntegrity()) && trade.getNetProfit() != null);
+    }
+
+    private static ProfileSummary summarizeProfile(List<HtxTrendReplayTradeEntity> trades, String profile,
+                                                   Set<Long> comparableCandidateIds) {
         List<HtxTrendReplayTradeEntity> comparable = trades.stream()
+                .filter(trade -> profile.equals(trade.getExitProfile()))
+                .filter(trade -> comparableCandidateIds.contains(trade.getSourceCandidateId()))
                 .filter(trade -> "COMPLETE".equals(trade.getDataIntegrity()))
                 .filter(trade -> trade.getNetProfit() != null).toList();
         BigDecimal net = comparable.stream().map(HtxTrendReplayTradeEntity::getNetProfit)
@@ -377,12 +419,17 @@ public class HtxTrendReplayService {
         BigDecimal grossLoss = comparable.stream().map(HtxTrendReplayTradeEntity::getNetProfit)
                 .filter(value -> value.signum() < 0).map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal pf = grossLoss.signum() == 0 ? null : grossProfit.divide(grossLoss, 8, RoundingMode.HALF_UP);
-        String integrity = comparable.size() == trades.size() ? "COMPLETE" : "PARTIAL";
-        return new ReplaySummary(replayRunId, candidateCount, trades.size(), comparable.size(), net, pf, integrity,
-                "frozen candle replay; unavailable samples retain their missing evidence reason");
+        long profileCount = trades.stream().filter(trade -> profile.equals(trade.getExitProfile())).count();
+        return new ProfileSummary(profileCount, comparable.size(), net, pf, comparable.size() == profileCount);
     }
 
     public record ReplaySummary(String replayRunId, long candidateCount, long tradeCount, long comparableTradeCount,
-                                BigDecimal netProfit, BigDecimal profitFactor, String inputIntegrity, String message) {
+                                BigDecimal netProfit, BigDecimal profitFactor, String inputIntegrity,
+                                Map<String, ProfileSummary> profileSummaries, String message) {
+    }
+
+    /** Aggregate is intentionally profile-scoped; the top-level PnL remains the staged-runner compatibility value. */
+    public record ProfileSummary(long tradeCount, long comparableTradeCount, BigDecimal netProfit,
+                                 BigDecimal profitFactor, boolean complete) {
     }
 }

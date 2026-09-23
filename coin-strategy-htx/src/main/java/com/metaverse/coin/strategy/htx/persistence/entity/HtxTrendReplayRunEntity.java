@@ -26,6 +26,7 @@ public class HtxTrendReplayRunEntity {
     private Long comparableTradeCount;
     private BigDecimal netProfit;
     private BigDecimal profitFactor;
+    private String comparisonSummaryJson;
     private String message;
     private LocalDateTime createdAt;
     private LocalDateTime completedAt;

@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.replay;
 
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendCandidateSignalMapper;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendReplayTradeEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendReplayCandleEntity;
 import org.apache.ibatis.annotations.Select;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,31 @@ class HtxTrendReplayServiceTest {
         assertTrue(statement.contains("bar_time >= #{startBarTime}"));
         assertTrue(statement.contains("bar_time <= #{endBarTime}"));
         assertFalse(statement.contains("gate_result = 'PASSED'"));
+    }
+
+    @Test
+    void summarizesExitProfilesSeparatelyWithoutMixingTheirProfitAndLoss() {
+        HtxTrendReplayTradeEntity full = completeTrade("FULL_EXIT_AT_FIRST_TARGET", "1.20");
+        HtxTrendReplayTradeEntity staged = completeTrade("STAGED_EXIT_AT_TARGETS", "0.80");
+        HtxTrendReplayTradeEntity runner = completeTrade("STAGED_RUNNER", "1.50");
+
+        HtxTrendReplayService.ReplaySummary summary = HtxTrendReplayService.summarize("replay:test", 1,
+                List.of(full, staged, runner));
+
+        assertEquals(new BigDecimal("1.50"), summary.netProfit());
+        assertEquals(3L, summary.tradeCount());
+        assertEquals(1L, summary.profileSummaries().get("FULL_EXIT_AT_FIRST_TARGET").comparableTradeCount());
+        assertEquals(new BigDecimal("0.80"), summary.profileSummaries().get("STAGED_EXIT_AT_TARGETS").netProfit());
+        assertEquals(new BigDecimal("1.50"), summary.profileSummaries().get("STAGED_RUNNER").netProfit());
+    }
+
+    private static HtxTrendReplayTradeEntity completeTrade(String profile, String netProfit) {
+        HtxTrendReplayTradeEntity trade = new HtxTrendReplayTradeEntity();
+        trade.setSourceCandidateId(1L);
+        trade.setExitProfile(profile);
+        trade.setDataIntegrity("COMPLETE");
+        trade.setNetProfit(new BigDecimal(netProfit));
+        return trade;
     }
 
     private static List<HtxTrendReplayCandleEntity> candles(String period, List<String> closes, List<Long> barTimes) {

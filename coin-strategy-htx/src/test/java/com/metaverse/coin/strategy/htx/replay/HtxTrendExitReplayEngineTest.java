@@ -35,6 +35,32 @@ class HtxTrendExitReplayEngineTest {
     }
 
     @Test
+    void comparesFullExitStagedExitAndRunnerAgainstTheSamePricePath() {
+        List<HtxTrendExitReplayEngine.Candle> candles = List.of(
+                candle(2, "100", "112", "101", "111"),
+                candle(3, "111", "121", "110", "120"),
+                candle(4, "120", "130", "119", "128"));
+        Map<Long, Integer> opposition = Map.of(2L, 0, 3L, 0, 4L, 0);
+
+        HtxTrendExitReplayEngine.Outcome fullExit = engine.replay(input(), candles, opposition,
+                HtxTrendExitReplayEngine.ExitProfile.FULL_EXIT_AT_FIRST_TARGET);
+        HtxTrendExitReplayEngine.Outcome stagedExit = engine.replay(input(), candles, opposition,
+                HtxTrendExitReplayEngine.ExitProfile.STAGED_EXIT_AT_TARGETS);
+        HtxTrendExitReplayEngine.Outcome runner = engine.replay(input(), candles, opposition,
+                HtxTrendExitReplayEngine.ExitProfile.STAGED_RUNNER);
+
+        assertEquals("TARGET_FULL_EXIT", fullExit.exitReason());
+        assertEquals(0L, fullExit.remainingContracts());
+        assertEquals("TARGET_SECOND_STAGE_FULL_EXIT", stagedExit.exitReason());
+        assertEquals(1, stagedExit.partialExitStage());
+        assertEquals(0L, stagedExit.remainingContracts());
+        assertEquals("MARK_TO_MARK", runner.outcomeState());
+        assertEquals(4L, runner.remainingContracts());
+        assertEquals(2, runner.partialExitStage());
+        assertTrue(runner.netProfit().compareTo(stagedExit.netProfit()) > 0);
+    }
+
+    @Test
     void exitsRunnerOnlyWhenMajorTimeframesConfirmExhaustion() {
         HtxTrendExitReplayEngine.Outcome outcome = engine.replay(input(), List.of(
                 candle(2, "100", "111", "110", "110"),

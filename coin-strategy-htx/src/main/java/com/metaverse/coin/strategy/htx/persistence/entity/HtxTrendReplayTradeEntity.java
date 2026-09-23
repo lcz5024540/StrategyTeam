@@ -15,6 +15,7 @@ public class HtxTrendReplayTradeEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String replayRunId;
+    private String exitProfile;
     private Long sourceCandidateId;
     private Long sourcePositionId;
     private String sourceRunId;

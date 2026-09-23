@@ -3,7 +3,6 @@ package com.metaverse.coin.strategy.htx.replay;
 import com.metaverse.coin.strategy.htx.service.HtxTrendExitRules;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -21,10 +20,20 @@ public final class HtxTrendExitReplayEngine {
     private static final BigDecimal TRAILING_ATR_MULTIPLIER = new BigDecimal("2");
 
     public Outcome replay(Input input, List<Candle> rawCandles, Map<Long, Integer> oppositionByBar) {
+        return replay(input, rawCandles, oppositionByBar, ExitProfile.STAGED_RUNNER);
+    }
+
+    /**
+     * Replays one explicit exit profile against the same frozen entry evidence and candle path.
+     * The caller must compare only outcomes with {@code dataIntegrity=COMPLETE}.
+     */
+    public Outcome replay(Input input, List<Candle> rawCandles, Map<Long, Integer> oppositionByBar,
+                          ExitProfile exitProfile) {
         String missing = input.validationError();
         if (missing != null) {
             return Outcome.insufficient(missing);
         }
+        ExitProfile effectiveProfile = exitProfile == null ? ExitProfile.STAGED_RUNNER : exitProfile;
         List<Candle> candles = rawCandles == null ? List.of() : rawCandles.stream()
                 .filter(candle -> candle != null && candle.barTime() > input.entryBarTime())
                 .sorted(Comparator.comparingLong(Candle::barTime)).toList();
@@ -61,11 +70,11 @@ public final class HtxTrendExitReplayEngine {
             if (stopHit && (oneRHit || structureHit || twoRHit)) {
                 ambiguous = true;
                 return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae,
-                        input.stopPrice(), "MODEL_INVALIDATION", "INTRABAR_AMBIGUOUS: stop and target in one bar");
+                        input.stopPrice(), "MODEL_INVALIDATION", "INTRABAR_AMBIGUOUS: stop and target in one bar", stage);
             }
             if (stopHit) {
                 return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae,
-                        input.stopPrice(), "MODEL_INVALIDATION", null);
+                        input.stopPrice(), "MODEL_INVALIDATION", null, stage);
             }
             BigDecimal activation = HtxTrendExitRules.rTargetPrice(input.side(), input.entryPrice(), input.stopPrice(), ONE);
             OptionalInt opposition = oppositionByBar == null ? OptionalInt.empty()
@@ -82,7 +91,12 @@ public final class HtxTrendExitReplayEngine {
             }
             if (trailingHit && trailingAllowed && (oneRHit || structureHit || twoRHit)) {
                 return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae, trailing,
-                        "ATR_TRAILING", "INTRABAR_AMBIGUOUS: trailing stop and target in one bar");
+                        "ATR_TRAILING", "INTRABAR_AMBIGUOUS: trailing stop and target in one bar", stage);
+            }
+            if (effectiveProfile == ExitProfile.FULL_EXIT_AT_FIRST_TARGET && (oneRHit || structureHit)) {
+                BigDecimal target = firstReachedTarget(input.side(), oneR, oneRHit, structure, structureHit);
+                return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae, target,
+                        "TARGET_FULL_EXIT", null, stage);
             }
             if (stage < 1 && (oneRHit || structureHit)) {
                 BigDecimal target = firstReachedTarget(input.side(), oneR, oneRHit, structure, structureHit);
@@ -95,6 +109,10 @@ public final class HtxTrendExitReplayEngine {
                 }
             }
             if (stage < 2 && twoRHit) {
+                if (effectiveProfile == ExitProfile.STAGED_EXIT_AT_TARGETS) {
+                    return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae, twoR,
+                            "TARGET_SECOND_STAGE_FULL_EXIT", null, stage);
+                }
                 long closeVolume = HtxTrendExitRules.partialCloseVolume(remaining, input.secondPartialRate());
                 if (closeVolume > 0L) {
                     realizedGross = realizedGross.add(favorablePnl(input, twoR, closeVolume));
@@ -105,7 +123,7 @@ public final class HtxTrendExitReplayEngine {
             }
             if (trailingHit && trailingAllowed) {
                 return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae,
-                        trailing, "ATR_TRAILING", null);
+                        trailing, "ATR_TRAILING", null, stage);
             }
         }
         Candle last = candles.get(candles.size() - 1);
@@ -122,12 +140,13 @@ public final class HtxTrendExitReplayEngine {
 
     private static Outcome closeAll(Input input, Candle candle, long remaining, BigDecimal realizedGross,
                                     BigDecimal closeFees, BigDecimal entryFee, BigDecimal mfe, BigDecimal mae,
-                                    BigDecimal exitPrice, String reason, String ambiguity) {
+                                    BigDecimal exitPrice, String reason, String ambiguity, int partialExitStage) {
         BigDecimal gross = realizedGross.add(favorablePnl(input, exitPrice, remaining));
         BigDecimal totalCloseFee = closeFees.add(fee(exitPrice, quantity(input, remaining), input.feeRate()));
         return new Outcome("CLOSED", reason, "COMPLETE", ambiguity, candle.barTime(), exitPrice, 0L, mfe, mae,
                 entryFee, totalCloseFee, gross.subtract(entryFee).subtract(totalCloseFee),
-                ambiguity == null ? "all replay exit rules evaluated" : "conservative stop-first intrabar rule", 0, ambiguity != null);
+                ambiguity == null ? "all replay exit rules evaluated" : "conservative stop-first intrabar rule",
+                partialExitStage, ambiguity != null);
     }
 
     private static BigDecimal trailingStop(String side, BigDecimal highest, BigDecimal lowest, BigDecimal atr) {
@@ -203,6 +222,16 @@ public final class HtxTrendExitReplayEngine {
                 throw new IllegalArgumentException("replay candle must contain positive OHLC prices");
             }
         }
+    }
+
+    /** Exit variants use identical entry and candle evidence, so their net-result delta is attributable to exit handling. */
+    public enum ExitProfile {
+        /** Close the whole position at the first 1R or structural target. */
+        FULL_EXIT_AT_FIRST_TARGET,
+        /** Take the first partial at 1R/structure and close all remaining volume at 2R. */
+        STAGED_EXIT_AT_TARGETS,
+        /** Take both staged reductions and leave the final volume for the multi-timeframe protected runner. */
+        STAGED_RUNNER
     }
 
     public record Outcome(String outcomeState, String exitReason, String dataIntegrity, String ambiguityReason,

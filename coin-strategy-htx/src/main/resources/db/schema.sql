@@ -465,6 +465,81 @@ CREATE TABLE IF NOT EXISTS htx_trend_paper_execution (
     INDEX idx_htx_trend_paper_execution_run (run_id, created_at)
 );
 
+-- Immutable input manifest and per-profile outcomes for deterministic exit comparisons.
+CREATE TABLE IF NOT EXISTS htx_trend_replay_run (
+    id                      BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    replay_run_id           VARCHAR(96)    NOT NULL,
+    engine_version          VARCHAR(96)    NOT NULL,
+    input_start_at          DATETIME(3)    NOT NULL,
+    input_end_at            DATETIME(3)    NOT NULL,
+    periods                 VARCHAR(256)   NOT NULL,
+    status                  VARCHAR(32)    NOT NULL,
+    input_integrity         VARCHAR(32)    NOT NULL,
+    candidate_count         BIGINT         NOT NULL DEFAULT 0,
+    trade_count             BIGINT         NOT NULL DEFAULT 0,
+    comparable_trade_count  BIGINT         NOT NULL DEFAULT 0,
+    net_profit              DECIMAL(36,18),
+    profit_factor           DECIMAL(36,18),
+    comparison_summary_json MEDIUMTEXT,
+    message                 VARCHAR(1024),
+    created_at              DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    completed_at            DATETIME(3),
+    UNIQUE KEY uk_htx_trend_replay_run_id (replay_run_id),
+    INDEX idx_htx_trend_replay_run_time (created_at)
+);
+
+CREATE TABLE IF NOT EXISTS htx_trend_replay_candle (
+    id              BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    replay_run_id   VARCHAR(96)    NOT NULL,
+    contract_code   VARCHAR(32)    NOT NULL,
+    period          VARCHAR(16)    NOT NULL,
+    bar_time        BIGINT         NOT NULL,
+    open_price      DECIMAL(36,18) NOT NULL,
+    high_price      DECIMAL(36,18) NOT NULL,
+    low_price       DECIMAL(36,18) NOT NULL,
+    close_price     DECIMAL(36,18) NOT NULL,
+    volume          DECIMAL(36,18),
+    turnover        DECIMAL(36,18),
+    trade_count     BIGINT,
+    created_at      DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_htx_trend_replay_candle (replay_run_id, contract_code, period, bar_time),
+    INDEX idx_htx_trend_replay_candle_lookup (replay_run_id, contract_code, period, bar_time)
+);
+
+CREATE TABLE IF NOT EXISTS htx_trend_replay_trade (
+    id                  BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    replay_run_id       VARCHAR(96)    NOT NULL,
+    exit_profile        VARCHAR(32)    NOT NULL,
+    source_candidate_id BIGINT         NOT NULL,
+    source_position_id  BIGINT,
+    source_run_id       VARCHAR(128),
+    contract_code       VARCHAR(32)    NOT NULL,
+    period              VARCHAR(16)    NOT NULL,
+    direction           VARCHAR(16),
+    market_regime       VARCHAR(32),
+    primary_model       VARCHAR(64),
+    entry_bar_time      BIGINT         NOT NULL,
+    entry_price         DECIMAL(36,18),
+    exit_bar_time       BIGINT,
+    exit_price          DECIMAL(36,18),
+    initial_contracts   BIGINT,
+    remaining_contracts BIGINT,
+    mfe                 DECIMAL(36,18),
+    mae                 DECIMAL(36,18),
+    entry_fee           DECIMAL(36,18),
+    close_fee           DECIMAL(36,18),
+    net_profit          DECIMAL(36,18),
+    outcome_state       VARCHAR(32)    NOT NULL,
+    exit_reason         VARCHAR(64)    NOT NULL,
+    data_integrity      VARCHAR(32)    NOT NULL,
+    ambiguity_reason    VARCHAR(512),
+    message             VARCHAR(1024),
+    created_at          DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_htx_trend_replay_trade (replay_run_id, source_candidate_id, exit_profile),
+    INDEX idx_htx_trend_replay_trade_source (source_position_id, source_run_id),
+    INDEX idx_htx_trend_replay_trade_profile (replay_run_id, exit_profile, data_integrity, net_profit)
+);
+
 -- Dashboard-managed policy. Only the latest enabled version may promote a combination candidate to live entry.
 CREATE TABLE IF NOT EXISTS htx_trend_strategy_policy (
     id                       BIGINT         PRIMARY KEY AUTO_INCREMENT,
