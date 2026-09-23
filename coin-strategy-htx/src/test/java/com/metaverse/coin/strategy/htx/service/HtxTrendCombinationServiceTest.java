@@ -1,8 +1,13 @@
 package com.metaverse.coin.strategy.htx.service;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCandidateSignalRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCombinationRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
+import com.metaverse.coin.strategy.htx.service.HtxTrendCombinationCalculator.CombinationCandidate;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.Direction;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.Regime;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.TrendCandidateSignal;
@@ -10,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -116,11 +122,78 @@ class HtxTrendCombinationServiceTest {
         assertTrue(snapshot.getValue().getFactorsJson().contains("\"netPnlAfterCosts\":3.05946"));
     }
 
+    @Test
+    void factorSnapshotSeparatesSameStructureConfirmationsFromIndependentAlpha() {
+        HtxTrendCombinationCalculator calculator = new HtxTrendCombinationCalculator();
+        List<HtxSwapKline> candles = risingRange(32);
+        candles.add(candle(32, "106", "121", "107", "120"));
+        for (int index = 33; index < 40; index++) {
+            candles.add(candle(index, "116", "120", "112", "116"));
+        }
+        candles.add(candle(40, "115", "117", "113", "114"));
+        CombinationCandidate candidate = calculator.evaluate(candles,
+                signal("15min", "114", "120"), 32).get(0);
+
+        JSONObject snapshot = JSON.parseObject(HtxTrendCombinationService.factorSnapshotJson(signal("15min", "114", "120"),
+                candidate));
+        JSONObject trendState = snapshot.getJSONObject("trendState");
+        JSONObject evidence = snapshot.getJSONObject("modelEvidence");
+        JSONArray confirmations = evidence.getJSONArray("confirmations");
+
+        assertEquals("trend-factor-v3", snapshot.getString("schema"));
+        assertEquals("AVAILABLE", trendState.getJSONObject("trendStrength").getString("status"));
+        assertEquals("NOT_AVAILABLE", trendState.getJSONObject("derivativesQuality").getString("status"));
+        assertEquals("NOT_EVALUATED", trendState.getJSONObject("executionQuality").getString("status"));
+        assertEquals(1, evidence.getIntValue("independentAlphaCount"));
+        assertEquals("BREAKOUT_RETEST:32", evidence.getJSONObject("primary").getString("correlationGroup"));
+        assertFalse(confirmations.isEmpty());
+        for (Object confirmation : confirmations) {
+            JSONObject item = (JSONObject) confirmation;
+            assertEquals("CONFIRMATION_SAME_STRUCTURE", item.getString("role"));
+            assertEquals("BREAKOUT_RETEST:32", item.getString("correlationGroup"));
+        }
+    }
+
+    @Test
+    void rejectedSnapshotKeepsUnavailableAndNotEvaluatedEvidenceExplicit() {
+        JSONObject snapshot = JSON.parseObject(HtxTrendCombinationService.factorSnapshotJson(signal("15min", "100", "101"), null));
+
+        assertEquals("NOT_EVALUATED", snapshot.getJSONObject("trendState")
+                .getJSONObject("structureQuality").getString("status"));
+        assertEquals("NOT_AVAILABLE", snapshot.getJSONObject("trendState")
+                .getJSONObject("crowdingRisk").getString("status"));
+        assertEquals("NOT_EVALUATED", snapshot.getJSONObject("modelEvidence").getString("status"));
+        assertEquals(0, snapshot.getJSONObject("modelEvidence").getIntValue("independentAlphaCount"));
+    }
+
     private static TrendCandidateSignal signal(String period) {
+        return signal(period, "100", "101");
+    }
+
+    private static TrendCandidateSignal signal(String period, String close, String breakoutHigh) {
         return new TrendCandidateSignal(period, 1_790_069_400L, Direction.LONG, Regime.TRENDING_UP,
                 new BigDecimal("90"), new BigDecimal("90"), BigDecimal.ZERO, new BigDecimal("90"),
-                new BigDecimal("100"), new BigDecimal("99"), new BigDecimal("98"), new BigDecimal("97"),
-                new BigDecimal("101"), new BigDecimal("95"), new BigDecimal("2"), new BigDecimal("0.02"),
+                new BigDecimal(close), new BigDecimal("99"), new BigDecimal("98"), new BigDecimal("97"),
+                new BigDecimal(breakoutHigh), new BigDecimal("95"), new BigDecimal("2"), new BigDecimal("0.02"),
                 new BigDecimal("30"), new BigDecimal("0.02"), new BigDecimal("1.5"), "valid", "none");
+    }
+
+    private static List<HtxSwapKline> risingRange(int size) {
+        List<HtxSwapKline> rows = new ArrayList<>();
+        for (int index = 0; index < size; index++) {
+            rows.add(candle(index, "100", "110", "101", "105"));
+        }
+        return rows;
+    }
+
+    private static HtxSwapKline candle(long id, String open, String high, String low, String close) {
+        HtxSwapKline candle = new HtxSwapKline();
+        candle.setId(id);
+        candle.setOpen(new BigDecimal(open));
+        candle.setHigh(new BigDecimal(high));
+        candle.setLow(new BigDecimal(low));
+        candle.setClose(new BigDecimal(close));
+        candle.setAmount(BigDecimal.ONE);
+        return candle;
     }
 }

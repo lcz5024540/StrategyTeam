@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
@@ -145,7 +146,7 @@ public class HtxTrendCombinationService {
         }
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
         snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime()
-                + ":combo-v2:REJECTED:evidence-v2");
+                + ":combo-v2:REJECTED:evidence-v3");
         snapshot.setContractCode(contractCode); snapshot.setPeriod(period); snapshot.setBarTime(signal.barTime());
         snapshot.setMarketRegime(signal.regime().name());
         snapshot.setFactorsJson(factorSnapshotJson(signal, null));
@@ -157,7 +158,7 @@ public class HtxTrendCombinationService {
         entity.setAtr(signal.atr()); entity.setAtrPct(signal.atrPct()); entity.setMomentumPct(signal.momentumPct());
         entity.setVolumeRatio(signal.volumeRatio()); entity.setEntryReason(signal.entryReason());
         entity.setInvalidationReason(signal.invalidationReason()); entity.setShadow(false);
-        entity.setModelVersion("combo-v2:evidence-v2:COMBINATION_GATE"); entity.setPrimaryModel("NONE");
+        entity.setModelVersion("combo-v2:evidence-v3:COMBINATION_GATE"); entity.setPrimaryModel("NONE");
         entity.setPolicyVersion("combo-v2"); entity.setFactorSnapshotId(snapshotId);
         entity.setRunId(runId(contractCode, period, signal.barTime()));
         entity.setGateResult("REJECTED"); entity.setGateReason(reason.code());
@@ -184,7 +185,7 @@ public class HtxTrendCombinationService {
     private Long recordSnapshot(String contractCode, String period, TrendCandidateSignal signal, ResolvedCandidate resolved) {
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
         snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":"
-                + resolved.policy().getPolicyVersion() + ":" + resolved.policy().getPolicyCode() + ":evidence-v2");
+                + resolved.policy().getPolicyVersion() + ":" + resolved.policy().getPolicyCode() + ":evidence-v3");
         snapshot.setContractCode(contractCode);
         snapshot.setPeriod(period);
         snapshot.setBarTime(signal.barTime());
@@ -197,11 +198,11 @@ public class HtxTrendCombinationService {
      * Stores all factors that actually participated in this entry decision. In particular, a Fibonacci
      * candidate keeps the prior breakout candle and impulse range rather than only the derived 0.382/0.618 zone.
      */
-    private static String factorSnapshotJson(TrendCandidateSignal signal, CombinationCandidate candidate) {
+    static String factorSnapshotJson(TrendCandidateSignal signal, CombinationCandidate candidate) {
         HtxTrendCombinationCalculator.FibonacciEvidence fibonacci = candidate == null
                 ? HtxTrendCombinationCalculator.FibonacciEvidence.notApplicable(0, 0)
                 : candidate.fibonacciEvidence();
-        return "{\"schema\":\"trend-factor-v2\",\"period\":" + jsonText(signal.period())
+        return "{\"schema\":\"trend-factor-v3\",\"period\":" + jsonText(signal.period())
                 + ",\"direction\":" + jsonText(signal.direction().name())
                 + ",\"regime\":" + jsonText(signal.regime().name())
                 + ",\"signalScore\":" + jsonNumber(signal.signalScore())
@@ -239,7 +240,120 @@ public class HtxTrendCombinationService {
                 + ",\"boxMeasuredMove\":" + jsonNumber(candidate == null ? null : candidate.boxMeasuredMoveTarget())
                 + ",\"fib1272\":" + jsonNumber(candidate == null ? null : candidate.fibExtension1272())
                 + ",\"fib1618\":" + jsonNumber(candidate == null ? null : candidate.fibExtension1618())
-                + ",\"expectedR\":" + jsonNumber(candidate == null ? null : candidate.expectedRMultiple()) + "}}";
+                + ",\"expectedR\":" + jsonNumber(candidate == null ? null : candidate.expectedRMultiple()) + "}"
+                + ",\"trendState\":" + trendStateJson(signal, candidate)
+                + ",\"modelEvidence\":" + modelEvidenceJson(candidate, fibonacci)
+                + "}";
+    }
+
+    /**
+     * Read-only market-state evidence.  This intentionally does not create a new score or gate: it makes the
+     * facts and unavailable inputs explicit so later policy changes can be replayed against the original snapshot.
+     */
+    private static String trendStateJson(TrendCandidateSignal signal, CombinationCandidate candidate) {
+        String structureStatus = candidate == null ? "NOT_EVALUATED" : "AVAILABLE";
+        return "{\"direction\":{" + statusJson("AVAILABLE", null) + ",\"value\":"
+                + jsonText(signal.direction() == null ? null : signal.direction().name()) + "}"
+                + ",\"regime\":{" + statusJson("AVAILABLE", null) + ",\"value\":"
+                + jsonText(signal.regime() == null ? null : signal.regime().name()) + "}"
+                + ",\"trendStrength\":{" + statusJson("AVAILABLE", null) + ",\"adx\":"
+                + jsonNumber(signal.adx()) + ",\"emaAlignment\":" + emaAlignmentJson(signal) + "}"
+                + ",\"structureQuality\":{" + statusJson(structureStatus,
+                candidate == null ? "combination structure was not evaluated" : null) + ",\"boxHigh\":"
+                + jsonNumber(candidate == null ? null : candidate.boxHigh()) + ",\"boxLow\":"
+                + jsonNumber(candidate == null ? null : candidate.boxLow()) + ",\"swingHigh\":"
+                + jsonNumber(candidate == null ? null : candidate.swingHigh()) + ",\"swingLow\":"
+                + jsonNumber(candidate == null ? null : candidate.swingLow()) + "}"
+                + ",\"momentumQuality\":{" + statusJson("AVAILABLE", null) + ",\"roc\":"
+                + jsonNumber(signal.momentumPct()) + ",\"scoreGap\":" + jsonNumber(signal.scoreGap())
+                + ",\"modelMomentumScore\":" + jsonNumber(candidate == null ? null : candidate.momentumQualityScore()) + "}"
+                + ",\"participationQuality\":{" + statusJson("AVAILABLE", null) + ",\"volumeRatio\":"
+                + jsonNumber(signal.volumeRatio()) + "}"
+                + ",\"derivativesQuality\":{" + statusJson("NOT_AVAILABLE",
+                "funding, open-interest and liquidation inputs are not in this snapshot") + "}"
+                + ",\"marketAlignment\":{" + statusJson("AVAILABLE", null) + ",\"marketRegime\":"
+                + jsonText(candidate == null ? signal.regime().name() : candidate.marketRegime()) + "}"
+                + ",\"crowdingRisk\":{" + statusJson("NOT_AVAILABLE",
+                "crowding data source is not connected") + "}"
+                + ",\"executionQuality\":{" + statusJson("NOT_EVALUATED",
+                "entry cost evidence is captured only after execution preflight") + "}}";
+    }
+
+    /**
+     * Describes model roles without changing combination scores.  BOX, Donchian and Fibonacci can refer to the
+     * same breakout/retest structure, so confirmations in the same group are not independent alpha sources.
+     */
+    private static String modelEvidenceJson(CombinationCandidate candidate,
+                                            HtxTrendCombinationCalculator.FibonacciEvidence fibonacci) {
+        if (candidate == null) {
+            return "{\"status\":\"NOT_EVALUATED\",\"reason\":\"no combination candidate\","
+                    + "\"independentAlphaCount\":0,\"structureCorrelation\":[]}";
+        }
+        String correlationGroup = structureCorrelationGroup(candidate, fibonacci);
+        String primaryRole = "PRIMARY_ALPHA";
+        String confirmations = confirmationEvidenceJson(candidate.confirmationModels(), correlationGroup);
+        return "{\"status\":\"AVAILABLE\",\"primary\":{\"model\":" + jsonText(candidate.primaryModel())
+                + ",\"role\":" + jsonText(primaryRole) + ",\"correlationGroup\":" + jsonText(correlationGroup)
+                + "},\"confirmations\":" + confirmations + ",\"conflicts\":[],\"independentAlphaCount\":1,"
+                + "\"structureCorrelation\":[{\"group\":" + jsonText(correlationGroup)
+                + ",\"classification\":\"SAME_STRUCTURE\",\"primaryModel\":" + jsonText(candidate.primaryModel())
+                + ",\"confirmationModels\":" + confirmationModelNamesJson(candidate.confirmationModels()) + "}]}";
+    }
+
+    private static String confirmationEvidenceJson(String confirmationModels, String correlationGroup) {
+        List<String> models = confirmationModels == null || confirmationModels.isBlank() ? List.of()
+                : Arrays.stream(confirmationModels.split(",")).map(String::trim).filter(value -> !value.isBlank()).toList();
+        StringBuilder json = new StringBuilder("[");
+        for (int index = 0; index < models.size(); index++) {
+            if (index > 0) {
+                json.append(',');
+            }
+            json.append("{\"model\":").append(jsonText(models.get(index)))
+                    .append(",\"role\":\"CONFIRMATION_SAME_STRUCTURE\",\"correlationGroup\":")
+                    .append(jsonText(correlationGroup)).append('}');
+        }
+        return json.append(']').toString();
+    }
+
+    private static String confirmationModelNamesJson(String confirmationModels) {
+        List<String> models = confirmationModels == null || confirmationModels.isBlank() ? List.of()
+                : Arrays.stream(confirmationModels.split(",")).map(String::trim).filter(value -> !value.isBlank()).toList();
+        StringBuilder json = new StringBuilder("[");
+        for (int index = 0; index < models.size(); index++) {
+            if (index > 0) {
+                json.append(',');
+            }
+            json.append(jsonText(models.get(index)));
+        }
+        return json.append(']').toString();
+    }
+
+    private static String structureCorrelationGroup(CombinationCandidate candidate,
+                                                    HtxTrendCombinationCalculator.FibonacciEvidence fibonacci) {
+        if ("FIB_PULLBACK_CONTINUATION".equals(candidate.primaryModel())
+                && fibonacci.breakoutBarTime() != null && fibonacci.breakoutBarTime() > 0L) {
+            return "BREAKOUT_RETEST:" + fibonacci.breakoutBarTime();
+        }
+        return "BREAKOUT:" + candidate.direction().name() + ":" + candidate.boxHigh() + ":" + candidate.boxLow();
+    }
+
+    private static String emaAlignmentJson(TrendCandidateSignal signal) {
+        if (signal.emaFast() == null || signal.emaMedium() == null || signal.emaSlow() == null) {
+            return jsonText("NOT_AVAILABLE");
+        }
+        if (signal.emaFast().compareTo(signal.emaMedium()) >= 0
+                && signal.emaMedium().compareTo(signal.emaSlow()) >= 0) {
+            return jsonText("BULLISH_STACK");
+        }
+        if (signal.emaFast().compareTo(signal.emaMedium()) <= 0
+                && signal.emaMedium().compareTo(signal.emaSlow()) <= 0) {
+            return jsonText("BEARISH_STACK");
+        }
+        return jsonText("MIXED");
+    }
+
+    private static String statusJson(String status, String reason) {
+        return "\"status\":" + jsonText(status) + (reason == null ? "" : ",\"reason\":" + jsonText(reason));
     }
 
     private static String multiTimeframeSnapshotJson(List<TrendCandidateSignal> signals) {
@@ -337,7 +451,7 @@ public class HtxTrendCombinationService {
         entity.setEmaFast(signal.emaFast()); entity.setEmaMedium(signal.emaMedium()); entity.setEmaSlow(signal.emaSlow());
         entity.setEntryReason(signal.entryReason()); entity.setInvalidationReason(signal.invalidationReason());
         entity.setShadow(false); entity.setModelVersion(resolved.policy().getPolicyVersion()
-                + ":evidence-v2:" + resolved.policy().getPolicyCode());
+                + ":evidence-v3:" + resolved.policy().getPolicyCode());
         entity.setPrimaryModel(resolved.candidate().primaryModel()); entity.setConfirmationModels(resolved.candidate().confirmationModels());
         entity.setRunId(runId);
         entity.setPolicyVersion(resolved.policy().getPolicyVersion()); entity.setFactorSnapshotId(snapshotId);
