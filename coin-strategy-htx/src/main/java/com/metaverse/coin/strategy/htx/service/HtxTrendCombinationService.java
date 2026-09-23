@@ -154,6 +154,28 @@ public class HtxTrendCombinationService {
         snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
         snapshot.setFactorsJson(pricePlanJson(plan));
         combinationRecorder.recordSnapshot(snapshot);
+        recordExternalSignal(contractCode, period, barTime, policyVersion, marketRegime, plan);
+    }
+
+    /** Emits only an immutable signal contract.  It never calls an exchange client or exposes account credentials. */
+    public HtxTrendFactorSnapshotEntity latestExternalSignal(String contractCode, String period, Long barTime,
+                                                              String policyVersion, String runId) {
+        if (contractCode == null || period == null || barTime == null || policyVersion == null || runId == null) {
+            return null;
+        }
+        return combinationRecorder.findLatestSnapshot(contractCode + ":" + period + ":" + barTime + ":"
+                + policyVersion + ":signal-outbox-v1:ENTRY_READY:" + runId);
+    }
+
+    private void recordExternalSignal(String contractCode, String period, Long barTime, String policyVersion,
+                                      String marketRegime, PricePlanEvidence plan) {
+        HtxTrendFactorSnapshotEntity event = new HtxTrendFactorSnapshotEntity();
+        event.setSnapshotKey(contractCode + ":" + period + ":" + barTime + ":" + policyVersion
+                + ":signal-outbox-v1:ENTRY_READY:" + plan.runId());
+        event.setContractCode(contractCode); event.setPeriod(period); event.setBarTime(barTime);
+        event.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
+        event.setFactorsJson(externalSignalJson(contractCode, plan));
+        combinationRecorder.recordSnapshot(event);
     }
 
     /** Persist a negative decision too, so a later review can distinguish missing structure from execution rejection. */
@@ -457,6 +479,14 @@ public class HtxTrendCombinationService {
                 + ",\"risk\":{\"maxSlippageBps\":0,\"plannedRiskUsdt\":" + jsonNumber(plan.plannedRiskUsdt())
                 + ",\"netRAtStructureTarget\":" + jsonNumber(plan.netRAtStructureTarget()) + "}"
                 + ",\"status\":\"FINAL_GATE_PASSED\",\"note\":\"read-only baseline; does not alter live order mode\"}";
+    }
+
+    private static String externalSignalJson(String contractCode, PricePlanEvidence plan) {
+        return "{\"schema\":\"trend-external-signal-v1\",\"eventType\":\"ENTRY_READY\",\"mode\":\"SIGNAL_ONLY\","
+                + "\"runId\":" + jsonText(plan.runId()) + ",\"contractCode\":" + jsonText(contractCode)
+                + ",\"timeframeProfile\":" + jsonText(plan.timeframeProfile()) + ",\"validUntilEpoch\":"
+                + jsonNumber(plan.validUntilEpoch()) + ",\"pricePlanRef\":" + jsonText("trend-price-plan-v1")
+                + ",\"executionBoundary\":\"NO_EXCHANGE_ORDER\"}";
     }
 
     private static String jsonNumber(Number value) {

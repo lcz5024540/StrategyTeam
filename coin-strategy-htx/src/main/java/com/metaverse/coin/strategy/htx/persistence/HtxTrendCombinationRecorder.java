@@ -31,4 +31,12 @@ public class HtxTrendCombinationRecorder {
             return null;
         }
     }
+
+    /** Read-only access for external signal subscribers; no subscriber can mutate the strategy state. */
+    public HtxTrendFactorSnapshotEntity findLatestSnapshot(String snapshotPrefix) {
+        if (snapshotPrefix == null || snapshotPrefix.isBlank()) {
+            return null;
+        }
+        return factorSnapshotMapper.findLatestBySnapshotPrefix(snapshotPrefix);
+    }
 }

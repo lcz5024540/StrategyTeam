@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -180,13 +181,16 @@ class HtxTrendCombinationServiceTest {
                         new BigDecimal("108"), new BigDecimal("3"), new BigDecimal("1.8")));
 
         ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
-        verify(combinationRecorder).recordSnapshot(snapshot.capture());
-        JSONObject json = JSON.parseObject(snapshot.getValue().getFactorsJson());
+        verify(combinationRecorder, times(2)).recordSnapshot(snapshot.capture());
+        JSONObject json = JSON.parseObject(snapshot.getAllValues().get(0).getFactorsJson());
+        JSONObject event = JSON.parseObject(snapshot.getAllValues().get(1).getFactorsJson());
         assertEquals("trend-price-plan-v1", json.getString("schema"));
         assertEquals("INTRADAY_15M", json.getString("timeframeProfile"));
         assertEquals(new BigDecimal("101"), json.getJSONObject("entry").getBigDecimal("maxAcceptablePrice"));
         assertEquals(new BigDecimal("107"), json.getJSONObject("exit").getBigDecimal("target2RPrice"));
         assertEquals(0, json.getJSONObject("risk").getIntValue("maxSlippageBps"));
+        assertEquals("ENTRY_READY", event.getString("eventType"));
+        assertEquals("NO_EXCHANGE_ORDER", event.getString("executionBoundary"));
     }
 
     private static TrendCandidateSignal signal(String period) {
