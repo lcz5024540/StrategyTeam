@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS htx_trend_replay_run (
     comparable_trade_count BIGINT NOT NULL DEFAULT 0,
     net_profit DECIMAL(36,18) NULL,
     profit_factor DECIMAL(36,18) NULL,
-    comparison_summary_json MEDIUMTEXT NULL,
     message VARCHAR(1024) NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     completed_at DATETIME(3) NULL,
@@ -26,7 +25,6 @@ CREATE TABLE IF NOT EXISTS htx_trend_replay_run (
 CREATE TABLE IF NOT EXISTS htx_trend_replay_candle (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     replay_run_id VARCHAR(96) NOT NULL,
-    exit_profile VARCHAR(32) NOT NULL DEFAULT 'STAGED_RUNNER',
     contract_code VARCHAR(32) NOT NULL,
     period VARCHAR(16) NOT NULL,
     bar_time BIGINT NOT NULL,
@@ -70,8 +68,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_replay_trade (
     ambiguity_reason VARCHAR(512) NULL,
     message VARCHAR(1024) NULL,
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    UNIQUE KEY uk_htx_trend_replay_trade (replay_run_id, source_candidate_id, exit_profile),
+    UNIQUE KEY uk_htx_trend_replay_trade (replay_run_id, source_candidate_id),
     INDEX idx_htx_trend_replay_trade_source (source_position_id, source_run_id),
-    INDEX idx_htx_trend_replay_trade_result (replay_run_id, data_integrity, net_profit),
-    INDEX idx_htx_trend_replay_trade_profile (replay_run_id, exit_profile, data_integrity, net_profit)
+    INDEX idx_htx_trend_replay_trade_result (replay_run_id, data_integrity, net_profit)
 );
