@@ -166,6 +166,29 @@ class HtxTrendCombinationServiceTest {
         assertEquals(0, snapshot.getJSONObject("modelEvidence").getIntValue("independentAlphaCount"));
     }
 
+    @Test
+    void pricePlanPersistsWorstPriceRiskTargetsAndTimeframeProfile() {
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(mock(HtxTrendStrategyPolicyService.class),
+                combinationRecorder, mock(HtxTrendCandidateSignalRecorder.class));
+
+        service.recordPricePlan("BTC-USDT", "15min", 1_790_069_400L, "combo-v2", "BROAD_UP",
+                new HtxTrendCombinationService.PricePlanEvidence("run-1", "INTRADAY_15M",
+                        new BigDecimal("100"), new BigDecimal("101"), new BigDecimal("101"), 1_790_070_345L,
+                        new BigDecimal("98"), new BigDecimal("98"), new BigDecimal("104"), new BigDecimal("107"),
+                        new BigDecimal("108"), new BigDecimal("3"), new BigDecimal("1.8")));
+
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder).recordSnapshot(snapshot.capture());
+        JSONObject json = JSON.parseObject(snapshot.getValue().getFactorsJson());
+        assertEquals("trend-price-plan-v1", json.getString("schema"));
+        assertEquals("INTRADAY_15M", json.getString("timeframeProfile"));
+        assertEquals(new BigDecimal("101"), json.getJSONObject("entry").getBigDecimal("maxAcceptablePrice"));
+        assertEquals(new BigDecimal("107"), json.getJSONObject("exit").getBigDecimal("target2RPrice"));
+        assertEquals(0, json.getJSONObject("risk").getIntValue("maxSlippageBps"));
+    }
+
     private static TrendCandidateSignal signal(String period) {
         return signal(period, "100", "101");
     }

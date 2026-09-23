@@ -138,6 +138,24 @@ public class HtxTrendCombinationService {
         candidateRecorder.markExecutionGate(runId, contractCode, result, reason);
     }
 
+    /** Persists an execution-neutral price contract after all current live preflight gates have passed. */
+    public void recordPricePlan(String contractCode, String period, Long barTime, String policyVersion,
+                                String marketRegime, PricePlanEvidence plan) {
+        if (contractCode == null || contractCode.isBlank() || barTime == null || barTime <= 0L
+                || policyVersion == null || policyVersion.isBlank() || plan == null || plan.runId() == null) {
+            return;
+        }
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + barTime + ":" + policyVersion
+                + ":price-plan-v1:" + plan.runId());
+        snapshot.setContractCode(contractCode);
+        snapshot.setPeriod(period);
+        snapshot.setBarTime(barTime);
+        snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
+        snapshot.setFactorsJson(pricePlanJson(plan));
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
     /** Persist a negative decision too, so a later review can distinguish missing structure from execution rejection. */
     private Selection reject(String contractCode, String period, TrendCandidateSignal signal,
                              HtxTrendCombinationGateReason reason) {
@@ -424,6 +442,23 @@ public class HtxTrendCombinationService {
                 + ",\"gateReason\":" + jsonText(evidence.gateReason()) + "}}";
     }
 
+    private static String pricePlanJson(PricePlanEvidence plan) {
+        return "{\"schema\":\"trend-price-plan-v1\",\"runId\":" + jsonText(plan.runId())
+                + ",\"timeframeProfile\":" + jsonText(plan.timeframeProfile())
+                + ",\"orderMode\":\"MARKET_BASELINE\",\"entry\":{\"triggerPrice\":"
+                + jsonNumber(plan.triggerPrice()) + ",\"idealPrice\":" + jsonNumber(plan.idealPrice())
+                + ",\"maxAcceptablePrice\":" + jsonNumber(plan.maxAcceptablePrice())
+                + ",\"validUntilEpoch\":" + jsonNumber(plan.validUntilEpoch()) + "}"
+                + ",\"exit\":{\"invalidationPrice\":" + jsonNumber(plan.invalidationPrice())
+                + ",\"initialStopPrice\":" + jsonNumber(plan.initialStopPrice())
+                + ",\"target1RPrice\":" + jsonNumber(plan.target1RPrice())
+                + ",\"target2RPrice\":" + jsonNumber(plan.target2RPrice())
+                + ",\"structureTargetPrice\":" + jsonNumber(plan.structureTargetPrice()) + "}"
+                + ",\"risk\":{\"maxSlippageBps\":0,\"plannedRiskUsdt\":" + jsonNumber(plan.plannedRiskUsdt())
+                + ",\"netRAtStructureTarget\":" + jsonNumber(plan.netRAtStructureTarget()) + "}"
+                + ",\"status\":\"FINAL_GATE_PASSED\",\"note\":\"read-only baseline; does not alter live order mode\"}";
+    }
+
     private static String jsonNumber(Number value) {
         if (value == null) {
             return "null";
@@ -521,5 +556,12 @@ public class HtxTrendCombinationService {
                     estimatedEntryFee, estimatedCloseFee, estimatedSpreadCost, expectedNetAfterCosts,
                     requiredMove, gateResult, gateReason);
         }
+    }
+
+    public record PricePlanEvidence(String runId, String timeframeProfile, BigDecimal triggerPrice,
+                                    BigDecimal idealPrice, BigDecimal maxAcceptablePrice, Long validUntilEpoch,
+                                    BigDecimal invalidationPrice, BigDecimal initialStopPrice, BigDecimal target1RPrice,
+                                    BigDecimal target2RPrice, BigDecimal structureTargetPrice,
+                                    BigDecimal plannedRiskUsdt, BigDecimal netRAtStructureTarget) {
     }
 }

@@ -1051,6 +1051,8 @@ public class HtxTrendFollowingService {
         BigDecimal stopPrice = combination == null ? initialStop(signal, side, contract)
                 : scalePrice(combination.invalidationPrice(), contract);
         BigDecimal takeProfitPrice = initialTakeProfit(signal, side, contract);
+        recordCombinationPricePlan(contractCode, signal, contract, combination, entryPrice, stopPrice, book,
+                volume, feeRates, entryCost);
         String positionKey = positionKey(contractCode);
         String clientOrderId = Long.toString(numericClientOrderId());
         HtxTrendPositionEntity entity = new HtxTrendPositionEntity();
@@ -2183,6 +2185,47 @@ public class HtxTrendFollowingService {
                         notional, expectedMove, expectedGross, entryCost.estimatedEntryFee(),
                         entryCost.estimatedCloseFee(), spreadCost, entryCost.expectedNetAfterFees(), requiredMove,
                         gateResult, gateReason));
+    }
+
+    /** Baseline plan records the price actually used today; later limit-order experiments consume this contract. */
+    private void recordCombinationPricePlan(String contractCode, TrendSignal signal, HtxSwapContractInfo contract,
+                                            CombinationContext combination, BigDecimal entryPrice, BigDecimal stopPrice,
+                                            TopOfBook book, long volume, HtxSwapFeeRateResolver.FeeRates feeRates,
+                                            EntryCostContext entryCost) {
+        if (combinationService == null || combination == null || signal == null || contract == null || book == null
+                || feeRates == null || entryCost == null || !positive(entryPrice) || !positive(stopPrice)) {
+            return;
+        }
+        BigDecimal riskDistance = entryPrice.subtract(stopPrice).abs();
+        BigDecimal quantity = contract.getContractSize().multiply(BigDecimal.valueOf(volume));
+        BigDecimal plannedRisk = riskDistance.multiply(quantity);
+        BigDecimal oneR = signal.side() == TrendSide.LONG ? entryPrice.add(riskDistance) : entryPrice.subtract(riskDistance);
+        BigDecimal twoR = signal.side() == TrendSide.LONG ? entryPrice.add(riskDistance.multiply(new BigDecimal("2")))
+                : entryPrice.subtract(riskDistance.multiply(new BigDecimal("2")));
+        BigDecimal structureTarget = signal.side() == TrendSide.LONG ? combination.targetZoneLow() : combination.targetZoneHigh();
+        BigDecimal structureGross = positive(structureTarget)
+                ? structureTarget.subtract(entryPrice).abs().multiply(quantity) : BigDecimal.ZERO;
+        BigDecimal spreadCost = entryPrice.multiply(quantity).multiply(book.ask().subtract(book.bid())
+                .divide(mid(book), 18, RoundingMode.HALF_UP));
+        BigDecimal netR = plannedRisk.signum() > 0 ? structureGross.subtract(entryCost.estimatedEntryFee())
+                .subtract(entryCost.estimatedCloseFee()).subtract(spreadCost)
+                .divide(plannedRisk, 12, RoundingMode.HALF_UP) : null;
+        Long validUntil = signal.barTime() == null ? null : signal.barTime() + periodSeconds(properties.getPeriod())
+                + Math.max(0L, properties.getMaxEntrySignalAgeSeconds());
+        combinationService.recordPricePlan(contractCode, properties.getPeriod(), signal.barTime(), combination.policyVersion(),
+                combination.marketRegime(), new HtxTrendCombinationService.PricePlanEvidence(combination.runId(),
+                timeframeProfile(properties.getPeriod()), signal.closePrice(), entryPrice, entryPrice, validUntil,
+                combination.invalidationPrice(), stopPrice, scalePrice(oneR, contract), scalePrice(twoR, contract),
+                structureTarget, plannedRisk, netR));
+    }
+
+    private static String timeframeProfile(String period) {
+        String normalized = period == null ? "" : period.trim().toLowerCase(Locale.ROOT);
+        if ("15min".equals(normalized)) return "INTRADAY_15M";
+        if ("30min".equals(normalized)) return "INTRADAY_30M";
+        if ("4hour".equals(normalized)) return "SWING_4H";
+        if ("1day".equals(normalized)) return "TREND_1D";
+        return "UNCLASSIFIED";
     }
 
     private long targetVolume(BigDecimal entryPrice, BigDecimal atr, BigDecimal contractSize, SizingContext sizing) {
