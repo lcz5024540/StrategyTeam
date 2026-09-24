@@ -77,6 +77,59 @@ class HtxTrendExitDecisionEngineTest {
         assertEquals("THESIS_INTACT", decision.phase());
     }
 
+    @Test
+    void intradayProfitArmUsesCostsAndAtrInsteadOfTheWideInitialStop() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(ltcIntradayInput(
+                new BigDecimal("73.60"), new BigDecimal("73.60"), TrendSide.LONG,
+                new BigDecimal("73.40"), new BigDecimal("73.00"), null));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, decision.action());
+        assertEquals("NET_COST_AND_ATR_MILESTONE", decision.trailingArmReason());
+        assertEquals(new BigDecimal("73.17979657142855"), decision.protectionPrice());
+        assertTrue(decision.protectionPrice().compareTo(new BigDecimal("72.92")) > 0);
+        assertTrue(decision.maxFavorableR().compareTo(new BigDecimal("0.20")) < 0,
+                "the arm must not wait for the 1R target implied by a wide structural stop");
+    }
+
+    @Test
+    void intradayPullbackReducesOnlyAfterAtrExcursionAndIndependentWeakeningEvidence() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(ltcIntradayInput(
+                new BigDecimal("74.00"), new BigDecimal("74.55"), TrendSide.FLAT,
+                new BigDecimal("73.80"), new BigDecimal("74.00"), LocalDateTime.of(2026, 9, 25, 0, 0)));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, decision.action());
+        assertEquals("PROFIT_AT_RISK", decision.phase());
+        assertEquals(9L, decision.targetRemainingContracts());
+        assertEquals("profit-at-risk-with-deteriorating-continuation", decision.reason());
+    }
+
+    @Test
+    void profitLockUsesActualEntryFeeInsteadOfAssumingMatchingCloseFee() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
+                HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, "LONG", 10L, BigDecimal.ONE,
+                new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("90"), new BigDecimal("110"),
+                new BigDecimal("100.60"), new BigDecimal("99"), new BigDecimal("100.60"), new BigDecimal("100"),
+                BigDecimal.ONE, TrendSide.LONG, new BigDecimal("101"), new BigDecimal("100"), 0, false,
+                new BigDecimal("1.00"), new BigDecimal("0.10"), new BigDecimal("0.40"), null, null, null,
+                LocalDateTime.of(2026, 9, 25, 0, 15), 0, 3, new BigDecimal("0.25"),
+                HtxTrendExitDecisionEngine.ProfitProtectionPolicy.intradayDefaults()));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, decision.action());
+        assertEquals(0, decision.protectionPrice().compareTo(new BigDecimal("100.20")));
+    }
+
+    private static HtxTrendExitDecisionEngine.Input ltcIntradayInput(BigDecimal reference, BigDecimal highest,
+                                                                       TrendSide signalSide, BigDecimal emaFast,
+                                                                       BigDecimal emaSlow, LocalDateTime armedAt) {
+        return new HtxTrendExitDecisionEngine.Input(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION,
+                "LONG", 12L, new BigDecimal("0.10"), new BigDecimal("72.92"), new BigDecimal("68.98"),
+                new BigDecimal("68.97766"), new BigDecimal("77.10336"), reference, new BigDecimal("71.79"),
+                highest, new BigDecimal("72.92"), new BigDecimal("1.342857142857"), signalSide, emaFast, emaSlow,
+                0, false, new BigDecimal("1.20"), new BigDecimal("0.0350208"), armedAt,
+                armedAt == null ? null : "NET_COST_AND_ATR_MILESTONE", null,
+                LocalDateTime.of(2026, 9, 25, 0, 15), 0, 3, new BigDecimal("0.25"));
+    }
+
     private static HtxTrendExitDecisionEngine.Input unarmedLossInput(int flatStreak) {
         return new HtxTrendExitDecisionEngine.Input(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION,
                 "SHORT", 10L, BigDecimal.ONE, new BigDecimal("100"), new BigDecimal("110"), new BigDecimal("110"),

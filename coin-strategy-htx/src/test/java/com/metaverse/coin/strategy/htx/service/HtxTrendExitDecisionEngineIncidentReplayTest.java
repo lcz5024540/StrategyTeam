@@ -37,17 +37,17 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
 
         ReplayOutcome doge = replay(findPosition(positions, 153L));
         assertClose(doge, 1790195400L, new BigDecimal("0.092272"), new BigDecimal("2.5995279200"));
-        assertEquals("MFE_DYNAMIC_PULLBACK", doge.trailingArmReason());
+        assertEquals("NET_COST_AND_ATR_MILESTONE", doge.trailingArmReason());
 
         ReplayOutcome sui = replay(findPosition(positions, 154L));
-        assertClose(sui, 1790180100L, new BigDecimal("0.9588"), new BigDecimal("0.96718440"));
-        assertEquals("RISK_REWARD_MILESTONE", sui.trailingArmReason());
+        assertClose(sui, 1790179200L, new BigDecimal("0.9626"), new BigDecimal("0.62124608"));
+        assertEquals("NET_COST_AND_ATR_MILESTONE", sui.trailingArmReason());
 
-        // ZEC finishes the frozen window in profit at its bar-close reference. XRP 156 and XRP 160
-        // are loss-making, but each has only two fully completed post-entry bars. With production's
-        // three-bar confirmation, all three remain deliberately unclosed in this no-look-ahead replay.
+        // ZEC finishes the frozen window in profit at its bar-close reference, so v3 can arm a durable
+        // cost-and-ATR lock but cannot invent a later fill. XRP 156 and XRP 160 are loss-making, but each
+        // has only two fully completed post-entry bars; both remain deliberately unclosed in this replay.
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 156L)), 1790198100L);
-        assertHoldUntilHistoricalExit(replay(findPosition(positions, 159L)), 1790246700L);
+        assertArmUntilHistoricalExit(replay(findPosition(positions, 159L)), 1790246700L);
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 160L)), 1790246700L);
     }
 
@@ -90,7 +90,7 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
                     HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, side, contracts, contractSize,
                     entryPrice, initialStop, invalidation, structureTarget, close, protection, highest, lowest,
                     decimal(bar, "atr"), signalSide, decimal(bar, "emaFast"),
-                    decimal(bar, "emaSlow"), 0, false, currentNet, estimatedCloseFee, trailingArmedAt,
+                    decimal(bar, "emaSlow"), 0, false, currentNet, entryFee, estimatedCloseFee, trailingArmedAt,
                     trailingArmReason, maxFavorableR, LocalDateTime.ofEpochSecond(bar.getLongValue("barTime"), 0,
                             java.time.ZoneOffset.ofHours(8)), flatStreak, requiredFlatStreak, flatLossBudget));
             trailingArmedAt = decision.trailingArmedAt();
@@ -128,6 +128,13 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
         assertNotNull(outcome);
         assertEquals(expectedBarTime, outcome.barTime());
         assertEquals(Action.HOLD, outcome.action());
+    }
+
+    private static void assertArmUntilHistoricalExit(ReplayOutcome outcome, long expectedBarTime) {
+        assertNotNull(outcome);
+        assertEquals(expectedBarTime, outcome.barTime());
+        assertEquals(Action.ARM_TRAILING, outcome.action());
+        assertEquals("NET_COST_AND_ATR_MILESTONE", outcome.trailingArmReason());
     }
 
     private static JSONObject loadFixture() {

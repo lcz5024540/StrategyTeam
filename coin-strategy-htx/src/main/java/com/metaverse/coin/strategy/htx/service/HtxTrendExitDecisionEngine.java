@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
  */
 public final class HtxTrendExitDecisionEngine {
 
-    public static final String VERSION = "fib-exit-engine-v2";
+    public static final String VERSION = "fib-exit-engine-v3";
     public static final String FIB_PULLBACK_CONTINUATION = "FIB_PULLBACK_CONTINUATION";
 
     public Decision evaluate(Input input) {
@@ -24,15 +24,26 @@ public final class HtxTrendExitDecisionEngine {
             return Decision.hold("THESIS_INTACT", "unsupported-or-incomplete", input == null ? null : input.maxFavorableR(),
                     input == null ? null : input.trailingArmedAt(), null, null);
         }
+        ProfitProtectionPolicy policy = policy(input.profitProtectionPolicy());
         BigDecimal riskDistance = input.entryPrice().subtract(input.initialStopPrice()).abs();
         BigDecimal favorableMove = favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice());
         BigDecimal computedMaxR = favorableMove.divide(riskDistance, 12, RoundingMode.DOWN).max(zero(input.maxFavorableR()));
         boolean structureTargetReached = targetReached(input.side(), input.referencePrice(), input.structureTargetPrice());
         boolean riskRewardMilestone = computedMaxR.compareTo(BigDecimal.ONE) >= 0;
         BigDecimal adverseFromBest = adverseMoveFromBest(input.side(), input.referencePrice(), input.highestPrice(), input.lowestPrice());
-        boolean dynamicPullback = positive(input.atr()) && adverseFromBest.compareTo(input.atr()) >= 0;
         boolean profitable = positive(input.currentNetPnl());
-        boolean milestone = profitable && (structureTargetReached || riskRewardMilestone || dynamicPullback);
+        BigDecimal allInCostDistance = allInCostDistance(input);
+        BigDecimal profitLockDistance = allInCostDistance.add(zero(input.atr()).multiply(policy.lockAtrMultiplier()));
+        BigDecimal profitArmDistance = max(zero(input.atr()).multiply(policy.armAtrMultiplier()), profitLockDistance);
+        BigDecimal partialQualificationDistance = zero(input.atr()).multiply(policy.partialAtrMultiplier());
+        boolean costCovered = input.currentNetPnl().compareTo(zero(input.estimatedCloseFee())
+                .multiply(policy.minNetFeeMultiple())) >= 0;
+        boolean atrProfitMilestone = costCovered && favorableMove.compareTo(profitArmDistance) >= 0;
+        boolean partialQualified = costCovered && favorableMove.compareTo(partialQualificationDistance) >= 0;
+        boolean earlyPullback = positive(input.atr())
+                && adverseFromBest.compareTo(input.atr().multiply(policy.pullbackAtrMultiplier())) >= 0;
+        boolean dynamicPullback = positive(input.atr()) && adverseFromBest.compareTo(input.atr()) >= 0;
+        boolean milestone = profitable && (structureTargetReached || riskRewardMilestone || atrProfitMilestone);
         LocalDateTime armedAt = input.trailingArmedAt();
         String armReason = input.trailingArmReason();
         boolean newlyArmed = false;
@@ -40,21 +51,26 @@ public final class HtxTrendExitDecisionEngine {
             armedAt = input.evaluatedAt();
             newlyArmed = true;
             armReason = structureTargetReached ? "STRUCTURE_TARGET" : riskRewardMilestone ? "RISK_REWARD_MILESTONE"
-                    : "MFE_DYNAMIC_PULLBACK";
+                    : "NET_COST_AND_ATR_MILESTONE";
         }
+        BigDecimal profitLockPrice = protectionPrice(input.side(), input.entryPrice(), profitLockDistance);
+        BigDecimal effectiveProtection = armedAt == null ? input.protectionPrice()
+                : tightenProtection(input.side(), input.protectionPrice(), profitLockPrice);
 
         boolean invalidated = crossed(input.side(), input.referencePrice(), input.invalidationPrice())
                 || crossed(input.side(), input.referencePrice(), input.initialStopPrice());
         if (invalidated) {
             return new Decision("INVALIDATED", Action.FULL_CLOSE, 0L, null, computedMaxR, armedAt, armReason,
-                    "model-or-initial-stop-invalidated", evidence(input, computedMaxR, dynamicPullback, 3, null));
+                    "model-or-initial-stop-invalidated", evidence(input, computedMaxR, dynamicPullback, earlyPullback,
+                    profitArmDistance, profitLockPrice, effectiveProtection, 3, null));
         }
 
         boolean protectionCrossed = !newlyArmed && armedAt != null
-                && crossed(input.side(), input.referencePrice(), input.protectionPrice());
+                && crossed(input.side(), input.referencePrice(), effectiveProtection);
         if (protectionCrossed) {
-            return new Decision("RUNNER", Action.FULL_CLOSE, 0L, input.protectionPrice(), computedMaxR, armedAt, armReason,
-                    "armed-protection-crossed", evidence(input, computedMaxR, dynamicPullback, 3, null));
+            return new Decision("RUNNER", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR, armedAt, armReason,
+                    "armed-protection-crossed", evidence(input, computedMaxR, dynamicPullback, earlyPullback,
+                    profitArmDistance, profitLockPrice, effectiveProtection, 3, null));
         }
 
         boolean flatLossBudgetExceeded = armedAt == null && input.signalSide() == TrendSide.FLAT
@@ -65,35 +81,40 @@ public final class HtxTrendExitDecisionEngine {
         if (flatLossBudgetExceeded) {
             return new Decision("THESIS_EXPIRED", Action.FULL_CLOSE, 0L, null, computedMaxR, null, null,
                     "unarmed-fib-flat-loss-budget-exceeded",
-                    evidence(input, computedMaxR, dynamicPullback, 0, null));
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, 0, null));
         }
 
-        int reversalEvidence = reversalEvidence(input, dynamicPullback);
+        int reversalEvidence = reversalEvidence(input, earlyPullback);
         BigDecimal expectedReward = expectedReward(input);
-        BigDecimal protectedRisk = protectedRisk(input);
+        BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
         boolean continuationWorthHolding = expectedReward.compareTo(protectedRisk) > 0 && reversalEvidence <= 1;
 
-        if (profitable && dynamicPullback && reversalEvidence >= 2 && !continuationWorthHolding) {
+        if (profitable && partialQualified && earlyPullback && reversalEvidence >= 2 && !continuationWorthHolding) {
             long targetRemaining = targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk);
             if (targetRemaining <= 0) {
-                return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, input.protectionPrice(), computedMaxR,
+                return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
                         armedAt, armReason, "multi-evidence-reversal-and-unfavorable-remaining-value",
-                        evidence(input, computedMaxR, true, reversalEvidence, expectedReward));
+                        evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                                effectiveProtection, reversalEvidence, expectedReward));
             }
-            return new Decision("PROFIT_AT_RISK", Action.PARTIAL_CLOSE, targetRemaining, input.protectionPrice(),
+            return new Decision("PROFIT_AT_RISK", Action.PARTIAL_CLOSE, targetRemaining, effectiveProtection,
                     computedMaxR, armedAt, armReason, "profit-at-risk-with-deteriorating-continuation",
-                    evidence(input, computedMaxR, true, reversalEvidence, expectedReward));
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
         }
 
         if (armedAt != null) {
             String phase = continuationWorthHolding ? "RUNNER" : dynamicPullback ? "PROFIT_AT_RISK" : "PROFIT_PROTECTED";
-            return new Decision(phase, Action.ARM_TRAILING, -1L, input.protectionPrice(), computedMaxR, armedAt, armReason,
+            return new Decision(phase, Action.ARM_TRAILING, -1L, effectiveProtection, computedMaxR, armedAt, armReason,
                     continuationWorthHolding ? "runner-hold-with-positive-remaining-value" : "armed-profit-protection",
-                    evidence(input, computedMaxR, dynamicPullback, reversalEvidence, expectedReward));
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
         }
         return Decision.hold(profitable ? "PROFIT_AT_RISK" : "THESIS_INTACT",
                 profitable ? "profit-not-yet-at-actionable-milestone" : "thesis-not-yet-profitable", computedMaxR,
-                null, null, evidence(input, computedMaxR, dynamicPullback, reversalEvidence, expectedReward));
+                null, null, evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                effectiveProtection, reversalEvidence, expectedReward));
     }
 
     private static boolean valid(Input input) {
@@ -126,11 +147,11 @@ public final class HtxTrendExitDecisionEngine {
                 .subtract(zero(input.estimatedCloseFee())) : BigDecimal.ZERO;
     }
 
-    private static BigDecimal protectedRisk(Input input) {
-        if (!positive(input.protectionPrice())) return BigDecimal.ZERO;
+    private static BigDecimal protectedRisk(Input input, BigDecimal protectionPrice) {
+        if (!positive(protectionPrice)) return BigDecimal.ZERO;
         BigDecimal move = HtxTrendExitRules.LONG.equals(input.side())
-                ? input.referencePrice().subtract(input.protectionPrice())
-                : input.protectionPrice().subtract(input.referencePrice());
+                ? input.referencePrice().subtract(protectionPrice)
+                : protectionPrice.subtract(input.referencePrice());
         return move.signum() > 0 ? move.multiply(input.contractSize()).multiply(BigDecimal.valueOf(input.remainingContracts()))
                 .add(zero(input.estimatedCloseFee())) : BigDecimal.ZERO;
     }
@@ -143,11 +164,18 @@ public final class HtxTrendExitDecisionEngine {
         return Math.max(0L, Math.min(remaining - 1L, target));
     }
 
-    private static String evidence(Input input, BigDecimal maxR, boolean dynamicPullback, int reversalEvidence,
+    private static String evidence(Input input, BigDecimal maxR, boolean dynamicPullback, boolean earlyPullback,
+                                   BigDecimal profitArmDistance, BigDecimal profitLockPrice, BigDecimal effectiveProtection,
+                                   int reversalEvidence,
                                    BigDecimal expectedReward) {
-        BigDecimal protectedRisk = protectedRisk(input);
-        return "{\"schema\":\"trend-exit-decision-v2\",\"model\":\"FIB_PULLBACK_CONTINUATION\","
+        BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
+        return "{\"schema\":\"trend-exit-decision-v3\",\"model\":\"FIB_PULLBACK_CONTINUATION\","
                 + "\"signal\":\"" + input.signalSide().name() + "\",\"dynamicPullback\":" + dynamicPullback
+                + ",\"earlyPullback\":" + earlyPullback + ",\"profitArmDistance\":" + number(profitArmDistance)
+                + ",\"profitLockPrice\":" + number(profitLockPrice) + ",\"effectiveProtectionPrice\":"
+                + number(effectiveProtection)
+                + ",\"entryFee\":" + number(input.entryFee()) + ",\"estimatedCloseFee\":"
+                + number(input.estimatedCloseFee())
                 + ",\"reversalEvidence\":" + reversalEvidence + ",\"majorTimeframeOpposition\":"
                 + input.majorTimeframeOpposition() + ",\"marketContextOpposes\":" + input.marketContextOpposes()
                 + ",\"maxFavorableR\":" + number(maxR) + ",\"expectedReward\":" + number(expectedReward)
@@ -164,6 +192,36 @@ public final class HtxTrendExitDecisionEngine {
     private static BigDecimal adverseMoveFromBest(String side, BigDecimal reference, BigDecimal highest, BigDecimal lowest) {
         return HtxTrendExitRules.LONG.equals(side) ? highest.subtract(reference).max(BigDecimal.ZERO)
                 : reference.subtract(lowest).max(BigDecimal.ZERO);
+    }
+
+    /**
+     * Uses the actual opening fee when it is known. The close fee is an estimate at the current
+     * mark price because it has not happened yet. Treating both legs as the close fee is only a
+     * compatibility fallback for historical inputs that predate the opening-fee field.
+     */
+    private static BigDecimal allInCostDistance(Input input) {
+        BigDecimal exposure = input.contractSize().multiply(BigDecimal.valueOf(input.remainingContracts()));
+        if (exposure.signum() <= 0) return BigDecimal.ZERO;
+        return zero(input.entryFee()).add(zero(input.estimatedCloseFee()))
+                .divide(exposure, 12, RoundingMode.UP);
+    }
+
+    private static BigDecimal protectionPrice(String side, BigDecimal entryPrice, BigDecimal lockDistance) {
+        return HtxTrendExitRules.LONG.equals(side) ? entryPrice.add(lockDistance) : entryPrice.subtract(lockDistance);
+    }
+
+    private static BigDecimal tightenProtection(String side, BigDecimal existing, BigDecimal candidate) {
+        if (!positive(existing)) return candidate;
+        if (!positive(candidate)) return existing;
+        return HtxTrendExitRules.LONG.equals(side) ? max(existing, candidate) : existing.min(candidate);
+    }
+
+    private static BigDecimal max(BigDecimal first, BigDecimal second) {
+        return first.compareTo(second) >= 0 ? first : second;
+    }
+
+    private static ProfitProtectionPolicy policy(ProfitProtectionPolicy policy) {
+        return policy == null ? ProfitProtectionPolicy.intradayDefaults() : policy.normalized();
     }
 
     private static boolean crossed(String side, BigDecimal reference, BigDecimal price) {
@@ -201,10 +259,64 @@ public final class HtxTrendExitDecisionEngine {
                         BigDecimal structureTargetPrice, BigDecimal referencePrice, BigDecimal protectionPrice,
                         BigDecimal highestPrice, BigDecimal lowestPrice, BigDecimal atr, TrendSide signalSide,
                         BigDecimal emaFast, BigDecimal emaSlow, int majorTimeframeOpposition,
-                        boolean marketContextOpposes, BigDecimal currentNetPnl, BigDecimal estimatedCloseFee,
+                        boolean marketContextOpposes, BigDecimal currentNetPnl, BigDecimal entryFee,
+                        BigDecimal estimatedCloseFee,
                         LocalDateTime trailingArmedAt, String trailingArmReason, BigDecimal maxFavorableR,
                         LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
-                        BigDecimal flatLossBudget) {
+                        BigDecimal flatLossBudget, ProfitProtectionPolicy profitProtectionPolicy) {
+        public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
+                     BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
+                     BigDecimal structureTargetPrice, BigDecimal referencePrice, BigDecimal protectionPrice,
+                     BigDecimal highestPrice, BigDecimal lowestPrice, BigDecimal atr, TrendSide signalSide,
+                     BigDecimal emaFast, BigDecimal emaSlow, int majorTimeframeOpposition,
+                     boolean marketContextOpposes, BigDecimal currentNetPnl, BigDecimal entryFee,
+                     BigDecimal estimatedCloseFee, LocalDateTime trailingArmedAt, String trailingArmReason,
+                     BigDecimal maxFavorableR, LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
+                     BigDecimal flatLossBudget) {
+            this(primaryModel, side, remainingContracts, contractSize, entryPrice, initialStopPrice, invalidationPrice,
+                    structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
+                    emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
+                    estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
+                    requiredFlatStreak, flatLossBudget, ProfitProtectionPolicy.intradayDefaults());
+        }
+
+        public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
+                     BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
+                     BigDecimal structureTargetPrice, BigDecimal referencePrice, BigDecimal protectionPrice,
+                     BigDecimal highestPrice, BigDecimal lowestPrice, BigDecimal atr, TrendSide signalSide,
+                     BigDecimal emaFast, BigDecimal emaSlow, int majorTimeframeOpposition,
+                     boolean marketContextOpposes, BigDecimal currentNetPnl, BigDecimal estimatedCloseFee,
+                     LocalDateTime trailingArmedAt, String trailingArmReason, BigDecimal maxFavorableR,
+                     LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak, BigDecimal flatLossBudget) {
+            this(primaryModel, side, remainingContracts, contractSize, entryPrice, initialStopPrice, invalidationPrice,
+                    structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
+                    emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, estimatedCloseFee,
+                    estimatedCloseFee,
+                    trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak, requiredFlatStreak,
+                    flatLossBudget, ProfitProtectionPolicy.intradayDefaults());
+        }
+    }
+
+    public record ProfitProtectionPolicy(BigDecimal armAtrMultiplier, BigDecimal lockAtrMultiplier,
+                                         BigDecimal partialAtrMultiplier, BigDecimal pullbackAtrMultiplier,
+                                         BigDecimal minNetFeeMultiple) {
+        public static ProfitProtectionPolicy intradayDefaults() {
+            return new ProfitProtectionPolicy(new BigDecimal("0.50"), new BigDecimal("0.15"),
+                    new BigDecimal("0.75"), new BigDecimal("0.40"), new BigDecimal("2.00"));
+        }
+
+        ProfitProtectionPolicy normalized() {
+            ProfitProtectionPolicy defaults = intradayDefaults();
+            return new ProfitProtectionPolicy(nonNegativeOr(armAtrMultiplier, defaults.armAtrMultiplier),
+                    nonNegativeOr(lockAtrMultiplier, defaults.lockAtrMultiplier),
+                    nonNegativeOr(partialAtrMultiplier, defaults.partialAtrMultiplier),
+                    nonNegativeOr(pullbackAtrMultiplier, defaults.pullbackAtrMultiplier),
+                    nonNegativeOr(minNetFeeMultiple, defaults.minNetFeeMultiple));
+        }
+
+        private static BigDecimal nonNegativeOr(BigDecimal value, BigDecimal fallback) {
+            return value == null || value.signum() < 0 ? fallback : value;
+        }
     }
 
     public record Decision(String phase, Action action, long targetRemainingContracts, BigDecimal protectionPrice,

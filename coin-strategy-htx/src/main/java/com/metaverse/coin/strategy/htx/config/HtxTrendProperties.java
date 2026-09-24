@@ -224,6 +224,24 @@ public class HtxTrendProperties {
     /** During the first gray release, never apply v2 exits to the mirrored account. */
     private boolean exitEngineV2PrimaryAccountOnly = true;
 
+    /**
+     * For intraday Fibonacci positions, arm profit protection after this many entry-timeframe ATRs.
+     * This is deliberately independent from the structural initial stop used for invalidation and sizing.
+     */
+    private BigDecimal intradayProfitArmAtrMultiplier = new BigDecimal("0.50");
+
+    /** Extra ATR retained above the all-in cost price when an intraday profit lock is armed. */
+    private BigDecimal intradayProfitLockAtrMultiplier = new BigDecimal("0.15");
+
+    /** Minimum favorable excursion before an intraday position may reduce on a confirmed pullback. */
+    private BigDecimal intradayProfitPartialAtrMultiplier = new BigDecimal("0.75");
+
+    /** Pullback from MFE, in entry-timeframe ATRs, required before an intraday partial exit is considered. */
+    private BigDecimal intradayProfitPullbackAtrMultiplier = new BigDecimal("0.40");
+
+    /** Current net profit must exceed this many estimated closing fees before profit protection is armed. */
+    private BigDecimal intradayProfitMinNetFeeMultiple = new BigDecimal("2.00");
+
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
 

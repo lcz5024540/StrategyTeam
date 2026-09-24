@@ -192,6 +192,11 @@ htx:
     exit-engine-v2-enabled: ${HTX_TREND_EXIT_ENGINE_V2_ENABLED:false}
     exit-engine-v2-live-enabled: ${HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED:false}
     exit-engine-v2-primary-account-only: ${HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY:true}
+    intraday-profit-arm-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER:0.50}
+    intraday-profit-lock-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_LOCK_ATR_MULTIPLIER:0.15}
+    intraday-profit-partial-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PARTIAL_ATR_MULTIPLIER:0.75}
+    intraday-profit-pullback-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PULLBACK_ATR_MULTIPLIER:0.40}
+    intraday-profit-min-net-fee-multiple: ${HTX_TREND_INTRADAY_PROFIT_MIN_NET_FEE_MULTIPLE:2.00}
     no-extension-exit-enabled: ${HTX_TREND_NO_EXTENSION_EXIT_ENABLED:true}
     no-extension-exit-bars: ${HTX_TREND_NO_EXTENSION_EXIT_BARS:2}
     no-extension-min-favorable-net-usdt: ${HTX_TREND_NO_EXTENSION_MIN_FAVORABLE_NET_USDT:0.15}

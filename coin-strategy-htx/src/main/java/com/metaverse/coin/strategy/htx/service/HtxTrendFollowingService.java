@@ -2626,15 +2626,21 @@ public class HtxTrendFollowingService {
                 || position.getContractVolume() <= 0L) {
             return null;
         }
-        BigDecimal quantity = position.getContractSize().multiply(BigDecimal.valueOf(position.getContractVolume()));
+        long remaining = remainingContractVolume(position);
+        if (remaining <= 0L) {
+            return null;
+        }
+        BigDecimal quantity = position.getContractSize().multiply(BigDecimal.valueOf(remaining));
         if (!positive(quantity)) {
             return null;
         }
         BigDecimal entryPrice = position.getEntryAvgPrice();
         BigDecimal entryNotional = entryPrice.multiply(quantity);
         BigDecimal takerFeeRate = effectiveTakerFeeRate(position.getContractCode());
-        BigDecimal entryFee = positive(position.getEntryFee())
-                ? position.getEntryFee() : entryNotional.multiply(takerFeeRate);
+        BigDecimal entryFee = remainingEntryFee(position);
+        if (!positive(entryFee)) {
+            entryFee = entryNotional.multiply(takerFeeRate);
+        }
         BigDecimal estimatedCloseFee = entryNotional.multiply(takerFeeRate);
         BigDecimal minProfit = entryNotional.multiply(nonNegative(properties.getMinNetProfitRate()))
                 .max(nonNegative(properties.getMinFlatExitProfitUsdt()));
@@ -2916,7 +2922,11 @@ public class HtxTrendFollowingService {
                 || position.getContractVolume() == null || position.getContractVolume() <= 0L || !positive(reference)) {
             return null;
         }
-        BigDecimal quantity = position.getContractSize().multiply(BigDecimal.valueOf(position.getContractVolume()));
+        long remaining = remainingContractVolume(position);
+        if (remaining <= 0L) {
+            return null;
+        }
+        BigDecimal quantity = position.getContractSize().multiply(BigDecimal.valueOf(remaining));
         if (!positive(quantity)) {
             return null;
         }
@@ -2924,10 +2934,41 @@ public class HtxTrendFollowingService {
                 ? reference.subtract(position.getEntryAvgPrice()).multiply(quantity)
                 : position.getEntryAvgPrice().subtract(reference).multiply(quantity);
         BigDecimal takerFeeRate = effectiveTakerFeeRate(position.getContractCode());
-        BigDecimal entryFee = positive(position.getEntryFee())
-                ? position.getEntryFee() : position.getEntryAvgPrice().multiply(quantity).multiply(takerFeeRate);
+        BigDecimal entryFee = remainingEntryFee(position);
+        if (!positive(entryFee)) {
+            entryFee = position.getEntryAvgPrice().multiply(quantity).multiply(takerFeeRate);
+        }
         BigDecimal closeFee = reference.multiply(quantity).multiply(takerFeeRate);
         return pricePnl.subtract(entryFee).subtract(closeFee);
+    }
+
+    /** Allocates the one-time entry fee to contracts still open after completed partial exits. */
+    private static BigDecimal remainingEntryFee(HtxTrendPositionEntity position) {
+        if (position == null || !positive(position.getEntryFee()) || position.getContractVolume() == null
+                || position.getContractVolume() <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        long remaining = remainingContractVolume(position);
+        if (remaining <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        return position.getEntryFee().multiply(BigDecimal.valueOf(remaining))
+                .divide(BigDecimal.valueOf(position.getContractVolume()), 18, RoundingMode.HALF_UP);
+    }
+
+    /** Uses the recorded opening fee, with a current account-rate estimate only for legacy rows without it. */
+    private BigDecimal exitEngineEntryFee(HtxTrendPositionEntity position) {
+        BigDecimal recorded = remainingEntryFee(position);
+        if (positive(recorded) || position == null || !positive(position.getEntryAvgPrice())
+                || !positive(position.getContractSize())) {
+            return recorded;
+        }
+        long remaining = remainingContractVolume(position);
+        if (remaining <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        return position.getEntryAvgPrice().multiply(position.getContractSize()).multiply(BigDecimal.valueOf(remaining))
+                .multiply(effectiveTakerFeeRate(position.getContractCode()));
     }
 
     /** Uses remaining contracts so a post-partial runner is not charged as if its full original size still existed. */
@@ -3065,8 +3106,12 @@ public class HtxTrendFollowingService {
                 remainingContractVolume(position), position.getContractSize(), position.getEntryAvgPrice(), position.getStopPrice(),
                 position.getInvalidationPrice(), structuralTarget, reference, protectionPrice, highest, lowest, signal.atr(),
                 signal.side(), signal.emaFast(), signal.emaSlow(), majorOpposition, marketOpposes, snapshot.currentNet(),
-                estimatedCloseFee, position.getTrailingArmedAt(), position.getTrailingArmReason(),
-                position.getMaxFavorableR(), LocalDateTime.now(), flatStreak, requiredFlatBars, flatLossBudget(position)));
+                exitEngineEntryFee(position), estimatedCloseFee, position.getTrailingArmedAt(), position.getTrailingArmReason(),
+                position.getMaxFavorableR(), LocalDateTime.now(), flatStreak, requiredFlatBars, flatLossBudget(position),
+                new HtxTrendExitDecisionEngine.ProfitProtectionPolicy(
+                        properties.getIntradayProfitArmAtrMultiplier(), properties.getIntradayProfitLockAtrMultiplier(),
+                        properties.getIntradayProfitPartialAtrMultiplier(), properties.getIntradayProfitPullbackAtrMultiplier(),
+                        properties.getIntradayProfitMinNetFeeMultiple())));
     }
 
     /** V2 only: a durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */
