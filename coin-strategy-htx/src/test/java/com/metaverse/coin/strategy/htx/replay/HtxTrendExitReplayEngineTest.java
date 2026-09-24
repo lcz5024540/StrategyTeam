@@ -14,7 +14,7 @@ class HtxTrendExitReplayEngineTest {
     private final HtxTrendExitReplayEngine engine = new HtxTrendExitReplayEngine();
 
     @Test
-    void doesNotCloseRunnerBeforeOneRAndMajorTimeframeOpposition() {
+    void doesNotCloseRunnerBeforeItHasBeenArmed() {
         HtxTrendExitReplayEngine.Outcome outcome = engine.replay(input(), List.of(
                 candle(2, "101", "105", "99", "103")), Map.of(2L, 0));
 
@@ -27,7 +27,7 @@ class HtxTrendExitReplayEngineTest {
     void appliesOneRAndTwoRPartialExitsBeforeWindowMark() {
         HtxTrendExitReplayEngine.Outcome outcome = engine.replay(input(), List.of(
                 candle(2, "100", "112", "101", "111"),
-                candle(3, "111", "121", "110", "120")), Map.of(2L, 0, 3L, 0));
+                candle(3, "111", "121", "118", "120")), Map.of(2L, 0, 3L, 0));
 
         assertEquals("MARK_TO_MARK", outcome.outcomeState());
         assertEquals(4L, outcome.remainingContracts());
@@ -38,8 +38,8 @@ class HtxTrendExitReplayEngineTest {
     void comparesFullExitStagedExitAndRunnerAgainstTheSamePricePath() {
         List<HtxTrendExitReplayEngine.Candle> candles = List.of(
                 candle(2, "100", "112", "101", "111"),
-                candle(3, "111", "121", "110", "120"),
-                candle(4, "120", "130", "119", "128"));
+                candle(3, "111", "121", "118", "120"),
+                candle(4, "120", "130", "127", "128"));
         Map<Long, Integer> opposition = Map.of(2L, 0, 3L, 0, 4L, 0);
 
         HtxTrendExitReplayEngine.Outcome fullExit = engine.replay(input(), candles, opposition,
@@ -61,10 +61,10 @@ class HtxTrendExitReplayEngineTest {
     }
 
     @Test
-    void exitsRunnerOnlyWhenMajorTimeframesConfirmExhaustion() {
+    void exitsArmedRunnerWhenProtectionIsCrossedWithoutCurrentTimeframeOpposition() {
         HtxTrendExitReplayEngine.Outcome outcome = engine.replay(input(), List.of(
                 candle(2, "100", "111", "110", "110"),
-                candle(3, "110", "111", "107", "108")), Map.of(2L, 2, 3L, 2));
+                candle(3, "110", "111", "107", "108")), Map.of(2L, 0, 3L, 0));
 
         assertEquals("CLOSED", outcome.outcomeState());
         assertEquals("ATR_TRAILING", outcome.exitReason());
@@ -83,12 +83,12 @@ class HtxTrendExitReplayEngineTest {
     }
 
     @Test
-    void marksRunnerOutcomeInsufficientWhenHighTimeframeEvidenceIsMissing() {
+    void completesRunnerReplayWhenHighTimeframeEvidenceIsMissing() {
         HtxTrendExitReplayEngine.Outcome outcome = engine.replay(input(), List.of(
                 candle(2, "100", "111", "110", "110")), Map.of());
 
         assertEquals("MARK_TO_MARK", outcome.outcomeState());
-        assertEquals("INSUFFICIENT_EVIDENCE", outcome.dataIntegrity());
+        assertEquals("COMPLETE", outcome.dataIntegrity());
     }
 
     @Test

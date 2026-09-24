@@ -189,6 +189,9 @@ htx:
     max-flat-exit-loss-usdt: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_USDT:0.25}
     max-flat-exit-loss-rate: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_RATE:0.0030}
     flat-loss-exit-confirmation-bars: ${HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS:3}
+    exit-engine-v2-enabled: ${HTX_TREND_EXIT_ENGINE_V2_ENABLED:false}
+    exit-engine-v2-live-enabled: ${HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED:false}
+    exit-engine-v2-primary-account-only: ${HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY:true}
     no-extension-exit-enabled: ${HTX_TREND_NO_EXTENSION_EXIT_ENABLED:true}
     no-extension-exit-bars: ${HTX_TREND_NO_EXTENSION_EXIT_BARS:2}
     no-extension-min-favorable-net-usdt: ${HTX_TREND_NO_EXTENSION_MIN_FAVORABLE_NET_USDT:0.15}

@@ -501,3 +501,15 @@ E5 才允许组合评分接管真实退出动作。
 只有同一候选的三条结果均为 `COMPLETE` 才进入净 PnL 和 PF 对照；任一方案缺高周期、费用、仓位或 K 线证据时，该候选整体不得用于方案优劣判断。结果按 `exit_profile` 写入回放账本，运行汇总保留三组独立统计。
 
 本地测试和编译已通过。新增生产迁移 `2026-09-23e__htx_trend_exit_profile_replay.sql` 尚未执行，未部署，`HTX_TREND_PARTIAL_TAKE_PROFIT_LIVE_ENABLED` 仍保持关闭。
+
+## 13. 2026-09-24 实施记录：Fibonacci 退出引擎观察版
+
+本轮只为 `FIB_PULLBACK_CONTINUATION` 新增 `fib-exit-engine-v2`，默认关闭。它与旧退出链路的边界如下：
+
+1. **持久化状态**：活动仓位新增 `exit_phase`、`trailing_armed_at`、`trailing_arm_reason`、`max_favorable_r`、`profit_lock_price` 与 `exit_engine_version`。一旦武装保护，重启或回撤不会抹掉该事实。
+2. **不可变决策账本**：新增 `htx_trend_exit_decision`，每轮保存建议动作、实际动作或阻断原因、MFE/MAE、回吐、保护价、结构目标和证据 JSON。观察期 `executed_action=OBSERVE`。
+3. **动作规则**：模型失效/初始止损为全平；已武装且穿越保护价为全平；趋势强且剩余扣费后收益优于保护风险则继续持有并保护；有浮盈、动态回吐、两类独立反转证据且剩余价值恶化时，按剩余收益与保护风险计算目标持仓张数，不再固定减 25% 或 33%。
+4. **同 K 线口径**：回放中止损优先。某根 K 线刚达到武装条件时，不假设其盘中已穿越一个在该根 K 线开始时不存在的保护价；从下一根 K 线开始执行该保护。已经武装后同 K 线既触及保护又触及目标时标记 `INTRABAR_AMBIGUOUS` 并按保护优先。
+5. **灰度边界**：`HTX_TREND_EXIT_ENGINE_V2_ENABLED=false`、`HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED=false` 和 `HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY=true` 是默认值。仅当未来明确打开 v2 实盘开关时，Fibonacci 仓位才由 v2 独占退出选择；观察模式仍完整保留旧退出行为。TradeX、Donchian、EMA/动量不变；既有分批止盈开关继续为 `false`。
+
+本轮未执行 `2026-09-24e__htx_trend_exit_engine_state.sql`，未部署，未修改生产环境变量。后续以 `EXIT-06` 进入影子数据积累、同源回放和单账号小仓灰度，不得跳过。

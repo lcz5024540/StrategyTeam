@@ -80,6 +80,12 @@ public class HtxTrendPositionEntity {
     private Long exitSnapshotBars;
     private String exitSnapshotCandidates;
     private LocalDateTime exitSnapshotUpdatedAt;
+    private String exitPhase;
+    private LocalDateTime trailingArmedAt;
+    private String trailingArmReason;
+    private BigDecimal maxFavorableR;
+    private BigDecimal profitLockPrice;
+    private String exitEngineVersion;
     private Long exitAttributionSnapshotId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

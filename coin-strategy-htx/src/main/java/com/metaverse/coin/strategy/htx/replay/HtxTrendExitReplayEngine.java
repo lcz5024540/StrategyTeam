@@ -6,7 +6,6 @@ import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalInt;
 
 /**
  * Deterministic exit replay. It never calls an exchange and never silently assumes an intrabar path.
@@ -55,7 +54,7 @@ public final class HtxTrendExitReplayEngine {
         BigDecimal mfe = BigDecimal.ZERO;
         BigDecimal mae = BigDecimal.ZERO;
         boolean ambiguous = false;
-        boolean missingTimeframeEvidence = false;
+        boolean runnerArmed = false;
 
         for (Candle candle : candles) {
             highest = highest.max(candle.high());
@@ -77,19 +76,14 @@ public final class HtxTrendExitReplayEngine {
                         input.stopPrice(), "MODEL_INVALIDATION", null, stage);
             }
             BigDecimal activation = HtxTrendExitRules.rTargetPrice(input.side(), input.entryPrice(), input.stopPrice(), ONE);
-            OptionalInt opposition = oppositionByBar == null ? OptionalInt.empty()
-                    : oppositionByBar.containsKey(candle.barTime())
-                    ? OptionalInt.of(oppositionByBar.get(candle.barTime())) : OptionalInt.empty();
-            boolean runnerActivated = HtxTrendExitRules.targetReached(input.side(), favorablePrice(input.side(), candle), activation);
-            BigDecimal trailing = runnerActivated ? trailingStop(input.side(), highest, lowest, input.atr()) : null;
-            boolean trailingHit = runnerActivated && HtxTrendExitRules.crossedStop(input.side(), adversePrice(input.side(), candle), trailing);
-            boolean trailingAllowed = runnerActivated && opposition.isPresent()
-                    && HtxTrendExitRules.trailingExitAllowed(input.side(), input.entryPrice(), input.stopPrice(),
-                    favorablePrice(input.side(), candle), ONE, true, opposition.getAsInt(), 2);
-            if (runnerActivated && opposition.isEmpty()) {
-                missingTimeframeEvidence = true;
-            }
-            if (trailingHit && trailingAllowed && (oneRHit || structureHit || twoRHit)) {
+            // A bar can arm the runner, but its low/high cannot also be assumed to have crossed a
+            // protection price which did not exist at the bar open. The next bar is the first
+            // unambiguous opportunity to execute the newly armed trailing protection.
+            boolean armedBeforeBar = runnerArmed;
+            runnerArmed = runnerArmed || HtxTrendExitRules.targetReached(input.side(), favorablePrice(input.side(), candle), activation);
+            BigDecimal trailing = runnerArmed ? trailingStop(input.side(), highest, lowest, input.atr()) : null;
+            boolean trailingHit = armedBeforeBar && HtxTrendExitRules.crossedStop(input.side(), adversePrice(input.side(), candle), trailing);
+            if (trailingHit && (oneRHit || structureHit || twoRHit)) {
                 return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae, trailing,
                         "ATR_TRAILING", "INTRABAR_AMBIGUOUS: trailing stop and target in one bar", stage);
             }
@@ -121,7 +115,7 @@ public final class HtxTrendExitReplayEngine {
                     stage = 2;
                 }
             }
-            if (trailingHit && trailingAllowed) {
+            if (trailingHit) {
                 return closeAll(input, candle, remaining, realizedGross, closeFees, entryFee, mfe, mae,
                         trailing, "ATR_TRAILING", null, stage);
             }
@@ -129,10 +123,8 @@ public final class HtxTrendExitReplayEngine {
         Candle last = candles.get(candles.size() - 1);
         BigDecimal gross = realizedGross.add(favorablePnl(input, last.close(), remaining));
         BigDecimal markCloseFee = closeFees.add(fee(last.close(), quantity(input, remaining), input.feeRate()));
-        String integrity = missingTimeframeEvidence ? "INSUFFICIENT_EVIDENCE" : "COMPLETE";
-        String message = missingTimeframeEvidence
-                ? "high timeframe opposition unavailable for at least one runner evaluation"
-                : "replay window ended with remaining runner marked to market";
+        String integrity = "COMPLETE";
+        String message = "replay window ended with remaining runner marked to market";
         return new Outcome("MARK_TO_MARK", "REPLAY_WINDOW_END_MARK", integrity, null, last.barTime(), last.close(),
                 remaining, mfe, mae, entryFee, markCloseFee, gross.subtract(entryFee).subtract(markCloseFee), message,
                 stage, ambiguous);

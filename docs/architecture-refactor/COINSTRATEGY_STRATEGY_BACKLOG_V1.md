@@ -68,6 +68,7 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | EXIT-01 | 观察中 | **模型专属 no-extension / time-stop**：不同模型不共用短周期机械平仓。 | 按 `MOMENTUM`、`BOX`、`FIB`、`DONCHIAN` 回测过早退出率和净收益，灰度开关默认关闭。 | Exit E2 |
 | EXIT-02 | 已部署，待完整样本 | **分批止盈与 runner**：状态机、账本和镜像账户已支持 1R/结构目标减 33%、2R 再减剩余仓位 50%，默认关闭真实下单。回放器现以同一入场、费用和冻结 K 线并排记录“首目标整仓平”“两段分批后第二目标全平”“两段分批后保留 runner”三种结果；只有三种结果都具备完整证据的同一候选才进入比较。生产迁移已验列、JAR 已部署。 | 积累完整样本，按模型×周期画像比较净 PnL、PF、MFE/MAE、最大回撤和 runner 贡献；参数定标后才允许单账号小仓灰度。 | Exit E3 |
 | EXIT-03 | 代码完成，待回测 | **多周期退出确认与评分**：runner 的 ATR trailing 已要求 30m/60m/4h 至少两个周期反向；高周期同向时保持持仓。 | 多周期确认、退出候选评分和真实动作分开回测；完成回测后再定灰度范围。 | Exit E4/E5 |
+| EXIT-06 | 代码完成，待生产迁移 / 影子回放 | **Fibonacci 退出引擎 v2**：`FIB_PULLBACK_CONTINUATION` 先进入可恢复状态机和不可变决策账本；达到结构目标、1R 或 MFE 动态回吐后永久武装保护，按结构、动量、多周期、市场环境和扣费后剩余收益决定持有、动态减仓或全平。 | 先执行追加式迁移并仅打开 `HTX_TREND_EXIT_ENGINE_V2_ENABLED=true`、`...LIVE_ENABLED=false` 积累影子决策；完成 9/18–9/24 同源回放后，才允许主账户小仓开启 v2。TradeX 和非 FIB 模型继续旧退出链路，`HTX_TREND_PARTIAL_TAKE_PROFIT_LIVE_ENABLED` 必须保持 `false`。 | 2026-09-24 退出修复 |
 | ENTRY-01 | 依赖 PLAN-01 / EXT-02 / BT-03 | **试探性限价实盘灰度**：趋势确认且全部真实预检通过后，以被验证的价格计划驱动被动限价探路，而不是默认市价追单。 | HTX `maker/post-only`、条件限价、IOC、撤单和部分成交能力已实测；每笔记录 maker/taker 实际费率、未成交原因和信号失效时刻；未通过回测和单账号小仓验收前，不切换默认执行方式。 | 价格执行讨论稿 §7 |
 
 ### 2.3 试探性限价单的边界

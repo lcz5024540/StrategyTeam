@@ -215,6 +215,15 @@ public class HtxTrendProperties {
     /** Number of consecutive flat signals required before loss-control flat exit. */
     private int flatLossExitConfirmationBars = 3;
 
+    /** Enables Fibonacci exit-engine v2 observation and its durable decision ledger. */
+    private boolean exitEngineV2Enabled = false;
+
+    /** Permits v2 decisions to submit reduce-only orders; remains false until replay and gray review pass. */
+    private boolean exitEngineV2LiveEnabled = false;
+
+    /** During the first gray release, never apply v2 exits to the mirrored account. */
+    private boolean exitEngineV2PrimaryAccountOnly = true;
+
     /** Expected move proxy = ATR * this multiplier; entry is skipped when it cannot cover costs. */
     private BigDecimal minExpectedMoveAtrMultiplier = BigDecimal.ONE;
 

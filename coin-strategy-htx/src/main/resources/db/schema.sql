@@ -457,6 +457,12 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     exit_snapshot_bars       BIGINT,
     exit_snapshot_candidates VARCHAR(1024),
     exit_snapshot_updated_at DATETIME(3),
+    exit_phase               VARCHAR(32),
+    trailing_armed_at        DATETIME(3),
+    trailing_arm_reason      VARCHAR(512),
+    max_favorable_r          DECIMAL(36,18),
+    profit_lock_price        DECIMAL(36,18),
+    exit_engine_version      VARCHAR(64),
     exit_attribution_snapshot_id BIGINT,
     created_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -467,6 +473,38 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     INDEX idx_trend_position_close    (close_order_id)
     ,INDEX idx_trend_position_run     (run_id)
     ,INDEX idx_trend_position_profile (timeframe_profile, status, updated_at)
+);
+
+-- Append-only record of each model-specific exit decision. It is intentionally separate from
+-- the mutable position row so observation and later replay can explain actions not taken.
+CREATE TABLE IF NOT EXISTS htx_trend_exit_decision (
+    id                        BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    decision_key              VARCHAR(160)   NOT NULL UNIQUE,
+    position_id               BIGINT         NOT NULL,
+    run_id                    VARCHAR(128),
+    account_id                BIGINT,
+    account_label             VARCHAR(32)    NOT NULL DEFAULT 'primary',
+    contract_code             VARCHAR(32)    NOT NULL,
+    side                      VARCHAR(8)     NOT NULL,
+    primary_model             VARCHAR(64),
+    engine_version            VARCHAR(64)    NOT NULL,
+    exit_phase                VARCHAR(32)    NOT NULL,
+    suggested_action          VARCHAR(32)    NOT NULL,
+    executed_action           VARCHAR(32)    NOT NULL,
+    execution_block_reason   VARCHAR(512),
+    reference_price           DECIMAL(36,18),
+    protection_price          DECIMAL(36,18),
+    expected_target_price     DECIMAL(36,18),
+    current_net_pnl           DECIMAL(36,18),
+    mfe_net_pnl               DECIMAL(36,18),
+    mae_net_pnl               DECIMAL(36,18),
+    giveback_rate             DECIMAL(18,8),
+    max_favorable_r           DECIMAL(36,18),
+    target_remaining_contracts BIGINT,
+    evidence_json             CLOB,
+    created_at                DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_trend_exit_decision_position_time (position_id, created_at),
+    INDEX idx_trend_exit_decision_account_time (account_label, created_at)
 );
 
 -- Immutable factor evidence for a combined trend candidate. Policy and position rows reference this record;

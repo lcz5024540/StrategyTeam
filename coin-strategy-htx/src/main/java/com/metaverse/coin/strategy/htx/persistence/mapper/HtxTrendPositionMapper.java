@@ -23,7 +23,9 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "primary_model, confirmation_models, policy_version, timeframe_profile, market_regime, factor_snapshot_id, "
             + "entry_hypothesis, invalidation_price, target_zone_low, target_zone_high, expected_r_multiple, momentum_quality_score, "
             + "exit_snapshot_state, exit_snapshot_net, exit_snapshot_mfe, exit_snapshot_mae, exit_snapshot_giveback, "
-            + "exit_snapshot_bars, exit_snapshot_candidates, exit_snapshot_updated_at, exit_attribution_snapshot_id, created_at, updated_at";
+            + "exit_snapshot_bars, exit_snapshot_candidates, exit_snapshot_updated_at, exit_phase, trailing_armed_at, "
+            + "trailing_arm_reason, max_favorable_r, profit_lock_price, exit_engine_version, "
+            + "exit_attribution_snapshot_id, created_at, updated_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "
             + "AND status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'PARTIAL_CLOSE_SENT', 'CLOSE_SENT', 'UNKNOWN') "
@@ -84,6 +86,26 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                          @Param("exitSnapshotGiveback") BigDecimal exitSnapshotGiveback,
                          @Param("exitSnapshotBars") Long exitSnapshotBars,
                          @Param("exitSnapshotCandidates") String exitSnapshotCandidates);
+
+    /** Persist restart-safe exit state without changing the initial stop or any order status. */
+    @Update("UPDATE htx_trend_position SET exit_phase = #{exitPhase}, "
+            + "trailing_armed_at = COALESCE(trailing_armed_at, #{trailingArmedAt}), "
+            + "trailing_arm_reason = COALESCE(trailing_arm_reason, #{trailingArmReason}), "
+            + "max_favorable_r = CASE WHEN max_favorable_r IS NULL OR max_favorable_r < #{maxFavorableR} "
+            + "THEN #{maxFavorableR} ELSE max_favorable_r END, "
+            + "profit_lock_price = CASE WHEN #{profitLockPrice} IS NULL THEN profit_lock_price "
+            + "WHEN profit_lock_price IS NULL THEN #{profitLockPrice} "
+            + "WHEN side = 'LONG' THEN GREATEST(profit_lock_price, #{profitLockPrice}) "
+            + "WHEN side = 'SHORT' THEN LEAST(profit_lock_price, #{profitLockPrice}) "
+            + "ELSE profit_lock_price END, exit_engine_version = #{exitEngineVersion}, "
+            + "updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
+    int updateExitEngineState(@Param("id") long id,
+                              @Param("exitPhase") String exitPhase,
+                              @Param("trailingArmedAt") LocalDateTime trailingArmedAt,
+                              @Param("trailingArmReason") String trailingArmReason,
+                              @Param("maxFavorableR") BigDecimal maxFavorableR,
+                              @Param("profitLockPrice") BigDecimal profitLockPrice,
+                              @Param("exitEngineVersion") String exitEngineVersion);
 
     @Update("UPDATE htx_trend_position SET status = 'CLOSE_SENT', exit_reason = #{exitReason}, "
             + "close_client_order_id = #{clientOrderId}, close_order_id = #{orderId}, message = #{message}, "

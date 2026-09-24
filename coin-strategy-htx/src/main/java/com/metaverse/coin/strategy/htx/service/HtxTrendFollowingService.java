@@ -21,6 +21,7 @@ import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
@@ -46,6 +47,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -98,6 +100,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendEnsembleSignalCalculator ensembleCalculator;
     private final HtxTrendMirrorExecutor mirrorExecutor;
     private final HtxSwapFeeRateResolver feeRateResolver;
+    private final HtxTrendExitDecisionEngine exitDecisionEngine = new HtxTrendExitDecisionEngine();
     private HtxTrendCombinationService combinationService;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
@@ -1357,6 +1360,46 @@ public class HtxTrendFollowingService {
                         + feeProtectionMessage(feeProtectedStop) + " " + exitSnapshot.summary()),
                 exitSnapshot.state(), exitSnapshot.currentNet(), exitSnapshot.mfe(), exitSnapshot.mae(),
                 exitSnapshot.giveback(), exitSnapshot.bars(), exitSnapshot.candidates());
+        BigDecimal v2ProtectionPrice = v2ProtectionPrice(position, trailingStop);
+        HtxTrendExitDecisionEngine.Decision v2Decision = exitEngineDecision(position, signal, reference, highest, lowest,
+                v2ProtectionPrice, exitSnapshot);
+        if (v2Decision != null) {
+            if (!exitEngineLiveFor(position)) {
+                persistExitEngineState(position, v2Decision);
+                recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
+                        "OBSERVE", exitEngineBlockReason(position));
+            } else {
+                persistExitEngineState(position, v2Decision);
+                if (v2Decision.action() == HtxTrendExitDecisionEngine.Action.FULL_CLOSE) {
+                    RunResult result = closePosition(position, exitEngineReason(v2ExitCategory(v2Decision),
+                            "v2 " + v2Decision.reason()));
+                    recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
+                            result.code() == RunCode.CLOSE_SENT ? v2Decision.action().name() : "NOT_EXECUTED",
+                            result.code() == RunCode.CLOSE_SENT ? null : result.message());
+                    return result;
+                }
+                if (v2Decision.action() == HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE) {
+                    PartialExitDecision partial = dynamicPartialExitDecision(position, v2Decision);
+                    if (partial.triggered()) {
+                        RunResult result = partialClosePosition(position, partial, clip("v2 " + v2Decision.reason()));
+                        recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
+                                result.code() == RunCode.PARTIAL_CLOSE_SENT ? v2Decision.action().name() : "NOT_EXECUTED",
+                                result.code() == RunCode.PARTIAL_CLOSE_SENT ? null : result.message());
+                        return result;
+                    }
+                    recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
+                            "NOT_EXECUTED", "target remaining exposure cannot form a valid reduce-only order");
+                } else {
+                    recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
+                            v2Decision.action().name(), null);
+                }
+                // A live Fibonacci v2 decision owns the whole exit choice. Falling through to the
+                // legacy FLAT/ATR path would make the recorded action differ from the executed one.
+                return RunResult.of(RunCode.ACTIVE, position.getId(), clip("v2 holding ref=" + reference
+                        + " action=" + v2Decision.action() + " phase=" + v2Decision.phase()
+                        + " reason=" + v2Decision.reason()));
+            }
+        }
         String exitReason = combinationInvalidationExitReason(position, reference);
         if (exitReason == null) {
             exitReason = flatAfterFeeProtectionExitReason(position, signal, reference, feeProtectedStop);
@@ -2887,6 +2930,19 @@ public class HtxTrendFollowingService {
         return pricePnl.subtract(entryFee).subtract(closeFee);
     }
 
+    /** Uses remaining contracts so a post-partial runner is not charged as if its full original size still existed. */
+    private BigDecimal estimatedCloseFee(HtxTrendPositionEntity position, BigDecimal reference) {
+        if (position == null || !positive(position.getContractSize()) || !positive(reference)) {
+            return BigDecimal.ZERO;
+        }
+        long remaining = remainingContractVolume(position);
+        if (remaining <= 0L) {
+            return BigDecimal.ZERO;
+        }
+        return reference.multiply(position.getContractSize()).multiply(BigDecimal.valueOf(remaining))
+                .multiply(effectiveTakerFeeRate(position.getContractCode()));
+    }
+
     private BigDecimal flatLossBudget(HtxTrendPositionEntity position) {
         if (position == null || !positive(position.getEntryAvgPrice()) || !positive(position.getContractSize())
                 || position.getContractVolume() == null || position.getContractVolume() <= 0L) {
@@ -2978,6 +3034,128 @@ public class HtxTrendFollowingService {
                 position.getStopPrice(), reference, nonNegative(properties.getTrailingActivationR()),
                 properties.isRunnerTrailingRequireTimeframeExhaustion(), majorTimeframeOpposition(position),
                 properties.getRunnerTimeframeMajorOppositeCount());
+    }
+
+    /**
+     * The v2 engine is deliberately isolated to Fibonacci positions. Other model types keep their legacy exits
+     * while the same schema can accumulate observations for their eventual policies.
+     */
+    private HtxTrendExitDecisionEngine.Decision exitEngineDecision(HtxTrendPositionEntity position, TrendSignal signal,
+                                                                    BigDecimal reference, BigDecimal highest,
+                                                                    BigDecimal lowest, BigDecimal protectionPrice,
+                                                                    ExitSnapshot snapshot) {
+        if (!properties.isExitEngineV2Enabled() || position == null
+                || !HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION.equals(position.getPrimaryModel())) {
+            return null;
+        }
+        BigDecimal structuralTarget = structuralTargetPrice(position);
+        int majorOpposition = majorTimeframeOpposition(position);
+        boolean marketOpposes = againstBroadMarket(LONG.equals(position.getSide()) ? TrendSide.LONG : TrendSide.SHORT,
+                marketBreadthContext());
+        BigDecimal estimatedCloseFee = estimatedCloseFee(position, reference);
+        return exitDecisionEngine.evaluate(new HtxTrendExitDecisionEngine.Input(position.getPrimaryModel(), position.getSide(),
+                remainingContractVolume(position), position.getContractSize(), position.getEntryAvgPrice(), position.getStopPrice(),
+                position.getInvalidationPrice(), structuralTarget, reference, protectionPrice, highest, lowest, signal.atr(),
+                signal.side(), signal.emaFast(), signal.emaSlow(), majorOpposition, marketOpposes, snapshot.currentNet(),
+                estimatedCloseFee, position.getTrailingArmedAt(), position.getTrailingArmReason(),
+                position.getMaxFavorableR(), LocalDateTime.now()));
+    }
+
+    /** V2 only: a durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */
+    private static BigDecimal v2ProtectionPrice(HtxTrendPositionEntity position, BigDecimal calculatedProtection) {
+        if (position == null || !positive(position.getProfitLockPrice())) {
+            return calculatedProtection;
+        }
+        if (!positive(calculatedProtection)) {
+            return position.getProfitLockPrice();
+        }
+        return LONG.equals(position.getSide()) ? max(calculatedProtection, position.getProfitLockPrice())
+                : min(calculatedProtection, position.getProfitLockPrice());
+    }
+
+    private void persistExitEngineState(HtxTrendPositionEntity position, HtxTrendExitDecisionEngine.Decision decision) {
+        if (position == null || position.getId() == null || decision == null) {
+            return;
+        }
+        recorder.updateExitEngineState(position.getId(), decision.phase(), decision.trailingArmedAt(),
+                decision.trailingArmReason(), decision.maxFavorableR(), decision.protectionPrice(),
+                HtxTrendExitDecisionEngine.VERSION);
+    }
+
+    private void recordExitEngineDecision(HtxTrendPositionEntity position, BigDecimal reference, BigDecimal protectionPrice,
+                                          ExitSnapshot snapshot, HtxTrendExitDecisionEngine.Decision decision,
+                                          String executedAction, String executionBlockReason) {
+        if (position == null || position.getId() == null || decision == null) {
+            return;
+        }
+        HtxTrendExitDecisionEntity entity = new HtxTrendExitDecisionEntity();
+        entity.setDecisionKey(position.getId() + ":" + UUID.randomUUID());
+        entity.setPositionId(position.getId());
+        entity.setRunId(position.getRunId());
+        entity.setAccountId(position.getAccountId());
+        entity.setAccountLabel(position.getAccountLabel() == null ? "primary" : position.getAccountLabel());
+        entity.setContractCode(position.getContractCode());
+        entity.setSide(position.getSide());
+        entity.setPrimaryModel(position.getPrimaryModel());
+        entity.setEngineVersion(HtxTrendExitDecisionEngine.VERSION);
+        entity.setExitPhase(decision.phase());
+        entity.setSuggestedAction(decision.action().name());
+        entity.setExecutedAction(executedAction == null ? "NOT_EXECUTED" : executedAction);
+        entity.setExecutionBlockReason(executionBlockReason);
+        entity.setReferencePrice(reference);
+        entity.setProtectionPrice(decision.protectionPrice() == null ? protectionPrice : decision.protectionPrice());
+        entity.setExpectedTargetPrice(structuralTargetPrice(position));
+        entity.setCurrentNetPnl(snapshot.currentNet());
+        entity.setMfeNetPnl(snapshot.mfe());
+        entity.setMaeNetPnl(snapshot.mae());
+        entity.setGivebackRate(snapshot.giveback());
+        entity.setMaxFavorableR(decision.maxFavorableR());
+        entity.setTargetRemainingContracts(decision.targetRemainingContracts() < 0 ? null
+                : decision.targetRemainingContracts());
+        entity.setEvidenceJson(decision.evidenceJson());
+        recorder.recordExitDecision(entity);
+    }
+
+    private static String v2ExitCategory(HtxTrendExitDecisionEngine.Decision decision) {
+        if (decision == null) {
+            return EXIT_TREND_EXHAUSTION;
+        }
+        if ("INVALIDATED".equals(decision.phase())) {
+            return EXIT_MODEL_INVALIDATION;
+        }
+        return "REVERSAL_CONFIRMED".equals(decision.phase()) ? EXIT_TREND_EXHAUSTION : EXIT_TRAILING_STOP;
+    }
+
+    private boolean exitEngineLiveFor(HtxTrendPositionEntity position) {
+        if (!properties.isExitEngineV2Enabled() || !properties.isExitEngineV2LiveEnabled() || position == null) {
+            return false;
+        }
+        return !properties.isExitEngineV2PrimaryAccountOnly() || "primary".equalsIgnoreCase(position.getAccountLabel());
+    }
+
+    private String exitEngineBlockReason(HtxTrendPositionEntity position) {
+        if (!properties.isExitEngineV2LiveEnabled()) {
+            return "exit-engine-v2-live-disabled";
+        }
+        if (properties.isExitEngineV2PrimaryAccountOnly()
+                && (position == null || !"primary".equalsIgnoreCase(position.getAccountLabel()))) {
+            return "exit-engine-v2-primary-account-only";
+        }
+        return "exit-engine-v2-not-eligible";
+    }
+
+    private PartialExitDecision dynamicPartialExitDecision(HtxTrendPositionEntity position,
+                                                            HtxTrendExitDecisionEngine.Decision decision) {
+        long remaining = remainingContractVolume(position);
+        long targetRemaining = decision == null ? -1L : decision.targetRemainingContracts();
+        if (targetRemaining < 0L || targetRemaining >= remaining || remaining <= 1L) {
+            return PartialExitDecision.inactive(position == null || position.getPartialExitStage() == null
+                    ? 0 : position.getPartialExitStage());
+        }
+        BigDecimal rate = BigDecimal.valueOf(remaining - targetRemaining).divide(BigDecimal.valueOf(remaining), 12,
+                RoundingMode.DOWN);
+        int stage = Math.min(2, (position.getPartialExitStage() == null ? 0 : position.getPartialExitStage()) + 1);
+        return PartialExitDecision.trigger(stage, rate, "dynamic remaining=" + targetRemaining + " reason=" + decision.reason());
     }
 
     private int majorTimeframeOpposition(HtxTrendPositionEntity position) {

@@ -1,6 +1,8 @@
 package com.metaverse.coin.strategy.htx.persistence;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendExitDecisionMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
@@ -44,6 +46,8 @@ public class HtxTrendRecorder {
     private final HtxTrendSignalMapper signalMapper;
     private final CoinStrategyLedgerRecorder ledgerRecorder;
     private final HtxTrendCombinationRecorder combinationRecorder;
+    @Autowired(required = false)
+    private HtxTrendExitDecisionMapper exitDecisionMapper;
 
     public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
                             HtxTrendSignalMapper signalMapper) {
@@ -214,6 +218,33 @@ public class HtxTrendRecorder {
         positionMapper.updateRiskLevels(id, stopPrice, trailingStopPrice, takeProfitPrice,
                 highestPrice, lowestPrice, message, exitSnapshotState, exitSnapshotNet, exitSnapshotMfe,
                 exitSnapshotMae, exitSnapshotGiveback, exitSnapshotBars, clip(exitSnapshotCandidates, 1024));
+    }
+
+    /** Writes state needed after process restart; failures must not interrupt existing protective exits. */
+    public void updateExitEngineState(long id, String exitPhase, LocalDateTime trailingArmedAt,
+                                      String trailingArmReason, BigDecimal maxFavorableR,
+                                      BigDecimal profitLockPrice, String exitEngineVersion) {
+        try {
+            positionMapper.updateExitEngineState(id, exitPhase, trailingArmedAt, clip(trailingArmReason),
+                    maxFavorableR, profitLockPrice, exitEngineVersion);
+        } catch (RuntimeException ex) {
+            log.warn("trend exit-engine state persistence failed positionId={}", id, ex);
+        }
+    }
+
+    /** Appends an explainable decision without allowing diagnostics to block the legacy exit path. */
+    public void recordExitDecision(HtxTrendExitDecisionEntity decision) {
+        if (decision == null || exitDecisionMapper == null) {
+            return;
+        }
+        try {
+            decision.setEvidenceJson(clip(decision.getEvidenceJson(), 12_000));
+            decision.setExecutionBlockReason(clip(decision.getExecutionBlockReason()));
+            exitDecisionMapper.insert(decision);
+        } catch (RuntimeException ex) {
+            log.warn("trend exit-engine decision persistence failed positionId={} key={}",
+                    decision.getPositionId(), decision.getDecisionKey(), ex);
+        }
     }
 
     public void markCloseAccepted(long id, String exitReason, String clientOrderId, Long orderId, String message) {

@@ -21,6 +21,7 @@ import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendStrategyPolicyEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
@@ -1075,6 +1076,64 @@ class HtxTrendFollowingServiceTest {
         assertTrue(candidatesCaptor.getValue().contains("suggestClose=33%"));
         assertTrue(candidatesCaptor.getValue().contains("PROFIT_PROTECTION:"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void fibExitEngineObservationPersistsDecisionWithoutSendingCloseOrder() {
+        properties.setExitEngineV2Enabled(true);
+        properties.setExitEngineV2LiveEnabled(false);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setPrimaryModel(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION);
+        active.setInvalidationPrice(new BigDecimal("4280.00"));
+        active.setTargetZoneLow(new BigDecimal("4400.00"));
+        active.setRunId("run-exit-observe");
+        active.setAccountLabel("primary");
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(45));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4342.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        verify(recorder).updateExitEngineState(eq(77L), any(), any(), any(), any(), any(),
+                eq(HtxTrendExitDecisionEngine.VERSION));
+        ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
+        verify(recorder).recordExitDecision(decisionCaptor.capture());
+        assertEquals("OBSERVE", decisionCaptor.getValue().getExecutedAction());
+        assertEquals(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION,
+                decisionCaptor.getValue().getPrimaryModel());
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveFibExitEngineRecordsOnlySubmittedModelInvalidationCloseAsExecuted() {
+        properties.setExitEngineV2Enabled(true);
+        properties.setExitEngineV2LiveEnabled(true);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setPrimaryModel(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION);
+        active.setInvalidationPrice(new BigDecimal("4330.00"));
+        active.setAccountLabel("primary");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4320.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("MODEL_INVALIDATION"));
+        ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
+        verify(recorder).recordExitDecision(decisionCaptor.capture());
+        assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
+        assertEquals("FULL_CLOSE", decisionCaptor.getValue().getExecutedAction());
+        assertEquals(null, decisionCaptor.getValue().getExecutionBlockReason());
     }
 
     @Test
