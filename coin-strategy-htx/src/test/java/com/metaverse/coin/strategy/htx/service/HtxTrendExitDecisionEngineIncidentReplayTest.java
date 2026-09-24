@@ -31,7 +31,7 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
     private final HtxTrendExitDecisionEngine engine = new HtxTrendExitDecisionEngine();
 
     @Test
-    void replaysClosedIncidentWithoutLookAheadAndExposesUnprotectedCases() {
+    void replaysClosedIncidentWithoutLookAheadAndRecordsUnarmedLossFallback() {
         JSONObject fixture = loadFixture();
         JSONArray positions = fixture.getJSONArray("positions");
 
@@ -43,8 +43,9 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
         assertClose(sui, 1790180100L, new BigDecimal("0.9588"), new BigDecimal("0.96718440"));
         assertEquals("RISK_REWARD_MILESTONE", sui.trailingArmReason());
 
-        // These three positions never reached a v2 actionable milestone before their historical
-        // legacy FLAT exit. This is a deployment blocker: v2 owns Fibonacci exits and would hold them.
+        // ZEC finishes the frozen window in profit at its bar-close reference. XRP 156 and XRP 160
+        // are loss-making, but each has only two fully completed post-entry bars. With production's
+        // three-bar confirmation, all three remain deliberately unclosed in this no-look-ahead replay.
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 156L)), 1790198100L);
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 159L)), 1790246700L);
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 160L)), 1790246700L);
@@ -68,6 +69,9 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
         LocalDateTime trailingArmedAt = null;
         String trailingArmReason = null;
         ReplayOutcome latest = null;
+        int flatStreak = 0;
+        int requiredFlatStreak = position.getIntValue("requiredFlatStreak");
+        BigDecimal flatLossBudget = decimal(position, "flatLossBudget");
 
         for (Object rawBar : position.getJSONArray("bars")) {
             JSONObject bar = (JSONObject) rawBar;
@@ -80,13 +84,15 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
             BigDecimal estimatedCloseFee = close.multiply(contractSize).multiply(BigDecimal.valueOf(contracts))
                     .multiply(closeFeeRate);
             BigDecimal currentNet = closeNetPnl(entryPrice, close, contractSize, contracts, entryFee, estimatedCloseFee);
+            TrendSide signalSide = TrendSide.valueOf(bar.getString("signalSide"));
+            flatStreak = signalSide == TrendSide.FLAT ? flatStreak + 1 : 0;
             HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
                     HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, side, contracts, contractSize,
                     entryPrice, initialStop, invalidation, structureTarget, close, protection, highest, lowest,
-                    decimal(bar, "atr"), TrendSide.valueOf(bar.getString("signalSide")), decimal(bar, "emaFast"),
+                    decimal(bar, "atr"), signalSide, decimal(bar, "emaFast"),
                     decimal(bar, "emaSlow"), 0, false, currentNet, estimatedCloseFee, trailingArmedAt,
                     trailingArmReason, maxFavorableR, LocalDateTime.ofEpochSecond(bar.getLongValue("barTime"), 0,
-                            java.time.ZoneOffset.ofHours(8))));
+                            java.time.ZoneOffset.ofHours(8)), flatStreak, requiredFlatStreak, flatLossBudget));
             trailingArmedAt = decision.trailingArmedAt();
             trailingArmReason = decision.trailingArmReason();
             maxFavorableR = decision.maxFavorableR();

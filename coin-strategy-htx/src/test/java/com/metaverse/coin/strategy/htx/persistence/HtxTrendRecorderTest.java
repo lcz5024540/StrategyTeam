@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -76,6 +77,20 @@ class HtxTrendRecorderTest {
         assertEquals(new BigDecimal("-0.42"), result.getNetProfit());
         verify(positionMapper).trendPerformanceForBucket(any(LocalDateTime.class), eq(20), eq("LONG"),
                 eq("FIB_PULLBACK_CONTINUATION"), eq("BROAD_UP"), eq("primary"));
+    }
+
+    @Test
+    void consecutiveSignalsStopAtTheFirstNonFlatBar() {
+        HtxTrendSignalMapper signalMapper = mock(HtxTrendSignalMapper.class);
+        when(signalMapper.recentSignalSides(eq("XRP-USDT"), eq("15min"), any(LocalDateTime.class), eq(3)))
+                .thenReturn(List.of("FLAT", "FLAT", "SHORT"));
+        HtxTrendRecorder recorder = new HtxTrendRecorder(mock(HtxTrendPositionMapper.class),
+                mock(HtxTrendOrderMapper.class), signalMapper);
+
+        long consecutive = recorder.countConsecutiveSignalsBySide("XRP-USDT", "15min", "FLAT",
+                LocalDateTime.now().minusHours(1), 3);
+
+        assertEquals(2L, consecutive);
     }
 
     @Test

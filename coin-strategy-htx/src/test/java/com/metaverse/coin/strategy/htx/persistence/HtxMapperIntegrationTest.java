@@ -29,6 +29,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -103,6 +104,27 @@ class HtxMapperIntegrationTest {
         assertEquals("LONG", stored.getSignal());
         assertEquals("Fibonacci pullback continuation", stored.getReason());
         assertEquals(0, new BigDecimal("0.0005").compareTo(stored.getSpreadRate()));
+    }
+
+    @Test void recent_signal_sides_are_deduplicated_and_scoped_to_the_entry_period() {
+        long barTime = 1790260000L + System.nanoTime() % 100000;
+        String contractCode = "XRP-USDT";
+        HtxTrendSignalEntity first = trendSignal(contractCode, barTime, "LONG", "first");
+        HtxTrendSignalEntity second = trendSignal(contractCode, barTime + 900L, "SHORT", "second");
+        HtxTrendSignalEntity third = trendSignal(contractCode, barTime + 1800L, "FLAT", "third");
+        HtxTrendSignalEntity fourth = trendSignal(contractCode, barTime + 2700L, "FLAT", "fourth");
+        HtxTrendSignalEntity otherPeriod = trendSignal(contractCode, barTime + 3600L, "FLAT", "other period");
+        otherPeriod.setPeriod("60min");
+        assertEquals(1, trendSignalMapper.insert(first));
+        assertEquals(1, trendSignalMapper.insert(second));
+        assertEquals(1, trendSignalMapper.insert(third));
+        assertEquals(1, trendSignalMapper.insert(fourth));
+        assertEquals(1, trendSignalMapper.insert(otherPeriod));
+
+        List<String> recent = trendSignalMapper.recentSignalSides(contractCode, "15min",
+                LocalDateTime.now().minusMinutes(1), 3);
+
+        assertEquals(List.of("FLAT", "FLAT", "SHORT"), recent);
     }
 
     @Test void trend_performance_bucket_executes_and_deducts_fees_before_loss_average() {

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -98,6 +99,26 @@ public class HtxTrendRecorder {
     public long countRecentSignalsBySide(String contractCode, String signal, LocalDateTime since, int limit) {
         Long count = signalMapper.countRecentSignalsBySide(contractCode, signal, since, limit);
         return count == null ? 0L : count;
+    }
+
+    /** Counts the newest uninterrupted run of one signal side for the configured entry timeframe. */
+    public long countConsecutiveSignalsBySide(String contractCode, String period, String signal,
+                                              LocalDateTime since, int limit) {
+        if (limit <= 0) {
+            return 0L;
+        }
+        List<String> recentSides = signalMapper.recentSignalSides(contractCode, period, since, limit);
+        if (recentSides == null || recentSides.isEmpty()) {
+            return 0L;
+        }
+        long consecutive = 0L;
+        for (String recentSide : recentSides) {
+            if (!signal.equals(recentSide)) {
+                break;
+            }
+            consecutive++;
+        }
+        return consecutive;
     }
 
     public HtxTrendBreadthStats latestBreadthStats(LocalDateTime since) {

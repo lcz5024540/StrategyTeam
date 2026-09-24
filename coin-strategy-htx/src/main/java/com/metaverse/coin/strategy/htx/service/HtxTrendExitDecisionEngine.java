@@ -57,6 +57,17 @@ public final class HtxTrendExitDecisionEngine {
                     "armed-protection-crossed", evidence(input, computedMaxR, dynamicPullback, 3, null));
         }
 
+        boolean flatLossBudgetExceeded = armedAt == null && input.signalSide() == TrendSide.FLAT
+                && input.requiredFlatStreak() > 0 && input.flatStreak() >= input.requiredFlatStreak()
+                && negative(input.currentNetPnl())
+                && positive(input.flatLossBudget())
+                && input.currentNetPnl().negate().compareTo(input.flatLossBudget()) >= 0;
+        if (flatLossBudgetExceeded) {
+            return new Decision("THESIS_EXPIRED", Action.FULL_CLOSE, 0L, null, computedMaxR, null, null,
+                    "unarmed-fib-flat-loss-budget-exceeded",
+                    evidence(input, computedMaxR, dynamicPullback, 0, null));
+        }
+
         int reversalEvidence = reversalEvidence(input, dynamicPullback);
         BigDecimal expectedReward = expectedReward(input);
         BigDecimal protectedRisk = protectedRisk(input);
@@ -140,7 +151,9 @@ public final class HtxTrendExitDecisionEngine {
                 + ",\"reversalEvidence\":" + reversalEvidence + ",\"majorTimeframeOpposition\":"
                 + input.majorTimeframeOpposition() + ",\"marketContextOpposes\":" + input.marketContextOpposes()
                 + ",\"maxFavorableR\":" + number(maxR) + ",\"expectedReward\":" + number(expectedReward)
-                + ",\"protectedRisk\":" + number(protectedRisk) + "}";
+                + ",\"protectedRisk\":" + number(protectedRisk) + ",\"flatStreak\":" + input.flatStreak()
+                + ",\"requiredFlatStreak\":" + input.requiredFlatStreak() + ",\"flatLossBudget\":"
+                + number(input.flatLossBudget()) + "}";
     }
 
     private static BigDecimal favorableMove(String side, BigDecimal entry, BigDecimal highest, BigDecimal lowest) {
@@ -169,6 +182,10 @@ public final class HtxTrendExitDecisionEngine {
         return value != null && value.signum() > 0;
     }
 
+    private static boolean negative(BigDecimal value) {
+        return value != null && value.signum() < 0;
+    }
+
     private static BigDecimal zero(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
@@ -186,7 +203,8 @@ public final class HtxTrendExitDecisionEngine {
                         BigDecimal emaFast, BigDecimal emaSlow, int majorTimeframeOpposition,
                         boolean marketContextOpposes, BigDecimal currentNetPnl, BigDecimal estimatedCloseFee,
                         LocalDateTime trailingArmedAt, String trailingArmReason, BigDecimal maxFavorableR,
-                        LocalDateTime evaluatedAt) {
+                        LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
+                        BigDecimal flatLossBudget) {
     }
 
     public record Decision(String phase, Action action, long targetRemainingContracts, BigDecimal protectionPrice,

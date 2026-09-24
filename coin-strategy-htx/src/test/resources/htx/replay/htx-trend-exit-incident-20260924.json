@@ -20,6 +20,8 @@
       "entryFee": "0.0416724",
       "closeFeeRate": "0.0004",
       "oldNetPnl": "-0.4201",
+      "flatLossBudget": "0.312543",
+      "requiredFlatStreak": 3,
       "bars": [
         {
           "barTime": 1790175600,
@@ -597,6 +599,8 @@
       "entryFee": "0.03531528",
       "closeFeeRate": "0.0004",
       "oldNetPnl": "-0.3528",
+      "flatLossBudget": "0.264865",
+      "requiredFlatStreak": 3,
       "bars": [
         {
           "barTime": 1790175600,
@@ -1104,6 +1108,8 @@
       "entryFee": "0.05354676",
       "closeFeeRate": "0.0004",
       "oldNetPnl": "-0.6320",
+      "flatLossBudget": "0.401601",
+      "requiredFlatStreak": 3,
       "bars": [
         {
           "barTime": 1790197200,
@@ -1141,6 +1147,8 @@
       "entryFee": "0.04141256",
       "closeFeeRate": "0.0004",
       "oldNetPnl": "-0.5009",
+      "flatLossBudget": "0.310594",
+      "requiredFlatStreak": 3,
       "bars": [
         {
           "barTime": 1790244000,
@@ -1198,6 +1206,8 @@
       "entryFee": "0.03499416",
       "closeFeeRate": "0.0004",
       "oldNetPnl": "-0.6732",
+      "flatLossBudget": "0.262456",
+      "requiredFlatStreak": 3,
       "bars": [
         {
           "barTime": 1790245800,

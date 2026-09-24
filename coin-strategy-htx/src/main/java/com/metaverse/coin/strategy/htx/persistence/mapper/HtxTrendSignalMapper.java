@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Mapper
 public interface HtxTrendSignalMapper extends BaseMapper<HtxTrendSignalEntity> {
@@ -43,6 +44,21 @@ public interface HtxTrendSignalMapper extends BaseMapper<HtxTrendSignalEntity> {
                                   @Param("signal") String signal,
                                   @Param("since") LocalDateTime since,
                                   @Param("limit") int limit);
+
+    /**
+     * Latest de-duplicated signal sides for one entry timeframe, newest first. The caller counts only
+     * the uninterrupted prefix, so a historical FLAT cannot be mistaken for a consecutive confirmation.
+     */
+    @Select("SELECT s.trend_signal FROM htx_trend_signal s "
+            + "JOIN ("
+            + "SELECT bar_time, MAX(id) AS max_id FROM htx_trend_signal "
+            + "WHERE contract_code = #{contractCode} AND period = #{period} AND created_at >= #{since} "
+            + "AND bar_time IS NOT NULL GROUP BY bar_time ORDER BY bar_time DESC LIMIT #{limit}"
+            + ") latest_bars ON latest_bars.max_id = s.id ORDER BY s.bar_time DESC")
+    List<String> recentSignalSides(@Param("contractCode") String contractCode,
+                                   @Param("period") String period,
+                                   @Param("since") LocalDateTime since,
+                                   @Param("limit") int limit);
 
     @Select("SELECT COUNT(*) AS totalCount, "
             + "COALESCE(SUM(CASE WHEN latest.trend_signal = 'LONG' "

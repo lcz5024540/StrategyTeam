@@ -2960,6 +2960,12 @@ public class HtxTrendFollowingService {
                 since, requiredFlatBars);
     }
 
+    private long countConsecutiveFlatSignals(HtxTrendPositionEntity position, int requiredFlatBars) {
+        LocalDateTime since = position.getCreatedAt() == null ? SIGNAL_HISTORY_FLOOR : position.getCreatedAt();
+        return recorder.countConsecutiveSignalsBySide(position.getContractCode(), properties.getPeriod(),
+                TrendSide.FLAT.name(), since, requiredFlatBars);
+    }
+
     private BigDecimal roundTripCostRate(BigDecimal spreadRate, BigDecimal takerFeeRate) {
         return nonNegative(takerFeeRate).multiply(TWO)
                 .add(nonNegative(properties.getMinNetProfitRate()))
@@ -3053,12 +3059,14 @@ public class HtxTrendFollowingService {
         boolean marketOpposes = againstBroadMarket(LONG.equals(position.getSide()) ? TrendSide.LONG : TrendSide.SHORT,
                 marketBreadthContext());
         BigDecimal estimatedCloseFee = estimatedCloseFee(position, reference);
+        int requiredFlatBars = Math.max(1, properties.getFlatLossExitConfirmationBars());
+        int flatStreak = (int) countConsecutiveFlatSignals(position, requiredFlatBars);
         return exitDecisionEngine.evaluate(new HtxTrendExitDecisionEngine.Input(position.getPrimaryModel(), position.getSide(),
                 remainingContractVolume(position), position.getContractSize(), position.getEntryAvgPrice(), position.getStopPrice(),
                 position.getInvalidationPrice(), structuralTarget, reference, protectionPrice, highest, lowest, signal.atr(),
                 signal.side(), signal.emaFast(), signal.emaSlow(), majorOpposition, marketOpposes, snapshot.currentNet(),
                 estimatedCloseFee, position.getTrailingArmedAt(), position.getTrailingArmReason(),
-                position.getMaxFavorableR(), LocalDateTime.now()));
+                position.getMaxFavorableR(), LocalDateTime.now(), flatStreak, requiredFlatBars, flatLossBudget(position)));
     }
 
     /** V2 only: a durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */
