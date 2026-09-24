@@ -43,6 +43,7 @@ public class HtxTrendOrderEntity {
     private String modelName;
     private Long factorSnapshotId;
     private BigDecimal feeRateUsed;
+    private Long feeProfileId;
     private BigDecimal estimatedFee;
     private BigDecimal estimatedOpenFee;
     private BigDecimal estimatedCloseFee;

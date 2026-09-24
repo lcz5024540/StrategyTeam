@@ -30,6 +30,31 @@ SELECT 'primary', 'HTX', 'USDT_SWAP', 'PRIMARY', 1, 1, 0, 'https://api.hbdm.com'
        'default primary trend account; credentials may be filled by migration'
 WHERE NOT EXISTS (SELECT 1 FROM htx_trade_account WHERE account_label = 'primary');
 
+-- Append-only account fee schedule. The sole non-null current_profile_key marks the active version for one account+contract.
+CREATE TABLE IF NOT EXISTS htx_trade_account_fee_profile (
+    id                   BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    account_id           BIGINT         NOT NULL,
+    account_label        VARCHAR(32)    NOT NULL,
+    exchange             VARCHAR(16)    NOT NULL DEFAULT 'HTX',
+    market_type          VARCHAR(16)    NOT NULL DEFAULT 'USDT_SWAP',
+    contract_code        VARCHAR(32)    NOT NULL,
+    open_maker_rate      DECIMAL(36,18) NOT NULL,
+    open_taker_rate      DECIMAL(36,18) NOT NULL,
+    close_maker_rate     DECIMAL(36,18) NOT NULL,
+    close_taker_rate     DECIMAL(36,18) NOT NULL,
+    effective_taker_rate DECIMAL(36,18) NOT NULL,
+    source               VARCHAR(32)    NOT NULL,
+    fallback             TINYINT(1)     NOT NULL DEFAULT 0,
+    current_profile_key  VARCHAR(128),
+    effective_from       DATETIME(3)    NOT NULL,
+    effective_to         DATETIME(3),
+    last_observed_at     DATETIME(3)    NOT NULL,
+    created_at           DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at           DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_trade_account_fee_profile_current (current_profile_key),
+    INDEX idx_trade_account_fee_profile_history (account_id, market_type, contract_code, effective_from)
+);
+
 -- Cross-strategy append-only ledger projection. Execution tables remain the source of truth;
 -- this table provides account/strategy/model level attribution for dashboards and backtests.
 CREATE TABLE IF NOT EXISTS coin_strategy_ledger_event (
@@ -405,6 +430,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     strategy_name            VARCHAR(64)    NOT NULL DEFAULT 'HTX_TREND_V1',
     model_name               VARCHAR(64)    NOT NULL DEFAULT 'LEGACY_TREND_SIGNAL',
     entry_fee_rate           DECIMAL(36,18),
+    entry_fee_profile_id     BIGINT,
     estimated_entry_fee      DECIMAL(36,18),
     estimated_close_fee      DECIMAL(36,18),
     expected_net_after_fees  DECIMAL(36,18),
@@ -611,6 +637,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_order (
     model_name               VARCHAR(64)    NOT NULL DEFAULT 'LEGACY_TREND_SIGNAL',
     factor_snapshot_id       BIGINT,
     fee_rate_used            DECIMAL(36,18),
+    fee_profile_id           BIGINT,
     estimated_fee            DECIMAL(36,18),
     estimated_open_fee       DECIMAL(36,18),
     estimated_close_fee      DECIMAL(36,18),

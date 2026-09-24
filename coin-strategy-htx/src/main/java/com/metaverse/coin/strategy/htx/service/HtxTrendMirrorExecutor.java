@@ -159,9 +159,10 @@ public class HtxTrendMirrorExecutor {
         if (marginGate != null) {
             return SyncResult.failed(marginGate);
         }
-        BigDecimal takerFeeRate = account.feeRateResolver().takerRate(contractCode);
+        HtxSwapFeeRateResolver.FeeRates feeRates = account.feeRateResolver().rates(contractCode);
+        BigDecimal takerFeeRate = feeRates.taker();
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), false, deltaVolume);
-        createMirrorOrderIntent(position, account, HtxTrendRecorder.LEG_ENTRY, request, deltaVolume, takerFeeRate,
+        createMirrorOrderIntent(position, account, HtxTrendRecorder.LEG_ENTRY, request, deltaVolume, feeRates,
                 estimateFee(position.getEntryAvgPrice(), position.getContractSize(), deltaVolume, takerFeeRate),
                 mirrorEntryReason(position, leverageWarning));
         HtxRestResponse<HtxSwapOrderResult> response = account.swap().placeOrder(request);
@@ -211,9 +212,10 @@ public class HtxTrendMirrorExecutor {
             return SyncResult.failed("mirror close skipped: position volume below one contract account="
                     + account.accountLabel() + " contract=" + contractCode + " volume=" + snapshot.sameVolume());
         }
-        BigDecimal takerFeeRate = account.feeRateResolver().takerRate(contractCode);
+        HtxSwapFeeRateResolver.FeeRates feeRates = account.feeRateResolver().rates(contractCode);
+        BigDecimal takerFeeRate = feeRates.taker();
         HtxSwapOrderRequest request = orderRequest(contractCode, position.getSide(), true, closeVolume);
-        createMirrorOrderIntent(position, account, leg, request, closeVolume, takerFeeRate,
+        createMirrorOrderIntent(position, account, leg, request, closeVolume, feeRates,
                 estimateFee(position.getEntryAvgPrice(), position.getContractSize(), closeVolume, takerFeeRate),
                 "mirror exit signal: " + safe(position.getExitReason()));
         HtxRestResponse<HtxSwapOrderResult> response = account.swap().placeOrder(request);
@@ -370,7 +372,8 @@ public class HtxTrendMirrorExecutor {
     }
 
     private void createMirrorOrderIntent(HtxTrendPositionEntity position, HtxTrendMirrorAccount account, String leg,
-                                         HtxSwapOrderRequest request, long volume, BigDecimal takerFeeRate,
+                                         HtxSwapOrderRequest request, long volume,
+                                         HtxSwapFeeRateResolver.FeeRates feeRates,
                                          BigDecimal estimatedFee, String reason) {
         if (recorder == null) {
             return;
@@ -397,7 +400,8 @@ public class HtxTrendMirrorExecutor {
         entity.setStrategyName(position.getStrategyName());
         entity.setModelName(position.getModelName());
         entity.setFactorSnapshotId(position.getFactorSnapshotId());
-        entity.setFeeRateUsed(takerFeeRate);
+        entity.setFeeRateUsed(feeRates.taker());
+        entity.setFeeProfileId(feeRates.profileId());
         entity.setEstimatedFee(estimatedFee);
         if (HtxTrendRecorder.LEG_CLOSE.equals(leg)) {
             entity.setEstimatedCloseFee(estimatedFee);

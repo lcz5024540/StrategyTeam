@@ -18,7 +18,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "entry_client_order_id, entry_order_id, entry_filled_contracts, entry_avg_price, entry_fee, "
             + "close_client_order_id, close_order_id, close_filled_contracts, close_avg_price, close_fee, "
             + "realized_profit, stop_price, trailing_stop_price, take_profit_price, highest_price, lowest_price, "
-            + "entry_signal, exit_reason, message, account_id, account_label, strategy_family, strategy_name, model_name, entry_fee_rate, estimated_entry_fee, "
+            + "entry_signal, exit_reason, message, account_id, account_label, strategy_family, strategy_name, model_name, entry_fee_rate, entry_fee_profile_id, estimated_entry_fee, "
             + "estimated_close_fee, expected_net_after_fees, sizing_multiplier, sizing_reason, entry_gate_reason, "
             + "primary_model, confirmation_models, policy_version, market_regime, factor_snapshot_id, "
             + "entry_hypothesis, invalidation_price, target_zone_low, target_zone_high, expected_r_multiple, momentum_quality_score, "

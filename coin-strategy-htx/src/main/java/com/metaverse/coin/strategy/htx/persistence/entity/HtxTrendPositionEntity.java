@@ -53,6 +53,7 @@ public class HtxTrendPositionEntity {
     private String strategyName;
     private String modelName;
     private BigDecimal entryFeeRate;
+    private Long entryFeeProfileId;
     private BigDecimal estimatedEntryFee;
     private BigDecimal estimatedCloseFee;
     private BigDecimal expectedNetAfterFees;

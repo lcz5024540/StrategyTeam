@@ -110,10 +110,11 @@ public class HtxTrendFollowingService {
                                     HtxTrendProperties properties,
                                     HtxTrendRecorder recorder,
                                     HtxTrendMirrorExecutor mirrorExecutor,
-                                    HtxTrendEnsembleShadowProperties ensembleProperties) {
+                                    HtxTrendEnsembleShadowProperties ensembleProperties,
+                                    HtxAccountFeeProfileRecorder feeProfileRecorder) {
         this(api.getSwapService(), contractProperties, fundingArbitrageProperties, marketMakerProperties,
                 properties, recorder, new HtxTrendSignalCalculator(), ensembleProperties,
-                new HtxTrendEnsembleSignalCalculator(), mirrorExecutor);
+                new HtxTrendEnsembleSignalCalculator(), mirrorExecutor, feeProfileRecorder);
     }
 
     HtxTrendFollowingService(HtxUsdtSwapService swap,
@@ -150,6 +151,21 @@ public class HtxTrendFollowingService {
                              HtxTrendEnsembleShadowProperties ensembleProperties,
                              HtxTrendEnsembleSignalCalculator ensembleCalculator,
                              HtxTrendMirrorExecutor mirrorExecutor) {
+        this(swap, contractProperties, fundingArbitrageProperties, marketMakerProperties, properties, recorder,
+                calculator, ensembleProperties, ensembleCalculator, mirrorExecutor, null);
+    }
+
+    HtxTrendFollowingService(HtxUsdtSwapService swap,
+                             HtxContractProperties contractProperties,
+                             HtxFundingArbitrageProperties fundingArbitrageProperties,
+                             HtxMarketMakerProperties marketMakerProperties,
+                             HtxTrendProperties properties,
+                             HtxTrendRecorder recorder,
+                             HtxTrendSignalCalculator calculator,
+                             HtxTrendEnsembleShadowProperties ensembleProperties,
+                             HtxTrendEnsembleSignalCalculator ensembleCalculator,
+                             HtxTrendMirrorExecutor mirrorExecutor,
+                             HtxAccountFeeProfileRecorder feeProfileRecorder) {
         this.swap = swap;
         this.contractProperties = contractProperties;
         this.fundingArbitrageProperties = fundingArbitrageProperties;
@@ -161,7 +177,7 @@ public class HtxTrendFollowingService {
         this.ensembleCalculator = ensembleCalculator == null ? new HtxTrendEnsembleSignalCalculator() : ensembleCalculator;
         this.mirrorExecutor = mirrorExecutor;
         this.feeRateResolver = new HtxSwapFeeRateResolver(swap, properties::getEstimatedTakerFeeRate,
-                properties::getFeeRateCacheMs, "primary");
+                properties::getFeeRateCacheMs, "primary", feeProfileRecorder);
     }
 
     public RunResult runOnce() {
@@ -1104,6 +1120,7 @@ public class HtxTrendFollowingService {
             entity.setMomentumQualityScore(combination.momentumQualityScore());
         }
         entity.setEntryFeeRate(takerFeeRate);
+        entity.setEntryFeeProfileId(feeRates.profileId());
         entity.setEstimatedEntryFee(entryCost.estimatedEntryFee());
         entity.setEstimatedCloseFee(entryCost.estimatedCloseFee());
         entity.setExpectedNetAfterFees(entryCost.expectedNetAfterFees());
@@ -2196,6 +2213,7 @@ public class HtxTrendFollowingService {
         entity.setModelName(position.getModelName());
         entity.setFactorSnapshotId(position.getFactorSnapshotId());
         entity.setFeeRateUsed(position.getEntryFeeRate());
+        entity.setFeeProfileId(position.getEntryFeeProfileId());
         entity.setEstimatedOpenFee(position.getEstimatedEntryFee());
         entity.setEstimatedCloseFee(position.getEstimatedCloseFee());
         entity.setEstimatedFee(HtxTrendRecorder.LEG_CLOSE.equals(leg)

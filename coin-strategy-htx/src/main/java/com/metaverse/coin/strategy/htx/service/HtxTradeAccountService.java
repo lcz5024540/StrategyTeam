@@ -25,6 +25,7 @@ public class HtxTradeAccountService {
 
     private final HtxTradeAccountMapper mapper;
     private final HtxSecretDecryptor decryptor;
+    private final HtxAccountFeeProfileRecorder feeProfileRecorder;
 
     public HtxUsdtSwapApiService primarySwapApiService(HtxTradeProperties tradeProperties,
                                                         HtxContractProperties contractProperties) {
@@ -77,7 +78,7 @@ public class HtxTradeAccountService {
             String accountLabel = StringUtils.hasText(mirror.getAccountLabel()) ? mirror.getAccountLabel().trim() : "mirror";
             accounts.add(new HtxTrendMirrorAccount(accountLabel, api.getSwapService(),
                     new HtxSwapFeeRateResolver(api.getSwapService(), trendProperties::getEstimatedTakerFeeRate,
-                            trendProperties::getFeeRateCacheMs, accountLabel),
+                            trendProperties::getFeeRateCacheMs, accountLabel, feeProfileRecorder),
                     mirror.isSyncLeverage(), mirror.isBlockEntryOnLeverageSyncFailure(),
                     mirror.isBlockPrimaryCloseUntilSynced()));
         }
@@ -111,7 +112,7 @@ public class HtxTradeAccountService {
         String accountLabel = label(entity);
         return new HtxTrendMirrorAccount(accountLabel, api.getSwapService(),
                 new HtxSwapFeeRateResolver(api.getSwapService(), trendProperties::getEstimatedTakerFeeRate,
-                        trendProperties::getFeeRateCacheMs, accountLabel),
+                        trendProperties::getFeeRateCacheMs, accountLabel, feeProfileRecorder),
                 flag(entity.getSyncLeverage(), true),
                 flag(entity.getBlockEntryOnLeverageSyncFailure(), false),
                 flag(entity.getBlockPrimaryCloseUntilSynced(), true));
