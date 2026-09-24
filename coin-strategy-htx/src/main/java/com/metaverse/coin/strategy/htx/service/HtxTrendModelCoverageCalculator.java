@@ -46,6 +46,51 @@ public class HtxTrendModelCoverageCalculator {
         return new Coverage(true, context, donchian, fibonacci, emaVwap, momentum, squeeze, structure, route, vwap);
     }
 
+    /**
+     * Evaluates each independently observable model instead of turning overlapping evidence into
+     * a synthetic vote.  The caller may later compare their realised forward return on the same
+     * entry price and fee basis.  Squeeze and structure stay evidence-only: they can be useful
+     * context, but are not silently promoted into an entry family here.
+     */
+    public List<String> activeEntryModels(Coverage coverage) {
+        if (coverage == null || !coverage.available() || coverage.direction() == Direction.FLAT) {
+            return List.of();
+        }
+        List<String> models = new ArrayList<>();
+        if (coverage.donchian()) models.add("DONCHIAN_BREAKOUT");
+        if (coverage.fibonacci()) models.add("FIB_PULLBACK_CONTINUATION");
+        if (coverage.emaVwap()) models.add("EMA_VWAP_PULLBACK");
+        if (coverage.momentum()) models.add("MOMENTUM_CONTINUATION");
+        if (coverage.emaVwap() && coverage.momentum()) models.add("EMA_VWAP_MOMENTUM_CONTINUATION");
+        return List.copyOf(models);
+    }
+
+    /**
+     * Marks a forward close-to-close return for every independent model that was active at the
+     * source bar.  This is an observation result, never an execution instruction.  Open and
+     * close fee rates are kept separate because HTX can return different account-specific rates.
+     */
+    public List<ForwardOutcome> evaluateForwardOutcomes(Coverage coverage, BigDecimal entryPrice,
+                                                         BigDecimal futureClose, int horizonBars,
+                                                         BigDecimal openTakerFeeRate,
+                                                         BigDecimal closeTakerFeeRate) {
+        if (!positive(entryPrice) || !positive(futureClose) || horizonBars <= 0
+                || coverage == null || coverage.direction() == Direction.FLAT) {
+            return List.of();
+        }
+        BigDecimal grossReturn = coverage.direction() == Direction.LONG
+                ? futureClose.subtract(entryPrice).divide(entryPrice, 18, RoundingMode.HALF_UP)
+                : entryPrice.subtract(futureClose).divide(entryPrice, 18, RoundingMode.HALF_UP);
+        BigDecimal roundTripFeeRate = nonNegative(openTakerFeeRate).add(nonNegative(closeTakerFeeRate));
+        BigDecimal netReturn = grossReturn.subtract(roundTripFeeRate);
+        List<ForwardOutcome> outcomes = new ArrayList<>();
+        for (String model : activeEntryModels(coverage)) {
+            outcomes.add(new ForwardOutcome(model, coverage.direction(), horizonBars, entryPrice, futureClose,
+                    grossReturn, roundTripFeeRate, netReturn));
+        }
+        return List.copyOf(outcomes);
+    }
+
     private static Direction context(TrendCandidateSignal signal) {
         if (signal.direction() != Direction.FLAT) return signal.direction();
         if (positive(signal.emaFast()) && positive(signal.emaMedium()) && positive(signal.emaSlow())) {
@@ -126,8 +171,17 @@ public class HtxTrendModelCoverageCalculator {
     private static boolean valid(HtxSwapKline c) { return c != null && c.getId()!=null && positive(c.getHigh()) && positive(c.getLow()) && positive(c.getClose()); }
     private static boolean positive(BigDecimal v) { return v != null && v.signum()>0; }
 
+    private static BigDecimal nonNegative(BigDecimal value) {
+        return value == null || value.signum() < 0 ? BigDecimal.ZERO : value;
+    }
+
     public record Coverage(boolean available, Direction direction, boolean donchian, boolean fibonacci, boolean emaVwap,
                            boolean momentum, boolean squeeze, boolean structure, String primaryRoute, BigDecimal vwap) {
         static Coverage unavailable() { return new Coverage(false, Direction.FLAT, false,false,false,false,false,false,"UNAVAILABLE",BigDecimal.ZERO); }
+    }
+
+    public record ForwardOutcome(String model, Direction direction, int horizonBars, BigDecimal entryPrice,
+                                 BigDecimal futureClose, BigDecimal grossReturnRate,
+                                 BigDecimal roundTripFeeRate, BigDecimal netReturnRate) {
     }
 }

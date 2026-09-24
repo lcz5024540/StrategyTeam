@@ -37,6 +37,27 @@ class HtxTrendModelCoverageCalculatorTest {
         assertEquals("UNAVAILABLE", coverage.primaryRoute());
     }
 
+    @Test
+    void forwardOutcomeKeepsEachActiveModelIndependentAndDeductsBothFees() {
+        List<HtxSwapKline> candles = rising(42);
+        HtxSwapKline last = candles.get(candles.size() - 1);
+        last.setClose(new BigDecimal("200")); last.setHigh(new BigDecimal("202")); last.setLow(new BigDecimal("198"));
+        HtxTrendModelCoverageCalculator.Coverage coverage = calculator.evaluate(candles,
+                signal(last.getId(), last.getClose(), new BigDecimal("180"), new BigDecimal("120")));
+
+        List<HtxTrendModelCoverageCalculator.ForwardOutcome> outcomes = calculator.evaluateForwardOutcomes(
+                coverage, new BigDecimal("200"), new BigDecimal("204"), 4,
+                new BigDecimal("0.0002"), new BigDecimal("0.0003"));
+
+        assertEquals(2, outcomes.size());
+        HtxTrendModelCoverageCalculator.ForwardOutcome outcome = outcomes.stream()
+                .filter(item -> "DONCHIAN_BREAKOUT".equals(item.model())).findFirst().orElseThrow();
+        assertEquals("DONCHIAN_BREAKOUT", outcome.model());
+        assertEquals(0, new BigDecimal("0.02").compareTo(outcome.grossReturnRate()));
+        assertEquals(0, new BigDecimal("0.0005").compareTo(outcome.roundTripFeeRate()));
+        assertEquals(0, new BigDecimal("0.0195").compareTo(outcome.netReturnRate()));
+    }
+
     private static TrendCandidateSignal signal(long barTime, BigDecimal close, BigDecimal high, BigDecimal low) {
         return new TrendCandidateSignal("15min", barTime, Direction.LONG, Regime.TRENDING_UP, new BigDecimal("80"),
                 new BigDecimal("80"), BigDecimal.ZERO, new BigDecimal("80"), close, new BigDecimal("190"),

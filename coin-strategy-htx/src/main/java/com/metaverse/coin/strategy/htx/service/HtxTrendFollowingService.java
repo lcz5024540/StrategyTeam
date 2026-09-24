@@ -367,6 +367,7 @@ public class HtxTrendFollowingService {
                                                                               List<String> periods) {
         List<HtxTrendEnsembleSignalCalculator.TrendCandidateSignal> signals = new ArrayList<>(periods.size());
         int available = 0;
+        int modelCoverageOutcomes = 0;
         for (String period : periods) {
             HtxRestResponse<List<HtxSwapKline>> response = swap.historyKline(contractCode, period,
                     Math.max(1, properties.getFactorSnapshotKlineSize()));
@@ -381,10 +382,17 @@ public class HtxTrendFollowingService {
             if (signal.barTime() != null && signal.barTime() > 0L) {
                 available++;
             }
+            if (period.equalsIgnoreCase(properties.getPeriod())) {
+                HtxSwapFeeRateResolver.FeeRates fees = feeRateResolver.rates(contractCode);
+                modelCoverageOutcomes = combinationService.recordMaturedModelCoverageOutcomes(contractCode, period,
+                        response.payload(), ensembleCalculator, ensembleProperties,
+                        new HtxTrendCombinationService.ModelCoverageFeeContext("primary", fees.openTaker(),
+                                fees.closeTaker(), fees.fallback() ? "CONFIGURED_FALLBACK" : "HTX_ACCOUNT", fees.fallback()));
+            }
         }
         combinationService.recordMultiTimeframeSnapshot(contractCode, properties.getPeriod(), entryBarTime,
                 marketBreadth == null ? "UNKNOWN" : marketBreadth.regime().name(), signals);
-        return new FactorSnapshotCaptureResult(contractCode, available, periods.size());
+        return new FactorSnapshotCaptureResult(contractCode, available, periods.size(), modelCoverageOutcomes);
     }
 
     private List<CandidateScanResult> evaluateEntryCandidates(List<String> contractCodes,
@@ -3413,46 +3421,51 @@ public class HtxTrendFollowingService {
     private record CandidateEvaluation(RunResult result, EntryCandidate candidate) {
     }
 
-    private record FactorSnapshotCaptureResult(String contractCode, int availablePeriods, int requestedPeriods) {
+    private record FactorSnapshotCaptureResult(String contractCode, int availablePeriods, int requestedPeriods,
+                                               int modelCoverageOutcomes) {
     }
 
     private record FactorSnapshotCaptureSummary(int contracts, int completeContracts, int availablePeriods,
-                                                int requestedPeriods, long durationMs, String status) {
+                                                int requestedPeriods, int modelCoverageOutcomes,
+                                                long durationMs, String status) {
         static FactorSnapshotCaptureSummary notRun() {
-            return new FactorSnapshotCaptureSummary(0, 0, 0, 0, 0L, "not-run");
+            return new FactorSnapshotCaptureSummary(0, 0, 0, 0, 0, 0L, "not-run");
         }
 
         static FactorSnapshotCaptureSummary skipped(String reason) {
-            return new FactorSnapshotCaptureSummary(0, 0, 0, 0, 0L, "skipped:" + reason);
+            return new FactorSnapshotCaptureSummary(0, 0, 0, 0, 0, 0L, "skipped:" + reason);
         }
 
         static FactorSnapshotCaptureSummary from(List<FactorSnapshotCaptureResult> results, int requestedPeriods) {
             int contracts = results == null ? 0 : results.size();
             int completeContracts = 0;
             int availablePeriods = 0;
+            int modelCoverageOutcomes = 0;
             if (results != null) {
                 for (FactorSnapshotCaptureResult result : results) {
                     if (result == null) {
                         continue;
                     }
                     availablePeriods += result.availablePeriods();
+                    modelCoverageOutcomes += result.modelCoverageOutcomes();
                     if (result.availablePeriods() == requestedPeriods) {
                         completeContracts++;
                     }
                 }
             }
             return new FactorSnapshotCaptureSummary(contracts, completeContracts, availablePeriods,
-                    contracts * requestedPeriods, 0L, "complete");
+                    contracts * requestedPeriods, modelCoverageOutcomes, 0L, "complete");
         }
 
         FactorSnapshotCaptureSummary withDuration(long durationMs) {
             return new FactorSnapshotCaptureSummary(contracts, completeContracts, availablePeriods,
-                    requestedPeriods, durationMs, status);
+                    requestedPeriods, modelCoverageOutcomes, durationMs, status);
         }
 
         String summary() {
             return status + " contracts=" + contracts + " completeContracts=" + completeContracts
-                    + " periods=" + availablePeriods + "/" + requestedPeriods + " durationMs=" + durationMs;
+                    + " periods=" + availablePeriods + "/" + requestedPeriods
+                    + " modelCoverageOutcomes=" + modelCoverageOutcomes + " durationMs=" + durationMs;
         }
     }
 

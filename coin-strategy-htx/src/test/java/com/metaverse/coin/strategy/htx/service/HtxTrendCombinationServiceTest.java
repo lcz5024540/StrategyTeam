@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
+import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCandidateSignalRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCombinationRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -194,6 +196,37 @@ class HtxTrendCombinationServiceTest {
     }
 
     @Test
+    void maturedCoverageOutcomesPersistNetReturnUsingTheAccountFeeBasis() {
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(mock(HtxTrendStrategyPolicyService.class),
+                combinationRecorder, mock(HtxTrendCandidateSignalRecorder.class));
+        HtxTrendEnsembleShadowProperties props = new HtxTrendEnsembleShadowProperties();
+        props.setCandleCloseGraceSeconds(0L);
+        props.setFastEmaPeriod(3); props.setMediumEmaPeriod(5); props.setSlowEmaPeriod(8);
+        props.setBreakoutLookback(5); props.setMomentumLookback(3); props.setAtrPeriod(3);
+        props.setAdxPeriod(3); props.setVolumeLookback(3);
+
+        int recorded = service.recordMaturedModelCoverageOutcomes("BTC-USDT", "15min", risingCoverageCandles(),
+                new HtxTrendEnsembleSignalCalculator(), props,
+                new HtxTrendCombinationService.ModelCoverageFeeContext("primary", new BigDecimal("0.0002"),
+                        new BigDecimal("0.0003"), "HTX_ACCOUNT", false));
+
+        assertTrue(recorded > 0);
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder, org.mockito.Mockito.atLeastOnce()).recordSnapshot(snapshot.capture());
+        HtxTrendFactorSnapshotEntity outcome = snapshot.getAllValues().stream()
+                .filter(item -> item.getSnapshotKey().contains(":model-coverage-outcome-v1:"))
+                .findFirst().orElseThrow();
+        JSONObject json = JSON.parseObject(outcome.getFactorsJson());
+        assertEquals("trend-model-coverage-outcome-v1", json.getString("schema"));
+        assertEquals("primary", json.getJSONObject("fee").getString("accountLabel"));
+        assertEquals("HTX_ACCOUNT", json.getJSONObject("fee").getString("source"));
+        assertEquals(new BigDecimal("0.0005"), json.getBigDecimal("roundTripFeeRate"));
+        assertTrue(json.getBigDecimal("netReturnRate").compareTo(json.getBigDecimal("grossReturnRate")) < 0);
+    }
+
+    @Test
     void pricePlanPersistsWorstPriceRiskTargetsAndTimeframeProfile() {
         HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
         when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
@@ -240,6 +273,17 @@ class HtxTrendCombinationServiceTest {
         List<HtxSwapKline> rows = new ArrayList<>();
         for (int index = 0; index < size; index++) {
             rows.add(candle(index, "100", "110", "101", "105"));
+        }
+        return rows;
+    }
+
+    private static List<HtxSwapKline> risingCoverageCandles() {
+        List<HtxSwapKline> rows = new ArrayList<>();
+        long first = Instant.now().getEpochSecond() - 80L * 900L;
+        for (int index = 0; index < 70; index++) {
+            BigDecimal open = new BigDecimal("100").add(BigDecimal.valueOf(index));
+            rows.add(candle(first + index * 900L, open.toPlainString(), open.add(new BigDecimal("2")).toPlainString(),
+                    open.subtract(BigDecimal.ONE).toPlainString(), open.add(BigDecimal.ONE).toPlainString()));
         }
         return rows;
     }

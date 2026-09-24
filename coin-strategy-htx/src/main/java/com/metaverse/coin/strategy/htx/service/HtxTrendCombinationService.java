@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.service;
 
 import com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline;
+import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCandidateSignalRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCombinationRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendCandidateSignalEntity;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -81,6 +83,11 @@ public class HtxTrendCombinationService {
             return;
         }
         HtxTrendModelCoverageCalculator.Coverage coverage = coverageCalculator.evaluate(candles, signal);
+        recordModelCoverageSnapshot(contractCode, period, signal, coverage);
+    }
+
+    private void recordModelCoverageSnapshot(String contractCode, String period, TrendCandidateSignal signal,
+                                             HtxTrendModelCoverageCalculator.Coverage coverage) {
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
         snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":model-coverage-v1");
         snapshot.setContractCode(contractCode);
@@ -108,6 +115,100 @@ public class HtxTrendCombinationService {
                 + ",\"atr\":" + jsonNumber(signal.atr())
                 + ",\"adx\":" + jsonNumber(signal.adx())
                 + ",\"momentumPct\":" + jsonNumber(signal.momentumPct()) + "}";
+    }
+
+    /**
+     * Persists post-signal model outcomes only after the source candle and the requested forward
+     * horizon are both complete.  It deliberately lives in the P2 observation lane and creates
+     * new immutable rows rather than rewriting the signal-time snapshot.
+     */
+    public int recordMaturedModelCoverageOutcomes(String contractCode, String period, List<HtxSwapKline> rawCandles,
+                                                   HtxTrendEnsembleSignalCalculator ensembleCalculator,
+                                                   HtxTrendEnsembleShadowProperties ensembleProperties,
+                                                   ModelCoverageFeeContext feeContext) {
+        if (contractCode == null || contractCode.isBlank() || period == null || period.isBlank()
+                || rawCandles == null || rawCandles.isEmpty() || ensembleCalculator == null || ensembleProperties == null) {
+            return 0;
+        }
+        long completedBefore = Instant.now().getEpochSecond() - periodSeconds(period)
+                - Math.max(0L, ensembleProperties.getCandleCloseGraceSeconds());
+        List<HtxSwapKline> candles = rawCandles.stream().filter(HtxTrendCombinationService::validCoverageCandle)
+                .filter(candle -> candle.getId() <= completedBefore)
+                .sorted(Comparator.comparing(HtxSwapKline::getId)).toList();
+        if (candles.size() < 2) {
+            return 0;
+        }
+        ModelCoverageFeeContext fees = feeContext == null ? ModelCoverageFeeContext.unavailable() : feeContext;
+        int recorded = 0;
+        for (int horizonBars : List.of(1, 4, 8, 16)) {
+            int sourceIndex = candles.size() - 1 - horizonBars;
+            if (sourceIndex < 0) {
+                continue;
+            }
+            List<HtxSwapKline> sourceCandles = candles.subList(0, sourceIndex + 1);
+            HtxSwapKline source = sourceCandles.get(sourceCandles.size() - 1);
+            long sourceCompletedAt = source.getId() + periodSeconds(period)
+                    + Math.max(0L, ensembleProperties.getCandleCloseGraceSeconds());
+            TrendCandidateSignal signal = ensembleCalculator.evaluate(sourceCandles, ensembleProperties, period, sourceCompletedAt);
+            HtxTrendModelCoverageCalculator.Coverage coverage = coverageCalculator.evaluate(sourceCandles, signal);
+            if (!coverage.available()) {
+                continue;
+            }
+            recordModelCoverageSnapshot(contractCode, period, signal, coverage);
+            HtxSwapKline future = candles.get(sourceIndex + horizonBars);
+            for (HtxTrendModelCoverageCalculator.ForwardOutcome outcome : coverageCalculator.evaluateForwardOutcomes(
+                    coverage, source.getClose(), future.getClose(), horizonBars,
+                    fees.openTakerFeeRate(), fees.closeTakerFeeRate())) {
+                HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+                snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime()
+                        + ":model-coverage-outcome-v1:" + outcome.model() + ":" + horizonBars);
+                snapshot.setContractCode(contractCode);
+                snapshot.setPeriod(period);
+                snapshot.setBarTime(signal.barTime());
+                snapshot.setMarketRegime(signal.regime().name());
+                snapshot.setFactorsJson(modelCoverageOutcomeJson(signal, coverage, outcome, fees));
+                if (combinationRecorder.recordSnapshot(snapshot) != null) {
+                    recorded++;
+                }
+            }
+        }
+        return recorded;
+    }
+
+    private static String modelCoverageOutcomeJson(TrendCandidateSignal signal,
+                                                   HtxTrendModelCoverageCalculator.Coverage coverage,
+                                                   HtxTrendModelCoverageCalculator.ForwardOutcome outcome,
+                                                   ModelCoverageFeeContext fees) {
+        String sourceKey = "" + signal.period() + ":" + signal.barTime() + ":model-coverage-v1";
+        return "{\"schema\":\"trend-model-coverage-outcome-v1\",\"readOnly\":true"
+                + ",\"sourceCoverageSuffix\":" + jsonText(sourceKey)
+                + ",\"model\":" + jsonText(outcome.model())
+                + ",\"direction\":" + jsonText(outcome.direction().name())
+                + ",\"marketRegime\":" + jsonText(signal.regime().name())
+                + ",\"primaryRoute\":" + jsonText(coverage.primaryRoute())
+                + ",\"horizonBars\":" + outcome.horizonBars()
+                + ",\"entryPrice\":" + jsonNumber(outcome.entryPrice())
+                + ",\"futureClose\":" + jsonNumber(outcome.futureClose())
+                + ",\"grossReturnRate\":" + jsonNumber(outcome.grossReturnRate())
+                + ",\"roundTripFeeRate\":" + jsonNumber(outcome.roundTripFeeRate())
+                + ",\"netReturnRate\":" + jsonNumber(outcome.netReturnRate())
+                + ",\"fee\":{\"accountLabel\":" + jsonText(fees.accountLabel())
+                + ",\"openTakerRate\":" + jsonNumber(fees.openTakerFeeRate())
+                + ",\"closeTakerRate\":" + jsonNumber(fees.closeTakerFeeRate())
+                + ",\"source\":" + jsonText(fees.source())
+                + ",\"fallback\":" + fees.fallback() + "}}";
+    }
+
+    private static long periodSeconds(String period) {
+        String value = period == null ? "" : period.trim().toLowerCase(java.util.Locale.ROOT);
+        if (value.endsWith("min")) return Long.parseLong(value.substring(0, value.length() - 3)) * 60L;
+        if (value.endsWith("hour")) return Long.parseLong(value.substring(0, value.length() - 4)) * 3_600L;
+        if (value.endsWith("day")) return Long.parseLong(value.substring(0, value.length() - 3)) * 86_400L;
+        return 0L;
+    }
+
+    private static boolean validCoverageCandle(HtxSwapKline candle) {
+        return candle != null && candle.getId() != null && candle.getClose() != null && candle.getClose().signum() > 0;
     }
 
     /** Records the scan-level market context once per completed entry candle for later model attribution. */
@@ -746,6 +847,15 @@ public class HtxTrendCombinationService {
                                              BigDecimal profitFactor, BigDecimal payoffRatio,
                                              BigDecimal averageWin, BigDecimal averageLoss,
                                              BigDecimal expectancy, BigDecimal netProfit) {
+    }
+
+    /** Account-specific cost basis used only for read-only forward-return attribution. */
+    public record ModelCoverageFeeContext(String accountLabel, BigDecimal openTakerFeeRate,
+                                          BigDecimal closeTakerFeeRate, String source, boolean fallback) {
+        static ModelCoverageFeeContext unavailable() {
+            return new ModelCoverageFeeContext("primary", BigDecimal.ZERO, BigDecimal.ZERO,
+                    "UNAVAILABLE", true);
+        }
     }
 
     public record PricePlanEvidence(String runId, String timeframeProfile, BigDecimal triggerPrice,
