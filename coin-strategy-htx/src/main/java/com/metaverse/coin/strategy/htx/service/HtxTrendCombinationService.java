@@ -32,9 +32,11 @@ public class HtxTrendCombinationService {
     private final HtxTrendCombinationRecorder combinationRecorder;
     private final HtxTrendCandidateSignalRecorder candidateRecorder;
     private final HtxTrendCombinationCalculator calculator = new HtxTrendCombinationCalculator();
+    private final HtxTrendModelCoverageCalculator coverageCalculator = new HtxTrendModelCoverageCalculator();
 
     public Selection select(String contractCode, String period, List<HtxSwapKline> candles,
                             TrendCandidateSignal signal) {
+        recordModelCoverage(contractCode, period, candles, signal);
         List<HtxTrendStrategyPolicyEntity> policies = policyService.enabledPolicies();
         if (policies.isEmpty()) {
             return reject(contractCode, period, signal, HtxTrendCombinationGateReason.NO_ENABLED_POLICY);
@@ -67,6 +69,45 @@ public class HtxTrendCombinationService {
         BigDecimal notional = selected.policy().getBaseNotionalUsdt().multiply(multiplier)
                 .min(selected.policy().getMaxNotionalUsdt());
         return Selection.selected(selected.candidate(), selected.policy(), snapshotId, multiplier, notional, runId);
+    }
+
+    /**
+     * Persists an immutable, read-only model map for every evaluated bar.  This is intentionally
+     * outside policy selection, score ranking, sizing and the live order path.
+     */
+    private void recordModelCoverage(String contractCode, String period, List<HtxSwapKline> candles,
+                                     TrendCandidateSignal signal) {
+        if (signal == null || signal.barTime() == null) {
+            return;
+        }
+        HtxTrendModelCoverageCalculator.Coverage coverage = coverageCalculator.evaluate(candles, signal);
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":model-coverage-v1");
+        snapshot.setContractCode(contractCode);
+        snapshot.setPeriod(period);
+        snapshot.setBarTime(signal.barTime());
+        snapshot.setMarketRegime(signal.regime().name());
+        snapshot.setFactorsJson(modelCoverageJson(signal, coverage));
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
+    private static String modelCoverageJson(TrendCandidateSignal signal, HtxTrendModelCoverageCalculator.Coverage coverage) {
+        return "{\"schema\":\"trend-model-coverage-v1\",\"readOnly\":true"
+                + ",\"barDirection\":" + jsonText(signal.direction().name())
+                + ",\"contextDirection\":" + jsonText(coverage.direction().name())
+                + ",\"primaryRoute\":" + jsonText(coverage.primaryRoute())
+                + ",\"available\":" + coverage.available()
+                + ",\"models\":{\"donchian\":" + coverage.donchian()
+                + ",\"fibonacci\":" + coverage.fibonacci()
+                + ",\"emaVwap\":" + coverage.emaVwap()
+                + ",\"momentum\":" + coverage.momentum()
+                + ",\"squeeze\":" + coverage.squeeze()
+                + ",\"structure\":" + coverage.structure() + "}"
+                + ",\"vwap\":" + jsonNumber(coverage.vwap())
+                + ",\"close\":" + jsonNumber(signal.closePrice())
+                + ",\"atr\":" + jsonNumber(signal.atr())
+                + ",\"adx\":" + jsonNumber(signal.adx())
+                + ",\"momentumPct\":" + jsonNumber(signal.momentumPct()) + "}";
     }
 
     /** Records the scan-level market context once per completed entry candle for later model attribution. */
