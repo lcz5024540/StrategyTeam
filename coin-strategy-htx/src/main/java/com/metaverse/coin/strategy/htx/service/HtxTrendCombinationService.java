@@ -35,7 +35,7 @@ public class HtxTrendCombinationService {
     private final HtxTrendCandidateSignalRecorder candidateRecorder;
     private final HtxTrendCombinationCalculator calculator = new HtxTrendCombinationCalculator();
     private final HtxTrendModelCoverageCalculator coverageCalculator = new HtxTrendModelCoverageCalculator();
-    private final HtxTrendModelRouter modelRouter = new HtxTrendModelRouter();
+    private final HtxTrendModelAnalyzer modelAnalyzer = new HtxTrendModelAnalyzer();
 
     public Selection select(String contractCode, String period, List<HtxSwapKline> candles,
                             TrendCandidateSignal signal) {
@@ -85,7 +85,7 @@ public class HtxTrendCombinationService {
         }
         HtxTrendModelCoverageCalculator.Coverage coverage = coverageCalculator.evaluate(candles, signal);
         recordModelCoverageSnapshot(contractCode, period, signal, coverage);
-        recordModelRoutingSnapshot(contractCode, period, signal, modelRouter.route(signal, coverage));
+        recordModelAnalysisSnapshot(contractCode, period, signal, modelAnalyzer.analyze(signal, coverage));
     }
 
     private void recordModelCoverageSnapshot(String contractCode, String period, TrendCandidateSignal signal,
@@ -104,7 +104,7 @@ public class HtxTrendCombinationService {
         return "{\"schema\":\"trend-model-coverage-v1\",\"readOnly\":true"
                 + ",\"barDirection\":" + jsonText(signal.direction().name())
                 + ",\"contextDirection\":" + jsonText(coverage.direction().name())
-                + ",\"primaryRoute\":" + jsonText(coverage.primaryRoute())
+                + ",\"activeModels\":" + jsonTextArray(coverage.activeModels())
                 + ",\"available\":" + coverage.available()
                 + ",\"models\":{\"donchian\":" + coverage.donchian()
                 + ",\"fibonacci\":" + coverage.fibonacci()
@@ -120,35 +120,34 @@ public class HtxTrendCombinationService {
     }
 
     /**
-     * Persists routing evidence alongside the independent coverage map.  The router is explicitly
+     * Persists all active-model evidence for the same K-line window.  It is explicitly
      * observational: no field from this snapshot is read by policy selection, the final gate,
      * sizing or exchange execution.
      */
-    private void recordModelRoutingSnapshot(String contractCode, String period, TrendCandidateSignal signal,
-                                            HtxTrendModelRouter.RoutingDecision routing) {
+    private void recordModelAnalysisSnapshot(String contractCode, String period, TrendCandidateSignal signal,
+                                             HtxTrendModelAnalyzer.ModelAnalysis analysis) {
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
-        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":model-routing-v1");
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":model-analysis-v2");
         snapshot.setContractCode(contractCode);
         snapshot.setPeriod(period);
         snapshot.setBarTime(signal.barTime());
         snapshot.setMarketRegime(signal.regime().name());
-        snapshot.setFactorsJson(modelRoutingJson(signal, routing));
+        snapshot.setFactorsJson(modelAnalysisJson(signal, analysis));
         combinationRecorder.recordSnapshot(snapshot);
     }
 
-    private static String modelRoutingJson(TrendCandidateSignal signal, HtxTrendModelRouter.RoutingDecision routing) {
-        return "{\"schema\":\"trend-model-routing-v1\",\"readOnly\":true"
-                + ",\"executionBoundary\":" + jsonText(routing.executionBoundary())
-                + ",\"routable\":" + routing.routable()
-                + ",\"primaryModel\":" + jsonText(routing.primaryModel())
-                + ",\"direction\":" + jsonText(routing.direction().name())
-                + ",\"structureId\":" + jsonText(routing.structureId())
-                + ",\"timeframeProfile\":" + jsonText(routing.timeframeProfile())
+    private static String modelAnalysisJson(TrendCandidateSignal signal, HtxTrendModelAnalyzer.ModelAnalysis analysis) {
+        return "{\"schema\":\"trend-model-analysis-v2\",\"readOnly\":true"
+                + ",\"executionBoundary\":" + jsonText(analysis.executionBoundary())
+                + ",\"analysisAvailable\":" + analysis.available()
+                + ",\"direction\":" + jsonText(analysis.direction().name())
+                + ",\"timeframeProfile\":" + jsonText(analysis.timeframeProfile())
                 + ",\"marketRegime\":" + jsonText(signal.regime().name())
-                + ",\"supports\":" + jsonTextArray(routing.supports())
-                + ",\"conflicts\":" + jsonTextArray(routing.conflicts())
-                + ",\"risks\":" + jsonTextArray(routing.risks())
-                + ",\"reason\":" + jsonText(routing.reason()) + "}";
+                + ",\"activeModels\":" + jsonModelEvidenceArray(analysis.activeModels())
+                + ",\"contextEvidence\":" + jsonTextArray(analysis.contextEvidence())
+                + ",\"conflicts\":" + jsonTextArray(analysis.conflicts())
+                + ",\"risks\":" + jsonTextArray(analysis.risks())
+                + ",\"reason\":" + jsonText(analysis.reason()) + "}";
     }
 
     /**
@@ -189,20 +188,20 @@ public class HtxTrendCombinationService {
                 continue;
             }
             recordModelCoverageSnapshot(contractCode, period, signal, coverage);
-            HtxTrendModelRouter.RoutingDecision routing = modelRouter.route(signal, coverage);
-            recordModelRoutingSnapshot(contractCode, period, signal, routing);
+            HtxTrendModelAnalyzer.ModelAnalysis analysis = modelAnalyzer.analyze(signal, coverage);
+            recordModelAnalysisSnapshot(contractCode, period, signal, analysis);
             HtxSwapKline future = candles.get(sourceIndex + horizonBars);
             for (HtxTrendModelCoverageCalculator.ForwardOutcome outcome : coverageCalculator.evaluateForwardOutcomes(
                     coverage, source.getClose(), future.getClose(), horizonBars,
                     fees.openTakerFeeRate(), fees.closeTakerFeeRate())) {
                 HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
                 snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime()
-                        + ":model-coverage-outcome-v1:" + outcome.model() + ":" + horizonBars);
+                        + ":model-coverage-outcome-v2:" + outcome.model() + ":" + horizonBars);
                 snapshot.setContractCode(contractCode);
                 snapshot.setPeriod(period);
                 snapshot.setBarTime(signal.barTime());
                 snapshot.setMarketRegime(signal.regime().name());
-                snapshot.setFactorsJson(modelCoverageOutcomeJson(signal, coverage, routing, outcome, fees));
+                snapshot.setFactorsJson(modelCoverageOutcomeJson(signal, coverage, analysis, outcome, fees));
                 if (combinationRecorder.recordSnapshot(snapshot) != null) {
                     recorded++;
                 }
@@ -213,19 +212,18 @@ public class HtxTrendCombinationService {
 
     private static String modelCoverageOutcomeJson(TrendCandidateSignal signal,
                                                    HtxTrendModelCoverageCalculator.Coverage coverage,
-                                                   HtxTrendModelRouter.RoutingDecision routing,
+                                                   HtxTrendModelAnalyzer.ModelAnalysis analysis,
                                                    HtxTrendModelCoverageCalculator.ForwardOutcome outcome,
                                                    ModelCoverageFeeContext fees) {
         String sourceKey = "" + signal.period() + ":" + signal.barTime() + ":model-coverage-v1";
-        return "{\"schema\":\"trend-model-coverage-outcome-v1\",\"readOnly\":true"
+        return "{\"schema\":\"trend-model-coverage-outcome-v2\",\"readOnly\":true"
                 + ",\"sourceCoverageSuffix\":" + jsonText(sourceKey)
                 + ",\"model\":" + jsonText(outcome.model())
                 + ",\"direction\":" + jsonText(outcome.direction().name())
                 + ",\"marketRegime\":" + jsonText(signal.regime().name())
-                + ",\"primaryRoute\":" + jsonText(coverage.primaryRoute())
-                + ",\"routedPrimaryModel\":" + jsonText(routing.primaryModel())
-                + ",\"structureId\":" + jsonText(routing.structureId())
-                + ",\"routingBoundary\":" + jsonText(routing.executionBoundary())
+                + ",\"coverageModels\":" + jsonTextArray(coverage.activeModels())
+                + ",\"activeModels\":" + jsonModelEvidenceArray(analysis.activeModels())
+                + ",\"analysisBoundary\":" + jsonText(analysis.executionBoundary())
                 + ",\"horizonBars\":" + outcome.horizonBars()
                 + ",\"entryPrice\":" + jsonNumber(outcome.entryPrice())
                 + ",\"futureClose\":" + jsonNumber(outcome.futureClose())
@@ -802,6 +800,15 @@ public class HtxTrendCombinationService {
             return "[]";
         }
         return "[" + values.stream().map(HtxTrendCombinationService::jsonText)
+                .collect(java.util.stream.Collectors.joining(",")) + "]";
+    }
+
+    private static String jsonModelEvidenceArray(List<HtxTrendModelAnalyzer.ModelEvidence> values) {
+        if (values == null || values.isEmpty()) {
+            return "[]";
+        }
+        return "[" + values.stream().map(value -> "{\"model\":" + jsonText(value.model())
+                        + ",\"structureId\":" + jsonText(value.structureId()) + "}")
                 .collect(java.util.stream.Collectors.joining(",")) + "]";
     }
 

@@ -42,10 +42,9 @@ public class HtxTrendModelCoverageCalculator {
         boolean momentum = context != Direction.FLAT && momentumContinuation(context, signal);
         boolean squeeze = context != Direction.FLAT && squeeze(candles, last, signal.atr());
         boolean structure = context != Direction.FLAT && structureAligned(candles, last, context);
-        String route = donchian ? "DONCHIAN_BREAKOUT" : fibonacciRetest.matched() ? "FIB_PULLBACK_CONTINUATION"
-                : emaVwap && momentum ? "EMA_MOMENTUM_CONTINUATION" : "NO_ENTRY_ROUTE";
+        List<String> activeModels = activeEntryModels(donchian, fibonacciRetest.matched(), emaVwap, momentum);
         return new Coverage(true, context, donchian, fibonacciRetest.matched(), emaVwap, momentum, squeeze, structure,
-                route, fibonacciRetest.breakoutBarTime(), vwap);
+                activeModels, fibonacciRetest.breakoutBarTime(), vwap);
     }
 
     /**
@@ -58,12 +57,17 @@ public class HtxTrendModelCoverageCalculator {
         if (coverage == null || !coverage.available() || coverage.direction() == Direction.FLAT) {
             return List.of();
         }
+        return coverage.activeModels();
+    }
+
+    private static List<String> activeEntryModels(boolean donchian, boolean fibonacci, boolean emaVwap,
+                                                  boolean momentum) {
         List<String> models = new ArrayList<>();
-        if (coverage.donchian()) models.add("DONCHIAN_BREAKOUT");
-        if (coverage.fibonacci()) models.add("FIB_PULLBACK_CONTINUATION");
-        if (coverage.emaVwap()) models.add("EMA_VWAP_PULLBACK");
-        if (coverage.momentum()) models.add("MOMENTUM_CONTINUATION");
-        if (coverage.emaVwap() && coverage.momentum()) models.add("EMA_VWAP_MOMENTUM_CONTINUATION");
+        if (donchian) models.add("DONCHIAN_BREAKOUT");
+        if (fibonacci) models.add("FIB_PULLBACK_CONTINUATION");
+        if (emaVwap) models.add("EMA_VWAP_PULLBACK");
+        if (momentum) models.add("MOMENTUM_CONTINUATION");
+        if (emaVwap && momentum) models.add("EMA_VWAP_MOMENTUM_CONTINUATION");
         return List.copyOf(models);
     }
 
@@ -180,10 +184,10 @@ public class HtxTrendModelCoverageCalculator {
     }
 
     public record Coverage(boolean available, Direction direction, boolean donchian, boolean fibonacci, boolean emaVwap,
-                           boolean momentum, boolean squeeze, boolean structure, String primaryRoute,
+                           boolean momentum, boolean squeeze, boolean structure, List<String> activeModels,
                            Long fibonacciSourceBarTime, BigDecimal vwap) {
         static Coverage unavailable() { return new Coverage(false, Direction.FLAT, false,false,false,false,false,false,
-                "UNAVAILABLE", null, BigDecimal.ZERO); }
+                List.of(), null, BigDecimal.ZERO); }
     }
 
     private record FibonacciRetest(boolean matched, Long breakoutBarTime) {

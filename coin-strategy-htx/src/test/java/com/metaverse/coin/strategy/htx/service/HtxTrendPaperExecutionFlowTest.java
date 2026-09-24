@@ -84,7 +84,7 @@ class HtxTrendPaperExecutionFlowTest {
         assertEquals(6, snapshots.byKey.size());
         assertTrue(snapshots.byKey.containsKey(candidateEvidenceKey()));
         assertTrue(snapshots.byKey.containsKey(CONTRACT + ":" + PERIOD + ":" + BAR_TIME + ":model-coverage-v1"));
-        assertTrue(snapshots.byKey.containsKey(CONTRACT + ":" + PERIOD + ":" + BAR_TIME + ":model-routing-v1"));
+        assertTrue(snapshots.byKey.containsKey(CONTRACT + ":" + PERIOD + ":" + BAR_TIME + ":model-analysis-v2"));
         assertTrue(snapshots.byKey.containsKey(pricePlanKey()));
         assertTrue(snapshots.byKey.containsKey(outboxKey()));
 

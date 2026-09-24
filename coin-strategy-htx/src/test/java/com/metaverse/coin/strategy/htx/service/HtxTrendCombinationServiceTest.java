@@ -216,20 +216,20 @@ class HtxTrendCombinationServiceTest {
         ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
         verify(combinationRecorder, org.mockito.Mockito.atLeastOnce()).recordSnapshot(snapshot.capture());
         HtxTrendFactorSnapshotEntity outcome = snapshot.getAllValues().stream()
-                .filter(item -> item.getSnapshotKey().contains(":model-coverage-outcome-v1:"))
+                .filter(item -> item.getSnapshotKey().contains(":model-coverage-outcome-v2:"))
                 .findFirst().orElseThrow();
         JSONObject json = JSON.parseObject(outcome.getFactorsJson());
-        assertEquals("trend-model-coverage-outcome-v1", json.getString("schema"));
+        assertEquals("trend-model-coverage-outcome-v2", json.getString("schema"));
         assertEquals("primary", json.getJSONObject("fee").getString("accountLabel"));
         assertEquals("HTX_ACCOUNT", json.getJSONObject("fee").getString("source"));
         assertEquals(new BigDecimal("0.0005"), json.getBigDecimal("roundTripFeeRate"));
         assertTrue(json.getBigDecimal("netReturnRate").compareTo(json.getBigDecimal("grossReturnRate")) < 0);
-        assertEquals("OBSERVE_ONLY", json.getString("routingBoundary"));
-        assertTrue(json.containsKey("routedPrimaryModel"));
+        assertEquals("OBSERVE_ONLY", json.getString("analysisBoundary"));
+        assertTrue(json.containsKey("activeModels"));
     }
 
     @Test
-    void routingSnapshotIsRecordedWithoutChangingTheExistingSelectionRejection() {
+    void modelAnalysisSnapshotIsRecordedWithoutChangingTheExistingSelectionRejection() {
         HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
         when(policyService.enabledPolicies()).thenReturn(List.of());
         HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
@@ -244,13 +244,13 @@ class HtxTrendCombinationServiceTest {
         assertEquals(HtxTrendCombinationGateReason.NO_ENABLED_POLICY.code(), selection.rejection());
         ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
         verify(combinationRecorder, org.mockito.Mockito.atLeast(2)).recordSnapshot(snapshot.capture());
-        HtxTrendFactorSnapshotEntity routing = snapshot.getAllValues().stream()
-                .filter(item -> item.getSnapshotKey().endsWith(":model-routing-v1"))
+        HtxTrendFactorSnapshotEntity analysis = snapshot.getAllValues().stream()
+                .filter(item -> item.getSnapshotKey().endsWith(":model-analysis-v2"))
                 .findFirst().orElseThrow();
-        JSONObject json = JSON.parseObject(routing.getFactorsJson());
-        assertEquals("trend-model-routing-v1", json.getString("schema"));
+        JSONObject json = JSON.parseObject(analysis.getFactorsJson());
+        assertEquals("trend-model-analysis-v2", json.getString("schema"));
         assertEquals("OBSERVE_ONLY", json.getString("executionBoundary"));
-        assertEquals("NO_ROUTE", json.getString("primaryModel"));
+        assertTrue(json.getJSONArray("activeModels").isEmpty());
     }
 
     @Test

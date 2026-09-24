@@ -27,14 +27,14 @@ class HtxTrendModelCoverageCalculatorTest {
 
         assertTrue(coverage.available());
         assertTrue(coverage.donchian());
-        assertEquals("DONCHIAN_BREAKOUT", coverage.primaryRoute());
+        assertTrue(coverage.activeModels().contains("DONCHIAN_BREAKOUT"));
     }
 
     @Test
     void unavailableInputNeverPretendsToProduceAnEntryRoute() {
         HtxTrendModelCoverageCalculator.Coverage coverage = calculator.evaluate(List.of(), signal(1L, BigDecimal.ONE, BigDecimal.TEN, BigDecimal.ZERO));
         assertTrue(!coverage.available());
-        assertEquals("UNAVAILABLE", coverage.primaryRoute());
+        assertTrue(coverage.activeModels().isEmpty());
     }
 
     @Test
