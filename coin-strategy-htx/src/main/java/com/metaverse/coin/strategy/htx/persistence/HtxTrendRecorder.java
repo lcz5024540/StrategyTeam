@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.persistence;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
@@ -42,19 +43,27 @@ public class HtxTrendRecorder {
     private final HtxTrendOrderMapper orderMapper;
     private final HtxTrendSignalMapper signalMapper;
     private final CoinStrategyLedgerRecorder ledgerRecorder;
+    private final HtxTrendCombinationRecorder combinationRecorder;
 
     public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
                             HtxTrendSignalMapper signalMapper) {
-        this(positionMapper, orderMapper, signalMapper, null);
+        this(positionMapper, orderMapper, signalMapper, null, null);
+    }
+
+    public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
+                            HtxTrendSignalMapper signalMapper, CoinStrategyLedgerRecorder ledgerRecorder) {
+        this(positionMapper, orderMapper, signalMapper, ledgerRecorder, null);
     }
 
     @Autowired
     public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
-                            HtxTrendSignalMapper signalMapper, CoinStrategyLedgerRecorder ledgerRecorder) {
+                            HtxTrendSignalMapper signalMapper, CoinStrategyLedgerRecorder ledgerRecorder,
+                            HtxTrendCombinationRecorder combinationRecorder) {
         this.positionMapper = positionMapper;
         this.orderMapper = orderMapper;
         this.signalMapper = signalMapper;
         this.ledgerRecorder = ledgerRecorder;
+        this.combinationRecorder = combinationRecorder;
     }
 
     public Optional<HtxTrendPositionEntity> findActive(String contractCode) {
@@ -239,16 +248,77 @@ public class HtxTrendRecorder {
     public void markCloseFilled(long id, BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
                                 BigDecimal realizedProfit, String message) {
         positionMapper.markCloseFilled(id, filledContracts, avgPrice, fee, realizedProfit, message);
+        HtxTrendPositionEntity closedPosition = positionMapper.selectById(id);
+        recordExitAttribution(closedPosition, avgPrice);
         recordLedger(() -> {
-            HtxTrendPositionEntity position = positionMapper.selectById(id);
-            if (position == null || position.getPartialExitStage() == null || position.getPartialExitStage() <= 0) {
-                ledgerRecorder.recordTrendCloseFill(position);
+            if (closedPosition == null || closedPosition.getPartialExitStage() == null || closedPosition.getPartialExitStage() <= 0) {
+                ledgerRecorder.recordTrendCloseFill(closedPosition);
                 return;
             }
-            ledgerRecorder.recordTrendCloseFill(position, position.getCloseClientOrderId(), filledContracts,
+            ledgerRecorder.recordTrendCloseFill(closedPosition, closedPosition.getCloseClientOrderId(), filledContracts,
                     avgPrice, fee, realizedProfit);
         });
     }
+
+    /** Writes immutable post-fill evidence. Early/late exit classification remains pending until a forward window matures. */
+    private void recordExitAttribution(HtxTrendPositionEntity position, BigDecimal closePrice) {
+        if (position == null || combinationRecorder == null || position.getId() == null) {
+            return;
+        }
+        try {
+            BigDecimal realized = nz(position.getRealizedProfit());
+            BigDecimal entryFee = nz(position.getEntryFee());
+            BigDecimal closeFee = nz(position.getCloseFee());
+            BigDecimal net = realized.subtract(entryFee).subtract(closeFee);
+            BigDecimal mfe = position.getExitSnapshotMfe();
+            BigDecimal mae = position.getExitSnapshotMae();
+            BigDecimal giveback = position.getExitSnapshotGiveback();
+            String attribution = exitAttribution(position.getExitReason(), net, mfe, giveback, entryFee.add(closeFee));
+            HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+            snapshot.setSnapshotKey("EXIT:" + position.getId() + ":" + position.getUpdatedAt() + ":trend-exit-attribution-v1");
+            snapshot.setContractCode(position.getContractCode());
+            snapshot.setPeriod(position.getTimeframeProfile() == null ? "15min" : position.getTimeframeProfile());
+            snapshot.setBarTime(null);
+            snapshot.setMarketRegime(position.getMarketRegime());
+            snapshot.setFactorsJson(exitAttributionJson(position, closePrice, net, mfe, mae, giveback, attribution));
+            Long snapshotId = combinationRecorder.recordSnapshot(snapshot);
+            if (snapshotId != null) {
+                positionMapper.markExitAttributionSnapshotId(position.getId(), snapshotId);
+            }
+        } catch (RuntimeException ex) {
+            log.warn("trend exit attribution persistence failed positionId={}", position.getId(), ex);
+        }
+    }
+
+    private static String exitAttribution(String exitReason, BigDecimal net, BigDecimal mfe, BigDecimal giveback,
+                                          BigDecimal totalFees) {
+        String reason = exitReason == null ? "" : exitReason.toUpperCase(java.util.Locale.ROOT);
+        if (net.signum() <= 0 && totalFees.signum() > 0 && net.add(totalFees).signum() > 0) return "COST_EROSION";
+        if (reason.contains("MODEL_INVALIDATION") || reason.contains("INITIAL_STOP")) return "DIRECTION_OR_MODEL_FAILURE";
+        if (net.signum() < 0 && (mfe == null || mfe.signum() <= 0)) return "ENTRY_QUALITY_FAILURE";
+        if (net.signum() <= 0 && giveback != null && giveback.compareTo(new BigDecimal("0.50")) >= 0) return "LATE_EXIT_GIVEBACK";
+        if (net.signum() > 0) return "PROFIT_PROTECTION";
+        return "FORWARD_WINDOW_REQUIRED";
+    }
+
+    private static String exitAttributionJson(HtxTrendPositionEntity position, BigDecimal closePrice, BigDecimal net,
+                                              BigDecimal mfe, BigDecimal mae, BigDecimal giveback, String attribution) {
+        return "{\"schema\":\"trend-exit-attribution-v1\",\"runId\":" + json(position.getRunId())
+                + ",\"positionId\":" + position.getId() + ",\"model\":" + json(position.getPrimaryModel())
+                + ",\"side\":" + json(position.getSide()) + ",\"timeframeProfile\":" + json(position.getTimeframeProfile())
+                + ",\"exitReason\":" + json(position.getExitReason()) + ",\"closePrice\":" + number(closePrice)
+                + ",\"realizedProfit\":" + number(position.getRealizedProfit()) + ",\"entryFee\":" + number(position.getEntryFee())
+                + ",\"closeFee\":" + number(position.getCloseFee()) + ",\"netAfterFees\":" + number(net)
+                + ",\"mfe\":" + number(mfe) + ",\"mae\":" + number(mae) + ",\"giveback\":" + number(giveback)
+                + ",\"barsHeld\":" + number(position.getExitSnapshotBars()) + ",\"attribution\":" + json(attribution)
+                + ",\"earlyLateStatus\":\"FORWARD_WINDOW_REQUIRED\"}";
+    }
+
+    private static String json(String value) {
+        return value == null ? "null" : "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private static String number(Object value) { return value == null ? "null" : value.toString(); }
 
     public void markStatus(long id, String nextStatus, String message) {
         positionMapper.markStatus(id, nextStatus, message);

@@ -20,10 +20,10 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "realized_profit, stop_price, trailing_stop_price, take_profit_price, highest_price, lowest_price, "
             + "entry_signal, exit_reason, message, account_id, account_label, strategy_family, strategy_name, model_name, entry_fee_rate, entry_fee_profile_id, estimated_entry_fee, "
             + "estimated_close_fee, expected_net_after_fees, sizing_multiplier, sizing_reason, entry_gate_reason, "
-            + "primary_model, confirmation_models, policy_version, market_regime, factor_snapshot_id, "
+            + "primary_model, confirmation_models, policy_version, timeframe_profile, market_regime, factor_snapshot_id, "
             + "entry_hypothesis, invalidation_price, target_zone_low, target_zone_high, expected_r_multiple, momentum_quality_score, "
             + "exit_snapshot_state, exit_snapshot_net, exit_snapshot_mfe, exit_snapshot_mae, exit_snapshot_giveback, "
-            + "exit_snapshot_bars, exit_snapshot_candidates, exit_snapshot_updated_at, created_at, updated_at";
+            + "exit_snapshot_bars, exit_snapshot_candidates, exit_snapshot_updated_at, exit_attribution_snapshot_id, created_at, updated_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "
             + "AND status IN ('INTENT', 'ENTRY_SENT', 'ACTIVE', 'PARTIAL_CLOSE_SENT', 'CLOSE_SENT', 'UNKNOWN') "
@@ -152,6 +152,10 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                         @Param("fee") BigDecimal fee,
                         @Param("realizedProfit") BigDecimal realizedProfit,
                         @Param("message") String message);
+
+    @Update("UPDATE htx_trend_position SET exit_attribution_snapshot_id = #{snapshotId}, "
+            + "updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
+    int markExitAttributionSnapshotId(@Param("id") long id, @Param("snapshotId") long snapshotId);
 
     @Update("UPDATE htx_trend_position SET status = #{nextStatus}, message = #{message}, "
             + "updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")

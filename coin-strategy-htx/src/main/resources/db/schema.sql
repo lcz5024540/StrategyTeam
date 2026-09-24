@@ -440,6 +440,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     primary_model            VARCHAR(64),
     confirmation_models      VARCHAR(256),
     policy_version           VARCHAR(64),
+    timeframe_profile        VARCHAR(32)    NOT NULL DEFAULT 'INTRADAY_15M',
     market_regime            VARCHAR(32),
     factor_snapshot_id       BIGINT,
     entry_hypothesis         VARCHAR(1024),
@@ -456,6 +457,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     exit_snapshot_bars       BIGINT,
     exit_snapshot_candidates VARCHAR(1024),
     exit_snapshot_updated_at DATETIME(3),
+    exit_attribution_snapshot_id BIGINT,
     created_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX idx_trend_position_contract (contract_code, status),
@@ -464,6 +466,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     INDEX idx_trend_position_entry    (entry_order_id),
     INDEX idx_trend_position_close    (close_order_id)
     ,INDEX idx_trend_position_run     (run_id)
+    ,INDEX idx_trend_position_profile (timeframe_profile, status, updated_at)
 );
 
 -- Immutable factor evidence for a combined trend candidate. Policy and position rows reference this record;
@@ -636,6 +639,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_order (
     strategy_name            VARCHAR(64)    NOT NULL DEFAULT 'HTX_TREND_V1',
     model_name               VARCHAR(64)    NOT NULL DEFAULT 'LEGACY_TREND_SIGNAL',
     factor_snapshot_id       BIGINT,
+    timeframe_profile        VARCHAR(32)    NOT NULL DEFAULT 'INTRADAY_15M',
     fee_rate_used            DECIMAL(36,18),
     fee_profile_id           BIGINT,
     estimated_fee            DECIMAL(36,18),

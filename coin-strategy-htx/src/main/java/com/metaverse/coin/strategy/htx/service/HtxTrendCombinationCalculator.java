@@ -68,6 +68,11 @@ public class HtxTrendCombinationCalculator {
                     structure, marketState, priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("20")),
                     "Fibonacci retest confirmed by box and channel"));
         }
+        if (emaMomentumContinuation(signal)) {
+            candidates.add(candidate("EMA_VWAP_MOMENTUM_CONTINUATION", "EMA_STACK,MOMENTUM", signal,
+                    structure, marketState, priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("12")),
+                    "EMA stack and momentum continuation"));
+        }
         return candidates.stream().sorted(Comparator.comparing(CombinationCandidate::score).reversed()).toList();
     }
 
@@ -149,6 +154,20 @@ public class HtxTrendCombinationCalculator {
     private static boolean isDonchianBreakout(Direction direction, BigDecimal close, TrendCandidateSignal signal) {
         return direction == Direction.LONG ? close.compareTo(signal.breakoutHigh()) > 0
                 : close.compareTo(signal.breakoutLow()) < 0;
+    }
+
+    private static boolean emaMomentumContinuation(TrendCandidateSignal signal) {
+        if (signal.emaFast() == null || signal.emaMedium() == null || signal.emaSlow() == null
+                || signal.momentumPct() == null || signal.adx() == null) {
+            return false;
+        }
+        boolean longAligned = signal.emaFast().compareTo(signal.emaMedium()) > 0
+                && signal.emaMedium().compareTo(signal.emaSlow()) > 0 && signal.momentumPct().signum() > 0;
+        boolean shortAligned = signal.emaFast().compareTo(signal.emaMedium()) < 0
+                && signal.emaMedium().compareTo(signal.emaSlow()) < 0 && signal.momentumPct().signum() < 0;
+        return signal.adx().compareTo(new BigDecimal("20")) >= 0
+                && ((signal.direction() == Direction.LONG && longAligned)
+                || (signal.direction() == Direction.SHORT && shortAligned));
     }
 
     /**
@@ -247,6 +266,12 @@ public class HtxTrendCombinationCalculator {
                                        BigDecimal fibExtension1618, BigDecimal expectedRMultiple,
                                        BigDecimal momentumQualityScore, String hypothesis,
                                        FibonacciEvidence fibonacciEvidence) {
+        public CombinationCandidate withScore(BigDecimal adjustedScore) {
+            return new CombinationCandidate(primaryModel, confirmationModels, direction, adjustedScore, marketRegime,
+                    boxHigh, boxLow, swingHigh, swingLow, fibonacciLower, fibonacciUpper, invalidationPrice,
+                    targetZoneLow, targetZoneHigh, boxMeasuredMoveTarget, fibExtension1272, fibExtension1618,
+                    expectedRMultiple, momentumQualityScore, hypothesis, fibonacciEvidence);
+        }
     }
 
     private record Structure(BigDecimal boxHigh, BigDecimal boxLow, BigDecimal swingHigh, BigDecimal swingLow,

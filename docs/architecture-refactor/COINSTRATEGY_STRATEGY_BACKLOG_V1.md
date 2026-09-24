@@ -84,11 +84,11 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | ID | 状态 | 任务 | 完成判据 | 来源 |
 |---|---|---|---|---|
 | ENTRY-02 | 待实现 | 强弱信号分层与冷却解冻。 | 弱信号不能解冻；盈利/保本后强突破可提前解冻；亏损后仅极强信号可解冻，且记录模型、分数、广度、锚点和上一单失败类型。 | Batch 3 |
-| ENTRY-03 | 待设计 + 待实现 | 长短线订单分层。 | 15m/30m 负责入场，1h/4h 确认，1d 定义环境；`INTRADAY_15M`、`SWING_4H` 等画像使用独立止损和退出规则。 | Batch 4 |
+| ENTRY-03 | **代码完成，待 SQL / 回测 / 灰度** | 长短线订单分层。新增 `INTRADAY_15M`、`INTRADAY_30M`、`SWING_4H`、`TREND_1D` 画像；仓位与订单固化画像，4h 使用独立 ATR 参数、1d 环境口径。 | `SWING_4H` 实盘开关默认关闭；需执行迁移、回测后才可放开。 | Batch 4 |
 | ENTRY-04 | 待实现 | 挂单和外部仓位处理矩阵。 | 同向旧挂单按弱/普通/强信号处理；外部仓位默认仅提示；反向仓位或 DB/交易所不一致进入人工复核。 | Batch 5 |
-| ENTRY-05 | 待实现 | 全局市场状态进入真实候选排序。 | broad-up/broad-down 时，高质量 Donchian/EMA-stack/momentum 可进入真实候选，不强制全部满足 Fibonacci 条件；市场状态对 score/sizing 的影响可审计。 | TD-046/047 |
+| ENTRY-05 | **代码完成，待 SQL / 回测 / 灰度** | 全局市场状态进入真实候选排序。广度与 BTC/ETH 锚点同向时提升 Donchian、EMA/动量、Fibonacci 的有效排序分，反向降分，混合轻微降分；新增 EMA/动量延续候选。 | `trend-market-entry-rank-v1` 记录基础分、调整分、最终分和市场证据；新 `combo-v3` 政策须先回测后灰度。 | TD-046/047 |
 | EXIT-04 | 待设计 | 手续费保护止损重写。 | 以 MFE、结构、趋势强度和真实费用共同验证，不能只用保本价机械夹止损；完成回测前保持现有兼容行为。 | Batch 2 TODO |
-| EXIT-05 | 待实现 | 退出归因闭环。 | 页面和回测可区分方向错、入场错、退出过早、退出过晚、成本侵蚀和执行失败。 | Exit E5 |
+| EXIT-05 | **代码完成，待 SQL / 前瞻窗口 / 页面** | 全平确认后写入 `trend-exit-attribution-v1`，覆盖模型/方向、画像、开平费、净收益、MFE、MAE、giveback 与初步归因。 | 过早/过晚仍标为 `FORWARD_WINDOW_REQUIRED`，必须等后续 K 线成熟后再二次归因，不能伪造结果。 | Exit E5 |
 
 ## 4. P1：账本、账户和驾驶舱
 

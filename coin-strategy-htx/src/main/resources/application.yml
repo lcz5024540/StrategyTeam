@@ -251,6 +251,10 @@ htx:
     funding-carry-require-confirmation: ${HTX_TREND_FUNDING_CARRY_REQUIRE_CONFIRMATION:true}
     funding-carry-allow-against-broad-market: ${HTX_TREND_FUNDING_CARRY_ALLOW_AGAINST_BROAD_MARKET:false}
     max-hold-funding-cost-rate: ${HTX_TREND_MAX_HOLD_FUNDING_COST_RATE:0.0012}
+    swing-entry-enabled: ${HTX_TREND_SWING_ENTRY_ENABLED:false}
+    swing-atr-stop-multiplier: ${HTX_TREND_SWING_ATR_STOP_MULTIPLIER:3.375}
+    swing-trailing-atr-multiplier: ${HTX_TREND_SWING_TRAILING_ATR_MULTIPLIER:3.000}
+    swing-take-profit-atr-multiplier: ${HTX_TREND_SWING_TAKE_PROFIT_ATR_MULTIPLIER:0}
     leverage: ${HTX_TREND_LEVERAGE:5}
     price-scale: ${HTX_TREND_PRICE_SCALE:2}
     min-contract-margin-available: ${HTX_TREND_MIN_CONTRACT_MARGIN_AVAILABLE:20}

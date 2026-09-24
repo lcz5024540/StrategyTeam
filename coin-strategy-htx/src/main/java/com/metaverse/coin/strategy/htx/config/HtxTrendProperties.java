@@ -397,6 +397,14 @@ public class HtxTrendProperties {
     /** Exit a live trend position when its side funding cost is above this rate. */
     private BigDecimal maxHoldFundingCostRate = new BigDecimal("0.0012");
 
+    /** Keep 4h swing entries disabled until their independent replay and paper samples pass. */
+    private boolean swingEntryEnabled = false;
+
+    /** Extra ATR distance for 4h and 1d positions; intraday positions keep their existing values. */
+    private BigDecimal swingAtrStopMultiplier = new BigDecimal("3.375");
+    private BigDecimal swingTrailingAtrMultiplier = new BigDecimal("3.000");
+    private BigDecimal swingTakeProfitAtrMultiplier = new BigDecimal("0");
+
     /** Contract leverage used by this strategy. */
     private int leverage = 5;
 

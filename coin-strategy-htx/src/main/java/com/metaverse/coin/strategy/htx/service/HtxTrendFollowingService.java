@@ -598,7 +598,11 @@ public class HtxTrendFollowingService {
         HtxTrendEnsembleSignalCalculator.TrendCandidateSignal ensemble = ensembleCalculator.evaluate(snapshot.entryCandles(),
                 ensembleProperties, properties.getPeriod(), Instant.now().getEpochSecond());
         HtxTrendCombinationService.Selection selection = combinationService.select(contractCode, properties.getPeriod(),
-                snapshot.entryCandles(), ensemble);
+                snapshot.entryCandles(), ensemble, marketEntryRank(marketBreadth, marketAnchor));
+        // Compatibility for existing integrations that still implement the pre-ranking selection contract.
+        if (selection == null) {
+            selection = combinationService.select(contractCode, properties.getPeriod(), snapshot.entryCandles(), ensemble);
+        }
         if (!selection.accepted()) {
             recordSignal(contractCode, snapshot.signal());
             return new CandidateEvaluation(RunResult.of(RunCode.NO_SIGNAL, null, selection.rejection()), null);
@@ -753,6 +757,20 @@ public class HtxTrendFollowingService {
             return "carry requires both EMA and broad-market confirmation";
         }
         return null;
+    }
+
+    private HtxTrendCombinationService.MarketEntryRank marketEntryRank(MarketBreadthContext marketBreadth,
+                                                                         MarketAnchorContext marketAnchor) {
+        boolean bothUp = marketBreadth != null && marketAnchor != null
+                && marketBreadth.regime() == MarketRegime.BROAD_UP && marketAnchor.regime() == MarketRegime.BROAD_UP;
+        boolean bothDown = marketBreadth != null && marketAnchor != null
+                && marketBreadth.regime() == MarketRegime.BROAD_DOWN && marketAnchor.regime() == MarketRegime.BROAD_DOWN;
+        String side = bothUp ? TrendSide.LONG.name() : bothDown ? TrendSide.SHORT.name() : TrendSide.FLAT.name();
+        return new HtxTrendCombinationService.MarketEntryRank(
+                side.equals(TrendSide.FLAT.name()) ? "MIXED" : (bothUp ? "BROAD_UP" : "BROAD_DOWN"),
+                marketBreadth == null ? "MIXED" : marketBreadth.regime().name(),
+                marketAnchor == null ? "MIXED" : marketAnchor.regime().name(), side,
+                new BigDecimal("8"), new BigDecimal("12"), new BigDecimal("2"));
     }
 
     private BigDecimal entryCandidateScore(TrendSignal signal, MarketBreadthContext marketBreadth,
@@ -1074,9 +1092,14 @@ public class HtxTrendFollowingService {
             return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, leverageGate)));
         }
         String side = signal.side() == TrendSide.LONG ? LONG : SHORT;
-        BigDecimal stopPrice = combination == null ? initialStop(signal, side, contract)
+        HtxTrendTimeframeProfile timeframeProfile = HtxTrendTimeframeProfile.fromPeriod(properties.getPeriod());
+        if (timeframeProfile == HtxTrendTimeframeProfile.SWING_4H && !properties.isSwingEntryEnabled()) {
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, "SWING_4H entry disabled pending replay and paper validation")));
+        }
+        BigDecimal stopPrice = combination == null ? initialStop(signal, side, contract, timeframeProfile)
                 : scalePrice(combination.invalidationPrice(), contract);
-        BigDecimal takeProfitPrice = initialTakeProfit(signal, side, contract);
+        BigDecimal takeProfitPrice = initialTakeProfit(signal, side, contract, timeframeProfile);
         recordCombinationPricePlan(contractCode, signal, contract, combination, entryPrice, stopPrice, book,
                 volume, feeRates, entryCost);
         String positionKey = positionKey(contractCode);
@@ -1105,6 +1128,7 @@ public class HtxTrendFollowingService {
         entity.setAccountLabel("primary");
         entity.setStrategyFamily("TREND");
         entity.setStrategyName("HTX_TREND_V1");
+        entity.setTimeframeProfile(timeframeProfile.name());
         if (combination != null) {
             entity.setPrimaryModel(combination.primaryModel());
             entity.setModelName(combination.primaryModel());
@@ -2212,6 +2236,7 @@ public class HtxTrendFollowingService {
         entity.setStrategyName(position.getStrategyName());
         entity.setModelName(position.getModelName());
         entity.setFactorSnapshotId(position.getFactorSnapshotId());
+        entity.setTimeframeProfile(position.getTimeframeProfile());
         entity.setFeeRateUsed(position.getEntryFeeRate());
         entity.setFeeProfileId(position.getEntryFeeProfileId());
         entity.setEstimatedOpenFee(position.getEstimatedEntryFee());
@@ -2324,12 +2349,28 @@ public class HtxTrendFollowingService {
     }
 
     private static String timeframeProfile(String period) {
-        String normalized = period == null ? "" : period.trim().toLowerCase(Locale.ROOT);
-        if ("15min".equals(normalized)) return "INTRADAY_15M";
-        if ("30min".equals(normalized)) return "INTRADAY_30M";
-        if ("4hour".equals(normalized)) return "SWING_4H";
-        if ("1day".equals(normalized)) return "TREND_1D";
-        return "UNCLASSIFIED";
+        return HtxTrendTimeframeProfile.fromPeriod(period).name();
+    }
+
+    private BigDecimal atrStopMultiplier(HtxTrendTimeframeProfile profile) {
+        if (profile == HtxTrendTimeframeProfile.SWING_4H || profile == HtxTrendTimeframeProfile.TREND_1D) {
+            return nonNegative(properties.getSwingAtrStopMultiplier());
+        }
+        return nonNegative(properties.getAtrStopMultiplier());
+    }
+
+    private BigDecimal trailingAtrMultiplier(HtxTrendTimeframeProfile profile) {
+        if (profile == HtxTrendTimeframeProfile.SWING_4H || profile == HtxTrendTimeframeProfile.TREND_1D) {
+            return nonNegative(properties.getSwingTrailingAtrMultiplier());
+        }
+        return nonNegative(properties.getTrailingAtrMultiplier());
+    }
+
+    private BigDecimal takeProfitAtrMultiplier(HtxTrendTimeframeProfile profile) {
+        if (profile == HtxTrendTimeframeProfile.SWING_4H || profile == HtxTrendTimeframeProfile.TREND_1D) {
+            return nonNegative(properties.getSwingTakeProfitAtrMultiplier());
+        }
+        return nonNegative(properties.getTakeProfitAtrMultiplier());
     }
 
     private long targetVolume(BigDecimal entryPrice, BigDecimal atr, BigDecimal contractSize, SizingContext sizing) {
@@ -2337,7 +2378,7 @@ public class HtxTrendFollowingService {
             return 0L;
         }
         BigDecimal multiplier = sizing == null ? BigDecimal.ONE : sizing.multiplier();
-        BigDecimal stopDistance = atr.multiply(properties.getAtrStopMultiplier());
+        BigDecimal stopDistance = atr.multiply(atrStopMultiplier(HtxTrendTimeframeProfile.fromPeriod(properties.getPeriod())));
         if (stopDistance.signum() <= 0) {
             return 0L;
         }
@@ -2445,17 +2486,20 @@ public class HtxTrendFollowingService {
         throw new IllegalArgumentException("unsupported HTX trend period: " + period);
     }
 
-    private BigDecimal initialStop(TrendSignal signal, String side, HtxSwapContractInfo contract) {
-        BigDecimal distance = signal.atr().multiply(properties.getAtrStopMultiplier());
+    private BigDecimal initialStop(TrendSignal signal, String side, HtxSwapContractInfo contract,
+                                   HtxTrendTimeframeProfile timeframeProfile) {
+        BigDecimal distance = signal.atr().multiply(atrStopMultiplier(timeframeProfile));
         BigDecimal value = LONG.equals(side) ? signal.closePrice().subtract(distance) : signal.closePrice().add(distance);
         return scalePrice(value, contract);
     }
 
-    private BigDecimal initialTakeProfit(TrendSignal signal, String side, HtxSwapContractInfo contract) {
-        if (properties.getTakeProfitAtrMultiplier() == null || properties.getTakeProfitAtrMultiplier().signum() <= 0) {
+    private BigDecimal initialTakeProfit(TrendSignal signal, String side, HtxSwapContractInfo contract,
+                                         HtxTrendTimeframeProfile timeframeProfile) {
+        BigDecimal multiplier = takeProfitAtrMultiplier(timeframeProfile);
+        if (multiplier.signum() <= 0) {
             return null;
         }
-        BigDecimal distance = signal.atr().multiply(properties.getTakeProfitAtrMultiplier());
+        BigDecimal distance = signal.atr().multiply(multiplier);
         BigDecimal value = LONG.equals(side) ? signal.closePrice().add(distance) : signal.closePrice().subtract(distance);
         return scalePrice(value, contract);
     }
@@ -2492,8 +2536,11 @@ public class HtxTrendFollowingService {
 
     private BigDecimal atrTrailingStop(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
                                        BigDecimal highest, BigDecimal lowest, HtxSwapContractInfo contract) {
-        BigDecimal distance = positive(signal.atr()) ? signal.atr().multiply(properties.getTrailingAtrMultiplier())
-                : reference.multiply(properties.getMinAtrPct()).multiply(properties.getTrailingAtrMultiplier());
+        HtxTrendTimeframeProfile timeframeProfile = HtxTrendTimeframeProfile.fromPersisted(
+                position.getTimeframeProfile(), properties.getPeriod());
+        BigDecimal trailingMultiplier = trailingAtrMultiplier(timeframeProfile);
+        BigDecimal distance = positive(signal.atr()) ? signal.atr().multiply(trailingMultiplier)
+                : reference.multiply(properties.getMinAtrPct()).multiply(trailingMultiplier);
         BigDecimal candidate = LONG.equals(position.getSide()) ? highest.subtract(distance) : lowest.add(distance);
         BigDecimal previous = firstPositive(position.getTrailingStopPrice(), position.getStopPrice(), candidate);
         if (LONG.equals(position.getSide())) {
@@ -2816,8 +2863,9 @@ public class HtxTrendFollowingService {
             return 0L;
         }
         long seconds = Math.max(0L, Duration.between(position.getCreatedAt(), LocalDateTime.now()).getSeconds());
-        long period = Math.max(1L, periodSeconds(properties.getPeriod()));
-        return seconds / period;
+        HtxTrendTimeframeProfile profile = HtxTrendTimeframeProfile.fromPersisted(
+                position.getTimeframeProfile(), properties.getPeriod());
+        return seconds / Math.max(1L, periodSeconds(profile.entryPeriod()));
     }
 
     private BigDecimal estimatedCloseNetProfit(HtxTrendPositionEntity position, BigDecimal reference) {

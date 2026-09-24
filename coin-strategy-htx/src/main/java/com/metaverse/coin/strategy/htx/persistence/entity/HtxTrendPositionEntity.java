@@ -63,6 +63,7 @@ public class HtxTrendPositionEntity {
     private String primaryModel;
     private String confirmationModels;
     private String policyVersion;
+    private String timeframeProfile;
     private String marketRegime;
     private Long factorSnapshotId;
     private String entryHypothesis;
@@ -79,6 +80,7 @@ public class HtxTrendPositionEntity {
     private Long exitSnapshotBars;
     private String exitSnapshotCandidates;
     private LocalDateTime exitSnapshotUpdatedAt;
+    private Long exitAttributionSnapshotId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

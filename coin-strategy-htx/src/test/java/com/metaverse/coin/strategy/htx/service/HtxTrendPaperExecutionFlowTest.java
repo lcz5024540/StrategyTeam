@@ -81,10 +81,13 @@ class HtxTrendPaperExecutionFlowTest {
 
         assertTrue(result.accepted());
         assertEquals(101L, result.id());
-        assertEquals(6, snapshots.byKey.size());
+        // The execution contract requires these evidence types, not a fixed total count: ranking
+        // snapshots are additive as entry diagnostics evolve.
+        assertTrue(snapshots.byKey.size() >= 7);
         assertTrue(snapshots.byKey.containsKey(candidateEvidenceKey()));
         assertTrue(snapshots.byKey.containsKey(CONTRACT + ":" + PERIOD + ":" + BAR_TIME + ":model-coverage-v1"));
         assertTrue(snapshots.byKey.containsKey(CONTRACT + ":" + PERIOD + ":" + BAR_TIME + ":model-analysis-v2"));
+        assertTrue(snapshots.byKey.containsKey(CONTRACT + ":" + PERIOD + ":" + BAR_TIME + ":trend-market-entry-rank-v1"));
         assertTrue(snapshots.byKey.containsKey(pricePlanKey()));
         assertTrue(snapshots.byKey.containsKey(outboxKey()));
 

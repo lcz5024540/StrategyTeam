@@ -39,6 +39,12 @@ public class HtxTrendCombinationService {
 
     public Selection select(String contractCode, String period, List<HtxSwapKline> candles,
                             TrendCandidateSignal signal) {
+        return select(contractCode, period, candles, signal, MarketEntryRank.neutral());
+    }
+
+    /** Market state adjusts cross-symbol candidate order; it never overrides a model's own policy threshold. */
+    public Selection select(String contractCode, String period, List<HtxSwapKline> candles,
+                            TrendCandidateSignal signal, MarketEntryRank marketRank) {
         recordModelCoverage(contractCode, period, candles, signal);
         List<HtxTrendStrategyPolicyEntity> policies = policyService.enabledPolicies();
         if (policies.isEmpty()) {
@@ -50,8 +56,9 @@ public class HtxTrendCombinationService {
         if (candidates.isEmpty()) {
             return reject(contractCode, period, signal, HtxTrendCombinationGateReason.classifyNoCandidate(signal));
         }
+        MarketEntryRank ranking = marketRank == null ? MarketEntryRank.neutral() : marketRank;
         List<ResolvedCandidate> resolved = candidates.stream()
-                .map(candidate -> resolve(candidate, policies))
+                .map(candidate -> resolve(candidate, policies, ranking))
                 .filter(item -> item != null)
                 .sorted(Comparator.comparing((ResolvedCandidate item) -> item.candidate().score()).reversed())
                 .toList();
@@ -60,6 +67,7 @@ public class HtxTrendCombinationService {
         }
         ResolvedCandidate selected = resolved.get(0);
         Long snapshotId = recordSnapshot(contractCode, period, signal, selected);
+        recordMarketEntryRankSnapshot(contractCode, period, signal, selected, ranking);
         if (snapshotId == null) {
             return Selection.rejected("factor snapshot persistence failed");
         }
@@ -68,7 +76,7 @@ public class HtxTrendCombinationService {
             recordCandidate(contractCode, period, signal, item, snapshotId,
                     runId, item == selected ? "PASSED" : "REJECTED", item == selected ? "PASSED" : HtxTrendCombinationGateReason.LOWER_PRIORITY_FOR_SYMBOL.code());
         }
-        BigDecimal multiplier = sizingMultiplier(selected.candidate().score(), selected.candidate().marketRegime());
+        BigDecimal multiplier = sizingMultiplier(selected.baseScore(), selected.candidate().marketRegime());
         BigDecimal notional = selected.policy().getBaseNotionalUsdt().multiply(multiplier)
                 .min(selected.policy().getMaxNotionalUsdt());
         return Selection.selected(selected.candidate(), selected.policy(), snapshotId, multiplier, notional, runId);
@@ -445,11 +453,30 @@ public class HtxTrendCombinationService {
         return Selection.rejected(reason.code());
     }
 
-    private ResolvedCandidate resolve(CombinationCandidate candidate, List<HtxTrendStrategyPolicyEntity> policies) {
+    private void recordMarketEntryRankSnapshot(String contractCode, String period, TrendCandidateSignal signal,
+                                                ResolvedCandidate candidate, MarketEntryRank ranking) {
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":trend-market-entry-rank-v1");
+        snapshot.setContractCode(contractCode); snapshot.setPeriod(period); snapshot.setBarTime(signal.barTime());
+        snapshot.setMarketRegime(ranking.marketRegime());
+        snapshot.setFactorsJson("{\"schema\":\"trend-market-entry-rank-v1\",\"baseScore\":"
+                + jsonNumber(candidate.baseScore()) + ",\"effectiveScore\":" + jsonNumber(candidate.candidate().score())
+                + ",\"primaryModel\":" + jsonText(candidate.candidate().primaryModel()) + ",\"direction\":"
+                + jsonText(candidate.candidate().direction().name()) + ",\"marketRegime\":" + jsonText(ranking.marketRegime())
+                + ",\"breadthRegime\":" + jsonText(ranking.breadthRegime()) + ",\"anchorRegime\":"
+                + jsonText(ranking.anchorRegime()) + ",\"adjustment\":" + jsonNumber(candidate.marketAdjustment()) + "}");
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
+    private ResolvedCandidate resolve(CombinationCandidate candidate, List<HtxTrendStrategyPolicyEntity> policies,
+                                      MarketEntryRank ranking) {
+        BigDecimal adjustment = ranking.adjustment(candidate.direction().name(), candidate.primaryModel());
+        CombinationCandidate effectiveCandidate = candidate.withScore(candidate.score().add(adjustment)
+                .max(BigDecimal.ZERO).min(new BigDecimal("100")));
         return policies.stream()
                 .filter(policy -> matches(policy, candidate))
                 .filter(policy -> candidate.score().compareTo(policy.getScoreThreshold()) >= 0)
-                .map(policy -> new ResolvedCandidate(candidate, policy))
+                .map(policy -> new ResolvedCandidate(effectiveCandidate, policy, candidate.score(), adjustment))
                 .findFirst().orElse(null);
     }
 
@@ -852,7 +879,25 @@ public class HtxTrendCombinationService {
         return "trend-entry:" + contractCode + ":" + period + ":" + barTime;
     }
 
-    private record ResolvedCandidate(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy) { }
+    private record ResolvedCandidate(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy,
+                                     BigDecimal baseScore, BigDecimal marketAdjustment) { }
+
+    public record MarketEntryRank(String marketRegime, String breadthRegime, String anchorRegime,
+                                  String alignedSide, BigDecimal alignedBonus, BigDecimal counterPenalty,
+                                  BigDecimal mixedPenalty) {
+        public static MarketEntryRank neutral() {
+            return new MarketEntryRank("MIXED", "MIXED", "MIXED", "FLAT", BigDecimal.ZERO,
+                    BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+        BigDecimal adjustment(String direction, String model) {
+            if (direction == null || alignedSide == null || "FLAT".equals(alignedSide)) return mixedPenalty.negate();
+            BigDecimal modelWeight = "DONCHIAN_BREAKOUT".equals(model) ? new BigDecimal("1.20")
+                    : "EMA_VWAP_MOMENTUM_CONTINUATION".equals(model) ? BigDecimal.ONE
+                    : new BigDecimal("0.80");
+            return direction.equals(alignedSide) ? alignedBonus.multiply(modelWeight)
+                    : counterPenalty.multiply(modelWeight).negate();
+        }
+    }
 
     public record Selection(CombinationCandidate candidate, HtxTrendStrategyPolicyEntity policy, Long factorSnapshotId,
                             BigDecimal sizingMultiplier, BigDecimal plannedNotionalUsdt, String runId, String rejection) {

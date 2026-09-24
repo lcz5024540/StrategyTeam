@@ -2,6 +2,8 @@ package com.metaverse.coin.strategy.htx.persistence;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.HtxTrendCombinationRecorder;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
@@ -22,6 +24,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 class HtxTrendRecorderTest {
 
@@ -139,6 +142,32 @@ class HtxTrendRecorderTest {
         verify(positionMapper).markCloseFilled(42L, new BigDecimal("2"), new BigDecimal("110"),
                 new BigDecimal("0.02"), new BigDecimal("0.50"), "closed");
         verify(ledgerRecorder).recordTrendCloseFill(position);
+    }
+
+    @Test
+    void fullCloseWritesImmutableExitAttributionAndLinksThePosition() {
+        HtxTrendPositionMapper positionMapper = mock(HtxTrendPositionMapper.class);
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        HtxTrendPositionEntity position = trendPosition();
+        position.setId(42L); position.setRunId("run-42"); position.setTimeframeProfile("INTRADAY_15M");
+        position.setExitReason("EXIT_ENGINE: MODEL_INVALIDATION");
+        position.setRealizedProfit(new BigDecimal("-0.30")); position.setEntryFee(new BigDecimal("0.02"));
+        position.setCloseFee(new BigDecimal("0.02")); position.setExitSnapshotMfe(new BigDecimal("0.10"));
+        when(positionMapper.selectById(42L)).thenReturn(position);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(91L);
+        HtxTrendRecorder recorder = new HtxTrendRecorder(positionMapper, mock(HtxTrendOrderMapper.class),
+                mock(HtxTrendSignalMapper.class), null, combinationRecorder);
+
+        recorder.markCloseFilled(42L, new BigDecimal("2"), new BigDecimal("98"), new BigDecimal("0.02"),
+                new BigDecimal("-0.30"), "closed");
+
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder).recordSnapshot(snapshot.capture());
+        assertEquals("trend-exit-attribution-v1", com.alibaba.fastjson2.JSON.parseObject(snapshot.getValue().getFactorsJson())
+                .getString("schema"));
+        assertEquals("DIRECTION_OR_MODEL_FAILURE", com.alibaba.fastjson2.JSON.parseObject(snapshot.getValue().getFactorsJson())
+                .getString("attribution"));
+        verify(positionMapper).markExitAttributionSnapshotId(42L, 91L);
     }
 
     @Test

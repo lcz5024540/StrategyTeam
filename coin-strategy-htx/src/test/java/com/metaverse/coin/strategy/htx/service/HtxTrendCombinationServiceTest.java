@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCandidateSignalRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCombinationRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendStrategyPolicyEntity;
 import com.metaverse.coin.strategy.htx.service.HtxTrendCombinationCalculator.CombinationCandidate;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.Direction;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.Regime;
@@ -226,6 +227,53 @@ class HtxTrendCombinationServiceTest {
         assertTrue(json.getBigDecimal("netReturnRate").compareTo(json.getBigDecimal("grossReturnRate")) < 0);
         assertEquals("OBSERVE_ONLY", json.getString("analysisBoundary"));
         assertTrue(json.containsKey("activeModels"));
+    }
+
+    @Test
+    void marketRankBoostsAlignedContinuationAndPenalizesCounterTrend() {
+        HtxTrendCombinationService.MarketEntryRank rank = new HtxTrendCombinationService.MarketEntryRank(
+                "BROAD_UP", "BROAD_UP", "BROAD_UP", "LONG", new BigDecimal("8"),
+                new BigDecimal("12"), new BigDecimal("2"));
+
+        assertEquals(new BigDecimal("8.00"), rank.adjustment("LONG", "EMA_VWAP_MOMENTUM_CONTINUATION").setScale(2));
+        assertEquals(new BigDecimal("-14.40"), rank.adjustment("SHORT", "DONCHIAN_BREAKOUT").setScale(2));
+        assertEquals(new BigDecimal("6.40"), rank.adjustment("LONG", "FIB_PULLBACK_CONTINUATION").setScale(2));
+    }
+
+    @Test
+    void marketRankCannotPromoteAModelPastItsOwnPolicyThreshold() {
+        HtxTrendCombinationCalculator calculator = new HtxTrendCombinationCalculator();
+        List<HtxSwapKline> candles = risingRange(32);
+        candles.add(candle(32, "106", "121", "107", "120"));
+        TrendCandidateSignal signal = new TrendCandidateSignal("15min", 1_790_069_400L, Direction.LONG,
+                Regime.TRENDING_UP, new BigDecimal("90"), new BigDecimal("90"), BigDecimal.ZERO,
+                new BigDecimal("90"), new BigDecimal("120"), new BigDecimal("119"), new BigDecimal("118"),
+                new BigDecimal("117"), new BigDecimal("119"), new BigDecimal("95"), new BigDecimal("2"),
+                new BigDecimal("0.02"), new BigDecimal("30"), new BigDecimal("0.02"), new BigDecimal("1.5"),
+                "valid", "none");
+        CombinationCandidate candidate = calculator.evaluate(candles, signal, 32).get(0);
+        HtxTrendStrategyPolicyEntity policy = new HtxTrendStrategyPolicyEntity();
+        policy.setPolicyCode("threshold-test");
+        policy.setPolicyVersion("test");
+        policy.setPrimaryModel(candidate.primaryModel());
+        policy.setConfirmationModels(candidate.confirmationModels());
+        policy.setScoreThreshold(candidate.score().add(new BigDecimal("0.01")));
+        policy.setBaseNotionalUsdt(new BigDecimal("100"));
+        policy.setMaxNotionalUsdt(new BigDecimal("100"));
+        policy.setBoxWindowBars(32);
+        HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
+        when(policyService.enabledPolicies()).thenReturn(List.of(policy));
+        HtxTrendCombinationRecorder recorder = mock(HtxTrendCombinationRecorder.class);
+        when(recorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(policyService, recorder,
+                mock(HtxTrendCandidateSignalRecorder.class));
+
+        HtxTrendCombinationService.Selection selection = service.select("BTC-USDT", "15min", candles, signal,
+                new HtxTrendCombinationService.MarketEntryRank("BROAD_UP", "BROAD_UP", "BROAD_UP", "LONG",
+                        new BigDecimal("8"), new BigDecimal("12"), new BigDecimal("2")));
+
+        assertFalse(selection.accepted());
+        assertEquals(HtxTrendCombinationGateReason.POLICY_NOT_MATCHED.code(), selection.rejection());
     }
 
     @Test
