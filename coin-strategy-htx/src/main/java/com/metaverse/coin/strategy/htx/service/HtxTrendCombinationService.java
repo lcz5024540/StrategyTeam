@@ -35,6 +35,7 @@ public class HtxTrendCombinationService {
     private final HtxTrendCandidateSignalRecorder candidateRecorder;
     private final HtxTrendCombinationCalculator calculator = new HtxTrendCombinationCalculator();
     private final HtxTrendModelCoverageCalculator coverageCalculator = new HtxTrendModelCoverageCalculator();
+    private final HtxTrendModelRouter modelRouter = new HtxTrendModelRouter();
 
     public Selection select(String contractCode, String period, List<HtxSwapKline> candles,
                             TrendCandidateSignal signal) {
@@ -84,6 +85,7 @@ public class HtxTrendCombinationService {
         }
         HtxTrendModelCoverageCalculator.Coverage coverage = coverageCalculator.evaluate(candles, signal);
         recordModelCoverageSnapshot(contractCode, period, signal, coverage);
+        recordModelRoutingSnapshot(contractCode, period, signal, modelRouter.route(signal, coverage));
     }
 
     private void recordModelCoverageSnapshot(String contractCode, String period, TrendCandidateSignal signal,
@@ -115,6 +117,38 @@ public class HtxTrendCombinationService {
                 + ",\"atr\":" + jsonNumber(signal.atr())
                 + ",\"adx\":" + jsonNumber(signal.adx())
                 + ",\"momentumPct\":" + jsonNumber(signal.momentumPct()) + "}";
+    }
+
+    /**
+     * Persists routing evidence alongside the independent coverage map.  The router is explicitly
+     * observational: no field from this snapshot is read by policy selection, the final gate,
+     * sizing or exchange execution.
+     */
+    private void recordModelRoutingSnapshot(String contractCode, String period, TrendCandidateSignal signal,
+                                            HtxTrendModelRouter.RoutingDecision routing) {
+        HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
+        snapshot.setSnapshotKey(contractCode + ":" + period + ":" + signal.barTime() + ":model-routing-v1");
+        snapshot.setContractCode(contractCode);
+        snapshot.setPeriod(period);
+        snapshot.setBarTime(signal.barTime());
+        snapshot.setMarketRegime(signal.regime().name());
+        snapshot.setFactorsJson(modelRoutingJson(signal, routing));
+        combinationRecorder.recordSnapshot(snapshot);
+    }
+
+    private static String modelRoutingJson(TrendCandidateSignal signal, HtxTrendModelRouter.RoutingDecision routing) {
+        return "{\"schema\":\"trend-model-routing-v1\",\"readOnly\":true"
+                + ",\"executionBoundary\":" + jsonText(routing.executionBoundary())
+                + ",\"routable\":" + routing.routable()
+                + ",\"primaryModel\":" + jsonText(routing.primaryModel())
+                + ",\"direction\":" + jsonText(routing.direction().name())
+                + ",\"structureId\":" + jsonText(routing.structureId())
+                + ",\"timeframeProfile\":" + jsonText(routing.timeframeProfile())
+                + ",\"marketRegime\":" + jsonText(signal.regime().name())
+                + ",\"supports\":" + jsonTextArray(routing.supports())
+                + ",\"conflicts\":" + jsonTextArray(routing.conflicts())
+                + ",\"risks\":" + jsonTextArray(routing.risks())
+                + ",\"reason\":" + jsonText(routing.reason()) + "}";
     }
 
     /**
@@ -155,6 +189,8 @@ public class HtxTrendCombinationService {
                 continue;
             }
             recordModelCoverageSnapshot(contractCode, period, signal, coverage);
+            HtxTrendModelRouter.RoutingDecision routing = modelRouter.route(signal, coverage);
+            recordModelRoutingSnapshot(contractCode, period, signal, routing);
             HtxSwapKline future = candles.get(sourceIndex + horizonBars);
             for (HtxTrendModelCoverageCalculator.ForwardOutcome outcome : coverageCalculator.evaluateForwardOutcomes(
                     coverage, source.getClose(), future.getClose(), horizonBars,
@@ -166,7 +202,7 @@ public class HtxTrendCombinationService {
                 snapshot.setPeriod(period);
                 snapshot.setBarTime(signal.barTime());
                 snapshot.setMarketRegime(signal.regime().name());
-                snapshot.setFactorsJson(modelCoverageOutcomeJson(signal, coverage, outcome, fees));
+                snapshot.setFactorsJson(modelCoverageOutcomeJson(signal, coverage, routing, outcome, fees));
                 if (combinationRecorder.recordSnapshot(snapshot) != null) {
                     recorded++;
                 }
@@ -177,6 +213,7 @@ public class HtxTrendCombinationService {
 
     private static String modelCoverageOutcomeJson(TrendCandidateSignal signal,
                                                    HtxTrendModelCoverageCalculator.Coverage coverage,
+                                                   HtxTrendModelRouter.RoutingDecision routing,
                                                    HtxTrendModelCoverageCalculator.ForwardOutcome outcome,
                                                    ModelCoverageFeeContext fees) {
         String sourceKey = "" + signal.period() + ":" + signal.barTime() + ":model-coverage-v1";
@@ -186,6 +223,9 @@ public class HtxTrendCombinationService {
                 + ",\"direction\":" + jsonText(outcome.direction().name())
                 + ",\"marketRegime\":" + jsonText(signal.regime().name())
                 + ",\"primaryRoute\":" + jsonText(coverage.primaryRoute())
+                + ",\"routedPrimaryModel\":" + jsonText(routing.primaryModel())
+                + ",\"structureId\":" + jsonText(routing.structureId())
+                + ",\"routingBoundary\":" + jsonText(routing.executionBoundary())
                 + ",\"horizonBars\":" + outcome.horizonBars()
                 + ",\"entryPrice\":" + jsonNumber(outcome.entryPrice())
                 + ",\"futureClose\":" + jsonNumber(outcome.futureClose())
@@ -755,6 +795,14 @@ public class HtxTrendCombinationService {
 
     private static String jsonText(String value) {
         return value == null ? "null" : "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private static String jsonTextArray(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return "[]";
+        }
+        return "[" + values.stream().map(HtxTrendCombinationService::jsonText)
+                .collect(java.util.stream.Collectors.joining(",")) + "]";
     }
 
     private void recordCandidate(String contractCode, String period, TrendCandidateSignal signal, ResolvedCandidate resolved,

@@ -224,6 +224,33 @@ class HtxTrendCombinationServiceTest {
         assertEquals("HTX_ACCOUNT", json.getJSONObject("fee").getString("source"));
         assertEquals(new BigDecimal("0.0005"), json.getBigDecimal("roundTripFeeRate"));
         assertTrue(json.getBigDecimal("netReturnRate").compareTo(json.getBigDecimal("grossReturnRate")) < 0);
+        assertEquals("OBSERVE_ONLY", json.getString("routingBoundary"));
+        assertTrue(json.containsKey("routedPrimaryModel"));
+    }
+
+    @Test
+    void routingSnapshotIsRecordedWithoutChangingTheExistingSelectionRejection() {
+        HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
+        when(policyService.enabledPolicies()).thenReturn(List.of());
+        HtxTrendCombinationRecorder combinationRecorder = mock(HtxTrendCombinationRecorder.class);
+        when(combinationRecorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(policyService, combinationRecorder,
+                mock(HtxTrendCandidateSignalRecorder.class));
+
+        HtxTrendCombinationService.Selection selection = service.select("BTC-USDT", "15min", List.of(),
+                signal("15min"));
+
+        assertFalse(selection.accepted());
+        assertEquals(HtxTrendCombinationGateReason.NO_ENABLED_POLICY.code(), selection.rejection());
+        ArgumentCaptor<HtxTrendFactorSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendFactorSnapshotEntity.class);
+        verify(combinationRecorder, org.mockito.Mockito.atLeast(2)).recordSnapshot(snapshot.capture());
+        HtxTrendFactorSnapshotEntity routing = snapshot.getAllValues().stream()
+                .filter(item -> item.getSnapshotKey().endsWith(":model-routing-v1"))
+                .findFirst().orElseThrow();
+        JSONObject json = JSON.parseObject(routing.getFactorsJson());
+        assertEquals("trend-model-routing-v1", json.getString("schema"));
+        assertEquals("OBSERVE_ONLY", json.getString("executionBoundary"));
+        assertEquals("NO_ROUTE", json.getString("primaryModel"));
     }
 
     @Test

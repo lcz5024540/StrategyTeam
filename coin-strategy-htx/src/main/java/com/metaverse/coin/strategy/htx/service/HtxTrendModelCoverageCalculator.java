@@ -35,15 +35,17 @@ public class HtxTrendModelCoverageCalculator {
         int last = candles.size() - 1;
         Direction context = context(signal);
         boolean donchian = context != Direction.FLAT && brokeChannel(context, signal.closePrice(), signal);
-        boolean fibonacci = context != Direction.FLAT && fibonacciRetest(candles, last, context, signal.closePrice(), signal.emaFast());
+        FibonacciRetest fibonacciRetest = context == Direction.FLAT ? FibonacciRetest.none()
+                : fibonacciRetest(candles, last, context, signal.closePrice(), signal.emaFast());
         BigDecimal vwap = vwap(candles, last, VWAP_BARS);
         boolean emaVwap = context != Direction.FLAT && emaVwapPullback(context, signal, vwap);
         boolean momentum = context != Direction.FLAT && momentumContinuation(context, signal);
         boolean squeeze = context != Direction.FLAT && squeeze(candles, last, signal.atr());
         boolean structure = context != Direction.FLAT && structureAligned(candles, last, context);
-        String route = donchian ? "DONCHIAN_BREAKOUT" : fibonacci ? "FIB_PULLBACK_CONTINUATION"
+        String route = donchian ? "DONCHIAN_BREAKOUT" : fibonacciRetest.matched() ? "FIB_PULLBACK_CONTINUATION"
                 : emaVwap && momentum ? "EMA_MOMENTUM_CONTINUATION" : "NO_ENTRY_ROUTE";
-        return new Coverage(true, context, donchian, fibonacci, emaVwap, momentum, squeeze, structure, route, vwap);
+        return new Coverage(true, context, donchian, fibonacciRetest.matched(), emaVwap, momentum, squeeze, structure,
+                route, fibonacciRetest.breakoutBarTime(), vwap);
     }
 
     /**
@@ -104,7 +106,8 @@ public class HtxTrendModelCoverageCalculator {
         return side == Direction.LONG ? close.compareTo(signal.breakoutHigh()) > 0 : close.compareTo(signal.breakoutLow()) < 0;
     }
 
-    private static boolean fibonacciRetest(List<HtxSwapKline> candles, int last, Direction side, BigDecimal close, BigDecimal emaFast) {
+    private static FibonacciRetest fibonacciRetest(List<HtxSwapKline> candles, int last, Direction side,
+                                                    BigDecimal close, BigDecimal emaFast) {
         for (int index = last - 1; index >= Math.max(DONCHIAN_BARS, last - FIB_SOURCE_BARS); index--) {
             BigDecimal high = high(candles, index - DONCHIAN_BARS, index - 1);
             BigDecimal low = low(candles, index - DONCHIAN_BARS, index - 1);
@@ -117,9 +120,10 @@ public class HtxTrendModelCoverageCalculator {
             BigDecimal lower = impulseHigh.subtract(range.multiply(new BigDecimal("0.618")));
             BigDecimal upper = impulseHigh.subtract(range.multiply(new BigDecimal("0.382")));
             boolean inZone = close.compareTo(lower) >= 0 && close.compareTo(upper) <= 0;
-            return inZone && (side == Direction.LONG ? close.compareTo(emaFast) >= 0 : close.compareTo(emaFast) <= 0);
+            boolean emaReclaim = side == Direction.LONG ? close.compareTo(emaFast) >= 0 : close.compareTo(emaFast) <= 0;
+            return new FibonacciRetest(inZone && emaReclaim, candles.get(index).getId());
         }
-        return false;
+        return FibonacciRetest.none();
     }
 
     private static boolean emaVwapPullback(Direction side, TrendCandidateSignal signal, BigDecimal vwap) {
@@ -176,8 +180,14 @@ public class HtxTrendModelCoverageCalculator {
     }
 
     public record Coverage(boolean available, Direction direction, boolean donchian, boolean fibonacci, boolean emaVwap,
-                           boolean momentum, boolean squeeze, boolean structure, String primaryRoute, BigDecimal vwap) {
-        static Coverage unavailable() { return new Coverage(false, Direction.FLAT, false,false,false,false,false,false,"UNAVAILABLE",BigDecimal.ZERO); }
+                           boolean momentum, boolean squeeze, boolean structure, String primaryRoute,
+                           Long fibonacciSourceBarTime, BigDecimal vwap) {
+        static Coverage unavailable() { return new Coverage(false, Direction.FLAT, false,false,false,false,false,false,
+                "UNAVAILABLE", null, BigDecimal.ZERO); }
+    }
+
+    private record FibonacciRetest(boolean matched, Long breakoutBarTime) {
+        static FibonacciRetest none() { return new FibonacciRetest(false, null); }
     }
 
     public record ForwardOutcome(String model, Direction direction, int horizonBars, BigDecimal entryPrice,
