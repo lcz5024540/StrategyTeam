@@ -49,6 +49,49 @@ public class CoinStrategyLedgerRecorder {
     private final CoinStrategyLedgerEventMapper ledgerMapper;
     private final HtxTradeAccountMapper accountMapper;
 
+    /**
+     * Resolves the stable execution identity before the source execution rows are persisted.
+     * Account-label fallback remains only for legacy environment-backed accounts.
+     */
+    public void enrichTrendPositionIdentity(HtxTrendPositionEntity position) {
+        if (position == null) {
+            return;
+        }
+        position.setAccountLabel(label(position.getAccountLabel()));
+        if (position.getAccountId() == null) {
+            position.setAccountId(accountId(position.getAccountLabel()));
+        }
+        if (!StringUtils.hasText(position.getStrategyFamily())) {
+            position.setStrategyFamily(STRATEGY_FAMILY_TREND);
+        }
+        if (!StringUtils.hasText(position.getStrategyName())) {
+            position.setStrategyName(STRATEGY_NAME_HTX_TREND);
+        }
+        if (!StringUtils.hasText(position.getModelName())) {
+            position.setModelName(modelName(position.getPrimaryModel(), position.getEntrySignal()));
+        }
+    }
+
+    /** Resolves the same identity for every entry, partial-exit and close order. */
+    public void enrichTrendOrderIdentity(HtxTrendOrderEntity order) {
+        if (order == null) {
+            return;
+        }
+        order.setAccountLabel(label(order.getAccountLabel()));
+        if (order.getAccountId() == null) {
+            order.setAccountId(accountId(order.getAccountLabel()));
+        }
+        if (!StringUtils.hasText(order.getStrategyFamily())) {
+            order.setStrategyFamily(STRATEGY_FAMILY_TREND);
+        }
+        if (!StringUtils.hasText(order.getStrategyName())) {
+            order.setStrategyName(STRATEGY_NAME_HTX_TREND);
+        }
+        if (!StringUtils.hasText(order.getModelName())) {
+            order.setModelName(modelName(null, order.getReason()));
+        }
+    }
+
     public void recordTrendPositionIntent(HtxTrendPositionEntity position) {
         if (position == null || position.getId() == null) {
             return;
@@ -158,30 +201,38 @@ public class CoinStrategyLedgerRecorder {
     }
 
     private CoinStrategyLedgerEventEntity baseEvent(String eventType, String eventKey, HtxTrendPositionEntity position) {
-        CoinStrategyLedgerEventEntity event = common(eventType, eventKey, label(position.getAccountLabel()),
-                position.getContractCode(), position.getId(), null, position.getEntryClientOrderId(), position.getSide(),
-                position.getEntrySignal());
-        return event;
+        enrichTrendPositionIdentity(position);
+        return common(eventType, eventKey, position.getAccountId(), position.getAccountLabel(),
+                position.getStrategyFamily(), position.getStrategyName(), position.getModelName(), position.getRunId(),
+                position.getFactorSnapshotId(), position.getContractCode(), position.getId(), null,
+                position.getEntryClientOrderId(), position.getSide());
     }
 
     private CoinStrategyLedgerEventEntity baseEvent(String eventType, String eventKey, HtxTrendOrderEntity order) {
-        return common(eventType, eventKey, label(order.getAccountLabel()), order.getContractCode(), order.getPositionId(),
-                order.getId(), order.getClientOrderId(), order.getTrendSide(), order.getReason());
+        enrichTrendOrderIdentity(order);
+        return common(eventType, eventKey, order.getAccountId(), order.getAccountLabel(),
+                order.getStrategyFamily(), order.getStrategyName(), order.getModelName(), order.getRunId(),
+                order.getFactorSnapshotId(), order.getContractCode(), order.getPositionId(), order.getId(),
+                order.getClientOrderId(), order.getTrendSide());
     }
 
-    private CoinStrategyLedgerEventEntity common(String eventType, String eventKey, String accountLabel,
+    private CoinStrategyLedgerEventEntity common(String eventType, String eventKey, Long accountId,
+                                                 String accountLabel, String strategyFamily, String strategyName,
+                                                 String modelName, String runId, Long factorSnapshotId,
                                                  String contractCode, Long positionId, Long orderId,
-                                                 String clientOrderId, String side, String reason) {
+                                                 String clientOrderId, String side) {
         CoinStrategyLedgerEventEntity event = new CoinStrategyLedgerEventEntity();
         event.setEventKey(eventKey);
         event.setEventType(eventType);
+        event.setAccountId(accountId);
         event.setAccountLabel(accountLabel);
-        event.setAccountId(accountId(accountLabel));
         event.setExchange(EXCHANGE_HTX);
         event.setMarketType(MARKET_USDT_SWAP);
-        event.setStrategyFamily(STRATEGY_FAMILY_TREND);
-        event.setStrategyName(STRATEGY_NAME_HTX_TREND);
-        event.setModelName(modelName(reason));
+        event.setStrategyFamily(strategyFamily);
+        event.setStrategyName(strategyName);
+        event.setModelName(modelName);
+        event.setRunId(runId);
+        event.setFactorSnapshotId(factorSnapshotId);
         event.setSymbol(symbol(contractCode));
         event.setContractCode(contractCode);
         event.setPositionId(positionId);
@@ -215,7 +266,10 @@ public class CoinStrategyLedgerRecorder {
         }
     }
 
-    private static String modelName(String reason) {
+    private static String modelName(String primaryModel, String reason) {
+        if (StringUtils.hasText(primaryModel)) {
+            return primaryModel.trim();
+        }
         String value = reason == null ? "" : reason.toLowerCase(Locale.ROOT);
         if (value.contains("fib")) {
             return MODEL_FIB_PULLBACK;

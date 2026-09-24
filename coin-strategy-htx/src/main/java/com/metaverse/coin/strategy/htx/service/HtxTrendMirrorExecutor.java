@@ -378,6 +378,7 @@ public class HtxTrendMirrorExecutor {
         HtxTrendOrderEntity entity = new HtxTrendOrderEntity();
         entity.setPositionId(position.getId());
         entity.setPositionKey(position.getPositionKey());
+        entity.setRunId(position.getRunId());
         entity.setContractCode(request.getContractCode());
         entity.setLeg(leg);
         entity.setTrendSide(position.getSide());
@@ -392,6 +393,10 @@ public class HtxTrendMirrorExecutor {
         entity.setReason(clip(reason));
         entity.setMessage("prepared mirror " + leg.toLowerCase(Locale.ROOT) + " order");
         entity.setAccountLabel(account.accountLabel());
+        entity.setStrategyFamily(position.getStrategyFamily());
+        entity.setStrategyName(position.getStrategyName());
+        entity.setModelName(position.getModelName());
+        entity.setFactorSnapshotId(position.getFactorSnapshotId());
         entity.setFeeRateUsed(takerFeeRate);
         entity.setEstimatedFee(estimatedFee);
         if (HtxTrendRecorder.LEG_CLOSE.equals(leg)) {

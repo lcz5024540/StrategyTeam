@@ -1087,8 +1087,11 @@ public class HtxTrendFollowingService {
         entity.setEntrySignal(clip(signal.reason() + "; " + sizing.summary()));
         entity.setMessage(clip("trend entry intent signal=" + signal.side() + " " + sizing.summary()));
         entity.setAccountLabel("primary");
+        entity.setStrategyFamily("TREND");
+        entity.setStrategyName("HTX_TREND_V1");
         if (combination != null) {
             entity.setPrimaryModel(combination.primaryModel());
+            entity.setModelName(combination.primaryModel());
             entity.setConfirmationModels(combination.confirmationModels());
             entity.setPolicyVersion(combination.policyVersion());
             entity.setMarketRegime(combination.marketRegime());
@@ -2186,7 +2189,12 @@ public class HtxTrendFollowingService {
         entity.setStatus(HtxTrendRecorder.ORDER_INTENT);
         entity.setReason(clip(reason));
         entity.setMessage("prepared " + leg.toLowerCase(Locale.ROOT) + " order");
+        entity.setAccountId(position.getAccountId());
         entity.setAccountLabel(position.getAccountLabel() == null ? "primary" : position.getAccountLabel());
+        entity.setStrategyFamily(position.getStrategyFamily());
+        entity.setStrategyName(position.getStrategyName());
+        entity.setModelName(position.getModelName());
+        entity.setFactorSnapshotId(position.getFactorSnapshotId());
         entity.setFeeRateUsed(position.getEntryFeeRate());
         entity.setEstimatedOpenFee(position.getEstimatedEntryFee());
         entity.setEstimatedCloseFee(position.getEstimatedCloseFee());

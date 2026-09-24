@@ -47,7 +47,11 @@ public class HtxTrendPositionEntity {
     private String entrySignal;
     private String exitReason;
     private String message;
+    private Long accountId;
     private String accountLabel;
+    private String strategyFamily;
+    private String strategyName;
+    private String modelName;
     private BigDecimal entryFeeRate;
     private BigDecimal estimatedEntryFee;
     private BigDecimal estimatedCloseFee;

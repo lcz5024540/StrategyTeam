@@ -5,6 +5,9 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.CoinStrategyLedgerEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTradeAccountMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -66,6 +69,8 @@ class CoinStrategyLedgerRecorderTest {
                 .filter(v -> v != null)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertEquals(0, new BigDecimal("0.47").compareTo(additiveNet));
+        assertTrendIdentity(openFill, 1L, "run-btc-15m-1", 77L, "FIB_PULLBACK_CONTINUATION");
+        assertTrendIdentity(closeFill, 1L, "run-btc-15m-1", 77L, "FIB_PULLBACK_CONTINUATION");
 
         BigDecimal actualFees = events.stream()
                 .filter(e -> CoinStrategyLedgerRecorder.EVENT_FEE.equals(e.getEventType()))
@@ -116,6 +121,45 @@ class CoinStrategyLedgerRecorderTest {
         assertEquals(CoinStrategyLedgerRecorder.EVENT_OPEN_ORDER, event.getEventType());
         assertEquals(0, BigDecimal.ZERO.compareTo(event.getFeeUsdt()));
         assertNull(event.getNetPnlAfterFee());
+        assertTrendIdentity(event, 1L, "run-btc-15m-1", 77L, "FIB_PULLBACK_CONTINUATION");
+    }
+
+    @Test
+    void sourceRowsReceiveStableIdentityBeforeTheyArePersisted() {
+        CoinStrategyLedgerEventMapper ledgerMapper = mock(CoinStrategyLedgerEventMapper.class);
+        HtxTradeAccountMapper accountMapper = mock(HtxTradeAccountMapper.class);
+        HtxTrendPositionMapper positionMapper = mock(HtxTrendPositionMapper.class);
+        HtxTrendOrderMapper orderMapper = mock(HtxTrendOrderMapper.class);
+        HtxTrendSignalMapper signalMapper = mock(HtxTrendSignalMapper.class);
+        when(accountMapper.findIdByAccountLabel("primary")).thenReturn(1L);
+        CoinStrategyLedgerRecorder ledgerRecorder = new CoinStrategyLedgerRecorder(ledgerMapper, accountMapper);
+        HtxTrendRecorder recorder = new HtxTrendRecorder(positionMapper, orderMapper, signalMapper, ledgerRecorder);
+        HtxTrendPositionEntity position = trendPosition();
+        HtxTrendOrderEntity order = trendOrder();
+
+        recorder.createIntent(position);
+        recorder.createOrderIntent(order);
+
+        assertEquals(1L, position.getAccountId());
+        assertEquals("TREND", position.getStrategyFamily());
+        assertEquals("HTX_TREND_V1", position.getStrategyName());
+        assertEquals("FIB_PULLBACK_CONTINUATION", position.getModelName());
+        assertEquals(1L, order.getAccountId());
+        assertEquals("TREND", order.getStrategyFamily());
+        assertEquals("HTX_TREND_V1", order.getStrategyName());
+        assertEquals("FIB_PULLBACK_CONTINUATION", order.getModelName());
+        assertEquals(77L, order.getFactorSnapshotId());
+    }
+
+    private static void assertTrendIdentity(CoinStrategyLedgerEventEntity event, Long accountId, String runId,
+                                            Long factorSnapshotId, String modelName) {
+        assertEquals(accountId, event.getAccountId());
+        assertEquals("primary", event.getAccountLabel());
+        assertEquals("TREND", event.getStrategyFamily());
+        assertEquals("HTX_TREND_V1", event.getStrategyName());
+        assertEquals(modelName, event.getModelName());
+        assertEquals(runId, event.getRunId());
+        assertEquals(factorSnapshotId, event.getFactorSnapshotId());
     }
 
     private static CoinStrategyLedgerEventEntity event(List<CoinStrategyLedgerEventEntity> events, String eventType) {
@@ -129,6 +173,7 @@ class CoinStrategyLedgerRecorderTest {
         HtxTrendPositionEntity position = new HtxTrendPositionEntity();
         position.setId(42L);
         position.setPositionKey("trend-BTC-USDT-42");
+        position.setRunId("run-btc-15m-1");
         position.setContractCode("BTC-USDT");
         position.setStatus(HtxTrendRecorder.ACTIVE);
         position.setSide("LONG");
@@ -146,6 +191,8 @@ class CoinStrategyLedgerRecorderTest {
         position.setEntrySignal("Fibonacci pullback continuation");
         position.setExitReason("trailing stop");
         position.setAccountLabel("primary");
+        position.setPrimaryModel("FIB_PULLBACK_CONTINUATION");
+        position.setFactorSnapshotId(77L);
         return position;
     }
 
@@ -154,12 +201,17 @@ class CoinStrategyLedgerRecorderTest {
         order.setId(7L);
         order.setPositionId(42L);
         order.setPositionKey("trend-BTC-USDT-42");
+        order.setRunId("run-btc-15m-1");
         order.setContractCode("BTC-USDT");
         order.setLeg(HtxTrendRecorder.LEG_ENTRY);
         order.setTrendSide("LONG");
         order.setOrderSide("buy");
         order.setClientOrderId("1001");
         order.setAccountLabel("primary");
+        order.setStrategyFamily("TREND");
+        order.setStrategyName("HTX_TREND_V1");
+        order.setModelName("FIB_PULLBACK_CONTINUATION");
+        order.setFactorSnapshotId(77L);
         order.setEstimatedFee(new BigDecimal("0.01"));
         order.setReason("entry signal: Fibonacci pullback continuation");
         return order;

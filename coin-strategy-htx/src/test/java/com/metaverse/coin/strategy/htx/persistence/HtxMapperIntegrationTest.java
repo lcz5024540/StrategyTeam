@@ -10,6 +10,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxInventoryRecycleSag
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxSpotFillLedgerEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.CoinStrategyLedgerEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
@@ -20,6 +21,7 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxLockedPairMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxSpotFillLedgerMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +43,7 @@ class HtxMapperIntegrationTest {
     @Autowired HtxInventoryRecycleSagaMapper inventoryRecycleSagaMapper;
     @Autowired HtxTrendSignalMapper trendSignalMapper;
     @Autowired HtxTrendPositionMapper trendPositionMapper;
+    @Autowired HtxTrendOrderMapper trendOrderMapper;
     @Autowired CoinStrategyLedgerEventMapper ledgerEventMapper;
 
 
@@ -117,8 +120,51 @@ class HtxMapperIntegrationTest {
         position.setRealizedProfit(new BigDecimal("-0.80"));
         position.setPrimaryModel("FIB_PULLBACK_CONTINUATION");
         position.setMarketRegime("BROAD_UP");
+        position.setAccountId(1L);
         position.setAccountLabel("primary");
+        position.setStrategyFamily("TREND");
+        position.setStrategyName("HTX_TREND_V1");
+        position.setModelName("FIB_PULLBACK_CONTINUATION");
+        position.setRunId("it-run-" + nonce);
+        position.setFactorSnapshotId(77L);
         assertEquals(1, trendPositionMapper.insert(position));
+
+        HtxTrendPositionEntity storedPosition = trendPositionMapper.findLastDone("BTC-USDT");
+        assertEquals(1L, storedPosition.getAccountId());
+        assertEquals("TREND", storedPosition.getStrategyFamily());
+        assertEquals("HTX_TREND_V1", storedPosition.getStrategyName());
+        assertEquals("FIB_PULLBACK_CONTINUATION", storedPosition.getModelName());
+        assertEquals("it-run-" + nonce, storedPosition.getRunId());
+        assertEquals(77L, storedPosition.getFactorSnapshotId());
+
+        HtxTrendOrderEntity order = new HtxTrendOrderEntity();
+        order.setPositionId(position.getId());
+        order.setPositionKey(position.getPositionKey());
+        order.setRunId(position.getRunId());
+        order.setContractCode("BTC-USDT");
+        order.setLeg(HtxTrendRecorder.LEG_ENTRY);
+        order.setTrendSide("LONG");
+        order.setOrderSide("buy");
+        order.setPositionSide("long");
+        order.setReduceOnly(false);
+        order.setClientOrderId("it-trend-order-" + nonce);
+        order.setRequestVolume(1L);
+        order.setStatus(HtxTrendRecorder.ORDER_INTENT);
+        order.setAccountId(1L);
+        order.setAccountLabel("primary");
+        order.setStrategyFamily("TREND");
+        order.setStrategyName("HTX_TREND_V1");
+        order.setModelName("FIB_PULLBACK_CONTINUATION");
+        order.setFactorSnapshotId(77L);
+        assertEquals(1, trendOrderMapper.insert(order));
+
+        HtxTrendOrderEntity storedOrder = trendOrderMapper.selectById(order.getId());
+        assertEquals(1L, storedOrder.getAccountId());
+        assertEquals("TREND", storedOrder.getStrategyFamily());
+        assertEquals("HTX_TREND_V1", storedOrder.getStrategyName());
+        assertEquals("FIB_PULLBACK_CONTINUATION", storedOrder.getModelName());
+        assertEquals(position.getRunId(), storedOrder.getRunId());
+        assertEquals(77L, storedOrder.getFactorSnapshotId());
 
         HtxTrendPerformanceStats stats = trendPositionMapper.trendPerformanceForBucket(
                 LocalDateTime.now().minusMinutes(1), 20, "LONG", "FIB_PULLBACK_CONTINUATION", "BROAD_UP", "primary");

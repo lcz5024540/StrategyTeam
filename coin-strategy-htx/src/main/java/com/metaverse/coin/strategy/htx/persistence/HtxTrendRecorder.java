@@ -142,6 +142,7 @@ public class HtxTrendRecorder {
 
     public long createIntent(HtxTrendPositionEntity entity) {
         try {
+            preparePositionIdentity(entity);
             positionMapper.insert(entity);
             recordLedger(() -> ledgerRecorder.recordTrendPositionIntent(entity));
             return entity.getId();
@@ -152,6 +153,7 @@ public class HtxTrendRecorder {
 
     public void createOrderIntent(HtxTrendOrderEntity entity) {
         try {
+            prepareOrderIdentity(entity);
             orderMapper.insert(entity);
             recordLedger(() -> ledgerRecorder.recordTrendOrderIntent(entity));
         } catch (RuntimeException ex) {
@@ -250,6 +252,18 @@ public class HtxTrendRecorder {
 
     public void markStatus(long id, String nextStatus, String message) {
         positionMapper.markStatus(id, nextStatus, message);
+    }
+
+    private void preparePositionIdentity(HtxTrendPositionEntity entity) {
+        if (ledgerRecorder != null) {
+            ledgerRecorder.enrichTrendPositionIdentity(entity);
+        }
+    }
+
+    private void prepareOrderIdentity(HtxTrendOrderEntity entity) {
+        if (ledgerRecorder != null) {
+            ledgerRecorder.enrichTrendOrderIdentity(entity);
+        }
     }
 
     private void recordLedger(Runnable writer) {

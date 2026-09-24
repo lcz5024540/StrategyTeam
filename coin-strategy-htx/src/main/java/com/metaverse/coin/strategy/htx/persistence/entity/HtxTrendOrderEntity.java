@@ -36,7 +36,12 @@ public class HtxTrendOrderEntity {
     private String status;
     private String reason;
     private String message;
+    private Long accountId;
     private String accountLabel;
+    private String strategyFamily;
+    private String strategyName;
+    private String modelName;
+    private Long factorSnapshotId;
     private BigDecimal feeRateUsed;
     private BigDecimal estimatedFee;
     private BigDecimal estimatedOpenFee;
