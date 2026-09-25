@@ -104,6 +104,38 @@ class HtxTrendExitDecisionEngineTest {
     }
 
     @Test
+    void ltc20260925ProfitLockWouldCloseBeforeLegacyFlatLossControl() {
+        // Production position 161: entry 72.92, 12 contracts at 0.10, entry fee 0.0350016.
+        // The decision ledger first armed at the 74.74 MFE, then at 01:43:44 CST recorded ref=73.14.
+        HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
+                HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, "LONG", 12L, new BigDecimal("0.10"),
+                new BigDecimal("72.92"), new BigDecimal("68.98"), new BigDecimal("68.97766"),
+                new BigDecimal("77.10336"), new BigDecimal("74.74"), new BigDecimal("72.47"),
+                new BigDecimal("74.74"), new BigDecimal("72.92"), new BigDecimal("1.33179238095238"), TrendSide.FLAT,
+                new BigDecimal("73.20"), new BigDecimal("73.30"), 0, false, new BigDecimal("2.1131232"),
+                new BigDecimal("0.0350016"), new BigDecimal("0.0358752"), null, null, BigDecimal.ZERO,
+                LocalDateTime.of(2026, 9, 25, 1, 20), 0, 3, new BigDecimal("0.262512")));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, armed.action());
+        assertEquals("NET_COST_AND_ATR_MILESTONE", armed.trailingArmReason());
+
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
+                HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, "LONG", 12L, new BigDecimal("0.10"),
+                new BigDecimal("72.92"), new BigDecimal("68.98"), new BigDecimal("68.97766"),
+                new BigDecimal("77.10336"), new BigDecimal("73.14"), armed.protectionPrice(),
+                new BigDecimal("74.74"), new BigDecimal("72.92"), new BigDecimal("1.33179238095238"), TrendSide.FLAT,
+                new BigDecimal("73.20"), new BigDecimal("73.30"), 0, false, new BigDecimal("0.1938912"),
+                new BigDecimal("0.0350016"), new BigDecimal("0.0351072"), armed.trailingArmedAt(),
+                armed.trailingArmReason(), armed.maxFavorableR(),
+                LocalDateTime.of(2026, 9, 25, 1, 43, 44), 3, 3, new BigDecimal("0.262512")));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
+        assertEquals("RUNNER", decision.phase());
+        assertEquals("armed-protection-crossed", decision.reason());
+        assertTrue(decision.protectionPrice().compareTo(new BigDecimal("73.14")) > 0);
+    }
+
+    @Test
     void profitLockUsesActualEntryFeeInsteadOfAssumingMatchingCloseFee() {
         HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
                 HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, "LONG", 10L, BigDecimal.ONE,

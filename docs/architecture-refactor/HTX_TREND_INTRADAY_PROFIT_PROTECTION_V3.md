@@ -2,7 +2,7 @@
 
 > 日期：2026-09-25  
 > 范围：`FIB_PULLBACK_CONTINUATION` 的 `INTRADAY_15M` 仓位。  
-> 状态：代码与回放已完成，**未部署，未开启真实减仓或真实 v3 平仓**。
+> 状态：退出职责冲突已修复并完成 LTC 161 回放，**未部署，未开启真实减仓或真实 v3 平仓**。
 
 ## 1. 要修复的确定性问题
 
@@ -89,16 +89,50 @@ LTC 161 是直接例子：开仓 `72.92`、初始止损 `68.98`，风险距离 `
 
 这些是保守 K 线收盘价模拟，尚未纳入真实盘口和逐笔成交，不能作为真实收益承诺。
 
-## 5. 上线顺序
+## 5. 单一退出负责人
 
-1. 先部署 v3，但保持 `HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED=false`，只写 `fib-exit-engine-v3` 决策账本；
-2. 观察至少覆盖“武装、动态减仓候选、保护价穿越”三类真实场景，并复核保护价、证据、建议张数和实际 K 线；
-3. 补真实成交时点盘口和逐笔成交数据，完成 XRP/ZEC 执行价归因；
-4. 仅主账户小仓开启 v3 live；TradeX 继续关闭，旧 `HTX_TREND_PARTIAL_TAKE_PROFIT_LIVE_ENABLED` 保持关闭；
-5. 对比 v2 与 v3 的扣费后净 PnL、PF、MFE 捕获率、盈利回吐率、过早退出率和最大回撤，再决定扩大范围。
+LTC 161 暴露了此前观察模式的错误边界：v3 在保护价被穿越时只写 `FULL_CLOSE / OBSERVE`，随后旧 `TREND_EXHAUSTION` 仍可在亏损区发送真实平仓单。这会让同一 FIB 仓位同时存在两个退出负责人。
 
-## 6. 验证
+修复后的约束是：
+
+1. `FIB_PULLBACK_CONTINUATION` 且统一退出引擎开启时，v3 是唯一退出负责人；无论是观察还是真实执行，旧 FLAT、旧 ATR、旧 1R 分批都不得继续发单。
+2. 观察模式只写 v3 决策，不会把“v3 建议”误报为真实动作，也不会静默回退到旧链路。
+3. 真实模式由 v3 统一处理模型失效、初始止损、未武装亏损预算、动态减仓和已武装保护价穿越。
+4. Donchian、EMA/动量等尚未接入模型专属策略的仓位仍使用旧退出链路；人工仓位或交易所不一致仓位仍只进入人工复核。
+
+配置统一为不带历史版本号的名称：
+
+```text
+HTX_TREND_EXIT_ENGINE_ENABLED
+HTX_TREND_EXIT_ENGINE_LIVE_ENABLED
+HTX_TREND_EXIT_ENGINE_PRIMARY_ACCOUNT_ONLY
+```
+
+旧 `...V2...` 环境变量只作为部署兼容回退读取，不能再作为策略版本含义使用。
+
+## 6. LTC 161 回放结果
+
+| 时间（CST） | 参考价 | 合并后 v3 决策 | 实际旧链路发生的事 |
+|---|---:|---|---|
+| 01:20 附近 | 74.74 MFE | 武装 `NET_COST_AND_ATR_MILESTONE`，保护价约 73.1782 | 无 |
+| 01:43:44 | 73.14 | `FULL_CLOSE / armed-protection-crossed`，决策账本估计净收益 `+0.1939U` | v3 当时仍仅观察 |
+| 01:44:09 | 72.73 | 已无须等待该信号 | 旧 `TREND_EXHAUSTION` 在连续 3 根 FLAT 且亏损预算触发时发送市价平仓 |
+| 01:44:31 | 72.85 成交 | 无法倒改历史成交 | 实际价差损失 `-0.0840U`；计入双边手续费后净约 `-0.1540U` |
+
+回放证明的是决策时点：合并后的 v3 会在 73.14 发出真实 reduce-only 全平请求，不会等待旧 FLAT 亏损控制。它不能伪造该时点的真实成交价，因此 `+0.1939U` 是当时按参考价和实际费率计算的预估净收益，不是事后保证收益。
+
+## 7. 上线顺序
+
+1. 部署统一退出代码，设置 `HTX_TREND_EXIT_ENGINE_ENABLED=true`；观察模式下 FIB 不再由旧链路平仓。
+2. 复核至少一笔“武装、动态减仓候选、保护价穿越”的真实决策及盘口；补 XRP/ZEC 的执行价归因。
+3. 仅主账户小仓设置 `HTX_TREND_EXIT_ENGINE_LIVE_ENABLED=true`；TradeX 保持关闭，旧 `HTX_TREND_PARTIAL_TAKE_PROFIT_LIVE_ENABLED` 保持关闭。
+4. 对比扣费后净 PnL、PF、MFE 捕获率、盈利回吐率、过早退出率和最大回撤，再决定扩大范围。
+
+## 8. 验证
 
 - `HtxTrendExitDecisionEngineTest`：验证宽初始止损不会推迟 ATR 利润武装，及“ATR excursion + 回吐 + 独立转弱证据”才会动态减仓。
+- `ltc20260925ProfitLockWouldCloseBeforeLegacyFlatLossControl`：用 LTC 161 的真实开仓价、张数、费用、MFE、保护价和 01:43:44 参考价回放，验证 74.74 武装后在 73.14 返回 `FULL_CLOSE`。
+- `observedFibExitDoesNotFallThroughToLegacyFlatLossClose`：验证 FIB 观察决策不会落入旧 FLAT 亏损平仓链路。
+- `liveFibProfitLockCrossSubmitsModelRoutedCloseWithoutLegacyFallthrough`：验证主账户真实开关打开后，保护价穿越发送的是模型路由的 reduce-only 平仓。
 - `HtxTrendExitDecisionEngineIncidentReplayTest`：重放 DOGE、SUI、XRP、ZEC 的冻结事故样本。
 - 后续完整模块测试与构建通过后，才允许提交；部署仍需单独验收。

@@ -215,14 +215,14 @@ public class HtxTrendProperties {
     /** Number of consecutive flat signals required before loss-control flat exit. */
     private int flatLossExitConfirmationBars = 3;
 
-    /** Enables Fibonacci exit-engine v2 observation and its durable decision ledger. */
-    private boolean exitEngineV2Enabled = false;
+    /** Enables the model-routed exit engine and its durable decision ledger. */
+    private boolean exitEngineEnabled = false;
 
-    /** Permits v2 decisions to submit reduce-only orders; remains false until replay and gray review pass. */
-    private boolean exitEngineV2LiveEnabled = false;
+    /** Permits model-routed exit decisions to submit reduce-only orders. */
+    private boolean exitEngineLiveEnabled = false;
 
-    /** During the first gray release, never apply v2 exits to the mirrored account. */
-    private boolean exitEngineV2PrimaryAccountOnly = true;
+    /** During the first gray release, never apply model-routed exits to the mirrored account. */
+    private boolean exitEnginePrimaryAccountOnly = true;
 
     /**
      * For intraday Fibonacci positions, arm profit protection after this many entry-timeframe ATRs.

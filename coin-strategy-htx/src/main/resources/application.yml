@@ -189,9 +189,10 @@ htx:
     max-flat-exit-loss-usdt: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_USDT:0.25}
     max-flat-exit-loss-rate: ${HTX_TREND_MAX_FLAT_EXIT_LOSS_RATE:0.0030}
     flat-loss-exit-confirmation-bars: ${HTX_TREND_FLAT_LOSS_EXIT_CONFIRMATION_BARS:3}
-    exit-engine-v2-enabled: ${HTX_TREND_EXIT_ENGINE_V2_ENABLED:false}
-    exit-engine-v2-live-enabled: ${HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED:false}
-    exit-engine-v2-primary-account-only: ${HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY:true}
+    # Generic ownership switch. The V2 variables are read only as a deployment compatibility fallback.
+    exit-engine-enabled: ${HTX_TREND_EXIT_ENGINE_ENABLED:${HTX_TREND_EXIT_ENGINE_V2_ENABLED:false}}
+    exit-engine-live-enabled: ${HTX_TREND_EXIT_ENGINE_LIVE_ENABLED:${HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED:false}}
+    exit-engine-primary-account-only: ${HTX_TREND_EXIT_ENGINE_PRIMARY_ACCOUNT_ONLY:${HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY:true}}
     intraday-profit-arm-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER:0.50}
     intraday-profit-lock-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_LOCK_ATR_MULTIPLIER:0.15}
     intraday-profit-partial-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PARTIAL_ATR_MULTIPLIER:0.75}

@@ -1360,44 +1360,49 @@ public class HtxTrendFollowingService {
                         + feeProtectionMessage(feeProtectedStop) + " " + exitSnapshot.summary()),
                 exitSnapshot.state(), exitSnapshot.currentNet(), exitSnapshot.mfe(), exitSnapshot.mae(),
                 exitSnapshot.giveback(), exitSnapshot.bars(), exitSnapshot.candidates());
-        BigDecimal v2ProtectionPrice = v2ProtectionPrice(position, trailingStop);
-        HtxTrendExitDecisionEngine.Decision v2Decision = exitEngineDecision(position, signal, reference, highest, lowest,
-                v2ProtectionPrice, exitSnapshot);
-        if (v2Decision != null) {
+        BigDecimal engineProtectionPrice = exitEngineProtectionPrice(position, trailingStop);
+        HtxTrendExitDecisionEngine.Decision engineDecision = exitEngineDecision(position, signal, reference, highest, lowest,
+                engineProtectionPrice, exitSnapshot);
+        if (engineDecision != null) {
             if (!exitEngineLiveFor(position)) {
-                persistExitEngineState(position, v2Decision);
-                recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
+                persistExitEngineState(position, engineDecision);
+                recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
                         "OBSERVE", exitEngineBlockReason(position));
+                // A model-routed position has a single exit owner even during observation. Allowing the legacy
+                // FLAT/ATR branch to submit an order here would make the recorded decision differ from execution.
+                return RunResult.of(RunCode.ACTIVE, position.getId(), clip("exit-engine observing ref=" + reference
+                        + " action=" + engineDecision.action() + " phase=" + engineDecision.phase()
+                        + " reason=" + engineDecision.reason()));
             } else {
-                persistExitEngineState(position, v2Decision);
-                if (v2Decision.action() == HtxTrendExitDecisionEngine.Action.FULL_CLOSE) {
-                    RunResult result = closePosition(position, exitEngineReason(v2ExitCategory(v2Decision),
-                            "v2 " + v2Decision.reason()));
-                    recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
-                            result.code() == RunCode.CLOSE_SENT ? v2Decision.action().name() : "NOT_EXECUTED",
+                persistExitEngineState(position, engineDecision);
+                if (engineDecision.action() == HtxTrendExitDecisionEngine.Action.FULL_CLOSE) {
+                    RunResult result = closePosition(position, exitEngineReason(exitEngineCategory(engineDecision),
+                            "model-routed " + engineDecision.reason()));
+                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                            result.code() == RunCode.CLOSE_SENT ? engineDecision.action().name() : "NOT_EXECUTED",
                             result.code() == RunCode.CLOSE_SENT ? null : result.message());
                     return result;
                 }
-                if (v2Decision.action() == HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE) {
-                    PartialExitDecision partial = dynamicPartialExitDecision(position, v2Decision);
+                if (engineDecision.action() == HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE) {
+                    PartialExitDecision partial = dynamicPartialExitDecision(position, engineDecision);
                     if (partial.triggered()) {
-                        RunResult result = partialClosePosition(position, partial, clip("v2 " + v2Decision.reason()));
-                        recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
-                                result.code() == RunCode.PARTIAL_CLOSE_SENT ? v2Decision.action().name() : "NOT_EXECUTED",
+                        RunResult result = partialClosePosition(position, partial, clip("model-routed " + engineDecision.reason()));
+                        recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                                result.code() == RunCode.PARTIAL_CLOSE_SENT ? engineDecision.action().name() : "NOT_EXECUTED",
                                 result.code() == RunCode.PARTIAL_CLOSE_SENT ? null : result.message());
                         return result;
                     }
-                    recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
+                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
                             "NOT_EXECUTED", "target remaining exposure cannot form a valid reduce-only order");
                 } else {
-                    recordExitEngineDecision(position, reference, v2ProtectionPrice, exitSnapshot, v2Decision,
-                            v2Decision.action().name(), null);
+                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                            engineDecision.action().name(), null);
                 }
-                // A live Fibonacci v2 decision owns the whole exit choice. Falling through to the
+                // A live model-routed Fibonacci decision owns the whole exit choice. Falling through to the
                 // legacy FLAT/ATR path would make the recorded action differ from the executed one.
-                return RunResult.of(RunCode.ACTIVE, position.getId(), clip("v2 holding ref=" + reference
-                        + " action=" + v2Decision.action() + " phase=" + v2Decision.phase()
-                        + " reason=" + v2Decision.reason()));
+                return RunResult.of(RunCode.ACTIVE, position.getId(), clip("exit-engine holding ref=" + reference
+                        + " action=" + engineDecision.action() + " phase=" + engineDecision.phase()
+                        + " reason=" + engineDecision.reason()));
             }
         }
         String exitReason = combinationInvalidationExitReason(position, reference);
@@ -3084,14 +3089,14 @@ public class HtxTrendFollowingService {
     }
 
     /**
-     * The v2 engine is deliberately isolated to Fibonacci positions. Other model types keep their legacy exits
+     * The model-routed engine is deliberately isolated to Fibonacci positions. Other model types keep their legacy exits
      * while the same schema can accumulate observations for their eventual policies.
      */
     private HtxTrendExitDecisionEngine.Decision exitEngineDecision(HtxTrendPositionEntity position, TrendSignal signal,
                                                                     BigDecimal reference, BigDecimal highest,
                                                                     BigDecimal lowest, BigDecimal protectionPrice,
                                                                     ExitSnapshot snapshot) {
-        if (!properties.isExitEngineV2Enabled() || position == null
+        if (!properties.isExitEngineEnabled() || position == null
                 || !HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION.equals(position.getPrimaryModel())) {
             return null;
         }
@@ -3114,8 +3119,8 @@ public class HtxTrendFollowingService {
                         properties.getIntradayProfitMinNetFeeMultiple())));
     }
 
-    /** V2 only: a durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */
-    private static BigDecimal v2ProtectionPrice(HtxTrendPositionEntity position, BigDecimal calculatedProtection) {
+    /** A durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */
+    private static BigDecimal exitEngineProtectionPrice(HtxTrendPositionEntity position, BigDecimal calculatedProtection) {
         if (position == null || !positive(position.getProfitLockPrice())) {
             return calculatedProtection;
         }
@@ -3169,7 +3174,7 @@ public class HtxTrendFollowingService {
         recorder.recordExitDecision(entity);
     }
 
-    private static String v2ExitCategory(HtxTrendExitDecisionEngine.Decision decision) {
+    private static String exitEngineCategory(HtxTrendExitDecisionEngine.Decision decision) {
         if (decision == null) {
             return EXIT_TREND_EXHAUSTION;
         }
@@ -3180,21 +3185,21 @@ public class HtxTrendFollowingService {
     }
 
     private boolean exitEngineLiveFor(HtxTrendPositionEntity position) {
-        if (!properties.isExitEngineV2Enabled() || !properties.isExitEngineV2LiveEnabled() || position == null) {
+        if (!properties.isExitEngineEnabled() || !properties.isExitEngineLiveEnabled() || position == null) {
             return false;
         }
-        return !properties.isExitEngineV2PrimaryAccountOnly() || "primary".equalsIgnoreCase(position.getAccountLabel());
+        return !properties.isExitEnginePrimaryAccountOnly() || "primary".equalsIgnoreCase(position.getAccountLabel());
     }
 
     private String exitEngineBlockReason(HtxTrendPositionEntity position) {
-        if (!properties.isExitEngineV2LiveEnabled()) {
-            return "exit-engine-v2-live-disabled";
+        if (!properties.isExitEngineLiveEnabled()) {
+            return "exit-engine-live-disabled";
         }
-        if (properties.isExitEngineV2PrimaryAccountOnly()
+        if (properties.isExitEnginePrimaryAccountOnly()
                 && (position == null || !"primary".equalsIgnoreCase(position.getAccountLabel()))) {
-            return "exit-engine-v2-primary-account-only";
+            return "exit-engine-primary-account-only";
         }
-        return "exit-engine-v2-not-eligible";
+        return "exit-engine-not-eligible";
     }
 
     private PartialExitDecision dynamicPartialExitDecision(HtxTrendPositionEntity position,
