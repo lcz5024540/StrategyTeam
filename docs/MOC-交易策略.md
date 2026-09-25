@@ -51,6 +51,7 @@ updated: 2026-09-22
 - [HTX_TREND_STRATEGY_SYSTEM_V1](architecture-refactor/HTX_TREND_STRATEGY_SYSTEM_V1.md) — HTX 合约趋势策略系统 v1：市场分型、多模型信号、因子评分、gate、sizing、退出、回测与实盘观察骨架
 - [HTX_TREND_EXECUTION_REFACTOR_PLAN_V1](architecture-refactor/HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md) — HTX 趋势开仓与持仓管理重构计划：执行链路前置、退出引擎、冷却解冻、多周期和外部仓位处理分批计划
 - [HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1](architecture-refactor/HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md) — HTX 趋势退出系统重构计划：止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出、模型失效、MFE/MAE 与回测指标
+- [HTX_TREND_MFE_PROFIT_PROTECTION_PLAN_V1](architecture-refactor/HTX_TREND_MFE_PROFIT_PROTECTION_PLAN_V1.md) — HTX 趋势 MFE 利润保护与可执行退出计划：峰值浮盈保护价、动态减仓、条件单/高频触发、账本证据与 LTC/ZEC/XRP/DOGE/SUI 回放验收
 - [TOP50_STRATEGY](../TOP50_STRATEGY.md) — TOP50 趋势与波动率策略
 - [CONVENTIONAL_TECHNICAL_STRATEGY](../CONVENTIONAL_TECHNICAL_STRATEGY.md) — 常规技术分析策略
 - [RATE_MOMENTUM_STRATEGY](../RATE_MOMENTUM_STRATEGY.md) — 利率动量策略
