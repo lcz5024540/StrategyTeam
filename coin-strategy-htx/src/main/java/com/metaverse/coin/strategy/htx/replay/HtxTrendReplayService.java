@@ -88,7 +88,7 @@ public class HtxTrendReplayService {
         run.setMessage("freezing public HTX candles before replay");
         replayRunMapper.insert(run);
 
-        List<HtxTrendCandidateSignalEntity> candidates = candidateMapper.findReplayCandidatesBetween(startBarTime, endBarTime);
+        List<HtxTrendCandidateSignalEntity> candidates = candidateMapper.findReplayExecutedCandidatesBetween(startBarTime, endBarTime);
         freezeInputs(replayRunId, candidates, startBarTime, endBarTime);
         List<HtxTrendReplayTradeEntity> trades = new ArrayList<>();
         for (HtxTrendCandidateSignalEntity candidate : candidates) {
@@ -165,8 +165,9 @@ public class HtxTrendReplayService {
             unavailable(trade, "candidate has no stable run_id; cannot join execution evidence");
             return trade;
         }
-        if (!"PASSED".equals(candidate.getExecutionGateResult())) {
-            unavailable(trade, "candidate never passed final execution gate result=" + candidate.getExecutionGateResult());
+        if (!hasExecutedGate(candidate.getExecutionGateResult())) {
+            unavailable(trade, "candidate did not enter the real execution path result="
+                    + candidate.getExecutionGateResult());
             return trade;
         }
         if (candidate.getFactorSnapshotId() == null || factorSnapshotMapper.selectById(candidate.getFactorSnapshotId()) == null) {
@@ -306,6 +307,10 @@ public class HtxTrendReplayService {
         } catch (RuntimeException ex) {
             return null;
         }
+    }
+
+    static boolean hasExecutedGate(String result) {
+        return "PASSED".equals(result) || "ORDER_SUBMITTED".equals(result);
     }
 
     private static HtxTrendReplayTradeEntity baseTrade(String replayRunId, HtxTrendCandidateSignalEntity candidate) {

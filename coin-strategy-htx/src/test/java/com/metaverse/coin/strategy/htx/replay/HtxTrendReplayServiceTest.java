@@ -50,16 +50,25 @@ class HtxTrendReplayServiceTest {
     }
 
     @Test
-    void replaySelectionRetainsLegacyCandidatesWithoutFinalGate() throws NoSuchMethodException {
+    void replaySelectionUsesOnlyDurableExecutedEntries() throws NoSuchMethodException {
         Select select = HtxTrendCandidateSignalMapper.class
-                .getMethod("findReplayCandidatesBetween", long.class, long.class)
+                .getMethod("findReplayExecutedCandidatesBetween", long.class, long.class)
                 .getAnnotation(Select.class);
 
         assertNotNull(select);
         String statement = select.value()[0];
+        assertTrue(statement.contains("INNER JOIN htx_trend_position"));
         assertTrue(statement.contains("bar_time >= #{startBarTime}"));
         assertTrue(statement.contains("bar_time <= #{endBarTime}"));
-        assertFalse(statement.contains("gate_result = 'PASSED'"));
+        assertTrue(statement.contains("ORDER_SUBMITTED"));
+    }
+
+    @Test
+    void treatsSubmittedExchangeOrdersAsExecutedGateEvidence() {
+        assertTrue(HtxTrendReplayService.hasExecutedGate("PASSED"));
+        assertTrue(HtxTrendReplayService.hasExecutedGate("ORDER_SUBMITTED"));
+        assertFalse(HtxTrendReplayService.hasExecutedGate("REJECTED"));
+        assertFalse(HtxTrendReplayService.hasExecutedGate(null));
     }
 
     @Test

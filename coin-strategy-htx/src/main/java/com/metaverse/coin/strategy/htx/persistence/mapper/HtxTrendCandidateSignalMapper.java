@@ -28,14 +28,22 @@ public interface HtxTrendCandidateSignalMapper extends BaseMapper<HtxTrendCandid
                                              @Param("modelVersion") String modelVersion);
 
     /**
-     * Returns every durable candidate in the requested replay window. Historical rows created before
-     * final-gate persistence intentionally remain in this result so the replay ledger can record
-     * {@code INSUFFICIENT_EVIDENCE}, instead of silently treating the window as having no candidates.
+     * Returns only candidates that entered the real execution path and have a durable strategy position.
+     * A replay compares exit policies from actual entry prices and fees; broad model observations belong
+     * to the candidate analytics ledger and must not trigger market-data freezing here.
      */
-    @Select("SELECT " + COLUMNS + " FROM htx_trend_candidate_signal "
-            + "WHERE bar_time >= #{startBarTime} AND bar_time <= #{endBarTime} ORDER BY bar_time, id")
-    List<HtxTrendCandidateSignalEntity> findReplayCandidatesBetween(@Param("startBarTime") long startBarTime,
-                                                                     @Param("endBarTime") long endBarTime);
+    @Select("SELECT c.id, c.contract_code, c.period, c.bar_time, c.direction, c.regime, c.signal_score, c.long_score, "
+            + "c.short_score, c.score_gap, c.close_price, c.ema_fast, c.ema_medium, c.ema_slow, c.breakout_high, c.breakout_low, "
+            + "c.atr, c.atr_pct, c.adx, c.momentum_pct, c.volume_ratio, c.entry_reason, c.invalidation_reason, c.shadow, "
+            + "c.model_version, c.primary_model, c.confirmation_models, c.policy_version, c.run_id, c.factor_snapshot_id, c.gate_result, "
+            + "c.gate_reason, c.execution_gate_result, c.execution_gate_reason, c.execution_evaluated_at, c.invalidation_price, c.entry_hypothesis, "
+            + "c.sizing_multiplier, c.planned_notional_usdt, c.target_zone_low, c.target_zone_high, c.box_measured_move_target, "
+            + "c.fib_extension_1272, c.fib_extension_1618, c.expected_r_multiple, c.momentum_quality_score, c.created_at "
+            + "FROM htx_trend_candidate_signal c INNER JOIN htx_trend_position p ON p.run_id = c.run_id "
+            + "WHERE c.bar_time >= #{startBarTime} AND c.bar_time <= #{endBarTime} "
+            + "AND c.execution_gate_result IN ('PASSED', 'ORDER_SUBMITTED') ORDER BY c.bar_time, c.id")
+    List<HtxTrendCandidateSignalEntity> findReplayExecutedCandidatesBetween(@Param("startBarTime") long startBarTime,
+                                                                             @Param("endBarTime") long endBarTime);
 
     @Update("UPDATE htx_trend_candidate_signal SET execution_gate_result = #{result}, "
             + "execution_gate_reason = #{reason}, execution_evaluated_at = CURRENT_TIMESTAMP(3) "
