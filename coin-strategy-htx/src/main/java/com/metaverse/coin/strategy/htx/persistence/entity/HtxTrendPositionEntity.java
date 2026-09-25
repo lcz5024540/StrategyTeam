@@ -85,6 +85,13 @@ public class HtxTrendPositionEntity {
     private String trailingArmReason;
     private BigDecimal maxFavorableR;
     private BigDecimal profitLockPrice;
+    private BigDecimal profitProtectionMfePrice;
+    private BigDecimal profitProtectionMfeNetPnl;
+    private BigDecimal profitProtectionPrice;
+    private BigDecimal profitProtectionProjectedNetPnl;
+    private BigDecimal profitProtectionCaptureRatio;
+    private String profitProtectionMode;
+    private LocalDateTime profitProtectionUpdatedAt;
     private String exitEngineVersion;
     private Long exitAttributionSnapshotId;
     private LocalDateTime createdAt;

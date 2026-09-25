@@ -462,6 +462,13 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     trailing_arm_reason      VARCHAR(512),
     max_favorable_r          DECIMAL(36,18),
     profit_lock_price        DECIMAL(36,18),
+    profit_protection_mfe_price DECIMAL(36,18),
+    profit_protection_mfe_net_pnl DECIMAL(36,18),
+    profit_protection_price DECIMAL(36,18),
+    profit_protection_projected_net_pnl DECIMAL(36,18),
+    profit_protection_capture_ratio DECIMAL(18,8),
+    profit_protection_mode  VARCHAR(32),
+    profit_protection_updated_at DATETIME(3),
     exit_engine_version      VARCHAR(64),
     exit_attribution_snapshot_id BIGINT,
     created_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -500,11 +507,44 @@ CREATE TABLE IF NOT EXISTS htx_trend_exit_decision (
     mae_net_pnl               DECIMAL(36,18),
     giveback_rate             DECIMAL(18,8),
     max_favorable_r           DECIMAL(36,18),
+    profit_protection_mfe_price DECIMAL(36,18),
+    projected_locked_net_pnl  DECIMAL(36,18),
+    mfe_capture_ratio         DECIMAL(18,8),
+    protection_mode           VARCHAR(32),
+    execution_readiness       VARCHAR(32),
     target_remaining_contracts BIGINT,
     evidence_json             CLOB,
     created_at                DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX idx_trend_exit_decision_position_time (position_id, created_at),
     INDEX idx_trend_exit_decision_account_time (account_label, created_at)
+);
+
+-- Append-only transitions for MFE protection. P0 only records recommendations; later phases
+-- add conditional-order identifiers and execution reconciliation without rewriting this history.
+CREATE TABLE IF NOT EXISTS htx_trend_profit_protection_event (
+    id                        BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    event_key                 VARCHAR(160)   NOT NULL UNIQUE,
+    position_id               BIGINT         NOT NULL,
+    run_id                    VARCHAR(128),
+    account_id                BIGINT,
+    account_label             VARCHAR(32)    NOT NULL DEFAULT 'primary',
+    contract_code             VARCHAR(32)    NOT NULL,
+    side                      VARCHAR(8)     NOT NULL,
+    primary_model             VARCHAR(64),
+    event_type                VARCHAR(32)    NOT NULL,
+    protection_mode           VARCHAR(32),
+    reference_price           DECIMAL(36,18),
+    mfe_price                 DECIMAL(36,18),
+    mfe_net_pnl               DECIMAL(36,18),
+    protection_price          DECIMAL(36,18),
+    projected_locked_net_pnl  DECIMAL(36,18),
+    mfe_capture_ratio         DECIMAL(18,8),
+    execution_readiness       VARCHAR(32)    NOT NULL,
+    reason                    VARCHAR(512),
+    evidence_json             CLOB,
+    created_at                DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_trend_profit_protection_position_time (position_id, created_at),
+    INDEX idx_trend_profit_protection_account_time (account_label, created_at)
 );
 
 -- Immutable factor evidence for a combined trend candidate. Policy and position rows reference this record;

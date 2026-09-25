@@ -23,6 +23,7 @@ import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendProfitProtectionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
@@ -101,6 +102,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendMirrorExecutor mirrorExecutor;
     private final HtxSwapFeeRateResolver feeRateResolver;
     private final HtxTrendExitDecisionEngine exitDecisionEngine = new HtxTrendExitDecisionEngine();
+    private final HtxTrendProfitProtectionPlanner profitProtectionPlanner = new HtxTrendProfitProtectionPlanner();
     private HtxTrendCombinationService combinationService;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
@@ -1360,13 +1362,15 @@ public class HtxTrendFollowingService {
                         + feeProtectionMessage(feeProtectedStop) + " " + exitSnapshot.summary()),
                 exitSnapshot.state(), exitSnapshot.currentNet(), exitSnapshot.mfe(), exitSnapshot.mae(),
                 exitSnapshot.giveback(), exitSnapshot.bars(), exitSnapshot.candidates());
+        HtxTrendProfitProtectionPlanner.Plan profitProtectionPlan = observeProfitProtection(position, reference,
+                highest, lowest, signal);
         BigDecimal engineProtectionPrice = exitEngineProtectionPrice(position, trailingStop);
         HtxTrendExitDecisionEngine.Decision engineDecision = exitEngineDecision(position, signal, reference, highest, lowest,
                 engineProtectionPrice, exitSnapshot);
         if (engineDecision != null) {
             if (!exitEngineLiveFor(position)) {
                 persistExitEngineState(position, engineDecision);
-                recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision, profitProtectionPlan,
                         "OBSERVE", exitEngineBlockReason(position));
                 // A model-routed position has a single exit owner even during observation. Allowing the legacy
                 // FLAT/ATR branch to submit an order here would make the recorded decision differ from execution.
@@ -1378,7 +1382,7 @@ public class HtxTrendFollowingService {
                 if (engineDecision.action() == HtxTrendExitDecisionEngine.Action.FULL_CLOSE) {
                     RunResult result = closePosition(position, exitEngineReason(exitEngineCategory(engineDecision),
                             "model-routed " + engineDecision.reason()));
-                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision, profitProtectionPlan,
                             result.code() == RunCode.CLOSE_SENT ? engineDecision.action().name() : "NOT_EXECUTED",
                             result.code() == RunCode.CLOSE_SENT ? null : result.message());
                     return result;
@@ -1387,15 +1391,15 @@ public class HtxTrendFollowingService {
                     PartialExitDecision partial = dynamicPartialExitDecision(position, engineDecision);
                     if (partial.triggered()) {
                         RunResult result = partialClosePosition(position, partial, clip("model-routed " + engineDecision.reason()));
-                        recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                        recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision, profitProtectionPlan,
                                 result.code() == RunCode.PARTIAL_CLOSE_SENT ? engineDecision.action().name() : "NOT_EXECUTED",
                                 result.code() == RunCode.PARTIAL_CLOSE_SENT ? null : result.message());
                         return result;
                     }
-                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision, profitProtectionPlan,
                             "NOT_EXECUTED", "target remaining exposure cannot form a valid reduce-only order");
                 } else {
-                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision,
+                    recordExitEngineDecision(position, reference, engineProtectionPrice, exitSnapshot, engineDecision, profitProtectionPlan,
                             engineDecision.action().name(), null);
                 }
                 // A live model-routed Fibonacci decision owns the whole exit choice. Falling through to the
@@ -3142,6 +3146,7 @@ public class HtxTrendFollowingService {
 
     private void recordExitEngineDecision(HtxTrendPositionEntity position, BigDecimal reference, BigDecimal protectionPrice,
                                           ExitSnapshot snapshot, HtxTrendExitDecisionEngine.Decision decision,
+                                          HtxTrendProfitProtectionPlanner.Plan profitProtectionPlan,
                                           String executedAction, String executionBlockReason) {
         if (position == null || position.getId() == null || decision == null) {
             return;
@@ -3168,10 +3173,83 @@ public class HtxTrendFollowingService {
         entity.setMaeNetPnl(snapshot.mae());
         entity.setGivebackRate(snapshot.giveback());
         entity.setMaxFavorableR(decision.maxFavorableR());
+        if (profitProtectionPlan != null) {
+            entity.setProfitProtectionMfePrice(profitProtectionPlan.mfePrice());
+            entity.setProjectedLockedNetPnl(profitProtectionPlan.projectedLockedNetPnl());
+            entity.setMfeCaptureRatio(profitProtectionPlan.mfeCaptureRatio());
+            entity.setProtectionMode(profitProtectionPlan.mode());
+            entity.setExecutionReadiness("OBSERVE_ONLY");
+        }
         entity.setTargetRemainingContracts(decision.targetRemainingContracts() < 0 ? null
                 : decision.targetRemainingContracts());
         entity.setEvidenceJson(decision.evidenceJson());
         recorder.recordExitDecision(entity);
+    }
+
+    /** P0 records a restart-safe MFE protection recommendation only; it cannot submit or alter an exchange order. */
+    private HtxTrendProfitProtectionPlanner.Plan observeProfitProtection(HtxTrendPositionEntity position,
+                                                                           BigDecimal reference, BigDecimal highest,
+                                                                           BigDecimal lowest, TrendSignal signal) {
+        if (!properties.isProfitProtectionEnabled() || position == null || position.getId() == null
+                || !HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION.equals(position.getPrimaryModel())) {
+            return null;
+        }
+        HtxTrendProfitProtectionPlanner.Plan plan = profitProtectionPlanner.evaluate(new HtxTrendProfitProtectionPlanner.Input(
+                position.getSide(), remainingContractVolume(position), position.getContractSize(), position.getEntryAvgPrice(),
+                highest, lowest, reference, signal.atr(), exitEngineEntryFee(position), estimatedCloseFee(position, reference),
+                position.getProfitProtectionPrice(), new HtxTrendProfitProtectionPlanner.Policy(
+                properties.getIntradayProfitArmAtrMultiplier(), properties.getIntradayProfitLockAtrMultiplier(),
+                properties.getIntradayProfitProtectionNoiseAtrMultiplier(), properties.getIntradayProfitMfeLockRatio(),
+                properties.getIntradayProfitMinNetFeeMultiple())));
+        if (!plan.armed()) {
+            return plan;
+        }
+        boolean firstArm = !positive(position.getProfitProtectionPrice());
+        boolean ratcheted = !firstArm && tighterProtection(position.getSide(), plan.protectionPrice(),
+                position.getProfitProtectionPrice());
+        recorder.updateProfitProtectionState(position.getId(), plan.mfePrice(), plan.mfeNetPnl(), plan.protectionPrice(),
+                plan.projectedLockedNetPnl(), plan.mfeCaptureRatio(), plan.mode());
+        if (firstArm || ratcheted) {
+            HtxTrendProfitProtectionEventEntity event = new HtxTrendProfitProtectionEventEntity();
+            event.setEventKey(position.getId() + ":" + UUID.randomUUID());
+            event.setPositionId(position.getId());
+            event.setRunId(position.getRunId());
+            event.setAccountId(position.getAccountId());
+            event.setAccountLabel(position.getAccountLabel() == null ? "primary" : position.getAccountLabel());
+            event.setContractCode(position.getContractCode());
+            event.setSide(position.getSide());
+            event.setPrimaryModel(position.getPrimaryModel());
+            event.setEventType(firstArm ? "ARMED" : "RATCHETED");
+            event.setProtectionMode(plan.mode());
+            event.setReferencePrice(reference);
+            event.setMfePrice(plan.mfePrice());
+            event.setMfeNetPnl(plan.mfeNetPnl());
+            event.setProtectionPrice(plan.protectionPrice());
+            event.setProjectedLockedNetPnl(plan.projectedLockedNetPnl());
+            event.setMfeCaptureRatio(plan.mfeCaptureRatio());
+            event.setExecutionReadiness("OBSERVE_ONLY");
+            event.setReason("P0 MFE profit-protection recommendation; no HTX order submitted");
+            event.setEvidenceJson(profitProtectionEvidence(plan));
+            recorder.recordProfitProtectionEvent(event);
+        }
+        return plan;
+    }
+
+    private static boolean tighterProtection(String side, BigDecimal candidate, BigDecimal current) {
+        if (!positive(candidate) || !positive(current)) {
+            return false;
+        }
+        return LONG.equals(side) ? candidate.compareTo(current) > 0 : candidate.compareTo(current) < 0;
+    }
+
+    private static String profitProtectionEvidence(HtxTrendProfitProtectionPlanner.Plan plan) {
+        return "{\"schema\":\"trend-profit-protection-v1\",\"armed\":" + plan.armed()
+                + ",\"mfePrice\":" + fmt(plan.mfePrice()) + ",\"mfeNetPnl\":" + fmt(plan.mfeNetPnl())
+                + ",\"costFloorPrice\":" + fmt(plan.costFloorPrice()) + ",\"mfeProtectionPrice\":"
+                + fmt(plan.mfeProtectionPrice()) + ",\"protectionPrice\":" + fmt(plan.protectionPrice())
+                + ",\"projectedLockedNetPnl\":" + fmt(plan.projectedLockedNetPnl()) + ",\"mfeCaptureRatio\":"
+                + fmt(plan.mfeCaptureRatio()) + ",\"allowedGiveback\":" + fmt(plan.allowedGiveback())
+                + ",\"mode\":\"" + plan.mode() + "\"}";
     }
 
     private static String exitEngineCategory(HtxTrendExitDecisionEngine.Decision decision) {

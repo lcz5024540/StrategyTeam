@@ -224,6 +224,12 @@ public class HtxTrendProperties {
     /** During the first gray release, never apply model-routed exits to the mirrored account. */
     private boolean exitEnginePrimaryAccountOnly = true;
 
+    /** Enables read-only MFE profit-protection recommendations and their audit ledger. */
+    private boolean profitProtectionEnabled = false;
+
+    /** Reserved for the later conditional-order/high-frequency execution rollout. */
+    private boolean profitProtectionLiveEnabled = false;
+
     /**
      * For intraday Fibonacci positions, arm profit protection after this many entry-timeframe ATRs.
      * This is deliberately independent from the structural initial stop used for invalidation and sizing.
@@ -232,6 +238,12 @@ public class HtxTrendProperties {
 
     /** Extra ATR retained above the all-in cost price when an intraday profit lock is armed. */
     private BigDecimal intradayProfitLockAtrMultiplier = new BigDecimal("0.15");
+
+    /** Share of peak favorable price movement that P0 recommends retaining once protection is armed. */
+    private BigDecimal intradayProfitMfeLockRatio = new BigDecimal("0.50");
+
+    /** Minimum ATR noise band allowed below/above the MFE-protection price. */
+    private BigDecimal intradayProfitProtectionNoiseAtrMultiplier = new BigDecimal("0.40");
 
     /** Minimum favorable excursion before an intraday position may reduce on a confirmed pullback. */
     private BigDecimal intradayProfitPartialAtrMultiplier = new BigDecimal("0.75");

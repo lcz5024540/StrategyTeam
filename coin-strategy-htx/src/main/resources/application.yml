@@ -193,8 +193,12 @@ htx:
     exit-engine-enabled: ${HTX_TREND_EXIT_ENGINE_ENABLED:${HTX_TREND_EXIT_ENGINE_V2_ENABLED:false}}
     exit-engine-live-enabled: ${HTX_TREND_EXIT_ENGINE_LIVE_ENABLED:${HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED:false}}
     exit-engine-primary-account-only: ${HTX_TREND_EXIT_ENGINE_PRIMARY_ACCOUNT_ONLY:${HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY:true}}
+    profit-protection-enabled: ${HTX_TREND_PROFIT_PROTECTION_ENABLED:false}
+    profit-protection-live-enabled: ${HTX_TREND_PROFIT_PROTECTION_LIVE_ENABLED:false}
     intraday-profit-arm-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER:0.50}
     intraday-profit-lock-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_LOCK_ATR_MULTIPLIER:0.15}
+    intraday-profit-mfe-lock-ratio: ${HTX_TREND_INTRADAY_PROFIT_MFE_LOCK_RATIO:0.50}
+    intraday-profit-protection-noise-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PROTECTION_NOISE_ATR_MULTIPLIER:0.40}
     intraday-profit-partial-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PARTIAL_ATR_MULTIPLIER:0.75}
     intraday-profit-pullback-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PULLBACK_ATR_MULTIPLIER:0.40}
     intraday-profit-min-net-fee-multiple: ${HTX_TREND_INTRADAY_PROFIT_MIN_NET_FEE_MULTIPLE:2.00}

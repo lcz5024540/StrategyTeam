@@ -3,6 +3,8 @@ package com.metaverse.coin.strategy.htx.persistence;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendExitDecisionMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendProfitProtectionEventMapper;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendProfitProtectionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
@@ -49,6 +51,8 @@ public class HtxTrendRecorder {
     private final HtxTrendCombinationRecorder combinationRecorder;
     @Autowired(required = false)
     private HtxTrendExitDecisionMapper exitDecisionMapper;
+    @Autowired(required = false)
+    private HtxTrendProfitProtectionEventMapper profitProtectionEventMapper;
 
     public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
                             HtxTrendSignalMapper signalMapper) {
@@ -265,6 +269,33 @@ public class HtxTrendRecorder {
         } catch (RuntimeException ex) {
             log.warn("trend exit-engine decision persistence failed positionId={} key={}",
                     decision.getPositionId(), decision.getDecisionKey(), ex);
+        }
+    }
+
+    /** Persists a read-only profit-protection recommendation without touching any exchange order. */
+    public void updateProfitProtectionState(long id, BigDecimal mfePrice, BigDecimal mfeNetPnl,
+                                            BigDecimal protectionPrice, BigDecimal projectedLockedNetPnl,
+                                            BigDecimal mfeCaptureRatio, String protectionMode) {
+        try {
+            positionMapper.updateProfitProtectionState(id, mfePrice, mfeNetPnl, protectionPrice,
+                    projectedLockedNetPnl, mfeCaptureRatio, protectionMode);
+        } catch (RuntimeException ex) {
+            log.warn("trend profit-protection state persistence failed positionId={}", id, ex);
+        }
+    }
+
+    /** Appends a protection lifecycle event; diagnostics must never block the existing risk path. */
+    public void recordProfitProtectionEvent(HtxTrendProfitProtectionEventEntity event) {
+        if (event == null || profitProtectionEventMapper == null) {
+            return;
+        }
+        try {
+            event.setReason(clip(event.getReason()));
+            event.setEvidenceJson(clip(event.getEvidenceJson(), 12_000));
+            profitProtectionEventMapper.insert(event);
+        } catch (RuntimeException ex) {
+            log.warn("trend profit-protection event persistence failed positionId={} key={}",
+                    event.getPositionId(), event.getEventKey(), ex);
         }
     }
 

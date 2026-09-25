@@ -35,6 +35,11 @@ public class HtxTrendExitDecisionEntity {
     private BigDecimal maeNetPnl;
     private BigDecimal givebackRate;
     private BigDecimal maxFavorableR;
+    private BigDecimal profitProtectionMfePrice;
+    private BigDecimal projectedLockedNetPnl;
+    private BigDecimal mfeCaptureRatio;
+    private String protectionMode;
+    private String executionReadiness;
     private Long targetRemainingContracts;
     private String evidenceJson;
     private LocalDateTime createdAt;

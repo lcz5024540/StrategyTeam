@@ -24,7 +24,9 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "entry_hypothesis, invalidation_price, target_zone_low, target_zone_high, expected_r_multiple, momentum_quality_score, "
             + "exit_snapshot_state, exit_snapshot_net, exit_snapshot_mfe, exit_snapshot_mae, exit_snapshot_giveback, "
             + "exit_snapshot_bars, exit_snapshot_candidates, exit_snapshot_updated_at, exit_phase, trailing_armed_at, "
-            + "trailing_arm_reason, max_favorable_r, profit_lock_price, exit_engine_version, "
+            + "trailing_arm_reason, max_favorable_r, profit_lock_price, profit_protection_mfe_price, "
+            + "profit_protection_mfe_net_pnl, profit_protection_price, profit_protection_projected_net_pnl, "
+            + "profit_protection_capture_ratio, profit_protection_mode, profit_protection_updated_at, exit_engine_version, "
             + "exit_attribution_snapshot_id, created_at, updated_at";
 
     @Select("SELECT " + COLUMNS + " FROM htx_trend_position WHERE contract_code = #{contractCode} "
@@ -106,6 +108,27 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                               @Param("maxFavorableR") BigDecimal maxFavorableR,
                               @Param("profitLockPrice") BigDecimal profitLockPrice,
                               @Param("exitEngineVersion") String exitEngineVersion);
+
+    /** P0 only persists a monotonic MFE protection recommendation; it never creates an exchange order. */
+    @Update("UPDATE htx_trend_position SET "
+            + "profit_protection_mfe_price = CASE WHEN profit_protection_mfe_price IS NULL THEN #{mfePrice} "
+            + "WHEN side = 'LONG' THEN GREATEST(profit_protection_mfe_price, #{mfePrice}) "
+            + "WHEN side = 'SHORT' THEN LEAST(profit_protection_mfe_price, #{mfePrice}) ELSE profit_protection_mfe_price END, "
+            + "profit_protection_mfe_net_pnl = CASE WHEN profit_protection_mfe_net_pnl IS NULL "
+            + "OR profit_protection_mfe_net_pnl < #{mfeNetPnl} THEN #{mfeNetPnl} ELSE profit_protection_mfe_net_pnl END, "
+            + "profit_protection_price = CASE WHEN profit_protection_price IS NULL THEN #{protectionPrice} "
+            + "WHEN side = 'LONG' THEN GREATEST(profit_protection_price, #{protectionPrice}) "
+            + "WHEN side = 'SHORT' THEN LEAST(profit_protection_price, #{protectionPrice}) ELSE profit_protection_price END, "
+            + "profit_protection_projected_net_pnl = #{projectedLockedNetPnl}, "
+            + "profit_protection_capture_ratio = #{mfeCaptureRatio}, profit_protection_mode = #{protectionMode}, "
+            + "profit_protection_updated_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
+    int updateProfitProtectionState(@Param("id") long id,
+                                    @Param("mfePrice") BigDecimal mfePrice,
+                                    @Param("mfeNetPnl") BigDecimal mfeNetPnl,
+                                    @Param("protectionPrice") BigDecimal protectionPrice,
+                                    @Param("projectedLockedNetPnl") BigDecimal projectedLockedNetPnl,
+                                    @Param("mfeCaptureRatio") BigDecimal mfeCaptureRatio,
+                                    @Param("protectionMode") String protectionMode);
 
     @Update("UPDATE htx_trend_position SET status = 'CLOSE_SENT', exit_reason = #{exitReason}, "
             + "close_client_order_id = #{clientOrderId}, close_order_id = #{orderId}, message = #{message}, "

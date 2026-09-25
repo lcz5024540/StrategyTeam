@@ -1,7 +1,7 @@
 # HTX 趋势策略 MFE 利润保护与可执行退出计划 v1
 
 > 日期：2026-09-25  
-> 状态：待实现；不部署、不改变真实订单。  
+> 状态：P0 代码完成，待执行追加式 SQL 与只读部署；不改变真实订单。
 > 范围：先覆盖 `FIB_PULLBACK_CONTINUATION / INTRADAY_15M`，再按同一合同扩展至 Donchian 和 EMA/动量。  
 > 前置事实：`fib-exit-engine-v3` 已解决 FIB 仓位被旧 FLAT/ATR 链路抢先平仓的问题；它**尚未构成利润保护**。
 
@@ -77,6 +77,8 @@ MFE 保护价 = highest_price - 动态允许回吐
 
 **验收**：LTC 161、ZEC、XRP、DOGE、SUI 均能生成逐轮保护轨迹；任何一次保护价被放松或历史 MFE 被覆盖均使测试失败。
 
+**2026-09-25 实施状态**：已新增纯 `HtxTrendProfitProtectionPlanner`、仓位侧单向 MFE 保护状态、不可变 `htx_trend_profit_protection_event` 和追加式迁移 `2026-09-25__htx_trend_mfe_profit_protection.sql`。默认 `HTX_TREND_PROFIT_PROTECTION_ENABLED=false`；即使开启也只写 `OBSERVE_ONLY` 决策和事件，不创建、修改或撤销 HTX 委托。LTC 161 单测固定验证 `74.74` MFE 映射为 `73.83` 保护价、预计锁住收益大于 `1U`，且价格回落后保护价不放松。
+
 ### P1：本地动态减仓和 runner
 
 **目的**：在趋势转弱时先兑现一部分，不再只有整仓持有或整仓市价平仓。
@@ -141,4 +143,3 @@ HTX_TREND_PROFIT_PROTECTION_PRICE_WATCHER_ENABLED=false
 - 不以固定 1R、固定 33% 或“盈利即平”替代动态保护。
 - 不在未完成条件单语义验证前宣称轮询市价单能保证保护成交价。
 - 不部署、不启用真实 MFE 保护、不调整账户风险或杠杆。
-
