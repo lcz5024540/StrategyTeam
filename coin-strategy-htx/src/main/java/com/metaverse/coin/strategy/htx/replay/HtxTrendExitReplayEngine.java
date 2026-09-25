@@ -59,8 +59,8 @@ public final class HtxTrendExitReplayEngine {
         for (Candle candle : candles) {
             highest = highest.max(candle.high());
             lowest = lowest.min(candle.low());
-            mfe = max(mfe, favorablePnl(input, highest, input.contractVolume()));
-            mae = min(mae, favorablePnl(input, lowest, input.contractVolume()));
+            mfe = max(mfe, favorablePnl(input, favorableExtreme(input.side(), highest, lowest), input.contractVolume()));
+            mae = min(mae, favorablePnl(input, adverseExtreme(input.side(), highest, lowest), input.contractVolume()));
 
             boolean stopHit = HtxTrendExitRules.crossedStop(input.side(), adversePrice(input.side(), candle), input.stopPrice());
             boolean oneRHit = HtxTrendExitRules.targetReached(input.side(), favorablePrice(input.side(), candle), oneR);
@@ -170,6 +170,14 @@ public final class HtxTrendExitReplayEngine {
 
     private static BigDecimal fee(BigDecimal price, BigDecimal quantity, BigDecimal rate) {
         return price.multiply(quantity).multiply(rate);
+    }
+
+    private static BigDecimal favorableExtreme(String side, BigDecimal highest, BigDecimal lowest) {
+        return HtxTrendExitRules.LONG.equals(side) ? highest : lowest;
+    }
+
+    private static BigDecimal adverseExtreme(String side, BigDecimal highest, BigDecimal lowest) {
+        return HtxTrendExitRules.LONG.equals(side) ? lowest : highest;
     }
 
     private static BigDecimal favorablePrice(String side, Candle candle) {

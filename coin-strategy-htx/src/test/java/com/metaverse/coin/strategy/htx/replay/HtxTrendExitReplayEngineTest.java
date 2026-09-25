@@ -92,6 +92,20 @@ class HtxTrendExitReplayEngineTest {
     }
 
     @Test
+    void recordsShortMfeFromLowsAndMaeFromHighs() {
+        HtxTrendExitReplayEngine.Input shortInput = new HtxTrendExitReplayEngine.Input("SHORT", 1L,
+                new BigDecimal("100"), new BigDecimal("110"), new BigDecimal("85"), new BigDecimal("2"),
+                BigDecimal.ONE, 10L, new BigDecimal("0.04"), new BigDecimal("0.0004"),
+                new BigDecimal("0.33"), new BigDecimal("0.50"));
+
+        HtxTrendExitReplayEngine.Outcome outcome = engine.replay(shortInput,
+                List.of(candle(2, "100", "106", "94", "100")), Map.of(2L, 0));
+
+        assertEquals(new BigDecimal("60"), outcome.mfe());
+        assertEquals(new BigDecimal("-60"), outcome.mae());
+    }
+
+    @Test
     void refusesToProducePnlWithoutCostEvidence() {
         HtxTrendExitReplayEngine.Input incomplete = new HtxTrendExitReplayEngine.Input("LONG", 1L,
                 new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("115"), new BigDecimal("2"),
