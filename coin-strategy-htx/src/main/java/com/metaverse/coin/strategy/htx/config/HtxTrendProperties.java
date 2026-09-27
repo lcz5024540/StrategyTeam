@@ -251,6 +251,9 @@ public class HtxTrendProperties {
     /** Pullback from MFE, in entry-timeframe ATRs, required before an intraday partial exit is considered. */
     private BigDecimal intradayProfitPullbackAtrMultiplier = new BigDecimal("0.40");
 
+    /** Completed entry-timeframe closes required beyond an armed protection price before it may execute. */
+    private int intradayProfitProtectionBreachConfirmationBars = 2;
+
     /** Current net profit must exceed this many estimated closing fees before profit protection is armed. */
     private BigDecimal intradayProfitMinNetFeeMultiple = new BigDecimal("2.00");
 

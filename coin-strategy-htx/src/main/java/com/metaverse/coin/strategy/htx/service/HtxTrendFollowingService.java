@@ -3111,6 +3111,11 @@ public class HtxTrendFollowingService {
         BigDecimal estimatedCloseFee = estimatedCloseFee(position, reference);
         int requiredFlatBars = Math.max(1, properties.getFlatLossExitConfirmationBars());
         int flatStreak = (int) countConsecutiveFlatSignals(position, requiredFlatBars);
+        int requiredProtectionBreachBars = Math.max(1, properties.getIntradayProfitProtectionBreachConfirmationBars());
+        int protectionBreachBars = (int) recorder.countConsecutiveProtectionBreaches(position.getContractCode(),
+                properties.getPeriod(), position.getSide(), protectionPrice,
+                position.getTrailingArmedAt() == null ? position.getCreatedAt() : position.getTrailingArmedAt(),
+                requiredProtectionBreachBars);
         return exitDecisionEngine.evaluate(new HtxTrendExitDecisionEngine.Input(position.getPrimaryModel(), position.getSide(),
                 remainingContractVolume(position), position.getContractSize(), position.getEntryAvgPrice(), position.getStopPrice(),
                 position.getInvalidationPrice(), structuralTarget, reference, protectionPrice, highest, lowest, signal.atr(),
@@ -3120,7 +3125,7 @@ public class HtxTrendFollowingService {
                 new HtxTrendExitDecisionEngine.ProfitProtectionPolicy(
                         properties.getIntradayProfitArmAtrMultiplier(), properties.getIntradayProfitLockAtrMultiplier(),
                         properties.getIntradayProfitPartialAtrMultiplier(), properties.getIntradayProfitPullbackAtrMultiplier(),
-                        properties.getIntradayProfitMinNetFeeMultiple())));
+                        properties.getIntradayProfitMinNetFeeMultiple(), requiredProtectionBreachBars), protectionBreachBars));
     }
 
     /** A durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */

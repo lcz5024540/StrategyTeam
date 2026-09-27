@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
  */
 public final class HtxTrendExitDecisionEngine {
 
-    public static final String VERSION = "fib-exit-engine-v3";
+    public static final String VERSION = "fib-exit-engine-v4";
     public static final String FIB_PULLBACK_CONTINUATION = "FIB_PULLBACK_CONTINUATION";
 
     public Decision evaluate(Input input) {
@@ -43,6 +43,7 @@ public final class HtxTrendExitDecisionEngine {
         boolean earlyPullback = positive(input.atr())
                 && adverseFromBest.compareTo(input.atr().multiply(policy.pullbackAtrMultiplier())) >= 0;
         boolean dynamicPullback = positive(input.atr()) && adverseFromBest.compareTo(input.atr()) >= 0;
+        int reversalEvidence = reversalEvidence(input, earlyPullback);
         boolean milestone = profitable && (structureTargetReached || riskRewardMilestone || atrProfitMilestone);
         LocalDateTime armedAt = input.trailingArmedAt();
         String armReason = input.trailingArmReason();
@@ -62,15 +63,7 @@ public final class HtxTrendExitDecisionEngine {
         if (invalidated) {
             return new Decision("INVALIDATED", Action.FULL_CLOSE, 0L, null, computedMaxR, armedAt, armReason,
                     "model-or-initial-stop-invalidated", evidence(input, computedMaxR, dynamicPullback, earlyPullback,
-                    profitArmDistance, profitLockPrice, effectiveProtection, 3, null));
-        }
-
-        boolean protectionCrossed = !newlyArmed && armedAt != null
-                && crossed(input.side(), input.referencePrice(), effectiveProtection);
-        if (protectionCrossed) {
-            return new Decision("RUNNER", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR, armedAt, armReason,
-                    "armed-protection-crossed", evidence(input, computedMaxR, dynamicPullback, earlyPullback,
-                    profitArmDistance, profitLockPrice, effectiveProtection, 3, null));
+                    profitArmDistance, profitLockPrice, effectiveProtection, reversalEvidence, null));
         }
 
         boolean flatLossBudgetExceeded = armedAt == null && input.signalSide() == TrendSide.FLAT
@@ -85,10 +78,41 @@ public final class HtxTrendExitDecisionEngine {
                             effectiveProtection, 0, null));
         }
 
-        int reversalEvidence = reversalEvidence(input, earlyPullback);
         BigDecimal expectedReward = expectedReward(input);
         BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
         boolean continuationWorthHolding = expectedReward.compareTo(protectedRisk) > 0 && reversalEvidence <= 1;
+
+        // A profit-protection line is not a stop-market order.  It first needs completed-bar confirmation,
+        // then independent evidence that the Fibonacci continuation thesis is weakening.  This prevents one
+        // 15-minute wick or scheduler reference price from liquidating a still-valid runner.
+        boolean protectionBreached = !newlyArmed && armedAt != null && input.protectionBreachBars() > 0;
+        boolean protectionBreachConfirmed = protectionBreached
+                && input.protectionBreachBars() >= policy.protectionBreachConfirmationBars();
+        if (protectionBreached && !protectionBreachConfirmed) {
+            return new Decision("PROFIT_AT_RISK", Action.ARM_TRAILING, -1L, effectiveProtection, computedMaxR,
+                    armedAt, armReason, "armed-protection-breach-awaiting-bar-confirmation",
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
+        }
+        if (protectionBreachConfirmed) {
+            if (reversalEvidence < 2) {
+                return new Decision("PROFIT_AT_RISK", Action.ARM_TRAILING, -1L, effectiveProtection, computedMaxR,
+                        armedAt, armReason, "armed-protection-breach-insufficient-reversal-evidence",
+                        evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                                effectiveProtection, reversalEvidence, expectedReward));
+            }
+            long targetRemaining = targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk);
+            if (!profitable || targetRemaining <= 0L) {
+                return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
+                        armedAt, armReason, "confirmed-protection-breach-with-reversal-evidence",
+                        evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                                effectiveProtection, reversalEvidence, expectedReward));
+            }
+            return new Decision("PROFIT_AT_RISK", Action.PARTIAL_CLOSE, targetRemaining, effectiveProtection,
+                    computedMaxR, armedAt, armReason, "confirmed-protection-breach-with-reversal-evidence",
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
+        }
 
         if (profitable && partialQualified && earlyPullback && reversalEvidence >= 2 && !continuationWorthHolding) {
             long targetRemaining = targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk);
@@ -152,8 +176,8 @@ public final class HtxTrendExitDecisionEngine {
         BigDecimal move = HtxTrendExitRules.LONG.equals(input.side())
                 ? input.referencePrice().subtract(protectionPrice)
                 : protectionPrice.subtract(input.referencePrice());
-        return move.signum() > 0 ? move.multiply(input.contractSize()).multiply(BigDecimal.valueOf(input.remainingContracts()))
-                .add(zero(input.estimatedCloseFee())) : BigDecimal.ZERO;
+        return move.abs().multiply(input.contractSize()).multiply(BigDecimal.valueOf(input.remainingContracts()))
+                .add(zero(input.estimatedCloseFee()));
     }
 
     /** Retain more only when remaining structure reward is materially larger than protected loss. */
@@ -169,14 +193,17 @@ public final class HtxTrendExitDecisionEngine {
                                    int reversalEvidence,
                                    BigDecimal expectedReward) {
         BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
-        return "{\"schema\":\"trend-exit-decision-v3\",\"model\":\"FIB_PULLBACK_CONTINUATION\","
+        return "{\"schema\":\"trend-exit-decision-v4\",\"model\":\"FIB_PULLBACK_CONTINUATION\","
                 + "\"signal\":\"" + input.signalSide().name() + "\",\"dynamicPullback\":" + dynamicPullback
                 + ",\"earlyPullback\":" + earlyPullback + ",\"profitArmDistance\":" + number(profitArmDistance)
                 + ",\"profitLockPrice\":" + number(profitLockPrice) + ",\"effectiveProtectionPrice\":"
                 + number(effectiveProtection)
                 + ",\"entryFee\":" + number(input.entryFee()) + ",\"estimatedCloseFee\":"
                 + number(input.estimatedCloseFee())
-                + ",\"reversalEvidence\":" + reversalEvidence + ",\"majorTimeframeOpposition\":"
+                + ",\"reversalEvidence\":" + reversalEvidence + ",\"protectionBreachBars\":"
+                + input.protectionBreachBars() + ",\"requiredProtectionBreachBars\":"
+                + policy(input.profitProtectionPolicy()).protectionBreachConfirmationBars()
+                + ",\"majorTimeframeOpposition\":"
                 + input.majorTimeframeOpposition() + ",\"marketContextOpposes\":" + input.marketContextOpposes()
                 + ",\"maxFavorableR\":" + number(maxR) + ",\"expectedReward\":" + number(expectedReward)
                 + ",\"protectedRisk\":" + number(protectedRisk) + ",\"flatStreak\":" + input.flatStreak()
@@ -263,7 +290,23 @@ public final class HtxTrendExitDecisionEngine {
                         BigDecimal estimatedCloseFee,
                         LocalDateTime trailingArmedAt, String trailingArmReason, BigDecimal maxFavorableR,
                         LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
-                        BigDecimal flatLossBudget, ProfitProtectionPolicy profitProtectionPolicy) {
+                        BigDecimal flatLossBudget, ProfitProtectionPolicy profitProtectionPolicy,
+                        int protectionBreachBars) {
+        public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
+                     BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
+                     BigDecimal structureTargetPrice, BigDecimal referencePrice, BigDecimal protectionPrice,
+                     BigDecimal highestPrice, BigDecimal lowestPrice, BigDecimal atr, TrendSide signalSide,
+                     BigDecimal emaFast, BigDecimal emaSlow, int majorTimeframeOpposition,
+                     boolean marketContextOpposes, BigDecimal currentNetPnl, BigDecimal entryFee,
+                     BigDecimal estimatedCloseFee, LocalDateTime trailingArmedAt, String trailingArmReason,
+                     BigDecimal maxFavorableR, LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
+                     BigDecimal flatLossBudget, ProfitProtectionPolicy profitProtectionPolicy) {
+            this(primaryModel, side, remainingContracts, contractSize, entryPrice, initialStopPrice, invalidationPrice,
+                    structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
+                    emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
+                    estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
+                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, 0);
+        }
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
                      BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
                      BigDecimal structureTargetPrice, BigDecimal referencePrice, BigDecimal protectionPrice,
@@ -277,7 +320,7 @@ public final class HtxTrendExitDecisionEngine {
                     structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
                     estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
-                    requiredFlatStreak, flatLossBudget, ProfitProtectionPolicy.intradayDefaults());
+                    requiredFlatStreak, flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0);
         }
 
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
@@ -293,16 +336,30 @@ public final class HtxTrendExitDecisionEngine {
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, estimatedCloseFee,
                     estimatedCloseFee,
                     trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak, requiredFlatStreak,
-                    flatLossBudget, ProfitProtectionPolicy.intradayDefaults());
+                    flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0);
+        }
+
+        public Input withProtectionBreachBars(int breachBars) {
+            return new Input(primaryModel, side, remainingContracts, contractSize, entryPrice, initialStopPrice,
+                    invalidationPrice, structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice,
+                    atr, signalSide, emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl,
+                    entryFee, estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt,
+                    flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, breachBars);
         }
     }
 
     public record ProfitProtectionPolicy(BigDecimal armAtrMultiplier, BigDecimal lockAtrMultiplier,
                                          BigDecimal partialAtrMultiplier, BigDecimal pullbackAtrMultiplier,
-                                         BigDecimal minNetFeeMultiple) {
+                                         BigDecimal minNetFeeMultiple, int protectionBreachConfirmationBars) {
+        public ProfitProtectionPolicy(BigDecimal armAtrMultiplier, BigDecimal lockAtrMultiplier,
+                                      BigDecimal partialAtrMultiplier, BigDecimal pullbackAtrMultiplier,
+                                      BigDecimal minNetFeeMultiple) {
+            this(armAtrMultiplier, lockAtrMultiplier, partialAtrMultiplier, pullbackAtrMultiplier,
+                    minNetFeeMultiple, 2);
+        }
         public static ProfitProtectionPolicy intradayDefaults() {
             return new ProfitProtectionPolicy(new BigDecimal("0.50"), new BigDecimal("0.15"),
-                    new BigDecimal("0.75"), new BigDecimal("0.40"), new BigDecimal("2.00"));
+                    new BigDecimal("0.75"), new BigDecimal("0.40"), new BigDecimal("2.00"), 2);
         }
 
         ProfitProtectionPolicy normalized() {
@@ -311,7 +368,9 @@ public final class HtxTrendExitDecisionEngine {
                     nonNegativeOr(lockAtrMultiplier, defaults.lockAtrMultiplier),
                     nonNegativeOr(partialAtrMultiplier, defaults.partialAtrMultiplier),
                     nonNegativeOr(pullbackAtrMultiplier, defaults.pullbackAtrMultiplier),
-                    nonNegativeOr(minNetFeeMultiple, defaults.minNetFeeMultiple));
+                    nonNegativeOr(minNetFeeMultiple, defaults.minNetFeeMultiple),
+                    protectionBreachConfirmationBars <= 0 ? defaults.protectionBreachConfirmationBars
+                            : protectionBreachConfirmationBars);
         }
 
         private static BigDecimal nonNegativeOr(BigDecimal value, BigDecimal fallback) {

@@ -15,7 +15,7 @@ class HtxTrendExitDecisionEngineTest {
     private final HtxTrendExitDecisionEngine engine = new HtxTrendExitDecisionEngine();
 
     @Test
-    void suiLikeRunnerArmsAtMilestoneAndClosesAfterLaterProtectionCross() {
+    void protectionBreachNeedsTwoClosedBarsAndIndependentReversalEvidence() {
         LocalDateTime armedAt = LocalDateTime.of(2026, 9, 24, 0, 1);
         HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(suiInput(new BigDecimal("0.9380"), null, armedAt));
 
@@ -23,11 +23,22 @@ class HtxTrendExitDecisionEngineTest {
         assertNotNull(armed.trailingArmedAt());
         assertTrue(armed.maxFavorableR().compareTo(BigDecimal.ONE) > 0);
 
-        HtxTrendExitDecisionEngine.Decision exited = engine.evaluate(suiInput(new BigDecimal("0.9730"), armed.trailingArmedAt(),
-                LocalDateTime.of(2026, 9, 24, 0, 15)));
+        HtxTrendExitDecisionEngine.Decision oneBar = engine.evaluate(suiInput(new BigDecimal("0.9730"), armed.trailingArmedAt(),
+                LocalDateTime.of(2026, 9, 24, 0, 15)).withProtectionBreachBars(1));
 
-        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, exited.action());
-        assertEquals("armed-protection-crossed", exited.reason());
+        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, oneBar.action());
+        assertEquals("armed-protection-breach-awaiting-bar-confirmation", oneBar.reason());
+
+        HtxTrendExitDecisionEngine.Decision insufficientEvidence = engine.evaluate(suiInput(new BigDecimal("0.9730"),
+                armed.trailingArmedAt(), LocalDateTime.of(2026, 9, 24, 0, 30)).withProtectionBreachBars(2));
+        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, insufficientEvidence.action());
+        assertEquals("armed-protection-breach-insufficient-reversal-evidence", insufficientEvidence.reason());
+
+        HtxTrendExitDecisionEngine.Decision confirmed = engine.evaluate(suiInput(new BigDecimal("0.9730"),
+                armed.trailingArmedAt(), LocalDateTime.of(2026, 9, 24, 0, 30), TrendSide.LONG)
+                .withProtectionBreachBars(2));
+        assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, confirmed.action());
+        assertEquals("confirmed-protection-breach-with-reversal-evidence", confirmed.reason());
     }
 
     @Test
@@ -104,7 +115,7 @@ class HtxTrendExitDecisionEngineTest {
     }
 
     @Test
-    void ltc20260925ProfitLockWouldCloseBeforeLegacyFlatLossControl() {
+    void ltc20260925ProfitLockDoesNotFullCloseFromAnUnconfirmedReferencePrice() {
         // Production position 161: entry 72.92, 12 contracts at 0.10, entry fee 0.0350016.
         // The decision ledger first armed at the 74.74 MFE, then at 01:43:44 CST recorded ref=73.14.
         HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
@@ -129,9 +140,9 @@ class HtxTrendExitDecisionEngineTest {
                 armed.trailingArmReason(), armed.maxFavorableR(),
                 LocalDateTime.of(2026, 9, 25, 1, 43, 44), 3, 3, new BigDecimal("0.262512")));
 
-        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
-        assertEquals("RUNNER", decision.phase());
-        assertEquals("armed-protection-crossed", decision.reason());
+        assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, decision.action());
+        assertEquals("PROFIT_AT_RISK", decision.phase());
+        assertEquals("profit-at-risk-with-deteriorating-continuation", decision.reason());
         assertTrue(decision.protectionPrice().compareTo(new BigDecimal("73.14")) > 0);
     }
 
@@ -173,10 +184,15 @@ class HtxTrendExitDecisionEngineTest {
 
     private static HtxTrendExitDecisionEngine.Input suiInput(BigDecimal reference, LocalDateTime existingArm,
                                                               LocalDateTime evaluatedAt) {
+        return suiInput(reference, existingArm, evaluatedAt, TrendSide.FLAT);
+    }
+
+    private static HtxTrendExitDecisionEngine.Input suiInput(BigDecimal reference, LocalDateTime existingArm,
+                                                              LocalDateTime evaluatedAt, TrendSide signalSide) {
         return new HtxTrendExitDecisionEngine.Input(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION,
                 "SHORT", 91L, new BigDecimal("0.01"), new BigDecimal("0.9702"), new BigDecimal("0.9981"),
                 new BigDecimal("0.998092"), new BigDecimal("0.914432"), reference, new BigDecimal("0.9482"),
-                new BigDecimal("0.9861"), new BigDecimal("0.9380"), new BigDecimal("0.0065"), TrendSide.FLAT,
+                new BigDecimal("0.9861"), new BigDecimal("0.9380"), new BigDecimal("0.0065"), signalSide,
                 new BigDecimal("0.9607"), new BigDecimal("0.9666"), 0, false, new BigDecimal("1.20"),
                 new BigDecimal("0.04"), existingArm, "RISK_REWARD_MILESTONE", new BigDecimal("1.15"), evaluatedAt,
                 0, 3, null);

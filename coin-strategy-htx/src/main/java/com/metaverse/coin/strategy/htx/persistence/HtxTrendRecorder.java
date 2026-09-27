@@ -125,6 +125,32 @@ public class HtxTrendRecorder {
         return consecutive;
     }
 
+    /**
+     * Counts the newest uninterrupted completed entry-timeframe closes beyond a profit-protection price.
+     * A retry of the same K line is deliberately not another confirmation bar.
+     */
+    public long countConsecutiveProtectionBreaches(String contractCode, String period, String side,
+                                                   BigDecimal protectionPrice, LocalDateTime since, int limit) {
+        if (limit <= 0 || protectionPrice == null || protectionPrice.signum() <= 0) {
+            return 0L;
+        }
+        List<HtxTrendSignalEntity> snapshots = signalMapper.recentSignalSnapshots(contractCode, period, since, limit);
+        if (snapshots == null || snapshots.isEmpty()) {
+            return 0L;
+        }
+        long consecutive = 0L;
+        for (HtxTrendSignalEntity snapshot : snapshots) {
+            BigDecimal close = snapshot.getClosePrice();
+            boolean crossed = close != null && ("LONG".equals(side)
+                    ? close.compareTo(protectionPrice) <= 0 : close.compareTo(protectionPrice) >= 0);
+            if (!crossed) {
+                break;
+            }
+            consecutive++;
+        }
+        return consecutive;
+    }
+
     public HtxTrendBreadthStats latestBreadthStats(LocalDateTime since) {
         try {
             HtxTrendBreadthStats stats = signalMapper.latestBreadthStats(since);

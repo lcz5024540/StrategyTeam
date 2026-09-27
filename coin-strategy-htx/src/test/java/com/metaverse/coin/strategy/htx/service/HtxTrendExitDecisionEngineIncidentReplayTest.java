@@ -35,12 +35,14 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
         JSONObject fixture = loadFixture();
         JSONArray positions = fixture.getJSONArray("positions");
 
+        // A single recovered historical reference price no longer invents a full close.  The frozen fixture
+        // lacks two completed protection breaches plus two independent reversal groups, so it remains armed.
         ReplayOutcome doge = replay(findPosition(positions, 153L));
-        assertClose(doge, 1790195400L, new BigDecimal("0.092272"), new BigDecimal("2.5995279200"));
+        assertArmUntilHistoricalExit(doge, 1790225100L);
         assertEquals("NET_COST_AND_ATR_MILESTONE", doge.trailingArmReason());
 
         ReplayOutcome sui = replay(findPosition(positions, 154L));
-        assertClose(sui, 1790179200L, new BigDecimal("0.9626"), new BigDecimal("0.62124608"));
+        assertArmUntilHistoricalExit(sui, 1790218800L);
         assertEquals("NET_COST_AND_ATR_MILESTONE", sui.trailingArmReason());
 
         // ZEC finishes the frozen window in profit at its bar-close reference, so v3 can arm a durable
@@ -70,6 +72,7 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
         String trailingArmReason = null;
         ReplayOutcome latest = null;
         int flatStreak = 0;
+        int protectionBreachBars = 0;
         int requiredFlatStreak = position.getIntValue("requiredFlatStreak");
         BigDecimal flatLossBudget = decimal(position, "flatLossBudget");
 
@@ -81,6 +84,9 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
             BigDecimal calculatedTrailing = lowest.add(decimal(bar, "atr").multiply(TRAILING_ATR_MULTIPLIER));
             trailing = trailing.min(calculatedTrailing);
             BigDecimal protection = profitLock == null ? trailing : trailing.min(profitLock);
+            boolean protectionBreachedAtClose = trailingArmedAt != null
+                    && close.compareTo(protection) >= 0; // all frozen incident fixtures are short positions
+            protectionBreachBars = protectionBreachedAtClose ? protectionBreachBars + 1 : 0;
             BigDecimal estimatedCloseFee = close.multiply(contractSize).multiply(BigDecimal.valueOf(contracts))
                     .multiply(closeFeeRate);
             BigDecimal currentNet = closeNetPnl(entryPrice, close, contractSize, contracts, entryFee, estimatedCloseFee);
@@ -92,10 +98,15 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
                     decimal(bar, "atr"), signalSide, decimal(bar, "emaFast"),
                     decimal(bar, "emaSlow"), 0, false, currentNet, entryFee, estimatedCloseFee, trailingArmedAt,
                     trailingArmReason, maxFavorableR, LocalDateTime.ofEpochSecond(bar.getLongValue("barTime"), 0,
-                            java.time.ZoneOffset.ofHours(8)), flatStreak, requiredFlatStreak, flatLossBudget));
+                            java.time.ZoneOffset.ofHours(8)), flatStreak, requiredFlatStreak, flatLossBudget,
+                    HtxTrendExitDecisionEngine.ProfitProtectionPolicy.intradayDefaults(), protectionBreachBars));
             trailingArmedAt = decision.trailingArmedAt();
             trailingArmReason = decision.trailingArmReason();
             maxFavorableR = decision.maxFavorableR();
+            if (decision.trailingArmedAt() == null || decision.trailingArmedAt().equals(
+                    LocalDateTime.ofEpochSecond(bar.getLongValue("barTime"), 0, java.time.ZoneOffset.ofHours(8)))) {
+                protectionBreachBars = 0;
+            }
             if (decision.protectionPrice() != null) {
                 profitLock = profitLock == null ? decision.protectionPrice() : profitLock.min(decision.protectionPrice());
             }
@@ -112,16 +123,6 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
                                           long contracts, BigDecimal entryFee, BigDecimal closeFee) {
         BigDecimal quantity = contractSize.multiply(BigDecimal.valueOf(contracts));
         return entryPrice.subtract(closePrice).multiply(quantity).subtract(entryFee).subtract(closeFee);
-    }
-
-    private static void assertClose(ReplayOutcome outcome, long expectedBarTime, BigDecimal expectedPrice,
-                                    BigDecimal expectedNetPnl) {
-        assertNotNull(outcome);
-        assertEquals(Action.FULL_CLOSE, outcome.action());
-        assertEquals(expectedBarTime, outcome.barTime());
-        assertEquals(0, outcome.referencePrice().compareTo(expectedPrice));
-        assertEquals(0, outcome.netPnl().setScale(SCALE, RoundingMode.HALF_UP)
-                .compareTo(expectedNetPnl.setScale(SCALE, RoundingMode.HALF_UP)));
     }
 
     private static void assertHoldUntilHistoricalExit(ReplayOutcome outcome, long expectedBarTime) {

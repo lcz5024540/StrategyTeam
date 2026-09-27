@@ -47,6 +47,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -1166,7 +1167,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void liveFibProfitLockCrossSubmitsModelRoutedCloseWithoutLegacyFallthrough() {
+    void liveFibProfitLockReferenceCrossDoesNotSubmitBeforeCompletedBarConfirmation() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(true);
         givenContractInfo();
@@ -1187,13 +1188,48 @@ class HtxTrendFollowingServiceTest {
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        assertTrue(result.message().contains("exit-engine holding"));
+        ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
+        verify(recorder).recordExitDecision(decisionCaptor.capture());
+        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getSuggestedAction());
+        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getExecutedAction());
+        assertTrue(decisionCaptor.getValue().getExecutionBlockReason() == null);
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveFibConfirmedProtectionBreachSubmitsReduceOnlyCloseAfterTwoBarsAndTwoEvidenceGroups() {
+        properties.setExitEngineEnabled(true);
+        properties.setExitEngineLiveEnabled(true);
+        givenContractInfo();
+        givenKlines();
+        givenFlatSignalForCarry(TrendSide.SHORT);
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setPrimaryModel(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION);
+        active.setInvalidationPrice(new BigDecimal("4290.00"));
+        active.setTrailingArmedAt(LocalDateTime.of(2026, 9, 25, 1, 20));
+        active.setTrailingArmReason("NET_COST_AND_ATR_MILESTONE");
+        active.setMaxFavorableR(new BigDecimal("0.40"));
+        active.setProfitLockPrice(new BigDecimal("4324.00"));
+        active.setAccountLabel("primary");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(recorder.countConsecutiveProtectionBreaches(eq("XAUT-USDT"), eq(properties.getPeriod()), eq("LONG"),
+                any(BigDecimal.class), any(LocalDateTime.class), eq(2))).thenReturn(2L);
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4320.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("armed-protection-crossed"));
+        assertTrue(result.message().contains("confirmed-protection-breach-with-reversal-evidence"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getExecutedAction());
-        assertTrue(decisionCaptor.getValue().getExecutionBlockReason() == null);
+        verify(swap).placeOrder(argThat(request -> Boolean.TRUE.equals(request.getReduceOnly())
+                && "sell".equals(request.getSide())));
     }
 
     @Test

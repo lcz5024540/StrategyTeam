@@ -125,6 +125,11 @@ class HtxMapperIntegrationTest {
                 LocalDateTime.now().minusMinutes(1), 3);
 
         assertEquals(List.of("FLAT", "FLAT", "SHORT"), recent);
+
+        List<HtxTrendSignalEntity> snapshots = trendSignalMapper.recentSignalSnapshots(contractCode, "15min",
+                LocalDateTime.now().minusMinutes(1), 3);
+        assertEquals(3, snapshots.size());
+        assertEquals(List.of("FLAT", "FLAT", "SHORT"), snapshots.stream().map(HtxTrendSignalEntity::getSignal).toList());
     }
 
     @Test void trend_performance_bucket_executes_and_deducts_fees_before_loss_average() {

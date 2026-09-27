@@ -60,6 +60,25 @@ public interface HtxTrendSignalMapper extends BaseMapper<HtxTrendSignalEntity> {
                                    @Param("since") LocalDateTime since,
                                    @Param("limit") int limit);
 
+    /**
+     * Latest completed-bar snapshots for a position exit decision, newest first.  The inner query
+     * de-duplicates retries for the same bar, so a scheduler retry cannot count as a second bar.
+     */
+    @Select("SELECT s.id, s.contract_code AS contractCode, s.period, s.bar_time AS barTime, "
+            + "s.trend_signal AS signal, s.close_price AS closePrice, s.ema_fast AS emaFast, "
+            + "s.ema_slow AS emaSlow, s.breakout_high AS breakoutHigh, s.breakout_low AS breakoutLow, "
+            + "s.atr, s.atr_pct AS atrPct, s.adx, s.spread_rate AS spreadRate, "
+            + "s.funding_rate AS fundingRate, s.reason, s.created_at AS createdAt FROM htx_trend_signal s "
+            + "JOIN ("
+            + "SELECT bar_time, MAX(id) AS max_id FROM htx_trend_signal "
+            + "WHERE contract_code = #{contractCode} AND period = #{period} AND created_at >= #{since} "
+            + "AND bar_time IS NOT NULL GROUP BY bar_time ORDER BY bar_time DESC LIMIT #{limit}"
+            + ") latest_bars ON latest_bars.max_id = s.id ORDER BY s.bar_time DESC")
+    List<HtxTrendSignalEntity> recentSignalSnapshots(@Param("contractCode") String contractCode,
+                                                      @Param("period") String period,
+                                                      @Param("since") LocalDateTime since,
+                                                      @Param("limit") int limit);
+
     @Select("SELECT COUNT(*) AS totalCount, "
             + "COALESCE(SUM(CASE WHEN latest.trend_signal = 'LONG' "
             + "OR latest.reason LIKE '%trend=LONG%' OR latest.reason LIKE '%uptrend%' "
