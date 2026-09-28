@@ -65,7 +65,9 @@ public interface HtxTrendSignalMapper extends BaseMapper<HtxTrendSignalEntity> {
      * de-duplicates retries for the same bar, so a scheduler retry cannot count as a second bar.
      */
     @Select("SELECT s.id, s.contract_code AS contractCode, s.period, s.bar_time AS barTime, "
-            + "s.trend_signal AS signal, s.close_price AS closePrice, s.ema_fast AS emaFast, "
+            // SIGNAL is reserved by MySQL. Quote the result alias because the production query runs
+            // against MySQL while the H2 integration test otherwise accepts the unquoted spelling.
+            + "s.trend_signal AS `signal`, s.close_price AS closePrice, s.ema_fast AS emaFast, "
             + "s.ema_slow AS emaSlow, s.breakout_high AS breakoutHigh, s.breakout_low AS breakoutLow, "
             + "s.atr, s.atr_pct AS atrPct, s.adx, s.spread_rate AS spreadRate, "
             + "s.funding_rate AS fundingRate, s.reason, s.created_at AS createdAt FROM htx_trend_signal s "
