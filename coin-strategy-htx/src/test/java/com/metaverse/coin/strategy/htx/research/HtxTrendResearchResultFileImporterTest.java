@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,11 +48,13 @@ class HtxTrendResearchResultFileImporterTest {
                 """);
 
         HtxTrendResearchResultFileImporter.ImportResult result = importer().importCompleteResult(file);
+        HtxTrendResearchResultFileImporter.ImportResult resumed = importer().importCompleteResult(file);
 
         assertEquals(new HtxTrendResearchResultFileImporter.ImportResult("research:test", 1, 1, 1), result);
-        verify(regimeService).classifyAndRecord(any());
-        verify(resultRecorder).recordLabel(any());
-        verify(resultRecorder).recordEvaluation(any());
+        assertEquals(result, resumed);
+        verify(regimeService, times(1)).classifyAndRecord(any());
+        verify(resultRecorder, times(1)).recordLabel(any());
+        verify(resultRecorder, times(1)).recordEvaluation(any());
     }
 
     private HtxTrendResearchResultFileImporter importer() {

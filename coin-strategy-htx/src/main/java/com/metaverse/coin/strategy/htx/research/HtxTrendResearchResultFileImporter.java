@@ -12,6 +12,9 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /**
  * Imports the deterministic output of the P0 offline research pipeline into the immutable research ledger.
@@ -24,6 +27,7 @@ public class HtxTrendResearchResultFileImporter {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String SCHEMA = "htx-trend-research-derived-ledger-v1";
     private static final String COMPLETE = "COMPLETE";
+    private static final int DEFAULT_BATCH_SIZE = 500;
 
     private final HtxTrendMarketRegimeService regimeService;
     private final HtxTrendResearchResultRecorder resultRecorder;
@@ -34,29 +38,94 @@ public class HtxTrendResearchResultFileImporter {
             require(SCHEMA.equals(text(root, "schema")), "unsupported derived research ledger schema");
             require(COMPLETE.equals(text(root, "inputIntegrity")), "only COMPLETE research output may be imported");
             String datasetKey = text(root, "datasetKey");
-            int states = 0, labels = 0, evaluations = 0;
-            for (JsonNode value : root.withArray("states")) {
+            ImportCheckpoint checkpoint = checkpoint(resultPath, datasetKey);
+            if (checkpoint.completed) {
+                return new ImportResult(datasetKey, checkpoint.states, checkpoint.labels, checkpoint.evaluations);
+            }
+            for (int index = checkpoint.states; index < root.withArray("states").size(); index++) {
+                JsonNode value = root.withArray("states").get(index);
                 require(datasetKey.equals(text(value, "datasetKey")), "state dataset key differs from ledger");
                 regimeService.classifyAndRecord(new HtxTrendMarketRegimeService.MarketRegimeInput(
                         text(value, "snapshotKey"), datasetKey, text(value, "scope"), optionalText(value, "contractCode"),
                         longValue(value, "barTime"), text(value, "dailyDirection"), text(value, "fourHourDirection"),
                         text(value, "oneHourDirection"), decimal(value, "breadthRatio"), decimal(value, "volatilityScore"),
                         decimal(value, "crowdingScore"), JSON.writeValueAsString(value.path("evidence")), COMPLETE));
-                states++;
+                checkpoint.states = index + 1;
+                checkpoint.saveIfBoundary(resultPath, false);
             }
-            for (JsonNode value : root.withArray("labels")) {
+            for (int index = checkpoint.labels; index < root.withArray("labels").size(); index++) {
+                JsonNode value = root.withArray("labels").get(index);
                 require(datasetKey.equals(text(value, "datasetKey")), "label dataset key differs from ledger");
                 resultRecorder.recordLabel(label(value, datasetKey));
-                labels++;
+                checkpoint.labels = index + 1;
+                checkpoint.saveIfBoundary(resultPath, false);
             }
-            for (JsonNode value : root.withArray("evaluations")) {
+            for (int index = checkpoint.evaluations; index < root.withArray("evaluations").size(); index++) {
+                JsonNode value = root.withArray("evaluations").get(index);
                 require(datasetKey.equals(text(value, "datasetKey")), "evaluation dataset key differs from ledger");
                 resultRecorder.recordEvaluation(evaluation(value, datasetKey));
-                evaluations++;
+                checkpoint.evaluations = index + 1;
+                checkpoint.saveIfBoundary(resultPath, false);
             }
-            return new ImportResult(datasetKey, states, labels, evaluations);
+            checkpoint.completed = true;
+            checkpoint.saveIfBoundary(resultPath, true);
+            return new ImportResult(datasetKey, checkpoint.states, checkpoint.labels, checkpoint.evaluations);
         } catch (IOException exception) {
             throw new IllegalArgumentException("cannot read derived research ledger", exception);
+        }
+    }
+
+    private static ImportCheckpoint checkpoint(Path resultPath, String datasetKey) throws IOException {
+        Path checkpointPath = checkpointPath(resultPath);
+        String checksum = sha256(resultPath);
+        if (!Files.exists(checkpointPath)) {
+            return new ImportCheckpoint(datasetKey, checksum);
+        }
+        JsonNode node = JSON.readTree(Files.readString(checkpointPath));
+        if (!datasetKey.equals(text(node, "datasetKey")) || !checksum.equals(text(node, "sourceChecksum"))) {
+            throw new IllegalArgumentException("research result checkpoint belongs to a different immutable input");
+        }
+        return new ImportCheckpoint(datasetKey, checksum, node.path("states").asInt(), node.path("labels").asInt(),
+                node.path("evaluations").asInt(), node.path("completed").asBoolean());
+    }
+
+    private static Path checkpointPath(Path resultPath) {
+        return resultPath.resolveSibling(resultPath.getFileName() + ".checkpoint.json");
+    }
+
+    private static String sha256(Path path) {
+        try {
+            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)));
+        } catch (NoSuchAlgorithmException | IOException exception) {
+            throw new IllegalStateException("cannot checksum derived research ledger", exception);
+        }
+    }
+
+    private static final class ImportCheckpoint {
+        private final String datasetKey;
+        private final String sourceChecksum;
+        private int states;
+        private int labels;
+        private int evaluations;
+        private boolean completed;
+
+        private ImportCheckpoint(String datasetKey, String sourceChecksum) {
+            this(datasetKey, sourceChecksum, 0, 0, 0, false);
+        }
+
+        private ImportCheckpoint(String datasetKey, String sourceChecksum, int states, int labels, int evaluations, boolean completed) {
+            this.datasetKey = datasetKey; this.sourceChecksum = sourceChecksum; this.states = states;
+            this.labels = labels; this.evaluations = evaluations; this.completed = completed;
+        }
+
+        private void saveIfBoundary(Path resultPath, boolean force) throws IOException {
+            int total = states + labels + evaluations;
+            if (!force && total % DEFAULT_BATCH_SIZE != 0) return;
+            Path path = checkpointPath(resultPath);
+            Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
+            JSON.writeValue(temporary.toFile(), java.util.Map.of("datasetKey", datasetKey, "sourceChecksum", sourceChecksum,
+                    "states", states, "labels", labels, "evaluations", evaluations, "completed", completed));
+            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         }
     }
 
