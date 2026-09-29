@@ -41,15 +41,37 @@ def _manifest(path: Path) -> dict:
     return value
 
 
-def _direction(bars: list[Bar], bar_time: int) -> str:
-    timestamps = [bar.ts for bar in bars]
-    end = bisect.bisect_right(timestamps, bar_time)
-    values = bars[:end]
-    if len(values) < 61:
-        return "FLAT"
-    closes = [bar.close for bar in values]
-    fast, slow = ema(closes, 20), ema(closes, 60)
-    return "LONG" if fast > slow else "SHORT" if fast < slow else "FLAT"
+def _direction_series(bars: list[Bar], fast_period: int = 20, slow_period: int = 60) -> list[str]:
+    """Return completed-bar EMA directions in O(n), without using future candles."""
+    if not bars:
+        return []
+    alpha_fast, alpha_slow = 2 / (fast_period + 1), 2 / (slow_period + 1)
+    fast = slow = bars[0].close
+    values: list[str] = []
+    for index, bar in enumerate(bars):
+        if index:
+            fast += alpha_fast * (bar.close - fast)
+            slow += alpha_slow * (bar.close - slow)
+        values.append("FLAT" if index < slow_period else ("LONG" if fast > slow else "SHORT" if fast < slow else "FLAT"))
+    return values
+
+
+def _latest_direction(bars: list[Bar], directions: list[str], bar_time: int) -> str:
+    index = bisect.bisect_right([bar.ts for bar in bars], bar_time) - 1
+    return directions[index] if index >= 0 else "FLAT"
+
+
+def _market_breadth(all_bars: dict[str, dict[str, list[Bar]]]) -> dict[int, tuple[float | None, int]]:
+    """Cross-sectional 15m breadth: long directions / all non-flat directions at one completed bar."""
+    counts: dict[int, list[int]] = {}
+    for periods in all_bars.values():
+        for bar, direction in zip(periods[ENTRY_PERIOD], _direction_series(periods[ENTRY_PERIOD])):
+            if direction == "FLAT":
+                continue
+            bucket = counts.setdefault(bar.ts, [0, 0])
+            bucket[0] += direction == "LONG"
+            bucket[1] += 1
+    return {bar_time: (long_count / total if total else None, total) for bar_time, (long_count, total) in counts.items()}
 
 
 def _regime(daily: str, four_hour: str, one_hour: str) -> str:
@@ -135,6 +157,9 @@ def build_ledger(data_dir: Path, manifest_path: Path,
     end = int(__import__("datetime").datetime.fromisoformat(manifest["inputEndAt"] + "+08:00").timestamp())
     all_bars = {symbol: {period: load_bars(data_dir, symbol, period) for period in manifest["periods"]}
                 for symbol in symbols}
+    direction_series = {symbol: {period: _direction_series(bars) for period, bars in periods.items()}
+                        for symbol, periods in all_bars.items()}
+    breadth_by_bar = _market_breadth(all_bars)
     models = (DonchianBreakoutModel(), FibonacciPullbackModel(), EmaVwapMomentumModel())
     regimes, labels = [], []
     seen_regimes: set[str] = set()
@@ -143,18 +168,23 @@ def build_ledger(data_dir: Path, manifest_path: Path,
         for index in range(max(config.slow_ema, config.donchian_lookback) + 1, len(entry_bars) - HORIZON_BARS - 1):
             completed = entry_bars[:index + 1]
             bar_time = completed[-1].ts
-            daily = _direction(all_bars[symbol]["1day"], bar_time)
-            four_hour = _direction(all_bars[symbol]["4hour"], bar_time)
-            one_hour = _direction(all_bars[symbol]["60min"], bar_time)
-            state = _regime(daily, four_hour, one_hour)
+            daily = _latest_direction(all_bars[symbol]["1day"], direction_series[symbol]["1day"], bar_time)
+            four_hour = _latest_direction(all_bars[symbol]["4hour"], direction_series[symbol]["4hour"], bar_time)
+            one_hour = _latest_direction(all_bars[symbol]["60min"], direction_series[symbol]["60min"], bar_time)
+            breadth_ratio, breadth_universe = breadth_by_bar.get(bar_time, (None, 0))
+            state = _regime(daily, four_hour, one_hour) if breadth_ratio is None else (
+                "TREND_UP" if daily == four_hour == one_hour == "LONG" and breadth_ratio >= .55 else
+                "TREND_DOWN" if daily == four_hour == one_hour == "SHORT" and breadth_ratio <= .45 else
+                _regime(daily, four_hour, one_hour))
             state_key = f"regime:{manifest['datasetKey']}:{symbol}:{bar_time}"
             if state_key not in seen_regimes:
                 seen_regimes.add(state_key)
                 regimes.append({"snapshotKey": state_key, "datasetKey": manifest["datasetKey"], "scope": "CONTRACT",
                     "contractCode": symbol, "barTime": bar_time, "stateCode": state, "dailyDirection": daily,
-                    "fourHourDirection": four_hour, "oneHourDirection": one_hour, "breadthRatio": None,
+                    "fourHourDirection": four_hour, "oneHourDirection": one_hour, "breadthRatio": breadth_ratio,
                     "volatilityScore": None, "crowdingScore": None, "dataIntegrity": "COMPLETE",
-                    "evidence": {"ruleVersion": "regime-v1", "sourcePeriods": ["60min", "4hour", "1day"]}})
+                    "evidence": {"ruleVersion": "regime-v1", "sourcePeriods": ["15min", "60min", "4hour", "1day"],
+                                 "breadthUniverse": breadth_universe}})
             for side in (Side.LONG, Side.SHORT):
                 context = SignalContext(symbol, bar_time, completed, side, f"regime={state}")
                 for model in models:

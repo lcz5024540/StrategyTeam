@@ -35,6 +35,13 @@ class ResearchPipelineTest(unittest.TestCase):
         result = MODULE._evaluation(rows, "research:test", "MODEL", "TRAIN")
         self.assertEqual("INSUFFICIENT_EVIDENCE", result["decision"])
 
+    def test_cross_sectional_breadth_uses_only_completed_non_flat_symbols(self):
+        up = [MODULE.Bar(index, 1, 1, 1, 100 + index, 1, 1) for index in range(70)]
+        down = [MODULE.Bar(index, 1, 1, 1, 200 - index, 1, 1) for index in range(70)]
+        breadth = MODULE._market_breadth({
+            "UP-USDT": {MODULE.ENTRY_PERIOD: up}, "DOWN-USDT": {MODULE.ENTRY_PERIOD: down}})
+        self.assertEqual((0.5, 2), breadth[69])
+
 
 if __name__ == "__main__":
     unittest.main()
