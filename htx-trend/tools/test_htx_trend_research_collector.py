@@ -93,6 +93,21 @@ class CollectorTest(unittest.TestCase):
             merged = json.loads((root / "BTC-USDT_15min.json").read_text())
             self.assertEqual([0, 900, 2700], [row["id"] for row in merged["data"]])
 
+    def test_failed_target_is_retried_in_a_later_round_without_discarding_prior_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); state = {"targets": {}}
+            class FlakyClient:
+                def __init__(self): self.calls = 0
+                def fetch(self, symbol, period, start, end, size):
+                    self.calls += 1
+                    if self.calls == 1: raise COLLECTOR.CollectionError("temporary reset")
+                    return payload(0, 900), "https://test.example", "https://test.example/request"
+            results, rounds = COLLECTOR.collect_in_rounds([COLLECTOR.CollectionTarget("BTC-USDT", "15min")], root,
+                0, 1800, 2, 1, FlakyClient(), state, root / "state.json", threading.Lock(), 1, 2, 0)
+            self.assertEqual(2, rounds); self.assertEqual("COMPLETE", results[0]["status"])
+            self.assertEqual(1, len(state["targets"]["BTC-USDT:15min"]["failures"]))
+            self.assertEqual(2, state["targets"]["BTC-USDT:15min"]["lastRound"])
+
     def test_probe_requires_returned_rows_to_stay_in_requested_window(self):
         client = StubClient({(900, 2700): payload(900, 1800, 2700, 3600)})
         result = COLLECTOR.probe(client, "BTC-USDT", "15min", 900)

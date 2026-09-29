@@ -252,6 +252,38 @@ def collect_target(target: CollectionTarget, data_dir: Path, start: int, end: in
     return {"target": key, "status": target_state["status"], "bars": len(bars), "missingIntervals": len(missing)}
 
 
+def collect_in_rounds(targets: list[CollectionTarget], data_dir: Path, start: int, end: int, page_bars: int,
+                      retries: int, client: HtxPublicKlineClient, state: dict, state_path: Path,
+                      state_lock: threading.Lock, concurrency: int, retry_rounds: int,
+                      round_backoff_seconds: int) -> tuple[list[dict], int]:
+    """Collect every target, then retry only incomplete targets for bounded rounds.
+
+    Public market endpoints occasionally reset TLS connections.  A target remains
+    auditable after one failed page, but should not force an operator to manually
+    restart a multi-hour capture.  This function retries only FAILED/PARTIAL
+    targets, preserves all prior raw pages, and never reclassifies an incomplete
+    target as COMPLETE.
+    """
+    pending = list(targets)
+    final: dict[str, dict] = {}
+    for round_index in range(1, retry_rounds + 1):
+        if not pending:
+            break
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = [executor.submit(collect_target, target, data_dir, start, end, page_bars, retries,
+                                       client, state, state_path, state_lock) for target in pending]
+            round_results = [future.result() for future in concurrent.futures.as_completed(futures)]
+        for result in round_results:
+            final[result["target"]] = result
+            state["targets"][result["target"]]["lastRound"] = round_index
+            print(json.dumps({"round": round_index, **result}, ensure_ascii=False), flush=True)
+        pending = [target for target in targets if final.get(f"{target.symbol}:{target.period}", {}).get("status") != "COMPLETE"]
+        if pending and round_index < retry_rounds and round_backoff_seconds:
+            time.sleep(round_backoff_seconds * round_index)
+    return [final.get(f"{target.symbol}:{target.period}", {"target": f"{target.symbol}:{target.period}", "status": "FAILED",
+                                                        "reason": "not-attempted"}) for target in targets], round_index
+
+
 def probe(client: HtxPublicKlineClient, symbol: str, period: str, anchor: int) -> dict:
     """Validate exact range semantics before an expensive collection run."""
     seconds = PERIOD_SECONDS[period]
@@ -273,6 +305,9 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=5, choices=range(1, 11))
     parser.add_argument("--page-bars", type=int, default=2000, choices=range(10, 2001))
     parser.add_argument("--retries", type=int, default=3, choices=range(1, 6))
+    parser.add_argument("--retry-rounds", type=int, default=4, choices=range(1, 11),
+                        help="bounded whole-target retry rounds for transient public API failures")
+    parser.add_argument("--round-backoff-seconds", type=int, default=20, choices=range(0, 301))
     parser.add_argument("--timeout-seconds", type=int, default=45, choices=range(5, 121))
     parser.add_argument("--endpoints", default=",".join(DEFAULT_ENDPOINTS))
     parser.add_argument("--manifest-out", type=Path, help="defaults to <data-dir>/dataset-manifest.json")
@@ -300,22 +335,24 @@ def main() -> None:
     state = load_state(state_path, start, end, symbols, periods)
     lock = threading.Lock()
     targets = [CollectionTarget(symbol, period) for symbol in symbols for period in periods]
-    results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-        futures = [executor.submit(collect_target, target, args.data_dir, start, end, args.page_bars, args.retries,
-                                   client, state, state_path, lock) for target in targets]
-        for future in concurrent.futures.as_completed(futures):
-            result = future.result()
-            results.append(result)
-            print(json.dumps(result, ensure_ascii=False), flush=True)
+    results, rounds_used = collect_in_rounds(targets, args.data_dir, start, end, args.page_bars, args.retries,
+                                              client, state, state_path, lock, args.concurrency, args.retry_rounds,
+                                              args.round_backoff_seconds)
     summary = {"schema": "htx-trend-research-collector-summary-v1", "window": {"start": start, "end": end},
-               "targets": len(results), "complete": sum(item["status"] == "COMPLETE" for item in results),
+               "targets": len(results), "roundsUsed": rounds_used,
+               "complete": sum(item["status"] == "COMPLETE" for item in results),
                "partial": sum(item["status"] == "PARTIAL" for item in results),
                "failed": sum(item["status"] == "FAILED" for item in results), "results": sorted(results, key=lambda item: item["target"])}
     atomic_json_write(args.data_dir / "collector-summary.json", summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if summary["complete"] != summary["targets"]:
-        raise SystemExit("dataset is not complete; inspect collector-state.json and rerun to resume")
+        raise SystemExit("dataset is not complete after bounded retry rounds; inspect collector-state.json and rerun to resume")
+    manifest = build_manifest(args.data_dir, symbols, periods, args.start, args.end)
+    manifest_path = args.manifest_out or args.data_dir / "dataset-manifest.json"
+    atomic_json_write(manifest_path, manifest)
+    print(json.dumps({"manifest": str(manifest_path), "integrity": manifest["inputIntegrity"], "datasetKey": manifest["datasetKey"]}, ensure_ascii=False))
+    if manifest["inputIntegrity"] != "COMPLETE":
+        raise SystemExit("collector pages completed but manifest found a coverage gap")
 
 
 if __name__ == "__main__":
