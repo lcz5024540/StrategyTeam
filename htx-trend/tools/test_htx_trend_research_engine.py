@@ -67,6 +67,21 @@ class ResearchEngineTest(unittest.TestCase):
             MODULE.PricePlan(100,99,99,95,108,MODULE.OrderStyle.LIMIT,1,1.5))
         self.assertIsNone(MODULE.simulate_entry(signal, MODULE.Bar(900,101,102,100,101,1,1), self.execution))
 
+    def test_passive_limit_can_wait_but_ioc_expires_after_first_bar(self):
+        passive = MODULE.ResearchSignal("TEST", "BTC-USDT", MODULE.Side.LONG, 0, 1, (),
+            MODULE.PricePlan(100,99,99,95,108,MODULE.OrderStyle.LIMIT,2,1.5))
+        bars = [MODULE.Bar(900,101,102,100,101,1,1), MODULE.Bar(1800,100,101,98,99,1,1)]
+        self.assertEqual(1800, MODULE.simulate_entry_lifecycle(passive, bars, self.execution).entry_time)
+        ioc = MODULE.ResearchSignal("TEST", "BTC-USDT", MODULE.Side.LONG, 0, 1, (),
+            MODULE.PricePlan(100,99,99,95,108,MODULE.OrderStyle.IOC,2,1.5))
+        self.assertIsNone(MODULE.simulate_entry_lifecycle(ioc, bars, self.execution))
+
+    def test_conditional_limit_never_assumes_same_bar_trigger_and_fill(self):
+        signal = MODULE.ResearchSignal("TEST", "BTC-USDT", MODULE.Side.LONG, 0, 1, (),
+            MODULE.PricePlan(105,100,100,95,115,MODULE.OrderStyle.CONDITIONAL_LIMIT,3,1.5))
+        bars = [MODULE.Bar(900,100,106,99,104,1,1), MODULE.Bar(1800,101,102,100,101,1,1)]
+        self.assertEqual(1800, MODULE.simulate_entry_lifecycle(signal, bars, self.execution).entry_time)
+
     def test_walk_forward_keeps_windows_disjoint_and_partial_data_cannot_pass(self):
         windows = MODULE.walk_forward_windows(0, 1_000)
         self.assertEqual(["TRAIN", "VALIDATION", "OUT_OF_SAMPLE"], [item.name for item in windows])

@@ -21,8 +21,9 @@ class Side(str, Enum):
 
 class OrderStyle(str, Enum):
     MARKET = "MARKET"
-    LIMIT = "LIMIT"
+    LIMIT = "LIMIT"  # passive limit, may wait for max_wait_bars
     IOC = "IOC"
+    CONDITIONAL_LIMIT = "CONDITIONAL_LIMIT"
 
 
 class DatasetIntegrity(str, Enum):
@@ -259,17 +260,36 @@ class SimulatedTrade:
     net_pnl: float
 
 
-def simulate_entry(signal: ResearchSignal, next_bar: Bar, execution: ExecutionAssumptions) -> Fill | None:
-    plan = signal.price_plan
+def simulate_entry_lifecycle(signal: ResearchSignal, upcoming_bars: Sequence[Bar],
+                             execution: ExecutionAssumptions) -> Fill | None:
+    """Simulate an order without assuming an unknown intrabar path.
+
+    Passive limits may wait; IOC has exactly one bar; conditional limits require
+    a completed trigger bar and only become eligible from the following bar.
+    """
+    if not upcoming_bars:
+        return None
+    plan, side = signal.price_plan, signal.side
     if plan.order_style is OrderStyle.MARKET:
-        return Fill(signal, next_bar.ts, _adverse_price(signal.side, next_bar.open, execution.entry_slippage_bps))
-    limit = plan.ideal_entry
-    touched = next_bar.low <= limit <= next_bar.high
-    if not touched:
-        return None
-    if plan.order_style is OrderStyle.IOC and not touched:
-        return None
-    return Fill(signal, next_bar.ts, limit)
+        bar = upcoming_bars[0]
+        return Fill(signal, bar.ts, _adverse_price(side, bar.open, execution.entry_slippage_bps))
+    wait = 1 if plan.order_style is OrderStyle.IOC else max(1, plan.max_wait_bars)
+    start = 0
+    if plan.order_style is OrderStyle.CONDITIONAL_LIMIT:
+        trigger_seen = next((index for index, bar in enumerate(upcoming_bars[:wait])
+                             if (bar.high >= plan.trigger_price if side is Side.LONG else bar.low <= plan.trigger_price)), None)
+        if trigger_seen is None:
+            return None
+        start = trigger_seen + 1  # never assume trigger and fill order inside one OHLC bar
+    for bar in upcoming_bars[start:wait]:
+        if bar.low <= plan.ideal_entry <= bar.high:
+            return Fill(signal, bar.ts, plan.ideal_entry)
+    return None
+
+
+def simulate_entry(signal: ResearchSignal, next_bar: Bar, execution: ExecutionAssumptions) -> Fill | None:
+    """Compatibility wrapper for single-bar entry studies."""
+    return simulate_entry_lifecycle(signal, [next_bar], execution)
 
 
 def _net_pnl(side: Side, entry: float, exit_price: float, execution: ExecutionAssumptions) -> float:
