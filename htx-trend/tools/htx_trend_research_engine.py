@@ -359,3 +359,79 @@ def evaluate_walk_forward(windows: Sequence[WalkForwardWindow], runner: Callable
     oos = next(value["metrics"] for value in values if value["name"] == "OUT_OF_SAMPLE")
     decision = "PAPER_CANDIDATE" if oos["netPnl"] > 0 and oos["profitFactor"] >= 1.2 and oos["expectancy"] > 0 else "REJECT"
     return {"integrity": integrity.value, "decision": decision, "windows": values}
+
+@dataclass(frozen=True)
+class CrossSectionalContext:
+    """Completed bars for a single timestamp across a frozen, comparable universe."""
+    bar_time: int
+    bars_by_symbol: dict[str, Sequence[Bar]]
+    higher_timeframe_evidence: str = "UNSPECIFIED"
+
+
+class VolatilityCompressionBreakoutModel:
+    """Trend-start model: compressed ATR followed by a directional channel break."""
+    name = "VOLATILITY_COMPRESSION_BREAKOUT"
+
+    def evaluate(self, context: SignalContext, config: ModelConfig,
+                 execution: ExecutionAssumptions) -> List[ResearchSignal]:
+        bars = context.entry_bars
+        window = max(config.donchian_lookback, config.atr_period * 2) + 1
+        if len(bars) < max(config.slow_ema, window) + 1:
+            return []
+        # Compression is measured before the breakout bar.  Otherwise the breakout
+        # range itself would erase the condition we are trying to detect.
+        pre_breakout = bars[:-1]
+        current_atr = _atr(pre_breakout, config.atr_period)
+        prior_atrs = [_atr(pre_breakout[:index], config.atr_period)
+                      for index in range(max(config.atr_period, len(pre_breakout) - config.atr_period * 2),
+                                         len(pre_breakout) - config.atr_period + 1)]
+        prior_atrs = [value for value in prior_atrs if value > 0]
+        baseline = sum(prior_atrs) / len(prior_atrs) if prior_atrs else 0
+        if current_atr <= 0 or baseline <= 0 or current_atr > baseline * .75:
+            return []
+        last, history = bars[-1], bars[-config.donchian_lookback - 1:-1]
+        high, low = max(bar.high for bar in history), min(bar.low for bar in history)
+        closes = [bar.close for bar in bars]
+        fast, slow = ema(closes, config.fast_ema), ema(closes, config.slow_ema)
+        if context.side is Side.LONG and last.close > high and fast > slow:
+            return _signal(self.name, context, adx(list(bars), config.atr_period) + 25,
+                           ("ATR compression", "upper-channel expansion", context.higher_timeframe_evidence),
+                           min(last.low, last.close - config.stop_atr * current_atr), current_atr, config, execution)
+        if context.side is Side.SHORT and last.close < low and fast < slow:
+            return _signal(self.name, context, adx(list(bars), config.atr_period) + 25,
+                           ("ATR compression", "lower-channel expansion", context.higher_timeframe_evidence),
+                           max(last.high, last.close + config.stop_atr * current_atr), current_atr, config, execution)
+        return []
+
+
+class CrossSectionalMomentumModel:
+    """Relative-strength model. It ranks a cohort; it never uses a single symbol in isolation."""
+    name = "CROSS_SECTIONAL_MOMENTUM"
+
+    def evaluate(self, context: CrossSectionalContext, config: ModelConfig,
+                 execution: ExecutionAssumptions) -> List[ResearchSignal]:
+        lookback = config.donchian_lookback
+        scored: list[tuple[str, float, Sequence[Bar]]] = []
+        for symbol, bars in context.bars_by_symbol.items():
+            if len(bars) < max(config.slow_ema, lookback) + 1 or bars[-1].close <= 0:
+                continue
+            score = bars[-1].close / bars[-lookback - 1].close - 1
+            scored.append((symbol, score, bars))
+        if len(scored) < 5:
+            return []
+        ranked = sorted(scored, key=lambda row: (row[1], row[0]))
+        cohort = max(1, len(ranked) // 5)
+        values: list[ResearchSignal] = []
+        for symbol, score, bars in [*ranked[:cohort], *ranked[-cohort:]]:
+            side = Side.LONG if score > 0 else Side.SHORT
+            closes, value_atr = [bar.close for bar in bars], _atr(bars, config.atr_period)
+            if value_atr <= 0 or (side is Side.LONG and ema(closes, config.fast_ema) <= ema(closes, config.slow_ema)) \
+                    or (side is Side.SHORT and ema(closes, config.fast_ema) >= ema(closes, config.slow_ema)):
+                continue
+            last = bars[-1]
+            stop = min(last.low, last.close - config.stop_atr * value_atr) if side is Side.LONG else \
+                max(last.high, last.close + config.stop_atr * value_atr)
+            values.extend(_signal(self.name, SignalContext(symbol, context.bar_time, bars, side, context.higher_timeframe_evidence),
+                                  abs(score) * 10_000, ("cross-sectional top/bottom quintile", f"relative return={score:.6f}",
+                                  context.higher_timeframe_evidence), stop, value_atr, config, execution))
+        return values

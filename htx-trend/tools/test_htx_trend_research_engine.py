@@ -53,6 +53,30 @@ class ResearchEngineTest(unittest.TestCase):
         self.assertEqual(1, len(fibonacci)); self.assertEqual(MODULE.OrderStyle.LIMIT, fibonacci[0].price_plan.order_style)
         self.assertNotEqual(donchian[0].price_plan.invalidation_price, fibonacci[0].price_plan.invalidation_price)
 
+    def test_volatility_compression_uses_pre_breakout_atr_not_breakout_range(self):
+        rows=[]
+        for index in range(90):
+            close = 100 + index * .1
+            spread = 3 if 60 <= index < 75 else .25
+            if 75 <= index < 89: spread = .05
+            if index == 89: close += 2; spread = .8
+            rows.append(MODULE.Bar(index * 900, close - spread / 2, close + spread, close - spread, close, 10, 1000))
+        signal = MODULE.VolatilityCompressionBreakoutModel().evaluate(
+            MODULE.SignalContext("BTC-USDT", rows[-1].ts, rows, MODULE.Side.LONG, "4h aligned"), self.cfg, self.execution)
+        self.assertEqual("VOLATILITY_COMPRESSION_BREAKOUT", signal[0].model)
+
+    def test_cross_sectional_momentum_ranks_a_frozen_cohort_not_one_symbol(self):
+        universe = {}
+        for number in range(5):
+            slope = .7 if number == 4 else (-.6 if number == 0 else .1 + number * .05)
+            universe[f"S{number}-USDT"] = [MODULE.Bar(i * 900, 100 + i * slope - .2, 100 + i * slope + .2,
+                100 + i * slope - .4, 100 + i * slope, 10, 1000) for i in range(90)]
+        signals = MODULE.CrossSectionalMomentumModel().evaluate(
+            MODULE.CrossSectionalContext(universe["S0-USDT"][-1].ts, universe, "4h aligned"), self.cfg, self.execution)
+        self.assertTrue(signals)
+        self.assertEqual("CROSS_SECTIONAL_MOMENTUM", signals[0].model)
+        self.assertTrue({signal.symbol for signal in signals}.issubset({"S0-USDT", "S4-USDT"}))
+
     def test_market_fill_charges_adverse_slippage_and_same_bar_stop_wins(self):
         signal = MODULE.ResearchSignal("TEST", "BTC-USDT", MODULE.Side.LONG, 0, 1, (),
             MODULE.PricePlan(100,100,100.02,95,110,MODULE.OrderStyle.MARKET,1,1.5))
