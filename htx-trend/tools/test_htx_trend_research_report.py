@@ -1,0 +1,27 @@
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+
+ROOT=Path(__file__).parent; sys.path.insert(0,str(ROOT))
+spec=importlib.util.spec_from_file_location('research_report',ROOT/'htx_trend_research_report.py')
+MODULE=importlib.util.module_from_spec(spec); assert spec and spec.loader; sys.modules[spec.name]=MODULE; spec.loader.exec_module(MODULE)
+
+
+class ResearchReportTest(unittest.TestCase):
+    def manifest(self, integrity='COMPLETE'):
+        return {'datasetKey':'research:test','inputIntegrity':integrity,'inputStartAt':'2026-01-01T00:00:00','inputEndAt':'2026-01-09T00:00:00'}
+
+    def test_partial_input_cannot_produce_a_model_conclusion(self):
+        report=MODULE.build_report(self.manifest('PARTIAL'),{'datasetKey':'research:test','inputIntegrity':'PARTIAL','labels':[]})
+        self.assertEqual('INSUFFICIENT_EVIDENCE',report['decision'])
+
+    def test_report_uses_out_of_sample_labels_and_marks_low_samples(self):
+        label={'modelCode':'DONCHIAN_BREAKOUT','side':'LONG','marketState':'TREND_UP','contractCode':'BTC-USDT',
+               'entryBarTime':MODULE.epoch('2026-01-08T00:00:00'),'netProfit':1.0,'estimatedEntryFee':.1,'estimatedExitFee':.1,'dataIntegrity':'COMPLETE'}
+        report=MODULE.build_report(self.manifest(),{'datasetKey':'research:test','inputIntegrity':'COMPLETE','labels':[label]})
+        self.assertEqual(1,len(report['rows'])); self.assertEqual('INSUFFICIENT_SAMPLE',report['rows'][0]['decision'])
+        self.assertEqual('REJECT',report['decision'])
+
+
+if __name__=='__main__': unittest.main()

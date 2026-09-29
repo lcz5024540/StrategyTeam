@@ -39,7 +39,7 @@ scope: [research, backtest, portfolio, execution, risk]
 | PAR-04 | 研究账本批量导入 | 否 | 大规模状态/标签/评估幂等分批写入、失败可恢复、不会重复写。 | 已实现，待接入完整数据运行 |
 | PAR-05 | 订单类型实验框架 | 否 | 对同一候选并行比较市价、被动限价、条件限价和 IOC；不决定真实下单类型。 | 已实现，待接入完整数据运行 |
 | PAR-06 | 独立模型合同补齐 | 否，运行评估时需要 | 横截面强弱、波动收缩突破等模型各自有价格计划、失效与证据。 | 已实现首批，待接入完整数据评估 |
-| PAR-07 | 准入报告 | 否，生成结论时需要完整数据 | 固化模型×方向×状态×币种簇的净收益、PF、期望、回撤和样本数。 | 待执行 |
+| PAR-07 | 准入报告 | 否，生成结论时需要完整数据 | 固化模型×方向×状态×币种簇的净收益、PF、期望、回撤和样本数。 | 已实现，待完整数据生成结论 |
 
 ## 分批执行顺序
 
@@ -72,6 +72,8 @@ scope: [research, backtest, portfolio, execution, risk]
 ## Batch C 执行记录（2026-09-29）
 
 首批新增 `CROSS_SECTIONAL_MOMENTUM` 与 `VOLATILITY_COMPRESSION_BREAKOUT`。前者只能对同一时点、同一冻结币种池的相对收益排序，后者用突破前的 ATR 压缩和随后通道突破判断启动；两者都独立输出入场、失效、目标、订单类型及证据，不覆盖 Donchian、Fibonacci 或 EMA/VWAP 的同 K 线候选。
+
+报告框架 `htx_trend_research_report.py` 已完成：只消费 `COMPLETE` 数据集的样本外标签，并按模型、方向、市场状态、核心/山寨币簇输出交易数、净收益、PF、期望、回撤、费用和 `PAPER_CANDIDATE / REJECT / INSUFFICIENT_SAMPLE`。
 
 ## 与主计划的关系
 
