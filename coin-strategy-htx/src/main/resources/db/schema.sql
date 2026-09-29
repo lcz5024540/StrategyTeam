@@ -817,3 +817,135 @@ CREATE TABLE IF NOT EXISTS htx_trend_signal (
     INDEX idx_trend_signal_contract_time (contract_code, bar_time, created_at),
     INDEX idx_trend_signal_created       (created_at)
 );
+
+-- P0 strategy research foundation; production upgrades use sql/htx/2026-09-29__htx_trend_research_foundation.sql.
+-- HTX quant strategy research foundation (P0).
+-- Purpose: immutable datasets, frozen candles, market-state snapshots, outcome labels and model evaluations.
+-- Related feature: HTX_QUANT_STRATEGY_REMEDIATION_PLAN_V1 P0.
+-- Downtime: none. Additive tables only; no existing execution table or live switch is changed.
+-- Rollback: after confirming no consumer references these tables, DROP TABLE in reverse dependency order.
+
+CREATE TABLE IF NOT EXISTS htx_trend_research_dataset (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Surrogate primary key',
+    dataset_key VARCHAR(160) NOT NULL COMMENT 'Immutable research dataset identity',
+    source_kind VARCHAR(32) NOT NULL COMMENT 'HTX_PUBLIC_API, DERIVED_4H or other documented source',
+    source_reference VARCHAR(512) NULL COMMENT 'Non-secret source or capture reference',
+    captured_at DATETIME(3) NOT NULL COMMENT 'When the source was frozen',
+    input_start_at DATETIME(3) NOT NULL COMMENT 'Inclusive research input start in Asia/Shanghai',
+    input_end_at DATETIME(3) NOT NULL COMMENT 'Exclusive research input end in Asia/Shanghai',
+    contracts_json TEXT NOT NULL COMMENT 'Frozen contract universe',
+    periods_json TEXT NOT NULL COMMENT 'Frozen timeframe universe',
+    input_checksum VARCHAR(128) NULL COMMENT 'Checksum over the manifest or canonical inputs',
+    input_integrity VARCHAR(32) NOT NULL COMMENT 'COMPLETE, PARTIAL or INSUFFICIENT_EVIDENCE',
+    status VARCHAR(32) NOT NULL COMMENT 'FREEZING, FROZEN, FAILED or RETIRED',
+    purpose VARCHAR(64) NOT NULL COMMENT 'RESEARCH, VALIDATION, PAPER or INCIDENT_REVIEW',
+    provenance_json TEXT NULL COMMENT 'Capture failures, derivations and source metadata',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Ledger creation time',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_research_dataset_key (dataset_key),
+    KEY idx_htx_trend_research_dataset_window (input_start_at, input_end_at, status)
+) COMMENT='Immutable HTX strategy research input manifest';
+
+CREATE TABLE IF NOT EXISTS htx_trend_research_candle (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Surrogate primary key',
+    dataset_key VARCHAR(160) NOT NULL COMMENT 'Owning immutable research dataset',
+    contract_code VARCHAR(32) NOT NULL COMMENT 'HTX linear swap contract',
+    period VARCHAR(16) NOT NULL COMMENT '15min, 30min, 60min, 4hour or 1day',
+    bar_time BIGINT NOT NULL COMMENT 'UTC epoch-second bar open time',
+    open_price DECIMAL(36,18) NOT NULL COMMENT 'Frozen open price',
+    high_price DECIMAL(36,18) NOT NULL COMMENT 'Frozen high price',
+    low_price DECIMAL(36,18) NOT NULL COMMENT 'Frozen low price',
+    close_price DECIMAL(36,18) NOT NULL COMMENT 'Frozen close price',
+    volume DECIMAL(36,18) NULL COMMENT 'Reported volume',
+    turnover DECIMAL(36,18) NULL COMMENT 'Reported turnover',
+    trade_count BIGINT NULL COMMENT 'Reported trade count',
+    source_kind VARCHAR(32) NOT NULL COMMENT 'RAW_PUBLIC or DERIVED_4H',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Ledger creation time',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_research_candle (dataset_key, contract_code, period, bar_time),
+    KEY idx_htx_trend_research_candle_lookup (dataset_key, contract_code, period, bar_time)
+) COMMENT='Frozen market candles used by strategy research only';
+
+CREATE TABLE IF NOT EXISTS htx_trend_market_regime_snapshot (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Surrogate primary key',
+    snapshot_key VARCHAR(192) NOT NULL COMMENT 'Immutable state snapshot identity',
+    dataset_key VARCHAR(160) NOT NULL COMMENT 'Research dataset identity',
+    scope VARCHAR(16) NOT NULL COMMENT 'MARKET or CONTRACT',
+    contract_code VARCHAR(32) NULL COMMENT 'Null for market-wide state',
+    bar_time BIGINT NOT NULL COMMENT 'State observation bar time',
+    state_code VARCHAR(32) NOT NULL COMMENT 'TREND_UP, TREND_DOWN, PULLBACK, RANGE, VOLATILE_DISORDER or CROWDED',
+    daily_direction VARCHAR(16) NULL COMMENT 'Completed 1d direction',
+    four_hour_direction VARCHAR(16) NULL COMMENT 'Completed 4h direction',
+    one_hour_direction VARCHAR(16) NULL COMMENT 'Completed 1h direction',
+    breadth_ratio DECIMAL(18,8) NULL COMMENT 'Directional market breadth ratio',
+    volatility_score DECIMAL(18,8) NULL COMMENT 'Normalized volatility state score',
+    crowding_score DECIMAL(18,8) NULL COMMENT 'Funding/OI crowding score when available',
+    evidence_json TEXT NOT NULL COMMENT 'Immutable state evidence and unavailable inputs',
+    data_integrity VARCHAR(32) NOT NULL COMMENT 'COMPLETE, PARTIAL or INSUFFICIENT_EVIDENCE',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Ledger creation time',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_market_regime_snapshot_key (snapshot_key),
+    KEY idx_htx_trend_market_regime_lookup (dataset_key, contract_code, bar_time, state_code)
+) COMMENT='Immutable market classification evidence for research and replay';
+
+CREATE TABLE IF NOT EXISTS htx_trend_research_label (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Surrogate primary key',
+    label_key VARCHAR(192) NOT NULL COMMENT 'Immutable label identity',
+    dataset_key VARCHAR(160) NOT NULL COMMENT 'Research dataset identity',
+    source_candidate_id BIGINT NULL COMMENT 'Optional live candidate source; null for regenerated candidate',
+    source_run_id VARCHAR(128) NULL COMMENT 'Optional live run identity',
+    model_code VARCHAR(64) NOT NULL COMMENT 'Independent alpha model',
+    model_version VARCHAR(64) NOT NULL COMMENT 'Versioned model rules',
+    contract_code VARCHAR(32) NOT NULL COMMENT 'HTX linear swap contract',
+    side VARCHAR(16) NOT NULL COMMENT 'LONG or SHORT',
+    timeframe_profile VARCHAR(32) NOT NULL COMMENT 'INTRADAY_15M, SWING_4H or other profile',
+    entry_bar_time BIGINT NOT NULL COMMENT 'Completed signal bar time',
+    entry_price DECIMAL(36,18) NOT NULL COMMENT 'Assumed or actual entry price',
+    stop_price DECIMAL(36,18) NOT NULL COMMENT 'Predefined initial loss boundary',
+    target_one_r_price DECIMAL(36,18) NULL COMMENT 'Predefined 1R target',
+    target_two_r_price DECIMAL(36,18) NULL COMMENT 'Predefined 2R target',
+    horizon_bar_time BIGINT NOT NULL COMMENT 'Last bar allowed by the label horizon',
+    first_barrier VARCHAR(32) NOT NULL COMMENT 'TARGET_1R, TARGET_2R, STOP, TIMEOUT or UNAVAILABLE',
+    first_barrier_time BIGINT NULL COMMENT 'When the first deterministic barrier occurred',
+    mfe DECIMAL(36,18) NULL COMMENT 'Maximum favorable excursion in price terms',
+    mae DECIMAL(36,18) NULL COMMENT 'Maximum adverse excursion in price terms',
+    estimated_entry_fee DECIMAL(36,18) NULL COMMENT 'Entry fee used by research',
+    estimated_exit_fee DECIMAL(36,18) NULL COMMENT 'Exit fee used by research',
+    net_profit DECIMAL(36,18) NULL COMMENT 'Net result under declared label rules',
+    ambiguity_reason VARCHAR(512) NULL COMMENT 'Same-bar ordering or other ambiguity',
+    data_integrity VARCHAR(32) NOT NULL COMMENT 'COMPLETE, PARTIAL or INSUFFICIENT_EVIDENCE',
+    evidence_json TEXT NOT NULL COMMENT 'Frozen barriers, cost assumptions and evidence',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Ledger creation time',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_research_label_key (label_key),
+    KEY idx_htx_trend_research_label_model (dataset_key, model_code, timeframe_profile, entry_bar_time),
+    KEY idx_htx_trend_research_label_contract (contract_code, side, entry_bar_time)
+) COMMENT='Immutable target-before-stop and excursion labels for research candidates';
+
+CREATE TABLE IF NOT EXISTS htx_trend_model_evaluation (
+    id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Surrogate primary key',
+    evaluation_key VARCHAR(192) NOT NULL COMMENT 'Immutable evaluation identity',
+    dataset_key VARCHAR(160) NOT NULL COMMENT 'Research dataset identity',
+    research_version VARCHAR(64) NOT NULL COMMENT 'Backtest/research engine version',
+    sample_split VARCHAR(32) NOT NULL COMMENT 'TRAIN, VALIDATION, OUT_OF_SAMPLE or WALK_FORWARD',
+    model_code VARCHAR(64) NOT NULL COMMENT 'Independent alpha model',
+    model_version VARCHAR(64) NOT NULL COMMENT 'Versioned model rules',
+    direction VARCHAR(16) NULL COMMENT 'Optional LONG or SHORT bucket',
+    timeframe_profile VARCHAR(32) NULL COMMENT 'Optional period profile bucket',
+    market_state VARCHAR(32) NULL COMMENT 'Optional market-state bucket',
+    symbol_bucket VARCHAR(64) NULL COMMENT 'Liquidity or asset-group bucket',
+    trade_count BIGINT NOT NULL COMMENT 'Comparable completed trade count',
+    win_count BIGINT NOT NULL COMMENT 'Net-positive completed trade count',
+    loss_count BIGINT NOT NULL COMMENT 'Net-negative completed trade count',
+    net_profit DECIMAL(36,18) NULL COMMENT 'Aggregate net PnL after declared costs',
+    profit_factor DECIMAL(36,18) NULL COMMENT 'Gross profit divided by gross loss',
+    expectancy DECIMAL(36,18) NULL COMMENT 'Average net PnL per trade',
+    max_drawdown DECIMAL(36,18) NULL COMMENT 'Declared replay maximum drawdown',
+    fee_total DECIMAL(36,18) NULL COMMENT 'Aggregate estimated or actual fees',
+    decision VARCHAR(32) NOT NULL COMMENT 'PAPER_CANDIDATE, REJECT or INSUFFICIENT_SAMPLE',
+    evidence_json TEXT NOT NULL COMMENT 'Metric definitions, thresholds and exclusions',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Ledger creation time',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_model_evaluation_key (evaluation_key),
+    KEY idx_htx_trend_model_evaluation_lookup (dataset_key, model_code, sample_split, decision)
+) COMMENT='Versioned independent model evaluation ledger';

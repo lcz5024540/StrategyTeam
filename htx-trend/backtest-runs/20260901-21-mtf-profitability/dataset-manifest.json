@@ -1,0 +1,194 @@
+{
+  "schema": "htx-trend-research-dataset-manifest-v1",
+  "datasetKey": "research:6f6c9502e0b9fe3f5a2edad467d17ac0",
+  "sourceKind": "FROZEN_PUBLIC_KLINE",
+  "timezone": "Asia/Shanghai",
+  "inputStartAt": "2026-09-01T00:00:00",
+  "inputEndAt": "2026-09-21T00:00:00",
+  "contracts": [
+    "BTC-USDT",
+    "ETH-USDT",
+    "XAUT-USDT"
+  ],
+  "periods": [
+    "15min",
+    "30min",
+    "60min",
+    "4hour",
+    "1day"
+  ],
+  "inputChecksum": "6f6c9502e0b9fe3f5a2edad467d17ac07c764c30552c5b3425b6d7ca61c57965",
+  "inputIntegrity": "PARTIAL",
+  "inputs": [
+    {
+      "contract": "BTC-USDT",
+      "period": "15min",
+      "file": "BTC-USDT_15min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "f1dd1eea60e103940eae01ea67e3927a9e738571cdff6ed2ac93427e0a76747e",
+      "count": 2000,
+      "firstBarTime": 1788199200,
+      "lastBarTime": 1789998300,
+      "coverage": "PARTIAL"
+    },
+    {
+      "contract": "BTC-USDT",
+      "period": "30min",
+      "file": "BTC-USDT_30min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "a66d6396315b8735934ba0064cda036736fa19bd3b08495b6c4c53a556d83c4a",
+      "count": 1200,
+      "firstBarTime": 1787839200,
+      "lastBarTime": 1789997400,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "BTC-USDT",
+      "period": "60min",
+      "file": "BTC-USDT_60min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "5b1eae91589e02330f698eb2301f87ef10b31870e6255299431084fd72e1b1a8",
+      "count": 700,
+      "firstBarTime": 1787479200,
+      "lastBarTime": 1789995600,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "BTC-USDT",
+      "period": "4hour",
+      "file": "BTC-USDT_4hour.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "b271340e237acef96b2e17bb511cfcf08496476784f8dcd50827f74ffb1d3b76",
+      "count": 300,
+      "firstBarTime": 1785686400,
+      "lastBarTime": 1789992000,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "BTC-USDT",
+      "period": "1day",
+      "file": "BTC-USDT_4hour.json",
+      "sourceKind": "DERIVED_4H",
+      "sha256": "b271340e237acef96b2e17bb511cfcf08496476784f8dcd50827f74ffb1d3b76",
+      "count": 50,
+      "firstBarTime": 1785686400,
+      "lastBarTime": 1789920000,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "ETH-USDT",
+      "period": "15min",
+      "file": "ETH-USDT_15min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "ac9538e85eee67ce0546d681b4d1694637c47d36a17419ca645ce57c177a441e",
+      "count": 2000,
+      "firstBarTime": 1788199200,
+      "lastBarTime": 1789998300,
+      "coverage": "PARTIAL"
+    },
+    {
+      "contract": "ETH-USDT",
+      "period": "30min",
+      "file": "ETH-USDT_30min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "9de3a60ac05c8a87c5f453b6885a2c06590846b2ea3b7c2963550752e228fa40",
+      "count": 1200,
+      "firstBarTime": 1787839200,
+      "lastBarTime": 1789997400,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "ETH-USDT",
+      "period": "60min",
+      "file": "ETH-USDT_60min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "56bd36fdb85101576bc212c087927eb9590545609dda60b0ff469825a0398330",
+      "count": 700,
+      "firstBarTime": 1787479200,
+      "lastBarTime": 1789995600,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "ETH-USDT",
+      "period": "4hour",
+      "file": "ETH-USDT_4hour.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "710c9db24788bb373b6e4670977d69775ba93068c91f2534b871a678109d98af",
+      "count": 300,
+      "firstBarTime": 1785686400,
+      "lastBarTime": 1789992000,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "ETH-USDT",
+      "period": "1day",
+      "file": "ETH-USDT_4hour.json",
+      "sourceKind": "DERIVED_4H",
+      "sha256": "710c9db24788bb373b6e4670977d69775ba93068c91f2534b871a678109d98af",
+      "count": 50,
+      "firstBarTime": 1785686400,
+      "lastBarTime": 1789920000,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "XAUT-USDT",
+      "period": "15min",
+      "file": "XAUT-USDT_15min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "d6b4fc81df000cde7ad642226079a13fe7c360049c51345d22a3380b24cae35b",
+      "count": 2000,
+      "firstBarTime": 1788199200,
+      "lastBarTime": 1789998300,
+      "coverage": "PARTIAL"
+    },
+    {
+      "contract": "XAUT-USDT",
+      "period": "30min",
+      "file": "XAUT-USDT_30min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "ee0ba534a213a8fd405f68c599f2d4fe54c468ba9cf60825c796caea604b7e87",
+      "count": 1200,
+      "firstBarTime": 1787839200,
+      "lastBarTime": 1789997400,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "XAUT-USDT",
+      "period": "60min",
+      "file": "XAUT-USDT_60min.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "1f79906e088fcf3bc09e53569ea9ca19a8e3eb5026191470ecc0eef6c40db499",
+      "count": 700,
+      "firstBarTime": 1787479200,
+      "lastBarTime": 1789995600,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "XAUT-USDT",
+      "period": "4hour",
+      "file": "XAUT-USDT_4hour.json",
+      "sourceKind": "RAW_PUBLIC",
+      "sha256": "804ea931bb7b49bd806ab1baf68519cf02a581b5a539a7b6f0e795d31c94f216",
+      "count": 300,
+      "firstBarTime": 1785686400,
+      "lastBarTime": 1789992000,
+      "coverage": "COMPLETE"
+    },
+    {
+      "contract": "XAUT-USDT",
+      "period": "1day",
+      "file": "XAUT-USDT_4hour.json",
+      "sourceKind": "DERIVED_4H",
+      "sha256": "804ea931bb7b49bd806ab1baf68519cf02a581b5a539a7b6f0e795d31c94f216",
+      "count": 50,
+      "firstBarTime": 1785686400,
+      "lastBarTime": 1789920000,
+      "coverage": "COMPLETE"
+    }
+  ],
+  "missingOrPartial": [
+    "BTC-USDT:15min:insufficient-coverage",
+    "ETH-USDT:15min:insufficient-coverage",
+    "XAUT-USDT:15min:insufficient-coverage"
+  ]
+}

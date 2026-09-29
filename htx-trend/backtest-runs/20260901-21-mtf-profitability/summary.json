@@ -1,0 +1,40 @@
+{
+  "dataset_key": "research:6f6c9502e0b9fe3f5a2edad467d17ac0",
+  "input_checksum": "6f6c9502e0b9fe3f5a2edad467d17ac07c764c30552c5b3425b6d7ca61c57965",
+  "input_integrity": "PARTIAL",
+  "missing_or_partial": [
+    "BTC-USDT:15min:insufficient-coverage",
+    "ETH-USDT:15min:insufficient-coverage",
+    "XAUT-USDT:15min:insufficient-coverage"
+  ],
+  "all": {
+    "trades": 6,
+    "net_pnl": -4.998311129682624,
+    "profit_factor": 0.057491865310589925,
+    "expectancy": -0.833051854947104,
+    "win_rate": 0.3333333333333333,
+    "max_loss": -2.7680937134412975
+  },
+  "models": {
+    "DONCHIAN_BREAKOUT": {
+      "trades": 4,
+      "net_pnl": -3.177792360997611,
+      "profit_factor": 0.02062596604483478,
+      "expectancy": -0.7944480902494028,
+      "win_rate": 0.25,
+      "max_loss": -2.7680937134412975,
+      "decision": "INSUFFICIENT_EVIDENCE"
+    },
+    "FIB_PULLBACK_CONTINUATION": {
+      "trades": 2,
+      "net_pnl": -1.820518768685013,
+      "profit_factor": 0.11560231042177264,
+      "expectancy": -0.9102593843425065,
+      "win_rate": 0.5,
+      "max_loss": -2.0584843110040523,
+      "decision": "INSUFFICIENT_EVIDENCE"
+    }
+  },
+  "rejected": {},
+  "acceptance": "must beat no-trade (net PnL > 0), PF >= 1.20, positive expectancy, minimum sample, and COMPLETE frozen input"
+}
