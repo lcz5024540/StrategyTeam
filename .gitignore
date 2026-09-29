@@ -65,3 +65,5 @@ app-private.REAL.pem
 
 ### macOS ###
 .DS_Store
+# Immutable local research data; manifests and reports are committed separately.
+/htx-trend/research-data/
