@@ -16,6 +16,11 @@ public interface HtxTrendOrderMapper extends BaseMapper<HtxTrendOrderEntity> {
             + "AND status = 'ACCEPTED' ORDER BY id DESC LIMIT 1")
     HtxTrendOrderEntity findLatestAcceptedCloseOrder(@Param("positionId") long positionId);
 
+    /** Latest full-close intent regardless of whether it was accepted by HTX. */
+    @Select("SELECT * FROM htx_trend_order WHERE position_id = #{positionId} AND leg = 'CLOSE' "
+            + "ORDER BY id DESC LIMIT 1")
+    HtxTrendOrderEntity findLatestCloseOrder(@Param("positionId") long positionId);
+
     @Update("UPDATE htx_trend_order SET status = #{status}, exchange_order_id = #{exchangeOrderId}, "
             + "exchange_client_order_id = #{exchangeClientOrderId}, message = #{message}, "
             + "updated_at = CURRENT_TIMESTAMP(3) WHERE position_id = #{positionId} AND leg = #{leg} "

@@ -1287,6 +1287,9 @@ public class HtxTrendFollowingService {
         if (HtxTrendRecorder.CLOSE_SENT.equals(position.getStatus())) {
             return reconcileClose(position);
         }
+        if (HtxTrendRecorder.UNKNOWN.equals(position.getStatus())) {
+            return reconcileUnknownPosition(position);
+        }
         return RunResult.of(RunCode.WAITING, position.getId(), "position status=" + position.getStatus());
     }
 
@@ -1333,14 +1336,18 @@ public class HtxTrendFollowingService {
 
     private RunResult monitorActive(HtxTrendPositionEntity position, TrendSignal signal, HtxSwapContractInfo contract,
                                     List<HtxSwapKline> entryCandles) {
-        Optional<HtxSwapPosition> exchangePosition = exchangePosition(position.getContractCode(), position.getSide());
-        if (exchangePosition.isEmpty()) {
+        ExchangePositionLookup positionLookup = exchangePosition(position.getContractCode(), position.getSide());
+        if (!positionLookup.available()) {
+            return RunResult.of(RunCode.WAITING, position.getId(), "position query unavailable: " + positionLookup.reason());
+        }
+        if (positionLookup.position().isEmpty()) {
             String reviewReason = exitEngineReason(EXIT_HARD_RISK, "managed position missing on exchange");
             recorder.markStatus(position.getId(), HtxTrendRecorder.UNKNOWN,
                     reviewReason + "; manual review");
             return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(), reviewReason);
         }
-        BigDecimal reference = firstPositive(exchangePosition.get().getMarkPrice(), exchangePosition.get().getLastPrice(),
+        HtxSwapPosition exchangePosition = positionLookup.position().get();
+        BigDecimal reference = firstPositive(exchangePosition.getMarkPrice(), exchangePosition.getLastPrice(),
                 signal.closePrice(), position.getEntryAvgPrice());
         BigDecimal highest = max(firstPositive(position.getHighestPrice(), reference), reference);
         BigDecimal lowest = min(firstPositive(position.getLowestPrice(), reference), reference);
@@ -1811,16 +1818,52 @@ public class HtxTrendFollowingService {
         return null;
     }
 
-    private Optional<HtxSwapPosition> exchangePosition(String contractCode, String side) {
+    private ExchangePositionLookup exchangePosition(String contractCode, String side) {
         HtxRestResponse<List<HtxSwapPosition>> response = swap.positionInfo(contractCode);
         if (response == null || !response.ok() || response.payload() == null) {
-            return Optional.empty();
+            return ExchangePositionLookup.unavailable(error(response));
         }
         String positionSide = LONG.equals(side) ? POSITION_SIDE_LONG : POSITION_SIDE_SHORT;
-        return response.payload().stream()
+        Optional<HtxSwapPosition> position = response.payload().stream()
                 .filter(item -> item != null && positionSide.equalsIgnoreCase(item.getPositionSide()))
                 .filter(item -> positive(item.getVolume()))
                 .findFirst();
+        return ExchangePositionLookup.available(position);
+    }
+
+    /**
+     * UNKNOWN is only resolved after a second successful position snapshot.  Time proximity is not
+     * sufficient evidence: only HTX order/client identifiers may supply a close price and realized PnL.
+     */
+    private RunResult reconcileUnknownPosition(HtxTrendPositionEntity position) {
+        ExchangePositionLookup lookup = exchangePosition(position.getContractCode(), position.getSide());
+        if (!lookup.available()) {
+            return RunResult.of(RunCode.WAITING, position.getId(), "unknown position reconciliation waiting: " + lookup.reason());
+        }
+        if (lookup.position().isPresent()) {
+            recorder.markStatus(position.getId(), HtxTrendRecorder.ACTIVE,
+                    "exchange reconciliation restored active position volume=" + lookup.position().get().getVolume());
+            return RunResult.of(RunCode.ACTIVE, position.getId(), "exchange reconciliation restored active position");
+        }
+        Optional<HtxTrendOrderEntity> closeOrder = recorder.findLatestCloseOrder(position.getId());
+        if (closeOrder.isPresent() && !isBlank(closeOrder.get().getClientOrderId())) {
+            QueryOrderResult query = queryOrder(position.getContractCode(), closeOrder.get().getExchangeOrderId(),
+                    closeOrder.get().getClientOrderId());
+            if (query.found() && filled(query.order())) {
+                HtxSwapOrder order = query.order();
+                recorder.markOrderReconciled(position.getId(), HtxTrendRecorder.LEG_CLOSE, closeOrder.get().getClientOrderId(),
+                        HtxTrendRecorder.ORDER_FILLED, order.getOrderId(), order.getClientOrderId(), exchangeState(order),
+                        nz(order.getTradeVolume()), order.getTradeAveragePrice(), nz(order.getFee()), order.getFeeCurrency(),
+                        order.getRealProfit(), "close fill recovered from HTX by order identifier");
+                recorder.markCloseFilled(position.getId(), nz(order.getTradeVolume()), order.getTradeAveragePrice(),
+                        nz(order.getFee()), order.getRealProfit(), "close fill recovered from HTX by order identifier");
+                return RunResult.of(RunCode.DONE, position.getId(), "reconciled verified HTX close order=" + order.getOrderId());
+            }
+        }
+        String reason = "exchange position absent in two successful snapshots; no HTX close fill linked by order/client identifier; "
+                + "external close result unverified and excluded from strategy PnL";
+        recorder.markReconciledClosed(position, closeOrder.orElse(null), null, "EXTERNAL_UNVERIFIED", reason);
+        return RunResult.of(RunCode.DONE, position.getId(), reason);
     }
 
     private String switchLeverage(String contractCode, TrendSide side) {
@@ -3921,6 +3964,17 @@ public class HtxTrendFollowingService {
 
         static QueryOrderResult failed(String message) {
             return new QueryOrderResult(false, null, message);
+        }
+    }
+
+    /** Separates an authoritative empty HTX position list from a failed HTX query. */
+    private record ExchangePositionLookup(boolean available, Optional<HtxSwapPosition> position, String reason) {
+        static ExchangePositionLookup available(Optional<HtxSwapPosition> position) {
+            return new ExchangePositionLookup(true, position == null ? Optional.empty() : position, null);
+        }
+
+        static ExchangePositionLookup unavailable(String reason) {
+            return new ExchangePositionLookup(false, Optional.empty(), reason == null ? "unknown" : reason);
         }
     }
 }

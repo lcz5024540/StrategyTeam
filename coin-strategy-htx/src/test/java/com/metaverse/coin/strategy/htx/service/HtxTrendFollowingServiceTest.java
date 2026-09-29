@@ -47,9 +47,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -1422,6 +1424,43 @@ class HtxTrendFollowingServiceTest {
         assertTrue(result.message().contains("managed position missing on exchange"));
         verify(recorder).markStatus(eq(77L), eq(HtxTrendRecorder.UNKNOWN),
                 eq("exit engine: HARD_RISK: managed position missing on exchange; manual review"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void unknownPositionIsReleasedOnlyAfterSecondSuccessfulEmptyExchangeSnapshot() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        HtxTrendPositionEntity unknown = activeLongPosition();
+        unknown.setStatus(HtxTrendRecorder.UNKNOWN);
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(unknown));
+        when(recorder.findLatestCloseOrder(77L)).thenReturn(Optional.empty());
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(Collections.emptyList()));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.DONE, result.code());
+        assertTrue(result.message().contains("external close result unverified"));
+        verify(recorder).markReconciledClosed(eq(unknown), isNull(), isNull(), eq("EXTERNAL_UNVERIFIED"),
+                contains("exchange position absent in two successful snapshots"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void activePositionDoesNotBecomeUnknownWhenPositionQueryFails() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG);
+        HtxTrendPositionEntity active = activeLongPosition();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(error("io", "timeout"));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.WAITING, result.code());
+        assertTrue(result.message().contains("position query unavailable"));
+        verify(recorder, never()).markStatus(eq(77L), eq(HtxTrendRecorder.UNKNOWN), anyString());
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 

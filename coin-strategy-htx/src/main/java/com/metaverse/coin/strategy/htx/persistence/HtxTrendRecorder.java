@@ -7,9 +7,11 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendProfitProtecti
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendProfitProtectionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionReconciliationEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionReconciliationMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
@@ -53,6 +55,8 @@ public class HtxTrendRecorder {
     private HtxTrendExitDecisionMapper exitDecisionMapper;
     @Autowired(required = false)
     private HtxTrendProfitProtectionEventMapper profitProtectionEventMapper;
+    @Autowired(required = false)
+    private HtxTrendPositionReconciliationMapper positionReconciliationMapper;
 
     public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
                             HtxTrendSignalMapper signalMapper) {
@@ -94,6 +98,10 @@ public class HtxTrendRecorder {
 
     public Optional<HtxTrendOrderEntity> findAcceptedCloseOrder(long positionId) {
         return Optional.ofNullable(orderMapper.findLatestAcceptedCloseOrder(positionId));
+    }
+
+    public Optional<HtxTrendOrderEntity> findLatestCloseOrder(long positionId) {
+        return Optional.ofNullable(orderMapper.findLatestCloseOrder(positionId));
     }
 
     public Optional<HtxTrendOrderEntity> findAcceptedPartialCloseOrder(long positionId) {
@@ -431,6 +439,37 @@ public class HtxTrendRecorder {
 
     public void markStatus(long id, String nextStatus, String message) {
         positionMapper.markStatus(id, nextStatus, message);
+    }
+
+    /** Records why an exchange-absent position was resolved without inventing an execution price or PnL. */
+    public void markReconciledClosed(HtxTrendPositionEntity position, HtxTrendOrderEntity closeOrder,
+                                     Long exchangeCloseOrderId, String resolution, String reason) {
+        if (position == null || position.getId() == null) {
+            return;
+        }
+        String safeReason = clip(reason);
+        positionMapper.markReconciledClosed(position.getId(), "EXCHANGE_POSITION_ABSENT_" + resolution, safeReason);
+        if (positionReconciliationMapper == null) {
+            return;
+        }
+        try {
+            HtxTrendPositionReconciliationEntity event = new HtxTrendPositionReconciliationEntity();
+            event.setReconciliationKey("trend-position-reconcile:" + position.getId() + ":" + resolution
+                    + ":" + (exchangeCloseOrderId == null ? "none" : exchangeCloseOrderId));
+            event.setPositionId(position.getId());
+            event.setAccountLabel(position.getAccountLabel() == null ? "primary" : position.getAccountLabel());
+            event.setContractCode(position.getContractCode());
+            event.setPriorStatus(position.getStatus());
+            event.setExchangePositionState("ABSENT_CONFIRMED");
+            event.setCloseOrderId(closeOrder == null ? null : closeOrder.getId());
+            event.setCloseClientOrderId(closeOrder == null ? null : closeOrder.getClientOrderId());
+            event.setExchangeCloseOrderId(exchangeCloseOrderId);
+            event.setResolution(resolution);
+            event.setReason(safeReason);
+            positionReconciliationMapper.insert(event);
+        } catch (RuntimeException ex) {
+            log.warn("trend position reconciliation audit insert failed positionId={}", position.getId(), ex);
+        }
     }
 
     private void preparePositionIdentity(HtxTrendPositionEntity entity) {

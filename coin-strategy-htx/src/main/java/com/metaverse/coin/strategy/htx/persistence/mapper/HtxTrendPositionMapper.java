@@ -208,6 +208,17 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                    @Param("nextStatus") String nextStatus,
                    @Param("message") String message);
 
+    /**
+     * The exchange has authoritatively reported zero volume twice, but no strategy close fill can be
+     * linked by exchange/client order id.  Keep the unknown external result out of strategy PnL while
+     * releasing the local capacity it would otherwise occupy forever.
+     */
+    @Update("UPDATE htx_trend_position SET status = 'RECONCILED_CLOSED', remaining_contract_volume = 0, "
+            + "exit_reason = #{exitReason}, message = #{message}, updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
+    int markReconciledClosed(@Param("id") long id,
+                             @Param("exitReason") String exitReason,
+                             @Param("message") String message);
+
     @Select("SELECT MAX(updated_at) FROM htx_trend_position WHERE contract_code = #{contractCode} AND status = 'DONE'")
     LocalDateTime latestDoneAt(@Param("contractCode") String contractCode);
 
