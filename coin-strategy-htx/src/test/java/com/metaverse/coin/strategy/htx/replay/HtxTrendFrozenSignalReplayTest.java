@@ -1,6 +1,7 @@
 package com.metaverse.coin.strategy.htx.replay;
 
 import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
+import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.Direction;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -52,6 +53,23 @@ class HtxTrendFrozenSignalReplayTest {
         assertEquals(2L, result.directionalBars());
         assertEquals(result.combinationCount(), result.externalGateUnavailableCount());
         assertEquals(2L, result.contracts().get("BTC-USDT").evaluatedBars());
+    }
+
+    @Test
+    void usesTheSameTrailingKlineWindowAsTheProductionService() throws Exception {
+        Path input = directory.resolve("BTC-USDT_15min.json");
+        Files.writeString(input, candles());
+        HtxTrendFrozenDataset dataset = HtxTrendFrozenDataset.open(directory, manifest(input));
+        HtxTrendEnsembleShadowProperties properties = properties();
+        properties.setKlineSize(100);
+
+        HtxTrendFrozenSignalReplay.Observation replayed = new HtxTrendFrozenSignalReplay().evaluate(
+                dataset, "BTC-USDT", "15min", 139L * 900L, properties, 32);
+        List<com.metaverse.coin.strategy.common.client.htx.model.HtxSwapKline> candles = dataset.candles("BTC-USDT", "15min");
+        HtxTrendEnsembleSignalCalculator.TrendCandidateSignal expected = new HtxTrendEnsembleSignalCalculator().evaluate(
+                candles.subList(40, 140), properties, "15min", 140L * 900L + properties.getCandleCloseGraceSeconds());
+
+        assertEquals(expected, replayed.ensemble());
     }
 
     private String candles() {

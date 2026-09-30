@@ -40,18 +40,36 @@ public final class HtxTrendFrozenSignalReplay {
 
     /**
      * Replays every completed entry-period bar in the supplied inclusive time window.
+     * Every observation uses the same trailing {@code klineSize} window that production fetches from HTX.
      * Results are streamed to the optional consumer so callers can persist or compare evidence
      * without retaining a six-month universe in memory.
      */
     public BatchSummary replay(HtxTrendFrozenDataset dataset, String period, long startBarTime, long endBarTime,
                                HtxTrendEnsembleShadowProperties properties, int boxWindowBars,
                                Consumer<Observation> observationConsumer) throws IOException {
+        return replay(dataset, dataset == null ? List.of() : dataset.contracts(), period, startBarTime, endBarTime,
+                properties, boxWindowBars, observationConsumer);
+    }
+
+    /**
+     * Replays only the explicitly supplied contracts from the frozen universe.
+     * The contract filter makes small-window acceptance runs possible before the calculator has a rolling cache.
+     */
+    public BatchSummary replay(HtxTrendFrozenDataset dataset, List<String> contractCodes, String period,
+                               long startBarTime, long endBarTime, HtxTrendEnsembleShadowProperties properties,
+                               int boxWindowBars, Consumer<Observation> observationConsumer) throws IOException {
         if (dataset == null || properties == null || startBarTime > endBarTime) {
             throw new IllegalArgumentException("dataset, properties and an ordered replay window are required");
         }
+        if (contractCodes == null || contractCodes.isEmpty()) {
+            throw new IllegalArgumentException("at least one frozen contract is required");
+        }
         Map<String, ContractSummary> summaries = new LinkedHashMap<>();
         long evaluated = 0L, directional = 0L, combinations = 0L, externalGateUnavailable = 0L;
-        for (String contractCode : dataset.contracts()) {
+        for (String contractCode : contractCodes.stream().distinct().sorted().toList()) {
+            if (!dataset.contracts().contains(contractCode)) {
+                throw new IllegalArgumentException("contract is not declared by frozen dataset: " + contractCode);
+            }
             if (!dataset.periods(contractCode).contains(period)) {
                 continue;
             }
@@ -88,7 +106,10 @@ public final class HtxTrendFrozenSignalReplay {
     private Observation evaluateCompleted(String datasetKey, String contractCode, String period, List<HtxSwapKline> candles,
                                           int index, HtxTrendEnsembleShadowProperties properties, int boxWindowBars) {
         long completedBarTime = candles.get(index).getId();
-        List<HtxSwapKline> completed = candles.subList(0, index + 1);
+        // Production requests klineSize bars on every evaluation. A full historical prefix would change EMA/ADX
+        // values relative to production and makes the replay needlessly quadratic in the frozen window length.
+        int first = Math.max(0, index + 1 - properties.getKlineSize());
+        List<HtxSwapKline> completed = candles.subList(first, index + 1);
         long seconds = periodSeconds(period);
         long evaluationTime = completedBarTime + seconds + Math.max(0L, properties.getCandleCloseGraceSeconds());
         HtxTrendEnsembleSignalCalculator.TrendCandidateSignal ensemble = ensembleCalculator.evaluate(
