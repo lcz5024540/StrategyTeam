@@ -1,0 +1,28 @@
+{
+  "schema": "htx-trend-replay-configuration-v1",
+  "configurationKey": "replay-config:20260930-code-defaults",
+  "sourceKind": "CODE_DEFAULTS",
+  "sourceReference": "support_htx@3330bda1 · HtxTrendEnsembleShadowProperties and application.yml defaults",
+  "configurationEvidence": "INSUFFICIENT_EVIDENCE: historical ensemble configuration was not frozen; code defaults snapshot is suitable only for formula and candidate coverage replay",
+  "inputIntegrity": "COMPLETE",
+  "boxWindowBars": 32,
+  "ensemble": {
+    "klineSize": 180,
+    "candleCloseGraceSeconds": 10,
+    "fastEmaPeriod": 20,
+    "mediumEmaPeriod": 60,
+    "slowEmaPeriod": 120,
+    "breakoutLookback": 20,
+    "momentumLookback": 12,
+    "atrPeriod": 14,
+    "adxPeriod": 14,
+    "volumeLookback": 20,
+    "minAtrPct": "0.0010",
+    "minAdx": "16",
+    "minMomentumPct": "0.0015",
+    "minVolumeRatio": "1.10",
+    "entryScoreThreshold": "60",
+    "minScoreGap": "12",
+    "modelVersion": "ensemble-shadow-v1"
+  }
+}

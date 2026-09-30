@@ -23,12 +23,14 @@ class HtxTrendFrozenSignalReplayCommandTest {
         Path input = directory.resolve("BTC-USDT_15min.json");
         Files.writeString(input, candles());
         Path manifest = manifest(input);
+        Path configuration = configuration();
         Path output = directory.resolve("out/observations.jsonl");
 
         HtxTrendFrozenSignalReplayCommand.Result result = HtxTrendFrozenSignalReplayCommand.run(
                 HtxTrendFrozenSignalReplayCommand.Arguments.parse(new String[]{
                         "--data-dir=" + directory,
                         "--manifest=" + manifest,
+                        "--configuration=" + configuration,
                         "--contracts=BTC-USDT",
                         "--period=15min",
                         "--start=" + (138L * 900L),
@@ -40,8 +42,9 @@ class HtxTrendFrozenSignalReplayCommandTest {
         JSONObject header = JSON.parseObject(Files.readAllLines(output).get(0));
         assertEquals("HEADER", header.getString("recordType"));
         assertEquals("SIGNAL_AND_COMBINATION_ONLY", header.getString("executionScope"));
-        assertEquals("INSUFFICIENT_EVIDENCE: historical ensemble configuration was not frozen; code defaults were used",
+        assertEquals("INSUFFICIENT_EVIDENCE: test code-default configuration",
                 header.getString("calculatorConfigurationEvidence"));
+        assertEquals("replay-config:test", header.getString("configurationKey"));
         JSONObject summary = JSON.parseObject(Files.readString(result.summary()));
         assertEquals(2L, summary.getLongValue("evaluatedBars"));
         assertEquals(HtxTrendFrozenSignalReplay.EXTERNAL_GATE_UNAVAILABLE,
@@ -81,5 +84,19 @@ class HtxTrendFrozenSignalReplayCommandTest {
                 "lastBarTime":126000,"sourceKind":"RAW_PUBLIC","coverage":"COMPLETE"}]}
                 """.formatted(java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(input)))));
         return manifest;
+    }
+
+    private Path configuration() throws Exception {
+        Path configuration = directory.resolve("configuration.json");
+        Files.writeString(configuration, """
+                {"schema":"htx-trend-replay-configuration-v1","configurationKey":"replay-config:test",
+                "sourceKind":"CODE_DEFAULTS","configurationEvidence":"INSUFFICIENT_EVIDENCE: test code-default configuration",
+                "sourceReference":"test source","inputIntegrity":"COMPLETE","boxWindowBars":32,"ensemble":{"klineSize":180,
+                "candleCloseGraceSeconds":10,"fastEmaPeriod":8,"mediumEmaPeriod":21,"slowEmaPeriod":55,
+                "breakoutLookback":20,"momentumLookback":8,"atrPeriod":5,"adxPeriod":5,"volumeLookback":20,
+                "minAtrPct":"0.0001","minAdx":"1","minMomentumPct":"0.001","minVolumeRatio":"1",
+                "entryScoreThreshold":"60","minScoreGap":"10","modelVersion":"test-v1"}}
+                """);
+        return configuration;
     }
 }

@@ -1,7 +1,6 @@
 package com.metaverse.coin.strategy.htx.replay;
 
 import com.alibaba.fastjson2.JSON;
-import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -26,7 +25,6 @@ public final class HtxTrendFrozenSignalReplayCommand {
 
     private static final String OBSERVATION_SCHEMA = "htx-trend-frozen-signal-observation-v1";
     private static final String SUMMARY_SCHEMA = "htx-trend-frozen-signal-summary-v1";
-    private static final String CONFIGURATION_UNAVAILABLE = "INSUFFICIENT_EVIDENCE: historical ensemble configuration was not frozen; code defaults were used";
     private static final ZoneOffset SHANGHAI_OFFSET = ZoneOffset.ofHours(8);
     private static final int DEFAULT_BOX_WINDOW_BARS = 32;
 
@@ -46,6 +44,8 @@ public final class HtxTrendFrozenSignalReplayCommand {
 
     static Result run(Arguments arguments) throws IOException {
         HtxTrendFrozenDataset dataset = HtxTrendFrozenDataset.open(arguments.dataDirectory(), arguments.manifest());
+        HtxTrendFrozenReplayConfiguration.Configuration configuration = HtxTrendFrozenReplayConfiguration.open(
+                arguments.configuration());
         HtxTrendFrozenSignalReplay replay = new HtxTrendFrozenSignalReplay();
         Path output = arguments.output().toAbsolutePath().normalize();
         Path summary = output.resolveSibling(output.getFileName() + ".summary.json");
@@ -55,11 +55,11 @@ public final class HtxTrendFrozenSignalReplayCommand {
         }
 
         try (BufferedWriter writer = Files.newBufferedWriter(output, StandardCharsets.UTF_8)) {
-            write(writer, header(dataset, arguments));
+            write(writer, header(dataset, arguments, configuration));
             HtxTrendFrozenSignalReplay.BatchSummary batchSummary = replay.replay(dataset, arguments.contractCodes(),
-                    arguments.period(), arguments.startBarTime(), arguments.endBarTime(), defaultProperties(),
-                    arguments.boxWindowBars(), observation -> writeUnchecked(writer, observationRecord(observation)));
-            Files.writeString(summary, JSON.toJSONString(summaryRecord(arguments, batchSummary)), StandardCharsets.UTF_8);
+                    arguments.period(), arguments.startBarTime(), arguments.endBarTime(), configuration.properties(),
+                    configuration.boxWindowBars(), observation -> writeUnchecked(writer, observationRecord(observation, configuration)));
+            Files.writeString(summary, JSON.toJSONString(summaryRecord(arguments, batchSummary, configuration)), StandardCharsets.UTF_8);
             return new Result(output, summary, batchSummary);
         }
     }
@@ -79,7 +79,8 @@ public final class HtxTrendFrozenSignalReplayCommand {
         writer.flush();
     }
 
-    private static Map<String, Object> header(HtxTrendFrozenDataset dataset, Arguments arguments) {
+    private static Map<String, Object> header(HtxTrendFrozenDataset dataset, Arguments arguments,
+                                               HtxTrendFrozenReplayConfiguration.Configuration configuration) {
         Map<String, Object> header = new LinkedHashMap<>();
         header.put("schema", OBSERVATION_SCHEMA);
         header.put("recordType", "HEADER");
@@ -89,14 +90,19 @@ public final class HtxTrendFrozenSignalReplayCommand {
         header.put("period", arguments.period());
         header.put("startBarTime", arguments.startBarTime());
         header.put("endBarTime", arguments.endBarTime());
-        header.put("boxWindowBars", arguments.boxWindowBars());
+        header.put("configurationKey", configuration.configurationKey());
+        header.put("configurationSourceKind", configuration.sourceKind());
+        header.put("configurationSourceReference", configuration.sourceReference());
+        header.put("configurationSha256", configuration.sha256());
+        header.put("boxWindowBars", configuration.boxWindowBars());
         header.put("executionScope", "SIGNAL_AND_COMBINATION_ONLY");
-        header.put("calculatorConfigurationEvidence", CONFIGURATION_UNAVAILABLE);
+        header.put("calculatorConfigurationEvidence", configuration.configurationEvidence());
         header.put("executionGateEvidence", HtxTrendFrozenSignalReplay.EXTERNAL_GATE_UNAVAILABLE);
         return header;
     }
 
-    private static Map<String, Object> observationRecord(HtxTrendFrozenSignalReplay.Observation observation) {
+    private static Map<String, Object> observationRecord(HtxTrendFrozenSignalReplay.Observation observation,
+                                                           HtxTrendFrozenReplayConfiguration.Configuration configuration) {
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("schema", OBSERVATION_SCHEMA);
         record.put("recordType", "OBSERVATION");
@@ -107,13 +113,17 @@ public final class HtxTrendFrozenSignalReplayCommand {
         record.put("barClosedAt", Instant.ofEpochSecond(observation.barTime()).atOffset(SHANGHAI_OFFSET).toString());
         record.put("ensemble", observation.ensemble());
         record.put("combinations", observation.combinations());
-        record.put("calculatorConfigurationEvidence", CONFIGURATION_UNAVAILABLE);
+        record.put("configurationKey", configuration.configurationKey());
+        record.put("configurationSourceReference", configuration.sourceReference());
+        record.put("configurationSha256", configuration.sha256());
+        record.put("calculatorConfigurationEvidence", configuration.configurationEvidence());
         record.put("executionGateEvidence", observation.executionGateEvidence());
         return record;
     }
 
     private static Map<String, Object> summaryRecord(Arguments arguments,
-                                                       HtxTrendFrozenSignalReplay.BatchSummary batchSummary) {
+                                                       HtxTrendFrozenSignalReplay.BatchSummary batchSummary,
+                                                       HtxTrendFrozenReplayConfiguration.Configuration configuration) {
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("schema", SUMMARY_SCHEMA);
         record.put("datasetKey", batchSummary.datasetKey());
@@ -127,21 +137,21 @@ public final class HtxTrendFrozenSignalReplayCommand {
         record.put("externalGateUnavailableCount", batchSummary.externalGateUnavailableCount());
         record.put("contractsSummary", batchSummary.contracts());
         record.put("executionScope", "SIGNAL_AND_COMBINATION_ONLY");
-        record.put("calculatorConfigurationEvidence", CONFIGURATION_UNAVAILABLE);
+        record.put("configurationKey", configuration.configurationKey());
+        record.put("configurationSourceKind", configuration.sourceKind());
+        record.put("configurationSourceReference", configuration.sourceReference());
+        record.put("configurationSha256", configuration.sha256());
+        record.put("calculatorConfigurationEvidence", configuration.configurationEvidence());
         record.put("executionGateEvidence", HtxTrendFrozenSignalReplay.EXTERNAL_GATE_UNAVAILABLE);
         return record;
     }
 
-    private static HtxTrendEnsembleShadowProperties defaultProperties() {
-        return new HtxTrendEnsembleShadowProperties();
-    }
-
     public record Arguments(Path dataDirectory, Path manifest, List<String> contractCodes, String period,
-                            long startBarTime, long endBarTime, int boxWindowBars, Path output) {
+                            long startBarTime, long endBarTime, Path configuration, Path output) {
         public Arguments {
             if (dataDirectory == null || manifest == null || contractCodes == null || contractCodes.isEmpty()
-                    || period == null || period.isBlank() || startBarTime > endBarTime || boxWindowBars < 2 || output == null) {
-                throw new IllegalArgumentException("data directory, manifest, contracts, period, ordered window, box window and output are required");
+                    || period == null || period.isBlank() || startBarTime > endBarTime || configuration == null || output == null) {
+                throw new IllegalArgumentException("data directory, manifest, contracts, period, ordered window, configuration and output are required");
             }
             contractCodes = List.copyOf(contractCodes);
         }
@@ -162,12 +172,8 @@ public final class HtxTrendFrozenSignalReplayCommand {
                     .map(String::trim).filter(value -> !value.isEmpty()).toList();
             return new Arguments(Path.of(required(values, "data-dir")), Path.of(required(values, "manifest")),
                     contractCodes, required(values, "period"), parseBarTime(required(values, "start")),
-                    parseBarTime(required(values, "end")), parsePositiveInt(values.get("box-window-bars")),
+                    parseBarTime(required(values, "end")), Path.of(required(values, "configuration")),
                     Path.of(required(values, "output")));
-        }
-
-        private static int parsePositiveInt(String value) {
-            return value == null || value.isBlank() ? DEFAULT_BOX_WINDOW_BARS : Integer.parseInt(value);
         }
 
         private static long parseBarTime(String value) {
@@ -187,9 +193,8 @@ public final class HtxTrendFrozenSignalReplayCommand {
         }
 
         private static String usage() {
-            return "usage: --data-dir=PATH --manifest=PATH --contracts=BTC-USDT,ETH-USDT --period=15min "
-                    + "--start=2026-09-18T00:00:00+08:00 --end=2026-09-18T23:45:00+08:00 --output=PATH "
-                    + "[--box-window-bars=32]";
+            return "usage: --data-dir=PATH --manifest=PATH --configuration=PATH --contracts=BTC-USDT,ETH-USDT "
+                    + "--period=15min --start=2026-09-18T00:00:00+08:00 --end=2026-09-18T23:45:00+08:00 --output=PATH";
         }
     }
 
