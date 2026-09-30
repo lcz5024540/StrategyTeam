@@ -11,6 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +35,23 @@ class HtxTrendFrozenSignalReplayTest {
         assertEquals(Direction.LONG, observation.ensemble().direction());
         assertFalse(observation.combinations().isEmpty());
         assertEquals(HtxTrendFrozenSignalReplay.EXTERNAL_GATE_UNAVAILABLE, observation.executionGateEvidence());
+    }
+
+    @Test
+    void streamsBatchObservationsAndSeparatesUnavailableExternalGates() throws Exception {
+        Path input = directory.resolve("BTC-USDT_15min.json");
+        Files.writeString(input, candles());
+        HtxTrendFrozenDataset dataset = HtxTrendFrozenDataset.open(directory, manifest(input));
+        List<HtxTrendFrozenSignalReplay.Observation> observations = new ArrayList<>();
+
+        HtxTrendFrozenSignalReplay.BatchSummary result = new HtxTrendFrozenSignalReplay().replay(
+                dataset, "15min", 138L * 900L, 139L * 900L, properties(), 32, observations::add);
+
+        assertEquals(2L, result.evaluatedBars());
+        assertEquals(2L, observations.size());
+        assertEquals(2L, result.directionalBars());
+        assertEquals(result.combinationCount(), result.externalGateUnavailableCount());
+        assertEquals(2L, result.contracts().get("BTC-USDT").evaluatedBars());
     }
 
     private String candles() {

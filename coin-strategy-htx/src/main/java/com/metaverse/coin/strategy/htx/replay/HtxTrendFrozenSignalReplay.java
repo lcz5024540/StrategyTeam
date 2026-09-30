@@ -6,7 +6,10 @@ import com.metaverse.coin.strategy.htx.service.HtxTrendCombinationCalculator;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Re-evaluates one completed historical bar with the production ensemble and combination calculators.
@@ -27,19 +30,72 @@ public final class HtxTrendFrozenSignalReplay {
         if (dataset == null || properties == null) {
             throw new IllegalArgumentException("frozen dataset and ensemble properties are required");
         }
-        long seconds = periodSeconds(period);
         List<HtxSwapKline> candles = dataset.candles(contractCode, period);
         int index = find(candles, completedBarTime);
         if (index < 0) {
             throw new IllegalArgumentException("completed bar is not in the frozen input: " + contractCode + " " + period + " " + completedBarTime);
         }
+        return evaluateCompleted(dataset.datasetKey(), contractCode, period, candles, index, properties, boxWindowBars);
+    }
+
+    /**
+     * Replays every completed entry-period bar in the supplied inclusive time window.
+     * Results are streamed to the optional consumer so callers can persist or compare evidence
+     * without retaining a six-month universe in memory.
+     */
+    public BatchSummary replay(HtxTrendFrozenDataset dataset, String period, long startBarTime, long endBarTime,
+                               HtxTrendEnsembleShadowProperties properties, int boxWindowBars,
+                               Consumer<Observation> observationConsumer) throws IOException {
+        if (dataset == null || properties == null || startBarTime > endBarTime) {
+            throw new IllegalArgumentException("dataset, properties and an ordered replay window are required");
+        }
+        Map<String, ContractSummary> summaries = new LinkedHashMap<>();
+        long evaluated = 0L, directional = 0L, combinations = 0L, externalGateUnavailable = 0L;
+        for (String contractCode : dataset.contracts()) {
+            if (!dataset.periods(contractCode).contains(period)) {
+                continue;
+            }
+            List<HtxSwapKline> candles = dataset.candles(contractCode, period);
+            long contractEvaluated = 0L, contractDirectional = 0L, contractCombinations = 0L;
+            for (int index = 0; index < candles.size(); index++) {
+                long barTime = candles.get(index).getId();
+                if (barTime < startBarTime || barTime > endBarTime) {
+                    continue;
+                }
+                Observation observation = evaluateCompleted(dataset.datasetKey(), contractCode, period, candles, index,
+                        properties, boxWindowBars);
+                contractEvaluated++;
+                evaluated++;
+                if (observation.ensemble().direction() != HtxTrendEnsembleSignalCalculator.Direction.FLAT) {
+                    contractDirectional++;
+                    directional++;
+                }
+                if (!observation.combinations().isEmpty()) {
+                    contractCombinations += observation.combinations().size();
+                    combinations += observation.combinations().size();
+                    externalGateUnavailable += observation.combinations().size();
+                }
+                if (observationConsumer != null) {
+                    observationConsumer.accept(observation);
+                }
+            }
+            summaries.put(contractCode, new ContractSummary(contractEvaluated, contractDirectional, contractCombinations));
+        }
+        return new BatchSummary(dataset.datasetKey(), period, startBarTime, endBarTime, evaluated, directional,
+                combinations, externalGateUnavailable, Map.copyOf(summaries));
+    }
+
+    private Observation evaluateCompleted(String datasetKey, String contractCode, String period, List<HtxSwapKline> candles,
+                                          int index, HtxTrendEnsembleShadowProperties properties, int boxWindowBars) {
+        long completedBarTime = candles.get(index).getId();
         List<HtxSwapKline> completed = candles.subList(0, index + 1);
+        long seconds = periodSeconds(period);
         long evaluationTime = completedBarTime + seconds + Math.max(0L, properties.getCandleCloseGraceSeconds());
         HtxTrendEnsembleSignalCalculator.TrendCandidateSignal ensemble = ensembleCalculator.evaluate(
                 completed, properties, period, evaluationTime);
         List<HtxTrendCombinationCalculator.CombinationCandidate> combinations = combinationCalculator.evaluate(
                 completed, ensemble, boxWindowBars);
-        return new Observation(dataset.datasetKey(), contractCode, period, completedBarTime, ensemble, combinations,
+        return new Observation(datasetKey, contractCode, period, completedBarTime, ensemble, combinations,
                 EXTERNAL_GATE_UNAVAILABLE);
     }
 
@@ -69,6 +125,17 @@ public final class HtxTrendFrozenSignalReplay {
                               String executionGateEvidence) {
         public Observation {
             combinations = List.copyOf(combinations == null ? List.of() : combinations);
+        }
+    }
+
+    public record ContractSummary(long evaluatedBars, long directionalBars, long combinationCount) {
+    }
+
+    public record BatchSummary(String datasetKey, String period, long startBarTime, long endBarTime,
+                               long evaluatedBars, long directionalBars, long combinationCount,
+                               long externalGateUnavailableCount, Map<String, ContractSummary> contracts) {
+        public BatchSummary {
+            contracts = Map.copyOf(contracts == null ? Map.of() : contracts);
         }
     }
 }
