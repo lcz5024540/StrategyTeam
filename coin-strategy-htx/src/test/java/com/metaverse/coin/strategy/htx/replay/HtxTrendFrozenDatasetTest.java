@@ -69,10 +69,10 @@ class HtxTrendFrozenDatasetTest {
     private Path manifest(Path input, String integrity, String checksum) throws IOException {
         Path manifest = directory.resolve("dataset-manifest.json");
         Files.writeString(manifest, """
-                {"schema":"htx-trend-research-dataset-manifest-v1","datasetKey":"research:test",
+                {"schema":"htx-trend-research-dataset-manifest-v1","sourceKind":"FROZEN_PUBLIC_KLINE","datasetKey":"research:test",
                 "inputIntegrity":"%s","inputs":[{"contract":"BTC-USDT","period":"15min",
                 "file":"BTC-USDT_15min.json","sha256":"%s","count":2,"firstBarTime":100,
-                "lastBarTime":200,"coverage":"COMPLETE"}]}
+                "lastBarTime":200,"sourceKind":"RAW_PUBLIC","coverage":"COMPLETE"}]}
                 """.formatted(integrity, checksum));
         return manifest;
     }

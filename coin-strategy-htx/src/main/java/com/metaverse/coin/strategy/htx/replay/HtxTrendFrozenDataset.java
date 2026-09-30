@@ -46,6 +46,9 @@ public final class HtxTrendFrozenDataset {
         if (!MANIFEST_SCHEMA.equals(manifest.getString("schema"))) {
             throw new IllegalArgumentException("unsupported frozen dataset manifest schema");
         }
+        if (!"FROZEN_PUBLIC_KLINE".equals(manifest.getString("sourceKind"))) {
+            throw new IllegalArgumentException("production replay requires FROZEN_PUBLIC_KLINE inputs");
+        }
         if (!"COMPLETE".equals(manifest.getString("inputIntegrity"))) {
             throw new IllegalArgumentException("production replay requires a COMPLETE frozen dataset");
         }
@@ -189,7 +192,8 @@ public final class HtxTrendFrozenDataset {
             Long firstBarTime = row.getLong("firstBarTime");
             Long lastBarTime = row.getLong("lastBarTime");
             if (blank(contractCode) || blank(period) || blank(fileName) || blank(sha256) || count == null || count < 1
-                    || firstBarTime == null || lastBarTime == null || !"COMPLETE".equals(row.getString("coverage"))) {
+                    || firstBarTime == null || lastBarTime == null || !"RAW_PUBLIC".equals(row.getString("sourceKind"))
+                    || !"COMPLETE".equals(row.getString("coverage"))) {
                 throw new IllegalArgumentException("frozen dataset manifest contains an incomplete input declaration");
             }
             return new Input(contractCode, period, fileName, sha256, count, firstBarTime, lastBarTime);
