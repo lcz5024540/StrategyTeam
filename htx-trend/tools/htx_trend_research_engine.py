@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Dict, Iterable, List, Protocol, Sequence
+from typing import Callable, Dict, Iterable, List, Mapping, Protocol, Sequence
 
 from htx_trend_backtest import Bar, adx, average_tail, ema, true_ranges
 
@@ -61,6 +61,14 @@ class SignalContext:
     entry_bars: Sequence[Bar]
     side: Side
     higher_timeframe_evidence: str = "UNSPECIFIED"
+    # The offline pipeline may provide values calculated from the same
+    # completed prefix.  Live-style callers leave this empty.
+    indicator_values: Mapping[str, float] = field(default_factory=dict)
+
+
+def _indicator(context: SignalContext, name: str, fallback: Callable[[], float]) -> float:
+    value = context.indicator_values.get(name)
+    return fallback() if value is None else value
 
 
 @dataclass(frozen=True)
@@ -168,16 +176,18 @@ class DonchianBreakoutModel:
             return []
         last, history = bars[-1], bars[-config.donchian_lookback - 1:-1]
         high, low = max(bar.high for bar in history), min(bar.low for bar in history)
-        closes = [bar.close for bar in bars]
-        fast, slow, value_atr = ema(closes, config.fast_ema), ema(closes, config.slow_ema), _atr(bars, config.atr_period)
+        fast = _indicator(context, "fast_ema", lambda: ema([bar.close for bar in bars], config.fast_ema))
+        slow = _indicator(context, "slow_ema", lambda: ema([bar.close for bar in bars], config.slow_ema))
+        value_atr = _indicator(context, "atr", lambda: _atr(bars, config.atr_period))
+        value_adx = _indicator(context, "adx", lambda: adx(list(bars), config.atr_period))
         if value_atr <= 0:
             return []
         if context.side is Side.LONG and last.close > high and fast > slow:
-            return _signal(self.name, context, adx(list(bars), config.atr_period) + 30,
+            return _signal(self.name, context, value_adx + 30,
                            ("Donchian upper-channel breakout", "EMA trend aligned", context.higher_timeframe_evidence),
                            min(last.low, last.close - config.stop_atr * value_atr), value_atr, config, execution)
         if context.side is Side.SHORT and last.close < low and fast < slow:
-            return _signal(self.name, context, adx(list(bars), config.atr_period) + 30,
+            return _signal(self.name, context, value_adx + 30,
                            ("Donchian lower-channel breakdown", "EMA trend aligned", context.higher_timeframe_evidence),
                            max(last.high, last.close + config.stop_atr * value_atr), value_atr, config, execution)
         return []
@@ -195,22 +205,24 @@ class FibonacciPullbackModel:
         last, previous = bars[-1], bars[-2]
         structure = bars[-config.donchian_lookback - 1:-1]
         high, low = max(bar.high for bar in structure), min(bar.low for bar in structure)
-        span, value_atr = high - low, _atr(bars, config.atr_period)
-        closes = [bar.close for bar in bars]
-        fast, slow = ema(closes, config.fast_ema), ema(closes, config.slow_ema)
+        span = high - low
+        value_atr = _indicator(context, "atr", lambda: _atr(bars, config.atr_period))
+        fast = _indicator(context, "fast_ema", lambda: ema([bar.close for bar in bars], config.fast_ema))
+        slow = _indicator(context, "slow_ema", lambda: ema([bar.close for bar in bars], config.slow_ema))
+        value_adx = _indicator(context, "adx", lambda: adx(list(bars), config.atr_period))
         if value_atr <= 0 or span < config.fibonacci_min_atr_range * value_atr:
             return []
         if context.side is Side.LONG:
             upper, lower = high - config.fib_lower * span, high - config.fib_upper * span
             if lower <= last.close <= upper and last.close > previous.close and fast > slow:
-                return _signal(self.name, context, adx(list(bars), config.atr_period) + 20,
+                return _signal(self.name, context, value_adx + 20,
                                ("Fibonacci 0.382-0.618 pullback", "bullish recovery", context.higher_timeframe_evidence),
                                min(low, last.close - config.stop_atr * value_atr), value_atr, config, execution,
                                OrderStyle.LIMIT)
         else:
             lower, upper = low + config.fib_lower * span, low + config.fib_upper * span
             if lower <= last.close <= upper and last.close < previous.close and fast < slow:
-                return _signal(self.name, context, adx(list(bars), config.atr_period) + 20,
+                return _signal(self.name, context, value_adx + 20,
                                ("Fibonacci 0.382-0.618 pullback", "bearish recovery", context.higher_timeframe_evidence),
                                max(high, last.close + config.stop_atr * value_atr), value_atr, config, execution,
                                OrderStyle.LIMIT)
@@ -226,17 +238,19 @@ class EmaVwapMomentumModel:
         if len(bars) < max(config.slow_ema, config.vwap_window) + 2:
             return []
         last, previous = bars[-1], bars[-2]
-        closes = [bar.close for bar in bars]
-        fast, slow, value_atr = ema(closes, config.fast_ema), ema(closes, config.slow_ema), _atr(bars, config.atr_period)
-        value_vwap = _vwap(bars, config.vwap_window)
+        fast = _indicator(context, "fast_ema", lambda: ema([bar.close for bar in bars], config.fast_ema))
+        slow = _indicator(context, "slow_ema", lambda: ema([bar.close for bar in bars], config.slow_ema))
+        value_atr = _indicator(context, "atr", lambda: _atr(bars, config.atr_period))
+        value_vwap = _indicator(context, "vwap", lambda: _vwap(bars, config.vwap_window))
+        value_adx = _indicator(context, "adx", lambda: adx(list(bars), config.atr_period))
         if value_atr <= 0 or value_vwap <= 0 or abs(last.close - fast) > .35 * value_atr:
             return []
         if context.side is Side.LONG and fast > slow and last.close > value_vwap and last.close > previous.close:
-            return _signal(self.name, context, adx(list(bars), config.atr_period) + 15,
+            return _signal(self.name, context, value_adx + 15,
                            ("EMA recovery", "above VWAP", "positive momentum", context.higher_timeframe_evidence),
                            min(last.low, last.close - config.stop_atr * value_atr), value_atr, config, execution)
         if context.side is Side.SHORT and fast < slow and last.close < value_vwap and last.close < previous.close:
-            return _signal(self.name, context, adx(list(bars), config.atr_period) + 15,
+            return _signal(self.name, context, value_adx + 15,
                            ("EMA recovery", "below VWAP", "negative momentum", context.higher_timeframe_evidence),
                            max(last.high, last.close + config.stop_atr * value_atr), value_atr, config, execution)
         return []

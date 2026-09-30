@@ -7,13 +7,18 @@ import json
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 MIN_TRADES, MIN_PF = 30, 1.3
 CORE_SYMBOLS = {"BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT"}
+TZ = ZoneInfo("Asia/Shanghai")
 
 
 def epoch(value: str) -> int:
-    return int(datetime.fromisoformat(value + "+08:00").timestamp())
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=TZ)
+    return int(parsed.timestamp())
 
 
 def sample_split(bar_time: int, start: int, end: int) -> str:
@@ -63,18 +68,32 @@ def build_report(manifest: dict, ledger: dict) -> dict:
         value=metrics(values)
         rows.append({"model": model, "side": side, "marketState": state, "symbolBucket": bucket,
                      **value, "decision": decision(value)})
-    candidates=[row for row in rows if row["decision"] == "PAPER_CANDIDATE"]
+    # A direction/regime/symbol-bucket slice is found after inspecting this
+    # dataset.  It may inform a future hypothesis, but it cannot promote a
+    # model by itself: doing so would be post-hoc selection on the OOS sample.
+    for row in rows:
+        if row["decision"] == "PAPER_CANDIDATE":
+            row["decision"] = "HYPOTHESIS_REQUIRES_VALIDATION"
+    model_evaluations = sorted(ledger.get("evaluations", []),
+                               key=lambda row: (row.get("modelCode", ""), row.get("sampleSplit", "")))
+    oos_models = [row for row in model_evaluations if row.get("sampleSplit") == "OUT_OF_SAMPLE"]
+    candidates = [row for row in oos_models if row.get("decision") == "PAPER_CANDIDATE"]
     return {"schema": "htx-trend-research-acceptance-report-v1", "datasetKey": ledger["datasetKey"],
             "inputIntegrity": "COMPLETE", "sampleSplit": "OUT_OF_SAMPLE", "thresholds": {"minTrades": MIN_TRADES, "minProfitFactor": MIN_PF},
-            "decision": "PAPER_CANDIDATE" if candidates else "REJECT", "rows": rows,
-            "evidence": "only complete, out-of-sample labels; no live-order decision"}
+            "decision": "PAPER_CANDIDATE" if candidates else "REJECT", "modelEvaluations": model_evaluations,
+            "rows": rows, "evidence": "promotion uses complete out-of-sample model aggregates only; segmented rows are exploratory hypotheses and cannot select a live policy"}
 
 
 def markdown(report: dict) -> str:
     lines=[f"# HTX 趋势研究样本外报告\n\n- 数据集：`{report.get('datasetKey')}`\n- 结论：`{report['decision']}`\n"]
     if report.get("reason"):
         return "\n".join(lines + [f"- 原因：{report['reason']}\n"])
-    lines.extend(["| 模型 | 方向 | 状态 | 币种簇 | 样本 | 净收益 | PF | 期望 | 最大回撤 | 费用 | 结论 |",
+    lines.extend(["## 模型整体评估\n", "| 模型 | 切分 | 样本 | 净收益 | PF | 期望 | 最大回撤 | 费用 | 结论 |",
+                  "|---|---|---:|---:|---:|---:|---:|---:|---|"])
+    for row in report.get("modelEvaluations", []):
+        lines.append(f"| {row['modelCode']} | {row['sampleSplit']} | {row['tradeCount']} | {row['netProfit']:.4f} | {row['profitFactor']:.2f} | {row['expectancy']:.4f} | {row['maxDrawdown']:.4f} | {row['feeTotal']:.4f} | {row['decision']} |")
+    lines.extend(["\n## 样本外分层观察\n", "以下分层在本数据集内发现，只能形成下一轮独立验证假设，不能直接提升为实盘政策。\n",
+                  "| 模型 | 方向 | 状态 | 币种簇 | 样本 | 净收益 | PF | 期望 | 最大回撤 | 费用 | 结论 |",
                   "|---|---|---|---|---:|---:|---:|---:|---:|---:|---|"])
     for row in report["rows"]:
         lines.append(f"| {row['model']} | {row['side']} | {row['marketState']} | {row['symbolBucket']} | {row['tradeCount']} | {row['netProfit']:.4f} | {row['profitFactor']:.2f} | {row['expectancy']:.4f} | {row['maxDrawdown']:.4f} | {row['feeTotal']:.4f} | {row['decision']} |")

@@ -9,6 +9,9 @@ MODULE=importlib.util.module_from_spec(spec); assert spec and spec.loader; sys.m
 
 
 class ResearchReportTest(unittest.TestCase):
+
+    def test_epoch_accepts_explicit_and_legacy_shanghai_timestamps(self):
+        self.assertEqual(MODULE.epoch("2026-01-01T00:00:00+08:00"), MODULE.epoch("2026-01-01T00:00:00"))
     def manifest(self, integrity='COMPLETE'):
         return {'datasetKey':'research:test','inputIntegrity':integrity,'inputStartAt':'2026-01-01T00:00:00','inputEndAt':'2026-01-09T00:00:00'}
 

@@ -12,10 +12,12 @@ import argparse
 import bisect
 import json
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
+from zoneinfo import ZoneInfo
 
-from htx_trend_backtest import Bar, ema, load_bars
+from htx_trend_backtest import Bar, adx, ema, load_bars
 from htx_trend_research_engine import (
     DatasetIntegrity, DonchianBreakoutModel, EmaVwapMomentumModel,
     ExecutionAssumptions, FibonacciPullbackModel, ModelConfig, OrderStyle,
@@ -28,6 +30,34 @@ MODEL_VERSION = "independent-model-contract-v1"
 ENTRY_PERIOD = "15min"
 HORIZON_BARS = 32
 MIN_COMPARABLE_TRADES = 30
+TZ = ZoneInfo("Asia/Shanghai")
+
+
+class _CompletedBars(Sequence[Bar]):
+    """A completed-bar prefix that avoids copying the whole history per candidate."""
+
+    def __init__(self, values: list[Bar], stop: int):
+        self._values = values
+        self._stop = stop
+
+    def __len__(self) -> int:
+        return self._stop
+
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            return self._values[:self._stop][item]
+        index = item + self._stop if item < 0 else item
+        if index < 0 or index >= self._stop:
+            raise IndexError(index)
+        return self._values[index]
+
+
+def _manifest_epoch(value: str) -> int:
+    """Accept both legacy naive timestamps and ISO-8601 timestamps with offsets."""
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=TZ)
+    return int(parsed.timestamp())
 
 
 def _manifest(path: Path) -> dict:
@@ -148,26 +178,111 @@ def _evaluation(rows: list[dict], dataset_key: str, model: str, split: str) -> d
     }
 
 
+def _rolling_entry_features(bars: list[Bar], config: ModelConfig) -> dict[str, list[float]]:
+    """Precompute the O(n) features used by the model prefilter."""
+    count = len(bars)
+    fast, slow, atr, vwap, adx = ([0.0] * count for _ in range(5))
+    if not bars:
+        return {"fast": fast, "slow": slow, "atr": atr, "vwap": vwap, "adx": adx}
+    alpha_fast, alpha_slow = 2 / (config.fast_ema + 1), 2 / (config.slow_ema + 1)
+    fast_value = slow_value = bars[0].close
+    tr_prefix, plus_prefix, minus_prefix, dx_prefix = ([0.0] * (count + 1) for _ in range(4))
+    volume_prefix, price_volume_prefix = [0.0] * (count + 1), [0.0] * (count + 1)
+    for index, bar in enumerate(bars):
+        if index:
+            fast_value += (bar.close - fast_value) * alpha_fast
+            slow_value += (bar.close - slow_value) * alpha_slow
+            previous = bars[index - 1]
+            tr_prefix[index + 1] = tr_prefix[index] + max(abs(bar.high - bar.low), abs(bar.high - previous.close), abs(bar.low - previous.close))
+            up, down = bar.high - previous.high, previous.low - bar.low
+            plus_prefix[index + 1] = plus_prefix[index] + (up if up > down and up > 0 else 0.0)
+            minus_prefix[index + 1] = minus_prefix[index] + (down if down > up and down > 0 else 0.0)
+        else:
+            tr_prefix[index + 1] = tr_prefix[index]
+            plus_prefix[index + 1], minus_prefix[index + 1] = plus_prefix[index], minus_prefix[index]
+        fast[index], slow[index] = fast_value, slow_value
+        tr_start = max(1, index - config.atr_period + 1)
+        tr_count = index - tr_start + 1
+        atr[index] = (tr_prefix[index + 1] - tr_prefix[tr_start]) / tr_count if tr_count > 0 else 0.0
+        if index:
+            dx_start = max(1, index - config.atr_period + 1)
+            total_tr = tr_prefix[index + 1] - tr_prefix[dx_start]
+            if total_tr:
+                plus_di = (plus_prefix[index + 1] - plus_prefix[dx_start]) * 100.0 / total_tr
+                minus_di = (minus_prefix[index + 1] - minus_prefix[dx_start]) * 100.0 / total_tr
+                denominator = plus_di + minus_di
+                dx = 0.0 if denominator <= 0 else abs(plus_di - minus_di) * 100.0 / denominator
+            else:
+                dx = 0.0
+            dx_prefix[index + 1] = dx_prefix[index] + dx
+            adx[index] = (dx_prefix[index + 1] - dx_prefix[dx_start]) / (index - dx_start + 1)
+        else:
+            dx_prefix[index + 1] = dx_prefix[index]
+        volume = bar.turnover or bar.amount
+        volume_prefix[index + 1] = volume_prefix[index] + volume
+        price_volume_prefix[index + 1] = price_volume_prefix[index] + ((bar.high + bar.low + bar.close) / 3.0) * volume
+        vwap_start = max(0, index - config.vwap_window + 1)
+        total_volume = volume_prefix[index + 1] - volume_prefix[vwap_start]
+        vwap[index] = (price_volume_prefix[index + 1] - price_volume_prefix[vwap_start]) / total_volume if total_volume else 0.0
+    return {"fast": fast, "slow": slow, "atr": atr, "vwap": vwap, "adx": adx}
+
+
+def _potential_models(bars: list[Bar], index: int, config: ModelConfig,
+                      features: dict[str, list[float]]) -> dict[Side, set[str]]:
+    """Cheap, exact prefilter for the three model predicates.
+
+    The model implementations remain the source of truth.  This only avoids
+    rebuilding every indicator history for sides/models that cannot possibly
+    pass their own price predicates on the completed bar.
+    """
+    last, previous = bars[index], bars[index - 1]
+    fast, slow, value_atr, vwap = (features["fast"][index], features["slow"][index],
+                                   features["atr"][index], features["vwap"][index])
+    if value_atr <= 0:
+        return {Side.LONG: set(), Side.SHORT: set()}
+    structure = bars[index - config.donchian_lookback:index]
+    high, low = max(bar.high for bar in structure), min(bar.low for bar in structure)
+    span = high - low
+    values = {Side.LONG: set(), Side.SHORT: set()}
+    for side, aligned in ((Side.LONG, fast > slow), (Side.SHORT, fast < slow)):
+        if not aligned:
+            continue
+        if (side is Side.LONG and last.close > high) or (side is Side.SHORT and last.close < low):
+            values[side].add("DONCHIAN_BREAKOUT")
+        if span >= config.fibonacci_min_atr_range * value_atr:
+            lower, upper = ((high - config.fib_upper * span, high - config.fib_lower * span)
+                            if side is Side.LONG else
+                            (low + config.fib_lower * span, low + config.fib_upper * span))
+            recovering = last.close > previous.close if side is Side.LONG else last.close < previous.close
+            if lower <= last.close <= upper and recovering:
+                values[side].add("FIB_PULLBACK_CONTINUATION")
+        momentum = ((last.close > vwap and last.close > previous.close) if side is Side.LONG
+                    else (last.close < vwap and last.close < previous.close))
+        if vwap > 0 and abs(last.close - fast) <= .35 * value_atr and momentum:
+            values[side].add("EMA_VWAP_MOMENTUM")
+    return values
+
+
 def build_ledger(data_dir: Path, manifest_path: Path,
                  config: ModelConfig = ModelConfig(),
                  execution: ExecutionAssumptions = ExecutionAssumptions()) -> dict:
     manifest = _manifest(manifest_path)
     symbols = manifest["contracts"]
-    start = int(__import__("datetime").datetime.fromisoformat(manifest["inputStartAt"] + "+08:00").timestamp())
-    end = int(__import__("datetime").datetime.fromisoformat(manifest["inputEndAt"] + "+08:00").timestamp())
+    start = _manifest_epoch(manifest["inputStartAt"])
+    end = _manifest_epoch(manifest["inputEndAt"])
     all_bars = {symbol: {period: load_bars(data_dir, symbol, period) for period in manifest["periods"]}
                 for symbol in symbols}
     direction_series = {symbol: {period: _direction_series(bars) for period, bars in periods.items()}
                         for symbol, periods in all_bars.items()}
     breadth_by_bar = _market_breadth(all_bars)
-    models = (DonchianBreakoutModel(), FibonacciPullbackModel(), EmaVwapMomentumModel())
+    models = {model.name: model for model in (DonchianBreakoutModel(), FibonacciPullbackModel(), EmaVwapMomentumModel())}
     regimes, labels = [], []
     seen_regimes: set[str] = set()
     for symbol in symbols:
         entry_bars = all_bars[symbol][ENTRY_PERIOD]
+        features = _rolling_entry_features(entry_bars, config)
         for index in range(max(config.slow_ema, config.donchian_lookback) + 1, len(entry_bars) - HORIZON_BARS - 1):
-            completed = entry_bars[:index + 1]
-            bar_time = completed[-1].ts
+            bar_time = entry_bars[index].ts
             daily = _latest_direction(all_bars[symbol]["1day"], direction_series[symbol]["1day"], bar_time)
             four_hour = _latest_direction(all_bars[symbol]["4hour"], direction_series[symbol]["4hour"], bar_time)
             one_hour = _latest_direction(all_bars[symbol]["60min"], direction_series[symbol]["60min"], bar_time)
@@ -185,9 +300,18 @@ def build_ledger(data_dir: Path, manifest_path: Path,
                     "volatilityScore": None, "crowdingScore": None, "dataIntegrity": "COMPLETE",
                     "evidence": {"ruleVersion": "regime-v1", "sourcePeriods": ["15min", "60min", "4hour", "1day"],
                                  "breadthUniverse": breadth_universe}})
+            potentials = _potential_models(entry_bars, index, config, features)
             for side in (Side.LONG, Side.SHORT):
-                context = SignalContext(symbol, bar_time, completed, side, f"regime={state}")
-                for model in models:
+                selected = potentials[side]
+                if not selected:
+                    continue
+                completed = _CompletedBars(entry_bars, index + 1)
+                context = SignalContext(symbol, bar_time, completed, side, f"regime={state}", {
+                    "fast_ema": features["fast"][index], "slow_ema": features["slow"][index],
+                    "atr": features["atr"][index], "vwap": features["vwap"][index], "adx": features["adx"][index],
+                })
+                for model_name in sorted(selected):
+                    model = models[model_name]
                     for signal in model.evaluate(context, config, execution):
                         fill = simulate_entry(signal, entry_bars[index + 1], execution)
                         if fill is None:
