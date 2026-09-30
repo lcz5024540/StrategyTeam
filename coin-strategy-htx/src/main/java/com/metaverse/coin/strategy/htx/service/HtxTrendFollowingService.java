@@ -20,6 +20,7 @@ import com.metaverse.coin.strategy.htx.config.HtxMarketMakerProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendEnsembleShadowProperties;
 import com.metaverse.coin.strategy.htx.config.HtxTrendProperties;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
+import com.metaverse.coin.strategy.htx.persistence.HtxTrendRuntimeKlineRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
@@ -105,6 +106,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendExitDecisionEngine exitDecisionEngine = new HtxTrendExitDecisionEngine();
     private final HtxTrendProfitProtectionPlanner profitProtectionPlanner = new HtxTrendProfitProtectionPlanner();
     private HtxTrendCombinationService combinationService;
+    private HtxTrendRuntimeKlineRecorder runtimeKlineRecorder;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
 
@@ -193,6 +195,11 @@ public class HtxTrendFollowingService {
     @Autowired(required = false)
     void setCombinationService(HtxTrendCombinationService combinationService) {
         this.combinationService = combinationService;
+    }
+
+    @Autowired(required = false)
+    void setRuntimeKlineRecorder(HtxTrendRuntimeKlineRecorder runtimeKlineRecorder) {
+        this.runtimeKlineRecorder = runtimeKlineRecorder;
     }
 
     public boolean hasOpenLikePositions() {
@@ -400,6 +407,7 @@ public class HtxTrendFollowingService {
         List<HtxTrendEnsembleSignalCalculator.TrendCandidateSignal> signals = new ArrayList<>(periods.size());
         int available = 0;
         int modelCoverageOutcomes = 0;
+        List<RuntimeKlineWindow> runtimeWindows = new ArrayList<>(periods.size());
         for (String period : periods) {
             HtxRestResponse<List<HtxSwapKline>> response = swap.historyKline(contractCode, period,
                     Math.max(1, properties.getFactorSnapshotKlineSize()));
@@ -411,6 +419,8 @@ public class HtxTrendFollowingService {
             HtxTrendEnsembleSignalCalculator.TrendCandidateSignal signal = ensembleCalculator.evaluate(response.payload(),
                     ensembleProperties, period, Instant.now().getEpochSecond());
             signals.add(signal);
+            runtimeWindows.add(new RuntimeKlineWindow(period, signal.barTime(), response.payload(),
+                    Math.max(1, properties.getFactorSnapshotKlineSize())));
             if (signal.barTime() != null && signal.barTime() > 0L) {
                 available++;
             }
@@ -422,8 +432,12 @@ public class HtxTrendFollowingService {
                                 fees.closeTaker(), fees.fallback() ? "CONFIGURED_FALLBACK" : "HTX_ACCOUNT", fees.fallback()));
             }
         }
-        combinationService.recordMultiTimeframeSnapshot(contractCode, properties.getPeriod(), entryBarTime,
+        Long factorSnapshotId = combinationService.recordMultiTimeframeSnapshot(contractCode, properties.getPeriod(), entryBarTime,
                 marketBreadth == null ? "UNKNOWN" : marketBreadth.regime().name(), signals);
+        for (RuntimeKlineWindow window : runtimeWindows) {
+            captureRuntimeKlines("FACTOR_SNAPSHOT", contractCode, window.period(), window.targetBarTime(),
+                    window.expectedWindowSize(), null, factorSnapshotId, null, window.candles());
+        }
         return new FactorSnapshotCaptureResult(contractCode, available, periods.size(), modelCoverageOutcomes);
     }
 
@@ -565,6 +579,8 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(EXECUTION_PREFLIGHT, "contract info unavailable"));
         }
         SignalSnapshot snapshot = loadSignal(contractCode);
+        captureSignalWindows("POSITION_MANAGEMENT", contractCode, snapshot, active.get().getRunId(),
+                active.get().getFactorSnapshotId(), active.get().getId());
         TrendSignal rawSignal = snapshot.signal();
         recordSignal(contractCode, rawSignal);
         return advance(active.get(), rawSignal, contract, snapshot.entryCandles());
@@ -586,6 +602,7 @@ public class HtxTrendFollowingService {
                     gateMessage(EXECUTION_PREFLIGHT, "contract info unavailable")), null);
         }
         SignalSnapshot snapshot = loadSignal(contractCode);
+        captureSignalWindows("ENTRY_SCAN", contractCode, snapshot, null, null, null);
         TrendSignal rawSignal = snapshot.signal();
         if (properties.isCombinationEntryEnabled()) {
             return combinationCandidateEvaluation(contractCode, contract, snapshot, marketBreadth, marketAnchor);
@@ -627,6 +644,7 @@ public class HtxTrendFollowingService {
         TrendSignal signal = TrendSignal.of(side, ensemble.barTime(), ensemble.closePrice(), ensemble.emaFast(),
                 ensemble.emaSlow(), ensemble.breakoutHigh(), ensemble.breakoutLow(), ensemble.atr(), ensemble.atrPct(),
                 ensemble.adx(), selection.candidate().hypothesis() + "; policy=" + selection.policy().getPolicyCode());
+        captureSignalWindows("ENTRY_GATE", contractCode, snapshot, selection.runId(), selection.factorSnapshotId(), null);
         recordSignal(contractCode, signal);
         BigDecimal score = selection.candidate().score();
         CombinationContext context = new CombinationContext(selection);
@@ -1704,18 +1722,43 @@ public class HtxTrendFollowingService {
         HtxRestResponse<List<HtxSwapKline>> entryResponse = swap.historyKline(contractCode,
                 properties.getPeriod(), properties.getKlineSize());
         if (entryResponse == null || !entryResponse.ok() || entryResponse.payload() == null) {
-            return new SignalSnapshot(TrendSignal.skip("entry kline unavailable: " + error(entryResponse)), List.of());
+            return new SignalSnapshot(TrendSignal.skip("entry kline unavailable: " + error(entryResponse)), List.of(), List.of());
         }
         String trendPeriod = trendPeriod();
         HtxRestResponse<List<HtxSwapKline>> trendResponse = trendPeriod.equalsIgnoreCase(properties.getPeriod())
                 ? entryResponse : swap.historyKline(contractCode, trendPeriod, properties.getTrendKlineSize());
         if (trendResponse == null || !trendResponse.ok() || trendResponse.payload() == null) {
             return new SignalSnapshot(TrendSignal.skip("trend kline unavailable: " + error(trendResponse)),
-                    entryResponse.payload());
+                    entryResponse.payload(), List.of());
         }
         TrendSignal signal = calculator.evaluate(entryResponse.payload(), trendResponse.payload(),
                 properties, Instant.now().getEpochSecond());
-        return new SignalSnapshot(signal, entryResponse.payload());
+        return new SignalSnapshot(signal, entryResponse.payload(), trendResponse.payload());
+    }
+
+    private void captureSignalWindows(String stage, String contractCode, SignalSnapshot snapshot, String runId,
+                                      Long factorSnapshotId, Long positionId) {
+        if (snapshot == null) {
+            return;
+        }
+        Long targetBarTime = snapshot.signal() == null ? null : snapshot.signal().barTime();
+        captureRuntimeKlines(stage, contractCode, properties.getPeriod(), targetBarTime, properties.getKlineSize(),
+                runId, factorSnapshotId, positionId, snapshot.entryCandles());
+        String trendPeriod = trendPeriod();
+        if (!trendPeriod.equalsIgnoreCase(properties.getPeriod())) {
+            captureRuntimeKlines(stage, contractCode, trendPeriod, targetBarTime, properties.getTrendKlineSize(),
+                    runId, factorSnapshotId, positionId, snapshot.trendCandles());
+        }
+    }
+
+    private void captureRuntimeKlines(String stage, String contractCode, String period, Long targetBarTime,
+                                      int expectedWindowSize, String runId, Long factorSnapshotId, Long positionId,
+                                      List<HtxSwapKline> candles) {
+        if (!properties.isRuntimeKlineCaptureEnabled() || runtimeKlineRecorder == null || candles == null || candles.isEmpty()) {
+            return;
+        }
+        runtimeKlineRecorder.capture(new HtxTrendRuntimeKlineRecorder.CaptureRequest(stage, contractCode, period,
+                targetBarTime, expectedWindowSize, runId, factorSnapshotId, positionId, candles));
     }
 
     private void recordSignal(String contractCode, TrendSignal signal) {
@@ -2103,6 +2146,9 @@ public class HtxTrendFollowingService {
             return TrendSide.FLAT;
         }
         List<HtxSwapKline> candles = completedCandles(response.payload(), period);
+        Long targetBarTime = candles.isEmpty() ? null : candles.get(candles.size() - 1).getId();
+        captureRuntimeKlines("MARKET_ANCHOR", contractCode, period, targetBarTime,
+                properties.getMarketAnchorKlineSize(), null, null, null, response.payload());
         int slowPeriod = Math.max(2, properties.getMarketAnchorSlowEmaPeriod());
         if (candles.size() < slowPeriod + 2) {
             return TrendSide.FLAT;
@@ -3859,7 +3905,7 @@ public class HtxTrendFollowingService {
         }
     }
 
-    private record SignalSnapshot(TrendSignal signal, List<HtxSwapKline> entryCandles) {
+    private record SignalSnapshot(TrendSignal signal, List<HtxSwapKline> entryCandles, List<HtxSwapKline> trendCandles) {
     }
 
     private record CandidateScanResult(String contractCode, CandidateEvaluation evaluation) {
@@ -3870,6 +3916,10 @@ public class HtxTrendFollowingService {
 
     private record FactorSnapshotCaptureResult(String contractCode, int availablePeriods, int requestedPeriods,
                                                int modelCoverageOutcomes) {
+    }
+
+    private record RuntimeKlineWindow(String period, Long targetBarTime, List<HtxSwapKline> candles,
+                                      int expectedWindowSize) {
     }
 
     private record FactorSnapshotCaptureSummary(int contracts, int completeContracts, int availablePeriods,

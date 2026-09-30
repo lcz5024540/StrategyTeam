@@ -11,6 +11,8 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxSpotFillLedgerEntit
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendRuntimeKlineCandleEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendRuntimeKlineSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.CoinStrategyLedgerEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
@@ -22,6 +24,8 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxSpotFillLedgerMappe
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendRuntimeKlineCandleMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendRuntimeKlineSnapshotMapper;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +50,51 @@ class HtxMapperIntegrationTest {
     @Autowired HtxTrendPositionMapper trendPositionMapper;
     @Autowired HtxTrendOrderMapper trendOrderMapper;
     @Autowired CoinStrategyLedgerEventMapper ledgerEventMapper;
+    @Autowired HtxTrendRuntimeKlineCandleMapper runtimeKlineCandleMapper;
+    @Autowired HtxTrendRuntimeKlineSnapshotMapper runtimeKlineSnapshotMapper;
+
+    @Test void runtime_kline_evidence_is_content_addressed_and_windowed() {
+        long nonce = System.nanoTime();
+        HtxTrendRuntimeKlineCandleEntity candle = new HtxTrendRuntimeKlineCandleEntity();
+        candle.setCandleHash(String.format("%064x", nonce));
+        candle.setContractCode("BTC-USDT");
+        candle.setPeriod("15min");
+        candle.setBarTime(1_790_000_000L + nonce % 100_000L);
+        candle.setOpenPrice(new BigDecimal("100000"));
+        candle.setHighPrice(new BigDecimal("100100"));
+        candle.setLowPrice(new BigDecimal("99900"));
+        candle.setClosePrice(new BigDecimal("100050"));
+        candle.setAmount(new BigDecimal("1.5"));
+        candle.setVolume(new BigDecimal("150000"));
+        candle.setTurnover(new BigDecimal("150000"));
+        candle.setTradeCount(15L);
+        candle.setSourceKind(HtxTrendRuntimeKlineRecorder.SOURCE_KIND);
+        candle.setCapturedAt(LocalDateTime.now());
+        assertEquals(1, runtimeKlineCandleMapper.insertIgnoreBatch(List.of(candle)));
+        assertEquals(0, runtimeKlineCandleMapper.insertIgnoreBatch(List.of(candle)));
+
+        HtxTrendRuntimeKlineSnapshotEntity snapshot = new HtxTrendRuntimeKlineSnapshotEntity();
+        snapshot.setSnapshotKey("it-runtime-window-" + nonce);
+        snapshot.setCaptureStage("ENTRY_SCAN");
+        snapshot.setContractCode("BTC-USDT");
+        snapshot.setPeriod("15min");
+        snapshot.setTargetBarTime(candle.getBarTime());
+        snapshot.setWindowStartBarTime(candle.getBarTime());
+        snapshot.setWindowEndBarTime(candle.getBarTime());
+        snapshot.setExpectedWindowSize(160);
+        snapshot.setActualWindowSize(1);
+        snapshot.setCompleteWindow(false);
+        snapshot.setWindowSha256(String.format("%064x", nonce + 1));
+        snapshot.setSourceKind(HtxTrendRuntimeKlineRecorder.SOURCE_KIND);
+        snapshot.setSourceReference("market/history/kline");
+        snapshot.setDataIntegrity("PARTIAL");
+        snapshot.setCapturedAt(LocalDateTime.now());
+        assertEquals(1, runtimeKlineSnapshotMapper.insert(snapshot));
+        HtxTrendRuntimeKlineSnapshotEntity stored = runtimeKlineSnapshotMapper.findBySnapshotKey(snapshot.getSnapshotKey());
+        assertEquals("ENTRY_SCAN", stored.getCaptureStage());
+        assertEquals(candle.getBarTime(), stored.getTargetBarTime());
+        assertFalse(stored.getCompleteWindow());
+    }
 
 
     @Test void insert_and_read_strategy_ledger_event() {

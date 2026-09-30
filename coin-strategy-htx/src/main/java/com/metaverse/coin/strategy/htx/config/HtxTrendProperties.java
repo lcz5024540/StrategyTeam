@@ -287,6 +287,9 @@ public class HtxTrendProperties {
     /** Bounded read-only concurrency for P2 snapshots; it is independent of order submission. */
     private int factorSnapshotConcurrency = 4;
 
+    /** Persist the public K-line windows actually supplied to runtime calculations for later replay and audit. */
+    private boolean runtimeKlineCaptureEnabled = true;
+
     /** Enable quality and market-breadth based entry sizing. This never hard-pauses entries by itself. */
     private boolean adaptiveSizingEnabled = true;
 

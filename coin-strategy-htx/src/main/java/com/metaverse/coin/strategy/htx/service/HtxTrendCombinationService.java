@@ -285,10 +285,10 @@ public class HtxTrendCombinationService {
      * It is deliberately separate from the immutable entry-decision snapshot: capturing more market data must not
      * delay a fresh signal, while both records remain queryable by contract and completed entry candle.
      */
-    public void recordMultiTimeframeSnapshot(String contractCode, String entryPeriod, long entryBarTime,
+    public Long recordMultiTimeframeSnapshot(String contractCode, String entryPeriod, long entryBarTime,
                                              String marketRegime, List<TrendCandidateSignal> timeframeSignals) {
         if (contractCode == null || contractCode.isBlank() || entryBarTime <= 0L) {
-            return;
+            return null;
         }
         String period = entryPeriod == null || entryPeriod.isBlank() ? "15min" : entryPeriod;
         HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
@@ -298,7 +298,7 @@ public class HtxTrendCombinationService {
         snapshot.setBarTime(entryBarTime);
         snapshot.setMarketRegime(marketRegime == null ? "UNKNOWN" : marketRegime);
         snapshot.setFactorsJson(multiTimeframeSnapshotJson(timeframeSignals));
-        combinationRecorder.recordSnapshot(snapshot);
+        return combinationRecorder.recordSnapshot(snapshot);
     }
 
     /**

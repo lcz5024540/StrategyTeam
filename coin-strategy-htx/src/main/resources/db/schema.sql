@@ -866,6 +866,36 @@ CREATE TABLE IF NOT EXISTS htx_trend_research_candle (
     KEY idx_htx_trend_research_candle_lookup (dataset_key, contract_code, period, bar_time)
 ) COMMENT='Frozen market candles used by strategy research only';
 
+-- Runtime K-line evidence is deliberately separated from research datasets. It records public inputs actually
+-- supplied to production calculations and keeps corrected exchange bars as content-addressed versions.
+CREATE TABLE IF NOT EXISTS htx_trend_runtime_kline_candle (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    candle_hash CHAR(64) NOT NULL,
+    contract_code VARCHAR(32) NOT NULL,
+    period VARCHAR(16) NOT NULL,
+    bar_time BIGINT NOT NULL,
+    open_price DECIMAL(36,18), high_price DECIMAL(36,18), low_price DECIMAL(36,18), close_price DECIMAL(36,18),
+    amount DECIMAL(36,18), volume DECIMAL(36,18), turnover DECIMAL(36,18), trade_count BIGINT,
+    source_kind VARCHAR(32) NOT NULL, captured_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_runtime_kline_candle_hash (candle_hash),
+    KEY idx_htx_trend_runtime_kline_candle_lookup (contract_code, period, bar_time, captured_at)
+);
+
+CREATE TABLE IF NOT EXISTS htx_trend_runtime_kline_snapshot (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    snapshot_key VARCHAR(255) NOT NULL, run_id VARCHAR(128), factor_snapshot_id BIGINT, position_id BIGINT,
+    capture_stage VARCHAR(32) NOT NULL, contract_code VARCHAR(32) NOT NULL, period VARCHAR(16) NOT NULL,
+    target_bar_time BIGINT NOT NULL, window_start_bar_time BIGINT NOT NULL, window_end_bar_time BIGINT NOT NULL,
+    expected_window_size INT NOT NULL, actual_window_size INT NOT NULL, complete_window TINYINT(1) NOT NULL,
+    window_sha256 CHAR(64) NOT NULL, source_kind VARCHAR(32) NOT NULL, source_reference VARCHAR(128) NOT NULL,
+    data_integrity VARCHAR(32) NOT NULL, captured_at DATETIME(3) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_htx_trend_runtime_kline_snapshot_key (snapshot_key),
+    KEY idx_htx_trend_runtime_kline_snapshot_lookup (contract_code, period, target_bar_time, capture_stage),
+    KEY idx_htx_trend_runtime_kline_snapshot_run (run_id, factor_snapshot_id, position_id, captured_at)
+);
+
 CREATE TABLE IF NOT EXISTS htx_trend_market_regime_snapshot (
     id BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Surrogate primary key',
     snapshot_key VARCHAR(192) NOT NULL COMMENT 'Immutable state snapshot identity',
