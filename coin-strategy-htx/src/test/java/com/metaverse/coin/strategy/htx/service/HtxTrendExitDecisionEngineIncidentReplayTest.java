@@ -15,6 +15,7 @@ import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Replays the 2026-09-24 closed Fibonacci-short incident with frozen public 15-minute candles
@@ -31,21 +32,18 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
     private final HtxTrendExitDecisionEngine engine = new HtxTrendExitDecisionEngine();
 
     @Test
-    void replaysClosedIncidentWithoutLookAheadAndRecordsUnarmedLossFallback() {
+    void replaysClosedIncidentAndProtectsAProfitBeforeTheHistoricalLoss() {
         JSONObject fixture = loadFixture();
         JSONArray positions = fixture.getJSONArray("positions");
 
-        // A single recovered historical reference price no longer invents a full close.  The frozen fixture
-        // lacks two completed protection breaches plus two independent reversal groups, so it remains armed.
+        // A protected winner must not wait for unrelated reversal evidence before exiting an ATR-scale reversal.
         ReplayOutcome doge = replay(findPosition(positions, 153L));
-        assertArmUntilHistoricalExit(doge, 1790225100L);
-        assertEquals("NET_COST_AND_ATR_MILESTONE", doge.trailingArmReason());
+        assertProtectedProfitExit(doge, 1790195400L);
 
         ReplayOutcome sui = replay(findPosition(positions, 154L));
-        assertArmUntilHistoricalExit(sui, 1790218800L);
-        assertEquals("NET_COST_AND_ATR_MILESTONE", sui.trailingArmReason());
+        assertProtectedProfitExit(sui, 1790179200L);
 
-        // ZEC finishes the frozen window in profit at its bar-close reference, so v3 can arm a durable
+        // ZEC finishes the frozen window in profit at its bar-close reference, so v4 can arm a durable
         // cost-and-ATR lock but cannot invent a later fill. XRP 156 and XRP 160 are loss-making, but each
         // has only two fully completed post-entry bars; both remain deliberately unclosed in this replay.
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 156L)), 1790198100L);
@@ -135,7 +133,13 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
         assertNotNull(outcome);
         assertEquals(expectedBarTime, outcome.barTime());
         assertEquals(Action.ARM_TRAILING, outcome.action());
-        assertEquals("NET_COST_AND_ATR_MILESTONE", outcome.trailingArmReason());
+    }
+
+    private static void assertProtectedProfitExit(ReplayOutcome outcome, long expectedBarTime) {
+        assertNotNull(outcome);
+        assertEquals(expectedBarTime, outcome.barTime());
+        assertEquals(Action.FULL_CLOSE, outcome.action());
+        assertTrue(outcome.netPnl().signum() > 0, "the protected exit must retain net profit");
     }
 
     private static JSONObject loadFixture() {

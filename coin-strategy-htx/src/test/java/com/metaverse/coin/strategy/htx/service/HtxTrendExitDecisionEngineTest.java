@@ -15,30 +15,46 @@ class HtxTrendExitDecisionEngineTest {
     private final HtxTrendExitDecisionEngine engine = new HtxTrendExitDecisionEngine();
 
     @Test
-    void protectionBreachNeedsTwoClosedBarsAndIndependentReversalEvidence() {
+    void remainsTheSingleV4EngineAfterAProfitProtectionRuleFix() {
+        assertEquals("fib-exit-engine-v4", HtxTrendExitDecisionEngine.VERSION);
+    }
+
+    @Test
+    void fundingCostExitRemainsInsideV4InsteadOfFallingThroughToTheLegacyBranch() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(ltcIntradayInput(
+                new BigDecimal("73.20"), new BigDecimal("73.40"), TrendSide.LONG,
+                new BigDecimal("73.30"), new BigDecimal("73.00"), null)
+                .withFundingCostExitReason("funding cost blocked side=LONG funding=0.0020 sideCost=0.0020 max=0.0005"));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
+        assertEquals("FUNDING_COST", decision.phase());
+        assertTrue(decision.reason().startsWith("funding-cost-exit:"));
+        assertTrue(decision.evidenceJson().contains("\"fundingCostExit\""));
+    }
+
+    @Test
+    void protectionBreachClosesAfterConfirmationWithoutWaitingForIndependentReversalEvidence() {
         LocalDateTime armedAt = LocalDateTime.of(2026, 9, 24, 0, 1);
-        HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(suiInput(new BigDecimal("0.9380"), null, armedAt));
+        HtxTrendExitDecisionEngine.Decision confirmed = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
+                HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, "SHORT", 10L, BigDecimal.ONE,
+                new BigDecimal("100"), new BigDecimal("110"), new BigDecimal("110"), new BigDecimal("90"),
+                new BigDecimal("101"), new BigDecimal("100"), new BigDecimal("101.50"), new BigDecimal("100.50"),
+                new BigDecimal("2"), TrendSide.FLAT, new BigDecimal("101"), new BigDecimal("102"),
+                0, false, new BigDecimal("1"), new BigDecimal("0.10"), new BigDecimal("0.10"), armedAt,
+                "NET_COST_AND_ATR_MILESTONE", new BigDecimal("0.25"), LocalDateTime.of(2026, 9, 24, 0, 30),
+                0, 3, null, HtxTrendExitDecisionEngine.ProfitProtectionPolicy.intradayDefaults(), 2));
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, confirmed.action());
+        assertEquals("confirmed-profit-protection-breach", confirmed.reason());
+    }
 
-        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, armed.action());
-        assertNotNull(armed.trailingArmedAt());
-        assertTrue(armed.maxFavorableR().compareTo(BigDecimal.ONE) > 0);
-
-        HtxTrendExitDecisionEngine.Decision oneBar = engine.evaluate(suiInput(new BigDecimal("0.9730"), armed.trailingArmedAt(),
+    @Test
+    void acuteAtrDrawdownAcrossArmedProtectionClosesWithoutWaitingForSecondBar() {
+        LocalDateTime armedAt = LocalDateTime.of(2026, 9, 24, 0, 1);
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(suiInput(new BigDecimal("0.9730"), armedAt,
                 LocalDateTime.of(2026, 9, 24, 0, 15)).withProtectionBreachBars(1));
 
-        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, oneBar.action());
-        assertEquals("armed-protection-breach-awaiting-bar-confirmation", oneBar.reason());
-
-        HtxTrendExitDecisionEngine.Decision insufficientEvidence = engine.evaluate(suiInput(new BigDecimal("0.9730"),
-                armed.trailingArmedAt(), LocalDateTime.of(2026, 9, 24, 0, 30)).withProtectionBreachBars(2));
-        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, insufficientEvidence.action());
-        assertEquals("armed-protection-breach-insufficient-reversal-evidence", insufficientEvidence.reason());
-
-        HtxTrendExitDecisionEngine.Decision confirmed = engine.evaluate(suiInput(new BigDecimal("0.9730"),
-                armed.trailingArmedAt(), LocalDateTime.of(2026, 9, 24, 0, 30), TrendSide.LONG)
-                .withProtectionBreachBars(2));
-        assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, confirmed.action());
-        assertEquals("confirmed-protection-breach-with-reversal-evidence", confirmed.reason());
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
+        assertEquals("armed-protection-breach-atr-impulse", decision.reason());
     }
 
     @Test

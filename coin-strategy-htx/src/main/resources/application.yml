@@ -194,7 +194,6 @@ htx:
     exit-engine-live-enabled: ${HTX_TREND_EXIT_ENGINE_LIVE_ENABLED:${HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED:false}}
     exit-engine-primary-account-only: ${HTX_TREND_EXIT_ENGINE_PRIMARY_ACCOUNT_ONLY:${HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY:true}}
     profit-protection-enabled: ${HTX_TREND_PROFIT_PROTECTION_ENABLED:false}
-    profit-protection-live-enabled: ${HTX_TREND_PROFIT_PROTECTION_LIVE_ENABLED:false}
     intraday-profit-arm-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER:0.50}
     intraday-profit-lock-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_LOCK_ATR_MULTIPLIER:0.15}
     intraday-profit-mfe-lock-ratio: ${HTX_TREND_INTRADAY_PROFIT_MFE_LOCK_RATIO:0.50}
@@ -202,13 +201,6 @@ htx:
     intraday-profit-partial-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PARTIAL_ATR_MULTIPLIER:0.75}
     intraday-profit-pullback-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_PULLBACK_ATR_MULTIPLIER:0.40}
     intraday-profit-min-net-fee-multiple: ${HTX_TREND_INTRADAY_PROFIT_MIN_NET_FEE_MULTIPLE:2.00}
-    no-extension-exit-enabled: ${HTX_TREND_NO_EXTENSION_EXIT_ENABLED:true}
-    no-extension-exit-bars: ${HTX_TREND_NO_EXTENSION_EXIT_BARS:2}
-    no-extension-min-favorable-net-usdt: ${HTX_TREND_NO_EXTENSION_MIN_FAVORABLE_NET_USDT:0.15}
-    adverse-shock-exit-enabled: ${HTX_TREND_ADVERSE_SHOCK_EXIT_ENABLED:true}
-    adverse-shock-exit-bars: ${HTX_TREND_ADVERSE_SHOCK_EXIT_BARS:1}
-    adverse-shock-atr-multiplier: ${HTX_TREND_ADVERSE_SHOCK_ATR_MULTIPLIER:0.90}
-    adverse-shock-min-favorable-net-usdt: ${HTX_TREND_ADVERSE_SHOCK_MIN_FAVORABLE_NET_USDT:0.15}
     min-expected-move-atr-multiplier: ${HTX_TREND_MIN_EXPECTED_MOVE_ATR_MULTIPLIER:1.0}
     max-entry-signal-chase-atr-multiplier: ${HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_ATR_MULTIPLIER:0.20}
     max-entry-signal-chase-rate: ${HTX_TREND_MAX_ENTRY_SIGNAL_CHASE_RATE:0}

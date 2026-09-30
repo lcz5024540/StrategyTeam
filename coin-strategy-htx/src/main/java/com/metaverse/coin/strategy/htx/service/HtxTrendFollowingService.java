@@ -1382,7 +1382,11 @@ public class HtxTrendFollowingService {
         BigDecimal lowest = min(firstPositive(position.getLowestPrice(), reference), reference);
         StopContext stopContext = stopContext(position, signal, reference, highest, lowest, contract, entryCandles);
         BigDecimal trailingStop = stopContext.effectiveStop();
-        BigDecimal feeProtectedStop = feeProtectedStop(position, highest, lowest, contract);
+        // Fibonacci positions have one exit owner.  v4 already derives its protection from the actual two-leg
+        // cost and MFE state, so the old fee-protection clamp must not silently tighten its decision boundary.
+        boolean fibV4Owned = properties.isExitEngineEnabled()
+                && HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION.equals(position.getPrimaryModel());
+        BigDecimal feeProtectedStop = fibV4Owned ? null : feeProtectedStop(position, highest, lowest, contract);
         if (feeProtectedStop != null) {
             trailingStop = LONG.equals(position.getSide())
                     ? max(trailingStop, feeProtectedStop) : min(trailingStop, feeProtectedStop);
@@ -1401,6 +1405,10 @@ public class HtxTrendFollowingService {
         HtxTrendProfitProtectionPlanner.Plan profitProtectionPlan = observeProfitProtection(position, reference,
                 highest, lowest, signal);
         BigDecimal engineProtectionPrice = exitEngineProtectionPrice(position, trailingStop);
+        if (profitProtectionPlan != null && profitProtectionPlan.armed()) {
+            engineProtectionPrice = tighterExitProtection(position.getSide(), engineProtectionPrice,
+                    profitProtectionPlan.protectionPrice());
+        }
         HtxTrendExitDecisionEngine.Decision engineDecision = exitEngineDecision(position, signal, reference, highest, lowest,
                 engineProtectionPrice, exitSnapshot);
         if (engineDecision != null) {
@@ -3216,6 +3224,11 @@ public class HtxTrendFollowingService {
                 properties.getPeriod(), position.getSide(), protectionPrice,
                 position.getTrailingArmedAt() == null ? position.getCreatedAt() : position.getTrailingArmedAt(),
                 requiredProtectionBreachBars);
+        TrendSide positionSide = LONG.equals(position.getSide()) ? TrendSide.LONG : TrendSide.SHORT;
+        // Pass the raw funding observation into v4.  Do not call the legacy exit-reason formatter here:
+        // v4 owns the action and emits its own category and audit evidence.
+        String fundingCostGate = fundingCostGate(position.getContractCode(), positionSide,
+                properties.getMaxHoldFundingCostRate());
         return exitDecisionEngine.evaluate(new HtxTrendExitDecisionEngine.Input(position.getPrimaryModel(), position.getSide(),
                 remainingContractVolume(position), position.getContractSize(), position.getEntryAvgPrice(), position.getStopPrice(),
                 position.getInvalidationPrice(), structuralTarget, reference, protectionPrice, highest, lowest, signal.atr(),
@@ -3225,19 +3238,29 @@ public class HtxTrendFollowingService {
                 new HtxTrendExitDecisionEngine.ProfitProtectionPolicy(
                         properties.getIntradayProfitArmAtrMultiplier(), properties.getIntradayProfitLockAtrMultiplier(),
                         properties.getIntradayProfitPartialAtrMultiplier(), properties.getIntradayProfitPullbackAtrMultiplier(),
-                        properties.getIntradayProfitMinNetFeeMultiple(), requiredProtectionBreachBars), protectionBreachBars));
+                        properties.getIntradayProfitMinNetFeeMultiple(), requiredProtectionBreachBars), protectionBreachBars)
+                .withFundingCostExitReason(fundingCostGate));
     }
 
     /** A durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */
     private static BigDecimal exitEngineProtectionPrice(HtxTrendPositionEntity position, BigDecimal calculatedProtection) {
-        if (position == null || !positive(position.getProfitLockPrice())) {
+        if (position == null) {
             return calculatedProtection;
         }
-        if (!positive(calculatedProtection)) {
-            return position.getProfitLockPrice();
+        BigDecimal protection = tighterExitProtection(position.getSide(), calculatedProtection, position.getProfitLockPrice());
+        // The MFE recommendation is persisted independently so a restart must not discard a stricter lock.
+        return tighterExitProtection(position.getSide(), protection, position.getProfitProtectionPrice());
+    }
+
+    /** The MFE planner and the exit engine share one non-loosening protection boundary. */
+    private static BigDecimal tighterExitProtection(String side, BigDecimal current, BigDecimal candidate) {
+        if (!positive(current)) {
+            return candidate;
         }
-        return LONG.equals(position.getSide()) ? max(calculatedProtection, position.getProfitLockPrice())
-                : min(calculatedProtection, position.getProfitLockPrice());
+        if (!positive(candidate)) {
+            return current;
+        }
+        return LONG.equals(side) ? max(current, candidate) : min(current, candidate);
     }
 
     private void persistExitEngineState(HtxTrendPositionEntity position, HtxTrendExitDecisionEngine.Decision decision) {
@@ -3283,7 +3306,7 @@ public class HtxTrendFollowingService {
             entity.setProjectedLockedNetPnl(profitProtectionPlan.projectedLockedNetPnl());
             entity.setMfeCaptureRatio(profitProtectionPlan.mfeCaptureRatio());
             entity.setProtectionMode(profitProtectionPlan.mode());
-            entity.setExecutionReadiness("OBSERVE_ONLY");
+            entity.setExecutionReadiness("OBSERVE".equals(executedAction) ? "OBSERVE_ONLY" : "EXIT_ENGINE_INPUT");
         }
         entity.setTargetRemainingContracts(decision.targetRemainingContracts() < 0 ? null
                 : decision.targetRemainingContracts());
@@ -3291,7 +3314,7 @@ public class HtxTrendFollowingService {
         recorder.recordExitDecision(entity);
     }
 
-    /** P0 records a restart-safe MFE protection recommendation only; it cannot submit or alter an exchange order. */
+    /** Records a restart-safe MFE lock; the v4 exit engine consumes this price, but this component never submits orders itself. */
     private HtxTrendProfitProtectionPlanner.Plan observeProfitProtection(HtxTrendPositionEntity position,
                                                                            BigDecimal reference, BigDecimal highest,
                                                                            BigDecimal lowest, TrendSignal signal) {
@@ -3332,8 +3355,8 @@ public class HtxTrendFollowingService {
             event.setProtectionPrice(plan.protectionPrice());
             event.setProjectedLockedNetPnl(plan.projectedLockedNetPnl());
             event.setMfeCaptureRatio(plan.mfeCaptureRatio());
-            event.setExecutionReadiness("OBSERVE_ONLY");
-            event.setReason("P0 MFE profit-protection recommendation; no HTX order submitted");
+            event.setExecutionReadiness("EXIT_ENGINE_INPUT");
+            event.setReason("MFE protection price is consumed by the v4 exit engine; this recorder submits no standalone HTX order");
             event.setEvidenceJson(profitProtectionEvidence(plan));
             recorder.recordProfitProtectionEvent(event);
         }
@@ -3363,6 +3386,9 @@ public class HtxTrendFollowingService {
         }
         if ("INVALIDATED".equals(decision.phase())) {
             return EXIT_MODEL_INVALIDATION;
+        }
+        if ("FUNDING_COST".equals(decision.phase())) {
+            return EXIT_FUNDING_COST;
         }
         return "REVERSAL_CONFIRMED".equals(decision.phase()) ? EXIT_TREND_EXHAUSTION : EXIT_TRAILING_STOP;
     }

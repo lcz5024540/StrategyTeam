@@ -1201,6 +1201,33 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void liveFibFundingCostExitIsSubmittedByV4WithoutCallingTheLegacyExitBranch() {
+        properties.setExitEngineEnabled(true);
+        properties.setExitEngineLiveEnabled(true);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("0.0020");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setPrimaryModel(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION);
+        active.setInvalidationPrice(new BigDecimal("4200.00"));
+        active.setAccountLabel("primary");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4315.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("exit engine: FUNDING_COST"));
+        ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
+        verify(recorder).recordExitDecision(decisionCaptor.capture());
+        assertEquals("FUNDING_COST", decisionCaptor.getValue().getExitPhase());
+        assertEquals("FULL_CLOSE", decisionCaptor.getValue().getExecutedAction());
+        assertTrue(decisionCaptor.getValue().getEvidenceJson().contains("\"fundingCostExit\""));
+    }
+
+    @Test
     void liveFibProfitLockReferenceCrossDoesNotSubmitBeforeCompletedBarConfirmation() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(true);
@@ -1214,7 +1241,8 @@ class HtxTrendFollowingServiceTest {
         active.setTrailingArmedAt(LocalDateTime.of(2026, 9, 25, 1, 20));
         active.setTrailingArmReason("NET_COST_AND_ATR_MILESTONE");
         active.setMaxFavorableR(new BigDecimal("0.40"));
-        active.setProfitLockPrice(new BigDecimal("4324.00"));
+        active.setProfitLockPrice(new BigDecimal("4300.00"));
+        active.setProfitProtectionPrice(new BigDecimal("4324.00"));
         active.setAccountLabel("primary");
         when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4320.00"))));
@@ -1228,12 +1256,13 @@ class HtxTrendFollowingServiceTest {
         verify(recorder).recordExitDecision(decisionCaptor.capture());
         assertEquals("ARM_TRAILING", decisionCaptor.getValue().getSuggestedAction());
         assertEquals("ARM_TRAILING", decisionCaptor.getValue().getExecutedAction());
+        assertEquals(0, decisionCaptor.getValue().getProtectionPrice().compareTo(new BigDecimal("4324.00")));
         assertTrue(decisionCaptor.getValue().getExecutionBlockReason() == null);
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
     @Test
-    void liveFibConfirmedProtectionBreachSubmitsReduceOnlyCloseAfterTwoBarsAndTwoEvidenceGroups() {
+    void liveFibConfirmedProtectionBreachSubmitsReduceOnlyCloseWithoutIndependentReversalGate() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(true);
         givenContractInfo();
@@ -1257,7 +1286,7 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("confirmed-protection-breach-with-reversal-evidence"));
+        assertTrue(result.message().contains("armed-protection-breach-atr-impulse"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());

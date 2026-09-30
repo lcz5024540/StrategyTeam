@@ -306,7 +306,7 @@ public class HtxTrendRecorder {
         }
     }
 
-    /** Persists a read-only profit-protection recommendation without touching any exchange order. */
+    /** Persists the restart-safe MFE protection input used by the v4 exit engine; this method never places an order. */
     public void updateProfitProtectionState(long id, BigDecimal mfePrice, BigDecimal mfeNetPnl,
                                             BigDecimal protectionPrice, BigDecimal projectedLockedNetPnl,
                                             BigDecimal mfeCaptureRatio, String protectionMode) {

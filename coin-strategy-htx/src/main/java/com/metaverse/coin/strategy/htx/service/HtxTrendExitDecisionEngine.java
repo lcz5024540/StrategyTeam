@@ -16,6 +16,10 @@ import java.time.LocalDateTime;
  */
 public final class HtxTrendExitDecisionEngine {
 
+    /**
+     * One and only executable policy for Fibonacci positions.  Do not create a new numbered
+     * engine for a rule fix: the durable state and the live execution path must remain one v4 chain.
+     */
     public static final String VERSION = "fib-exit-engine-v4";
     public static final String FIB_PULLBACK_CONTINUATION = "FIB_PULLBACK_CONTINUATION";
 
@@ -82,12 +86,19 @@ public final class HtxTrendExitDecisionEngine {
         BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
         boolean continuationWorthHolding = expectedReward.compareTo(protectedRisk) > 0 && reversalEvidence <= 1;
 
-        // A profit-protection line is not a stop-market order.  It first needs completed-bar confirmation,
-        // then independent evidence that the Fibonacci continuation thesis is weakening.  This prevents one
-        // 15-minute wick or scheduler reference price from liquidating a still-valid runner.
+        // The protection line is the boundary of already-earned profit.  A deep intrabar break is a failed
+        // continuation, even if higher timeframes have not yet reversed.  For a shallow break we retain the
+        // completed-bar confirmation so one wick cannot liquidate a healthy runner.
         boolean protectionBreached = !newlyArmed && armedAt != null && input.protectionBreachBars() > 0;
         boolean protectionBreachConfirmed = protectionBreached
                 && input.protectionBreachBars() >= policy.protectionBreachConfirmationBars();
+        boolean acuteProtectionBreach = protectionBreached && dynamicPullback;
+        if (acuteProtectionBreach) {
+            return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
+                    armedAt, armReason, "armed-protection-breach-atr-impulse",
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
+        }
         if (protectionBreached && !protectionBreachConfirmed) {
             return new Decision("PROFIT_AT_RISK", Action.ARM_TRAILING, -1L, effectiveProtection, computedMaxR,
                     armedAt, armReason, "armed-protection-breach-awaiting-bar-confirmation",
@@ -95,21 +106,8 @@ public final class HtxTrendExitDecisionEngine {
                             effectiveProtection, reversalEvidence, expectedReward));
         }
         if (protectionBreachConfirmed) {
-            if (reversalEvidence < 2) {
-                return new Decision("PROFIT_AT_RISK", Action.ARM_TRAILING, -1L, effectiveProtection, computedMaxR,
-                        armedAt, armReason, "armed-protection-breach-insufficient-reversal-evidence",
-                        evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
-                                effectiveProtection, reversalEvidence, expectedReward));
-            }
-            long targetRemaining = targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk);
-            if (!profitable || targetRemaining <= 0L) {
-                return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
-                        armedAt, armReason, "confirmed-protection-breach-with-reversal-evidence",
-                        evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
-                                effectiveProtection, reversalEvidence, expectedReward));
-            }
-            return new Decision("PROFIT_AT_RISK", Action.PARTIAL_CLOSE, targetRemaining, effectiveProtection,
-                    computedMaxR, armedAt, armReason, "confirmed-protection-breach-with-reversal-evidence",
+            return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
+                    armedAt, armReason, "confirmed-profit-protection-breach",
                     evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
                             effectiveProtection, reversalEvidence, expectedReward));
         }
@@ -124,6 +122,16 @@ public final class HtxTrendExitDecisionEngine {
             }
             return new Decision("PROFIT_AT_RISK", Action.PARTIAL_CLOSE, targetRemaining, effectiveProtection,
                     computedMaxR, armedAt, armReason, "profit-at-risk-with-deteriorating-continuation",
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
+        }
+
+        // Funding was historically evaluated after the legacy exit rules.  Fibonacci positions return from
+        // this engine before that legacy branch, so keep the same safety rule inside v4 rather than silently
+        // dropping it.  It remains lower priority than invalidation and an already-breached profit protection.
+        if (input.fundingCostExitReason() != null && !input.fundingCostExitReason().isBlank()) {
+            return new Decision("FUNDING_COST", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
+                    armedAt, armReason, "funding-cost-exit: " + input.fundingCostExitReason(),
                     evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
                             effectiveProtection, reversalEvidence, expectedReward));
         }
@@ -208,7 +216,8 @@ public final class HtxTrendExitDecisionEngine {
                 + ",\"maxFavorableR\":" + number(maxR) + ",\"expectedReward\":" + number(expectedReward)
                 + ",\"protectedRisk\":" + number(protectedRisk) + ",\"flatStreak\":" + input.flatStreak()
                 + ",\"requiredFlatStreak\":" + input.requiredFlatStreak() + ",\"flatLossBudget\":"
-                + number(input.flatLossBudget()) + "}";
+                + number(input.flatLossBudget()) + ",\"fundingCostExit\":"
+                + jsonText(input.fundingCostExitReason()) + "}";
     }
 
     private static BigDecimal favorableMove(String side, BigDecimal entry, BigDecimal highest, BigDecimal lowest) {
@@ -279,6 +288,10 @@ public final class HtxTrendExitDecisionEngine {
         return value == null ? "null" : value.stripTrailingZeros().toPlainString();
     }
 
+    private static String jsonText(String value) {
+        return value == null ? "null" : "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
     public enum Action { HOLD, ARM_TRAILING, PARTIAL_CLOSE, FULL_CLOSE }
 
     public record Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
@@ -291,7 +304,24 @@ public final class HtxTrendExitDecisionEngine {
                         LocalDateTime trailingArmedAt, String trailingArmReason, BigDecimal maxFavorableR,
                         LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
                         BigDecimal flatLossBudget, ProfitProtectionPolicy profitProtectionPolicy,
-                        int protectionBreachBars) {
+                        int protectionBreachBars, String fundingCostExitReason) {
+        /** Compatibility constructor for frozen fixtures and callers that do not have a funding observation. */
+        public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
+                     BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
+                     BigDecimal structureTargetPrice, BigDecimal referencePrice, BigDecimal protectionPrice,
+                     BigDecimal highestPrice, BigDecimal lowestPrice, BigDecimal atr, TrendSide signalSide,
+                     BigDecimal emaFast, BigDecimal emaSlow, int majorTimeframeOpposition,
+                     boolean marketContextOpposes, BigDecimal currentNetPnl, BigDecimal entryFee,
+                     BigDecimal estimatedCloseFee, LocalDateTime trailingArmedAt, String trailingArmReason,
+                     BigDecimal maxFavorableR, LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
+                     BigDecimal flatLossBudget, ProfitProtectionPolicy profitProtectionPolicy,
+                     int protectionBreachBars) {
+            this(primaryModel, side, remainingContracts, contractSize, entryPrice, initialStopPrice, invalidationPrice,
+                    structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
+                    emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
+                    estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
+                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars, null);
+        }
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
                      BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
                      BigDecimal structureTargetPrice, BigDecimal referencePrice, BigDecimal protectionPrice,
@@ -305,7 +335,7 @@ public final class HtxTrendExitDecisionEngine {
                     structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
                     estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
-                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, 0);
+                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, 0, null);
         }
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
                      BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
@@ -320,7 +350,7 @@ public final class HtxTrendExitDecisionEngine {
                     structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
                     estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
-                    requiredFlatStreak, flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0);
+                    requiredFlatStreak, flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0, null);
         }
 
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
@@ -336,7 +366,7 @@ public final class HtxTrendExitDecisionEngine {
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, estimatedCloseFee,
                     estimatedCloseFee,
                     trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak, requiredFlatStreak,
-                    flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0);
+                    flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0, null);
         }
 
         public Input withProtectionBreachBars(int breachBars) {
@@ -344,7 +374,16 @@ public final class HtxTrendExitDecisionEngine {
                     invalidationPrice, structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice,
                     atr, signalSide, emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl,
                     entryFee, estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt,
-                    flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, breachBars);
+                    flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, breachBars,
+                    fundingCostExitReason);
+        }
+
+        public Input withFundingCostExitReason(String reason) {
+            return new Input(primaryModel, side, remainingContracts, contractSize, entryPrice, initialStopPrice,
+                    invalidationPrice, structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice,
+                    atr, signalSide, emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl,
+                    entryFee, estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt,
+                    flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars, reason);
         }
     }
 
