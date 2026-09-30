@@ -196,6 +196,10 @@ htx:
     # Disabled by default: only supervises already-open positions; it never scans candidates or opens a position.
     exit-supervisor-enabled: ${HTX_TREND_EXIT_SUPERVISOR_ENABLED:false}
     exit-supervisor-poll-interval-ms: ${HTX_TREND_EXIT_SUPERVISOR_POLL_INTERVAL_MS:10000}
+    # Public swap price stream used only by existing-position exits. A stale/disconnected stream falls back to REST mark price.
+    realtime-price-feed-enabled: ${HTX_TREND_REALTIME_PRICE_FEED_ENABLED:false}
+    realtime-price-ws-url: ${HTX_TREND_REALTIME_PRICE_WS_URL:wss://api.hbdm.com/linear-swap-ws}
+    realtime-price-max-stale-ms: ${HTX_TREND_REALTIME_PRICE_MAX_STALE_MS:15000}
     profit-protection-enabled: ${HTX_TREND_PROFIT_PROTECTION_ENABLED:false}
     intraday-profit-arm-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER:0.50}
     intraday-profit-lock-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_LOCK_ATR_MULTIPLIER:0.15}

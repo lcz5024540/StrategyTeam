@@ -107,6 +107,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendProfitProtectionPlanner profitProtectionPlanner = new HtxTrendProfitProtectionPlanner();
     private HtxTrendCombinationService combinationService;
     private HtxTrendRuntimeKlineRecorder runtimeKlineRecorder;
+    private HtxTrendRealtimePriceFeed realtimePriceFeed;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
 
@@ -200,6 +201,11 @@ public class HtxTrendFollowingService {
     @Autowired(required = false)
     void setRuntimeKlineRecorder(HtxTrendRuntimeKlineRecorder runtimeKlineRecorder) {
         this.runtimeKlineRecorder = runtimeKlineRecorder;
+    }
+
+    @Autowired(required = false)
+    void setRealtimePriceFeed(HtxTrendRealtimePriceFeed realtimePriceFeed) {
+        this.realtimePriceFeed = realtimePriceFeed;
     }
 
     public boolean hasOpenLikePositions() {
@@ -1402,7 +1408,9 @@ public class HtxTrendFollowingService {
             return RunResult.of(RunCode.MANUAL_REVIEW, position.getId(), reviewReason);
         }
         HtxSwapPosition exchangePosition = positionLookup.position().get();
-        BigDecimal reference = firstPositive(exchangePosition.getMarkPrice(), exchangePosition.getLastPrice(),
+        BigDecimal realtimePrice = realtimePriceFeed == null ? null : realtimePriceFeed.latest(position.getContractCode())
+                .map(HtxTrendRealtimePriceFeed.Quote::price).orElse(null);
+        BigDecimal reference = firstPositive(realtimePrice, exchangePosition.getMarkPrice(), exchangePosition.getLastPrice(),
                 signal.closePrice(), position.getEntryAvgPrice());
         BigDecimal highest = max(firstPositive(position.getHighestPrice(), reference), reference);
         BigDecimal lowest = min(firstPositive(position.getLowestPrice(), reference), reference);

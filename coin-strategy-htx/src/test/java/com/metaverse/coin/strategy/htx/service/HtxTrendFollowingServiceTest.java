@@ -1163,6 +1163,30 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void freshRealtimeQuoteTakesPrecedenceOverPolledExchangeMarkForExistingPositionOnly() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(45));
+        HtxTrendRealtimePriceFeed realtimeFeed = mock(HtxTrendRealtimePriceFeed.class);
+        when(realtimeFeed.latest("XAUT-USDT")).thenReturn(Optional.of(new HtxTrendRealtimePriceFeed.Quote(
+                new BigDecimal("4344.00"), Instant.now().toEpochMilli(), Instant.now().toEpochMilli(),
+                "HTX_SWAP_WS_DETAIL")));
+        service.setRealtimePriceFeed(realtimeFeed);
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4342.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.manageOpenPositionsOnly();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        verify(realtimeFeed).latest("XAUT-USDT");
+        verify(recorder).updateRiskLevels(eq(77L), any(), any(), any(),
+                eq(new BigDecimal("4344.00")), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void observedFibExitDoesNotFallThroughToLegacyFlatLossClose() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(false);

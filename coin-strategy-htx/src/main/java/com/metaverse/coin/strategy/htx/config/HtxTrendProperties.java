@@ -230,6 +230,15 @@ public class HtxTrendProperties {
     /** Delay between lightweight existing-position supervision runs. */
     private long exitSupervisorPollIntervalMs = 10_000L;
 
+    /** Prefer a fresh public swap WebSocket quote for managing an existing position; disabled by default. */
+    private boolean realtimePriceFeedEnabled = false;
+
+    /** HTX USDT-swap public market endpoint.  It is intentionally separate from the spot WebSocket URL. */
+    private String realtimePriceWsUrl = "wss://api.hbdm.com/linear-swap-ws";
+
+    /** A WebSocket quote older than this is rejected and the existing REST mark-price path is used instead. */
+    private long realtimePriceMaxStaleMs = 15_000L;
+
     /** Enables MFE protection calculation, durable storage, audit events and v4 exit-engine input. */
     private boolean profitProtectionEnabled = false;
 

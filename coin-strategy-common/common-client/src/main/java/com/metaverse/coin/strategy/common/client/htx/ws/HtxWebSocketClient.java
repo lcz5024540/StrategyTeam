@@ -33,6 +33,7 @@ public class HtxWebSocketClient {
     private final String wsUrl;
     private final Map<String, HtxSubscription> subscriptions = new ConcurrentHashMap<>();
     private volatile WebSocket ws;
+    private volatile boolean connected;
 
     public HtxWebSocketClient() {
         this("wss://api.huobi.pro/ws");
@@ -61,14 +62,21 @@ public class HtxWebSocketClient {
     }
 
     public synchronized void connect() {
-        if (ws != null) {
+        if (ws != null && connected) {
             return;
         }
         HttpClient http = HttpClient.newHttpClient();
-        this.ws = http.newWebSocketBuilder()
-                .buildAsync(URI.create(wsUrl), new Listener())
-                .join();
-        subscriptions.keySet().forEach(this::sendSub);
+        try {
+            this.ws = http.newWebSocketBuilder()
+                    .buildAsync(URI.create(wsUrl), new Listener())
+                    .join();
+            this.connected = true;
+            subscriptions.keySet().forEach(this::sendSub);
+        } catch (RuntimeException ex) {
+            this.ws = null;
+            this.connected = false;
+            throw ex;
+        }
     }
 
     public synchronized void close() {
@@ -76,10 +84,22 @@ public class HtxWebSocketClient {
             ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye");
             ws = null;
         }
+        connected = false;
+    }
+
+    /**
+     * A caller can use this as a reconnect seam.  A false result never means a cached market
+     * price is valid; consumers still need their own freshness policy.
+     */
+    public boolean isConnected() {
+        return connected && ws != null;
     }
 
     private void sendSub(String topic) {
-        ws.sendText("{\"sub\":\"" + topic + "\",\"id\":\"" + topic + "\"}", true);
+        WebSocket current = ws;
+        if (current != null) {
+            current.sendText("{\"sub\":\"" + topic + "\",\"id\":\"" + topic + "\"}", true);
+        }
     }
 
     private void dispatch(String json) {
@@ -123,6 +143,12 @@ public class HtxWebSocketClient {
 
     private class Listener implements WebSocket.Listener {
         @Override
+        public void onOpen(WebSocket webSocket) {
+            connected = true;
+            webSocket.request(1);
+        }
+
+        @Override
         public CompletionStage<?> onBinary(WebSocket webSocket, ByteBuffer data, boolean last) {
             String json = inflate(data);
             if (json != null) {
@@ -138,6 +164,24 @@ public class HtxWebSocketClient {
             dispatch(data.toString());
             webSocket.request(1);
             return CompletableFuture.completedStage(null);
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            connected = false;
+            if (ws == webSocket) {
+                ws = null;
+            }
+            return CompletableFuture.completedStage(null);
+        }
+
+        @Override
+        public void onError(WebSocket webSocket, Throwable error) {
+            connected = false;
+            if (ws == webSocket) {
+                ws = null;
+            }
+            log.warn("HTX WS disconnected: {}", error.toString());
         }
     }
 }

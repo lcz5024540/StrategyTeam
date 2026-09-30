@@ -103,6 +103,10 @@ MFE 保护价 = highest_price - 动态允许回吐
 
 **2026-09-30 v4 实施状态**：v4 已直接用当前交易所标记价判断保护价是否被穿越。若已武装仓位的当前价格穿越保护价，且从 MFE 回吐达到 `1 ATR`，立即提交 reduce-only 全平，不再等待下一根 15 分钟 K 线；仅轻微穿越仍保留完成 K 线确认，避免单次针刺误平。新增默认关闭的 `HTX_TREND_EXIT_SUPERVISOR_ENABLED`：开启后每 `HTX_TREND_EXIT_SUPERVISOR_POLL_INTERVAL_MS`（默认 10 秒）只运行已有仓位管理、退出订单对账和 v4 决策，绝不扫描候选、写因子快照或开新仓，并与完整扫描调度互斥。交易所原生条件单和 WebSocket 触发仍属于后续能力，未伪称已完成。
 
+**2026-10-01 v4 补充状态**：新增默认关闭的 `HTX_TREND_REALTIME_PRICE_FEED_ENABLED`。开启后只为数据库中已有的趋势仓位订阅合约公共行情 `market.<contract>.detail`，以最新价优先驱动既有 v4 退出判断；报价超过 `HTX_TREND_REALTIME_PRICE_MAX_STALE_MS`（默认 15 秒）、乱序或 WebSocket 断线时，一律退回原有私有持仓 `mark_price / last_price` 轮询，绝不使用陈旧缓存，也不扫描或订阅 52 个开仓候选。公共行情流和本地退出监督器仍不能替代交易所原生保护单。
+
+**条件单接口的阻断事实**：已核验的 HTX Java 参考实现只覆盖旧 `/linear-swap-api/v1/swap_tpsl_order`、`swap_tpsl_cancel` 等私有接口；本项目的账户已因 V5 迁移而明确不能再调用任何 v1 私有合约接口。当前运行环境无法获得 HTX V5 条件单文档的请求字段与响应契约，因此不得猜测 V5 路径或把 v1 条件单接到真实账户。待取得 HTX V5 文档或测试账户的最小只读/小额验证后，才允许实现创建、查询、撤销及“新单确认后撤旧单”；在此之前，`HTX_TREND_REALTIME_PRICE_FEED_ENABLED` 与既有 v4 本地 reduce-only 退出是唯一可验证的执行路径，且均保持默认关闭。
+
 **验收**：用测试账户最小仓位验证创建、替换、触发、撤销、服务重启恢复和部分成交；任何仓位在保护已武装时都能反查到一条交易所保护状态或明确的 fail-closed 告警。
 
 ### P3：回放、对照与灰度
