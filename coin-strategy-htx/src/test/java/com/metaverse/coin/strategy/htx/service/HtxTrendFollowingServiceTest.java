@@ -40,6 +40,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -641,6 +642,37 @@ class HtxTrendFollowingServiceTest {
         verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
         verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getPeriod()), eq(properties.getKlineSize()));
         verify(swap, times(1)).historyKline(eq("XAUT-USDT"), eq(properties.getTrendPeriod()), eq(properties.getTrendKlineSize()));
+    }
+
+    @Test
+    void reevaluatesEntryWindowAfterCandidateScanCompletes() {
+        givenContractInfo();
+        givenKlines();
+        givenFunding("-0.0001");
+        givenDepth();
+        givenNoOpenOrders();
+        givenNoExternalPositions();
+        givenContractMargin();
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.empty());
+        when(recorder.createIntent(any())).thenReturn(77L);
+        when(swap.switchLeverage(eq("XAUT-USDT"), eq("long"), eq(properties.getLeverage())))
+                .thenReturn(ok(leverage("XAUT-USDT", "long")));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(88L, 99L)));
+
+        AtomicBoolean entryWindowOpen = new AtomicBoolean(false);
+        TrendSignal signal = TrendSignal.of(TrendSide.LONG, freshBarTime(), new BigDecimal("4300"),
+                new BigDecimal("4290"), new BigDecimal("4280"), new BigDecimal("4310"),
+                new BigDecimal("4260"), new BigDecimal("12"), new BigDecimal("0.0028"),
+                new BigDecimal("24"), "test signal");
+        when(calculator.evaluate(anyList(), anyList(), eq(properties), anyLong())).thenAnswer(invocation -> {
+            entryWindowOpen.set(true);
+            return signal;
+        });
+
+        HtxTrendFollowingService.RunResult result = service.runOnce(entryWindowOpen::get);
+
+        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
+        verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
     @Test

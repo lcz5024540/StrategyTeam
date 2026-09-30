@@ -58,6 +58,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.BooleanSupplier;
 
 /** Contract-only trend following for HTX swaps, safe to run in observe-only mode. */
 @Slf4j
@@ -199,6 +200,15 @@ public class HtxTrendFollowingService {
     }
 
     RunResult runOnce(boolean entryWindowAllowsNewEntries) {
+        return runOnce(() -> entryWindowAllowsNewEntries);
+    }
+
+    /**
+     * Evaluates the entry-window policy only after candidate collection finishes.
+     * A 52-contract scan can begin before the post-close window and finish inside it;
+     * freezing the scheduler-start result would incorrectly discard that fresh candidate.
+     */
+    RunResult runOnce(BooleanSupplier entryWindowAllowsNewEntries) {
         List<String> contractCodes = liveContractCodes();
         if (contractCodes.isEmpty()) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(MODE_GATE, "trend contract list is blank"));
@@ -274,12 +284,13 @@ public class HtxTrendFollowingService {
                 .sorted(Comparator.comparing(EntryCandidate::score).reversed())
                 .toList();
         if (!rankedCandidates.isEmpty()) {
+            boolean entryWindowOpenAtExecution = entryWindowAllowsNewEntries.getAsBoolean();
             if (!properties.isEntryEnabled()) {
                 RunResult blocked = RunResult.of(RunCode.SKIPPED, null,
                         gateMessage(EXECUTION_PREFLIGHT, "new trend entries disabled"));
                 selected = select(selected, tag("ENTRY", blocked));
                 summaries.add("ENTRY=" + blocked.code() + ":" + blocked.message());
-            } else if (!entryWindowAllowsNewEntries && !hasFreshCarryoverCandidate) {
+            } else if (!entryWindowOpenAtExecution && !hasFreshCarryoverCandidate) {
                 RunResult blocked = RunResult.of(RunCode.SKIPPED, null,
                         gateMessage(EXECUTION_PREFLIGHT, "entry window closed; candidates cached"));
                 selected = select(selected, tag("ENTRY", blocked));

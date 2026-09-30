@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /** Periodic runner for HTX contract trend following. */
 @Slf4j
@@ -34,7 +35,7 @@ public class HtxTrendFollowingScheduler {
             return;
         }
         try {
-            HtxTrendFollowingService.RunResult result = scheduledAt(Instant.now());
+            HtxTrendFollowingService.RunResult result = scheduledAt();
             log.info("[HTX-TREND] result={}", result);
         } catch (HtxPersistenceException ex) {
             log.error("[HTX-TREND] persistence failure; no new order will be attempted", ex);
@@ -45,16 +46,9 @@ public class HtxTrendFollowingScheduler {
         }
     }
 
-    HtxTrendFollowingService.RunResult scheduledAt(Instant now) {
-        boolean entryWindowOpen = entryWindowOpen(now);
-        boolean hasOpenLikePositions = service.hasOpenLikePositions();
-        if (!entryWindowOpen && !hasOpenLikePositions) {
-            HtxTrendFollowingService.RunResult result = service.runOnce(false);
-            return HtxTrendFollowingService.RunResult.of(result.code(), result.positionId(),
-                    result.message() + "; outside candle-close entry window ageSeconds="
-                            + ageSinceLastCandleClose(now));
-        }
-        return service.runOnce(entryWindowOpen);
+    HtxTrendFollowingService.RunResult scheduledAt() {
+        BooleanSupplier entryWindowAtExecution = () -> entryWindowOpen(Instant.now());
+        return service.runOnce(entryWindowAtExecution);
     }
 
     private boolean entryWindowOpen(Instant now) {
