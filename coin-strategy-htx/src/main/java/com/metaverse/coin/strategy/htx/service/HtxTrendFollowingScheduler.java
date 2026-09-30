@@ -51,6 +51,33 @@ public class HtxTrendFollowingScheduler {
         return service.runOnce(entryWindowAtExecution);
     }
 
+    @Scheduled(
+            fixedDelayString = "${htx.trend.exit-supervisor-poll-interval-ms:10000}",
+            initialDelayString = "${htx.trend.exit-supervisor-poll-interval-ms:10000}")
+    public void exitSupervisorScheduled() {
+        if (!properties.isExitSupervisorEnabled()) {
+            return;
+        }
+        if (!running.compareAndSet(false, true)) {
+            log.debug("[HTX-TREND] full run still active; skip overlapping exit supervision");
+            return;
+        }
+        try {
+            HtxTrendFollowingService.RunResult result = exitSupervisorAt();
+            log.info("[HTX-TREND] exit-supervisor result={}", result);
+        } catch (HtxPersistenceException ex) {
+            log.error("[HTX-TREND] exit-supervisor persistence failure", ex);
+        } catch (RuntimeException ex) {
+            log.error("[HTX-TREND] exit-supervisor run failed", ex);
+        } finally {
+            running.set(false);
+        }
+    }
+
+    HtxTrendFollowingService.RunResult exitSupervisorAt() {
+        return service.manageOpenPositionsOnly();
+    }
+
     private boolean entryWindowOpen(Instant now) {
         if (!properties.isAlignEntryToCandleClose()) {
             return true;

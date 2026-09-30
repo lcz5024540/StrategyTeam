@@ -206,6 +206,32 @@ public class HtxTrendFollowingService {
         return recorder.countOpenLike() > 0L;
     }
 
+    /**
+     * Manages and reconciles only existing positions. It deliberately omits candidate scans, factor snapshots,
+     * and every entry path so an exit supervisor cannot create a new position.
+     */
+    RunResult manageOpenPositionsOnly() {
+        List<String> contractCodes = liveContractCodes();
+        if (contractCodes.isEmpty()) {
+            return RunResult.of(RunCode.SKIPPED, null, gateMessage(MODE_GATE, "trend contract list is blank"));
+        }
+        RunResult selected = null;
+        List<String> summaries = new ArrayList<>();
+        for (String contractCode : contractCodes) {
+            RunResult result = manageActiveContract(contractCode);
+            if (result == null) {
+                continue;
+            }
+            selected = select(selected, tag(contractCode, result));
+            summaries.add(contractCode + "=" + result.code() + ":" + result.message());
+        }
+        if (selected == null) {
+            return RunResult.of(RunCode.SKIPPED, null, "exit supervisor found no open-like trend positions");
+        }
+        return RunResult.of(selected.code(), selected.positionId(), selected.message()
+                + "; exitSupervisor=true; managedContracts=" + String.join(" | ", summaries));
+    }
+
     RunResult runOnce(boolean entryWindowAllowsNewEntries) {
         return runOnce(() -> entryWindowAllowsNewEntries);
     }

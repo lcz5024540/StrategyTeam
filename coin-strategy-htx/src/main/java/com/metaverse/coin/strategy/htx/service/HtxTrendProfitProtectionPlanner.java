@@ -5,8 +5,8 @@ import java.math.RoundingMode;
 
 /**
  * Computes an auditable profit-protection price from durable MFE facts.
- * It has no exchange side effects. The returned price is an observation until the dedicated
- * execution bridge is enabled in a later rollout phase.
+ * It has no exchange side effects. The v4 exit decision engine consumes this price and owns
+ * any resulting order; this planner never submits an HTX order directly.
  */
 public final class HtxTrendProfitProtectionPlanner {
 

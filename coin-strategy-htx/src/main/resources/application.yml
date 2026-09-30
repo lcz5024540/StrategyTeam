@@ -193,6 +193,9 @@ htx:
     exit-engine-enabled: ${HTX_TREND_EXIT_ENGINE_ENABLED:${HTX_TREND_EXIT_ENGINE_V2_ENABLED:false}}
     exit-engine-live-enabled: ${HTX_TREND_EXIT_ENGINE_LIVE_ENABLED:${HTX_TREND_EXIT_ENGINE_V2_LIVE_ENABLED:false}}
     exit-engine-primary-account-only: ${HTX_TREND_EXIT_ENGINE_PRIMARY_ACCOUNT_ONLY:${HTX_TREND_EXIT_ENGINE_V2_PRIMARY_ACCOUNT_ONLY:true}}
+    # Disabled by default: only supervises already-open positions; it never scans candidates or opens a position.
+    exit-supervisor-enabled: ${HTX_TREND_EXIT_SUPERVISOR_ENABLED:false}
+    exit-supervisor-poll-interval-ms: ${HTX_TREND_EXIT_SUPERVISOR_POLL_INTERVAL_MS:10000}
     profit-protection-enabled: ${HTX_TREND_PROFIT_PROTECTION_ENABLED:false}
     intraday-profit-arm-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_ARM_ATR_MULTIPLIER:0.50}
     intraday-profit-lock-atr-multiplier: ${HTX_TREND_INTRADAY_PROFIT_LOCK_ATR_MULTIPLIER:0.15}

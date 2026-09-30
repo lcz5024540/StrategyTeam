@@ -57,4 +57,19 @@ class HtxTrendFollowingSchedulerTest {
         assertEquals(expected, result);
         verify(service).runOnce(any(BooleanSupplier.class));
     }
+
+    @Test
+    void exitSupervisorDelegatesOnlyExistingPositionManagement() {
+        HtxTrendFollowingService service = mock(HtxTrendFollowingService.class);
+        HtxTrendProperties properties = new HtxTrendProperties();
+        HtxTrendFollowingScheduler scheduler = new HtxTrendFollowingScheduler(service, properties);
+        HtxTrendFollowingService.RunResult expected = HtxTrendFollowingService.RunResult.of(
+                HtxTrendFollowingService.RunCode.ACTIVE, 7L, "holding");
+        when(service.manageOpenPositionsOnly()).thenReturn(expected);
+
+        HtxTrendFollowingService.RunResult result = scheduler.exitSupervisorAt();
+
+        assertEquals(expected, result);
+        verify(service).manageOpenPositionsOnly();
+    }
 }

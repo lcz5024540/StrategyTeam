@@ -1145,6 +1145,24 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
+    void exitSupervisorManagesExistingPositionWithoutScanningOrOpeningEntries() {
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.LONG, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(45));
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4342.00"))));
+
+        HtxTrendFollowingService.RunResult result = service.manageOpenPositionsOnly();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        assertTrue(result.message().contains("exitSupervisor=true"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
     void observedFibExitDoesNotFallThroughToLegacyFlatLossClose() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(false);
@@ -1228,7 +1246,41 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void liveFibProfitLockReferenceCrossDoesNotSubmitBeforeCompletedBarConfirmation() {
+    void liveFibShallowProfitLockReferenceCrossWaitsForCompletedBarConfirmation() {
+        properties.setExitEngineEnabled(true);
+        properties.setExitEngineLiveEnabled(true);
+        givenContractInfo();
+        givenKlines();
+        givenSignal(TrendSide.FLAT, new BigDecimal("12"));
+        givenFunding("-0.0001");
+        HtxTrendPositionEntity active = activeLongPosition();
+        active.setPrimaryModel(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION);
+        active.setInvalidationPrice(new BigDecimal("4290.00"));
+        active.setTrailingArmedAt(LocalDateTime.of(2026, 9, 25, 1, 20));
+        active.setTrailingArmReason("NET_COST_AND_ATR_MILESTONE");
+        active.setMaxFavorableR(new BigDecimal("0.40"));
+        active.setProfitLockPrice(new BigDecimal("4300.00"));
+        active.setProfitProtectionPrice(new BigDecimal("4324.00"));
+        active.setAccountLabel("primary");
+        when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(active));
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of(openLongPosition("4323.00"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(888L, 999L)));
+
+        HtxTrendFollowingService.RunResult result = service.runOnce();
+
+        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
+        assertTrue(result.message().contains("exit-engine holding"));
+        ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
+        verify(recorder).recordExitDecision(decisionCaptor.capture());
+        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getSuggestedAction());
+        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getExecutedAction());
+        assertEquals(0, decisionCaptor.getValue().getProtectionPrice().compareTo(new BigDecimal("4324.00")));
+        assertTrue(decisionCaptor.getValue().getExecutionBlockReason() == null);
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+    }
+
+    @Test
+    void liveFibAcuteProfitLockReferenceCrossSubmitsReduceOnlyCloseWithoutCompletedBar() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(true);
         givenContractInfo();
@@ -1250,15 +1302,18 @@ class HtxTrendFollowingServiceTest {
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
-        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
-        assertTrue(result.message().contains("exit-engine holding"));
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("armed-protection-breach-atr-impulse"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
-        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getSuggestedAction());
-        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getExecutedAction());
-        assertEquals(0, decisionCaptor.getValue().getProtectionPrice().compareTo(new BigDecimal("4324.00")));
-        assertTrue(decisionCaptor.getValue().getExecutionBlockReason() == null);
-        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+        assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
+        assertEquals("FULL_CLOSE", decisionCaptor.getValue().getExecutedAction());
+        assertTrue(decisionCaptor.getValue().getEvidenceJson()
+                .contains("\"referenceProtectionBreached\":true"));
+        assertTrue(decisionCaptor.getValue().getEvidenceJson()
+                .contains("\"completedBarProtectionBreaches\":0"));
+        verify(swap).placeOrder(argThat(request -> Boolean.TRUE.equals(request.getReduceOnly())
+                && "sell".equals(request.getSide())));
     }
 
     @Test

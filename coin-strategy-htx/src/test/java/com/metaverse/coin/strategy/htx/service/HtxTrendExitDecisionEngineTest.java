@@ -48,13 +48,15 @@ class HtxTrendExitDecisionEngineTest {
     }
 
     @Test
-    void acuteAtrDrawdownAcrossArmedProtectionClosesWithoutWaitingForSecondBar() {
+    void acuteAtrDrawdownAcrossArmedProtectionClosesFromReferencePriceWithoutCompletedBar() {
         LocalDateTime armedAt = LocalDateTime.of(2026, 9, 24, 0, 1);
         HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(suiInput(new BigDecimal("0.9730"), armedAt,
-                LocalDateTime.of(2026, 9, 24, 0, 15)).withProtectionBreachBars(1));
+                LocalDateTime.of(2026, 9, 24, 0, 15)).withProtectionBreachBars(0));
 
         assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
         assertEquals("armed-protection-breach-atr-impulse", decision.reason());
+        assertTrue(decision.evidenceJson().contains("\"referenceProtectionBreached\":true"));
+        assertTrue(decision.evidenceJson().contains("\"completedBarProtectionBreaches\":0"));
     }
 
     @Test
@@ -131,7 +133,7 @@ class HtxTrendExitDecisionEngineTest {
     }
 
     @Test
-    void ltc20260925ProfitLockDoesNotFullCloseFromAnUnconfirmedReferencePrice() {
+    void ltc20260925ProfitLockClosesWhenReferencePriceBreaksProtectionAfterAtrDrawdown() {
         // Production position 161: entry 72.92, 12 contracts at 0.10, entry fee 0.0350016.
         // The decision ledger first armed at the 74.74 MFE, then at 01:43:44 CST recorded ref=73.14.
         HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(new HtxTrendExitDecisionEngine.Input(
@@ -156,10 +158,12 @@ class HtxTrendExitDecisionEngineTest {
                 armed.trailingArmReason(), armed.maxFavorableR(),
                 LocalDateTime.of(2026, 9, 25, 1, 43, 44), 3, 3, new BigDecimal("0.262512")));
 
-        assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, decision.action());
-        assertEquals("PROFIT_AT_RISK", decision.phase());
-        assertEquals("profit-at-risk-with-deteriorating-continuation", decision.reason());
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
+        assertEquals("REVERSAL_CONFIRMED", decision.phase());
+        assertEquals("armed-protection-breach-atr-impulse", decision.reason());
         assertTrue(decision.protectionPrice().compareTo(new BigDecimal("73.14")) > 0);
+        assertTrue(decision.evidenceJson().contains("\"referenceProtectionBreached\":true"));
+        assertTrue(decision.evidenceJson().contains("\"completedBarProtectionBreaches\":0"));
     }
 
     @Test

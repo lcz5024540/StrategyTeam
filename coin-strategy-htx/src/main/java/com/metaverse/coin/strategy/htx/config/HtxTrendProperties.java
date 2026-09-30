@@ -224,6 +224,12 @@ public class HtxTrendProperties {
     /** During the first gray release, never apply model-routed exits to the mirrored account. */
     private boolean exitEnginePrimaryAccountOnly = true;
 
+    /** Run a lightweight supervisor for existing positions between full candidate scans. */
+    private boolean exitSupervisorEnabled = false;
+
+    /** Delay between lightweight existing-position supervision runs. */
+    private long exitSupervisorPollIntervalMs = 10_000L;
+
     /** Enables MFE protection calculation, durable storage, audit events and v4 exit-engine input. */
     private boolean profitProtectionEnabled = false;
 

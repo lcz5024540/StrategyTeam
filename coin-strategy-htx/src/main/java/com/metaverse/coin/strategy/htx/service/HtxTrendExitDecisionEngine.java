@@ -89,27 +89,31 @@ public final class HtxTrendExitDecisionEngine {
         // The protection line is the boundary of already-earned profit.  A deep intrabar break is a failed
         // continuation, even if higher timeframes have not yet reversed.  For a shallow break we retain the
         // completed-bar confirmation so one wick cannot liquidate a healthy runner.
-        boolean protectionBreached = !newlyArmed && armedAt != null && input.protectionBreachBars() > 0;
-        boolean protectionBreachConfirmed = protectionBreached
+        boolean referenceProtectionBreached = !newlyArmed && armedAt != null
+                && crossed(input.side(), input.referencePrice(), effectiveProtection);
+        boolean completedBarProtectionBreached = !newlyArmed && armedAt != null
+                && input.protectionBreachBars() > 0;
+        boolean protectionBreached = referenceProtectionBreached || completedBarProtectionBreached;
+        boolean protectionBreachConfirmed = completedBarProtectionBreached
                 && input.protectionBreachBars() >= policy.protectionBreachConfirmationBars();
-        boolean acuteProtectionBreach = protectionBreached && dynamicPullback;
+        boolean acuteProtectionBreach = referenceProtectionBreached && dynamicPullback;
         if (acuteProtectionBreach) {
             return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
                     armedAt, armReason, "armed-protection-breach-atr-impulse",
                     evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
-                            effectiveProtection, reversalEvidence, expectedReward));
+                            effectiveProtection, reversalEvidence, expectedReward, referenceProtectionBreached));
         }
         if (protectionBreached && !protectionBreachConfirmed) {
             return new Decision("PROFIT_AT_RISK", Action.ARM_TRAILING, -1L, effectiveProtection, computedMaxR,
                     armedAt, armReason, "armed-protection-breach-awaiting-bar-confirmation",
                     evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
-                            effectiveProtection, reversalEvidence, expectedReward));
+                            effectiveProtection, reversalEvidence, expectedReward, referenceProtectionBreached));
         }
         if (protectionBreachConfirmed) {
             return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
                     armedAt, armReason, "confirmed-profit-protection-breach",
                     evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
-                            effectiveProtection, reversalEvidence, expectedReward));
+                            effectiveProtection, reversalEvidence, expectedReward, referenceProtectionBreached));
         }
 
         if (profitable && partialQualified && earlyPullback && reversalEvidence >= 2 && !continuationWorthHolding) {
@@ -200,6 +204,15 @@ public final class HtxTrendExitDecisionEngine {
                                    BigDecimal profitArmDistance, BigDecimal profitLockPrice, BigDecimal effectiveProtection,
                                    int reversalEvidence,
                                    BigDecimal expectedReward) {
+        boolean referenceProtectionBreached = input.trailingArmedAt() != null
+                && crossed(input.side(), input.referencePrice(), effectiveProtection);
+        return evidence(input, maxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                effectiveProtection, reversalEvidence, expectedReward, referenceProtectionBreached);
+    }
+
+    private static String evidence(Input input, BigDecimal maxR, boolean dynamicPullback, boolean earlyPullback,
+                                   BigDecimal profitArmDistance, BigDecimal profitLockPrice, BigDecimal effectiveProtection,
+                                   int reversalEvidence, BigDecimal expectedReward, boolean referenceProtectionBreached) {
         BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
         return "{\"schema\":\"trend-exit-decision-v4\",\"model\":\"FIB_PULLBACK_CONTINUATION\","
                 + "\"signal\":\"" + input.signalSide().name() + "\",\"dynamicPullback\":" + dynamicPullback
@@ -208,6 +221,9 @@ public final class HtxTrendExitDecisionEngine {
                 + number(effectiveProtection)
                 + ",\"entryFee\":" + number(input.entryFee()) + ",\"estimatedCloseFee\":"
                 + number(input.estimatedCloseFee())
+                + ",\"referenceProtectionBreached\":" + referenceProtectionBreached
+                + ",\"completedBarProtectionBreaches\":"
+                + input.protectionBreachBars()
                 + ",\"reversalEvidence\":" + reversalEvidence + ",\"protectionBreachBars\":"
                 + input.protectionBreachBars() + ",\"requiredProtectionBreachBars\":"
                 + policy(input.profitProtectionPolicy()).protectionBreachConfirmationBars()
