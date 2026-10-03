@@ -25,10 +25,44 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def build_manifest(data_dir: Path, symbols: list[str], periods: list[str], start_at: str, end_at: str) -> dict:
+def canonical_universe(universe: dict | None, symbols: list[str]) -> dict | None:
+    """Validate an explicit research universe without ever altering the live whitelist."""
+    if universe is None:
+        return None
+    if universe.get("schema") != "htx-trend-research-universe-v1":
+        raise ValueError("unsupported research universe schema")
+    contracts = sorted({str(value).strip() for value in universe.get("contracts", []) if str(value).strip()})
+    if contracts != sorted(symbols):
+        raise ValueError("research universe contracts differ from requested collection symbols")
+    excluded = universe.get("excludedContracts", [])
+    if not isinstance(excluded, list):
+        raise ValueError("research universe exclusions must be a list")
+    normalized_excluded = []
+    for item in excluded:
+        contract = str(item.get("contract", "")).strip() if isinstance(item, dict) else ""
+        reason = str(item.get("reason", "")).strip() if isinstance(item, dict) else ""
+        evidence = item.get("evidence") if isinstance(item, dict) else None
+        if not contract or not reason or not evidence or contract in contracts:
+            raise ValueError("each excluded contract requires reason, evidence, and must be outside the research universe")
+        normalized_excluded.append({"contract": contract, "reason": reason, "evidence": evidence})
+    return {"schema": "htx-trend-research-universe-v1", "contracts": contracts,
+            "excludedContracts": sorted(normalized_excluded, key=lambda value: value["contract"])}
+
+
+def universe_sha256(universe: dict | None) -> str | None:
+    if universe is None:
+        return None
+    return hashlib.sha256(json.dumps(universe, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def build_manifest(data_dir: Path, symbols: list[str], periods: list[str], start_at: str, end_at: str,
+                   research_universe: dict | None = None) -> dict:
     start, end = epoch(start_at), epoch(end_at)
+    universe = canonical_universe(research_universe, symbols)
     inputs, missing = [], []
     digest = hashlib.sha256()
+    if universe is not None:
+        digest.update(f"research-universe:{universe_sha256(universe)}\n".encode())
     for symbol in sorted(symbols):
         for period in periods:
             path = data_dir / f"{symbol}_{period}.json"
@@ -57,6 +91,7 @@ def build_manifest(data_dir: Path, symbols: list[str], periods: list[str], start
             "sourceKind": "FROZEN_PUBLIC_KLINE", "timezone": "Asia/Shanghai", "inputStartAt": start_at,
             "inputEndAt": end_at, "contracts": sorted(symbols), "periods": periods,
             "inputChecksum": checksum, "inputIntegrity": "COMPLETE" if not missing else "PARTIAL",
+            "researchUniverse": ({**universe, "sha256": universe_sha256(universe)} if universe is not None else None),
             "inputs": inputs, "missingOrPartial": missing}
 
 

@@ -114,6 +114,17 @@ class CollectorTest(unittest.TestCase):
         self.assertTrue(result["rangeHonored"])
         self.assertEqual([900, 1800, 2700], result["returnedIds"])
 
+    def test_state_refuses_to_resume_with_different_audited_universe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "collector-state.json"
+            universe = {"schema": "htx-trend-research-universe-v1", "contracts": ["BTC-USDT"], "excludedContracts": []}
+            state = COLLECTOR.load_state(path, 0, 900, ["BTC-USDT"], ["15min"], universe)
+            COLLECTOR.atomic_json_write(path, state)
+            different = {"schema": "htx-trend-research-universe-v1", "contracts": ["BTC-USDT"],
+                         "excludedContracts": [{"contract": "PONS-USDT", "reason": "INSUFFICIENT_HISTORY", "evidence": "probe"}]}
+            with self.assertRaises(COLLECTOR.CollectionError):
+                COLLECTOR.load_state(path, 0, 900, ["BTC-USDT"], ["15min"], different)
+
     def test_historical_fetch_does_not_mix_size_with_from_and_to(self):
         class Response:
             def read(self):

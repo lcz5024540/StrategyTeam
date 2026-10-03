@@ -23,7 +23,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-from htx_trend_dataset_manifest import build_manifest
+from htx_trend_dataset_manifest import build_manifest, canonical_universe, universe_sha256
 
 TZ = ZoneInfo("Asia/Shanghai")
 PERIOD_SECONDS = {"15min": 900, "30min": 1800, "60min": 3600, "4hour": 14400, "1day": 86400}
@@ -157,7 +157,7 @@ class HtxPublicKlineClient:
         raise CollectionError("; ".join(errors), last_error_payload)
 
 
-def load_state(path: Path, start: int, end: int, symbols: list[str], periods: list[str]) -> dict:
+def load_state(path: Path, start: int, end: int, symbols: list[str], periods: list[str], research_universe: dict | None = None) -> dict:
     if path.exists():
         value = json.loads(path.read_text(encoding="utf-8"))
         if value.get("schema") != STATE_SCHEMA:
@@ -166,8 +166,15 @@ def load_state(path: Path, start: int, end: int, symbols: list[str], periods: li
             raise CollectionError("collector state window differs from requested window; use a new data directory")
         if value.get("symbols") != symbols or value.get("periods") != periods:
             raise CollectionError("collector state universe differs from request; use a new data directory")
+        recorded_universe = value.get("researchUniverse")
+        expected_universe = ({**research_universe, "sha256": universe_sha256(research_universe)}
+                             if research_universe is not None else None)
+        if recorded_universe != expected_universe:
+            raise CollectionError("collector state research universe differs from request; use a new data directory")
         return value
     return {"schema": STATE_SCHEMA, "window": {"start": start, "end": end}, "symbols": symbols, "periods": periods,
+            "researchUniverse": ({**research_universe, "sha256": universe_sha256(research_universe)}
+                                 if research_universe is not None else None),
             "targets": {}, "createdAt": datetime.now(timezone.utc).isoformat(), "updatedAt": None}
 
 
@@ -301,6 +308,7 @@ def main() -> None:
     parser.add_argument("--start", required=True, help="Asia/Shanghai ISO timestamp")
     parser.add_argument("--end", required=True, help="exclusive Asia/Shanghai ISO timestamp")
     parser.add_argument("--symbols", help="comma-separated contracts; defaults to HTX trend whitelist")
+    parser.add_argument("--universe-file", type=Path, help="immutable research universe JSON; cannot be combined with --symbols")
     parser.add_argument("--periods", default=",".join(DEFAULT_PERIODS))
     parser.add_argument("--concurrency", type=int, default=5, choices=range(1, 11))
     parser.add_argument("--page-bars", type=int, default=2000, choices=range(10, 2001))
@@ -320,8 +328,17 @@ def main() -> None:
     unknown = sorted(set(periods) - PERIOD_SECONDS.keys())
     if unknown:
         raise SystemExit(f"unsupported periods: {','.join(unknown)}")
-    symbols = [value.strip() for value in args.symbols.split(",") if value.strip()] if args.symbols else load_default_symbols(
-        Path("coin-strategy-htx/src/main/resources/application.yml"))
+    if args.symbols and args.universe_file:
+        raise SystemExit("--symbols and --universe-file cannot be combined")
+    research_universe = None
+    if args.universe_file:
+        raw_universe = json.loads(args.universe_file.read_text(encoding="utf-8"))
+        contracts = raw_universe.get("contracts", []) if isinstance(raw_universe, dict) else []
+        research_universe = canonical_universe(raw_universe, contracts)
+        symbols = research_universe["contracts"]
+    else:
+        symbols = [value.strip() for value in args.symbols.split(",") if value.strip()] if args.symbols else load_default_symbols(
+            Path("coin-strategy-htx/src/main/resources/application.yml"))
     client = HtxPublicKlineClient(tuple(value.rstrip("/") for value in args.endpoints.split(",") if value.strip()), args.timeout_seconds)
     if args.probe_only:
         result = probe(client, symbols[0], periods[0], start)
@@ -332,7 +349,7 @@ def main() -> None:
 
     args.data_dir.mkdir(parents=True, exist_ok=True)
     state_path = args.data_dir / "collector-state.json"
-    state = load_state(state_path, start, end, symbols, periods)
+    state = load_state(state_path, start, end, symbols, periods, research_universe)
     lock = threading.Lock()
     targets = [CollectionTarget(symbol, period) for symbol in symbols for period in periods]
     results, rounds_used = collect_in_rounds(targets, args.data_dir, start, end, args.page_bars, args.retries,
@@ -347,7 +364,7 @@ def main() -> None:
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if summary["complete"] != summary["targets"]:
         raise SystemExit("dataset is not complete after bounded retry rounds; inspect collector-state.json and rerun to resume")
-    manifest = build_manifest(args.data_dir, symbols, periods, args.start, args.end)
+    manifest = build_manifest(args.data_dir, symbols, periods, args.start, args.end, research_universe)
     manifest_path = args.manifest_out or args.data_dir / "dataset-manifest.json"
     atomic_json_write(manifest_path, manifest)
     print(json.dumps({"manifest": str(manifest_path), "integrity": manifest["inputIntegrity"], "datasetKey": manifest["datasetKey"]}, ensure_ascii=False))
