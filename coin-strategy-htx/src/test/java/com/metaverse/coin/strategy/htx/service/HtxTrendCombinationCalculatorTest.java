@@ -36,6 +36,37 @@ class HtxTrendCombinationCalculatorTest {
     }
 
     @Test
+    void donchianBreakoutCanBeAnIndependentTrendStartWithoutBoxConfirmation() {
+        List<HtxSwapKline> candles = flatRange(32, "115", "100", "108");
+        candles.add(candle(32, "108", "113", "107", "112"));
+        TrendCandidateSignal signal = signal(Direction.LONG, Regime.TRENDING_UP, "112", "110", "90");
+
+        List<CombinationCandidate> candidates = calculator.evaluate(candles, signal, 32);
+
+        CombinationCandidate candidate = candidates.stream()
+                .filter(item -> "DONCHIAN_BREAKOUT".equals(item.primaryModel()))
+                .findFirst().orElseThrow();
+        assertEquals("TREND_CONTEXT", candidate.confirmationModels());
+        assertEquals(new BigDecimal("100"), candidate.score());
+        assertEquals(new BigDecimal("99"), candidate.invalidationPrice());
+    }
+
+    @Test
+    void emaMomentumContinuationRemainsAnIndependentCandidate() {
+        List<HtxSwapKline> candles = flatRange(32, "115", "100", "108");
+        candles.add(candle(32, "108", "109", "107", "108"));
+        TrendCandidateSignal signal = signal(Direction.LONG, Regime.TRENDING_UP, "108", "120", "80");
+
+        List<CombinationCandidate> candidates = calculator.evaluate(candles, signal, 32);
+
+        CombinationCandidate candidate = candidates.stream()
+                .filter(item -> "EMA_VWAP_MOMENTUM_CONTINUATION".equals(item.primaryModel()))
+                .findFirst().orElseThrow();
+        assertEquals("EMA_STACK,MOMENTUM", candidate.confirmationModels());
+        assertEquals(new BigDecimal("92"), candidate.score());
+    }
+
+    @Test
     void lowVolatilityStateDoesNotProduceACombination() {
         List<HtxSwapKline> candles = risingRange(40);
         TrendCandidateSignal signal = signal(Direction.LONG, Regime.LOW_VOLATILITY, "108", "107", "90");
@@ -78,6 +109,14 @@ class HtxTrendCombinationCalculatorTest {
         List<HtxSwapKline> rows = new ArrayList<>();
         for (int i = 0; i < size; i++) {
             rows.add(candle(i, "100", "110", "101", "105"));
+        }
+        return rows;
+    }
+
+    private List<HtxSwapKline> flatRange(int size, String high, String low, String close) {
+        List<HtxSwapKline> rows = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            rows.add(candle(i, close, high, low, close));
         }
         return rows;
     }

@@ -277,6 +277,40 @@ class HtxTrendCombinationServiceTest {
     }
 
     @Test
+    void independentDonchianPolicyCanSelectATrendStartWithoutBoxConfirmation() {
+        List<HtxSwapKline> candles = flatRange(32, "115", "100", "108");
+        candles.add(candle(32, "108", "113", "107", "112"));
+        TrendCandidateSignal signal = new TrendCandidateSignal("15min", 1_790_069_400L, Direction.LONG,
+                Regime.TRENDING_UP, new BigDecimal("90"), new BigDecimal("90"), BigDecimal.ZERO,
+                new BigDecimal("90"), new BigDecimal("112"), new BigDecimal("106"), new BigDecimal("104"),
+                new BigDecimal("102"), new BigDecimal("110"), new BigDecimal("99"), new BigDecimal("2"),
+                new BigDecimal("0.02"), new BigDecimal("30"), new BigDecimal("0.02"), new BigDecimal("1.5"),
+                "valid", "none");
+        HtxTrendStrategyPolicyEntity policy = new HtxTrendStrategyPolicyEntity();
+        policy.setPolicyCode("donchian-trend-start-test");
+        policy.setPolicyVersion("model-route-v1");
+        policy.setPrimaryModel("DONCHIAN_BREAKOUT");
+        policy.setConfirmationModels("TREND_CONTEXT");
+        policy.setScoreThreshold(new BigDecimal("90"));
+        policy.setBaseNotionalUsdt(new BigDecimal("100"));
+        policy.setMaxNotionalUsdt(new BigDecimal("100"));
+        policy.setBoxWindowBars(32);
+        HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
+        when(policyService.enabledPolicies()).thenReturn(List.of(policy));
+        HtxTrendCombinationRecorder recorder = mock(HtxTrendCombinationRecorder.class);
+        when(recorder.recordSnapshot(any())).thenReturn(1L);
+        HtxTrendCombinationService service = new HtxTrendCombinationService(policyService, recorder,
+                mock(HtxTrendCandidateSignalRecorder.class));
+
+        HtxTrendCombinationService.Selection selection = service.select("BTC-USDT", "15min", candles, signal);
+
+        assertTrue(selection.accepted());
+        assertEquals("DONCHIAN_BREAKOUT", selection.candidate().primaryModel());
+        assertEquals("TREND_CONTEXT", selection.candidate().confirmationModels());
+        assertEquals("donchian-trend-start-test", selection.policy().getPolicyCode());
+    }
+
+    @Test
     void modelAnalysisSnapshotIsRecordedWithoutChangingTheExistingSelectionRejection() {
         HtxTrendStrategyPolicyService policyService = mock(HtxTrendStrategyPolicyService.class);
         when(policyService.enabledPolicies()).thenReturn(List.of());
@@ -348,6 +382,14 @@ class HtxTrendCombinationServiceTest {
         List<HtxSwapKline> rows = new ArrayList<>();
         for (int index = 0; index < size; index++) {
             rows.add(candle(index, "100", "110", "101", "105"));
+        }
+        return rows;
+    }
+
+    private static List<HtxSwapKline> flatRange(int size, String high, String low, String close) {
+        List<HtxSwapKline> rows = new ArrayList<>();
+        for (int index = 0; index < size; index++) {
+            rows.add(candle(index, close, high, low, close));
         }
         return rows;
     }

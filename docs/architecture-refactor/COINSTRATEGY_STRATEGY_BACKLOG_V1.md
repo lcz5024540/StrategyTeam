@@ -3,7 +3,7 @@ title: "CoinStrategy 策略未完成任务清单 v1"
 type: strategy-backlog
 status: active
 created: 2026-09-22
-updated: 2026-09-24
+updated: 2026-10-03
 tags: [strategy, trend, execution, observability, backtest, backlog]
 ---
 
@@ -25,6 +25,16 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | 价格计划、多周期执行和外部模拟信号 | [HTX 趋势策略价格决策与多周期执行设计讨论稿](HTX_TREND_PRICE_AND_TIMEFRAME_DESIGN_DISCUSSION_V1.md) |
 
 **状态口径**：`待设计` 表示先形成可评审规则；`待实现` 表示方案已定、尚未编码；`观察中` 表示已记录但未改变真实交易；`待回测` 表示不得直接改变实盘行为。
+
+## 1.1 2026-10-03：模型职责修正
+
+当前实盘组合政策虽名为多模型，近期真实成交实际集中在 `FIB_PULLBACK_CONTINUATION + INTRADAY_15M`。这不符合趋势系统同时捕捉主趋势启动、回踩延续和日内动量的目标。后续不以历史某一版本的短期收益作为回滚依据，而是让各模型以独立合同、独立样本和独立退出规则参与。
+
+| ID | 状态 | 任务 | 完成判据 |
+|---|---|---|---|
+| MODEL-01 | 代码进行中 | **独立模型路由**：Donchian 负责趋势启动，Fibonacci 负责已确认趋势的回踩延续，EMA/VWAP 负责日内动量；同一 K 线可并行产生候选，但同币种最终只能选一个已授权模型成交。 | 代码能产生 `DONCHIAN_BREAKOUT + TREND_CONTEXT`、`FIB_PULLBACK_CONTINUATION`、`EMA_VWAP_MOMENTUM_CONTINUATION` 三类独立候选；每类必须匹配自身 DB 政策才可进入真实 Gate。新增模型政策默认不直接启用。 |
+| MODEL-02 | 待回测 | **模型政策标定**：当前启用政策尚未覆盖 EMA/VWAP，且 Donchian 主要要求箱体确认。先用冻结 K 线按模型 × 方向 × 市场分型标定门槛、风险和周期画像，再创建或启用 `model-route-v1` 政策。 | 禁止因“有候选”直接开启真实交易；每个拟启用政策必须有扣费后样本、walk-forward 结果、最大回撤和执行成本证据。 |
+| MODEL-03 | 待实现 | **多周期职责落地**：1d/4h 定环境与大趋势，1h 定趋势质量，30m 定结构，15m 只负责触发与日内保护。 | `ENTRY-03` 的周期画像进入模型政策、价格计划与退出权限；高周期仓位不得被普通 15m 回撤直接全平。 |
 
 ## 2. P0：趋势候选质量、价格计划与模拟执行
 

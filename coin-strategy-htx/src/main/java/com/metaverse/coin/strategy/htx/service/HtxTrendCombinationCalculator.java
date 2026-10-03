@@ -52,6 +52,11 @@ public class HtxTrendCombinationCalculator {
                     priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("15")),
                     "fresh channel breakout confirmed by box"));
         }
+        if (donchianBreakout && !boxBreakout) {
+            candidates.add(candidate("DONCHIAN_BREAKOUT", "TREND_CONTEXT", signal, structure, marketState,
+                    priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("12")),
+                    "fresh channel breakout aligned with trend context"));
+        }
         if ((boxBreakout || priorBreakout.boxBreakout()) && fibonacciRetest) {
             candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT", signal, structure, marketState,
                     priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("10")),
