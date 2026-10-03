@@ -32,7 +32,7 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 
 | ID | 状态 | 任务 | 完成判据 |
 |---|---|---|---|
-| MODEL-01 | 代码进行中 | **独立模型路由**：Donchian 负责趋势启动，Fibonacci 负责已确认趋势的回踩延续，EMA/VWAP 负责日内动量；同一 K 线可并行产生候选，但同币种最终只能选一个已授权模型成交。 | 代码能产生 `DONCHIAN_BREAKOUT + TREND_CONTEXT`、`FIB_PULLBACK_CONTINUATION`、`EMA_VWAP_MOMENTUM_CONTINUATION` 三类独立候选；每类必须匹配自身 DB 政策才可进入真实 Gate。新增模型政策默认不直接启用。 |
+| MODEL-01 | 代码完成，待回测与政策标定 | **独立模型路由**：Donchian 负责趋势启动，Fibonacci 负责已确认趋势的回踩延续，EMA/VWAP 负责日内动量；同一 K 线可并行产生候选，但同币种最终只能选一个已授权模型成交。候选、观测快照和模型合同现已分别固化适用状态、15m 画像、建议委托方式、失效依据、目标依据和退出权限；Fibonacci 仅授权 v4 退出，Donchian/EMA 仍禁止借用该退出链路。 | 三类独立候选都必须匹配自身 DB 政策才可进入真实 Gate；新增模型政策默认不直接启用。冻结数据的模型级回测通过后，才可为 Donchian/EMA 创建 `model-route-v1` 政策与独立退出授权。 |
 | MODEL-02 | 待回测 | **模型政策标定**：当前启用政策尚未覆盖 EMA/VWAP，且 Donchian 主要要求箱体确认。先用冻结 K 线按模型 × 方向 × 市场分型标定门槛、风险和周期画像，再创建或启用 `model-route-v1` 政策。 | 禁止因“有候选”直接开启真实交易；每个拟启用政策必须有扣费后样本、walk-forward 结果、最大回撤和执行成本证据。 |
 | MODEL-03 | 待实现 | **多周期职责落地**：1d/4h 定环境与大趋势，1h 定趋势质量，30m 定结构，15m 只负责触发与日内保护。 | `ENTRY-03` 的周期画像进入模型政策、价格计划与退出权限；高周期仓位不得被普通 15m 回撤直接全平。 |
 

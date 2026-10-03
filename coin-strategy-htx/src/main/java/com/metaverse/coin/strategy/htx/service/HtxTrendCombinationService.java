@@ -835,7 +835,14 @@ public class HtxTrendCombinationService {
             return "[]";
         }
         return "[" + values.stream().map(value -> "{\"model\":" + jsonText(value.model())
-                        + ",\"structureId\":" + jsonText(value.structureId()) + "}")
+                        + ",\"structureId\":" + jsonText(value.structureId())
+                        + ",\"entryRole\":" + jsonText(value.contract().entryRole().name())
+                        + ",\"marketRole\":" + jsonText(value.contract().marketRole())
+                        + ",\"timeframeProfile\":" + jsonText(value.contract().timeframeProfile())
+                        + ",\"preferredEntryStyle\":" + jsonText(value.contract().preferredEntryStyle().name())
+                        + ",\"invalidationBasis\":" + jsonText(value.contract().invalidationBasis().name())
+                        + ",\"targetBasis\":" + jsonText(value.contract().targetBasis().name())
+                        + ",\"exitAuthority\":" + jsonText(value.contract().exitAuthority().name()) + "}")
                 .collect(java.util.stream.Collectors.joining(",")) + "]";
     }
 

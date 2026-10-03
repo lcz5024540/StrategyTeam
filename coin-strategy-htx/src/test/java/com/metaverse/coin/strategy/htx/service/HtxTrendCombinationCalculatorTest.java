@@ -49,6 +49,8 @@ class HtxTrendCombinationCalculatorTest {
         assertEquals("TREND_CONTEXT", candidate.confirmationModels());
         assertEquals(new BigDecimal("100"), candidate.score());
         assertEquals(new BigDecimal("99"), candidate.invalidationPrice());
+        assertEquals(candidate.boxMeasuredMoveTarget(), candidate.targetZoneLow());
+        assertEquals(candidate.boxMeasuredMoveTarget(), candidate.targetZoneHigh());
     }
 
     @Test
@@ -64,6 +66,9 @@ class HtxTrendCombinationCalculatorTest {
                 .findFirst().orElseThrow();
         assertEquals("EMA_STACK,MOMENTUM", candidate.confirmationModels());
         assertEquals(new BigDecimal("92"), candidate.score());
+        assertEquals(new BigDecimal("102"), candidate.invalidationPrice());
+        assertEquals(candidate.swingHigh(), candidate.targetZoneLow());
+        assertEquals(candidate.swingHigh(), candidate.targetZoneHigh());
     }
 
     @Test
@@ -95,6 +100,8 @@ class HtxTrendCombinationCalculatorTest {
         assertEquals(new BigDecimal("112.348"), candidate.fibonacciEvidence().retracementLower());
         assertEquals(new BigDecimal("115.652"), candidate.fibonacciEvidence().retracementUpper());
         assertEquals(true, candidate.fibonacciEvidence().emaReclaimConfirmed());
+        assertEquals(candidate.fibExtension1272().min(candidate.fibExtension1618()), candidate.targetZoneLow());
+        assertEquals(candidate.fibExtension1272().max(candidate.fibExtension1618()), candidate.targetZoneHigh());
     }
 
     private TrendCandidateSignal signal(Direction direction, Regime regime, String close, String breakoutHigh, String score) {

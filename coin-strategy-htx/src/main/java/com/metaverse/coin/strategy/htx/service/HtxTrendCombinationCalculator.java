@@ -48,45 +48,55 @@ public class HtxTrendCombinationCalculator {
         BigDecimal baseScore = signal.signalScore() == null ? BigDecimal.ZERO : signal.signalScore();
 
         if (boxBreakout && donchianBreakout) {
-            candidates.add(candidate("DONCHIAN_BREAKOUT", "BOX_BREAKOUT", signal, structure, marketState,
+            addCandidate(candidates, candidate("DONCHIAN_BREAKOUT", "BOX_BREAKOUT", signal, structure, marketState,
                     priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("15")),
                     "fresh channel breakout confirmed by box"));
         }
         if (donchianBreakout && !boxBreakout) {
-            candidates.add(candidate("DONCHIAN_BREAKOUT", "TREND_CONTEXT", signal, structure, marketState,
+            addCandidate(candidates, candidate("DONCHIAN_BREAKOUT", "TREND_CONTEXT", signal, structure, marketState,
                     priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("12")),
                     "fresh channel breakout aligned with trend context"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && fibonacciRetest) {
-            candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT", signal, structure, marketState,
+            addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT", signal, structure, marketState,
                     priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("10")),
                     "Fibonacci retest confirmed by prior box breakout"));
         }
         if ((donchianBreakout || priorBreakout.donchianBreakout()) && fibonacciRetest) {
-            candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "DONCHIAN_BREAKOUT", signal, structure, marketState,
+            addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "DONCHIAN_BREAKOUT", signal, structure, marketState,
                     priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("10")),
                     "Fibonacci retest confirmed by prior channel breakout"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && (donchianBreakout || priorBreakout.donchianBreakout())
                 && fibonacciRetest) {
-            candidates.add(candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal,
+            addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal,
                     structure, marketState, priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("20")),
                     "Fibonacci retest confirmed by box and channel"));
         }
         if (emaMomentumContinuation(signal)) {
-            candidates.add(candidate("EMA_VWAP_MOMENTUM_CONTINUATION", "EMA_STACK,MOMENTUM", signal,
+            addCandidate(candidates, candidate("EMA_VWAP_MOMENTUM_CONTINUATION", "EMA_STACK,MOMENTUM", signal,
                     structure, marketState, priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("12")),
                     "EMA stack and momentum continuation"));
         }
         return candidates.stream().sorted(Comparator.comparing(CombinationCandidate::score).reversed()).toList();
     }
 
+    private static void addCandidate(List<CombinationCandidate> candidates, CombinationCandidate candidate) {
+        if (candidate != null) {
+            candidates.add(candidate);
+        }
+    }
+
     private CombinationCandidate candidate(String primaryModel, String confirmationModels,
                                            TrendCandidateSignal signal, Structure structure, MarketState marketState,
                                            BreakoutEvidence priorBreakout, boolean emaReclaimConfirmed,
                                            int boxWindowBars, BigDecimal score, String hypothesis) {
-        BigDecimal invalidation = invalidation(primaryModel, signal, structure);
-        Targets targets = targets(signal.direction(), structure);
+        HtxTrendModelContract contract = HtxTrendModelContract.fromCode(primaryModel);
+        if (!contract.appliesTo(signal.regime(), signal.period())) {
+            return null;
+        }
+        BigDecimal invalidation = invalidation(contract, signal, structure);
+        Targets targets = targets(contract, signal.direction(), structure);
         BigDecimal reward = signal.direction() == Direction.LONG
                 ? targets.targetZoneLow().subtract(signal.closePrice()) : signal.closePrice().subtract(targets.targetZoneHigh());
         BigDecimal risk = signal.direction() == Direction.LONG
@@ -107,7 +117,7 @@ public class HtxTrendCombinationCalculator {
                 targets.fibExtension1618(), expectedR, momentumQuality, hypothesis, fibonacciEvidence);
     }
 
-    private static Targets targets(Direction direction, Structure structure) {
+    private static Targets targets(HtxTrendModelContract contract, Direction direction, Structure structure) {
         BigDecimal range = structure.boxHigh().subtract(structure.boxLow());
         BigDecimal swingRange = structure.swingHigh().subtract(structure.swingLow());
         BigDecimal measured = direction == Direction.LONG ? structure.boxHigh().add(range) : structure.boxLow().subtract(range);
@@ -117,17 +127,35 @@ public class HtxTrendCombinationCalculator {
         BigDecimal extension1618 = direction == Direction.LONG
                 ? structure.swingLow().add(swingRange.multiply(new BigDecimal("1.618")))
                 : structure.swingHigh().subtract(swingRange.multiply(new BigDecimal("1.618")));
+        if (contract.targetBasis() == HtxTrendModelContract.TargetBasis.CHANNEL_MEASURED_MOVE) {
+            return new Targets(measured, measured, measured, extension1272, extension1618);
+        }
+        if (contract.targetBasis() == HtxTrendModelContract.TargetBasis.FIBONACCI_EXTENSION) {
+            return new Targets(extension1272.min(extension1618), extension1272.max(extension1618), measured,
+                    extension1272, extension1618);
+        }
+        if (contract.targetBasis() == HtxTrendModelContract.TargetBasis.STRUCTURE_SWING) {
+            BigDecimal swingTarget = direction == Direction.LONG ? structure.swingHigh() : structure.swingLow();
+            return new Targets(swingTarget, swingTarget, measured, extension1272, extension1618);
+        }
         BigDecimal zoneLow = measured.min(extension1272).min(extension1618);
         BigDecimal zoneHigh = measured.max(extension1272).max(extension1618);
         return new Targets(zoneLow, zoneHigh, measured, extension1272, extension1618);
     }
 
-    private static BigDecimal invalidation(String primaryModel, TrendCandidateSignal signal, Structure structure) {
-        if ("FIB_PULLBACK_CONTINUATION".equals(primaryModel)) {
+    private static BigDecimal invalidation(HtxTrendModelContract contract, TrendCandidateSignal signal, Structure structure) {
+        if (contract.invalidationBasis() == HtxTrendModelContract.InvalidationBasis.FIBONACCI_RETRACEMENT_FAILURE) {
             return signal.direction() == Direction.LONG ? structure.fibonacciLower() : structure.fibonacciUpper();
         }
-        if ("DONCHIAN_BREAKOUT".equals(primaryModel)) {
+        if (contract.invalidationBasis() == HtxTrendModelContract.InvalidationBasis.DONCHIAN_OPPOSITE_BOUNDARY) {
             return signal.direction() == Direction.LONG ? signal.breakoutLow() : signal.breakoutHigh();
+        }
+        if (contract.invalidationBasis() == HtxTrendModelContract.InvalidationBasis.EMA_VWAP_FAILURE) {
+            BigDecimal atrBoundary = signal.direction() == Direction.LONG
+                    ? signal.closePrice().subtract(signal.atr().multiply(new BigDecimal("1.25")))
+                    : signal.closePrice().add(signal.atr().multiply(new BigDecimal("1.25")));
+            return signal.direction() == Direction.LONG ? signal.emaSlow().min(atrBoundary)
+                    : signal.emaSlow().max(atrBoundary);
         }
         return signal.direction() == Direction.LONG ? structure.boxLow() : structure.boxHigh();
     }

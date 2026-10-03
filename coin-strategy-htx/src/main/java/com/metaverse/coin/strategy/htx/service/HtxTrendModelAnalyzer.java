@@ -31,7 +31,8 @@ public class HtxTrendModelAnalyzer {
                                                      HtxTrendModelCoverageCalculator.Coverage coverage) {
         List<ModelEvidence> models = new ArrayList<>();
         for (String model : coverage.activeModels()) {
-            models.add(new ModelEvidence(model, structureId(model, signal, coverage)));
+            models.add(new ModelEvidence(model, structureId(model, signal, coverage),
+                    HtxTrendModelContract.fromCode(model)));
         }
         return List.copyOf(models);
     }
@@ -74,7 +75,7 @@ public class HtxTrendModelAnalyzer {
         return List.copyOf(result);
     }
 
-    public record ModelEvidence(String model, String structureId) {
+    public record ModelEvidence(String model, String structureId, HtxTrendModelContract contract) {
     }
 
     public record ModelAnalysis(boolean available, Direction direction, String timeframeProfile,

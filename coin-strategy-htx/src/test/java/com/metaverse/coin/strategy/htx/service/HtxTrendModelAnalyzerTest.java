@@ -26,6 +26,9 @@ class HtxTrendModelAnalyzerTest {
                 analysis.activeModels().stream().map(HtxTrendModelAnalyzer.ModelEvidence::model).toList());
         assertTrue(analysis.contextEvidence().contains("EMA_VWAP_ALIGNED"));
         assertTrue(analysis.contextEvidence().contains("MOMENTUM_CONFIRMS"));
+        assertEquals(HtxTrendModelContract.ExitAuthority.FIB_V4,
+                analysis.activeModels().stream().filter(item -> "FIB_PULLBACK_CONTINUATION".equals(item.model()))
+                        .findFirst().orElseThrow().contract().exitAuthority());
         assertFalse(analysis.toString().contains("primaryModel"));
     }
 
