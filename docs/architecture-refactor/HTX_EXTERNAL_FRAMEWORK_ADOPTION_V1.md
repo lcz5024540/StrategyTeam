@@ -130,9 +130,9 @@ Frozen dataset / 候选 / 价格计划
 
 - **P0 已完成**：新增自有 `htx_trend_research_quality_gate.py`，不引入 Freqtrade 代码。它在内容寻址数据集 `research:c5cfa7cd77cf22c0fefa271ef6ba7e93` 的 52 个合约上完成 156 个未来数据变更探针和 156 个递归 warm-up 探针；结果为 `PASS`，前视泄漏数为 `0`，256 根启动历史不稳定数为 `0`。研究验收报告现在必须消费同一数据集的 `PASS` 质量报告，否则只能输出 `INSUFFICIENT_EVIDENCE`。
 - **P1 的实现已闭环，历史执行证据仍待采集**：`HtxTrendFrozenGateAblationCommand` 已复用 Java 生产信号、组合计算和反向大盘风险 Gate；2026-09-18 的 52 币种验收有 4,743 个原始候选，当前 Gate 拦截 39 个，多周期实验额外拦截 500 个，当前路径与“仅反向大盘风险”对照一致。`HtxTrendFrozenExecutionEvidence`、`HtxTrendFrozenExecutionReplay` 和离线命令已将 BT-01/完整 BT-02A 所需的候选全量、最终 Gate、费率/盘口/保证金/杠杆/仓位预检、成交和 Fibonacci v4 退出输入定义为同一冻结合同；任一项缺失都会输出 `INSUFFICIENT_EVIDENCE`，不会伪造 PF、PnL 或回撤。`htx_trend_model_policy.py` 已把同一数据集的质量闸门与样本外报告固化成不可开启实盘的准入报告：Donchian `PF=0.82`、EMA/VWAP `PF=0.95`、Fibonacci `PF=1.13`，均未达到 `PF≥1.30`，当前全部 `REJECT`。下一轮只缺真实或同一价格计划模拟的完整执行事实；输入到位后，工具会直接输出四组 Gate 的候选数、漏单数、扣费后 PnL、PF、期望和回撤。
-- **P2 已完成只读适配与许可证收口**：PyBroker 的原始许可证为 Apache 2.0 with Commons Clause，因此不引入其源码、运行时或对外服务能力；当前 Python 3.9 包索引也没有可复现的 `pybroker` 发布包。`htx_trend_pybroker_export.py` 已从同一三个月冻结集校验并导出 459,264 根 15m OHLCV 行，作为未来获许可的隔离环境只读输入，不访问 HTX 或账户。
-- **P3 已完成纯组合分配层**：`HtxTrendPortfolioAllocator` 已将已授权候选转成 `TargetExposure`，再按相关性簇、同向总敞口、并发数、账户可用保证金、账户上限和费率选择账户。输出边界固定为 `TARGET_EXPOSURE_ONLY`，不调用 HTX 或改变单币种模型、价格计划和 v4 退出。
-- **P4 已完成状态与回放内核**：`HtxTrendOrderStateMachine` 固化 `INTENT → SUBMITTED → ACCEPTED → PARTIALLY_FILLED → FILLED` 及拒绝、过期、撤单状态，不允许终态回退；`htx_trend_execution_mode_replay.py` 以同一冻结价格计划比较市价、被动限价、IOC 和一次重报价，输出成交率、费用、滑点、净收益和 PF。它仍等待完整价格计划与未来 K 线输入后再形成正式 BT-03 结论，不能改变真实执行方式。
+- **P2 仅完成只读输入适配与许可证收口，未完成独立框架验证**：PyBroker 的原始许可证为 Apache 2.0 with Commons Clause，因此不引入其源码、运行时或对外服务能力；当前 Python 3.9 包索引也没有可复现的 `pybroker` 发布包。`htx_trend_pybroker_export.py` 已从同一三个月冻结集校验并导出 459,264 根 15m OHLCV 行，作为未来获许可隔离环境的只读输入。尚未运行 PyBroker 的 walk-forward 或 bootstrap，不能称为独立验证完成。
+- **P3 完成分配器与审计快照基础，未接入真实候选执行路径**：`HtxTrendPortfolioAllocator` 输出 `TargetExposure`、组合风险预算与账户选择；`HtxTrendPortfolioAllocationAuditService` 将接受、拒绝的分配决策写为不可变 `trend-target-exposure-v1` 快照。它仍未由 `HtxTrendFollowingService` 的候选批次调用，因此不参与纸面或实盘下单，不能称为组合风控上线。
+- **P4 完成纸面订单状态与 BT-03 输入合同，未完成正式比较结论**：`HtxTrendOrderStateMachine` 固化 `INTENT → SUBMITTED → ACCEPTED → PARTIALLY_FILLED → FILLED` 及拒绝、过期、撤单状态；`HtxTrendPaperExecutionService` 现在将旧的一次性回传同步记为不可变生命周期事件。`htx_trend_bt03_input_builder.py` 只接受冻结价格计划与校验过的后续 K 线，`htx_trend_execution_mode_replay.py` 才可比较市价、被动限价、IOC 和一次重报价。当前生产外没有有效期内的完整价格计划样本，首份 BT-03 结果为 `INSUFFICIENT_EVIDENCE`，不得形成成交率、PF 或实盘执行结论。
 
 ## 7. 决策
 

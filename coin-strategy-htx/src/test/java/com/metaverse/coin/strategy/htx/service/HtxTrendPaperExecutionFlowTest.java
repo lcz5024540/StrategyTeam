@@ -7,9 +7,11 @@ import com.metaverse.coin.strategy.htx.persistence.HtxTrendCandidateSignalRecord
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendCombinationRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPaperExecutionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPaperExecutionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendStrategyPolicyEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendFactorSnapshotMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPaperExecutionMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPaperExecutionEventMapper;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.Direction;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.Regime;
 import com.metaverse.coin.strategy.htx.service.HtxTrendEnsembleSignalCalculator.TrendCandidateSignal;
@@ -56,9 +58,21 @@ class HtxTrendPaperExecutionFlowTest {
             executions.put(entity.getExecutionKey(), entity);
             return 1;
         });
+        HtxTrendPaperExecutionEventMapper eventMapper = mock(HtxTrendPaperExecutionEventMapper.class);
+        Map<String, HtxTrendPaperExecutionEventEntity> events = new LinkedHashMap<>();
+        when(eventMapper.findByEventKey(anyString())).thenAnswer(invocation -> events.get(invocation.getArgument(0)));
+        when(eventMapper.findLatestByExecutionKey(anyString())).thenAnswer(invocation -> events.values().stream()
+                .filter(event -> invocation.getArgument(0).equals(event.getExecutionKey()))
+                .max(Comparator.comparing(HtxTrendPaperExecutionEventEntity::getId)).orElse(null));
+        when(eventMapper.insert(any())).thenAnswer(invocation -> {
+            HtxTrendPaperExecutionEventEntity event = invocation.getArgument(0);
+            event.setId(200L + events.size());
+            events.put(event.getEventKey(), event);
+            return 1;
+        });
 
         HtxTrendPaperExecutionService paperExecutionService = new HtxTrendPaperExecutionService(
-                combinationService, executionMapper);
+                combinationService, executionMapper, eventMapper);
         HtxTrendCombinationService.Selection selection = combinationService.select(CONTRACT, PERIOD,
                 breakoutCandles(), trendSignal());
         assertTrue(selection.accepted());
@@ -117,6 +131,11 @@ class HtxTrendPaperExecutionFlowTest {
         assertEquals("PARTIALLY_FILLED", execution.getOutcome());
         assertDecimalEquals("99", execution.getFillPrice());
         assertEquals(2L, execution.getFilledContracts());
+        assertEquals(3, events.size());
+        assertTrue(events.values().stream().anyMatch(event -> "INTENT".equals(event.getStateFrom())
+                && "SUBMITTED".equals(event.getStateTo())));
+        assertTrue(events.values().stream().anyMatch(event -> "ACCEPTED".equals(event.getStateFrom())
+                && "PARTIALLY_FILLED".equals(event.getStateTo()) && event.getCumulativeFilledContracts() == 2L));
         assertTrue(Arrays.stream(HtxTrendPaperExecutionService.class.getDeclaredFields())
                 .noneMatch(field -> field.getType().getSimpleName().contains("HtxUsdtSwap")));
     }

@@ -2,7 +2,9 @@ package com.metaverse.coin.strategy.htx.service;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPaperExecutionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPaperExecutionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPaperExecutionMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPaperExecutionEventMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -10,6 +12,9 @@ import org.mockito.ArgumentCaptor;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,6 +26,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyString;
 
 class HtxTrendPaperExecutionServiceTest {
     private static final String RUN_ID = "trend-entry:BTC-USDT:15min:100";
@@ -28,13 +34,26 @@ class HtxTrendPaperExecutionServiceTest {
 
     private HtxTrendCombinationService combinationService;
     private HtxTrendPaperExecutionMapper mapper;
+    private HtxTrendPaperExecutionEventMapper eventMapper;
     private HtxTrendPaperExecutionService service;
 
     @BeforeEach
     void setUp() {
         combinationService = mock(HtxTrendCombinationService.class);
         mapper = mock(HtxTrendPaperExecutionMapper.class);
-        service = new HtxTrendPaperExecutionService(combinationService, mapper);
+        eventMapper = mock(HtxTrendPaperExecutionEventMapper.class);
+        Map<String, HtxTrendPaperExecutionEventEntity> events = new LinkedHashMap<>();
+        when(eventMapper.findByEventKey(anyString())).thenAnswer(call -> events.get(call.getArgument(0)));
+        when(eventMapper.findLatestByExecutionKey(anyString())).thenAnswer(call -> events.values().stream()
+                .filter(event -> call.getArgument(0).equals(event.getExecutionKey()))
+                .max(Comparator.comparing(HtxTrendPaperExecutionEventEntity::getId)).orElse(null));
+        when(eventMapper.insert(any())).thenAnswer(call -> {
+            HtxTrendPaperExecutionEventEntity event = call.getArgument(0);
+            event.setId((long) events.size() + 1L);
+            events.put(event.getEventKey(), event);
+            return 1;
+        });
+        service = new HtxTrendPaperExecutionService(combinationService, mapper, eventMapper);
         when(combinationService.latestExternalSignal("BTC-USDT", "15min", BAR_TIME, "combo-v2", RUN_ID))
                 .thenReturn(snapshot("trend-external-signal-v1", "{}"));
         when(combinationService.latestPricePlan("BTC-USDT", "15min", BAR_TIME, "combo-v2", RUN_ID))

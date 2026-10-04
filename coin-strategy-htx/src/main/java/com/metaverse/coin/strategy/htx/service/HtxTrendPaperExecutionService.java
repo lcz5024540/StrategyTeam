@@ -4,13 +4,17 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendFactorSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPaperExecutionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPaperExecutionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPaperExecutionMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPaperExecutionEventMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Locale;
 
 /** Accepts paper-only fills after validating the immutable outbox and price-plan boundaries. */
@@ -28,7 +32,15 @@ public class HtxTrendPaperExecutionService {
 
     private final HtxTrendCombinationService combinationService;
     private final HtxTrendPaperExecutionMapper mapper;
+    private final HtxTrendPaperExecutionEventMapper eventMapper;
+    private final HtxTrendOrderStateMachine orderStateMachine = new HtxTrendOrderStateMachine();
 
+    /**
+     * Compatibility callback for the original one-shot paper executor. It now emits the equivalent
+     * immutable lifecycle before it writes the existing fill summary, so old subscribers keep working
+     * while BT-03 can distinguish a fill from an expired or rejected order.
+     */
+    @Transactional
     public Result report(Report request) {
         String requestError = validateRequest(request);
         if (requestError != null) {
@@ -59,6 +71,10 @@ public class HtxTrendPaperExecutionService {
         if (outcomeError != null) {
             return Result.rejected(outcomeError);
         }
+        String lifecycleError = recordLegacyLifecycle(request, outcome, plan.plannedContracts());
+        if (lifecycleError != null) {
+            return Result.rejected(lifecycleError);
+        }
         if (isFill(outcome)) {
             HtxTrendCombinationService.PaperExitPlanEvidence paperExitPlan = recomputeExitPlan(request, plan);
             if (paperExitPlan == null) {
@@ -85,6 +101,91 @@ public class HtxTrendPaperExecutionService {
             return Result.accepted(entity.getId());
         } catch (RuntimeException ex) {
             return Result.rejected("duplicate or persistence failure");
+        }
+    }
+
+    /**
+     * Event-oriented paper callback. It never creates an HTX order or position; callers may use it
+     * to record SUBMIT/ACCEPT/FILL/CANCEL transitions before a terminal fill summary is reported.
+     */
+    @Transactional
+    public LifecycleResult reportEvent(LifecycleEvent request) {
+        if (request == null || blank(request.eventKey()) || blank(request.executionKey()) || blank(request.runId())
+                || request.requestedContracts() <= 0L || request.cumulativeFilledContracts() < 0L
+                || request.cumulativeFilledContracts() > request.requestedContracts() || request.eventType() == null) {
+            return LifecycleResult.rejected("paper execution event identity is incomplete");
+        }
+        HtxTrendPaperExecutionEventEntity duplicate = eventMapper.findByEventKey(request.eventKey());
+        if (duplicate != null) {
+            return LifecycleResult.accepted(duplicate.getId(), state(duplicate.getStateTo()));
+        }
+        HtxTrendPaperExecutionEventEntity prior = eventMapper.findLatestByExecutionKey(request.executionKey());
+        HtxTrendOrderStateMachine.State current = prior == null ? HtxTrendOrderStateMachine.State.INTENT
+                : state(prior.getStateTo());
+        if (current == null) {
+            return LifecycleResult.rejected("stored paper execution state is invalid");
+        }
+        long priorFilled = prior == null || prior.getCumulativeFilledContracts() == null ? 0L
+                : prior.getCumulativeFilledContracts();
+        if (request.cumulativeFilledContracts() < priorFilled) {
+            return LifecycleResult.rejected("cumulative filled contracts cannot decrease");
+        }
+        if (request.eventType() == HtxTrendOrderStateMachine.Event.FILL_UPDATE && !positive(request.fillPrice())) {
+            return LifecycleResult.rejected("fill update requires a positive fill price");
+        }
+        HtxTrendOrderStateMachine.Transition transition = orderStateMachine.apply(current, request.eventType(),
+                request.requestedContracts(), request.cumulativeFilledContracts());
+        if (!transition.accepted()) {
+            return LifecycleResult.rejected(transition.reason());
+        }
+        HtxTrendPaperExecutionEventEntity event = new HtxTrendPaperExecutionEventEntity();
+        event.setEventKey(request.eventKey());
+        event.setExecutionKey(request.executionKey());
+        event.setRunId(request.runId());
+        event.setStateFrom(transition.from().name());
+        event.setStateTo(transition.to().name());
+        event.setEventType(request.eventType().name());
+        event.setRequestedContracts(request.requestedContracts());
+        event.setCumulativeFilledContracts(request.cumulativeFilledContracts());
+        event.setFillPrice(request.fillPrice());
+        event.setReason(request.reason());
+        event.setOccurredAt(request.occurredAt() == null ? LocalDateTime.now() : request.occurredAt());
+        try {
+            if (eventMapper.insert(event) != 1) {
+                return LifecycleResult.rejected("paper execution event persistence failed");
+            }
+            return LifecycleResult.accepted(event.getId(), transition.to());
+        } catch (RuntimeException ex) {
+            return LifecycleResult.rejected("duplicate or persistence failure");
+        }
+    }
+
+    private String recordLegacyLifecycle(Report request, String outcome, long requestedContracts) {
+        String prefix = request.executionKey() + ":legacy:";
+        LifecycleResult submitted = reportEvent(new LifecycleEvent(prefix + "submit", request.executionKey(), request.runId(),
+                HtxTrendOrderStateMachine.Event.SUBMIT, requestedContracts, 0L, null, "legacy paper callback", null));
+        if (!submitted.accepted()) return submitted.reason();
+        LifecycleResult accepted = reportEvent(new LifecycleEvent(prefix + "accept", request.executionKey(), request.runId(),
+                HtxTrendOrderStateMachine.Event.ACCEPT, requestedContracts, 0L, null, "legacy paper callback", null));
+        if (!accepted.accepted()) return accepted.reason();
+        HtxTrendOrderStateMachine.Event finalEvent = switch (outcome) {
+            case OUTCOME_FILLED, OUTCOME_PARTIALLY_FILLED -> HtxTrendOrderStateMachine.Event.FILL_UPDATE;
+            case OUTCOME_REJECTED -> HtxTrendOrderStateMachine.Event.REJECT;
+            case OUTCOME_EXPIRED -> HtxTrendOrderStateMachine.Event.EXPIRE;
+            default -> null;
+        };
+        if (finalEvent == null) return "unsupported paper outcome";
+        long filled = isFill(outcome) ? request.filledContracts() : 0L;
+        LifecycleResult terminal = reportEvent(new LifecycleEvent(prefix + "final:" + finalEvent.name(), request.executionKey(),
+                request.runId(), finalEvent, requestedContracts, filled, request.fillPrice(), request.reason(), null));
+        return terminal.accepted() ? null : terminal.reason();
+    }
+
+    private static HtxTrendOrderStateMachine.State state(String value) {
+        try {
+            return value == null ? null : HtxTrendOrderStateMachine.State.valueOf(value);
+        } catch (IllegalArgumentException ex) {
+            return null;
         }
     }
 
@@ -208,6 +309,19 @@ public class HtxTrendPaperExecutionService {
     public record Result(boolean accepted, Long id, String reason) {
         static Result accepted(Long id) { return new Result(true, id, null); }
         static Result rejected(String reason) { return new Result(false, null, reason); }
+    }
+
+    public record LifecycleEvent(String eventKey, String executionKey, String runId,
+                                 HtxTrendOrderStateMachine.Event eventType, long requestedContracts,
+                                 long cumulativeFilledContracts, BigDecimal fillPrice, String reason,
+                                 LocalDateTime occurredAt) {
+    }
+
+    public record LifecycleResult(boolean accepted, Long id, HtxTrendOrderStateMachine.State state, String reason) {
+        static LifecycleResult accepted(Long id, HtxTrendOrderStateMachine.State state) {
+            return new LifecycleResult(true, id, state, null);
+        }
+        static LifecycleResult rejected(String reason) { return new LifecycleResult(false, null, null, reason); }
     }
 
     private record PricePlan(String side, BigDecimal maxAcceptablePrice, Long validUntilEpoch, BigDecimal contractSize,
