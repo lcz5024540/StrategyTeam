@@ -1,0 +1,103 @@
+{
+  "schema": "htx-trend-research-universe-v1",
+  "name": "htx-trend-three-month-v1",
+  "source": "live HTX trend whitelist snapshot on 2026-10-03; three-month replacement audit on 2026-10-04",
+  "contracts": [
+    "BTC-USDT",
+    "ETH-USDT",
+    "SOL-USDT",
+    "XRP-USDT",
+    "BNB-USDT",
+    "DOGE-USDT",
+    "ADA-USDT",
+    "TRX-USDT",
+    "LINK-USDT",
+    "AVAX-USDT",
+    "SUI-USDT",
+    "HYPE-USDT",
+    "HBAR-USDT",
+    "BCH-USDT",
+    "LTC-USDT",
+    "DOT-USDT",
+    "UNI-USDT",
+    "AAVE-USDT",
+    "NEAR-USDT",
+    "ETC-USDT",
+    "XLM-USDT",
+    "FIL-USDT",
+    "ARB-USDT",
+    "OP-USDT",
+    "ATOM-USDT",
+    "ICP-USDT",
+    "APT-USDT",
+    "PEPE-USDT",
+    "SHIB-USDT",
+    "WIF-USDT",
+    "BONK-USDT",
+    "FLOKI-USDT",
+    "TAO-USDT",
+    "WLD-USDT",
+    "TIA-USDT",
+    "JUP-USDT",
+    "ENA-USDT",
+    "ONDO-USDT",
+    "ALGO-USDT",
+    "OKB-USDT",
+    "DASH-USDT",
+    "ZEC-USDT",
+    "XAUT-USDT",
+    "PAXG-USDT",
+    "PEOPLE-USDT",
+    "ORDI-USDT",
+    "CHZ-USDT",
+    "ETHFI-USDT",
+    "XMR-USDT",
+    "SUSHI-USDT",
+    "JST-USDT",
+    "BTT-USDT"
+  ],
+  "excludedContracts": [
+    {
+      "contract": "ACE-USDT",
+      "reason": "INSUFFICIENT_HISTORY",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 49 bars, below the required three-month coverage."
+    },
+    {
+      "contract": "BOME-USDT",
+      "reason": "INSUFFICIENT_HISTORY",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 43 bars, below the required three-month coverage."
+    },
+    {
+      "contract": "PONS-USDT",
+      "reason": "INSUFFICIENT_HISTORY",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 33 bars, below the required three-month coverage."
+    },
+    {
+      "contract": "RAY-USDT",
+      "reason": "INSUFFICIENT_HISTORY",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 26 bars, below the required three-month coverage."
+    }
+  ],
+  "replacementContracts": [
+    {
+      "contract": "XMR-USDT",
+      "reason": "ACTIVE_HTX_CRYPTO_CONTRACT_WITH_COMPLETE_THREE_MONTH_PROBE",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 92 bars with coverage from the window start."
+    },
+    {
+      "contract": "SUSHI-USDT",
+      "reason": "ACTIVE_HTX_CRYPTO_CONTRACT_WITH_COMPLETE_THREE_MONTH_PROBE",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 92 bars with coverage from the window start."
+    },
+    {
+      "contract": "JST-USDT",
+      "reason": "ACTIVE_HTX_CRYPTO_CONTRACT_WITH_COMPLETE_THREE_MONTH_PROBE",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 92 bars with coverage from the window start."
+    },
+    {
+      "contract": "BTT-USDT",
+      "reason": "ACTIVE_HTX_CRYPTO_CONTRACT_WITH_COMPLETE_THREE_MONTH_PROBE",
+      "evidence": "HTX public 1day range probe for 2026-07-03 through 2026-10-03 returned 92 bars with coverage from the window start."
+    }
+  ]
+}
