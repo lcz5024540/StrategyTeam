@@ -19,7 +19,8 @@ spring:
       validation-timeout: 3000
   sql:
     init:
-      mode: always
+      # Shared environments use explicit, reviewed SQL migrations; a service restart must never mutate schema.
+      mode: never
       schema-locations: classpath:db/schema.sql
 
 logging:
