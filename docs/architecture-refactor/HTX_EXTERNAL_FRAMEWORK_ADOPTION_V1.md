@@ -129,7 +129,7 @@ Frozen dataset / 候选 / 价格计划
 ### 6.1 执行记录（2026-10-04）
 
 - **P0 已完成**：新增自有 `htx_trend_research_quality_gate.py`，不引入 Freqtrade 代码。它在内容寻址数据集 `research:c5cfa7cd77cf22c0fefa271ef6ba7e93` 的 52 个合约上完成 156 个未来数据变更探针和 156 个递归 warm-up 探针；结果为 `PASS`，前视泄漏数为 `0`，256 根启动历史不稳定数为 `0`。研究验收报告现在必须消费同一数据集的 `PASS` 质量报告，否则只能输出 `INSUFFICIENT_EVIDENCE`。
-- **P1 的 K 线证据层已向前推进，但 `BT-01` 和完整 `BT-02A` 仍未完成**：新增 `HtxTrendFrozenGateAblationCommand`，它复用 Java 生产信号、组合计算和反向大盘风险 Gate，在冻结集上逐候选比较结构基线、当前生产 Gate、多周期方向实验和仅反向风险对照。2026-09-18 的 52 币种验收产生 4,743 个原始候选：当前 Gate 拦截 39 个，多周期方向实验额外拦截 500 个，且当前路径与“仅反向大盘风险”对照相同。由于公开 K 线不能重放历史盘口、费率、保证金、仓位、订单、成交或 v4 退出，产物强制标 `INSUFFICIENT_EVIDENCE`，不得输出 PF、PnL、回撤或修改实盘门槛。全量三个月单核基线未完成；先以逐点一致校验实现窗口缓存/并行化。独立研究引擎的三个月结果仍为 Donchian `PF=0.82`、EMA/VWAP `PF=0.95`、Fibonacci `PF=1.13`，均未达到 `PF≥1.30` 的准入线。
+- **P1 的实现已闭环，历史执行证据仍待采集**：`HtxTrendFrozenGateAblationCommand` 已复用 Java 生产信号、组合计算和反向大盘风险 Gate；2026-09-18 的 52 币种验收有 4,743 个原始候选，当前 Gate 拦截 39 个，多周期实验额外拦截 500 个，当前路径与“仅反向大盘风险”对照一致。`HtxTrendFrozenExecutionEvidence`、`HtxTrendFrozenExecutionReplay` 和离线命令已将 BT-01/完整 BT-02A 所需的候选全量、最终 Gate、费率/盘口/保证金/杠杆/仓位预检、成交和 Fibonacci v4 退出输入定义为同一冻结合同；任一项缺失都会输出 `INSUFFICIENT_EVIDENCE`，不会伪造 PF、PnL 或回撤。`htx_trend_model_policy.py` 已把同一数据集的质量闸门与样本外报告固化成不可开启实盘的准入报告：Donchian `PF=0.82`、EMA/VWAP `PF=0.95`、Fibonacci `PF=1.13`，均未达到 `PF≥1.30`，当前全部 `REJECT`。下一轮只缺真实或同一价格计划模拟的完整执行事实；输入到位后，工具会直接输出四组 Gate 的候选数、漏单数、扣费后 PnL、PF、期望和回撤。
 - **P2/P3/P4 未启动**：PyBroker 仍先做许可证用途复核；目标敞口、组合风险预算与订单生命周期回放要以同源生产回放 `BT-01/BT-02A` 的输入为基础，不能拿独立研究器的结果直接改真实 HTX 行为。
 
 ## 7. 决策

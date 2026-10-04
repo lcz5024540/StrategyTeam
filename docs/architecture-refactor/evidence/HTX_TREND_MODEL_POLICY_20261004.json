@@ -1,0 +1,77 @@
+{
+  "schema": "htx-trend-model-policy-v1",
+  "datasetKey": "research:c5cfa7cd77cf22c0fefa271ef6ba7e93",
+  "inputIntegrity": "COMPLETE",
+  "liveExecution": "FORBIDDEN",
+  "databasePolicyMutation": "FORBIDDEN",
+  "promotionBoundary": "PAPER_CANDIDATE is not a live authorization; same-source execution replay and an explicit approval are still required",
+  "sourceDigests": {
+    "manifestSha256": "adb8f606480bf804565ddaf75cb8db156efa8c222e092b10658b94f81a67185d",
+    "qualityReportSha256": "ed8a645525c8fae8395f3ebbb3a59266ec0b554fdd6f78ce35f76449d32d7632",
+    "acceptanceReportSha256": "149818d2796c237adf9c327c98697ae44e3ae25b48c8d5850d617e6b4294fbf7"
+  },
+  "thresholds": {
+    "minTrades": 30,
+    "minProfitFactor": 1.3,
+    "requiresPositiveNetProfit": true,
+    "requiresPositiveExpectancy": true
+  },
+  "decision": "REJECT",
+  "models": [
+    {
+      "modelCode": "DONCHIAN_BREAKOUT",
+      "sourceEvaluationKey": "evaluation:research:c5cfa7cd77cf22c0fefa271ef6ba7e93:research-engine-v1:DONCHIAN_BREAKOUT:OUT_OF_SAMPLE",
+      "sampleSplit": "OUT_OF_SAMPLE",
+      "decision": "REJECT",
+      "liveEnabled": false,
+      "tradeCount": 8340,
+      "netProfit": -1958.1302975416606,
+      "profitFactor": 0.824051397763423,
+      "expectancy": -0.23478780546063077,
+      "maxDrawdown": -1968.0601154107064,
+      "feeTotal": 1334.657952732589,
+      "reasons": [
+        "扣费后净收益 -1958.130298U 非正",
+        "PF 0.8241 低于最低 1.30",
+        "单笔期望 -0.234788U 非正"
+      ],
+      "nextRequirement": "new independent model specification and a fresh frozen out-of-sample evaluation"
+    },
+    {
+      "modelCode": "EMA_VWAP_MOMENTUM",
+      "sourceEvaluationKey": "evaluation:research:c5cfa7cd77cf22c0fefa271ef6ba7e93:research-engine-v1:EMA_VWAP_MOMENTUM:OUT_OF_SAMPLE",
+      "sampleSplit": "OUT_OF_SAMPLE",
+      "decision": "REJECT",
+      "liveEnabled": false,
+      "tradeCount": 3663,
+      "netProfit": -220.4712337539954,
+      "profitFactor": 0.9467726090447155,
+      "expectancy": -0.060188707003547746,
+      "maxDrawdown": -463.11468911537327,
+      "feeTotal": 586.3157661657973,
+      "reasons": [
+        "扣费后净收益 -220.471234U 非正",
+        "PF 0.9468 低于最低 1.30",
+        "单笔期望 -0.060189U 非正"
+      ],
+      "nextRequirement": "new independent model specification and a fresh frozen out-of-sample evaluation"
+    },
+    {
+      "modelCode": "FIB_PULLBACK_CONTINUATION",
+      "sourceEvaluationKey": "evaluation:research:c5cfa7cd77cf22c0fefa271ef6ba7e93:research-engine-v1:FIB_PULLBACK_CONTINUATION:OUT_OF_SAMPLE",
+      "sampleSplit": "OUT_OF_SAMPLE",
+      "decision": "REJECT",
+      "liveEnabled": false,
+      "tradeCount": 8978,
+      "netProfit": 1740.7205833066016,
+      "profitFactor": 1.1251968101102148,
+      "expectancy": 0.19388734498848315,
+      "maxDrawdown": -370.41017726512746,
+      "feeTotal": 1437.575818443772,
+      "reasons": [
+        "PF 1.1252 低于最低 1.30"
+      ],
+      "nextRequirement": "new independent model specification and a fresh frozen out-of-sample evaluation"
+    }
+  ]
+}
