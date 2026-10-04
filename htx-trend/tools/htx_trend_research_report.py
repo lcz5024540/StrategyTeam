@@ -48,10 +48,15 @@ def decision(value: dict) -> str:
     return "PAPER_CANDIDATE" if value["netProfit"] > 0 and value["profitFactor"] >= MIN_PF and value["expectancy"] > 0 else "REJECT"
 
 
-def build_report(manifest: dict, ledger: dict) -> dict:
+def build_report(manifest: dict, ledger: dict, quality_gate: dict | None = None) -> dict:
     if manifest.get("inputIntegrity") != "COMPLETE" or ledger.get("inputIntegrity") != "COMPLETE":
         return {"datasetKey": ledger.get("datasetKey"), "decision": "INSUFFICIENT_EVIDENCE", "rows": [],
                 "reason": "a research report cannot use partial input"}
+    if (quality_gate is None or quality_gate.get("schema") != "htx-trend-research-quality-gate-v1"
+            or quality_gate.get("datasetKey") != manifest.get("datasetKey")
+            or quality_gate.get("inputIntegrity") != "COMPLETE" or quality_gate.get("decision") != "PASS"):
+        return {"datasetKey": ledger.get("datasetKey"), "decision": "INSUFFICIENT_EVIDENCE", "rows": [],
+                "reason": "a PASS quality-gate report for the same COMPLETE dataset is required"}
     if manifest.get("datasetKey") != ledger.get("datasetKey"):
         raise ValueError("manifest and derived ledger dataset keys differ")
     start, end = epoch(manifest["inputStartAt"]), epoch(manifest["inputEndAt"])
@@ -104,8 +109,10 @@ def main() -> None:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True); parser.add_argument("--ledger", type=Path, required=True)
     parser.add_argument("--json-out", type=Path, required=True); parser.add_argument("--markdown-out", type=Path, required=True)
+    parser.add_argument("--quality-report", type=Path, required=True)
     args=parser.parse_args()
-    report=build_report(json.loads(args.manifest.read_text()), json.loads(args.ledger.read_text()))
+    report=build_report(json.loads(args.manifest.read_text()), json.loads(args.ledger.read_text()),
+                        json.loads(args.quality_report.read_text()))
     args.json_out.write_text(json.dumps(report, ensure_ascii=False, indent=2)+"\n")
     args.markdown_out.write_text(markdown(report))
     print(json.dumps({"decision":report["decision"],"rows":len(report["rows"])},ensure_ascii=False))
