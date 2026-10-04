@@ -85,6 +85,11 @@ public class HtxTradeAccountService {
         return accounts;
     }
 
+    /** Read-only database identity used by portfolio evidence; empty means legacy environment credentials. */
+    public Optional<Long> primaryTrendAccountId() {
+        return primaryTrendAccount().map(HtxTradeAccountEntity::getId).filter(id -> id != null && id > 0L);
+    }
+
     private Optional<HtxTradeAccountEntity> primaryTrendAccount() {
         try {
             return Optional.ofNullable(mapper.findPrimaryTrendAccount());

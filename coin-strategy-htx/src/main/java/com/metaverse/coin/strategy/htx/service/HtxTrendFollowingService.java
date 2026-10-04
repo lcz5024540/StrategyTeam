@@ -106,6 +106,8 @@ public class HtxTrendFollowingService {
     private final HtxTrendExitDecisionEngine exitDecisionEngine = new HtxTrendExitDecisionEngine();
     private final HtxTrendProfitProtectionPlanner profitProtectionPlanner = new HtxTrendProfitProtectionPlanner();
     private HtxTrendCombinationService combinationService;
+    private HtxTrendPortfolioAllocationAuditService portfolioAllocationAuditService;
+    private HtxTradeAccountService tradeAccountService;
     private HtxTrendRuntimeKlineRecorder runtimeKlineRecorder;
     private HtxTrendRealtimePriceFeed realtimePriceFeed;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
@@ -196,6 +198,16 @@ public class HtxTrendFollowingService {
     @Autowired(required = false)
     void setCombinationService(HtxTrendCombinationService combinationService) {
         this.combinationService = combinationService;
+    }
+
+    @Autowired(required = false)
+    void setPortfolioAllocationAuditService(HtxTrendPortfolioAllocationAuditService portfolioAllocationAuditService) {
+        this.portfolioAllocationAuditService = portfolioAllocationAuditService;
+    }
+
+    @Autowired(required = false)
+    void setTradeAccountService(HtxTradeAccountService tradeAccountService) {
+        this.tradeAccountService = tradeAccountService;
     }
 
     @Autowired(required = false)
@@ -322,6 +334,7 @@ public class HtxTrendFollowingService {
         List<EntryCandidate> rankedCandidates = entryCandidates.values().stream()
                 .sorted(Comparator.comparing(EntryCandidate::score).reversed())
                 .toList();
+        recordPortfolioAllocationObservation(rankedCandidates, candidateScanCloseEpoch, remainingSlots);
         if (!rankedCandidates.isEmpty()) {
             boolean entryWindowOpenAtExecution = entryWindowAllowsNewEntries.getAsBoolean();
             if (!properties.isEntryEnabled()) {
@@ -532,6 +545,71 @@ public class HtxTrendFollowingService {
     private int candidateScanConcurrency(int contractCount) {
         int configured = Math.max(1, properties.getCandidateScanConcurrency());
         return Math.min(configured, Math.max(1, contractCount));
+    }
+
+    /**
+     * P3 observation only: consume the whole ranked combination-candidate batch before the first
+     * live gate runs. The allocator output is persisted as evidence, never read by openIfEligible.
+     */
+    private void recordPortfolioAllocationObservation(List<EntryCandidate> rankedCandidates, long scanCloseEpoch,
+                                                      long remainingSlots) {
+        if (!properties.isPortfolioAuditEnabled() || portfolioAllocationAuditService == null
+                || tradeAccountService == null || rankedCandidates == null || rankedCandidates.isEmpty()) {
+            return;
+        }
+        List<HtxTrendPortfolioAllocationAuditService.AuditedCandidate> candidates = rankedCandidates.stream()
+                .filter(candidate -> candidate.combination() != null && candidate.signal().barTime() != null
+                        && candidate.signal().side() != TrendSide.FLAT)
+                .filter(candidate -> positive(candidate.combination().plannedNotionalUsdt()))
+                .filter(candidate -> positive(properties.getRiskPerTradeUsdt()))
+                .map(candidate -> new HtxTrendPortfolioAllocationAuditService.AuditedCandidate(properties.getPeriod(),
+                        candidate.signal().barTime(), isBlank(candidate.combination().marketRegime()) ? "UNKNOWN"
+                                : candidate.combination().marketRegime(),
+                        new HtxTrendPortfolioAllocator.Candidate(candidate.combination().runId(), candidate.contractCode(),
+                                candidate.signal().side().name(), candidate.combination().plannedNotionalUsdt(),
+                                nonNegative(properties.getRiskPerTradeUsdt()), candidate.score(),
+                                portfolioCorrelationCluster(candidate.contractCode()))))
+                .toList();
+        if (candidates.isEmpty()) return;
+        Optional<Long> accountId = tradeAccountService.primaryTrendAccountId();
+        if (accountId.isEmpty()) {
+            log.warn("[HTX-TREND] portfolio audit skipped: primary DB account identity unavailable");
+            return;
+        }
+        BigDecimal availableMargin = portfolioAvailableMargin(candidates.get(0).candidate().contractCode());
+        if (!positive(availableMargin)) {
+            log.warn("[HTX-TREND] portfolio audit skipped: global available margin unavailable");
+            return;
+        }
+        int capacity = remainingSlots == Long.MAX_VALUE ? candidates.size()
+                : (int) Math.min(Integer.MAX_VALUE, Math.max(1L, remainingSlots));
+        BigDecimal largestNotional = candidates.stream().map(value -> value.candidate().requestedNotional())
+                .max(BigDecimal::compareTo).orElse(properties.getMaxQuoteNotional());
+        BigDecimal maxGross = largestNotional.multiply(BigDecimal.valueOf(capacity));
+        try {
+            portfolioAllocationAuditService.allocateAndRecord("portfolio-scan:" + scanCloseEpoch, candidates,
+                    List.of(new HtxTrendPortfolioAllocator.AccountCapacity(accountId.get(), "primary", true,
+                            availableMargin, maxGross, nonNegative(properties.getEstimatedTakerFeeRate()))),
+                    new HtxTrendPortfolioAllocator.RiskBudget(capacity,
+                            Math.max(1, properties.getPortfolioMaxPositionsPerCluster()), maxGross, maxGross));
+        } catch (RuntimeException exception) {
+            log.warn("[HTX-TREND] portfolio audit failed without affecting entry path", exception);
+        }
+    }
+
+    private BigDecimal portfolioAvailableMargin(String contractCode) {
+        HtxRestResponse<List<HtxSwapAccount>> response = swap.accountInfo(contractCode);
+        if (response == null || !response.ok() || response.payload() == null) return null;
+        return response.payload().stream().filter(item -> item != null).map(HtxSwapAccount::getMarginAvailable)
+                .filter(HtxTrendFollowingService::positive).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private String portfolioCorrelationCluster(String contractCode) {
+        if (properties.getPortfolioCorrelationClusters() != null) {
+            String configured = properties.getPortfolioCorrelationClusters().get(contractCode);
+            if (configured != null && !configured.isBlank()) return configured.trim();
+        }
+        return "UNCLASSIFIED:" + contractCode;
     }
 
     private void addPendingEntryCandidates(Map<String, EntryCandidate> entryCandidates, List<String> summaries) {

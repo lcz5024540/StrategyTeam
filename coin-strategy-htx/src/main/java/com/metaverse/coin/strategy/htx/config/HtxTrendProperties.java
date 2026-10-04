@@ -5,7 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Configuration for HTX contract trend following. */
 @Data
@@ -32,6 +34,15 @@ public class HtxTrendProperties {
 
     /** Maximum open-like trend positions across the live whitelist. */
     private int maxActivePositions = 1;
+
+    /** Records ranked candidate portfolio targets without changing live order selection. */
+    private boolean portfolioAuditEnabled = false;
+
+    /** Maximum selected candidates in one configured correlation cluster during observation. */
+    private int portfolioMaxPositionsPerCluster = 1;
+
+    /** Explicit contract-to-cluster map. An unmapped contract remains isolated in the audit. */
+    private Map<String, String> portfolioCorrelationClusters = new HashMap<>();
 
     /** Lower timeframe used for entry and exit triggers, for example 15min or 60min. */
     private String period = "15min";

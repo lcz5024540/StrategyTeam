@@ -859,6 +859,7 @@ class HtxTrendFollowingServiceTest {
     @Test
     void combinationEntryBypassesLegacyDirectionConfidenceInMixedMarket() {
         properties.setCombinationEntryEnabled(true);
+        properties.setPortfolioAuditEnabled(true);
         properties.setDirectionConfidenceGateEnabled(true);
         properties.setMinDirectionConfidenceScore(new BigDecimal("200"));
         properties.setMinMixedDirectionConfidenceScore(new BigDecimal("200"));
@@ -882,6 +883,11 @@ class HtxTrendFollowingServiceTest {
         when(combinationService.select(eq("XAUT-USDT"), eq(properties.getPeriod()), anyList(), any()))
                 .thenReturn(selection);
         service.setCombinationService(combinationService);
+        HtxTrendPortfolioAllocationAuditService portfolioAudit = mock(HtxTrendPortfolioAllocationAuditService.class);
+        HtxTradeAccountService accountService = mock(HtxTradeAccountService.class);
+        when(accountService.primaryTrendAccountId()).thenReturn(Optional.of(1L));
+        service.setPortfolioAllocationAuditService(portfolioAudit);
+        service.setTradeAccountService(accountService);
         givenContractInfo();
         givenEnsembleRisingKlines("XAUT-USDT");
         givenFunding("-0.0001");
@@ -902,6 +908,8 @@ class HtxTrendFollowingServiceTest {
                 eq("LONG"), eq("FIB_PULLBACK_CONTINUATION"), eq("BROAD_UP"), eq("primary"));
         verify(combinationService).recordDirectionalQualityEvidence(eq("XAUT-USDT"), eq(properties.getPeriod()),
                 anyLong(), eq("combo-v2"), eq("BROAD_UP"), any());
+        verify(portfolioAudit).allocateAndRecord(org.mockito.ArgumentMatchers.startsWith("portfolio-scan:"), anyList(),
+                anyList(), any(HtxTrendPortfolioAllocator.RiskBudget.class));
         verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
