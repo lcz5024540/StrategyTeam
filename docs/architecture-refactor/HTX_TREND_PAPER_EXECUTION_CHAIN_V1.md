@@ -35,6 +35,9 @@ tags: [htx, trend, paper-execution, run-id, contract-test]
 5. 原始候选证据、价格计划和 outbox 在回传后仍保留；纸面执行服务没有 HTX 合约下单客户端依赖。
 6. 生命周期事件只能从上一个已记录状态迁移；累计成交张数不得倒退，终态后不得继续成交。部分成交后撤单与“撤单后迟到成交”均有合同测试。
 
+纸面执行器可以继续使用既有 `POST /htx/contract/trend-paper-executions` 一次性回传，也可以先向
+`POST /htx/contract/trend-paper-execution-events` 追加 `SUBMIT`、`ACCEPT`、`FILL_UPDATE`、撤单或过期事件。两个端点都只写纸面证据，不能访问 HTX 下单接口。
+
 ## 3. 边界与未完成项
 
 这条链路只负责冻结、发布和验证模拟成交。它不会触发或拦截现有的 HTX 真实下单链路，也不改变真实 Gate、仓位、环境开关或账户配置。

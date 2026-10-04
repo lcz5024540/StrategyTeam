@@ -65,4 +65,11 @@ public class HtxContractController {
             @RequestBody HtxTrendPaperExecutionService.Report request) {
         return paperExecutionService.report(request);
     }
+
+    /** Paper-only lifecycle callback. It records order-state evidence and never invokes HTX. */
+    @PostMapping("/trend-paper-execution-events")
+    public HtxTrendPaperExecutionService.LifecycleResult reportPaperExecutionEvent(
+            @RequestBody HtxTrendPaperExecutionService.LifecycleEvent request) {
+        return paperExecutionService.reportEvent(request);
+    }
 }
