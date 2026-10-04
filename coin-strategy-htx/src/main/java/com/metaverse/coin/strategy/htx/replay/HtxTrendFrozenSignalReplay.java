@@ -103,8 +103,13 @@ public final class HtxTrendFrozenSignalReplay {
                 combinations, externalGateUnavailable, Map.copyOf(summaries));
     }
 
-    private Observation evaluateCompleted(String datasetKey, String contractCode, String period, List<HtxSwapKline> candles,
-                                          int index, HtxTrendEnsembleShadowProperties properties, int boxWindowBars) {
+    /**
+     * Evaluates a caller-supplied immutable candle window without opening a dataset file again.
+     * BT-02A uses this entry point to reconstruct all contracts at one completed bar while still
+     * delegating every signal and combination formula to the production calculators.
+     */
+    public Observation evaluateCompleted(String datasetKey, String contractCode, String period, List<HtxSwapKline> candles,
+                                        int index, HtxTrendEnsembleShadowProperties properties, int boxWindowBars) {
         long completedBarTime = candles.get(index).getId();
         // Production requests klineSize bars on every evaluation. A full historical prefix would change EMA/ADX
         // values relative to production and makes the replay needlessly quadratic in the frozen window length.

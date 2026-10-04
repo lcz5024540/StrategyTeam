@@ -2381,8 +2381,10 @@ public class HtxTrendFollowingService {
      * broad market. A mixed market is handled by reduced sizing in {@link #sizingContext}.
      */
     private static String combinationMarketRiskGate(TrendSide side, MarketBreadthContext marketBreadth) {
-        if (againstBroadMarket(side, marketBreadth)) {
-            return "combination market risk: signal opposes " + marketBreadth.summary();
+        if (HtxTrendCombinationMarketRiskGate.opposesBroadMarket(side.name(),
+                marketBreadth == null ? "MIXED" : marketBreadth.regime().name())) {
+            return "combination market risk: signal opposes "
+                    + (marketBreadth == null ? "UNKNOWN" : marketBreadth.summary());
         }
         return null;
     }

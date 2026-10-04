@@ -6,6 +6,14 @@
   "configurationEvidence": "INSUFFICIENT_EVIDENCE: historical ensemble configuration was not frozen; code defaults snapshot is suitable only for formula and candidate coverage replay",
   "inputIntegrity": "COMPLETE",
   "boxWindowBars": 32,
+  "gateAblation": {
+    "schema": "htx-trend-frozen-gate-ablation-v1",
+    "inputIntegrity": "COMPLETE",
+    "minimumBreadthSymbols": 20,
+    "breadthThreshold": "0.70",
+    "oppositeBreadthMaximum": "0.15",
+    "directionConfirmationPeriods": ["30min", "60min", "4hour"]
+  },
   "ensemble": {
     "klineSize": 180,
     "candleCloseGraceSeconds": 10,
