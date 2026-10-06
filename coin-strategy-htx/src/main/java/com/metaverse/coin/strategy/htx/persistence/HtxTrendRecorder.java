@@ -2,6 +2,8 @@ package com.metaverse.coin.strategy.htx.persistence;
 
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendAssessmentEntity;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendAssessmentMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendExitDecisionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendProfitProtectionEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendProfitProtectionEventEntity;
@@ -53,6 +55,8 @@ public class HtxTrendRecorder {
     private final HtxTrendCombinationRecorder combinationRecorder;
     @Autowired(required = false)
     private HtxTrendExitDecisionMapper exitDecisionMapper;
+    @Autowired(required = false)
+    private HtxTrendAssessmentMapper assessmentMapper;
     @Autowired(required = false)
     private HtxTrendProfitProtectionEventMapper profitProtectionEventMapper;
     @Autowired(required = false)
@@ -304,6 +308,40 @@ public class HtxTrendRecorder {
             log.warn("trend exit-engine decision persistence failed positionId={} key={}",
                     decision.getPositionId(), decision.getDecisionKey(), ex);
         }
+    }
+
+    /** Assessment history is diagnostic only: it may never block a live risk or execution path. */
+    public void recordAssessment(HtxTrendAssessmentEntity assessment) {
+        if (assessment == null || assessmentMapper == null || assessment.getAssessmentKey() == null) return;
+        try {
+            // Retry of the same completed bar is expected after a process restart.  It is not a new assessment.
+            if (assessmentMapper.countByAssessmentKey(assessment.getAssessmentKey()) > 0L) return;
+            assessment.setEvidenceJson(clip(assessment.getEvidenceJson(), 12_000));
+            assessment.setTransitionReason(clip(assessment.getTransitionReason()));
+            assessmentMapper.insert(assessment);
+        } catch (RuntimeException ex) {
+            log.warn("[HTX-TREND-ASSESSMENT] persistence failed stage={} positionId={} key={} reason={}",
+                    assessment.getAssessmentStage(), assessment.getPositionId(), assessment.getAssessmentKey(),
+                    ex.getMessage());
+        }
+    }
+
+    public boolean assessmentExists(String assessmentKey) {
+        if (assessmentMapper == null || assessmentKey == null) return false;
+        try { return assessmentMapper.countByAssessmentKey(assessmentKey) > 0L; }
+        catch (RuntimeException ex) { return false; }
+    }
+
+    public String latestHoldingAssessmentState(long positionId) {
+        if (assessmentMapper == null) return null;
+        try { return assessmentMapper.latestHoldingState(positionId); }
+        catch (RuntimeException ex) { return null; }
+    }
+
+    public String latestHoldingAssessmentStateBefore(long positionId, long barTime) {
+        if (assessmentMapper == null) return null;
+        try { return assessmentMapper.latestHoldingStateBefore(positionId, barTime); }
+        catch (RuntimeException ex) { return null; }
     }
 
     /** Persists the restart-safe MFE protection input used by the v4 exit engine; this method never places an order. */

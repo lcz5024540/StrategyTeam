@@ -13,6 +13,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendRuntimeKlineCandleEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendRuntimeKlineSnapshotEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendAssessmentEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.CoinStrategyLedgerEventMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractLegMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxContractCycleMapper;
@@ -26,6 +27,7 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendRuntimeKlineCandleMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendRuntimeKlineSnapshotMapper;
+import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendAssessmentMapper;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +54,31 @@ class HtxMapperIntegrationTest {
     @Autowired CoinStrategyLedgerEventMapper ledgerEventMapper;
     @Autowired HtxTrendRuntimeKlineCandleMapper runtimeKlineCandleMapper;
     @Autowired HtxTrendRuntimeKlineSnapshotMapper runtimeKlineSnapshotMapper;
+    @Autowired HtxTrendAssessmentMapper trendAssessmentMapper;
+    @Autowired HtxTrendRecorder trendRecorder;
+
+    @Test void trend_assessment_is_append_only_and_completed_bar_is_idempotent() {
+        long nonce = System.nanoTime();
+        HtxTrendAssessmentEntity holding = new HtxTrendAssessmentEntity();
+        holding.setAssessmentKey("it-holding-" + nonce);
+        holding.setAssessmentStage("HOLDING_ASSESSMENT");
+        holding.setPositionId(nonce);
+        holding.setAccountLabel("primary");
+        holding.setContractCode("BTC-USDT");
+        holding.setSide("LONG");
+        holding.setPrimaryModel("FIB_PULLBACK_CONTINUATION");
+        holding.setTimeframeProfile("INTRADAY_15M");
+        holding.setBarTime(1_790_000_000L + nonce % 100_000L);
+        holding.setTrendState("TRENDING");
+        holding.setEvidenceJson("{\"source\":\"test\"}");
+
+        trendRecorder.recordAssessment(holding);
+        trendRecorder.recordAssessment(holding);
+
+        assertEquals(1L, trendAssessmentMapper.countByAssessmentKey(holding.getAssessmentKey()));
+        assertEquals("TRENDING", trendAssessmentMapper.latestHoldingState(holding.getPositionId()));
+        assertNull(trendAssessmentMapper.latestHoldingStateBefore(holding.getPositionId(), holding.getBarTime()));
+    }
 
     @Test void runtime_kline_evidence_is_content_addressed_and_windowed() {
         long nonce = System.nanoTime();

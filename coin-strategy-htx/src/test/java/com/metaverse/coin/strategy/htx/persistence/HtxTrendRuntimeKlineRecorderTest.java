@@ -80,6 +80,39 @@ class HtxTrendRuntimeKlineRecorderTest {
         verify(snapshotMapper).insert(any(HtxTrendRuntimeKlineSnapshotEntity.class));
     }
 
+    @Test void marks_a_same_size_window_with_a_missing_bar_as_partial() {
+        HtxTrendRuntimeKlineCandleMapper candleMapper = mock(HtxTrendRuntimeKlineCandleMapper.class);
+        HtxTrendRuntimeKlineSnapshotMapper snapshotMapper = mock(HtxTrendRuntimeKlineSnapshotMapper.class);
+        HtxTrendRuntimeKlineRecorder recorder = new HtxTrendRuntimeKlineRecorder(candleMapper, snapshotMapper);
+        HtxTrendRuntimeKlineRecorder.CaptureRequest request = new HtxTrendRuntimeKlineRecorder.CaptureRequest(
+                "ENTRY_GATE", "BTC-USDT", "15min", 1_790_001_800L, 3, "run-42", 42L, 9L,
+                List.of(candle(1_790_000_000L, "100"), candle(1_790_000_900L, "101"),
+                        candle(1_790_002_700L, "102")));
+
+        recorder.capture(request);
+
+        ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
+        verify(snapshotMapper).insert(snapshot.capture());
+        assertFalse(snapshot.getValue().getCompleteWindow());
+        assertEquals("PARTIAL", snapshot.getValue().getDataIntegrity());
+    }
+
+    @Test void marks_a_continuous_window_complete() {
+        HtxTrendRuntimeKlineCandleMapper candleMapper = mock(HtxTrendRuntimeKlineCandleMapper.class);
+        HtxTrendRuntimeKlineSnapshotMapper snapshotMapper = mock(HtxTrendRuntimeKlineSnapshotMapper.class);
+        HtxTrendRuntimeKlineRecorder recorder = new HtxTrendRuntimeKlineRecorder(candleMapper, snapshotMapper);
+        HtxTrendRuntimeKlineRecorder.CaptureRequest request = new HtxTrendRuntimeKlineRecorder.CaptureRequest(
+                "ENTRY_GATE", "BTC-USDT", "15min", 1_790_000_900L, 2, "run-42", 42L, 9L,
+                List.of(candle(1_790_000_000L, "100"), candle(1_790_000_900L, "101")));
+
+        recorder.capture(request);
+
+        ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
+        verify(snapshotMapper).insert(snapshot.capture());
+        assertTrue(snapshot.getValue().getCompleteWindow());
+        assertEquals("COMPLETE", snapshot.getValue().getDataIntegrity());
+    }
+
     private static HtxTrendRuntimeKlineRecorder.CaptureRequest request(List<HtxSwapKline> candles) {
         return new HtxTrendRuntimeKlineRecorder.CaptureRequest("ENTRY_GATE", "BTC-USDT", "15min", 1_790_000_900L,
                 160, "run-42", 42L, 9L, candles);

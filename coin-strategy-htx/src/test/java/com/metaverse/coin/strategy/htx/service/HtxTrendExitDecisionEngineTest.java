@@ -33,6 +33,17 @@ class HtxTrendExitDecisionEngineTest {
     }
 
     @Test
+    void persistedHoldingAssessmentOverridesTransientSignalForV4DecisionEvidence() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(ltcIntradayInput(
+                new BigDecimal("73.60"), new BigDecimal("73.80"), TrendSide.LONG,
+                new BigDecimal("73.40"), new BigDecimal("73.00"), null)
+                .withAssessmentState("WEAKENING", "TRENDING", "HOLDING:77:1790000000"));
+
+        assertTrue(decision.evidenceJson().contains("\"assessmentState\":\"WEAKENING\""));
+        assertTrue(decision.evidenceJson().contains("\"previousAssessmentState\":\"TRENDING\""));
+    }
+
+    @Test
     void protectionBreachClosesAfterConfirmationWithoutWaitingForIndependentReversalEvidence() {
         LocalDateTime armedAt = LocalDateTime.of(2026, 9, 24, 0, 1);
         HtxTrendExitDecisionEngine.Decision confirmed = engine.evaluate(new HtxTrendExitDecisionEngine.Input(

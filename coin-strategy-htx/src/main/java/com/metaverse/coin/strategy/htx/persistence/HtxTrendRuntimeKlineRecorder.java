@@ -17,7 +17,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Captures the exact public K-line payload made available to a runtime calculation.
@@ -37,12 +39,21 @@ public class HtxTrendRuntimeKlineRecorder {
     private final HtxTrendRuntimeKlineSnapshotMapper snapshotMapper;
     /** One writer preserves append-only evidence while candidate scanning remains concurrent. */
     private final ReentrantLock writeLock = new ReentrantLock();
+    private final AtomicLong captureAttempts = new AtomicLong();
+    private final AtomicLong captureCompleted = new AtomicLong();
+    private final AtomicLong completeWindows = new AtomicLong();
+    private final AtomicLong partialWindows = new AtomicLong();
+    private final AtomicLong deadlockRetries = new AtomicLong();
+    private final AtomicLong finalFailures = new AtomicLong();
+    private final AtomicLong captureLatencyMs = new AtomicLong();
 
     /** Fail-open: evidence persistence must never turn a valid market signal into a duplicate trade attempt. */
     public void capture(CaptureRequest request) {
         if (!valid(request)) {
             return;
         }
+        long startedAt = System.nanoTime();
+        captureAttempts.incrementAndGet();
         try {
             List<HtxSwapKline> candles = request.candles().stream()
                     .filter(candle -> candle != null && candle.getId() != null)
@@ -78,18 +89,26 @@ public class HtxTrendRuntimeKlineRecorder {
             snapshot.setTargetBarTime(targetBarTime);
             snapshot.setWindowStartBarTime(candles.get(0).getId());
             snapshot.setWindowEndBarTime(candles.get(candles.size() - 1).getId());
-            snapshot.setExpectedWindowSize(Math.max(1, request.expectedWindowSize()));
+            int expectedWindowSize = Math.max(1, request.expectedWindowSize());
+            boolean completeWindow = completeWindow(candles, request.period(), expectedWindowSize);
+            snapshot.setExpectedWindowSize(expectedWindowSize);
             snapshot.setActualWindowSize(candles.size());
-            snapshot.setCompleteWindow(candles.size() >= Math.max(1, request.expectedWindowSize()));
+            snapshot.setCompleteWindow(completeWindow);
             snapshot.setWindowSha256(windowHash);
             snapshot.setSourceKind(SOURCE_KIND);
             snapshot.setSourceReference("market/history/kline");
-            snapshot.setDataIntegrity(candles.size() >= Math.max(1, request.expectedWindowSize()) ? "COMPLETE" : "PARTIAL");
+            snapshot.setDataIntegrity(completeWindow ? "COMPLETE" : "PARTIAL");
             snapshot.setCapturedAt(capturedAt);
             snapshotMapper.insert(snapshot);
+            captureCompleted.incrementAndGet();
+            if (snapshot.getCompleteWindow()) completeWindows.incrementAndGet();
+            else partialWindows.incrementAndGet();
         } catch (RuntimeException exception) {
-            log.warn("runtime K-line evidence capture failed stage={} contract={} period={}", request.captureStage(),
-                    request.contractCode(), request.period(), exception);
+            finalFailures.incrementAndGet();
+            log.warn("[HTX-TREND-KLINE] capture failed stage={} contract={} period={} reason={}", request.captureStage(),
+                    request.contractCode(), request.period(), rootMessage(exception));
+        } finally {
+            captureLatencyMs.addAndGet((System.nanoTime() - startedAt) / 1_000_000L);
         }
     }
 
@@ -115,7 +134,8 @@ public class HtxTrendRuntimeKlineRecorder {
             } catch (RuntimeException exception) {
                 last = exception;
                 if (!deadlock(exception) || attempt == DEADLOCK_RETRY_LIMIT) break;
-                log.warn("runtime K-line evidence deadlock; retry={}/{} batchSize={}", attempt,
+                deadlockRetries.incrementAndGet();
+                log.warn("[HTX-TREND-KLINE] deadlock retry={}/{} batchSize={}", attempt,
                         DEADLOCK_RETRY_LIMIT, batch.size());
             }
         }
@@ -130,6 +150,28 @@ public class HtxTrendRuntimeKlineRecorder {
             current = current.getCause();
         }
         return false;
+    }
+
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null && current.getCause() != null) current = current.getCause();
+        return current == null || current.getMessage() == null ? "unknown" : current.getMessage();
+    }
+
+    /** Cumulative in-process quality signal; counters are diagnostic and never gate an order. */
+    public QualitySnapshot qualitySnapshot() {
+        return new QualitySnapshot(captureAttempts.get(), captureCompleted.get(), completeWindows.get(), partialWindows.get(),
+                deadlockRetries.get(), finalFailures.get(), captureLatencyMs.get());
+    }
+
+    public record QualitySnapshot(long attempts, long completed, long completeWindows, long partialWindows,
+                                  long deadlockRetries, long finalFailures, long totalLatencyMs) {
+        public static QualitySnapshot unavailable() { return new QualitySnapshot(0, 0, 0, 0, 0, 0, 0); }
+        public String summary() {
+            return "attempts=" + attempts + ",completed=" + completed + ",complete=" + completeWindows
+                    + ",partial=" + partialWindows + ",deadlockRetries=" + deadlockRetries
+                    + ",failures=" + finalFailures + ",latencyMs=" + totalLatencyMs;
+        }
     }
 
     private static HtxTrendRuntimeKlineCandleEntity toCandle(CaptureRequest request, HtxSwapKline candle,
@@ -155,6 +197,41 @@ public class HtxTrendRuntimeKlineRecorder {
     private static boolean valid(CaptureRequest request) {
         return request != null && !blank(request.captureStage()) && !blank(request.contractCode())
                 && !blank(request.period()) && request.candles() != null && !request.candles().isEmpty();
+    }
+
+    /** A full row count is insufficient evidence when HTX returned a window with a missing completed bar. */
+    private static boolean completeWindow(List<HtxSwapKline> candles, String period, int expectedWindowSize) {
+        if (candles.size() < expectedWindowSize) {
+            return false;
+        }
+        long seconds;
+        try {
+            seconds = periodSeconds(period);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+        for (int index = 1; index < candles.size(); index++) {
+            Long previous = candles.get(index - 1).getId();
+            Long current = candles.get(index).getId();
+            if (previous == null || current == null || current - previous != seconds) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static long periodSeconds(String period) {
+        String value = period == null ? "" : period.trim().toLowerCase(Locale.ROOT);
+        if (value.endsWith("min")) {
+            return Long.parseLong(value.substring(0, value.length() - 3)) * 60L;
+        }
+        if (value.endsWith("hour")) {
+            return Long.parseLong(value.substring(0, value.length() - 4)) * 3_600L;
+        }
+        if (value.endsWith("day")) {
+            return Long.parseLong(value.substring(0, value.length() - 3)) * 86_400L;
+        }
+        throw new IllegalArgumentException("unsupported runtime K-line period=" + period);
     }
 
     private static String windowHash(List<HtxSwapKline> candles) {

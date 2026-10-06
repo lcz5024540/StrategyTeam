@@ -23,6 +23,7 @@ import com.metaverse.coin.strategy.htx.persistence.HtxTrendRecorder;
 import com.metaverse.coin.strategy.htx.persistence.HtxTrendRuntimeKlineRecorder;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendOrderEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendExitDecisionEntity;
+import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendAssessmentEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendProfitProtectionEventEntity;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
@@ -58,8 +59,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Collectors;
 
 /** Contract-only trend following for HTX swaps, safe to run in observe-only mode. */
 @Slf4j
@@ -112,6 +115,8 @@ public class HtxTrendFollowingService {
     private HtxTrendRuntimeKlineRecorder runtimeKlineRecorder;
     private HtxTrendRealtimePriceFeed realtimePriceFeed;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
+    /** Per scheduler run: permits a compact, searchable summary of every final entry gate result. */
+    private final Map<String, AtomicLong> entryGateOutcomeCounts = new ConcurrentHashMap<>();
     private volatile long lastCandidateScanCloseEpoch = Long.MIN_VALUE;
 
     @Autowired
@@ -225,6 +230,55 @@ public class HtxTrendFollowingService {
         return recorder.countOpenLike() > 0L;
     }
 
+    private HoldingAssessment holdingAssessment(HtxTrendPositionEntity position, TrendSignal signal) {
+        if (position == null || position.getId() == null || signal == null || signal.barTime() == null) {
+            return HoldingAssessment.unavailable();
+        }
+        HtxTrendStateEvaluator.HoldingState state = trendStateEvaluator.evaluateHolding(
+                new HtxTrendStateEvaluator.HoldingInput(position.getSide(), signal.side(), signal.emaFast(), signal.emaSlow(),
+                        majorTimeframeOpposition(position), againstBroadMarket(LONG.equals(position.getSide()) ? TrendSide.LONG : TrendSide.SHORT,
+                        marketBreadthContext())));
+        return new HoldingAssessment(state.name(), recorder.latestHoldingAssessmentStateBefore(position.getId(), signal.barTime()),
+                "HOLDING:" + position.getId() + ":" + signal.barTime());
+    }
+
+    private void recordHoldingAssessment(HtxTrendPositionEntity position, TrendSignal signal, BigDecimal reference,
+                                         BigDecimal protection, ExitSnapshot snapshot,
+                                         HtxTrendExitDecisionEngine.Decision decision, HoldingAssessment holding) {
+        if (position == null || position.getId() == null || signal == null || signal.barTime() == null || holding == null
+                || holding.state() == null || recorder.assessmentExists(holding.key())) return;
+        HtxTrendAssessmentEntity assessment = new HtxTrendAssessmentEntity();
+        assessment.setAssessmentKey(holding.key());
+        assessment.setAssessmentStage("HOLDING_ASSESSMENT"); assessment.setPositionId(position.getId());
+        assessment.setRunId(position.getRunId()); assessment.setAccountLabel(assessmentAccountLabel(position));
+        assessment.setContractCode(position.getContractCode()); assessment.setSide(position.getSide());
+        assessment.setPrimaryModel(position.getPrimaryModel()); assessment.setTimeframeProfile(position.getTimeframeProfile());
+        assessment.setBarTime(signal.barTime()); assessment.setTrendState(holding.state()); assessment.setPreviousTrendState(holding.previousState());
+        if (holding.previousState() != null && !holding.previousState().equals(holding.state())) {
+            assessment.setTransitionType(holding.previousState() + "_TO_" + holding.state());
+        }
+        assessment.setTransitionReason(decision == null ? "non-fib holding evaluation" : decision.reason());
+        assessment.setReferencePrice(reference); assessment.setExpectedRMultiple(position.getExpectedRMultiple());
+        assessment.setCurrentNetPnl(snapshot.currentNet()); assessment.setMfeNetPnl(snapshot.mfe()); assessment.setMaeNetPnl(snapshot.mae());
+        assessment.setProtectionPrice(decision == null ? protection : decision.protectionPrice());
+        assessment.setEvidenceJson(decision == null ? "{\"signal\":\"" + signal.side() + "\"}" : decision.evidenceJson());
+        recorder.recordAssessment(assessment);
+        if (assessment.getTransitionType() != null) {
+            HtxTrendAssessmentEntity transition = new HtxTrendAssessmentEntity();
+            transition.setAssessmentKey("TRANSITION:" + position.getId() + ":" + signal.barTime());
+            transition.setAssessmentStage("TREND_TRANSITION"); transition.setPositionId(position.getId());
+            transition.setRunId(position.getRunId()); transition.setAccountLabel(assessmentAccountLabel(position));
+            transition.setContractCode(position.getContractCode()); transition.setSide(position.getSide());
+            transition.setPrimaryModel(position.getPrimaryModel()); transition.setTimeframeProfile(position.getTimeframeProfile());
+            transition.setBarTime(signal.barTime()); transition.setTrendState(holding.state()); transition.setPreviousTrendState(holding.previousState());
+            transition.setTransitionType(assessment.getTransitionType()); transition.setTransitionReason(assessment.getTransitionReason());
+            transition.setReferencePrice(reference); transition.setProtectionPrice(assessment.getProtectionPrice());
+            transition.setEvidenceJson(assessment.getEvidenceJson()); recorder.recordAssessment(transition);
+            log.info("[HTX-TREND-STATE] positionId={} contract={} assessmentStage=TREND_TRANSITION trendState={} previousState={} transitionReason={}",
+                    position.getId(), position.getContractCode(), holding.state(), holding.previousState(), assessment.getTransitionReason());
+        }
+    }
+
     /**
      * Manages and reconciles only existing positions. It deliberately omits candidate scans, factor snapshots,
      * and every entry path so an exit supervisor cannot create a new position.
@@ -262,6 +316,7 @@ public class HtxTrendFollowingService {
      */
     RunResult runOnce(BooleanSupplier entryWindowAllowsNewEntries) {
         List<String> contractCodes = liveContractCodes();
+        entryGateOutcomeCounts.clear();
         if (contractCodes.isEmpty()) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(MODE_GATE, "trend contract list is blank"));
         }
@@ -380,6 +435,10 @@ public class HtxTrendFollowingService {
                     Duration.ofNanos(System.nanoTime() - snapshotStartedAt).toMillis());
         }
 
+        HtxTrendRuntimeKlineRecorder.QualitySnapshot klineQuality = runtimeKlineRecorder == null
+                ? HtxTrendRuntimeKlineRecorder.QualitySnapshot.unavailable() : runtimeKlineRecorder.qualitySnapshot();
+        log.info("[HTX-TREND-SCAN] assessmentStage=SCAN_SUMMARY contracts={} candidateScanDurationMs={} gateOutcomes={} "
+                        + "klineEvidence={}", candidateScanContracts, candidateScanDurationMs, gateOutcomeSummary(), klineQuality.summary());
         if (selected == null) {
             return RunResult.of(RunCode.SKIPPED, null, gateMessage(CANDIDATE_SCAN, "no trend contracts evaluated"));
         }
@@ -1142,6 +1201,9 @@ public class HtxTrendFollowingService {
         DirectionalQualityContext directionalQuality = directionalQualityContext(signal, combination);
         recordCombinationDirectionalQualityEvidence(contractCode, signal, combination, directionalQuality);
         recordCombinationCostNotEvaluated(contractCode, signal, combination);
+        CandidateTrendState candidateTrendState = combination == null ? CandidateTrendState.legacy()
+                : candidateTrendState(signal, combination, marketBreadth);
+        recordEntryAssessment(contractCode, signal, combination, marketBreadth, candidateTrendState);
         if (signal.side() == TrendSide.FLAT) {
             return executionResult(contractCode, combination, RunResult.of(RunCode.NO_SIGNAL, null, signal.reason()));
         }
@@ -1174,7 +1236,6 @@ public class HtxTrendFollowingService {
                 return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, directionGate)));
             }
         }
-        CandidateTrendState candidateTrendState = candidateTrendState(signal, combination, marketBreadth);
         if (properties.isCandidateTrendStateGateEnabled() && combination != null && !candidateTrendState.tradable()) {
             return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
                     gateMessage(ENTRY_GATE, "candidate trend state=" + candidateTrendState.regime() + "; "
@@ -1317,7 +1378,12 @@ public class HtxTrendFollowingService {
     }
 
     private RunResult executionResult(String contractCode, CombinationContext combination, RunResult result) {
-        if (combination == null || combinationService == null || result == null) {
+        if (result == null) return null;
+        String stage = executionStage(result.message());
+        entryGateOutcomeCounts.computeIfAbsent(stage + ":" + result.code(), ignored -> new AtomicLong()).incrementAndGet();
+        if (combination == null) {
+            log.info("[HTX-TREND-GATE] contract={} assessmentStage=ENTRY_OUTCOME outcome={} gateStage={} reason={}",
+                    contractCode, result.code(), stage, clip(result.message()));
             return result;
         }
         String state = switch (result.code()) {
@@ -1326,8 +1392,43 @@ public class HtxTrendFollowingService {
             case OBSERVED -> "OBSERVED";
             default -> "REJECTED";
         };
-        combinationService.recordExecutionGate(combination.runId(), contractCode, state, result.message());
+        if (combinationService != null) {
+            combinationService.recordExecutionGate(combination.runId(), contractCode, state, result.message());
+        }
+        recordEntryOutcomeAssessment(contractCode, combination, result, stage);
+        log.info("[HTX-TREND-GATE] runId={} contract={} model={} timeframeProfile=INTRADAY_15M assessmentStage=ENTRY_OUTCOME "
+                        + "outcome={} gateStage={} reason={}", combination.runId(), contractCode, combination.primaryModel(),
+                result.code(), stage, clip(result.message()));
         return result;
+    }
+
+    private void recordEntryOutcomeAssessment(String contractCode, CombinationContext combination, RunResult result, String stage) {
+        String reason = result.message() == null ? "" : result.message();
+        HtxTrendAssessmentEntity outcome = new HtxTrendAssessmentEntity();
+        outcome.setAssessmentKey("ENTRY_OUTCOME:" + combination.runId() + ":" + contractCode + ":" + result.code()
+                + ":" + Integer.toUnsignedString(reason.hashCode()));
+        outcome.setAssessmentStage("ENTRY_OUTCOME");
+        outcome.setPositionId(result.positionId()); outcome.setRunId(combination.runId()); outcome.setContractCode(contractCode);
+        outcome.setAccountLabel("primary");
+        outcome.setSide(combination.selection().candidate().direction().name()); outcome.setPrimaryModel(combination.primaryModel());
+        outcome.setTimeframeProfile("INTRADAY_15M"); outcome.setTrendState(result.code().name());
+        outcome.setTransitionReason(stage + ": " + reason);
+        outcome.setExpectedRMultiple(combination.expectedRMultiple());
+        outcome.setEvidenceJson("{\"schema\":\"trend-entry-outcome-v1\",\"runId\":\""
+                + combination.runId() + "\",\"gateStage\":\"" + stage + "\",\"outcome\":\""
+                + result.code() + "\"}");
+        recorder.recordAssessment(outcome);
+    }
+
+    private static String executionStage(String message) {
+        if (message == null) return "UNKNOWN";
+        String normalized = message.toLowerCase(Locale.ROOT);
+        if (normalized.contains(EXECUTION_PREFLIGHT)) return "EXECUTION_PREFLIGHT";
+        if (normalized.contains(ENTRY_GATE)) return "ENTRY_GATE";
+        if (normalized.contains(ORDER_EXECUTION)) return "ORDER_EXECUTION";
+        if (normalized.contains(MODE_GATE)) return "MODE_GATE";
+        if (normalized.contains(CANDIDATE_SCAN)) return "CANDIDATE_SCAN";
+        return "EXECUTION";
     }
 
     /**
@@ -1519,8 +1620,10 @@ public class HtxTrendFollowingService {
             engineProtectionPrice = tighterExitProtection(position.getSide(), engineProtectionPrice,
                     profitProtectionPlan.protectionPrice());
         }
+        HoldingAssessment holdingAssessment = holdingAssessment(position, signal);
         HtxTrendExitDecisionEngine.Decision engineDecision = exitEngineDecision(position, signal, reference, highest, lowest,
-                engineProtectionPrice, exitSnapshot);
+                engineProtectionPrice, exitSnapshot, holdingAssessment);
+        recordHoldingAssessment(position, signal, reference, engineProtectionPrice, exitSnapshot, engineDecision, holdingAssessment);
         if (engineDecision != null) {
             if (!exitEngineLiveFor(position)) {
                 persistExitEngineState(position, engineDecision);
@@ -2457,6 +2560,29 @@ public class HtxTrendFollowingService {
         return new CandidateTrendState(state.regime(), state.tradable(), state.score(), state.reason());
     }
 
+    private void recordEntryAssessment(String contractCode, TrendSignal signal, CombinationContext combination,
+                                       MarketBreadthContext breadth, CandidateTrendState state) {
+        if (combination == null || signal == null || signal.barTime() == null || state == null) return;
+        HtxTrendAssessmentEntity assessment = new HtxTrendAssessmentEntity();
+        assessment.setAssessmentKey("ENTRY:" + combination.runId() + ":" + contractCode);
+        assessment.setAssessmentStage("ENTRY_ASSESSMENT"); assessment.setRunId(combination.runId());
+        assessment.setAccountLabel("primary");
+        assessment.setContractCode(contractCode); assessment.setSide(signal.side().name());
+        assessment.setPrimaryModel(combination.primaryModel()); assessment.setTimeframeProfile("INTRADAY_15M");
+        assessment.setBarTime(signal.barTime()); assessment.setTrendState(state.regime());
+        assessment.setTransitionReason(state.reason()); assessment.setReferencePrice(signal.closePrice());
+        assessment.setExpectedRMultiple(combination.expectedRMultiple());
+        assessment.setEvidenceJson("{\"candidateTrendScore\":" + state.score() + ",\"breadth\":\""
+                + (breadth == null ? "MIXED" : breadth.regime()) + "\",\"emaFast\":" + signal.emaFast()
+                + ",\"emaSlow\":" + signal.emaSlow() + "}");
+        recorder.recordAssessment(assessment);
+    }
+
+    private static String assessmentAccountLabel(HtxTrendPositionEntity position) {
+        return position == null || position.getAccountLabel() == null || position.getAccountLabel().isBlank()
+                ? "primary" : position.getAccountLabel();
+    }
+
     /**
      * The combination candidate already inherits EMA, momentum, Donchian, ADX, ATR and volume confirmation
      * from the ensemble signal. Do not score those inputs a second time here: only reject a clearly opposite
@@ -3328,7 +3454,7 @@ public class HtxTrendFollowingService {
     private HtxTrendExitDecisionEngine.Decision exitEngineDecision(HtxTrendPositionEntity position, TrendSignal signal,
                                                                     BigDecimal reference, BigDecimal highest,
                                                                     BigDecimal lowest, BigDecimal protectionPrice,
-                                                                    ExitSnapshot snapshot) {
+                                                                    ExitSnapshot snapshot, HoldingAssessment assessment) {
         if (!properties.isExitEngineEnabled() || position == null
                 || !HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION.equals(position.getPrimaryModel())) {
             return null;
@@ -3360,7 +3486,10 @@ public class HtxTrendFollowingService {
                         properties.getIntradayProfitArmAtrMultiplier(), properties.getIntradayProfitLockAtrMultiplier(),
                         properties.getIntradayProfitPartialAtrMultiplier(), properties.getIntradayProfitPullbackAtrMultiplier(),
                         properties.getIntradayProfitMinNetFeeMultiple(), requiredProtectionBreachBars), protectionBreachBars)
-                .withFundingCostExitReason(fundingCostGate));
+                .withFundingCostExitReason(fundingCostGate)
+                .withAssessmentState(assessment == null ? null : assessment.state(),
+                        assessment == null ? null : assessment.previousState(),
+                        assessment == null ? null : assessment.key()));
     }
 
     /** A durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */
@@ -3910,6 +4039,17 @@ public class HtxTrendFollowingService {
             return value;
         }
         return value.substring(0, maxLength);
+    }
+
+    private String gateOutcomeSummary() {
+        return entryGateOutcomeCounts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue().get())
+                .collect(Collectors.joining(","));
+    }
+
+    private record HoldingAssessment(String state, String previousState, String key) {
+        static HoldingAssessment unavailable() { return new HoldingAssessment(null, null, null); }
     }
 
     private record PartialExitDecision(boolean triggered, int stage, BigDecimal rate, String reason) {
