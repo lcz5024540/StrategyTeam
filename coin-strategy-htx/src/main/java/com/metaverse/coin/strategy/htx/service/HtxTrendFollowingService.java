@@ -1241,6 +1241,13 @@ public class HtxTrendFollowingService {
                     gateMessage(ENTRY_GATE, "candidate trend state=" + candidateTrendState.regime() + "; "
                             + candidateTrendState.reason())));
         }
+        if (combination != null && properties.isMixedMarketRequiresStrongCandidate()
+                && marketBreadth != null && marketBreadth.regime() == MarketRegime.MIXED
+                && !mixedMarketCandidateEligible(candidateTrendState, combination)) {
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, "mixed market requires A-grade candidate; state="
+                            + candidateTrendState.regime() + "; " + mixedMarketCandidateReason(combination))));
+        }
         HtxDepth depth = depthSnapshot(contractCode);
         TopOfBook book = topOfBook(depth);
         if (book == null) {
@@ -1866,7 +1873,8 @@ public class HtxTrendFollowingService {
      * authority for resuming reconciliation without issuing another close order.
      */
     private RunResult recoverAcceptedClose(HtxTrendPositionEntity position) {
-        Optional<HtxTrendOrderEntity> acceptedClose = recorder.findAcceptedCloseOrder(position.getId());
+        Optional<HtxTrendOrderEntity> acceptedClose = recorder.findAcceptedCloseOrder(position.getId(),
+                assessmentAccountLabel(position));
         if (acceptedClose.isEmpty()) {
             return null;
         }
@@ -2120,7 +2128,8 @@ public class HtxTrendFollowingService {
                     "exchange reconciliation restored active position volume=" + lookup.position().get().getVolume());
             return RunResult.of(RunCode.ACTIVE, position.getId(), "exchange reconciliation restored active position");
         }
-        Optional<HtxTrendOrderEntity> closeOrder = recorder.findLatestCloseOrder(position.getId());
+        Optional<HtxTrendOrderEntity> closeOrder = recorder.findLatestCloseOrder(position.getId(),
+                assessmentAccountLabel(position));
         if (closeOrder.isPresent() && !isBlank(closeOrder.get().getClientOrderId())) {
             QueryOrderResult query = queryOrder(position.getContractCode(), closeOrder.get().getExchangeOrderId(),
                     closeOrder.get().getClientOrderId());
@@ -2558,6 +2567,25 @@ public class HtxTrendFollowingService {
                 nonNegative(properties.getCandidateTrendStateStrongExpectedR()),
                 nonNegative(properties.getCandidateTrendStateMinMomentumScore())));
         return new CandidateTrendState(state.regime(), state.tradable(), state.score(), state.reason());
+    }
+
+    private boolean mixedMarketCandidateEligible(CandidateTrendState state, CombinationContext combination) {
+        if (state == null || !state.tradable() || combination == null) {
+            return false;
+        }
+        return nonNegative(combination.selection().candidate().score())
+                .compareTo(nonNegative(properties.getMixedMarketMinModelScore())) >= 0
+                && nonNegative(combination.expectedRMultiple())
+                .compareTo(nonNegative(properties.getMixedMarketMinExpectedR())) >= 0
+                && nonNegative(combination.momentumQualityScore())
+                .compareTo(nonNegative(properties.getMixedMarketMinMomentumScore())) >= 0;
+    }
+
+    private String mixedMarketCandidateReason(CombinationContext combination) {
+        return "modelScore=" + combination.selection().candidate().score() + "/"
+                + properties.getMixedMarketMinModelScore() + ", expectedR=" + combination.expectedRMultiple()
+                + "/" + properties.getMixedMarketMinExpectedR() + ", momentum="
+                + combination.momentumQualityScore() + "/" + properties.getMixedMarketMinMomentumScore();
     }
 
     private void recordEntryAssessment(String contractCode, TrendSignal signal, CombinationContext combination,

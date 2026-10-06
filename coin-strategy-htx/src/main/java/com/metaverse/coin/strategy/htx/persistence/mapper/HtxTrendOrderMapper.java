@@ -12,14 +12,16 @@ import java.math.BigDecimal;
 @Mapper
 public interface HtxTrendOrderMapper extends BaseMapper<HtxTrendOrderEntity> {
 
-    @Select("SELECT * FROM htx_trend_order WHERE position_id = #{positionId} AND leg = 'CLOSE' "
+    @Select("SELECT * FROM htx_trend_order WHERE position_id = #{positionId} AND account_label = #{accountLabel} AND leg = 'CLOSE' "
             + "AND status = 'ACCEPTED' ORDER BY id DESC LIMIT 1")
-    HtxTrendOrderEntity findLatestAcceptedCloseOrder(@Param("positionId") long positionId);
+    HtxTrendOrderEntity findLatestAcceptedCloseOrder(@Param("positionId") long positionId,
+                                                      @Param("accountLabel") String accountLabel);
 
     /** Latest full-close intent regardless of whether it was accepted by HTX. */
-    @Select("SELECT * FROM htx_trend_order WHERE position_id = #{positionId} AND leg = 'CLOSE' "
+    @Select("SELECT * FROM htx_trend_order WHERE position_id = #{positionId} AND account_label = #{accountLabel} AND leg = 'CLOSE' "
             + "ORDER BY id DESC LIMIT 1")
-    HtxTrendOrderEntity findLatestCloseOrder(@Param("positionId") long positionId);
+    HtxTrendOrderEntity findLatestCloseOrder(@Param("positionId") long positionId,
+                                              @Param("accountLabel") String accountLabel);
 
     @Update("UPDATE htx_trend_order SET status = #{status}, exchange_order_id = #{exchangeOrderId}, "
             + "exchange_client_order_id = #{exchangeClientOrderId}, message = #{message}, "

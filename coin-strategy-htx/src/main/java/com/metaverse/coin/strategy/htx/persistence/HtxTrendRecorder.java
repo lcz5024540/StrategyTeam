@@ -100,12 +100,12 @@ public class HtxTrendRecorder {
         return Optional.ofNullable(positionMapper.findLastDone(contractCode));
     }
 
-    public Optional<HtxTrendOrderEntity> findAcceptedCloseOrder(long positionId) {
-        return Optional.ofNullable(orderMapper.findLatestAcceptedCloseOrder(positionId));
+    public Optional<HtxTrendOrderEntity> findAcceptedCloseOrder(long positionId, String accountLabel) {
+        return Optional.ofNullable(orderMapper.findLatestAcceptedCloseOrder(positionId, accountLabel));
     }
 
-    public Optional<HtxTrendOrderEntity> findLatestCloseOrder(long positionId) {
-        return Optional.ofNullable(orderMapper.findLatestCloseOrder(positionId));
+    public Optional<HtxTrendOrderEntity> findLatestCloseOrder(long positionId, String accountLabel) {
+        return Optional.ofNullable(orderMapper.findLatestCloseOrder(positionId, accountLabel));
     }
 
     public Optional<HtxTrendOrderEntity> findAcceptedPartialCloseOrder(long positionId) {

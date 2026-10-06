@@ -319,6 +319,18 @@ public class HtxTrendProperties {
     /** Require the current candidate's own trend evidence before a real trend entry. */
     private boolean candidateTrendStateGateEnabled = true;
 
+    /** In a mixed market, only an A-grade local candidate may send a live entry. */
+    private boolean mixedMarketRequiresStrongCandidate = true;
+
+    /** Minimum raw combined-model score for a live entry in a mixed market. */
+    private BigDecimal mixedMarketMinModelScore = new BigDecimal("92");
+
+    /** Minimum structural reward/risk for a live entry in a mixed market. */
+    private BigDecimal mixedMarketMinExpectedR = new BigDecimal("1.75");
+
+    /** Minimum momentum-quality score for a live entry in a mixed market. */
+    private BigDecimal mixedMarketMinMomentumScore = new BigDecimal("70");
+
     /** Minimum current-candidate trend score after structure, reward, momentum and market-context evidence. */
     private BigDecimal candidateTrendStateMinScore = new BigDecimal("75");
 

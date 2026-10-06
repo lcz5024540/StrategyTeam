@@ -221,6 +221,10 @@ htx:
     runtime-kline-capture-enabled: ${HTX_TREND_RUNTIME_KLINE_CAPTURE_ENABLED:true}
     adaptive-sizing-enabled: ${HTX_TREND_ADAPTIVE_SIZING_ENABLED:true}
     candidate-trend-state-gate-enabled: ${HTX_TREND_CANDIDATE_TREND_STATE_GATE_ENABLED:true}
+    mixed-market-requires-strong-candidate: ${HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE:true}
+    mixed-market-min-model-score: ${HTX_TREND_MIXED_MARKET_MIN_MODEL_SCORE:92}
+    mixed-market-min-expected-r: ${HTX_TREND_MIXED_MARKET_MIN_EXPECTED_R:1.75}
+    mixed-market-min-momentum-score: ${HTX_TREND_MIXED_MARKET_MIN_MOMENTUM_SCORE:70}
     candidate-trend-state-min-score: ${HTX_TREND_CANDIDATE_TREND_STATE_MIN_SCORE:75}
     candidate-trend-state-strong-score: ${HTX_TREND_CANDIDATE_TREND_STATE_STRONG_SCORE:88}
     candidate-trend-state-min-expected-r: ${HTX_TREND_CANDIDATE_TREND_STATE_MIN_EXPECTED_R:1.25}

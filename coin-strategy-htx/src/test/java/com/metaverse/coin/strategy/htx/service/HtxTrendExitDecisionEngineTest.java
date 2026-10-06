@@ -107,7 +107,7 @@ class HtxTrendExitDecisionEngineTest {
 
         assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
         assertEquals("THESIS_EXPIRED", decision.phase());
-        assertEquals("unarmed-fib-flat-loss-budget-exceeded", decision.reason());
+        assertEquals("unarmed-fib-flat-loss-budget-with-independent-failure", decision.reason());
     }
 
     @Test
@@ -116,6 +116,22 @@ class HtxTrendExitDecisionEngineTest {
 
         assertEquals(HtxTrendExitDecisionEngine.Action.HOLD, decision.action());
         assertEquals("THESIS_INTACT", decision.phase());
+    }
+
+    @Test
+    void flatLossBudgetDoesNotCloseWithoutIndependentFailureEvidence() {
+        HtxTrendExitDecisionEngine.Input input = new HtxTrendExitDecisionEngine.Input(
+                HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, "SHORT", 10L, BigDecimal.ONE,
+                new BigDecimal("100"), new BigDecimal("110"), new BigDecimal("110"), new BigDecimal("90"),
+                new BigDecimal("101"), new BigDecimal("105"), new BigDecimal("102"), new BigDecimal("99"),
+                BigDecimal.ONE, TrendSide.FLAT, new BigDecimal("99"), new BigDecimal("100"),
+                0, false, new BigDecimal("-0.50"), new BigDecimal("0.10"), null, null, BigDecimal.ZERO,
+                LocalDateTime.of(2026, 9, 24, 12, 15), 3, 3, new BigDecimal("0.25"));
+
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(input);
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.HOLD, decision.action());
+        assertTrue(decision.evidenceJson().contains("\"flatIndependentFailureEvidence\":false"));
     }
 
     @Test

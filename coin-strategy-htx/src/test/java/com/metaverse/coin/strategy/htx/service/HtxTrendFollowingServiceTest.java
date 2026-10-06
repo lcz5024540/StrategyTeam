@@ -858,7 +858,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void combinationEntryBypassesLegacyDirectionConfidenceInMixedMarket() {
+    void mixedMarketCombinationRequiresAGradeCandidate() {
         properties.setCombinationEntryEnabled(true);
         properties.setPortfolioAuditEnabled(true);
         properties.setDirectionConfidenceGateEnabled(true);
@@ -904,14 +904,9 @@ class HtxTrendFollowingServiceTest {
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
-        assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code(), result.message());
-        verify(recorder).trendPerformanceForBucket(any(LocalDateTime.class), eq(properties.getQualityLookbackTrades()),
-                eq("LONG"), eq("FIB_PULLBACK_CONTINUATION"), eq("BROAD_UP"), eq("primary"));
-        verify(combinationService).recordDirectionalQualityEvidence(eq("XAUT-USDT"), eq(properties.getPeriod()),
-                anyLong(), eq("combo-v2"), eq("BROAD_UP"), any());
-        verify(portfolioAudit).allocateAndRecord(org.mockito.ArgumentMatchers.startsWith("portfolio-scan:"), anyList(),
-                anyList(), any(HtxTrendPortfolioAllocator.RiskBudget.class));
-        verify(swap).placeOrder(any(HtxSwapOrderRequest.class));
+        assertEquals(HtxTrendFollowingService.RunCode.SKIPPED, result.code(), result.message());
+        assertTrue(result.message().contains("mixed market requires A-grade candidate"));
+        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
 
@@ -1585,7 +1580,7 @@ class HtxTrendFollowingServiceTest {
         HtxTrendPositionEntity unknown = activeLongPosition();
         unknown.setStatus(HtxTrendRecorder.UNKNOWN);
         when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(unknown));
-        when(recorder.findLatestCloseOrder(77L)).thenReturn(Optional.empty());
+        when(recorder.findLatestCloseOrder(77L, "primary")).thenReturn(Optional.empty());
         when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(Collections.emptyList()));
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
@@ -1759,7 +1754,7 @@ class HtxTrendFollowingServiceTest {
         closeOrder.setExchangeOrderId(188L);
         closeOrder.setReason("exit signal: exit engine: TRAILING_STOP");
         when(recorder.findActive("XAUT-USDT")).thenReturn(Optional.of(position));
-        when(recorder.findAcceptedCloseOrder(77L)).thenReturn(Optional.of(closeOrder));
+        when(recorder.findAcceptedCloseOrder(77L, "primary")).thenReturn(Optional.of(closeOrder));
         when(swap.queryOrder("XAUT-USDT", 188L))
                 .thenReturn(ok(List.of(filledOrder(188L, 199L, "44", "4320.00", "0.0760"))));
 

@@ -78,10 +78,11 @@ public final class HtxTrendExitDecisionEngine {
                 && input.requiredFlatStreak() > 0 && input.flatStreak() >= input.requiredFlatStreak()
                 && negative(input.currentNetPnl())
                 && positive(input.flatLossBudget())
-                && input.currentNetPnl().negate().compareTo(input.flatLossBudget()) >= 0;
+                && input.currentNetPnl().negate().compareTo(input.flatLossBudget()) >= 0
+                && independentUnarmedFailureEvidence(input);
         if (flatLossBudgetExceeded) {
             return new Decision("THESIS_EXPIRED", Action.FULL_CLOSE, 0L, null, computedMaxR, null, null,
-                    "unarmed-fib-flat-loss-budget-exceeded",
+                    "unarmed-fib-flat-loss-budget-with-independent-failure",
                     evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
                             effectiveProtection, 0, null));
         }
@@ -217,6 +218,17 @@ public final class HtxTrendExitDecisionEngine {
         return HtxTrendExitRules.LONG.equals(side) ? fast.compareTo(slow) < 0 : fast.compareTo(slow) > 0;
     }
 
+    /**
+     * A flat 15-minute signal only says that momentum is absent. It may close an unprofitable position only
+     * when an independent higher-timeframe, market-context, EMA, or opposite-signal failure also supports it.
+     */
+    private static boolean independentUnarmedFailureEvidence(Input input) {
+        boolean oppositeSignal = (HtxTrendExitRules.LONG.equals(input.side()) && input.signalSide() == TrendSide.SHORT)
+                || (HtxTrendExitRules.SHORT.equals(input.side()) && input.signalSide() == TrendSide.LONG);
+        return oppositeSignal || emaAgainst(input.side(), input.emaFast(), input.emaSlow())
+                || input.majorTimeframeOpposition() > 0 || input.marketContextOpposes();
+    }
+
     private static BigDecimal expectedReward(Input input) {
         if (!positive(input.structureTargetPrice())) return BigDecimal.ZERO;
         BigDecimal move = HtxTrendExitRules.LONG.equals(input.side())
@@ -284,7 +296,8 @@ public final class HtxTrendExitDecisionEngine {
                 + ",\"maxFavorableR\":" + number(maxR) + ",\"expectedReward\":" + number(expectedReward)
                 + ",\"protectedRisk\":" + number(protectedRisk) + ",\"flatStreak\":" + input.flatStreak()
                 + ",\"requiredFlatStreak\":" + input.requiredFlatStreak() + ",\"flatLossBudget\":"
-                + number(input.flatLossBudget()) + ",\"fundingCostExit\":"
+                + number(input.flatLossBudget()) + ",\"flatIndependentFailureEvidence\":"
+                + independentUnarmedFailureEvidence(input) + ",\"fundingCostExit\":"
                 + jsonText(input.fundingCostExitReason()) + ",\"assessmentState\":"
                 + jsonText(input.assessedTrendState()) + ",\"previousAssessmentState\":"
                 + jsonText(input.previousAssessedTrendState()) + ",\"assessmentReference\":"
