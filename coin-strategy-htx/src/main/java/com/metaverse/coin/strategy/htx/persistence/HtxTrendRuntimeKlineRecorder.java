@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Captures the exact public K-line payload made available to a runtime calculation.
@@ -30,8 +31,12 @@ import java.util.List;
 public class HtxTrendRuntimeKlineRecorder {
 
     public static final String SOURCE_KIND = "HTX_PUBLIC_RUNTIME";
+    private static final int INSERT_BATCH_SIZE = 32;
+    private static final int DEADLOCK_RETRY_LIMIT = 3;
     private final HtxTrendRuntimeKlineCandleMapper candleMapper;
     private final HtxTrendRuntimeKlineSnapshotMapper snapshotMapper;
+    /** One writer preserves append-only evidence while candidate scanning remains concurrent. */
+    private final ReentrantLock writeLock = new ReentrantLock();
 
     /** Fail-open: evidence persistence must never turn a valid market signal into a duplicate trade attempt. */
     public void capture(CaptureRequest request) {
@@ -61,7 +66,7 @@ public class HtxTrendRuntimeKlineRecorder {
             for (HtxSwapKline candle : candles) {
                 entities.add(toCandle(request, candle, capturedAt));
             }
-            candleMapper.insertIgnoreBatch(entities);
+            persistCandles(entities);
             HtxTrendRuntimeKlineSnapshotEntity snapshot = new HtxTrendRuntimeKlineSnapshotEntity();
             snapshot.setSnapshotKey(snapshotKey);
             snapshot.setRunId(blankToNull(request.runId()));
@@ -86,6 +91,45 @@ public class HtxTrendRuntimeKlineRecorder {
             log.warn("runtime K-line evidence capture failed stage={} contract={} period={}", request.captureStage(),
                     request.contractCode(), request.period(), exception);
         }
+    }
+
+    private void persistCandles(List<HtxTrendRuntimeKlineCandleEntity> entities) {
+        writeLock.lock();
+        try {
+            for (int offset = 0; offset < entities.size(); offset += INSERT_BATCH_SIZE) {
+                List<HtxTrendRuntimeKlineCandleEntity> batch = entities.subList(offset,
+                        Math.min(entities.size(), offset + INSERT_BATCH_SIZE));
+                insertWithRetry(batch);
+            }
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    private void insertWithRetry(List<HtxTrendRuntimeKlineCandleEntity> batch) {
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= DEADLOCK_RETRY_LIMIT; attempt++) {
+            try {
+                candleMapper.insertIgnoreBatch(batch);
+                return;
+            } catch (RuntimeException exception) {
+                last = exception;
+                if (!deadlock(exception) || attempt == DEADLOCK_RETRY_LIMIT) break;
+                log.warn("runtime K-line evidence deadlock; retry={}/{} batchSize={}", attempt,
+                        DEADLOCK_RETRY_LIMIT, batch.size());
+            }
+        }
+        throw last == null ? new IllegalStateException("runtime K-line evidence write failed") : last;
+    }
+
+    private static boolean deadlock(RuntimeException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase().contains("deadlock")) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 
     private static HtxTrendRuntimeKlineCandleEntity toCandle(CaptureRequest request, HtxSwapKline candle,

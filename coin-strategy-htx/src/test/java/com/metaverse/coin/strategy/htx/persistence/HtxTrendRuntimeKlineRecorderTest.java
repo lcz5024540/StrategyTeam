@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,6 +64,20 @@ class HtxTrendRuntimeKlineRecorderTest {
         ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> revised = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
         verify(revisedSnapshotMapper).insert(revised.capture());
         assertTrue(revised.getValue().getSnapshotKey().contains("ENTRY_GATE"));
+    }
+
+    @Test void retries_a_deadlocked_candle_batch_without_losing_the_window_snapshot() {
+        HtxTrendRuntimeKlineCandleMapper candleMapper = mock(HtxTrendRuntimeKlineCandleMapper.class);
+        HtxTrendRuntimeKlineSnapshotMapper snapshotMapper = mock(HtxTrendRuntimeKlineSnapshotMapper.class);
+        when(candleMapper.insertIgnoreBatch(any()))
+                .thenThrow(new RuntimeException("Deadlock found when trying to get lock; try restarting transaction"))
+                .thenReturn(1);
+
+        new HtxTrendRuntimeKlineRecorder(candleMapper, snapshotMapper)
+                .capture(request(List.of(candle(1_790_000_000L, "100"))));
+
+        verify(candleMapper, times(2)).insertIgnoreBatch(any());
+        verify(snapshotMapper).insert(any(HtxTrendRuntimeKlineSnapshotEntity.class));
     }
 
     private static HtxTrendRuntimeKlineRecorder.CaptureRequest request(List<HtxSwapKline> candles) {
