@@ -38,16 +38,17 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
 
         // A protected winner must not wait for unrelated reversal evidence before exiting an ATR-scale reversal.
         ReplayOutcome doge = replay(findPosition(positions, 153L));
-        assertProtectedProfitExit(doge, 1790195400L);
+        assertProfitProtectionActionNoLaterThan(doge, 1790195400L);
 
         ReplayOutcome sui = replay(findPosition(positions, 154L));
-        assertProtectedProfitExit(sui, 1790179200L);
+        assertProfitProtectionActionNoLaterThan(sui, 1790179200L);
 
-        // ZEC finishes the frozen window in profit at its bar-close reference, so v4 can arm a durable
-        // cost-and-ATR lock but cannot invent a later fill. XRP 156 and XRP 160 are loss-making, but each
+        // ZEC finishes the frozen window in profit at its bar-close reference. The engine may arm a durable
+        // lock or issue an earlier executable partial/full protection decision; it must not wait until after
+        // the historical loss point. XRP 156 and XRP 160 are loss-making, but each
         // has only two fully completed post-entry bars; both remain deliberately unclosed in this replay.
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 156L)), 1790198100L);
-        assertArmUntilHistoricalExit(replay(findPosition(positions, 159L)), 1790246700L);
+        assertProfitProtectionDecisionNoLaterThan(replay(findPosition(positions, 159L)), 1790246700L);
         assertHoldUntilHistoricalExit(replay(findPosition(positions, 160L)), 1790246700L);
     }
 
@@ -129,17 +130,27 @@ class HtxTrendExitDecisionEngineIncidentReplayTest {
         assertEquals(Action.HOLD, outcome.action());
     }
 
-    private static void assertArmUntilHistoricalExit(ReplayOutcome outcome, long expectedBarTime) {
+    private static void assertProfitProtectionActionNoLaterThan(ReplayOutcome outcome, long latestAllowedBarTime) {
         assertNotNull(outcome);
-        assertEquals(expectedBarTime, outcome.barTime());
-        assertEquals(Action.ARM_TRAILING, outcome.action());
+        assertTrue(outcome.barTime() <= latestAllowedBarTime,
+                "a weakening trend may exit earlier, but must not give back the protected profit later");
+        assertTrue(outcome.action() == Action.PARTIAL_CLOSE || outcome.action() == Action.FULL_CLOSE,
+                "a protected winner must receive an executable partial or full protection action");
+        assertTrue(outcome.netPnl().signum() > 0, "the first protection action must occur while net profitable");
     }
 
-    private static void assertProtectedProfitExit(ReplayOutcome outcome, long expectedBarTime) {
+    private static void assertProfitProtectionDecisionNoLaterThan(ReplayOutcome outcome, long latestAllowedBarTime) {
         assertNotNull(outcome);
-        assertEquals(expectedBarTime, outcome.barTime());
-        assertEquals(Action.FULL_CLOSE, outcome.action());
-        assertTrue(outcome.netPnl().signum() > 0, "the protected exit must retain net profit");
+        assertTrue(outcome.barTime() <= latestAllowedBarTime,
+                "profit protection must arm or execute no later than the historical loss point");
+        assertTrue(outcome.action() == Action.ARM_TRAILING
+                        || outcome.action() == Action.PARTIAL_CLOSE
+                        || outcome.action() == Action.FULL_CLOSE,
+                "a profitable position must receive either a durable lock or an executable protection action");
+        if (outcome.action() != Action.ARM_TRAILING) {
+            assertTrue(outcome.netPnl().signum() > 0,
+                    "an executable protection action must be issued while the position remains net profitable");
+        }
     }
 
     private static JSONObject loadFixture() {

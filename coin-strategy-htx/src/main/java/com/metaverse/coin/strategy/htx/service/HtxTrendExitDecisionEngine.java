@@ -48,6 +48,7 @@ public final class HtxTrendExitDecisionEngine {
                 && adverseFromBest.compareTo(input.atr().multiply(policy.pullbackAtrMultiplier())) >= 0;
         boolean dynamicPullback = positive(input.atr()) && adverseFromBest.compareTo(input.atr()) >= 0;
         int reversalEvidence = reversalEvidence(input, earlyPullback);
+        HtxTrendStateEvaluator.HoldingState trendState = holdingState(input);
         boolean milestone = profitable && (structureTargetReached || riskRewardMilestone || atrProfitMilestone);
         LocalDateTime armedAt = input.trailingArmedAt();
         String armReason = input.trailingArmReason();
@@ -61,12 +62,15 @@ public final class HtxTrendExitDecisionEngine {
         BigDecimal profitLockPrice = protectionPrice(input.side(), input.entryPrice(), profitLockDistance);
         BigDecimal effectiveProtection = armedAt == null ? input.protectionPrice()
                 : tightenProtection(input.side(), input.protectionPrice(), profitLockPrice);
+        if (armedAt != null && trendState == HtxTrendStateEvaluator.HoldingState.WEAKENING) {
+            effectiveProtection = tightenProtection(input.side(), effectiveProtection, trendWeakeningProtection(input));
+        }
 
         boolean invalidated = crossed(input.side(), input.referencePrice(), input.invalidationPrice())
                 || crossed(input.side(), input.referencePrice(), input.initialStopPrice());
-        if (invalidated) {
+        if (invalidated || trendState == HtxTrendStateEvaluator.HoldingState.INVALIDATED) {
             return new Decision("INVALIDATED", Action.FULL_CLOSE, 0L, null, computedMaxR, armedAt, armReason,
-                    "model-or-initial-stop-invalidated", evidence(input, computedMaxR, dynamicPullback, earlyPullback,
+                    invalidated ? "model-or-initial-stop-invalidated" : "trend-state-invalidated", evidence(input, computedMaxR, dynamicPullback, earlyPullback,
                     profitArmDistance, profitLockPrice, effectiveProtection, reversalEvidence, null));
         }
 
@@ -84,7 +88,8 @@ public final class HtxTrendExitDecisionEngine {
 
         BigDecimal expectedReward = expectedReward(input);
         BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
-        boolean continuationWorthHolding = expectedReward.compareTo(protectedRisk) > 0 && reversalEvidence <= 1;
+        boolean continuationWorthHolding = trendState == HtxTrendStateEvaluator.HoldingState.TRENDING
+                && expectedReward.compareTo(protectedRisk) > 0 && reversalEvidence <= 1;
 
         // The protection line is the boundary of already-earned profit.  A deep intrabar break is a failed
         // continuation, even if higher timeframes have not yet reversed.  For a shallow break we retain the
@@ -97,6 +102,21 @@ public final class HtxTrendExitDecisionEngine {
         boolean protectionBreachConfirmed = completedBarProtectionBreached
                 && input.protectionBreachBars() >= policy.protectionBreachConfirmationBars();
         boolean acuteProtectionBreach = referenceProtectionBreached && dynamicPullback;
+        if (referenceProtectionBreached && trendState == HtxTrendStateEvaluator.HoldingState.WEAKENING) {
+            long targetRemaining = profitable && partialQualified && expectedReward.compareTo(protectedRisk) > 0
+                    ? targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk,
+                            adverseFromBest, favorableMove) : 0L;
+            if (targetRemaining > 0L) {
+                return new Decision("PROFIT_AT_RISK", Action.PARTIAL_CLOSE, targetRemaining, effectiveProtection,
+                        computedMaxR, armedAt, armReason, "trend-weakened-protection-breach-partial",
+                        evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                                effectiveProtection, reversalEvidence, expectedReward, true));
+            }
+            return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
+                    armedAt, armReason, "trend-weakened-protection-breach",
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward, true));
+        }
         if (acuteProtectionBreach) {
             return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
                     armedAt, armReason, "armed-protection-breach-atr-impulse",
@@ -116,8 +136,11 @@ public final class HtxTrendExitDecisionEngine {
                             effectiveProtection, reversalEvidence, expectedReward, referenceProtectionBreached));
         }
 
-        if (profitable && partialQualified && earlyPullback && reversalEvidence >= 2 && !continuationWorthHolding) {
-            long targetRemaining = targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk);
+        if (!newlyArmed && profitable && partialQualified && !continuationWorthHolding
+                && (earlyPullback || trendState == HtxTrendStateEvaluator.HoldingState.WEAKENING)
+                && (reversalEvidence >= 2 || trendState == HtxTrendStateEvaluator.HoldingState.WEAKENING)) {
+            long targetRemaining = targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk,
+                            adverseFromBest, favorableMove);
             if (targetRemaining <= 0) {
                 return new Decision("REVERSAL_CONFIRMED", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
                         armedAt, armReason, "multi-evidence-reversal-and-unfavorable-remaining-value",
@@ -169,6 +192,19 @@ public final class HtxTrendExitDecisionEngine {
         return evidence;
     }
 
+    private static HtxTrendStateEvaluator.HoldingState holdingState(Input input) {
+        return new HtxTrendStateEvaluator().evaluateHolding(new HtxTrendStateEvaluator.HoldingInput(input.side(),
+                input.signalSide(), input.emaFast(), input.emaSlow(), input.majorTimeframeOpposition(),
+                input.marketContextOpposes()));
+    }
+
+    /** A weakening trend tightens toward the current market using current ATR, never a fixed percentage. */
+    private static BigDecimal trendWeakeningProtection(Input input) {
+        BigDecimal distance = zero(input.atr()).multiply(new BigDecimal("0.15"));
+        return HtxTrendExitRules.LONG.equals(input.side()) ? input.referencePrice().subtract(distance)
+                : input.referencePrice().add(distance);
+    }
+
     private static boolean emaAgainst(String side, BigDecimal fast, BigDecimal slow) {
         if (!positive(fast) || !positive(slow)) return false;
         return HtxTrendExitRules.LONG.equals(side) ? fast.compareTo(slow) < 0 : fast.compareTo(slow) > 0;
@@ -193,9 +229,17 @@ public final class HtxTrendExitDecisionEngine {
     }
 
     /** Retain more only when remaining structure reward is materially larger than protected loss. */
-    private static long targetRemainingContracts(long remaining, BigDecimal expectedReward, BigDecimal protectedRisk) {
+    private static long targetRemainingContracts(long remaining, BigDecimal expectedReward, BigDecimal protectedRisk,
+                                                BigDecimal adverseFromBest, BigDecimal favorableMove) {
         if (remaining <= 1L || expectedReward.signum() <= 0 || protectedRisk.signum() <= 0) return 0L;
-        BigDecimal ratio = expectedReward.divide(expectedReward.add(protectedRisk), 12, RoundingMode.DOWN);
+        BigDecimal rewardWeight = expectedReward.divide(expectedReward.add(protectedRisk), 12, RoundingMode.DOWN);
+        BigDecimal givebackRate = positive(favorableMove)
+                ? zero(adverseFromBest).divide(favorableMove, 12, RoundingMode.DOWN)
+                        .max(BigDecimal.ZERO).min(BigDecimal.ONE)
+                : BigDecimal.ONE;
+        // Keep the portion whose remaining structural reward still compensates its protected risk, then reduce it
+        // by the realised giveback. This changes with the live trend instead of using a fixed 25%/33% exit rate.
+        BigDecimal ratio = rewardWeight.multiply(BigDecimal.ONE.subtract(givebackRate));
         long target = BigDecimal.valueOf(remaining).multiply(ratio).setScale(0, RoundingMode.DOWN).longValue();
         return Math.max(0L, Math.min(remaining - 1L, target));
     }
@@ -216,6 +260,7 @@ public final class HtxTrendExitDecisionEngine {
         BigDecimal protectedRisk = protectedRisk(input, effectiveProtection);
         return "{\"schema\":\"trend-exit-decision-v4\",\"model\":\"FIB_PULLBACK_CONTINUATION\","
                 + "\"signal\":\"" + input.signalSide().name() + "\",\"dynamicPullback\":" + dynamicPullback
+                + ",\"trendState\":\"" + holdingState(input).name() + "\""
                 + ",\"earlyPullback\":" + earlyPullback + ",\"profitArmDistance\":" + number(profitArmDistance)
                 + ",\"profitLockPrice\":" + number(profitLockPrice) + ",\"effectiveProtectionPrice\":"
                 + number(effectiveProtection)

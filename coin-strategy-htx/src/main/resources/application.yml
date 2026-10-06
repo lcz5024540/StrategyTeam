@@ -220,6 +220,12 @@ htx:
     factor-snapshot-concurrency: ${HTX_TREND_FACTOR_SNAPSHOT_CONCURRENCY:4}
     runtime-kline-capture-enabled: ${HTX_TREND_RUNTIME_KLINE_CAPTURE_ENABLED:true}
     adaptive-sizing-enabled: ${HTX_TREND_ADAPTIVE_SIZING_ENABLED:true}
+    candidate-trend-state-gate-enabled: ${HTX_TREND_CANDIDATE_TREND_STATE_GATE_ENABLED:true}
+    candidate-trend-state-min-score: ${HTX_TREND_CANDIDATE_TREND_STATE_MIN_SCORE:75}
+    candidate-trend-state-strong-score: ${HTX_TREND_CANDIDATE_TREND_STATE_STRONG_SCORE:88}
+    candidate-trend-state-min-expected-r: ${HTX_TREND_CANDIDATE_TREND_STATE_MIN_EXPECTED_R:1.25}
+    candidate-trend-state-strong-expected-r: ${HTX_TREND_CANDIDATE_TREND_STATE_STRONG_EXPECTED_R:1.75}
+    candidate-trend-state-min-momentum-score: ${HTX_TREND_CANDIDATE_TREND_STATE_MIN_MOMENTUM_SCORE:60}
     quality-lookback-trades: ${HTX_TREND_QUALITY_LOOKBACK_TRADES:20}
     quality-lookback-hours: ${HTX_TREND_QUALITY_LOOKBACK_HOURS:24}
     quality-min-closed-trades: ${HTX_TREND_QUALITY_MIN_CLOSED_TRADES:6}

@@ -90,7 +90,7 @@ public class HtxTrendFollowingService {
     private static final String EXIT_TRAILING_STOP = "TRAILING_STOP";
     private static final String EXIT_TARGET_ZONE = "TARGET_ZONE";
     private static final LocalDateTime SIGNAL_HISTORY_FLOOR = LocalDateTime.of(1970, 1, 1, 0, 0);
-    private static final List<String> EXIT_CONFIRMATION_PERIODS = List.of("30min", "60min", "4hour");
+    private static final List<String> EXIT_CONFIRMATION_PERIODS = List.of("30min", "60min", "4hour", "1day");
 
     private final HtxUsdtSwapService swap;
     private final HtxContractProperties contractProperties;
@@ -104,6 +104,7 @@ public class HtxTrendFollowingService {
     private final HtxTrendMirrorExecutor mirrorExecutor;
     private final HtxSwapFeeRateResolver feeRateResolver;
     private final HtxTrendExitDecisionEngine exitDecisionEngine = new HtxTrendExitDecisionEngine();
+    private final HtxTrendStateEvaluator trendStateEvaluator = new HtxTrendStateEvaluator();
     private final HtxTrendProfitProtectionPlanner profitProtectionPlanner = new HtxTrendProfitProtectionPlanner();
     private HtxTrendCombinationService combinationService;
     private HtxTrendPortfolioAllocationAuditService portfolioAllocationAuditService;
@@ -270,7 +271,7 @@ public class HtxTrendFollowingService {
         int maxActivePositions = Math.max(0, properties.getMaxActivePositions());
         MarketBreadthContext marketBreadth = marketBreadthContext();
         MarketAnchorContext marketAnchor = MarketAnchorContext.neutral("not evaluated");
-        PerformanceContext performance = performanceContext();
+        PerformanceContext historicalPerformance = performanceContext();
         List<String> summaries = new ArrayList<>();
         Map<String, EntryCandidate> entryCandidates = new HashMap<>();
         long candidateScanDurationMs = 0L;
@@ -359,8 +360,7 @@ public class HtxTrendFollowingService {
                         break;
                     }
                     RunResult result = openIfEligible(candidate.contractCode(), candidate.signal(),
-                            candidate.entryCandles(), candidate.contract(), marketBreadth, marketAnchor, performance,
-                            candidate.combination());
+                            candidate.entryCandles(), candidate.contract(), marketBreadth, marketAnchor, candidate.combination());
                     pendingEntryCandidates.remove(candidate.contractCode());
                     RunResult tagged = tag(candidate.contractCode(), result);
                     summaries.add(candidate.contractCode() + "=" + result.code() + ":" + result.message());
@@ -386,7 +386,7 @@ public class HtxTrendFollowingService {
         return RunResult.of(selected.code(), selected.positionId(), selected.message()
                 + "; market=" + marketBreadth.summary()
                 + "; anchor=" + marketAnchor.summary()
-                + "; quality=" + performance.summary()
+                + "; historicalStats=" + historicalPerformance.summary()
                 + "; candidates=" + rankedCandidates.size()
                 + "; pendingCandidates=" + pendingEntryCandidates.size()
                 + "; candidateScanCloseEpoch=" + candidateScanCloseEpoch
@@ -959,8 +959,7 @@ public class HtxTrendFollowingService {
     }
 
     private DirectionConfidence directionConfidence(TrendSignal signal, List<HtxSwapKline> entryCandles,
-                                                    MarketBreadthContext marketBreadth, MarketAnchorContext marketAnchor,
-                                                    PerformanceContext performance) {
+                                                    MarketBreadthContext marketBreadth, MarketAnchorContext marketAnchor) {
         BigDecimal score = BigDecimal.ZERO;
         StringBuilder reason = new StringBuilder();
         BigDecimal minAdx = nonNegative(properties.getMinAdx());
@@ -1029,13 +1028,6 @@ public class HtxTrendFollowingService {
             reason.append(" marketAnchorCounter-");
         } else {
             reason.append(" marketAnchorMixed");
-        }
-        if (performance != null && performance.regime() == QualityRegime.STRONG) {
-            score = score.add(new BigDecimal("5"));
-            reason.append(" quality+");
-        } else if (performance != null && performance.regime() == QualityRegime.WEAK) {
-            score = score.subtract(new BigDecimal("10"));
-            reason.append(" quality-");
         }
         BigDecimal required = nonNegative(properties.getMinDirectionConfidenceScore());
         if (marketBreadth == null || marketBreadth.regime() == MarketRegime.MIXED) {
@@ -1145,7 +1137,7 @@ public class HtxTrendFollowingService {
 
     private RunResult openIfEligible(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
                                      HtxSwapContractInfo contract, MarketBreadthContext marketBreadth,
-                                     MarketAnchorContext marketAnchor, PerformanceContext performance,
+                                     MarketAnchorContext marketAnchor,
                                      CombinationContext combination) {
         DirectionalQualityContext directionalQuality = directionalQualityContext(signal, combination);
         recordCombinationDirectionalQualityEvidence(contractCode, signal, combination, directionalQuality);
@@ -1176,11 +1168,17 @@ public class HtxTrendFollowingService {
                 return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, marketRiskGate)));
             }
         } else {
-            confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor, performance);
+            confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor);
             String directionGate = directionConfidenceGate(signal, confidence);
             if (directionGate != null) {
                 return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, directionGate)));
             }
+        }
+        CandidateTrendState candidateTrendState = candidateTrendState(signal, combination, marketBreadth);
+        if (properties.isCandidateTrendStateGateEnabled() && combination != null && !candidateTrendState.tradable()) {
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, "candidate trend state=" + candidateTrendState.regime() + "; "
+                            + candidateTrendState.reason())));
         }
         HtxDepth depth = depthSnapshot(contractCode);
         TopOfBook book = topOfBook(depth);
@@ -1204,7 +1202,7 @@ public class HtxTrendFollowingService {
         if (chaseGate != null) {
             return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, chaseGate)));
         }
-        SizingContext sizing = sizingContext(signal.side(), marketBreadth, performance, confidence, combination != null);
+        SizingContext sizing = sizingContext(signal.side(), marketBreadth, confidence, combination != null, candidateTrendState);
         long volume = combination == null ? targetVolume(entryPrice, signal.atr(), contract.getContractSize(), sizing)
                 : targetVolumeForNotional(entryPrice, contract.getContractSize(),
                 combination.plannedNotionalUsdt().multiply(sizing.multiplier()));
@@ -2386,18 +2384,17 @@ public class HtxTrendFollowingService {
     }
 
     private SizingContext sizingContext(TrendSide side, MarketBreadthContext marketBreadth,
-                                        PerformanceContext performance, DirectionConfidence confidence,
-                                        boolean combinationEntry) {
+                                        DirectionConfidence confidence, boolean combinationEntry,
+                                        CandidateTrendState candidateTrendState) {
         BigDecimal multiplier = BigDecimal.ONE;
         StringBuilder reason = new StringBuilder();
-        if (performance != null && performance.regime() == QualityRegime.WEAK) {
-            multiplier = multiplier.multiply(nonNegative(properties.getWeakQualityPositionMultiplier()));
-            reason.append("quality=WEAK ");
-        } else if (performance != null && performance.regime() == QualityRegime.STRONG) {
+        if (candidateTrendState != null && candidateTrendState.strong()) {
             multiplier = multiplier.multiply(nonNegative(properties.getStrongQualityPositionMultiplier()));
-            reason.append("quality=STRONG ");
+            reason.append("candidateTrend=STRONG(score=")
+                    .append(candidateTrendState.score().setScale(2, RoundingMode.HALF_UP)).append(") ");
         } else {
-            reason.append("quality=NEUTRAL ");
+            reason.append("candidateTrend=")
+                    .append(candidateTrendState == null ? "UNAVAILABLE" : candidateTrendState.regime()).append(" ");
         }
         if (marketBreadth != null && side == TrendSide.LONG && marketBreadth.regime() == MarketRegime.BROAD_UP) {
             multiplier = multiplier.multiply(nonNegative(properties.getMarketBreadthAlignedPositionMultiplier()));
@@ -2420,10 +2417,10 @@ public class HtxTrendFollowingService {
             }
         }
         if (properties.isDirectionConfidenceGateEnabled() && properties.isConfidenceSizingEnabled()
-                && confidence != null && performance != null && performance.regime() != QualityRegime.WEAK) {
+                && confidence != null) {
             BigDecimal score = confidence.score();
             if (score.compareTo(nonNegative(properties.getStrongConfluenceSizingScore())) >= 0
-                    && breadthAligned(side, marketBreadth) && performance.regime() == QualityRegime.STRONG) {
+                    && breadthAligned(side, marketBreadth) && candidateTrendState != null && candidateTrendState.strong()) {
                 multiplier = multiplier.multiply(nonNegative(properties.getStrongConfluencePositionMultiplier()));
                 reason.append("confidence=STRONG_CONFLUENCE(score=")
                         .append(score.setScale(2, RoundingMode.HALF_UP)).append(") ");
@@ -2435,22 +2432,29 @@ public class HtxTrendFollowingService {
                 reason.append("confidence=NORMAL(score=")
                         .append(score.setScale(2, RoundingMode.HALF_UP)).append(") ");
             }
-        } else if (properties.isConfidenceSizingEnabled() && performance != null && performance.regime() == QualityRegime.WEAK
-                && confidence != null) {
-            reason.append("confidence=HELD_BY_WEAK_QUALITY(score=")
-                    .append(confidence.score().setScale(2, RoundingMode.HALF_UP)).append(") ");
-        }
-        if (performance != null && performance.regime() == QualityRegime.WEAK
-                && positive(properties.getWeakQualityMaxPositionMultiplier())
-                && multiplier.compareTo(properties.getWeakQualityMaxPositionMultiplier()) > 0) {
-            multiplier = properties.getWeakQualityMaxPositionMultiplier();
-            reason.append("qualityCap=WEAK_MAX ");
         }
         multiplier = clamp(multiplier, positive(properties.getMinAdaptivePositionMultiplier())
                         ? properties.getMinAdaptivePositionMultiplier() : BigDecimal.ONE,
                 positive(properties.getMaxAdaptivePositionMultiplier())
                         ? properties.getMaxAdaptivePositionMultiplier() : BigDecimal.ONE);
         return new SizingContext(multiplier, reason.toString().trim());
+    }
+
+    private CandidateTrendState candidateTrendState(TrendSignal signal, CombinationContext combination,
+                                                    MarketBreadthContext marketBreadth) {
+        if (combination == null) {
+            return CandidateTrendState.legacy();
+        }
+        HtxTrendStateEvaluator.EntryState state = trendStateEvaluator.evaluateEntry(new HtxTrendStateEvaluator.EntryInput(
+                signal.side(), combination.selection().candidate().score(), combination.expectedRMultiple(),
+                combination.momentumQualityScore(), signal.emaFast(), signal.emaSlow(),
+                marketBreadth == null ? "MIXED" : marketBreadth.regime().name(),
+                nonNegative(properties.getCandidateTrendStateMinScore()),
+                nonNegative(properties.getCandidateTrendStateStrongScore()),
+                nonNegative(properties.getCandidateTrendStateMinExpectedR()),
+                nonNegative(properties.getCandidateTrendStateStrongExpectedR()),
+                nonNegative(properties.getCandidateTrendStateMinMomentumScore())));
+        return new CandidateTrendState(state.regime(), state.tradable(), state.score(), state.reason());
     }
 
     /**
@@ -3066,6 +3070,9 @@ public class HtxTrendFollowingService {
         }
         if (normalized.endsWith("hour")) {
             return normalized.substring(0, normalized.length() - 4) + "h";
+        }
+        if (normalized.endsWith("day")) {
+            return normalized.substring(0, normalized.length() - 3) + "d";
         }
         return normalized;
     }
@@ -4108,6 +4115,14 @@ public class HtxTrendFollowingService {
 
     private record EntryCandidate(String contractCode, TrendSignal signal, List<HtxSwapKline> entryCandles,
                                   HtxSwapContractInfo contract, BigDecimal score, CombinationContext combination) {
+    }
+
+    /** Current-candidate evidence used for real entry eligibility and sizing; never derived from recent PnL. */
+    private record CandidateTrendState(String regime, boolean tradable, BigDecimal score, String reason) {
+        static CandidateTrendState legacy() {
+            return new CandidateTrendState("LEGACY", true, BigDecimal.ZERO, "no combination candidate evidence");
+        }
+        boolean strong() { return "STRONG".equals(regime); }
     }
 
     private record CombinationContext(HtxTrendCombinationService.Selection selection) {

@@ -43,6 +43,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -254,7 +255,7 @@ class HtxTrendFollowingServiceTest {
         assertTrue(positionIntent.getEstimatedCloseFee().signum() > 0);
         assertTrue(positionIntent.getExpectedNetAfterFees().signum() > 0);
         assertEquals(new BigDecimal("1.00"), positionIntent.getSizingMultiplier().setScale(2));
-        assertTrue(positionIntent.getSizingReason().contains("quality=NEUTRAL"));
+        assertTrue(positionIntent.getSizingReason().contains("candidateTrend=LEGACY"));
         assertTrue(positionIntent.getEntryGateReason().contains("expectedMoveGate=PASS"));
 
         ArgumentCaptor<HtxTrendOrderEntity> captor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
@@ -275,7 +276,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void highConfidenceConfluenceUsesLargerButCappedPositionSize() {
+    void highCurrentConfidenceUsesLargerButCappedPositionSizeRegardlessOfHistoricalStats() {
         properties.setDirectionConfidenceGateEnabled(true);
         properties.setConfidenceSizingEnabled(true);
         properties.setTargetQuoteNotional(new BigDecimal("220"));
@@ -303,7 +304,7 @@ class HtxTrendFollowingServiceTest {
 
         assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
         assertTrue(result.message().contains("sizingMultiplier=1.80"));
-        assertTrue(result.message().contains("confidence=STRONG_CONFLUENCE"));
+        assertTrue(result.message().contains("confidence=HIGH"));
         ArgumentCaptor<HtxSwapOrderRequest> captor = ArgumentCaptor.forClass(HtxSwapOrderRequest.class);
         verify(swap).placeOrder(captor.capture());
         assertEquals("81", captor.getValue().getVolume());
@@ -333,7 +334,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void broadBullishMarketAndStrongQualityIncreaseAlignedLongSize() {
+    void broadBullishMarketIncreasesAlignedLongSizeRegardlessOfHistoricalStats() {
         properties.setMaxQuoteNotional(new BigDecimal("285"));
         givenContractInfo();
         givenKlines();
@@ -415,7 +416,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void weakQualityDownsizesButDoesNotDisableLiveEntry() {
+    void historicalWeakPerformanceDoesNotDownsizeCurrentCandidate() {
         givenContractInfo();
         givenKlines();
         givenSignal(TrendSide.LONG);
@@ -434,14 +435,14 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
-        assertTrue(result.message().contains("sizingMultiplier=0.50"));
+        assertTrue(result.message().contains("sizingMultiplier=1.00"));
         ArgumentCaptor<HtxSwapOrderRequest> captor = ArgumentCaptor.forClass(HtxSwapOrderRequest.class);
         verify(swap).placeOrder(captor.capture());
-        assertEquals("22", captor.getValue().getVolume());
+        assertEquals("44", captor.getValue().getVolume());
     }
 
     @Test
-    void broadMarketDoesNotResizeWeakQualityAboveWeakCap() {
+    void broadMarketSizingIsNotCappedByHistoricalWeakPerformance() {
         givenContractInfo();
         givenKlines();
         givenSignal(TrendSide.LONG);
@@ -461,11 +462,11 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.ENTRY_SENT, result.code());
-        assertTrue(result.message().contains("sizingMultiplier=0.60"));
-        assertTrue(result.message().contains("qualityCap=WEAK_MAX"));
+        assertTrue(result.message().contains("sizingMultiplier=1.50"));
+        assertFalse(result.message().contains("qualityCap=WEAK_MAX"));
         ArgumentCaptor<HtxSwapOrderRequest> captor = ArgumentCaptor.forClass(HtxSwapOrderRequest.class);
         verify(swap).placeOrder(captor.capture());
-        assertEquals("26", captor.getValue().getVolume());
+        assertEquals("44", captor.getValue().getVolume());
     }
 
     @Test
@@ -1278,7 +1279,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     @Test
-    void liveFibShallowProfitLockReferenceCrossWaitsForCompletedBarConfirmation() {
+    void liveFibWeakeningProtectionCrossClosesWithoutWaitingForASecondFlatBar() {
         properties.setExitEngineEnabled(true);
         properties.setExitEngineLiveEnabled(true);
         givenContractInfo();
@@ -1300,15 +1301,16 @@ class HtxTrendFollowingServiceTest {
 
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
-        assertEquals(HtxTrendFollowingService.RunCode.ACTIVE, result.code());
-        assertTrue(result.message().contains("exit-engine holding"));
+        assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
+        assertTrue(result.message().contains("trend-weakened-protection-breach"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
-        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getSuggestedAction());
-        assertEquals("ARM_TRAILING", decisionCaptor.getValue().getExecutedAction());
-        assertEquals(0, decisionCaptor.getValue().getProtectionPrice().compareTo(new BigDecimal("4324.00")));
+        assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
+        assertEquals("FULL_CLOSE", decisionCaptor.getValue().getExecutedAction());
+        assertTrue(decisionCaptor.getValue().getProtectionPrice().compareTo(new BigDecimal("4324.00")) >= 0);
         assertTrue(decisionCaptor.getValue().getExecutionBlockReason() == null);
-        verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
+        verify(swap).placeOrder(argThat(request -> Boolean.TRUE.equals(request.getReduceOnly())
+                && "sell".equals(request.getSide())));
     }
 
     @Test
@@ -1335,7 +1337,7 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("armed-protection-breach-atr-impulse"));
+        assertTrue(result.message().contains("trend-weakened-protection-breach"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
@@ -1373,7 +1375,7 @@ class HtxTrendFollowingServiceTest {
         HtxTrendFollowingService.RunResult result = service.runOnce();
 
         assertEquals(HtxTrendFollowingService.RunCode.CLOSE_SENT, result.code());
-        assertTrue(result.message().contains("armed-protection-breach-atr-impulse"));
+        assertTrue(result.message().contains("trend-weakened-protection-breach"));
         ArgumentCaptor<HtxTrendExitDecisionEntity> decisionCaptor = ArgumentCaptor.forClass(HtxTrendExitDecisionEntity.class);
         verify(recorder).recordExitDecision(decisionCaptor.capture());
         assertEquals("FULL_CLOSE", decisionCaptor.getValue().getSuggestedAction());
@@ -1402,7 +1404,7 @@ class HtxTrendFollowingServiceTest {
                 any(), eq(null), eq(new BigDecimal("4342.00")), eq(new BigDecimal("4315.84")),
                 any(), any(), any(), any(), any(), any(), any(), candidatesCaptor.capture());
         assertTrue(candidatesCaptor.getValue()
-                .contains("TIMEFRAME_CONFIRMATION:hold:30m=LONG,60m=LONG,4h=LONG"));
+                .contains("TIMEFRAME_CONFIRMATION:hold:30m=LONG,60m=LONG,4h=LONG,1d=LONG"));
         verify(swap, never()).placeOrder(any(HtxSwapOrderRequest.class));
     }
 
@@ -2004,7 +2006,7 @@ class HtxTrendFollowingServiceTest {
     }
 
     private void givenExitConfirmationKlines(String contractCode, boolean rising) {
-        for (String period : List.of("30min", "60min", "4hour")) {
+        for (String period : List.of("30min", "60min", "4hour", "1day")) {
             givenMarketAnchorKlines(contractCode, period, rising);
         }
     }
@@ -2033,6 +2035,9 @@ class HtxTrendFollowingServiceTest {
         }
         if (value.endsWith("hour")) {
             return Long.parseLong(value.substring(0, value.length() - 4)) * 3_600L;
+        }
+        if (value.endsWith("day")) {
+            return Long.parseLong(value.substring(0, value.length() - 3)) * 86_400L;
         }
         throw new IllegalArgumentException("unsupported test period: " + period);
     }

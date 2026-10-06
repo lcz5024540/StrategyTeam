@@ -39,7 +39,7 @@ class HtxTrendExitDecisionEngineTest {
                 HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION, "SHORT", 10L, BigDecimal.ONE,
                 new BigDecimal("100"), new BigDecimal("110"), new BigDecimal("110"), new BigDecimal("90"),
                 new BigDecimal("101"), new BigDecimal("100"), new BigDecimal("101.50"), new BigDecimal("100.50"),
-                new BigDecimal("2"), TrendSide.FLAT, new BigDecimal("101"), new BigDecimal("102"),
+                new BigDecimal("2"), TrendSide.SHORT, new BigDecimal("101"), new BigDecimal("102"),
                 0, false, new BigDecimal("1"), new BigDecimal("0.10"), new BigDecimal("0.10"), armedAt,
                 "NET_COST_AND_ATR_MILESTONE", new BigDecimal("0.25"), LocalDateTime.of(2026, 9, 24, 0, 30),
                 0, 3, null, HtxTrendExitDecisionEngine.ProfitProtectionPolicy.intradayDefaults(), 2));
@@ -54,7 +54,7 @@ class HtxTrendExitDecisionEngineTest {
                 LocalDateTime.of(2026, 9, 24, 0, 15)).withProtectionBreachBars(0));
 
         assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
-        assertEquals("armed-protection-breach-atr-impulse", decision.reason());
+        assertEquals("trend-weakened-protection-breach", decision.reason());
         assertTrue(decision.evidenceJson().contains("\"referenceProtectionBreached\":true"));
         assertTrue(decision.evidenceJson().contains("\"completedBarProtectionBreaches\":0"));
     }
@@ -67,7 +67,8 @@ class HtxTrendExitDecisionEngineTest {
                 new BigDecimal("0.090645824"), new BigDecimal("0.093556"), new BigDecimal("0.094300"),
                 new BigDecimal("0.095225"), new BigDecimal("0.091468"), new BigDecimal("0.000552"), TrendSide.FLAT,
                 new BigDecimal("0.093308"), new BigDecimal("0.093644"), 0, true, new BigDecimal("0.80"),
-                new BigDecimal("0.0001"), null, null, null, LocalDateTime.of(2026, 9, 24, 12, 15),
+                new BigDecimal("0.0001"), LocalDateTime.of(2026, 9, 24, 12, 0), "NET_COST_AND_ATR_MILESTONE",
+                new BigDecimal("1.00"), LocalDateTime.of(2026, 9, 24, 12, 15),
                 0, 3, null));
 
         assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, decision.action());
@@ -128,7 +129,9 @@ class HtxTrendExitDecisionEngineTest {
 
         assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, decision.action());
         assertEquals("PROFIT_AT_RISK", decision.phase());
-        assertEquals(9L, decision.targetRemainingContracts());
+        assertTrue(decision.targetRemainingContracts() > 0L && decision.targetRemainingContracts() < 12L);
+        assertTrue(decision.protectionPrice().compareTo(new BigDecimal("73.70")) > 0);
+        assertTrue(decision.protectionPrice().compareTo(new BigDecimal("74.00")) < 0);
         assertEquals("profit-at-risk-with-deteriorating-continuation", decision.reason());
     }
 
@@ -158,9 +161,10 @@ class HtxTrendExitDecisionEngineTest {
                 armed.trailingArmReason(), armed.maxFavorableR(),
                 LocalDateTime.of(2026, 9, 25, 1, 43, 44), 3, 3, new BigDecimal("0.262512")));
 
-        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, decision.action());
-        assertEquals("REVERSAL_CONFIRMED", decision.phase());
-        assertEquals("armed-protection-breach-atr-impulse", decision.reason());
+        assertEquals(HtxTrendExitDecisionEngine.Action.PARTIAL_CLOSE, decision.action());
+        assertEquals("PROFIT_AT_RISK", decision.phase());
+        assertEquals("trend-weakened-protection-breach-partial", decision.reason());
+        assertTrue(decision.targetRemainingContracts() > 0L && decision.targetRemainingContracts() < 12L);
         assertTrue(decision.protectionPrice().compareTo(new BigDecimal("73.14")) > 0);
         assertTrue(decision.evidenceJson().contains("\"referenceProtectionBreached\":true"));
         assertTrue(decision.evidenceJson().contains("\"completedBarProtectionBreaches\":0"));

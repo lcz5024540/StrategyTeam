@@ -313,16 +313,34 @@ public class HtxTrendProperties {
     /** Persist the public K-line windows actually supplied to runtime calculations for later replay and audit. */
     private boolean runtimeKlineCaptureEnabled = true;
 
-    /** Enable quality and market-breadth based entry sizing. This never hard-pauses entries by itself. */
+    /** Enables current-candidate and market-breadth sizing. Historical performance stays read-only. */
     private boolean adaptiveSizingEnabled = true;
 
-    /** Closed trend positions inspected for recent quality sizing. */
+    /** Require the current candidate's own trend evidence before a real trend entry. */
+    private boolean candidateTrendStateGateEnabled = true;
+
+    /** Minimum current-candidate trend score after structure, reward, momentum and market-context evidence. */
+    private BigDecimal candidateTrendStateMinScore = new BigDecimal("75");
+
+    /** Score at which the current candidate may receive the strong-trend sizing multiplier. */
+    private BigDecimal candidateTrendStateStrongScore = new BigDecimal("88");
+
+    /** Minimum structural reward/risk remaining from the current entry price. */
+    private BigDecimal candidateTrendStateMinExpectedR = new BigDecimal("1.25");
+
+    /** Reward/risk required before classifying the current candidate as strong. */
+    private BigDecimal candidateTrendStateStrongExpectedR = new BigDecimal("1.75");
+
+    /** Minimum current-candidate momentum-quality score. */
+    private BigDecimal candidateTrendStateMinMomentumScore = new BigDecimal("60");
+
+    /** Closed trend positions inspected only for historical reporting and research evidence. */
     private int qualityLookbackTrades = 20;
 
-    /** Time window inspected for recent quality sizing. */
+    /** Historical-reporting window. It does not affect live entry eligibility or sizing. */
     private int qualityLookbackHours = 24;
 
-    /** Minimum closed positions before quality sizing changes the base size. */
+    /** Minimum closed positions before historical quality is classified for reporting. */
     private int qualityMinClosedTrades = 6;
 
     /** Profit factor required to avoid weak-quality downsizing. */
@@ -340,13 +358,13 @@ public class HtxTrendProperties {
     /** Average win / average loss required for strong-quality upsizing when both sides have samples. */
     private BigDecimal qualityStrongPayoffRatio = new BigDecimal("1.20");
 
-    /** Position multiplier when wins do not exceed losses, payoff is poor, profit factor is poor, or recent expectancy is weak. */
+    /** Retained for configuration compatibility; historical quality no longer changes live sizing. */
     private BigDecimal weakQualityPositionMultiplier = new BigDecimal("0.50");
 
-    /** Upper cap for the final adaptive multiplier while recent execution quality is weak. */
+    /** Retained for configuration compatibility; historical quality no longer caps live sizing. */
     private BigDecimal weakQualityMaxPositionMultiplier = new BigDecimal("0.60");
 
-    /** Position multiplier when recent win count, payoff ratio and profit factor are all healthy. */
+    /** Multiplier used when the current candidate itself reaches the strong-trend state. */
     private BigDecimal strongQualityPositionMultiplier = new BigDecimal("1.15");
 
     /** Recent signal window used to detect market-wide trend breadth. */
