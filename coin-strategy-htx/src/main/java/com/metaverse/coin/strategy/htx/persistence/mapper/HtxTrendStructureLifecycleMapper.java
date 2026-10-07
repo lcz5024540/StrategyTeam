@@ -23,8 +23,9 @@ public interface HtxTrendStructureLifecycleMapper extends BaseMapper<HtxTrendStr
     @Update("UPDATE htx_trend_structure_lifecycle SET state = 'DISCOVERED', source_run_id = #{sourceRunId}, "
             + "entry_position_id = NULL, terminal_position_id = NULL, terminal_reason = NULL, opened_at = NULL, "
             + "terminal_at = NULL, updated_at = CURRENT_TIMESTAMP(3) "
-            + "WHERE structure_key = #{structureKey} AND state = 'ABANDONED'")
-    int reclaimAbandoned(@Param("structureKey") String structureKey, @Param("sourceRunId") String sourceRunId);
+            + "WHERE structure_key = #{structureKey} "
+            + "AND state IN ('ABANDONED', 'EXHAUSTED', 'INVALIDATED', 'PROFIT_PROTECTED', 'SUPERSEDED')")
+    int reclaimReusable(@Param("structureKey") String structureKey, @Param("sourceRunId") String sourceRunId);
 
     @Update("UPDATE htx_trend_structure_lifecycle SET entry_position_id = #{positionId}, "
             + "updated_at = CURRENT_TIMESTAMP(3) WHERE structure_key = #{structureKey} "

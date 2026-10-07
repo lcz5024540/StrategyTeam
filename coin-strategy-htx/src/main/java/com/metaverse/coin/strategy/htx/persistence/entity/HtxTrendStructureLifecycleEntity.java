@@ -8,8 +8,8 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Durable lifecycle for one model structure. A Fibonacci breakout/retest may create one real trade only;
- * later scans may observe the same structure but must not turn it into another entry after it was consumed.
+ * Durable ownership lifecycle for one model structure. It only prevents concurrent duplicate entries while an
+ * intent or position is active. A terminal trade releases the structure for a later candidate to reassess.
  */
 @Data
 @TableName("htx_trend_structure_lifecycle")

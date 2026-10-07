@@ -7,10 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
+import java.util.Set;
 
 /**
- * Serializes ownership of an entry structure across scheduler runs and service restarts.
+ * Serializes ownership of an entry structure while an entry intent or position is still active.
  * A database unique key, rather than an in-memory cache, is the source of truth.
+ * A terminal trade releases the key: every later candidate must pass its current trend and execution gates again.
  */
 @Slf4j
 @Service
@@ -19,6 +21,8 @@ public class HtxTrendStructureLifecycleService {
     public static final String FIB_PULLBACK_CONTINUATION = "FIB_PULLBACK_CONTINUATION";
     public static final String STRUCTURE_ALREADY_CONSUMED = "STRUCTURE_ALREADY_CONSUMED";
     public static final String STRUCTURE_LIFECYCLE_UNAVAILABLE = "STRUCTURE_LIFECYCLE_UNAVAILABLE";
+    private static final Set<String> RECLAIMABLE_STATES = Set.of(
+            "ABANDONED", "EXHAUSTED", "INVALIDATED", "PROFIT_PROTECTED", "SUPERSEDED");
 
     private final HtxTrendStructureLifecycleMapper mapper;
 
@@ -29,7 +33,7 @@ public class HtxTrendStructureLifecycleService {
         }
         try {
             HtxTrendStructureLifecycleEntity existing = mapper.findByStructureKey(structureKey);
-            if (existing == null || "ABANDONED".equals(existing.getState())) {
+            if (existing == null || isReclaimable(existing.getState())) {
                 return Decision.available();
             }
             return Decision.blocked(STRUCTURE_ALREADY_CONSUMED + " state=" + existing.getState()
@@ -58,8 +62,8 @@ public class HtxTrendStructureLifecycleService {
                 return Decision.claimedDecision();
             }
             HtxTrendStructureLifecycleEntity existing = mapper.findByStructureKey(claim.structureKey());
-            if (existing != null && "ABANDONED".equals(existing.getState())
-                    && mapper.reclaimAbandoned(claim.structureKey(), claim.sourceRunId()) == 1) {
+            if (existing != null && isReclaimable(existing.getState())
+                    && mapper.reclaimReusable(claim.structureKey(), claim.sourceRunId()) == 1) {
                 return Decision.claimedDecision();
             }
             return Decision.blocked(STRUCTURE_ALREADY_CONSUMED + " state="
@@ -96,7 +100,7 @@ public class HtxTrendStructureLifecycleService {
         }
     }
 
-    /** A terminal real trade consumes the structure permanently; only a newer breakout can create a new key. */
+    /** A terminal trade releases its structure key so a later candidate can be assessed from fresh market evidence. */
     public void markTerminal(long positionId, String exitReason) {
         try {
             mapper.markTerminal(positionId, terminalState(exitReason), clip(exitReason));
@@ -110,6 +114,10 @@ public class HtxTrendStructureLifecycleService {
         if (value.contains("MODEL_INVALIDATION") || value.contains("INITIAL_STOP")) return "INVALIDATED";
         if (value.contains("PROFIT") || value.contains("TRAILING") || value.contains("TARGET")) return "PROFIT_PROTECTED";
         return "EXHAUSTED";
+    }
+
+    private static boolean isReclaimable(String state) {
+        return state != null && RECLAIMABLE_STATES.contains(state);
     }
 
     private static String clip(String value) {
