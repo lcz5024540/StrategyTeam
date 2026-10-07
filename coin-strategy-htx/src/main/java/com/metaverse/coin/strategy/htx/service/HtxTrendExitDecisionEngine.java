@@ -37,19 +37,28 @@ public final class HtxTrendExitDecisionEngine {
         BigDecimal adverseFromBest = adverseMoveFromBest(input.side(), input.referencePrice(), input.highestPrice(), input.lowestPrice());
         boolean profitable = positive(input.currentNetPnl());
         BigDecimal allInCostDistance = allInCostDistance(input);
+        BigDecimal mfeNetPnl = netAtFavorablePrice(input, favorableMove);
+        BigDecimal costFloorPrice = protectionPrice(input.side(), input.entryPrice(), allInCostDistance);
         BigDecimal profitLockDistance = allInCostDistance.add(zero(input.atr()).multiply(policy.lockAtrMultiplier()));
         BigDecimal profitArmDistance = max(zero(input.atr()).multiply(policy.armAtrMultiplier()), profitLockDistance);
         BigDecimal partialQualificationDistance = zero(input.atr()).multiply(policy.partialAtrMultiplier());
         boolean costCovered = input.currentNetPnl().compareTo(zero(input.estimatedCloseFee())
                 .multiply(policy.minNetFeeMultiple())) >= 0;
         boolean atrProfitMilestone = costCovered && favorableMove.compareTo(profitArmDistance) >= 0;
+        // A trend may make a valid initial push without reaching the wider ATR milestone used for a runner.
+        // Once the best observed price has covered both legs, retain that validated progress with a cost-floor
+        // trail. This does not take profit merely because a trade turns green: the position can still run, but
+        // it cannot turn a positive MFE into an unbounded loss after the trend weakens.
+        boolean netPositiveMfeCostFloor = profitable && positive(mfeNetPnl)
+                && favorableMove.compareTo(allInCostDistance) >= 0;
         boolean partialQualified = costCovered && favorableMove.compareTo(partialQualificationDistance) >= 0;
         boolean earlyPullback = positive(input.atr())
                 && adverseFromBest.compareTo(input.atr().multiply(policy.pullbackAtrMultiplier())) >= 0;
         boolean dynamicPullback = positive(input.atr()) && adverseFromBest.compareTo(input.atr()) >= 0;
         int reversalEvidence = reversalEvidence(input, earlyPullback);
         HtxTrendStateEvaluator.HoldingState trendState = holdingState(input);
-        boolean milestone = profitable && (structureTargetReached || riskRewardMilestone || atrProfitMilestone);
+        boolean milestone = (profitable && (structureTargetReached || riskRewardMilestone || atrProfitMilestone))
+                || netPositiveMfeCostFloor;
         LocalDateTime armedAt = input.trailingArmedAt();
         String armReason = input.trailingArmReason();
         boolean newlyArmed = false;
@@ -57,11 +66,13 @@ public final class HtxTrendExitDecisionEngine {
             armedAt = input.evaluatedAt();
             newlyArmed = true;
             armReason = structureTargetReached ? "STRUCTURE_TARGET" : riskRewardMilestone ? "RISK_REWARD_MILESTONE"
-                    : "NET_COST_AND_ATR_MILESTONE";
+                    : atrProfitMilestone ? "NET_COST_AND_ATR_MILESTONE" : "NET_POSITIVE_MFE_COST_FLOOR";
         }
         BigDecimal profitLockPrice = protectionPrice(input.side(), input.entryPrice(), profitLockDistance);
+        boolean costFloorTrail = "NET_POSITIVE_MFE_COST_FLOOR".equals(armReason);
+        BigDecimal armProtectionPrice = costFloorTrail ? costFloorPrice : profitLockPrice;
         BigDecimal effectiveProtection = armedAt == null ? input.protectionPrice()
-                : tightenProtection(input.side(), input.protectionPrice(), profitLockPrice);
+                : tightenProtection(input.side(), input.protectionPrice(), armProtectionPrice);
         if (armedAt != null && trendState == HtxTrendStateEvaluator.HoldingState.WEAKENING) {
             effectiveProtection = tightenProtection(input.side(), effectiveProtection, trendWeakeningProtection(input));
         }
@@ -95,7 +106,8 @@ public final class HtxTrendExitDecisionEngine {
         // The protection line is the boundary of already-earned profit.  A deep intrabar break is a failed
         // continuation, even if higher timeframes have not yet reversed.  For a shallow break we retain the
         // completed-bar confirmation so one wick cannot liquidate a healthy runner.
-        boolean referenceProtectionBreached = !newlyArmed && armedAt != null
+        boolean referenceProtectionBreached = armedAt != null
+                && (!newlyArmed || costFloorTrail)
                 && crossed(input.side(), input.referencePrice(), effectiveProtection);
         boolean completedBarProtectionBreached = !newlyArmed && armedAt != null
                 && input.protectionBreachBars() > 0;
@@ -281,6 +293,14 @@ public final class HtxTrendExitDecisionEngine {
                 + "\"signal\":\"" + input.signalSide().name() + "\",\"dynamicPullback\":" + dynamicPullback
                 + ",\"trendState\":\"" + holdingState(input).name() + "\""
                 + ",\"earlyPullback\":" + earlyPullback + ",\"profitArmDistance\":" + number(profitArmDistance)
+                + ",\"costFloorDistance\":" + number(allInCostDistance(input))
+                + ",\"mfeNetPnl\":" + number(netAtFavorablePrice(input,
+                        favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice())))
+                + ",\"netPositiveMfeCostFloor\":" + (positive(input.currentNetPnl())
+                        && positive(netAtFavorablePrice(input,
+                        favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice())))
+                        && favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice())
+                        .compareTo(allInCostDistance(input)) >= 0)
                 + ",\"profitLockPrice\":" + number(profitLockPrice) + ",\"effectiveProtectionPrice\":"
                 + number(effectiveProtection)
                 + ",\"entryFee\":" + number(input.entryFee()) + ",\"estimatedCloseFee\":"
@@ -324,6 +344,12 @@ public final class HtxTrendExitDecisionEngine {
         if (exposure.signum() <= 0) return BigDecimal.ZERO;
         return zero(input.entryFee()).add(zero(input.estimatedCloseFee()))
                 .divide(exposure, 12, RoundingMode.UP);
+    }
+
+    /** Net PnL at the best observed price, using the actual entry fee and a proportional close-fee estimate. */
+    private static BigDecimal netAtFavorablePrice(Input input, BigDecimal favorableMove) {
+        BigDecimal exposure = input.contractSize().multiply(BigDecimal.valueOf(input.remainingContracts()));
+        return favorableMove.multiply(exposure).subtract(zero(input.entryFee())).subtract(zero(input.estimatedCloseFee()));
     }
 
     private static BigDecimal protectionPrice(String side, BigDecimal entryPrice, BigDecimal lockDistance) {

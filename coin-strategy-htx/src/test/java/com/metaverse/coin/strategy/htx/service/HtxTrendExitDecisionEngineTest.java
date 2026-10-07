@@ -212,6 +212,61 @@ class HtxTrendExitDecisionEngineTest {
         assertEquals(0, decision.protectionPrice().compareTo(new BigDecimal("100.20")));
     }
 
+    @Test
+    void netPositiveMfeArmsCostFloorTrailBeforeTheWiderAtrRunnerMilestone() {
+        HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(bnbCostFloorInput(
+                new BigDecimal("765.395"), new BigDecimal("765.395"), new BigDecimal("0.1246696"),
+                null, null, null));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.ARM_TRAILING, armed.action());
+        assertEquals("NET_POSITIVE_MFE_COST_FLOOR", armed.trailingArmReason());
+        assertEquals(0, armed.protectionPrice().compareTo(new BigDecimal("765.6443392")));
+        assertTrue(armed.maxFavorableR().compareTo(new BigDecimal("0.15")) < 0,
+                "a cost-floor trail must not wait for the wide structural 1R threshold");
+        assertTrue(armed.evidenceJson().contains("\"netPositiveMfeCostFloor\":true"));
+    }
+
+    @Test
+    void weakeningFibTrendClosesWhenPriceReturnsThroughItsArmedCostFloor() {
+        HtxTrendExitDecisionEngine.Decision armed = engine.evaluate(bnbCostFloorInput(
+                new BigDecimal("765.395"), new BigDecimal("765.395"), new BigDecimal("0.1246696"),
+                null, null, null));
+
+        HtxTrendExitDecisionEngine.Decision exited = engine.evaluate(bnbCostFloorInput(
+                new BigDecimal("765.700"), new BigDecimal("765.395"), new BigDecimal("-0.0278314"),
+                armed.trailingArmedAt(), armed.trailingArmReason(), armed.maxFavorableR())
+                .withProtectionBreachBars(1));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, exited.action());
+        assertEquals("REVERSAL_CONFIRMED", exited.phase());
+        assertEquals("trend-weakened-protection-breach", exited.reason());
+        assertTrue(exited.evidenceJson().contains("\"referenceProtectionBreached\":true"));
+    }
+
+    @Test
+    void costFloorTrailDoesNotArmUntilTheBestPriceCanCoverBothTradingFees() {
+        HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(bnbCostFloorInput(
+                new BigDecimal("765.700"), new BigDecimal("765.700"), new BigDecimal("-0.0278314"),
+                null, null, null));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.HOLD, decision.action());
+        assertEquals(null, decision.trailingArmedAt());
+        assertTrue(decision.evidenceJson().contains("\"netPositiveMfeCostFloor\":false"));
+    }
+
+    private static HtxTrendExitDecisionEngine.Input bnbCostFloorInput(BigDecimal reference, BigDecimal lowest,
+                                                                        BigDecimal currentNetPnl, LocalDateTime armedAt,
+                                                                        String armReason, BigDecimal maxFavorableR) {
+        return new HtxTrendExitDecisionEngine.Input(HtxTrendExitDecisionEngine.FIB_PULLBACK_CONTINUATION,
+                "SHORT", 5L, new BigDecimal("0.10"), new BigDecimal("766.257"), new BigDecimal("772.208"),
+                new BigDecimal("772.208"), new BigDecimal("752.875616"), reference, new BigDecimal("771.156"),
+                new BigDecimal("766.257"), lowest, new BigDecimal("2.742"), TrendSide.FLAT,
+                new BigDecimal("765.80"), new BigDecimal("766.10"), 0, false, currentNetPnl,
+                new BigDecimal("0.1532514"), new BigDecimal("0.1530790"), armedAt, armReason, maxFavorableR,
+                LocalDateTime.of(2026, 10, 7, 11, 21), 0, 3, new BigDecimal("1.1493855"))
+                .withAssessmentState("WEAKENING", "TRENDING", "HOLDING:290:1791342000");
+    }
+
     private static HtxTrendExitDecisionEngine.Input ltcIntradayInput(BigDecimal reference, BigDecimal highest,
                                                                        TrendSide signalSide, BigDecimal emaFast,
                                                                        BigDecimal emaSlow, LocalDateTime armedAt) {
