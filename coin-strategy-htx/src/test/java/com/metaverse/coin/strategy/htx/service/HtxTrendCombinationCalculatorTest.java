@@ -102,6 +102,9 @@ class HtxTrendCombinationCalculatorTest {
         assertEquals(true, candidate.fibonacciEvidence().emaReclaimConfirmed());
         assertEquals(candidate.fibExtension1272().min(candidate.fibExtension1618()), candidate.targetZoneLow());
         assertEquals(candidate.fibExtension1272().max(candidate.fibExtension1618()), candidate.targetZoneHigh());
+        assertEquals(0, new BigDecimal("0.25").compareTo(candidate.entryCandleQuality().bodyToRange()));
+        assertEquals(0, new BigDecimal("0.5").compareTo(candidate.entryCandleQuality().upperWickToRange()));
+        assertEquals(0, new BigDecimal("0.25").compareTo(candidate.entryCandleQuality().lowerWickToRange()));
     }
 
     private TrendCandidateSignal signal(Direction direction, Regime regime, String close, String breakoutHigh, String score) {

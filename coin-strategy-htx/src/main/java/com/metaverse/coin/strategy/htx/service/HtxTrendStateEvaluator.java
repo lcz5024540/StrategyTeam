@@ -18,29 +18,33 @@ public final class HtxTrendStateEvaluator {
     public EntryState evaluateEntry(EntryInput input) {
         if (input == null || input.side() == TrendSide.FLAT || !positive(input.modelScore())
                 || !positive(input.expectedRMultiple()) || !positive(input.momentumQualityScore())) {
-            return EntryState.reject("INVALID", ZERO, "incomplete candidate evidence");
+            EntryScoreBreakdown breakdown = new EntryScoreBreakdown(ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO);
+            return EntryState.reject("INVALID", ZERO, ZERO, breakdown, "incomplete candidate evidence");
         }
         boolean emaAligned = aligned(input.side(), input.emaFast(), input.emaSlow());
         boolean broadAligned = alignedWithMarket(input.side(), input.marketRegime());
         boolean broadOpposed = opposedByMarket(input.side(), input.marketRegime());
-        BigDecimal score = input.modelScore();
-        score = score.add(input.expectedRMultiple().compareTo(input.minExpectedRMultiple()) >= 0
-                ? new BigDecimal("8") : new BigDecimal("-25"));
-        score = score.add(input.momentumQualityScore().compareTo(input.minMomentumQualityScore()) >= 0
-                ? new BigDecimal("5") : new BigDecimal("-15"));
-        score = score.add(emaAligned ? new BigDecimal("5") : new BigDecimal("-25"));
-        score = score.add(broadAligned ? new BigDecimal("8") : broadOpposed ? new BigDecimal("-40") : ZERO);
-        score = score.max(ZERO).min(ONE_HUNDRED);
+        BigDecimal expectedRAdjustment = input.expectedRMultiple().compareTo(input.minExpectedRMultiple()) >= 0
+                ? new BigDecimal("8") : new BigDecimal("-25");
+        BigDecimal momentumAdjustment = input.momentumQualityScore().compareTo(input.minMomentumQualityScore()) >= 0
+                ? new BigDecimal("5") : new BigDecimal("-15");
+        BigDecimal emaAdjustment = emaAligned ? new BigDecimal("5") : new BigDecimal("-25");
+        BigDecimal breadthAdjustment = broadAligned ? new BigDecimal("8") : broadOpposed ? new BigDecimal("-40") : ZERO;
+        BigDecimal rawScore = input.modelScore().add(expectedRAdjustment).add(momentumAdjustment)
+                .add(emaAdjustment).add(breadthAdjustment);
+        BigDecimal score = rawScore.max(ZERO).min(ONE_HUNDRED);
+        EntryScoreBreakdown breakdown = new EntryScoreBreakdown(input.modelScore(), expectedRAdjustment,
+                momentumAdjustment, emaAdjustment, breadthAdjustment, rawScore, score);
 
         if (!emaAligned || broadOpposed || input.expectedRMultiple().compareTo(input.minExpectedRMultiple()) < 0
                 || input.momentumQualityScore().compareTo(input.minMomentumQualityScore()) < 0
                 || score.compareTo(input.minTrendScore()) < 0) {
-            return EntryState.reject("WEAK", score, reason(input, emaAligned, broadAligned, broadOpposed));
+            return EntryState.reject("WEAK", score, rawScore, breakdown, reason(input, emaAligned, broadAligned, broadOpposed));
         }
         boolean strong = score.compareTo(input.strongTrendScore()) >= 0
                 && input.expectedRMultiple().compareTo(input.strongExpectedRMultiple()) >= 0
                 && (broadAligned || "TRENDING_UP".equals(input.marketRegime()) || "TRENDING_DOWN".equals(input.marketRegime()));
-        return new EntryState(strong ? "STRONG" : "QUALIFIED", true, score,
+        return new EntryState(strong ? "STRONG" : "QUALIFIED", true, score, rawScore, breakdown,
                 reason(input, emaAligned, broadAligned, broadOpposed));
     }
 
@@ -96,9 +100,16 @@ public final class HtxTrendStateEvaluator {
                              BigDecimal minExpectedRMultiple, BigDecimal strongExpectedRMultiple,
                              BigDecimal minMomentumQualityScore) { }
 
-    public record EntryState(String regime, boolean tradable, BigDecimal score, String reason) {
-        static EntryState reject(String regime, BigDecimal score, String reason) {
-            return new EntryState(regime, false, score, reason);
+    public record EntryScoreBreakdown(BigDecimal modelScore, BigDecimal expectedRAdjustment,
+                                      BigDecimal momentumAdjustment, BigDecimal emaAdjustment,
+                                      BigDecimal breadthAdjustment, BigDecimal rawScore, BigDecimal cappedScore) {
+    }
+
+    public record EntryState(String regime, boolean tradable, BigDecimal score, BigDecimal rawScore,
+                             EntryScoreBreakdown breakdown, String reason) {
+        static EntryState reject(String regime, BigDecimal score, BigDecimal rawScore,
+                                 EntryScoreBreakdown breakdown, String reason) {
+            return new EntryState(regime, false, score, rawScore, breakdown, reason);
         }
         boolean strong() { return "STRONG".equals(regime); }
     }

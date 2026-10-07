@@ -548,8 +548,24 @@ public class HtxTrendCombinationService {
                 + ",\"fib1618\":" + jsonNumber(candidate == null ? null : candidate.fibExtension1618())
                 + ",\"expectedR\":" + jsonNumber(candidate == null ? null : candidate.expectedRMultiple()) + "}"
                 + ",\"trendState\":" + trendStateJson(signal, candidate)
+                + ",\"entryCandleQuality\":" + entryCandleQualityJson(candidate)
                 + ",\"modelEvidence\":" + modelEvidenceJson(candidate, fibonacci)
                 + "}";
+    }
+
+    /** Captured for replay only; live policy and sizing deliberately do not consume these fields yet. */
+    private static String entryCandleQualityJson(CombinationCandidate candidate) {
+        HtxTrendCombinationCalculator.EntryCandleQuality quality = candidate == null ? null : candidate.entryCandleQuality();
+        if (quality == null || quality.close() == null) {
+            return "{\"status\":\"NOT_AVAILABLE\",\"reason\":\"entry candle OHLC unavailable\"}";
+        }
+        return "{\"status\":\"AVAILABLE\",\"open\":" + jsonNumber(quality.open())
+                + ",\"high\":" + jsonNumber(quality.high()) + ",\"low\":" + jsonNumber(quality.low())
+                + ",\"close\":" + jsonNumber(quality.close()) + ",\"bodyToRange\":" + jsonNumber(quality.bodyToRange())
+                + ",\"upperWickToRange\":" + jsonNumber(quality.upperWickToRange())
+                + ",\"lowerWickToRange\":" + jsonNumber(quality.lowerWickToRange())
+                + ",\"rangeToAtr\":" + jsonNumber(quality.rangeToAtr())
+                + ",\"closeLocation\":" + jsonNumber(quality.closeLocation()) + "}";
     }
 
     /**

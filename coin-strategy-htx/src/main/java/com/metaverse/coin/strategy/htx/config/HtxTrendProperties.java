@@ -56,6 +56,15 @@ public class HtxTrendProperties {
     /** Number of bars fetched for each trend-timeframe evaluation. */
     private int trendKlineSize = 160;
 
+    /** Freeze short execution windows for Fibonacci replay; this never changes entry eligibility or order type. */
+    private boolean fibExecutionObservationEnabled = true;
+
+    /** Short periods used only to study retest execution quality after a Fibonacci candidate is selected. */
+    private List<String> fibExecutionObservationPeriods = new ArrayList<>(List.of("1min", "5min"));
+
+    /** Bounded public-K-line window retained for each Fibonacci execution observation. */
+    private int fibExecutionObservationKlineSize = 40;
+
     /** Ignore the still-forming current crypto candle until it has this close grace. */
     private long candleCloseGraceSeconds = 10L;
 

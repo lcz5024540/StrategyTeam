@@ -49,33 +49,33 @@ public class HtxTrendCombinationCalculator {
 
         if (boxBreakout && donchianBreakout) {
             addCandidate(candidates, candidate("DONCHIAN_BREAKOUT", "BOX_BREAKOUT", signal, structure, marketState,
-                    priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("15")),
+                    priorBreakout, candles.get(last), false, boxWindow, baseScore.add(new BigDecimal("15")),
                     "fresh channel breakout confirmed by box"));
         }
         if (donchianBreakout && !boxBreakout) {
             addCandidate(candidates, candidate("DONCHIAN_BREAKOUT", "TREND_CONTEXT", signal, structure, marketState,
-                    priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("12")),
+                    priorBreakout, candles.get(last), false, boxWindow, baseScore.add(new BigDecimal("12")),
                     "fresh channel breakout aligned with trend context"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && fibonacciRetest) {
             addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT", signal, structure, marketState,
-                    priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("10")),
+                    priorBreakout, candles.get(last), true, boxWindow, baseScore.add(new BigDecimal("10")),
                     "Fibonacci retest confirmed by prior box breakout"));
         }
         if ((donchianBreakout || priorBreakout.donchianBreakout()) && fibonacciRetest) {
             addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "DONCHIAN_BREAKOUT", signal, structure, marketState,
-                    priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("10")),
+                    priorBreakout, candles.get(last), true, boxWindow, baseScore.add(new BigDecimal("10")),
                     "Fibonacci retest confirmed by prior channel breakout"));
         }
         if ((boxBreakout || priorBreakout.boxBreakout()) && (donchianBreakout || priorBreakout.donchianBreakout())
                 && fibonacciRetest) {
             addCandidate(candidates, candidate("FIB_PULLBACK_CONTINUATION", "BOX_BREAKOUT,DONCHIAN_BREAKOUT", signal,
-                    structure, marketState, priorBreakout, true, boxWindow, baseScore.add(new BigDecimal("20")),
+                    structure, marketState, priorBreakout, candles.get(last), true, boxWindow, baseScore.add(new BigDecimal("20")),
                     "Fibonacci retest confirmed by box and channel"));
         }
         if (emaMomentumContinuation(signal)) {
             addCandidate(candidates, candidate("EMA_VWAP_MOMENTUM_CONTINUATION", "EMA_STACK,MOMENTUM", signal,
-                    structure, marketState, priorBreakout, false, boxWindow, baseScore.add(new BigDecimal("12")),
+                    structure, marketState, priorBreakout, candles.get(last), false, boxWindow, baseScore.add(new BigDecimal("12")),
                     "EMA stack and momentum continuation"));
         }
         return candidates.stream().sorted(Comparator.comparing(CombinationCandidate::score).reversed()).toList();
@@ -89,7 +89,7 @@ public class HtxTrendCombinationCalculator {
 
     private CombinationCandidate candidate(String primaryModel, String confirmationModels,
                                            TrendCandidateSignal signal, Structure structure, MarketState marketState,
-                                           BreakoutEvidence priorBreakout, boolean emaReclaimConfirmed,
+                                           BreakoutEvidence priorBreakout, HtxSwapKline entryCandle, boolean emaReclaimConfirmed,
                                            int boxWindowBars, BigDecimal score, String hypothesis) {
         HtxTrendModelContract contract = HtxTrendModelContract.fromCode(primaryModel);
         if (!contract.appliesTo(signal.regime(), signal.period())) {
@@ -114,7 +114,8 @@ public class HtxTrendCombinationCalculator {
                 marketState.name(), structure.boxHigh(), structure.boxLow(), structure.swingHigh(), structure.swingLow(),
                 structure.fibonacciLower(), structure.fibonacciUpper(), invalidation, targets.targetZoneLow(),
                 targets.targetZoneHigh(), targets.boxMeasuredMoveTarget(), targets.fibExtension1272(),
-                targets.fibExtension1618(), expectedR, momentumQuality, hypothesis, fibonacciEvidence);
+                targets.fibExtension1618(), expectedR, momentumQuality, hypothesis, fibonacciEvidence,
+                EntryCandleQuality.from(entryCandle, signal.atr()));
     }
 
     private static Targets targets(HtxTrendModelContract contract, Direction direction, Structure structure) {
@@ -298,12 +299,12 @@ public class HtxTrendCombinationCalculator {
                                        BigDecimal targetZoneHigh, BigDecimal boxMeasuredMoveTarget, BigDecimal fibExtension1272,
                                        BigDecimal fibExtension1618, BigDecimal expectedRMultiple,
                                        BigDecimal momentumQualityScore, String hypothesis,
-                                       FibonacciEvidence fibonacciEvidence) {
+                                       FibonacciEvidence fibonacciEvidence, EntryCandleQuality entryCandleQuality) {
         public CombinationCandidate withScore(BigDecimal adjustedScore) {
             return new CombinationCandidate(primaryModel, confirmationModels, direction, adjustedScore, marketRegime,
                     boxHigh, boxLow, swingHigh, swingLow, fibonacciLower, fibonacciUpper, invalidationPrice,
                     targetZoneLow, targetZoneHigh, boxMeasuredMoveTarget, fibExtension1272, fibExtension1618,
-                    expectedRMultiple, momentumQualityScore, hypothesis, fibonacciEvidence);
+                    expectedRMultiple, momentumQualityScore, hypothesis, fibonacciEvidence, entryCandleQuality);
         }
     }
 
@@ -330,6 +331,28 @@ public class HtxTrendCombinationCalculator {
         static FibonacciEvidence notApplicable(int boxWindowBars, int sourceLookbackBars) {
             return new FibonacciEvidence(null, null, null, null, null, false, boxWindowBars, sourceLookbackBars);
         }
+    }
+
+    /** Read-only entry-bar shape evidence. It is not an entry gate until frozen replay validates it. */
+    public record EntryCandleQuality(BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close,
+                                     BigDecimal bodyToRange, BigDecimal upperWickToRange,
+                                     BigDecimal lowerWickToRange, BigDecimal rangeToAtr,
+                                     BigDecimal closeLocation) {
+        static EntryCandleQuality from(HtxSwapKline candle, BigDecimal atr) {
+            if (candle == null || candle.getOpen() == null || candle.getHigh() == null || candle.getLow() == null
+                    || candle.getClose() == null) return unavailable();
+            BigDecimal range = candle.getHigh().subtract(candle.getLow());
+            if (range.signum() <= 0) return unavailable();
+            BigDecimal bodyHigh = candle.getOpen().max(candle.getClose());
+            BigDecimal bodyLow = candle.getOpen().min(candle.getClose());
+            return new EntryCandleQuality(candle.getOpen(), candle.getHigh(), candle.getLow(), candle.getClose(),
+                    candle.getClose().subtract(candle.getOpen()).abs().divide(range, 18, java.math.RoundingMode.HALF_UP),
+                    candle.getHigh().subtract(bodyHigh).divide(range, 18, java.math.RoundingMode.HALF_UP),
+                    bodyLow.subtract(candle.getLow()).divide(range, 18, java.math.RoundingMode.HALF_UP),
+                    atr != null && atr.signum() > 0 ? range.divide(atr, 18, java.math.RoundingMode.HALF_UP) : null,
+                    candle.getClose().subtract(candle.getLow()).divide(range, 18, java.math.RoundingMode.HALF_UP));
+        }
+        static EntryCandleQuality unavailable() { return new EntryCandleQuality(null, null, null, null, null, null, null, null, null); }
     }
 
     private record Targets(BigDecimal targetZoneLow, BigDecimal targetZoneHigh, BigDecimal boxMeasuredMoveTarget,

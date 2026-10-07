@@ -878,7 +878,8 @@ class HtxTrendFollowingServiceTest {
                         new BigDecimal("4290"), new BigDecimal("4260"), new BigDecimal("4350"),
                         new BigDecimal("4350"), new BigDecimal("4350"), new BigDecimal("4380"),
                         new BigDecimal("4400"), new BigDecimal("2.0"), new BigDecimal("70"),
-                        "test combination", HtxTrendCombinationCalculator.FibonacciEvidence.notApplicable(32, 8));
+                        "test combination", HtxTrendCombinationCalculator.FibonacciEvidence.notApplicable(32, 8),
+                        HtxTrendCombinationCalculator.EntryCandleQuality.unavailable());
         HtxTrendCombinationService.Selection selection = new HtxTrendCombinationService.Selection(candidate, policy,
                 1L, BigDecimal.ONE, new BigDecimal("190"), "run-quality-observation", null);
         when(combinationService.select(eq("XAUT-USDT"), eq(properties.getPeriod()), anyList(), any()))

@@ -36,6 +36,19 @@ class HtxTrendStateEvaluatorTest {
     }
 
     @Test
+    void preservesRawStateScoreAndItsCappedExecutionScoreSeparately() {
+        HtxTrendStateEvaluator.EntryState state = evaluator.evaluateEntry(new HtxTrendStateEvaluator.EntryInput(
+                TrendSide.SHORT, new BigDecimal("88"), new BigDecimal("1.80"), new BigDecimal("75"),
+                new BigDecimal("99"), new BigDecimal("100"), "BROAD_DOWN", new BigDecimal("75"),
+                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60")));
+
+        assertEquals(new BigDecimal("114"), state.rawScore());
+        assertEquals(new BigDecimal("100"), state.score());
+        assertEquals(new BigDecimal("8"), state.breakdown().expectedRAdjustment());
+        assertEquals(new BigDecimal("8"), state.breakdown().breadthAdjustment());
+    }
+
+    @Test
     void holdingStateUsesLiveTrendEvidenceInsteadOfEntryTimeConstants() {
         assertEquals(HtxTrendStateEvaluator.HoldingState.TRENDING,
                 evaluator.evaluateHolding(new HtxTrendStateEvaluator.HoldingInput("LONG", TrendSide.LONG,

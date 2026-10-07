@@ -817,9 +817,32 @@ public class HtxTrendFollowingService {
         recordSignal(contractCode, signal);
         BigDecimal score = selection.candidate().score();
         CombinationContext context = new CombinationContext(selection);
+        captureFibonacciExecutionObservation(contractCode, signal, context);
         EntryCandidate candidate = new EntryCandidate(contractCode, signal, snapshot.entryCandles(), contract, score, context);
         return new CandidateEvaluation(RunResult.of(RunCode.OBSERVED, null,
                 "combination candidate queued policy=" + selection.policy().getPolicyCode() + " score=" + score), candidate);
+    }
+
+    /**
+     * Preserves the short execution context for later market/limit/confirmation replay.  This method is strictly
+     * observational: its failure cannot reject a candidate or alter the exchange order path.
+     */
+    private void captureFibonacciExecutionObservation(String contractCode, TrendSignal signal, CombinationContext context) {
+        if (context == null || signal == null || !properties.isFibExecutionObservationEnabled()
+                || !"FIB_PULLBACK_CONTINUATION".equals(context.primaryModel())) {
+            return;
+        }
+        int size = Math.max(2, properties.getFibExecutionObservationKlineSize());
+        for (String period : properties.getFibExecutionObservationPeriods()) {
+            if (period == null || period.isBlank()) continue;
+            HtxRestResponse<List<HtxSwapKline>> response = swap.historyKline(contractCode, period, size);
+            if (response == null || !response.ok() || response.payload() == null || response.payload().isEmpty()) {
+                log.debug("[HTX-TREND-FIB-OBSERVE] unavailable contract={} period={}", contractCode, period);
+                continue;
+            }
+            captureRuntimeKlines("FIB_EXECUTION_OBSERVATION", contractCode, period, signal.barTime(), size,
+                    context.runId(), context.factorSnapshotId(), null, response.payload());
+        }
     }
 
     private TrendSignal entrySignalWithCarryContext(String contractCode, TrendSignal signal, MarketBreadthContext marketBreadth) {
@@ -2566,7 +2589,8 @@ public class HtxTrendFollowingService {
                 nonNegative(properties.getCandidateTrendStateMinExpectedR()),
                 nonNegative(properties.getCandidateTrendStateStrongExpectedR()),
                 nonNegative(properties.getCandidateTrendStateMinMomentumScore())));
-        return new CandidateTrendState(state.regime(), state.tradable(), state.score(), state.reason());
+        return new CandidateTrendState(state.regime(), state.tradable(), state.score(), state.rawScore(),
+                state.breakdown(), state.reason());
     }
 
     private boolean mixedMarketCandidateEligible(CandidateTrendState state, CombinationContext combination) {
@@ -2600,9 +2624,15 @@ public class HtxTrendFollowingService {
         assessment.setBarTime(signal.barTime()); assessment.setTrendState(state.regime());
         assessment.setTransitionReason(state.reason()); assessment.setReferencePrice(signal.closePrice());
         assessment.setExpectedRMultiple(combination.expectedRMultiple());
-        assessment.setEvidenceJson("{\"candidateTrendScore\":" + state.score() + ",\"breadth\":\""
-                + (breadth == null ? "MIXED" : breadth.regime()) + "\",\"emaFast\":" + signal.emaFast()
-                + ",\"emaSlow\":" + signal.emaSlow() + "}");
+        HtxTrendStateEvaluator.EntryScoreBreakdown breakdown = state.breakdown();
+        assessment.setEvidenceJson("{\"modelScore\":" + combination.selection().candidate().score()
+                + ",\"stateScore\":{\"capped\":" + state.score() + ",\"raw\":" + state.rawScore()
+                + ",\"components\":{\"expectedR\":" + breakdown.expectedRAdjustment()
+                + ",\"momentum\":" + breakdown.momentumAdjustment() + ",\"ema\":" + breakdown.emaAdjustment()
+                + ",\"breadth\":" + breakdown.breadthAdjustment() + "}}"
+                + ",\"calibratedQuality\":{\"status\":\"PENDING_FROZEN_REPLAY\",\"reason\":\"no completed same-source score-bucket calibration\"}"
+                + ",\"breadth\":\"" + (breadth == null ? "MIXED" : breadth.regime()) + "\",\"emaFast\":"
+                + signal.emaFast() + ",\"emaSlow\":" + signal.emaSlow() + "}");
         recorder.recordAssessment(assessment);
     }
 
@@ -4286,9 +4316,14 @@ public class HtxTrendFollowingService {
     }
 
     /** Current-candidate evidence used for real entry eligibility and sizing; never derived from recent PnL. */
-    private record CandidateTrendState(String regime, boolean tradable, BigDecimal score, String reason) {
+    private record CandidateTrendState(String regime, boolean tradable, BigDecimal score, BigDecimal rawScore,
+                                       HtxTrendStateEvaluator.EntryScoreBreakdown breakdown, String reason) {
         static CandidateTrendState legacy() {
-            return new CandidateTrendState("LEGACY", true, BigDecimal.ZERO, "no combination candidate evidence");
+            HtxTrendStateEvaluator.EntryScoreBreakdown breakdown = new HtxTrendStateEvaluator.EntryScoreBreakdown(
+                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                    BigDecimal.ZERO, BigDecimal.ZERO);
+            return new CandidateTrendState("LEGACY", true, BigDecimal.ZERO, BigDecimal.ZERO, breakdown,
+                    "no combination candidate evidence");
         }
         boolean strong() { return "STRONG".equals(regime); }
     }
