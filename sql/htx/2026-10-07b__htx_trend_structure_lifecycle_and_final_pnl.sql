@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_structure_lifecycle (
     UNIQUE KEY uk_htx_trend_structure_lifecycle_key (structure_key),
     KEY idx_htx_trend_structure_lifecycle_position (entry_position_id),
     KEY idx_htx_trend_structure_lifecycle_contract_time (contract_code, timeframe, breakout_bar_time)
-) COMMENT='HTX trend structure ownership; terminal states may be reclaimed by a fresh candidate';
+) COMMENT='HTX trend entry-cycle ownership; each completed K-line has an independent lifecycle';
 
 DROP PROCEDURE IF EXISTS add_htx_trend_structure_pnl_column;
 DELIMITER $$

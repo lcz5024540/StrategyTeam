@@ -7,12 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
-import java.util.Set;
 
 /**
- * Serializes ownership of an entry structure while an entry intent or position is still active.
+ * Serializes one entry decision for one completed K-line cycle across scheduler runs and service restarts.
  * A database unique key, rather than an in-memory cache, is the source of truth.
- * A terminal trade releases the key: every later candidate must pass its current trend and execution gates again.
+ * A new completed K-line gets a new key and must independently pass all trend and execution gates.
  */
 @Slf4j
 @Service
@@ -21,10 +20,19 @@ public class HtxTrendStructureLifecycleService {
     public static final String FIB_PULLBACK_CONTINUATION = "FIB_PULLBACK_CONTINUATION";
     public static final String STRUCTURE_ALREADY_CONSUMED = "STRUCTURE_ALREADY_CONSUMED";
     public static final String STRUCTURE_LIFECYCLE_UNAVAILABLE = "STRUCTURE_LIFECYCLE_UNAVAILABLE";
-    private static final Set<String> RECLAIMABLE_STATES = Set.of(
-            "ABANDONED", "EXHAUSTED", "INVALIDATED", "PROFIT_PROTECTED", "SUPERSEDED");
-
     private final HtxTrendStructureLifecycleMapper mapper;
+
+    /**
+     * The breakout bar remains evidence for a Fibonacci candidate, but it is never the identity of a trade.
+     * The completed entry candle (runId) defines the entry cycle, so a later candle starts a fresh assessment.
+     */
+    public static String entryCycleKey(String contractCode, String direction, String primaryModel, String runId) {
+        if (contractCode == null || contractCode.isBlank() || direction == null || direction.isBlank()
+                || primaryModel == null || primaryModel.isBlank() || runId == null || runId.isBlank()) {
+            return null;
+        }
+        return contractCode + ":" + direction + ":" + primaryModel + ":ENTRY_CYCLE:" + runId;
+    }
 
     /** A read-only early gate, used before expensive account and leverage operations. */
     public Decision availability(String structureKey) {
@@ -33,7 +41,7 @@ public class HtxTrendStructureLifecycleService {
         }
         try {
             HtxTrendStructureLifecycleEntity existing = mapper.findByStructureKey(structureKey);
-            if (existing == null || isReclaimable(existing.getState())) {
+            if (existing == null || "ABANDONED".equals(existing.getState())) {
                 return Decision.available();
             }
             return Decision.blocked(STRUCTURE_ALREADY_CONSUMED + " state=" + existing.getState()
@@ -62,8 +70,8 @@ public class HtxTrendStructureLifecycleService {
                 return Decision.claimedDecision();
             }
             HtxTrendStructureLifecycleEntity existing = mapper.findByStructureKey(claim.structureKey());
-            if (existing != null && isReclaimable(existing.getState())
-                    && mapper.reclaimReusable(claim.structureKey(), claim.sourceRunId()) == 1) {
+            if (existing != null && "ABANDONED".equals(existing.getState())
+                    && mapper.reclaimAbandoned(claim.structureKey(), claim.sourceRunId()) == 1) {
                 return Decision.claimedDecision();
             }
             return Decision.blocked(STRUCTURE_ALREADY_CONSUMED + " state="
@@ -100,7 +108,7 @@ public class HtxTrendStructureLifecycleService {
         }
     }
 
-    /** A terminal trade releases its structure key so a later candidate can be assessed from fresh market evidence. */
+    /** A terminal trade closes this entry cycle; only a later completed K-line can create a new cycle. */
     public void markTerminal(long positionId, String exitReason) {
         try {
             mapper.markTerminal(positionId, terminalState(exitReason), clip(exitReason));
@@ -114,10 +122,6 @@ public class HtxTrendStructureLifecycleService {
         if (value.contains("MODEL_INVALIDATION") || value.contains("INITIAL_STOP")) return "INVALIDATED";
         if (value.contains("PROFIT") || value.contains("TRAILING") || value.contains("TARGET")) return "PROFIT_PROTECTED";
         return "EXHAUSTED";
-    }
-
-    private static boolean isReclaimable(String state) {
-        return state != null && RECLAIMABLE_STATES.contains(state);
     }
 
     private static String clip(String value) {

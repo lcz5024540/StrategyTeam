@@ -10,31 +10,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class HtxTrendStructureLifecycleServiceTest {
 
     @Test
-    void zecSecondFibCandidateCanReclaimTerminalStructureAndMustBeEvaluatedFromCurrentEvidence() {
+    void zecSecondFibTradeUsesItsOwnCompletedCandleCycleRatherThanTheFirstTradesBreakout() {
         HtxTrendStructureLifecycleMapper mapper = mock(HtxTrendStructureLifecycleMapper.class);
         HtxTrendStructureLifecycleService service = new HtxTrendStructureLifecycleService(mapper);
-        HtxTrendStructureLifecycleService.Claim first = zecClaim("trend-entry:ZEC-USDT:15min:1791370800");
-        HtxTrendStructureLifecycleService.Claim second = zecClaim("trend-entry:ZEC-USDT:15min:1791375300");
-        HtxTrendStructureLifecycleEntity consumed = new HtxTrendStructureLifecycleEntity();
-        consumed.setState("EXHAUSTED");
-        consumed.setEntryPositionId(295L);
+        String firstRun = "trend-entry:ZEC-USDT:15min:1791370800";
+        String secondRun = "trend-entry:ZEC-USDT:15min:1791375300";
+        HtxTrendStructureLifecycleService.Claim first = zecClaim(firstRun);
+        HtxTrendStructureLifecycleService.Claim second = zecClaim(secondRun);
 
-        when(mapper.insertDiscovered(any())).thenReturn(1, 0);
-        when(mapper.findByStructureKey(eq(first.structureKey()))).thenReturn(consumed);
-        when(mapper.reclaimReusable(eq(first.structureKey()), eq(second.sourceRunId()))).thenReturn(1);
+        when(mapper.insertDiscovered(any())).thenReturn(1, 1);
 
         HtxTrendStructureLifecycleService.Decision firstDecision = service.claim(first);
         HtxTrendStructureLifecycleService.Decision secondDecision = service.claim(second);
 
+        assertFalse(first.structureKey().equals(second.structureKey()));
+        assertTrue(first.structureKey().contains(firstRun));
+        assertTrue(second.structureKey().contains(secondRun));
         assertTrue(firstDecision.allowed());
         assertTrue(firstDecision.claimed());
         assertTrue(secondDecision.allowed());
         assertTrue(secondDecision.claimed());
+        verify(mapper, never()).findByStructureKey(any());
     }
 
     @Test
@@ -58,8 +61,8 @@ class HtxTrendStructureLifecycleServiceTest {
     }
 
     @Test
-    void allTerminalStatesAreAvailableForFreshTrendAssessment() {
-        for (String state : new String[]{"ABANDONED", "EXHAUSTED", "INVALIDATED", "PROFIT_PROTECTED", "SUPERSEDED"}) {
+    void terminalStateBlocksOnlyTheSameCompletedCandleCycle() {
+        for (String state : new String[]{"EXHAUSTED", "INVALIDATED", "PROFIT_PROTECTED", "SUPERSEDED"}) {
             HtxTrendStructureLifecycleMapper mapper = mock(HtxTrendStructureLifecycleMapper.class);
             HtxTrendStructureLifecycleService service = new HtxTrendStructureLifecycleService(mapper);
             HtxTrendStructureLifecycleEntity terminal = new HtxTrendStructureLifecycleEntity();
@@ -69,13 +72,14 @@ class HtxTrendStructureLifecycleServiceTest {
 
             HtxTrendStructureLifecycleService.Decision availability = service.availability("ZEC-" + state);
 
-            assertTrue(availability.allowed(), state + " should release the structure for fresh gates");
+            assertFalse(availability.allowed(), state + " must not re-enter from the same completed candle");
         }
     }
 
     private static HtxTrendStructureLifecycleService.Claim zecClaim(String runId) {
         return new HtxTrendStructureLifecycleService.Claim(
-                "ZEC-USDT:SHORT:FIB_PULLBACK_CONTINUATION:BREAKOUT_RETEST:1791369000",
+                HtxTrendStructureLifecycleService.entryCycleKey("ZEC-USDT", "SHORT",
+                        "FIB_PULLBACK_CONTINUATION", runId),
                 "ZEC-USDT", "15min", "SHORT", "FIB_PULLBACK_CONTINUATION", 1791369000L, runId);
     }
 }

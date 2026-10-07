@@ -4459,11 +4459,11 @@ public class HtxTrendFollowingService {
         String structureKey(String contractCode) {
             HtxTrendCombinationCalculator.FibonacciEvidence fib = selection.candidate().fibonacciEvidence();
             if (!HtxTrendStructureLifecycleService.FIB_PULLBACK_CONTINUATION.equals(primaryModel())
-                    || fib == null || fib.breakoutBarTime() == null || contractCode == null || contractCode.isBlank()) {
+                    || fib == null || fib.breakoutBarTime() == null) {
                 return null;
             }
-            return contractCode + ":" + selection.candidate().direction().name() + ":" + primaryModel()
-                    + ":BREAKOUT_RETEST:" + fib.breakoutBarTime();
+            return HtxTrendStructureLifecycleService.entryCycleKey(contractCode,
+                    selection.candidate().direction().name(), primaryModel(), runId());
         }
     }
 

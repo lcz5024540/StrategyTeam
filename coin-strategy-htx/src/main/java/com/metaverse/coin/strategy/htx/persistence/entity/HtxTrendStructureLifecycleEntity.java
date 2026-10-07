@@ -8,8 +8,8 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * Durable ownership lifecycle for one model structure. It only prevents concurrent duplicate entries while an
- * intent or position is active. A terminal trade releases the structure for a later candidate to reassess.
+ * Durable ownership lifecycle for one completed K-line entry cycle. A Fibonacci breakout is evidence only;
+ * it never identifies a later trade. A later completed K-line starts a distinct lifecycle.
  */
 @Data
 @TableName("htx_trend_structure_lifecycle")
