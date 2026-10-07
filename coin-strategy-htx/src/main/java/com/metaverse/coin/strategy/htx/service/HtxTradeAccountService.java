@@ -76,7 +76,7 @@ public class HtxTradeAccountService {
                     contractProperties.getUidTradeLimit(),
                     contractProperties.getUidRateWindowMs());
             String accountLabel = StringUtils.hasText(mirror.getAccountLabel()) ? mirror.getAccountLabel().trim() : "mirror";
-            accounts.add(new HtxTrendMirrorAccount(accountLabel, api.getSwapService(),
+            accounts.add(new HtxTrendMirrorAccount(null, accountLabel, api.getSwapService(),
                     new HtxSwapFeeRateResolver(api.getSwapService(), trendProperties::getEstimatedTakerFeeRate,
                             trendProperties::getFeeRateCacheMs, accountLabel, feeProfileRecorder),
                     mirror.isSyncLeverage(), mirror.isBlockEntryOnLeverageSyncFailure(),
@@ -115,7 +115,7 @@ public class HtxTradeAccountService {
                                                 HtxContractProperties contractProperties) {
         HtxUsdtSwapApiService api = swapApi(entity, contractProperties);
         String accountLabel = label(entity);
-        return new HtxTrendMirrorAccount(accountLabel, api.getSwapService(),
+        return new HtxTrendMirrorAccount(entity.getId(), accountLabel, api.getSwapService(),
                 new HtxSwapFeeRateResolver(api.getSwapService(), trendProperties::getEstimatedTakerFeeRate,
                         trendProperties::getFeeRateCacheMs, accountLabel, feeProfileRecorder),
                 flag(entity.getSyncLeverage(), true),

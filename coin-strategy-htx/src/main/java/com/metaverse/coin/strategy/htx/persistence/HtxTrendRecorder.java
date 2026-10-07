@@ -100,6 +100,69 @@ public class HtxTrendRecorder {
         return Optional.ofNullable(positionMapper.findLastDone(contractCode));
     }
 
+    /**
+     * Each follower account owns an independent position row.  Orders must never be attached to the
+     * primary position merely because the primary signal originated the mirror execution.
+     */
+    public HtxTrendPositionEntity ensureMirrorPosition(HtxTrendPositionEntity primary, Long accountId,
+                                                        String accountLabel) {
+        if (primary == null || primary.getId() == null || accountLabel == null || accountLabel.isBlank()) {
+            return primary;
+        }
+        HtxTrendPositionEntity existing = positionMapper.findMirrorPosition(primary.getId(), accountLabel.trim());
+        if (existing != null) {
+            return existing;
+        }
+        HtxTrendPositionEntity mirror = new HtxTrendPositionEntity();
+        mirror.setSourcePositionId(primary.getId());
+        mirror.setPositionKey(mirrorPositionKey(primary.getPositionKey(), accountLabel));
+        mirror.setRunId(primary.getRunId());
+        mirror.setContractCode(primary.getContractCode());
+        mirror.setStatus(INTENT);
+        mirror.setSide(primary.getSide());
+        mirror.setContractSize(nz(primary.getContractSize()));
+        mirror.setContractVolume(primary.getContractVolume() == null ? 0L : primary.getContractVolume());
+        mirror.setRemainingContractVolume(0L);
+        mirror.setPartialExitStage(0);
+        mirror.setLeverage(primary.getLeverage() == null ? 1 : primary.getLeverage());
+        mirror.setEntryFilledContracts(BigDecimal.ZERO);
+        mirror.setEntryFee(BigDecimal.ZERO);
+        mirror.setCloseFilledContracts(BigDecimal.ZERO);
+        mirror.setCloseFee(BigDecimal.ZERO);
+        mirror.setEntrySignal(clip(primary.getEntrySignal()));
+        mirror.setAccountId(accountId);
+        mirror.setAccountLabel(accountLabel.trim());
+        mirror.setStrategyFamily(primary.getStrategyFamily() == null ? "TREND" : primary.getStrategyFamily());
+        mirror.setStrategyName(primary.getStrategyName() == null ? "HTX_TREND_V1" : primary.getStrategyName());
+        mirror.setModelName(primary.getModelName() == null ? "LEGACY_TREND_SIGNAL" : primary.getModelName());
+        mirror.setEntryFeeRate(primary.getEntryFeeRate());
+        mirror.setEntryFeeProfileId(primary.getEntryFeeProfileId());
+        mirror.setEstimatedEntryFee(primary.getEstimatedEntryFee());
+        mirror.setEstimatedCloseFee(primary.getEstimatedCloseFee());
+        mirror.setExpectedNetAfterFees(primary.getExpectedNetAfterFees());
+        mirror.setSizingMultiplier(primary.getSizingMultiplier());
+        mirror.setSizingReason(clip(primary.getSizingReason()));
+        mirror.setEntryGateReason(clip(primary.getEntryGateReason(), 1024));
+        mirror.setPrimaryModel(primary.getPrimaryModel());
+        mirror.setConfirmationModels(primary.getConfirmationModels());
+        mirror.setPolicyVersion(primary.getPolicyVersion());
+        mirror.setTimeframeProfile(primary.getTimeframeProfile() == null ? "INTRADAY_15M" : primary.getTimeframeProfile());
+        mirror.setMarketRegime(primary.getMarketRegime());
+        mirror.setFactorSnapshotId(primary.getFactorSnapshotId());
+        mirror.setEntryHypothesis(clip(primary.getEntryHypothesis(), 1024));
+        mirror.setInvalidationPrice(primary.getInvalidationPrice());
+        mirror.setTargetZoneLow(primary.getTargetZoneLow());
+        mirror.setTargetZoneHigh(primary.getTargetZoneHigh());
+        mirror.setExpectedRMultiple(primary.getExpectedRMultiple());
+        mirror.setMomentumQualityScore(primary.getMomentumQualityScore());
+        createIntent(mirror);
+        return mirror;
+    }
+
+    public Optional<HtxTrendPositionEntity> findMirrorPosition(long sourcePositionId, String accountLabel) {
+        return Optional.ofNullable(positionMapper.findMirrorPosition(sourcePositionId, accountLabel));
+    }
+
     public Optional<HtxTrendOrderEntity> findAcceptedCloseOrder(long positionId, String accountLabel) {
         return Optional.ofNullable(orderMapper.findLatestAcceptedCloseOrder(positionId, accountLabel));
     }
@@ -546,5 +609,10 @@ public class HtxTrendRecorder {
 
     private static BigDecimal nz(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private static String mirrorPositionKey(String primaryKey, String accountLabel) {
+        String prefix = "mirror:" + accountLabel.trim() + ":" + (primaryKey == null ? "unknown" : primaryKey);
+        return prefix.length() <= 128 ? prefix : prefix.substring(0, 128);
     }
 }

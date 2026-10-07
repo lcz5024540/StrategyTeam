@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -65,6 +66,39 @@ class HtxTrendMirrorExecutorTest {
         assertEquals(position.getEntryGateReason(), order.getEntryGateReason());
         verify(recorder).markOrderAccepted(eq(77L), eq(HtxTrendRecorder.LEG_ENTRY), eq(order.getClientOrderId()),
                 eq(123L), eq(456L), eq("mirror entry accepted by exchange"));
+    }
+
+    @Test
+    void mirrorEntryAttachesItsOrderAndLifecycleToTheFollowerPosition() {
+        HtxTrendProperties properties = new HtxTrendProperties();
+        properties.getMirror().setEnabled(true);
+        properties.getMirror().setAccountLabel("TradeX");
+        properties.getMirror().setSyncLeverage(false);
+        HtxUsdtSwapService swap = mock(HtxUsdtSwapService.class);
+        HtxTrendRecorder recorder = mock(HtxTrendRecorder.class);
+        HtxTrendMirrorExecutor executor = new HtxTrendMirrorExecutor(properties, new HtxContractProperties(), swap, recorder);
+        HtxTrendPositionEntity primary = position();
+        HtxTrendPositionEntity follower = position();
+        follower.setId(177L);
+        follower.setPositionKey("mirror:TradeX:trend-XAUT-USDT-77");
+        when(recorder.ensureMirrorPosition(eq(primary), isNull(), eq("TradeX"))).thenReturn(follower);
+        when(swap.positionInfo("XAUT-USDT")).thenReturn(ok(List.of()));
+        HtxSwapOpenOrders openOrders = new HtxSwapOpenOrders();
+        openOrders.setOrders(List.of());
+        when(swap.openOrders("XAUT-USDT")).thenReturn(ok(openOrders));
+        HtxSwapAccount account = new HtxSwapAccount();
+        account.setMarginAvailable(new BigDecimal("100"));
+        when(swap.accountInfo("XAUT-USDT")).thenReturn(ok(List.of(account)));
+        when(swap.tradingFee("XAUT-USDT")).thenReturn(ok(List.of(feeRate("0.0002"))));
+        when(swap.placeOrder(any(HtxSwapOrderRequest.class))).thenReturn(ok(accepted(123L, 456L)));
+
+        executor.syncEntry(primary);
+
+        ArgumentCaptor<HtxTrendOrderEntity> orderCaptor = ArgumentCaptor.forClass(HtxTrendOrderEntity.class);
+        verify(recorder).createOrderIntent(orderCaptor.capture());
+        assertEquals(177L, orderCaptor.getValue().getPositionId());
+        assertEquals("mirror:TradeX:trend-XAUT-USDT-77", orderCaptor.getValue().getPositionKey());
+        verify(recorder).markEntryAccepted(177L, 123L, "mirror entry accepted by exchange");
     }
 
 

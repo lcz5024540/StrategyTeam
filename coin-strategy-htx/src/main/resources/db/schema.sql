@@ -393,6 +393,7 @@ CREATE TABLE IF NOT EXISTS htx_contract_leg (
 -- positions; this table owns only positions opened by htx.trend.
 CREATE TABLE IF NOT EXISTS htx_trend_position (
     id                       BIGINT         PRIMARY KEY AUTO_INCREMENT,
+    source_position_id       BIGINT         NULL COMMENT 'Primary position that originated a follower-account mirror',
     position_key             VARCHAR(128)   NOT NULL UNIQUE,
     run_id                   VARCHAR(128),
     contract_code            VARCHAR(32)    NOT NULL,
@@ -474,6 +475,7 @@ CREATE TABLE IF NOT EXISTS htx_trend_position (
     created_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at               DATETIME(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX idx_trend_position_contract (contract_code, status),
+    INDEX idx_trend_position_source_account (source_position_id, account_label),
     INDEX idx_trend_position_account  (account_id, account_label, status, updated_at),
     INDEX idx_trend_position_strategy (strategy_family, strategy_name, model_name, updated_at),
     INDEX idx_trend_position_entry    (entry_order_id),

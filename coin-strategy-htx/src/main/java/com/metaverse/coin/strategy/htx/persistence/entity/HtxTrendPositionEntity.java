@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
 public class HtxTrendPositionEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
+    /** Primary position that originated this follower-account mirror position; null for primary positions. */
+    private Long sourcePositionId;
     private String positionKey;
     private String runId;
     private String contractCode;
