@@ -1,7 +1,7 @@
 ---
 title: "HTX 趋势策略状态识别与统计模型接入计划 v1"
 type: execution-plan
-status: proposed
+status: active
 created: 2026-10-07
 tags: [htx, trend, regime, hmm, changepoint, kalman, volatility, meta-labeling]
 ---
@@ -91,6 +91,8 @@ flowchart LR
 
 **验收**：每项后续实验都能复现基线；不完整数据只能输出 `INSUFFICIENT_EVIDENCE`，不能得出状态或盈利结论。
 
+**执行记录（2026-10-07）**：复用 `research:c5cfa7cd77cf22c0fefa271ef6ba7e93`，即 52 个合约、五个周期、260 个 `RAW_PUBLIC` 输入均为 `COMPLETE` 的冻结数据集；同一数据集此前已通过 156 次前视/递归稳定性探针。基线不需要重新采集，Phase 0 以复用方式完成。
+
 ### Phase 1：GHMM 离线状态研究（MODEL-REGIME-01）
 
 **工作**
@@ -101,6 +103,8 @@ flowchart LR
 4. 输出只读快照和报告：规则分型与 GHMM 的一致/冲突、每种状态下三类结构模型的候选数、净 PnL、PF、回撤、漏单率和费用占比。
 
 **验收**：状态不塌缩、样本外可复现、转移概率可解释；至少证明它对扣费后策略结果有增益或明确否定增益。此阶段不得改变 Gate、仓位、开平仓。
+
+**执行记录（2026-10-07）**：首轮纯离线 GHMM 已完成，证据见 `evidence/HTX_TREND_GHMM_REGIME_20261007.md`。四类状态均有样本，但样本外 `HIGH_VOL_RISK` 占比 `52.77%`，超过健康上限 `50%`，且 60 次迭代未收敛；结论为 `NEEDS_CALIBRATION`。因此不能跳过校准直接进行 MS-AR 对照、纸面矩阵或任何真实 Gate 接入。
 
 ### Phase 2：高周期对照实验（MODEL-REGIME-02）
 
