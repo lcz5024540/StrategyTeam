@@ -3,7 +3,7 @@ title: "CoinStrategy 策略体系实施路线图 v1"
 type: implementation-roadmap
 status: draft
 created: 2026-09-21
-updated: 2026-09-22
+updated: 2026-10-07
 tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backtest]
 ---
 
@@ -24,6 +24,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 | L2 子系统 | [HTX 趋势策略系统 v1](HTX_TREND_STRATEGY_SYSTEM_V1.md) | 定义趋势策略的市场分型、因子、模型、gate、sizing、退出和回测。 | 已建立 |
 | L3 执行计划 | [HTX 趋势策略开仓与持仓管理重构计划 v1](HTX_TREND_EXECUTION_REFACTOR_PLAN_V1.md) | 将开仓链路、已有仓位管理、冷却解冻、多周期和外部仓位处理拆成分批实施计划。 | 已建立 |
 | L3 执行计划 | [HTX 趋势策略退出系统重构计划 v1](HTX_TREND_EXIT_SYSTEM_REFACTOR_PLAN_V1.md) | 将止损、止盈、分批减仓、利润保护、趋势衰竭、时间退出、模型失效和退出质量回测拆成分批实施计划。 | 已建立 |
+| L3 执行计划 | [HTX 趋势策略状态识别与统计模型接入计划 v1](HTX_TREND_REGIME_AND_MODEL_INTEGRATION_PLAN_V1.md) | 将 GHMM 市场状态、变点检测、持仓趋势质量、波动风险、候选质量与灰度边界拆成独立验证阶段。 | 已建立，待实施 |
 | L2 子系统 | `HTX_FUNDING_ARBITRAGE_SYSTEM_V1.md` | 定义单所现货合约对冲资金费套利、跨所资金费套利、对冲和退出。 | 待创建 |
 | L2 子系统 | [CoinStrategy 资金、账户、风控与账本体系 v1](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) | 定义资金调度、账户体系、策略维度、统一账本和风控边界。 | 已建立 |
 | L2 子系统 | `COINSTRATEGY_BACKTEST_SYSTEM_V1.md` | 定义 K 线采集、回测引擎、费用滑点模型、指标和报告。 | 待创建 |
@@ -52,7 +53,7 @@ tags: [strategy, roadmap, trend, arbitrage, capital-allocation, dashboard, backt
 | P1 | 统一维度与账本底座 | 补账户、策略族、模型、净盈亏口径 | 否 |
 | P2 | 因子快照与候选观察 | 所有候选因子与最终执行 Gate 入库，页面可诊断 | 否 |
 | P3 | 趋势多模型重构 | 拆模型、统一评分、统一 gate | 先观察，后灰度 |
-| P4 | 回测系统闭环 | 覆盖 9/18–9/21 与更长历史样本 | 否 |
+| P4 | 回测系统闭环 | 覆盖 9/18–9/21 与更长历史样本；先验证状态、变点、波动模型是否改善扣费后结果 | 否 |
 | P5 | 套利策略资金池 | 恢复稳定收益底仓，先单所现货合约对冲 | 灰度 |
 | P6 | 资金调度与驾驶舱 | 趋势/套利/缓冲统一资金调度和页面 | 是，分阶段 |
 

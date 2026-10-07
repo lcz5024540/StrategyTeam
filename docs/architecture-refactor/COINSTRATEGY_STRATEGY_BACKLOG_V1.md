@@ -3,7 +3,7 @@ title: "CoinStrategy 策略未完成任务清单 v1"
 type: strategy-backlog
 status: active
 created: 2026-09-22
-updated: 2026-10-03
+updated: 2026-10-07
 tags: [strategy, trend, execution, observability, backtest, backlog]
 ---
 
@@ -23,6 +23,7 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | 组合模型实盘闭环 | `ray-agent/docs/exec-plans/active/plan-20260922-htx-trend-combination-live.md` |
 | 账户、资金、账本和风险维度 | [资金、账户、风控与账本体系](COINSTRATEGY_CAPITAL_RISK_LEDGER_V1.md) |
 | 价格计划、多周期执行和外部模拟信号 | [HTX 趋势策略价格决策与多周期执行设计讨论稿](HTX_TREND_PRICE_AND_TIMEFRAME_DESIGN_DISCUSSION_V1.md) |
+| 状态识别、变点、持仓趋势质量与波动模型 | [HTX 趋势策略状态识别与统计模型接入计划](HTX_TREND_REGIME_AND_MODEL_INTEGRATION_PLAN_V1.md) |
 
 **状态口径**：`待设计` 表示先形成可评审规则；`待实现` 表示方案已定、尚未编码；`观察中` 表示已记录但未改变真实交易；`待回测` 表示不得直接改变实盘行为。
 
@@ -35,6 +36,21 @@ tags: [strategy, trend, execution, observability, backtest, backlog]
 | MODEL-01 | 已完成；新增模型均未获授权 | **独立模型路由**：Donchian 负责趋势启动，Fibonacci 负责已确认趋势的回踩延续，EMA/VWAP 负责日内动量；同一 K 线可并行产生候选，但同币种最终只能选一个已授权模型成交。候选、观测快照和模型合同现已分别固化适用状态、15m 画像、建议委托方式、失效依据、目标依据和退出权限；Fibonacci 仅授权 v4 退出，Donchian/EMA 仍禁止借用该退出链路。 | 三类独立候选都必须匹配自身 DB 政策才可进入真实 Gate；新增模型政策默认不直接启用。冻结数据的模型级回测通过后，才可为 Donchian/EMA 创建 `model-route-v1` 政策与独立退出授权。 |
 | MODEL-02 | 已完成；研究准入结论为拒绝 | **模型政策标定**：`htx_trend_model_policy.py` 强制绑定同一 COMPLETE manifest、PASS 质量报告和样本外验收报告，输出不可变研究政策且禁止写入 DB/改变现有实盘开关。当前 Donchian `PF=0.82`、EMA/VWAP `PF=0.95`、Fibonacci `PF=1.13`，均低于 `PF≥1.30`，故本轮不新增或扩大任何模型授权。 | 禁止因“有候选”直接开启真实交易；新的模型规格必须在独立冻结样本、walk-forward、最大回撤和完整执行成本证据上重新通过，才可申请 `PAPER_CANDIDATE`。 |
 | MODEL-03 | 待实现 | **多周期职责落地**：1d/4h 定环境与大趋势，1h 定趋势质量，30m 定结构，15m 只负责触发与日内保护。 | `ENTRY-03` 的周期画像进入模型政策、价格计划与退出权限；高周期仓位不得被普通 15m 回撤直接全平。 |
+
+## 1.2 2026-10-07：统计模型接入队列
+
+统计模型不替代 Donchian、Fibonacci 回踩、EMA/VWAP 的结构假设和价格计划。每个模型只承担市场状态、突变、持仓趋势质量、波动风险或候选质量中的一个角色，先进入冻结数据回放、影子和纸面路径，再申请单一能力灰度。
+
+| ID | 状态 | 任务 | 完成判据 | 边界 |
+|---|---|---|---|---|
+| MODEL-REGIME-00 | 待实现 | 数据、特征、状态词典与规则基线合同 | 训练/验证/样本外严格按时间切分；缺失、前视、递归不稳定均 fail-closed。 | 只读，不改 Gate。 |
+| MODEL-REGIME-01 | 待实现 | Gaussian HMM 市场状态 | 输出状态概率、转移概率、版本和同源策略结果；状态不塌缩且样本外可复现。 | 不产生入场价，不直接开仓。 |
+| MODEL-REGIME-02 | 待实现 | MS-AR 4h/1d 对照研究 | 只与规则分型、GHMM 比较经济结果，不同时接入实盘。 | 研究报告。 |
+| MODEL-CHANGE-01 | 待实现 | CUSUM 假突破/变点只读事件 | 量化插针识别、误报和趋势漏失，不直接取消候选或平仓。 | 只读证据。 |
+| MODEL-HOLD-01 | 待实现 | Kalman 趋势质量与 EWMA 波动影子退出 | 在退出账本记录持仓斜率、预警、预测波动与建议动作，回放 MFE 捕获和回吐。 | 不替换 FIB v4 真实退出。 |
+| MODEL-PAPER-01 | 待实现 | 状态×模型×周期画像纸面政策矩阵 | 同源比较基线与状态过滤路径的扣费后 PF、期望、回撤和机会损失。 | 不改真实 Gate、仓位或订单。 |
+| MODEL-QUALITY-01 | 阻塞 | Meta-labeling 候选质量 | 足量已结算同口径样本下通过时间滚动校准和经济效果验证。 | 只能排序/拒绝既有候选。 |
+| MODEL-LIVE-01 | 阻塞 | 单一能力小仓灰度 | 纸面样本外通过、单开关可回退且用户明确授权。 | 不自动复制到 TradeX。 |
 
 ## 2. P0：趋势候选质量、价格计划与模拟执行
 
