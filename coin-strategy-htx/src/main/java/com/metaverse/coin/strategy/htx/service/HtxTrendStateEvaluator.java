@@ -33,13 +33,24 @@ public final class HtxTrendStateEvaluator {
         BigDecimal rawScore = input.modelScore().add(expectedRAdjustment).add(momentumAdjustment)
                 .add(emaAdjustment).add(breadthAdjustment);
         BigDecimal score = rawScore.max(ZERO).min(ONE_HUNDRED);
+        // A separately-qualified counter-market candidate is assessed on its local evidence.
+        // The negative breadth adjustment remains visible in the breakdown and sizing stays reduced.
+        BigDecimal eligibilityScore = broadOpposed && input.counterMarketQualified()
+                ? input.modelScore().add(expectedRAdjustment).add(momentumAdjustment).add(emaAdjustment)
+                        .max(ZERO).min(ONE_HUNDRED)
+                : score;
         EntryScoreBreakdown breakdown = new EntryScoreBreakdown(input.modelScore(), expectedRAdjustment,
                 momentumAdjustment, emaAdjustment, breadthAdjustment, rawScore, score);
 
-        if (!emaAligned || broadOpposed || input.expectedRMultiple().compareTo(input.minExpectedRMultiple()) < 0
+        if (!emaAligned || (!input.counterMarketQualified() && broadOpposed)
+                || input.expectedRMultiple().compareTo(input.minExpectedRMultiple()) < 0
                 || input.momentumQualityScore().compareTo(input.minMomentumQualityScore()) < 0
-                || score.compareTo(input.minTrendScore()) < 0) {
-            return EntryState.reject("WEAK", score, rawScore, breakdown, reason(input, emaAligned, broadAligned, broadOpposed));
+                || eligibilityScore.compareTo(input.minTrendScore()) < 0) {
+            return EntryState.reject("WEAK", eligibilityScore, rawScore, breakdown, reason(input, emaAligned, broadAligned, broadOpposed));
+        }
+        if (broadOpposed) {
+            return new EntryState("COUNTER_QUALIFIED", true, eligibilityScore, rawScore, breakdown,
+                    reason(input, emaAligned, false, true) + ", counterMarketQualified=true");
         }
         boolean strong = score.compareTo(input.strongTrendScore()) >= 0
                 && input.expectedRMultiple().compareTo(input.strongExpectedRMultiple()) >= 0
@@ -98,7 +109,7 @@ public final class HtxTrendStateEvaluator {
                              BigDecimal momentumQualityScore, BigDecimal emaFast, BigDecimal emaSlow,
                              String marketRegime, BigDecimal minTrendScore, BigDecimal strongTrendScore,
                              BigDecimal minExpectedRMultiple, BigDecimal strongExpectedRMultiple,
-                             BigDecimal minMomentumQualityScore) { }
+                             BigDecimal minMomentumQualityScore, boolean counterMarketQualified) { }
 
     public record EntryScoreBreakdown(BigDecimal modelScore, BigDecimal expectedRAdjustment,
                                       BigDecimal momentumAdjustment, BigDecimal emaAdjustment,

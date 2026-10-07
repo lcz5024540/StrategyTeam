@@ -221,6 +221,12 @@ htx:
     runtime-kline-capture-enabled: ${HTX_TREND_RUNTIME_KLINE_CAPTURE_ENABLED:true}
     adaptive-sizing-enabled: ${HTX_TREND_ADAPTIVE_SIZING_ENABLED:true}
     candidate-trend-state-gate-enabled: ${HTX_TREND_CANDIDATE_TREND_STATE_GATE_ENABLED:true}
+    # Broad-market opposition is eligible only after independent-structure verification. Disabled until replay approval.
+    counter-market-strong-candidate-enabled: ${HTX_TREND_COUNTER_MARKET_STRONG_CANDIDATE_ENABLED:false}
+    counter-market-min-model-score: ${HTX_TREND_COUNTER_MARKET_MIN_MODEL_SCORE:88}
+    counter-market-min-expected-r: ${HTX_TREND_COUNTER_MARKET_MIN_EXPECTED_R:2.00}
+    counter-market-min-momentum-score: ${HTX_TREND_COUNTER_MARKET_MIN_MOMENTUM_SCORE:65}
+    counter-market-min-adx: ${HTX_TREND_COUNTER_MARKET_MIN_ADX:25}
     mixed-market-requires-strong-candidate: ${HTX_TREND_MIXED_MARKET_REQUIRES_STRONG_CANDIDATE:true}
     mixed-market-min-model-score: ${HTX_TREND_MIXED_MARKET_MIN_MODEL_SCORE:92}
     mixed-market-min-expected-r: ${HTX_TREND_MIXED_MARKET_MIN_EXPECTED_R:1.75}

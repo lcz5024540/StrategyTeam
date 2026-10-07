@@ -1224,9 +1224,12 @@ public class HtxTrendFollowingService {
         DirectionalQualityContext directionalQuality = directionalQualityContext(signal, combination);
         recordCombinationDirectionalQualityEvidence(contractCode, signal, combination, directionalQuality);
         recordCombinationCostNotEvaluated(contractCode, signal, combination);
+        HtxTrendCounterMarketEntryGate.Decision counterMarketDecision = combination == null
+                ? HtxTrendCounterMarketEntryGate.Decision.notApplicable()
+                : counterMarketEntryDecision(signal, combination, marketBreadth);
         CandidateTrendState candidateTrendState = combination == null ? CandidateTrendState.legacy()
-                : candidateTrendState(signal, combination, marketBreadth);
-        recordEntryAssessment(contractCode, signal, combination, marketBreadth, candidateTrendState);
+                : candidateTrendState(signal, combination, marketBreadth, counterMarketDecision.qualified());
+        recordEntryAssessment(contractCode, signal, combination, marketBreadth, candidateTrendState, counterMarketDecision);
         if (signal.side() == TrendSide.FLAT) {
             return executionResult(contractCode, combination, RunResult.of(RunCode.NO_SIGNAL, null, signal.reason()));
         }
@@ -1248,9 +1251,9 @@ public class HtxTrendFollowingService {
         }
         DirectionConfidence confidence = null;
         if (combination != null) {
-            String marketRiskGate = combinationMarketRiskGate(signal.side(), marketBreadth);
-            if (marketRiskGate != null) {
-                return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null, gateMessage(ENTRY_GATE, marketRiskGate)));
+            if (counterMarketDecision.blocksEntry()) {
+                return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                        gateMessage(ENTRY_GATE, "counter-market candidate rejected: " + counterMarketDecision.reason())));
             }
         } else {
             confidence = directionConfidence(signal, entryCandles, marketBreadth, marketAnchor);
@@ -2576,7 +2579,7 @@ public class HtxTrendFollowingService {
     }
 
     private CandidateTrendState candidateTrendState(TrendSignal signal, CombinationContext combination,
-                                                    MarketBreadthContext marketBreadth) {
+                                                    MarketBreadthContext marketBreadth, boolean counterMarketQualified) {
         if (combination == null) {
             return CandidateTrendState.legacy();
         }
@@ -2588,7 +2591,7 @@ public class HtxTrendFollowingService {
                 nonNegative(properties.getCandidateTrendStateStrongScore()),
                 nonNegative(properties.getCandidateTrendStateMinExpectedR()),
                 nonNegative(properties.getCandidateTrendStateStrongExpectedR()),
-                nonNegative(properties.getCandidateTrendStateMinMomentumScore())));
+                nonNegative(properties.getCandidateTrendStateMinMomentumScore()), counterMarketQualified));
         return new CandidateTrendState(state.regime(), state.tradable(), state.score(), state.rawScore(),
                 state.breakdown(), state.reason());
     }
@@ -2613,7 +2616,8 @@ public class HtxTrendFollowingService {
     }
 
     private void recordEntryAssessment(String contractCode, TrendSignal signal, CombinationContext combination,
-                                       MarketBreadthContext breadth, CandidateTrendState state) {
+                                       MarketBreadthContext breadth, CandidateTrendState state,
+                                       HtxTrendCounterMarketEntryGate.Decision counterMarketDecision) {
         if (combination == null || signal == null || signal.barTime() == null || state == null) return;
         HtxTrendAssessmentEntity assessment = new HtxTrendAssessmentEntity();
         assessment.setAssessmentKey("ENTRY:" + combination.runId() + ":" + contractCode);
@@ -2631,9 +2635,15 @@ public class HtxTrendFollowingService {
                 + ",\"momentum\":" + breakdown.momentumAdjustment() + ",\"ema\":" + breakdown.emaAdjustment()
                 + ",\"breadth\":" + breakdown.breadthAdjustment() + "}}"
                 + ",\"calibratedQuality\":{\"status\":\"PENDING_FROZEN_REPLAY\",\"reason\":\"no completed same-source score-bucket calibration\"}"
-                + ",\"breadth\":\"" + (breadth == null ? "MIXED" : breadth.regime()) + "\",\"emaFast\":"
+                + ",\"breadth\":\"" + (breadth == null ? "MIXED" : breadth.regime()) + "\",\"counterMarket\":{\"applicable\":"
+                + counterMarketDecision.counterMarket() + ",\"qualified\":" + counterMarketDecision.qualified()
+                + ",\"reason\":\"" + jsonEscape(counterMarketDecision.reason()) + "\"},\"emaFast\":"
                 + signal.emaFast() + ",\"emaSlow\":" + signal.emaSlow() + "}");
         recorder.recordAssessment(assessment);
+    }
+
+    private static String jsonEscape(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static String assessmentAccountLabel(HtxTrendPositionEntity position) {
@@ -2642,17 +2652,21 @@ public class HtxTrendFollowingService {
     }
 
     /**
-     * The combination candidate already inherits EMA, momentum, Donchian, ADX, ATR and volume confirmation
-     * from the ensemble signal. Do not score those inputs a second time here: only reject a clearly opposite
-     * broad market. A mixed market is handled by reduced sizing in {@link #sizingContext}.
+     * Broad-market opposition is not an automatic veto. A counter candidate must prove local continuation
+     * structure and is still sized with the existing counter-breadth multiplier.
      */
-    private static String combinationMarketRiskGate(TrendSide side, MarketBreadthContext marketBreadth) {
-        if (HtxTrendCombinationMarketRiskGate.opposesBroadMarket(side.name(),
-                marketBreadth == null ? "MIXED" : marketBreadth.regime().name())) {
-            return "combination market risk: signal opposes "
-                    + (marketBreadth == null ? "UNKNOWN" : marketBreadth.summary());
-        }
-        return null;
+    private HtxTrendCounterMarketEntryGate.Decision counterMarketEntryDecision(TrendSignal signal,
+                                                                                 CombinationContext combination,
+                                                                                 MarketBreadthContext marketBreadth) {
+        return HtxTrendCounterMarketEntryGate.evaluate(new HtxTrendCounterMarketEntryGate.Input(
+                properties.isCounterMarketStrongCandidateEnabled(), signal.side(),
+                marketBreadth == null ? "MIXED" : marketBreadth.regime().name(),
+                combination.selection().candidate().score(), combination.expectedRMultiple(),
+                combination.momentumQualityScore(), signal.adx(), signal.emaFast(), signal.emaSlow(),
+                combination.confirmationModels(), nonNegative(properties.getCounterMarketMinModelScore()),
+                nonNegative(properties.getCounterMarketMinExpectedR()),
+                nonNegative(properties.getCounterMarketMinMomentumScore()),
+                nonNegative(properties.getCounterMarketMinAdx())));
     }
 
     private QueryOrderResult queryOrder(String contractCode, Long orderId, String clientOrderId) {

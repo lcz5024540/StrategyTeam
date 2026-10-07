@@ -328,6 +328,21 @@ public class HtxTrendProperties {
     /** Require the current candidate's own trend evidence before a real trend entry. */
     private boolean candidateTrendStateGateEnabled = true;
 
+    /** Enables a strictly qualified combination candidate to trade against broad market breadth. */
+    private boolean counterMarketStrongCandidateEnabled = false;
+
+    /** Minimum model score for a counter-market candidate. */
+    private BigDecimal counterMarketMinModelScore = new BigDecimal("88");
+
+    /** Minimum remaining reward/risk for a counter-market candidate. */
+    private BigDecimal counterMarketMinExpectedR = new BigDecimal("2.00");
+
+    /** Minimum momentum-quality score for a counter-market candidate. */
+    private BigDecimal counterMarketMinMomentumScore = new BigDecimal("65");
+
+    /** Minimum ADX for a counter-market candidate. */
+    private BigDecimal counterMarketMinAdx = new BigDecimal("25");
+
     /** In a mixed market, only an A-grade local candidate may send a live entry. */
     private boolean mixedMarketRequiresStrongCandidate = true;
 

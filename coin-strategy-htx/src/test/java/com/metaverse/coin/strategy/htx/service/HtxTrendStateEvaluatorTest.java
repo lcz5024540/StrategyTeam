@@ -18,7 +18,7 @@ class HtxTrendStateEvaluatorTest {
         HtxTrendStateEvaluator.EntryState state = evaluator.evaluateEntry(new HtxTrendStateEvaluator.EntryInput(
                 TrendSide.LONG, new BigDecimal("82"), new BigDecimal("1.60"), new BigDecimal("74"),
                 new BigDecimal("101"), new BigDecimal("100"), "MIXED", new BigDecimal("75"),
-                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60")));
+                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60"), false));
 
         assertTrue(state.tradable());
         assertEquals("QUALIFIED", state.regime());
@@ -29,10 +29,21 @@ class HtxTrendStateEvaluatorTest {
         HtxTrendStateEvaluator.EntryState state = evaluator.evaluateEntry(new HtxTrendStateEvaluator.EntryInput(
                 TrendSide.SHORT, new BigDecimal("92"), new BigDecimal("0.90"), new BigDecimal("52"),
                 new BigDecimal("100"), new BigDecimal("101"), "MIXED", new BigDecimal("75"),
-                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60")));
+                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60"), false));
 
         assertFalse(state.tradable());
         assertEquals("WEAK", state.regime());
+    }
+
+    @Test
+    void qualifiedCounterMarketCandidateDoesNotBecomeWeakOnlyBecauseBreadthOpposesIt() {
+        HtxTrendStateEvaluator.EntryState state = evaluator.evaluateEntry(new HtxTrendStateEvaluator.EntryInput(
+                TrendSide.LONG, new BigDecimal("90.4"), new BigDecimal("2.5459"), new BigDecimal("69.24"),
+                new BigDecimal("2.2283"), new BigDecimal("2.1865"), "BROAD_DOWN", new BigDecimal("75"),
+                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60"), true));
+
+        assertTrue(state.tradable());
+        assertEquals("COUNTER_QUALIFIED", state.regime());
     }
 
     @Test
@@ -40,7 +51,7 @@ class HtxTrendStateEvaluatorTest {
         HtxTrendStateEvaluator.EntryState state = evaluator.evaluateEntry(new HtxTrendStateEvaluator.EntryInput(
                 TrendSide.SHORT, new BigDecimal("88"), new BigDecimal("1.80"), new BigDecimal("75"),
                 new BigDecimal("99"), new BigDecimal("100"), "BROAD_DOWN", new BigDecimal("75"),
-                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60")));
+                new BigDecimal("88"), new BigDecimal("1.25"), new BigDecimal("1.75"), new BigDecimal("60"), false));
 
         assertEquals(new BigDecimal("114"), state.rawScore());
         assertEquals(new BigDecimal("100"), state.score());
