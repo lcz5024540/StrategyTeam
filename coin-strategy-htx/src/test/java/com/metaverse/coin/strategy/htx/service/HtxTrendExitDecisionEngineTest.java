@@ -244,6 +244,17 @@ class HtxTrendExitDecisionEngineTest {
     }
 
     @Test
+    void persistedPositiveMfeProtectsAnExistingPositionAfterTheProfitHasAlreadyRetraced() {
+        HtxTrendExitDecisionEngine.Decision exited = engine.evaluate(bnbCostFloorInput(
+                new BigDecimal("765.700"), new BigDecimal("765.395"), new BigDecimal("-0.0278314"),
+                null, null, null).withObservedMfeNetPnl(new BigDecimal("0.1246696")));
+
+        assertEquals(HtxTrendExitDecisionEngine.Action.FULL_CLOSE, exited.action());
+        assertEquals("trend-weakened-protection-breach", exited.reason());
+        assertTrue(exited.evidenceJson().contains("\"observedMfeNetPnl\":0.1246696"));
+    }
+
+    @Test
     void costFloorTrailDoesNotArmUntilTheBestPriceCanCoverBothTradingFees() {
         HtxTrendExitDecisionEngine.Decision decision = engine.evaluate(bnbCostFloorInput(
                 new BigDecimal("765.700"), new BigDecimal("765.700"), new BigDecimal("-0.0278314"),

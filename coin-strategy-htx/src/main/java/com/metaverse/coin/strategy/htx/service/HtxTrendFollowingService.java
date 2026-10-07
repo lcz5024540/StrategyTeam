@@ -3547,7 +3547,8 @@ public class HtxTrendFollowingService {
                 .withFundingCostExitReason(fundingCostGate)
                 .withAssessmentState(assessment == null ? null : assessment.state(),
                         assessment == null ? null : assessment.previousState(),
-                        assessment == null ? null : assessment.key()));
+                        assessment == null ? null : assessment.key())
+                .withObservedMfeNetPnl(snapshot == null ? null : snapshot.mfe()));
     }
 
     /** A durable profit lock may tighten a freshly calculated ATR stop but can never loosen it. */

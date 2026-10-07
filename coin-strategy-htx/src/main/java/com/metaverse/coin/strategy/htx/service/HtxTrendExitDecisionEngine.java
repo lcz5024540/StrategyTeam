@@ -49,8 +49,7 @@ public final class HtxTrendExitDecisionEngine {
         // Once the best observed price has covered both legs, retain that validated progress with a cost-floor
         // trail. This does not take profit merely because a trade turns green: the position can still run, but
         // it cannot turn a positive MFE into an unbounded loss after the trend weakens.
-        boolean netPositiveMfeCostFloor = profitable && positive(mfeNetPnl)
-                && favorableMove.compareTo(allInCostDistance) >= 0;
+        boolean netPositiveMfeCostFloor = hasNetPositiveMfeCostFloor(input, favorableMove);
         boolean partialQualified = costCovered && favorableMove.compareTo(partialQualificationDistance) >= 0;
         boolean earlyPullback = positive(input.atr())
                 && adverseFromBest.compareTo(input.atr().multiply(policy.pullbackAtrMultiplier())) >= 0;
@@ -115,6 +114,16 @@ public final class HtxTrendExitDecisionEngine {
         boolean protectionBreachConfirmed = completedBarProtectionBreached
                 && input.protectionBreachBars() >= policy.protectionBreachConfirmationBars();
         boolean acuteProtectionBreach = referenceProtectionBreached && dynamicPullback;
+        // A newly restored cost-floor state can detect a historical MFE and a current breach in one cycle.
+        // In that case preserve the existing funding-cost exit attribution; an already-armed protection breach
+        // remains higher priority below.
+        if (input.fundingCostExitReason() != null && !input.fundingCostExitReason().isBlank()
+                && (!referenceProtectionBreached || newlyArmed)) {
+            return new Decision("FUNDING_COST", Action.FULL_CLOSE, 0L, effectiveProtection, computedMaxR,
+                    armedAt, armReason, "funding-cost-exit: " + input.fundingCostExitReason(),
+                    evidence(input, computedMaxR, dynamicPullback, earlyPullback, profitArmDistance, profitLockPrice,
+                            effectiveProtection, reversalEvidence, expectedReward));
+        }
         if (referenceProtectionBreached && trendState == HtxTrendStateEvaluator.HoldingState.WEAKENING) {
             long targetRemaining = profitable && partialQualified && expectedReward.compareTo(protectedRisk) > 0
                     ? targetRemainingContracts(input.remainingContracts(), expectedReward, protectedRisk,
@@ -296,11 +305,9 @@ public final class HtxTrendExitDecisionEngine {
                 + ",\"costFloorDistance\":" + number(allInCostDistance(input))
                 + ",\"mfeNetPnl\":" + number(netAtFavorablePrice(input,
                         favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice())))
-                + ",\"netPositiveMfeCostFloor\":" + (positive(input.currentNetPnl())
-                        && positive(netAtFavorablePrice(input,
-                        favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice())))
-                        && favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice())
-                        .compareTo(allInCostDistance(input)) >= 0)
+                + ",\"observedMfeNetPnl\":" + number(input.observedMfeNetPnl())
+                + ",\"netPositiveMfeCostFloor\":" + hasNetPositiveMfeCostFloor(input,
+                        favorableMove(input.side(), input.entryPrice(), input.highestPrice(), input.lowestPrice()))
                 + ",\"profitLockPrice\":" + number(profitLockPrice) + ",\"effectiveProtectionPrice\":"
                 + number(effectiveProtection)
                 + ",\"entryFee\":" + number(input.entryFee()) + ",\"estimatedCloseFee\":"
@@ -350,6 +357,12 @@ public final class HtxTrendExitDecisionEngine {
     private static BigDecimal netAtFavorablePrice(Input input, BigDecimal favorableMove) {
         BigDecimal exposure = input.contractSize().multiply(BigDecimal.valueOf(input.remainingContracts()));
         return favorableMove.multiply(exposure).subtract(zero(input.entryFee())).subtract(zero(input.estimatedCloseFee()));
+    }
+
+    private static boolean hasNetPositiveMfeCostFloor(Input input, BigDecimal favorableMove) {
+        return (positive(input.observedMfeNetPnl())
+                || (positive(input.currentNetPnl()) && positive(netAtFavorablePrice(input, favorableMove))))
+                && favorableMove.compareTo(allInCostDistance(input)) >= 0;
     }
 
     private static BigDecimal protectionPrice(String side, BigDecimal entryPrice, BigDecimal lockDistance) {
@@ -415,7 +428,7 @@ public final class HtxTrendExitDecisionEngine {
                         LocalDateTime evaluatedAt, int flatStreak, int requiredFlatStreak,
                         BigDecimal flatLossBudget, ProfitProtectionPolicy profitProtectionPolicy,
                         int protectionBreachBars, String fundingCostExitReason, String assessedTrendState,
-                        String previousAssessedTrendState, String assessmentReference) {
+                        String previousAssessedTrendState, String assessmentReference, BigDecimal observedMfeNetPnl) {
         /** Compatibility constructor for frozen replay evidence with an explicit funding observation. */
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
                      BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
@@ -432,7 +445,7 @@ public final class HtxTrendExitDecisionEngine {
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
                     estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
                     requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars, fundingCostExitReason,
-                    null, null, null);
+                    null, null, null, null);
         }
 
         /** Compatibility constructor for frozen fixtures and callers that do not have a funding observation. */
@@ -450,7 +463,7 @@ public final class HtxTrendExitDecisionEngine {
                     structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
                     estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
-                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars, null, null, null, null);
+                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars, null, null, null, null, null);
         }
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
                      BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
@@ -465,7 +478,7 @@ public final class HtxTrendExitDecisionEngine {
                     structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
                     estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
-                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, 0, null, null, null, null);
+                    requiredFlatStreak, flatLossBudget, profitProtectionPolicy, 0, null, null, null, null, null);
         }
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
                      BigDecimal entryPrice, BigDecimal initialStopPrice, BigDecimal invalidationPrice,
@@ -480,7 +493,7 @@ public final class HtxTrendExitDecisionEngine {
                     structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice, atr, signalSide,
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, entryFee,
                     estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak,
-                    requiredFlatStreak, flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0, null, null, null, null);
+                    requiredFlatStreak, flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0, null, null, null, null, null);
         }
 
         public Input(String primaryModel, String side, long remainingContracts, BigDecimal contractSize,
@@ -496,7 +509,7 @@ public final class HtxTrendExitDecisionEngine {
                     emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl, estimatedCloseFee,
                     estimatedCloseFee,
                     trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt, flatStreak, requiredFlatStreak,
-                    flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0, null, null, null, null);
+                    flatLossBudget, ProfitProtectionPolicy.intradayDefaults(), 0, null, null, null, null, null);
         }
 
         public Input withProtectionBreachBars(int breachBars) {
@@ -505,7 +518,7 @@ public final class HtxTrendExitDecisionEngine {
                     atr, signalSide, emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl,
                     entryFee, estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt,
                     flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, breachBars,
-                    fundingCostExitReason, assessedTrendState, previousAssessedTrendState, assessmentReference);
+                    fundingCostExitReason, assessedTrendState, previousAssessedTrendState, assessmentReference, observedMfeNetPnl);
         }
 
         public Input withFundingCostExitReason(String reason) {
@@ -514,7 +527,7 @@ public final class HtxTrendExitDecisionEngine {
                     atr, signalSide, emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl,
                     entryFee, estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt,
                     flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars, reason,
-                    assessedTrendState, previousAssessedTrendState, assessmentReference);
+                    assessedTrendState, previousAssessedTrendState, assessmentReference, observedMfeNetPnl);
         }
 
         public Input withAssessmentState(String state, String previousState, String reference) {
@@ -523,7 +536,18 @@ public final class HtxTrendExitDecisionEngine {
                     atr, signalSide, emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl,
                     entryFee, estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt,
                     flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars,
-                    fundingCostExitReason, state, previousState, reference);
+                    fundingCostExitReason, state, previousState, reference, observedMfeNetPnl);
+        }
+
+        /** Preserves the best fee-adjusted excursion across scheduler cycles and service restarts. */
+        public Input withObservedMfeNetPnl(BigDecimal observedMfeNetPnl) {
+            return new Input(primaryModel, side, remainingContracts, contractSize, entryPrice, initialStopPrice,
+                    invalidationPrice, structureTargetPrice, referencePrice, protectionPrice, highestPrice, lowestPrice,
+                    atr, signalSide, emaFast, emaSlow, majorTimeframeOpposition, marketContextOpposes, currentNetPnl,
+                    entryFee, estimatedCloseFee, trailingArmedAt, trailingArmReason, maxFavorableR, evaluatedAt,
+                    flatStreak, requiredFlatStreak, flatLossBudget, profitProtectionPolicy, protectionBreachBars,
+                    fundingCostExitReason, assessedTrendState, previousAssessedTrendState, assessmentReference,
+                    observedMfeNetPnl);
         }
     }
 
