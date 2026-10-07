@@ -145,6 +145,11 @@ htx:
     min-adx: ${HTX_TREND_MIN_ADX:18}
     min-atr-pct: ${HTX_TREND_MIN_ATR_PCT:0.0010}
     fibonacci-pullback-enabled: ${HTX_TREND_FIBONACCI_PULLBACK_ENABLED:true}
+    fibonacci-execution-quality-gate-enabled: ${HTX_TREND_FIBONACCI_EXECUTION_QUALITY_GATE_ENABLED:true}
+    fibonacci-min-volume-ratio: ${HTX_TREND_FIBONACCI_MIN_VOLUME_RATIO:1.00}
+    fibonacci-min-body-to-range: ${HTX_TREND_FIBONACCI_MIN_BODY_TO_RANGE:0.20}
+    fibonacci-max-counter-wick-to-range: ${HTX_TREND_FIBONACCI_MAX_COUNTER_WICK_TO_RANGE:0.75}
+    fibonacci-max-entry-range-atr: ${HTX_TREND_FIBONACCI_MAX_ENTRY_RANGE_ATR:2.50}
     fibonacci-lower-rate: ${HTX_TREND_FIBONACCI_LOWER_RATE:0.382}
     fibonacci-upper-rate: ${HTX_TREND_FIBONACCI_UPPER_RATE:0.618}
     fibonacci-min-range-atr-multiplier: ${HTX_TREND_FIBONACCI_MIN_RANGE_ATR_MULTIPLIER:1.2}

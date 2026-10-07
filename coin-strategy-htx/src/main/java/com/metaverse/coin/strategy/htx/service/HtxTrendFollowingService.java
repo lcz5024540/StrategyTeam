@@ -114,6 +114,7 @@ public class HtxTrendFollowingService {
     private HtxTradeAccountService tradeAccountService;
     private HtxTrendRuntimeKlineRecorder runtimeKlineRecorder;
     private HtxTrendRealtimePriceFeed realtimePriceFeed;
+    private HtxTrendStructureLifecycleService structureLifecycleService;
     private final Map<String, EntryCandidate> pendingEntryCandidates = new ConcurrentHashMap<>();
     /** Per scheduler run: permits a compact, searchable summary of every final entry gate result. */
     private final Map<String, AtomicLong> entryGateOutcomeCounts = new ConcurrentHashMap<>();
@@ -214,6 +215,11 @@ public class HtxTrendFollowingService {
     @Autowired(required = false)
     void setTradeAccountService(HtxTradeAccountService tradeAccountService) {
         this.tradeAccountService = tradeAccountService;
+    }
+
+    @Autowired(required = false)
+    void setStructureLifecycleService(HtxTrendStructureLifecycleService structureLifecycleService) {
+        this.structureLifecycleService = structureLifecycleService;
     }
 
     @Autowired(required = false)
@@ -816,7 +822,7 @@ public class HtxTrendFollowingService {
         captureSignalWindows("ENTRY_GATE", contractCode, snapshot, selection.runId(), selection.factorSnapshotId(), null);
         recordSignal(contractCode, signal);
         BigDecimal score = selection.candidate().score();
-        CombinationContext context = new CombinationContext(selection);
+        CombinationContext context = new CombinationContext(selection, ensemble.volumeRatio());
         captureFibonacciExecutionObservation(contractCode, signal, context);
         EntryCandidate candidate = new EntryCandidate(contractCode, signal, snapshot.entryCandles(), contract, score, context);
         return new CandidateEvaluation(RunResult.of(RunCode.OBSERVED, null,
@@ -1274,6 +1280,16 @@ public class HtxTrendFollowingService {
                     gateMessage(ENTRY_GATE, "mixed market requires A-grade candidate; state="
                             + candidateTrendState.regime() + "; " + mixedMarketCandidateReason(combination))));
         }
+        String fibonacciExecutionQualityGate = fibonacciExecutionQualityGate(combination);
+        if (fibonacciExecutionQualityGate != null) {
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, fibonacciExecutionQualityGate)));
+        }
+        String structureLifecycleGate = structureLifecycleAvailabilityGate(contractCode, combination);
+        if (structureLifecycleGate != null) {
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, structureLifecycleGate)));
+        }
         HtxDepth depth = depthSnapshot(contractCode);
         TopOfBook book = topOfBook(depth);
         if (book == null) {
@@ -1338,6 +1354,11 @@ public class HtxTrendFollowingService {
         BigDecimal takeProfitPrice = initialTakeProfit(signal, side, contract, timeframeProfile);
         recordCombinationPricePlan(contractCode, signal, contract, combination, entryPrice, stopPrice, book,
                 volume, feeRates, entryCost);
+        HtxTrendStructureLifecycleService.Decision structureClaim = claimStructureLifecycle(contractCode, combination);
+        if (!structureClaim.allowed()) {
+            return executionResult(contractCode, combination, RunResult.of(RunCode.SKIPPED, null,
+                    gateMessage(ENTRY_GATE, structureClaim.reason())));
+        }
         String positionKey = positionKey(contractCode);
         String clientOrderId = Long.toString(numericClientOrderId());
         HtxTrendPositionEntity entity = new HtxTrendPositionEntity();
@@ -1389,6 +1410,7 @@ public class HtxTrendFollowingService {
         entity.setEntryGateReason(clip(entryCost.entryGateReason(), 1024));
         long id = recorder.createIntent(entity);
         entity.setId(id);
+        attachStructureIntent(contractCode, combination, id);
         HtxSwapOrderRequest request = orderRequest(contractCode, signal.side(), false, clientOrderId, volume);
         recorder.createOrderIntent(orderIntent(entity, HtxTrendRecorder.LEG_ENTRY, signal.side().name(), request,
                 "entry signal: " + signal.reason() + "; " + sizing.summary()));
@@ -1399,6 +1421,7 @@ public class HtxTrendFollowingService {
             String rejectionReason = gateMessage(ORDER_EXECUTION, "entry rejected: " + error(response));
             recorder.markOrderRejected(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, rejectionReason);
             recorder.markStatus(id, HtxTrendRecorder.REJECTED, rejectionReason);
+            abandonStructureIntent(id, rejectionReason);
             return executionResult(contractCode, combination, RunResult.of(RunCode.REJECTED, id, rejectionReason));
         }
         recorder.markOrderAccepted(id, HtxTrendRecorder.LEG_ENTRY, clientOrderId, orderId,
@@ -1408,6 +1431,82 @@ public class HtxTrendFollowingService {
                 id, contractCode, side, orderId, volume, signal.closePrice(), signal.atr(), signal.adx(),
                 takerFeeRate, signal.reason(), sizing.summary());
         return executionResult(contractCode, combination, RunResult.of(RunCode.ENTRY_SENT, id, "entry order sent " + sizing.summary()));
+    }
+
+    /**
+     * A Fibonacci retest is allowed to be a pullback candle, so this does not require a directional close.
+     * It does require normal relative participation and rejects wick-only or one-bar spike entries.
+     */
+    private String fibonacciExecutionQualityGate(CombinationContext combination) {
+        if (combination == null || !HtxTrendStructureLifecycleService.FIB_PULLBACK_CONTINUATION
+                .equals(combination.primaryModel()) || !properties.isFibonacciExecutionQualityGateEnabled()) {
+            return null;
+        }
+        HtxTrendCombinationCalculator.CombinationCandidate candidate = combination.selection().candidate();
+        if (candidate.fibonacciEvidence() == null || candidate.fibonacciEvidence().breakoutBarTime() == null) {
+            return "Fibonacci structure evidence unavailable";
+        }
+        if (candidate.fibonacciEvidence().emaReclaimConfirmed() == false) {
+            return "Fibonacci retest has not reclaimed the EMA structure";
+        }
+        // The ensemble signal owns relative-volume calculation; it is carried in the combination selection snapshot.
+        // It is intentionally read from the candidate's factor snapshot rather than using the old absolute turnover gate.
+        BigDecimal volumeRatio = combination.signalVolumeRatio();
+        if (volumeRatio == null || volumeRatio.compareTo(nonNegative(properties.getFibonacciMinVolumeRatio())) < 0) {
+            return "Fibonacci relative volume below threshold ratio=" + volumeRatio + " required="
+                    + properties.getFibonacciMinVolumeRatio();
+        }
+        HtxTrendCombinationCalculator.EntryCandleQuality quality = candidate.entryCandleQuality();
+        if (quality == null || quality.bodyToRange() == null || quality.rangeToAtr() == null
+                || quality.upperWickToRange() == null || quality.lowerWickToRange() == null) {
+            return "Fibonacci retest microstructure unavailable";
+        }
+        if (quality.bodyToRange().compareTo(nonNegative(properties.getFibonacciMinBodyToRange())) < 0) {
+            return "Fibonacci retest wick-only bodyToRange=" + quality.bodyToRange();
+        }
+        if (quality.rangeToAtr().compareTo(nonNegative(properties.getFibonacciMaxEntryRangeAtr())) > 0) {
+            return "Fibonacci retest one-bar spike rangeToAtr=" + quality.rangeToAtr();
+        }
+        BigDecimal counterWick = candidate.direction() == HtxTrendEnsembleSignalCalculator.Direction.LONG
+                ? quality.lowerWickToRange() : quality.upperWickToRange();
+        if (counterWick.compareTo(nonNegative(properties.getFibonacciMaxCounterWickToRange())) > 0) {
+            return "Fibonacci retest counter-wick too large ratio=" + counterWick;
+        }
+        return null;
+    }
+
+    private String structureLifecycleAvailabilityGate(String contractCode, CombinationContext combination) {
+        if (combination == null || structureLifecycleService == null || combination.structureKey(contractCode) == null) {
+            return null;
+        }
+        HtxTrendStructureLifecycleService.Decision decision = structureLifecycleService.availability(combination.structureKey(contractCode));
+        return decision.allowed() ? null : decision.reason();
+    }
+
+    private HtxTrendStructureLifecycleService.Decision claimStructureLifecycle(String contractCode,
+                                                                                 CombinationContext combination) {
+        if (combination == null || structureLifecycleService == null || combination.structureKey(contractCode) == null) {
+            return HtxTrendStructureLifecycleService.Decision.notApplicable();
+        }
+        return structureLifecycleService.claim(new HtxTrendStructureLifecycleService.Claim(combination.structureKey(contractCode),
+                contractCode, properties.getPeriod(), combination.selection().candidate().direction().name(),
+                combination.primaryModel(), combination.selection().candidate().fibonacciEvidence().breakoutBarTime(),
+                combination.runId()));
+    }
+
+    private void attachStructureIntent(String contractCode, CombinationContext combination, long positionId) {
+        if (combination != null && structureLifecycleService != null) {
+            String structureKey = combination.structureKey(contractCode);
+            if (structureKey != null) {
+                structureLifecycleService.attachIntent(structureKey, combination.runId(), positionId);
+            }
+        }
+    }
+
+    private void abandonStructureIntent(long positionId, String reason) {
+        if (structureLifecycleService != null) {
+            structureLifecycleService.markEntryAbandoned(positionId, reason);
+        }
     }
 
     private RunResult executionResult(String contractCode, CombinationContext combination, RunResult result) {
@@ -4343,7 +4442,7 @@ public class HtxTrendFollowingService {
         boolean strong() { return "STRONG".equals(regime); }
     }
 
-    private record CombinationContext(HtxTrendCombinationService.Selection selection) {
+    private record CombinationContext(HtxTrendCombinationService.Selection selection, BigDecimal signalVolumeRatio) {
         String runId() { return selection.runId(); }
         String primaryModel() { return selection.candidate().primaryModel(); }
         String confirmationModels() { return selection.candidate().confirmationModels(); }
@@ -4357,6 +4456,15 @@ public class HtxTrendFollowingService {
         BigDecimal targetZoneHigh() { return selection.candidate().targetZoneHigh(); }
         BigDecimal expectedRMultiple() { return selection.candidate().expectedRMultiple(); }
         BigDecimal momentumQualityScore() { return selection.candidate().momentumQualityScore(); }
+        String structureKey(String contractCode) {
+            HtxTrendCombinationCalculator.FibonacciEvidence fib = selection.candidate().fibonacciEvidence();
+            if (!HtxTrendStructureLifecycleService.FIB_PULLBACK_CONTINUATION.equals(primaryModel())
+                    || fib == null || fib.breakoutBarTime() == null || contractCode == null || contractCode.isBlank()) {
+                return null;
+            }
+            return contractCode + ":" + selection.candidate().direction().name() + ":" + primaryModel()
+                    + ":BREAKOUT_RETEST:" + fib.breakoutBarTime();
+        }
     }
 
     private record TopOfBook(BigDecimal bid, BigDecimal ask) {

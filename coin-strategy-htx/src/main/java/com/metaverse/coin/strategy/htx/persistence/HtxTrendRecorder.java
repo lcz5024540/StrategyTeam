@@ -17,6 +17,8 @@ import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionReconc
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendBreadthStats;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendOrderLedgerPnl;
+import com.metaverse.coin.strategy.htx.service.HtxTrendStructureLifecycleService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -61,6 +63,8 @@ public class HtxTrendRecorder {
     private HtxTrendProfitProtectionEventMapper profitProtectionEventMapper;
     @Autowired(required = false)
     private HtxTrendPositionReconciliationMapper positionReconciliationMapper;
+    @Autowired(required = false)
+    private HtxTrendStructureLifecycleService structureLifecycleService;
 
     public HtxTrendRecorder(HtxTrendPositionMapper positionMapper, HtxTrendOrderMapper orderMapper,
                             HtxTrendSignalMapper signalMapper) {
@@ -325,6 +329,9 @@ public class HtxTrendRecorder {
     public void markEntryFilled(long id, BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
                                 BigDecimal highestPrice, BigDecimal lowestPrice, String message) {
         positionMapper.markEntryFilled(id, filledContracts, avgPrice, fee, highestPrice, lowestPrice, message);
+        if (structureLifecycleService != null) {
+            structureLifecycleService.markEntryActive(id);
+        }
         recordLedger(() -> ledgerRecorder.recordTrendEntryFill(positionMapper.selectById(id)));
     }
 
@@ -466,8 +473,10 @@ public class HtxTrendRecorder {
     public void markCloseFilled(long id, BigDecimal filledContracts, BigDecimal avgPrice, BigDecimal fee,
                                 BigDecimal realizedProfit, String message) {
         positionMapper.markCloseFilled(id, filledContracts, avgPrice, fee, realizedProfit, message);
+        refreshFinalOrderLedgerPnl(id);
         HtxTrendPositionEntity closedPosition = positionMapper.selectById(id);
         recordExitAttribution(closedPosition, avgPrice);
+        markStructureTerminal(closedPosition);
         recordLedger(() -> {
             if (closedPosition == null || closedPosition.getPartialExitStage() == null || closedPosition.getPartialExitStage() <= 0) {
                 ledgerRecorder.recordTrendCloseFill(closedPosition);
@@ -484,14 +493,17 @@ public class HtxTrendRecorder {
             return;
         }
         try {
-            BigDecimal realized = nz(position.getRealizedProfit());
+            BigDecimal realized = position.getFinalGrossProfit() == null ? nz(position.getRealizedProfit())
+                    : position.getFinalGrossProfit();
+            BigDecimal totalFee = position.getFinalTotalFee() == null ? nz(position.getEntryFee()).add(nz(position.getCloseFee()))
+                    : position.getFinalTotalFee();
             BigDecimal entryFee = nz(position.getEntryFee());
             BigDecimal closeFee = nz(position.getCloseFee());
-            BigDecimal net = realized.subtract(entryFee).subtract(closeFee);
+            BigDecimal net = position.getFinalNetProfit() == null ? realized.subtract(totalFee) : position.getFinalNetProfit();
             BigDecimal mfe = position.getExitSnapshotMfe();
             BigDecimal mae = position.getExitSnapshotMae();
             BigDecimal giveback = position.getExitSnapshotGiveback();
-            String attribution = exitAttribution(position.getExitReason(), net, mfe, giveback, entryFee.add(closeFee));
+            String attribution = exitAttribution(position.getExitReason(), net, mfe, giveback, totalFee);
             HtxTrendFactorSnapshotEntity snapshot = new HtxTrendFactorSnapshotEntity();
             snapshot.setSnapshotKey("EXIT:" + position.getId() + ":" + position.getUpdatedAt() + ":trend-exit-attribution-v1");
             snapshot.setContractCode(position.getContractCode());
@@ -526,7 +538,9 @@ public class HtxTrendRecorder {
                 + ",\"side\":" + json(position.getSide()) + ",\"timeframeProfile\":" + json(position.getTimeframeProfile())
                 + ",\"exitReason\":" + json(position.getExitReason()) + ",\"closePrice\":" + number(closePrice)
                 + ",\"realizedProfit\":" + number(position.getRealizedProfit()) + ",\"entryFee\":" + number(position.getEntryFee())
-                + ",\"closeFee\":" + number(position.getCloseFee()) + ",\"netAfterFees\":" + number(net)
+                + ",\"closeFee\":" + number(position.getCloseFee()) + ",\"finalGrossProfit\":" + number(position.getFinalGrossProfit())
+                + ",\"finalTotalFee\":" + number(position.getFinalTotalFee()) + ",\"finalNetProfit\":" + number(position.getFinalNetProfit())
+                + ",\"finalPnlSource\":" + json(position.getFinalPnlSource()) + ",\"netAfterFees\":" + number(net)
                 + ",\"mfe\":" + number(mfe) + ",\"mae\":" + number(mae) + ",\"giveback\":" + number(giveback)
                 + ",\"barsHeld\":" + number(position.getExitSnapshotBars()) + ",\"attribution\":" + json(attribution)
                 + ",\"earlyLateStatus\":\"FORWARD_WINDOW_REQUIRED\"}";
@@ -540,6 +554,9 @@ public class HtxTrendRecorder {
 
     public void markStatus(long id, String nextStatus, String message) {
         positionMapper.markStatus(id, nextStatus, message);
+        if (REJECTED.equals(nextStatus) && structureLifecycleService != null) {
+            structureLifecycleService.markEntryAbandoned(id, message);
+        }
     }
 
     /** Records why an exchange-absent position was resolved without inventing an execution price or PnL. */
@@ -550,6 +567,7 @@ public class HtxTrendRecorder {
         }
         String safeReason = clip(reason);
         positionMapper.markReconciledClosed(position.getId(), "EXCHANGE_POSITION_ABSENT_" + resolution, safeReason);
+        markStructureTerminal(positionMapper.selectById(position.getId()));
         if (positionReconciliationMapper == null) {
             return;
         }
@@ -570,6 +588,27 @@ public class HtxTrendRecorder {
             positionReconciliationMapper.insert(event);
         } catch (RuntimeException ex) {
             log.warn("trend position reconciliation audit insert failed positionId={}", position.getId(), ex);
+        }
+    }
+
+    private void markStructureTerminal(HtxTrendPositionEntity position) {
+        if (structureLifecycleService == null || position == null || position.getId() == null) {
+            return;
+        }
+        structureLifecycleService.markTerminal(position.getId(), position.getExitReason());
+    }
+
+    private void refreshFinalOrderLedgerPnl(long positionId) {
+        try {
+            HtxTrendOrderLedgerPnl pnl = positionMapper.aggregateFilledOrderLedger(positionId);
+            if (pnl == null || pnl.getFilledOrderCount() == null || pnl.getFilledOrderCount() <= 0) {
+                log.warn("trend final order-ledger PnL unavailable positionId={}", positionId);
+                return;
+            }
+            positionMapper.updateFinalOrderLedgerPnl(positionId, nz(pnl.getGrossProfit()), nz(pnl.getTotalFee()),
+                    nz(pnl.getNetProfit()));
+        } catch (RuntimeException ex) {
+            log.error("trend final order-ledger PnL refresh failed positionId={}", positionId, ex);
         }
     }
 

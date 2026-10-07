@@ -98,6 +98,24 @@ public class HtxTrendProperties {
     /** Enable Fibonacci retracement continuation entries after the higher-timeframe trend is already established. */
     private boolean fibonacciPullbackEnabled = true;
 
+    /**
+     * Requires usable relative volume and non-spike entry-bar structure for Fibonacci continuation entries.
+     * This is model-specific: it does not reintroduce the old absolute 15-minute turnover threshold.
+     */
+    private boolean fibonacciExecutionQualityGateEnabled = true;
+
+    /** Minimum completed-bar volume relative to the recent Fibonacci volume baseline. */
+    private BigDecimal fibonacciMinVolumeRatio = BigDecimal.ONE;
+
+    /** Reject an entry bar whose body is too small to distinguish a retest from a wick-only probe. */
+    private BigDecimal fibonacciMinBodyToRange = new BigDecimal("0.20");
+
+    /** Reject a counter-direction wick that consumes most of the entry range. */
+    private BigDecimal fibonacciMaxCounterWickToRange = new BigDecimal("0.75");
+
+    /** Reject a one-bar impulse that is too large relative to current volatility. */
+    private BigDecimal fibonacciMaxEntryRangeAtr = new BigDecimal("2.50");
+
     /** Lower Fibonacci retracement bound used for pullback continuation entries. */
     private BigDecimal fibonacciLowerRate = new BigDecimal("0.382");
 

@@ -41,6 +41,12 @@ public class HtxTrendPositionEntity {
     private BigDecimal closeAvgPrice;
     private BigDecimal closeFee;
     private BigDecimal realizedProfit;
+    /** Immutable-at-close economic result calculated from all filled order legs, never from an exit snapshot. */
+    private BigDecimal finalGrossProfit;
+    private BigDecimal finalTotalFee;
+    private BigDecimal finalNetProfit;
+    private String finalPnlSource;
+    private LocalDateTime finalPnlCalculatedAt;
     private BigDecimal stopPrice;
     private BigDecimal trailingStopPrice;
     private BigDecimal takeProfitPrice;

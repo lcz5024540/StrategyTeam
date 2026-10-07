@@ -8,6 +8,7 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendSignalEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendOrderMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendPositionMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendSignalMapper;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendOrderLedgerPnl;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -28,6 +29,29 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 
 class HtxTrendRecorderTest {
+
+    @Test
+    void finalCloseUsesAllFilledOrderLegsForNetPnlInsteadOfTheLastExitSnapshot() {
+        HtxTrendPositionMapper positionMapper = mock(HtxTrendPositionMapper.class);
+        HtxTrendOrderMapper orderMapper = mock(HtxTrendOrderMapper.class);
+        HtxTrendRecorder recorder = new HtxTrendRecorder(positionMapper, orderMapper, mock(HtxTrendSignalMapper.class));
+        HtxTrendOrderLedgerPnl pnl = new HtxTrendOrderLedgerPnl();
+        pnl.setFilledOrderCount(3L);
+        pnl.setGrossProfit(new BigDecimal("3.4175"));
+        pnl.setTotalFee(new BigDecimal("0.38515276"));
+        pnl.setNetProfit(new BigDecimal("3.03234724"));
+        HtxTrendPositionEntity closed = new HtxTrendPositionEntity();
+        closed.setId(295L);
+        closed.setExitReason("TREND_EXHAUSTION");
+        when(positionMapper.aggregateFilledOrderLedger(295L)).thenReturn(pnl);
+        when(positionMapper.selectById(295L)).thenReturn(closed);
+
+        recorder.markCloseFilled(295L, new BigDecimal("5"), new BigDecimal("1299"),
+                new BigDecimal("0.05"), new BigDecimal("0.47"), "final runner close");
+
+        verify(positionMapper).updateFinalOrderLedgerPnl(295L, new BigDecimal("3.4175"),
+                new BigDecimal("0.38515276"), new BigDecimal("3.03234724"));
+    }
 
     @Test
     void recordSignalUpdatesExistingContractPeriodBarSnapshot() {

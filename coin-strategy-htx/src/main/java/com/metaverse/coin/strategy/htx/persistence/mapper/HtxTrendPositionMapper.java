@@ -2,6 +2,7 @@ package com.metaverse.coin.strategy.htx.persistence.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendPositionEntity;
+import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendOrderLedgerPnl;
 import com.metaverse.coin.strategy.htx.persistence.model.HtxTrendPerformanceStats;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -17,7 +18,8 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
     String COLUMNS = "id, source_position_id, position_key, run_id, contract_code, status, side, contract_size, contract_volume, remaining_contract_volume, partial_exit_stage, partial_close_client_order_id, partial_close_order_id, leverage, "
             + "entry_client_order_id, entry_order_id, entry_filled_contracts, entry_avg_price, entry_fee, "
             + "close_client_order_id, close_order_id, close_filled_contracts, close_avg_price, close_fee, "
-            + "realized_profit, stop_price, trailing_stop_price, take_profit_price, highest_price, lowest_price, "
+            + "realized_profit, final_gross_profit, final_total_fee, final_net_profit, final_pnl_source, final_pnl_calculated_at, "
+            + "stop_price, trailing_stop_price, take_profit_price, highest_price, lowest_price, "
             + "entry_signal, exit_reason, message, account_id, account_label, strategy_family, strategy_name, model_name, entry_fee_rate, entry_fee_profile_id, estimated_entry_fee, "
             + "estimated_close_fee, expected_net_after_fees, sizing_multiplier, sizing_reason, entry_gate_reason, "
             + "primary_model, confirmation_models, policy_version, timeframe_profile, market_regime, factor_snapshot_id, "
@@ -206,6 +208,26 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
                         @Param("realizedProfit") BigDecimal realizedProfit,
                         @Param("message") String message);
 
+    /**
+     * Final PnL is an order-ledger aggregate. In particular, a partial close followed by a runner close
+     * must include every filled leg and must never reuse the last exit-engine snapshot.
+     */
+    @Select("SELECT COUNT(*) AS filled_order_count, "
+            + "COALESCE(SUM(COALESCE(realized_profit, 0)), 0) AS gross_profit, "
+            + "COALESCE(SUM(ABS(COALESCE(fee, 0))), 0) AS total_fee, "
+            + "COALESCE(SUM(COALESCE(realized_profit, 0)), 0) - COALESCE(SUM(ABS(COALESCE(fee, 0))), 0) AS net_profit "
+            + "FROM htx_trend_order WHERE position_id = #{positionId} "
+            + "AND status IN ('FILLED', 'PARTIALLY_FILLED')")
+    HtxTrendOrderLedgerPnl aggregateFilledOrderLedger(@Param("positionId") long positionId);
+
+    @Update("UPDATE htx_trend_position SET final_gross_profit = #{grossProfit}, final_total_fee = #{totalFee}, "
+            + "final_net_profit = #{netProfit}, final_pnl_source = 'ORDER_LEDGER', "
+            + "final_pnl_calculated_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{positionId}")
+    int updateFinalOrderLedgerPnl(@Param("positionId") long positionId,
+                                  @Param("grossProfit") BigDecimal grossProfit,
+                                  @Param("totalFee") BigDecimal totalFee,
+                                  @Param("netProfit") BigDecimal netProfit);
+
     @Update("UPDATE htx_trend_position SET exit_attribution_snapshot_id = #{snapshotId}, "
             + "updated_at = CURRENT_TIMESTAMP(3) WHERE id = #{id}")
     int markExitAttributionSnapshotId(@Param("id") long id, @Param("snapshotId") long snapshotId);
@@ -242,7 +264,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "/ NULLIF(SUM(CASE WHEN recent.net_profit < 0 THEN 1 ELSE 0 END), 0), 0) AS averageLoss, "
             + "COALESCE(SUM(recent.net_profit) / NULLIF(COUNT(*), 0), 0) AS expectancy "
             + "FROM ("
-            + "SELECT COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0) AS net_profit "
+            + "SELECT COALESCE(final_net_profit, COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0)) AS net_profit "
             + "FROM htx_trend_position "
             + "WHERE status = 'DONE' AND updated_at >= #{since} "
             + "ORDER BY updated_at DESC LIMIT #{limit}"
@@ -267,7 +289,7 @@ public interface HtxTrendPositionMapper extends BaseMapper<HtxTrendPositionEntit
             + "/ NULLIF(SUM(CASE WHEN recent.net_profit < 0 THEN 1 ELSE 0 END), 0), 0) AS averageLoss, "
             + "COALESCE(SUM(recent.net_profit) / NULLIF(COUNT(*), 0), 0) AS expectancy "
             + "FROM ("
-            + "SELECT COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0) AS net_profit "
+            + "SELECT COALESCE(final_net_profit, COALESCE(realized_profit, 0) - COALESCE(entry_fee, 0) - COALESCE(close_fee, 0)) AS net_profit "
             + "FROM htx_trend_position "
             + "WHERE status = 'DONE' AND updated_at >= #{since} "
             + "AND side = #{side} AND primary_model = #{primaryModel} AND market_regime = #{marketRegime} "
