@@ -5,8 +5,8 @@ import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendRuntimeKlineCa
 import com.metaverse.coin.strategy.htx.persistence.entity.HtxTrendRuntimeKlineSnapshotEntity;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendRuntimeKlineCandleMapper;
 import com.metaverse.coin.strategy.htx.persistence.mapper.HtxTrendRuntimeKlineSnapshotMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import javax.annotation.PreDestroy;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -18,6 +18,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -29,14 +33,16 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class HtxTrendRuntimeKlineRecorder {
 
     public static final String SOURCE_KIND = "HTX_PUBLIC_RUNTIME";
     private static final int INSERT_BATCH_SIZE = 32;
     private static final int DEADLOCK_RETRY_LIMIT = 3;
+    /** Evidence must yield to execution. This queue absorbs one full multi-period scan without blocking it. */
+    private static final int ASYNC_QUEUE_CAPACITY = 2_048;
     private final HtxTrendRuntimeKlineCandleMapper candleMapper;
     private final HtxTrendRuntimeKlineSnapshotMapper snapshotMapper;
+    private final ThreadPoolExecutor writer;
     /** One writer preserves append-only evidence while candidate scanning remains concurrent. */
     private final ReentrantLock writeLock = new ReentrantLock();
     private final AtomicLong captureAttempts = new AtomicLong();
@@ -46,14 +52,41 @@ public class HtxTrendRuntimeKlineRecorder {
     private final AtomicLong deadlockRetries = new AtomicLong();
     private final AtomicLong finalFailures = new AtomicLong();
     private final AtomicLong captureLatencyMs = new AtomicLong();
+    private final AtomicLong rejectedCaptures = new AtomicLong();
 
-    /** Fail-open: evidence persistence must never turn a valid market signal into a duplicate trade attempt. */
+    public HtxTrendRuntimeKlineRecorder(HtxTrendRuntimeKlineCandleMapper candleMapper,
+                                        HtxTrendRuntimeKlineSnapshotMapper snapshotMapper) {
+        this.candleMapper = candleMapper;
+        this.snapshotMapper = snapshotMapper;
+        ThreadFactory factory = runnable -> {
+            Thread thread = new Thread(runnable, "htx-runtime-kline-evidence");
+            thread.setDaemon(true);
+            return thread;
+        };
+        this.writer = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(ASYNC_QUEUE_CAPACITY), factory, new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    /**
+     * Fail-open and non-blocking: the trade scanner only enqueues evidence.  Database latency, a deadlock or a full
+     * evidence queue can never consume an entry window or change a trade decision.
+     */
     public void capture(CaptureRequest request) {
         if (!valid(request)) {
             return;
         }
-        long startedAt = System.nanoTime();
         captureAttempts.incrementAndGet();
+        try {
+            writer.execute(() -> persist(request));
+        } catch (RuntimeException exception) {
+            rejectedCaptures.incrementAndGet();
+            log.warn("[HTX-TREND-KLINE] capture dropped stage={} contract={} period={} queueDepth={} reason={}",
+                    request.captureStage(), request.contractCode(), request.period(), writer.getQueue().size(), rootMessage(exception));
+        }
+    }
+
+    private void persist(CaptureRequest request) {
+        long startedAt = System.nanoTime();
         try {
             List<HtxSwapKline> candles = request.candles().stream()
                     .filter(candle -> candle != null && candle.getId() != null)
@@ -164,17 +197,24 @@ public class HtxTrendRuntimeKlineRecorder {
     /** Cumulative in-process quality signal; counters are diagnostic and never gate an order. */
     public QualitySnapshot qualitySnapshot() {
         return new QualitySnapshot(captureAttempts.get(), captureCompleted.get(), completeWindows.get(), partialWindows.get(),
-                deadlockRetries.get(), finalFailures.get(), captureLatencyMs.get());
+                deadlockRetries.get(), finalFailures.get(), rejectedCaptures.get(), writer.getQueue().size(), captureLatencyMs.get());
     }
 
     public record QualitySnapshot(long attempts, long completed, long completeWindows, long partialWindows,
-                                  long deadlockRetries, long finalFailures, long totalLatencyMs) {
-        public static QualitySnapshot unavailable() { return new QualitySnapshot(0, 0, 0, 0, 0, 0, 0); }
+                                  long deadlockRetries, long finalFailures, long rejectedCaptures, long queueDepth,
+                                  long totalLatencyMs) {
+        public static QualitySnapshot unavailable() { return new QualitySnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0); }
         public String summary() {
             return "attempts=" + attempts + ",completed=" + completed + ",complete=" + completeWindows
                     + ",partial=" + partialWindows + ",deadlockRetries=" + deadlockRetries
-                    + ",failures=" + finalFailures + ",latencyMs=" + totalLatencyMs;
+                    + ",failures=" + finalFailures + ",dropped=" + rejectedCaptures + ",queueDepth=" + queueDepth
+                    + ",latencyMs=" + totalLatencyMs;
         }
+    }
+
+    @PreDestroy
+    void stopWriter() {
+        writer.shutdown();
     }
 
     private static HtxTrendRuntimeKlineCandleEntity toCandle(CaptureRequest request, HtxSwapKline candle,

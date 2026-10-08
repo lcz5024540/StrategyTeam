@@ -18,8 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,8 +34,8 @@ class HtxTrendRuntimeKlineRecorderTest {
 
         ArgumentCaptor<List<HtxTrendRuntimeKlineCandleEntity>> candles = ArgumentCaptor.forClass(List.class);
         ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
-        verify(candleMapper).insertIgnoreBatch(candles.capture());
-        verify(snapshotMapper).insert(snapshot.capture());
+        verify(candleMapper, timeout(1_000)).insertIgnoreBatch(candles.capture());
+        verify(snapshotMapper, timeout(1_000)).insert(snapshot.capture());
         assertEquals(2, candles.getValue().size());
         assertNotEquals(candles.getValue().get(0).getCandleHash(), candles.getValue().get(1).getCandleHash());
         assertEquals("ENTRY_GATE", snapshot.getValue().getCaptureStage());
@@ -62,7 +62,7 @@ class HtxTrendRuntimeKlineRecorderTest {
         HtxTrendRuntimeKlineRecorder revisedRecorder = new HtxTrendRuntimeKlineRecorder(candleMapper, revisedSnapshotMapper);
         revisedRecorder.capture(request(List.of(candle(1_790_000_000L, "100"), candle(1_790_000_900L, "102"))));
         ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> revised = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
-        verify(revisedSnapshotMapper).insert(revised.capture());
+        verify(revisedSnapshotMapper, timeout(1_000)).insert(revised.capture());
         assertTrue(revised.getValue().getSnapshotKey().contains("ENTRY_GATE"));
     }
 
@@ -77,7 +77,7 @@ class HtxTrendRuntimeKlineRecorderTest {
         recorder.capture(request);
 
         ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
-        verify(snapshotMapper).insert(snapshot.capture());
+        verify(snapshotMapper, timeout(1_000)).insert(snapshot.capture());
         assertEquals(1_790_003_600L, snapshot.getValue().getTargetBarTime());
         assertEquals(1_790_003_600L, snapshot.getValue().getWindowEndBarTime());
     }
@@ -92,8 +92,8 @@ class HtxTrendRuntimeKlineRecorderTest {
         new HtxTrendRuntimeKlineRecorder(candleMapper, snapshotMapper)
                 .capture(request(List.of(candle(1_790_000_000L, "100"))));
 
-        verify(candleMapper, times(2)).insertIgnoreBatch(any());
-        verify(snapshotMapper).insert(any(HtxTrendRuntimeKlineSnapshotEntity.class));
+        verify(candleMapper, timeout(1_000).times(2)).insertIgnoreBatch(any());
+        verify(snapshotMapper, timeout(1_000)).insert(any(HtxTrendRuntimeKlineSnapshotEntity.class));
     }
 
     @Test void marks_a_same_size_window_with_a_missing_bar_as_partial() {
@@ -108,7 +108,7 @@ class HtxTrendRuntimeKlineRecorderTest {
         recorder.capture(request);
 
         ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
-        verify(snapshotMapper).insert(snapshot.capture());
+        verify(snapshotMapper, timeout(1_000)).insert(snapshot.capture());
         assertFalse(snapshot.getValue().getCompleteWindow());
         assertEquals("PARTIAL", snapshot.getValue().getDataIntegrity());
     }
@@ -124,7 +124,7 @@ class HtxTrendRuntimeKlineRecorderTest {
         recorder.capture(request);
 
         ArgumentCaptor<HtxTrendRuntimeKlineSnapshotEntity> snapshot = ArgumentCaptor.forClass(HtxTrendRuntimeKlineSnapshotEntity.class);
-        verify(snapshotMapper).insert(snapshot.capture());
+        verify(snapshotMapper, timeout(1_000)).insert(snapshot.capture());
         assertTrue(snapshot.getValue().getCompleteWindow());
         assertEquals("COMPLETE", snapshot.getValue().getDataIntegrity());
     }

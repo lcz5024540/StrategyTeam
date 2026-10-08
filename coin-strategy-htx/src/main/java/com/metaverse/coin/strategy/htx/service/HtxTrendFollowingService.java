@@ -2125,7 +2125,7 @@ public class HtxTrendFollowingService {
         }
         Long completedTargetBarTime = completedCandles.get(completedCandles.size() - 1).getId();
         runtimeKlineRecorder.capture(new HtxTrendRuntimeKlineRecorder.CaptureRequest(stage, contractCode, period,
-                completedTargetBarTime, expectedWindowSize, runId, factorSnapshotId, positionId, completedCandles));
+                completedTargetBarTime, completedCandles.size(), runId, factorSnapshotId, positionId, completedCandles));
     }
 
     private void recordSignal(String contractCode, TrendSignal signal) {
